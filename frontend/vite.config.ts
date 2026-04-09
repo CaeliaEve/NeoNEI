@@ -10,7 +10,9 @@ export default defineConfig(({ mode }) => {
     if (value === '/') return ''
     return value.replace(/\/+$/, '')
   }
-  const backendBaseUrl = normalizeBaseUrl(env.VITE_BACKEND_BASE_URL || '/api')
+  const backendBaseUrl = normalizeBaseUrl(
+    env.VITE_BACKEND_BASE_URL || (mode === 'development' ? devProxyTarget : '/api')
+  )
   const apiBaseUrl = normalizeBaseUrl(env.VITE_API_BASE_URL || '/api')
 
   const forbidLegacyImports = {

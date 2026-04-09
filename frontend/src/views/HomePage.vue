@@ -621,79 +621,6 @@ const saveSettings = () => {
               </span>
             </div>
 
-            <div class="surface-glass rounded border border-slate-200/60 px-2 py-2 text-[11px] text-slate-200/80">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div class="flex flex-col gap-1">
-                  <span>
-                    当前模板分组：
-                    <strong class="text-white">{{ currentGroupName || currentGroupId || '未选择' }}</strong>
-                  </span>
-                  <span
-                    v-if="patternCreateStatus.type !== 'idle'"
-                    :class="patternCreateStatus.type === 'success' ? 'text-emerald-300' : 'text-amber-300'"
-                  >
-                    {{ patternCreateStatus.message }}
-                  </span>
-                </div>
-                <button
-                  class="mini-pager-btn"
-                  :disabled="!canCreatePatternFromCurrentRecipe"
-                  @click="createPatternFromCurrentRecipe"
-                >
-                  保存到模板分组
-                </button>
-              </div>
-              <div class="mt-3 grid grid-cols-1 gap-2 text-[11px] md:grid-cols-2">
-                <label class="flex flex-col gap-1">
-                  <span class="text-slate-300/70">Pattern Name</span>
-                  <input
-                    v-model="patternDraftName"
-                    type="text"
-                    class="rounded border border-white/10 bg-white/5 px-2 py-1 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
-                  >
-                </label>
-                <label class="flex flex-col gap-1">
-                  <span class="text-slate-300/70">Output Item</span>
-                  <select
-                    v-model="patternDraftOutputItemId"
-                    class="rounded border border-white/10 bg-white/5 px-2 py-1 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
-                  >
-                    <option v-for="output in currentRecipeOutputOptions" :key="output.itemId" :value="output.itemId">
-                      {{ output.itemId }}
-                    </option>
-                  </select>
-                </label>
-                <label class="flex flex-col gap-1">
-                  <span class="text-slate-300/70">Priority</span>
-                  <input
-                    v-model.number="patternDraftPriority"
-                    type="number"
-                    class="rounded border border-white/10 bg-white/5 px-2 py-1 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
-                  >
-                </label>
-                <label class="flex flex-col gap-1">
-                  <span class="text-slate-300/70">Mode</span>
-                  <select
-                    v-model.number="patternDraftCrafting"
-                    class="rounded border border-white/10 bg-white/5 px-2 py-1 text-slate-100 focus:outline-none focus:ring-2 focus:ring-cyan-400/40"
-                  >
-                    <option :value="1">Crafting</option>
-                    <option :value="0">Processing</option>
-                  </select>
-                </label>
-              </div>
-              <div class="mt-2 flex flex-wrap gap-3 text-[11px] text-slate-200/80">
-                <label class="flex items-center gap-2">
-                  <input v-model.number="patternDraftSubstitute" type="checkbox" :true-value="1" :false-value="0">
-                  <span>Substitute inputs</span>
-                </label>
-                <label class="flex items-center gap-2">
-                  <input v-model.number="patternDraftBeSubstitute" type="checkbox" :true-value="1" :false-value="0">
-                  <span>May substitute elsewhere</span>
-                </label>
-              </div>
-            </div>
-
             <!-- Pagination (compact) -->
             <div
               v-if="totalRecipePages > 1"
@@ -848,7 +775,7 @@ const saveSettings = () => {
               }"
             >
                 <ItemTooltip
-                  v-for="item in items"
+                  v-for="(item, pageIndex) in items"
                   :key="item.itemId"
                   :item="item"
                   @click="openCraftingRecipes(item)"
@@ -857,8 +784,9 @@ const saveSettings = () => {
                   <ItemCard
                     :item="item"
                     :itemSize="itemSize"
+                    :enableAnimation="false"
                     :animationSpeed="animationSpeed"
-                    eager
+                    :eager="pageIndex < 10"
                     :deferAnimationMs="HOME_GRID_ANIMATION_DELAY_MS"
                     :atlas-sprite="currentPageAtlas?.entries[item.itemId] || null"
                     @click="openCraftingRecipes(item)"
@@ -886,7 +814,7 @@ const saveSettings = () => {
                 }"
               >
                 <ItemTooltip
-                  v-for="historyItem in viewHistory.slice(0, historyVisibleCount)"
+                  v-for="(historyItem, historyIndex) in viewHistory.slice(0, historyVisibleCount)"
                   :key="historyItem.itemId"
                   :item="historyItem"
                   @click="openCraftingRecipes(historyItem)"
@@ -895,8 +823,9 @@ const saveSettings = () => {
                   <ItemCard
                     :item="historyItem"
                     :itemSize="historyItemPixelSize"
+                    :enableAnimation="false"
                     :animationSpeed="animationSpeed"
-                    eager
+                    :eager="historyIndex < 8"
                     :deferAnimationMs="HOME_HISTORY_ANIMATION_DELAY_MS"
                     :atlas-sprite="historyAtlas?.entries[historyItem.itemId] || null"
                     @click="openCraftingRecipes(historyItem)"

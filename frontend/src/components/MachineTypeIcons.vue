@@ -92,7 +92,14 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
         @keydown="handleOptionKeydown($event, index)"
       >
         <span class="machine-icon-container" aria-hidden="true">
-          <span v-if="category.type === 'crafting'" class="crafting-icon">
+          <img
+            v-if="category.machineIcon"
+            :src="getMachineIconPath(category.machineIcon)"
+            class="machine-icon"
+            @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png' }"
+          />
+
+          <span v-else-if="category.type === 'crafting'" class="crafting-icon">
             <svg viewBox="0 0 24 24" width="32" height="32">
               <rect x="2" y="2" width="20" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
               <rect x="5" y="5" width="4" height="4" fill="currentColor"/>
@@ -106,13 +113,6 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
               <rect x="15" y="15" width="4" height="4" fill="currentColor"/>
             </svg>
           </span>
-
-          <img
-            v-else-if="category.machineIcon"
-            :src="getMachineIconPath(category.machineIcon)"
-            class="machine-icon"
-            @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png' }"
-          />
 
           <span v-else class="fallback-icon">?</span>
         </span>
@@ -314,4 +314,3 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
   }
 }
 </style>
-
