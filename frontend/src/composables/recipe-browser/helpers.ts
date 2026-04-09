@@ -91,6 +91,116 @@ const getMachineName = (recipeType: string): string => {
   return typeMap[recipeType] || recipeType;
 };
 
+const getCategoryMachineIcon = (recipe: Recipe, getImagePath: (itemId: string) => string): string | null => {
+  const profile = resolveRecipePresentationProfile({
+    machineType: recipe.machineInfo?.machineType,
+    recipeType: recipe.recipeType,
+    recipeTypeData: recipe.recipeTypeData,
+    inputs: recipe.inputs,
+    additionalData: recipe.additionalData as Record<string, unknown> | undefined,
+    metadata: recipe.metadata as Record<string, unknown> | undefined,
+    preferDetailedCrafting: false,
+  });
+
+  switch (profile.uiConfig.uiType) {
+    case 'thaumcraft_arcane':
+      return getImagePath('i~Thaumcraft~blockTable~15');
+    case 'thaumcraft_infusion':
+      return getImagePath('i~Thaumcraft~blockStoneDevice~2');
+    case 'blood_magic_altar':
+      return getImagePath('i~AWWayofTime~Altar~0');
+    case 'botania_mana_pool':
+      return getImagePath('i~Botania~pool~0');
+    case 'botania_rune_altar':
+      return getImagePath('i~Botania~runeAltar~0');
+    case 'botania_pure_daisy':
+      return getImagePath('i~Botania~specialFlower~0~BVmnjzvOML-Ap_zxeMIMOw==');
+    default:
+      break;
+  }
+
+  const resolved = resolveMachineIcon(recipe, getImagePath);
+  if (resolved) return resolved;
+
+  const combined = getCombinedRecipeText(recipe);
+  if (
+    combined.includes('singularity compressor') ||
+    combined.includes('奇点压缩机')
+  ) {
+    return getImagePath('i~Avaritia~Singularity~0');
+  }
+
+  return null;
+};
+
+const getCombinedRecipeText = (recipe: Recipe): string => {
+  return [
+    recipe.recipeType || '',
+    typeof recipe.recipeTypeData?.id === 'string' ? recipe.recipeTypeData.id : '',
+    typeof recipe.recipeTypeData?.type === 'string' ? recipe.recipeTypeData.type : '',
+    typeof recipe.recipeTypeData?.category === 'string' ? recipe.recipeTypeData.category : '',
+    typeof recipe.recipeTypeData?.machineType === 'string' ? recipe.recipeTypeData.machineType : '',
+    getExplicitMachineName(recipe) || '',
+  ]
+    .join(' ')
+    .toLowerCase();
+};
+
+const isGenericCraftingLabel = (name: string): boolean => {
+  const normalized = name.trim().toLowerCase();
+  return (
+    normalized === 'crafting' ||
+    normalized === 'crafting table' ||
+    normalized === 'crafting (shaped)' ||
+    normalized === 'crafting (shapeless)' ||
+    normalized === 'workbench' ||
+    normalized === 'minecraft:crafting' ||
+    normalized === '有序合成' ||
+    normalized === '无序合成' ||
+    normalized === '无需合成'
+  );
+};
+
+const getCraftingCategoryName = (recipe: Recipe): string => {
+  const explicitMachineName = getExplicitMachineName(recipe);
+  if (explicitMachineName && !isGenericCraftingLabel(explicitMachineName)) {
+    return normalizeMachineCategoryName(explicitMachineName);
+  }
+
+  const combined = getCombinedRecipeText(recipe);
+  if (combined.includes('singularity compressor') || combined.includes('奇点压缩机')) {
+    return explicitMachineName || '奇点压缩机';
+  }
+
+  if (
+    combined.includes('no crafting') ||
+    combined.includes('无需合成') ||
+    combined.includes('no recipe')
+  ) {
+    return '无需合成';
+  }
+
+  if (
+    combined.includes('shapeless') ||
+    combined.includes('无序合成')
+  ) {
+    return '无序合成';
+  }
+
+  if (
+    combined.includes('shaped') ||
+    combined.includes('有序合成')
+  ) {
+    return '有序合成';
+  }
+
+  if (isExtremeMachineText(combined)) {
+    return normalizeMachineCategoryName(explicitMachineName || getMachineName(recipe.recipeType));
+  }
+
+  return 'Crafting Table';
+};
+
 const getExplicitMachineName = (recipe: Recipe): string | null => {
   const machineType = recipe.machineInfo?.machineType;
   if (typeof machineType === 'string' && machineType.trim()) {
@@ -298,7 +408,7 @@ export const buildMachineCategories = (
     });
     const isCrafting = profile.uiConfig.presentation?.surface === 'workbench';
     const categoryName = isCrafting
-      ? 'Crafting Table'
+      ? getCraftingCategoryName(recipe)
       : normalizeMachineCategoryName(explicitMachineName || getMachineName(recipe.recipeType));
 
     if (!categories.has(categoryName)) {
@@ -306,7 +416,7 @@ export const buildMachineCategories = (
         type: isCrafting ? 'crafting' : 'machine',
         name: categoryName,
         recipeType: recipe.recipeType,
-        machineIcon: resolveMachineIcon(recipe, getImagePath),
+        machineIcon: getCategoryMachineIcon(recipe, getImagePath),
         recipes: [],
         recipeVariants: new Map(),
       });
