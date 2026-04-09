@@ -1,0 +1,438 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>动画物品测试 - NeoNEI</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    /* 婊氬姩鏉℃牱寮?*/
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #1f2937;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #4b5563;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #6b7280;
+    }
+
+    /* 鍔犺浇鍔ㄧ敾 */
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .spinner {
+      border: 3px solid #374151;
+      border-top: 3px solid #22d3ee;
+      border-radius: 50%;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-white p-8 min-h-screen">
+  <div class="max-w-7xl mx-auto">
+    <h1 class="text-3xl font-bold mb-2 text-cyan-400">馃幀 鍔ㄧ敾鐗╁搧娴嬭瘯椤甸潰</h1>
+    <p class="text-gray-400 mb-6">鑷姩妫€娴嬪苟鏄剧ず鎵€鏈夊甫鍔ㄧ敾鐨勭墿鍝?/p>
+
+    <!-- 鍔犺浇鐘舵€?-->
+    <div id="loading" class="flex items-center justify-center p-12">
+      <div class="flex flex-col items-center gap-4">
+        <div class="spinner"></div>
+        <p class="text-cyan-300">姝ｅ湪鍔犺浇鐗╁搧鏁版嵁...</p>
+        <p id="loading-progress" class="text-sm text-gray-400"></p>
+      </div>
+    </div>
+
+    <!-- 缁熻淇℃伅 -->
+    <div id="stats-container" class="hidden mb-6 bg-gray-800 p-4 rounded-lg border border-cyan-400/30">
+      <h2 class="text-xl font-bold mb-4 text-cyan-400">馃搳 缁熻淇℃伅</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+        <div class="bg-gray-700 p-3 rounded">
+          <p class="text-gray-400">鎬荤墿鍝佹暟</p>
+          <p id="total-items" class="text-2xl font-bold text-white">-</p>
+        </div>
+        <div class="bg-gray-700 p-3 rounded">
+          <p class="text-gray-400">鍔ㄧ敾鐗╁搧</p>
+          <p id="animated-items" class="text-2xl font-bold text-green-400">-</p>
+        </div>
+        <div class="bg-gray-700 p-3 rounded">
+          <p class="text-gray-400">闈欐€佺墿鍝?/p>
+          <p id="static-items" class="text-2xl font-bold text-blue-400">-</p>
+        </div>
+        <div class="bg-gray-700 p-3 rounded">
+          <p class="text-gray-400">妫€娴嬭繘搴?/p>
+          <p id="detection-progress" class="text-2xl font-bold text-yellow-400">-</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- 杩囨护鍣?-->
+    <div id="filter-container" class="hidden mb-6 flex gap-4 items-center flex-wrap">
+      <input
+        type="text"
+        id="search-input"
+        placeholder="鎼滅储鐗╁搧鍚嶇О..."
+        class="px-4 py-2 rounded bg-gray-800 border border-gray-600 text-white placeholder-gray-400 focus:outline-none focus:border-cyan-400"
+      />
+      <select id="mod-filter" class="px-4 py-2 rounded bg-gray-800 border border-gray-600 text-white focus:outline-none focus:border-cyan-400">
+        <option value="all">鎵€鏈夋ā缁?/option>
+      </select>
+      <button id="refresh-btn" class="px-4 py-2 rounded bg-cyan-600 hover:bg-cyan-500 text-white font-semibold transition">
+        馃攧 鍒锋柊
+      </button>
+    </div>
+
+    <!-- 鐗╁搧缃戞牸 -->
+    <div id="items-grid" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8 gap-4">
+    </div>
+
+    <!-- 绌虹姸鎬?-->
+    <div id="empty-state" class="hidden text-center py-12">
+      <p class="text-gray-400 text-lg">娌℃湁鎵惧埌鍖归厤鐨勭墿鍝?/p>
+    </div>
+  </div>
+
+  <script>
+    const backendBase = new URLSearchParams(window.location.search).get("backend")
+      || localStorage.getItem("backendBase")
+      || `${window.location.protocol}//${window.location.hostname}:3002`;
+    const API_BASE = `${backendBase}/api`;
+    const IMAGE_BASE = `${backendBase}/images/item`;
+    // 鐘舵€佺鐞?    let allItems = [];
+    let animatedItems = [];
+    let mods = new Map();
+    let isDetecting = false;
+
+    // DOM 鍏冪礌
+    const loadingEl = document.getElementById('loading');
+    const loadingProgressEl = document.getElementById('loading-progress');
+    const statsContainer = document.getElementById('stats-container');
+    const filterContainer = document.getElementById('filter-container');
+    const itemsGrid = document.getElementById('items-grid');
+    const emptyState = document.getElementById('empty-state');
+    const modFilter = document.getElementById('mod-filter');
+    const searchInput = document.getElementById('search-input');
+    const totalItemsEl = document.getElementById('total-items');
+    const animatedItemsEl = document.getElementById('animated-items');
+    const staticItemsEl = document.getElementById('static-items');
+    const detectionProgressEl = document.getElementById('detection-progress');
+
+    // 鑾峰彇鍥剧墖璺緞
+    function getImageSrc(item) {
+      if (item.itemId) {
+        const parts = item.itemId.split('~');
+        if (parts.length >= 4) {
+          const modId = parts[1];
+          const internalName = parts[2];
+          const damage = parts[3];
+          const nbt = parts[4] || null;
+
+          let imageFileName = nbt
+            ? `${modId}/${internalName}~${damage}~${nbt}.png`
+            : `${modId}/${internalName}~${damage}.png`;
+
+          return `${IMAGE_BASE}/${imageFileName}`;
+        }
+      }
+      return item.imageFileName ? `${IMAGE_BASE}/${item.imageFileName}` : '/placeholder.png';
+    }
+
+    // 妫€娴嬬墿鍝佹槸鍚︽湁鍔ㄧ敾
+    async function hasAnimation(item) {
+      try {
+        const imageUrl = getImageSrc(item);
+        const url = new URL(imageUrl);
+        const frame1Url = `${url.origin}${url.pathname.replace('.png', '_frame1.png')}`;
+
+        const response = await fetch(frame1Url, { method: 'HEAD' });
+        return response.ok;
+      } catch {
+        return false;
+      }
+    }
+
+    // 鍔犺浇鐗╁搧鏁版嵁锛堜紭鍖栫増 - 杈瑰姞杞借竟妫€娴嬶級
+    async function loadItems() {
+      try {
+        loadingProgressEl.textContent = '姝ｅ湪鑾峰彇妯＄粍鍒楄〃...';
+
+        // 鑾峰彇鎵€鏈夋ā缁?        const modsResponse = await fetch(`${API_BASE}/items/mods`);
+        const modsData = await modsResponse.json();
+
+        modsData.forEach(mod => {
+          mods.set(mod.modId, mod);
+        });
+
+        // 濉厖妯＄粍杩囨护鍣?        modFilter.innerHTML = '<option value="all">鎵€鏈夋ā缁?/option>';
+        Array.from(mods.entries())
+          .sort((a, b) => b[1].itemCount - a[1].itemCount)
+          .forEach(([modId, mod]) => {
+            const option = document.createElement('option');
+            option.value = modId;
+            option.textContent = `${mod.modName} (${mod.itemCount})`;
+            modFilter.appendChild(option);
+          });
+
+        // 绔嬪嵆鏄剧ず缁熻闈㈡澘鍜岃繃婊ゅ櫒
+        statsContainer.classList.remove('hidden');
+        filterContainer.classList.remove('hidden');
+
+        // 鑾峰彇鎵€鏈夌墿鍝?        const pageSize = 1000;
+        allItems = [];
+
+        for (let page = 1; ; page++) {
+          loadingProgressEl.textContent = `姝ｅ湪鍔犺浇鐗╁搧鏁版嵁... (宸插姞杞?${allItems.length} 涓?`;
+
+          const response = await fetch(`${API_BASE}/items?page=${page}&limit=${pageSize}`);
+          const result = await response.json();
+
+          // API杩斿洖鏍煎紡鏄?{data: [...], total: ...}
+          const data = result.data || result.items || [];
+          const total = result.total || result.length || 0;
+
+          allItems = allItems.concat(data);
+
+          if (allItems.length >= total) {
+            break;
+          }
+        }
+
+        totalItemsEl.textContent = allItems.length.toLocaleString();
+        loadingProgressEl.textContent = `宸插姞杞?${allItems.length} 涓墿鍝侊紝寮€濮嬫娴嬪姩鐢?..`;
+
+        return allItems;
+      } catch (error) {
+        console.error('鍔犺浇鐗╁搧澶辫触:', error);
+        loadingProgressEl.textContent = '鍔犺浇澶辫触: ' + error.message;
+        return [];
+      }
+    }
+
+    // 鎵归噺妫€娴嬪姩鐢伙紙浼樺寲鐗?- 妫€娴嬫墍鏈夊姞杞界殑鐗╁搧锛?    async function detectAnimations(items) {
+      if (isDetecting) return;
+      isDetecting = true;
+
+      animatedItems = [];
+      const BATCH_SIZE = 100; // 澧炲姞骞跺彂鏁伴噺鍔犲揩妫€娴嬮€熷害
+      let checkedCount = 0;
+
+      for (let i = 0; i < items.length; i += BATCH_SIZE) {
+        const batch = items.slice(i, i + BATCH_SIZE);
+        const results = await Promise.all(
+          batch.map(async (item) => {
+            const hasAnim = await hasAnimation(item);
+            return { item, hasAnimation: hasAnim };
+          })
+        );
+
+        results.forEach(({ item, hasAnimation: hasAnim }) => {
+          if (hasAnim) {
+            animatedItems.push(item);
+          }
+        });
+
+        checkedCount += batch.length;
+        const progress = Math.round((checkedCount / items.length) * 100);
+
+        detectionProgressEl.textContent = `${progress}%`;
+        loadingProgressEl.textContent = `妫€娴嬩腑... ${checkedCount}/${items.length} (鍙戠幇 ${animatedItems.length} 涓姩鐢荤墿鍝?`;
+
+        // 姣忔娴?00涓墿鍝侊紝鍒锋柊涓€娆℃樉绀?        if (checkedCount % 100 === 0 || checkedCount === items.length) {
+          renderItems(animatedItems);
+        }
+
+        // 璁?UI 鏈夋満浼氭洿鏂?        await new Promise(resolve => setTimeout(resolve, 10));
+      }
+
+      // 鏇存柊缁熻淇℃伅
+      animatedItemsEl.textContent = animatedItems.length.toLocaleString();
+      staticItemsEl.textContent = (items.length - animatedItems.length).toLocaleString();
+
+      loadingProgressEl.textContent = `妫€娴嬪畬鎴愶紒宸叉娴?${checkedCount.toLocaleString()} 涓墿鍝侊紝鍙戠幇 ${animatedItems.length} 涓姩鐢荤墿鍝乣;
+
+      // 寤惰繜闅愯棌鍔犺浇鐘舵€?      setTimeout(() => {
+        loadingEl.classList.add('hidden');
+      }, 3000);
+
+      isDetecting = false;
+
+      console.log(`妫€娴嬪畬鎴? ${animatedItems.length} 涓姩鐢荤墿鍝?(宸叉娴?${checkedCount} 涓墿鍝?`);
+    }
+
+    // 鍔犺浇鍔ㄧ敾甯?    async function loadAnimationFrames(item) {
+      const imageUrl = getImageSrc(item);
+      const url = new URL(imageUrl);
+      const frames = [];
+
+      // 鍔犺浇涓诲浘鐗?      const mainImg = new Image();
+      mainImg.src = imageUrl;
+      await new Promise((resolve, reject) => {
+        mainImg.onload = resolve;
+        mainImg.onerror = reject;
+      });
+      frames.push(mainImg);
+
+      // 鍔犺浇鍏朵粬甯?      let frameIndex = 1;
+      while (frameIndex <= 120) {
+        const frameUrl = `${url.origin}${url.pathname.replace('.png', '_frame' + frameIndex + '.png')}`;
+        const img = new Image();
+        img.src = frameUrl;
+
+        try {
+          await new Promise((resolve, reject) => {
+            img.onload = resolve;
+            img.onerror = reject;
+          });
+          frames.push(img);
+          frameIndex++;
+        } catch {
+          break;
+        }
+      }
+
+      return frames;
+    }
+
+    // 鍒涘缓鍔ㄧ敾鍏冪礌
+    async function createAnimatedItemCard(item) {
+      const card = document.createElement('div');
+      card.className = 'bg-gray-800 p-3 rounded-lg border border-cyan-400/30 hover:border-cyan-400 transition-all';
+
+      const modId = item.itemId?.split('~')?.[1] || 'unknown';
+      const modName = mods.get(modId)?.modName || modId;
+
+      card.innerHTML = `
+        <canvas class="rounded mx-auto" width="64" height="64" style="image-rendering: pixelated; width: 64px; height: 64px;"></canvas>
+        <h3 class="text-sm font-semibold mt-2 text-white truncate" title="${item.localizedName}">${item.localizedName}</h3>
+        <p class="text-xs text-gray-400 truncate" title="${modName}">${modName}</p>
+        <p class="text-xs text-green-400 mt-1">妫€娴嬩腑...</p>
+      `;
+
+      itemsGrid.appendChild(card);
+
+      try {
+        const frames = await loadAnimationFrames(item);
+        const canvas = card.querySelector('canvas');
+        const ctx = canvas.getContext('2d');
+        const statusEl = card.querySelector('.text-green-400');
+
+        if (frames.length > 1) {
+          statusEl.textContent = `${frames.length} 甯;
+          statusEl.className = 'text-xs text-green-400 mt-1';
+
+          let currentFrame = 0;
+          const fps = 20;
+          const frameInterval = 1000 / fps;
+          let lastFrameTime = 0;
+
+          function animate(timestamp) {
+            if (!lastFrameTime) lastFrameTime = timestamp;
+
+            const elapsed = timestamp - lastFrameTime;
+
+            if (elapsed >= frameInterval) {
+              if (frames[currentFrame] && frames[currentFrame].complete) {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(frames[currentFrame], 0, 0);
+              }
+              currentFrame = (currentFrame + 1) % frames.length;
+              lastFrameTime = timestamp;
+            }
+
+            if (card.isConnected) {
+              requestAnimationFrame(animate);
+            }
+          }
+
+          requestAnimationFrame(animate);
+        } else {
+          statusEl.textContent = '闈欐€佸浘鐗?;
+          statusEl.className = 'text-xs text-blue-400 mt-1';
+
+          // 鏄剧ず闈欐€佸浘鐗?          ctx.drawImage(frames[0], 0, 0);
+        }
+      } catch (error) {
+        console.error('鍔犺浇鍔ㄧ敾澶辫触:', item.localizedName, error);
+        card.querySelector('.text-green-400').textContent = '鍔犺浇澶辫触';
+        card.querySelector('.text-green-400').className = 'text-xs text-red-400 mt-1';
+      }
+    }
+
+    // 娓叉煋鐗╁搧鍒楄〃
+    function renderItems(items) {
+      itemsGrid.innerHTML = '';
+
+      if (items.length === 0) {
+        emptyState.classList.remove('hidden');
+        return;
+      }
+
+      emptyState.classList.add('hidden');
+
+      // 闄愬埗鏄剧ず鏁伴噺锛岄伩鍏嶉〉闈㈠崱椤?      const displayItems = items.slice(0, 200);
+
+      displayItems.forEach(item => {
+        createAnimatedItemCard(item);
+      });
+
+      if (items.length > 200) {
+        const moreInfo = document.createElement('div');
+        moreInfo.className = 'col-span-full text-center py-4 text-gray-400';
+        moreInfo.textContent = `杩樻湁 ${items.length - 200} 涓墿鍝佹湭鏄剧ず锛堜负閬垮厤椤甸潰鍗￠】锛塦;
+        itemsGrid.appendChild(moreInfo);
+      }
+    }
+
+    // 杩囨护鐗╁搧
+    function filterItems() {
+      const searchTerm = searchInput.value.toLowerCase();
+      const modId = modFilter.value;
+
+      const filtered = animatedItems.filter(item => {
+        const matchesSearch =
+          item.localizedName?.toLowerCase().includes(searchTerm) ||
+          item.itemId?.toLowerCase().includes(searchTerm);
+
+        const matchesMod =
+          modId === 'all' ||
+          item.itemId?.startsWith(`i~${modId}~`);
+
+        return matchesSearch && matchesMod;
+      });
+
+      renderItems(filtered);
+    }
+
+    // 浜嬩欢鐩戝惉
+    searchInput.addEventListener('input', filterItems);
+    modFilter.addEventListener('change', filterItems);
+
+    document.getElementById('refresh-btn').addEventListener('click', async () => {
+      if (isDetecting) return;
+
+      itemsGrid.innerHTML = '';
+      loadingEl.classList.remove('hidden');
+      loadingProgressEl.textContent = '閲嶆柊妫€娴嬩腑...';
+
+      await detectAnimations(allItems);
+    });
+
+    // 鍒濆鍖?    async function init() {
+      const items = await loadItems();
+      if (items.length > 0) {
+        await detectAnimations(items);
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>

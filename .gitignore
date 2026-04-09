@@ -1,0 +1,69 @@
+# Dependencies
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Environment variables
+.env
+.env.local
+.env.production
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+data/database.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+logs/
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.backup
+nul
+
+# Python (if any)
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+
+# Check scripts
+check-*.js
+check-*.ts
+analyze_*.py
+verify_*.py
+
+# Large data files (exceeds GitHub limits)
+backend/data/all_recipes.json
+backend/data/all_items.json
+backend/data/item_recipe_index.json
+backend/data/database.db-wal
+backend/data/*.db-shm
+backend/data/*.db-wal
+frontend/gatec-artifacts-final/
+frontend/test-results/

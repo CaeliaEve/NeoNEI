@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --app-shell-max-width: 96vw;
+  --recipe-shell-max-width: 92vw;
+}
+
+html {
+  font-size: 16px;
+}
+
+/* 1600x900 and similar short-height laptops */
+@media (max-width: 1600px), (max-height: 920px) {
+  html {
+    font-size: 15px;
+  }
+}
+
+/* 1080p baseline */
+@media (min-width: 1920px) and (min-height: 1000px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+/* 2K / 2560-wide */
+@media (min-width: 2560px) and (min-height: 1300px) {
+  html {
+    font-size: 17px;
+  }
+}
+
+/* 3200-wide panels */
+@media (min-width: 3200px) and (min-height: 1700px) {
+  html {
+    font-size: 18px;
+  }
+}
+
+/* 4K UHD */
+@media (min-width: 3840px) and (min-height: 2000px) {
+  html {
+    font-size: 20px;
+  }
+}
+
+/* Glassmorphism effect */
+.glass {
+  @apply bg-white/10 backdrop-blur-md border border-white/20;
+}
+
+.glass-dark {
+  @apply bg-black/30 backdrop-blur-md border border-white/10;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-gray-900/50;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-gray-600 rounded-full;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-gray-500;
+}
+
+/* Loading animation */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.animate-spin {
+  animation: spin 1s linear infinite;
+}

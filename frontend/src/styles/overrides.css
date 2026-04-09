@@ -1,0 +1,240 @@
+/* ========================================
+   GLOBAL OVERRIDES - REMOVE CYBERPUNK STYLES
+   Apply monochromatic design system globally
+   ======================================== */
+
+/* ===== OVERRIDE NEON COLORS ===== */
+
+/* Cyan overrides */
+.border-cyan-400\/30,
+.border-cyan-400\/40,
+.border-cyan-400\/20 {
+  border-color: rgba(203, 213, 225, 0.5) !important;
+}
+
+.text-cyan-300 {
+  color: var(--text-secondary) !important;
+}
+
+.text-cyan-300\/60 {
+  color: var(--text-tertiary) !important;
+}
+
+.bg-cyan-900\/50 {
+  background: rgba(148, 163, 184, 0.3) !important;
+}
+
+/* Purple overrides */
+.text-purple-400 {
+  color: var(--highlight-primary) !important;
+}
+
+.border-purple-400\/30 {
+  border-color: rgba(59, 130, 246, 0.3) !important;
+}
+
+/* Pink/Magenta overrides */
+.text-pink-400 {
+  color: var(--highlight-primary) !important;
+}
+
+/* Green overrides */
+.text-green-400 {
+  color: var(--success-soft) !important;
+}
+
+/* ===== OVERRIDE COMPONENT CLASSES ===== */
+
+/* Glass panels */
+.glass-enhanced {
+  background: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(20px) saturate(180%) !important;
+  -webkit-backdrop-filter: blur(20px) saturate(180%) !important;
+  border: 1px solid var(--surface-border) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .glass-enhanced {
+    background: rgba(26, 26, 26, 0.7) !important;
+  }
+}
+
+/* Cards */
+.cyber-card {
+  background: var(--surface-canvas) !important;
+  border: 1px solid var(--surface-border) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: var(--elevation-sm) !important;
+  transition: all var(--duration-normal) var(--ease-out-expo) !important;
+}
+
+.cyber-card:hover {
+  box-shadow: var(--elevation-md) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* Buttons */
+.btn-cyber {
+  background: var(--surface-elevated) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--surface-border) !important;
+  border-radius: var(--radius-md) !important;
+  padding: 8px 16px;
+  font-weight: var(--weight-medium) !important;
+  transition: all var(--duration-normal) var(--ease-out-expo) !important;
+}
+
+.btn-cyber:hover:not(:disabled) {
+  background: var(--surface-embedded) !important;
+  transform: translateY(-1px) !important;
+  box-shadow: var(--elevation-sm) !important;
+}
+
+/* Slider */
+.slider-cyber {
+  background: var(--surface-embedded) !important;
+  border-radius: var(--radius-full) !important;
+}
+
+.slider-cyber::-webkit-slider-thumb {
+  background: var(--highlight-primary) !important;
+  border-radius: var(--radius-full) !important;
+}
+
+/* Spinner */
+.cyber-spinner {
+  border: 2px solid var(--surface-border) !important;
+  border-top-color: var(--highlight-primary) !important;
+}
+
+/* ===== REMOVE SCANLINES & GRID PATTERNS ===== */
+.scanline::before,
+.grid-pattern,
+.scanline {
+  display: none !important;
+}
+
+/* ===== SHADOW OVERRIDES ===== */
+.shadow-2xl,
+.shadow-xl,
+.shadow-lg {
+  box-shadow: var(--elevation-lg) !important;
+}
+
+/* ===== TEXT SHADOW REMOVAL ===== */
+.text-glow-cyan,
+.text-glow-pink,
+.text-glow-purple,
+[style*="text-shadow"] {
+  text-shadow: none !important;
+}
+
+/* ===== RING/GLOW REMOVAL ===== */
+.ring-cyan-400\/50,
+.ring-2,
+.ring-purple-400\/30 {
+  box-shadow: none !important;
+  border: 1px solid var(--surface-border) !important;
+}
+
+/* ===== DROP SHADOW GLOW REMOVAL ===== */
+.drop-shadow-\[0_0_6px_rgba\(0\,255\,247\],
+.drop-shadow-\[0_0_10px_rgba\(0\,255\,247\),
+.drop-shadow-\[0_0_20px_rgba\(0\,255\,247\] {
+  filter: none !important;
+}
+
+/* ===== BACKGROUND OVERRIDES ===== */
+.bg-black\/40,
+.bg-black\/30,
+.bg-black\/20 {
+  background: rgba(0, 0, 0, 0.02) !important;
+}
+
+/* ===== BORDER OVERRIDES ===== */
+.border-t,
+.border-b,
+.border-l,
+.border-r,
+.border-x,
+.border-y {
+  border-color: var(--surface-border) !important;
+}
+
+/* ===== FOCUS STATE OVERRIDES ===== */
+.focus\:ring-cyan-400\/20:focus {
+  box-shadow: 0 0 0 3px var(--highlight-subtler) !important;
+}
+
+.focus\:border-cyan-400:focus {
+  border-color: var(--highlight-primary) !important;
+}
+
+/* ===== DARK MODE ADJUSTMENTS ===== */
+@media (prefers-color-scheme: dark) {
+  /* Backgrounds */
+  .bg-white\/5,
+  .bg-white\/10 {
+    background: rgba(255, 255, 255, 0.03) !important;
+  }
+
+  /* Borders */
+  .border-slate-200\/60 {
+    border-color: rgba(255, 255, 255, 0.1) !important;
+  }
+
+  /* Text colors */
+  .text-white {
+    color: var(--text-primary) !important;
+  }
+
+  .text-slate-200 {
+    color: var(--text-secondary) !important;
+  }
+}
+
+/* ===== SMOOTH TRANSITIONS ===== */
+.transition-all,
+.transition-colors,
+.transition-opacity {
+  transition-timing-function: var(--ease-out-expo) !important;
+  transition-duration: var(--duration-normal) !important;
+}
+
+/* ===== ELEVATION CONSISTENCY ===== */
+.elevation-low {
+  box-shadow: var(--elevation-sm) !important;
+}
+
+.elevation-medium {
+  box-shadow: var(--elevation-md) !important;
+}
+
+.elevation-high {
+  box-shadow: var(--elevation-lg) !important;
+}
+
+/* ===== FINAL POLISH ===== */
+
+/* Remove all cyan glows */
+* {
+  filter: none !important;
+}
+
+/* Ensure smooth interactions */
+button,
+a,
+.clickable,
+[role="button"] {
+  transition: all var(--duration-normal) var(--ease-out-expo) !important;
+}
+
+button:hover,
+a:hover {
+  transform: translateY(-1px);
+}
+
+button:active,
+a:active {
+  transform: translateY(0);
+}

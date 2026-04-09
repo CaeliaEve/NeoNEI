@@ -1,0 +1,28 @@
+﻿services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ae2-backend
+    env_file:
+      - ./backend/.env.example
+    ports:
+      - "3002:3002"
+    volumes:
+      - ./deploy/data:/app/data
+      - ./deploy/nesql-repository:/app/nesql-repository
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_BACKEND_BASE_URL: ${VITE_BACKEND_BASE_URL:-/api}
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api}
+    container_name: ae2-frontend
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
