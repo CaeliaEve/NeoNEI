@@ -1,6 +1,7 @@
 import { logger } from '../utils/logger';
 import { getMachineIconItem } from './machine-icon-mapping.service';
 import { getNesqlSplitExportService } from './nesql-split-export.service';
+import { transformRecipeMetadata } from './recipe-metadata';
 
 export interface IndexedItem {
   itemId: string;
@@ -78,6 +79,14 @@ export interface IndexedRecipeMetadata {
   requiresLowGravity: boolean | null;
   additionalInfo: string | null;
   specialItems?: IndexedItem[];
+  aspects?: Record<string, unknown>;
+  specialRecipeType?: unknown;
+  research?: unknown;
+  centralItemId?: unknown;
+  centerInputSlotIndex?: unknown;
+  instability?: unknown;
+  componentSlotOrder?: unknown[];
+  [key: string]: unknown;
 }
 
 type IndexedRecipeDimension = { width: number; height: number };
@@ -688,21 +697,7 @@ export class IndexedRecipesService {
       fluidInputs: Array.isArray(value.fluidInputs) ? value.fluidInputs.map((entry) => this.transformSplitFluidGroup(entry)) : [],
       fluidOutputs: Array.isArray(value.fluidOutputs) ? value.fluidOutputs.map((entry) => this.transformSplitFluidStack(entry)) : [],
       machineInfo,
-      metadata: metadataValue
-        ? {
-            voltageTier: typeof metadataValue.voltageTier === 'string' ? metadataValue.voltageTier : null,
-            voltage: typeof metadataValue.voltage === 'number' ? metadataValue.voltage : null,
-            amperage: typeof metadataValue.amperage === 'number' ? metadataValue.amperage : null,
-            duration: typeof metadataValue.duration === 'number' ? metadataValue.duration : null,
-            totalEU: typeof metadataValue.totalEU === 'number' ? metadataValue.totalEU : null,
-            requiresCleanroom: typeof metadataValue.requiresCleanroom === 'boolean' ? metadataValue.requiresCleanroom : null,
-            requiresLowGravity: typeof metadataValue.requiresLowGravity === 'boolean' ? metadataValue.requiresLowGravity : null,
-            additionalInfo: typeof metadataValue.additionalInfo === 'string' ? metadataValue.additionalInfo : null,
-            specialItems: Array.isArray(metadataValue.specialItems)
-              ? metadataValue.specialItems.map((entry) => this.transformSplitIndexedItem(entry))
-              : undefined,
-          }
-        : null,
+      metadata: transformRecipeMetadata(metadataValue, (entry) => this.transformSplitIndexedItem(entry)),
       recipeTypeData: recipeTypeDataValue,
     };
   }

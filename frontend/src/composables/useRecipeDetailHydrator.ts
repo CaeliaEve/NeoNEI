@@ -141,7 +141,18 @@ export function useRecipeDetailHydrator(args: {
         : {};
 
     if (existingAdditionalData) {
-      for (const key of ['rawIndexedInputs', 'rawIndexedOutputs', 'aspects', 'variantGroups']) {
+      for (const key of [
+        'rawIndexedInputs',
+        'rawIndexedOutputs',
+        'aspects',
+        'variantGroups',
+        'specialRecipeType',
+        'research',
+        'centralItemId',
+        'centerInputSlotIndex',
+        'instability',
+        'componentSlotOrder',
+      ]) {
         if (!(key in mergedAdditionalData) && key in existingAdditionalData) {
           mergedAdditionalData[key] = existingAdditionalData[key];
         }

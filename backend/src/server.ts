@@ -17,6 +17,7 @@ import { errorHandler } from './middleware/error-handler';
 import { logger } from './utils/logger';
 import { getRecipeBootstrapService } from './services/recipe-bootstrap.service';
 import { getPageAtlasService } from './services/page-atlas.service';
+import { getAutowarmPolicy } from './config/autowarm-policy';
 
 const app = express();
 const parsedPort = Number(process.env.PORT);
@@ -223,17 +224,16 @@ async function startServer() {
       logger.info(`Items API: ${PUBLIC_BASE_URL}/api/items`);
       logger.info(`Images path: ${IMAGES_PATH}`);
 
-      const autoPrewarm = process.env.RECIPE_BOOTSTRAP_AUTOWARM !== '0';
-      if (autoPrewarm) {
-        const limit = Number(process.env.RECIPE_BOOTSTRAP_AUTOWARM_LIMIT || 1000);
+      const autowarmPolicy = getAutowarmPolicy();
+      if (autowarmPolicy.recipeBootstrap.enabled) {
         setTimeout(() => {
           void getRecipeBootstrapService()
-            .prewarmBootstrapCache({ limit: Number.isFinite(limit) && limit > 0 ? limit : undefined })
+            .prewarmBootstrapCache({ limit: autowarmPolicy.recipeBootstrap.limit })
             .then((result) => {
               logger.info('[RECIPE_BOOTSTRAP_AUTOWARM] completed', {
                 warmed: result.warmed,
                 skipped: result.skipped,
-                limit: Number.isFinite(limit) && limit > 0 ? limit : null,
+                limit: autowarmPolicy.recipeBootstrap.limit,
               });
             })
             .catch((error) => {
@@ -242,24 +242,20 @@ async function startServer() {
         }, 500);
       }
 
-      const autoPrewarmAtlas = process.env.PAGE_ATLAS_AUTOWARM !== '0';
-      if (autoPrewarmAtlas) {
-        const pages = Number(process.env.PAGE_ATLAS_AUTOWARM_PAGES || 4);
-        const pageSize = Number(process.env.PAGE_ATLAS_AUTOWARM_PAGE_SIZE || 120);
-        const itemSize = Number(process.env.PAGE_ATLAS_AUTOWARM_ITEM_SIZE || 50);
+      if (autowarmPolicy.pageAtlas.enabled) {
         setTimeout(() => {
           void getPageAtlasService()
             .prewarmPages({
-              pages: Number.isFinite(pages) && pages > 0 ? pages : 4,
-              pageSize: Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 120,
-              itemSize: Number.isFinite(itemSize) && itemSize > 0 ? itemSize : 50,
+              pages: autowarmPolicy.pageAtlas.pages,
+              pageSize: autowarmPolicy.pageAtlas.pageSize,
+              itemSize: autowarmPolicy.pageAtlas.itemSize,
             })
             .then((result) => {
               logger.info('[PAGE_ATLAS_AUTOWARM] completed', {
                 warmed: result.warmed,
-                pages: Number.isFinite(pages) && pages > 0 ? pages : 4,
-                pageSize: Number.isFinite(pageSize) && pageSize > 0 ? pageSize : 120,
-                itemSize: Number.isFinite(itemSize) && itemSize > 0 ? itemSize : 50,
+                pages: autowarmPolicy.pageAtlas.pages,
+                pageSize: autowarmPolicy.pageAtlas.pageSize,
+                itemSize: autowarmPolicy.pageAtlas.itemSize,
               });
             })
             .catch((error) => {

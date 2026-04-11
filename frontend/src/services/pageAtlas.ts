@@ -1,4 +1,4 @@
-import { api, type Item } from './api';
+import { BACKEND_BASE_URL, api, type Item } from './api';
 
 export interface PageAtlasSpriteEntry {
   atlasUrl: string;
@@ -19,6 +19,36 @@ export interface PageAtlasResult {
 
 const atlasCache = new Map<string, PageAtlasResult | null>();
 const atlasInFlight = new Map<string, Promise<PageAtlasResult | null>>();
+
+function getBackendOrigin(): string {
+  return BACKEND_BASE_URL.replace(/\/api\/?$/i, '');
+}
+
+function resolveAtlasUrl(url: string): string {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+  if (url.startsWith('/')) return `${getBackendOrigin()}${url}`;
+  return `${getBackendOrigin()}/${url.replace(/^\/+/, '')}`;
+}
+
+function normalizeAtlasResult(result: PageAtlasResult): PageAtlasResult {
+  const atlasUrl = resolveAtlasUrl(result.atlasUrl);
+  const entries = Object.fromEntries(
+    Object.entries(result.entries).map(([itemId, entry]) => [
+      itemId,
+      {
+        ...entry,
+        atlasUrl: resolveAtlasUrl(entry.atlasUrl),
+      },
+    ]),
+  );
+
+  return {
+    ...result,
+    atlasUrl,
+    entries,
+  };
+}
 
 function createAtlasKey(items: Pick<Item, 'itemId'>[], itemSize: number): string {
   return `${itemSize}:${items.map((item) => item.itemId).join('|')}`;
@@ -42,8 +72,9 @@ export async function buildPageAtlas(items: Item[], itemSize: number): Promise<P
   const request = api
     .postPageAtlas(items.map((item) => item.itemId), slotSize)
     .then((result) => {
-      atlasCache.set(key, result);
-      return result;
+      const normalized = normalizeAtlasResult(result);
+      atlasCache.set(key, normalized);
+      return normalized;
     })
     .catch(() => {
       atlasCache.set(key, null);

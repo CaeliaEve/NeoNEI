@@ -9,6 +9,7 @@ import {
   NESQL_CANONICAL_DIR,
 } from '../config/runtime-paths';
 import { notFound } from '../utils/http';
+import { countManifestAssets } from './manifest-counts';
 
 type JsonValue = Record<string, unknown>;
 
@@ -17,12 +18,6 @@ function readJsonIfExists(filePath: string): JsonValue | null {
     return null;
   }
   return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as JsonValue;
-}
-
-function countTopLevelAssets(payload: JsonValue | null): number {
-  if (!payload) return 0;
-  const assets = payload.assets;
-  return Array.isArray(assets) ? assets.length : 0;
 }
 
 function countTopLevelGroups(payload: JsonValue | null): number {
@@ -108,31 +103,31 @@ export class RenderContractService {
         renderAssets: {
           path: NESQL_RENDER_ASSETS_FILE,
           exists: Boolean(renderAssets),
-          assetCount: countTopLevelAssets(renderAssets),
+          assetCount: countManifestAssets(renderAssets),
           groupCount: countTopLevelGroups(renderAssets),
         },
         animationManifest: {
           path: NESQL_ANIMATION_MANIFEST_FILE,
           exists: Boolean(animationManifest),
-          assetCount: countTopLevelAssets(animationManifest),
+          assetCount: countManifestAssets(animationManifest),
           groupCount: countTopLevelGroups(animationManifest),
         },
         atlasManifest: {
           path: NESQL_ATLAS_MANIFEST_FILE,
           exists: Boolean(atlasManifest),
-          assetCount: countTopLevelAssets(atlasManifest),
+          assetCount: countManifestAssets(atlasManifest),
           groupCount: countTopLevelGroups(atlasManifest),
         },
         animatedAtlasManifest: {
           path: NESQL_ANIMATED_ATLAS_MANIFEST_FILE,
           exists: Boolean(animatedAtlasManifest),
-          assetCount: countTopLevelAssets(animatedAtlasManifest),
+          assetCount: countManifestAssets(animatedAtlasManifest),
           groupCount: countTopLevelGroups(animatedAtlasManifest),
         },
         renderIndex: {
           path: NESQL_RENDER_INDEX_FILE,
           exists: Boolean(renderIndex),
-          assetCount: countTopLevelAssets(renderIndex),
+          assetCount: countManifestAssets(renderIndex),
         },
         atlasRegistry: {
           path: NESQL_ATLAS_REGISTRY_FILE,

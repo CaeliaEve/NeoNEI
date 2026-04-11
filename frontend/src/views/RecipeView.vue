@@ -795,6 +795,11 @@ onBeforeUnmount(() => {
   </div>
 </template>
 <style scoped>
+.recipe-view-root {
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
 .recipe-view {
   --rv-accent-rgb: 164, 181, 204;
   --rv-accent-strong-rgb: 195, 210, 228;
@@ -806,7 +811,7 @@ onBeforeUnmount(() => {
   flex-direction: column;
   align-items: center;
   position: relative;
-  overflow-x: hidden;
+  overflow: visible;
   --recipe-shell-width: min(1200px, var(--recipe-shell-max-width, 92vw));
 }
 
@@ -1191,6 +1196,11 @@ onBeforeUnmount(() => {
   padding: 12px;
   min-height: clamp(340px, 42vh, 640px);
   overflow: visible;
+}
+
+.tone-arcane .recipe-display,
+.tone-blood .recipe-display {
+  min-height: auto;
 }
 
 .recipe-detail-status {
