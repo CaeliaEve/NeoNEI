@@ -6,10 +6,12 @@ import { useSound } from '../services/sound.service';
 import { buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import {
   buildThaumcraftAspectCosts,
-  getThaumcraftAspectImagePath,
+  mergeRecipeMetadata,
   type RitualAspectCost,
   type RitualItemStack,
   normalizeCount,
+  getThaumcraftAspectImagePath,
+  isThaumcraftAspectItem,
 } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
@@ -26,9 +28,25 @@ const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 const { playClick } = useSound();
 
+const SCALE = 2.55;
+const OFFSET_X = 26;
+const OFFSET_Y = 26;
+const SLOT_SIZE = 42;
+const stageWidth = Math.round(166 * SCALE + OFFSET_X * 2);
+const stageHeight = Math.round(152 * SCALE + OFFSET_Y * 2);
+
 const craftingGrid = ref<Array<RitualItemStack | null>>(Array.from({ length: 9 }, () => null));
 const outputSlot = ref<ResolvedSlot | null>(null);
 const aspectCosts = ref<RitualAspectCost[]>([]);
+
+const mergedMetadata = computed(() => mergeRecipeMetadata(props.recipe));
+const researchLines = computed(() => {
+  const keys = ['research', 'researchKey', 'requiredResearch', 'research_name'];
+  return keys
+    .map((key) => mergedMetadata.value[key])
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .slice(0, 2);
+});
 
 function cellToItemStack(cell: RecipeInputCell): RitualItemStack | null {
   if (!cell) return null;
@@ -41,6 +59,82 @@ function cellToItemStack(cell: RecipeInputCell): RitualItemStack | null {
     count: normalizeCount(cell.count),
     localizedName: undefined,
   };
+}
+
+function rawEntryToItemStack(entry: unknown): RitualItemStack | null {
+  if (!entry || typeof entry !== 'object') return null;
+  const record = entry as {
+    slotIndex?: unknown;
+    itemId?: unknown;
+    count?: unknown;
+    stackSize?: unknown;
+    localizedName?: unknown;
+    item?: { itemId?: unknown; localizedName?: unknown };
+    items?: Array<{
+      item?: { itemId?: unknown; localizedName?: unknown };
+      itemId?: unknown;
+      count?: unknown;
+      stackSize?: unknown;
+      localizedName?: unknown;
+    }>;
+  };
+  const first = Array.isArray(record.items) ? record.items[0] : null;
+  const itemId =
+    (typeof record.itemId === 'string' && record.itemId) ||
+    (typeof record.item?.itemId === 'string' && record.item.itemId) ||
+    (typeof first?.itemId === 'string' && first.itemId) ||
+    (typeof first?.item?.itemId === 'string' && first.item.itemId) ||
+    '';
+  if (!itemId) return null;
+
+  return {
+    itemId,
+    count: normalizeCount(record.count ?? record.stackSize ?? first?.count ?? first?.stackSize),
+    localizedName:
+      (typeof record.localizedName === 'string' && record.localizedName) ||
+      (typeof record.item?.localizedName === 'string' ? record.item.localizedName : undefined) ||
+      (typeof first?.localizedName === 'string' ? first.localizedName : undefined) ||
+      (typeof first?.item?.localizedName === 'string' ? first.item.localizedName : undefined),
+    slotIndex: typeof record.slotIndex === 'number' ? record.slotIndex : undefined,
+  } as RitualItemStack & { slotIndex?: number };
+}
+
+function buildCraftingGridFromIndexedRaw(rawInputs: unknown): Array<RitualItemStack | null> | null {
+  if (!Array.isArray(rawInputs)) return null;
+  const stacks = rawInputs
+    .map((entry) => rawEntryToItemStack(entry))
+    .filter((entry): entry is RitualItemStack & { slotIndex?: number } => Boolean(entry))
+    .filter((entry) => !isThaumcraftAspectItem(entry.itemId, entry.localizedName));
+
+  if (stacks.length === 0) return null;
+
+  const grid = Array.from({ length: 9 }, () => null as RitualItemStack | null);
+  const positioned = stacks
+    .filter((entry) => typeof entry.slotIndex === 'number' && Number.isFinite(entry.slotIndex))
+    .map((entry) => ({
+      entry,
+      x: Math.floor(Number(entry.slotIndex) / 100),
+      y: Number(entry.slotIndex) % 100,
+    }));
+
+  const xs = Array.from(new Set(positioned.map((entry) => entry.x))).sort((a, b) => a - b);
+  const ys = Array.from(new Set(positioned.map((entry) => entry.y))).sort((a, b) => a - b);
+  if (positioned.length === stacks.length && xs.length <= 3 && ys.length <= 3) {
+    for (const item of positioned) {
+      const col = xs.indexOf(item.x);
+      const row = ys.indexOf(item.y);
+      if (row >= 0 && row < 3 && col >= 0 && col < 3) {
+        grid[row * 3 + col] = item.entry;
+      }
+    }
+    return grid;
+  }
+
+  const sorted = [...stacks].sort((a, b) => Number(a.slotIndex ?? 0) - Number(b.slotIndex ?? 0));
+  for (let index = 0; index < Math.min(sorted.length, 9); index += 1) {
+    grid[index] = sorted[index];
+  }
+  return grid;
 }
 
 function buildCraftingGrid(rawInputs: Recipe['inputs']): Array<RitualItemStack | null> {
@@ -57,14 +151,51 @@ function buildCraftingGrid(rawInputs: Recipe['inputs']): Array<RitualItemStack |
   return grid;
 }
 
+function stageStyle(x: number, y: number, width = SLOT_SIZE, height = SLOT_SIZE) {
+  return {
+    left: `${OFFSET_X + x * SCALE}px`,
+    top: `${OFFSET_Y + y * SCALE}px`,
+    width: `${width}px`,
+    height: `${height}px`,
+  };
+}
+
+const gridStyles = computed(() => {
+  const baseX = [40, 64, 88];
+  const baseY = [40, 64, 88];
+  return craftingGrid.value.map((_, index) => {
+    const row = Math.floor(index / 3);
+    const col = index % 3;
+    return stageStyle(baseX[col], baseY[row]);
+  });
+});
+
+const outputStyle = computed(() => stageStyle(74, 12, 46, 46));
+
+const aspectEntries = computed(() => {
+  const aspects = aspectCosts.value;
+  const columns = aspects.length;
+  const xOffset = (100 - columns * 20) / 2;
+  return aspects.map((aspect, index) => ({
+    aspect,
+    style: {
+      left: `${OFFSET_X + (36 + index * 18 + xOffset) * SCALE}px`,
+      top: '6px',
+      width: '34px',
+      height: '46px',
+    },
+  }));
+});
+
 function handleItemClick(itemId: string) {
   playClick();
   emit('item-click', itemId);
 }
 
 async function initialize() {
-  craftingGrid.value = buildCraftingGrid(props.recipe.inputs);
-  aspectCosts.value = buildThaumcraftAspectCosts(props.recipe, props.recipe.inputs);
+  const rawInputs = props.recipe.additionalData?.rawIndexedInputs ?? props.recipe.inputs;
+  craftingGrid.value = buildCraftingGridFromIndexedRaw(rawInputs) ?? buildCraftingGrid(props.recipe.inputs);
+  aspectCosts.value = buildThaumcraftAspectCosts(props.recipe, rawInputs);
   const [resolvedOutput] = await buildOutputSlots(props.recipe, 1);
   outputSlot.value = resolvedOutput ?? null;
 }
@@ -80,354 +211,303 @@ watch(
   },
   { deep: true },
 );
-
-const showAspectPanel = computed(() => aspectCosts.value.length > 0);
 </script>
 
 <template>
-  <div class="thaum-ui thaum-arcane">
-    <div class="scene-bg" aria-hidden="true">
-      <div class="mist mist-a" />
-      <div class="mist mist-b" />
-      <div class="scene-grid" />
+  <div class="thaum-page">
+    <div class="thaum-stage" :style="{ width: `${stageWidth}px`, height: `${stageHeight}px` }">
+      <div class="top-strip">
+        <div class="top-pill left-pill">研究</div>
+        <div class="top-pill right-pill">查看全部</div>
+      </div>
+
+      <div class="research-column">
+        <div class="research-title">RESEARCH</div>
+        <div v-if="researchLines.length" class="research-lines">
+          <span v-for="line in researchLines" :key="line" class="research-line">{{ line }}</span>
+        </div>
+        <div v-else class="research-lines muted">
+          <span class="research-line">Arcane Study</span>
+        </div>
+      </div>
+
+      <div class="sigil-layer" aria-hidden="true">
+        <div class="sigil sigil-a" />
+        <div class="sigil sigil-b" />
+        <div class="sigil sigil-c" />
+      </div>
+
+      <template v-for="(slot, index) in craftingGrid" :key="`arcane-grid-${index}`">
+        <RecipeItemTooltip
+          v-if="slot"
+          :item-id="slot.itemId"
+          :count="slot.count"
+          @click="handleItemClick(slot.itemId)"
+        >
+          <div class="slot item-slot" :style="gridStyles[index]">
+            <img
+              :src="getImageUrl(slot.itemId)"
+              class="item-icon"
+              @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
+            />
+            <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
+          </div>
+        </RecipeItemTooltip>
+        <div v-else class="slot empty-slot" :style="gridStyles[index]" />
+      </template>
+
+      <div class="result-lane" />
+      <RecipeItemTooltip
+        v-if="outputSlot"
+        :item-id="outputSlot.itemId"
+        :count="outputSlot.count"
+        @click="handleItemClick(outputSlot.itemId)"
+      >
+        <div class="slot output-slot" :style="outputStyle">
+          <img
+            :src="getImageUrl(outputSlot.itemId)"
+            class="item-icon"
+            @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
+          />
+          <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
+        </div>
+      </RecipeItemTooltip>
+
+      <div class="aspects-band">
+        <div class="aspects-title">ASPECTS</div>
+        <div class="aspects-row">
+          <div
+            v-for="entry in aspectEntries"
+            :key="`${entry.aspect.name}-${entry.aspect.hash || 'plain'}`"
+            class="aspect-slot"
+            :style="entry.style"
+          >
+            <img
+              :src="getThaumcraftAspectImagePath(entry.aspect)"
+              class="aspect-icon"
+              :alt="entry.aspect.name"
+              @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
+            />
+            <span class="aspect-amount">{{ entry.aspect.amount }}</span>
+          </div>
+        </div>
+      </div>
     </div>
-
-    <section class="arcane-shell">
-      <div class="arcane-core">
-        <div class="ring outer" />
-        <div class="ring middle" />
-        <div class="ring inner" />
-
-        <div class="crafting-grid">
-          <template v-for="(slot, index) in craftingGrid" :key="`grid-${index}`">
-            <RecipeItemTooltip
-              v-if="slot"
-              :item-id="slot.itemId"
-              :count="slot.count"
-              @click="handleItemClick(slot.itemId)"
-            >
-              <div class="slot">
-                <img :src="getImageUrl(slot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-                <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
-              </div>
-            </RecipeItemTooltip>
-            <div v-else class="slot empty" />
-          </template>
-        </div>
-      </div>
-
-      <div class="arcane-rail">
-        <div class="arrow-lane">
-          <div class="arrow-track" />
-          <svg viewBox="0 0 24 24" class="arrow-icon">
-            <path d="M4 11h12.17l-5.59-5.59L12 4l8 8-8 8-1.41-1.41L16.17 13H4v-2z" />
-          </svg>
-        </div>
-
-        <section class="panel panel-output">
-          <div class="panel-title panel-title-output">OUTPUT</div>
-          <div class="slot-wrap">
-            <RecipeItemTooltip
-              v-if="outputSlot"
-              :item-id="outputSlot.itemId"
-              :count="outputSlot.count"
-              @click="handleItemClick(outputSlot.itemId)"
-            >
-              <div class="slot output">
-                <img :src="getImageUrl(outputSlot.itemId)" class="item-icon output-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-                <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
-              </div>
-            </RecipeItemTooltip>
-            <div v-else class="slot output empty" />
-          </div>
-        </section>
-
-        <section v-if="showAspectPanel" class="panel panel-aspects">
-          <div class="panel-title">ASPECTS</div>
-          <div class="aspect-list">
-            <div
-              v-for="aspect in aspectCosts"
-              :key="`${aspect.name}-${aspect.hash || 'plain'}`"
-              class="aspect-row"
-            >
-              <img :src="getThaumcraftAspectImagePath(aspect)" class="aspect-icon" :alt="aspect.name" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-              <span class="aspect-name">{{ aspect.name }}</span>
-              <span class="aspect-amount">{{ aspect.amount }}</span>
-            </div>
-          </div>
-        </section>
-      </div>
-    </section>
   </div>
 </template>
 
 <style scoped>
-.thaum-ui {
+.thaum-page {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding: 8px 0;
+}
+
+.thaum-stage {
   position: relative;
-  overflow: visible;
+  overflow: hidden;
   border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  border: 1px solid rgba(100, 116, 139, 0.32);
   background:
-    linear-gradient(180deg, rgba(10, 14, 24, 0.96), rgba(7, 10, 18, 0.98)),
-    radial-gradient(circle at top, rgba(103, 232, 249, 0.08), transparent 40%);
+    linear-gradient(180deg, rgba(15, 23, 36, 0.96), rgba(8, 13, 22, 0.98)),
+    radial-gradient(circle at top, rgba(34, 211, 238, 0.08), transparent 38%);
   box-shadow:
-    0 18px 50px rgba(2, 8, 23, 0.38),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  padding: 16px;
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 18px 36px rgba(2, 8, 23, 0.28);
 }
 
-.scene-bg { position: absolute; inset: 0; pointer-events: none; }
-.mist {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(28px);
-  opacity: 0.22;
-}
-.mist-a { width: 260px; height: 180px; left: -30px; top: -30px; background: radial-gradient(circle, rgba(103, 232, 249, 0.34), transparent 72%); }
-.mist-b { width: 280px; height: 200px; right: -70px; bottom: -40px; background: radial-gradient(circle, rgba(192, 132, 252, 0.18), transparent 74%); }
-.scene-grid {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 18px 18px;
-  opacity: 0.16;
-}
-
-.arcane-shell {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(220px, 252px);
-  gap: 18px;
-  align-items: stretch;
-}
-
-.arcane-core {
-  position: relative;
-  width: min(100%, 360px);
-  aspect-ratio: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0 auto;
-}
-
-.ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid rgba(103, 232, 249, 0.24);
-}
-.outer { width: calc(100% - 40px); height: calc(100% - 40px); border-style: dashed; animation: spin 24s linear infinite; }
-.middle { width: calc(100% - 90px); height: calc(100% - 90px); animation: spinReverse 20s linear infinite; }
-.inner { width: calc(100% - 150px); height: calc(100% - 150px); opacity: 0.7; animation: spin 14s linear infinite; }
-
-.crafting-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  padding: 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background: rgba(7, 20, 36, 0.75);
-}
-
-.arcane-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  justify-content: center;
-}
-
-.panel {
-  position: relative;
-  padding: 18px 12px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background:
-    linear-gradient(180deg, rgba(18, 24, 32, 0.94), rgba(10, 14, 20, 0.98)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(2, 8, 23, 0.2);
-}
-
-.panel::after {
+.thaum-stage::before {
   content: '';
   position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
+  inset: 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(71, 85, 105, 0.18);
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: 22px 22px;
   pointer-events: none;
 }
 
-.panel-output { border-color: rgba(245, 208, 138, 0.24); min-width: 132px; }
-.panel-aspects { min-height: 0; }
-
-.panel-title {
+.top-strip {
   position: absolute;
-  top: -9px;
-  left: 12px;
-  min-width: 86px;
-  padding: 4px 10px 3px 12px;
-  background:
-    linear-gradient(180deg, rgba(74, 80, 89, 0.98), rgba(54, 59, 67, 0.98)),
-    url('/textures/nei/catalyst_tab.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  border: 1px solid rgba(198, 207, 220, 0.24);
-  border-radius: 6px 6px 4px 4px;
-  color: #eef4fb;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
-  box-shadow: 0 4px 10px rgba(2, 8, 23, 0.22);
-  z-index: 1;
+  inset: 18px 18px auto 18px;
+  display: flex;
+  justify-content: space-between;
+  pointer-events: none;
 }
 
-.panel-title-output { border-color: rgba(245, 208, 138, 0.32); color: #fff3da; }
+.top-pill {
+  min-width: 96px;
+  border-radius: 999px;
+  border: 1px solid rgba(71, 85, 105, 0.28);
+  background: rgba(15, 23, 42, 0.72);
+  color: rgba(226, 232, 240, 0.76);
+  padding: 6px 12px;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-align: center;
+}
 
-.slot-wrap {
-  min-height: 120px;
+.research-column {
+  position: absolute;
+  left: 18px;
+  top: 58px;
+  width: 120px;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.research-title {
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  color: rgba(125, 211, 252, 0.78);
+}
+
+.research-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.research-line {
+  font-size: 12px;
+  line-height: 1.25;
+  color: rgba(226, 232, 240, 0.88);
+}
+
+.research-lines.muted .research-line {
+  color: rgba(148, 163, 184, 0.74);
+}
+
+.sigil-layer {
+  position: absolute;
+  left: calc(26px + 82px);
+  top: calc(26px + 86px);
+  width: 150px;
+  height: 150px;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.sigil {
+  position: absolute;
+  inset: 0;
+  border-radius: 20px;
+  border: 1px solid rgba(71, 85, 105, 0.2);
+  transform: rotate(45deg);
+}
+
+.sigil-a { inset: 26px; border-color: rgba(34, 211, 238, 0.16); }
+.sigil-b { inset: 46px; border-color: rgba(148, 163, 184, 0.18); }
+.sigil-c {
+  inset: 62px;
+  border-color: rgba(192, 132, 252, 0.18);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.08);
 }
 
 .slot {
-  position: relative;
+  position: absolute;
   display: flex;
   align-items: center;
   justify-content: center;
-  overflow: hidden;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 12px;
+  border: 1px solid rgba(71, 85, 105, 0.38);
   background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.88), rgba(6, 10, 16, 0.92)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%, 18px 18px;
+    linear-gradient(180deg, rgba(18, 27, 42, 0.96), rgba(8, 14, 24, 0.98)),
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 50%);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 6px 12px rgba(2, 8, 23, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 8px 18px rgba(2, 8, 23, 0.2);
 }
 
-.slot.output { width: 70px; height: 70px; border-color: rgba(245, 208, 138, 0.42); }
-.slot.empty { opacity: 0.3; }
+.item-slot {
+  border-color: rgba(74, 222, 128, 0.28);
+}
 
-.item-icon { width: 34px; height: 34px; object-fit: contain; image-rendering: pixelated; }
-.output-icon { width: 54px; height: 54px; }
+.empty-slot {
+  position: absolute;
+  border-radius: 12px;
+  border: 1px dashed rgba(71, 85, 105, 0.22);
+  background: rgba(15, 23, 42, 0.2);
+}
+
+.output-slot {
+  border-color: rgba(125, 211, 252, 0.42);
+  box-shadow:
+    0 10px 24px rgba(14, 165, 233, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.result-lane {
+  position: absolute;
+  left: calc(26px + 82px);
+  top: calc(26px + 24px);
+  width: 2px;
+  height: 204px;
+  background: linear-gradient(180deg, rgba(125, 211, 252, 0), rgba(125, 211, 252, 0.44), rgba(125, 211, 252, 0));
+  transform: translateX(-50%);
+  opacity: 0.6;
+}
+
+.item-icon {
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
+}
 
 .count {
   position: absolute;
-  right: 2px;
-  bottom: 1px;
-  padding: 1px 3px;
-  border-radius: 4px;
-  background: rgba(15, 23, 42, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  font-size: 10px;
-  color: #fff;
+  right: 4px;
+  bottom: 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: #f8fafc;
+  text-shadow: 0 1px 2px rgba(2, 8, 23, 0.9);
 }
 
-.arrow-lane {
-  position: relative;
-  width: 30px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(210, 218, 230, 0.86);
-}
-
-.arrow-track {
+.aspects-band {
   position: absolute;
-  left: 1px;
-  right: 5px;
-  top: 50%;
-  height: 6px;
-  transform: translateY(-50%);
-  background: url('/textures/nei/dash.png') center / 100% 2px no-repeat;
-  opacity: 0.55;
+  left: 0;
+  right: 0;
+  bottom: 18px;
+  min-height: 96px;
 }
 
-.arrow-icon {
-  width: 18px;
-  height: 18px;
+.aspects-title {
+  text-align: center;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: rgba(125, 211, 252, 0.74);
+}
+
+.aspects-row {
   position: relative;
-  z-index: 1;
-  fill: currentColor;
+  height: 86px;
+  margin-top: 6px;
 }
 
-.aspect-list {
-  display: grid;
-  gap: 10px;
-  padding-top: 8px;
-  max-height: 320px;
-  overflow: auto;
-}
-
-.aspect-row {
-  display: grid;
-  grid-template-columns: 32px 1fr auto;
-  gap: 10px;
+.aspect-slot {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  min-height: 40px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(9, 14, 22, 0.72);
+  justify-content: flex-start;
+  gap: 4px;
 }
 
 .aspect-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  border: 1px solid rgba(111, 220, 250, 0.22);
-  padding: 2px;
-  background: rgba(8, 20, 36, 0.72);
-}
-
-.aspect-name {
-  font-size: 12px;
-  color: #e2e8f0;
+  width: 26px;
+  height: 26px;
+  image-rendering: pixelated;
 }
 
 .aspect-amount {
-  min-width: 28px;
-  text-align: right;
   font-size: 12px;
   font-weight: 700;
-  color: #111827;
-  background: linear-gradient(145deg, #ffe48b, #ffbe62);
-  border-radius: 999px;
-  padding: 2px 8px;
-}
-
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes spinReverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
-
-@media (max-width: 1080px) {
-  .arcane-shell {
-    grid-template-columns: 1fr;
-  }
-}
-
-@media (max-width: 720px) {
-  .thaum-ui {
-    padding: 14px;
-  }
-
-  .arcane-core {
-    width: min(100%, 320px);
-  }
+  color: rgba(226, 232, 240, 0.88);
 }
 </style>

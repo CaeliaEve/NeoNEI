@@ -320,6 +320,14 @@ export interface indexedRecipeMetadata {
   requiresCleanroom: boolean | null;
   requiresLowGravity: boolean | null;
   additionalInfo: string | null;
+  aspects?: Record<string, unknown>;
+  specialRecipeType?: unknown;
+  research?: unknown;
+  centralItemId?: unknown;
+  centerInputSlotIndex?: unknown;
+  instability?: unknown;
+  componentSlotOrder?: unknown[];
+  [key: string]: unknown;
 }
 
 export interface indexedRecipe {

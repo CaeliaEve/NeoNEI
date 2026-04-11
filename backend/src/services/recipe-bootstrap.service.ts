@@ -22,7 +22,7 @@ export interface RecipeBootstrapPayload {
 }
 
 type RecipeBootstrapCacheFile = {
-  version: 1;
+  version: 2;
   signature: string;
   payload: RecipeBootstrapPayload | null;
 };
@@ -84,7 +84,7 @@ export class RecipeBootstrapService {
     try {
       const buffer = fs.readFileSync(cacheFilePath);
       const payload = JSON.parse(zlib.gunzipSync(buffer).toString('utf-8')) as RecipeBootstrapCacheFile;
-      if (payload.version !== 1 || payload.signature !== signature) {
+      if (payload.version !== 2 || payload.signature !== signature) {
         return null;
       }
       return payload.payload ?? null;
@@ -103,7 +103,7 @@ export class RecipeBootstrapService {
     try {
       fs.mkdirSync(cacheDir, { recursive: true });
       const cacheFile: RecipeBootstrapCacheFile = {
-        version: 1,
+        version: 2,
         signature,
         payload,
       };

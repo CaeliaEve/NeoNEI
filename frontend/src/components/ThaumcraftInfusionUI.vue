@@ -8,6 +8,7 @@ import {
   buildThaumcraftAspectCosts,
   collectRecipeItemStacks,
   getThaumcraftAspectImagePath,
+  mergeRecipeMetadata,
   type RitualAspectCost,
   type RitualItemStack,
   isThaumcraftAspectItem,
@@ -24,25 +25,183 @@ interface Emits {
   (e: 'item-click', itemId: string): void;
 }
 
-interface RingLayoutEntry {
-  item: RitualItemStack;
-  ringIndex: number;
-  style: { transform: string };
+interface IndexedInputEntry {
+  slotIndex?: number;
+  itemId?: string;
+  count?: number;
+  stackSize?: number;
+  localizedName?: string;
+  item?: { itemId?: string; localizedName?: string };
+  items?: Array<{
+    item?: { itemId?: string; localizedName?: string };
+    itemId?: string;
+    count?: number;
+    stackSize?: number;
+    localizedName?: string;
+  }>;
 }
+
+interface RitualLayoutItem extends RitualItemStack {
+  slotIndex?: number;
+  rawX?: number | null;
+  rawY?: number | null;
+}
+
+interface PositionedIngredient {
+  item: RitualLayoutItem;
+  style: { left: string; top: string; width: string; height: string };
+  angle: number;
+}
+
+const ALTAR_SIZE = 352;
+const ALTAR_RING_INSET = 39;
+const SLOT_SIZE = 44;
+const HALF_SLOT = SLOT_SIZE / 2;
+const ALTAR_CENTER_X = ALTAR_SIZE / 2;
+const ALTAR_CENTER_Y = ALTAR_SIZE / 2;
+const ALTAR_RADIUS = 118;
 
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 const { playClick } = useSound();
 
-const centerItem = ref<RitualItemStack | null>(null);
-const ringItems = ref<RitualItemStack[]>([]);
+const centerItem = ref<RitualLayoutItem | null>(null);
+const ingredientLayout = ref<PositionedIngredient[]>([]);
 const outputSlot = ref<ResolvedSlot | null>(null);
 const aspectCosts = ref<RitualAspectCost[]>([]);
 const instability = ref<number | null>(null);
 
-async function resolveItemNames(items: RitualItemStack[]): Promise<RitualItemStack[]> {
+const mergedMetadata = computed(() => mergeRecipeMetadata(props.recipe));
+const researchLines = computed(() => {
+  const keys = ['research', 'researchKey', 'requiredResearch', 'research_name'];
+  return keys
+    .map((key) => mergedMetadata.value[key])
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+    .slice(0, 2);
+});
+const machineLabel = computed(() => {
+  const raw = props.recipe.machineInfo?.machineType?.trim() || '';
+  return raw && !raw.includes('�') ? raw : '奥术注魔';
+});
+const primaryOutputId = computed(() => {
+  const first = Array.isArray(props.recipe.outputs) ? props.recipe.outputs[0] : null;
+  if (!first || typeof first !== 'object') return null;
+  const record = first as Record<string, unknown>;
+  const nested = typeof record.item === 'object' && record.item !== null
+    ? (record.item as Record<string, unknown>)
+    : null;
+  const itemId = typeof record.itemId === 'string'
+    ? record.itemId
+    : typeof nested?.itemId === 'string'
+      ? nested.itemId
+      : null;
+  return itemId && itemId.trim() ? itemId.trim() : null;
+});
+const centerItemLabel = computed(() => centerItem.value?.localizedName || centerItem.value?.itemId || '未识别');
+const outputLabel = computed(() => outputSlot.value?.localizedName || outputSlot.value?.itemId || '配方产物');
+const ritualStats = computed(() => [
+  { label: '祭坛材料', value: String(ingredientLayout.value.length) },
+  { label: '要素种类', value: String(aspectCosts.value.length) },
+  { label: '不稳定度', value: instability.value === null ? '未导出' : String(instability.value) },
+]);
+const centerStyle = computed(() => {
+  const centerSize = 52;
+  return {
+    left: '50%',
+    top: '50%',
+    width: `${centerSize}px`,
+    height: `${centerSize}px`,
+    transform: 'translate(-50%, -50%)',
+  };
+});
+
+function slotStyle(left: number, top: number, size = SLOT_SIZE) {
+  return {
+    left: `${Math.round(ALTAR_RING_INSET + left)}px`,
+    top: `${Math.round(ALTAR_RING_INSET + top)}px`,
+    width: `${size}px`,
+    height: `${size}px`,
+  };
+}
+
+function decodeSlotCoordinates(slotIndex: number | undefined): { rawX: number; rawY: number } | null {
+  if (typeof slotIndex !== 'number' || !Number.isFinite(slotIndex) || slotIndex < 0) {
+    return null;
+  }
+
+  const rawX = Math.floor(slotIndex / 100);
+  const rawY = slotIndex % 100;
+  if (rawX > 120 || rawY > 120) {
+    return null;
+  }
+
+  return { rawX, rawY };
+}
+
+function resolveIndexedInput(entry: IndexedInputEntry): RitualLayoutItem | null {
+  const directItemId = typeof entry.itemId === 'string' ? entry.itemId : null;
+  const nestedItemId =
+    entry.item && typeof entry.item.itemId === 'string' ? entry.item.itemId : null;
+  const firstCandidate = Array.isArray(entry.items) ? entry.items[0] : null;
+  const listItemId =
+    firstCandidate && typeof firstCandidate.itemId === 'string'
+      ? firstCandidate.itemId
+      : firstCandidate && firstCandidate.item && typeof firstCandidate.item.itemId === 'string'
+        ? firstCandidate.item.itemId
+        : null;
+
+  const itemId = directItemId || nestedItemId || listItemId;
+  if (!itemId) return null;
+
+  const localizedName =
+    (typeof entry.localizedName === 'string' && entry.localizedName) ||
+    (entry.item && typeof entry.item.localizedName === 'string' ? entry.item.localizedName : undefined) ||
+    (firstCandidate && typeof firstCandidate.localizedName === 'string' ? firstCandidate.localizedName : undefined) ||
+    (firstCandidate && firstCandidate.item && typeof firstCandidate.item.localizedName === 'string'
+      ? firstCandidate.item.localizedName
+      : undefined);
+
+  const count = normalizeCount(
+    entry.count ??
+      entry.stackSize ??
+      firstCandidate?.count ??
+      firstCandidate?.stackSize,
+  );
+
+  const coords = decodeSlotCoordinates(typeof entry.slotIndex === 'number' ? entry.slotIndex : undefined);
+
+  return {
+    itemId,
+    count,
+    localizedName,
+    slotIndex: typeof entry.slotIndex === 'number' ? entry.slotIndex : undefined,
+    rawX: coords?.rawX ?? null,
+    rawY: coords?.rawY ?? null,
+  };
+}
+
+function extractIndexedInfusionInputs(source: unknown): RitualLayoutItem[] {
+  if (!Array.isArray(source)) return [];
+  const entries = source as IndexedInputEntry[];
+  if (!entries.length) return [];
+
+  return entries
+    .filter((entry) => typeof entry === 'object' && entry !== null)
+    .sort(
+      (a, b) =>
+        Number(a.slotIndex ?? Number.MAX_SAFE_INTEGER)
+        - Number(b.slotIndex ?? Number.MAX_SAFE_INTEGER),
+    )
+    .map((entry) => resolveIndexedInput(entry))
+    .filter((entry): entry is RitualLayoutItem => Boolean(entry));
+}
+
+async function resolveItemNames(items: RitualLayoutItem[]): Promise<RitualLayoutItem[]> {
   return Promise.all(
     items.map(async (item) => {
+      if (item.localizedName && item.localizedName.trim()) {
+        return item;
+      }
       try {
         const detail = await api.getItem(item.itemId);
         return { ...item, localizedName: detail.localizedName };
@@ -53,11 +212,106 @@ async function resolveItemNames(items: RitualItemStack[]): Promise<RitualItemSta
   );
 }
 
-function getRingPosition(index: number, total: number, radius: number) {
-  const safeTotal = Math.max(total, 1);
-  const angle = ((index / safeTotal) * 360 - 90) * (Math.PI / 180);
+function getRingRadius(itemCount: number): number {
+  if (itemCount <= 0) return ALTAR_RADIUS;
+  if (itemCount <= 8) return ALTAR_RADIUS - 8;
+  if (itemCount <= 12) return ALTAR_RADIUS + 4;
+  return ALTAR_RADIUS + Math.min(18, (itemCount - 12) * 2);
+}
+
+function buildCircularLayout(items: RitualLayoutItem[], startAngle = -Math.PI / 2): PositionedIngredient[] {
+  if (items.length === 0) return [];
+
+  const radius = getRingRadius(items.length);
+  const step = (Math.PI * 2) / Math.max(items.length, 1);
+
+  return items.map((item, index) => {
+    const angle = startAngle + index * step;
+    return {
+      item,
+      angle,
+      style: slotStyle(
+        ALTAR_CENTER_X + Math.cos(angle) * radius - HALF_SLOT,
+        ALTAR_CENTER_Y + Math.sin(angle) * radius - HALF_SLOT,
+      ),
+    };
+  });
+}
+
+function inferCenterItem(items: RitualLayoutItem[]): RitualLayoutItem | null {
+  if (items.length === 0) return null;
+
+  // NESQL++ preserves NEI's infusion ingredient order: center catalyst first,
+  // followed by pedestal components and aspect stacks.
+  return items[0] ?? null;
+}
+
+function selectCenterItem(
+  items: RitualLayoutItem[],
+  metadata: Record<string, unknown>,
+): RitualLayoutItem | null {
+  const centerSlotIndex = Number(metadata.centerInputSlotIndex);
+  if (Number.isFinite(centerSlotIndex)) {
+    const bySlot = items.find((item) => item.slotIndex === Math.floor(centerSlotIndex));
+    if (bySlot) return bySlot;
+  }
+
+  const centerItemId = typeof metadata.centralItemId === 'string' ? metadata.centralItemId.trim() : '';
+  if (centerItemId) {
+    const byId = items.find((item) => item.itemId === centerItemId);
+    if (byId) return byId;
+  }
+
+  return inferCenterItem(items);
+}
+
+function orderRingItems(
+  items: RitualLayoutItem[],
+  metadata: Record<string, unknown>,
+): RitualLayoutItem[] {
+  const componentOrder = Array.isArray(metadata.componentSlotOrder)
+    ? metadata.componentSlotOrder.filter((value): value is number => typeof value === 'number' && Number.isFinite(value))
+    : [];
+
+  if (componentOrder.length === 0) {
+    return items;
+  }
+
+  const bySlot = new Map(items.map((item) => [item.slotIndex, item] as const));
+  const ordered: RitualLayoutItem[] = [];
+  const seen = new Set<RitualLayoutItem>();
+
+  for (const slotIndex of componentOrder) {
+    const item = bySlot.get(Math.floor(slotIndex));
+    if (item && !seen.has(item)) {
+      ordered.push(item);
+      seen.add(item);
+    }
+  }
+
+  for (const item of items) {
+    if (!seen.has(item)) {
+      ordered.push(item);
+      seen.add(item);
+    }
+  }
+
+  return ordered;
+}
+
+function buildLayoutFromCoordinates(
+  items: RitualLayoutItem[],
+  metadata: Record<string, unknown>,
+): {
+  center: RitualLayoutItem | null;
+  ring: PositionedIngredient[];
+} {
+  const center = selectCenterItem(items, metadata);
+  const ringItems = orderRingItems(center ? items.filter((item) => item !== center) : items, metadata);
+
   return {
-    transform: `translate(calc(-50% + ${Math.cos(angle) * radius}px), calc(-50% + ${Math.sin(angle) * radius}px))`,
+    center,
+    ring: buildCircularLayout(ringItems),
   };
 }
 
@@ -68,23 +322,27 @@ function handleItemClick(itemId: string) {
 
 async function initialize() {
   const additional = parseAdditionalData(props.recipe);
-  const rawInputs: RitualItemStack[] = [];
-  collectRecipeItemStacks((additional?.rawIndexedInputs as unknown) ?? props.recipe.inputs, rawInputs);
+  const metadata = mergeRecipeMetadata(props.recipe);
+  const rawSource = (additional?.rawIndexedInputs as unknown) ?? props.recipe.inputs;
+  const indexedInputs = extractIndexedInfusionInputs(rawSource);
+  const rawInputs: RitualLayoutItem[] = indexedInputs.length > 0 ? indexedInputs : [];
+
+  if (rawInputs.length === 0) {
+    collectRecipeItemStacks(rawSource, rawInputs);
+  }
 
   const nonAspectInputs = rawInputs.filter((item) => !isThaumcraftAspectItem(item.itemId, item.localizedName));
   const resolved = await resolveItemNames(nonAspectInputs);
+  const layout = buildLayoutFromCoordinates(resolved, metadata);
 
-  centerItem.value = resolved[0] ?? null;
-  ringItems.value = resolved.slice(1);
-  aspectCosts.value = buildThaumcraftAspectCosts(
-    props.recipe,
-    (additional?.rawIndexedInputs as unknown) ?? props.recipe.inputs,
-  );
+  centerItem.value = layout.center;
+  ingredientLayout.value = layout.ring;
+  aspectCosts.value = buildThaumcraftAspectCosts(props.recipe, rawSource);
 
   const [output] = await buildOutputSlots(props.recipe, 1);
   outputSlot.value = output ?? null;
 
-  const rawInstability = Number(additional?.stability ?? additional?.instability);
+  const rawInstability = Number(metadata.instability ?? additional?.stability ?? additional?.instability);
   instability.value = Number.isFinite(rawInstability) ? Math.floor(rawInstability) : null;
 }
 
@@ -100,451 +358,610 @@ watch(
   { deep: true },
 );
 
-const ringCount = computed(() => {
-  const count = ringItems.value.length;
-  if (count <= 8) return 1;
-  if (count <= 18) return 2;
-  return 3;
+const aspectEntries = computed(() => {
+  return aspectCosts.value.map((aspect) => ({
+    aspect,
+    accent: aspect.color || '#8bdcff',
+  }));
 });
-
-const coreSize = computed(() => {
-  switch (ringCount.value) {
-    case 1: return 360;
-    case 2: return 420;
-    default: return 500;
-  }
-});
-
-const ringRadii = computed(() => {
-  switch (ringCount.value) {
-    case 1: return [110];
-    case 2: return [96, 156];
-    default: return [88, 146, 204];
-  }
-});
-
-const ingredientLayout = computed<RingLayoutEntry[]>(() => {
-  const items = ringItems.value;
-  if (items.length === 0) return [];
-
-  const radii = ringRadii.value;
-  const perRing = Math.ceil(items.length / radii.length);
-  const entries: RingLayoutEntry[] = [];
-
-  items.forEach((item, index) => {
-    const ringIndex = Math.min(radii.length - 1, Math.floor(index / perRing));
-    const indexInRing = index % perRing;
-    const ringItemCount =
-      ringIndex === radii.length - 1
-        ? items.length - ringIndex * perRing
-        : Math.min(perRing, items.length - ringIndex * perRing);
-
-    entries.push({
-      item,
-      ringIndex,
-      style: getRingPosition(indexInRing, Math.max(ringItemCount, 1), radii[ringIndex]),
-    });
-  });
-
-  return entries;
-});
-
-const infusionCoreStyle = computed(() => ({
-  width: `${coreSize.value}px`,
-  height: `${coreSize.value}px`,
-  maxWidth: '100%',
-}));
-
-const showAspectPanel = computed(() => aspectCosts.value.length > 0);
-const compactCore = computed(() => ringCount.value >= 3);
 </script>
 
 <template>
-  <div class="thaum-ui thaum-infusion">
-    <div class="scene-bg" aria-hidden="true">
-      <div class="mist mist-a" />
-      <div class="mist mist-b" />
-      <div class="scene-grid" />
-    </div>
+  <div class="infusion-shell">
+    <section class="info-card left-card">
+      <div class="card-kicker">RITUAL PROFILE</div>
+      <h3 class="card-title">{{ machineLabel }}</h3>
+      <div class="research-panel">
+        <div class="panel-label">研究需求</div>
+        <div v-if="researchLines.length" class="research-lines">
+          <span v-for="line in researchLines" :key="line" class="research-line">{{ line }}</span>
+        </div>
+        <div v-else class="research-lines muted">
+          <span class="research-line">Infusion Study</span>
+        </div>
+      </div>
+      <div class="stats-grid">
+        <div v-for="entry in ritualStats" :key="entry.label" class="stat-chip">
+          <span class="stat-label">{{ entry.label }}</span>
+          <strong class="stat-value">{{ entry.value }}</strong>
+        </div>
+      </div>
+      <div class="focus-summary">
+        <div class="summary-label">中心催化</div>
+        <div class="summary-value">{{ centerItemLabel }}</div>
+      </div>
+    </section>
 
-    <section class="infusion-shell" :class="{ 'is-compact': compactCore }">
-      <div class="infusion-core" :style="infusionCoreStyle">
-        <div class="ring outer" />
-        <div class="ring middle" />
-        <div class="ring inner" />
+    <section class="altar-stage">
+      <div class="stage-header">
+        <div class="header-pill">Infusion Matrix</div>
+        <div class="header-pill accent-pill">NeoNEI Ritual View</div>
+      </div>
+
+      <div class="result-lane" v-if="outputSlot && primaryOutputId">
+        <div class="result-connector" aria-hidden="true" />
+        <RecipeItemTooltip
+          :item-id="primaryOutputId"
+          :count="outputSlot.count"
+          @click="handleItemClick(primaryOutputId)"
+        >
+          <div class="result-slot">
+            <img
+              :src="getImageUrl(primaryOutputId)"
+              class="item-icon result-icon"
+              @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
+            />
+            <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
+          </div>
+        </RecipeItemTooltip>
+      </div>
+
+      <div class="altar-board">
+        <div class="altar-rings" aria-hidden="true">
+          <div class="ring ring-outer" />
+          <div class="ring ring-middle" />
+          <div class="ring ring-inner" />
+          <div class="crosshair crosshair-h" />
+          <div class="crosshair crosshair-v" />
+        </div>
 
         <div
           v-for="entry in ingredientLayout"
-          :key="`ring-item-${entry.item.itemId}-${entry.ringIndex}-${entry.style.transform}`"
-          class="ingredient-node"
+          :key="`infusion-${entry.item.itemId}-${entry.style.left}-${entry.style.top}`"
+          class="slot-anchor"
           :style="entry.style"
         >
-          <RecipeItemTooltip :item-id="entry.item.itemId" :count="entry.item.count" @click="handleItemClick(entry.item.itemId)">
-            <div class="slot pedestal">
-              <img :src="getImageUrl(entry.item.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
+          <RecipeItemTooltip
+            :item-id="entry.item.itemId"
+            :count="entry.item.count"
+            @click="handleItemClick(entry.item.itemId)"
+          >
+            <div class="slot pedestal-slot slot-fill">
+              <img
+                :src="getImageUrl(entry.item.itemId)"
+                class="item-icon"
+                @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
+              />
               <span v-if="entry.item.count > 1" class="count">{{ entry.item.count }}</span>
             </div>
           </RecipeItemTooltip>
         </div>
 
-        <div class="center-node">
+        <div v-if="centerItem" class="slot-anchor center-anchor" :style="centerStyle">
           <RecipeItemTooltip
-            v-if="centerItem"
             :item-id="centerItem.itemId"
             :count="centerItem.count"
             @click="handleItemClick(centerItem.itemId)"
           >
-            <div class="slot center">
-              <img :src="getImageUrl(centerItem.itemId)" class="item-icon center-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
+            <div class="slot center-slot slot-fill">
+              <img
+                :src="getImageUrl(centerItem.itemId)"
+                class="item-icon center-icon"
+                @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
+              />
               <span v-if="centerItem.count > 1" class="count">{{ centerItem.count }}</span>
             </div>
           </RecipeItemTooltip>
-          <div v-else class="slot center empty" />
+        </div>
+        <div v-else class="slot-anchor center-anchor" :style="centerStyle">
+          <div class="slot center-slot empty-slot slot-fill" />
+        </div>
+      </div>
+    </section>
+
+    <section class="info-card right-card">
+      <div class="card-kicker">OUTPUT</div>
+      <h3 class="card-title output-title">{{ outputLabel }}</h3>
+
+      <div class="aspects-panel">
+        <div class="panel-label">ASPECT COST</div>
+        <div class="aspect-stack">
+          <div
+            v-for="entry in aspectEntries"
+            :key="`${entry.aspect.name}-${entry.aspect.hash || 'plain'}`"
+            class="aspect-row"
+            :style="{ '--accent': entry.accent }"
+          >
+            <div class="aspect-main">
+              <img
+                :src="getThaumcraftAspectImagePath(entry.aspect)"
+                class="aspect-icon"
+                :alt="entry.aspect.name"
+                @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
+              />
+              <span class="aspect-name">{{ entry.aspect.name }}</span>
+            </div>
+            <strong class="aspect-amount">{{ entry.aspect.amount }}</strong>
+          </div>
         </div>
       </div>
 
-      <div class="side-column">
-        <div class="arrow-lane">
-          <div class="arrow-track" />
-          <svg viewBox="0 0 24 24" class="arrow-icon">
-            <path d="M4 11h12.17l-5.59-5.59L12 4l8 8-8 8-1.41-1.41L16.17 13H4v-2z" />
-          </svg>
-        </div>
-
-        <section class="panel panel-output">
-          <div class="panel-title panel-title-output">OUTPUT</div>
-          <div class="slot-wrap">
-            <RecipeItemTooltip
-              v-if="outputSlot"
-              :item-id="outputSlot.itemId"
-              :count="outputSlot.count"
-              @click="handleItemClick(outputSlot.itemId)"
-            >
-              <div class="slot output">
-                <img :src="getImageUrl(outputSlot.itemId)" class="item-icon output-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-                <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
-              </div>
-            </RecipeItemTooltip>
-            <div v-else class="slot output empty" />
-          </div>
-          <div v-if="instability !== null" class="status-chip">INSTABILITY {{ instability }}</div>
-        </section>
-
-        <section v-if="showAspectPanel" class="panel panel-aspects">
-          <div class="panel-title">ASPECTS</div>
-          <div class="aspect-list">
-            <div
-              v-for="aspect in aspectCosts"
-              :key="`${aspect.name}-${aspect.hash || 'plain'}`"
-              class="aspect-row"
-            >
-              <img :src="getThaumcraftAspectImagePath(aspect)" class="aspect-icon" :alt="aspect.name" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-              <span class="aspect-name">{{ aspect.name }}</span>
-              <span class="aspect-amount">{{ aspect.amount }}</span>
-            </div>
-          </div>
-        </section>
+      <div class="instability-card" :class="{ 'is-muted': instability === null }">
+        <span class="instability-label">不稳定度</span>
+        <strong class="instability-value">{{ instability === null ? '未导出' : instability }}</strong>
       </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.thaum-ui {
-  position: relative;
-  overflow: visible;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background:
-    linear-gradient(180deg, rgba(10, 14, 24, 0.96), rgba(7, 10, 18, 0.98)),
-    radial-gradient(circle at top, rgba(103, 232, 249, 0.08), transparent 40%);
-  box-shadow:
-    0 18px 50px rgba(2, 8, 23, 0.38),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-  padding: 16px;
-}
-
-.scene-bg { position: absolute; inset: 0; pointer-events: none; }
-.mist {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(28px);
-  opacity: 0.22;
-}
-.mist-a { width: 260px; height: 180px; left: -30px; top: -30px; background: radial-gradient(circle, rgba(103, 232, 249, 0.34), transparent 72%); }
-.mist-b { width: 280px; height: 220px; right: -70px; bottom: -40px; background: radial-gradient(circle, rgba(192, 132, 252, 0.18), transparent 74%); }
-.scene-grid {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 18px 18px;
-  opacity: 0.16;
-}
-
 .infusion-shell {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(380px, 1fr) minmax(220px, 260px);
+  gap: 18px;
+  align-items: stretch;
+  width: 100%;
+  max-width: 1160px;
+  margin: 0 auto;
+  padding: 10px 0 6px;
+}
+
+.info-card,
+.altar-stage {
+  position: relative;
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    linear-gradient(180deg, rgba(10, 16, 28, 0.96), rgba(6, 10, 18, 0.98)),
+    radial-gradient(circle at top, rgba(34, 211, 238, 0.08), transparent 42%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 16px 42px rgba(2, 8, 23, 0.32);
+}
+
+.info-card::before,
+.altar-stage::before {
+  content: '';
+  position: absolute;
+  inset: 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  pointer-events: none;
+}
+
+.info-card {
+  padding: 22px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.left-card {
+  background:
+    linear-gradient(180deg, rgba(9, 15, 28, 0.98), rgba(6, 10, 18, 0.98)),
+    radial-gradient(circle at top left, rgba(56, 189, 248, 0.1), transparent 44%);
+}
+
+.right-card {
+  background:
+    linear-gradient(180deg, rgba(12, 16, 30, 0.98), rgba(6, 10, 18, 0.98)),
+    radial-gradient(circle at top right, rgba(168, 85, 247, 0.1), transparent 42%);
+}
+
+.card-kicker {
+  position: relative;
+  z-index: 1;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(125, 211, 252, 0.74);
+}
+
+.card-title {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.25;
+  color: #eef6ff;
+}
+
+.output-title {
+  color: #f5e9ff;
+}
+
+.research-panel,
+.aspects-panel,
+.focus-summary,
+.instability-card {
+  position: relative;
+  z-index: 1;
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(9, 15, 27, 0.72);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.panel-label,
+.summary-label,
+.instability-label,
+.stat-label {
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.72);
+}
+
+.research-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.research-line,
+.summary-value,
+.aspect-name {
+  color: rgba(226, 232, 240, 0.92);
+}
+
+.research-lines.muted .research-line {
+  color: rgba(148, 163, 184, 0.68);
+}
+
+.stats-grid {
   position: relative;
   z-index: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
-  gap: 18px;
+  gap: 10px;
+}
+
+.stat-chip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(12, 18, 31, 0.68);
+}
+
+.stat-value,
+.instability-value,
+.aspect-amount {
+  color: #f8fbff;
+  font-size: 17px;
+}
+
+.summary-value {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.altar-stage {
+  padding: 18px 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background:
+    linear-gradient(180deg, rgba(10, 15, 26, 0.98), rgba(6, 10, 18, 0.99)),
+    radial-gradient(circle at top, rgba(56, 189, 248, 0.08), transparent 40%),
+    radial-gradient(circle at bottom, rgba(168, 85, 247, 0.06), transparent 42%);
+}
+
+.stage-header {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
   align-items: center;
 }
 
-.infusion-shell.is-compact {
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
+.header-pill {
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  background: rgba(7, 13, 23, 0.74);
+  color: rgba(226, 232, 240, 0.8);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
 
-.infusion-core {
+.accent-pill {
+  border-color: rgba(192, 132, 252, 0.22);
+  color: rgba(233, 213, 255, 0.84);
+}
+
+.result-lane {
   position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 72px;
+}
+
+.result-connector {
+  position: absolute;
+  width: 180px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(125, 211, 252, 0.4), transparent);
+  filter: drop-shadow(0 0 8px rgba(56, 189, 248, 0.18));
+}
+
+.result-slot,
+.slot {
+  position: absolute;
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  background:
+    linear-gradient(180deg, rgba(14, 21, 35, 0.96), rgba(8, 12, 21, 0.98)),
+    radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 52%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05),
+    0 10px 24px rgba(2, 8, 23, 0.24);
+}
+
+.slot-anchor {
+  position: absolute;
+  width: 44px;
+  height: 44px;
+  z-index: 2;
+}
+
+.center-anchor {
+  width: 52px;
+  height: 52px;
+  z-index: 3;
+}
+
+.slot-fill {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: 100%;
+}
+
+.slot-anchor :deep(.recipe-item-tooltip-container) {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.result-slot {
+  position: relative;
+  width: 58px;
+  height: 58px;
+  border-color: rgba(125, 211, 252, 0.4);
+  box-shadow:
+    0 0 0 1px rgba(125, 211, 252, 0.08),
+    0 12px 28px rgba(14, 165, 233, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.altar-board {
+  position: relative;
+  z-index: 1;
+  align-self: center;
+  width: 100%;
+  max-width: 430px;
+  aspect-ratio: 1 / 1;
+  min-height: 430px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background:
+    radial-gradient(circle at center, rgba(13, 20, 34, 0.94), rgba(6, 10, 18, 0.98) 70%),
+    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+  background-size: auto, 24px 24px, 24px 24px;
+}
+
+.altar-rings {
+  position: absolute;
+  inset: 39px;
+  pointer-events: none;
 }
 
 .ring {
   position: absolute;
+  inset: 0;
   border-radius: 50%;
-  border: 1px solid rgba(103, 232, 249, 0.22);
-}
-.outer {
-  width: calc(100% - 24px);
-  height: calc(100% - 24px);
-  border-style: dashed;
-  animation: spin 22s linear infinite;
-}
-.middle {
-  width: calc(100% - 110px);
-  height: calc(100% - 110px);
-  animation: spinReverse 18s linear infinite;
-}
-.inner {
-  width: calc(100% - 190px);
-  height: calc(100% - 190px);
-  border-style: dashed;
-  animation: spin 12s linear infinite;
 }
 
-.ingredient-node {
+.ring-outer {
+  border: 1px dashed rgba(56, 189, 248, 0.26);
+  box-shadow: 0 0 16px rgba(56, 189, 248, 0.08);
+}
+
+.ring-middle {
+  inset: 56px;
+  border: 1px solid rgba(168, 85, 247, 0.2);
+}
+
+.ring-inner {
+  inset: 116px;
+  border: 1px solid rgba(245, 158, 11, 0.16);
+}
+
+.ring,
+.ring-outer,
+.ring-middle,
+.ring-inner {
+  aspect-ratio: 1 / 1;
+}
+
+.crosshair {
   position: absolute;
-  top: 50%;
-  left: 50%;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.18), transparent);
 }
 
-.center-node {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
+.crosshair-h {
+  left: 32px;
+  right: 32px;
+  top: calc(50% - 0.5px);
+  height: 1px;
 }
 
-.side-column {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  align-items: stretch;
-}
-
-.panel {
-  position: relative;
-  padding: 18px 12px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background:
-    linear-gradient(180deg, rgba(18, 24, 32, 0.94), rgba(10, 14, 20, 0.98)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(2, 8, 23, 0.2);
-}
-
-.panel::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
-  pointer-events: none;
-}
-
-.panel-output { border-color: rgba(245, 208, 138, 0.24); min-width: 132px; }
-
-.panel-title {
-  position: absolute;
-  top: -9px;
-  left: 12px;
-  min-width: 86px;
-  padding: 4px 10px 3px 12px;
-  background:
-    linear-gradient(180deg, rgba(74, 80, 89, 0.98), rgba(54, 59, 67, 0.98)),
-    url('/textures/nei/catalyst_tab.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  border: 1px solid rgba(198, 207, 220, 0.24);
-  border-radius: 6px 6px 4px 4px;
-  color: #eef4fb;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
-  box-shadow: 0 4px 10px rgba(2, 8, 23, 0.22);
-  z-index: 1;
-}
-
-.panel-title-output { border-color: rgba(245, 208, 138, 0.32); color: #fff3da; }
-
-.slot-wrap {
-  min-height: 120px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.crosshair-v {
+  top: 32px;
+  bottom: 32px;
+  left: calc(50% - 0.5px);
+  width: 1px;
+  background: linear-gradient(180deg, transparent, rgba(148, 163, 184, 0.18), transparent);
 }
 
 .slot {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.88), rgba(6, 10, 16, 0.92)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%, 18px 18px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 6px 12px rgba(2, 8, 23, 0.28);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
 }
 
-.slot.pedestal { width: 44px; height: 44px; }
-.slot.center { width: 60px; height: 60px; border-color: rgba(103, 232, 249, 0.5); }
-.slot.output { width: 72px; height: 72px; border-color: rgba(245, 208, 138, 0.42); }
-.slot.empty { opacity: 0.3; }
+.slot:hover,
+.result-slot:hover {
+  transform: translateY(-1px) scale(1.02);
+}
 
-.item-icon { width: 34px; height: 34px; object-fit: contain; image-rendering: pixelated; }
-.center-icon { width: 46px; height: 46px; }
-.output-icon { width: 54px; height: 54px; }
+.pedestal-slot {
+  border-color: rgba(103, 232, 249, 0.2);
+}
+
+.pedestal-slot:hover {
+  border-color: rgba(103, 232, 249, 0.52);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 0 1px rgba(103, 232, 249, 0.08),
+    0 12px 24px rgba(14, 116, 144, 0.16);
+}
+
+.center-slot {
+  border-color: rgba(192, 132, 252, 0.36);
+  box-shadow:
+    0 0 0 1px rgba(192, 132, 252, 0.08),
+    0 16px 32px rgba(76, 29, 149, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.center-slot:hover {
+  border-color: rgba(216, 180, 254, 0.62);
+}
+
+.empty-slot {
+  border-style: dashed;
+  border-color: rgba(71, 85, 105, 0.22);
+  background: rgba(15, 23, 42, 0.22);
+}
+
+.item-icon {
+  width: 30px;
+  height: 30px;
+  image-rendering: pixelated;
+}
+
+.result-icon,
+.center-icon {
+  width: 34px;
+  height: 34px;
+}
 
 .count {
   position: absolute;
-  right: 2px;
-  bottom: 1px;
-  padding: 1px 3px;
-  border-radius: 4px;
-  background: rgba(15, 23, 42, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  font-size: 10px;
-  color: #fff;
-}
-
-.arrow-lane {
-  position: relative;
-  width: 30px;
-  height: 22px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(210, 218, 230, 0.86);
-  align-self: center;
-}
-
-.arrow-track {
-  position: absolute;
-  left: 1px;
-  right: 5px;
-  top: 50%;
-  height: 6px;
-  transform: translateY(-50%);
-  background: url('/textures/nei/dash.png') center / 100% 2px no-repeat;
-  opacity: 0.55;
-}
-
-.arrow-icon {
-  width: 18px;
-  height: 18px;
-  position: relative;
-  z-index: 1;
-  fill: currentColor;
-}
-
-.status-chip {
-  margin-top: 8px;
-  padding: 4px 10px;
+  right: 4px;
+  bottom: 3px;
+  padding: 1px 4px;
   border-radius: 999px;
-  border: 1px solid rgba(192, 132, 252, 0.24);
-  background: rgba(40, 20, 58, 0.68);
-  color: #ede9fe;
-  font-size: 11px;
-  text-align: center;
+  background: rgba(15, 23, 42, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  font-size: 10px;
+  font-weight: 700;
+  color: #f8fafc;
+  text-shadow: 0 1px 2px rgba(2, 8, 23, 0.9);
 }
 
-.aspect-list {
-  display: grid;
+.aspect-stack {
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  padding-top: 8px;
-  max-height: 320px;
-  overflow: auto;
+  margin-top: 12px;
 }
 
 .aspect-row {
-  display: grid;
-  grid-template-columns: 32px 1fr auto;
-  gap: 10px;
+  display: flex;
   align-items: center;
-  min-height: 40px;
-  padding: 6px 8px;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  background: rgba(9, 14, 22, 0.72);
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, rgba(148, 163, 184, 0.1));
+  background:
+    linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, rgba(15, 23, 42, 0.9)), rgba(9, 14, 25, 0.82));
+}
+
+.aspect-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .aspect-icon {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  border: 1px solid rgba(111, 220, 250, 0.22);
-  padding: 2px;
-  background: rgba(8, 20, 36, 0.72);
+  width: 24px;
+  height: 24px;
+  image-rendering: pixelated;
+  flex: 0 0 auto;
 }
 
 .aspect-name {
-  font-size: 12px;
-  color: #e2e8f0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.aspect-amount {
-  min-width: 28px;
-  text-align: right;
-  font-size: 12px;
-  font-weight: 700;
-  color: #111827;
-  background: linear-gradient(145deg, #ffe48b, #ffbe62);
-  border-radius: 999px;
-  padding: 2px 8px;
+.instability-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-color: rgba(249, 115, 22, 0.18);
+  background:
+    linear-gradient(180deg, rgba(39, 16, 8, 0.52), rgba(18, 10, 8, 0.66)),
+    rgba(17, 24, 39, 0.5);
 }
 
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes spinReverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
+.instability-card.is-muted {
+  border-color: rgba(71, 85, 105, 0.2);
+  background: rgba(9, 15, 27, 0.58);
+}
 
-@media (max-width: 1180px) {
+@media (max-width: 1080px) {
   .infusion-shell {
     grid-template-columns: 1fr;
   }
-}
 
-@media (max-width: 720px) {
-  .thaum-ui {
-    padding: 14px;
+  .altar-stage {
+    order: -1;
+  }
+
+  .altar-board {
+    min-height: 400px;
   }
 }
 </style>

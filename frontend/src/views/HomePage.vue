@@ -22,6 +22,7 @@ import ItemTooltip from "../components/ItemTooltip.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
 import { useSound } from "../services/sound.service";
 import { useRecipeViewer } from "../composables/useRecipeViewer";
+import { resolveRecipePresentationProfile } from "../services/uiTypeMapping";
 
 type ItemBasicInfo = Pick<Item, "itemId" | "localizedName" | "modId" | "internalName" | "damage" | "imageFileName" | "renderAssetRef" | "preferredImageUrl">;
 
@@ -342,15 +343,54 @@ const centerRailStyle = computed(() => ({
   left: "var(--home-center-left)",
 }));
 
-const recipeDockStyle = computed(() => ({
-  ...centerRailStyle.value,
-  top: "var(--home-recipe-top)",
-  bottom: "var(--home-recipe-bottom)",
-}));
-
 const itemColumnStyle = computed(() => ({
   width: "var(--home-right-width)",
 }));
+
+const currentRecipePresentation = computed(() => {
+  const recipe = currentPageRecipes.value[0];
+  if (!recipe) return null;
+  return resolveRecipePresentationProfile({
+    machineType: recipe.machineInfo?.machineType,
+    recipeType: recipe.recipeType,
+    recipeTypeData: recipe.recipeTypeData,
+    inputs: recipe.inputs,
+    additionalData: recipe.additionalData as Record<string, unknown> | undefined,
+    metadata: recipe.metadata as Record<string, unknown> | undefined,
+    preferDetailedCrafting: false,
+  });
+});
+
+const recipeModalScaleToFit = computed(() => {
+  const surface = currentRecipePresentation.value?.uiConfig.presentation?.surface;
+  const density = currentRecipePresentation.value?.uiConfig.presentation?.density;
+  const family = currentRecipePresentation.value?.uiConfig.presentation?.family;
+  if (surface === 'ritual' || surface === 'research') return false;
+  if (density === 'oversized') return false;
+  if (family === 'thaumcraft' || family === 'blood_magic' || family === 'multiblock') return false;
+  return true;
+});
+
+const recipePreviewNeedsWideStage = computed(() => !recipeModalScaleToFit.value);
+
+const recipeDockStyle = computed(() => {
+  if (recipePreviewNeedsWideStage.value) {
+    return {
+      left: "16px",
+      right: "calc(var(--home-right-width) + 16px)",
+      top: "var(--home-recipe-top)",
+      bottom: "var(--home-recipe-bottom)",
+      width: "auto",
+      zIndex: "30",
+    };
+  }
+
+  return {
+    ...centerRailStyle.value,
+    top: "var(--home-recipe-top)",
+    bottom: "var(--home-recipe-bottom)",
+  };
+});
 
 const recipeStageKey = computed(() => {
   if (recipeModalLoading.value) return "loading";
@@ -597,7 +637,7 @@ const saveSettings = () => {
           v-if="
             showRecipeModal
           "
-          class="recipe-preview-panel absolute flex flex-col overflow-hidden surface-glass border border-slate-300/50 rounded-xl shadow-lg"
+          :class="['recipe-preview-panel absolute flex flex-col overflow-hidden surface-glass border border-slate-300/50 rounded-xl shadow-lg', { 'wide-stage': recipePreviewNeedsWideStage }]"
           :style="recipeDockStyle"
         >
           <!-- Recipe Content (no scroll, compact) -->
@@ -671,7 +711,7 @@ const saveSettings = () => {
                     v-else-if="currentPageRecipes.length > 0"
                     :recipe="currentPageRecipes[0]"
                     @item-click="handleRecipeItemClick"
-                    :scaleToFit="true"
+                    :scale-to-fit="recipeModalScaleToFit"
                   />
                   <div v-else class="state-panel stage-state-panel">
                     <p class="state-title">暂无可显示配方</p>
@@ -1016,10 +1056,20 @@ const saveSettings = () => {
 }
 
 .mod-filter-anchor,
-.search-anchor,
+.search-anchor {
+  width: var(--home-center-width);
+  left: var(--home-center-left);
+}
+
 .recipe-preview-panel {
   width: var(--home-center-width);
   left: var(--home-center-left);
+}
+
+.recipe-preview-panel.wide-stage {
+  width: auto;
+  left: 16px;
+  right: calc(var(--home-right-width) + 16px);
 }
 
 .items-column {
