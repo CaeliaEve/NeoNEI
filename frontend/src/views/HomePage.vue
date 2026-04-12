@@ -316,6 +316,7 @@ const {
 } = useRecipeViewer(modalRecipeItemId, playClick);
 
 const recipeModalError = computed(() => recipeLoadError.value);
+const pendingRecipeMachineName = ref<string | null>(null);
 
 watch(recipeModalMode, (mode) => {
   setCurrentTab(mode);
@@ -537,15 +538,55 @@ const prevRecipePage = () => {
   prevPage();
 };
 
+const handleRecipeWheel = (event: WheelEvent) => {
+  if (Math.abs(event.deltaY) < 8 || totalRecipePages.value <= 1) return;
+  event.preventDefault();
+  if (event.deltaY > 0) {
+    nextPage();
+  } else {
+    prevPage();
+  }
+};
+
 // Handle item click in recipe
-const handleRecipeItemClick = (itemId: string) => {
+const handleRecipeItemClick = (itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => {
   const item = items.value.find((i) => i.itemId === itemId);
   if (item) {
+    if (options?.tab) {
+      setCurrentTab(options.tab);
+      recipeModalMode.value = options.tab;
+      pendingRecipeMachineName.value = options.tab === 'producedBy' ? '物品中的要素' : null;
+    }
     openRecipeModal(item);
     return;
   }
-  void router.push({ name: "recipe", params: { itemId } });
+  void router.push({
+    name: "recipe",
+    params: { itemId },
+    query: options?.tab
+      ? {
+          tab: options.tab,
+          mode: options.tab === 'usedIn' ? 'u' : 'r',
+          machineName: options.tab === 'producedBy' ? '物品中的要素' : undefined,
+          page: '0',
+        }
+      : undefined,
+  });
 };
+
+watch(
+  () => [pendingRecipeMachineName.value, machineCategories.value.map((category) => category.name).join('|')] as const,
+  ([pendingMachineName]) => {
+    if (!pendingMachineName) return;
+    const index = machineCategories.value.findIndex(
+      (category) => category.name.trim().toLowerCase() === pendingMachineName.trim().toLowerCase(),
+    );
+    if (index >= 0) {
+      selectMachine(index);
+      pendingRecipeMachineName.value = null;
+    }
+  },
+);
 
 // Handle pattern group selection
 const onSelectGroup = (groupId: string) => {
@@ -668,7 +709,7 @@ const saveSettings = () => {
             >
               <button
                 @click="prevRecipePage"
-                :disabled="recipeModalPage === 0"
+                :disabled="totalRecipePages <= 1"
                 class="px-1.5 py-0.5 text-[10px] mini-pager-btn disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="上一页"
                 aria-label="上一页"
@@ -680,7 +721,7 @@ const saveSettings = () => {
               </span>
               <button
                 @click="nextRecipePage"
-                :disabled="recipeModalPage >= totalRecipePages - 1"
+                :disabled="totalRecipePages <= 1"
                 class="px-1.5 py-0.5 text-[10px] mini-pager-btn disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 title="下一页"
                 aria-label="下一页"
@@ -692,9 +733,9 @@ const saveSettings = () => {
             <!-- Recipe Display (scaled to fit, flex-1 to fill remaining space) -->
             <div
               class="surface-glass rounded border border-slate-200/60 flex-1 flex items-center justify-center recipe-display-container p-2 min-h-0"
+              @wheel="handleRecipeWheel"
             >
-              <Transition name="recipe-stage-swap" mode="out-in">
-                <div :key="recipeStageKey" class="recipe-stage-slot">
+                <div class="recipe-stage-slot">
                   <div v-if="recipeModalLoading" class="state-panel stage-state-panel">
                     <p class="state-title">正在加载配方...</p>
                     <p class="state-subtitle">请稍候，系统正在准备该物品的配方索引。</p>
@@ -722,7 +763,6 @@ const saveSettings = () => {
                     </div>
                   </div>
                 </div>
-              </Transition>
             </div>
           </div>
         </div>
@@ -1161,18 +1201,6 @@ const saveSettings = () => {
   border: 2px solid rgba(157, 174, 197, 0.26);
   border-top-color: rgba(188, 204, 226, 0.78);
   animation: spin 0.9s linear infinite;
-}
-
-.recipe-stage-swap-enter-active,
-.recipe-stage-swap-leave-active {
-  transition: opacity 220ms ease, transform 220ms ease, filter 220ms ease;
-}
-
-.recipe-stage-swap-enter-from,
-.recipe-stage-swap-leave-to {
-  opacity: 0;
-  transform: translateY(8px) scale(0.992);
-  filter: blur(4px);
 }
 
 /* Keep internal panel clipping without locking page scroll */

@@ -41,6 +41,7 @@ const hasEmptyActions = computed(() => Boolean(slots['empty-actions']));
 const resolvedStageShellClass = computed(() => props.stageShellClass || 'recipe-browser-stage__shell');
 const resolvedStatusClass = computed(() => props.statusClass || 'recipe-browser-stage__status');
 const resolvedStatePanelClass = computed(() => props.statePanelClass || 'recipe-browser-stage__panel');
+const shouldTransition = computed(() => props.transitionName.trim().length > 0);
 </script>
 
 <template>
@@ -49,7 +50,7 @@ const resolvedStatePanelClass = computed(() => props.statePanelClass || 'recipe-
       <slot name="status" />
     </div>
 
-    <Transition :name="transitionName" mode="out-in">
+    <Transition v-if="shouldTransition" :name="transitionName" mode="out-in">
       <div :key="stageKey" :class="resolvedStageShellClass">
         <RecipeStatePanel
           v-if="loading"
@@ -87,6 +88,43 @@ const resolvedStatePanelClass = computed(() => props.statePanelClass || 'recipe-
         </template>
       </div>
     </Transition>
+
+    <div v-else :class="resolvedStageShellClass">
+      <RecipeStatePanel
+        v-if="loading"
+        :class="resolvedStatePanelClass"
+        variant="loading"
+        :title="loadingTitle"
+        :subtitle="loadingSubtitle"
+      />
+
+      <RecipeStatePanel
+        v-else-if="errorTitle"
+        :class="resolvedStatePanelClass"
+        variant="error"
+        :title="errorTitle"
+        :subtitle="errorSubtitle"
+      >
+        <template v-if="hasErrorActions" #actions>
+          <slot name="error-actions" />
+        </template>
+      </RecipeStatePanel>
+
+      <RecipeStatePanel
+        v-else-if="empty"
+        :class="resolvedStatePanelClass"
+        :title="emptyTitle"
+        :subtitle="emptySubtitle"
+      >
+        <template v-if="hasEmptyActions" #actions>
+          <slot name="empty-actions" />
+        </template>
+      </RecipeStatePanel>
+
+      <template v-else>
+        <slot name="content" />
+      </template>
+    </div>
   </div>
 </template>
 

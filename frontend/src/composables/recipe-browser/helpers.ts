@@ -330,6 +330,41 @@ const getExtremeRecipePreference = (recipe: Recipe): number => {
   return score;
 };
 
+const isThaumcraftItemAspectRecipe = (recipe: Recipe): boolean => {
+  return getExplicitMachineName(recipe) === '物品中的要素';
+};
+
+const getMaxItemAspectAmount = (recipe: Recipe): number => {
+  let max = 0;
+  const rawInputs = recipe.additionalData?.rawIndexedInputs;
+  const inputs = Array.isArray(rawInputs) ? rawInputs : recipe.inputs;
+
+  const visit = (node: unknown) => {
+    if (!node) return;
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
+    if (typeof node !== 'object') return;
+    const record = node as {
+      count?: unknown;
+      stackSize?: unknown;
+      items?: Array<{ count?: unknown; stackSize?: unknown }>;
+    };
+    const direct = Number(record.count ?? record.stackSize);
+    if (Number.isFinite(direct) && direct > max) max = direct;
+    if (Array.isArray(record.items)) {
+      for (const item of record.items) {
+        const amount = Number(item.count ?? item.stackSize);
+        if (Number.isFinite(amount) && amount > max) max = amount;
+      }
+    }
+  };
+
+  visit(inputs);
+  return max;
+};
+
 export const extractVariantGroups = (recipe: Recipe): RecipeVariantGroup[] => {
   if (!recipe.additionalData || typeof recipe.additionalData !== 'object') {
     return [];
@@ -449,8 +484,19 @@ export const buildMachineCategories = (
       signatureGroups.get(key)!.push(recipe);
     }
 
-    const dedupedRecipes = Array.from(signatureGroups.values()).map((group) => group[0]);
-    return { ...category, recipeVariants: signatureGroups, recipes: dedupedRecipes };
+    const sortedSignatureEntries = Array.from(signatureGroups.entries());
+    if (sortedSignatureEntries.some(([, group]) => isThaumcraftItemAspectRecipe(group[0]))) {
+      sortedSignatureEntries.sort((a, b) => {
+        const recipeA = a[1][0];
+        const recipeB = b[1][0];
+        const amountDelta = getMaxItemAspectAmount(recipeB) - getMaxItemAspectAmount(recipeA);
+        if (amountDelta !== 0) return amountDelta;
+        return recipeA.recipeId.localeCompare(recipeB.recipeId);
+      });
+    }
+    const sortedRecipeVariants = new Map(sortedSignatureEntries);
+    const dedupedRecipes = sortedSignatureEntries.map(([, group]) => group[0]);
+    return { ...category, recipeVariants: sortedRecipeVariants, recipes: dedupedRecipes };
   });
 
   const getCategoryPriority = (category: MachineCategory): number => {

@@ -19,6 +19,7 @@ export interface RitualAspectCost {
   amount: number;
   color: string;
   hash?: string;
+  itemId?: string;
 }
 
 export function normalizeCount(value: unknown): number {
@@ -139,6 +140,7 @@ export function buildThaumcraftAspectCosts(recipe: Recipe, sourceNode: unknown):
     if (existing) {
       existing.amount += input.count;
       if (!existing.hash && hash) existing.hash = hash;
+      if (!existing.itemId) existing.itemId = input.itemId;
       continue;
     }
     merged.set(name, {
@@ -146,10 +148,17 @@ export function buildThaumcraftAspectCosts(recipe: Recipe, sourceNode: unknown):
       amount: input.count,
       color: ASPECT_COLORS[name] || '#d7e0ff',
       hash,
+      itemId: input.itemId,
     });
   }
 
   return Array.from(merged.values()).sort((a, b) => b.amount - a.amount);
+}
+
+export function getThaumcraftAspectItemId(aspect: RitualAspectCost): string | null {
+  if (aspect.itemId) return aspect.itemId;
+  if (aspect.hash) return `i~thaumcraftneiplugin~Aspect~0~${aspect.hash}`;
+  return null;
 }
 
 export function getThaumcraftAspectImagePath(aspect: RitualAspectCost): string {

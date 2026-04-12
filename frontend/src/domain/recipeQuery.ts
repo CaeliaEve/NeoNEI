@@ -7,6 +7,7 @@ export type RecipeQuerySnapshot = {
   tab?: RecipeTab;
   mode?: RecipeMode;
   machine: string;
+  machineName?: string;
   page: string;
   q?: string;
   recipeId?: string;
@@ -25,6 +26,7 @@ export const parseRecipeQuery = (query: LocationQuery): RecipeQuerySnapshot => {
   const tab = firstQueryValue(query.tab);
   const mode = firstQueryValue(query.mode);
   const machine = firstQueryValue(query.machine) ?? '0';
+  const machineName = firstQueryValue(query.machineName);
   const page = firstQueryValue(query.page) ?? '0';
   const q = firstQueryValue(query.q);
   const recipeId = firstQueryValue(query.recipeId);
@@ -33,6 +35,7 @@ export const parseRecipeQuery = (query: LocationQuery): RecipeQuerySnapshot => {
     tab: tab === 'usedIn' || tab === 'producedBy' ? tab : undefined,
     mode: mode === 'u' || mode === 'r' ? mode : undefined,
     machine,
+    machineName,
     page,
     q,
     recipeId,
@@ -40,7 +43,7 @@ export const parseRecipeQuery = (query: LocationQuery): RecipeQuerySnapshot => {
 };
 
 export const serializeRecipeQuery = (snapshot: RecipeQuerySnapshot): string =>
-  `${snapshot.tab ?? ''}|${snapshot.mode ?? ''}|${snapshot.machine}|${snapshot.page}|${snapshot.q ?? ''}|${snapshot.recipeId ?? ''}`;
+  `${snapshot.tab ?? ''}|${snapshot.mode ?? ''}|${snapshot.machine}|${snapshot.machineName ?? ''}|${snapshot.page}|${snapshot.q ?? ''}|${snapshot.recipeId ?? ''}`;
 
 export const parseNonNegativeInt = (value: string | undefined, fallback: number): number => {
   const parsed = Number(value);
@@ -62,6 +65,7 @@ export const buildRecipeQuery = (
     tab: snapshot.tab,
     mode: snapshot.mode,
     machine: snapshot.machine,
+    machineName: snapshot.machineName,
     page: snapshot.page,
     recipeId: snapshot.recipeId,
   };
@@ -70,6 +74,9 @@ export const buildRecipeQuery = (
     nextQuery.q = snapshot.q;
   } else {
     delete nextQuery.q;
+  }
+  if (!snapshot.machineName) {
+    delete nextQuery.machineName;
   }
 
   return nextQuery;

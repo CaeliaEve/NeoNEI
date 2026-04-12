@@ -316,19 +316,17 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   };
 
   const nextPage = () => {
-    if (currentPage.value < totalPages.value - 1) {
-      markRecipeSwitch('page-next');
-      playClick();
-      currentPage.value++;
-    }
+    if (totalPages.value <= 0) return;
+    markRecipeSwitch('page-next');
+    playClick();
+    currentPage.value = (currentPage.value + 1) % totalPages.value;
   };
 
   const prevPage = () => {
-    if (currentPage.value > 0) {
-      markRecipeSwitch('page-prev');
-      playClick();
-      currentPage.value--;
-    }
+    if (totalPages.value <= 0) return;
+    markRecipeSwitch('page-prev');
+    playClick();
+    currentPage.value = (currentPage.value - 1 + totalPages.value) % totalPages.value;
   };
 
   const setPage = (page: number) => {

@@ -38,6 +38,7 @@ const BotaniaElvenTradeUI = defineAsyncComponent(() => import('./BotaniaElvenTra
 const ThaumcraftArcaneUI = defineAsyncComponent(() => import('./ThaumcraftArcaneUI.vue'));
 const ThaumcraftInfusionUI = defineAsyncComponent(() => import('./ThaumcraftInfusionUI.vue'));
 const ThaumcraftCrucibleUI = defineAsyncComponent(() => import('./ThaumcraftCrucibleUI.vue'));
+const ThaumcraftAspectUI = defineAsyncComponent(() => import('./ThaumcraftAspectUI.vue'));
 const ThaumcraftResearchUI = defineAsyncComponent(() => import('./ThaumcraftResearchUI.vue'));
 const BloodMagicAltarUI = defineAsyncComponent(() => import('./BloodMagicAltarUI.vue'));
 const BloodAlchemyTableUI = defineAsyncComponent(() => import('./BloodAlchemyTableUI.vue'));
@@ -52,7 +53,7 @@ interface Props {
 }
 
 interface Emits {
-  (e: 'item-click', itemId: string): void;
+  (e: 'item-click', itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }): void;
   (e: 'overlay-state-change', state: RecipeOverlayUiState): void;
 }
 
@@ -96,6 +97,7 @@ const componentRegistry: Record<string, Component> = {
   ThaumcraftArcaneUI,
   ThaumcraftInfusionUI,
   ThaumcraftCrucibleUI,
+  ThaumcraftAspectUI,
   ThaumcraftResearchUI,
   BloodMagicAltarUI,
   BloodAlchemyTableUI,
@@ -344,46 +346,45 @@ if (isDev && typeof window !== 'undefined') {
       class="recipe-display-content"
       :style="{ transform: shouldUseRouterScale ? `scale(${scaleValue})` : 'none' }"
     >
-      <Transition name="ui-morph" mode="out-in">
-        <NEIRecipeDisplay
-          v-if="shouldUseDetailedCrafting"
-          ref="detailedCraftingRef"
-          :key="`nei-${recipe.recipeId}`"
-          :recipe="recipe"
-          :recipe-id="recipe.recipeId"
-          @item-click="(itemId: string) => emit('item-click', itemId)"
-          @overlay-state-change="handleOverlayStateChange"
-        />
-        <ThaumcraftArcaneUI
-          v-else-if="uiConfig.uiType === 'thaumcraft_arcane'"
-          :key="`thaum-arcane-${recipe.recipeId}`"
-          :recipe="recipe"
-          :ui-config="uiConfig"
-          @item-click="(itemId: string) => emit('item-click', itemId)"
-        />
-        <ThaumcraftInfusionUI
-          v-else-if="uiConfig.uiType === 'thaumcraft_infusion'"
-          :key="`thaum-infusion-${recipe.recipeId}`"
-          :recipe="recipe"
-          :ui-config="uiConfig"
-          @item-click="(itemId: string) => emit('item-click', itemId)"
-        />
-        <ThaumcraftCrucibleUI
-          v-else-if="uiConfig.uiType === 'thaumcraft_crucible'"
-          :key="`thaum-crucible-${recipe.recipeId}`"
-          :recipe="recipe"
-          :ui-config="uiConfig"
-          @item-click="(itemId: string) => emit('item-click', itemId)"
-        />
-        <component
-          v-else
-          :is="currentComponent"
-          :key="`${displayedComponentName}-${recipe.recipeId}`"
-          :recipe="recipe"
-          :ui-config="uiConfig"
-          @item-click="(itemId: string) => emit('item-click', itemId)"
-        />
-      </Transition>
+      <NEIRecipeDisplay
+        v-if="shouldUseDetailedCrafting"
+        ref="detailedCraftingRef"
+        :recipe="recipe"
+        :recipe-id="recipe.recipeId"
+        @item-click="(itemId: string) => emit('item-click', itemId)"
+        @overlay-state-change="handleOverlayStateChange"
+      />
+      <ThaumcraftArcaneUI
+        v-else-if="uiConfig.uiType === 'thaumcraft_arcane'"
+        :recipe="recipe"
+        :ui-config="uiConfig"
+        @item-click="(itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => emit('item-click', itemId, options)"
+      />
+      <ThaumcraftInfusionUI
+        v-else-if="uiConfig.uiType === 'thaumcraft_infusion'"
+        :recipe="recipe"
+        :ui-config="uiConfig"
+        @item-click="(itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => emit('item-click', itemId, options)"
+      />
+      <ThaumcraftCrucibleUI
+        v-else-if="uiConfig.uiType === 'thaumcraft_crucible'"
+        :recipe="recipe"
+        :ui-config="uiConfig"
+        @item-click="(itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => emit('item-click', itemId, options)"
+      />
+      <ThaumcraftAspectUI
+        v-else-if="uiConfig.uiType === 'thaumcraft_aspect'"
+        :recipe="recipe"
+        :ui-config="uiConfig"
+        @item-click="(itemId: string) => emit('item-click', itemId)"
+      />
+      <component
+        v-else
+        :is="currentComponent"
+        :recipe="recipe"
+        :ui-config="uiConfig"
+        @item-click="(itemId: string) => emit('item-click', itemId)"
+      />
     </div>
 
   </div>
@@ -411,18 +412,6 @@ if (isDev && typeof window !== 'undefined') {
   align-items: center;
   justify-content: center;
 }
-
-.ui-morph-enter-active,
-.ui-morph-leave-active {
-  transition: opacity 180ms ease, transform 180ms ease;
-}
-
-.ui-morph-enter-from,
-.ui-morph-leave-to {
-  opacity: 0;
-  transform: translateY(4px) scale(0.996);
-}
-
 
 .debug-toggle {
   position: absolute;
