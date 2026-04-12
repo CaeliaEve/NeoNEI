@@ -9,16 +9,90 @@ export interface ResolvedSlot {
 interface RawSlotLike {
   itemId?: unknown;
   count?: unknown;
+  stackSize?: unknown;
+  item?: unknown;
+  items?: unknown;
 }
 
 function toCandidate(slotLike: RawSlotLike | null | undefined): { itemId: string; count: number } | null {
-  if (!slotLike || typeof slotLike.itemId !== 'string' || slotLike.itemId.length === 0) {
+  if (!slotLike) {
     return null;
   }
-  return {
-    itemId: slotLike.itemId,
-    count: normalizeCount(slotLike.count),
-  };
+  if (typeof slotLike.itemId === 'string' && slotLike.itemId.length > 0) {
+    return {
+      itemId: slotLike.itemId,
+      count: normalizeCount(slotLike.count ?? slotLike.stackSize),
+    };
+  }
+  if (
+    typeof slotLike.item === 'object' &&
+    slotLike.item !== null &&
+    typeof (slotLike.item as RawSlotLike).itemId === 'string' &&
+    ((slotLike.item as RawSlotLike).itemId as string).length > 0
+  ) {
+    return {
+      itemId: (slotLike.item as RawSlotLike).itemId as string,
+      count: normalizeCount(slotLike.count ?? slotLike.stackSize),
+    };
+  }
+  return null;
+}
+
+function collectFirstCandidate(node: unknown): { itemId: string; count: number } | null {
+  if (!node) return null;
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const candidate = collectFirstCandidate(child);
+      if (candidate) return candidate;
+    }
+    return null;
+  }
+  if (typeof node !== 'object') return null;
+  const record = node as RawSlotLike;
+  const direct = toCandidate(record);
+  if (direct) return direct;
+  if (Array.isArray(record.items)) return collectFirstCandidate(record.items);
+  if (record.item) return collectFirstCandidate(record.item);
+  return null;
+}
+
+function collectAllCandidates(node: unknown, output: Array<{ itemId: string; count: number }>): void {
+  if (!node) return;
+  if (Array.isArray(node)) {
+    for (const child of node) collectAllCandidates(child, output);
+    return;
+  }
+  if (typeof node !== 'object') return;
+
+  const record = node as RawSlotLike;
+  const direct = toCandidate(record);
+  if (direct) {
+    output.push(direct);
+    return;
+  }
+
+  if (Array.isArray(record.items)) {
+    const first = collectFirstCandidate(record.items);
+    if (first) output.push(first);
+    return;
+  }
+
+  if (record.item) {
+    collectAllCandidates(record.item, output);
+  }
+}
+
+function uniqueSlots(slots: Array<{ itemId: string; count: number }>): Array<{ itemId: string; count: number }> {
+  const seen = new Set<string>();
+  const result: Array<{ itemId: string; count: number }> = [];
+  for (const slot of slots) {
+    const key = `${slot.itemId}|${slot.count}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      result.push(slot);
+    }
+  }
+  return result;
 }
 
 function normalizeCount(value: unknown): number {
@@ -37,26 +111,7 @@ function getInputSource(recipe: Recipe): unknown {
 }
 
 function collectInputCandidates(node: unknown, output: Array<{ itemId: string; count: number }>): void {
-  if (!node) {
-    return;
-  }
-
-  if (Array.isArray(node)) {
-    for (const child of node) {
-      collectInputCandidates(child, output);
-    }
-    return;
-  }
-
-  if (typeof node === 'object') {
-    const slot = node as RawSlotLike;
-    if (typeof slot.itemId === 'string' && slot.itemId.length > 0) {
-      output.push({
-        itemId: slot.itemId,
-        count: normalizeCount(slot.count),
-      });
-    }
-  }
+  collectAllCandidates(node, output);
 }
 
 async function resolveSlots(slots: Array<{ itemId: string; count: number }>): Promise<ResolvedSlot[]> {
@@ -75,7 +130,7 @@ async function resolveSlots(slots: Array<{ itemId: string; count: number }>): Pr
 export async function buildInputSlots(recipe: Recipe): Promise<ResolvedSlot[]> {
   const slots: Array<{ itemId: string; count: number }> = [];
   collectInputCandidates(getInputSource(recipe), slots);
-  return resolveSlots(slots);
+  return resolveSlots(uniqueSlots(slots).filter((slot) => slot.itemId));
 }
 
 export async function buildPrimaryInputSlots(recipe: Recipe): Promise<ResolvedSlot[]> {
@@ -85,6 +140,8 @@ export async function buildPrimaryInputSlots(recipe: Recipe): Promise<ResolvedSl
 
   for (const row of rows) {
     if (!Array.isArray(row)) {
+      const chosen = collectFirstCandidate(row);
+      if (chosen) selected.push(chosen);
       continue;
     }
 
@@ -93,20 +150,14 @@ export async function buildPrimaryInputSlots(recipe: Recipe): Promise<ResolvedSl
         continue;
       }
 
-      let chosen: { itemId: string; count: number } | null = null;
-      if (Array.isArray(cell)) {
-        chosen = toCandidate(cell[0] as RawSlotLike | undefined);
-      } else if (typeof cell === 'object') {
-        chosen = toCandidate(cell as RawSlotLike);
-      }
-
+      const chosen = collectFirstCandidate(cell);
       if (chosen) {
         selected.push(chosen);
       }
     }
   }
 
-  return resolveSlots(selected);
+  return resolveSlots(uniqueSlots(selected).filter((slot) => slot.itemId));
 }
 
 export async function buildFirstInputSlotsPerRow(recipe: Recipe): Promise<ResolvedSlot[]> {
@@ -125,24 +176,19 @@ export async function buildFirstInputSlotsPerRow(recipe: Recipe): Promise<Resolv
         continue;
       }
 
-      if (Array.isArray(cell)) {
-        const first = cell[0] as RawSlotLike | undefined;
-        chosen = toCandidate(first);
-      } else if (typeof cell === 'object') {
-        chosen = toCandidate(cell as RawSlotLike);
-      }
+      chosen = collectFirstCandidate(cell);
 
       if (chosen) {
         break;
       }
     }
 
-    if (chosen) {
+    if (chosen && chosen.itemId) {
       selected.push(chosen);
     }
   }
 
-  return resolveSlots(selected);
+  return resolveSlots(uniqueSlots(selected).filter((slot) => slot.itemId));
 }
 
 export async function buildOutputSlots(recipe: Recipe, maxCount?: number): Promise<ResolvedSlot[]> {

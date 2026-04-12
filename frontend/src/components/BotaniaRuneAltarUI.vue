@@ -7,55 +7,21 @@ import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composa
 import { readPositiveIntegerMeta } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
-interface Props {
-  recipe: Recipe;
-  uiConfig?: UITypeConfig;
-}
-
-interface Emits {
-  (e: 'item-click', itemId: string): void;
-}
+interface Props { recipe: Recipe; uiConfig?: UITypeConfig }
+interface Emits { (e: 'item-click', itemId: string): void }
 
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 const { playClick } = useSound();
-
-const centerSlot = ref<ResolvedSlot | null>(null);
-const ringSlots = ref<ResolvedSlot[]>([]);
-const outputSlot = ref<ResolvedSlot | null>(null);
+const inputs = ref<ResolvedSlot[]>([]);
+const outputs = ref<ResolvedSlot[]>([]);
 const manaCost = ref<number | null>(null);
-const manaCapacity = ref<number | null>(null);
+const manaText = computed(() => (manaCost.value ? `${manaCost.value.toLocaleString()} MANA` : 'RUNE INFUSION'));
 
-const manaPercent = computed(() => {
-  if (!manaCost.value || !manaCapacity.value || manaCapacity.value <= 0) return 0;
-  return Math.max(0, Math.min((manaCost.value / manaCapacity.value) * 100, 100));
-});
-
-const manaLabel = computed(() => {
-  if (!manaCost.value) return '--';
-  return manaCost.value.toLocaleString();
-});
-
-function getRunePosition(index: number, total: number, radius: number) {
-  const safeTotal = Math.max(total, 1);
-  const angle = (Math.PI * 2 * index) / safeTotal - Math.PI / 2;
-  return {
-    left: `calc(50% + ${Math.cos(angle) * radius}px)`,
-    top: `calc(50% + ${Math.sin(angle) * radius}px)`,
-    transform: 'translate(-50%, -50%)',
-  };
-}
-
-async function initRuneAltar() {
-  const allInputs = await buildInputSlots(props.recipe);
-  centerSlot.value = allInputs.length > 0 ? allInputs[0] : null;
-  ringSlots.value = allInputs.slice(1);
-
-  const [firstOutput] = await buildOutputSlots(props.recipe, 1);
-  outputSlot.value = firstOutput ?? null;
-
+async function initRune() {
+  inputs.value = (await buildInputSlots(props.recipe)).slice(0, 12);
+  outputs.value = await buildOutputSlots(props.recipe, 3);
   manaCost.value = readPositiveIntegerMeta(props.recipe, ['manaCost', 'mana', 'requiredMana', 'cost']);
-  manaCapacity.value = readPositiveIntegerMeta(props.recipe, ['manaCapacity', 'capacity', 'altarMana']);
 }
 
 function onItemClick(itemId: string) {
@@ -63,331 +29,123 @@ function onItemClick(itemId: string) {
   emit('item-click', itemId);
 }
 
-onMounted(() => {
-  void initRuneAltar();
-});
+function imageError(event: Event) {
+  (event.target as HTMLImageElement).src = '/placeholder.png';
+}
 
-watch(
-  () => props.recipe,
-  () => {
-    void initRuneAltar();
-  },
-  { deep: true },
-);
+function orbitStyle(index: number, total: number) {
+  const safeTotal = Math.max(total, 1);
+  const angle = (Math.PI * 2 * index) / safeTotal - Math.PI / 2;
+  const radius = total > 8 ? 174 : 154;
+  return {
+    left: `calc(50% + ${Math.cos(angle) * radius}px)`,
+    top: `calc(50% + ${Math.sin(angle) * radius}px)`,
+  };
+}
+
+onMounted(() => void initRune());
+watch(() => props.recipe, () => void initRune(), { deep: true });
 </script>
 
 <template>
-  <div class="ritual-ui ritual-rune">
-    <div class="scene-bg" aria-hidden="true">
-      <div class="mist mist-a" />
-      <div class="mist mist-b" />
-      <div class="scene-grid" />
-    </div>
+  <div class="rune-altar-ui">
+    <section class="altar">
+      <div class="rune-grid" />
+      <div class="rune-haze haze-a" />
+      <div class="rune-haze haze-b" />
+      <div class="rune-band band-outer" />
+      <div class="rune-band band-inner" />
+      <div class="material-flow flow-top" />
+      <div class="material-flow flow-upper-right" />
+      <div class="material-flow flow-lower-right" />
+      <div class="material-flow flow-bottom" />
+      <div class="material-flow flow-lower-left" />
+      <div class="material-flow flow-upper-left" />
 
-    <section class="panel">
-      <div class="panel-title">INPUT</div>
-      <RecipeItemTooltip
-        v-if="centerSlot"
-        :item-id="centerSlot.itemId"
-        :count="centerSlot.count"
-        @click="onItemClick(centerSlot.itemId)"
-      >
-        <div class="slot">
-          <img :src="getImageUrl(centerSlot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-          <span v-if="centerSlot.count > 1" class="count">{{ centerSlot.count }}</span>
+      <div class="rune-core">
+        <div class="core-aura" />
+        <img :src="getImageUrl('i~Botania~runeAltar~0')" @error="imageError" />
+      </div>
+
+      <div class="input-orbit">
+        <div
+          v-for="(slot, index) in inputs"
+          :key="`${slot.itemId}-${index}`"
+          class="orbit-anchor"
+          :style="orbitStyle(index, inputs.length)"
+        >
+          <RecipeItemTooltip :item-id="slot.itemId" :count="slot.count">
+            <button class="slot input" type="button" @click.stop="onItemClick(slot.itemId)">
+              <img :src="getImageUrl(slot.itemId)" @error="imageError" />
+              <span v-if="slot.count > 1">{{ slot.count }}</span>
+            </button>
+          </RecipeItemTooltip>
         </div>
-      </RecipeItemTooltip>
-      <div v-else class="slot empty" />
+      </div>
+
+      <div class="altar-caption">RUNE ALTAR INSCRIPTION</div>
     </section>
 
-    <section class="ritual-core altar-core" aria-hidden="true">
-      <div class="ring outer" />
-      <div class="ring middle" />
-      <div class="ring inner" />
-      <div class="altar-glow" />
-      <div class="core-label">Rune Altar</div>
-
-      <div v-for="(slot, index) in ringSlots" :key="`rune-${slot.itemId}-${index}`" class="orbit-slot" :style="getRunePosition(index, ringSlots.length, 116)">
-        <RecipeItemTooltip
-          :item-id="slot.itemId"
-          :count="slot.count"
-          @click="onItemClick(slot.itemId)"
-        >
-          <div class="slot orbit">
-            <img :src="getImageUrl(slot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-            <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
-          </div>
+    <aside class="result-panel">
+      <div class="panel-title">INSCRIBED RUNE</div>
+      <div class="result-stack">
+        <RecipeItemTooltip v-for="slot in outputs" :key="slot.itemId" :item-id="slot.itemId" :count="slot.count">
+          <button class="slot output" type="button" @click.stop="onItemClick(slot.itemId)">
+            <img :src="getImageUrl(slot.itemId)" @error="imageError" />
+            <span v-if="slot.count > 1">{{ slot.count }}</span>
+          </button>
         </RecipeItemTooltip>
       </div>
-    </section>
-
-    <section class="panel panel-output">
-      <div class="panel-title panel-title-output">OUTPUT</div>
-      <RecipeItemTooltip
-        v-if="outputSlot"
-        :item-id="outputSlot.itemId"
-        :count="outputSlot.count"
-        @click="onItemClick(outputSlot.itemId)"
-      >
-        <div class="slot output">
-          <img :src="getImageUrl(outputSlot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-          <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
-        </div>
-      </RecipeItemTooltip>
-      <div v-else class="slot output empty" />
-    </section>
-
-    <section class="mana-bar-wrap">
-      <div class="mana-label">Mana</div>
-      <div class="mana-bar">
-        <div class="mana-fill" :style="{ width: `${manaPercent}%` }" />
-      </div>
-      <div class="mana-text">
-        {{ manaLabel }}
-        <span v-if="manaCapacity"> / {{ manaCapacity.toLocaleString() }}</span>
-      </div>
-    </section>
+      <div class="mana">{{ manaText }}</div>
+    </aside>
   </div>
 </template>
 
 <style scoped>
-.ritual-ui {
-  --slot: 54px;
-  position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 14px;
-  align-items: center;
-  width: min(980px, 100%);
-  padding: 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.96), rgba(7, 12, 18, 0.98)),
-    radial-gradient(circle at top, rgba(74, 222, 128, 0.1), transparent 40%);
-  overflow: visible;
-  box-shadow:
-    0 18px 50px rgba(2, 8, 23, 0.38),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.scene-bg { position: absolute; inset: 0; pointer-events: none; }
-.mist {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(28px);
-  opacity: 0.24;
-}
-.mist-a { width: 260px; height: 180px; left: -30px; top: -30px; background: radial-gradient(circle, rgba(74, 222, 128, 0.34), transparent 72%); }
-.mist-b { width: 280px; height: 200px; right: -70px; bottom: -40px; background: radial-gradient(circle, rgba(110, 231, 183, 0.24), transparent 74%); }
-.scene-grid {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 18px 18px;
-  opacity: 0.18;
-}
-
-.panel {
-  position: relative;
-  z-index: 1;
-  padding: 18px 12px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background:
-    linear-gradient(180deg, rgba(18, 24, 32, 0.94), rgba(10, 14, 20, 0.98)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(2, 8, 23, 0.2);
-}
-
-.panel::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
-  pointer-events: none;
-}
-
-.panel-output { border-color: rgba(245, 208, 138, 0.24); }
-
-.panel-title {
-  position: absolute;
-  top: -9px;
-  left: 12px;
-  min-width: 96px;
-  padding: 4px 10px 3px 12px;
-  background:
-    linear-gradient(180deg, rgba(74, 80, 89, 0.98), rgba(54, 59, 67, 0.98)),
-    url('/textures/nei/catalyst_tab.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  border: 1px solid rgba(198, 207, 220, 0.24);
-  border-radius: 6px 6px 4px 4px;
-  color: #eef4fb;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
-  box-shadow: 0 4px 10px rgba(2, 8, 23, 0.22);
-  z-index: 1;
-}
-
-.panel-title-output {
-  border-color: rgba(245, 208, 138, 0.32);
-  color: #fff3da;
-}
-
-.ritual-core {
-  position: relative;
-  z-index: 1;
-  height: 280px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ring {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  border-radius: 50%;
-  border: 1px solid rgba(167, 243, 208, 0.26);
-  transform: translate(-50%, -50%);
-}
-
-.outer { width: 258px; height: 258px; border-style: dashed; animation: spin 20s linear infinite; }
-.middle { width: 220px; height: 220px; animation: spinReverse 14s linear infinite; }
-.inner { width: 160px; height: 160px; opacity: 0.65; animation: pulse 3s ease-in-out infinite; }
-
-.altar-glow {
-  width: 84px;
-  height: 84px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(204, 255, 229, 0.72), rgba(88, 224, 170, 0.34) 45%, rgba(9, 84, 70, 0.24));
-  box-shadow: inset 0 0 24px rgba(255, 255, 255, 0.2), 0 0 22px rgba(130, 244, 193, 0.22);
-  animation: breathe 2.6s ease-in-out infinite;
-}
-
-.core-label {
-  position: absolute;
-  bottom: 38px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(178, 255, 221, 0.24);
-  background: rgba(7, 27, 23, 0.75);
-  font-size: 12px;
-  color: #e6fff3;
-}
-
-.orbit-slot { position: absolute; }
-
-.slot {
-  width: var(--slot);
-  height: var(--slot);
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.88), rgba(6, 10, 16, 0.92)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%, 18px 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 6px 12px rgba(2, 8, 23, 0.28);
-}
-
-.slot:hover {
-  transform: scale(1.03);
-  border-color: rgba(74, 222, 128, 0.56);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 0 1px rgba(74, 222, 128, 0.12),
-    0 10px 18px rgba(22, 163, 74, 0.14);
-}
-
-.orbit {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-}
-
-.output {
-  width: 62px;
-  height: 62px;
-  border-color: rgba(245, 208, 138, 0.42);
-}
-
-.output:hover { border-color: rgba(245, 208, 138, 0.72); }
-.empty { opacity: 0.36; }
-.item-icon { width: 82%; height: 82%; object-fit: contain; image-rendering: pixelated; }
-.count {
-  position: absolute;
-  right: 3px;
-  bottom: 2px;
-  padding: 1px 3px;
-  border-radius: 4px;
-  background: rgba(15, 23, 42, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  font-size: 10px;
-  color: #fff;
-  text-shadow: 0 1px 1px rgba(15, 23, 42, 0.92);
-}
-
-.mana-bar-wrap {
-  grid-column: 1 / -1;
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(6, 25, 19, 0.62);
-}
-
-.mana-label { font-size: 12px; color: #dcfff0; }
-.mana-bar {
-  flex: 1;
-  height: 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.3);
-  background: rgba(3, 16, 12, 0.72);
-  overflow: hidden;
-}
-
-.mana-fill {
-  height: 100%;
-  background: linear-gradient(90deg, rgba(92, 230, 171, 0.9), rgba(167, 255, 227, 0.95));
-  box-shadow: 0 0 12px rgba(123, 243, 187, 0.32);
-  transition: width 0.5s ease;
-}
-
-.mana-text { font-size: 12px; color: #ecfff6; }
-
-@keyframes spin { from { transform: translate(-50%, -50%) rotate(0deg); } to { transform: translate(-50%, -50%) rotate(360deg); } }
-@keyframes spinReverse { from { transform: translate(-50%, -50%) rotate(360deg); } to { transform: translate(-50%, -50%) rotate(0deg); } }
-@keyframes pulse { 0%,100% { transform: scale(0.98); opacity: 0.56; } 50% { transform: scale(1.05); opacity: 0.95; } }
-@keyframes breathe { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-
-@media (max-width: 980px) {
-  .ritual-ui { grid-template-columns: 1fr; }
-  .ritual-core { height: 260px; }
-}
+.rune-altar-ui { width:min(1120px,calc(100vw - 64px)); min-height:540px; display:grid; grid-template-columns:minmax(720px,1fr) 210px; gap:0; align-items:stretch; padding:18px; border:1px solid rgba(133,255,188,.26); border-radius:24px; background:radial-gradient(circle at 38% 52%,rgba(80,255,170,.16),transparent 40%), radial-gradient(circle at 82% 24%,rgba(255,226,130,.11),transparent 28%), linear-gradient(180deg,#08130f,#04080d); box-shadow:0 22px 60px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.05); overflow:hidden; isolation:isolate; }
+.rune-altar-ui::before { content:''; position:absolute; inset:18px; border-radius:20px; pointer-events:none; z-index:0; background-image:linear-gradient(rgba(200,255,180,.032) 1px,transparent 1px), linear-gradient(90deg,rgba(200,255,180,.032) 1px,transparent 1px), radial-gradient(circle at 42% 50%,rgba(22,76,50,.45),rgba(5,13,12,.86) 68%,rgba(5,13,12,.92)); background-size:28px 28px,28px 28px,100% 100%; mask-image:radial-gradient(circle at 46% 50%,#000 0 68%,rgba(0,0,0,.72) 84%,transparent 102%); }
+.rune-altar-ui::after { content:none; }
+.rune-altar-ui { position:relative; }
+.altar { position:relative; z-index:1; min-height:502px; display:grid; place-items:center; border:0; border-radius:20px 0 0 20px; overflow:hidden; background:transparent; }
+.rune-grid { display:none; }
+.rune-haze { position:absolute; border-radius:50%; filter:blur(28px); opacity:.36; }
+.haze-a { width:300px; height:180px; left:18%; top:22%; background:rgba(118,255,150,.18); }
+.haze-b { width:280px; height:220px; right:18%; bottom:18%; background:rgba(78,255,205,.12); }
+.rune-band { position:absolute; border-radius:50%; pointer-events:none; mix-blend-mode:screen; }
+.band-outer { width:390px; height:390px; background:conic-gradient(from 12deg,rgba(216,255,150,.68) 0 7deg,transparent 7deg 25deg,rgba(104,255,186,.44) 25deg 31deg,transparent 31deg 52deg); -webkit-mask:radial-gradient(circle,transparent 0 68%,#000 69% 71%,transparent 72%); mask:radial-gradient(circle,transparent 0 68%,#000 69% 71%,transparent 72%); animation:runeTurn 28s linear infinite; opacity:.72; }
+.band-inner { width:270px; height:270px; background:conic-gradient(from 180deg,transparent 0 22deg,rgba(255,226,130,.52) 22deg 27deg,transparent 27deg 48deg,rgba(101,255,188,.34) 48deg 54deg); -webkit-mask:radial-gradient(circle,transparent 0 64%,#000 65% 68%,transparent 69%); mask:radial-gradient(circle,transparent 0 64%,#000 65% 68%,transparent 69%); animation:runeTurnReverse 22s linear infinite; opacity:.68; }
+.material-flow { position:absolute; z-index:3; width:9px; height:9px; border-radius:50%; background:radial-gradient(circle,rgba(255,246,172,.95),rgba(130,255,170,.48) 48%,rgba(86,255,210,.12) 72%,transparent); box-shadow:0 0 18px rgba(190,255,128,.42); pointer-events:none; mix-blend-mode:screen; }
+.flow-top { left:50%; top:20%; animation:flowTop 4.8s ease-in-out infinite; }
+.flow-upper-right { right:30%; top:34%; animation:flowUpperRight 5.4s ease-in-out infinite .55s; }
+.flow-lower-right { right:30%; bottom:34%; animation:flowLowerRight 5s ease-in-out infinite 1.1s; }
+.flow-bottom { left:50%; bottom:20%; animation:flowBottom 5.6s ease-in-out infinite 1.65s; }
+.flow-lower-left { left:30%; bottom:34%; animation:flowLowerLeft 5.2s ease-in-out infinite 2.2s; }
+.flow-upper-left { left:30%; top:34%; animation:flowUpperLeft 5.8s ease-in-out infinite 2.75s; }
+.rune-core { position:relative; z-index:3; width:132px; height:132px; display:grid; place-items:center; border-radius:42%; background:radial-gradient(circle,rgba(220,255,168,.28),rgba(18,78,48,.42)); box-shadow:0 0 42px rgba(120,255,180,.24), inset 0 0 28px rgba(255,255,255,.08); }
+.core-aura { position:absolute; width:210px; height:210px; border-radius:50%; background:radial-gradient(circle,rgba(200,255,150,.3),rgba(118,255,160,.13) 42%,transparent 70%); animation:coreBreathe 4.8s ease-in-out infinite; }
+.rune-core img { position:relative; z-index:2; width:86px; height:86px; image-rendering:pixelated; object-fit:contain; filter:drop-shadow(0 0 14px rgba(180,255,180,.42)); }
+.input-orbit { position:absolute; inset:0; z-index:4; pointer-events:none; }
+.orbit-anchor { position:absolute; transform:translate(-50%,-50%); pointer-events:auto; }
+.slot { position:relative; width:62px; height:62px; border:1px solid rgba(142,255,190,.38); border-radius:50%; background:radial-gradient(circle at 44% 34%,rgba(42,110,64,.72),transparent 62%), linear-gradient(180deg,#0e1c15,#06100d); display:grid; place-items:center; cursor:pointer; box-shadow:0 12px 22px rgba(0,0,0,.28), 0 0 16px rgba(90,255,165,.08), inset 0 1px 0 rgba(255,255,255,.07); }
+.slot:hover { border-color:rgba(226,255,160,.86); box-shadow:0 0 26px rgba(184,247,138,.32), 0 0 0 2px rgba(97,255,165,.08), inset 0 1px 0 rgba(255,255,255,.12); }
+.slot img { width:44px; height:44px; object-fit:contain; image-rendering:pixelated; }
+.slot span { position:absolute; right:2px; bottom:1px; color:#fff; font-size:10px; text-shadow:0 1px 2px #000; }
+.altar-caption { position:absolute; left:50%; bottom:22px; transform:translateX(-50%); color:#e7ffd5; font-size:12px; font-weight:900; letter-spacing:.18em; text-shadow:0 0 18px rgba(184,247,138,.35); }
+.result-panel { position:relative; z-index:1; display:grid; gap:14px; justify-items:center; align-content:center; padding:20px 20px 20px 34px; border:0; border-radius:0 20px 20px 0; background:transparent; box-shadow:none; }
+.result-panel::before,
+.result-panel::after { content:none; }
+.panel-title { color:#d9ffb3; font-size:11px; font-weight:900; letter-spacing:.18em; text-align:center; }
+.result-stack { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; }
+.output { width:76px; height:76px; border-color:rgba(250,204,21,.55); border-radius:18px; }
+.output img { width:56px; height:56px; }
+.mana { color:rgba(239,255,216,.78); font-size:12px; font-weight:800; letter-spacing:.12em; text-align:center; }
+@keyframes runeTurn { from { transform:rotate(0deg); } to { transform:rotate(360deg); } }
+@keyframes runeTurnReverse { from { transform:rotate(360deg); } to { transform:rotate(0deg); } }
+@keyframes flowTop { 0%,100% { opacity:0; transform:translate(0,0) scale(.45); } 18% { opacity:.9; } 72% { opacity:.75; transform:translate(0,132px) scale(1); } 100% { opacity:0; transform:translate(0,164px) scale(.24); } }
+@keyframes flowBottom { 0%,100% { opacity:0; transform:translate(0,0) scale(.45); } 18% { opacity:.9; } 72% { opacity:.75; transform:translate(0,-132px) scale(1); } 100% { opacity:0; transform:translate(0,-164px) scale(.24); } }
+@keyframes flowUpperRight { 0%,100% { opacity:0; transform:translate(0,0) scale(.45); } 18% { opacity:.9; } 72% { opacity:.75; transform:translate(-118px,78px) scale(1); } 100% { opacity:0; transform:translate(-148px,98px) scale(.24); } }
+@keyframes flowLowerRight { 0%,100% { opacity:0; transform:translate(0,0) scale(.45); } 18% { opacity:.9; } 72% { opacity:.75; transform:translate(-118px,-78px) scale(1); } 100% { opacity:0; transform:translate(-148px,-98px) scale(.24); } }
+@keyframes flowUpperLeft { 0%,100% { opacity:0; transform:translate(0,0) scale(.45); } 18% { opacity:.9; } 72% { opacity:.75; transform:translate(118px,78px) scale(1); } 100% { opacity:0; transform:translate(148px,98px) scale(.24); } }
+@keyframes flowLowerLeft { 0%,100% { opacity:0; transform:translate(0,0) scale(.45); } 18% { opacity:.9; } 72% { opacity:.75; transform:translate(118px,-78px) scale(1); } 100% { opacity:0; transform:translate(148px,-98px) scale(.24); } }
+@keyframes coreBreathe { 0%,100% { opacity:.34; transform:scale(.86); } 44%,58% { opacity:1; transform:scale(1.16); } 72% { opacity:.48; transform:scale(.96); } }
 </style>

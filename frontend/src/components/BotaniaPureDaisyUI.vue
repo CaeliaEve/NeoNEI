@@ -6,305 +6,90 @@ import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
-interface Props {
-  recipe: Recipe;
-  uiConfig?: UITypeConfig;
-}
-
-interface Emits {
-  (e: 'item-click', itemId: string): void;
-}
+interface Props { recipe: Recipe; uiConfig?: UITypeConfig }
+interface Emits { (e: 'item-click', itemId: string): void }
 
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 const { playClick } = useSound();
-
-const inputSlot = ref<ResolvedSlot | null>(null);
-const outputSlot = ref<ResolvedSlot | null>(null);
+const inputs = ref<ResolvedSlot[]>([]);
+const outputs = ref<ResolvedSlot[]>([]);
 
 async function initPureDaisy() {
-  const inputs = await buildInputSlots(props.recipe);
-  inputSlot.value = inputs.length > 0 ? inputs[0] : null;
-  const outputs = await buildOutputSlots(props.recipe, 1);
-  outputSlot.value = outputs.length > 0 ? outputs[0] : null;
+  inputs.value = (await buildInputSlots(props.recipe)).slice(0, 4);
+  outputs.value = await buildOutputSlots(props.recipe, 3);
 }
 
-function onItemClick(itemId: string) {
-  playClick();
-  emit('item-click', itemId);
-}
+function onItemClick(itemId: string) { playClick(); emit('item-click', itemId); }
+function imageError(event: Event) { (event.target as HTMLImageElement).src = '/placeholder.png'; }
 
-onMounted(() => {
-  void initPureDaisy();
-});
-
-watch(
-  () => props.recipe,
-  () => {
-    void initPureDaisy();
-  },
-  { deep: true },
-);
+onMounted(() => void initPureDaisy());
+watch(() => props.recipe, () => void initPureDaisy(), { deep: true });
 </script>
 
 <template>
-  <div class="ritual-ui ritual-daisy">
-    <div class="scene-bg" aria-hidden="true">
-      <div class="mist mist-a" />
-      <div class="mist mist-b" />
-      <div class="scene-grid" />
-    </div>
-
-    <section class="panel">
-      <div class="panel-title">INPUT</div>
-      <RecipeItemTooltip
-        v-if="inputSlot"
-        :item-id="inputSlot.itemId"
-        :count="inputSlot.count"
-        @click="onItemClick(inputSlot.itemId)"
-      >
-        <div class="slot">
-          <img :src="getImageUrl(inputSlot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-          <span v-if="inputSlot.count > 1" class="count">{{ inputSlot.count }}</span>
-        </div>
-      </RecipeItemTooltip>
-      <div v-else class="slot empty" />
+  <div class="pure-daisy-ui">
+    <div class="garden-field" />
+    <section class="daisy-plot">
+      <div class="soil-ring" />
+      <div class="petal petal-a" />
+      <div class="petal petal-b" />
+      <div class="petal petal-c" />
+      <div class="petal petal-d" />
+      <div class="growth-mote mote-a" />
+      <div class="growth-mote mote-b" />
+      <div class="daisy-center">
+        <img :src="getImageUrl('i~Botania~specialFlower~0~BVmnjzvOML-Ap_zxeMIMOw==')" @error="imageError" />
+      </div>
     </section>
 
-    <section class="ritual-core daisy-core" aria-hidden="true">
-      <div class="ring outer" />
-      <div class="ring inner" />
-      <div class="daisy-flower" />
-      <div class="daisy-seed" />
-      <div class="core-label">Pure Daisy</div>
-    </section>
-
-    <section class="panel panel-output">
-      <div class="panel-title panel-title-output">OUTPUT</div>
-      <RecipeItemTooltip
-        v-if="outputSlot"
-        :item-id="outputSlot.itemId"
-        :count="outputSlot.count"
-        @click="onItemClick(outputSlot.itemId)"
-      >
-        <div class="slot output">
-          <img :src="getImageUrl(outputSlot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-          <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
-        </div>
-      </RecipeItemTooltip>
-      <div v-else class="slot output empty" />
+    <section class="conversion">
+      <div class="lane-title">NATURAL CONVERSION</div>
+      <div class="lane">
+        <RecipeItemTooltip v-for="slot in inputs" :key="slot.itemId" :item-id="slot.itemId" :count="slot.count">
+          <button class="slot" type="button" @click.stop="onItemClick(slot.itemId)">
+            <img :src="getImageUrl(slot.itemId)" @error="imageError" />
+            <span v-if="slot.count > 1">{{ slot.count }}</span>
+          </button>
+        </RecipeItemTooltip>
+        <div class="conversion-bloom" aria-hidden="true" />
+        <RecipeItemTooltip v-for="slot in outputs" :key="slot.itemId" :item-id="slot.itemId" :count="slot.count">
+          <button class="slot output" type="button" @click.stop="onItemClick(slot.itemId)">
+            <img :src="getImageUrl(slot.itemId)" @error="imageError" />
+            <span v-if="slot.count > 1">{{ slot.count }}</span>
+          </button>
+        </RecipeItemTooltip>
+      </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.ritual-ui {
-  --slot: 56px;
-  position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 14px;
-  align-items: center;
-  width: min(980px, 100%);
-  padding: 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.96), rgba(7, 12, 18, 0.98)),
-    radial-gradient(circle at top, rgba(244, 114, 182, 0.08), transparent 40%);
-  overflow: visible;
-  box-shadow:
-    0 18px 50px rgba(2, 8, 23, 0.38),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.scene-bg { position: absolute; inset: 0; pointer-events: none; }
-.mist {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(28px);
-  opacity: 0.24;
-}
-.mist-a { width: 260px; height: 180px; left: -30px; top: -30px; background: radial-gradient(circle, rgba(244, 114, 182, 0.4), transparent 72%); }
-.mist-b { width: 280px; height: 200px; right: -70px; bottom: -40px; background: radial-gradient(circle, rgba(125, 211, 252, 0.24), transparent 74%); }
-.scene-grid {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 18px 18px;
-  opacity: 0.16;
-}
-
-.panel {
-  position: relative;
-  z-index: 1;
-  padding: 18px 12px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background:
-    linear-gradient(180deg, rgba(18, 24, 32, 0.94), rgba(10, 14, 20, 0.98)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(2, 8, 23, 0.2);
-}
-
-.panel::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
-  pointer-events: none;
-}
-
-.panel-output { border-color: rgba(245, 208, 138, 0.24); }
-
-.panel-title {
-  position: absolute;
-  top: -9px;
-  left: 12px;
-  min-width: 86px;
-  padding: 4px 10px 3px 12px;
-  background:
-    linear-gradient(180deg, rgba(74, 80, 89, 0.98), rgba(54, 59, 67, 0.98)),
-    url('/textures/nei/catalyst_tab.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  border: 1px solid rgba(198, 207, 220, 0.24);
-  border-radius: 6px 6px 4px 4px;
-  color: #eef4fb;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
-  box-shadow: 0 4px 10px rgba(2, 8, 23, 0.22);
-  z-index: 1;
-}
-
-.panel-title-output {
-  border-color: rgba(245, 208, 138, 0.32);
-  color: #fff3da;
-}
-
-.ritual-core {
-  position: relative;
-  z-index: 1;
-  height: 206px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid rgba(244, 114, 182, 0.2);
-}
-.outer { width: 188px; height: 188px; border-style: dashed; animation: spin 14s linear infinite; }
-.inner { width: 150px; height: 150px; animation: spinReverse 10s linear infinite; }
-
-.daisy-flower {
-  width: 104px;
-  height: 104px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(255, 255, 255, 0.94), rgba(255, 207, 230, 0.72) 58%, transparent 70%),
-    radial-gradient(circle at 0% 50%, rgba(255, 255, 255, 0.92), rgba(255, 207, 230, 0.7) 58%, transparent 70%),
-    radial-gradient(circle at 100% 50%, rgba(255, 255, 255, 0.92), rgba(255, 207, 230, 0.7) 58%, transparent 70%),
-    radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.94), rgba(255, 207, 230, 0.72) 58%, transparent 70%);
-  filter: drop-shadow(0 0 18px rgba(255, 194, 227, 0.24));
-  animation: pulse 2.8s ease-in-out infinite;
-}
-
-.daisy-seed {
-  position: absolute;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 239, 170, 0.95), rgba(255, 197, 105, 0.72));
-  box-shadow: 0 0 12px rgba(255, 211, 146, 0.28);
-}
-
-.core-label {
-  position: absolute;
-  bottom: 14px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(244, 114, 182, 0.24);
-  background: rgba(34, 25, 47, 0.72);
-  color: #ffeef9;
-  font-size: 12px;
-}
-
-.slot {
-  width: var(--slot);
-  height: var(--slot);
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.88), rgba(6, 10, 16, 0.92)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%, 18px 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 6px 12px rgba(2, 8, 23, 0.28);
-}
-
-.slot:hover {
-  transform: translateY(-1px);
-  border-color: rgba(244, 114, 182, 0.56);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 0 1px rgba(244, 114, 182, 0.12),
-    0 10px 18px rgba(190, 24, 93, 0.12);
-}
-
-.slot.output {
-  width: 62px;
-  height: 62px;
-  border-color: rgba(245, 208, 138, 0.42);
-}
-
-.slot.output:hover {
-  border-color: rgba(245, 208, 138, 0.72);
-}
-
-.empty { opacity: 0.38; }
-.item-icon { width: 82%; height: 82%; object-fit: contain; image-rendering: pixelated; }
-.count {
-  position: absolute;
-  right: 3px;
-  bottom: 2px;
-  padding: 1px 3px;
-  border-radius: 4px;
-  background: rgba(15, 23, 42, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  font-size: 10px;
-  color: #fff;
-  text-shadow: 0 1px 1px rgba(15, 23, 42, 0.92);
-}
-
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes spinReverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
-@keyframes pulse { 0%,100% { transform: scale(0.98); } 50% { transform: scale(1.06); } }
-
-@media (max-width: 980px) {
-  .ritual-ui { grid-template-columns: 1fr; }
-  .ritual-core { height: 190px; }
-}
+.pure-daisy-ui { position:relative; width:min(980px,calc(100vw - 64px)); min-height:430px; display:grid; grid-template-columns:340px 1fr; gap:0; align-items:stretch; padding:18px; border:1px solid rgba(255,220,236,.24); border-radius:24px; background:radial-gradient(circle at 28% 45%,rgba(255,220,236,.18),transparent 36%), radial-gradient(circle at 80% 28%,rgba(190,255,180,.1),transparent 30%), linear-gradient(180deg,#10141a,#05080d); box-shadow:0 22px 60px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.05); overflow:hidden; isolation:isolate; }
+.garden-field { position:absolute; inset:18px; z-index:0; border-radius:20px; pointer-events:none; background-image:linear-gradient(rgba(255,240,248,.026) 1px,transparent 1px), linear-gradient(90deg,rgba(255,240,248,.026) 1px,transparent 1px), radial-gradient(circle at 32% 50%,rgba(50,120,70,.4),rgba(6,14,12,.9) 70%); background-size:30px 30px,30px 30px,100% 100%; mask-image:radial-gradient(circle at 40% 50%,#000 0 68%,rgba(0,0,0,.7) 86%,transparent 105%); }
+.daisy-plot, .conversion { position:relative; z-index:1; }
+.daisy-plot { min-height:394px; display:grid; place-items:center; overflow:hidden; border-radius:20px 0 0 20px; }
+.soil-ring { position:absolute; width:250px; height:250px; border-radius:50%; border:1px dashed rgba(255,240,248,.18); box-shadow:0 0 28px rgba(255,210,236,.12); animation:soilBreathe 7s ease-in-out infinite; }
+.petal { position:absolute; width:128px; height:58px; border-radius:999px; background:linear-gradient(90deg,rgba(255,255,255,.78),rgba(255,190,230,.26),transparent); filter:drop-shadow(0 0 14px rgba(255,220,236,.12)); animation:petalPulse 6.2s ease-in-out infinite; }
+.petal-a { transform:translateY(-66px) rotate(90deg); }
+.petal-b { transform:translateY(66px) rotate(90deg); animation-delay:1.1s; }
+.petal-c { transform:translateX(-66px); animation-delay:1.8s; }
+.petal-d { transform:translateX(66px); animation-delay:2.5s; }
+.growth-mote { position:absolute; width:9px; height:9px; border-radius:50%; background:radial-gradient(circle,rgba(255,244,180,.96),rgba(165,255,180,.45),transparent 74%); box-shadow:0 0 16px rgba(255,220,160,.34); animation:growthDrift 6s ease-in-out infinite; }
+.mote-a { left:28%; top:34%; } .mote-b { right:26%; bottom:34%; animation-delay:1.6s; }
+.daisy-center { position:relative; z-index:2; width:92px; height:92px; border-radius:50%; background:radial-gradient(circle,#ffeaa0,#d89643); display:grid; place-items:center; box-shadow:0 0 26px rgba(255,210,140,.32), inset 0 1px 0 rgba(255,255,255,.2); }
+.daisy-center img { width:60px; height:60px; object-fit:contain; image-rendering:pixelated; }
+.conversion { display:grid; align-content:center; padding:22px 28px; }
+.lane-title { margin-bottom:22px; color:#ffd8ee; font-size:11px; font-weight:900; letter-spacing:.2em; }
+.lane { display:flex; align-items:center; gap:16px; flex-wrap:wrap; }
+.conversion-bloom { width:54px; height:54px; border-radius:50%; background:radial-gradient(circle,rgba(255,240,180,.42),rgba(168,255,190,.18) 48%,transparent 72%); animation:conversionPulse 4.4s ease-in-out infinite; }
+.slot { position:relative; width:66px; height:66px; border-radius:16px; border:1px solid rgba(255,210,236,.32); background:radial-gradient(circle at 44% 35%,rgba(90,58,82,.52),transparent 62%), linear-gradient(180deg,#10141d,#070b12); display:grid; place-items:center; cursor:pointer; box-shadow:0 12px 22px rgba(0,0,0,.25), inset 0 1px 0 rgba(255,255,255,.07); }
+.slot:hover { border-color:rgba(255,240,248,.78); box-shadow:0 0 22px rgba(255,210,236,.24), inset 0 1px 0 rgba(255,255,255,.12); }
+.slot img { width:48px; height:48px; object-fit:contain; image-rendering:pixelated; }
+.slot span { position:absolute; right:3px; bottom:2px; color:white; font-size:10px; text-shadow:0 1px 2px #000; }
+.output { border-color:rgba(250,204,21,.48); }
+@keyframes soilBreathe { 0%,100% { opacity:.26; transform:scale(.96); } 50% { opacity:.72; transform:scale(1.05); } }
+@keyframes petalPulse { 0%,100% { opacity:.54; } 50% { opacity:.92; } }
+@keyframes growthDrift { 0%,100% { opacity:.24; transform:translateY(0) scale(.7); } 50% { opacity:.9; transform:translateY(-16px) scale(1.05); } }
+@keyframes conversionPulse { 0%,100% { opacity:.3; transform:scale(.82); } 50% { opacity:.86; transform:scale(1.1); } }
 </style>
