@@ -117,6 +117,8 @@ const getCategoryMachineIcon = (recipe: Recipe, getImagePath: (itemId: string) =
       return getImagePath('i~Botania~runeAltar~0');
     case 'botania_pure_daisy':
       return getImagePath('i~Botania~specialFlower~0~BVmnjzvOML-Ap_zxeMIMOw==');
+    case 'botania_terra_plate':
+      return getImagePath('i~Botania~terraPlate~0');
     default:
       break;
   }

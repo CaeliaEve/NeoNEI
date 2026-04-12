@@ -1,363 +1,112 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { onMounted, ref, watch } from 'vue';
 import { getImageUrl, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
-import { readPositiveIntegerMeta } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
-interface Props {
-  recipe: Recipe;
-  uiConfig?: UITypeConfig;
-}
-
-interface Emits {
-  (e: 'item-click', itemId: string): void;
-}
+interface Props { recipe: Recipe; uiConfig?: UITypeConfig }
+interface Emits { (e: 'item-click', itemId: string): void }
 
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 const { playClick } = useSound();
-
-const inputSlots = ref<ResolvedSlot[]>([]);
-const outputSlots = ref<ResolvedSlot[]>([]);
-const manaCost = ref<number | null>(null);
-
-const inputColumns = computed(() => (inputSlots.value.length > 6 ? 4 : 3));
-const outputColumns = computed(() => (outputSlots.value.length > 4 ? 3 : 2));
-
-const manaLabel = computed(() => (
-  manaCost.value ? `${manaCost.value.toLocaleString()} MANA` : '--'
-));
+const inputs = ref<ResolvedSlot[]>([]);
+const outputs = ref<ResolvedSlot[]>([]);
 
 async function initElven() {
-  inputSlots.value = await buildInputSlots(props.recipe);
-  outputSlots.value = await buildOutputSlots(props.recipe, 6);
-  manaCost.value = readPositiveIntegerMeta(props.recipe, ['manaCost', 'mana', 'requiredMana', 'cost']);
+  inputs.value = (await buildInputSlots(props.recipe)).slice(0, 12);
+  outputs.value = await buildOutputSlots(props.recipe, 6);
 }
 
-function onItemClick(itemId: string) {
-  playClick();
-  emit('item-click', itemId);
-}
+function onItemClick(itemId: string) { playClick(); emit('item-click', itemId); }
+function imageError(event: Event) { (event.target as HTMLImageElement).src = '/placeholder.png'; }
 
-onMounted(() => {
-  void initElven();
-});
-
-watch(
-  () => props.recipe,
-  () => {
-    void initElven();
-  },
-  { deep: true },
-);
+onMounted(() => void initElven());
+watch(() => props.recipe, () => void initElven(), { deep: true });
 </script>
 
 <template>
-  <div class="ritual-ui ritual-elven">
-    <div class="scene-bg" aria-hidden="true">
-      <div class="mist mist-a" />
-      <div class="mist mist-b" />
-      <div class="scene-grid" />
-    </div>
-
-    <section class="panel">
-      <div class="panel-title">INPUT</div>
-      <div class="slot-grid" :style="{ gridTemplateColumns: `repeat(${inputColumns}, var(--slot))` }">
-        <RecipeItemTooltip
-          v-for="slot in inputSlots"
-          :key="`elven-in-${slot.itemId}`"
-          :item-id="slot.itemId"
-          :count="slot.count"
-          @click="onItemClick(slot.itemId)"
-        >
-          <div class="slot">
-            <img :src="getImageUrl(slot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-            <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
-          </div>
+  <div class="elven-ui">
+    <div class="portal-field" />
+    <section class="trade-bank offer-bank">
+      <div class="label">OFFER</div>
+      <div class="slot-grid">
+        <RecipeItemTooltip v-for="slot in inputs" :key="slot.itemId" :item-id="slot.itemId" :count="slot.count">
+          <button class="slot" type="button" @click.stop="onItemClick(slot.itemId)">
+            <img :src="getImageUrl(slot.itemId)" @error="imageError" />
+            <span v-if="slot.count > 1">{{ slot.count }}</span>
+          </button>
         </RecipeItemTooltip>
       </div>
     </section>
 
-    <section class="ritual-core elven-core" aria-hidden="true">
-      <div class="ring outer" />
-      <div class="ring inner" />
-      <div class="portal-surface" />
-      <div class="portal-vortex" />
-      <div class="portal-leaf-ring" />
-      <div class="core-label">Elven Gateway</div>
-    </section>
-
-    <section class="panel panel-output">
-      <div class="panel-title panel-title-output">OUTPUT</div>
-      <div class="slot-grid" :style="{ gridTemplateColumns: `repeat(${outputColumns}, var(--slot))` }">
-        <RecipeItemTooltip
-          v-for="slot in outputSlots"
-          :key="`elven-out-${slot.itemId}`"
-          :item-id="slot.itemId"
-          :count="slot.count"
-          @click="onItemClick(slot.itemId)"
-        >
-          <div class="slot output">
-            <img :src="getImageUrl(slot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-            <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
-          </div>
-        </RecipeItemTooltip>
-        <div v-if="outputSlots.length === 0" class="slot output empty" />
+    <section class="portal">
+      <div class="portal-arc arc-a" />
+      <div class="portal-arc arc-b" />
+      <div class="exchange-flow flow-a" />
+      <div class="exchange-flow flow-b" />
+      <div class="portal-core">
+        <div class="portal-glow" />
+        <div class="portal-glyph" aria-hidden="true">
+          <span class="glyph-strut strut-left" />
+          <span class="glyph-strut strut-right" />
+          <span class="glyph-keystone" />
+          <span class="glyph-rift" />
+        </div>
       </div>
+      <div class="portal-label">ELVEN GATE EXCHANGE</div>
     </section>
 
-    <section class="resource-rail">
-      <span class="resource-label">MANA</span>
-      <span class="resource-value">{{ manaLabel }}</span>
+    <section class="trade-bank output-bank">
+      <div class="label">RETURN</div>
+      <div class="slot-grid">
+        <RecipeItemTooltip v-for="slot in outputs" :key="slot.itemId" :item-id="slot.itemId" :count="slot.count">
+          <button class="slot output" type="button" @click.stop="onItemClick(slot.itemId)">
+            <img :src="getImageUrl(slot.itemId)" @error="imageError" />
+            <span v-if="slot.count > 1">{{ slot.count }}</span>
+          </button>
+        </RecipeItemTooltip>
+      </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.ritual-ui {
-  --slot: 52px;
-  position: relative;
-  display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 14px;
-  align-items: center;
-  width: min(980px, 100%);
-  padding: 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.96), rgba(7, 12, 18, 0.98)),
-    radial-gradient(circle at top, rgba(45, 212, 191, 0.1), transparent 40%);
-  overflow: visible;
-  box-shadow:
-    0 18px 50px rgba(2, 8, 23, 0.38),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.scene-bg { position: absolute; inset: 0; pointer-events: none; }
-.mist {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(28px);
-  opacity: 0.24;
-}
-.mist-a { width: 280px; height: 180px; left: -30px; top: -30px; background: radial-gradient(circle, rgba(45, 212, 191, 0.34), transparent 72%); }
-.mist-b { width: 280px; height: 220px; right: -70px; bottom: -40px; background: radial-gradient(circle, rgba(103, 232, 249, 0.24), transparent 74%); }
-.scene-grid {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 18px 18px;
-  opacity: 0.18;
-}
-
-.panel {
-  position: relative;
-  z-index: 1;
-  padding: 18px 12px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background:
-    linear-gradient(180deg, rgba(18, 24, 32, 0.94), rgba(10, 14, 20, 0.98)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(2, 8, 23, 0.2);
-}
-
-.panel::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
-  pointer-events: none;
-}
-
-.panel-output { border-color: rgba(245, 208, 138, 0.24); }
-
-.panel-title {
-  position: absolute;
-  top: -9px;
-  left: 12px;
-  min-width: 86px;
-  padding: 4px 10px 3px 12px;
-  background:
-    linear-gradient(180deg, rgba(74, 80, 89, 0.98), rgba(54, 59, 67, 0.98)),
-    url('/textures/nei/catalyst_tab.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  border: 1px solid rgba(198, 207, 220, 0.24);
-  border-radius: 6px 6px 4px 4px;
-  color: #eef4fb;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
-  box-shadow: 0 4px 10px rgba(2, 8, 23, 0.22);
-  z-index: 1;
-}
-
-.panel-title-output {
-  border-color: rgba(245, 208, 138, 0.32);
-  color: #fff3da;
-}
-
-.slot-grid { display: grid; gap: 8px; }
-
-.ritual-core {
-  position: relative;
-  z-index: 1;
-  height: 240px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid rgba(153, 246, 228, 0.26);
-}
-.outer { width: 212px; height: 212px; border-style: dashed; animation: spin 16s linear infinite; }
-.inner { width: 172px; height: 172px; animation: spinReverse 12s linear infinite; }
-
-.portal-surface {
-  width: 124px;
-  height: 124px;
-  border-radius: 50%;
-  background: radial-gradient(circle at 38% 30%, rgba(237, 255, 250, 0.95), rgba(143, 244, 211, 0.5) 42%, rgba(63, 172, 213, 0.3) 70%, rgba(18, 71, 110, 0.4));
-  box-shadow: inset 0 0 28px rgba(255, 255, 255, 0.18), 0 0 22px rgba(137, 245, 214, 0.22);
-  animation: swell 3s ease-in-out infinite;
-}
-
-.portal-vortex {
-  position: absolute;
-  width: 98px;
-  height: 98px;
-  border-radius: 50%;
-  border: 1px solid rgba(205, 255, 240, 0.3);
-  border-top-color: transparent;
-  border-bottom-color: transparent;
-  animation: spin 6.5s linear infinite;
-}
-
-.portal-leaf-ring {
-  position: absolute;
-  width: 156px;
-  height: 156px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 50% 0%, rgba(180, 255, 223, 0.4), transparent 22%),
-    radial-gradient(circle at 100% 50%, rgba(180, 255, 223, 0.4), transparent 22%),
-    radial-gradient(circle at 50% 100%, rgba(180, 255, 223, 0.4), transparent 22%),
-    radial-gradient(circle at 0% 50%, rgba(180, 255, 223, 0.4), transparent 22%);
-  animation: spinReverse 18s linear infinite;
-}
-
-.core-label {
-  position: absolute;
-  bottom: 22px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(153, 246, 228, 0.24);
-  background: rgba(8, 26, 36, 0.72);
-  color: #effffc;
-  font-size: 12px;
-}
-
-.slot {
-  width: var(--slot);
-  height: var(--slot);
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.28);
-  background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.88), rgba(6, 10, 16, 0.92)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%, 18px 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: relative;
-  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 6px 12px rgba(2, 8, 23, 0.28);
-}
-
-.slot:hover {
-  transform: translateY(-1px);
-  border-color: rgba(45, 212, 191, 0.56);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.12),
-    0 0 0 1px rgba(45, 212, 191, 0.12),
-    0 10px 18px rgba(13, 148, 136, 0.14);
-}
-
-.slot.output {
-  border-color: rgba(245, 208, 138, 0.42);
-}
-
-.slot.output:hover { border-color: rgba(245, 208, 138, 0.72); }
-.empty { opacity: 0.38; }
-.item-icon { width: 82%; height: 82%; object-fit: contain; image-rendering: pixelated; }
-.count {
-  position: absolute;
-  right: 3px;
-  bottom: 2px;
-  padding: 1px 3px;
-  border-radius: 4px;
-  background: rgba(15, 23, 42, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  font-size: 10px;
-  color: #fff;
-  text-shadow: 0 1px 1px rgba(15, 23, 42, 0.92);
-}
-
-.resource-rail {
-  grid-column: 1 / -1;
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background: rgba(6, 25, 19, 0.62);
-}
-
-.resource-label {
-  font-size: 12px;
-  color: #dcfff0;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.resource-value {
-  font-size: 12px;
-  color: #ecfff6;
-}
-
-@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes spinReverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
-@keyframes swell { 0%,100% { transform: scale(1); } 50% { transform: scale(1.06); } }
-
-@media (max-width: 980px) {
-  .ritual-ui { grid-template-columns: 1fr; }
-  .ritual-core { height: 220px; }
-}
+.elven-ui { position:relative; width:min(1080px,calc(100vw - 64px)); min-height:500px; display:grid; grid-template-columns:250px minmax(360px,1fr) 250px; gap:0; padding:18px; border:1px solid rgba(120,220,255,.24); border-radius:24px; background:radial-gradient(circle at 50% 48%,rgba(120,220,255,.18),transparent 38%), radial-gradient(circle at 78% 24%,rgba(255,226,130,.11),transparent 30%), linear-gradient(180deg,#081421,#05080f); box-shadow:0 22px 60px rgba(0,0,0,.36), inset 0 1px 0 rgba(255,255,255,.05); overflow:hidden; isolation:isolate; }
+.portal-field { position:absolute; inset:18px; border-radius:20px; z-index:0; pointer-events:none; background-image:linear-gradient(rgba(185,235,255,.03) 1px,transparent 1px), linear-gradient(90deg,rgba(185,235,255,.03) 1px,transparent 1px), radial-gradient(circle at 50% 50%,rgba(30,110,150,.42),rgba(5,12,20,.92) 72%); background-size:30px 30px,30px 30px,100% 100%; mask-image:radial-gradient(circle at center,#000 0 72%,rgba(0,0,0,.68) 88%,transparent 106%); }
+.trade-bank, .portal { position:relative; z-index:1; }
+.trade-bank { display:grid; align-content:center; justify-items:center; gap:14px; padding:22px; }
+.label { color:#c4f2ff; font-size:11px; font-weight:900; letter-spacing:.18em; }
+.output-bank .label { color:#ffe7a6; }
+.slot-grid { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; align-items:center; max-width:194px; }
+.portal { display:grid; place-items:center; min-height:464px; overflow:hidden; }
+.portal-arc { position:absolute; border-radius:50%; border:1px solid rgba(120,220,255,.34); border-left-color:transparent; border-right-color:transparent; pointer-events:none; mix-blend-mode:screen; }
+.arc-a { width:292px; height:292px; animation:portalArc 8s ease-in-out infinite; }
+.arc-b { width:220px; height:220px; border-color:rgba(255,226,130,.24); border-left-color:transparent; border-right-color:transparent; animation:portalArcReverse 9.2s ease-in-out infinite .8s; }
+.exchange-flow { position:absolute; width:9px; height:9px; border-radius:50%; background:radial-gradient(circle,rgba(230,255,255,.95),rgba(120,220,255,.48) 48%,transparent 74%); box-shadow:0 0 18px rgba(120,220,255,.4); pointer-events:none; mix-blend-mode:screen; }
+.flow-a { left:24%; top:48%; animation:flowToPortal 5s ease-in-out infinite; }
+.flow-b { right:24%; top:52%; animation:flowFromPortal 5.4s ease-in-out infinite 1s; }
+.portal-core { position:relative; z-index:2; width:184px; height:184px; border-radius:50%; display:grid; place-items:center; background:radial-gradient(circle,rgba(220,255,255,.2),rgba(20,70,90,.1)); box-shadow:0 0 54px rgba(120,220,255,.24), inset 0 0 34px rgba(255,255,255,.05); }
+.portal-glow { position:absolute; width:250px; height:250px; border-radius:50%; background:radial-gradient(circle,rgba(120,220,255,.3),rgba(255,226,130,.08) 44%,transparent 72%); animation:portalGlow 4.8s ease-in-out infinite; }
+.portal-glyph { position:relative; z-index:2; width:124px; height:150px; display:grid; place-items:center; filter:drop-shadow(0 0 18px rgba(120,220,255,.38)); }
+.portal-glyph::before { content:''; position:absolute; inset:8px 18px 18px; border-radius:50% 50% 42% 42%; border:2px solid rgba(220,250,255,.54); border-bottom-color:rgba(255,226,130,.34); box-shadow:0 0 24px rgba(120,220,255,.28), inset 0 0 22px rgba(120,220,255,.14); }
+.glyph-strut { position:absolute; bottom:10px; width:14px; height:92px; border-radius:10px; background:linear-gradient(180deg,rgba(236,255,255,.92),rgba(120,220,255,.34) 54%,rgba(16,54,74,.18)); box-shadow:0 0 18px rgba(120,220,255,.22), inset 0 1px 0 rgba(255,255,255,.28); }
+.strut-left { left:22px; transform:rotate(-7deg); }
+.strut-right { right:22px; transform:rotate(7deg); }
+.glyph-keystone { position:absolute; top:14px; width:72px; height:18px; border-radius:999px; background:linear-gradient(90deg,rgba(255,226,130,.72),rgba(210,250,255,.9),rgba(120,220,255,.48)); box-shadow:0 0 20px rgba(255,226,130,.28); }
+.glyph-rift { position:absolute; width:56px; height:98px; border-radius:50%; background:radial-gradient(ellipse at center,rgba(235,255,255,.88),rgba(120,220,255,.3) 46%,rgba(255,226,130,.1) 62%,transparent 78%); animation:riftPulse 4.6s ease-in-out infinite; }
+.portal-label { position:absolute; bottom:26px; color:#e5fbff; font-size:12px; font-weight:900; letter-spacing:.16em; text-align:center; }
+.slot { position:relative; width:58px; height:58px; border:1px solid rgba(120,220,255,.35); border-radius:14px; background:radial-gradient(circle at 45% 35%,rgba(44,92,118,.64),transparent 62%), linear-gradient(180deg,#0c1724,#060b12); display:grid; place-items:center; cursor:pointer; box-shadow:0 12px 22px rgba(0,0,0,.26), inset 0 1px 0 rgba(255,255,255,.07); }
+.slot:hover { border-color:rgba(210,245,255,.84); box-shadow:0 0 24px rgba(120,220,255,.28), inset 0 1px 0 rgba(255,255,255,.12); }
+.slot img { width:42px; height:42px; object-fit:contain; image-rendering:pixelated; }
+.slot span { position:absolute; right:3px; bottom:2px; color:#fff; font-size:10px; text-shadow:0 1px 2px #000; }
+.output { border-color:rgba(250,204,21,.5); }
+@keyframes portalArc { 0%,100% { opacity:.2; transform:rotate(-8deg) scale(.96); } 50% { opacity:.7; transform:rotate(12deg) scale(1.08); } }
+@keyframes portalArcReverse { 0%,100% { opacity:.16; transform:rotate(12deg) scale(.95); } 50% { opacity:.58; transform:rotate(-14deg) scale(1.1); } }
+@keyframes portalGlow { 0%,100% { opacity:.34; transform:scale(.9); } 50% { opacity:1; transform:scale(1.08); } }
+@keyframes riftPulse { 0%,100% { opacity:.52; transform:scale(.88); } 50% { opacity:1; transform:scale(1.08); } }
+@keyframes flowToPortal { 0%,100% { opacity:0; transform:translate(0,0) scale(.45); } 18% { opacity:.88; } 72% { opacity:.74; transform:translate(210px,8px) scale(1); } 100% { opacity:0; transform:translate(260px,10px) scale(.25); } }
+@keyframes flowFromPortal { 0%,100% { opacity:0; transform:translate(0,0) scale(.45); } 18% { opacity:.88; } 72% { opacity:.74; transform:translate(-210px,-8px) scale(1); } 100% { opacity:0; transform:translate(-260px,-10px) scale(.25); } }
 </style>
