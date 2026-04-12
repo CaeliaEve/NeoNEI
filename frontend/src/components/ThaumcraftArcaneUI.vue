@@ -28,12 +28,12 @@ const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 const { playClick } = useSound();
 
-const SCALE = 2.55;
-const OFFSET_X = 26;
-const OFFSET_Y = 26;
-const SLOT_SIZE = 42;
-const stageWidth = Math.round(166 * SCALE + OFFSET_X * 2);
-const stageHeight = Math.round(152 * SCALE + OFFSET_Y * 2);
+const SCALE = 3.45;
+const OFFSET_X = 36;
+const OFFSET_Y = 34;
+const SLOT_SIZE = 56;
+const stageWidth = Math.round(178 * SCALE + OFFSET_X * 2);
+const stageHeight = Math.round(160 * SCALE + OFFSET_Y * 2);
 
 const craftingGrid = ref<Array<RitualItemStack | null>>(Array.from({ length: 9 }, () => null));
 const outputSlot = ref<ResolvedSlot | null>(null);
@@ -161,8 +161,8 @@ function stageStyle(x: number, y: number, width = SLOT_SIZE, height = SLOT_SIZE)
 }
 
 const gridStyles = computed(() => {
-  const baseX = [40, 64, 88];
-  const baseY = [40, 64, 88];
+  const baseX = [50, 74, 98];
+  const baseY = [44, 68, 92];
   return craftingGrid.value.map((_, index) => {
     const row = Math.floor(index / 3);
     const col = index % 3;
@@ -170,21 +170,10 @@ const gridStyles = computed(() => {
   });
 });
 
-const outputStyle = computed(() => stageStyle(74, 12, 46, 46));
+const outputStyle = computed(() => stageStyle(74, 14, 60, 60));
 
 const aspectEntries = computed(() => {
-  const aspects = aspectCosts.value;
-  const columns = aspects.length;
-  const xOffset = (100 - columns * 20) / 2;
-  return aspects.map((aspect, index) => ({
-    aspect,
-    style: {
-      left: `${OFFSET_X + (36 + index * 18 + xOffset) * SCALE}px`,
-      top: '6px',
-      width: '34px',
-      height: '46px',
-    },
-  }));
+  return aspectCosts.value.map((aspect) => ({ aspect }));
 });
 
 function handleItemClick(itemId: string) {
@@ -274,13 +263,11 @@ watch(
       </RecipeItemTooltip>
 
       <div class="aspects-band">
-        <div class="aspects-title">ASPECTS</div>
         <div class="aspects-row">
           <div
             v-for="entry in aspectEntries"
             :key="`${entry.aspect.name}-${entry.aspect.hash || 'plain'}`"
             class="aspect-slot"
-            :style="entry.style"
           >
             <img
               :src="getThaumcraftAspectImagePath(entry.aspect)"
@@ -301,7 +288,7 @@ watch(
   display: flex;
   justify-content: center;
   width: 100%;
-  padding: 8px 0;
+  padding: 18px 0 24px;
 }
 
 .thaum-stage {
@@ -332,20 +319,20 @@ watch(
 
 .top-strip {
   position: absolute;
-  inset: 18px 18px auto 18px;
+  inset: 20px 24px auto 24px;
   display: flex;
   justify-content: space-between;
   pointer-events: none;
 }
 
 .top-pill {
-  min-width: 96px;
+  min-width: 122px;
   border-radius: 999px;
   border: 1px solid rgba(71, 85, 105, 0.28);
   background: rgba(15, 23, 42, 0.72);
   color: rgba(226, 232, 240, 0.76);
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 8px 16px;
+  font-size: 13px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   text-align: center;
@@ -353,16 +340,16 @@ watch(
 
 .research-column {
   position: absolute;
-  left: 18px;
-  top: 58px;
-  width: 120px;
+  left: 24px;
+  top: 86px;
+  width: 170px;
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
 .research-title {
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.18em;
   color: rgba(125, 211, 252, 0.78);
 }
@@ -374,7 +361,7 @@ watch(
 }
 
 .research-line {
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.25;
   color: rgba(226, 232, 240, 0.88);
 }
@@ -385,10 +372,10 @@ watch(
 
 .sigil-layer {
   position: absolute;
-  left: calc(26px + 82px);
-  top: calc(26px + 86px);
-  width: 150px;
-  height: 150px;
+  left: calc(36px + 74px * 3.45 + 28px);
+  top: calc(34px + 68px * 3.45 + 28px);
+  width: 230px;
+  height: 230px;
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
@@ -401,10 +388,10 @@ watch(
   transform: rotate(45deg);
 }
 
-.sigil-a { inset: 26px; border-color: rgba(34, 211, 238, 0.16); }
-.sigil-b { inset: 46px; border-color: rgba(148, 163, 184, 0.18); }
+.sigil-a { inset: 34px; border-color: rgba(34, 211, 238, 0.16); }
+.sigil-b { inset: 66px; border-color: rgba(148, 163, 184, 0.18); }
 .sigil-c {
-  inset: 62px;
+  inset: 92px;
   border-color: rgba(192, 132, 252, 0.18);
   box-shadow: 0 0 18px rgba(34, 211, 238, 0.08);
 }
@@ -414,7 +401,7 @@ watch(
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 12px;
+  border-radius: 14px;
   border: 1px solid rgba(71, 85, 105, 0.38);
   background:
     linear-gradient(180deg, rgba(18, 27, 42, 0.96), rgba(8, 14, 24, 0.98)),
@@ -444,18 +431,18 @@ watch(
 
 .result-lane {
   position: absolute;
-  left: calc(26px + 82px);
-  top: calc(26px + 24px);
+  left: calc(36px + 82px * 3.45);
+  top: calc(34px + 32px * 3.45);
   width: 2px;
-  height: 204px;
+  height: 124px;
   background: linear-gradient(180deg, rgba(125, 211, 252, 0), rgba(125, 211, 252, 0.44), rgba(125, 211, 252, 0));
   transform: translateX(-50%);
   opacity: 0.6;
 }
 
 .item-icon {
-  width: 28px;
-  height: 28px;
+  width: 36px;
+  height: 36px;
   image-rendering: pixelated;
 }
 
@@ -473,40 +460,39 @@ watch(
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 18px;
-  min-height: 96px;
-}
-
-.aspects-title {
-  text-align: center;
-  font-size: 11px;
-  letter-spacing: 0.22em;
-  color: rgba(125, 211, 252, 0.74);
+  bottom: 28px;
+  min-height: 126px;
 }
 
 .aspects-row {
-  position: relative;
-  height: 86px;
-  margin-top: 6px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  height: 112px;
+  margin-top: 10px;
+  width: 360px;
+  margin-left: calc(36px + 82px * 3.45 - 180px);
 }
 
 .aspect-slot {
-  position: absolute;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
   gap: 4px;
+  flex: 1 1 0;
+  width: 42px;
+  height: 58px;
 }
 
 .aspect-icon {
-  width: 26px;
-  height: 26px;
+  width: 34px;
+  height: 34px;
   image-rendering: pixelated;
 }
 
 .aspect-amount {
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 700;
   color: rgba(226, 232, 240, 0.88);
 }

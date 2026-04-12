@@ -7,6 +7,8 @@
 // key: "machineType:voltageTier" 或 "machineType"
 // value: { itemId, imageFileName }
 const GREGTECH_MACHINE_ICONS: Record<string, { itemId: string; imageFileName: string }> = {
+  '\u5769\u57da': { itemId: 'i~Thaumcraft~blockMetalDevice~0', imageFileName: 'blockMetalDevice~0.gif' },
+  'crucible': { itemId: 'i~Thaumcraft~blockMetalDevice~0', imageFileName: 'blockMetalDevice~0.gif' },
   // 研究站系列
   '研究站 (ULV)': { itemId: 'i~gregtech~gt.blockmachines~30', imageFileName: 'gt.blockmachines~30.png' },
   '研究站 (LV)': { itemId: 'i~gregtech~gt.blockmachines~31', imageFileName: 'gt.blockmachines~31.png' },
@@ -325,7 +327,11 @@ const GREGTECH_MACHINE_ICONS: Record<string, { itemId: string; imageFileName: st
  * @returns 机器图标信息，如果没有找到则返回null
  */
 export function getMachineIcon(machineType: string): { itemId: string; imageFileName: string } | null {
-  return GREGTECH_MACHINE_ICONS[machineType] || null;
+  const normalized = machineType.trim();
+  if (normalized === '\u5769\u57da') {
+    return GREGTECH_MACHINE_ICONS['\u5769\u57da'];
+  }
+  return GREGTECH_MACHINE_ICONS[normalized] || null;
 }
 
 /**

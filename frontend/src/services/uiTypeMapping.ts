@@ -180,6 +180,13 @@ const THAUMCRAFT_INFUSION: UITypeConfig = {
   hasVisCost: true,
 };
 
+const THAUMCRAFT_CRUCIBLE: UITypeConfig = {
+  uiType: 'thaumcraft_crucible',
+  component: 'ThaumcraftCrucibleUI',
+  hasCentralElement: true,
+  hasVisCost: true,
+};
+
 const THAUMCRAFT_RESEARCH: UITypeConfig = {
   uiType: 'thaumcraft_research',
   component: 'ThaumcraftResearchUI',
@@ -321,6 +328,11 @@ const PRESENTATION_BY_UI_TYPE: Record<string, UIPresentationMeta> = {
     surface: 'ritual',
     density: 'oversized',
   },
+  thaumcraft_crucible: {
+    family: 'thaumcraft',
+    surface: 'ritual',
+    density: 'standard',
+  },
   thaumcraft_research: {
     family: 'thaumcraft',
     surface: 'research',
@@ -439,6 +451,8 @@ const EXACT_ALIASES: Array<[string, UITypeConfig]> = [
   ['arcane crafting', THAUMCRAFT_ARCANE],
   ['ordered arcane crafting', THAUMCRAFT_ARCANE],
   ['shapeless arcane crafting', THAUMCRAFT_ARCANE],
+  ['crucible', THAUMCRAFT_CRUCIBLE],
+  ['坩埚', THAUMCRAFT_CRUCIBLE],
   ['奥术工作台', THAUMCRAFT_ARCANE],
   ['奥术合成', THAUMCRAFT_ARCANE],
   ['奥术注魔', THAUMCRAFT_INFUSION],
@@ -532,6 +546,8 @@ const KEYWORD_ALIASES: Array<[string, UITypeConfig]> = [
   ['注魔', THAUMCRAFT_INFUSION],
   ['灌注', THAUMCRAFT_INFUSION],
   ['arcane infusion', THAUMCRAFT_INFUSION],
+  ['crucible', THAUMCRAFT_CRUCIBLE],
+  ['坩埚', THAUMCRAFT_CRUCIBLE],
   ['奥术注魔', THAUMCRAFT_INFUSION],
   ['魔力灌注', THAUMCRAFT_INFUSION],
   ['arcane', THAUMCRAFT_ARCANE],
@@ -936,6 +952,16 @@ export function resolveRecipePresentationProfile(
 
   const normalizedPrimary = (machineType || recipeType || 'Crafting (Shaped)').toLowerCase();
   if (
+    normalizedPrimary.includes('crucible') ||
+    normalizedPrimary.includes('坩埚') ||
+    normalizedPrimary.includes('\u5769\u57da')
+  ) {
+    return createPresentationProfile(THAUMCRAFT_CRUCIBLE, {
+      reason: 'combined:thaumcraft_crucible',
+    });
+  }
+
+  if (
     normalizedPrimary.includes('infusion') ||
     normalizedPrimary.includes('注魔') ||
     normalizedPrimary.includes('锟斤拷注') ||
@@ -1044,6 +1070,7 @@ export function getAllUITypes(): string[] {
         BOTANIA_ELVEN_TRADE,
         THAUMCRAFT_ARCANE,
         THAUMCRAFT_INFUSION,
+        THAUMCRAFT_CRUCIBLE,
         THAUMCRAFT_RESEARCH,
         BLOOD_MAGIC_ALTAR,
         BLOOD_ALCHEMY_TABLE,

@@ -682,7 +682,7 @@ export class IndexedRecipesService {
         }
       : null;
 
-    if (machineInfo && machineInfo.machineType && !machineInfo.machineIcon) {
+    if (machineInfo && machineInfo.machineType) {
       const machineIcon = getMachineIconItem(machineInfo.machineType);
       if (machineIcon) {
         machineInfo.machineIcon = machineIcon;

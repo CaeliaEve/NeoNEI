@@ -37,6 +37,7 @@ const BotaniaRuneAltarUI = defineAsyncComponent(() => import('./BotaniaRuneAltar
 const BotaniaElvenTradeUI = defineAsyncComponent(() => import('./BotaniaElvenTradeUI.vue'));
 const ThaumcraftArcaneUI = defineAsyncComponent(() => import('./ThaumcraftArcaneUI.vue'));
 const ThaumcraftInfusionUI = defineAsyncComponent(() => import('./ThaumcraftInfusionUI.vue'));
+const ThaumcraftCrucibleUI = defineAsyncComponent(() => import('./ThaumcraftCrucibleUI.vue'));
 const ThaumcraftResearchUI = defineAsyncComponent(() => import('./ThaumcraftResearchUI.vue'));
 const BloodMagicAltarUI = defineAsyncComponent(() => import('./BloodMagicAltarUI.vue'));
 const BloodAlchemyTableUI = defineAsyncComponent(() => import('./BloodAlchemyTableUI.vue'));
@@ -94,6 +95,7 @@ const componentRegistry: Record<string, Component> = {
   BotaniaElvenTradeUI,
   ThaumcraftArcaneUI,
   ThaumcraftInfusionUI,
+  ThaumcraftCrucibleUI,
   ThaumcraftResearchUI,
   BloodMagicAltarUI,
   BloodAlchemyTableUI,
@@ -362,6 +364,13 @@ if (isDev && typeof window !== 'undefined') {
         <ThaumcraftInfusionUI
           v-else-if="uiConfig.uiType === 'thaumcraft_infusion'"
           :key="`thaum-infusion-${recipe.recipeId}`"
+          :recipe="recipe"
+          :ui-config="uiConfig"
+          @item-click="(itemId: string) => emit('item-click', itemId)"
+        />
+        <ThaumcraftCrucibleUI
+          v-else-if="uiConfig.uiType === 'thaumcraft_crucible'"
+          :key="`thaum-crucible-${recipe.recipeId}`"
           :recipe="recipe"
           :ui-config="uiConfig"
           @item-click="(itemId: string) => emit('item-click', itemId)"
