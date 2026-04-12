@@ -11,6 +11,7 @@ import {
   type RitualItemStack,
   normalizeCount,
   getThaumcraftAspectImagePath,
+  getThaumcraftAspectItemId,
   isThaumcraftAspectItem,
 } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
@@ -21,7 +22,7 @@ interface Props {
 }
 
 interface Emits {
-  (e: 'item-click', itemId: string): void;
+  (e: 'item-click', itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }): void;
 }
 
 const props = defineProps<Props>();
@@ -181,6 +182,14 @@ function handleItemClick(itemId: string) {
   emit('item-click', itemId);
 }
 
+function handleAspectClick(aspect: RitualAspectCost) {
+  const itemId = getThaumcraftAspectItemId(aspect);
+  if (itemId) {
+    playClick();
+    emit('item-click', itemId, { tab: 'producedBy' });
+  }
+}
+
 async function initialize() {
   const rawInputs = props.recipe.additionalData?.rawIndexedInputs ?? props.recipe.inputs;
   craftingGrid.value = buildCraftingGridFromIndexedRaw(rawInputs) ?? buildCraftingGrid(props.recipe.inputs);
@@ -268,6 +277,8 @@ watch(
             v-for="entry in aspectEntries"
             :key="`${entry.aspect.name}-${entry.aspect.hash || 'plain'}`"
             class="aspect-slot"
+            :class="{ 'is-clickable': Boolean(getThaumcraftAspectItemId(entry.aspect)) }"
+            @click="handleAspectClick(entry.aspect)"
           >
             <img
               :src="getThaumcraftAspectImagePath(entry.aspect)"
@@ -485,10 +496,20 @@ watch(
   height: 58px;
 }
 
+.aspect-slot.is-clickable {
+  cursor: pointer;
+}
+
+.aspect-slot.is-clickable:hover .aspect-icon {
+  transform: translateY(-1px) scale(1.08);
+  filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.42));
+}
+
 .aspect-icon {
   width: 34px;
   height: 34px;
   image-rendering: pixelated;
+  transition: transform 160ms ease, filter 160ms ease;
 }
 
 .aspect-amount {

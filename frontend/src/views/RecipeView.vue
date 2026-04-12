@@ -269,9 +269,19 @@ const goBack = () => {
   router.push('/');
 };
 
-const handleItemClick = (clickedItemId: string) => {
+const handleItemClick = (clickedItemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => {
   playClick();
-  router.push(`/recipe/${clickedItemId}`);
+  router.push({
+    path: `/recipe/${clickedItemId}`,
+    query: options?.tab
+      ? {
+          tab: options.tab,
+          mode: options.tab === 'usedIn' ? 'u' : 'r',
+          machineName: options.tab === 'producedBy' ? '物品中的要素' : undefined,
+          page: '0',
+        }
+      : undefined,
+  });
 };
 
 const openOracle = () => {
@@ -406,6 +416,7 @@ useRecipeRouteSync({
   currentPage,
   currentRecipeId,
   machineCategoryCount: computed(() => machineCategories.value.length),
+  machineCategoryNames: computed(() => machineCategories.value.map((category) => category.name)),
   totalPages,
   currentCategoryPageCount: computed(() => currentCategoryPages.value.length),
   selectRecipeById,
@@ -505,6 +516,16 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 };
 
+const handleRecipeWheel = (event: WheelEvent) => {
+  if (Math.abs(event.deltaY) < 8 || totalPages.value <= 1) return;
+  event.preventDefault();
+  if (event.deltaY > 0) {
+    nextPage();
+  } else {
+    prevPage();
+  }
+};
+
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown);
   const loadOverview = () => {
@@ -591,8 +612,8 @@ onBeforeUnmount(() => {
           :next-title="copy.nextPage"
           prev-test-id="recipe-prev-page"
           next-test-id="recipe-next-page"
-          :prev-disabled="currentPage === 0"
-          :next-disabled="currentPage >= totalPages - 1"
+          :prev-disabled="totalPages <= 1"
+          :next-disabled="totalPages <= 1"
           pager-class="pagination"
           @select-tab="(tab) => setCurrentTab(tab as 'usedIn' | 'producedBy')"
           @select-machine="selectMachine"
@@ -710,10 +731,10 @@ onBeforeUnmount(() => {
           </template>
         </RecipeBrowseControls>
 
-        <div class="recipe-display">
+        <div class="recipe-display" @wheel="handleRecipeWheel">
           <RecipeBrowserStage
             :stage-key="currentRecipeKey"
-            transition-name="recipe-stage-morph"
+            transition-name=""
             stage-shell-class="recipe-stage-shell"
             state-panel-class="recipe-stage-state-panel"
             :empty="!(currentPageRecipes.length > 0)"
@@ -1292,18 +1313,6 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   overflow: visible;
-}
-
-.recipe-stage-morph-enter-active,
-.recipe-stage-morph-leave-active {
-  transition: opacity 230ms ease, transform 230ms ease, filter 230ms ease;
-}
-
-.recipe-stage-morph-enter-from,
-.recipe-stage-morph-leave-to {
-  opacity: 0;
-  transform: translateY(8px) scale(0.992);
-  filter: blur(4px);
 }
 
 .recipe-stage-state-panel {

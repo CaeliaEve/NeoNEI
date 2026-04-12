@@ -30,6 +30,7 @@ type UseRecipeRouteSyncOptions = {
   currentPage: Ref<number>;
   currentRecipeId: Ref<string | null>;
   machineCategoryCount: Ref<number>;
+  machineCategoryNames?: Ref<string[]>;
   totalPages: Ref<number>;
   currentCategoryPageCount: Ref<number>;
   selectRecipeById: (recipeId: string) => boolean;
@@ -40,6 +41,7 @@ type UseRecipeRouteSyncOptions = {
 export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
   const pendingRecipeIdFromQuery = ref<string | null>(null);
   const pendingMachineIndexFromQuery = ref<number | null>(null);
+  const pendingMachineNameFromQuery = ref<string | null>(null);
   const pendingPageFromQuery = ref<number | null>(null);
   const applyingSnapshot = ref(false);
   const lastAppliedRouteSnapshot = ref('');
@@ -64,6 +66,7 @@ export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
     }
 
     pendingMachineIndexFromQuery.value = parseNonNegativeInt(snapshot.machine, 0);
+    pendingMachineNameFromQuery.value = snapshot.machineName || null;
     pendingPageFromQuery.value = parseNonNegativeInt(snapshot.page, 0);
     pendingRecipeIdFromQuery.value = snapshot.recipeId || null;
   };
@@ -106,6 +109,7 @@ export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
       if (!currentItemId || applyingSnapshot.value) return;
       if (
         pendingMachineIndexFromQuery.value !== null
+        || pendingMachineNameFromQuery.value !== null
         || pendingPageFromQuery.value !== null
         || pendingRecipeIdFromQuery.value !== null
       ) {
@@ -122,6 +126,7 @@ export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
         tab,
         mode: tab === 'usedIn' ? 'u' : 'r',
         machine: String(machineIndex),
+        machineName: undefined,
         page: String(pageIndex),
         q: searchQ || undefined,
         recipeId: navigationChanged ? undefined : recipeId || undefined,
@@ -135,6 +140,7 @@ export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
           tab: options.currentTab.value,
           mode: options.currentTab.value === 'usedIn' ? 'u' : 'r',
           machine: String(options.selectedMachineIndex.value),
+          machineName: undefined,
           page: String(options.currentPage.value),
           q: options.recipeSearchQuery.value || undefined,
           recipeId: options.currentRecipeId.value || undefined,
@@ -168,11 +174,29 @@ export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
   watch(
     () => [pendingMachineIndexFromQuery.value, options.machineCategoryCount.value] as const,
     ([pendingMachineIndex, categoryCount]) => {
+      if (pendingMachineNameFromQuery.value !== null) return;
       if (pendingMachineIndex === null) return;
       if (categoryCount <= 0) return;
       const safeMachineIndex = Math.min(Math.max(0, pendingMachineIndex), categoryCount - 1);
       options.selectedMachineIndex.value = safeMachineIndex;
       pendingMachineIndexFromQuery.value = null;
+    },
+    { immediate: true },
+  );
+
+  watch(
+    () => [pendingMachineNameFromQuery.value, options.machineCategoryNames?.value.join('|') ?? ''] as const,
+    ([pendingMachineName]) => {
+      if (!pendingMachineName) return;
+      const names = options.machineCategoryNames?.value ?? [];
+      if (names.length <= 0) return;
+      const normalized = pendingMachineName.trim().toLowerCase();
+      const index = names.findIndex((name) => name.trim().toLowerCase() === normalized);
+      if (index >= 0) {
+        options.selectedMachineIndex.value = index;
+        pendingMachineIndexFromQuery.value = null;
+        pendingMachineNameFromQuery.value = null;
+      }
     },
     { immediate: true },
   );

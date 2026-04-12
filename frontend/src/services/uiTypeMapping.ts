@@ -187,6 +187,13 @@ const THAUMCRAFT_CRUCIBLE: UITypeConfig = {
   hasVisCost: true,
 };
 
+const THAUMCRAFT_ASPECT: UITypeConfig = {
+  uiType: 'thaumcraft_aspect',
+  component: 'ThaumcraftAspectUI',
+  hasCentralElement: true,
+  hasVisCost: true,
+};
+
 const THAUMCRAFT_RESEARCH: UITypeConfig = {
   uiType: 'thaumcraft_research',
   component: 'ThaumcraftResearchUI',
@@ -333,6 +340,11 @@ const PRESENTATION_BY_UI_TYPE: Record<string, UIPresentationMeta> = {
     surface: 'ritual',
     density: 'standard',
   },
+  thaumcraft_aspect: {
+    family: 'thaumcraft',
+    surface: 'research',
+    density: 'standard',
+  },
   thaumcraft_research: {
     family: 'thaumcraft',
     surface: 'research',
@@ -453,6 +465,10 @@ const EXACT_ALIASES: Array<[string, UITypeConfig]> = [
   ['shapeless arcane crafting', THAUMCRAFT_ARCANE],
   ['crucible', THAUMCRAFT_CRUCIBLE],
   ['坩埚', THAUMCRAFT_CRUCIBLE],
+  ['物品中的要素', THAUMCRAFT_ASPECT],
+  ['要素组合', THAUMCRAFT_ASPECT],
+  ['aspect combination', THAUMCRAFT_ASPECT],
+  ['aspects from items', THAUMCRAFT_ASPECT],
   ['奥术工作台', THAUMCRAFT_ARCANE],
   ['奥术合成', THAUMCRAFT_ARCANE],
   ['奥术注魔', THAUMCRAFT_INFUSION],
@@ -548,6 +564,10 @@ const KEYWORD_ALIASES: Array<[string, UITypeConfig]> = [
   ['arcane infusion', THAUMCRAFT_INFUSION],
   ['crucible', THAUMCRAFT_CRUCIBLE],
   ['坩埚', THAUMCRAFT_CRUCIBLE],
+  ['物品中的要素', THAUMCRAFT_ASPECT],
+  ['要素组合', THAUMCRAFT_ASPECT],
+  ['aspect combination', THAUMCRAFT_ASPECT],
+  ['aspects from items', THAUMCRAFT_ASPECT],
   ['奥术注魔', THAUMCRAFT_INFUSION],
   ['魔力灌注', THAUMCRAFT_INFUSION],
   ['arcane', THAUMCRAFT_ARCANE],
@@ -952,6 +972,17 @@ export function resolveRecipePresentationProfile(
 
   const normalizedPrimary = (machineType || recipeType || 'Crafting (Shaped)').toLowerCase();
   if (
+    normalizedPrimary.includes('物品中的要素') ||
+    normalizedPrimary.includes('要素组合') ||
+    normalizedPrimary.includes('aspect combination') ||
+    normalizedPrimary.includes('aspects from items')
+  ) {
+    return createPresentationProfile(THAUMCRAFT_ASPECT, {
+      reason: 'combined:thaumcraft_aspect',
+    });
+  }
+
+  if (
     normalizedPrimary.includes('crucible') ||
     normalizedPrimary.includes('坩埚') ||
     normalizedPrimary.includes('\u5769\u57da')
@@ -1071,6 +1102,7 @@ export function getAllUITypes(): string[] {
         THAUMCRAFT_ARCANE,
         THAUMCRAFT_INFUSION,
         THAUMCRAFT_CRUCIBLE,
+        THAUMCRAFT_ASPECT,
         THAUMCRAFT_RESEARCH,
         BLOOD_MAGIC_ALTAR,
         BLOOD_ALCHEMY_TABLE,

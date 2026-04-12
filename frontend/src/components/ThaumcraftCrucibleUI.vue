@@ -7,6 +7,7 @@ import {
   buildThaumcraftAspectCosts,
   collectRecipeItemStacks,
   getThaumcraftAspectImagePath,
+  getThaumcraftAspectItemId,
   isThaumcraftAspectItem,
   mergeRecipeMetadata,
   type RitualAspectCost,
@@ -21,7 +22,7 @@ interface Props {
 }
 
 interface Emits {
-  (e: 'item-click', itemId: string): void;
+  (e: 'item-click', itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }): void;
 }
 
 const props = defineProps<Props>();
@@ -73,6 +74,14 @@ function handleItemClick(itemId: string) {
   emit('item-click', itemId);
 }
 
+function handleAspectClick(aspect: RitualAspectCost) {
+  const itemId = getThaumcraftAspectItemId(aspect);
+  if (itemId) {
+    playClick();
+    emit('item-click', itemId, { tab: 'producedBy' });
+  }
+}
+
 onMounted(() => {
   void initialize();
 });
@@ -108,6 +117,10 @@ watch(
         <div class="steam steam-c" />
       </div>
 
+    </section>
+
+    <section class="input-panel">
+      <div class="panel-pill">输入</div>
       <RecipeItemTooltip
         v-if="catalyst"
         :item-id="catalyst.itemId"
@@ -152,7 +165,9 @@ watch(
           v-for="aspect in aspectCosts"
           :key="`${aspect.name}-${aspect.hash || 'plain'}`"
           class="aspect-slot"
+          :class="{ 'is-clickable': Boolean(getThaumcraftAspectItemId(aspect)) }"
           :style="{ '--accent': aspect.color || '#8bdcff' }"
+          @click="handleAspectClick(aspect)"
         >
           <img
             :src="getThaumcraftAspectImagePath(aspect)"
@@ -170,8 +185,11 @@ watch(
 <style scoped>
 .crucible-ui {
   position: relative;
-  width: min(860px, 100%);
+  width: 860px;
+  max-width: calc(100vw - 96px);
+  height: 540px;
   min-height: 540px;
+  flex: 0 0 auto;
   padding: 24px 28px 26px;
   overflow: hidden;
   border-radius: 22px;
@@ -197,6 +215,7 @@ watch(
 }
 
 .research-panel,
+.input-panel,
 .output-panel {
   position: absolute;
   z-index: 2;
@@ -209,13 +228,18 @@ watch(
 }
 
 .research-panel { left: 30px; }
+.input-panel,
 .output-panel {
-  right: 30px;
+  top: 50%;
+  transform: translateY(-50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 14px;
 }
+
+.input-panel { left: 30px; }
+.output-panel { right: 30px; }
 
 .panel-pill {
   display: inline-flex;
@@ -326,10 +350,6 @@ watch(
 }
 
 .catalyst-slot {
-  position: absolute;
-  left: 50%;
-  top: 38%;
-  transform: translate(-50%, -50%);
   border-color: rgba(192, 132, 252, 0.42);
 }
 
@@ -388,11 +408,20 @@ watch(
   color: rgba(226, 232, 240, 0.9);
 }
 
+.aspect-slot.is-clickable {
+  cursor: pointer;
+}
+
+.aspect-slot.is-clickable:hover .aspect-icon {
+  transform: translateY(-1px) scale(1.08);
+}
+
 .aspect-icon {
   width: 36px;
   height: 36px;
   image-rendering: pixelated;
   filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 42%, transparent));
+  transition: transform 160ms ease;
 }
 
 .aspect-amount {

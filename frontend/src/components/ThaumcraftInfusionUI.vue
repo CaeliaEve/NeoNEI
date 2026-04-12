@@ -8,6 +8,7 @@ import {
   buildThaumcraftAspectCosts,
   collectRecipeItemStacks,
   getThaumcraftAspectImagePath,
+  getThaumcraftAspectItemId,
   mergeRecipeMetadata,
   type RitualAspectCost,
   type RitualItemStack,
@@ -22,7 +23,7 @@ interface Props {
 }
 
 interface Emits {
-  (e: 'item-click', itemId: string): void;
+  (e: 'item-click', itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }): void;
 }
 
 interface IndexedInputEntry {
@@ -320,6 +321,14 @@ function handleItemClick(itemId: string) {
   emit('item-click', itemId);
 }
 
+function handleAspectClick(aspect: RitualAspectCost) {
+  const itemId = getThaumcraftAspectItemId(aspect);
+  if (itemId) {
+    playClick();
+    emit('item-click', itemId, { tab: 'producedBy' });
+  }
+}
+
 async function initialize() {
   const additional = parseAdditionalData(props.recipe);
   const metadata = mergeRecipeMetadata(props.recipe);
@@ -480,7 +489,9 @@ const aspectEntries = computed(() => {
             v-for="entry in aspectEntries"
             :key="`${entry.aspect.name}-${entry.aspect.hash || 'plain'}`"
             class="aspect-row"
+            :class="{ 'is-clickable': Boolean(getThaumcraftAspectItemId(entry.aspect)) }"
             :style="{ '--accent': entry.accent }"
+            @click="handleAspectClick(entry.aspect)"
           >
             <div class="aspect-main">
               <img
@@ -913,6 +924,16 @@ const aspectEntries = computed(() => {
   border: 1px solid color-mix(in srgb, var(--accent) 30%, rgba(148, 163, 184, 0.1));
   background:
     linear-gradient(90deg, color-mix(in srgb, var(--accent) 10%, rgba(15, 23, 42, 0.9)), rgba(9, 14, 25, 0.82));
+}
+
+.aspect-row.is-clickable {
+  cursor: pointer;
+}
+
+.aspect-row.is-clickable:hover {
+  transform: translateX(2px);
+  border-color: color-mix(in srgb, var(--accent) 52%, rgba(148, 163, 184, 0.16));
+  filter: brightness(1.08);
 }
 
 .aspect-main {
