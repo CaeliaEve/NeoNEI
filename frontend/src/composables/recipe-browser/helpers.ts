@@ -107,6 +107,8 @@ const getCategoryMachineIcon = (recipe: Recipe, getImagePath: (itemId: string) =
       return getImagePath('i~Thaumcraft~blockTable~15');
     case 'thaumcraft_infusion':
       return getImagePath('i~Thaumcraft~blockStoneDevice~2');
+    case 'thaumcraft_crucible':
+      return getImagePath('i~Thaumcraft~blockMetalDevice~0');
     case 'blood_magic_altar':
       return getImagePath('i~AWWayofTime~Altar~0');
     case 'botania_mana_pool':
