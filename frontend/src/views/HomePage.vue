@@ -362,7 +362,22 @@ const currentRecipePresentation = computed(() => {
   });
 });
 
+const isRecipeModalWorkbenchCanvas = computed(() => {
+  const categoryName = `${currentCategory.value?.name || ''}`.toLowerCase();
+  const isNamedWorkbench =
+    categoryName === 'crafting table'
+    || categoryName === 'crafting (shaped)'
+    || categoryName === 'crafting (shapeless)'
+    || categoryName === '有序合成'
+    || categoryName === '无序合成';
+  return (
+    currentCategory.value?.type === 'crafting'
+    || isNamedWorkbench
+  );
+});
+
 const recipeModalScaleToFit = computed(() => {
+  if (isRecipeModalWorkbenchCanvas.value) return false;
   const surface = currentRecipePresentation.value?.uiConfig.presentation?.surface;
   const density = currentRecipePresentation.value?.uiConfig.presentation?.density;
   const family = currentRecipePresentation.value?.uiConfig.presentation?.family;
@@ -753,6 +768,7 @@ const saveSettings = () => {
                     :recipe="currentPageRecipes[0]"
                     @item-click="handleRecipeItemClick"
                     :scale-to-fit="recipeModalScaleToFit"
+                    :prefer-detailed-crafting="false"
                   />
                   <div v-else class="state-panel stage-state-panel">
                     <p class="state-title">暂无可显示配方</p>

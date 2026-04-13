@@ -86,7 +86,8 @@ const normalizeRecipeInputs = (
   const variantGroups: RecipeVariantGroup[] = [];
   const seenVariantGroup = new Set<string>();
 
-  const appendVariantGroup = (row: number, col: number, cell: IndexedLikeCell) => {
+  const appendVariantGroup = (row: number, col: number, cell: IndexedLikeCell | null | undefined) => {
+    if (!cell || typeof cell !== 'object') return;
     const items = Array.isArray(cell.items)
       ? (cell.items as Array<{ item?: { itemId?: unknown }; stackSize?: unknown }>)
       : [];

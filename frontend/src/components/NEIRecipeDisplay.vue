@@ -237,6 +237,9 @@ const inputGridDims = computed(() => {
 
 // Get output grid dimensions
 const outputGridDims = computed(() => {
+  if (inputGridDims.value.width === 3 && inputGridDims.value.height === 3) {
+    return { width: 1, height: 1 };
+  }
   if (normalizedRecipe.value.recipeTypeData?.itemOutputDimension) {
     return normalizedRecipe.value.recipeTypeData.itemOutputDimension;
   }
@@ -628,8 +631,8 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
           <div
             class="nei-input-grid"
             :style="{
-              gridTemplateColumns: `repeat(${inputGridDims.width}, 44px)`,
-              gridTemplateRows: `repeat(${inputGridDims.height}, 44px)`
+              gridTemplateColumns: `repeat(${inputGridDims.width}, 60px)`,
+              gridTemplateRows: `repeat(${inputGridDims.height}, 60px)`
             }"
           >
             <template v-for="slot in inputSlotViewModels" :key="slot.key">
@@ -679,8 +682,8 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
           <div
             class="nei-output-grid"
             :style="{
-              gridTemplateColumns: `repeat(${outputGridDims.width}, 44px)`,
-              gridTemplateRows: `repeat(${outputGridDims.height}, 44px)`
+              gridTemplateColumns: `repeat(${outputGridDims.width}, 60px)`,
+              gridTemplateRows: `repeat(${outputGridDims.height}, 60px)`
             }"
           >
             <template v-for="slot in outputSlotViewModels" :key="slot.key">
@@ -882,10 +885,16 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 560px;
 }
 
 /* Main Recipe Container - Industrial Tech Panel */
 .nei-recipe {
+  width: min(1180px, calc(100vw - 56px));
+  min-height: 560px;
+  height: min(680px, calc(100vh - 220px));
+  display: flex;
+  flex-direction: column;
   background:
     linear-gradient(180deg, rgba(9, 13, 20, 0.95), rgba(6, 10, 16, 0.98)),
     radial-gradient(circle at top, rgba(34, 211, 238, 0.08), transparent 42%);
@@ -991,13 +1000,14 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
-  padding: 18px 16px 14px;
+  gap: 26px;
+  flex: 1;
+  min-height: 480px;
+  padding: 42px 38px 34px;
   background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.86), rgba(8, 12, 18, 0.92)),
-    url('/textures/nei/recipebg.png');
-  background-repeat: repeat;
-  background-size: auto, 128px 128px;
+    radial-gradient(circle at 28% 30%, rgba(96, 165, 250, 0.11), transparent 38%),
+    radial-gradient(circle at 82% 68%, rgba(245, 208, 138, 0.07), transparent 28%),
+    linear-gradient(180deg, rgba(11, 16, 24, 0.88), rgba(8, 12, 18, 0.94));
   position: relative;
   z-index: 1;
 }
@@ -1007,16 +1017,13 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 88px;
-  padding: 18px 12px 12px;
+  min-height: 300px;
+  padding: 34px 28px 28px;
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 12px;
   background:
-    linear-gradient(180deg, rgba(18, 24, 32, 0.94), rgba(10, 14, 20, 0.98)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
+    radial-gradient(circle at 50% 0%, rgba(148, 163, 184, 0.10), transparent 48%),
+    linear-gradient(180deg, rgba(18, 24, 32, 0.94), rgba(10, 14, 20, 0.98));
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.03),
     0 10px 24px rgba(2, 8, 23, 0.2);
@@ -1033,11 +1040,8 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
 
 .nei-grid-panel-output {
   background:
-    linear-gradient(180deg, rgba(32, 27, 20, 0.92), rgba(16, 13, 10, 0.98)),
-    radial-gradient(circle at top, rgba(245, 208, 138, 0.08), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
+    radial-gradient(circle at 50% 0%, rgba(245, 208, 138, 0.13), transparent 50%),
+    linear-gradient(180deg, rgba(32, 27, 20, 0.92), rgba(16, 13, 10, 0.98));
 }
 
 .nei-panel-label,
@@ -1069,7 +1073,7 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
 .nei-input-grid,
 .nei-output-grid {
   display: grid;
-  gap: 4px;
+  gap: 8px;
   background: transparent;
   padding: 0;
   border: none;
@@ -1094,14 +1098,11 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
 /* Slot - Enhanced Tech Design */
 .nei-slot {
   position: relative;
-  width: 44px;
-  height: 44px;
+  width: 60px;
+  height: 60px;
   background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.88), rgba(6, 10, 16, 0.92)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%, 18px 18px;
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.10), transparent 42%),
+    linear-gradient(180deg, rgba(13, 20, 30, 0.96), rgba(5, 9, 15, 0.98));
   border: 1px solid rgba(148, 163, 184, 0.28);
   display: flex;
   align-items: center;
@@ -1127,12 +1128,7 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
 }
 
 .nei-slot-empty {
-  background:
-    linear-gradient(180deg, rgba(8, 12, 18, 0.72), rgba(6, 10, 16, 0.8)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%, 18px 18px;
+  background: linear-gradient(180deg, rgba(8, 12, 18, 0.72), rgba(6, 10, 16, 0.8));
   border-color: rgba(148, 163, 184, 0.12);
   opacity: 0.45;
 }
@@ -1152,8 +1148,8 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
 
 /* Item Icon - Enhanced with Glow + Lazy Loading */
 .nei-item-icon {
-  width: 28px;
-  height: 28px;
+  width: 42px;
+  height: 42px;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
   display: block;
@@ -1269,13 +1265,13 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 30px;
+  min-width: 68px;
   align-self: stretch;
 }
 
 .nei-arrow {
-  width: 30px;
-  height: 22px;
+  width: 58px;
+  height: 42px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1284,8 +1280,8 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
 }
 
 .nei-arrow-icon {
-  width: 18px;
-  height: 18px;
+  width: 32px;
+  height: 32px;
   position: relative;
   z-index: 1;
 }
@@ -1298,8 +1294,9 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   top: 50%;
   height: 6px;
   transform: translateY(-50%);
-  background: url('/textures/nei/dash.png') center / 100% 2px no-repeat;
-  opacity: 0.55;
+  background: linear-gradient(90deg, transparent, rgba(210, 218, 230, 0.42), transparent);
+  box-shadow: 0 0 12px rgba(148, 163, 184, 0.18);
+  opacity: 0.72;
 }
 
 /* Fluid Area - Industrial Panel */
@@ -1323,11 +1320,7 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   padding: 16px 12px 12px;
   border: 1px solid rgba(148, 163, 184, 0.18);
   border-radius: 12px;
-  background:
-    linear-gradient(180deg, rgba(17, 22, 29, 0.92), rgba(10, 13, 18, 0.98)),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, repeat;
-  background-size: auto, 96px 96px;
+  background: linear-gradient(180deg, rgba(17, 22, 29, 0.92), rgba(10, 13, 18, 0.98));
 }
 
 .nei-fluid-label {
@@ -1347,11 +1340,8 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   gap: 5px;
   padding: 8px 8px 7px;
   background:
-    linear-gradient(180deg, rgba(19, 24, 31, 0.92), rgba(10, 14, 20, 0.98)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: auto, 16px 16px;
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.10), transparent 42%),
+    linear-gradient(180deg, rgba(19, 24, 31, 0.92), rgba(10, 14, 20, 0.98));
   border: 1px solid rgba(148, 163, 184, 0.24);
   border-radius: 10px;
   box-shadow:
@@ -1386,11 +1376,8 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   position: relative;
   overflow: hidden;
   background:
-    linear-gradient(180deg, rgba(19, 24, 31, 0.94), rgba(10, 14, 20, 0.98)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
+    radial-gradient(circle at 34% 28%, rgba(255, 255, 255, 0.10), transparent 42%),
+    linear-gradient(180deg, rgba(19, 24, 31, 0.94), rgba(10, 14, 20, 0.98));
 }
 
 .nei-fluid-icon::before {
@@ -1577,10 +1564,8 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   min-width: 260px;
   max-width: 380px;
   background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.96), rgba(7, 11, 17, 0.98)),
-    url('/textures/nei/recipebg.png');
-  background-repeat: repeat;
-  background-size: auto, 96px 96px;
+    radial-gradient(circle at 30% 20%, rgba(96, 165, 250, 0.10), transparent 42%),
+    linear-gradient(180deg, rgba(11, 16, 24, 0.96), rgba(7, 11, 17, 0.98));
   border: 1px solid rgba(148, 163, 184, 0.26);
   border-radius: 12px;
   backdrop-filter: blur(18px);

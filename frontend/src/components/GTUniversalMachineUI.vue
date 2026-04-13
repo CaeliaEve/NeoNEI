@@ -52,13 +52,27 @@ const machineLabel = computed(() => {
 const combinedDescriptor = computed(() => {
   return [
     machineLabel.value,
-    recipe.value.recipeType || '',
     typeof recipe.value.recipeTypeData?.type === 'string' ? recipe.value.recipeTypeData.type : '',
     typeof recipe.value.recipeTypeData?.category === 'string' ? recipe.value.recipeTypeData.category : '',
+    typeof recipe.value.recipeTypeData?.machineType === 'string' ? recipe.value.recipeTypeData.machineType : '',
   ].join(' ').toLowerCase();
 });
 
 const looksLikeWorkbenchCrafting = computed(() => {
+  const labels = [
+    machineLabel.value,
+    typeof recipe.value.recipeTypeData?.machineType === 'string' ? recipe.value.recipeTypeData.machineType : '',
+    typeof recipe.value.recipeTypeData?.type === 'string' ? recipe.value.recipeTypeData.type : '',
+  ].map((value) => value.trim().toLowerCase()).filter(Boolean);
+  return labels.some((text) => (
+    text === 'crafting table'
+    || text === 'crafting (shaped)'
+    || text === 'crafting (shapeless)'
+    || text === 'worktable'
+    || text === 'workbench'
+    || text === '有序合成'
+    || text === '无序合成'
+  ));
   const text = combinedDescriptor.value;
   return (
     text.includes('crafting')

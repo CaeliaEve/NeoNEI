@@ -163,7 +163,6 @@ onBeforeUnmount(() => {
 
     <div class="matrix-shell">
       <section class="matrix-panel">
-        <div class="panel-label">Input Matrix</div>
         <div class="slot-grid">
           <template v-for="(slotItem, index) in craftingGrid" :key="`slot-${index}`">
             <div
@@ -201,14 +200,15 @@ onBeforeUnmount(() => {
 
       <div class="fusion-lane" aria-hidden="true">
         <div class="lane-arrow">
-          <svg viewBox="0 0 24 24" class="lane-arrow-icon">
-            <path d="M4 11h12.17l-5.59-5.59L12 4l8 8-8 8-1.41-1.41L16.17 13H4v-2z" />
-          </svg>
+          <span class="fusion-rail rail-top" />
+          <span class="fusion-rail rail-bottom" />
+          <span class="fusion-pulse pulse-a" />
+          <span class="fusion-pulse pulse-b" />
+          <span class="fusion-pulse pulse-c" />
         </div>
       </div>
 
       <section class="result-panel">
-        <div class="panel-label panel-label-output">Output</div>
         <RecipeItemTooltip
           v-if="hasOutput"
           :item-id="outputItem!.itemId"
@@ -228,10 +228,6 @@ onBeforeUnmount(() => {
       </section>
     </div>
 
-    <div class="status-row">
-      <span class="chip">Workbench 3x3</span>
-      <span v-if="totalAlternatives > 0" class="chip">Alternatives {{ totalAlternatives }}</span>
-    </div>
   </div>
 </template>
 
@@ -240,15 +236,17 @@ onBeforeUnmount(() => {
   --wb-accent-rgb: 148, 163, 184;
   --wb-accent-strong-rgb: 225, 232, 241;
   --wb-output-rgb: 245, 208, 138;
-  --slot-size: 44px;
-  --slot-icon-size: 28px;
-  --gap-size: 4px;
+  --slot-size: 82px;
+  --slot-icon-size: 58px;
+  --gap-size: 14px;
   position: relative;
-  display: grid;
-  justify-items: center;
-  gap: 10px;
-  width: min(100%, 640px);
-  padding: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: min(1180px, calc(100vw - 56px));
+  min-height: 560px;
+  height: min(680px, calc(100vh - 220px));
+  padding: 24px;
   overflow: hidden;
 }
 
@@ -257,11 +255,9 @@ onBeforeUnmount(() => {
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at top, rgba(34, 211, 238, 0.06), transparent 42%),
-    linear-gradient(180deg, rgba(9, 13, 20, 0.95), rgba(6, 10, 16, 0.98)),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 128px 128px;
+    radial-gradient(circle at 28% 28%, rgba(132, 180, 255, 0.10), transparent 34%),
+    radial-gradient(circle at 78% 64%, rgba(245, 208, 138, 0.08), transparent 30%),
+    linear-gradient(180deg, rgba(9, 13, 20, 0.96), rgba(5, 9, 15, 0.99));
 }
 
 .scene-bg::before {
@@ -269,55 +265,102 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   background:
-    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 18px),
-    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.014) 0 1px, transparent 1px 18px);
-  opacity: 0.35;
+    linear-gradient(rgba(170, 195, 225, 0.026) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(170, 195, 225, 0.026) 1px, transparent 1px);
+  background-size: 24px 24px;
+  opacity: 0.72;
+  mask-image: radial-gradient(circle at center, #000 0 62%, transparent 96%);
+}
+
+.scene-bg::after {
+  content: '';
+  position: absolute;
+  inset: -20%;
+  pointer-events: none;
+  background: linear-gradient(110deg, transparent 28%, rgba(128, 168, 220, 0.11) 46%, rgba(245, 208, 138, 0.08) 52%, transparent 68%);
+  transform: translateX(-26%);
+  animation: workbenchSweep 9s ease-in-out infinite;
 }
 
 .matrix-shell {
   position: relative;
   z-index: 1;
-  display: flex;
+  display: grid;
+  grid-template-columns: 360px 118px 248px;
   align-items: center;
-  gap: 10px;
-  width: 100%;
+  gap: 34px;
+  width: min(960px, 100%);
   justify-content: center;
-  padding: 14px 12px 12px;
-  border-radius: 18px;
+  min-height: 500px;
+  padding: 54px 64px 52px;
+  border-radius: 28px;
   border: 1px solid rgba(var(--wb-accent-rgb), 0.22);
   background:
-    linear-gradient(180deg, rgba(9, 13, 20, 0.95), rgba(6, 10, 16, 0.98)),
-    radial-gradient(circle at top, rgba(34, 211, 238, 0.08), transparent 42%);
+    radial-gradient(circle at 31% 36%, rgba(96, 165, 250, 0.12), transparent 44%),
+    radial-gradient(circle at 72% 50%, rgba(var(--wb-output-rgb), 0.12), transparent 30%),
+    linear-gradient(180deg, rgba(9, 13, 20, 0.95), rgba(6, 10, 16, 0.98));
   box-shadow:
-    0 18px 50px rgba(2, 8, 23, 0.38),
+    0 22px 58px rgba(2, 8, 23, 0.48),
+    0 0 0 1px rgba(96, 165, 250, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
+}
+
+.matrix-shell::before {
+  content: '';
+  position: absolute;
+  inset: 28px;
+  border-radius: 22px;
+  pointer-events: none;
+  background:
+    linear-gradient(90deg, transparent 0 39%, rgba(148, 163, 184, 0.04) 50%, transparent 61%),
+    radial-gradient(circle at 38% 50%, rgba(96, 165, 250, 0.08), transparent 36%),
+    radial-gradient(circle at 68% 50%, rgba(var(--wb-output-rgb), 0.08), transparent 26%);
+  opacity: 0.9;
 }
 
 .matrix-panel,
 .result-panel {
   position: relative;
-  padding: 18px 12px 12px;
-  border-radius: 12px;
+  z-index: 1;
+  min-height: 0;
+  padding: 32px;
+  border-radius: 24px;
   border: 1px solid rgba(var(--wb-accent-rgb), 0.2);
   background:
-    linear-gradient(180deg, rgba(18, 24, 32, 0.94), rgba(10, 14, 20, 0.98)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.05), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
+    radial-gradient(circle at 50% 0%, rgba(148, 163, 184, 0.10), transparent 48%),
+    linear-gradient(180deg, rgba(22, 31, 45, 0.96), rgba(7, 13, 22, 0.99));
   box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(2, 8, 23, 0.2);
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 12px 28px rgba(2, 8, 23, 0.28),
+    0 0 22px rgba(96, 165, 250, 0.08);
+}
+
+.matrix-panel {
+  justify-self: end;
+  width: 360px;
+  height: 360px;
+  display: grid;
+  place-items: center;
+  border-color: rgba(128, 168, 220, 0.62);
+  background:
+    radial-gradient(circle at 50% 0%, rgba(128, 168, 220, 0.18), transparent 50%),
+    linear-gradient(180deg, rgba(23, 34, 50, 0.98), rgba(6, 12, 22, 0.99));
 }
 
 .result-panel {
-  border-color: rgba(var(--wb-output-rgb), 0.26);
+  width: 248px;
+  height: 248px;
+  display: grid;
+  place-items: center;
+  justify-self: start;
+  border-color: rgba(var(--wb-output-rgb), 0.62);
   background:
-    linear-gradient(180deg, rgba(32, 27, 20, 0.92), rgba(16, 13, 10, 0.98)),
-    radial-gradient(circle at top, rgba(var(--wb-output-rgb), 0.08), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
+    radial-gradient(circle at 50% 0%, rgba(var(--wb-output-rgb), 0.24), transparent 50%),
+    linear-gradient(180deg, rgba(44, 34, 19, 0.98), rgba(13, 10, 7, 0.99));
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 12px 28px rgba(2, 8, 23, 0.28),
+    0 0 26px rgba(var(--wb-output-rgb), 0.10);
 }
 
 .matrix-panel::after,
@@ -326,37 +369,8 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 8px;
   border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 8px;
+  border-radius: 18px;
   pointer-events: none;
-}
-
-.panel-label {
-  position: absolute;
-  top: -9px;
-  left: 12px;
-  min-width: 86px;
-  padding: 4px 10px 3px 12px;
-  background:
-    linear-gradient(180deg, rgba(74, 80, 89, 0.98), rgba(54, 59, 67, 0.98)),
-    url('/textures/nei/catalyst_tab.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  border: 1px solid rgba(198, 207, 220, 0.24);
-  border-radius: 6px 6px 4px 4px;
-  color: #eef4fb;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
-  box-shadow: 0 4px 10px rgba(2, 8, 23, 0.22);
-  z-index: 1;
-}
-
-.panel-label-output {
-  border-color: rgba(var(--wb-output-rgb), 0.32);
-  color: #fff3da;
 }
 
 .slot-grid {
@@ -370,21 +384,19 @@ onBeforeUnmount(() => {
 .output-slot {
   width: var(--slot-size);
   height: var(--slot-size);
-  border-radius: 10px;
+  border-radius: 16px;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(var(--wb-accent-rgb), 0.28);
+  border: 1px solid rgba(150, 190, 245, 0.42);
   background:
-    linear-gradient(180deg, rgba(11, 16, 24, 0.88), rgba(6, 10, 16, 0.92)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%, 18px 18px;
+    radial-gradient(circle at 34% 28%, rgba(210, 230, 255, 0.16), transparent 42%),
+    linear-gradient(180deg, rgba(15, 26, 42, 0.98), rgba(4, 9, 18, 0.99));
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 6px 12px rgba(2, 8, 23, 0.28);
+    0 6px 12px rgba(2, 8, 23, 0.32),
+    0 0 14px rgba(96, 165, 250, 0.12);
   transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
   overflow: hidden;
 }
@@ -403,13 +415,9 @@ onBeforeUnmount(() => {
 .craft-slot.empty,
 .output-slot.empty {
   background:
-    linear-gradient(180deg, rgba(8, 12, 18, 0.72), rgba(6, 10, 16, 0.8)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%, 18px 18px;
-  border-color: rgba(var(--wb-accent-rgb), 0.12);
-  opacity: 0.45;
+    linear-gradient(180deg, rgba(9, 15, 24, 0.82), rgba(4, 8, 15, 0.88));
+  border-color: rgba(150, 190, 245, 0.16);
+  opacity: 0.52;
 }
 
 .craft-slot.is-hovered,
@@ -424,7 +432,11 @@ onBeforeUnmount(() => {
 }
 
 .craft-slot.has-alternatives {
-  border-color: rgba(var(--wb-accent-strong-rgb), 0.3);
+  border-color: rgba(var(--wb-accent-strong-rgb), 0.48);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 14px rgba(96, 165, 250, 0.12),
+    0 6px 12px rgba(2, 8, 23, 0.32);
 }
 
 .slot-item {
@@ -443,12 +455,19 @@ onBeforeUnmount(() => {
 }
 
 .output-icon {
-  width: 30px;
-  height: 30px;
+  width: 74px;
+  height: 74px;
 }
 
 .result-panel .output-slot {
-  border-color: rgba(217, 182, 122, 0.3);
+  border-color: rgba(245, 208, 138, 0.78);
+  background:
+    radial-gradient(circle at 34% 28%, rgba(255, 236, 178, 0.22), transparent 42%),
+    linear-gradient(180deg, rgba(42, 32, 18, 0.98), rgba(9, 7, 4, 0.99));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 0 24px rgba(var(--wb-output-rgb), 0.28),
+    0 6px 12px rgba(2, 8, 23, 0.32);
 }
 
 .result-panel .output-slot:hover {
@@ -500,63 +519,147 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 30px;
+  min-width: 130px;
+  justify-self: center;
   align-self: stretch;
 }
 
 .lane-arrow {
-  width: 30px;
-  height: 22px;
+  width: 120px;
+  height: 72px;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  color: rgba(210, 218, 230, 0.86);
+  color: rgba(245, 208, 138, 0.82);
+  filter: drop-shadow(0 0 18px rgba(96, 165, 250, 0.12));
 }
 
 .lane-arrow::before {
   content: '';
   position: absolute;
-  left: 1px;
-  right: 5px;
+  left: 2px;
+  right: 2px;
   top: 50%;
-  height: 6px;
+  height: 34px;
   transform: translateY(-50%);
-  background: url('/textures/nei/dash.png') center / 100% 2px no-repeat;
-  opacity: 0.55;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background:
+    radial-gradient(circle at 78% 50%, rgba(var(--wb-output-rgb), 0.24), transparent 30%),
+    linear-gradient(90deg, rgba(96, 165, 250, 0.02), rgba(96, 165, 250, 0.10) 44%, rgba(var(--wb-output-rgb), 0.14) 70%, transparent);
+  box-shadow:
+    inset 0 0 18px rgba(96, 165, 250, 0.08),
+    0 0 22px rgba(var(--wb-output-rgb), 0.08);
+  opacity: 0.92;
 }
 
-.lane-arrow-icon {
-  width: 18px;
-  height: 18px;
-  position: relative;
-  z-index: 1;
-  fill: currentColor;
+.lane-arrow::after {
+  content: '';
+  position: absolute;
+  right: 9px;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  transform: translateY(-50%);
+  background:
+    radial-gradient(circle, rgba(255, 247, 214, 0.86), rgba(var(--wb-output-rgb), 0.38) 38%, transparent 68%);
+  box-shadow:
+    0 0 18px rgba(var(--wb-output-rgb), 0.38),
+    0 0 38px rgba(var(--wb-output-rgb), 0.16);
+  animation: outputFocus 3.8s ease-in-out infinite;
 }
 
-.status-row {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+.fusion-rail {
+  position: absolute;
+  left: 10px;
+  right: 17px;
+  height: 1px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: linear-gradient(90deg, transparent, rgba(148, 190, 255, 0.30), rgba(var(--wb-output-rgb), 0.34), transparent);
 }
 
-.chip {
-  border: 1px solid rgba(var(--wb-accent-rgb), 0.24);
-  border-radius: 8px;
-  padding: 4px 8px;
-  background: rgba(8, 16, 25, 0.72);
-  color: #eaf8ff;
-  font-size: 12px;
-  display: inline-flex;
-  align-items: baseline;
-  gap: 6px;
+.fusion-rail::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0 18%, rgba(232, 240, 255, 0.86) 32%, transparent 48%);
+  transform: translateX(-70%);
+  animation: railCharge 2.9s cubic-bezier(0.42, 0, 0.18, 1) infinite;
+}
+
+.rail-top {
+  top: 24px;
+}
+
+.rail-bottom {
+  bottom: 24px;
+}
+
+.rail-bottom::after {
+  animation-delay: 0.52s;
+  opacity: 0.7;
+}
+
+.fusion-pulse {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  transform: translate(-8px, -50%);
+  background: rgba(229, 238, 255, 0.86);
+  box-shadow:
+    0 0 8px rgba(148, 190, 255, 0.62),
+    0 0 18px rgba(var(--wb-output-rgb), 0.18);
+  opacity: 0;
+  animation: fusionPulse 3.1s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+}
+
+.pulse-b {
+  animation-delay: 0.62s;
+  width: 3px;
+  height: 3px;
+  top: calc(50% - 10px);
+}
+
+.pulse-c {
+  animation-delay: 1.16s;
+  width: 5px;
+  height: 5px;
+  top: calc(50% + 10px);
 }
 
 @keyframes altSwap {
   from { opacity: 0; transform: scale(0.9); }
   to { opacity: 1; transform: scale(1); }
+}
+
+@keyframes workbenchSweep {
+  0%, 100% { opacity: 0.12; transform: translateX(-28%); }
+  48%, 60% { opacity: 0.46; transform: translateX(18%); }
+}
+
+@keyframes outputFocus {
+  0%, 100% { opacity: 0.58; transform: translateY(-50%) scale(0.9); }
+  50% { opacity: 0.96; transform: translateY(-50%) scale(1.08); }
+}
+
+@keyframes railCharge {
+  0% { transform: translateX(-78%); opacity: 0; }
+  18% { opacity: 0.88; }
+  72% { opacity: 0.72; }
+  100% { transform: translateX(92%); opacity: 0; }
+}
+
+@keyframes fusionPulse {
+  0% { opacity: 0; transform: translate(-8px, -50%) scale(0.65); }
+  18% { opacity: 0.9; }
+  72% { opacity: 0.72; }
+  100% { opacity: 0; transform: translate(82px, -50%) scale(1.08); }
 }
 
 @media (max-width: 980px) {

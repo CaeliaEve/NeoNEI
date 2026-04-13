@@ -265,6 +265,24 @@ const shellToneClass = computed(() => {
   return 'tone-neutral';
 });
 
+const isWorkbenchCanvas = computed(() => {
+  const categoryName = `${currentCategory.value?.name || ''}`.toLowerCase();
+  const isNamedWorkbench =
+    categoryName === 'crafting table'
+    || categoryName === 'crafting (shaped)'
+    || categoryName === 'crafting (shapeless)'
+    || categoryName === '有序合成'
+    || categoryName === '无序合成';
+  return (
+    currentCategory.value?.type === 'crafting'
+    || isNamedWorkbench
+  );
+});
+
+const shellLayoutClass = computed(() => {
+  return isWorkbenchCanvas.value ? 'recipe-workbench-canvas' : '';
+});
+
 const goBack = () => {
   router.push('/');
 };
@@ -349,8 +367,8 @@ const currentRecipeKey = computed(() => {
 });
 
 const recipeDisplayRouterBindings = computed(() => ({
-  scaleToFit: currentCategory.value?.type === 'machine',
-  preferDetailedCrafting: currentCategory.value?.type === 'crafting',
+  scaleToFit: currentCategory.value?.type === 'machine' && !isWorkbenchCanvas.value,
+  preferDetailedCrafting: false,
 }));
 
 const invalidateMultiblockRequest = (): number => {
@@ -552,7 +570,7 @@ onBeforeUnmount(() => {
 <template>
   <div class="recipe-view-root">
     <div
-      :class="['recipe-view', shellToneClass, featureRecipeBrowserV2 ? 'recipe-browser-v2-on' : 'recipe-browser-v2-off']"
+      :class="['recipe-view', shellToneClass, shellLayoutClass, featureRecipeBrowserV2 ? 'recipe-browser-v2-on' : 'recipe-browser-v2-off']"
       :inert="showMultiblockDialog"
       :aria-hidden="showMultiblockDialog ? 'true' : undefined"
       tabindex="0"
@@ -1224,6 +1242,11 @@ onBeforeUnmount(() => {
   min-height: auto;
 }
 
+.recipe-workbench-canvas .recipe-display {
+  min-height: clamp(620px, 70vh, 820px);
+  padding: 12px 10px;
+}
+
 .recipe-detail-status {
   position: relative;
   z-index: 1;
@@ -1306,6 +1329,11 @@ onBeforeUnmount(() => {
   overflow: hidden;
 }
 
+.recipe-workbench-canvas .recipe-display-frame {
+  min-height: clamp(590px, 68vh, 790px);
+  align-items: stretch;
+}
+
 .recipe-stage-shell {
   width: 100%;
   height: 100%;
@@ -1313,6 +1341,10 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   overflow: visible;
+}
+
+.recipe-workbench-canvas .recipe-stage-shell {
+  align-items: stretch;
 }
 
 .recipe-stage-state-panel {
