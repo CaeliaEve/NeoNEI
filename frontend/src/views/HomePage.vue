@@ -100,6 +100,8 @@ const HOME_GRID_ANIMATION_DELAY_MS = 6000;
 const HOME_HISTORY_ANIMATION_DELAY_MS = 8000;
 const currentPageAtlas = ref<PageAtlasResult | null>(null);
 const historyAtlas = ref<PageAtlasResult | null>(null);
+const showSearchContextMenu = ref(false);
+const searchContextMenuPosition = ref({ x: 0, y: 0 });
 
 const prefetchImageUrl = (url: string) => {
   if (!url || prefetchedHomeImages.has(url)) return;
@@ -207,10 +209,16 @@ const historyVisibleCount = computed(() => historyColumns.value * historyRows);
 onMounted(() => {
   updateHistoryPanelWidth();
   window.addEventListener("resize", updateHistoryPanelWidth);
+  window.addEventListener("pointerdown", handleGlobalPointerDown, true);
+  window.addEventListener("scroll", closeSearchContextMenu, true);
+  window.addEventListener("keydown", handleGlobalKeydown);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", updateHistoryPanelWidth);
+  window.removeEventListener("pointerdown", handleGlobalPointerDown, true);
+  window.removeEventListener("scroll", closeSearchContextMenu, true);
+  window.removeEventListener("keydown", handleGlobalKeydown);
 });
 
 watch(currentView, async (view) => {
@@ -286,8 +294,71 @@ const resetItemFilters = () => {
   void loadItems();
 };
 
+const openRecipeOracleEntry = () => {
+  void router.push({ name: 'recipe-oracle' });
+};
+
 const handleSearchContextMenu = (event: MouseEvent) => {
   event.preventDefault();
+  event.stopPropagation();
+  searchContextMenuPosition.value = { x: event.clientX, y: event.clientY };
+  showSearchContextMenu.value = true;
+};
+
+const closeSearchContextMenu = () => {
+  showSearchContextMenu.value = false;
+};
+
+const clearSearchQuery = () => {
+  searchQuery.value = '';
+  currentPage.value = 1;
+  closeSearchContextMenu();
+  void loadItems();
+};
+
+const handleGlobalPointerDown = () => {
+  if (!showSearchContextMenu.value) return;
+  closeSearchContextMenu();
+};
+
+const handleGlobalKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Escape') {
+    closeSearchContextMenu();
+  }
+};
+
+const handleRecipePreviewContextMenu = (event: MouseEvent) => {
+  event.preventDefault();
+  event.stopPropagation();
+};
+
+const changeItemsPageWrapped = (targetPage: number) => {
+  const total = totalPages.value;
+  if (total <= 0) return;
+
+  if (targetPage < 1) {
+    changePage(total);
+    return;
+  }
+
+  if (targetPage > total) {
+    changePage(1);
+    return;
+  }
+
+  changePage(targetPage);
+};
+
+const handleItemsWheel = (event: WheelEvent) => {
+  if (currentView.value !== 'items' || totalPages.value <= 1) return;
+  if (Math.abs(event.deltaY) < 8) return;
+
+  event.preventDefault();
+  if (event.deltaY > 0) {
+    changeItemsPageWrapped(currentPage.value + 1);
+  } else {
+    changeItemsPageWrapped(currentPage.value - 1);
+  }
 };
 
 // Recipe modal state
@@ -344,6 +415,13 @@ const centerRailStyle = computed(() => ({
   left: "var(--home-center-left)",
 }));
 
+const leftRailStyle = computed(() => ({
+  left: "max(24px, calc((100vw - var(--home-right-width) - var(--home-left-rail-width)) / 2))",
+  right: "auto",
+  width: "min(var(--home-left-rail-width), calc(100vw - var(--home-right-width) - 48px))",
+  maxWidth: "calc(100vw - var(--home-right-width) - 48px)",
+}));
+
 const itemColumnStyle = computed(() => ({
   width: "var(--home-right-width)",
 }));
@@ -393,7 +471,7 @@ const recipeModalScaleToFit = computed(() => {
   return true;
 });
 
-const recipePreviewNeedsWideStage = computed(() => !recipeModalScaleToFit.value);
+const recipePreviewNeedsWideStage = computed(() => recipeStageIsStateView.value || !recipeModalScaleToFit.value);
 
 const recipeDockStyle = computed(() => {
   if (recipePreviewNeedsWideStage.value) {
@@ -421,6 +499,10 @@ const recipeStageKey = computed(() => {
   if (!recipe) return `empty-${recipeModalMode.value}-${currentCategory.value?.name || "none"}`;
   return `${currentCategory.value?.name || "unknown"}-${recipe.recipeId}`;
 });
+
+const recipeStageIsStateView = computed(() =>
+  recipeModalLoading.value || Boolean(recipeModalError.value) || currentPageRecipes.value.length === 0,
+);
 
 const currentRecipeForPattern = computed(() => currentPageRecipes.value[0] || null);
 const currentRecipeOutputOptions = computed(() => currentRecipeForPattern.value?.outputs || []);
@@ -653,10 +735,21 @@ const saveSettings = () => {
 
 <template>
   <div class="homepage-shell min-h-screen flex">
+    <div class="fixed top-4 left-4 z-50">
+      <button
+        @click="openRecipeOracleEntry"
+        class="recipe-entry-btn px-4 py-2 rounded-xl text-sm font-semibold"
+        title="进入 Recipe 界面"
+        aria-label="进入 Recipe 界面"
+      >
+        Recipe
+      </button>
+    </div>
+
     <!-- Mod Filter Panel (Fixed Top, offset to have left 18% and right 12%) -->
     <div
-      class="mod-filter-anchor fixed top-0 z-40 pt-0 pb-2 px-2"
-      :style="centerRailStyle"
+      class="mod-filter-anchor fixed top-0 z-40 pt-0 pb-1 px-2"
+      :style="leftRailStyle"
     >
       <div v-if="currentView === 'items'" class="flex flex-col gap-2">
         <select
@@ -666,7 +759,7 @@ const saveSettings = () => {
             loadItems();
           "
           :disabled="modsLoading || !!modsLoadError"
-          class="w-full px-3 py-2 text-sm text-center rounded-lg chrome-field chrome-select disabled:opacity-60 disabled:cursor-not-allowed"
+          class="w-full px-4 py-2.5 text-sm text-center rounded-lg chrome-field chrome-select disabled:opacity-60 disabled:cursor-not-allowed"
         >
           <option value="all">全部模组</option>
           <option v-for="mod in mods" :key="mod.modId" :value="mod.modId">
@@ -699,11 +792,11 @@ const saveSettings = () => {
           v-if="
             showRecipeModal
           "
-          :class="['recipe-preview-panel absolute flex flex-col overflow-hidden surface-glass border border-slate-300/50 rounded-xl shadow-lg', { 'wide-stage': recipePreviewNeedsWideStage }]"
+          :class="['recipe-preview-panel absolute flex flex-col overflow-visible surface-glass border border-slate-300/50 rounded-xl shadow-lg', { 'wide-stage': recipePreviewNeedsWideStage }]"
           :style="recipeDockStyle"
         >
           <!-- Recipe Content (no scroll, compact) -->
-          <div class="flex-1 flex flex-col p-2 gap-2 min-h-0 overflow-hidden">
+          <div class="flex-1 flex flex-col p-2 gap-2 min-h-0 overflow-visible">
             <!-- Machine Type Icons (compact) -->
             <MachineTypeIcons
               :categories="machineCategories"
@@ -753,10 +846,14 @@ const saveSettings = () => {
 
             <!-- Recipe Display (scaled to fit, flex-1 to fill remaining space) -->
             <div
-              class="surface-glass rounded border border-slate-200/60 flex-1 flex items-center justify-center recipe-display-container p-2 min-h-0"
+              :class="[
+                'surface-glass rounded border border-slate-200/60 flex-1 flex items-center justify-center recipe-display-container p-2 min-h-0',
+                { 'recipe-display-container--state': recipeStageIsStateView }
+              ]"
               @wheel="handleRecipeWheel"
+              @contextmenu="handleRecipePreviewContextMenu"
             >
-                <div class="recipe-stage-slot">
+                <div :class="['recipe-stage-slot', { 'recipe-stage-slot--state': recipeStageIsStateView }]">
                   <div v-if="recipeModalLoading" class="state-panel stage-state-panel">
                     <p class="state-title">正在加载配方...</p>
                     <p class="state-subtitle">请稍候，系统正在准备该物品的配方索引。</p>
@@ -806,6 +903,7 @@ const saveSettings = () => {
         <div
           class="items-column ml-auto flex flex-col overflow-hidden border-l border-slate-200/40"
           :style="itemColumnStyle"
+          @wheel="handleItemsWheel"
         >
           <!-- Top Pagination Control -->
           <div
@@ -815,9 +913,8 @@ const saveSettings = () => {
             <div class="flex items-center justify-between gap-1">
               <!-- 上一页按钮 - 最左侧 -->
               <button
-                @click="changePage(currentPage - 1)"
-                :disabled="currentPage === 1"
-                class="pager-btn rounded disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 flex items-center justify-center transition-colors"
+                @click="changeItemsPageWrapped(currentPage - 1)"
+                class="pager-btn rounded flex-shrink-0 flex items-center justify-center transition-colors"
                 :style="{
                   width: itemSize + 'px',
                   height: itemSize + 'px',
@@ -840,9 +937,8 @@ const saveSettings = () => {
 
               <!-- 下一页按钮 - 最右侧 -->
               <button
-                @click="changePage(currentPage + 1)"
-                :disabled="currentPage === totalPages"
-                class="pager-btn rounded disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0 flex items-center justify-center transition-colors"
+                @click="changeItemsPageWrapped(currentPage + 1)"
+                class="pager-btn rounded flex-shrink-0 flex items-center justify-center transition-colors"
                 :style="{
                   width: itemSize + 'px',
                   height: itemSize + 'px',
@@ -967,29 +1063,47 @@ const saveSettings = () => {
 
       <!-- Bottom Search Bar (Fixed Position, offset to have left 18% and right 12%) -->
       <div
-        class="search-anchor bottom-search-bar fixed bottom-0 z-40 pt-2 pb-0 px-2"
-        :style="centerRailStyle"
+        class="search-anchor bottom-search-bar fixed bottom-0 z-40 pt-1 pb-0 px-2"
+        :style="leftRailStyle"
       >
         <input
           v-model="searchQuery"
           @input="onSearch"
           @contextmenu="handleSearchContextMenu"
           type="text"
-          class="w-full px-3 py-2 text-sm rounded-lg chrome-field chrome-search-input"
+          class="w-full px-4 py-2.5 text-sm rounded-lg chrome-field chrome-search-input"
         />
+      </div>
+
+      <div
+        v-if="showSearchContextMenu"
+        class="search-context-menu fixed z-[70] min-w-[148px] rounded-xl border border-slate-300/20 p-1.5"
+        :style="{
+          left: `${searchContextMenuPosition.x}px`,
+          top: `${searchContextMenuPosition.y}px`,
+        }"
+        @pointerdown.stop
+        @contextmenu.prevent
+      >
+        <button
+          class="search-context-action w-full rounded-lg px-3 py-2 text-left text-sm"
+          @click="clearSearchQuery"
+        >
+          清空搜索
+        </button>
       </div>
     </main>
 
     <!-- Gear Button (Fixed Bottom-Left, Outside Main) -->
-    <div class="fixed bottom-6 left-6 z-50">
+    <div class="fixed bottom-3 left-6 z-50">
       <div class="relative">
         <button
           @click="showGearMenu = !showGearMenu"
-          class="gear-btn w-14 h-14 rounded-xl flex items-center justify-center text-3xl transition-all duration-300"
+          class="gear-btn w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all duration-300"
           :class="
             showGearMenu
-              ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/50'
-              : 'surface-glass text-slate-200 hover:bg-white/10 border border-slate-200/40'
+              ? 'bg-gradient-to-r from-slate-700 to-slate-600 text-white shadow-lg shadow-slate-900/35'
+              : 'surface-glass text-slate-300 hover:text-white border border-slate-200/20'
           "
           title="设置菜单"
           aria-label="设置菜单"
@@ -1125,6 +1239,7 @@ const saveSettings = () => {
   --home-shell-width: min(1880px, var(--app-shell-max-width, 96vw));
   --home-center-width: clamp(420px, 30vw, 760px);
   --home-center-left: clamp(180px, calc(50% - 18vw), 860px);
+  --home-left-rail-width: clamp(520px, 34vw, 920px);
   --home-right-width: clamp(520px, 38vw, 1240px);
   --home-recipe-top: clamp(56px, 6.2vh, 70px);
   --home-recipe-bottom: clamp(76px, 8vh, 98px);
@@ -1162,12 +1277,23 @@ const saveSettings = () => {
   overflow: hidden;
 }
 
+.recipe-display-container--state {
+  width: 100%;
+  max-width: none;
+  margin-inline: 0;
+}
+
 .recipe-stage-slot {
   width: 100%;
   height: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.recipe-stage-slot--state {
+  align-items: stretch;
+  justify-content: stretch;
 }
 
 .modal-stacked-furnace-recipes {
@@ -1275,7 +1401,11 @@ const saveSettings = () => {
 }
 
 .stage-state-panel {
-  max-width: 460px;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  min-height: 100%;
+  border-radius: 18px;
 }
 
 .list-state-panel {
@@ -1428,13 +1558,19 @@ const saveSettings = () => {
 
 /* Gear Button */
 .gear-btn {
-  backdrop-filter: blur(10px);
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(12px);
+  box-shadow:
+    0 8px 18px rgba(0, 0, 0, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  opacity: 0.84;
 }
 
 .gear-btn:hover {
-  transform: rotate(45deg) scale(1.1);
-  box-shadow: 0 0 20px rgba(0, 255, 247, 0.5);
+  transform: translateY(-1px) scale(1.04);
+  opacity: 1;
+  box-shadow:
+    0 12px 26px rgba(0, 0, 0, 0.30),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
 /* Gear Menu */
@@ -1442,6 +1578,45 @@ const saveSettings = () => {
   backdrop-filter: blur(20px);
   animation: scaleIn 0.2s ease-out;
   width: clamp(290px, 22vw, 420px);
+}
+
+.recipe-entry-btn {
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background: linear-gradient(180deg, rgba(20, 24, 31, 0.90), rgba(13, 16, 22, 0.94));
+  color: rgba(233, 241, 251, 0.95);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 10px 22px rgba(0, 0, 0, 0.22);
+  backdrop-filter: blur(12px);
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease, color 180ms ease;
+}
+
+.recipe-entry-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(191, 219, 254, 0.28);
+  color: #ffffff;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 28px rgba(0, 0, 0, 0.28);
+}
+
+.search-context-menu {
+  background:
+    linear-gradient(180deg, rgba(18, 22, 29, 0.96), rgba(11, 14, 20, 0.98));
+  box-shadow:
+    0 18px 36px rgba(0, 0, 0, 0.36),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(14px);
+}
+
+.search-context-action {
+  color: rgba(229, 236, 245, 0.94);
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.search-context-action:hover {
+  background: rgba(148, 163, 184, 0.14);
+  color: #ffffff;
 }
 
 @keyframes scaleIn {
@@ -1574,6 +1749,7 @@ const saveSettings = () => {
   .homepage-shell {
     --home-shell-width: min(2140px, 95vw);
     --home-center-width: clamp(460px, 29vw, 820px);
+    --home-left-rail-width: clamp(620px, 33vw, 1080px);
     --home-right-width: clamp(580px, 38vw, 1360px);
   }
 }
@@ -1582,6 +1758,7 @@ const saveSettings = () => {
   .homepage-shell {
     --home-center-width: clamp(520px, 30vw, 900px);
     --home-center-left: clamp(250px, calc(50% - 18vw), 980px);
+    --home-left-rail-width: clamp(720px, 32vw, 1240px);
     --home-right-width: clamp(700px, 39vw, 1500px);
   }
 }
@@ -1591,6 +1768,7 @@ const saveSettings = () => {
     --home-shell-width: min(2680px, 94vw);
     --home-center-width: clamp(620px, 30vw, 1080px);
     --home-center-left: clamp(320px, calc(50% - 18vw), 1220px);
+    --home-left-rail-width: clamp(860px, 31vw, 1520px);
     --home-right-width: clamp(860px, 40vw, 1760px);
   }
 }
@@ -1600,6 +1778,7 @@ const saveSettings = () => {
     --home-shell-width: min(3200px, 92vw);
     --home-center-width: clamp(760px, 31vw, 1280px);
     --home-center-left: clamp(420px, calc(50% - 18vw), 1520px);
+    --home-left-rail-width: clamp(1040px, 30vw, 1880px);
     --home-right-width: clamp(1120px, 41vw, 2160px);
   }
 }

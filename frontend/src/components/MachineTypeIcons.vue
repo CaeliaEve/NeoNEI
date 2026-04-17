@@ -125,6 +125,8 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
 </template>
 <style scoped>
 .machine-type-icons {
+  position: relative;
+  z-index: 20;
   background: linear-gradient(180deg, rgba(14, 18, 24, 0.84), rgba(10, 14, 19, 0.88));
   border: 1px solid rgba(156, 174, 198, 0.14);
   border-radius: 12px;
@@ -139,6 +141,7 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
   gap: 10px;
   justify-content: center;
   flex-wrap: wrap;
+  overflow: visible;
 }
 
 .icon-wrapper {
@@ -250,7 +253,7 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
 /* Tooltip */
 .icon-tooltip {
   position: absolute;
-  bottom: -40px;
+  top: calc(100% + 8px);
   left: 50%;
   transform: translateX(-50%) scale(0.8);
   padding: 6px 12px;
@@ -264,7 +267,7 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
   pointer-events: none;
   opacity: 0;
   transition: all 0.2s ease;
-  z-index: 100;
+  z-index: 1200;
   box-shadow: 0 10px 20px rgba(0, 0, 0, 0.36);
 }
 
