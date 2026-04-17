@@ -3,11 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { getImageUrl, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
-import {
-  buildInputSlots,
-  buildOutputSlots,
-  type ResolvedSlot,
-} from '../composables/useRecipeSlots';
+import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
 interface Props {
@@ -25,332 +21,231 @@ const { playClick } = useSound();
 
 const inputSlots = ref<ResolvedSlot[]>([]);
 const outputSlot = ref<ResolvedSlot | null>(null);
-
 const machineLabel = computed(() => props.recipe.machineInfo?.machineType?.trim() || 'Blood Orb Synthesis');
-const variantCount = computed(() => {
-  const firstCell = Array.isArray(props.recipe.inputs) ? props.recipe.inputs[0] : null;
-  const firstSlot = Array.isArray(firstCell) ? firstCell[0] : null;
-  if (!firstSlot || Array.isArray(firstSlot)) {
-    return 0;
-  }
-  return Array.isArray(firstSlot.items) ? firstSlot.items.length : 0;
-});
 
-const gridColumns = computed(() => {
-  const count = inputSlots.value.length;
-  if (count <= 4) return 2;
-  if (count <= 9) return 3;
-  return 4;
-});
-
-async function initBloodOrbCrafting() {
+async function initOrb() {
   inputSlots.value = (await buildInputSlots(props.recipe)).filter(Boolean);
   const [firstOutput] = await buildOutputSlots(props.recipe, 1);
   outputSlot.value = firstOutput ?? null;
 }
 
-function handleItemClick(itemId: string) {
+function onItemClick(itemId: string) {
   playClick();
   emit('item-click', itemId);
 }
 
-onMounted(() => {
-  void initBloodOrbCrafting();
-});
+function imageError(event: Event) {
+  (event.target as HTMLImageElement).src = '/placeholder.png';
+}
 
-watch(
-  () => props.recipe,
-  () => {
-    void initBloodOrbCrafting();
-  },
-  { deep: true },
-);
+onMounted(() => void initOrb());
+watch(() => props.recipe, () => void initOrb(), { deep: true });
 </script>
 
 <template>
-  <div class="blood-ui orb-ui">
-    <div class="scene-bg" aria-hidden="true">
-      <div class="mist mist-a" />
-      <div class="mist mist-b" />
-      <div class="scene-grid" />
+  <div class="blood-orb-ui">
+    <div class="orb-ambient">
+      <div class="halo halo-a" />
+      <div class="halo halo-b" />
     </div>
 
-    <header class="ritual-header">
-      <div class="ritual-title-shell">
-        <div class="ritual-title">BLOOD ORB SYNTHESIS</div>
-        <div class="ritual-subtitle">{{ machineLabel }}</div>
-      </div>
-      <div class="ritual-badge">{{ variantCount > 1 ? `${variantCount} variants` : 'Orb focus' }}</div>
+    <header class="orb-header">
+      <span class="eyebrow">Orb Craft</span>
+      <h2>{{ machineLabel }}</h2>
     </header>
 
-    <section class="ritual-stage">
-      <section class="panel">
-        <div class="panel-title">INPUT</div>
-        <div class="input-grid" :style="{ gridTemplateColumns: `repeat(${gridColumns}, 50px)` }">
+    <section class="orb-stage">
+      <div class="matrix-panel">
+        <span class="panel-kicker">Catalysts</span>
+        <div class="matrix-grid">
           <template v-for="(slot, index) in inputSlots" :key="`${slot.itemId}-${index}`">
-            <RecipeItemTooltip :item-id="slot.itemId" :count="slot.count" @click="handleItemClick(slot.itemId)">
-              <div class="slot">
-                <img :src="getImageUrl(slot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-                <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
-              </div>
+            <RecipeItemTooltip :item-id="slot.itemId" :count="slot.count" @click="onItemClick(slot.itemId)">
+              <button class="small-slot" type="button">
+                <img :src="getImageUrl(slot.itemId)" :alt="slot.itemId" @error="imageError" />
+                <span v-if="slot.count > 1">{{ slot.count }}</span>
+              </button>
             </RecipeItemTooltip>
           </template>
-          <div v-if="inputSlots.length === 0" class="slot empty" />
         </div>
-      </section>
+      </div>
 
-      <section class="ritual-core" aria-hidden="true">
-        <div class="ring outer" />
-        <div class="ring inner" />
-        <div class="orb-frame" />
-        <div class="orb-sigil" />
-        <div class="sigil-chip">ORB</div>
-      </section>
+      <div class="orb-core">
+        <div class="core-ring outer" />
+        <div class="core-ring inner" />
+        <div class="orb-heart" />
+        <div class="orb-caption">ORB FOCUS</div>
+      </div>
 
-      <section class="panel panel-output">
-        <div class="panel-title panel-title-output">OUTPUT</div>
-        <div class="slot-wrap">
-          <RecipeItemTooltip
-            v-if="outputSlot"
-            :item-id="outputSlot.itemId"
-            :count="outputSlot.count"
-            @click="handleItemClick(outputSlot.itemId)"
-          >
-            <div class="slot output">
-              <img :src="getImageUrl(outputSlot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-              <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
-            </div>
-          </RecipeItemTooltip>
-          <div v-else class="slot output empty" />
-        </div>
-      </section>
+      <div class="result-panel">
+        <span class="panel-kicker">Result</span>
+        <RecipeItemTooltip
+          v-if="outputSlot"
+          :item-id="outputSlot.itemId"
+          :count="outputSlot.count"
+          @click="onItemClick(outputSlot.itemId)"
+        >
+          <button class="result-slot" type="button">
+            <img :src="getImageUrl(outputSlot.itemId)" :alt="outputSlot.itemId" @error="imageError" />
+            <span v-if="outputSlot.count > 1">{{ outputSlot.count }}</span>
+          </button>
+        </RecipeItemTooltip>
+        <div v-else class="result-slot is-empty" />
+      </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.blood-ui {
+.blood-orb-ui {
   position: relative;
-  overflow: visible;
-  width: min(960px, 100%);
-  padding: 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  background:
-    linear-gradient(180deg, rgba(22, 9, 13, 0.96), rgba(12, 7, 9, 0.98)),
-    radial-gradient(circle at top, rgba(190, 24, 93, 0.14), transparent 40%);
-  color: #f9d7de;
-  box-shadow:
-    0 24px 52px rgba(0, 0, 0, 0.48),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.scene-bg { position: absolute; inset: 0; pointer-events: none; }
-.mist {
-  position: absolute;
-  border-radius: 999px;
-  filter: blur(28px);
-  opacity: 0.24;
-}
-.mist-a { width: 280px; height: 200px; left: -40px; top: -40px; background: radial-gradient(circle, rgba(244, 114, 182, 0.28), transparent 72%); }
-.mist-b { width: 300px; height: 220px; right: -70px; bottom: -60px; background: radial-gradient(circle, rgba(225, 29, 72, 0.24), transparent 74%); }
-.scene-grid {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 18px 18px;
-  opacity: 0.14;
-}
-
-.ritual-header {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 18px 9px;
-  background:
-    linear-gradient(180deg, rgba(55, 19, 25, 0.94), rgba(30, 12, 16, 0.98)),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05), transparent 58%);
+  width: min(1180px, calc(100vw - 56px));
+  min-height: 620px;
+  height: min(760px, calc(100vh - 210px));
+  padding: 24px;
+  border-radius: 28px;
   border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(14, 10, 14, 0.96), rgba(6, 5, 9, 0.99)),
+    radial-gradient(circle at 50% 50%, rgba(239, 68, 68, 0.08), transparent 34%);
+  box-shadow: 0 28px 70px rgba(0,0,0,0.44);
+  overflow: hidden;
 }
-
-.ritual-title-shell { display: flex; flex-direction: column; gap: 2px; }
-.ritual-title {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #ffd8df;
+.orb-ambient { position: absolute; inset: 0; pointer-events: none; }
+.halo {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(46px);
+  opacity: 0.22;
 }
-.ritual-subtitle { font-size: 12px; color: #cc9ea6; }
-.ritual-badge {
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(244, 114, 182, 0.28);
-  background: rgba(73, 12, 22, 0.66);
-  color: #ffd8df;
-  font-size: 12px;
-}
-
-.ritual-stage {
+.halo-a { width: 360px; height: 220px; left: 10%; top: 8%; background: rgba(244, 114, 182, 0.2); }
+.halo-b { width: 380px; height: 240px; right: 8%; bottom: 10%; background: rgba(190, 24, 93, 0.18); }
+.orb-header {
   position: relative;
   z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(240px, 1fr) auto minmax(220px, 1fr);
-  gap: 14px;
-  align-items: center;
-  margin-top: 14px;
+  margin-bottom: 18px;
 }
-
-.panel {
-  position: relative;
-  padding: 18px 12px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background:
-    linear-gradient(180deg, rgba(43, 10, 18, 0.74), rgba(26, 7, 12, 0.78)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(2, 8, 23, 0.24);
-  min-height: 220px;
-}
-
-.panel::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
-  pointer-events: none;
-}
-
-.panel-title {
-  position: absolute;
-  top: -9px;
-  left: 12px;
-  min-width: 86px;
-  padding: 4px 10px 3px 12px;
-  background:
-    linear-gradient(180deg, rgba(104, 71, 49, 0.98), rgba(76, 49, 33, 0.98)),
-    url('/textures/nei/catalyst_tab.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  border: 1px solid rgba(251, 191, 36, 0.22);
-  border-radius: 6px 6px 4px 4px;
-  color: #fff1df;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
-  box-shadow: 0 4px 10px rgba(2, 8, 23, 0.22);
-  z-index: 1;
-}
-.panel-title-output {
-  border-color: rgba(245, 208, 138, 0.32);
-  color: #fff3da;
-}
-
-.input-grid {
-  margin-top: 18px;
-  min-height: 170px;
-  display: grid;
-  gap: 10px;
-  align-content: center;
-  justify-content: center;
-}
-.slot-wrap {
-  min-height: 170px;
-  display: grid;
-  place-items: center;
-}
-
-.slot {
-  position: relative;
-  width: 50px;
-  height: 50px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(0, 0, 0, 0.28);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
-}
-.slot.output { box-shadow: 0 0 22px rgba(248, 113, 113, 0.16), inset 0 0 0 1px rgba(255, 255, 255, 0.05); }
-.slot.empty { opacity: 0.35; }
-.item-icon { width: 32px; height: 32px; image-rendering: pixelated; }
-.count {
-  position: absolute;
-  right: 4px;
-  bottom: 3px;
+.eyebrow {
+  display: block;
+  color: #f8d084;
   font-size: 11px;
-  font-weight: 700;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  font-weight: 800;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
 }
-
-.ritual-core {
+.orb-header h2 {
+  margin: 10px 0 0;
+  color: #ffe4e7;
+  font-size: 30px;
+}
+.orb-stage {
   position: relative;
-  width: 250px;
-  height: 250px;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 280px minmax(280px, 1fr) 220px;
+  gap: 24px;
+  align-items: center;
+  height: calc(100% - 90px);
+}
+.matrix-panel,
+.result-panel {
+  min-height: 260px;
+  padding: 18px;
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: linear-gradient(180deg, rgba(24, 14, 20, 0.92), rgba(9, 8, 12, 0.96));
+}
+.panel-kicker {
+  display: block;
+  margin-bottom: 14px;
+  color: rgba(255, 232, 176, 0.84);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.matrix-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.small-slot,
+.result-slot {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  border: 1px solid rgba(236, 72, 153, 0.26);
+  background: linear-gradient(180deg, rgba(54, 16, 28, 0.9), rgba(18, 10, 14, 0.96));
+  cursor: pointer;
+}
+.result-slot {
+  width: 84px;
+  height: 84px;
+  border-color: rgba(244, 194, 118, 0.28);
+}
+.small-slot.is-empty,
+.result-slot.is-empty {
+  opacity: 0.3;
+  cursor: default;
+}
+.small-slot img,
+.result-slot img {
+  width: 46px;
+  height: 46px;
+  image-rendering: pixelated;
+}
+.result-slot img { width: 56px; height: 56px; }
+.small-slot span,
+.result-slot span {
+  position: absolute;
+  right: 6px;
+  bottom: 5px;
+  color: #fff;
+  font-size: 11px;
+}
+.result-panel {
   display: grid;
   place-items: center;
 }
-.ring {
+.orb-core {
+  position: relative;
+  min-height: 420px;
+  display: grid;
+  place-items: center;
+}
+.core-ring {
   position: absolute;
-  border-radius: 999px;
-  border: 2px solid rgba(59, 130, 246, 0.55);
+  border-radius: 50%;
+  border: 1px dashed rgba(236, 72, 153, 0.3);
 }
-.ring.outer { width: 208px; height: 208px; }
-.ring.inner { width: 160px; height: 160px; opacity: 0.7; }
-.orb-frame {
+.core-ring.outer { width: 300px; height: 300px; }
+.core-ring.inner { width: 196px; height: 196px; border-color: rgba(244, 194, 118, 0.28); }
+.orb-heart {
+  width: 110px;
+  height: 110px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 215, 223, 0.92), rgba(220, 38, 38, 0.86) 28%, rgba(127, 29, 29, 0.94) 62%);
+  box-shadow: 0 0 38px rgba(236, 72, 153, 0.26);
+}
+.orb-caption {
   position: absolute;
-  width: 112px;
-  height: 112px;
+  bottom: 62px;
+  padding: 10px 18px;
   border-radius: 999px;
-  border: 1px solid rgba(253, 164, 175, 0.28);
-  background: radial-gradient(circle, rgba(127, 29, 29, 0.65), rgba(42, 10, 18, 0.82));
-  box-shadow: 0 0 30px rgba(190, 24, 93, 0.18);
+  border: 1px solid rgba(236, 72, 153, 0.24);
+  background: rgba(55, 19, 25, 0.82);
+  color: #ffd8df;
+  font-weight: 800;
+  letter-spacing: 0.18em;
 }
-.orb-sigil {
-  width: 68px;
-  height: 68px;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(248, 113, 113, 0.92), rgba(157, 23, 77, 0.88));
-  border: 1px solid rgba(254, 205, 211, 0.42);
-  box-shadow: 0 0 20px rgba(248, 113, 113, 0.28);
-}
-.sigil-chip {
-  position: absolute;
-  bottom: 14px;
-  min-width: 98px;
-  text-align: center;
-  padding: 10px 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(190, 24, 93, 0.25);
-  background: linear-gradient(180deg, rgba(76, 5, 25, 0.86), rgba(58, 8, 19, 0.96));
-  color: #f8cdd6;
-  font-size: 12px;
-  letter-spacing: 0.14em;
-  font-weight: 700;
-}
-
-@media (max-width: 860px) {
-  .blood-ui { width: min(100%, 96vw); }
-  .ritual-stage { grid-template-columns: 1fr; }
-  .ritual-core { order: -1; margin: 0 auto; width: 220px; height: 220px; }
-  .ring.outer { width: 184px; height: 184px; }
-  .ring.inner { width: 142px; height: 142px; }
+@media (max-width: 980px) {
+  .blood-orb-ui {
+    height: auto;
+  }
+  .orb-stage {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

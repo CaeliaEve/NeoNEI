@@ -950,8 +950,10 @@ export function resolveRecipePresentationProfile(
     combined.includes('特定血宝珠合成') ||
     combined.includes('不定血宝珠合成')
   ) {
-    return createPresentationProfile(BLOOD_ORB_CRAFTING, {
-      reason: 'combined:blood_orb_crafting',
+    return createPresentationProfile(STANDARD_CRAFTING, {
+      preferDetailedCrafting: input.preferDetailedCrafting,
+      reason: 'combined:blood_orb_crafting:workbench_override',
+      sourceUiType: BLOOD_ORB_CRAFTING.uiType,
     });
   }
 

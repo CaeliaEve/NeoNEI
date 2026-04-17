@@ -3,11 +3,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { getImageUrl, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
-import {
-  buildInputSlots,
-  buildOutputSlots,
-  type ResolvedSlot,
-} from '../composables/useRecipeSlots';
+import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import { readPositiveIntegerMeta } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
@@ -26,396 +22,567 @@ const { playClick } = useSound();
 
 const inputSlots = ref<ResolvedSlot[]>([]);
 const outputSlot = ref<ResolvedSlot | null>(null);
-const bloodCost = ref<number | null>(null);
+const lpCost = ref<number | null>(null);
 
-const shownInputs = computed(() => inputSlots.value);
-const inputGridColumns = computed(() => {
-  const count = shownInputs.value.length;
-  if (count <= 4) return 2;
-  if (count <= 9) return 3;
-  return 4;
+const lpText = computed(() => (lpCost.value ? lpCost.value.toLocaleString() : '--'));
+const arrayNodes = computed(() => {
+  const total = inputSlots.value.length;
+  if (!total) return [] as Array<{ left: string; top: string }>;
+
+  const outerCount = Math.min(total, 8);
+  const positions: Array<{ left: string; top: string }> = [];
+  const outerRadiusX = 210;
+  const outerRadiusY = 172;
+
+  for (let i = 0; i < outerCount; i += 1) {
+    const angle = (Math.PI * 2 * i) / outerCount - Math.PI / 2;
+    positions.push({
+      left: `calc(50% + ${Math.cos(angle) * outerRadiusX}px)`,
+      top: `calc(50% + ${Math.sin(angle) * outerRadiusY}px)`,
+    });
+  }
+
+  const innerCount = total - outerCount;
+  if (innerCount > 0) {
+    const innerRadiusX = 114;
+    const innerRadiusY = 92;
+    for (let i = 0; i < innerCount; i += 1) {
+      const angle = (Math.PI * 2 * i) / innerCount - Math.PI / 2 + Math.PI / innerCount;
+      positions.push({
+        left: `calc(50% + ${Math.cos(angle) * innerRadiusX}px)`,
+        top: `calc(50% + ${Math.sin(angle) * innerRadiusY}px)`,
+      });
+    }
+  }
+
+  return positions;
 });
 
-const bloodCostDisplay = computed(() => (
-  typeof bloodCost.value === 'number' && bloodCost.value > 0
-    ? bloodCost.value.toLocaleString()
-    : '--'
-));
-
-async function initAlchemyTable() {
+async function initAlchemy() {
   inputSlots.value = await buildInputSlots(props.recipe);
   const [firstOutput] = await buildOutputSlots(props.recipe, 1);
   outputSlot.value = firstOutput ?? null;
-  bloodCost.value = readPositiveIntegerMeta(props.recipe, ['bloodCost', 'lpCost', 'requiredLP', 'lifeEssence']);
+  lpCost.value = readPositiveIntegerMeta(props.recipe, ['lpCost', 'bloodCost', 'requiredLP', 'lifeEssence']);
 }
 
-function handleItemClick(itemId: string) {
+function onItemClick(itemId: string) {
   playClick();
   emit('item-click', itemId);
 }
 
+function imageError(event: Event) {
+  (event.target as HTMLImageElement).src = '/placeholder.png';
+}
+
 onMounted(() => {
-  void initAlchemyTable();
+  void initAlchemy();
 });
 
-watch(
-  () => props.recipe,
-  () => {
-    void initAlchemyTable();
-  },
-  { deep: true },
-);
+watch(() => props.recipe, () => void initAlchemy(), { deep: true });
 </script>
 
 <template>
-  <div class="blood-ui blood-lab-ui">
-    <div class="scene-bg" aria-hidden="true">
-      <div class="mist mist-a" />
-      <div class="mist mist-b" />
-      <div class="scene-grid" />
-    </div>
+  <div class="blood-array-ui">
+    <div class="ambient ambient-a" aria-hidden="true" />
+    <div class="ambient ambient-b" aria-hidden="true" />
 
-    <header class="ritual-header">
-      <div class="ritual-title-shell">
-        <div class="ritual-title">ALCHEMY TABLE</div>
-        <div class="ritual-subtitle">Sanguine transmutation</div>
+    <header class="array-header">
+      <div class="title-block">
+        <span class="eyebrow">Blood Magic</span>
+        <h2>炼成阵列</h2>
       </div>
-      <div class="ritual-meta-rail">
-        <div class="ritual-pill">BLOOD ALCHEMY</div>
-        <div class="ritual-pill ritual-pill-accent">LP {{ bloodCostDisplay }}</div>
+
+      <div class="cost-panel">
+        <span>阵列消耗</span>
+        <strong>{{ lpText }} LP</strong>
       </div>
     </header>
 
-    <section class="ritual-stage">
-      <section class="panel">
-        <div class="panel-title">INPUT</div>
-        <div class="input-grid" :style="{ gridTemplateColumns: `repeat(${inputGridColumns}, 50px)` }">
-          <template v-for="(slot, index) in shownInputs" :key="`input-${index}`">
-            <RecipeItemTooltip :item-id="slot.itemId" :count="slot.count" @click="handleItemClick(slot.itemId)">
-              <div class="slot">
-                <img :src="getImageUrl(slot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-                <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
-              </div>
-            </RecipeItemTooltip>
-          </template>
-          <div v-if="shownInputs.length === 0" class="slot empty" />
-        </div>
-      </section>
+    <section class="array-stage">
+      <div class="array-board">
+        <div class="board-circle circle-a" />
+        <div class="board-circle circle-b" />
+        <div class="board-circle circle-c" />
+        <div class="board-circle circle-d" />
+        <div class="board-diamond diamond-a" />
+        <div class="board-diamond diamond-b" />
+        <div class="board-diamond diamond-c" />
+        <div class="axis axis-h" />
+        <div class="axis axis-v" />
+        <div class="axis axis-h axis-h-soft" />
+        <div class="axis axis-v axis-v-soft" />
+        <div class="blood-thread blood-thread-a" />
+        <div class="blood-thread blood-thread-b" />
+        <div class="blood-thread blood-thread-c" />
+        <div class="blood-thread blood-thread-d" />
+        <div class="ritual-mist mist-a" />
+        <div class="ritual-mist mist-b" />
 
-      <section class="ritual-core" aria-hidden="true">
-        <div class="ring outer" />
-        <div class="ring inner" />
-        <div class="lab-node" />
-        <div class="lab-sigil" />
-      </section>
-
-      <section class="panel panel-output">
-        <div class="panel-title panel-title-output">OUTPUT</div>
-        <div class="slot-wrap">
+        <div class="array-core">
+          <div class="core-shadow" />
+          <div class="core-ring" />
+          <div class="core-ring inner" />
+          <div class="core-pulse" />
+          <div class="core-pulse secondary" />
           <RecipeItemTooltip
             v-if="outputSlot"
             :item-id="outputSlot.itemId"
             :count="outputSlot.count"
-            @click="handleItemClick(outputSlot.itemId)"
+            @click="onItemClick(outputSlot.itemId)"
           >
-            <div class="slot output">
-              <img :src="getImageUrl(outputSlot.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
-              <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
-            </div>
+            <button class="core-slot" type="button">
+              <img :src="getImageUrl(outputSlot.itemId)" :alt="outputSlot.itemId" @error="imageError" />
+              <span v-if="outputSlot.count > 1">{{ outputSlot.count }}</span>
+            </button>
           </RecipeItemTooltip>
-          <div v-else class="slot output empty" />
+          <div v-else class="core-slot is-empty" />
         </div>
-      </section>
+
+        <div
+          v-for="(slot, index) in inputSlots"
+          :key="`${slot.itemId}-${index}`"
+          class="array-node"
+          :style="arrayNodes[index]"
+        >
+          <div class="node-link" aria-hidden="true" />
+          <RecipeItemTooltip :item-id="slot.itemId" :count="slot.count" @click="onItemClick(slot.itemId)">
+            <button class="node-slot" type="button">
+              <img :src="getImageUrl(slot.itemId)" :alt="slot.itemId" @error="imageError" />
+              <span v-if="slot.count > 1">{{ slot.count }}</span>
+            </button>
+          </RecipeItemTooltip>
+        </div>
+      </div>
     </section>
   </div>
 </template>
 
 <style scoped>
-.blood-ui {
+.blood-array-ui {
+  --gold-rgb: 183, 149, 99;
+  --gold-soft-rgb: 238, 214, 168;
+  --blood-rgb: 150, 28, 42;
+  --blood-bright-rgb: 228, 84, 106;
   position: relative;
-  overflow: visible;
-  width: min(960px, 100%);
-  padding: 16px;
-  border-radius: 18px;
-  border: 1px solid rgba(148, 163, 184, 0.22);
+  width: min(1200px, calc(100vw - 56px));
+  min-height: 640px;
+  height: min(780px, calc(100vh - 200px));
+  padding: 22px;
+  border-radius: 28px;
+  border: 1px solid rgba(var(--gold-rgb), 0.16);
   background:
-    linear-gradient(180deg, rgba(22, 9, 13, 0.96), rgba(12, 7, 9, 0.98)),
-    radial-gradient(circle at top, rgba(225, 29, 72, 0.1), transparent 40%);
-  color: #f9d7de;
+    linear-gradient(180deg, rgba(18, 13, 18, 0.97), rgba(8, 7, 10, 1)),
+    radial-gradient(circle at 50% 50%, rgba(var(--blood-rgb), 0.09), transparent 34%);
   box-shadow:
-    0 24px 52px rgba(0, 0, 0, 0.48),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 28px 72px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  overflow: hidden;
 }
 
-.scene-bg { position: absolute; inset: 0; pointer-events: none; }
-.mist {
+.ambient {
   position: absolute;
-  border-radius: 999px;
-  filter: blur(28px);
-  opacity: 0.24;
-}
-.mist-a { width: 280px; height: 200px; left: -40px; top: -40px; background: radial-gradient(circle, rgba(244, 114, 182, 0.28), transparent 72%); }
-.mist-b { width: 300px; height: 220px; right: -70px; bottom: -60px; background: radial-gradient(circle, rgba(225, 29, 72, 0.24), transparent 74%); }
-.scene-grid {
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.014) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.014) 1px, transparent 1px);
-  background-size: 18px 18px;
-  opacity: 0.14;
-}
-
-.ritual-header {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 18px 9px;
-  background:
-    linear-gradient(180deg, rgba(55, 19, 25, 0.94), rgba(30, 12, 16, 0.98)),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.05), transparent 58%);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 14px;
-}
-
-.ritual-title-shell {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.ritual-title {
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: #ffd8df;
-}
-
-.ritual-subtitle {
-  font-size: 12px;
-  color: #cc9ea6;
-}
-
-.ritual-meta-rail {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.ritual-pill {
-  padding: 6px 10px;
-  border-radius: 999px;
-  border: 1px solid rgba(248, 113, 113, 0.28);
-  background: rgba(73, 12, 22, 0.66);
-  color: #ffd8df;
-  font-size: 12px;
-}
-
-.ritual-pill-accent {
-  border-color: rgba(253, 186, 116, 0.3);
-  background: rgba(87, 33, 18, 0.62);
-  color: #fff0d6;
-}
-
-.ritual-stage {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto minmax(220px, 1fr);
-  gap: 14px;
-  align-items: center;
-  margin-top: 14px;
-}
-
-.panel {
-  position: relative;
-  padding: 18px 12px 12px;
-  border-radius: 16px;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  background:
-    linear-gradient(180deg, rgba(43, 10, 18, 0.74), rgba(26, 7, 12, 0.78)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.04), transparent 48%),
-    url('/textures/nei/recipebg.png');
-  background-repeat: no-repeat, no-repeat, repeat;
-  background-size: auto, auto, 96px 96px;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(2, 8, 23, 0.24);
-}
-
-.panel::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
-  border-radius: 10px;
+  border-radius: 50%;
+  filter: blur(48px);
+  opacity: 0.18;
   pointer-events: none;
 }
 
-.panel-output { border-color: rgba(245, 208, 138, 0.24); }
-
-.panel-title {
-  position: absolute;
-  top: -9px;
-  left: 12px;
-  min-width: 86px;
-  padding: 4px 10px 3px 12px;
-  background:
-    linear-gradient(180deg, rgba(104, 71, 49, 0.98), rgba(76, 49, 33, 0.98)),
-    url('/textures/nei/catalyst_tab.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: cover;
-  border: 1px solid rgba(251, 191, 36, 0.22);
-  border-radius: 6px 6px 4px 4px;
-  color: #fff1df;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-transform: uppercase;
-  box-shadow: 0 4px 10px rgba(2, 8, 23, 0.22);
-  z-index: 1;
+.ambient-a {
+  width: 280px;
+  height: 180px;
+  left: -60px;
+  top: 42px;
+  background: rgba(var(--blood-rgb), 0.24);
 }
 
-.panel-title-output {
-  border-color: rgba(245, 208, 138, 0.32);
-  color: #fff3da;
+.ambient-b {
+  width: 360px;
+  height: 240px;
+  right: -100px;
+  bottom: 36px;
+  background: rgba(147, 51, 234, 0.12);
 }
 
-.input-grid {
-  min-height: 178px;
-  display: grid;
-  grid-auto-rows: 50px;
-  justify-content: center;
-  align-content: center;
-  gap: 8px;
-}
-
-.slot-wrap {
-  min-height: 178px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.slot {
-  width: 50px;
-  height: 50px;
+.array-header {
   position: relative;
+  z-index: 1;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border-radius: 10px;
-  border: 1px solid rgba(177, 63, 83, 0.5);
-  background:
-    linear-gradient(180deg, rgba(62, 14, 24, 0.9), rgba(36, 8, 14, 0.92)),
-    url('/textures/nei/slot.png');
-  background-repeat: no-repeat;
-  background-position: center;
-  background-size: 100% 100%, 18px 18px;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 6px 12px rgba(2, 8, 23, 0.28);
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin-bottom: 18px;
 }
 
-.slot.output { border-color: rgba(245, 208, 138, 0.42); }
-.slot.empty { opacity: 0.34; }
+.eyebrow {
+  display: block;
+  color: rgba(var(--gold-soft-rgb), 0.86);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
 
-.item-icon {
-  width: 40px;
-  height: 40px;
-  max-width: 42px;
-  max-height: 42px;
-  object-fit: contain;
+.title-block h2 {
+  margin: 8px 0 10px;
+  color: #f7ece2;
+  font-size: 30px;
+  line-height: 1;
+}
+
+.title-block p {
+  margin: 0;
+  max-width: 520px;
+  color: rgba(255, 228, 231, 0.74);
+  line-height: 1.65;
+}
+
+.cost-panel {
+  min-width: 206px;
+  padding: 12px 16px;
+  border-radius: 16px;
+  border: 1px solid rgba(var(--gold-rgb), 0.18);
+  background:
+    linear-gradient(180deg, rgba(58, 23, 30, 0.88), rgba(25, 14, 17, 0.96));
+  box-shadow:
+    0 0 20px rgba(var(--blood-rgb), 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+.cost-panel span {
+  display: block;
+  color: rgba(var(--gold-soft-rgb), 0.68);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.cost-panel strong {
+  display: block;
+  margin-top: 8px;
+  color: #fff1d7;
+  font-size: 22px;
+  line-height: 1;
+}
+
+.array-stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0;
+  align-items: stretch;
+}
+
+.array-board {
+  position: relative;
+  min-height: 580px;
+  border-radius: 24px;
+  border: 1px solid rgba(var(--gold-rgb), 0.14);
+  background:
+    linear-gradient(180deg, rgba(19, 15, 19, 0.95), rgba(10, 9, 12, 0.98)),
+    radial-gradient(circle at center, rgba(var(--blood-rgb), 0.08), transparent 32%);
+  overflow: hidden;
+}
+
+.board-circle,
+.board-diamond {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.board-circle {
+  border-radius: 50%;
+  border: 1px dashed rgba(var(--gold-rgb), 0.18);
+}
+
+.circle-a {
+  width: 470px;
+  height: 470px;
+}
+
+.circle-b {
+  width: 304px;
+  height: 304px;
+  border-color: rgba(var(--blood-bright-rgb), 0.20);
+}
+
+.circle-c {
+  width: 164px;
+  height: 164px;
+  border-style: solid;
+  border-color: rgba(var(--gold-rgb), 0.16);
+}
+
+.circle-d {
+  width: 540px;
+  height: 540px;
+  border-color: rgba(var(--blood-bright-rgb), 0.08);
+}
+
+.board-diamond {
+  width: 396px;
+  height: 396px;
+  border: 1px solid rgba(var(--gold-rgb), 0.10);
+  transform: translate(-50%, -50%) rotate(45deg);
+}
+
+.diamond-b {
+  width: 214px;
+  height: 214px;
+  border-color: rgba(var(--blood-bright-rgb), 0.12);
+}
+
+.diamond-c {
+  width: 548px;
+  height: 548px;
+  border-color: rgba(var(--gold-rgb), 0.06);
+}
+
+.axis {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.axis-h {
+  width: 520px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--gold-rgb), 0.16), transparent);
+}
+
+.axis-v {
+  width: 1px;
+  height: 520px;
+  background: linear-gradient(180deg, transparent, rgba(var(--gold-rgb), 0.14), transparent);
+}
+
+.axis-h-soft {
+  width: 360px;
+  background: linear-gradient(90deg, transparent, rgba(var(--blood-bright-rgb), 0.16), transparent);
+}
+
+.axis-v-soft {
+  height: 360px;
+  background: linear-gradient(180deg, transparent, rgba(var(--blood-bright-rgb), 0.14), transparent);
+}
+
+.blood-thread {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  height: 1px;
+  transform-origin: left center;
+  background: linear-gradient(90deg, rgba(var(--blood-bright-rgb), 0.28), transparent 78%);
+  pointer-events: none;
+  filter: blur(0.2px);
+}
+
+.blood-thread-a {
+  width: 228px;
+  transform: translate(0, 0) rotate(-45deg);
+}
+
+.blood-thread-b {
+  width: 228px;
+  transform: translate(0, 0) rotate(45deg);
+}
+
+.blood-thread-c {
+  width: 228px;
+  transform: translate(0, 0) rotate(135deg);
+}
+
+.blood-thread-d {
+  width: 228px;
+  transform: translate(0, 0) rotate(-135deg);
+}
+
+.ritual-mist {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.mist-a {
+  background: radial-gradient(circle at 50% 50%, rgba(var(--blood-rgb), 0.06), transparent 28%);
+}
+
+.mist-b {
+  background: radial-gradient(circle at 50% 50%, rgba(var(--gold-rgb), 0.04), transparent 42%);
+}
+
+.rune-track {
+  position: absolute;
+  left: 50%;
+  width: 54%;
+  display: flex;
+  justify-content: space-between;
+  transform: translateX(-50%);
+  color: rgba(var(--gold-soft-rgb), 0.64);
+  font-size: 15px;
+  text-shadow: 0 0 16px rgba(var(--gold-rgb), 0.12);
+}
+
+.rune-track.top { top: 18%; }
+.rune-track.bottom { bottom: 18%; }
+
+.array-core {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.core-shadow {
+  position: absolute;
+  inset: -32px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--blood-rgb), 0.18), transparent 72%);
+  filter: blur(18px);
+  pointer-events: none;
+}
+
+.core-ring {
+  position: absolute;
+  inset: -18px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--gold-rgb), 0.16);
+  pointer-events: none;
+}
+
+.core-ring.inner {
+  inset: -8px;
+  border-color: rgba(var(--blood-bright-rgb), 0.18);
+}
+
+.core-pulse {
+  position: absolute;
+  inset: -28px;
+  border-radius: 50%;
+  border: 1px solid rgba(var(--blood-bright-rgb), 0.12);
+  opacity: 0.34;
+  animation: corePulse 4.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.core-pulse.secondary {
+  inset: -46px;
+  border-color: rgba(var(--gold-rgb), 0.08);
+  animation-duration: 6.4s;
+}
+
+.core-slot {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  display: grid;
+  place-items: center;
+  border-radius: 18px;
+  border: 1px solid rgba(var(--gold-rgb), 0.22);
+  background:
+    radial-gradient(circle at 50% 28%, rgba(var(--gold-soft-rgb), 0.10), transparent 42%),
+    linear-gradient(180deg, rgba(66, 22, 31, 0.96), rgba(18, 10, 14, 1));
+  box-shadow:
+    0 0 26px rgba(var(--blood-rgb), 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.core-slot:hover {
+  transform: translateY(-2px);
+}
+
+.core-slot.is-empty { opacity: 0.3; }
+
+.core-slot img,
+.node-slot img {
+  width: 52px;
+  height: 52px;
   image-rendering: pixelated;
 }
 
-.count {
+.node-slot img {
+  width: 40px;
+  height: 40px;
+}
+
+.core-slot span,
+.node-slot span {
   position: absolute;
-  right: 3px;
-  bottom: 2px;
-  padding: 1px 3px;
-  border-radius: 4px;
-  background: rgba(15, 23, 42, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  font-size: 10px;
+  right: 6px;
+  bottom: 4px;
   color: #fff;
-  text-shadow: 0 1px 1px rgba(15, 23, 42, 0.92);
+  font-size: 11px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
 }
 
-.ritual-core {
-  width: 214px;
-  height: 214px;
+.array-node {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+}
+
+.node-link {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 2px;
+  height: 176px;
+  transform-origin: top center;
+  transform: translate(-50%, -50%) rotate(90deg);
+  background: linear-gradient(180deg, rgba(var(--blood-bright-rgb), 0.34), rgba(var(--gold-rgb), 0.08) 52%, transparent);
+  pointer-events: none;
+  filter: blur(0.2px);
+}
+
+.node-slot {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ring {
-  position: absolute;
-  border-radius: 50%;
-  border: 1px solid rgba(212, 84, 108, 0.28);
-}
-
-.outer {
-  width: 214px;
-  height: 214px;
-  border-style: dashed;
-  animation: spinSlow 22s linear infinite;
-}
-
-.inner {
-  width: 166px;
-  height: 166px;
-  border-style: dashed;
-  animation: spinReverse 16s linear infinite;
-}
-
-.lab-node {
-  width: 122px;
-  height: 122px;
-  transform: rotate(45deg);
-  border: 1px solid rgba(233, 121, 141, 0.34);
-  box-shadow: 0 0 24px rgba(182, 44, 69, 0.22);
-  animation: pulseRune 3.4s ease-in-out infinite;
-}
-
-.lab-sigil {
-  position: absolute;
-  width: 54px;
-  height: 92px;
-  transform: rotate(45deg);
-  border: 1px solid rgba(236, 132, 161, 0.52);
-  background: linear-gradient(165deg, rgba(112, 20, 41, 0.92), rgba(58, 10, 21, 0.96));
+  width: 68px;
+  height: 68px;
+  display: grid;
+  place-items: center;
+  border-radius: 16px;
+  border: 1px solid rgba(var(--gold-rgb), 0.18);
+  background:
+    radial-gradient(circle at 50% 28%, rgba(var(--gold-soft-rgb), 0.08), transparent 40%),
+    linear-gradient(180deg, rgba(54, 21, 28, 0.94), rgba(18, 10, 13, 0.98));
   box-shadow:
-    0 0 24px rgba(194, 58, 92, 0.32),
-    inset 0 0 18px rgba(255, 171, 196, 0.12);
+    0 0 18px rgba(var(--blood-rgb), 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
-@keyframes spinSlow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-@keyframes spinReverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
-@keyframes pulseRune {
-  0%, 100% { opacity: 0.34; transform: rotate(45deg) scale(0.97); }
-  50% { opacity: 0.72; transform: rotate(45deg) scale(1.02); }
+.node-slot:hover {
+  transform: translateY(-2px);
 }
 
-@media (max-width: 900px) {
-  .ritual-stage {
-    grid-template-columns: 1fr;
-    justify-items: center;
-    gap: 12px;
+@keyframes corePulse {
+  0%, 100% {
+    transform: scale(0.94);
+    opacity: 0.18;
+  }
+  50% {
+    transform: scale(1.06);
+    opacity: 0.42;
+  }
+}
+
+@media (max-width: 980px) {
+  .blood-alchemy-ui {
+    height: auto;
   }
 
-  .ritual-core {
-    order: -1;
+  .ritual-board {
+    min-height: 500px;
   }
 }
 </style>
