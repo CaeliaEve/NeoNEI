@@ -1,5 +1,6 @@
 ﻿import { computed, type Ref } from 'vue';
 import type { Recipe, RecipeVariantGroup } from '../../services/api';
+import { resolveRecipePresentationProfile } from '../../services/uiTypeMapping';
 import type { RecipeGraph } from '../../domain/recipeGraph';
 import type { RecipeIndexes } from '../../utils/recipeIndexing';
 import {
@@ -139,15 +140,33 @@ export const useRecipeBrowserSelectors = ({
     return Array.from(currentCategory.value.recipeVariants.values()).map((group) => group[0]);
   });
 
+  const recipesPerPage = computed(() => {
+    const recipe = currentCategoryPages.value[0];
+    if (!recipe) return 1;
+    const profile = resolveRecipePresentationProfile({
+      machineType: recipe.machineInfo?.machineType,
+      recipeType: recipe.recipeType,
+      recipeTypeData: recipe.recipeTypeData,
+      inputs: recipe.inputs,
+      additionalData: recipe.additionalData as Record<string, unknown> | undefined,
+      metadata: recipe.metadata as Record<string, unknown> | undefined,
+      preferDetailedCrafting: false,
+    });
+    return profile.component === 'FurnaceUI' ? 2 : 1;
+  });
+
   const currentBaseRecipe = computed(() => {
     if (!currentCategory.value || currentCategoryPages.value.length === 0) return null;
-    const recipeIndex = currentPage.value % currentCategoryPages.value.length;
+    const recipeIndex = (currentPage.value % totalPages.value) * recipesPerPage.value;
     return currentCategoryPages.value[recipeIndex] || null;
   });
 
   const currentPageRecipes = computed(() => {
-    if (!currentBaseRecipe.value) return [];
-    return [applySelectedVariants(currentBaseRecipe.value, getSelectedVariant)];
+    if (!currentCategory.value || currentCategoryPages.value.length === 0) return [];
+    const startIndex = (currentPage.value % totalPages.value) * recipesPerPage.value;
+    return currentCategoryPages.value
+      .slice(startIndex, startIndex + recipesPerPage.value)
+      .map((recipe) => applySelectedVariants(recipe, getSelectedVariant));
   });
 
   const currentRecipeVariantGroups = computed<RecipeVariantGroup[]>(() => {
@@ -191,7 +210,7 @@ export const useRecipeBrowserSelectors = ({
 
   const totalPages = computed(() => {
     if (!currentCategory.value) return 0;
-    return currentCategory.value.recipeVariants.size;
+    return Math.ceil(currentCategory.value.recipeVariants.size / recipesPerPage.value);
   });
 
   const filteredRecipeCount = computed(() => filteredRecipes.value.length);

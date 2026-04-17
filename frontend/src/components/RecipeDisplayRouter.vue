@@ -119,6 +119,30 @@ const presentationProfile = computed<RecipePresentationProfile>(() => resolveRec
 const uiConfig = computed<UITypeConfig>(() => presentationProfile.value.uiConfig);
 const shouldUseDetailedCrafting = computed(() => presentationProfile.value.renderMode === 'detailed_crafting');
 const shouldUseRouterScale = computed(() => props.scaleToFit);
+const neiHandlerMetadata = computed(() => {
+  const metadata = props.recipe.metadata && typeof props.recipe.metadata === 'object'
+    ? (props.recipe.metadata as Record<string, unknown>)
+    : {};
+  const additionalData = props.recipe.additionalData && typeof props.recipe.additionalData === 'object'
+    ? (props.recipe.additionalData as Record<string, unknown>)
+    : {};
+  if (metadata.specialRecipeType !== 'NEI_Handler' && additionalData.specialRecipeType !== 'NEI_Handler') {
+    return null;
+  }
+  return {
+    handler: String(additionalData.handler ?? ''),
+    handlerClass: String(additionalData.handlerClass ?? ''),
+    modName: String(additionalData.modName ?? ''),
+    modId: String(additionalData.modId ?? ''),
+    handlerIcon: String(additionalData.handlerIcon ?? ''),
+    size: [
+      additionalData.handlerWidth ? `w=${additionalData.handlerWidth}` : '',
+      additionalData.handlerHeight ? `h=${additionalData.handlerHeight}` : '',
+      additionalData.maxRecipesPerPage ? `page=${additionalData.maxRecipesPerPage}` : '',
+      additionalData.yShift !== null && additionalData.yShift !== undefined ? `y=${additionalData.yShift}` : '',
+    ].filter(Boolean).join(' '),
+  };
+});
 
 const calculateScale = () => {
   if (!shouldUseRouterScale.value || !containerRef.value || !contentRef.value) {
@@ -327,6 +351,25 @@ if (isDev && typeof window !== 'undefined') {
           <span class="debug-label">Component:</span>
           <span class="debug-value">{{ displayedComponentName }}</span>
         </div>
+        <template v-if="neiHandlerMetadata">
+          <div class="debug-section-title">NEI Handler</div>
+          <div class="debug-row">
+            <span class="debug-label">Handler:</span>
+            <span class="debug-value">{{ neiHandlerMetadata.handler || neiHandlerMetadata.handlerClass }}</span>
+          </div>
+          <div class="debug-row">
+            <span class="debug-label">Mod:</span>
+            <span class="debug-value">{{ neiHandlerMetadata.modName || neiHandlerMetadata.modId }}</span>
+          </div>
+          <div class="debug-row">
+            <span class="debug-label">Icon:</span>
+            <span class="debug-value">{{ neiHandlerMetadata.handlerIcon || 'N/A' }}</span>
+          </div>
+          <div class="debug-row">
+            <span class="debug-label">Layout:</span>
+            <span class="debug-value">{{ neiHandlerMetadata.size || 'N/A' }}</span>
+          </div>
+        </template>
       </div>
     </div>
 
@@ -499,6 +542,16 @@ if (isDev && typeof window !== 'undefined') {
   background: rgba(148, 163, 184, 0.06);
   border: 1px solid rgba(148, 163, 184, 0.08);
   border-radius: 8px;
+}
+
+.debug-section-title {
+  margin-top: 8px;
+  padding: 4px 2px 2px;
+  color: #f8d084;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
 }
 
 .debug-label {

@@ -124,6 +124,7 @@ export interface IndexedRecipe {
   fluidOutputs: IndexedFluidStack[];
   machineInfo: IndexedMachineInfo | null;
   metadata: IndexedRecipeMetadata | null;
+  additionalData?: Record<string, unknown> | null;
   recipeTypeData?: RecipeTypeData;
 }
 
@@ -659,6 +660,7 @@ export class IndexedRecipesService {
     const value = (raw ?? {}) as Record<string, unknown>;
     const machineInfoValue = (value.machineInfo ?? null) as Record<string, unknown> | null;
     const metadataValue = (value.metadata ?? null) as Record<string, unknown> | null;
+    const additionalDataValue = (value.additionalData ?? null) as Record<string, unknown> | null;
     const recipeTypeDataValue = (value.recipeTypeData ?? undefined) as RecipeTypeData | undefined;
 
     const machineInfo = machineInfoValue
@@ -698,6 +700,7 @@ export class IndexedRecipesService {
       fluidOutputs: Array.isArray(value.fluidOutputs) ? value.fluidOutputs.map((entry) => this.transformSplitFluidStack(entry)) : [],
       machineInfo,
       metadata: transformRecipeMetadata(metadataValue, (entry) => this.transformSplitIndexedItem(entry)),
+      additionalData: additionalDataValue,
       recipeTypeData: recipeTypeDataValue,
     };
   }

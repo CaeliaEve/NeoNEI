@@ -376,8 +376,14 @@ const isRecipeModalWorkbenchCanvas = computed(() => {
   );
 });
 
+const isRecipeModalWideCanvas = computed(() => {
+  return isRecipeModalWorkbenchCanvas.value || currentRecipePresentation.value?.component === 'FurnaceUI';
+});
+
+const isRecipeModalFurnaceCanvas = computed(() => currentRecipePresentation.value?.component === 'FurnaceUI');
+
 const recipeModalScaleToFit = computed(() => {
-  if (isRecipeModalWorkbenchCanvas.value) return false;
+  if (isRecipeModalWideCanvas.value) return false;
   const surface = currentRecipePresentation.value?.uiConfig.presentation?.surface;
   const density = currentRecipePresentation.value?.uiConfig.presentation?.density;
   const family = currentRecipePresentation.value?.uiConfig.presentation?.family;
@@ -762,6 +768,19 @@ const saveSettings = () => {
                       <button class="mini-pager-btn" @click="openCurrentRecipeMode">重试</button>
                       <button class="mini-pager-btn" @click="showRecipeModal = false">关闭面板</button>
                     </div>
+                  </div>
+                  <div
+                    v-else-if="isRecipeModalFurnaceCanvas && currentPageRecipes.length > 0"
+                    class="modal-stacked-furnace-recipes"
+                  >
+                    <RecipeDisplayRouter
+                      v-for="recipe in currentPageRecipes"
+                      :key="recipe.recipeId"
+                      :recipe="recipe"
+                      @item-click="handleRecipeItemClick"
+                      :scale-to-fit="recipeModalScaleToFit"
+                      :prefer-detailed-crafting="false"
+                    />
                   </div>
                   <RecipeDisplayRouter
                     v-else-if="currentPageRecipes.length > 0"
@@ -1149,6 +1168,95 @@ const saveSettings = () => {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.modal-stacked-furnace-recipes {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  align-items: stretch;
+  position: relative;
+  overflow: hidden;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(249, 115, 22, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(9, 14, 22, 0.96), rgba(4, 8, 14, 0.99));
+  box-shadow:
+    0 18px 42px rgba(2, 8, 23, 0.40),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.modal-stacked-furnace-recipes::after {
+  content: '';
+  position: absolute;
+  left: 26px;
+  right: 26px;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.18), transparent);
+  pointer-events: none;
+}
+
+.modal-stacked-furnace-recipes :deep(.furnace-ui) {
+  --furnace-slot-size: 58px;
+  --furnace-icon-size: 40px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 6px 12px;
+  overflow: visible;
+}
+
+.modal-stacked-furnace-recipes :deep(.scene-bg) {
+  display: none;
+}
+
+.modal-stacked-furnace-recipes :deep(.furnace-shell) {
+  width: min(940px, 100%);
+  min-height: 0;
+  height: 100%;
+  grid-template-columns: 164px minmax(220px, 1fr) 164px;
+  gap: 26px;
+  padding: 16px 34px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.modal-stacked-furnace-recipes :deep(.furnace-shell::before) {
+  inset: 16px 28px;
+  border-color: rgba(148, 163, 184, 0.05);
+  background: radial-gradient(circle at 50% 50%, rgba(249, 115, 22, 0.045), transparent 30%);
+}
+
+.modal-stacked-furnace-recipes :deep(.furnace-panel) {
+  min-height: 136px;
+  padding: 24px 18px 18px;
+}
+
+.modal-stacked-furnace-recipes :deep(.heat-core) {
+  min-height: 190px;
+}
+
+.modal-stacked-furnace-recipes :deep(.thermal-core) {
+  width: 84px;
+  height: 84px;
+  border-radius: 22px;
+}
+
+.modal-stacked-furnace-recipes :deep(.thermal-track) {
+  left: 0;
+  right: 0;
+  height: 82px;
+}
+
+.modal-stacked-furnace-recipes :deep(.thermal-caption) {
+  bottom: 14px;
+  font-size: 8px;
 }
 
 .state-panel {

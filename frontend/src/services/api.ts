@@ -388,6 +388,105 @@ export interface RecipeBootstrapPayload {
   indexedSummary: indexedItemRecipeSummaryResponse | null;
 }
 
+export interface GTDiagramItemRef {
+  itemId: string;
+  localizedName: string;
+  tier?: number | null;
+  tierName?: string | null;
+}
+
+export interface GTCircuitLine {
+  startTier: number;
+  boards: GTDiagramItemRef[];
+  circuits: GTDiagramItemRef[];
+}
+
+export interface GTIndividualCircuit {
+  tier: number;
+  boards: GTDiagramItemRef[];
+  circuit: GTDiagramItemRef | null;
+}
+
+export interface GTCircuitPartGroup {
+  key: string;
+  parts: Array<{
+    prefix: string;
+    itemId: string;
+    localizedName: string;
+  }>;
+}
+
+export interface GTCircuitProgressionDocument {
+  generatedFrom: string;
+  circuitLines: GTCircuitLine[];
+  individualCircuits: GTIndividualCircuit[];
+  circuitParts: GTCircuitPartGroup[];
+}
+
+export interface GTMaterialPartRef {
+  prefix: string;
+  itemId: string;
+  localizedName: string;
+}
+
+export interface GTMaterialFluidRef {
+  kind: string;
+  fluidId: string;
+  localizedName: string;
+}
+
+export interface GTMaterialPartsEntry {
+  materialName: string;
+  materialId: string;
+  sections: Record<string, GTMaterialPartRef[]>;
+  fluids: GTMaterialFluidRef[];
+}
+
+export interface GTMaterialPartsDocument {
+  generatedFrom: string;
+  materials: GTMaterialPartsEntry[];
+}
+
+export interface GTDiagramsOverview {
+  circuits: GTCircuitProgressionDocument | null;
+  materials: GTMaterialPartsDocument | null;
+}
+
+export interface ForestryGeneticsItemDrop {
+  itemId: string;
+  localizedName: string;
+  chance: number;
+}
+
+export interface ForestryGeneticsSpecies {
+  uid: string;
+  name: string;
+  memberItemId: string;
+  products: ForestryGeneticsItemDrop[];
+  specialties: ForestryGeneticsItemDrop[];
+}
+
+export interface ForestryGeneticsMutation {
+  allele0: string;
+  allele1: string;
+  result: string;
+  chance: number;
+  restricted: boolean;
+  dimensions?: string[];
+  biomes?: string[];
+}
+
+export interface ForestryGeneticsBranch {
+  species: ForestryGeneticsSpecies[];
+  mutations: ForestryGeneticsMutation[];
+}
+
+export interface ForestryGeneticsOverview {
+  generatedFrom: string;
+  bees: ForestryGeneticsBranch | null;
+  trees: ForestryGeneticsBranch | null;
+}
+
 export interface MultiblockDimensions {
   x: number;
   y: number;
@@ -830,6 +929,16 @@ export const api = {
   // Get multiblock blueprint by controller item ID
   async getMultiblockBlueprint(controllerItemId: string): Promise<MultiblockBlueprint> {
     const response = await http.get(`/multiblocks/${encodeURIComponent(controllerItemId)}`);
+    return response.data;
+  },
+
+  async getGTDiagramsOverview(): Promise<GTDiagramsOverview> {
+    const response = await http.get('/gt-diagrams/overview');
+    return response.data;
+  },
+
+  async getForestryGeneticsOverview(): Promise<ForestryGeneticsOverview> {
+    const response = await http.get('/forestry-genetics/overview');
     return response.data;
   }
 };

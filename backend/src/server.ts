@@ -8,6 +8,8 @@ import patternsRoutes from './routes/patterns.routes';
 import indexedRecipesRoutes from './routes/recipes-indexed.routes';
 import multiblocksRoutes from './routes/multiblocks.routes';
 import ecosystemRoutes from './routes/ecosystem.routes';
+import gtDiagramsRoutes from './routes/gt-diagrams.routes';
+import forestryGeneticsRoutes from './routes/forestry-genetics.routes';
 import renderContractRoutes from './routes/render-contract.routes';
 import recipeBootstrapRoutes from './routes/recipe-bootstrap.routes';
 import { getDatabaseManager } from './models/database';
@@ -193,6 +195,8 @@ app.get('/api', (_req, res) => {
       mods: '/api/items/mods',
       indexedRecipes: '/api/recipes-indexed',
       multiblocks: '/api/multiblocks/:controllerItemId',
+      gtDiagrams: '/api/gt-diagrams/overview',
+      forestryGenetics: '/api/forestry-genetics/overview',
       patterns: '/api/patterns',
     },
   });
@@ -203,6 +207,8 @@ app.use('/api/patterns', patternsRoutes);
 app.use('/api/recipes-indexed', indexedRecipesRoutes);
 app.use('/api/multiblocks', multiblocksRoutes);
 app.use('/api/ecosystem', ecosystemRoutes);
+app.use('/api/gt-diagrams', gtDiagramsRoutes);
+app.use('/api/forestry-genetics', forestryGeneticsRoutes);
 app.use('/api/render-contract', renderContractRoutes);
 app.use('/api/recipe-bootstrap', recipeBootstrapRoutes);
 app.use(errorHandler);

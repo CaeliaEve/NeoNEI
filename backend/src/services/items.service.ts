@@ -72,6 +72,18 @@ export class ItemsService {
     const normalizedSearch = (params.search || '').trim().toLowerCase();
     const normalizedModId = (params.modId || '').trim();
 
+    if (!normalizedSearch && (!normalizedModId || normalizedModId === 'all')) {
+      const fastPage = this.splitExportService.getItemsPageFast(page, pageSize);
+      const total = fastPage.total ?? 0;
+      return {
+        data: fastPage.items.map((raw) => this.transformSplitItem(raw)),
+        total,
+        page,
+        pageSize,
+        totalPages: Math.max(1, Math.ceil(total / pageSize)),
+      };
+    }
+
     let items = this.splitExportService.getAllItems().map((raw) => this.transformSplitItem(raw));
 
     if (normalizedModId && normalizedModId !== 'all') {
@@ -226,7 +238,7 @@ export class ItemsService {
 
   async getMods(): Promise<Array<{ modId: string; modName: string; itemCount: number }>> {
     this.ensureSplitItemsAvailable();
-    return this.splitExportService.getMods();
+    return this.splitExportService.getModsFast();
   }
 
   private transformSplitItem(raw: Record<string, unknown>): Item {

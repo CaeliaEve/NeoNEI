@@ -970,6 +970,24 @@ export function resolveRecipePresentationProfile(
     });
   }
 
+  if (
+    mergedMeta.specialRecipeType === 'NEI_Thaumcraft' &&
+    mergedMeta.thaumcraftLayout === 'infusion'
+  ) {
+    return createPresentationProfile(THAUMCRAFT_INFUSION, {
+      reason: 'metadata:nei_thaumcraft_infusion',
+    });
+  }
+
+  if (
+    mergedMeta.specialRecipeType === 'NEI_Thaumcraft' &&
+    mergedMeta.thaumcraftLayout === 'arcane'
+  ) {
+    return createPresentationProfile(THAUMCRAFT_ARCANE, {
+      reason: 'metadata:nei_thaumcraft_arcane',
+    });
+  }
+
   const normalizedPrimary = (machineType || recipeType || 'Crafting (Shaped)').toLowerCase();
   if (
     normalizedPrimary.includes('物品中的要素') ||

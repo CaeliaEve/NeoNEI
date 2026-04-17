@@ -18,6 +18,16 @@ const routes: RouteRecordRaw[] = [
     name: 'recipe-oracle',
     component: () => import('../views/RecipeOracleView.vue'),
     props: true
+  },
+  {
+    path: '/gt-diagrams',
+    name: 'gt-diagrams',
+    component: () => import('../views/GTDiagramsView.vue'),
+  },
+  {
+    path: '/forestry-bee-tree',
+    name: 'forestry-bee-tree',
+    component: () => import('../views/ForestryBeeTreeView.vue'),
   }
 ];
 

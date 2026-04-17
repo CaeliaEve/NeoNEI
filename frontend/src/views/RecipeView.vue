@@ -80,6 +80,8 @@ const copy = {
   producedByCount: '\u6765\u6e90',
   usedInCount: '\u7528\u9014',
   openOracle: 'Open Oracle',
+  openGTDiagrams: 'GT Diagrams',
+  openBeeTree: 'Bee Tree',
   overlayFailed: 'Overlay \u53d1\u9001\u5931\u8d25',
   overlaySending: '\u6b63\u5728\u53d1\u9001 Overlay...',
   overlaySent: 'Overlay \u5df2\u53d1\u9001',
@@ -248,6 +250,8 @@ const currentPresentationProfile = computed(() => {
   });
 });
 
+const isFurnaceCanvas = computed(() => currentPresentationProfile.value?.component === 'FurnaceUI');
+
 const shellToneClass = computed(() => {
   const family = currentPresentationProfile.value?.uiConfig.presentation?.family;
   if (family === 'thaumcraft') return 'tone-arcane';
@@ -279,8 +283,12 @@ const isWorkbenchCanvas = computed(() => {
   );
 });
 
+const isWideRecipeCanvas = computed(() => {
+  return isWorkbenchCanvas.value || isFurnaceCanvas.value;
+});
+
 const shellLayoutClass = computed(() => {
-  return isWorkbenchCanvas.value ? 'recipe-workbench-canvas' : '';
+  return isWideRecipeCanvas.value ? 'recipe-workbench-canvas' : '';
 });
 
 const goBack = () => {
@@ -306,6 +314,16 @@ const openOracle = () => {
   if (!itemId.value) return;
   playClick();
   router.push({ name: 'recipe-oracle', params: { itemId: itemId.value } });
+};
+
+const openGTDiagrams = () => {
+  playClick();
+  router.push({ name: 'gt-diagrams' });
+};
+
+const openBeeTree = () => {
+  playClick();
+  router.push({ name: 'forestry-bee-tree' });
 };
 
 const onSelectRecipeVariant = (slotKey: string, event: Event) => {
@@ -367,7 +385,7 @@ const currentRecipeKey = computed(() => {
 });
 
 const recipeDisplayRouterBindings = computed(() => ({
-  scaleToFit: currentCategory.value?.type === 'machine' && !isWorkbenchCanvas.value,
+  scaleToFit: currentCategory.value?.type === 'machine' && !isWideRecipeCanvas.value,
   preferDetailedCrafting: false,
 }));
 
@@ -667,7 +685,11 @@ onBeforeUnmount(() => {
                       >
                         {{ lane.label }}
                       </span>
-                      <button class="ecosystem-cta" @click="openOracle">{{ copy.openOracle }}</button>
+                      <div class="ecosystem-cta-row">
+                        <button class="ecosystem-cta" @click="openOracle">{{ copy.openOracle }}</button>
+                        <button class="ecosystem-cta ecosystem-cta-secondary" @click="openGTDiagrams">{{ copy.openGTDiagrams }}</button>
+                        <button class="ecosystem-cta ecosystem-cta-secondary" @click="openBeeTree">{{ copy.openBeeTree }}</button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -799,8 +821,21 @@ onBeforeUnmount(() => {
             </template>
 
             <template #content>
+              <div
+                v-if="isFurnaceCanvas && currentPageRecipes.length > 0"
+                class="stacked-furnace-recipes"
+              >
+                <RecipeDisplayRouter
+                  v-for="recipe in currentPageRecipes"
+                  :key="recipe.recipeId"
+                  v-bind="recipeDisplayRouterBindings"
+                  :recipe="recipe"
+                  @item-click="handleItemClick"
+                  @overlay-state-change="handleOverlayStateChange"
+                />
+              </div>
               <RecipeDisplayRouter
-                v-if="currentPageRecipes.length > 0"
+                v-else-if="currentPageRecipes.length > 0"
                 ref="recipeDisplayRouterRef"
                 v-bind="recipeDisplayRouterBindings"
                 :recipe="currentPageRecipes[0]"
@@ -1061,6 +1096,17 @@ onBeforeUnmount(() => {
 .ecosystem-cta {
   cursor: pointer;
   font: inherit;
+}
+
+.ecosystem-cta-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.ecosystem-cta-secondary {
+  border-color: rgba(250, 204, 21, 0.24);
+  color: rgba(252, 233, 166, 0.92);
 }
 
 .ecosystem-cta:hover {
@@ -1345,6 +1391,120 @@ onBeforeUnmount(() => {
 
 .recipe-workbench-canvas .recipe-stage-shell {
   align-items: stretch;
+}
+
+.stacked-furnace-recipes {
+  width: 100%;
+  min-height: 100%;
+  display: grid;
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  gap: 0;
+  align-items: stretch;
+  position: relative;
+  overflow: hidden;
+  border-radius: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(249, 115, 22, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(9, 14, 22, 0.96), rgba(4, 8, 14, 0.99));
+  box-shadow:
+    0 22px 58px rgba(2, 8, 23, 0.46),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+}
+
+.stacked-furnace-recipes::before {
+  content: '';
+  position: absolute;
+  inset: 28px;
+  border-radius: 22px;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  pointer-events: none;
+  background:
+    linear-gradient(rgba(180, 205, 235, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(180, 205, 235, 0.018) 1px, transparent 1px);
+  background-size: 24px 24px;
+  mask-image: radial-gradient(circle at center, #000 0 64%, transparent 96%);
+}
+
+.stacked-furnace-recipes::after {
+  content: '';
+  position: absolute;
+  left: 36px;
+  right: 36px;
+  top: 50%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.20), transparent);
+  pointer-events: none;
+}
+
+.stacked-furnace-recipes :deep(.recipe-display-wrapper) {
+  position: relative;
+  z-index: 1;
+  min-height: 0;
+}
+
+.stacked-furnace-recipes :deep(.furnace-ui) {
+  --furnace-slot-size: 64px;
+  --furnace-icon-size: 44px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 8px 16px;
+  overflow: visible;
+}
+
+.stacked-furnace-recipes :deep(.scene-bg) {
+  display: none;
+}
+
+.stacked-furnace-recipes :deep(.furnace-shell) {
+  width: min(1020px, 100%);
+  min-height: 0;
+  height: 100%;
+  grid-template-columns: 180px minmax(250px, 1fr) 180px;
+  gap: 34px;
+  padding: 18px 44px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.stacked-furnace-recipes :deep(.furnace-shell::before) {
+  inset: 18px 32px;
+  border-color: rgba(148, 163, 184, 0.05);
+  background: radial-gradient(circle at 50% 50%, rgba(249, 115, 22, 0.045), transparent 30%);
+}
+
+.stacked-furnace-recipes :deep(.furnace-panel) {
+  min-height: 150px;
+  padding: 26px 20px 20px;
+  border-radius: 20px;
+}
+
+.stacked-furnace-recipes :deep(.heat-core) {
+  min-height: 210px;
+}
+
+.stacked-furnace-recipes :deep(.thermal-core) {
+  width: 92px;
+  height: 92px;
+  border-radius: 24px;
+}
+
+.stacked-furnace-recipes :deep(.thermal-track) {
+  left: 0;
+  right: 0;
+  height: 88px;
+}
+
+.stacked-furnace-recipes :deep(.thermal-line) {
+  opacity: 0.56;
+}
+
+.stacked-furnace-recipes :deep(.thermal-caption) {
+  bottom: 18px;
+  font-size: 9px;
 }
 
 .recipe-stage-state-panel {

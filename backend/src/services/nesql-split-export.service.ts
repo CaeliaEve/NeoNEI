@@ -33,6 +33,7 @@ class NesqlSplitExportService {
   private itemsIndex = new Map<string, JsonObject>();
   private itemsList: JsonObject[] = [];
   private loadedItemMods = new Set<string>();
+  private itemMods = new Map<string, JsonObject[]>();
   private itemsSorted = true;
   private recipeLocations = new Map<string, string>();
   private producedByIndex = new Map<string, string[]>();
@@ -56,6 +57,15 @@ class NesqlSplitExportService {
     return path.join(SPLIT_ITEMS_DIR, modId, 'items.json.gz');
   }
 
+  private listItemModIds(): string[] {
+    if (!this.hasSplitItems()) return [];
+    return fs
+      .readdirSync(SPLIT_ITEMS_DIR, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort((a, b) => a.localeCompare(b));
+  }
+
   private extractModIdFromItemId(itemId: string): string | null {
     const parts = itemId.split('~');
     return parts.length >= 3 && parts[1] ? parts[1] : null;
@@ -67,13 +77,16 @@ class NesqlSplitExportService {
     const filePath = this.getItemModFilePath(modId);
     const data = readMaybeGzipJson(filePath);
     if (Array.isArray(data)) {
+      const modItems: JsonObject[] = [];
       for (const item of data) {
         const itemId = typeof item.itemId === 'string' ? item.itemId : null;
         if (itemId) {
           this.itemsIndex.set(itemId, item);
           this.itemsList.push(item);
+          modItems.push(item);
         }
       }
+      this.itemMods.set(modId, modItems);
       this.itemsSorted = false;
     }
 
@@ -398,6 +411,40 @@ class NesqlSplitExportService {
     this.loadItemsIfNeeded();
     this.ensureItemsSorted();
     return this.itemsList;
+  }
+
+  getItemsPageFast(page: number, pageSize: number): { items: JsonObject[]; total: number | null } {
+    const safePage = Math.max(1, page);
+    const safePageSize = Math.max(1, pageSize);
+    const start = (safePage - 1) * safePageSize;
+    const end = start + safePageSize;
+    const result: JsonObject[] = [];
+    let seen = 0;
+    let total = 0;
+
+    for (const modId of this.listItemModIds()) {
+      this.loadItemModIfNeeded(modId);
+      const modItems = this.itemMods.get(modId) ?? [];
+      total += modItems.length;
+
+      for (const item of modItems) {
+        if (seen >= start && seen < end) {
+          result.push(item);
+        }
+        seen += 1;
+      }
+    }
+
+    return { items: result, total };
+  }
+
+  getModsFast(): Array<{ modId: string; modName: string; itemCount: number }> {
+    this.loadItemsIfNeeded();
+    return this.listItemModIds().map((modId) => ({
+      modId,
+      modName: modId,
+      itemCount: this.itemMods.get(modId)?.length ?? 0,
+    }));
   }
 
   getAllItemIds(): string[] {

@@ -253,6 +253,10 @@ export const convertIndexedRecipe = (indexed: indexedRecipe): Recipe => {
     indexed && typeof indexed === 'object' && 'recipeTypeData' in indexed
       ? (indexed.recipeTypeData as Recipe['recipeTypeData'])
       : undefined;
+  const indexedAdditionalData =
+    indexed && typeof indexed === 'object' && 'additionalData' in indexed
+      ? (indexed.additionalData as Record<string, unknown> | undefined)
+      : undefined;
 
   const normalizedInputs = normalizeRecipeInputs(indexed.inputs as unknown, {
     itemInputDimension: recipeTypeData?.itemInputDimension,
@@ -271,6 +275,7 @@ export const convertIndexedRecipe = (indexed: indexedRecipe): Recipe => {
     machineInfo: indexed.machineInfo ?? undefined,
     metadata: (indexed.metadata as any) ?? undefined,
     additionalData: {
+      ...(indexedAdditionalData ?? {}),
       ...((indexed.metadata as unknown as Record<string, unknown>) ?? {}),
       rawIndexedInputs: indexed.inputs as unknown,
       rawIndexedOutputs: indexed.outputs as unknown,

@@ -206,6 +206,19 @@ const getCraftingCategoryName = (recipe: Recipe): string => {
 };
 
 const getExplicitMachineName = (recipe: Recipe): string | null => {
+  if (recipe.additionalData?.specialRecipeType === 'NEI_Thaumcraft') {
+    if (recipe.additionalData?.thaumcraftLayout === 'infusion') {
+      return '奥术注魔';
+    }
+    if (recipe.additionalData?.thaumcraftLayout === 'arcane') {
+      const machineType = recipe.machineInfo?.machineType;
+      if (typeof machineType === 'string' && machineType.trim()) {
+        return machineType.trim();
+      }
+      return '有序奥术合成';
+    }
+  }
+
   const machineType = recipe.machineInfo?.machineType;
   if (typeof machineType === 'string' && machineType.trim()) {
     return machineType.trim();
