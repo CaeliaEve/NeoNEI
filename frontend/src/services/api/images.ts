@@ -25,6 +25,18 @@ function normalizeImageFileName(imageFileName: string): string {
     .replace(/^.*?nesql-repository\/image\//, '');
 }
 
+function stripVariantSuffixFromImageFileName(imageFileName: string): string {
+  const normalized = normalizeImageFileName(imageFileName);
+  const parts = normalized.split('/');
+  const fileName = parts.pop() || '';
+  const match = fileName.match(/^(.+~\d+)~[^/]+\.(gif|png)$/i);
+  if (!match) {
+    return normalized;
+  }
+  const baseName = `${match[1]}.${match[2].toLowerCase()}`;
+  return [...parts, baseName].join('/');
+}
+
 export function getImageUrl(itemId: string): string {
   const parts = itemId.split('~');
   if (parts.length >= 4) {
@@ -32,9 +44,11 @@ export function getImageUrl(itemId: string): string {
     const internalName = parts[2];
     const damage = parts[3];
     const nbt = parts[4] || null;
-    const imageFileName = nbt
-      ? `${internalName}~${damage}~${nbt}.png`
-      : `${internalName}~${damage}.png`;
+    const normalizedInternal = encodeURIComponent(`${internalName}~${damage}.png`);
+    if (nbt) {
+      return buildItemImageUrl(`${modId}/${normalizedInternal}`);
+    }
+    const imageFileName = `${internalName}~${damage}.png`;
 
     return buildItemImageUrl(`${modId}/${encodeURIComponent(imageFileName)}`);
   }
@@ -92,7 +106,11 @@ export function getPreferredStaticImageUrlFromEntity(item: {
 } | null | undefined): string {
   if (item?.imageFileName) {
     if (item.imageFileName.toLowerCase().endsWith('.gif')) {
-      return getImageUrlFromFileName(item.imageFileName.replace(/\.gif$/i, '.png'));
+      const strippedVariantPath = stripVariantSuffixFromImageFileName(item.imageFileName);
+      if (strippedVariantPath !== normalizeImageFileName(item.imageFileName)) {
+        return getImageUrlFromFileName(strippedVariantPath);
+      }
+      return getImageUrlFromFileName(item.imageFileName);
     }
     return getImageUrlFromFileName(item.imageFileName);
   }

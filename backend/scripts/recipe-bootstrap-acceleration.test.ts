@@ -97,3 +97,64 @@ test('RecipeBootstrapService returns materialized bootstrap payload from acceler
   manager.close();
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('RecipeBootstrapService builds bootstrap from indexed services when materialized bootstrap is missing', async () => {
+  const { manager, tempDir } = await createTempDatabase();
+
+  const service = new RecipeBootstrapService({
+    databaseManager: manager,
+    splitExportFallback: false,
+    itemsService: {
+      getItemById: async (itemId: string) => ({
+        itemId,
+        modId: 'gregtech',
+        internalName: 'gt.blockmachines',
+        localizedName: '测试机器',
+        renderAssetRef: null,
+        preferredImageUrl: '/images/item/gregtech/test.png',
+        unlocalizedName: 'gregtech.test',
+        damage: 0,
+        maxStackSize: 64,
+        maxDamage: 0,
+        imageFileName: 'gregtech/test.png',
+        tooltip: null,
+        searchTerms: null,
+        toolClasses: null,
+      }),
+    } as never,
+    indexedRecipesService: {
+      getCraftingRecipesForItem: async () => ([
+        {
+          id: 'r~test~crafting',
+          recipeType: 'crafting',
+          outputs: [],
+          inputs: [],
+          fluidInputs: [],
+          fluidOutputs: [],
+          machineInfo: null,
+          metadata: null,
+        },
+      ]),
+      getUsageRecipesForItem: async () => ([
+        {
+          id: 'r~test~usage',
+          recipeType: 'crafting',
+          outputs: [],
+          inputs: [],
+          fluidInputs: [],
+          fluidOutputs: [],
+          machineInfo: null,
+          metadata: null,
+        },
+      ]),
+    } as never,
+  });
+
+  const result = await service.getBootstrap('i~gregtech~gt.blockmachines~16027');
+  assert.equal(result?.item.localizedName, '测试机器');
+  assert.deepEqual(result?.recipeIndex.producedByRecipes, ['r~test~crafting']);
+  assert.deepEqual(result?.recipeIndex.usedInRecipes, ['r~test~usage']);
+
+  manager.close();
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});

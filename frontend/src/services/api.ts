@@ -23,6 +23,8 @@ const indexedUsageInFlight = new Map<string, Promise<indexedRecipe[]>>();
 const indexedSummaryInFlight = new Map<string, Promise<indexedItemRecipeSummaryResponse>>();
 const recipeBootstrapCache = new Map<string, RecipeBootstrapPayload>();
 const recipeBootstrapInFlight = new Map<string, Promise<RecipeBootstrapPayload>>();
+const uiPayloadCache = new Map<string, RecipeUiPayload>();
+const uiPayloadInFlight = new Map<string, Promise<RecipeUiPayload>>();
 let ecosystemOverviewCache: EcosystemOverview | null = null;
 let ecosystemOverviewInFlight: Promise<EcosystemOverview> | null = null;
 
@@ -386,6 +388,24 @@ export interface RecipeBootstrapPayload {
   indexedCrafting: indexedRecipe[];
   indexedUsage: indexedRecipe[];
   indexedSummary: indexedItemRecipeSummaryResponse | null;
+}
+
+export interface RecipeUiPayload {
+  recipeId: string;
+  familyKey: string;
+  machineType?: string;
+  recipeType?: string;
+  inputItemIds?: string[];
+  outputItemIds?: string[];
+  slotCount?: {
+    input?: number;
+    output?: number;
+  };
+  presentation?: {
+    surface?: string;
+    density?: string;
+  };
+  [key: string]: unknown;
 }
 
 export interface GTDiagramItemRef {
@@ -804,6 +824,29 @@ export const api = {
       params: { assetId },
     });
     return response.data;
+  },
+
+  async getRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload> {
+    const cached = uiPayloadCache.get(recipeId);
+    if (cached) {
+      return cached;
+    }
+    const existingRequest = uiPayloadInFlight.get(recipeId);
+    if (existingRequest) {
+      return existingRequest;
+    }
+    const request = http.get('/render-contract/ui-payload', {
+      params: { recipeId },
+    })
+      .then((response) => {
+        uiPayloadCache.set(recipeId, response.data);
+        return response.data;
+      })
+      .finally(() => {
+        uiPayloadInFlight.delete(recipeId);
+      });
+    uiPayloadInFlight.set(recipeId, request);
+    return request;
   },
 
   async getRecipeBootstrap(itemId: string): Promise<RecipeBootstrapPayload> {

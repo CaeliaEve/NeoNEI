@@ -9,6 +9,16 @@ function isExplicitlyEnabled(value: string | undefined): boolean {
   return value === '1' || value?.toLowerCase() === 'true';
 }
 
+function isExplicitlyDisabled(value: string | undefined): boolean {
+  return value === '0' || value?.toLowerCase() === 'false';
+}
+
+function readEnabledWithDefault(value: string | undefined, fallback: boolean): boolean {
+  if (isExplicitlyEnabled(value)) return true;
+  if (isExplicitlyDisabled(value)) return false;
+  return fallback;
+}
+
 export interface AutowarmPolicy {
   recipeBootstrap: {
     enabled: boolean;
@@ -24,11 +34,11 @@ export interface AutowarmPolicy {
 export function getAutowarmPolicy(env: Env = process.env): AutowarmPolicy {
   return {
     recipeBootstrap: {
-      enabled: isExplicitlyEnabled(env.RECIPE_BOOTSTRAP_AUTOWARM),
+      enabled: readEnabledWithDefault(env.RECIPE_BOOTSTRAP_AUTOWARM, false),
       limit: readPositiveNumber(env.RECIPE_BOOTSTRAP_AUTOWARM_LIMIT, 1000),
     },
     pageAtlas: {
-      enabled: isExplicitlyEnabled(env.PAGE_ATLAS_AUTOWARM),
+      enabled: readEnabledWithDefault(env.PAGE_ATLAS_AUTOWARM, true),
       pages: readPositiveNumber(env.PAGE_ATLAS_AUTOWARM_PAGES, 4),
       pageSize: readPositiveNumber(env.PAGE_ATLAS_AUTOWARM_PAGE_SIZE, 120),
       itemSize: readPositiveNumber(env.PAGE_ATLAS_AUTOWARM_ITEM_SIZE, 50),

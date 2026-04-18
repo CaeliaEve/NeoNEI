@@ -287,6 +287,8 @@ export class DatabaseManager {
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS recipe_bootstrap (
         item_id TEXT PRIMARY KEY,
+        produced_by_ids TEXT,
+        used_in_ids TEXT,
         produced_by_payload TEXT,
         used_in_payload TEXT,
         summary_payload TEXT,
@@ -346,6 +348,17 @@ export class DatabaseManager {
       )
     `);
 
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS ui_payloads (
+        payload_id TEXT PRIMARY KEY,
+        recipe_id TEXT NOT NULL,
+        family_key TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        signature TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_core_mod_id ON items_core(mod_id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_core_localized_name ON items_core(localized_name)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_search_localized_name_norm ON items_search(localized_name_norm)');
@@ -360,6 +373,8 @@ export class DatabaseManager {
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_assets_manifest_type_mod ON assets_manifest(asset_type, mod_id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_hot_items_home_rank ON hot_items(home_rank)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_summary_compact_signature ON recipe_summary_compact(signature)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_ui_payloads_recipe_id ON ui_payloads(recipe_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_ui_payloads_family_key ON ui_payloads(family_key)');
   }
 
   private async migrateDatabase(): Promise<void> {
@@ -457,6 +472,16 @@ export class DatabaseManager {
         this.db.exec('ALTER TABLE recipes_core ADD COLUMN payload TEXT');
       }
 
+      const recipeBootstrapColumns = this.db.pragma(`table_info(recipe_bootstrap)`) as TableInfoRow[];
+      const hasProducedByIds = recipeBootstrapColumns.some((col) => col.name === 'produced_by_ids');
+      const hasUsedInIds = recipeBootstrapColumns.some((col) => col.name === 'used_in_ids');
+      if (!hasProducedByIds) {
+        this.db.exec('ALTER TABLE recipe_bootstrap ADD COLUMN produced_by_ids TEXT');
+      }
+      if (!hasUsedInIds) {
+        this.db.exec('ALTER TABLE recipe_bootstrap ADD COLUMN used_in_ids TEXT');
+      }
+
       const assetsManifestColumns = this.db.pragma(`table_info(assets_manifest)`) as TableInfoRow[];
       const hasAssetsMetadataJson = assetsManifestColumns.some((col) => col.name === 'metadata_json');
       if (!hasAssetsMetadataJson) {
@@ -473,6 +498,21 @@ export class DatabaseManager {
           )
         `);
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_summary_compact_signature ON recipe_summary_compact(signature)');
+      }
+
+      if (!tableNames.includes('ui_payloads')) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS ui_payloads (
+            payload_id TEXT PRIMARY KEY,
+            recipe_id TEXT NOT NULL,
+            family_key TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            signature TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_ui_payloads_recipe_id ON ui_payloads(recipe_id)');
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_ui_payloads_family_key ON ui_payloads(family_key)');
       }
 
     } catch (error) {
@@ -500,6 +540,10 @@ export class DatabaseManager {
       this.db.close();
       this.db = null;
     }
+  }
+
+  getDbPath(): string {
+    return this.dbPath;
   }
 }
 

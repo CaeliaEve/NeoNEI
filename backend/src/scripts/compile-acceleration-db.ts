@@ -1,24 +1,22 @@
-import { getAccelerationDatabaseManager } from '../models/database';
 import {
+  ACCELERATION_DB_FILE,
   IMAGES_PATH,
   NESQL_CANONICAL_DIR,
   SPLIT_ITEMS_DIR,
   SPLIT_RECIPES_DIR,
 } from '../config/runtime-paths';
-import { NeoNeiCompilerService } from '../services/neonei-compiler.service';
+import { compileAccelerationDatabase } from '../services/acceleration-db-pipeline.service';
 
 async function run(): Promise<void> {
-  const manager = getAccelerationDatabaseManager();
-  await manager.init();
-
-  const compiler = new NeoNeiCompilerService(manager, {
-    itemsDir: SPLIT_ITEMS_DIR,
-    recipesDir: SPLIT_RECIPES_DIR,
-    canonicalDir: NESQL_CANONICAL_DIR,
-    imageRoot: IMAGES_PATH,
+  const result = await compileAccelerationDatabase({
+    targetDbPath: ACCELERATION_DB_FILE,
+    sourceRoots: {
+      itemsDir: SPLIT_ITEMS_DIR,
+      recipesDir: SPLIT_RECIPES_DIR,
+      canonicalDir: NESQL_CANONICAL_DIR,
+      imageRoot: IMAGES_PATH,
+    },
   });
-
-  const result = await compiler.compile();
   console.log(
     JSON.stringify(
       {
@@ -33,8 +31,6 @@ async function run(): Promise<void> {
       2,
     ),
   );
-
-  manager.close();
 }
 
 run().catch((error) => {

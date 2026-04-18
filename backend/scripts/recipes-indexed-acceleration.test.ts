@@ -106,3 +106,71 @@ test('IndexedRecipesService reads materialized crafting, usage, and summary payl
   manager.close();
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
+
+test('IndexedRecipesService falls back to recipe_edges and recipes_core for non-hot items', async () => {
+  const { manager, tempDir } = await createTempDatabase();
+  const db = manager.getDatabase();
+
+  const recipe: IndexedRecipe = {
+    id: 'r~gregtech~wireless~1',
+    recipeType: 'assembly_line',
+    outputs: [],
+    inputs: [],
+    fluidInputs: [],
+    fluidOutputs: [],
+    machineInfo: {
+      machineId: 'm~gregtech~assembly_line',
+      category: 'gregtech',
+      machineType: '装配线加工 (UMV)',
+      iconInfo: 'UMV',
+      shapeless: true,
+      parsedVoltageTier: null,
+      parsedVoltage: null,
+    },
+    metadata: null,
+    additionalData: null,
+    recipeTypeData: undefined,
+  };
+
+  db.prepare(`
+    INSERT INTO recipes_core (
+      recipe_id, recipe_type, family, machine_type, voltage_tier, source_mod,
+      input_count, output_count, bootstrap_key, payload
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    recipe.id,
+    recipe.recipeType,
+    'gregtech',
+    '装配线加工 (UMV)',
+    null,
+    'gregtech',
+    0,
+    1,
+    'i~gregtech~gt.blockmachines~16027',
+    JSON.stringify(recipe),
+  );
+
+  db.prepare(`
+    INSERT INTO recipe_edges (
+      item_id, relation_type, recipe_id, slot_index, weight
+    ) VALUES (?, ?, ?, ?, ?)
+  `).run(
+    'i~gregtech~gt.blockmachines~16027',
+    'produced_by',
+    recipe.id,
+    0,
+    0,
+  );
+
+  const service = new IndexedRecipesService({
+    databaseManager: manager,
+    splitExportFallback: false,
+  });
+
+  const crafting = await service.getCraftingRecipesForItem('i~gregtech~gt.blockmachines~16027');
+  assert.equal(crafting.length, 1);
+  assert.equal(crafting[0]?.id, recipe.id);
+
+  manager.close();
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});

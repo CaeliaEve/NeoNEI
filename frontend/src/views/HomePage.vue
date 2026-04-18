@@ -102,6 +102,15 @@ const currentPageAtlas = ref<PageAtlasResult | null>(null);
 const historyAtlas = ref<PageAtlasResult | null>(null);
 const showSearchContextMenu = ref(false);
 const searchContextMenuPosition = ref({ x: 0, y: 0 });
+const usePrecomputedHomepageAtlas = computed(
+  () => !searchQuery.value.trim() && selectedMod.value === 'all',
+);
+const shouldDeferHomepageCards = computed(
+  () => currentView.value === 'items' && usePrecomputedHomepageAtlas.value && items.value.length > 0 && !currentPageAtlas.value,
+);
+const shouldDeferHistoryCards = computed(
+  () => currentView.value === 'items' && viewHistory.value.length > 0 && !historyAtlas.value,
+);
 
 const prefetchImageUrl = (url: string) => {
   if (!url || prefetchedHomeImages.has(url)) return;
@@ -232,7 +241,6 @@ watch(
   () => items.value.map((item) => item.itemId).join("|"),
   () => {
     if (currentView.value === "items" && items.value.length > 0) {
-      prewarmVisibleItemImages();
       const usePrecomputedAtlas =
         !searchQuery.value.trim() &&
         selectedMod.value === 'all';
@@ -1013,7 +1021,13 @@ const saveSettings = () => {
                   @click="openCraftingRecipes(item)"
                   @contextmenu="handleCardContextMenu"
                 >
+                  <div
+                    v-if="shouldDeferHomepageCards"
+                    class="atlas-card-placeholder"
+                    :style="{ width: `${itemSize}px`, height: `${itemSize}px` }"
+                  />
                   <ItemCard
+                    v-else
                     :item="item"
                     :itemSize="itemSize"
                     :enableAnimation="false"
@@ -1052,7 +1066,13 @@ const saveSettings = () => {
                   @click="openCraftingRecipes(historyItem)"
                   @contextmenu="handleCardContextMenu"
                 >
+                  <div
+                    v-if="shouldDeferHistoryCards"
+                    class="atlas-card-placeholder"
+                    :style="{ width: `${historyItemPixelSize}px`, height: `${historyItemPixelSize}px` }"
+                  />
                   <ItemCard
+                    v-else
                     :item="historyItem"
                     :itemSize="historyItemPixelSize"
                     :enableAnimation="false"
@@ -1254,6 +1274,17 @@ const saveSettings = () => {
 /* Items Grid - 使用 flex 布局确保不产生滚动条 */
 .items-grid-container {
   overflow: hidden !important;
+}
+
+.atlas-card-placeholder {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(20, 24, 31, 0.84), rgba(13, 16, 22, 0.88)),
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.05), transparent 55%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 3px 8px rgba(0, 0, 0, 0.18);
 }
 
 .homepage-shell {

@@ -33,6 +33,8 @@ type CompactRecipeBootstrapPayload = {
 };
 
 type RecipeBootstrapRow = {
+  produced_by_ids: string | null;
+  used_in_ids: string | null;
   produced_by_payload: string | null;
   used_in_payload: string | null;
   summary_payload: string | null;
@@ -126,7 +128,7 @@ export class RecipeBootstrapService {
 
     const row = db
       .prepare(`
-        SELECT produced_by_payload, used_in_payload, summary_payload, signature
+        SELECT produced_by_ids, used_in_ids, produced_by_payload, used_in_payload, summary_payload, signature
         FROM recipe_bootstrap
         WHERE item_id = ?
       `)
@@ -140,7 +142,10 @@ export class RecipeBootstrapService {
       const payload = JSON.parse(row.summary_payload) as CompactRecipeBootstrapPayload;
       const hydrated: RecipeBootstrapPayload = {
         item: payload.item,
-        recipeIndex: payload.recipeIndex,
+        recipeIndex: {
+          usedInRecipes: row.used_in_ids ? JSON.parse(row.used_in_ids) as string[] : payload.recipeIndex.usedInRecipes,
+          producedByRecipes: row.produced_by_ids ? JSON.parse(row.produced_by_ids) as string[] : payload.recipeIndex.producedByRecipes,
+        },
         indexedCrafting: [],
         indexedUsage: [],
         indexedSummary: payload.indexedSummary,
@@ -167,10 +172,6 @@ export class RecipeBootstrapService {
     if (materialized) {
       this.cache.set(itemId, { value: materialized, expiresAt: Date.now() + this.cacheTtlMs });
       return materialized;
-    }
-
-    if (!this.splitExportFallback) {
-      return null;
     }
 
     const item = await this.itemsService.getItemById(itemId);

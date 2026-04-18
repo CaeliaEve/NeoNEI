@@ -1,4 +1,5 @@
 import type { Recipe, RecipeTypeDTO } from './api';
+import type { RecipeUiPayload } from './api';
 
 export type UIPresentationFamily =
   | 'crafting'
@@ -1136,4 +1137,75 @@ export function getAllUITypes(): string[] {
 
 export function isUIType(machineType: string, uiType: string): boolean {
   return detectUIType(machineType).uiType === uiType;
+}
+
+const UI_CONFIG_BY_TYPE: Record<string, UITypeConfig> = {
+  [STANDARD_CRAFTING.uiType]: STANDARD_CRAFTING,
+  [AVARITIA_EXTREME_CRAFTING.uiType]: AVARITIA_EXTREME_CRAFTING,
+  [FURNACE.uiType]: FURNACE,
+  [GT_GENERIC.uiType]: GT_GENERIC,
+  [GT_RESEARCH_STATION.uiType]: GT_RESEARCH_STATION,
+  [GT_ASSEMBLER.uiType]: GT_ASSEMBLER,
+  [GT_ASSEMBLY_LINE.uiType]: GT_ASSEMBLY_LINE,
+  [GT_ALLOY_SMELTER.uiType]: GT_ALLOY_SMELTER,
+  [GT_MOLECULAR.uiType]: GT_MOLECULAR,
+  [GT_ELECTROLYZER.uiType]: GT_ELECTROLYZER,
+  [GT_BLAST_FURNACE.uiType]: GT_BLAST_FURNACE,
+  [GT_ELECTRIC_FURNACE.uiType]: GT_ELECTRIC_FURNACE,
+  [BOTANIA_MANA_POOL.uiType]: BOTANIA_MANA_POOL,
+  [BOTANIA_PURE_DAISY.uiType]: BOTANIA_PURE_DAISY,
+  [BOTANIA_TERRA_PLATE.uiType]: BOTANIA_TERRA_PLATE,
+  [BOTANIA_RUNE_ALTAR.uiType]: BOTANIA_RUNE_ALTAR,
+  [BOTANIA_ELVEN_TRADE.uiType]: BOTANIA_ELVEN_TRADE,
+  [THAUMCRAFT_ARCANE.uiType]: THAUMCRAFT_ARCANE,
+  [THAUMCRAFT_INFUSION.uiType]: THAUMCRAFT_INFUSION,
+  [THAUMCRAFT_CRUCIBLE.uiType]: THAUMCRAFT_CRUCIBLE,
+  [THAUMCRAFT_ASPECT.uiType]: THAUMCRAFT_ASPECT,
+  [THAUMCRAFT_RESEARCH.uiType]: THAUMCRAFT_RESEARCH,
+  [BLOOD_MAGIC_ALTAR.uiType]: BLOOD_MAGIC_ALTAR,
+  [BLOOD_ALCHEMY_TABLE.uiType]: BLOOD_ALCHEMY_TABLE,
+  [BLOOD_BINDING_RITUAL.uiType]: BLOOD_BINDING_RITUAL,
+  [BLOOD_ORB_CRAFTING.uiType]: BLOOD_ORB_CRAFTING,
+  [MULTIBLOCK_BLUEPRINT.uiType]: MULTIBLOCK_BLUEPRINT,
+};
+
+const FAMILY_KEY_TO_UI_TYPE: Record<string, string> = {
+  botania_terra_plate: BOTANIA_TERRA_PLATE.uiType,
+  botania_rune_altar: BOTANIA_RUNE_ALTAR.uiType,
+  botania_mana_pool: BOTANIA_MANA_POOL.uiType,
+  thaumcraft_infusion: THAUMCRAFT_INFUSION.uiType,
+  blood_magic_altar: BLOOD_MAGIC_ALTAR.uiType,
+};
+
+export function resolveRecipePresentationProfileFromUiPayload(
+  uiPayload: RecipeUiPayload | null | undefined,
+): RecipePresentationProfile | null {
+  if (!uiPayload?.familyKey) {
+    return null;
+  }
+
+  const uiType = FAMILY_KEY_TO_UI_TYPE[uiPayload.familyKey];
+  if (!uiType) {
+    return null;
+  }
+
+  const baseConfig = UI_CONFIG_BY_TYPE[uiType];
+  if (!baseConfig) {
+    return null;
+  }
+
+  return createPresentationProfile(baseConfig, {
+    reason: `ui_payload:${uiPayload.familyKey}`,
+    sourceUiType: uiType,
+    presentationOverrides: {
+      surface:
+        uiPayload.presentation?.surface === 'nature_ritual' || uiPayload.presentation?.surface === 'ritual'
+          ? 'ritual'
+          : undefined,
+      density:
+        uiPayload.presentation?.density === 'wide'
+          ? 'oversized'
+          : undefined,
+    },
+  });
 }

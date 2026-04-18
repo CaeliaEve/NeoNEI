@@ -7,6 +7,8 @@ import { DatabaseManager } from '../models/database';
 import { DATA_DIR } from '../config/runtime-paths';
 import { ItemsService } from './items.service';
 import { PageAtlasService } from './page-atlas.service';
+import { getMachineIconItem } from './machine-icon-mapping.service';
+import { transformRecipeMetadata } from './recipe-metadata';
 
 export interface CompilerSourceRoots {
   itemsDir: string;
@@ -42,6 +44,7 @@ type NormalizedCompilerOptions = {
   };
   bootstrap: {
     hotItemLimit: number;
+    inlineSeedLimit: number;
   };
 };
 
@@ -72,16 +75,97 @@ type SplitRecipeRecord = {
   recipeType?: string;
   inputs?: Array<{
     slotIndex?: number;
-    items?: Array<{ item?: { itemId?: string } }>;
+    items?: Array<{
+      item?: {
+        itemId?: string;
+        modId?: string;
+        internalName?: string;
+        localizedName?: string;
+        imageFileName?: string | null;
+        renderAssetRef?: string | null;
+        damage?: number;
+        tooltip?: string | null;
+      };
+      stackSize?: number;
+      probability?: number;
+    }>;
+    isOreDictionary?: boolean;
+    oreDictName?: string | null;
   }>;
-  outputs?: Array<{ item?: { itemId?: string } }>;
+  outputs?: Array<{
+    item?: {
+      itemId?: string;
+      modId?: string;
+      internalName?: string;
+      localizedName?: string;
+      imageFileName?: string | null;
+      renderAssetRef?: string | null;
+      damage?: number;
+      tooltip?: string | null;
+    };
+    stackSize?: number;
+    probability?: number;
+  }>;
+  fluidInputs?: Array<{
+    slotIndex?: number;
+    fluids?: Array<{
+      fluid?: {
+        fluidId?: string;
+        modId?: string;
+        internalName?: string;
+        localizedName?: string;
+        renderAssetRef?: string | null;
+        temperature?: number;
+      };
+      amount?: number;
+      probability?: number;
+    }>;
+  }>;
+  fluidOutputs?: Array<{
+    fluid?: {
+      fluidId?: string;
+      modId?: string;
+      internalName?: string;
+      localizedName?: string;
+      renderAssetRef?: string | null;
+      temperature?: number;
+    };
+    amount?: number;
+    probability?: number;
+  }>;
   machineInfo?: {
+    machineId?: string;
     machineType?: string;
     category?: string;
+    iconInfo?: string;
+    shapeless?: boolean;
     parsedVoltageTier?: string | null;
     parsedVoltage?: number | null;
   };
+  metadata?: Record<string, unknown> | null;
+  additionalData?: Record<string, unknown> | null;
+  recipeTypeData?: Record<string, unknown> | null;
 };
+
+type UiPayloadRecord = {
+  payloadId: string;
+  recipeId: string;
+  familyKey: string;
+  payloadJson: string;
+};
+
+type MaterializedItemRecord = {
+  itemId: string;
+  modId: string;
+  internalName: string;
+  localizedName: string;
+  renderAssetRef: string | null;
+  damage: number;
+  imageFileName: string | null;
+  tooltip: string | null;
+};
+
+type MaterializedRecipePayload = Record<string, unknown>;
 
 function readGzipJsonArray(filePath: string): SplitItemRecord[] {
   if (!fs.existsSync(filePath)) return [];
@@ -204,6 +288,211 @@ function extractOutputItemIds(recipe: SplitRecipeRecord): string[] {
   return Array.from(result);
 }
 
+function detectUiFamilyKey(recipe: SplitRecipeRecord): string | null {
+  const machineType = `${recipe.machineInfo?.machineType ?? ''}`.trim().toLowerCase();
+  const recipeType = `${recipe.recipeType ?? ''}`.trim().toLowerCase();
+  const combined = `${machineType} ${recipeType}`;
+
+  if (combined.includes('terra plate') || combined.includes('泰拉凝聚板')) return 'botania_terra_plate';
+  if (combined.includes('rune altar') || combined.includes('符文祭坛')) return 'botania_rune_altar';
+  if (combined.includes('mana pool') || combined.includes('魔力池')) return 'botania_mana_pool';
+  if (combined.includes('infusion') || combined.includes('奥术注魔')) return 'thaumcraft_infusion';
+  if (combined.includes('blood altar') || combined.includes('血祭坛') || combined.includes('血之祭坛')) return 'blood_magic_altar';
+  return null;
+}
+
+function buildUiPayload(recipe: SplitRecipeRecord, familyKey: string): UiPayloadRecord {
+  const inputIds = extractInputItemIds(recipe);
+  const outputIds = extractOutputItemIds(recipe);
+  const payload = {
+    recipeId: `${recipe.id ?? ''}`.trim(),
+    familyKey,
+    machineType: `${recipe.machineInfo?.machineType ?? ''}`.trim(),
+    recipeType: `${recipe.recipeType ?? ''}`.trim(),
+    inputItemIds: inputIds,
+    outputItemIds: outputIds,
+    slotCount: {
+      input: inputIds.length,
+      output: outputIds.length,
+    },
+    presentation: {
+      surface: familyKey.includes('botania') ? 'nature_ritual' : 'ritual',
+      density: outputIds.length + inputIds.length > 8 ? 'wide' : 'default',
+    },
+  };
+
+  return {
+    payloadId: `ui~${payload.recipeId}`,
+    recipeId: payload.recipeId,
+    familyKey,
+    payloadJson: JSON.stringify(payload),
+  };
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
+}
+
+function compactJsonValue(value: unknown, depth = 0): unknown {
+  if (value == null) return null;
+  if (depth > 5) return undefined;
+  if (typeof value === 'string') {
+    return value.length <= 512 ? value : undefined;
+  }
+  if (typeof value === 'number' || typeof value === 'boolean') {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => compactJsonValue(entry, depth + 1))
+      .filter((entry) => entry !== undefined);
+  }
+  if (!isPlainObject(value)) {
+    return undefined;
+  }
+
+  const compacted: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const normalized = compactJsonValue(entry, depth + 1);
+    if (normalized !== undefined) {
+      compacted[key] = normalized;
+    }
+  }
+  return compacted;
+}
+
+function compactObject(value: Record<string, unknown> | null | undefined): Record<string, unknown> | null {
+  if (!value) return null;
+  const compacted = compactJsonValue(value, 0);
+  if (!isPlainObject(compacted) || Object.keys(compacted).length === 0) {
+    return null;
+  }
+  return compacted;
+}
+
+function toMaterializedItemRecord(record: SplitItemRecord): MaterializedItemRecord | null {
+  const itemId = String(record.itemId ?? '').trim();
+  if (!itemId) return null;
+  return {
+    itemId,
+    modId: String(record.modId ?? ''),
+    internalName: String(record.internalName ?? ''),
+    localizedName: String(record.localizedName ?? ''),
+    renderAssetRef: typeof record.renderAssetRef === 'string' ? record.renderAssetRef : null,
+    damage: Number(record.damage ?? 0),
+    imageFileName: typeof record.imageFileName === 'string' ? record.imageFileName : null,
+    tooltip: typeof record.tooltip === 'string' ? record.tooltip : null,
+  };
+}
+
+function buildMaterializedItem(
+  entry: {
+    itemId?: string;
+    modId?: string;
+    internalName?: string;
+    localizedName?: string;
+    imageFileName?: string | null;
+    renderAssetRef?: string | null;
+    damage?: number;
+    tooltip?: string | null;
+  } | undefined,
+  itemRecords: Map<string, MaterializedItemRecord>,
+): Record<string, unknown> {
+  const itemId = `${entry?.itemId ?? ''}`.trim();
+  const fallback = itemId ? itemRecords.get(itemId) : null;
+  return {
+    itemId,
+    modId: `${entry?.modId ?? fallback?.modId ?? ''}`.trim(),
+    internalName: `${entry?.internalName ?? fallback?.internalName ?? ''}`.trim(),
+    localizedName: `${entry?.localizedName ?? fallback?.localizedName ?? ''}`.trim(),
+    renderAssetRef:
+      typeof entry?.renderAssetRef === 'string' ? entry.renderAssetRef : fallback?.renderAssetRef ?? null,
+    damage: Number(entry?.damage ?? fallback?.damage ?? 0),
+    stackSize: 1,
+    maxStackSize: 64,
+    maxDamage: 0,
+    nbt: null,
+    imageFileName:
+      typeof entry?.imageFileName === 'string' ? entry.imageFileName : fallback?.imageFileName ?? null,
+    tooltip: typeof entry?.tooltip === 'string' ? entry.tooltip : fallback?.tooltip ?? null,
+  };
+}
+
+function buildMaterializedRecipe(
+  recipe: SplitRecipeRecord,
+  family: string,
+  itemRecords: Map<string, MaterializedItemRecord>,
+): MaterializedRecipePayload {
+  const machineType = `${recipe.machineInfo?.machineType ?? ''}`.trim();
+  const machineIcon = machineType ? getMachineIconItem(machineType) : null;
+  const compactMetadata = compactObject(recipe.metadata ?? null);
+  const transformedMetadata = transformRecipeMetadata(compactMetadata, (entry) =>
+    buildMaterializedItem((entry as { itemId?: string } | undefined) ?? undefined, itemRecords) as never,
+  );
+
+  return {
+    id: `${recipe.id ?? ''}`.trim(),
+    recipeType: `${recipe.recipeType ?? family}`.trim(),
+    outputs: (recipe.outputs ?? []).map((stack) => ({
+      item: buildMaterializedItem(stack.item, itemRecords),
+      stackSize: Number(stack.stackSize ?? 1),
+      probability: Number(stack.probability ?? 1),
+    })),
+    inputs: (recipe.inputs ?? []).map((group) => ({
+      slotIndex: Number(group.slotIndex ?? 0),
+      items: (group.items ?? []).map((stack) => ({
+        item: buildMaterializedItem(stack.item, itemRecords),
+        stackSize: Number(stack.stackSize ?? 1),
+        probability: Number(stack.probability ?? 1),
+      })),
+      isOreDictionary: Boolean(group.isOreDictionary),
+      oreDictName: typeof group.oreDictName === 'string' ? group.oreDictName : null,
+    })),
+    fluidInputs: (recipe.fluidInputs ?? []).map((group) => ({
+      slotIndex: Number(group.slotIndex ?? 0),
+      fluids: (group.fluids ?? []).map((stack) => ({
+        fluid: {
+          fluidId: `${stack.fluid?.fluidId ?? ''}`.trim(),
+          modId: `${stack.fluid?.modId ?? ''}`.trim(),
+          internalName: `${stack.fluid?.internalName ?? ''}`.trim(),
+          localizedName: `${stack.fluid?.localizedName ?? ''}`.trim(),
+          renderAssetRef: typeof stack.fluid?.renderAssetRef === 'string' ? stack.fluid.renderAssetRef : null,
+          temperature: Number(stack.fluid?.temperature ?? 0),
+        },
+        amount: Number(stack.amount ?? 0),
+        probability: Number(stack.probability ?? 1),
+      })),
+    })),
+    fluidOutputs: (recipe.fluidOutputs ?? []).map((stack) => ({
+      fluid: {
+        fluidId: `${stack.fluid?.fluidId ?? ''}`.trim(),
+        modId: `${stack.fluid?.modId ?? ''}`.trim(),
+        internalName: `${stack.fluid?.internalName ?? ''}`.trim(),
+        localizedName: `${stack.fluid?.localizedName ?? ''}`.trim(),
+        renderAssetRef: typeof stack.fluid?.renderAssetRef === 'string' ? stack.fluid.renderAssetRef : null,
+        temperature: Number(stack.fluid?.temperature ?? 0),
+      },
+      amount: Number(stack.amount ?? 0),
+      probability: Number(stack.probability ?? 1),
+    })),
+    machineInfo: recipe.machineInfo
+      ? {
+          machineId: `${recipe.machineInfo.machineId ?? ''}`.trim(),
+          category: `${recipe.machineInfo.category ?? ''}`.trim(),
+          machineType,
+          iconInfo: `${recipe.machineInfo.iconInfo ?? ''}`.trim(),
+          shapeless: Boolean(recipe.machineInfo.shapeless),
+          parsedVoltageTier: recipe.machineInfo.parsedVoltageTier ?? null,
+          parsedVoltage: recipe.machineInfo.parsedVoltage ?? null,
+          machineIcon: machineIcon ?? undefined,
+        }
+      : null,
+    metadata: transformedMetadata,
+    additionalData: compactObject(recipe.additionalData ?? null),
+    recipeTypeData: compactObject(recipe.recipeTypeData ?? null),
+  };
+}
+
 function chunkArray<T>(items: T[], chunkSize: number): T[][] {
   if (chunkSize <= 0) return [items];
   const chunks: T[][] = [];
@@ -238,6 +527,7 @@ export class NeoNeiCompilerService {
       },
       bootstrap: {
         hotItemLimit: 5000,
+        inlineSeedLimit: 2,
       },
     };
   }
@@ -347,9 +637,9 @@ export class NeoNeiCompilerService {
 
     const insertBootstrap = db.prepare(`
       INSERT OR REPLACE INTO recipe_bootstrap (
-        item_id, produced_by_payload, used_in_payload, summary_payload, signature, updated_at
+        item_id, produced_by_ids, used_in_ids, produced_by_payload, used_in_payload, summary_payload, signature, updated_at
       ) VALUES (
-        @item_id, @produced_by_payload, @used_in_payload, @summary_payload, @signature, CURRENT_TIMESTAMP
+        @item_id, @produced_by_ids, @used_in_ids, @produced_by_payload, @used_in_payload, @summary_payload, @signature, CURRENT_TIMESTAMP
       )
     `);
 
@@ -358,6 +648,14 @@ export class NeoNeiCompilerService {
         item_id, summary_payload, signature, updated_at
       ) VALUES (
         @item_id, @summary_payload, @signature, CURRENT_TIMESTAMP
+      )
+    `);
+
+    const insertUiPayload = db.prepare(`
+      INSERT OR REPLACE INTO ui_payloads (
+        payload_id, recipe_id, family_key, payload_json, signature, updated_at
+      ) VALUES (
+        @payload_id, @recipe_id, @family_key, @payload_json, @signature, CURRENT_TIMESTAMP
       )
     `);
 
@@ -371,8 +669,13 @@ export class NeoNeiCompilerService {
 
     let itemsImported = 0;
     let recipesImported = 0;
-    const producedByMap = new Map<string, SplitRecipeRecord[]>();
-    const usedInMap = new Map<string, SplitRecipeRecord[]>();
+    let recipesCorePayloadBytes = 0;
+    let recipeBootstrapPayloadBytes = 0;
+    let recipeSummaryCompactBytes = 0;
+    let uiPayloadBytes = 0;
+    const itemRecords = new Map<string, MaterializedItemRecord>();
+    const producedByMap = new Map<string, MaterializedRecipePayload[]>();
+    const usedInMap = new Map<string, MaterializedRecipePayload[]>();
     const machineGroupsMap = new Map<string, Map<string, { family: string; voltageTier: string | null; recipeIds: string[] }>>();
     let allBootstrapItemIds: string[] = [];
     let hotBootstrapItemIds: string[] = [];
@@ -385,6 +688,7 @@ export class NeoNeiCompilerService {
       db.exec('DELETE FROM recipe_machine_groups');
       db.exec('DELETE FROM recipe_bootstrap');
       db.exec('DELETE FROM recipe_summary_compact');
+      db.exec('DELETE FROM ui_payloads');
       db.exec('DELETE FROM hot_items');
       db.exec("DELETE FROM assets_manifest WHERE asset_type = 'page_atlas'");
     });
@@ -428,6 +732,11 @@ export class NeoNeiCompilerService {
             family_score: 0,
           });
 
+          const materializedItem = toMaterializedItemRecord(record);
+          if (materializedItem) {
+            itemRecords.set(materializedItem.itemId, materializedItem);
+          }
+
           itemsImported += 1;
         }
       }
@@ -446,6 +755,10 @@ export class NeoNeiCompilerService {
         const outputIds = extractOutputItemIds(recipe);
         const machineType = `${recipe.machineInfo?.machineType ?? ''}`.trim() || null;
         const voltageTier = recipe.machineInfo?.parsedVoltageTier ?? null;
+        const uiFamilyKey = detectUiFamilyKey(recipe);
+        const materializedRecipe = buildMaterializedRecipe(recipe, family, itemRecords);
+        const materializedRecipeJson = JSON.stringify(materializedRecipe);
+        recipesCorePayloadBytes += Buffer.byteLength(materializedRecipeJson, 'utf8');
 
         insertRecipeCore.run({
           recipe_id: recipeId,
@@ -457,14 +770,7 @@ export class NeoNeiCompilerService {
           input_count: inputIds.length,
           output_count: outputIds.length,
           bootstrap_key: outputIds[0] ?? inputIds[0] ?? recipeId,
-          payload: JSON.stringify({
-            id: recipeId,
-            recipeType: recipe.recipeType ?? family,
-            machineInfo: recipe.machineInfo ?? null,
-            recipeTypeData: null,
-            metadata: null,
-            additionalData: null,
-          }),
+          payload: materializedRecipeJson,
         });
 
         inputIds.forEach((itemId, index) => {
@@ -476,7 +782,7 @@ export class NeoNeiCompilerService {
             weight: 0,
           });
           const list = usedInMap.get(itemId) ?? [];
-          list.push(recipe);
+          list.push(materializedRecipe);
           usedInMap.set(itemId, list);
         });
 
@@ -489,7 +795,7 @@ export class NeoNeiCompilerService {
             weight: 0,
           });
           const list = producedByMap.get(itemId) ?? [];
-          list.push(recipe);
+          list.push(materializedRecipe);
           producedByMap.set(itemId, list);
 
           if (machineType) {
@@ -505,6 +811,18 @@ export class NeoNeiCompilerService {
             machineGroupsMap.set(itemId, itemMachineGroups);
           }
         });
+
+        if (uiFamilyKey) {
+          const uiPayload = buildUiPayload(recipe, uiFamilyKey);
+          uiPayloadBytes += Buffer.byteLength(uiPayload.payloadJson, 'utf8');
+          insertUiPayload.run({
+            payload_id: uiPayload.payloadId,
+            recipe_id: uiPayload.recipeId,
+            family_key: uiPayload.familyKey,
+            payload_json: uiPayload.payloadJson,
+            signature,
+          });
+        }
 
         recipesImported += 1;
       }
@@ -618,11 +936,23 @@ export class NeoNeiCompilerService {
 
         const indexedCrafting = (producedByMap.get(itemId) ?? []) as unknown as object[];
         const indexedUsage = (usedInMap.get(itemId) ?? []) as unknown as object[];
+        const producedByRecipeIds = indexedCrafting
+          .map((recipe) => String((recipe as { id?: string }).id ?? ''))
+          .filter(Boolean);
+        const usedInRecipeIds = indexedUsage
+          .map((recipe) => String((recipe as { id?: string }).id ?? ''))
+          .filter(Boolean);
+        const inlineProducedBy = indexedCrafting.slice(0, this.options.bootstrap.inlineSeedLimit);
+        const inlineUsedIn = indexedUsage.slice(0, this.options.bootstrap.inlineSeedLimit);
         const payload = {
           item: itemPayload,
           recipeIndex: {
-            usedInRecipes: indexedUsage.map((recipe) => String((recipe as { id?: string }).id ?? '')).filter(Boolean),
-            producedByRecipes: indexedCrafting.map((recipe) => String((recipe as { id?: string }).id ?? '')).filter(Boolean),
+            usedInRecipes: usedInRecipeIds,
+            producedByRecipes: producedByRecipeIds,
+          },
+          seedRecipeIds: {
+            producedBy: producedByRecipeIds.slice(0, this.options.bootstrap.inlineSeedLimit),
+            usedIn: usedInRecipeIds.slice(0, this.options.bootstrap.inlineSeedLimit),
           },
           indexedSummary: {
             itemId,
@@ -647,13 +977,27 @@ export class NeoNeiCompilerService {
           summary_payload: JSON.stringify(payload.indexedSummary),
           signature,
         });
+        recipeSummaryCompactBytes += Buffer.byteLength(JSON.stringify(payload.indexedSummary), 'utf8');
 
         if (writeFullBootstrap) {
+          const producedByIds = JSON.stringify(producedByRecipeIds);
+          const usedInIds = JSON.stringify(usedInRecipeIds);
+          const producedByPayload = JSON.stringify(inlineProducedBy);
+          const usedInPayload = JSON.stringify(inlineUsedIn);
+          const summaryPayload = JSON.stringify(payload);
+          recipeBootstrapPayloadBytes +=
+            Buffer.byteLength(producedByIds, 'utf8') +
+            Buffer.byteLength(usedInIds, 'utf8') +
+            Buffer.byteLength(producedByPayload, 'utf8') +
+            Buffer.byteLength(usedInPayload, 'utf8') +
+            Buffer.byteLength(summaryPayload, 'utf8');
           insertBootstrap.run({
             item_id: itemId,
-            produced_by_payload: JSON.stringify(indexedCrafting),
-            used_in_payload: JSON.stringify(indexedUsage),
-            summary_payload: JSON.stringify(payload),
+            produced_by_ids: producedByIds,
+            used_in_ids: usedInIds,
+            produced_by_payload: producedByPayload,
+            used_in_payload: usedInPayload,
+            summary_payload: summaryPayload,
             signature,
           });
         }
@@ -673,6 +1017,14 @@ export class NeoNeiCompilerService {
       upsertState.run({ state_key: 'recipe_summary_compact_count', state_value: String(allBootstrapItemIds.length) });
       upsertState.run({ state_key: 'recipe_machine_groups_count', state_value: String(Array.from(machineGroupsMap.values()).reduce((sum, groups) => sum + groups.size, 0)) });
       upsertState.run({ state_key: 'hot_items_count', state_value: String(allBootstrapItemIds.length) });
+      upsertState.run({ state_key: 'recipes_core_payload_bytes', state_value: String(recipesCorePayloadBytes) });
+      upsertState.run({ state_key: 'recipe_bootstrap_payload_bytes', state_value: String(recipeBootstrapPayloadBytes) });
+      upsertState.run({ state_key: 'recipe_summary_compact_bytes', state_value: String(recipeSummaryCompactBytes) });
+      upsertState.run({ state_key: 'ui_payload_bytes', state_value: String(uiPayloadBytes) });
+      upsertState.run({
+        state_key: 'ui_payloads_count',
+        state_value: String((db.prepare('SELECT COUNT(*) AS c FROM ui_payloads').get() as { c: number }).c),
+      });
     });
 
     resetTransaction();

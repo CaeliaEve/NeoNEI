@@ -11,10 +11,11 @@ import {
 } from 'vue';
 import NEIRecipeDisplay from './NEIRecipeDisplay.vue';
 import StandardCraftingUI from './StandardCraftingUI.vue';
-import type { Recipe } from '../services/api';
+import { api, type Recipe, type RecipeUiPayload } from '../services/api';
 import type { RecipeDisplayHandle, RecipeOverlayUiState } from '../domain/recipeDisplayContract';
 import {
   resolveRecipePresentationProfile,
+  resolveRecipePresentationProfileFromUiPayload,
   type RecipePresentationProfile,
   type UITypeConfig,
 } from '../services/uiTypeMapping';
@@ -73,8 +74,10 @@ const debugPanelRef = ref<HTMLElement | null>(null);
 const debugToggleRef = ref<HTMLElement | null>(null);
 const debugCloseRef = ref<HTMLElement | null>(null);
 const lastFocusedElementBeforeDebug = ref<HTMLElement | null>(null);
+const recipeUiPayload = ref<RecipeUiPayload | null>(null);
 let resizeObserver: ResizeObserver | null = null;
 let rafId: number | null = null;
+let uiPayloadRequestSeq = 0;
 
 const componentRegistry: Record<string, Component> = {
   StandardCraftingUI,
@@ -106,7 +109,7 @@ const componentRegistry: Record<string, Component> = {
   MultiblockBlueprintUI,
 };
 
-const presentationProfile = computed<RecipePresentationProfile>(() => resolveRecipePresentationProfile({
+const detectedPresentationProfile = computed<RecipePresentationProfile>(() => resolveRecipePresentationProfile({
   machineType: props.recipe.machineInfo?.machineType,
   recipeType: props.recipe.recipeType,
   recipeTypeData: props.recipe.recipeTypeData,
@@ -115,6 +118,11 @@ const presentationProfile = computed<RecipePresentationProfile>(() => resolveRec
   metadata: props.recipe.metadata as Record<string, unknown> | undefined,
   preferDetailedCrafting: props.preferDetailedCrafting,
 }));
+
+const presentationProfile = computed<RecipePresentationProfile>(() => {
+  const payloadProfile = resolveRecipePresentationProfileFromUiPayload(recipeUiPayload.value);
+  return payloadProfile ?? detectedPresentationProfile.value;
+});
 
 const uiConfig = computed<UITypeConfig>(() => presentationProfile.value.uiConfig);
 const shouldUseDetailedCrafting = computed(() => presentationProfile.value.renderMode === 'detailed_crafting');
@@ -174,6 +182,7 @@ const scheduleScale = () => {
 };
 
 onMounted(() => {
+  void refreshRecipeUiPayload();
   scheduleScale();
   window.addEventListener('resize', scheduleScale);
 
@@ -215,6 +224,32 @@ const displayedComponentName = computed(() => {
 
   return presentationProfile.value.component;
 });
+
+const refreshRecipeUiPayload = async () => {
+  const uiType = detectedPresentationProfile.value.uiConfig.uiType;
+  const shouldFetch = [
+    'botania_terra_plate',
+    'botania_rune_altar',
+    'botania_mana_pool',
+    'thaumcraft_infusion',
+    'blood_magic_altar',
+  ].includes(uiType);
+
+  if (!shouldFetch || !props.recipe.recipeId) {
+    recipeUiPayload.value = null;
+    return;
+  }
+
+  const requestSeq = ++uiPayloadRequestSeq;
+  try {
+    const payload = await api.getRecipeUiPayload(props.recipe.recipeId);
+    if (requestSeq !== uiPayloadRequestSeq) return;
+    recipeUiPayload.value = payload;
+  } catch {
+    if (requestSeq !== uiPayloadRequestSeq) return;
+    recipeUiPayload.value = null;
+  }
+};
 
 const handleOverlayStateChange = (state: RecipeOverlayUiState) => {
   emit('overlay-state-change', state);
@@ -274,6 +309,14 @@ watch(
   ],
   () => {
     scheduleScale();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => props.recipe.recipeId,
+  () => {
+    void refreshRecipeUiPayload();
   },
   { immediate: true },
 );

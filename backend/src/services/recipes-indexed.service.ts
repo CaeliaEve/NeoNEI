@@ -294,6 +294,18 @@ export class IndexedRecipesService {
     }
   }
 
+  private canUseMaterializedRecipeEdges(db: ReturnType<IndexedRecipesService['getAccelerationDatabase']>): db is NonNullable<ReturnType<IndexedRecipesService['getAccelerationDatabase']>> {
+    if (!db) return false;
+    try {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recipe_edges'")
+        .get() as { name?: string } | undefined;
+      return row?.name === 'recipe_edges';
+    } catch {
+      return false;
+    }
+  }
+
   public peekRecipeIndexCache(itemId: string, column: RecipeIndexColumn): boolean {
     const cached = this.recipeIndexCache.get(`${column}:${itemId}`);
     return Boolean(cached && cached.expiresAt > Date.now());
@@ -309,17 +321,29 @@ export class IndexedRecipesService {
   }
 
   private getCachedIndexRecipeIds(itemId: string, column: RecipeIndexColumn): string[] {
-    this.ensureSplitRecipesAvailable();
     const key = `${column}:${itemId}`;
     const now = Date.now();
     const cached = this.recipeIndexCache.get(key);
     if (cached && cached.expiresAt > now) {
       return cached.recipeIds;
     }
+    const db = this.getAccelerationDatabase();
+    let recipeIds: string[] = [];
 
-    const recipeIds = column === 'produced_by_recipes'
-      ? this.splitExportService.getProducedByRecipeIds(itemId)
-      : this.splitExportService.getUsedInRecipeIds(itemId);
+    if (this.canUseMaterializedRecipeEdges(db)) {
+      const relationType = column === 'produced_by_recipes' ? 'produced_by' : 'used_in';
+      recipeIds = (db.prepare(`
+        SELECT recipe_id
+        FROM recipe_edges
+        WHERE item_id = ? AND relation_type = ?
+        ORDER BY slot_index ASC, recipe_id ASC
+      `).all(itemId, relationType) as Array<{ recipe_id: string }>).map((row) => row.recipe_id);
+    } else {
+      this.ensureSplitRecipesAvailable();
+      recipeIds = column === 'produced_by_recipes'
+        ? this.splitExportService.getProducedByRecipeIds(itemId)
+        : this.splitExportService.getUsedInRecipeIds(itemId);
+    }
 
     this.recipeIndexCache.set(key, {
       expiresAt: now + this.indexCacheTtlMs,
@@ -399,7 +423,6 @@ export class IndexedRecipesService {
   }
 
   async getRecipesByIds(recipeIds: string[]): Promise<IndexedRecipe[]> {
-    this.ensureSplitRecipesAvailable();
     const normalizedIds = Array.from(new Set(recipeIds.map((id) => id.trim()).filter(Boolean)));
     const cachedRecipes = new Map<string, IndexedRecipe>();
     const missingIds: string[] = [];
@@ -414,9 +437,30 @@ export class IndexedRecipesService {
     }
 
     if (missingIds.length > 0) {
-      for (const raw of this.splitExportService.getRecipesByIds(missingIds)) {
-        const transformed = this.transformAndCacheSplitRecipe(raw);
-        cachedRecipes.set(transformed.id, transformed);
+      const db = this.getAccelerationDatabase();
+      if (this.canUseMaterializedRecipesCore(db)) {
+        const placeholders = missingIds.map(() => '?').join(', ');
+        const rows = db.prepare(`
+          SELECT payload
+          FROM recipes_core
+          WHERE recipe_id IN (${placeholders})
+        `).all(...missingIds) as MaterializedRecipeCoreRow[];
+
+        for (const row of rows) {
+          if (!row.payload) continue;
+          const recipe = JSON.parse(row.payload) as IndexedRecipe;
+          this.setCachedTransformedRecipe(recipe);
+          cachedRecipes.set(recipe.id, recipe);
+        }
+      }
+
+      const stillMissingIds = missingIds.filter((recipeId) => !cachedRecipes.has(recipeId));
+      if (stillMissingIds.length > 0 && this.splitExportFallback) {
+        this.ensureSplitRecipesAvailable();
+        for (const raw of this.splitExportService.getRecipesByIds(stillMissingIds)) {
+          const transformed = this.transformAndCacheSplitRecipe(raw);
+          cachedRecipes.set(transformed.id, transformed);
+        }
       }
     }
 
@@ -438,10 +482,6 @@ export class IndexedRecipesService {
       return this.setCachedRecipeCollection(cacheKey, recipes);
     }
 
-    if (!this.splitExportFallback) {
-      return [];
-    }
-
     const recipeIds = this.getCachedIndexRecipeIds(itemId, 'produced_by_recipes');
     if (recipeIds.length === 0) return [];
     const parsed = await this.getRecipesByIds(recipeIds);
@@ -459,10 +499,6 @@ export class IndexedRecipesService {
     if (materialized?.used_in_payload) {
       const recipes = JSON.parse(materialized.used_in_payload) as IndexedRecipe[];
       return this.setCachedRecipeCollection(cacheKey, recipes);
-    }
-
-    if (!this.splitExportFallback) {
-      return [];
     }
 
     const recipeIds = this.getCachedIndexRecipeIds(itemId, 'used_in_recipes');

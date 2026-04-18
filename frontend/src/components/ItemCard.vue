@@ -70,6 +70,11 @@ const getImageSrc = (item: Item): string => {
 };
 
 const imageSrc = computed(() => getImageSrc(props.item));
+const shouldRenderFallbackImage = computed(() => {
+  if (props.atlasSprite || showAnimation.value) return false;
+  const src = imageSrc.value || "";
+  return !src.includes('/images/item/OpenBlocks/devnull~0');
+});
 
 const renderFrame = (frameIndex: number) => {
   const canvas = canvasRef.value;
@@ -274,12 +279,30 @@ watch(
   () => props.item.itemId,
   () => {
     resetAnimationState();
-    isStaticImageLoaded.value = false;
+    isStaticImageLoaded.value = Boolean(props.atlasSprite);
     staticImageError.value = false;
+    if (isVisible.value && !props.atlasSprite) {
+      scheduleAnimationEnhancement();
+    }
+  },
+);
+
+watch(
+  () => props.atlasSprite,
+  (atlasSprite) => {
+    if (atlasSprite) {
+      resetAnimationState();
+      isStaticImageLoaded.value = true;
+      staticImageError.value = false;
+      return;
+    }
+
+    isStaticImageLoaded.value = false;
     if (isVisible.value) {
       scheduleAnimationEnhancement();
     }
   },
+  { immediate: true },
 );
 
 onMounted(() => {
@@ -327,7 +350,7 @@ onUnmounted(() => {
     </div>
 
     <img
-      v-show="!showAnimation && !atlasSprite"
+      v-if="shouldRenderFallbackImage"
       :src="imageSrc"
       :loading="eager ? 'eager' : 'lazy'"
       :fetchpriority="eager ? 'high' : 'auto'"

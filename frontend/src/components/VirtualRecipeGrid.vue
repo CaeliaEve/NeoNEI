@@ -12,6 +12,7 @@ interface Props {
   gap?: number;
   overscanRows?: number;
   scrollThrottleMs?: number;
+  showPreviewImages?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -21,6 +22,7 @@ const props = withDefaults(defineProps<Props>(), {
   gap: 8,
   overscanRows: 4,
   scrollThrottleMs: 32,
+  showPreviewImages: true,
 });
 
 const emit = defineEmits<{
@@ -194,7 +196,7 @@ watch(
           @click="emit('select', entry.index)"
         >
           <img
-            v-if="entry.previewItemId"
+            v-if="showPreviewImages && entry.previewItemId"
             class="virtual-grid-icon"
             :src="getImageUrl(entry.previewItemId)"
             :alt="`${entry.previewItemId} 图标`"

@@ -2,11 +2,15 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { getAutowarmPolicy } from '../src/config/autowarm-policy';
 
-test('autowarm is disabled by default', () => {
+test('autowarm defaults keep homepage atlas hot without blocking recipe startup', () => {
   const policy = getAutowarmPolicy({});
 
   assert.equal(policy.recipeBootstrap.enabled, false);
-  assert.equal(policy.pageAtlas.enabled, false);
+  assert.equal(policy.recipeBootstrap.limit, 1000);
+  assert.equal(policy.pageAtlas.enabled, true);
+  assert.equal(policy.pageAtlas.pages, 4);
+  assert.equal(policy.pageAtlas.pageSize, 120);
+  assert.equal(policy.pageAtlas.itemSize, 50);
 });
 
 test('autowarm can be enabled explicitly', () => {

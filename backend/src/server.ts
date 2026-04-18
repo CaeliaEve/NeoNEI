@@ -20,7 +20,7 @@ import { logger } from './utils/logger';
 import { getRecipeBootstrapService } from './services/recipe-bootstrap.service';
 import { getPageAtlasService } from './services/page-atlas.service';
 import { getAutowarmPolicy } from './config/autowarm-policy';
-import { NeoNeiCompilerService } from './services/neonei-compiler.service';
+import { ensureAccelerationDatabaseReady } from './services/acceleration-db-pipeline.service';
 
 const app = express();
 const parsedPort = Number(process.env.PORT);
@@ -221,18 +221,18 @@ async function startServer() {
     await dbManager.init();
     logger.info('Database ready');
 
-    logger.info('Initializing acceleration database...');
     const accelerationDbManager = getAccelerationDatabaseManager();
-    await accelerationDbManager.init();
-    logger.info('Acceleration database ready');
-
-    const compiler = new NeoNeiCompilerService(accelerationDbManager, {
-      itemsDir: SPLIT_ITEMS_DIR,
-      recipesDir: SPLIT_RECIPES_DIR,
-      canonicalDir: NESQL_CANONICAL_DIR,
-      imageRoot: IMAGES_PATH,
+    logger.info('Initializing acceleration database...');
+    const compileResult = await ensureAccelerationDatabaseReady({
+      manager: accelerationDbManager,
+      sourceRoots: {
+        itemsDir: SPLIT_ITEMS_DIR,
+        recipesDir: SPLIT_RECIPES_DIR,
+        canonicalDir: NESQL_CANONICAL_DIR,
+        imageRoot: IMAGES_PATH,
+      },
     });
-    const compileResult = await compiler.ensureCompiled();
+    logger.info('Acceleration database ready');
     if (compileResult) {
       logger.info('[ACCELERATION_DB] compiled', {
         itemsImported: compileResult.itemsImported,

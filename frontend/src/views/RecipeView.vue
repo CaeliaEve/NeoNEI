@@ -852,6 +852,7 @@ onBeforeUnmount(() => {
             :selected-index="currentPage"
             :overscan-rows="5"
             :scroll-throttle-ms="32"
+            :show-preview-images="false"
             @select="setPage"
           />
         </div>
