@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger';
+import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import { getMachineIconItem } from './machine-icon-mapping.service';
 import { getNesqlSplitExportService } from './nesql-split-export.service';
 import { transformRecipeMetadata } from './recipe-metadata';
@@ -165,7 +166,50 @@ export interface ItemRecipeSummaryResponse {
 const BOTANIA_TERRASTEEL_ITEM_ID = 'i~Botania~manaResource~4';
 type RecipeIndexColumn = 'produced_by_recipes' | 'used_in_recipes';
 
+type MaterializedBootstrapRow = {
+  produced_by_payload: string | null;
+  used_in_payload: string | null;
+  summary_payload: string | null;
+};
+
+type MaterializedRecipeCoreRow = {
+  payload: string | null;
+};
+
+type MaterializedSummaryRow = {
+  summary_payload: string | null;
+};
+
+export interface IndexedRecipesServiceOptions {
+  databaseManager?: DatabaseManager;
+  splitExportFallback?: boolean;
+}
+
+const MACHINE_TYPE_ALIAS_GROUPS: string[][] = [
+  ['Terra Plate', '泰拉凝聚板'],
+  ['Rune Altar', '符文祭坛'],
+  ['Mana Pool', '魔力池'],
+  ['Pure Daisy', '白雏菊'],
+  ['Binding Ritual', '绑定仪式'],
+  ['Blood Altar', '血之祭坛', '血祭坛'],
+  ['Alchemy Array', '炼金阵', '炼金法阵'],
+  ['Alchemy Table', '炼金台'],
+  ['Arcane Infusion', '奥术注魔'],
+  ['Arcane Worktable', '奥术工作台', '奥术合成'],
+  ['Crucible', '坩埚'],
+];
+
+function expandMachineTypeAliases(machineType: string): string[] {
+  const normalized = machineType.trim();
+  if (!normalized) return [];
+  const group = MACHINE_TYPE_ALIAS_GROUPS.find((aliases) => aliases.includes(normalized));
+  if (!group) return [normalized];
+  return Array.from(new Set(group));
+}
+
 export class IndexedRecipesService {
+  private databaseManager: DatabaseManager;
+  private splitExportFallback: boolean;
   private splitExportService = getNesqlSplitExportService();
   private readonly indexCacheTtlMs = Number(process.env.RECIPE_INDEX_CACHE_TTL_MS || 15_000);
   private readonly machineTypesCacheTtlMs = Number(process.env.MACHINE_TYPES_CACHE_TTL_MS || 60_000);
@@ -178,9 +222,75 @@ export class IndexedRecipesService {
   private readonly recipeCollectionCache = new Map<string, { expiresAt: number; value: IndexedRecipe[] }>();
   private machineTypesCache: { expiresAt: number; value: string[] } | null = null;
 
+  constructor(options: IndexedRecipesServiceOptions = {}) {
+    this.databaseManager = options.databaseManager ?? getAccelerationDatabaseManager();
+    this.splitExportFallback = options.splitExportFallback ?? true;
+  }
+
   private ensureSplitRecipesAvailable(): void {
     if (!this.splitExportService.hasSplitRecipes()) {
       throw new Error('Split recipe export is unavailable');
+    }
+  }
+
+  private getAccelerationDatabase() {
+    try {
+      return this.databaseManager.getDatabase();
+    } catch {
+      return null;
+    }
+  }
+
+  private canUseMaterializedBootstrap(db: ReturnType<IndexedRecipesService['getAccelerationDatabase']>): db is NonNullable<ReturnType<IndexedRecipesService['getAccelerationDatabase']>> {
+    if (!db) return false;
+    try {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recipe_bootstrap'")
+        .get() as { name?: string } | undefined;
+      return row?.name === 'recipe_bootstrap';
+    } catch {
+      return false;
+    }
+  }
+
+  private getMaterializedBootstrapRow(itemId: string): MaterializedBootstrapRow | null {
+    const db = this.getAccelerationDatabase();
+    if (!this.canUseMaterializedBootstrap(db)) {
+      return null;
+    }
+
+    const row = db
+      .prepare(`
+        SELECT produced_by_payload, used_in_payload, summary_payload
+        FROM recipe_bootstrap
+        WHERE item_id = ?
+      `)
+      .get(itemId) as MaterializedBootstrapRow | undefined;
+
+    return row ?? null;
+  }
+
+  private canUseMaterializedRecipesCore(db: ReturnType<IndexedRecipesService['getAccelerationDatabase']>): db is NonNullable<ReturnType<IndexedRecipesService['getAccelerationDatabase']>> {
+    if (!db) return false;
+    try {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recipes_core'")
+        .get() as { name?: string } | undefined;
+      return row?.name === 'recipes_core';
+    } catch {
+      return false;
+    }
+  }
+
+  private canUseMaterializedSummary(db: ReturnType<IndexedRecipesService['getAccelerationDatabase']>): db is NonNullable<ReturnType<IndexedRecipesService['getAccelerationDatabase']>> {
+    if (!db) return false;
+    try {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recipe_summary_compact'")
+        .get() as { name?: string } | undefined;
+      return row?.name === 'recipe_summary_compact';
+    } catch {
+      return false;
     }
   }
 
@@ -265,6 +375,20 @@ export class IndexedRecipesService {
   }
 
   async getRecipeById(recipeId: string): Promise<IndexedRecipe | null> {
+    const db = this.getAccelerationDatabase();
+    if (this.canUseMaterializedRecipesCore(db)) {
+      const row = db
+        .prepare('SELECT payload FROM recipes_core WHERE recipe_id = ?')
+        .get(recipeId) as MaterializedRecipeCoreRow | undefined;
+      if (row?.payload) {
+        return JSON.parse(row.payload) as IndexedRecipe;
+      }
+    }
+
+    if (!this.splitExportFallback) {
+      return null;
+    }
+
     this.ensureSplitRecipesAvailable();
     const cached = this.getCachedTransformedRecipe(recipeId);
     if (cached) {
@@ -307,6 +431,17 @@ export class IndexedRecipesService {
     if (cached) {
       return cached;
     }
+
+    const materialized = this.getMaterializedBootstrapRow(itemId);
+    if (materialized?.produced_by_payload) {
+      const recipes = JSON.parse(materialized.produced_by_payload) as IndexedRecipe[];
+      return this.setCachedRecipeCollection(cacheKey, recipes);
+    }
+
+    if (!this.splitExportFallback) {
+      return [];
+    }
+
     const recipeIds = this.getCachedIndexRecipeIds(itemId, 'produced_by_recipes');
     if (recipeIds.length === 0) return [];
     const parsed = await this.getRecipesByIds(recipeIds);
@@ -319,13 +454,23 @@ export class IndexedRecipesService {
     if (cached) {
       return cached;
     }
+
+    const materialized = this.getMaterializedBootstrapRow(itemId);
+    if (materialized?.used_in_payload) {
+      const recipes = JSON.parse(materialized.used_in_payload) as IndexedRecipe[];
+      return this.setCachedRecipeCollection(cacheKey, recipes);
+    }
+
+    if (!this.splitExportFallback) {
+      return [];
+    }
+
     const recipeIds = this.getCachedIndexRecipeIds(itemId, 'used_in_recipes');
     if (recipeIds.length === 0) return [];
     return this.setCachedRecipeCollection(cacheKey, await this.getRecipesByIds(recipeIds));
   }
 
   async getItemRecipeSummary(itemId: string): Promise<ItemRecipeSummaryResponse> {
-    this.ensureSplitRecipesAvailable();
     const normalizedItemId = itemId.trim();
     if (!normalizedItemId) {
       const error = new Error('Item not found') as Error & { statusCode?: number; code?: string };
@@ -339,6 +484,42 @@ export class IndexedRecipesService {
     if (cached && cached.expiresAt > now) {
       return cached.value;
     }
+
+    const db = this.getAccelerationDatabase();
+    if (this.canUseMaterializedSummary(db)) {
+      const summaryRow = db
+        .prepare('SELECT summary_payload FROM recipe_summary_compact WHERE item_id = ?')
+        .get(normalizedItemId) as MaterializedSummaryRow | undefined;
+      if (summaryRow?.summary_payload) {
+        const summary = JSON.parse(summaryRow.summary_payload) as ItemRecipeSummaryResponse;
+        this.recipeSummaryCache.set(normalizedItemId, {
+          expiresAt: now + this.summaryCacheTtlMs,
+          value: summary,
+        });
+        return summary;
+      }
+    }
+
+    const materialized = this.getMaterializedBootstrapRow(normalizedItemId);
+    if (materialized?.summary_payload) {
+      const payload = JSON.parse(materialized.summary_payload) as { indexedSummary?: ItemRecipeSummaryResponse };
+      if (payload.indexedSummary) {
+        this.recipeSummaryCache.set(normalizedItemId, {
+          expiresAt: now + this.summaryCacheTtlMs,
+          value: payload.indexedSummary,
+        });
+        return payload.indexedSummary;
+      }
+    }
+
+    if (!this.splitExportFallback) {
+      const error = new Error('Item not found') as Error & { statusCode?: number; code?: string };
+      error.statusCode = 404;
+      error.code = 'NOT_FOUND';
+      throw error;
+    }
+
+    this.ensureSplitRecipesAvailable();
 
     const splitItem = this.splitExportService.getItemById(normalizedItemId);
     if (!splitItem) {
@@ -444,10 +625,10 @@ export class IndexedRecipesService {
   }
 
   async getRecipesByMachine(machineType: string, voltageTier?: string): Promise<IndexedRecipe[]> {
-    this.ensureSplitRecipesAvailable();
     const normalizedMachineType = machineType.trim();
     const normalizedVoltageTier = voltageTier?.trim() || undefined;
     if (!normalizedMachineType) return [];
+    const machineAliases = expandMachineTypeAliases(normalizedMachineType);
 
     const cacheKey = `machine:${normalizedMachineType}::${normalizedVoltageTier ?? ''}`;
     const cached = this.getCachedRecipeCollection(cacheKey);
@@ -455,14 +636,59 @@ export class IndexedRecipesService {
       return cached;
     }
 
+    const db = this.getAccelerationDatabase();
+    if (this.canUseMaterializedRecipesCore(db)) {
+      const bindings: Record<string, unknown> = {
+        machineType: normalizedMachineType,
+      };
+      const aliasBindings = machineAliases.reduce<Record<string, unknown>>((acc, alias, index) => {
+        acc[`machineType${index}`] = alias;
+        return acc;
+      }, {});
+      Object.assign(bindings, aliasBindings);
+      const aliasWhere = machineAliases.map((_, index) => `machine_type = @machineType${index}`).join(' OR ');
+      let whereClause = `WHERE (${aliasWhere})`;
+      if (normalizedVoltageTier) {
+        whereClause += ' AND voltage_tier = @voltageTier';
+        bindings.voltageTier = normalizedVoltageTier;
+      }
+
+      const rows = db.prepare(`
+        SELECT payload
+        FROM recipes_core
+        ${whereClause}
+        ORDER BY recipe_id ASC
+      `).all(bindings) as MaterializedRecipeCoreRow[];
+
+      const recipes = rows
+        .map((row) => (row.payload ? JSON.parse(row.payload) as IndexedRecipe : null))
+        .filter((recipe): recipe is IndexedRecipe => Boolean(recipe));
+
+      return this.setCachedRecipeCollection(cacheKey, recipes);
+    }
+
+    if (!this.splitExportFallback) {
+      return [];
+    }
+
+    this.ensureSplitRecipesAvailable();
+
     const startedAt = Date.now();
-    const recipes = this.splitExportService
-      .getRecipesByMachine(normalizedMachineType, normalizedVoltageTier)
-      .map((raw) => this.transformAndCacheSplitRecipe(raw))
-      .filter((recipe) => Boolean(recipe.machineInfo?.machineType?.trim()));
+    const recipeMap = new Map<string, IndexedRecipe>();
+    for (const alias of machineAliases) {
+      const aliasRecipes = this.splitExportService
+        .getRecipesByMachine(alias, normalizedVoltageTier)
+        .map((raw) => this.transformAndCacheSplitRecipe(raw))
+        .filter((recipe) => Boolean(recipe.machineInfo?.machineType?.trim()));
+      for (const recipe of aliasRecipes) {
+        recipeMap.set(recipe.id, recipe);
+      }
+    }
+    const recipes = Array.from(recipeMap.values());
 
     logger.info('[RECIPES_INDEXED] getRecipesByMachine(split-only)', {
       machineType: normalizedMachineType,
+      aliases: machineAliases,
       voltageTier: normalizedVoltageTier || null,
       recipeCount: recipes.length,
       durationMs: Date.now() - startedAt,
@@ -471,11 +697,32 @@ export class IndexedRecipesService {
   }
 
   async getAllMachineTypes(): Promise<string[]> {
-    this.ensureSplitRecipesAvailable();
     const now = Date.now();
     if (this.machineTypesCache && this.machineTypesCache.expiresAt > now) {
       return this.machineTypesCache.value;
     }
+
+    const db = this.getAccelerationDatabase();
+    if (this.canUseMaterializedRecipesCore(db)) {
+      const machineTypes = (db.prepare(`
+        SELECT DISTINCT machine_type
+        FROM recipes_core
+        WHERE machine_type IS NOT NULL AND machine_type != ''
+        ORDER BY machine_type COLLATE NOCASE ASC
+      `).all() as Array<{ machine_type: string }>).map((row) => row.machine_type);
+
+      this.machineTypesCache = {
+        expiresAt: now + this.machineTypesCacheTtlMs,
+        value: machineTypes,
+      };
+      return machineTypes;
+    }
+
+    if (!this.splitExportFallback) {
+      return [];
+    }
+
+    this.ensureSplitRecipesAvailable();
 
     const machineTypes = this.splitExportService.getAllMachineTypes();
     this.machineTypesCache = {
@@ -710,7 +957,7 @@ let serviceInstance: IndexedRecipesService | null = null;
 
 export function getIndexedRecipesService(): IndexedRecipesService {
   if (!serviceInstance) {
-    serviceInstance = new IndexedRecipesService();
+    serviceInstance = new IndexedRecipesService({ splitExportFallback: false });
   }
   return serviceInstance;
 }

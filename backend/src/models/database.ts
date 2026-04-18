@@ -1,6 +1,6 @@
 import Database from 'better-sqlite3';
 import * as fs from 'fs';
-import { DB_FILE } from '../config/runtime-paths';
+import { ACCELERATION_DB_FILE, DB_FILE } from '../config/runtime-paths';
 
 type TableInfoRow = {
   name: string;
@@ -206,7 +206,160 @@ export class DatabaseManager {
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_recipes_machine_type ON recipes(json_extract(additional_data, '$.machineInfo.machineType'))");
     this.db.exec("CREATE INDEX IF NOT EXISTS idx_recipes_machine_voltage ON recipes(json_extract(additional_data, '$.machineInfo.machineType'), json_extract(additional_data, '$.machineInfo.parsedVoltageTier'))");
 
+    this.createAccelerationSchema();
+
     console.log('✅ Database schema created');
+  }
+
+  private createAccelerationSchema(): void {
+    if (!this.db) throw new Error('Database not initialized');
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS compiler_state (
+        state_key TEXT PRIMARY KEY,
+        state_value TEXT NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS items_core (
+        item_id TEXT PRIMARY KEY,
+        mod_id TEXT NOT NULL,
+        internal_name TEXT NOT NULL,
+        localized_name TEXT,
+        unlocalized_name TEXT,
+        damage INTEGER DEFAULT 0,
+        image_file_name TEXT,
+        render_asset_ref TEXT,
+        preferred_image_url TEXT,
+        tooltip TEXT,
+        search_terms TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS items_search (
+        item_id TEXT PRIMARY KEY,
+        localized_name_norm TEXT,
+        internal_name_norm TEXT,
+        item_id_norm TEXT,
+        search_terms_norm TEXT,
+        pinyin_full TEXT,
+        pinyin_acronym TEXT,
+        aliases TEXT,
+        popularity_score REAL DEFAULT 0,
+        family_score REAL DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (item_id) REFERENCES items_core(item_id) ON DELETE CASCADE
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recipes_core (
+        recipe_id TEXT PRIMARY KEY,
+        recipe_type TEXT NOT NULL,
+        family TEXT,
+        machine_type TEXT,
+        voltage_tier TEXT,
+        source_mod TEXT,
+        input_count INTEGER DEFAULT 0,
+        output_count INTEGER DEFAULT 0,
+        bootstrap_key TEXT,
+        payload TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recipe_edges (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id TEXT NOT NULL,
+        relation_type TEXT NOT NULL,
+        recipe_id TEXT NOT NULL,
+        slot_index INTEGER DEFAULT 0,
+        weight REAL DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recipe_bootstrap (
+        item_id TEXT PRIMARY KEY,
+        produced_by_payload TEXT,
+        used_in_payload TEXT,
+        summary_payload TEXT,
+        signature TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recipe_machine_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id TEXT NOT NULL,
+        machine_key TEXT NOT NULL,
+        family TEXT,
+        voltage_tier TEXT,
+        recipe_ids_blob TEXT,
+        recipe_count INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS assets_manifest (
+        asset_id TEXT PRIMARY KEY,
+        asset_type TEXT NOT NULL,
+        mod_id TEXT,
+        path TEXT NOT NULL,
+        width INTEGER,
+        height INTEGER,
+        hash TEXT,
+        atlas_id TEXT,
+        frame_count INTEGER DEFAULT 1,
+        first_frame_path TEXT,
+        metadata_json TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS hot_items (
+        item_id TEXT PRIMARY KEY,
+        popularity_score REAL DEFAULT 0,
+        home_rank INTEGER,
+        search_rank INTEGER,
+        recipe_rank INTEGER,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (item_id) REFERENCES items_core(item_id) ON DELETE CASCADE
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recipe_summary_compact (
+        item_id TEXT PRIMARY KEY,
+        summary_payload TEXT NOT NULL,
+        signature TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_core_mod_id ON items_core(mod_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_core_localized_name ON items_core(localized_name)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_search_localized_name_norm ON items_search(localized_name_norm)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_search_internal_name_norm ON items_search(internal_name_norm)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_search_pinyin_full ON items_search(pinyin_full)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_search_pinyin_acronym ON items_search(pinyin_acronym)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipes_core_family ON recipes_core(family)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipes_core_machine_type ON recipes_core(machine_type)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_edges_item_relation ON recipe_edges(item_id, relation_type)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_edges_recipe_id ON recipe_edges(recipe_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_machine_groups_item_id ON recipe_machine_groups(item_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_assets_manifest_type_mod ON assets_manifest(asset_type, mod_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_hot_items_home_rank ON hot_items(home_rank)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_summary_compact_signature ON recipe_summary_compact(signature)');
   }
 
   private async migrateDatabase(): Promise<void> {
@@ -296,6 +449,31 @@ export class DatabaseManager {
       // Ensure expression indexes exist for machine-based indexed recipe queries.
       this.db.exec("CREATE INDEX IF NOT EXISTS idx_recipes_machine_type ON recipes(json_extract(additional_data, '$.machineInfo.machineType'))");
       this.db.exec("CREATE INDEX IF NOT EXISTS idx_recipes_machine_voltage ON recipes(json_extract(additional_data, '$.machineInfo.machineType'), json_extract(additional_data, '$.machineInfo.parsedVoltageTier'))");
+      this.createAccelerationSchema();
+
+      const recipesCoreColumns = this.db.pragma(`table_info(recipes_core)`) as TableInfoRow[];
+      const hasRecipesCorePayload = recipesCoreColumns.some((col) => col.name === 'payload');
+      if (!hasRecipesCorePayload) {
+        this.db.exec('ALTER TABLE recipes_core ADD COLUMN payload TEXT');
+      }
+
+      const assetsManifestColumns = this.db.pragma(`table_info(assets_manifest)`) as TableInfoRow[];
+      const hasAssetsMetadataJson = assetsManifestColumns.some((col) => col.name === 'metadata_json');
+      if (!hasAssetsMetadataJson) {
+        this.db.exec('ALTER TABLE assets_manifest ADD COLUMN metadata_json TEXT');
+      }
+
+      if (!tableNames.includes('recipe_summary_compact')) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS recipe_summary_compact (
+            item_id TEXT PRIMARY KEY,
+            summary_payload TEXT NOT NULL,
+            signature TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_summary_compact_signature ON recipe_summary_compact(signature)');
+      }
 
     } catch (error) {
       console.error('❌ Database migration failed:', error);
@@ -314,6 +492,11 @@ export class DatabaseManager {
 
   close(): void {
     if (this.db) {
+      try {
+        this.db.pragma('wal_checkpoint(TRUNCATE)');
+      } catch {
+        // ignore checkpoint failures during shutdown
+      }
       this.db.close();
       this.db = null;
     }
@@ -322,10 +505,18 @@ export class DatabaseManager {
 
 // Singleton instance
 let dbManager: DatabaseManager | null = null;
+let accelerationDbManager: DatabaseManager | null = null;
 
 export function getDatabaseManager(): DatabaseManager {
   if (!dbManager) {
     dbManager = new DatabaseManager();
   }
   return dbManager;
+}
+
+export function getAccelerationDatabaseManager(): DatabaseManager {
+  if (!accelerationDbManager) {
+    accelerationDbManager = new DatabaseManager(ACCELERATION_DB_FILE);
+  }
+  return accelerationDbManager;
 }

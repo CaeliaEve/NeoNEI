@@ -11,4 +11,11 @@ router.get(
   })
 );
 
+router.get(
+  '/acceleration',
+  asyncHandler(async (_req, res) => {
+    res.json(getEcosystemService().getAccelerationOverview());
+  })
+);
+
 export default router;

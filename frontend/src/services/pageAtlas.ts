@@ -54,6 +54,15 @@ function createAtlasKey(items: Pick<Item, 'itemId'>[], itemSize: number): string
   return `${itemSize}:${items.map((item) => item.itemId).join('|')}`;
 }
 
+function createPrecomputedAtlasKey(params: {
+  page: number;
+  pageSize: number;
+  slotSize: number;
+  modId?: string;
+}): string {
+  return `precomputed:${params.page}:${params.pageSize}:${params.slotSize}:${params.modId || 'all'}`;
+}
+
 export async function buildPageAtlas(items: Item[], itemSize: number): Promise<PageAtlasResult | null> {
   if (items.length === 0) return null;
 
@@ -88,6 +97,62 @@ export async function buildPageAtlas(items: Item[], itemSize: number): Promise<P
   return request;
 }
 
+export async function buildPrecomputedPageAtlas(params: {
+  page: number;
+  pageSize: number;
+  itemSize: number;
+  modId?: string;
+}): Promise<PageAtlasResult | null> {
+  const slotSize = Math.max(32, Math.ceil(params.itemSize * 0.9));
+  const key = createPrecomputedAtlasKey({
+    page: params.page,
+    pageSize: params.pageSize,
+    slotSize,
+    modId: params.modId,
+  });
+  const cached = atlasCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const inFlight = atlasInFlight.get(key);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const request = api
+    .getPrecomputedPageAtlas({
+      page: params.page,
+      pageSize: params.pageSize,
+      slotSize,
+      modId: params.modId,
+    })
+    .then((result) => {
+      const normalized = result ? normalizeAtlasResult(result) : null;
+      atlasCache.set(key, normalized);
+      return normalized;
+    })
+    .catch(() => {
+      atlasCache.set(key, null);
+      return null;
+    })
+    .finally(() => {
+      atlasInFlight.delete(key);
+    });
+
+  atlasInFlight.set(key, request);
+  return request;
+}
+
 export async function primePageAtlas(items: Item[], itemSize: number): Promise<void> {
   await buildPageAtlas(items, itemSize);
+}
+
+export async function primePrecomputedPageAtlas(params: {
+  page: number;
+  pageSize: number;
+  itemSize: number;
+  modId?: string;
+}): Promise<void> {
+  await buildPrecomputedPageAtlas(params);
 }

@@ -668,6 +668,18 @@ export const api = {
     return response.data;
   },
 
+  async getPrecomputedPageAtlas(params: {
+    page: number;
+    pageSize: number;
+    slotSize: number;
+    modId?: string;
+  }): Promise<PageAtlasResult | null> {
+    const response = await http.get('/items/page-atlas/precomputed', {
+      params,
+    });
+    return response.data;
+  },
+
 
   // === indexed Recipe API (with machine icons) ===
 

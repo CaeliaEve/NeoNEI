@@ -12,14 +12,15 @@ import gtDiagramsRoutes from './routes/gt-diagrams.routes';
 import forestryGeneticsRoutes from './routes/forestry-genetics.routes';
 import renderContractRoutes from './routes/render-contract.routes';
 import recipeBootstrapRoutes from './routes/recipe-bootstrap.routes';
-import { getDatabaseManager } from './models/database';
-import { DATA_DIR, IMAGES_PATH, NESQL_CANONICAL_DIR } from './config/runtime-paths';
+import { getAccelerationDatabaseManager, getDatabaseManager } from './models/database';
+import { DATA_DIR, IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from './config/runtime-paths';
 import { requestObservability } from './middleware/request-observability';
 import { errorHandler } from './middleware/error-handler';
 import { logger } from './utils/logger';
 import { getRecipeBootstrapService } from './services/recipe-bootstrap.service';
 import { getPageAtlasService } from './services/page-atlas.service';
 import { getAutowarmPolicy } from './config/autowarm-policy';
+import { NeoNeiCompilerService } from './services/neonei-compiler.service';
 
 const app = express();
 const parsedPort = Number(process.env.PORT);
@@ -219,6 +220,27 @@ async function startServer() {
     const dbManager = getDatabaseManager();
     await dbManager.init();
     logger.info('Database ready');
+
+    logger.info('Initializing acceleration database...');
+    const accelerationDbManager = getAccelerationDatabaseManager();
+    await accelerationDbManager.init();
+    logger.info('Acceleration database ready');
+
+    const compiler = new NeoNeiCompilerService(accelerationDbManager, {
+      itemsDir: SPLIT_ITEMS_DIR,
+      recipesDir: SPLIT_RECIPES_DIR,
+      canonicalDir: NESQL_CANONICAL_DIR,
+      imageRoot: IMAGES_PATH,
+    });
+    const compileResult = await compiler.ensureCompiled();
+    if (compileResult) {
+      logger.info('[ACCELERATION_DB] compiled', {
+        itemsImported: compileResult.itemsImported,
+        signature: compileResult.signature,
+      });
+    } else {
+      logger.info('[ACCELERATION_DB] already fresh');
+    }
 
     app.listen(PORT, HOST, () => {
       if (!fs.existsSync(IMAGES_PATH)) {

@@ -1,13 +1,15 @@
 import fs from 'fs';
 import path from 'path';
-import zlib from 'zlib';
+import type Database from 'better-sqlite3';
 import { ItemsService, type Item } from './items.service';
 import {
   getIndexedRecipesService,
   type IndexedRecipe,
+  type IndexedRecipesService,
   type ItemRecipeSummaryResponse,
 } from './recipes-indexed.service';
 import { getNesqlSplitExportService } from './nesql-split-export.service';
+import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import { SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from '../config/runtime-paths';
 
 export interface RecipeBootstrapPayload {
@@ -21,34 +23,75 @@ export interface RecipeBootstrapPayload {
   indexedSummary: ItemRecipeSummaryResponse | null;
 }
 
-type RecipeBootstrapCacheFile = {
-  version: 2;
-  signature: string;
-  payload: RecipeBootstrapPayload | null;
+type CompactRecipeBootstrapPayload = {
+  item: Item;
+  recipeIndex: {
+    usedInRecipes: string[];
+    producedByRecipes: string[];
+  };
+  indexedSummary: ItemRecipeSummaryResponse | null;
 };
 
+type RecipeBootstrapRow = {
+  produced_by_payload: string | null;
+  used_in_payload: string | null;
+  summary_payload: string | null;
+  signature: string | null;
+};
+
+export interface RecipeBootstrapServiceOptions {
+  databaseManager?: DatabaseManager;
+  itemsService?: ItemsService;
+  indexedRecipesService?: IndexedRecipesService;
+  splitExportFallback?: boolean;
+}
+
 export class RecipeBootstrapService {
-  private itemsService = new ItemsService();
-  private indexedRecipesService = getIndexedRecipesService();
+  private itemsService: ItemsService;
+  private indexedRecipesService: IndexedRecipesService;
+  private databaseManager: DatabaseManager;
+  private splitExportFallback: boolean;
   private splitExportService = getNesqlSplitExportService();
   private cache = new Map<string, { expiresAt: number; value: RecipeBootstrapPayload | null }>();
   private readonly cacheTtlMs = Number(process.env.RECIPE_BOOTSTRAP_CACHE_TTL_MS || 60 * 60 * 1000);
+
+  constructor(options: RecipeBootstrapServiceOptions = {}) {
+    this.databaseManager = options.databaseManager ?? getAccelerationDatabaseManager();
+    this.splitExportFallback = options.splitExportFallback ?? true;
+    this.itemsService =
+      options.itemsService ??
+      new ItemsService({
+        databaseManager: this.databaseManager,
+        splitExportFallback: this.splitExportFallback,
+      });
+    this.indexedRecipesService = options.indexedRecipesService ?? getIndexedRecipesService();
+  }
+
+  private getAccelerationDatabase(): Database.Database | null {
+    try {
+      return this.databaseManager.getDatabase();
+    } catch {
+      return null;
+    }
+  }
+
+  private canUseMaterializedBootstrap(db: Database.Database | null): db is Database.Database {
+    if (!db) return false;
+    try {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recipe_bootstrap'")
+        .get() as { name?: string } | undefined;
+      return row?.name === 'recipe_bootstrap';
+    } catch {
+      return false;
+    }
+  }
 
   private buildRecipeIndex(indexedCrafting: IndexedRecipe[], indexedUsage: IndexedRecipe[]) {
     return {
       usedInRecipes: indexedUsage.map((recipe) => recipe.id),
       producedByRecipes: indexedCrafting.map((recipe) => recipe.id),
     };
-  }
-
-  private getBootstrapCacheDir(): string | null {
-    return SPLIT_RECIPES_DIR ? path.join(SPLIT_RECIPES_DIR, '.hub-bootstrap-cache') : null;
-  }
-
-  private getBootstrapCacheFilePath(itemId: string): string | null {
-    const cacheDir = this.getBootstrapCacheDir();
-    if (!cacheDir) return null;
-    return path.join(cacheDir, `${encodeURIComponent(itemId)}.json.gz`);
   }
 
   private getBootstrapSignature(itemId: string): string {
@@ -75,41 +118,42 @@ export class RecipeBootstrapService {
     return signatures.join('|');
   }
 
-  private readDiskCache(itemId: string, signature: string): RecipeBootstrapPayload | null {
-    const cacheFilePath = this.getBootstrapCacheFilePath(itemId);
-    if (!cacheFilePath || !fs.existsSync(cacheFilePath)) {
+  private readMaterializedBootstrap(itemId: string): RecipeBootstrapPayload | null {
+    const db = this.getAccelerationDatabase();
+    if (!this.canUseMaterializedBootstrap(db)) {
+      return null;
+    }
+
+    const row = db
+      .prepare(`
+        SELECT produced_by_payload, used_in_payload, summary_payload, signature
+        FROM recipe_bootstrap
+        WHERE item_id = ?
+      `)
+      .get(itemId) as RecipeBootstrapRow | undefined;
+
+    if (!row?.summary_payload) {
       return null;
     }
 
     try {
-      const buffer = fs.readFileSync(cacheFilePath);
-      const payload = JSON.parse(zlib.gunzipSync(buffer).toString('utf-8')) as RecipeBootstrapCacheFile;
-      if (payload.version !== 2 || payload.signature !== signature) {
-        return null;
-      }
-      return payload.payload ?? null;
-    } catch {
-      return null;
-    }
-  }
-
-  private writeDiskCache(itemId: string, signature: string, payload: RecipeBootstrapPayload | null): void {
-    const cacheDir = this.getBootstrapCacheDir();
-    const cacheFilePath = this.getBootstrapCacheFilePath(itemId);
-    if (!cacheDir || !cacheFilePath) {
-      return;
-    }
-
-    try {
-      fs.mkdirSync(cacheDir, { recursive: true });
-      const cacheFile: RecipeBootstrapCacheFile = {
-        version: 2,
-        signature,
-        payload,
+      const payload = JSON.parse(row.summary_payload) as CompactRecipeBootstrapPayload;
+      const hydrated: RecipeBootstrapPayload = {
+        item: payload.item,
+        recipeIndex: payload.recipeIndex,
+        indexedCrafting: [],
+        indexedUsage: [],
+        indexedSummary: payload.indexedSummary,
       };
-      fs.writeFileSync(cacheFilePath, zlib.gzipSync(Buffer.from(JSON.stringify(cacheFile))));
+      if (row.produced_by_payload) {
+        hydrated.indexedCrafting = JSON.parse(row.produced_by_payload) as IndexedRecipe[];
+      }
+      if (row.used_in_payload) {
+        hydrated.indexedUsage = JSON.parse(row.used_in_payload) as IndexedRecipe[];
+      }
+      return hydrated;
     } catch {
-      // Best-effort disk cache only.
+      return null;
     }
   }
 
@@ -119,17 +163,19 @@ export class RecipeBootstrapService {
       return cached.value;
     }
 
-    const signature = this.getBootstrapSignature(itemId);
-    const diskCached = this.readDiskCache(itemId, signature);
-    if (diskCached) {
-      this.cache.set(itemId, { value: diskCached, expiresAt: Date.now() + this.cacheTtlMs });
-      return diskCached;
+    const materialized = this.readMaterializedBootstrap(itemId);
+    if (materialized) {
+      this.cache.set(itemId, { value: materialized, expiresAt: Date.now() + this.cacheTtlMs });
+      return materialized;
+    }
+
+    if (!this.splitExportFallback) {
+      return null;
     }
 
     const item = await this.itemsService.getItemById(itemId);
     if (!item) {
       this.cache.set(itemId, { value: null, expiresAt: Date.now() + this.cacheTtlMs });
-      this.writeDiskCache(itemId, signature, null);
       return null;
     }
 
@@ -147,7 +193,6 @@ export class RecipeBootstrapService {
       indexedSummary: null,
     };
     this.cache.set(itemId, { value: payload, expiresAt: Date.now() + this.cacheTtlMs });
-    this.writeDiskCache(itemId, signature, payload);
     return payload;
   }
 
@@ -167,9 +212,7 @@ export class RecipeBootstrapService {
         skipped += 1;
         continue;
       }
-      const signature = this.getBootstrapSignature(itemId);
-      const diskCached = this.readDiskCache(itemId, signature);
-      if (diskCached) {
+      if (this.readMaterializedBootstrap(itemId)) {
         skipped += 1;
         continue;
       }
@@ -185,7 +228,7 @@ let instance: RecipeBootstrapService | null = null;
 
 export function getRecipeBootstrapService(): RecipeBootstrapService {
   if (!instance) {
-    instance = new RecipeBootstrapService();
+    instance = new RecipeBootstrapService({ splitExportFallback: false });
   }
   return instance;
 }

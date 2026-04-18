@@ -8,12 +8,14 @@
     "build": "tsc",
     "start": "node --max-old-space-size=4096 dist/server.js",
     "db:init": "ts-node src/scripts/init-database.ts",
+    "compile:acceleration-db": "ts-node src/scripts/compile-acceleration-db.ts",
     "verify-summaries": "ts-node src/scripts/quick-test-summaries.ts",
     "prewarm:recipe-bootstrap": "ts-node src/scripts/prewarm-recipe-bootstrap.ts",
     "test:pattern-export-contract": "node --test scripts/pattern-export-contract.test.mjs",
     "test:pattern-route-contract": "node --test scripts/pattern-route-contract.test.mjs",
     "gate:p0:recipe": "npm run build && npm run regression:api",
     "smoke": "node scripts/smoke-test.mjs",
+    "bench:acceleration": "node scripts/bench-acceleration.mjs",
     "regression:api": "node scripts/regression-api.mjs"
   },
   "keywords": [

@@ -52,6 +52,8 @@ function pickImageRootPath(candidates: Array<string | undefined>): string {
 
 export const DATA_DIR = resolvedDataDir;
 export const DB_FILE = process.env.DB_FILE || path.join(DATA_DIR, 'database.db');
+export const ACCELERATION_DB_FILE =
+  process.env.ACCELERATION_DB_FILE || path.join(DATA_DIR, 'acceleration.db');
 export const RECIPE_SUMMARIES_FILE =
   process.env.RECIPE_SUMMARIES_FILE || path.join(DATA_DIR, 'recipe_summaries.csv');
 export const REBUILD_PROGRESS_FILE =

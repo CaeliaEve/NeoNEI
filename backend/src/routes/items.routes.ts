@@ -16,7 +16,7 @@ function addCacheHeaders(req: Request, res: Response, next: NextFunction) {
 }
 
 function getItemsService(): ItemsService {
-  return new ItemsService();
+  return new ItemsService({ splitExportFallback: false });
 }
 
 // Apply cache headers to all routes in this router
@@ -134,6 +134,25 @@ router.post(
     const items = await itemsService.getItemsByIds(limitedIds);
     const normalizedSlotSize = Number.isFinite(slotSize) ? Math.max(24, Math.min(128, Number(slotSize))) : 48;
     const atlas = await getPageAtlasService().buildAtlas(items, normalizedSlotSize);
+    res.json(atlas);
+  })
+);
+
+router.get(
+  '/page-atlas/precomputed',
+  asyncHandler(async (req, res) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 50;
+    const slotSize = parseInt(req.query.slotSize as string) || 48;
+    const modIdRaw = typeof req.query.modId === 'string' ? req.query.modId.trim() : '';
+    const modId = modIdRaw && modIdRaw !== 'all' ? modIdRaw : undefined;
+
+    const atlas = await getPageAtlasService().buildAtlasForPage({
+      page,
+      pageSize,
+      slotSize: Math.max(24, Math.min(128, Number(slotSize))),
+      modId,
+    });
     res.json(atlas);
   })
 );

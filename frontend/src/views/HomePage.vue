@@ -17,7 +17,7 @@ import {
   getPreferredStaticImageUrlFromEntity,
   type Item,
 } from "../services/api";
-import { buildPageAtlas, primePageAtlas, type PageAtlasResult } from "../services/pageAtlas";
+import { buildPageAtlas, buildPrecomputedPageAtlas, primePageAtlas, primePrecomputedPageAtlas, type PageAtlasResult } from "../services/pageAtlas";
 import ItemTooltip from "../components/ItemTooltip.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
 import { useSound } from "../services/sound.service";
@@ -233,7 +233,17 @@ watch(
   () => {
     if (currentView.value === "items" && items.value.length > 0) {
       prewarmVisibleItemImages();
-      void buildPageAtlas(items.value, itemSize.value).then((atlas) => {
+      const usePrecomputedAtlas =
+        !searchQuery.value.trim() &&
+        selectedMod.value === 'all';
+      const atlasRequest = usePrecomputedAtlas
+        ? buildPrecomputedPageAtlas({
+            page: currentPage.value,
+            pageSize: pageSize.value,
+            itemSize: itemSize.value,
+          })
+        : buildPageAtlas(items.value, itemSize.value);
+      void atlasRequest.then((atlas) => {
         currentPageAtlas.value = atlas;
       });
     }
@@ -244,6 +254,9 @@ watch(
   () => [currentPage.value, totalPages.value, currentView.value] as const,
   ([page, total, view]) => {
     if (view !== "items") return;
+    const usePrecomputedAtlas =
+      !searchQuery.value.trim() &&
+      selectedMod.value === 'all';
     void prefetchItemsPage(page + 1);
     if (page > 1) {
       void prefetchItemsPage(page - 1);
@@ -254,6 +267,14 @@ watch(
 
     const neighborPages = [page - 1, page + 1, page + 2].filter((value) => value >= 1 && value <= total);
     for (const neighborPage of neighborPages) {
+      if (usePrecomputedAtlas) {
+        void primePrecomputedPageAtlas({
+          page: neighborPage,
+          pageSize: pageSize.value,
+          itemSize: itemSize.value,
+        });
+        continue;
+      }
       const cached = getCachedItemsPage(neighborPage);
       if (cached?.data?.length) {
         void primePageAtlas(cached.data, itemSize.value);

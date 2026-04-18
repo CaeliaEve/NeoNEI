@@ -1,7 +1,9 @@
+import type Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { DATA_DIR, IMAGES_PATH } from '../config/runtime-paths';
+import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import { ItemsService, type Item } from './items.service';
 
 export interface PageAtlasSpriteEntry {
@@ -26,6 +28,22 @@ type CachedAtlas = {
   response: PageAtlasResponse;
 };
 
+type AtlasManifestRow = {
+  asset_id: string;
+  path: string;
+  width: number | null;
+  height: number | null;
+  hash: string | null;
+  metadata_json: string | null;
+};
+
+export interface PageAtlasServiceOptions {
+  itemsService?: ItemsService;
+  databaseManager?: DatabaseManager;
+  imageRoot?: string;
+  atlasDir?: string;
+}
+
 const PNG_HEADER = Buffer.from([0x89, 0x50, 0x4e, 0x47]);
 
 function escapeXml(value: string): string {
@@ -36,19 +54,11 @@ function escapeXml(value: string): string {
     .replace(/>/g, '&gt;');
 }
 
-function resolveImageFilePath(imageUrl: string): string | null {
-  const match = imageUrl.match(/^\/images\/item\/(.+)$/);
-  if (!match) return null;
-  const relativePath = match[1]
-    .split('/')
-    .map((part) => decodeURIComponent(part))
-    .join(path.sep);
-  const absolute = path.resolve(IMAGES_PATH, 'item', relativePath);
-  const itemRoot = path.resolve(IMAGES_PATH, 'item');
-  if (!absolute.startsWith(itemRoot) || !fs.existsSync(absolute)) {
-    return null;
-  }
-  return absolute;
+export function hashAtlasKey(itemIds: string[], slotSize: number): string {
+  return crypto
+    .createHash('sha1')
+    .update(`${slotSize}:${itemIds.join('|')}`)
+    .digest('hex');
 }
 
 function detectImageMime(buffer: Buffer): string {
@@ -61,20 +71,122 @@ function detectImageMime(buffer: Buffer): string {
   return 'application/octet-stream';
 }
 
-function hashAtlasKey(itemIds: string[], slotSize: number): string {
-  return crypto
-    .createHash('sha1')
-    .update(`${slotSize}:${itemIds.join('|')}`)
-    .digest('hex');
-}
-
 export class PageAtlasService {
-  private itemsService = new ItemsService();
+  private itemsService: ItemsService;
+  private databaseManager: DatabaseManager;
+  private imageRoot: string;
   private atlasCache = new Map<string, CachedAtlas>();
-  private readonly atlasDir = path.join(DATA_DIR, 'page-atlas-cache');
+  private readonly atlasDir: string;
 
-  constructor() {
+  constructor(options: PageAtlasServiceOptions = {}) {
+    this.itemsService = options.itemsService ?? new ItemsService({ splitExportFallback: false });
+    this.databaseManager = options.databaseManager ?? getAccelerationDatabaseManager();
+    this.imageRoot = options.imageRoot ?? IMAGES_PATH;
+    this.atlasDir = options.atlasDir ?? path.join(DATA_DIR, 'page-atlas-cache');
     fs.mkdirSync(this.atlasDir, { recursive: true });
+  }
+
+  private getAccelerationDatabase(): Database.Database | null {
+    try {
+      return this.databaseManager.getDatabase();
+    } catch {
+      return null;
+    }
+  }
+
+  private canUseAssetsManifest(db: Database.Database | null): db is Database.Database {
+    if (!db) return false;
+    try {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'assets_manifest'")
+        .get() as { name?: string } | undefined;
+      return row?.name === 'assets_manifest';
+    } catch {
+      return false;
+    }
+  }
+
+  private resolveImageFilePath(imageUrl: string): string | null {
+    const match = imageUrl.match(/^\/images\/item\/(.+)$/);
+    if (!match) return null;
+    const relativePath = match[1]
+      .split('/')
+      .map((part) => decodeURIComponent(part))
+      .join(path.sep);
+    const absolute = path.resolve(this.imageRoot, 'item', relativePath);
+    const itemRoot = path.resolve(this.imageRoot, 'item');
+    if (!absolute.startsWith(itemRoot) || !fs.existsSync(absolute)) {
+      return null;
+    }
+    return absolute;
+  }
+
+  private buildSignature(items: Item[]): string {
+    const hash = crypto.createHash('sha1');
+    for (const item of items) {
+      const imageUrl = item.preferredImageUrl || this.itemsService.resolvePreferredStaticImageUrl(item);
+      const imagePath = this.resolveImageFilePath(imageUrl);
+      if (!imagePath) {
+        hash.update(`${item.itemId}:missing`);
+        continue;
+      }
+      const stat = fs.statSync(imagePath);
+      hash.update(`${item.itemId}:${imagePath}:${stat.size}:${stat.mtimeMs}`);
+    }
+    return hash.digest('hex');
+  }
+
+  private persistAtlasManifest(assetId: string, fileName: string, signature: string, response: PageAtlasResponse): void {
+    const db = this.getAccelerationDatabase();
+    if (!this.canUseAssetsManifest(db)) {
+      return;
+    }
+
+    db.prepare(`
+      INSERT OR REPLACE INTO assets_manifest (
+        asset_id, asset_type, mod_id, path, width, height, hash, atlas_id,
+        frame_count, first_frame_path, metadata_json, updated_at
+      ) VALUES (
+        @asset_id, 'page_atlas', null, @path, @width, @height, @hash, @atlas_id,
+        1, null, @metadata_json, CURRENT_TIMESTAMP
+      )
+    `).run({
+      asset_id: assetId,
+      path: fileName,
+      width: response.atlasWidth,
+      height: response.atlasHeight,
+      hash: signature,
+      atlas_id: assetId,
+      metadata_json: JSON.stringify(response),
+    });
+  }
+
+  private readMaterializedAtlas(assetId: string, signature: string): PageAtlasResponse | null {
+    const db = this.getAccelerationDatabase();
+    if (!this.canUseAssetsManifest(db)) {
+      return null;
+    }
+
+    const row = db.prepare(`
+      SELECT asset_id, path, width, height, hash, metadata_json
+      FROM assets_manifest
+      WHERE asset_id = ? AND asset_type = 'page_atlas'
+    `).get(assetId) as AtlasManifestRow | undefined;
+
+    if (!row?.metadata_json || row.hash !== signature) {
+      return null;
+    }
+
+    const filePath = path.join(this.atlasDir, row.path);
+    if (!fs.existsSync(filePath)) {
+      return null;
+    }
+
+    try {
+      return JSON.parse(row.metadata_json) as PageAtlasResponse;
+    } catch {
+      return null;
+    }
   }
 
   async buildAtlas(items: Item[], slotSize: number): Promise<PageAtlasResponse | null> {
@@ -85,6 +197,15 @@ export class PageAtlasService {
     const signature = this.buildSignature(items);
     if (cached && cached.signature === signature) {
       return cached.response;
+    }
+
+    const materialized = this.readMaterializedAtlas(key, signature);
+    if (materialized) {
+      this.atlasCache.set(key, {
+        signature,
+        response: materialized,
+      });
+      return materialized;
     }
 
     const fileName = `${key}.svg`;
@@ -103,8 +224,8 @@ export class PageAtlasService {
     let drawnCount = 0;
     for (let index = 0; index < items.length; index += 1) {
       const item = items[index];
-      const imageUrl = this.itemsService.resolvePreferredStaticImageUrl(item);
-      const imagePath = resolveImageFilePath(imageUrl);
+      const imageUrl = item.preferredImageUrl || this.itemsService.resolvePreferredStaticImageUrl(item);
+      const imagePath = this.resolveImageFilePath(imageUrl);
       if (!imagePath) continue;
 
       const buffer = fs.readFileSync(imagePath);
@@ -141,6 +262,7 @@ export class PageAtlasService {
       entries,
     };
 
+    this.persistAtlasManifest(key, fileName, signature, response);
     this.atlasCache.set(key, {
       signature,
       response,
@@ -165,19 +287,21 @@ export class PageAtlasService {
     return { warmed };
   }
 
-  private buildSignature(items: Item[]): string {
-    const hash = crypto.createHash('sha1');
-    for (const item of items) {
-      const imageUrl = this.itemsService.resolvePreferredStaticImageUrl(item);
-      const imagePath = resolveImageFilePath(imageUrl);
-      if (!imagePath) {
-        hash.update(`${item.itemId}:missing`);
-        continue;
-      }
-      const stat = fs.statSync(imagePath);
-      hash.update(`${item.itemId}:${imagePath}:${stat.size}:${stat.mtimeMs}`);
+  async buildAtlasForPage(params: {
+    page: number;
+    pageSize: number;
+    slotSize: number;
+    modId?: string;
+  }): Promise<PageAtlasResponse | null> {
+    const result = await this.itemsService.getItems({
+      page: params.page,
+      pageSize: params.pageSize,
+      modId: params.modId,
+    });
+    if (!result.data.length) {
+      return null;
     }
-    return hash.digest('hex');
+    return this.buildAtlas(result.data, params.slotSize);
   }
 }
 

@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import {
+  ACCELERATION_DB_FILE,
   DATA_DIR,
   DB_FILE,
   IMAGES_PATH,
@@ -12,6 +13,7 @@ import {
   SPLIT_ITEMS_DIR,
   SPLIT_RECIPES_DIR,
 } from '../config/runtime-paths';
+import { getAccelerationDatabaseManager } from '../models/database';
 
 export interface EcosystemLaneStatus {
   id: 'nesql-exporter-main' | 'neonei' | 'oc-pattern';
@@ -26,6 +28,14 @@ export interface EcosystemOverview {
   hub: string;
   workflow: string[];
   lanes: EcosystemLaneStatus[];
+}
+
+export interface AccelerationOverview {
+  dbFile: string;
+  exists: boolean;
+  sizeBytes: number;
+  generatedAtlasCount: number;
+  tableCounts: Record<string, number>;
 }
 
 function resolveSiblingRepo(repoName: string): string {
@@ -161,6 +171,54 @@ export class EcosystemService {
       expiresAt: Date.now() + this.cacheTtlMs,
     };
     return overview;
+  }
+
+  getAccelerationOverview(): AccelerationOverview {
+    const exists = fs.existsSync(ACCELERATION_DB_FILE);
+    const sizeBytes = exists ? fs.statSync(ACCELERATION_DB_FILE).size : 0;
+    const result: AccelerationOverview = {
+      dbFile: ACCELERATION_DB_FILE,
+      exists,
+      sizeBytes,
+      generatedAtlasCount: 0,
+      tableCounts: {},
+    };
+
+    if (!exists) {
+      return result;
+    }
+
+    try {
+      const db = getAccelerationDatabaseManager().getDatabase();
+      const rows = db.prepare(`
+        SELECT state_key, state_value
+        FROM compiler_state
+        WHERE state_key IN (
+          'items_core_count',
+          'recipes_core_count',
+          'recipe_edges_count',
+          'recipe_bootstrap_count',
+          'recipe_summary_compact_count',
+          'recipe_machine_groups_count',
+          'hot_items_count',
+          'page_atlas_assets_count'
+        )
+      `).all() as Array<{ state_key: string; state_value: string }>;
+
+      const counts = Object.fromEntries(rows.map((row) => [row.state_key, Number(row.state_value || 0)]));
+      result.tableCounts.items_core = counts.items_core_count ?? 0;
+      result.tableCounts.recipes_core = counts.recipes_core_count ?? 0;
+      result.tableCounts.recipe_edges = counts.recipe_edges_count ?? 0;
+      result.tableCounts.recipe_bootstrap = counts.recipe_bootstrap_count ?? 0;
+      result.tableCounts.recipe_summary_compact = counts.recipe_summary_compact_count ?? 0;
+      result.tableCounts.recipe_machine_groups = counts.recipe_machine_groups_count ?? 0;
+      result.tableCounts.hot_items = counts.hot_items_count ?? 0;
+      result.generatedAtlasCount = counts.page_atlas_assets_count ?? 0;
+    } catch {
+      // keep best-effort overview only
+    }
+
+    return result;
   }
 }
 
