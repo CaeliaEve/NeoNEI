@@ -61,6 +61,26 @@ router.get(
   })
 );
 
+// POST /api/recipes-indexed/batch - Get recipes by ids
+router.post(
+  '/batch',
+  asyncHandler(async (req, res) => {
+    const rawIds = Array.isArray(req.body?.recipeIds) ? req.body.recipeIds : [];
+    const recipeIds = rawIds
+      .filter((value: unknown): value is string => typeof value === 'string')
+      .map((value: string) => value.trim())
+      .filter(Boolean);
+
+    if (recipeIds.length === 0) {
+      throw badRequest('recipeIds is required');
+    }
+
+    const service = getIndexedRecipesService();
+    const recipes = await service.getRecipesByIds(recipeIds);
+    res.json(recipes);
+  })
+);
+
 // GET /api/recipes-indexed/:itemId/crafting - Get crafting recipes for item
 router.get(
   '/:itemId/crafting',

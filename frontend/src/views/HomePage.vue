@@ -1462,7 +1462,12 @@ const saveSettings = () => {
 
 .list-state-panel {
   flex: 1;
+  align-self: stretch;
+  width: auto;
+  max-width: none;
+  min-height: 0;
   margin: 12px;
+  box-sizing: border-box;
 }
 
 .state-panel-error {

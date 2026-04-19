@@ -109,6 +109,12 @@ const getCategoryMachineIcon = (recipe: Recipe, getImagePath: (itemId: string) =
       return getImagePath('i~Thaumcraft~blockStoneDevice~2');
     case 'thaumcraft_crucible':
       return getImagePath('i~Thaumcraft~blockMetalDevice~0');
+    case 'thaumcraft_aspect':
+      return getExplicitMachineName(recipe) === '要素组合'
+        ? getImagePath('i~Thaumcraft~ItemResource~9')
+        : getImagePath('i~Thaumcraft~ItemResearchNotes~0');
+    case 'thaumcraft_research':
+      return getImagePath('i~Thaumcraft~ItemResearchNotes~0');
     case 'blood_magic_altar':
       return getImagePath('i~AWWayofTime~Altar~0');
     case 'botania_mana_pool':
@@ -126,12 +132,122 @@ const getCategoryMachineIcon = (recipe: Recipe, getImagePath: (itemId: string) =
   const resolved = resolveMachineIcon(recipe, getImagePath);
   if (resolved) return resolved;
 
+  const fallbackMapped = resolveFallbackMachineIconByName(getExplicitMachineName(recipe) || '', getImagePath);
+  if (fallbackMapped) return fallbackMapped;
+
   const combined = getCombinedRecipeText(recipe);
   if (
     combined.includes('singularity compressor') ||
     combined.includes('奇点压缩机')
   ) {
     return getImagePath('i~Avaritia~Singularity~0');
+  }
+
+  return null;
+};
+
+const GT_TIER_ORDER = ['ULV', 'LV', 'MV', 'HV', 'EV', 'IV', 'LuV', 'ZPM', 'UV', 'UHV', 'UEV', 'UIV', 'UMV', 'UXV', 'MAX'] as const;
+type GtTier = typeof GT_TIER_ORDER[number];
+
+const GT_MACHINE_ICON_BY_FAMILY: Array<{
+  patterns: string[];
+  tiers: Partial<Record<GtTier, number>>;
+  fallback?: number;
+}> = [
+  {
+    patterns: ['研究站', 'research station'],
+    tiers: { ULV: 30, LV: 31, MV: 32, HV: 33, EV: 34, IV: 35, LuV: 36, ZPM: 37, UV: 38, UHV: 39, UEV: 40, UIV: 41, UMV: 42, UXV: 43, MAX: 44 },
+    fallback: 33,
+  },
+  {
+    patterns: ['组装机', 'assembler', 'assembly machine', 'circuit assembler'],
+    tiers: { ULV: 14, LV: 15, MV: 16, HV: 17, EV: 18, IV: 19, LuV: 20, ZPM: 21, UV: 22, UHV: 23, UEV: 24, UIV: 25, UMV: 26, UXV: 27, MAX: 28 },
+    fallback: 17,
+  },
+  {
+    patterns: ['装配线加工', 'assembly line'],
+    tiers: { ULV: 4, LV: 5, MV: 6, HV: 7, EV: 8, IV: 9, LuV: 10, ZPM: 11, UV: 12, UHV: 13, UEV: 14, UIV: 2059, UMV: 2060, UXV: 2061, MAX: 2062 },
+    fallback: 8,
+  },
+  {
+    patterns: ['压缩机', 'compressor'],
+    tiers: { ULV: 114, LV: 115, MV: 116, HV: 117, EV: 118, IV: 119, LuV: 120, ZPM: 121, UV: 122, UHV: 123, UIV: 124, UMV: 125, UXV: 126 },
+    fallback: 117,
+  },
+  {
+    patterns: ['电解机', 'electrolyzer'],
+    tiers: { LV: 245, MV: 246, HV: 247, EV: 248, IV: 249, LuV: 250, ZPM: 251, UV: 252 },
+    fallback: 247,
+  },
+  {
+    patterns: ['离心机', 'centrifuge'],
+    tiers: { ULV: 214, LV: 215, MV: 216, HV: 217, EV: 218, IV: 219, LuV: 220, ZPM: 221, UV: 222, UHV: 223 },
+    fallback: 217,
+  },
+  {
+    patterns: ['高炉', 'blast furnace'],
+    tiers: { ULV: 84, LV: 85, MV: 86, HV: 87, EV: 88, IV: 89, LuV: 90, ZPM: 97, UV: 95, UHV: 92, UEV: 91, UIV: 93, UMV: 94, UXV: 96, MAX: 98 },
+    fallback: 87,
+  },
+  {
+    patterns: ['电弧炉', 'arc furnace'],
+    tiers: { LV: 132, MV: 133, HV: 134, UEV: 135, UHV: 136 },
+    fallback: 134,
+  },
+  {
+    patterns: ['分子重组仪', 'molecular'],
+    tiers: { EV: 7, IV: 207, LuV: 207, ZPM: 210, UV: 209, UHV: 208 },
+    fallback: 207,
+  },
+  {
+    patterns: ['车床', 'lathe'],
+    tiers: { ULV: 310, LV: 314, MV: 316, HV: 312, EV: 311, IV: 313, LuV: 315, ZPM: 317, UV: 318, UHV: 320, UEV: 319, UIV: 321, UMV: 322, UXV: 323 },
+    fallback: 312,
+  },
+  {
+    patterns: ['卷板机', 'bender'],
+    tiers: { ULV: 148, LV: 149, MV: 150, HV: 151, EV: 152, IV: 153, LuV: 154, ZPM: 155, UV: 156, UHV: 157, UEV: 158, UMV: 160, UXV: 161, MAX: 162 },
+    fallback: 151,
+  },
+  {
+    patterns: ['挤压机', 'extruder'],
+    tiers: { ULV: 172, LV: 173, MV: 174, HV: 175, EV: 176, IV: 177, LuV: 178, ZPM: 179, UV: 180, UHV: 181, UMV: 183, UXV: 184, MAX: 185 },
+    fallback: 175,
+  },
+  {
+    patterns: ['切割机', 'cutting machine'],
+    tiers: { ULV: 284, LV: 285, MV: 286, HV: 287, EV: 288, IV: 289, LuV: 290, ZPM: 291, UV: 292, UHV: 293, UEV: 295 },
+    fallback: 287,
+  },
+  {
+    patterns: ['化学反应釜', 'chemical reactor'],
+    tiers: { ULV: 208, LV: 209, MV: 210, HV: 211, EV: 212, IV: 213, LuV: 214, ZPM: 215, UV: 216, UHV: 217 },
+    fallback: 211,
+  },
+];
+
+const detectGtTier = (name: string): GtTier | null => {
+  const match = name.match(/\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)/i);
+  if (!match) return null;
+  const normalized = match[1];
+  return GT_TIER_ORDER.find((tier) => tier.toLowerCase() === normalized.toLowerCase()) ?? null;
+};
+
+const resolveFallbackMachineIconByName = (
+  machineName: string,
+  getImagePath: (itemId: string) => string,
+): string | null => {
+  const normalized = machineName.trim().toLowerCase();
+  if (!normalized) return null;
+
+  for (const family of GT_MACHINE_ICON_BY_FAMILY) {
+    if (!family.patterns.some((pattern) => normalized.includes(pattern.toLowerCase()))) {
+      continue;
+    }
+    const tier = detectGtTier(machineName);
+    const metaId = (tier ? family.tiers[tier] : undefined) ?? family.fallback;
+    if (!metaId) return null;
+    return getImagePath(`i~gregtech~gt.blockmachines~${metaId}`);
   }
 
   return null;
@@ -252,8 +368,26 @@ export const isExtremeMachineText = (text: string): boolean => {
   );
 };
 
+const GT_MACHINE_CATEGORY_ALIAS_GROUPS: string[][] = [
+  ['真空冷冻机', '凛冰冷冻机'],
+  ['电解机', '工业电解机'],
+  ['离心机', '工业离心机'],
+  ['化学反应釜', '大型化学反应釜'],
+  ['高炉', '工业高炉'],
+  ['搅拌机', '工业搅拌机'],
+];
+
 const normalizeMachineCategoryName = (name: string): string => {
-  return isExtremeMachineText(name) ? '无尽工作台' : name;
+  if (isExtremeMachineText(name)) {
+    return '无尽工作台';
+  }
+
+  const normalized = name.trim();
+  if (!normalized) return normalized;
+
+  const withoutTier = normalized.replace(/\s*\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)\s*$/i, '').trim();
+  const aliasGroup = GT_MACHINE_CATEGORY_ALIAS_GROUPS.find((aliases) => aliases.includes(withoutTier));
+  return aliasGroup?.[0] ?? withoutTier;
 };
 
 const generateGenericRecipeSignature = (recipe: Recipe): string => {

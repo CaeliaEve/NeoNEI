@@ -11,6 +11,7 @@ import {
 import { getNesqlSplitExportService } from './nesql-split-export.service';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import { SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from '../config/runtime-paths';
+import { getMachineIconItem } from './machine-icon-mapping.service';
 
 export interface RecipeBootstrapPayload {
   item: Item;
@@ -96,6 +97,26 @@ export class RecipeBootstrapService {
     };
   }
 
+  private normalizeRecipeMachineIcon(recipe: IndexedRecipe): IndexedRecipe {
+    const machineType = recipe.machineInfo?.machineType?.trim();
+    if (!machineType) {
+      return recipe;
+    }
+
+    const machineIcon = getMachineIconItem(machineType);
+    if (!machineIcon) {
+      return recipe;
+    }
+
+    return {
+      ...recipe,
+      machineInfo: {
+        ...recipe.machineInfo!,
+        machineIcon,
+      },
+    };
+  }
+
   private getBootstrapSignature(itemId: string): string {
     const signatures: string[] = [];
 
@@ -151,10 +172,12 @@ export class RecipeBootstrapService {
         indexedSummary: payload.indexedSummary,
       };
       if (row.produced_by_payload) {
-        hydrated.indexedCrafting = JSON.parse(row.produced_by_payload) as IndexedRecipe[];
+        hydrated.indexedCrafting = (JSON.parse(row.produced_by_payload) as IndexedRecipe[])
+          .map((recipe) => this.normalizeRecipeMachineIcon(recipe));
       }
       if (row.used_in_payload) {
-        hydrated.indexedUsage = JSON.parse(row.used_in_payload) as IndexedRecipe[];
+        hydrated.indexedUsage = (JSON.parse(row.used_in_payload) as IndexedRecipe[])
+          .map((recipe) => this.normalizeRecipeMachineIcon(recipe));
       }
       return hydrated;
     } catch {

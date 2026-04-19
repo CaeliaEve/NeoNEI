@@ -899,6 +899,15 @@ export const api = {
     return response.data;
   },
 
+  async getIndexedRecipesByIds(recipeIds: string[]): Promise<indexedRecipe[]> {
+    const uniqueIds = Array.from(new Set(recipeIds.map((id) => id.trim()).filter(Boolean)));
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+    const response = await http.post('/recipes-indexed/batch', { recipeIds: uniqueIds });
+    return response.data;
+  },
+
   // Get crafting recipes for item
   async getIndexedCraftingRecipes(itemId: string): Promise<indexedRecipe[]> {
     const cached = indexedCraftingCache.get(itemId);

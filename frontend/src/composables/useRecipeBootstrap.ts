@@ -33,14 +33,6 @@ const appendIndexedRecipes = (target: Map<string, Recipe>, indexedRecipes: index
   return recipeIds;
 };
 
-const buildRecipeIndex = (
-  indexedCraftingRecipeIds: string[],
-  indexedUsageRecipeIds: string[],
-): RecipeIndex => ({
-  usedInRecipes: indexedUsageRecipeIds,
-  producedByRecipes: indexedCraftingRecipeIds,
-});
-
 const orderRecipes = (recipeIds: string[], recipesById: Map<string, Recipe>): Recipe[] => {
   const ordered: Recipe[] = [];
   for (const recipeId of recipeIds) {
@@ -57,9 +49,24 @@ export async function loadRecipeBootstrap(itemId: string): Promise<RecipeBootstr
   const indexedUsage = bootstrap.indexedUsage;
 
   const recipesById = new Map<string, Recipe>();
-  const indexedCraftingRecipeIds = appendIndexedRecipes(recipesById, indexedCrafting);
-  const indexedUsageRecipeIds = appendIndexedRecipes(recipesById, indexedUsage);
-  const recipeIndex = buildRecipeIndex(indexedCraftingRecipeIds, indexedUsageRecipeIds);
+  appendIndexedRecipes(recipesById, indexedCrafting);
+  appendIndexedRecipes(recipesById, indexedUsage);
+
+  const recipeIndex: RecipeIndex = {
+    usedInRecipes: Array.isArray(bootstrap.recipeIndex?.usedInRecipes) ? bootstrap.recipeIndex.usedInRecipes : [],
+    producedByRecipes: Array.isArray(bootstrap.recipeIndex?.producedByRecipes) ? bootstrap.recipeIndex.producedByRecipes : [],
+  };
+
+  const missingRecipeIds = Array.from(
+    new Set(
+      [...recipeIndex.producedByRecipes, ...recipeIndex.usedInRecipes].filter((recipeId) => !recipesById.has(recipeId)),
+    ),
+  );
+
+  if (missingRecipeIds.length > 0) {
+    const missingRecipes = await api.getIndexedRecipesByIds(missingRecipeIds);
+    appendIndexedRecipes(recipesById, missingRecipes);
+  }
 
   return {
     item,
