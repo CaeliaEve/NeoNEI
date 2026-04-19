@@ -6,253 +6,276 @@ Approved for implementation planning.
 
 ## Goal
 
-Upgrade the `gt_assembly_line` recipe page into a stronger NeoNEI-specific assembly line experience without changing the current structural layout.
+Completely redesign the `gt_assembly_line` recipe page into a dedicated NeoNEI assembly-line interface using a modern high-tech sci-fi visual language.
 
 This redesign must:
 
-- Preserve the current major layout regions.
-- Expand the canvas so the page uses more of the available recipe stage.
-- Rebuild the visual language around an industrial assembly-line identity.
-- Improve color hierarchy so input, transfer, fluid bus, and output read more clearly.
+- abandon the current visual language rather than refining it
+- use a fixed `4×4` item input matrix
+- use a fixed `1×4` vertical fluid input column
+- use a single prominent output slot
+- present the page primarily in Chinese
+- deliver a high-end dark industrial cyberpunk interface with restrained glassmorphism / neomorphism material treatment
 
 ## User-Approved Direction
 
 The approved direction is:
 
-- Keep the current layout structure.
-- Make the overall canvas larger.
-- Refine the UI rather than replacing the page architecture.
-- Change the color system so the page has a stronger dedicated assembly line identity.
+- `工业总线台`
 
-## Layout Constraints
+Core intent:
 
-The following structure is preserved:
+- Left side is a disciplined `4×4` input bus matrix.
+- Middle section is a dedicated fluid and transfer conduit zone.
+- Right side is a single emphasized output chamber.
+- The page must feel like a premium futuristic assembly machine, not a reused GT card.
 
-- Header strip
-- Main stage with:
-  - input area
-  - fluid / transfer area
-  - output area
-- Bottom status bar
+## Structural Contract
 
-Allowed changes:
+### Fixed Layout Rules
 
-- Resize regions
-- Rebalance proportions
-- Re-style each region
-- Improve spacing and emphasis
+The following structure is mandatory:
 
-Not allowed in this pass:
+- left: `4×4` input matrix with 16 square slots
+- middle: `1×4` vertical fluid input column
+- right: one large output slot
+- bottom: concise machine metrics such as energy and time
 
-- Replacing the layout with a different page composition
-- Converting the page into a research, ritual, or console-style screen
-- Introducing a second independent layout mode
+This layout is not optional and must not collapse back into the previous composition.
 
-## Canvas Direction
+### Header Direction
 
-### 1. Larger Stage
+The top region should be minimal and controlled:
 
-Purpose:
+- machine identity
+- tier / voltage badge
+- no verbose descriptive sentence blocks
 
-- Make the assembly line page feel substantial and machine-scale.
+The page should read as a machine interface first, not a documentation card.
 
-Changes:
-
-- Increase the visual footprint of the full canvas.
-- Give the stage more horizontal and vertical presence.
-- Let the input, fluid bus, and output regions breathe.
-
-Result:
-
-- The page should feel less cramped and more like a dedicated production line surface.
-
-### 2. Preserve Existing Spatial Logic
-
-Purpose:
-
-- Keep learned behavior intact while improving visual quality.
-
-Rules:
-
-- Input remains visually dominant on the left.
-- Flow / fluid region stays central.
-- Output remains clearly separated on the right.
-- Bottom bar continues to summarize machine stats.
-
-## Visual Language
+## Visual Direction
 
 ### Theme
 
-The assembly line should feel like:
+Target feel:
 
-- a dark industrial fabrication platform
-- a precision production lane
-- a high-tier GregTech machine, not a generic crafting board
+- dark sci-fi industrial workstation
+- cyberpunk manufacturing interface
+- premium dashboard-level machine UI
+
+Reference mood:
+
+- Dribbble-grade concept polish
+- Figma-style component discipline
+- high-end game database UI
 
 ### Color System
 
-Recommended palette:
+Core palette:
 
-- Deep graphite / steel base for the shell
-- Cold cyan-blue as the transfer / bus accent
-- Warm amber-gold as the output completion accent
-- Muted slate for neutral support surfaces
+- deep charcoal / graphite background
+- neon cyan for active pathways and input emphasis
+- energetic amber for result / output emphasis
+- restrained slate and steel neutrals for shells and separators
 
 Color role mapping:
 
-- Input bus: cool industrial blue
-- Transfer / fluid spine: brighter cyan energy lane
-- Output: warmer amber / brass emphasis
-- Status cards: restrained neutral with selective highlight accents
+- input matrix: cool cyan / blue emphasis
+- fluid column: glowing liquid colors inside transparent tanks
+- transfer lane: cyan-to-amber circuit energy flow
+- output slot: strongest amber completion highlight
 
-### Material Direction
+### Materials
 
 Use:
 
-- layered dark panels
-- subtle machine seams
-- controlled glow
-- precise metallic framing
+- subtle glassmorphism for tanks and select panels
+- restrained neomorphism for slot wells and recessed machine surfaces
+- soft inner shadows for slot depth
+- clean glow edges, not fuzzy bloom everywhere
 
 Avoid:
 
-- ritual or mystical glow language
-- candy gradients
-- noisy decorative effects
-- soft toy-like cards
+- flat generic panels
+- noisy textured grids
+- obvious placeholder slot carpets
+- decorative effects that do not explain machine flow
 
-## Region-Level Redesign
+## Region-Level Design
 
-### Header
+### 1. Input Matrix
 
-Keep:
+Layout:
 
-- machine identity
-- tier chip
+- strict `4×4` matrix
+- 16 square slots
+- all slots aligned and evenly spaced
 
-Improve:
+Visual rules:
 
-- stronger machine-title hierarchy
-- cleaner panel framing
-- more credible industrial header treatment
+- rounded corners
+- subtle recessed wells
+- soft inner shadows
+- cyan hover / active emphasis
 
-### Input Area
+Meaning:
 
-Keep:
+- this area represents the assembly line input bus, so it must feel precise, modular, and machine-ordered
 
-- current grid / input-bus structure
+### 2. Fluid Column
 
-Improve:
+Layout:
 
-- panel scale
-- slot framing
-- bus identity
-- better emphasis for alternates / cycling items
+- one vertical stack of 4 transparent rectangular tanks
 
-### Flow / Fluid Area
+Visual rules:
 
-Keep:
+- tank body uses translucent glass shell
+- liquid fill glows from inside
+- each fluid chamber reads clearly even when empty
+- empty chambers remain elegant, not dead boxes
 
-- fluid section in the middle
-- transfer direction and central role
+Meaning:
 
-Improve:
+- this is a machine fluid feed column, not inventory slots turned vertical
 
-- flow lane readability
-- fluid bus identity
-- assembly throughput feel
-- central lane should look like a production conduit, not a placeholder column
+### 3. Transfer Conduit
 
-### Output Area
+Layout:
 
-Keep:
+- sits between input matrix and output slot
+- uses futuristic circuit-like glowing lines
 
-- single clear output emphasis
+Visual rules:
 
-Improve:
+- clean horizontal transfer logic
+- light pulse or energy travel from left toward right
+- lines should feel engineered and premium
 
-- stronger "completed product" visual state
-- better contrast from the input side
-- warmer completion tone
+Meaning:
 
-### Bottom Status Bar
+- this region visually communicates assembly flow and recipe transformation
 
-Keep:
+### 4. Output Chamber
 
-- total EU
-- EU/t or machine load summary
-- duration
+Layout:
 
-Improve:
+- one single large slot
 
-- visual consistency with the upper canvas
-- cleaner stat-card polish
-- better hierarchy between value and label
+Visual rules:
 
-## Motion and Effects
+- strongest amber emphasis on the page
+- reads as finished product chamber
+- more prominent than any single input slot
 
-Motion should stay restrained and machine-like.
+Meaning:
+
+- the interface must make it obvious that the assembly line synthesizes many inputs into one completed result
+
+### 5. Bottom Metrics
+
+Layout:
+
+- compact three-card or strip layout
+
+Primary content:
+
+- total energy
+- power / EU/t
+- time / duration
+
+Visual rules:
+
+- minimalist typography
+- small labels, stronger values
+- no bulky stat cards that compete with the main machine stage
+
+## Typography
+
+Language:
+
+- Chinese first
+- keep technical units like `EU`, `EU/t`, `ticks` when appropriate
+
+Direction:
+
+- clean sans-serif
+- crisp dashboard labels
+- restrained hierarchy
+
+Avoid:
+
+- oversized display copy
+- long helper paragraphs
+- mixed English labels for non-technical text
+
+## Motion
+
+Motion should be restrained and premium.
 
 Allowed:
 
-- slow line energy movement
-- subtle conduit pulse
-- quiet hover response
-- low-noise fluid shimmer
+- subtle liquid glow
+- energy travel in transfer conduit
+- hover glow on active slots
+- quiet output chamber breathing light
 
 Avoid:
 
-- excessive spinning ornaments
-- ornamental animation disconnected from the machine flow
-- anything that makes the page feel magical instead of industrial
+- dramatic spinning ornaments
+- excessive bloom
+- animation that feels magical instead of engineered
 
 ## Interaction Rules
 
-- Item inputs remain clickable.
-- Special items remain clickable.
-- Fluid slots remain clickable.
+- Input item slots remain clickable.
+- Fluid entries remain clickable.
 - Output remains clickable.
-- Existing cycling behavior for alternate item variants remains intact.
+- Existing item cycling behavior for alternate inputs remains intact.
 
 ## Responsiveness
 
 Desktop:
 
-- Keep the current layout logic but with larger, more spacious proportions.
+- preserve the fixed three-zone logic
+- keep the machine reading horizontally
 
 Tablet:
 
-- Preserve the same stage order while allowing tighter scaling.
+- maintain the same left-middle-right order with proportion tightening
 
 Mobile:
 
-- Existing stacking behavior may stay, but styling should remain coherent.
+- stacking is allowed only if required by width
+- the order must remain input → fluid → output
+- visual language must survive the collapse cleanly
 
 ## Implementation Scope
 
 In scope:
 
-- Rework `frontend/src/components/GTAssemblyLineUI.vue`
-- Increase canvas scale
-- Redesign panel treatment and color system
-- Improve visual hierarchy of the current layout
+- fully redesign `frontend/src/components/GTAssemblyLineUI.vue`
+- replace the current visual system
+- enforce `4×4` input, `1×4` fluid, single output presentation
+- rebuild the page into the approved sci-fi industrial interface
 
 Out of scope:
 
-- Changing data extraction behavior unless minor adjustments are strictly necessary
-- Introducing a new router path or alternate component architecture
-- Replacing the current assembly line layout with a new one
+- changing router/component selection logic
+- changing recipe interaction behavior
+- changing backend export format
 
 ## Verification Targets
 
-- Assembly line page still renders the current structure correctly.
-- Canvas reads larger and more substantial.
-- Input / flow / output zones are visually clearer.
-- Output area has stronger completion emphasis than input.
-- Existing item and fluid interactions still work.
-- Responsive layout still behaves safely.
+- The page renders as a dedicated assembly-line interface, not a reused machine card.
+- Input matrix is clearly `4×4`.
+- Fluid input reads clearly as `1×4`.
+- Output is singular and visually dominant.
+- The background is clean and premium, without ugly placeholder grid treatment.
+- Item and fluid click interactions still work.
+- Responsive behavior remains safe.
 
 ## Expected Files To Change
 
 - `frontend/src/components/GTAssemblyLineUI.vue`
-- Optional targeted regression coverage if implementation needs a layout marker test
+- `frontend/scripts/gt-assembly-line-ui-regression.test.mjs`
