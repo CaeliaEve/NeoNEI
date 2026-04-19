@@ -73,6 +73,7 @@ const {
   pageSize,
   totalItems,
   totalPages,
+  setPageSize,
   loadMods,
   loadItems,
   onSearch,
@@ -80,6 +81,8 @@ const {
   prefetchItemsPage,
   getCachedItemsPage,
 } = useItemBrowser(itemSize);
+const itemGridShellRef = ref<HTMLElement | null>(null);
+let itemGridResizeObserver: ResizeObserver | null = null;
 const currentGroupId = ref<string | undefined>(undefined);
 const currentGroupName = ref<string>('');
 const latestCreatedPatternId = ref<string | undefined>(undefined);
@@ -221,6 +224,9 @@ onMounted(() => {
   window.addEventListener("pointerdown", handleGlobalPointerDown, true);
   window.addEventListener("scroll", closeSearchContextMenu, true);
   window.addEventListener("keydown", handleGlobalKeydown);
+  itemGridResizeObserver = new ResizeObserver(() => {
+    syncMeasuredPageSize();
+  });
 });
 
 onBeforeUnmount(() => {
@@ -228,18 +234,25 @@ onBeforeUnmount(() => {
   window.removeEventListener("pointerdown", handleGlobalPointerDown, true);
   window.removeEventListener("scroll", closeSearchContextMenu, true);
   window.removeEventListener("keydown", handleGlobalKeydown);
+  itemGridResizeObserver?.disconnect();
+  itemGridResizeObserver = null;
 });
 
 watch(currentView, async (view) => {
   if (view === "items") {
     await nextTick();
     updateHistoryPanelWidth();
+    if (itemGridShellRef.value) {
+      itemGridResizeObserver?.disconnect();
+      itemGridResizeObserver?.observe(itemGridShellRef.value);
+      syncMeasuredPageSize();
+    }
   }
 });
 
 watch(
   () => items.value.map((item) => item.itemId).join("|"),
-  () => {
+  async () => {
     if (currentView.value === "items" && items.value.length > 0) {
       const usePrecomputedAtlas =
         !searchQuery.value.trim() &&
@@ -254,6 +267,13 @@ watch(
       void atlasRequest.then((atlas) => {
         currentPageAtlas.value = atlas;
       });
+
+      await nextTick();
+      if (itemGridShellRef.value) {
+        itemGridResizeObserver?.disconnect();
+        itemGridResizeObserver?.observe(itemGridShellRef.value);
+        syncMeasuredPageSize();
+      }
     }
   },
 );
@@ -743,6 +763,32 @@ const gridCellSize = computed(() => {
   return `${itemSize.value + 4}px`; // itemSize + gap-1 (4px)
 });
 
+const measureVisibleGridCapacity = () => {
+  const shell = itemGridShellRef.value;
+  if (!shell) return null;
+
+  const style = window.getComputedStyle(shell);
+  const columnCount = style.gridTemplateColumns
+    .split(" ")
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .length;
+  const firstCell = shell.firstElementChild as HTMLElement | null;
+  const rowHeight = firstCell?.getBoundingClientRect().height ?? itemSize.value;
+  const rowGap = Number.parseFloat(style.rowGap || style.gap || "0") || 0;
+  const rows = Math.max(1, Math.floor((shell.clientHeight + rowGap) / (rowHeight + rowGap)));
+
+  if (columnCount <= 0 || rows <= 0) return null;
+  return columnCount * rows;
+};
+
+const syncMeasuredPageSize = () => {
+  if (currentView.value !== "items" || loading.value || items.value.length === 0) return;
+  const measured = measureVisibleGridCapacity();
+  if (!measured || measured === pageSize.value) return;
+  setPageSize(measured);
+};
+
 // Save settings to localStorage
 const saveSettings = () => {
   localStorage.setItem("itemSize", itemSize.value.toString());
@@ -763,7 +809,7 @@ const saveSettings = () => {
 </script>
 
 <template>
-  <div class="homepage-shell min-h-screen flex">
+  <div class="homepage-shell h-screen overflow-hidden flex">
     <div class="fixed top-4 left-4 z-50">
       <button
         @click="openRecipeOracleEntry"
@@ -1009,14 +1055,16 @@ const saveSettings = () => {
 
             <div
               v-else
-              class="grid gap-1 w-full p-4 flex-1 min-h-0 overflow-y-auto"
+              ref="itemGridShellRef"
+              class="item-grid-shell grid gap-1 w-full p-4 flex-1 min-h-0 overflow-hidden"
               :style="{
-                gridTemplateColumns: `repeat(auto-fill, ${gridCellSize})`,
+                gridTemplateColumns: `repeat(auto-fit, minmax(${gridCellSize}, 1fr))`,
               }"
             >
                 <ItemTooltip
                   v-for="(item, pageIndex) in items"
                   :key="item.itemId"
+                  class="item-grid-cell"
                   :item="item"
                   @click="openCraftingRecipes(item)"
                   @contextmenu="handleCardContextMenu"
@@ -1274,6 +1322,18 @@ const saveSettings = () => {
 /* Items Grid - 使用 flex 布局确保不产生滚动条 */
 .items-grid-container {
   overflow: hidden !important;
+}
+
+.item-grid-shell {
+  align-content: start;
+  justify-items: stretch;
+}
+
+.item-grid-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
 }
 
 .atlas-card-placeholder {

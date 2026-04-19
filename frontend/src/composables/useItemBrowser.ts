@@ -33,17 +33,16 @@ export function useItemBrowser(itemSize: Ref<number>) {
     const gap = 4;
     const itemSizeWithGap = itemSize.value + gap;
 
-    const topPanelHeight = 60;
-    const bottomSearchBarHeight = 80;
-    const modFilterHeight = 60;
+    const paginationHeight = 52;
+    const historyReserveHeight = Math.min(itemSize.value, 56) * 2 + 4 + 40;
     const paddingX = 32;
-    const paddingY = 32;
+    const paddingY = 24;
 
     const maxHeight =
-      window.innerHeight - topPanelHeight - bottomSearchBarHeight - modFilterHeight - paddingY;
+      window.innerHeight - paginationHeight - historyReserveHeight - paddingY;
     const contentWidth = Math.floor(window.innerWidth * 0.38) - paddingX;
 
-    const rows = Math.floor(maxHeight / itemSizeWithGap);
+    const rows = Math.max(1, Math.floor(maxHeight / itemSizeWithGap));
     const cols = Math.floor(contentWidth / itemSizeWithGap);
 
     return Math.max(rows * cols, 20);
@@ -159,6 +158,16 @@ export function useItemBrowser(itemSize: Ref<number>) {
     void loadItems();
   };
 
+  const setPageSize = (newSize: number, options?: { resetPage?: boolean }) => {
+    const normalized = Math.max(20, Math.floor(newSize));
+    if (normalized === pageSize.value) return;
+    pageSize.value = normalized;
+    if (options?.resetPage) {
+      currentPage.value = 1;
+    }
+    void loadItems();
+  };
+
   const prefetchItemsPage = async (page: number) => {
     const trimmed = searchQuery.value.trim();
     if (page < 1) return;
@@ -199,9 +208,7 @@ export function useItemBrowser(itemSize: Ref<number>) {
     resizeTimeout = setTimeout(() => {
       const newSize = calculatePageSize();
       if (newSize !== pageSize.value) {
-        pageSize.value = newSize;
-        currentPage.value = 1;
-        void loadItems();
+        setPageSize(newSize, { resetPage: true });
       }
     }, 300);
   };
@@ -211,9 +218,7 @@ export function useItemBrowser(itemSize: Ref<number>) {
     () => {
       const newSize = calculatePageSize();
       if (newSize !== pageSize.value) {
-        pageSize.value = newSize;
-        currentPage.value = 1;
-        void loadItems();
+        setPageSize(newSize, { resetPage: true });
       }
     },
     { flush: 'post' }
@@ -248,6 +253,7 @@ export function useItemBrowser(itemSize: Ref<number>) {
     pageSize,
     totalItems,
     totalPages,
+    setPageSize,
     loadMods,
     loadItems,
     onSearch,
