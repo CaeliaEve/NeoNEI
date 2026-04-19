@@ -1,4 +1,4 @@
-# GT Assembly Line UI Design
+﻿# GT Assembly Line UI Design
 
 ## Status
 
@@ -21,7 +21,7 @@ This redesign must:
 
 The approved direction is:
 
-- `工业总线台`
+- 工业总线台`r
 
 Core intent:
 
@@ -144,13 +144,18 @@ Meaning:
 Layout:
 
 - sits between input matrix and output slot
-- uses futuristic circuit-like glowing lines
+- uses the approved 能量汇流轨 treatment
+- is composed of one main horizontal conduit, two quieter support rails, and one central junction node
 
 Visual rules:
 
-- clean horizontal transfer logic
-- light pulse or energy travel from left toward right
-- lines should feel engineered and premium
+- remove the current oval / capsule placeholder shapes entirely
+- keep clean horizontal transfer logic
+- use a primary cyan lane that transitions toward amber near the output side
+- support rails stay thinner and quieter than the main conduit
+- the central junction node should be a diamond or chamfered hexagonal energy interface, not a dot
+- energy pulse should travel left to right in a restrained and premium way
+- the full region must feel engineered and premium rather than decorative
 
 Meaning:
 
@@ -279,3 +284,4 @@ Out of scope:
 
 - `frontend/src/components/GTAssemblyLineUI.vue`
 - `frontend/scripts/gt-assembly-line-ui-regression.test.mjs`
+
