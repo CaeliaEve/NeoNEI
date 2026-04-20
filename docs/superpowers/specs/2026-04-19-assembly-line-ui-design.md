@@ -144,18 +144,19 @@ Meaning:
 Layout:
 
 - sits between input matrix and output slot
-- uses the approved 能量汇流轨 treatment
-- is composed of one main horizontal conduit, two quieter support rails, and one central junction node
+- uses the approved `裂隙纺锤` treatment
+- is built around one narrow vertical rift-like spindle core with two to three floating geometric alignment shards on each side
 
 Visual rules:
 
 - remove the current oval / capsule placeholder shapes entirely
-- keep clean horizontal transfer logic
-- use a primary cyan lane that transitions toward amber near the output side
-- support rails stay thinner and quieter than the main conduit
-- the central junction node should be a diamond or chamfered hexagonal energy interface, not a dot
-- energy pulse should travel left to right in a restrained and premium way
-- the full region must feel engineered and premium rather than decorative
+- remove any obvious progress-bar-like left-to-right strip treatment
+- remove large circular ring motifs entirely
+- the spindle core should look like a dark high-energy slit or compressed rift with a thin cold edge glow
+- surrounding geometric shards should be slender, faceted, and slightly offset rather than circular or blocky
+- motion should come from subtle shard alignment drift and restrained internal rift pulsing, not a running bar
+- color remains cold cyan-blue dominant, with only a restrained amber hint toward the output side
+- the region must feel mysterious and premium while still belonging to an industrial assembly page
 
 Meaning:
 
