@@ -920,19 +920,30 @@ const saveSettings = () => {
             </div>
 
             <!-- Recipe Display (scaled to fit, flex-1 to fill remaining space) -->
-            <div
-              :class="[
-                'surface-glass rounded border border-slate-200/60 flex-1 flex items-center justify-center recipe-display-container p-2 min-h-0',
-                { 'recipe-display-container--state': recipeStageIsStateView }
-              ]"
-              @wheel="handleRecipeWheel"
-              @contextmenu="handleRecipePreviewContextMenu"
-            >
-                <div :class="['recipe-stage-slot', { 'recipe-stage-slot--state': recipeStageIsStateView }]">
-                  <div v-if="recipeModalLoading" class="state-panel stage-state-panel">
-                    <p class="state-title">正在加载配方...</p>
-                    <p class="state-subtitle">请稍候，系统正在准备该物品的配方索引。</p>
-                  </div>
+              <div
+                :class="[
+                  'surface-glass rounded border border-slate-200/60 flex-1 flex items-center justify-center recipe-display-container p-2 min-h-0',
+                  {
+                    'recipe-display-container--state': recipeStageIsStateView,
+                    'recipe-display-container--homepage': !recipeStageIsStateView,
+                  }
+                ]"
+                @wheel="handleRecipeWheel"
+                @contextmenu="handleRecipePreviewContextMenu"
+              >
+                  <div
+                    :class="[
+                      'recipe-stage-slot',
+                      {
+                        'recipe-stage-slot--state': recipeStageIsStateView,
+                        'recipe-stage-slot--homepage': !recipeStageIsStateView,
+                      },
+                    ]"
+                  >
+                    <div v-if="recipeModalLoading" class="state-panel stage-state-panel">
+                      <p class="state-title">正在加载配方...</p>
+                      <p class="state-subtitle">请稍候，系统正在准备该物品的配方索引。</p>
+                    </div>
                   <div v-else-if="recipeModalError" class="state-panel stage-state-panel state-panel-error">
                     <p class="state-title">{{ recipeModalError }}</p>
                     <p class="state-subtitle">你可以立即重试，或切换到其他物品后再查询。</p>
@@ -941,29 +952,33 @@ const saveSettings = () => {
                       <button class="mini-pager-btn" @click="showRecipeModal = false">关闭面板</button>
                     </div>
                   </div>
-                  <div
-                    v-else-if="isRecipeModalFurnaceCanvas && currentPageRecipes.length > 0"
-                    class="modal-stacked-furnace-recipes"
-                  >
-                    <RecipeDisplayRouter
-                      v-for="recipe in currentPageRecipes"
-                      :key="recipe.recipeId"
+                    <div
+                      v-else-if="isRecipeModalFurnaceCanvas && currentPageRecipes.length > 0"
+                      class="modal-stacked-furnace-recipes homepage-recipe-scale-shell"
+                    >
+                      <RecipeDisplayRouter
+                        v-for="recipe in currentPageRecipes"
+                        :key="recipe.recipeId"
                       :recipe="recipe"
                       @item-click="handleRecipeItemClick"
                       :scale-to-fit="recipeModalScaleToFit"
                       :prefer-detailed-crafting="false"
                     />
-                  </div>
-                  <RecipeDisplayRouter
-                    v-else-if="currentPageRecipes.length > 0"
-                    :recipe="currentPageRecipes[0]"
-                    @item-click="handleRecipeItemClick"
-                    :scale-to-fit="recipeModalScaleToFit"
-                    :prefer-detailed-crafting="false"
-                  />
-                  <div v-else class="state-panel stage-state-panel">
-                    <p class="state-title">暂无可显示配方</p>
-                    <p class="state-subtitle">请尝试右键查看“用途配方”，或切换其他物品。</p>
+                    </div>
+                    <div
+                      v-else-if="currentPageRecipes.length > 0"
+                      class="homepage-recipe-scale-shell"
+                    >
+                      <RecipeDisplayRouter
+                        :recipe="currentPageRecipes[0]"
+                        @item-click="handleRecipeItemClick"
+                        :scale-to-fit="recipeModalScaleToFit"
+                        :prefer-detailed-crafting="false"
+                      />
+                    </div>
+                    <div v-else class="state-panel stage-state-panel">
+                      <p class="state-title">暂无可显示配方</p>
+                      <p class="state-subtitle">请尝试右键查看“用途配方”，或切换其他物品。</p>
                     <div class="state-actions">
                       <button class="mini-pager-btn" @click="openCurrentRecipeMode">重新加载</button>
                       <button class="mini-pager-btn" @click="showRecipeModal = false">关闭面板</button>
@@ -1395,6 +1410,13 @@ const saveSettings = () => {
   margin-inline: 0;
 }
 
+.recipe-display-container--homepage {
+  padding-top: 6px;
+  padding-bottom: 6px;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
 .recipe-stage-slot {
   width: 100%;
   height: 100%;
@@ -1406,6 +1428,76 @@ const saveSettings = () => {
 .recipe-stage-slot--state {
   align-items: stretch;
   justify-content: stretch;
+}
+
+.recipe-stage-slot--homepage {
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.homepage-recipe-scale-shell {
+  --homepage-recipe-preview-scale: 0.92;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.homepage-recipe-scale-shell :deep(.recipe-display-wrapper) {
+  width: calc(100% / var(--homepage-recipe-preview-scale));
+  height: calc(100% / var(--homepage-recipe-preview-scale));
+  align-items: stretch;
+  justify-content: stretch;
+  zoom: var(--homepage-recipe-preview-scale);
+}
+
+.homepage-recipe-scale-shell :deep(.recipe-display-content) {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+@supports not (zoom: 1) {
+  .homepage-recipe-scale-shell {
+    transform: scale(var(--homepage-recipe-preview-scale));
+    transform-origin: center top;
+  }
+
+  .homepage-recipe-scale-shell :deep(.recipe-display-wrapper) {
+    zoom: normal;
+  }
+}
+
+.homepage-recipe-scale-shell :deep(.gt-research-ui),
+.homepage-recipe-scale-shell :deep(.gt-assembler-ui),
+.homepage-recipe-scale-shell :deep(.gt-assembly-line-ui),
+.homepage-recipe-scale-shell :deep(.gt-alloy-smelter-ui),
+.homepage-recipe-scale-shell :deep(.gt-molecular-ui),
+.homepage-recipe-scale-shell :deep(.gt-electrolyzer-ui),
+.homepage-recipe-scale-shell :deep(.gt-blast-furnace-ui),
+.homepage-recipe-scale-shell :deep(.gt-electric-furnace-ui),
+.homepage-recipe-scale-shell :deep(.thaumcraft-infusion-ui),
+.homepage-recipe-scale-shell :deep(.thaumcraft-arcane-ui),
+.homepage-recipe-scale-shell :deep(.thaumcraft-crucible-ui),
+.homepage-recipe-scale-shell :deep(.thaumcraft-aspect-ui),
+.homepage-recipe-scale-shell :deep(.blood-magic-altar-ui),
+.homepage-recipe-scale-shell :deep(.blood-alchemy-table-ui),
+.homepage-recipe-scale-shell :deep(.blood-binding-ritual-ui),
+.homepage-recipe-scale-shell :deep(.botania-rune-altar-ui),
+.homepage-recipe-scale-shell :deep(.botania-terra-plate-ui),
+.homepage-recipe-scale-shell :deep(.botania-pool-ui),
+.homepage-recipe-scale-shell :deep(.botania-elven-trade-ui),
+.homepage-recipe-scale-shell :deep(.furnace-ui),
+.homepage-recipe-scale-shell :deep(.avaritia-extreme-ui),
+.homepage-recipe-scale-shell :deep(.multiblock-blueprint-ui) {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  max-width: none;
+  max-height: 100%;
 }
 
 .modal-stacked-furnace-recipes {
