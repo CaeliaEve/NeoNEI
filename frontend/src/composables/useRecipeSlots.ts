@@ -4,17 +4,28 @@ export interface ResolvedSlot {
   itemId: string;
   count: number;
   localizedName: string;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
 }
 
 interface RawSlotLike {
   itemId?: unknown;
   count?: unknown;
   stackSize?: unknown;
+  renderAssetRef?: unknown;
+  imageFileName?: unknown;
   item?: unknown;
   items?: unknown;
 }
 
-function toCandidate(slotLike: RawSlotLike | null | undefined): { itemId: string; count: number } | null {
+interface SlotCandidate {
+  itemId: string;
+  count: number;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
+}
+
+function toCandidate(slotLike: RawSlotLike | null | undefined): SlotCandidate | null {
   if (!slotLike) {
     return null;
   }
@@ -22,6 +33,8 @@ function toCandidate(slotLike: RawSlotLike | null | undefined): { itemId: string
     return {
       itemId: slotLike.itemId,
       count: normalizeCount(slotLike.count ?? slotLike.stackSize),
+      renderAssetRef: typeof slotLike.renderAssetRef === 'string' ? slotLike.renderAssetRef : null,
+      imageFileName: typeof slotLike.imageFileName === 'string' ? slotLike.imageFileName : null,
     };
   }
   if (
@@ -30,15 +43,24 @@ function toCandidate(slotLike: RawSlotLike | null | undefined): { itemId: string
     typeof (slotLike.item as RawSlotLike).itemId === 'string' &&
     ((slotLike.item as RawSlotLike).itemId as string).length > 0
   ) {
+    const nested = slotLike.item as RawSlotLike;
     return {
-      itemId: (slotLike.item as RawSlotLike).itemId as string,
+      itemId: nested.itemId as string,
       count: normalizeCount(slotLike.count ?? slotLike.stackSize),
+      renderAssetRef:
+        typeof slotLike.renderAssetRef === 'string'
+          ? slotLike.renderAssetRef
+          : (typeof nested.renderAssetRef === 'string' ? nested.renderAssetRef : null),
+      imageFileName:
+        typeof slotLike.imageFileName === 'string'
+          ? slotLike.imageFileName
+          : (typeof nested.imageFileName === 'string' ? nested.imageFileName : null),
     };
   }
   return null;
 }
 
-function collectFirstCandidate(node: unknown): { itemId: string; count: number } | null {
+function collectFirstCandidate(node: unknown): SlotCandidate | null {
   if (!node) return null;
   if (Array.isArray(node)) {
     for (const child of node) {
@@ -56,7 +78,7 @@ function collectFirstCandidate(node: unknown): { itemId: string; count: number }
   return null;
 }
 
-function collectAllCandidates(node: unknown, output: Array<{ itemId: string; count: number }>): void {
+function collectAllCandidates(node: unknown, output: SlotCandidate[]): void {
   if (!node) return;
   if (Array.isArray(node)) {
     for (const child of node) collectAllCandidates(child, output);
@@ -82,9 +104,9 @@ function collectAllCandidates(node: unknown, output: Array<{ itemId: string; cou
   }
 }
 
-function uniqueSlots(slots: Array<{ itemId: string; count: number }>): Array<{ itemId: string; count: number }> {
+function uniqueSlots(slots: SlotCandidate[]): SlotCandidate[] {
   const seen = new Set<string>();
-  const result: Array<{ itemId: string; count: number }> = [];
+  const result: SlotCandidate[] = [];
   for (const slot of slots) {
     const key = `${slot.itemId}|${slot.count}`;
     if (!seen.has(key)) {
@@ -110,25 +132,37 @@ function getInputSource(recipe: Recipe): unknown {
   return recipe.inputs;
 }
 
-function collectInputCandidates(node: unknown, output: Array<{ itemId: string; count: number }>): void {
+function collectInputCandidates(node: unknown, output: SlotCandidate[]): void {
   collectAllCandidates(node, output);
 }
 
-async function resolveSlots(slots: Array<{ itemId: string; count: number }>): Promise<ResolvedSlot[]> {
+async function resolveSlots(slots: SlotCandidate[]): Promise<ResolvedSlot[]> {
   return Promise.all(
-    slots.map(async ({ itemId, count }) => {
+    slots.map(async ({ itemId, count, renderAssetRef, imageFileName }) => {
       try {
         const item = await api.getItem(itemId);
-        return { itemId, count, localizedName: item.localizedName };
+        return {
+          itemId,
+          count,
+          localizedName: item.localizedName,
+          renderAssetRef: item.renderAssetRef ?? renderAssetRef ?? null,
+          imageFileName: item.imageFileName ?? imageFileName ?? null,
+        };
       } catch {
-        return { itemId, count, localizedName: itemId };
+        return {
+          itemId,
+          count,
+          localizedName: itemId,
+          renderAssetRef: renderAssetRef ?? null,
+          imageFileName: imageFileName ?? null,
+        };
       }
     }),
   );
 }
 
 export async function buildInputSlots(recipe: Recipe): Promise<ResolvedSlot[]> {
-  const slots: Array<{ itemId: string; count: number }> = [];
+  const slots: SlotCandidate[] = [];
   collectInputCandidates(getInputSource(recipe), slots);
   return resolveSlots(uniqueSlots(slots).filter((slot) => slot.itemId));
 }
@@ -136,7 +170,7 @@ export async function buildInputSlots(recipe: Recipe): Promise<ResolvedSlot[]> {
 export async function buildPrimaryInputSlots(recipe: Recipe): Promise<ResolvedSlot[]> {
   const inputSource = getInputSource(recipe);
   const rows = Array.isArray(inputSource) ? inputSource : [];
-  const selected: Array<{ itemId: string; count: number }> = [];
+  const selected: SlotCandidate[] = [];
 
   for (const row of rows) {
     if (!Array.isArray(row)) {
@@ -163,7 +197,7 @@ export async function buildPrimaryInputSlots(recipe: Recipe): Promise<ResolvedSl
 export async function buildFirstInputSlotsPerRow(recipe: Recipe): Promise<ResolvedSlot[]> {
   const inputSource = getInputSource(recipe);
   const rows = Array.isArray(inputSource) ? inputSource : [];
-  const selected: Array<{ itemId: string; count: number }> = [];
+  const selected: SlotCandidate[] = [];
 
   for (const row of rows) {
     if (!Array.isArray(row)) {
@@ -211,9 +245,14 @@ export async function buildOutputSlots(recipe: Recipe, maxCount?: number): Promi
       if (!itemId) return null;
 
       const count = normalizeCount(asRecord.count ?? asRecord.stackSize);
-      return { itemId, count };
+      return {
+        itemId,
+        count,
+        renderAssetRef: typeof asRecord.renderAssetRef === 'string' ? asRecord.renderAssetRef : null,
+        imageFileName: typeof asRecord.imageFileName === 'string' ? asRecord.imageFileName : null,
+      };
     })
-    .filter((slot): slot is { itemId: string; count: number } => Boolean(slot));
+    .filter((slot): slot is SlotCandidate => Boolean(slot));
 
   const sliced = typeof maxCount === 'number' ? prepared.slice(0, maxCount) : prepared;
   return resolveSlots(sliced);

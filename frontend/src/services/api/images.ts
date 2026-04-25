@@ -69,8 +69,12 @@ export function getFluidImageUrl(fluidId: string): string {
 export function getFluidImageUrlFromFluid(fluid: {
   renderAssetRef?: string | null;
   fluidId?: string | null;
+  preferredImageUrl?: string | null;
 } | null | undefined): string | null {
   if (!fluid) return null;
+  if (fluid.preferredImageUrl) {
+    return fluid.preferredImageUrl;
+  }
   if (fluid.renderAssetRef) {
     const renderAssetUrl = getImageUrlFromRenderAssetRef(fluid.renderAssetRef);
     if (renderAssetUrl) return renderAssetUrl;
@@ -82,10 +86,14 @@ export function getFluidImageUrlFromFluid(fluid: {
 }
 
 export function getItemImageUrlFromEntity(item: {
+  preferredImageUrl?: string | null;
   renderAssetRef?: string | null;
   imageFileName?: string | null;
   itemId?: string | null;
 } | null | undefined): string {
+  if (item?.preferredImageUrl && item.preferredImageUrl.includes('/images/item/')) {
+    return item.preferredImageUrl;
+  }
   if (item?.imageFileName) {
     return getImageUrlFromFileName(item.imageFileName);
   }
@@ -100,10 +108,14 @@ export function getItemImageUrlFromEntity(item: {
 }
 
 export function getPreferredStaticImageUrlFromEntity(item: {
+  preferredImageUrl?: string | null;
   renderAssetRef?: string | null;
   imageFileName?: string | null;
   itemId?: string | null;
 } | null | undefined): string {
+  if (item?.preferredImageUrl && item.preferredImageUrl.includes('/images/item/')) {
+    return item.preferredImageUrl;
+  }
   if (item?.imageFileName) {
     if (item.imageFileName.toLowerCase().endsWith('.gif')) {
       const strippedVariantPath = stripVariantSuffixFromImageFileName(item.imageFileName);
@@ -199,12 +211,20 @@ export interface AnimatedAtlasFrameEntry {
   height: number;
 }
 
+export interface AnimatedAtlasTimelineEntry {
+  timelineIndex: number;
+  frameIndex: number;
+  index: number;
+  durationMs: number;
+}
+
 export interface AnimatedAtlasAssetEntry {
   assetId: string;
   variantKey: string;
   frameDurationMs: number | null;
   loopMode: string | null;
   frameCount: number;
+  timeline: AnimatedAtlasTimelineEntry[];
   frames: AnimatedAtlasFrameEntry[];
   atlasFile: string;
   atlasGroup: string;
@@ -229,8 +249,18 @@ export function resolveCanonicalRelativePath(relativePath?: string | null): stri
   if (!relativePath) return null;
   if (/^https?:\/\//i.test(relativePath)) return relativePath;
   const normalized = relativePath.replace(/^\/+/, '');
-  if (normalized.startsWith('canonical/')) {
-    return `${getBackendOrigin()}/${normalized}`;
+  const canonicalPath = normalized.startsWith('canonical/')
+    ? normalized.slice('canonical/'.length)
+    : normalized;
+
+  if (/^https?:\/\//i.test(BACKEND_BASE_URL)) {
+    return `${getBackendOrigin()}/canonical/${canonicalPath}`;
   }
-  return `${getBackendOrigin()}/canonical/${normalized}`;
+
+  const proxyBase = BACKEND_BASE_URL.replace(/\/+$/, '');
+  if (proxyBase.startsWith('/api')) {
+    return `${proxyBase}/canonical/${canonicalPath}`;
+  }
+
+  return `${getBackendOrigin()}/canonical/${canonicalPath}`;
 }

@@ -6,6 +6,7 @@ import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import { readPositiveIntegerMeta } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props { recipe: Recipe; uiConfig?: UITypeConfig }
 interface Emits { (e: 'item-click', itemId: string): void }
@@ -39,7 +40,12 @@ watch(() => props.recipe, () => void initPool(), { deep: true });
       <div class="slot-grid">
         <RecipeItemTooltip v-for="slot in inputs" :key="slot.itemId" :item-id="slot.itemId" :count="slot.count">
           <button class="slot input-slot" type="button" @click.stop="onItemClick(slot.itemId)">
-            <img :src="getImageUrl(slot.itemId)" @error="imageError" />
+            <AnimatedItemIcon
+              :item-id="slot.itemId"
+              :render-asset-ref="slot.renderAssetRef || null"
+              :image-file-name="slot.imageFileName || null"
+              :size="46"
+            />
             <span v-if="slot.count > 1">{{ slot.count }}</span>
           </button>
         </RecipeItemTooltip>
@@ -64,7 +70,12 @@ watch(() => props.recipe, () => void initPool(), { deep: true });
       <div class="slot-grid single">
         <RecipeItemTooltip v-for="slot in outputs" :key="slot.itemId" :item-id="slot.itemId" :count="slot.count">
           <button class="slot output-slot" type="button" @click.stop="onItemClick(slot.itemId)">
-            <img :src="getImageUrl(slot.itemId)" @error="imageError" />
+            <AnimatedItemIcon
+              :item-id="slot.itemId"
+              :render-asset-ref="slot.renderAssetRef || null"
+              :image-file-name="slot.imageFileName || null"
+              :size="54"
+            />
             <span v-if="slot.count > 1">{{ slot.count }}</span>
           </button>
         </RecipeItemTooltip>

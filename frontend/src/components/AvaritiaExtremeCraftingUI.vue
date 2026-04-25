@@ -1,9 +1,10 @@
 ﻿<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, shallowRef, triggerRef, watch } from 'vue';
-import { getImageUrl, type Recipe, type RecipeItem } from '../services/api';
+import { type Recipe, type RecipeItem } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 import { useSound } from '../services/sound.service';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -17,6 +18,8 @@ interface Emits {
 interface SlotVariant {
   itemId: string;
   count: number;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
 }
 
 interface SlotCell {
@@ -42,6 +45,10 @@ const parseVariants = (entry: RecipeItem | RecipeItem[] | null | undefined): Slo
     .map((it) => ({
       itemId: String(it.itemId),
       count: typeof it.count === 'number' && Number.isFinite(it.count) ? Math.max(1, it.count) : 1,
+      renderAssetRef: typeof it.renderAssetRef === 'string' ? it.renderAssetRef : null,
+      imageFileName: typeof (it as { imageFileName?: unknown }).imageFileName === 'string'
+        ? ((it as { imageFileName?: string }).imageFileName ?? null)
+        : null,
     }));
 };
 
@@ -127,10 +134,12 @@ onUnmounted(() => {
                   @click="onItemClick(cell.variants[cell.activeIndex].itemId)"
                 >
                   <div class="slot-inner">
-                    <img
-                      :src="getImageUrl(cell.variants[cell.activeIndex].itemId)"
+                    <AnimatedItemIcon
+                      :item-id="cell.variants[cell.activeIndex].itemId"
+                      :render-asset-ref="cell.variants[cell.activeIndex].renderAssetRef || null"
+                      :image-file-name="cell.variants[cell.activeIndex].imageFileName || null"
+                      :size="30"
                       class="item-icon"
-                      @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
                     />
                     <span v-if="cell.variants[cell.activeIndex].count > 1" class="item-count">
                       {{ cell.variants[cell.activeIndex].count }}
@@ -168,10 +177,12 @@ onUnmounted(() => {
           >
             <div class="slot output-slot">
               <div class="slot-inner">
-                <img
-                  :src="getImageUrl(outputItem.itemId)"
+                <AnimatedItemIcon
+                  :item-id="outputItem.itemId"
+                  :render-asset-ref="outputItem.renderAssetRef || null"
+                  :image-file-name="null"
+                  :size="60"
                   class="item-icon output-icon"
-                  @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
                 />
                 <span v-if="outputItem.count > 1" class="item-count">{{ outputItem.count }}</span>
               </div>

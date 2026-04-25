@@ -188,9 +188,25 @@ export interface Item {
   tooltip?: string | null;
   searchTerms?: string | null;
   toolClasses?: string | null;
+  browserGroupKey?: string | null;
+  browserGroupLabel?: string | null;
+  browserGroupSize?: number | null;
   nbt?: string | null;
   [key: string]: unknown;
 }
+
+export interface BrowserVariantGroup {
+  key: string;
+  representative: Item;
+  size: number;
+  visibleCount: number;
+  expandable: boolean;
+  label: string;
+}
+
+export type BrowserGridEntry =
+  | { key: string; kind: 'item'; item: Item }
+  | { key: string; kind: 'group-collapsed' | 'group-header'; group: BrowserVariantGroup };
 
 export interface PageAtlasSpriteEntry {
   atlasUrl: string;
@@ -613,15 +629,49 @@ export interface AnimatedAtlasFrameEntry {
   height: number;
 }
 
+export interface AnimatedAtlasTimelineEntry {
+  timelineIndex: number;
+  frameIndex: number;
+  index: number;
+  durationMs: number;
+}
+
 export interface AnimatedAtlasAssetEntry {
   assetId: string;
   variantKey: string;
   frameDurationMs: number | null;
   loopMode: string | null;
   frameCount: number;
+  timeline: AnimatedAtlasTimelineEntry[];
   frames: AnimatedAtlasFrameEntry[];
   atlasFile: string;
   atlasGroup: string;
+}
+
+export interface RenderContractAssetEntry {
+  assetId: string;
+  variantKey: string;
+  sourceType: string | null;
+  family: string | null;
+  mode: string | null;
+  renderMode: string | null;
+  animationMode: string | null;
+  captureMethod: string | null;
+  captureSource: string | null;
+  rendererFamily: string | null;
+  playbackHint: string | null;
+  staticFile: string | null;
+  primaryArtifact: string | null;
+  spriteMetadataFile: string | null;
+  nativeSpriteAtlasFile: string | null;
+  contractFile: string | null;
+  atlasGroup: string | null;
+  frameCount: number | null;
+  frameDurationMs: number | null;
+  layers: Array<Record<string, unknown>>;
+  rendererContract: Record<string, unknown> | null;
+  shaderContract: Record<string, unknown> | null;
+  captureContract: Record<string, unknown> | null;
 }
 
 export const api = {
@@ -633,6 +683,22 @@ export const api = {
     modId?: string;
   }): Promise<PaginatedResponse<Item>> {
     const response = await http.get('/items', { params });
+    return response.data;
+  },
+
+  async getBrowserItems(params: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    modId?: string;
+    expandedGroups?: string[];
+  }): Promise<PaginatedResponse<BrowserGridEntry>> {
+    const response = await http.get('/items/browser', {
+      params: {
+        ...params,
+        expandedGroups: (params.expandedGroups ?? []).join(','),
+      },
+    });
     return response.data;
   },
 
@@ -821,6 +887,13 @@ export const api = {
 
   async getAnimatedAtlasEntry(assetId: string): Promise<AnimatedAtlasAssetEntry> {
     const response = await http.get('/render-contract/animated-atlas', {
+      params: { assetId },
+    });
+    return response.data;
+  },
+
+  async getRenderContractAsset(assetId: string): Promise<RenderContractAssetEntry> {
+    const response = await http.get('/render-contract/asset', {
       params: { assetId },
     });
     return response.data;

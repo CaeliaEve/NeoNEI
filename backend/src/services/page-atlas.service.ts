@@ -113,12 +113,80 @@ export class PageAtlasService {
       .split('/')
       .map((part) => decodeURIComponent(part))
       .join(path.sep);
-    const absolute = path.resolve(this.imageRoot, 'item', relativePath);
     const itemRoot = path.resolve(this.imageRoot, 'item');
-    if (!absolute.startsWith(itemRoot) || !fs.existsSync(absolute)) {
+
+    const resolveCandidate = (relativeCandidatePath: string): string | null => {
+      const absolute = path.resolve(this.imageRoot, 'item', relativeCandidatePath);
+      if (!absolute.startsWith(itemRoot) || !fs.existsSync(absolute)) {
+        return null;
+      }
+      return absolute;
+    };
+
+    const exact = resolveCandidate(relativePath);
+    if (exact) {
+      return exact;
+    }
+
+    const extensionMatch = relativePath.match(/^(.*)\.(png|gif)$/i);
+    if (!extensionMatch) {
       return null;
     }
-    return absolute;
+
+    const stem = extensionMatch[1];
+    const currentExtension = extensionMatch[2].toLowerCase();
+    const alternateExtension = currentExtension === 'png' ? 'gif' : 'png';
+
+    const alternate = resolveCandidate(`${stem}.${alternateExtension}`);
+    if (alternate) {
+      return alternate;
+    }
+
+    const spriteAtlas = resolveCandidate(`${stem}.sprite-atlas.png`);
+    if (spriteAtlas) {
+      return spriteAtlas;
+    }
+
+    const parentDir = path.dirname(path.resolve(this.imageRoot, 'item', relativePath));
+    if (parentDir.startsWith(itemRoot) && fs.existsSync(parentDir)) {
+      const requestedFile = path.basename(relativePath);
+      const baseName = requestedFile.replace(/\.(png|gif)$/i, '');
+      const escapedBaseName = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const variantPattern = new RegExp(`^${escapedBaseName}~.+(?:\\.png|\\.gif|\\.sprite-atlas\\.png)$`, 'i');
+      const siblings = fs.readdirSync(parentDir).filter((name) => variantPattern.test(name));
+      if (siblings.length > 0) {
+        siblings.sort((left, right) => left.localeCompare(right));
+        const preferred =
+          siblings.find((name) => !name.toLowerCase().includes('.sprite-atlas.') && name.toLowerCase().endsWith(`.${currentExtension}`))
+          ?? siblings.find((name) => name.toLowerCase().endsWith('.gif'))
+          ?? siblings.find((name) => name.toLowerCase().endsWith('.sprite-atlas.png'))
+          ?? siblings[0];
+        const preferredAbsolute = path.resolve(parentDir, preferred);
+        if (preferredAbsolute.startsWith(itemRoot) && fs.existsSync(preferredAbsolute)) {
+          return preferredAbsolute;
+        }
+      }
+    }
+
+    const strippedVariantMatch = stem.match(/^(.+~\d+)~.+$/);
+    if (strippedVariantMatch) {
+      const strippedExact = resolveCandidate(`${strippedVariantMatch[1]}.${currentExtension}`);
+      if (strippedExact) {
+        return strippedExact;
+      }
+
+      const strippedAlternate = resolveCandidate(`${strippedVariantMatch[1]}.${alternateExtension}`);
+      if (strippedAlternate) {
+        return strippedAlternate;
+      }
+
+      const strippedSpriteAtlas = resolveCandidate(`${strippedVariantMatch[1]}.sprite-atlas.png`);
+      if (strippedSpriteAtlas) {
+        return strippedSpriteAtlas;
+      }
+    }
+
+    return null;
   }
 
   private buildSignature(items: Item[]): string {
@@ -210,7 +278,7 @@ export class PageAtlasService {
 
     const fileName = `${key}.svg`;
     const filePath = path.join(this.atlasDir, fileName);
-    const atlasUrl = `/generated/page-atlas/${encodeURIComponent(fileName)}`;
+    const atlasUrl = `/api/generated/page-atlas/${encodeURIComponent(fileName)}`;
 
     const columns = Math.max(1, Math.ceil(Math.sqrt(items.length)));
     const rows = Math.max(1, Math.ceil(items.length / columns));

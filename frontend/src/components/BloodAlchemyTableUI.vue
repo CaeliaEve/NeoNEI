@@ -6,6 +6,7 @@ import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import { readPositiveIntegerMeta } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -131,7 +132,12 @@ watch(() => props.recipe, () => void initAlchemy(), { deep: true });
             @click="onItemClick(outputSlot.itemId)"
           >
             <button class="core-slot" type="button">
-              <img :src="getImageUrl(outputSlot.itemId)" :alt="outputSlot.itemId" @error="imageError" />
+              <AnimatedItemIcon
+                :item-id="outputSlot.itemId"
+                :render-asset-ref="outputSlot.renderAssetRef || null"
+                :image-file-name="outputSlot.imageFileName || null"
+                :size="52"
+              />
               <span v-if="outputSlot.count > 1">{{ outputSlot.count }}</span>
             </button>
           </RecipeItemTooltip>
@@ -147,7 +153,12 @@ watch(() => props.recipe, () => void initAlchemy(), { deep: true });
           <div class="node-link" aria-hidden="true" />
           <RecipeItemTooltip :item-id="slot.itemId" :count="slot.count" @click="onItemClick(slot.itemId)">
             <button class="node-slot" type="button">
-              <img :src="getImageUrl(slot.itemId)" :alt="slot.itemId" @error="imageError" />
+              <AnimatedItemIcon
+                :item-id="slot.itemId"
+                :render-asset-ref="slot.renderAssetRef || null"
+                :image-file-name="slot.imageFileName || null"
+                :size="40"
+              />
               <span v-if="slot.count > 1">{{ slot.count }}</span>
             </button>
           </RecipeItemTooltip>

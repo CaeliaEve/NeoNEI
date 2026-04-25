@@ -257,6 +257,18 @@ export class DatabaseManager {
     `);
 
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS item_browser_groups (
+        item_id TEXT PRIMARY KEY,
+        group_key TEXT,
+        group_label TEXT,
+        group_size INTEGER DEFAULT 1,
+        group_sort_order INTEGER NOT NULL,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (item_id) REFERENCES items_core(item_id) ON DELETE CASCADE
+      )
+    `);
+
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS recipes_core (
         recipe_id TEXT PRIMARY KEY,
         recipe_type TEXT NOT NULL,
@@ -361,6 +373,8 @@ export class DatabaseManager {
 
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_core_mod_id ON items_core(mod_id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_core_localized_name ON items_core(localized_name)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_item_browser_groups_key ON item_browser_groups(group_key)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_item_browser_groups_sort ON item_browser_groups(group_sort_order)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_search_localized_name_norm ON items_search(localized_name_norm)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_search_internal_name_norm ON items_search(internal_name_norm)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_search_pinyin_full ON items_search(pinyin_full)');
@@ -514,6 +528,22 @@ export class DatabaseManager {
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_ui_payloads_recipe_id ON ui_payloads(recipe_id)');
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_ui_payloads_family_key ON ui_payloads(family_key)');
       }
+
+      if (!tableNames.includes('item_browser_groups')) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS item_browser_groups (
+            item_id TEXT PRIMARY KEY,
+            group_key TEXT,
+            group_label TEXT,
+            group_size INTEGER DEFAULT 1,
+            group_sort_order INTEGER NOT NULL,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (item_id) REFERENCES items_core(item_id) ON DELETE CASCADE
+          )
+        `);
+      }
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_item_browser_groups_key ON item_browser_groups(group_key)');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_item_browser_groups_sort ON item_browser_groups(group_sort_order)');
 
     } catch (error) {
       console.error('❌ Database migration failed:', error);

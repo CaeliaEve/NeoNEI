@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { getFluidImageUrlFromFluid, getImageUrl, type Recipe } from '../services/api';
+import { getFluidImageUrlFromFluid, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -17,6 +18,8 @@ interface Emits {
 interface ItemStack {
   itemId: string;
   count: number;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
 }
 
 interface FluidStackView {
@@ -102,11 +105,28 @@ function extractItemStack(node: unknown): ItemStack | null {
   };
 
   if (typeof obj.itemId === 'string' && obj.itemId.length > 0) {
-    return { itemId: obj.itemId, count: normalizeCount(obj.count ?? obj.stackSize) };
+    return {
+      itemId: obj.itemId,
+      count: normalizeCount(obj.count ?? obj.stackSize),
+      renderAssetRef: typeof obj.renderAssetRef === 'string' ? obj.renderAssetRef : null,
+      imageFileName: typeof obj.imageFileName === 'string' ? obj.imageFileName : null,
+    };
   }
 
   if (obj.item && typeof obj.item.itemId === 'string' && obj.item.itemId.length > 0) {
-    return { itemId: obj.item.itemId, count: normalizeCount(obj.count ?? obj.stackSize) };
+    const nested = obj.item as { itemId: string; renderAssetRef?: unknown; imageFileName?: unknown };
+    return {
+      itemId: nested.itemId,
+      count: normalizeCount(obj.count ?? obj.stackSize),
+      renderAssetRef:
+        typeof obj.renderAssetRef === 'string'
+          ? obj.renderAssetRef
+          : (typeof nested.renderAssetRef === 'string' ? nested.renderAssetRef : null),
+      imageFileName:
+        typeof obj.imageFileName === 'string'
+          ? obj.imageFileName
+          : (typeof nested.imageFileName === 'string' ? nested.imageFileName : null),
+    };
   }
 
   if (Array.isArray(obj.items)) {
@@ -183,7 +203,14 @@ const outputSlots = computed(() => {
   for (let i = 0; i < slots.length; i += 1) {
     const out = outputs[i];
     slots[i] = out && typeof out.itemId === 'string'
-      ? { itemId: out.itemId, count: normalizeCount(out.count) }
+      ? {
+          itemId: out.itemId,
+          count: normalizeCount(out.count),
+          renderAssetRef: typeof out.renderAssetRef === 'string' ? out.renderAssetRef : null,
+          imageFileName: typeof (out as { imageFileName?: unknown }).imageFileName === 'string'
+            ? ((out as { imageFileName?: string }).imageFileName ?? null)
+            : null,
+        }
       : null;
   }
   return slots;
@@ -354,7 +381,13 @@ function onClickItem(itemId: string): void {
           <template v-for="(slot, idx) in inputSlots" :key="`in-${idx}`">
             <RecipeItemTooltip v-if="slot" :item-id="slot.itemId" :count="slot.count" @click="onClickItem(slot.itemId)">
               <div class="slot item">
-                <img :src="getImageUrl(slot.itemId)" class="icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
+                <AnimatedItemIcon
+                  :item-id="slot.itemId"
+                  :render-asset-ref="slot.renderAssetRef || null"
+                  :image-file-name="slot.imageFileName || null"
+                  :size="28"
+                  class="icon"
+                />
                 <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
               </div>
             </RecipeItemTooltip>
@@ -373,7 +406,11 @@ function onClickItem(itemId: string): void {
               @click="onClickItem(slot.itemId)"
             >
               <div class="slot item special" :class="{ circuit: slot.kind === 'circuit' }">
-                <img :src="getImageUrl(slot.itemId)" class="icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
+                <AnimatedItemIcon
+                  :item-id="slot.itemId"
+                  :size="28"
+                  class="icon"
+                />
                 <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
               </div>
             </RecipeItemTooltip>
@@ -408,7 +445,13 @@ function onClickItem(itemId: string): void {
           <template v-for="(slot, idx) in outputSlots" :key="`out-${idx}`">
             <RecipeItemTooltip v-if="slot" :item-id="slot.itemId" :count="slot.count" @click="onClickItem(slot.itemId)">
               <div class="slot item output">
-                <img :src="getImageUrl(slot.itemId)" class="icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
+                <AnimatedItemIcon
+                  :item-id="slot.itemId"
+                  :render-asset-ref="slot.renderAssetRef || null"
+                  :image-file-name="slot.imageFileName || null"
+                  :size="28"
+                  class="icon"
+                />
                 <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
               </div>
             </RecipeItemTooltip>

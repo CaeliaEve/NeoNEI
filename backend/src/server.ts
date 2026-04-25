@@ -1,4 +1,4 @@
-import express, { type Request, type Response } from 'express';
+import express, { type NextFunction, type Request, type Response } from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
@@ -49,112 +49,134 @@ app.use(
 
 app.use(express.static(path.join(__dirname, '../public')));
 
-// Item image fallback resolver:
-// 1) exact requested file
-// 2) drop NBT suffix: internal~damage~nbt.png -> internal~damage.png
-app.get('/images/item/:modId/:fileName', (req, res, next) => {
-  try {
-    const modId = decodeURIComponent(req.params.modId || '');
-    const fileName = decodeURIComponent(req.params.fileName || '');
-    if (!modId || !fileName || modId.includes('..') || fileName.includes('..')) {
-      return next();
-    }
+type RequestedArtifactDescriptor = {
+  stem: string;
+  extension: string;
+  variantRegex: RegExp;
+  variantRegexes: RegExp[];
+};
 
-    const absolute = path.resolve(IMAGES_PATH, 'item', modId, fileName);
-    const itemRoot = path.resolve(IMAGES_PATH, 'item');
-    if (!absolute.startsWith(itemRoot)) {
-      return next();
-    }
+function isSafeUnderRoot(root: string, candidate: string): boolean {
+  return candidate.startsWith(root);
+}
 
-    if (fs.existsSync(absolute) && fs.statSync(absolute).isFile()) {
-      return res.sendFile(absolute);
-    }
+function isExistingFile(candidate: string): boolean {
+  return fs.existsSync(candidate) && fs.statSync(candidate).isFile();
+}
 
-    const extensionMatch = fileName.match(/^(.*)\.(png|gif)$/i);
-    if (extensionMatch) {
-      const stem = extensionMatch[1];
-      const alternateExtension = extensionMatch[2].toLowerCase() === 'png' ? 'gif' : 'png';
-      const alternateAbsolute = path.resolve(IMAGES_PATH, 'item', modId, `${stem}.${alternateExtension}`);
-      if (alternateAbsolute.startsWith(itemRoot) && fs.existsSync(alternateAbsolute) && fs.statSync(alternateAbsolute).isFile()) {
-        return res.sendFile(alternateAbsolute);
-      }
-
-      const spriteAtlasAbsolute = path.resolve(IMAGES_PATH, 'item', modId, `${stem}.sprite-atlas.png`);
-      if (spriteAtlasAbsolute.startsWith(itemRoot) && fs.existsSync(spriteAtlasAbsolute) && fs.statSync(spriteAtlasAbsolute).isFile()) {
-        return res.sendFile(spriteAtlasAbsolute);
-      }
-
-      const fileDir = path.resolve(IMAGES_PATH, 'item', modId);
-      if (fileDir.startsWith(itemRoot) && fs.existsSync(fileDir)) {
-        const wildcardGif = fs.readdirSync(fileDir).find((name) => name.startsWith(`${stem}~`) && name.endsWith('.gif'));
-        if (wildcardGif) {
-          return res.sendFile(path.join(fileDir, wildcardGif));
-        }
-      }
-    }
-
-    const m = fileName.match(/^(.+~\d+)~.+\.png$/i);
-    if (!m) {
-      return next();
-    }
-
-    const baseName = `${m[1]}.png`;
-    const fallbackAbsolute = path.resolve(IMAGES_PATH, 'item', modId, baseName);
-    if (!fallbackAbsolute.startsWith(itemRoot)) {
-      return next();
-    }
-    if (fs.existsSync(fallbackAbsolute) && fs.statSync(fallbackAbsolute).isFile()) {
-      return res.sendFile(fallbackAbsolute);
-    }
-  } catch {
-    // Fall through to static middleware.
+function parseRequestedArtifact(fileName: string): RequestedArtifactDescriptor | null {
+  const match = fileName.match(/^(.*?)(\.sprite-atlas\.png|\.sprite\.json|\.render\.json|\.png|\.gif)$/i);
+  if (!match) {
+    return null;
   }
-  return next();
-});
 
-// Fluid image fallback resolver:
-// 1) exact requested file
-// 2) png <-> gif alternate extension
-// 3) native sprite atlas sidecar
-app.get('/images/fluid/:modId/:fileName', (req, res, next) => {
-  try {
-    const modId = decodeURIComponent(req.params.modId || '');
-    const fileName = decodeURIComponent(req.params.fileName || '');
-    if (!modId || !fileName || modId.includes('..') || fileName.includes('..')) {
-      return next();
-    }
+  const stem = match[1];
+  const extension = match[2].toLowerCase();
+  const escapedStem = stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const variantRegexes =
+    extension === '.png' || extension === '.gif'
+      ? [
+          new RegExp(`^${escapedStem}~.+${extension.replace('.', '\\.')}$`, 'i'),
+          new RegExp(`^${escapedStem}~.+\\.sprite-atlas\\.png$`, 'i'),
+        ]
+      : [new RegExp(`^${escapedStem}~.+${extension.replace('.', '\\.')}$`, 'i')];
+  return {
+    stem,
+    extension,
+    variantRegex: variantRegexes[0],
+    variantRegexes,
+  };
+}
 
-    const absolute = path.resolve(IMAGES_PATH, 'fluid', modId, fileName);
-    const fluidRoot = path.resolve(IMAGES_PATH, 'fluid');
-    if (!absolute.startsWith(fluidRoot)) {
-      return next();
-    }
+function resolveFamilyArtifact(
+  family: 'item' | 'fluid',
+  modId: string,
+  fileName: string,
+): string | null {
+  const familyRoot = path.resolve(IMAGES_PATH, family);
+  const familyDir = path.resolve(familyRoot, modId);
+  const direct = path.resolve(familyDir, fileName);
 
-    if (fs.existsSync(absolute) && fs.statSync(absolute).isFile()) {
-      return res.sendFile(absolute);
-    }
-
-    const extensionMatch = fileName.match(/^(.*)\.(png|gif)$/i);
-    if (!extensionMatch) {
-      return next();
-    }
-
-    const stem = extensionMatch[1];
-    const alternateExtension = extensionMatch[2].toLowerCase() === 'png' ? 'gif' : 'png';
-    const alternateAbsolute = path.resolve(IMAGES_PATH, 'fluid', modId, `${stem}.${alternateExtension}`);
-    if (alternateAbsolute.startsWith(fluidRoot) && fs.existsSync(alternateAbsolute) && fs.statSync(alternateAbsolute).isFile()) {
-      return res.sendFile(alternateAbsolute);
-    }
-
-    const spriteAtlasAbsolute = path.resolve(IMAGES_PATH, 'fluid', modId, `${stem}.sprite-atlas.png`);
-    if (spriteAtlasAbsolute.startsWith(fluidRoot) && fs.existsSync(spriteAtlasAbsolute) && fs.statSync(spriteAtlasAbsolute).isFile()) {
-      return res.sendFile(spriteAtlasAbsolute);
-    }
-  } catch {
-    // Fall through to static middleware.
+  if (!isSafeUnderRoot(familyRoot, direct) || !isSafeUnderRoot(familyRoot, familyDir)) {
+    return null;
   }
-  return next();
-});
+
+  if (isExistingFile(direct)) {
+    return direct;
+  }
+
+  const descriptor = parseRequestedArtifact(fileName);
+  if (!descriptor) {
+    return null;
+  }
+
+  if (descriptor.extension === '.png' || descriptor.extension === '.gif') {
+    const alternateExtension = descriptor.extension === '.png' ? '.gif' : '.png';
+    const alternateDirect = path.resolve(familyDir, `${descriptor.stem}${alternateExtension}`);
+    if (isSafeUnderRoot(familyRoot, alternateDirect) && isExistingFile(alternateDirect)) {
+      return alternateDirect;
+    }
+
+    const spriteAtlasDirect = path.resolve(familyDir, `${descriptor.stem}.sprite-atlas.png`);
+    if (isSafeUnderRoot(familyRoot, spriteAtlasDirect) && isExistingFile(spriteAtlasDirect)) {
+      return spriteAtlasDirect;
+    }
+  }
+
+  if (!fs.existsSync(familyDir) || !fs.statSync(familyDir).isDirectory()) {
+    return null;
+  }
+
+  const siblings = fs.readdirSync(familyDir);
+  const variantCandidates = siblings.filter((name) =>
+    descriptor.variantRegexes.some((regex) => regex.test(name)),
+  );
+  if (variantCandidates.length > 0) {
+    variantCandidates.sort((left, right) => left.localeCompare(right));
+    const sameExtension =
+      variantCandidates.find((name) => !name.toLowerCase().includes('.sprite-atlas.') && name.toLowerCase().endsWith(descriptor.extension))
+      ?? variantCandidates.find((name) => name.toLowerCase().endsWith('.gif'))
+      ?? variantCandidates.find((name) => name.toLowerCase().endsWith('.sprite-atlas.png'));
+    const chosen = sameExtension ?? variantCandidates[0];
+    const resolved = path.resolve(familyDir, chosen);
+    if (isSafeUnderRoot(familyRoot, resolved) && isExistingFile(resolved)) {
+      return resolved;
+    }
+  }
+
+  const baseNbtMatch = fileName.match(/^(.+~\d+)~.+(\.png|\.gif)$/i);
+  if (baseNbtMatch) {
+    const fallback = path.resolve(familyDir, `${baseNbtMatch[1]}${baseNbtMatch[2]}`);
+    if (isSafeUnderRoot(familyRoot, fallback) && isExistingFile(fallback)) {
+      return fallback;
+    }
+  }
+
+  return null;
+}
+
+function createArtifactFallbackRoute(family: 'item' | 'fluid') {
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const modId = decodeURIComponent(req.params.modId || '');
+      const fileName = decodeURIComponent(req.params.fileName || '');
+      if (!modId || !fileName || modId.includes('..') || fileName.includes('..')) {
+        return next();
+      }
+
+      const resolved = resolveFamilyArtifact(family, modId, fileName);
+      if (resolved) {
+        return res.sendFile(resolved);
+      }
+    } catch {
+      // Fall through to static middleware.
+    }
+    return next();
+  };
+}
+
+app.get('/images/item/:modId/:fileName', createArtifactFallbackRoute('item'));
+app.get('/images/fluid/:modId/:fileName', createArtifactFallbackRoute('fluid'));
 
 app.use(
   '/images',
@@ -172,9 +194,25 @@ app.use(
   })
 );
 
+app.use(
+  '/api/generated/page-atlas',
+  express.static(path.join(DATA_DIR, 'page-atlas-cache'), {
+    maxAge: '7d',
+    etag: true,
+  })
+);
+
 if (NESQL_CANONICAL_DIR && fs.existsSync(NESQL_CANONICAL_DIR)) {
   app.use(
     '/canonical',
+    express.static(NESQL_CANONICAL_DIR, {
+      maxAge: '7d',
+      etag: true,
+    })
+  );
+
+  app.use(
+    '/api/canonical',
     express.static(NESQL_CANONICAL_DIR, {
       maxAge: '7d',
       etag: true,

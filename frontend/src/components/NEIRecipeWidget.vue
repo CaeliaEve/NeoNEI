@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { Recipe } from '../services/api';
-import { getImageUrl } from '../services/api';
 import { useSound } from '../services/sound.service';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -51,7 +51,6 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<Emits>();
 const { playClick } = useSound();
-const getImagePath = getImageUrl;
 
 const getPrimaryInputItem = (cell: Recipe['inputs'][number][number] | undefined): StackItem | null => {
   if (!cell) return null;
@@ -223,10 +222,12 @@ const handleToggleFavorite = () => {
         @click="handleItemClick(stack.item.itemId)"
         @contextmenu="handleItemContextMenu(stack.item.itemId, $event)"
       >
-        <img
-          :src="getImagePath(stack.item.itemId)"
+        <AnimatedItemIcon
+          :item-id="stack.item.itemId"
+          :render-asset-ref="stack.item.renderAssetRef || null"
+          :image-file-name="null"
+          :size="16"
           class="nei-item-icon"
-          @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
         />
         <span v-if="stack.count > 1" class="nei-item-count">{{ stack.count }}</span>
       </div>
@@ -248,10 +249,12 @@ const handleToggleFavorite = () => {
         @click="handleItemClick(stack.item.itemId)"
         @contextmenu="handleItemContextMenu(stack.item.itemId, $event)"
       >
-        <img
-          :src="getImagePath(stack.item.itemId)"
+        <AnimatedItemIcon
+          :item-id="stack.item.itemId"
+          :render-asset-ref="stack.item.renderAssetRef || null"
+          :image-file-name="null"
+          :size="16"
           class="nei-item-icon"
-          @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
         />
         <span v-if="stack.count > 1" class="nei-item-count">{{ stack.count }}</span>
         <span
@@ -272,10 +275,12 @@ const handleToggleFavorite = () => {
         @mouseleave="handleItemLeave"
         @click="handleItemClick(stack.item.itemId)"
       >
-        <img
-          :src="getImagePath(stack.item.itemId)"
+        <AnimatedItemIcon
+          :item-id="stack.item.itemId"
+          :render-asset-ref="stack.item.renderAssetRef || null"
+          :image-file-name="null"
+          :size="16"
           class="nei-item-icon"
-          @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
         />
       </div>
     </template>

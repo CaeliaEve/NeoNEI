@@ -15,6 +15,7 @@ import {
 } from '../composables/ritualFamilyMetadata';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -128,10 +129,10 @@ watch(
         @click="handleItemClick(catalyst.itemId)"
       >
         <div class="slot catalyst-slot">
-          <img
-            :src="getImageUrl(catalyst.itemId)"
+          <AnimatedItemIcon
+            :item-id="catalyst.itemId"
+            :size="44"
             class="item-icon"
-            @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
           />
           <span v-if="catalyst.count > 1" class="count">{{ catalyst.count }}</span>
         </div>
@@ -148,10 +149,12 @@ watch(
         @click="handleItemClick(outputSlot.itemId)"
       >
         <div class="slot output-slot">
-          <img
-            :src="getImageUrl(outputSlot.itemId)"
+          <AnimatedItemIcon
+            :item-id="outputSlot.itemId"
+            :render-asset-ref="outputSlot.renderAssetRef || null"
+            :image-file-name="outputSlot.imageFileName || null"
+            :size="54"
             class="item-icon output-icon"
-            @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
           />
           <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
         </div>

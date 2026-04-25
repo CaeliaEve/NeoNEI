@@ -15,9 +15,11 @@ import {
   api,
   getItemImageUrlFromEntity,
   getPreferredStaticImageUrlFromEntity,
+  type BrowserGridEntry,
+  type BrowserVariantGroup,
   type Item,
 } from "../services/api";
-import { buildPageAtlas, buildPrecomputedPageAtlas, primePageAtlas, primePrecomputedPageAtlas, type PageAtlasResult } from "../services/pageAtlas";
+import { buildPageAtlas, primePageAtlas, type PageAtlasResult } from "../services/pageAtlas";
 import ItemTooltip from "../components/ItemTooltip.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
 import { useSound } from "../services/sound.service";
@@ -52,16 +54,10 @@ const loadSavedItemSize = () => {
 };
 const itemSize = ref(loadSavedItemSize());
 
-// Animation speed settings with localStorage
-const loadSavedAnimationSpeed = () => {
-  const saved = localStorage.getItem("animationSpeed");
-  return saved ? parseInt(saved, 10) : 20; // 默认20 FPS
-};
-const animationSpeed = ref(loadSavedAnimationSpeed());
-
 const {
 
   items,
+  browserEntries: browserGridEntries,
   mods,
   loading,
   modsLoading,
@@ -73,6 +69,7 @@ const {
   pageSize,
   totalItems,
   totalPages,
+  setExpandedGroups,
   setPageSize,
   loadMods,
   loadItems,
@@ -99,20 +96,19 @@ const loadViewHistory = () => {
 const viewHistory = ref<ItemBasicInfo[]>(loadViewHistory());
 const maxHistoryItems = 400; // Keep a bounded history list without limiting UI to 20.
 const prefetchedHomeImages = new Set<string>();
-const HOME_GRID_ANIMATION_DELAY_MS = 6000;
-const HOME_HISTORY_ANIMATION_DELAY_MS = 8000;
-const currentPageAtlas = ref<PageAtlasResult | null>(null);
-const historyAtlas = ref<PageAtlasResult | null>(null);
+const HOME_GRID_ANIMATION_DELAY_MS = 1200;
+const HOME_HISTORY_ANIMATION_DELAY_MS = 1800;
+const currentPageAtlas = ref<PageAtlasResult | null | undefined>(undefined);
+const historyAtlas = ref<PageAtlasResult | null | undefined>(undefined);
+const expandedBrowserGroups = ref<Set<string>>(new Set());
 const showSearchContextMenu = ref(false);
 const searchContextMenuPosition = ref({ x: 0, y: 0 });
-const usePrecomputedHomepageAtlas = computed(
-  () => !searchQuery.value.trim() && selectedMod.value === 'all',
-);
+const usePrecomputedHomepageAtlas = computed(() => false);
 const shouldDeferHomepageCards = computed(
-  () => currentView.value === 'items' && usePrecomputedHomepageAtlas.value && items.value.length > 0 && !currentPageAtlas.value,
+  () => currentView.value === 'items' && usePrecomputedHomepageAtlas.value && items.value.length > 0 && currentPageAtlas.value === undefined,
 );
 const shouldDeferHistoryCards = computed(
-  () => currentView.value === 'items' && viewHistory.value.length > 0 && !historyAtlas.value,
+  () => currentView.value === 'items' && viewHistory.value.length > 0 && historyAtlas.value === undefined,
 );
 
 const prefetchImageUrl = (url: string) => {
@@ -254,17 +250,8 @@ watch(
   () => items.value.map((item) => item.itemId).join("|"),
   async () => {
     if (currentView.value === "items" && items.value.length > 0) {
-      const usePrecomputedAtlas =
-        !searchQuery.value.trim() &&
-        selectedMod.value === 'all';
-      const atlasRequest = usePrecomputedAtlas
-        ? buildPrecomputedPageAtlas({
-            page: currentPage.value,
-            pageSize: pageSize.value,
-            itemSize: itemSize.value,
-          })
-        : buildPageAtlas(items.value, itemSize.value);
-      void atlasRequest.then((atlas) => {
+      currentPageAtlas.value = null;
+      void buildPageAtlas(items.value, itemSize.value).then((atlas) => {
         currentPageAtlas.value = atlas;
       });
 
@@ -282,9 +269,6 @@ watch(
   () => [currentPage.value, totalPages.value, currentView.value] as const,
   ([page, total, view]) => {
     if (view !== "items") return;
-    const usePrecomputedAtlas =
-      !searchQuery.value.trim() &&
-      selectedMod.value === 'all';
     void prefetchItemsPage(page + 1);
     if (page > 1) {
       void prefetchItemsPage(page - 1);
@@ -295,17 +279,9 @@ watch(
 
     const neighborPages = [page - 1, page + 1, page + 2].filter((value) => value >= 1 && value <= total);
     for (const neighborPage of neighborPages) {
-      if (usePrecomputedAtlas) {
-        void primePrecomputedPageAtlas({
-          page: neighborPage,
-          pageSize: pageSize.value,
-          itemSize: itemSize.value,
-        });
-        continue;
-      }
       const cached = getCachedItemsPage(neighborPage);
-      if (cached?.data?.length) {
-        void primePageAtlas(cached.data, itemSize.value);
+      if (cached?.items?.length) {
+        void primePageAtlas(cached.items, itemSize.value);
       }
     }
   },
@@ -320,6 +296,7 @@ watch(
       historyAtlas.value = null;
       return;
     }
+    historyAtlas.value = undefined;
     void buildPageAtlas(visibleHistoryItems, historyItemPixelSize.value).then((atlas) => {
       historyAtlas.value = atlas;
     });
@@ -682,6 +659,32 @@ const handleCardContextMenu = (item: Item, event?: MouseEvent) => {
   openUsageRecipes(item);
 };
 
+const toggleBrowserGroup = (groupKey: string) => {
+  const next = new Set(expandedBrowserGroups.value);
+  if (next.has(groupKey)) {
+    next.delete(groupKey);
+  } else {
+    next.add(groupKey);
+  }
+  expandedBrowserGroups.value = next;
+  setExpandedGroups(Array.from(next));
+};
+
+const handleBrowserGroupClick = (group: BrowserVariantGroup) => {
+  if (!group.expandable) {
+    return;
+  }
+  toggleBrowserGroup(group.key);
+};
+
+const handleBrowserGroupContextMenu = (group: BrowserVariantGroup, event?: MouseEvent) => {
+  if (event) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  openUsageRecipes(group.representative);
+};
+
 const nextRecipePage = () => {
   nextPage();
 };
@@ -773,13 +776,26 @@ const measureVisibleGridCapacity = () => {
     .map((value) => value.trim())
     .filter(Boolean)
     .length;
-  const firstCell = shell.firstElementChild as HTMLElement | null;
-  const rowHeight = firstCell?.getBoundingClientRect().height ?? itemSize.value;
+  const firstCell = shell.querySelector(".item-grid-cell") as HTMLElement | null;
+  if (!firstCell) return null;
+  const measuredRowHeight = firstCell.getBoundingClientRect().height;
+  const minimumRowHeight = Math.max(28, itemSize.value * 0.8);
+  if (!Number.isFinite(measuredRowHeight) || measuredRowHeight < minimumRowHeight) {
+    return null;
+  }
+  const rowHeight = measuredRowHeight;
   const rowGap = Number.parseFloat(style.rowGap || style.gap || "0") || 0;
   const rows = Math.max(1, Math.floor((shell.clientHeight + rowGap) / (rowHeight + rowGap)));
 
   if (columnCount <= 0 || rows <= 0) return null;
-  return columnCount * rows;
+  const capacity = columnCount * rows;
+  const baseline = calculatePageSize();
+  const lowerBound = Math.max(20, Math.floor(baseline * 0.75));
+  const upperBound = Math.max(lowerBound, Math.ceil(baseline * 1.5));
+  if (capacity < lowerBound || capacity > upperBound) {
+    return null;
+  }
+  return capacity;
 };
 
 const syncMeasuredPageSize = () => {
@@ -792,7 +808,6 @@ const syncMeasuredPageSize = () => {
 // Save settings to localStorage
 const saveSettings = () => {
   localStorage.setItem("itemSize", itemSize.value.toString());
-  localStorage.setItem("animationSpeed", animationSpeed.value.toString());
 
   const button = document.querySelector(
     ".save-settings-btn",
@@ -1076,12 +1091,12 @@ const saveSettings = () => {
                 gridTemplateColumns: `repeat(auto-fit, minmax(${gridCellSize}, 1fr))`,
               }"
             >
+              <template v-for="(entry, pageIndex) in browserGridEntries" :key="entry.key">
                 <ItemTooltip
-                  v-for="(item, pageIndex) in items"
-                  :key="item.itemId"
+                  v-if="entry.kind === 'item'"
                   class="item-grid-cell"
-                  :item="item"
-                  @click="openCraftingRecipes(item)"
+                  :item="entry.item"
+                  @click="openCraftingRecipes(entry.item)"
                   @contextmenu="handleCardContextMenu"
                 >
                   <div
@@ -1091,17 +1106,61 @@ const saveSettings = () => {
                   />
                   <ItemCard
                     v-else
-                    :item="item"
+                    :item="entry.item"
                     :itemSize="itemSize"
-                    :enableAnimation="false"
-                    :animationSpeed="animationSpeed"
+                    :enableAnimation="true"
                     :eager="pageIndex < 10"
                     :deferAnimationMs="HOME_GRID_ANIMATION_DELAY_MS"
-                    :atlas-sprite="currentPageAtlas?.entries[item.itemId] || null"
-                    @click="openCraftingRecipes(item)"
-                    @contextmenu="handleCardContextMenu"
+                    :atlas-sprite="currentPageAtlas?.entries[entry.item.itemId] || null"
+                    @click="openCraftingRecipes(entry.item)"
+                    @contextmenu="handleCardContextMenu(entry.item, $event)"
                   />
                 </ItemTooltip>
+
+                <ItemTooltip
+                  v-else
+                  class="item-grid-cell"
+                  :item="entry.group.representative"
+                  @click="handleBrowserGroupClick(entry.group)"
+                  @contextmenu="handleBrowserGroupContextMenu(entry.group, $event)"
+                >
+                  <button
+                    type="button"
+                    class="browser-group-card"
+                    :class="{
+                      'browser-group-card--expanded': entry.kind === 'group-header',
+                    }"
+                    :title="
+                      !entry.group.expandable
+                        ? 'GTNH 折叠组'
+                        : entry.kind === 'group-header'
+                          ? '收起变体组'
+                          : '展开变体组'
+                    "
+                  >
+                    <div class="browser-group-card__frame">
+                      <div
+                        v-if="shouldDeferHomepageCards"
+                        class="atlas-card-placeholder browser-group-card__placeholder"
+                        :style="{ width: `${itemSize}px`, height: `${itemSize}px` }"
+                      />
+                      <ItemCard
+                        v-else
+                        :item="entry.group.representative"
+                        :itemSize="itemSize"
+                        :enableAnimation="true"
+                        :eager="pageIndex < 10"
+                        :deferAnimationMs="HOME_GRID_ANIMATION_DELAY_MS"
+                        :atlas-sprite="currentPageAtlas?.entries[entry.group.representative.itemId] || null"
+                      />
+                    </div>
+                    <span class="browser-group-card__count">{{ entry.group.size }}</span>
+                    <span class="browser-group-card__label">
+                      {{ !entry.group.expandable ? '分组' : entry.kind === 'group-header' ? '收起' : '展开' }}
+                    </span>
+                  </button>
+                </ItemTooltip>
+              </template>
             </div>
 
             <!-- View History（位于物品浏览区底部，固定高度） -->
@@ -1138,8 +1197,7 @@ const saveSettings = () => {
                     v-else
                     :item="historyItem"
                     :itemSize="historyItemPixelSize"
-                    :enableAnimation="false"
-                    :animationSpeed="animationSpeed"
+                    :enableAnimation="true"
                     :eager="historyIndex < 8"
                     :deferAnimationMs="HOME_HISTORY_ANIMATION_DELAY_MS"
                     :atlas-sprite="historyAtlas?.entries[historyItem.itemId] || null"
@@ -1277,30 +1335,6 @@ const saveSettings = () => {
               <span class="text-slate-200 font-bold">{{ itemSize }}px</span>
               <span>大</span>
             </div>
-          </div>
-
-          <!-- Animation Speed Slider -->
-          <div class="p-4 border-b border-slate-200/40">
-            <p class="text-slate-200/60 text-xs uppercase tracking-wider mb-3">
-              动画速度
-            </p>
-            <input
-              v-model.number="animationSpeed"
-              type="range"
-              min="1"
-              max="60"
-              step="1"
-              class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-modern"
-            />
-            <div
-              class="flex items-center justify-between text-xs text-slate-200/70 mt-2"
-            >
-              <span>1 FPS</span>
-              <span class="text-slate-200 font-bold"
-                >{{ animationSpeed }} FPS</span
-              >
-              <span>60 FPS</span>
-            </div>
             <button
               @click="saveSettings"
               class="save-settings-btn w-full mt-4 py-2.5 px-4 rounded-lg bg-green-500 hover:bg-green-600 text-white font-bold text-sm transition-colors shadow-sm"
@@ -1349,6 +1383,88 @@ const saveSettings = () => {
   align-items: center;
   justify-content: center;
   min-width: 0;
+}
+
+.browser-group-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(125, 211, 252, 0.16), transparent 42%),
+    linear-gradient(180deg, rgba(16, 20, 27, 0.92), rgba(8, 11, 16, 0.96));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 10px 20px rgba(0, 0, 0, 0.26);
+  cursor: pointer;
+  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
+}
+
+.browser-group-card:hover {
+  transform: translateY(-1px);
+  border-color: rgba(125, 211, 252, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 14px 24px rgba(0, 0, 0, 0.3);
+}
+
+.browser-group-card--expanded {
+  border-color: rgba(96, 165, 250, 0.34);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(96, 165, 250, 0.18), transparent 44%),
+    linear-gradient(180deg, rgba(18, 23, 32, 0.94), rgba(9, 13, 18, 0.98));
+}
+
+.browser-group-card__frame {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+}
+
+.browser-group-card__placeholder {
+  border-radius: 10px;
+}
+
+.browser-group-card__count {
+  position: absolute;
+  right: 5px;
+  top: 5px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.86);
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  color: rgba(226, 232, 240, 0.96);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0.02em;
+}
+
+.browser-group-card__label {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(8, 12, 18, 0.82);
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: rgba(191, 219, 254, 0.96);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .atlas-card-placeholder {

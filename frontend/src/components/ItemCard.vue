@@ -8,6 +8,7 @@ import {
   getAnimatedAtlasImageUrl,
   getNativeSpriteAtlasUrl,
   loadImageAsset,
+  probeDirectGifPlayback,
   probeAnimationSupport,
 } from "../services/animationBudget";
 
@@ -15,7 +16,6 @@ interface Props {
   item: Item;
   itemSize?: number;
   enableAnimation?: boolean;
-  animationSpeed?: number;
   eager?: boolean;
   deferAnimationMs?: number;
   atlasSprite?: PageAtlasSpriteEntry | null;
@@ -24,7 +24,6 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   itemSize: 50,
   enableAnimation: true,
-  animationSpeed: 20,
   eager: false,
   deferAnimationMs: 0,
   atlasSprite: null,
@@ -37,20 +36,21 @@ const emit = defineEmits<{
 
 const hasAnimation = ref(false);
 const showAnimation = ref(false);
+const preferDirectAnimatedImage = ref(false);
 const isStaticImageLoaded = ref(false);
 const staticImageError = ref(false);
 const isAnimationLoaded = ref(false);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const rootRef = ref<HTMLElement | null>(null);
-const animationFrames = ref<HTMLImageElement[]>([]);
+const animationFrames = ref<Array<{ image: HTMLImageElement; durationMs: number }>>([]);
 const isVisible = ref(false);
 
 let animationFrameId: number | null = null;
 let lastFrameTime = 0;
+let currentFrameIndex = 0;
 let animationProbeToken = 0;
 let visibilityObserver: IntersectionObserver | null = null;
-
-const frameInterval = computed(() => 1000 / props.animationSpeed);
+const DEFAULT_FRAME_DURATION_MS = 50;
 const spriteScale = computed(() => (props.atlasSprite ? (props.itemSize * 0.9) / props.atlasSprite.slotSize : 1));
 const atlasSpriteStyle = computed<Record<string, string> | null>(() => {
   if (!props.atlasSprite) return null;
@@ -69,16 +69,46 @@ const getImageSrc = (item: Item): string => {
   return getPreferredStaticImageUrlFromEntity(item);
 };
 
+const getAnimationBaseUrl = (item: Item): string => {
+  const preferred = typeof item.preferredImageUrl === "string" ? item.preferredImageUrl : "";
+  if (preferred && preferred.includes("/images/item/")) {
+    return preferred;
+  }
+  return getItemImageUrlFromEntity(item);
+};
+
+const normalizeFrameDuration = (durationMs?: number | null): number => {
+  if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return DEFAULT_FRAME_DURATION_MS;
+  }
+  return Math.max(16, Math.round(durationMs));
+};
+
+const getSpriteSheetPhysicalFrameCount = (timeline: Array<{ frameIndex?: number; index?: number }> | undefined, fallback?: number | null): number => {
+  const timelineMax =
+    timeline?.reduce((max, frame, idx) => {
+      const frameIndex =
+        typeof frame.frameIndex === "number"
+          ? frame.frameIndex
+          : typeof frame.index === "number"
+            ? frame.index
+            : idx;
+      return Math.max(max, frameIndex + 1);
+    }, 0) ?? 0;
+  return Math.max(Number(fallback ?? 0), timelineMax, 1);
+};
+
 const imageSrc = computed(() => getImageSrc(props.item));
 const shouldRenderFallbackImage = computed(() => {
-  if (props.atlasSprite || showAnimation.value) return false;
+  if (showAnimation.value) return false;
+  if (props.atlasSprite && !preferDirectAnimatedImage.value) return false;
   const src = imageSrc.value || "";
   return !src.includes('/images/item/OpenBlocks/devnull~0');
 });
 
 const renderFrame = (frameIndex: number) => {
   const canvas = canvasRef.value;
-  const currentImg = animationFrames.value[frameIndex];
+  const currentImg = animationFrames.value[frameIndex]?.image;
   if (!canvas || !currentImg || !currentImg.complete) return;
 
   const ctx = canvas.getContext("2d");
@@ -91,18 +121,36 @@ const renderFrame = (frameIndex: number) => {
 };
 
 const animate = (timestamp: number) => {
-  if (!lastFrameTime) lastFrameTime = timestamp;
-  const elapsed = timestamp - lastFrameTime;
-
-  if (elapsed >= frameInterval.value) {
-    const currentFrame =
-      animationFrames.value.length > 0
-        ? Math.floor(timestamp / frameInterval.value) % animationFrames.value.length
-        : 0;
-    renderFrame(currentFrame);
-    lastFrameTime = timestamp;
+  if (!animationFrames.value.length) {
+    animationFrameId = null;
+    return;
   }
 
+  if (!lastFrameTime) {
+    lastFrameTime = timestamp;
+    renderFrame(currentFrameIndex);
+    animationFrameId = requestAnimationFrame(animate);
+    return;
+  }
+
+  let elapsed = timestamp - lastFrameTime;
+  let frameDuration = normalizeFrameDuration(animationFrames.value[currentFrameIndex]?.durationMs);
+  let advanced = false;
+  let guard = 0;
+
+  while (elapsed >= frameDuration && guard < animationFrames.value.length * 2) {
+    elapsed -= frameDuration;
+    currentFrameIndex = (currentFrameIndex + 1) % animationFrames.value.length;
+    frameDuration = normalizeFrameDuration(animationFrames.value[currentFrameIndex]?.durationMs);
+    advanced = true;
+    guard += 1;
+  }
+
+  if (advanced) {
+    renderFrame(currentFrameIndex);
+  }
+
+  lastFrameTime = timestamp - elapsed;
   animationFrameId = requestAnimationFrame(animate);
 };
 
@@ -112,10 +160,13 @@ const stopAnimation = () => {
     animationFrameId = null;
   }
   lastFrameTime = 0;
+  currentFrameIndex = 0;
 };
 
 const startAnimation = () => {
   if (animationFrames.value.length <= 1 || animationFrameId !== null) return;
+  currentFrameIndex = 0;
+  renderFrame(currentFrameIndex);
   animationFrameId = requestAnimationFrame(animate);
 };
 
@@ -123,6 +174,7 @@ const resetAnimationState = () => {
   stopAnimation();
   hasAnimation.value = false;
   showAnimation.value = false;
+  preferDirectAnimatedImage.value = false;
   isAnimationLoaded.value = false;
   animationFrames.value = [];
 };
@@ -137,7 +189,7 @@ const loadAnimationFrames = async (token: number): Promise<void> => {
       const atlasImg = await loadImageAsset(atlasUrl);
       if (token !== animationProbeToken) return;
 
-      const frames: HTMLImageElement[] = [];
+      const frames: Array<{ image: HTMLImageElement; durationMs: number }> = [];
       for (const frame of animatedAtlasEntry.frames) {
         const frameCanvas = document.createElement("canvas");
         frameCanvas.width = frame.width;
@@ -163,7 +215,12 @@ const loadAnimationFrames = async (token: number): Promise<void> => {
           img.onload = () => resolve();
           img.onerror = () => reject();
         });
-        frames.push(img);
+        const timelineEntry = animatedAtlasEntry.timeline?.find((entry) => entry.index === frame.index)
+          ?? animatedAtlasEntry.timeline?.find((entry) => entry.frameIndex === frame.index);
+        frames.push({
+          image: img,
+          durationMs: normalizeFrameDuration(timelineEntry?.durationMs ?? animatedAtlasEntry.frameDurationMs),
+        });
       }
 
       if (token !== animationProbeToken) return;
@@ -178,18 +235,23 @@ const loadAnimationFrames = async (token: number): Promise<void> => {
     }
   }
 
-  const spriteMeta = await fetchNativeSpriteMetadata(getItemImageUrlFromEntity(props.item));
+  const animationBaseUrl = getAnimationBaseUrl(props.item);
+  const spriteMeta = await fetchNativeSpriteMetadata(animationBaseUrl);
   if (token !== animationProbeToken) return;
 
   if (spriteMeta?.animated && (spriteMeta.timeline?.length ?? 0) > 0) {
-    const atlasUrl = getNativeSpriteAtlasUrl(getItemImageUrlFromEntity(props.item), spriteMeta);
+    const atlasUrl = getNativeSpriteAtlasUrl(animationBaseUrl, spriteMeta);
     const atlasImg = await loadImageAsset(atlasUrl);
     if (token !== animationProbeToken) return;
 
     const width = spriteMeta.width || atlasImg.naturalWidth;
+    const physicalFrameCount = getSpriteSheetPhysicalFrameCount(spriteMeta.timeline, spriteMeta.frameCount);
     const height =
-      spriteMeta.height || Math.floor(atlasImg.naturalHeight / Math.max(spriteMeta.timeline.length, 1));
-    const frames: HTMLImageElement[] = [];
+      spriteMeta.height || Math.floor(atlasImg.naturalHeight / physicalFrameCount);
+    const frames: Array<{ image: HTMLImageElement; durationMs: number }> = [];
+    const defaultFrameDurationMs = normalizeFrameDuration(
+      typeof spriteMeta.defaultFrameTime === "number" ? spriteMeta.defaultFrameTime * 50 : undefined,
+    );
 
     for (let idx = 0; idx < spriteMeta.timeline.length; idx++) {
       const frame = spriteMeta.timeline[idx];
@@ -214,7 +276,12 @@ const loadAnimationFrames = async (token: number): Promise<void> => {
         img.onload = () => resolve();
         img.onerror = () => reject();
       });
-      frames.push(img);
+      frames.push({
+        image: img,
+        durationMs: normalizeFrameDuration(
+          typeof frame.durationMs === "number" ? frame.durationMs : defaultFrameDurationMs,
+        ),
+      });
     }
 
     if (token !== animationProbeToken) return;
@@ -235,9 +302,18 @@ const scheduleAnimationEnhancement = () => {
   const run = async () => {
     if (!isVisible.value || !isStaticImageLoaded.value) return;
     try {
-      const supportsAnimation = await probeAnimationSupport(getItemImageUrlFromEntity(props.item), props.item.renderAssetRef);
-      if (token !== animationProbeToken || !supportsAnimation) return;
-      await loadAnimationFrames(token);
+      const baseUrl = getAnimationBaseUrl(props.item);
+      const supportsAnimation = await probeAnimationSupport(baseUrl, props.item.renderAssetRef);
+      if (token !== animationProbeToken) return;
+      if (supportsAnimation) {
+        await loadAnimationFrames(token);
+        return;
+      }
+
+      const supportsDirectGifPlayback = await probeDirectGifPlayback(baseUrl);
+      if (token !== animationProbeToken || !supportsDirectGifPlayback) return;
+      preferDirectAnimatedImage.value = true;
+      hasAnimation.value = true;
     } catch {
       // Keep static image visible on any animation-path failure.
     }
@@ -281,7 +357,7 @@ watch(
     resetAnimationState();
     isStaticImageLoaded.value = Boolean(props.atlasSprite);
     staticImageError.value = false;
-    if (isVisible.value && !props.atlasSprite) {
+    if (isVisible.value) {
       scheduleAnimationEnhancement();
     }
   },
@@ -294,6 +370,9 @@ watch(
       resetAnimationState();
       isStaticImageLoaded.value = true;
       staticImageError.value = false;
+      if (isVisible.value) {
+        scheduleAnimationEnhancement();
+      }
       return;
     }
 
@@ -386,7 +465,7 @@ onUnmounted(() => {
     />
 
     <div
-      v-if="!showAnimation && atlasSprite"
+      v-if="!showAnimation && atlasSprite && !preferDirectAnimatedImage"
       :style="atlasSpriteStyle || undefined"
       class="atlas-sprite"
     />

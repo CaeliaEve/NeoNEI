@@ -9,6 +9,7 @@ import {
   type ResolvedSlot,
 } from '../composables/useRecipeSlots';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -24,7 +25,6 @@ const emit = defineEmits<Emits>();
 const { playClick } = useSound();
 
 const recipeData = computed(() => props.recipe);
-const getImagePath = getImageUrl;
 
 const inputSlots = ref<ResolvedSlot[]>([]);
 const outputItem = ref<ResolvedSlot | null>(null);
@@ -67,7 +67,13 @@ watch(
         <template v-for="(slot, index) in inputSlots" :key="`input-${index}`">
           <RecipeItemTooltip :item-id="slot.itemId" :count="slot.count" @click="handleItemClick(slot.itemId)">
             <div class="slot">
-              <img :src="getImagePath(slot.itemId)" class="slot-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
+              <AnimatedItemIcon
+                :item-id="slot.itemId"
+                :render-asset-ref="slot.renderAssetRef || null"
+                :image-file-name="slot.imageFileName || null"
+                :size="42"
+                class="slot-icon"
+              />
               <span v-if="slot.count > 1" class="slot-count">{{ slot.count }}</span>
             </div>
           </RecipeItemTooltip>
@@ -101,7 +107,13 @@ watch(
           @click="handleItemClick(outputItem.itemId)"
         >
           <div class="slot output">
-            <img :src="getImagePath(outputItem.itemId)" class="slot-icon output-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
+            <AnimatedItemIcon
+              :item-id="outputItem.itemId"
+              :render-asset-ref="outputItem.renderAssetRef || null"
+              :image-file-name="outputItem.imageFileName || null"
+              :size="54"
+              class="slot-icon output-icon"
+            />
             <span v-if="outputItem.count > 1" class="slot-count">{{ outputItem.count }}</span>
           </div>
         </RecipeItemTooltip>

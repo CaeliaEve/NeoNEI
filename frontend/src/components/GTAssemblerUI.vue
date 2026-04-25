@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { getFluidImageUrlFromFluid, getImageUrl, type Recipe } from '../services/api';
+import { getFluidImageUrlFromFluid, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -17,6 +18,8 @@ interface Emits {
 interface ItemSlot {
   itemId: string;
   count: number;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
 }
 
 const props = defineProps<Props>();
@@ -40,13 +43,27 @@ function extractItem(node: unknown): ItemSlot | null {
   };
 
   if (typeof obj.itemId === 'string' && obj.itemId.length > 0) {
-    return { itemId: obj.itemId, count: normalizeCount(obj.count ?? obj.stackSize) };
+    return {
+      itemId: obj.itemId,
+      count: normalizeCount(obj.count ?? obj.stackSize),
+      renderAssetRef: typeof obj.renderAssetRef === 'string' ? obj.renderAssetRef : null,
+      imageFileName: typeof obj.imageFileName === 'string' ? obj.imageFileName : null,
+    };
   }
 
   if (obj.item && typeof obj.item.itemId === 'string' && obj.item.itemId.length > 0) {
+    const nested = obj.item as { itemId: string; renderAssetRef?: unknown; imageFileName?: unknown };
     return {
-      itemId: obj.item.itemId,
+      itemId: nested.itemId,
       count: normalizeCount(obj.count ?? obj.stackSize),
+      renderAssetRef:
+        typeof obj.renderAssetRef === 'string'
+          ? obj.renderAssetRef
+          : (typeof nested.renderAssetRef === 'string' ? nested.renderAssetRef : null),
+      imageFileName:
+        typeof obj.imageFileName === 'string'
+          ? obj.imageFileName
+          : (typeof nested.imageFileName === 'string' ? nested.imageFileName : null),
     };
   }
 
@@ -200,10 +217,12 @@ function handleItemClick(itemId: string): void {
               @click="handleItemClick(slot.itemId)"
             >
               <div class="gt-slot">
-                <img
-                  :src="getImageUrl(slot.itemId)"
+                <AnimatedItemIcon
+                  :item-id="slot.itemId"
+                  :render-asset-ref="slot.renderAssetRef || null"
+                  :image-file-name="slot.imageFileName || null"
+                  :size="28"
                   class="item-icon"
-                  @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
                 />
                 <span v-if="slot.count > 1" class="item-count">{{ slot.count }}</span>
               </div>
@@ -249,10 +268,12 @@ function handleItemClick(itemId: string): void {
           <template v-for="(slot, index) in outputs" :key="`output-${index}`">
             <RecipeItemTooltip :item-id="slot.itemId" :count="slot.count" @click="handleItemClick(slot.itemId)">
               <div class="gt-slot output-slot">
-                <img
-                  :src="getImageUrl(slot.itemId)"
+                <AnimatedItemIcon
+                  :item-id="slot.itemId"
+                  :render-asset-ref="slot.renderAssetRef || null"
+                  :image-file-name="slot.imageFileName || null"
+                  :size="28"
                   class="item-icon"
-                  @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
                 />
                 <span v-if="slot.count > 1" class="item-count">{{ slot.count }}</span>
               </div>

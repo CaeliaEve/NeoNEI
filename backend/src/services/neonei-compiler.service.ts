@@ -7,6 +7,8 @@ import { DatabaseManager } from '../models/database';
 import { DATA_DIR } from '../config/runtime-paths';
 import { ItemsService } from './items.service';
 import { PageAtlasService } from './page-atlas.service';
+import { buildCollapsibleItemAssignments, type CollapsibleItemCandidate } from './gtnh-collapsible-items.service';
+import { compareGtnhBrowserOrder } from './gtnh-browser-order.service';
 import { getMachineIconItem } from './machine-icon-mapping.service';
 import { transformRecipeMetadata } from './recipe-metadata';
 
@@ -203,26 +205,75 @@ function buildPinyinFields(localizedName: string): { pinyinFull: string; pinyinA
   };
 }
 
-function deriveAliasesAndPopularity(localizedName: string): { aliases: string | null; popularityScore: number } {
-  const normalizedName = `${localizedName ?? ''}`.trim();
+function deriveAliasesAndPopularity(
+  record: Pick<SplitItemRecord, 'modId' | 'internalName' | 'localizedName' | 'itemId'>,
+): { aliases: string | null; popularityScore: number } {
+  const normalizedName = `${record.localizedName ?? ''}`.trim();
+  const normalizedInternalName = `${record.internalName ?? ''}`.trim().toLowerCase();
+  const normalizedModId = `${record.modId ?? ''}`.trim().toLowerCase();
+  const aliasSet = new Set<string>();
+  let popularityScore = 0;
+
   for (const rule of MATERIAL_BASE_SUFFIX_RULES) {
     if (normalizedName.endsWith(rule.suffix) && normalizedName.length > rule.suffix.length) {
       const baseName = normalizedName.slice(0, -rule.suffix.length);
       const pinyinFields = buildPinyinFields(baseName);
-      const aliases = [baseName, pinyinFields.pinyinFull, pinyinFields.pinyinAcronym]
+      [baseName, pinyinFields.pinyinFull, pinyinFields.pinyinAcronym]
         .map((value) => `${value ?? ''}`.trim())
         .filter(Boolean)
-        .join(' ');
-      return {
-        aliases: aliases || null,
-        popularityScore: rule.weight,
-      };
+        .forEach((value) => aliasSet.add(value));
+      popularityScore = Math.max(popularityScore, rule.weight);
+      break;
+    }
+  }
+
+  if (normalizedModId === 'thaumcraft') {
+    const thaumcraftWandLike =
+      normalizedInternalName === 'wandcasting'
+      || normalizedInternalName === 'wandrod'
+      || normalizedInternalName === 'wandcap'
+      || normalizedName.includes('法杖')
+      || normalizedName.includes('手杖')
+      || normalizedName.includes('权杖')
+      || normalizedName.includes('杖端')
+      || normalizedName.includes('杖芯')
+      || normalizedName.includes('杖柄');
+
+    if (thaumcraftWandLike) {
+      [
+        'thaumcraft',
+        'wand',
+        'staff',
+        'scepter',
+        'sceptre',
+        '法杖',
+        '手杖',
+        '权杖',
+        '魔杖',
+        '魔杖核心',
+      ].forEach((value) => aliasSet.add(value));
+      popularityScore = Math.max(popularityScore, 80);
+    }
+
+    if (normalizedInternalName === 'wandcasting') {
+      ['wandcasting', 'wand casting', 'casting wand', '法杖', '手杖', '权杖'].forEach((value) => aliasSet.add(value));
+      popularityScore = Math.max(popularityScore, 90);
+    }
+
+    if (normalizedInternalName === 'wandrod') {
+      ['wandrod', 'wand rod', 'rod', 'core', '杖芯', '杖柄'].forEach((value) => aliasSet.add(value));
+      popularityScore = Math.max(popularityScore, 72);
+    }
+
+    if (normalizedInternalName === 'wandcap') {
+      ['wandcap', 'wand cap', 'cap', '杖端'].forEach((value) => aliasSet.add(value));
+      popularityScore = Math.max(popularityScore, 72);
     }
   }
 
   return {
-    aliases: null,
-    popularityScore: 0,
+    aliases: aliasSet.size > 0 ? Array.from(aliasSet).join(' ') : null,
+    popularityScore,
   };
 }
 
@@ -235,6 +286,98 @@ function toPublicImageUrl(imageFileName: string | null | undefined): string | nu
     .replace(/^api\/images\/item\//, '');
   if (!normalized) return null;
   return `/images/item/${normalized.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
+}
+
+function normalizeCompilerImagePath(imageFileName: string | null | undefined): string | null {
+  if (!imageFileName) return null;
+  const normalized = imageFileName
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/^images\/item\//, '')
+    .replace(/^api\/images\/item\//, '');
+  return normalized || null;
+}
+
+function compilerImageExists(imageRoot: string, relativePath: string): boolean {
+  const itemRoot = path.resolve(imageRoot, 'item');
+  const absolute = path.resolve(itemRoot, relativePath);
+  return absolute.startsWith(itemRoot) && fs.existsSync(absolute);
+}
+
+function resolveCompilerSiblingVariant(imageRoot: string, modId: string, stem: string): string | null {
+  const itemRoot = path.resolve(imageRoot, 'item');
+  const directory = path.resolve(itemRoot, modId);
+  if (!directory.startsWith(itemRoot) || !fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) {
+    return null;
+  }
+
+  const escapedStem = stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const variantPattern = new RegExp(`^${escapedStem}~.+(?:\\.png|\\.gif|\\.sprite-atlas\\.png)$`, 'i');
+  const siblings = fs.readdirSync(directory).filter((name) => variantPattern.test(name));
+  if (siblings.length === 0) {
+    return null;
+  }
+
+  siblings.sort((left, right) => left.localeCompare(right));
+  const preferred =
+    siblings.find((name) => !name.toLowerCase().includes('.sprite-atlas.') && name.toLowerCase().endsWith('.png'))
+    ?? siblings.find((name) => name.toLowerCase().endsWith('.gif'))
+    ?? siblings.find((name) => name.toLowerCase().endsWith('.sprite-atlas.png'))
+    ?? siblings[0];
+  return `${modId}/${preferred}`.replace(/\\/g, '/');
+}
+
+function resolveMaterializedPreferredItemUrl(
+  imageRoot: string,
+  record: Pick<SplitItemRecord, 'imageFileName' | 'modId' | 'internalName' | 'damage' | 'itemId'>,
+): string | null {
+  const normalizedImagePath = normalizeCompilerImagePath(record.imageFileName ?? null);
+  if (normalizedImagePath) {
+    if (compilerImageExists(imageRoot, normalizedImagePath)) {
+      return `/images/item/${normalizedImagePath.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
+    }
+
+    const spriteAtlasPath = normalizedImagePath.replace(/\.(png|gif)$/i, '.sprite-atlas.png');
+    if (spriteAtlasPath !== normalizedImagePath && compilerImageExists(imageRoot, spriteAtlasPath)) {
+      return `/images/item/${spriteAtlasPath.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
+    }
+
+    const slash = normalizedImagePath.lastIndexOf('/');
+    if (slash > 0) {
+      const modId = normalizedImagePath.slice(0, slash);
+      const stem = normalizedImagePath.slice(slash + 1).replace(/\.(png|gif)$/i, '');
+      const sibling = resolveCompilerSiblingVariant(imageRoot, modId, stem);
+      if (sibling) {
+        return `/images/item/${sibling.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
+      }
+    }
+  }
+
+  const modId = `${record.modId ?? ''}`.trim();
+  const internalName = `${record.internalName ?? ''}`.trim();
+  if (!modId || !internalName) {
+    return toPublicImageUrl(record.imageFileName ?? null);
+  }
+
+  const damage = Number(record.damage ?? 0);
+  const directCandidates = [
+    `${modId}/${internalName}~${damage}.png`,
+    `${modId}/${internalName}~${damage}.gif`,
+    `${modId}/${internalName}~${damage}.sprite-atlas.png`,
+  ];
+
+  for (const candidate of directCandidates) {
+    if (compilerImageExists(imageRoot, candidate)) {
+      return `/images/item/${candidate.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
+    }
+  }
+
+  const sibling = resolveCompilerSiblingVariant(imageRoot, modId, `${internalName}~${damage}`);
+  if (sibling) {
+    return `/images/item/${sibling.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
+  }
+
+  return toPublicImageUrl(record.imageFileName ?? null);
 }
 
 function listModItemFiles(itemsDir: string): string[] {
@@ -275,6 +418,23 @@ function extractInputItemIds(recipe: SplitRecipeRecord): string[] {
     }
   }
   return Array.from(result);
+}
+
+function collectRecipeOreDictionaryRefs(recipe: SplitRecipeRecord, sink: Map<string, Set<string>>): void {
+  for (const slot of recipe.inputs ?? []) {
+    const oreDictName = `${slot.oreDictName ?? ''}`.trim();
+    if (!slot.isOreDictionary || !oreDictName) {
+      continue;
+    }
+
+    for (const stack of slot.items ?? []) {
+      const itemId = `${stack.item?.itemId ?? ''}`.trim();
+      if (!itemId) continue;
+      const current = sink.get(itemId) ?? new Set<string>();
+      current.add(oreDictName);
+      sink.set(itemId, current);
+    }
+  }
 }
 
 function extractOutputItemIds(recipe: SplitRecipeRecord): string[] {
@@ -601,6 +761,14 @@ export class NeoNeiCompilerService {
       )
     `);
 
+    const insertItemBrowserGroup = db.prepare(`
+      INSERT OR REPLACE INTO item_browser_groups (
+        item_id, group_key, group_label, group_size, group_sort_order, updated_at
+      ) VALUES (
+        @item_id, @group_key, @group_label, @group_size, @group_sort_order, CURRENT_TIMESTAMP
+      )
+    `);
+
     const upsertState = db.prepare(`
       INSERT INTO compiler_state (state_key, state_value, updated_at)
       VALUES (@state_key, @state_value, CURRENT_TIMESTAMP)
@@ -674,6 +842,8 @@ export class NeoNeiCompilerService {
     let recipeSummaryCompactBytes = 0;
     let uiPayloadBytes = 0;
     const itemRecords = new Map<string, MaterializedItemRecord>();
+    const itemSourceOrder = new Map<string, number>();
+    const itemOreDictionaryNames = new Map<string, Set<string>>();
     const producedByMap = new Map<string, MaterializedRecipePayload[]>();
     const usedInMap = new Map<string, MaterializedRecipePayload[]>();
     const machineGroupsMap = new Map<string, Map<string, { family: string; voltageTier: string | null; recipeIds: string[] }>>();
@@ -686,6 +856,7 @@ export class NeoNeiCompilerService {
       db.exec('DELETE FROM recipes_core');
       db.exec('DELETE FROM recipe_edges');
       db.exec('DELETE FROM recipe_machine_groups');
+      db.exec('DELETE FROM item_browser_groups');
       db.exec('DELETE FROM recipe_bootstrap');
       db.exec('DELETE FROM recipe_summary_compact');
       db.exec('DELETE FROM ui_payloads');
@@ -694,6 +865,7 @@ export class NeoNeiCompilerService {
     });
 
     const itemsTransaction = db.transaction(() => {
+      let sourceOrder = 0;
       for (const filePath of itemFiles) {
         const records = readGzipJsonArray(filePath);
         for (const record of records) {
@@ -703,7 +875,7 @@ export class NeoNeiCompilerService {
           const localizedName = String(record.localizedName ?? '');
           const internalName = String(record.internalName ?? '');
           const pinyinFields = buildPinyinFields(localizedName);
-          const aliasMetadata = deriveAliasesAndPopularity(localizedName);
+          const aliasMetadata = deriveAliasesAndPopularity(record);
 
           insertItemCore.run({
             item_id: itemId,
@@ -714,7 +886,10 @@ export class NeoNeiCompilerService {
             damage: Number(record.damage ?? 0),
             image_file_name: record.imageFileName ?? null,
             render_asset_ref: record.renderAssetRef ?? null,
-            preferred_image_url: record.preferredImageUrl ?? toPublicImageUrl(record.imageFileName ?? null),
+            preferred_image_url:
+              resolveMaterializedPreferredItemUrl(this.sourceRoots.imageRoot, record)
+              ?? record.preferredImageUrl
+              ?? toPublicImageUrl(record.imageFileName ?? null),
             tooltip: record.tooltip ?? null,
             search_terms: record.searchTerms ?? null,
           });
@@ -737,6 +912,11 @@ export class NeoNeiCompilerService {
             itemRecords.set(materializedItem.itemId, materializedItem);
           }
 
+          if (!itemSourceOrder.has(itemId)) {
+            itemSourceOrder.set(itemId, sourceOrder);
+          }
+          sourceOrder += 1;
+
           itemsImported += 1;
         }
       }
@@ -748,6 +928,8 @@ export class NeoNeiCompilerService {
       const family = path.basename(path.dirname(path.dirname(filePath)));
 
       for (const recipe of records) {
+        collectRecipeOreDictionaryRefs(recipe, itemOreDictionaryNames);
+
         const recipeId = `${recipe.id ?? ''}`.trim();
         if (!recipeId) continue;
 
@@ -828,6 +1010,66 @@ export class NeoNeiCompilerService {
       }
     });
 
+    const itemBrowserGroupsTransaction = db.transaction(() => {
+      const orderedRows = db.prepare(`
+        SELECT item_id, mod_id, internal_name, localized_name, damage, tooltip
+        FROM items_core
+      `).all() as Array<{
+        item_id: string;
+        mod_id: string;
+        internal_name: string;
+        localized_name: string;
+        damage: number;
+        tooltip: string | null;
+      }>;
+
+      orderedRows.sort((left, right) =>
+        compareGtnhBrowserOrder(
+          {
+            itemId: left.item_id,
+            modId: left.mod_id,
+            internalName: left.internal_name,
+            localizedName: left.localized_name,
+            damage: Number(left.damage ?? 0),
+            tooltip: left.tooltip,
+            sourceOrder: itemSourceOrder.get(left.item_id) ?? null,
+          },
+          {
+            itemId: right.item_id,
+            modId: right.mod_id,
+            internalName: right.internal_name,
+            localizedName: right.localized_name,
+            damage: Number(right.damage ?? 0),
+            tooltip: right.tooltip,
+            sourceOrder: itemSourceOrder.get(right.item_id) ?? null,
+          },
+        ),
+      );
+
+      const candidates: CollapsibleItemCandidate[] = orderedRows.map((row) => ({
+        itemId: row.item_id,
+        modId: row.mod_id,
+        internalName: row.internal_name,
+        localizedName: row.localized_name,
+        damage: Number(row.damage ?? 0),
+        oreDictionaryNames: Array.from(itemOreDictionaryNames.get(row.item_id) ?? []),
+      }));
+
+      const assignments = buildCollapsibleItemAssignments(candidates);
+
+      for (const candidate of candidates) {
+        const assignment = assignments.get(candidate.itemId);
+        if (!assignment) continue;
+        insertItemBrowserGroup.run({
+          item_id: assignment.itemId,
+          group_key: assignment.groupKey,
+          group_label: assignment.groupLabel,
+          group_size: assignment.groupSize,
+          group_sort_order: assignment.groupSortOrder,
+        });
+      }
+    });
+
     const machineGroupsTransaction = db.transaction(() => {
       for (const [itemId, groups] of machineGroupsMap.entries()) {
         for (const [machineKey, group] of groups.entries()) {
@@ -845,10 +1087,8 @@ export class NeoNeiCompilerService {
 
     const hotItemsTransaction = db.transaction(() => {
       const selectHomeOrder = db.prepare(`
-        SELECT item_id
+        SELECT item_id, mod_id, internal_name, localized_name, damage, tooltip
         FROM items_core
-        ORDER BY localized_name COLLATE NOCASE ASC
-        LIMIT 2000
       `);
       const selectPopularity = db.prepare(`
         SELECT popularity_score
@@ -856,7 +1096,35 @@ export class NeoNeiCompilerService {
         WHERE item_id = ?
       `);
 
-      const homeRows = selectHomeOrder.all() as Array<{ item_id: string }>;
+      const homeRows = (selectHomeOrder.all() as Array<{
+        item_id: string;
+        mod_id: string;
+        internal_name: string;
+        localized_name: string;
+        damage: number;
+        tooltip: string | null;
+      }>).sort((left, right) =>
+        compareGtnhBrowserOrder(
+          {
+            itemId: left.item_id,
+            modId: left.mod_id,
+            internalName: left.internal_name,
+            localizedName: left.localized_name,
+            damage: Number(left.damage ?? 0),
+            tooltip: left.tooltip,
+            sourceOrder: itemSourceOrder.get(left.item_id) ?? null,
+          },
+          {
+            itemId: right.item_id,
+            modId: right.mod_id,
+            internalName: right.internal_name,
+            localizedName: right.localized_name,
+            damage: Number(right.damage ?? 0),
+            tooltip: right.tooltip,
+            sourceOrder: itemSourceOrder.get(right.item_id) ?? null,
+          },
+        ),
+      ).slice(0, 2000);
       const homeRankMap = new Map<string, number>();
       homeRows.forEach((row, index) => {
         homeRankMap.set(row.item_id, index + 1);
@@ -1016,6 +1284,10 @@ export class NeoNeiCompilerService {
       upsertState.run({ state_key: 'recipe_bootstrap_count', state_value: String(hotBootstrapItemIds.length) });
       upsertState.run({ state_key: 'recipe_summary_compact_count', state_value: String(allBootstrapItemIds.length) });
       upsertState.run({ state_key: 'recipe_machine_groups_count', state_value: String(Array.from(machineGroupsMap.values()).reduce((sum, groups) => sum + groups.size, 0)) });
+      upsertState.run({
+        state_key: 'item_browser_groups_count',
+        state_value: String((db.prepare('SELECT COUNT(*) AS c FROM item_browser_groups').get() as { c: number }).c),
+      });
       upsertState.run({ state_key: 'hot_items_count', state_value: String(allBootstrapItemIds.length) });
       upsertState.run({ state_key: 'recipes_core_payload_bytes', state_value: String(recipesCorePayloadBytes) });
       upsertState.run({ state_key: 'recipe_bootstrap_payload_bytes', state_value: String(recipeBootstrapPayloadBytes) });
@@ -1038,6 +1310,9 @@ export class NeoNeiCompilerService {
       db.pragma('wal_checkpoint(PASSIVE)');
     }
     this.logStage('recipes-done', { recipesImported });
+    itemBrowserGroupsTransaction();
+    this.logStage('item-browser-groups-done');
+    db.pragma('wal_checkpoint(PASSIVE)');
     machineGroupsTransaction();
     this.logStage('machine-groups-done', { machineGroupItems: machineGroupsMap.size });
     db.pragma('wal_checkpoint(PASSIVE)');

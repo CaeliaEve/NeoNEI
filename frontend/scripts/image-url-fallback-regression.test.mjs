@@ -22,3 +22,11 @@ test('preferred static image resolves hashed gif variants to base gif file', () 
     'preferred static image path should normalize hashed gif variants',
   );
 });
+
+test('canonical assets resolve through api proxy when backend base is relative', () => {
+  assert.equal(
+    source.includes("return `${proxyBase}/canonical/${canonicalPath}`;"),
+    true,
+    'canonical animation assets should resolve through the /api proxy in preview deployments',
+  );
+});

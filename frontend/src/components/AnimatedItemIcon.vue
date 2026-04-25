@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
-import { getImageUrl } from '../services/api';
+import { onMounted, onUnmounted, ref, watch } from 'vue';
+import { getItemImageUrlFromEntity } from '../services/api';
 import {
   fetchAnimatedAtlasEntry,
   fetchNativeSpriteMetadata,
@@ -13,6 +13,7 @@ import {
 interface Props {
   itemId: string;
   renderAssetRef?: string | null;
+  imageFileName?: string | null;
   size?: number;
   enableAnimation?: boolean;
 }
@@ -22,18 +23,53 @@ const props = withDefaults(defineProps<Props>(), {
   enableAnimation: true,
 });
 
-const getImageSrc = (itemId: string): string => getImageUrl(itemId);
+const getImageSrc = (itemId: string, renderAssetRef?: string | null, imageFileName?: string | null): string => (
+  getItemImageUrlFromEntity({ itemId, renderAssetRef, imageFileName })
+);
+
+const getAnimationBaseUrl = (
+  itemId: string,
+  renderAssetRef?: string | null,
+  imageFileName?: string | null,
+): string => {
+  return getItemImageUrlFromEntity({ itemId, renderAssetRef, imageFileName });
+};
 
 const hasAnimation = ref(false);
 const isAnimating = ref(false);
 const isLoaded = ref(false);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
-const animationFrames = ref<HTMLImageElement[]>([]);
+const animationFrames = ref<Array<{ image: HTMLImageElement; durationMs: number }>>([]);
 
 let animationFrameId: number | null = null;
 let lastFrameTime = 0;
-const animationFPS = 20;
-const frameInterval = 1000 / animationFPS;
+let currentFrameIndex = 0;
+const DEFAULT_FRAME_DURATION_MS = 50;
+
+const normalizeFrameDuration = (durationMs?: number | null): number => {
+  if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs <= 0) {
+    return DEFAULT_FRAME_DURATION_MS;
+  }
+  return Math.max(16, Math.round(durationMs));
+};
+
+const getSpriteSheetPhysicalFrameCount = (
+  timeline: Array<{ frameIndex?: number; index?: number }> | undefined,
+  fallback?: number | null,
+): number => {
+  const timelineMax =
+    timeline?.reduce((max, frame, idx) => {
+      const frameIndex =
+        typeof frame.frameIndex === 'number'
+          ? frame.frameIndex
+          : typeof frame.index === 'number'
+            ? frame.index
+            : idx;
+      return Math.max(max, frameIndex + 1);
+    }, 0) ?? 0;
+
+  return Math.max(Number(fallback ?? 0), timelineMax, 1);
+};
 
 const renderFrame = (frameIndex: number) => {
   const canvas = canvasRef.value;
@@ -42,7 +78,7 @@ const renderFrame = (frameIndex: number) => {
   const ctx = canvas.getContext('2d');
   if (!ctx) return;
 
-  const currentImg = animationFrames.value[frameIndex];
+  const currentImg = animationFrames.value[frameIndex]?.image;
   if (!currentImg || !currentImg.complete) return;
 
   canvas.width = currentImg.naturalWidth;
@@ -52,18 +88,38 @@ const renderFrame = (frameIndex: number) => {
 };
 
 const animate = (timestamp: number) => {
-  if (!lastFrameTime) lastFrameTime = timestamp;
-  const elapsed = timestamp - lastFrameTime;
-
-  if (elapsed >= frameInterval) {
-    const currentFrame =
-      animationFrames.value.length > 0
-        ? Math.floor(timestamp / frameInterval) % animationFrames.value.length
-        : 0;
-    renderFrame(currentFrame);
-    lastFrameTime = timestamp;
+  if (!animationFrames.value.length) {
+    animationFrameId = null;
+    return;
   }
 
+  if (!lastFrameTime) {
+    lastFrameTime = timestamp;
+    renderFrame(currentFrameIndex);
+    if (isAnimating.value) {
+      animationFrameId = requestAnimationFrame(animate);
+    }
+    return;
+  }
+
+  let elapsed = timestamp - lastFrameTime;
+  let frameDuration = normalizeFrameDuration(animationFrames.value[currentFrameIndex]?.durationMs);
+  let advanced = false;
+  let guard = 0;
+
+  while (elapsed >= frameDuration && guard < animationFrames.value.length * 2) {
+    elapsed -= frameDuration;
+    currentFrameIndex = (currentFrameIndex + 1) % animationFrames.value.length;
+    frameDuration = normalizeFrameDuration(animationFrames.value[currentFrameIndex]?.durationMs);
+    advanced = true;
+    guard += 1;
+  }
+
+  if (advanced) {
+    renderFrame(currentFrameIndex);
+  }
+
+  lastFrameTime = timestamp - elapsed;
   if (isAnimating.value) {
     animationFrameId = requestAnimationFrame(animate);
   }
@@ -72,8 +128,17 @@ const animate = (timestamp: number) => {
 const startAnimation = () => {
   if (animationFrames.value.length <= 1 || isAnimating.value) return;
   isAnimating.value = true;
+  currentFrameIndex = 0;
+  renderFrame(currentFrameIndex);
   lastFrameTime = 0;
   animationFrameId = requestAnimationFrame(animate);
+};
+
+const resetState = () => {
+  stopAnimation();
+  hasAnimation.value = false;
+  isLoaded.value = false;
+  animationFrames.value = [];
 };
 
 const stopAnimation = () => {
@@ -82,13 +147,14 @@ const stopAnimation = () => {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
   }
+  currentFrameIndex = 0;
 };
 
 const loadAnimationFrames = async (itemId: string, renderAssetRef?: string | null): Promise<void> => {
   try {
-    const imageUrl = getImageSrc(itemId);
+    const imageUrl = getAnimationBaseUrl(itemId, renderAssetRef, props.imageFileName);
     const animatedAtlasEntry = await fetchAnimatedAtlasEntry(renderAssetRef);
-    const frames: HTMLImageElement[] = [];
+    const frames: Array<{ image: HTMLImageElement; durationMs: number }> = [];
 
     if (animatedAtlasEntry && animatedAtlasEntry.frames.length > 0) {
       const atlasUrl = getAnimatedAtlasImageUrl(animatedAtlasEntry);
@@ -119,7 +185,12 @@ const loadAnimationFrames = async (itemId: string, renderAssetRef?: string | nul
             img.onload = () => resolve();
             img.onerror = () => reject();
           });
-          frames.push(img);
+          const timelineEntry = animatedAtlasEntry.timeline?.find((entry) => entry.index === frame.index)
+            ?? animatedAtlasEntry.timeline?.find((entry) => entry.frameIndex === frame.index);
+          frames.push({
+            image: img,
+            durationMs: normalizeFrameDuration(timelineEntry?.durationMs ?? animatedAtlasEntry.frameDurationMs),
+          });
         }
       }
     }
@@ -140,9 +211,13 @@ const loadAnimationFrames = async (itemId: string, renderAssetRef?: string | nul
       const atlasUrl = getNativeSpriteAtlasUrl(imageUrl, spriteMeta);
       const atlasImg = await loadImageAsset(atlasUrl);
       const width = spriteMeta.width || atlasImg.naturalWidth;
+      const physicalFrameCount = getSpriteSheetPhysicalFrameCount(spriteMeta.timeline, spriteMeta.frameCount);
       const height =
         spriteMeta.height ||
-        Math.floor(atlasImg.naturalHeight / Math.max(spriteMeta.timeline.length, 1));
+        Math.floor(atlasImg.naturalHeight / physicalFrameCount);
+      const defaultFrameDurationMs = normalizeFrameDuration(
+        typeof spriteMeta.defaultFrameTime === 'number' ? spriteMeta.defaultFrameTime * 50 : undefined,
+      );
 
       for (let idx = 0; idx < spriteMeta.timeline.length; idx++) {
         const frame = spriteMeta.timeline[idx];
@@ -167,11 +242,16 @@ const loadAnimationFrames = async (itemId: string, renderAssetRef?: string | nul
           img.onload = () => resolve();
           img.onerror = () => reject();
         });
-        frames.push(img);
+        frames.push({
+          image: img,
+          durationMs: normalizeFrameDuration(
+            typeof frame.durationMs === 'number' ? frame.durationMs : defaultFrameDurationMs,
+          ),
+        });
       }
     } else {
       const staticImg = await loadImageAsset(imageUrl);
-      frames.push(staticImg);
+      frames.push({ image: staticImg, durationMs: DEFAULT_FRAME_DURATION_MS });
     }
 
     animationFrames.value = frames;
@@ -194,7 +274,7 @@ const checkAnimation = async () => {
   }
 
   try {
-    const imageUrl = getImageSrc(props.itemId);
+    const imageUrl = getImageSrc(props.itemId, props.renderAssetRef, props.imageFileName);
     const hasAnim = await probeAnimationSupport(imageUrl, props.renderAssetRef);
     if (hasAnim) {
       await loadAnimationFrames(props.itemId, props.renderAssetRef);
@@ -209,6 +289,14 @@ const checkAnimation = async () => {
 onMounted(() => {
   void checkAnimation();
 });
+
+watch(
+  () => [props.itemId, props.renderAssetRef, props.imageFileName, props.enableAnimation],
+  () => {
+    resetState();
+    void checkAnimation();
+  },
+);
 
 onUnmounted(() => {
   stopAnimation();
@@ -229,7 +317,7 @@ onUnmounted(() => {
 
     <img
       v-else
-      :src="getImageSrc(itemId)"
+      :src="getImageSrc(itemId, renderAssetRef, imageFileName)"
       :alt="itemId"
       :style="{
         width: `${size}px`,

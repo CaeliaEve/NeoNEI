@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, shallowRef, triggerRef, watch } from 'vue';
-import { api, getImageUrl, type Recipe } from '../services/api';
+import { api, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -18,6 +19,8 @@ interface SlotVariant {
   itemId: string;
   count: number;
   localizedName: string;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
 }
 
 interface SlotItem {
@@ -30,8 +33,6 @@ const emit = defineEmits<Emits>();
 const { playClick } = useSound();
 
 const recipeData = computed(() => props.recipe);
-const getImagePath = getImageUrl;
-
 const gridDims = computed(() => ({ width: 3, height: 3 }));
 const totalSlots = computed(() => gridDims.value.width * gridDims.value.height);
 const craftingGrid = shallowRef<Array<SlotItem | null>>([]);
@@ -87,7 +88,7 @@ const initGrid = async () => {
   const items = await api.getItemsByIds(Array.from(itemIds));
   if (token !== initToken) return;
 
-  const nameById = new Map(items.map((item) => [item.itemId, item.localizedName]));
+  const itemById = new Map(items.map((item) => [item.itemId, item]));
 
   for (let slotIndex = 0; slotIndex < gridSize; slotIndex++) {
     const row = Math.floor(slotIndex / gridWidth);
@@ -105,7 +106,9 @@ const initGrid = async () => {
       slotItems.push({
         itemId: item.itemId,
         count: item.count,
-        localizedName: nameById.get(item.itemId) || item.itemId,
+        localizedName: itemById.get(item.itemId)?.localizedName || item.itemId,
+        renderAssetRef: itemById.get(item.itemId)?.renderAssetRef ?? null,
+        imageFileName: itemById.get(item.itemId)?.imageFileName ?? null,
       });
     }
 
@@ -178,11 +181,13 @@ onBeforeUnmount(() => {
                 @click="handleItemClick(slotItem.items[slotItem.primaryIndex].itemId)"
               >
                 <div class="slot-item">
-                  <img
-                    :src="getImagePath(slotItem.items[slotItem.primaryIndex].itemId)"
+                  <AnimatedItemIcon
+                    :item-id="slotItem.items[slotItem.primaryIndex].itemId"
+                    :render-asset-ref="slotItem.items[slotItem.primaryIndex].renderAssetRef || null"
+                    :image-file-name="slotItem.items[slotItem.primaryIndex].imageFileName || null"
+                    :size="58"
                     class="item-icon"
                     :class="{ 'cycling-icon': slotItem.items.length > 1 }"
-                    @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
                   />
                   <span v-if="slotItem.items[slotItem.primaryIndex].count > 1" class="item-count">
                     {{ slotItem.items[slotItem.primaryIndex].count }}
@@ -216,10 +221,11 @@ onBeforeUnmount(() => {
           @click="handleItemClick(outputItem!.itemId)"
         >
           <div class="output-slot" @mouseenter="hoveredSlot = -1" @mouseleave="hoveredSlot = null">
-            <img
-              :src="getImagePath(outputItem!.itemId)"
+            <AnimatedItemIcon
+              :item-id="outputItem!.itemId"
+              :render-asset-ref="outputItem!.renderAssetRef || null"
+              :size="74"
               class="item-icon output-icon"
-              @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
             />
             <span v-if="outputItem!.count > 1" class="item-count">{{ outputItem!.count }}</span>
           </div>

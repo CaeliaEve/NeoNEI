@@ -6,6 +6,7 @@ import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import { readPositiveIntegerMeta } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 interface Props { recipe: Recipe; uiConfig?: UITypeConfig }
 interface Emits { (e: 'item-click', itemId: string): void }
 const props = defineProps<Props>(); const emit = defineEmits<Emits>(); const { playClick } = useSound();
@@ -65,14 +66,20 @@ onMounted(() => void initTerra()); watch(() => props.recipe, () => void initTerr
         <div class="plate-aura" />
         <RecipeItemTooltip v-if="outputs[0]" :item-id="outputs[0].itemId" :count="outputs[0].count">
           <button class="plate-result-button" type="button" @click.stop="onItemClick(outputs[0].itemId)">
-            <img class="plate-result-icon" :src="getImageUrl(outputs[0].itemId)" @error="imageError" />
+            <AnimatedItemIcon
+              :item-id="outputs[0].itemId"
+              :render-asset-ref="outputs[0].renderAssetRef || null"
+              :image-file-name="outputs[0].imageFileName || null"
+              :size="76"
+              class="plate-result-icon"
+            />
           </button>
         </RecipeItemTooltip>
       </div>
       <div class="input-orbit">
         <div v-for="(slot, index) in inputs" :key="`${slot.itemId}-${index}`" class="orbit-anchor" :style="orbitStyle(index, inputs.length)">
           <RecipeItemTooltip :item-id="slot.itemId" :count="slot.count" @click="onItemClick(slot.itemId)">
-            <button class="slot input" type="button"><img :src="getImageUrl(slot.itemId)" @error="imageError" /><span v-if="slot.count > 1">{{ slot.count }}</span></button>
+            <button class="slot input" type="button"><AnimatedItemIcon :item-id="slot.itemId" :render-asset-ref="slot.renderAssetRef || null" :image-file-name="slot.imageFileName || null" :size="48" /><span v-if="slot.count > 1">{{ slot.count }}</span></button>
           </RecipeItemTooltip>
         </div>
       </div>

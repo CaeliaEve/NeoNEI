@@ -1,9 +1,32 @@
 import { onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
-import { api, type Item, type Mod } from '../services/api';
+import { api, type BrowserGridEntry, type Item, type Mod } from '../services/api';
+
+type CachedBrowserPage = {
+  data: BrowserGridEntry[];
+  items: Item[];
+  total: number;
+  totalPages: number;
+  page: number;
+};
+
+function collectDisplayItems(entries: BrowserGridEntry[]): Item[] {
+  const ordered: Item[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of entries) {
+    const item = entry.kind === 'item' ? entry.item : entry.group.representative;
+    if (!item?.itemId || seen.has(item.itemId)) continue;
+    seen.add(item.itemId);
+    ordered.push(item);
+  }
+
+  return ordered;
+}
 
 export function useItemBrowser(itemSize: Ref<number>) {
-  const pageCache = new Map<string, { data: Item[]; total: number; totalPages: number }>();
+  const pageCache = new Map<string, CachedBrowserPage>();
   const items = ref<Item[]>([]);
+  const browserEntries = ref<BrowserGridEntry[]>([]);
   const mods = ref<Mod[]>([]);
   const loading = ref(false);
   const modsLoading = ref(false);
@@ -11,6 +34,7 @@ export function useItemBrowser(itemSize: Ref<number>) {
   const modsLoadError = ref('');
   const searchQuery = ref('');
   const selectedMod = ref<string>('all');
+  const expandedGroupKeys = ref<string[]>([]);
   const currentPage = ref(1);
   const pageSize = ref(50);
   const totalItems = ref(0);
@@ -19,14 +43,20 @@ export function useItemBrowser(itemSize: Ref<number>) {
   let loadItemsRequestId = 0;
   let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
   let searchTimeout: ReturnType<typeof setTimeout> | undefined;
-  let searchAbortController: AbortController | null = null;
 
-  const buildPageCacheKey = (params: { page: number; pageSize: number; search?: string; modId?: string }) =>
+  const buildPageCacheKey = (params: {
+    page: number;
+    pageSize: number;
+    search?: string;
+    modId?: string;
+    expandedGroups?: string[];
+  }) =>
     JSON.stringify({
       page: params.page,
       pageSize: params.pageSize,
       search: params.search?.trim() || '',
       modId: params.modId || 'all',
+      expandedGroups: [...(params.expandedGroups ?? [])].sort(),
     });
 
   const calculatePageSize = () => {
@@ -62,79 +92,64 @@ export function useItemBrowser(itemSize: Ref<number>) {
     }
   };
 
+  const buildRequestParams = (page: number) => ({
+    page,
+    pageSize: pageSize.value,
+    search: searchQuery.value.trim() || undefined,
+    modId: selectedMod.value === 'all' ? undefined : selectedMod.value,
+    expandedGroups: expandedGroupKeys.value,
+  });
+
+  const applyBrowserResponse = (
+    response: CachedBrowserPage,
+    requestId: number,
+  ) => {
+    if (requestId !== loadItemsRequestId) {
+      return;
+    }
+
+    browserEntries.value = response.data;
+    items.value = response.items;
+    totalItems.value = response.total;
+    totalPages.value = response.totalPages;
+    currentPage.value = response.page;
+  };
+
   const loadItems = async () => {
     const requestId = ++loadItemsRequestId;
     loading.value = true;
     loadError.value = '';
 
-    if (searchAbortController) {
-      searchAbortController.abort();
-    }
-    searchAbortController = new AbortController();
-
     try {
-      const trimmed = searchQuery.value.trim();
-
-      if (!trimmed) {
-        const requestParams = {
-          page: currentPage.value,
-          pageSize: pageSize.value,
-          modId: selectedMod.value === 'all' ? undefined : selectedMod.value,
-        };
-        const cacheKey = buildPageCacheKey(requestParams);
-        const cached = pageCache.get(cacheKey);
-        const response = cached ?? await api.getItems(requestParams);
-        if (!cached) {
-          pageCache.set(cacheKey, {
-            data: response.data,
-            total: response.total,
-            totalPages: response.totalPages,
-          });
-        }
-
-        if (requestId !== loadItemsRequestId) {
-          return;
-        }
-
-        items.value = response.data;
-        totalItems.value = response.total;
-        totalPages.value = response.totalPages;
+      const requestParams = buildRequestParams(currentPage.value);
+      const cacheKey = buildPageCacheKey(requestParams);
+      const cached = pageCache.get(cacheKey);
+      if (cached) {
+        applyBrowserResponse(cached, requestId);
         return;
       }
 
-      const fastResults = await api.searchItemsFast(trimmed, Math.max(pageSize.value * 6, 200), {
-        signal: searchAbortController.signal,
-      });
+      const response = await api.getBrowserItems(requestParams);
+      const normalized: CachedBrowserPage = {
+        data: response.data,
+        items: collectDisplayItems(response.data),
+        total: response.total,
+        totalPages: response.totalPages,
+        page: response.page,
+      };
 
-      const modFiltered = selectedMod.value === 'all'
-        ? fastResults
-        : fastResults.filter((entry) => entry.modId === selectedMod.value);
-
-      const start = (currentPage.value - 1) * pageSize.value;
-      const end = start + pageSize.value;
-      const pageResults = modFiltered.slice(start, end);
-
-      if (requestId !== loadItemsRequestId) {
-        return;
-      }
-
-      const detailedItems = pageResults.length > 0
-        ? await api.getItemsByIds(pageResults.map((entry) => entry.itemId))
-        : [];
-
-      if (requestId !== loadItemsRequestId) {
-        return;
-      }
-
-      items.value = detailedItems;
-      totalItems.value = modFiltered.length;
-      totalPages.value = Math.ceil(modFiltered.length / pageSize.value);
+      pageCache.set(
+        buildPageCacheKey({
+          ...requestParams,
+          page: normalized.page,
+        }),
+        normalized,
+      );
+      applyBrowserResponse(normalized, requestId);
     } catch (error) {
-      if ((error as { name?: string })?.name === 'AbortError') {
-        return;
-      }
       console.error('Failed to load items:', error);
       loadError.value = '加载物品列表失败，请检查后端连接后重试。';
+      browserEntries.value = [];
       items.value = [];
       totalItems.value = 0;
       totalPages.value = 0;
@@ -158,10 +173,17 @@ export function useItemBrowser(itemSize: Ref<number>) {
     void loadItems();
   };
 
+  const setExpandedGroups = (groupKeys: string[]) => {
+    expandedGroupKeys.value = Array.from(new Set(groupKeys.filter(Boolean)));
+    pageCache.clear();
+    void loadItems();
+  };
+
   const setPageSize = (newSize: number, options?: { resetPage?: boolean }) => {
     const normalized = Math.max(20, Math.floor(newSize));
     if (normalized === pageSize.value) return;
     pageSize.value = normalized;
+    pageCache.clear();
     if (options?.resetPage) {
       currentPage.value = 1;
     }
@@ -169,37 +191,28 @@ export function useItemBrowser(itemSize: Ref<number>) {
   };
 
   const prefetchItemsPage = async (page: number) => {
-    const trimmed = searchQuery.value.trim();
     if (page < 1) return;
-    if (!trimmed) {
-      const requestParams = {
-        page,
-        pageSize: pageSize.value,
-        modId: selectedMod.value === 'all' ? undefined : selectedMod.value,
-      };
-      const cacheKey = buildPageCacheKey(requestParams);
-      if (pageCache.has(cacheKey)) return;
-      try {
-        const response = await api.getItems(requestParams);
-        pageCache.set(cacheKey, {
-          data: response.data,
-          total: response.total,
-          totalPages: response.totalPages,
-        });
-      } catch {
-        // best-effort prefetch only
-      }
+    const requestParams = buildRequestParams(page);
+    const cacheKey = buildPageCacheKey(requestParams);
+    if (pageCache.has(cacheKey)) return;
+
+    try {
+      const response = await api.getBrowserItems(requestParams);
+      pageCache.set(cacheKey, {
+        data: response.data,
+        items: collectDisplayItems(response.data),
+        total: response.total,
+        totalPages: response.totalPages,
+        page: response.page,
+      });
+    } catch {
+      // best-effort prefetch only
     }
   };
 
   const getCachedItemsPage = (page: number) => {
-    const trimmed = searchQuery.value.trim();
-    if (trimmed || page < 1) return null;
-    const requestParams = {
-      page,
-      pageSize: pageSize.value,
-      modId: selectedMod.value === 'all' ? undefined : selectedMod.value,
-    };
+    if (page < 1) return null;
+    const requestParams = buildRequestParams(page);
     return pageCache.get(buildPageCacheKey(requestParams)) ?? null;
   };
 
@@ -221,7 +234,7 @@ export function useItemBrowser(itemSize: Ref<number>) {
         setPageSize(newSize, { resetPage: true });
       }
     },
-    { flush: 'post' }
+    { flush: 'post' },
   );
 
   onMounted(async () => {
@@ -235,13 +248,11 @@ export function useItemBrowser(itemSize: Ref<number>) {
     window.removeEventListener('resize', handleResize);
     if (resizeTimeout) clearTimeout(resizeTimeout);
     if (searchTimeout) clearTimeout(searchTimeout);
-    if (searchAbortController) {
-      searchAbortController.abort();
-    }
   });
 
   return {
     items,
+    browserEntries,
     mods,
     loading,
     modsLoading,
@@ -249,10 +260,12 @@ export function useItemBrowser(itemSize: Ref<number>) {
     modsLoadError,
     searchQuery,
     selectedMod,
+    expandedGroupKeys,
     currentPage,
     pageSize,
     totalItems,
     totalPages,
+    setExpandedGroups,
     setPageSize,
     loadMods,
     loadItems,

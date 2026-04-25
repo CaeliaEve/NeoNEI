@@ -54,12 +54,26 @@ const spriteMetadataCache = new Map<string, NativeSpriteMetadata | null>();
 const spriteMetadataInFlight = new Map<string, Promise<NativeSpriteMetadata | null>>();
 const animatedAtlasCache = new Map<string, AnimatedAtlasAssetEntry | null>();
 const animatedAtlasInFlight = new Map<string, Promise<AnimatedAtlasAssetEntry | null>>();
+const renderContractCache = new Map<string, Awaited<ReturnType<typeof api.getRenderContractAsset>> | null>();
+const renderContractInFlight = new Map<string, Promise<Awaited<ReturnType<typeof api.getRenderContractAsset>> | null>>();
+const directGifProbeCache = new Map<string, boolean>();
+const directGifProbeInFlight = new Map<string, Promise<boolean>>();
 
 const loadImage = (src: string): Promise<HTMLImageElement> => {
   return new Promise((resolve, reject) => {
     const image = new Image();
+    image.crossOrigin = 'anonymous';
     image.src = src;
-    image.onload = () => resolve(image);
+    image.onload = async () => {
+      try {
+        if (typeof image.decode === 'function') {
+          await image.decode();
+        }
+      } catch {
+        // Keep the already-loaded image usable even if decode() rejects.
+      }
+      resolve(image);
+    };
     image.onerror = () => reject(new Error(`Image load failed: ${src}`));
   });
 };
@@ -132,7 +146,60 @@ export const fetchAnimatedAtlasEntry = async (
   return request;
 };
 
+export const fetchRenderContractAsset = async (
+  renderAssetRef?: string | null,
+): Promise<Awaited<ReturnType<typeof api.getRenderContractAsset>> | null> => {
+  if (!renderAssetRef) return null;
+  if (renderContractCache.has(renderAssetRef)) {
+    return renderContractCache.get(renderAssetRef) ?? null;
+  }
+
+  const inFlight = renderContractInFlight.get(renderAssetRef);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const request = runAnimationWork(async () => {
+    try {
+      const entry = await api.getRenderContractAsset(renderAssetRef);
+      renderContractCache.set(renderAssetRef, entry);
+      return entry;
+    } catch {
+      renderContractCache.set(renderAssetRef, null);
+      return null;
+    } finally {
+      renderContractInFlight.delete(renderAssetRef);
+    }
+  });
+
+  renderContractInFlight.set(renderAssetRef, request);
+  return request;
+};
+
 export const probeAnimationSupport = async (baseUrl: string, renderAssetRef?: string | null): Promise<boolean> => {
+  const renderContract = renderAssetRef ? await fetchRenderContractAsset(renderAssetRef) : null;
+  if (renderContract) {
+    if (
+      renderContract.renderMode === 'native_sprite'
+      && typeof renderContract.frameCount === 'number'
+      && renderContract.frameCount > 1
+    ) {
+      animationProbeCache.set(baseUrl, true);
+      return true;
+    }
+
+    if (
+      renderContract.renderMode === 'captured_final_atlas'
+      && (
+        renderContract.mode === 'rendered_frames'
+        || (typeof renderContract.frameCount === 'number' && renderContract.frameCount > 1)
+      )
+    ) {
+      animationProbeCache.set(baseUrl, true);
+      return true;
+    }
+  }
+
   if (renderAssetRef) {
     const atlasEntry = await fetchAnimatedAtlasEntry(renderAssetRef);
     if (atlasEntry && atlasEntry.frames.length > 0) {
@@ -149,6 +216,51 @@ export const probeAnimationSupport = async (baseUrl: string, renderAssetRef?: st
   animationProbeCache.set(baseUrl, hasAnimation);
   animationProbeInFlight.delete(baseUrl);
   return hasAnimation;
+};
+
+export const probeDirectGifPlayback = async (baseUrl: string): Promise<boolean> => {
+  if (directGifProbeCache.has(baseUrl)) {
+    return directGifProbeCache.get(baseUrl) ?? false;
+  }
+
+  const inFlight = directGifProbeInFlight.get(baseUrl);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const request = runAnimationWork(async () => {
+    const detectFromResponse = (response: Response | null): boolean => {
+      if (!response?.ok) return false;
+      const contentType = response.headers.get('content-type') || '';
+      return contentType.toLowerCase().includes('image/gif');
+    };
+
+    try {
+      let response: Response | null = null;
+      try {
+        response = await fetch(baseUrl, { method: 'HEAD' });
+      } catch {
+        response = null;
+      }
+
+      let isGif = detectFromResponse(response);
+      if (!isGif && (!response || !response.ok || !response.headers.get('content-type'))) {
+        response = await fetch(baseUrl, { method: 'GET' });
+        isGif = detectFromResponse(response);
+      }
+
+      directGifProbeCache.set(baseUrl, isGif);
+      return isGif;
+    } catch {
+      directGifProbeCache.set(baseUrl, false);
+      return false;
+    } finally {
+      directGifProbeInFlight.delete(baseUrl);
+    }
+  });
+
+  directGifProbeInFlight.set(baseUrl, request);
+  return request;
 };
 
 export const loadImageAsset = loadImage;

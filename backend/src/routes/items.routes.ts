@@ -42,6 +42,31 @@ router.get(
   })
 );
 
+router.get(
+  '/browser',
+  asyncHandler(async (req, res) => {
+    const page = parseInt(req.query.page as string) || 1;
+    const pageSize = parseInt(req.query.pageSize as string) || 50;
+    const search = req.query.search as string;
+    const modId = req.query.modId as string;
+    const expandedGroupsRaw = req.query.expandedGroups as string | undefined;
+    const expandedGroups = `${expandedGroupsRaw ?? ''}`
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+
+    const result = await getItemsService().getBrowserItems({
+      page,
+      pageSize,
+      search,
+      modId,
+      expandedGroups,
+    });
+
+    res.json(result);
+  })
+);
+
 // GET /api/items/mods - Get all mods
 router.get(
   '/mods',

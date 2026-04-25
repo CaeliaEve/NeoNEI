@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { api, getImageUrl, getImageUrlFromFileName, getImageUrlFromRenderAssetRef, type Item } from '../services/api';
+import { api, type Item } from '../services/api';
 import { useFloatingTooltip } from '../composables/useFloatingTooltip';
 import ThaumcraftTooltip from './ThaumcraftTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 type TooltipSizeMode = 'auto' | 'default' | 'compact' | 'dense';
 type TooltipMotionLevel = 'auto' | 'high' | 'medium' | 'low' | 'off';
@@ -92,20 +93,6 @@ const handleClick = () => {
   emit('click');
 };
 
-const getImagePath = () => {
-  if (itemData.value?.renderAssetRef) {
-    const renderAssetUrl = getImageUrlFromRenderAssetRef(itemData.value.renderAssetRef);
-    if (renderAssetUrl) return renderAssetUrl;
-  }
-  if (props.itemId) {
-    return getImageUrl(props.itemId);
-  }
-  if (itemData.value?.imageFileName) {
-    return getImageUrlFromFileName(itemData.value.imageFileName);
-  }
-  return getImageUrl(props.itemId);
-};
-
 const parsedItemId = computed(() => {
   const parts = props.itemId.split('~');
   if (parts.length >= 3) {
@@ -156,11 +143,12 @@ onBeforeUnmount(() => {
 
         <template v-else-if="itemData">
           <div class="tooltip-header">
-            <img
-              :src="getImagePath()"
-              :alt="itemData.localizedName"
+            <AnimatedItemIcon
+              :item-id="itemData.itemId || itemId"
+              :render-asset-ref="itemData.renderAssetRef || null"
+              :image-file-name="itemData.imageFileName || null"
+              :size="34"
               class="tooltip-icon"
-              @error="(e: Event) => (e.target as HTMLImageElement).src = '/placeholder.png'"
             />
             <div class="tooltip-title">
               <h3 class="item-name">{{ itemData.localizedName }}</h3>
@@ -190,11 +178,10 @@ onBeforeUnmount(() => {
         </template>
 
         <div v-else class="tooltip-fallback">
-          <img
-            :src="getImagePath()"
-            alt="Item"
+          <AnimatedItemIcon
+            :item-id="itemId"
+            :size="28"
             class="tooltip-icon"
-            @error="(e: Event) => (e.target as HTMLImageElement).src = '/placeholder.png'"
           />
           <div class="fallback-info">
             <p class="fallback-id">{{ parsedItemId.modId }} / {{ parsedItemId.internalName }}</p>

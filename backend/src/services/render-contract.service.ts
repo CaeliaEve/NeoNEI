@@ -53,32 +53,72 @@ export interface AnimatedAtlasFrameEntry {
   height: number;
 }
 
+export interface AnimatedAtlasTimelineEntry {
+  timelineIndex: number;
+  frameIndex: number;
+  index: number;
+  durationMs: number;
+}
+
 export interface AnimatedAtlasAssetEntry {
   assetId: string;
   variantKey: string;
   frameDurationMs: number | null;
   loopMode: string | null;
   frameCount: number;
+  timeline: AnimatedAtlasTimelineEntry[];
   frames: AnimatedAtlasFrameEntry[];
   atlasFile: string;
   atlasGroup: string;
+}
+
+export interface RenderContractAssetEntry {
+  assetId: string;
+  variantKey: string;
+  sourceType: string | null;
+  family: string | null;
+  mode: string | null;
+  renderMode: string | null;
+  animationMode: string | null;
+  captureMethod: string | null;
+  captureSource: string | null;
+  rendererFamily: string | null;
+  playbackHint: string | null;
+  staticFile: string | null;
+  primaryArtifact: string | null;
+  spriteMetadataFile: string | null;
+  nativeSpriteAtlasFile: string | null;
+  contractFile: string | null;
+  atlasGroup: string | null;
+  frameCount: number | null;
+  frameDurationMs: number | null;
+  layers: Array<Record<string, unknown>>;
+  rendererContract: Record<string, unknown> | null;
+  shaderContract: Record<string, unknown> | null;
+  captureContract: Record<string, unknown> | null;
 }
 
 type AnimatedAtlasManifestJson = {
   groups?: Array<{
     atlasGroup?: string;
     atlasFile?: string;
-    assets?: Array<{
-      assetId?: string;
-      variantKey?: string;
-      frameDurationMs?: number | null;
-      loopMode?: string | null;
-      frameCount?: number;
-      frames?: Array<{
-        index?: number;
-        sourcePath?: string;
-        x?: number;
-        y?: number;
+      assets?: Array<{
+        assetId?: string;
+        variantKey?: string;
+        frameDurationMs?: number | null;
+        loopMode?: string | null;
+        frameCount?: number;
+        timeline?: Array<{
+          timelineIndex?: number;
+          frameIndex?: number;
+          index?: number;
+          durationMs?: number;
+        }>;
+        frames?: Array<{
+          index?: number;
+          sourcePath?: string;
+          x?: number;
+          y?: number;
         width?: number;
         height?: number;
       }>;
@@ -86,8 +126,13 @@ type AnimatedAtlasManifestJson = {
   }>;
 };
 
+type RenderAssetsManifestJson = {
+  assets?: Array<Record<string, unknown>>;
+};
+
 export class RenderContractService {
   private animatedAtlasEntryCache: Map<string, AnimatedAtlasAssetEntry> | null = null;
+  private renderAssetEntryCache: Map<string, RenderContractAssetEntry> | null = null;
 
   getOverview(): RenderContractOverview {
     const renderAssets = readJsonIfExists(NESQL_RENDER_ASSETS_FILE);
@@ -151,6 +196,15 @@ export class RenderContractService {
     return entry;
   }
 
+  getRenderAssetEntry(assetId: string): RenderContractAssetEntry {
+    const cache = this.getRenderAssetEntryCache();
+    const entry = cache.get(assetId);
+    if (!entry) {
+      throw notFound(`Render contract asset not found: ${assetId}`);
+    }
+    return entry;
+  }
+
   private getAnimatedAtlasEntryCache(): Map<string, AnimatedAtlasAssetEntry> {
     if (this.animatedAtlasEntryCache) {
       return this.animatedAtlasEntryCache;
@@ -165,6 +219,7 @@ export class RenderContractService {
       for (const asset of group.assets ?? []) {
         if (typeof asset.assetId !== 'string' || !asset.assetId) continue;
         const frames: AnimatedAtlasFrameEntry[] = [];
+        const timeline: AnimatedAtlasTimelineEntry[] = [];
         for (const frame of asset.frames ?? []) {
           if (
             typeof frame.index !== 'number'
@@ -185,12 +240,29 @@ export class RenderContractService {
             height: frame.height,
           });
         }
+        for (const frame of asset.timeline ?? []) {
+          if (
+            typeof frame.timelineIndex !== 'number'
+            || typeof frame.frameIndex !== 'number'
+            || typeof frame.index !== 'number'
+            || typeof frame.durationMs !== 'number'
+          ) {
+            continue;
+          }
+          timeline.push({
+            timelineIndex: frame.timelineIndex,
+            frameIndex: frame.frameIndex,
+            index: frame.index,
+            durationMs: frame.durationMs,
+          });
+        }
         entries.set(asset.assetId, {
           assetId: asset.assetId,
           variantKey: typeof asset.variantKey === 'string' ? asset.variantKey : asset.assetId,
           frameDurationMs: typeof asset.frameDurationMs === 'number' ? asset.frameDurationMs : null,
           loopMode: typeof asset.loopMode === 'string' ? asset.loopMode : null,
           frameCount: typeof asset.frameCount === 'number' ? asset.frameCount : (asset.frames?.length ?? 0),
+          timeline,
           frames,
           atlasFile,
           atlasGroup,
@@ -201,6 +273,75 @@ export class RenderContractService {
     this.animatedAtlasEntryCache = entries;
     return entries;
   }
+
+  private getRenderAssetEntryCache(): Map<string, RenderContractAssetEntry> {
+    if (this.renderAssetEntryCache) {
+      return this.renderAssetEntryCache;
+    }
+
+    const payload = readJsonIfExists(NESQL_RENDER_ASSETS_FILE) as RenderAssetsManifestJson | null;
+    const entries = new Map<string, RenderContractAssetEntry>();
+
+    for (const asset of payload?.assets ?? []) {
+      const assetId = typeof asset.assetId === 'string' ? asset.assetId : '';
+      if (!assetId) continue;
+      entries.set(assetId, normalizeRenderAssetEntry(asset));
+    }
+
+    this.renderAssetEntryCache = entries;
+    return entries;
+  }
+}
+
+function normalizeRenderAssetEntry(asset: Record<string, unknown>): RenderContractAssetEntry {
+  const layers = Array.isArray(asset.layers)
+    ? asset.layers.filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object')
+    : [];
+  const mode = typeof asset.mode === 'string' ? asset.mode : null;
+  const renderMode =
+    typeof asset.renderMode === 'string'
+      ? asset.renderMode
+      : mode === 'native_sprite_animation' || mode === 'native_sprite_snapshot'
+        ? 'native_sprite'
+        : mode === 'rendered_frames'
+          ? 'captured_final_atlas'
+          : 'native_sprite';
+
+  return {
+    assetId: typeof asset.assetId === 'string' ? asset.assetId : '',
+    variantKey: typeof asset.variantKey === 'string' ? asset.variantKey : '',
+    sourceType: typeof asset.sourceType === 'string' ? asset.sourceType : null,
+    family: typeof asset.family === 'string' ? asset.family : null,
+    mode,
+    renderMode,
+    animationMode: typeof asset.animationMode === 'string' ? asset.animationMode : null,
+    captureMethod: typeof asset.captureMethod === 'string' ? asset.captureMethod : null,
+    captureSource: typeof asset.captureSource === 'string' ? asset.captureSource : null,
+    rendererFamily: typeof asset.rendererFamily === 'string' ? asset.rendererFamily : null,
+    playbackHint: typeof asset.playbackHint === 'string' ? asset.playbackHint : null,
+    staticFile: typeof asset.staticFile === 'string' ? asset.staticFile : null,
+    primaryArtifact: typeof asset.primaryArtifact === 'string' ? asset.primaryArtifact : null,
+    spriteMetadataFile: typeof asset.spriteMetadataFile === 'string' ? asset.spriteMetadataFile : null,
+    nativeSpriteAtlasFile:
+      typeof asset.nativeSpriteAtlasFile === 'string' ? asset.nativeSpriteAtlasFile : null,
+    contractFile: typeof asset.contractFile === 'string' ? asset.contractFile : null,
+    atlasGroup: typeof asset.atlasGroup === 'string' ? asset.atlasGroup : null,
+    frameCount: typeof asset.frameCount === 'number' ? asset.frameCount : null,
+    frameDurationMs: typeof asset.frameDurationMs === 'number' ? asset.frameDurationMs : null,
+    layers,
+    rendererContract:
+      asset.rendererContract && typeof asset.rendererContract === 'object'
+        ? (asset.rendererContract as Record<string, unknown>)
+        : null,
+    shaderContract:
+      asset.shaderContract && typeof asset.shaderContract === 'object'
+        ? (asset.shaderContract as Record<string, unknown>)
+        : null,
+    captureContract:
+      asset.captureContract && typeof asset.captureContract === 'object'
+        ? (asset.captureContract as Record<string, unknown>)
+        : null,
+  };
 }
 
 let instance: RenderContractService | null = null;

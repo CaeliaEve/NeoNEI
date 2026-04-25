@@ -5,6 +5,7 @@ import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -61,7 +62,12 @@ watch(() => props.recipe, () => void initOrb(), { deep: true });
           <template v-for="(slot, index) in inputSlots" :key="`${slot.itemId}-${index}`">
             <RecipeItemTooltip :item-id="slot.itemId" :count="slot.count" @click="onItemClick(slot.itemId)">
               <button class="small-slot" type="button">
-                <img :src="getImageUrl(slot.itemId)" :alt="slot.itemId" @error="imageError" />
+                <AnimatedItemIcon
+                  :item-id="slot.itemId"
+                  :render-asset-ref="slot.renderAssetRef || null"
+                  :image-file-name="slot.imageFileName || null"
+                  :size="46"
+                />
                 <span v-if="slot.count > 1">{{ slot.count }}</span>
               </button>
             </RecipeItemTooltip>
@@ -85,7 +91,12 @@ watch(() => props.recipe, () => void initOrb(), { deep: true });
           @click="onItemClick(outputSlot.itemId)"
         >
           <button class="result-slot" type="button">
-            <img :src="getImageUrl(outputSlot.itemId)" :alt="outputSlot.itemId" @error="imageError" />
+            <AnimatedItemIcon
+              :item-id="outputSlot.itemId"
+              :render-asset-ref="outputSlot.renderAssetRef || null"
+              :image-file-name="outputSlot.imageFileName || null"
+              :size="56"
+            />
             <span v-if="outputSlot.count > 1">{{ outputSlot.count }}</span>
           </button>
         </RecipeItemTooltip>

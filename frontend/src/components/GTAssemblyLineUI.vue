@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { api, getFluidImageUrlFromFluid, getImageUrl, type Recipe } from '../services/api';
+import { api, getFluidImageUrlFromFluid, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -17,6 +18,8 @@ interface Emits {
 interface SlotVariant {
   itemId: string;
   count: number;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
 }
 
 interface SlotItem {
@@ -42,7 +45,6 @@ const emit = defineEmits<Emits>();
 const { playClick } = useSound();
 
 const recipeData = computed(() => props.recipe);
-const getImagePath = getImageUrl;
 
 const craftingSlots = ref<Array<SlotItem | null>>([]);
 const fluidInputsData = ref<FluidEntry[]>([]);
@@ -166,7 +168,31 @@ const initGrid = async () => {
   }
 
   if (itemIds.size > 0) {
-    await api.getItemsByIds(Array.from(itemIds));
+    const items = await api.getItemsByIds(Array.from(itemIds));
+    const itemById = new Map(items.map((item) => [item.itemId, item]));
+
+    const nextSlots: Array<SlotItem | null> = [];
+    for (let slotIndex = 0; slotIndex < 16; slotIndex++) {
+      const cell = flatInputs[slotIndex];
+      if (!cell) {
+        nextSlots.push(null);
+        continue;
+      }
+
+      const variants = (Array.isArray(cell) ? cell : [cell])
+        .filter((variant): variant is { itemId: string; count?: number; renderAssetRef?: string | null; imageFileName?: string | null } => Boolean(variant?.itemId))
+        .map((variant) => ({
+          itemId: variant.itemId,
+          count: typeof variant.count === 'number' && variant.count > 0 ? variant.count : 1,
+          renderAssetRef: itemById.get(variant.itemId)?.renderAssetRef ?? variant.renderAssetRef ?? null,
+          imageFileName: itemById.get(variant.itemId)?.imageFileName ?? variant.imageFileName ?? null,
+        }));
+
+      nextSlots.push(variants.length > 0 ? { items: variants, primaryIndex: 0 } : null);
+    }
+
+    craftingSlots.value = nextSlots;
+    return;
   }
 
   const nextSlots: Array<SlotItem | null> = [];
@@ -178,10 +204,12 @@ const initGrid = async () => {
     }
 
     const variants = (Array.isArray(cell) ? cell : [cell])
-      .filter((variant): variant is { itemId: string; count?: number } => Boolean(variant?.itemId))
+      .filter((variant): variant is { itemId: string; count?: number; renderAssetRef?: string | null; imageFileName?: string | null } => Boolean(variant?.itemId))
       .map((variant) => ({
         itemId: variant.itemId,
         count: typeof variant.count === 'number' && variant.count > 0 ? variant.count : 1,
+        renderAssetRef: variant.renderAssetRef ?? null,
+        imageFileName: variant.imageFileName ?? null,
       }));
 
     nextSlots.push(variants.length > 0 ? { items: variants, primaryIndex: 0 } : null);
@@ -258,10 +286,12 @@ watch(() => props.recipe, async () => {
                 @click="handleItemClick(craftingSlots[slotIndex - 1]!.items[craftingSlots[slotIndex - 1]!.primaryIndex].itemId)"
               >
                 <div class="slot-inner">
-                  <img
-                    :src="getImagePath(craftingSlots[slotIndex - 1]!.items[craftingSlots[slotIndex - 1]!.primaryIndex].itemId)"
+                  <AnimatedItemIcon
+                    :item-id="craftingSlots[slotIndex - 1]!.items[craftingSlots[slotIndex - 1]!.primaryIndex].itemId"
+                    :render-asset-ref="craftingSlots[slotIndex - 1]!.items[craftingSlots[slotIndex - 1]!.primaryIndex].renderAssetRef || null"
+                    :image-file-name="craftingSlots[slotIndex - 1]!.items[craftingSlots[slotIndex - 1]!.primaryIndex].imageFileName || null"
+                    :size="44"
                     class="item-icon"
-                    @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
                   />
                   <span
                     v-if="craftingSlots[slotIndex - 1]!.items[craftingSlots[slotIndex - 1]!.primaryIndex].count > 1"
@@ -343,7 +373,12 @@ watch(() => props.recipe, async () => {
             @click="handleItemClick(outputItem.itemId)"
           >
             <div class="output-slot-main">
-              <img :src="getImagePath(outputItem.itemId)" class="output-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
+              <AnimatedItemIcon
+                :item-id="outputItem.itemId"
+                :render-asset-ref="outputItem.renderAssetRef || null"
+                :size="72"
+                class="output-icon"
+              />
               <span v-if="outputItem.count > 1" class="item-count">{{ outputItem.count }}</span>
             </div>
           </RecipeItemTooltip>
@@ -360,7 +395,11 @@ watch(() => props.recipe, async () => {
             >
               <div class="slot-shell special-slot special-slot-output">
                 <div class="slot-inner">
-                  <img :src="getImagePath(item.itemId)" class="item-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
+                  <AnimatedItemIcon
+                    :item-id="item.itemId"
+                    :size="44"
+                    class="item-icon"
+                  />
                   <span v-if="item.count > 1" class="item-count">{{ item.count }}</span>
                 </div>
               </div>

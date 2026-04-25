@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import { getImageUrl, type Recipe } from '../services/api';
+import { type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -21,7 +22,6 @@ const emit = defineEmits<Emits>();
 const { playClick } = useSound();
 
 const recipeData = computed(() => props.recipe);
-const getImagePath = getImageUrl;
 
 const inputSlots = ref<ResolvedSlot[]>([]);
 const outputSlot = ref<ResolvedSlot | null>(null);
@@ -63,10 +63,12 @@ watch(
               @click="handleItemClick(slot.itemId)"
             >
               <div class="furnace-slot input-slot">
-                <img
-                  :src="getImagePath(slot.itemId)"
+                <AnimatedItemIcon
+                  :item-id="slot.itemId"
+                  :render-asset-ref="slot.renderAssetRef || null"
+                  :image-file-name="slot.imageFileName || null"
+                  :size="58"
                   class="item-icon"
-                  @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
                 />
                 <span v-if="slot.count > 1" class="item-count">{{ slot.count }}</span>
               </div>
@@ -100,13 +102,15 @@ watch(
             @click="handleItemClick(outputSlot.itemId)"
           >
             <div class="furnace-slot output-slot">
-              <img
-                :src="getImagePath(outputSlot.itemId)"
+              <AnimatedItemIcon
+                :item-id="outputSlot.itemId"
+                :render-asset-ref="outputSlot.renderAssetRef || null"
+                :image-file-name="outputSlot.imageFileName || null"
+                :size="58"
                 class="item-icon"
-                @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
               />
-              <span v-if="outputSlot.count > 1" class="item-count">{{ outputSlot.count }}</span>
-            </div>
+            <span v-if="outputSlot.count > 1" class="item-count">{{ outputSlot.count }}</span>
+          </div>
           </RecipeItemTooltip>
           <div v-else class="furnace-slot empty-slot"></div>
         </div>

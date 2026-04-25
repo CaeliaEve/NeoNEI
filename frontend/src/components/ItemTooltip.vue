@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
-import { api, getImageUrl, getImageUrlFromFileName, getImageUrlFromRenderAssetRef, type Item } from '../services/api';
+import { api, type Item } from '../services/api';
 import { useFloatingTooltip } from '../composables/useFloatingTooltip';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 type TooltipSizeMode = 'auto' | 'default' | 'compact' | 'dense';
 type TooltipMotionLevel = 'auto' | 'high' | 'medium' | 'low' | 'off';
@@ -109,20 +110,6 @@ const handleRightMouseDown = (event: MouseEvent) => {
   emit('contextmenu', props.item, event);
 };
 
-const getImagePath = () => {
-  if (props.item.renderAssetRef) {
-    const renderAssetUrl = getImageUrlFromRenderAssetRef(props.item.renderAssetRef);
-    if (renderAssetUrl) return renderAssetUrl;
-  }
-  if (props.item.itemId) {
-    return getImageUrl(props.item.itemId);
-  }
-  if (props.item.imageFileName) {
-    return getImageUrlFromFileName(props.item.imageFileName);
-  }
-  return getImageUrl(props.item.itemId);
-};
-
 onMounted(() => {
   window.addEventListener('resize', refreshViewportState, { passive: true });
   mediaQueryList = window.matchMedia('(prefers-reduced-motion: reduce)');
@@ -161,11 +148,12 @@ onBeforeUnmount(() => {
         :style="{ left: `${tooltipX}px`, top: `${tooltipY}px` }"
       >
         <div class="tooltip-header">
-          <img
-            :src="getImagePath()"
-            :alt="displayItem.localizedName"
+          <AnimatedItemIcon
+            :item-id="displayItem.itemId"
+            :render-asset-ref="displayItem.renderAssetRef || null"
+            :image-file-name="displayItem.imageFileName || null"
+            :size="34"
             class="tooltip-icon"
-            @error="(e: Event) => (e.target as HTMLImageElement).src = '/placeholder.png'"
           />
           <div class="tooltip-title">
             <h3 class="item-name">{{ displayItem.localizedName }}</h3>

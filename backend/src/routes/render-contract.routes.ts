@@ -21,6 +21,14 @@ router.get(
 );
 
 router.get(
+  '/asset',
+  asyncHandler(async (req, res) => {
+    const assetId = String(req.query.assetId || '').trim();
+    res.json(getRenderContractService().getRenderAssetEntry(assetId));
+  })
+);
+
+router.get(
   '/ui-payload',
   asyncHandler(async (req, res) => {
     const recipeId = String(req.query.recipeId || '').trim();

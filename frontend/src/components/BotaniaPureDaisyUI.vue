@@ -5,6 +5,7 @@ import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props { recipe: Recipe; uiConfig?: UITypeConfig }
 interface Emits { (e: 'item-click', itemId: string): void }
@@ -48,14 +49,24 @@ watch(() => props.recipe, () => void initPureDaisy(), { deep: true });
       <div class="lane">
         <RecipeItemTooltip v-for="slot in inputs" :key="slot.itemId" :item-id="slot.itemId" :count="slot.count">
           <button class="slot" type="button" @click.stop="onItemClick(slot.itemId)">
-            <img :src="getImageUrl(slot.itemId)" @error="imageError" />
+            <AnimatedItemIcon
+              :item-id="slot.itemId"
+              :render-asset-ref="slot.renderAssetRef || null"
+              :image-file-name="slot.imageFileName || null"
+              :size="48"
+            />
             <span v-if="slot.count > 1">{{ slot.count }}</span>
           </button>
         </RecipeItemTooltip>
         <div class="conversion-bloom" aria-hidden="true" />
         <RecipeItemTooltip v-for="slot in outputs" :key="slot.itemId" :item-id="slot.itemId" :count="slot.count">
           <button class="slot output" type="button" @click.stop="onItemClick(slot.itemId)">
-            <img :src="getImageUrl(slot.itemId)" @error="imageError" />
+            <AnimatedItemIcon
+              :item-id="slot.itemId"
+              :render-asset-ref="slot.renderAssetRef || null"
+              :image-file-name="slot.imageFileName || null"
+              :size="48"
+            />
             <span v-if="slot.count > 1">{{ slot.count }}</span>
           </button>
         </RecipeItemTooltip>

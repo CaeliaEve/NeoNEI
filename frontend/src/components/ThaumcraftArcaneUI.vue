@@ -15,6 +15,7 @@ import {
   isThaumcraftAspectItem,
 } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -243,10 +244,12 @@ watch(
           @click="handleItemClick(slot.itemId)"
         >
           <div class="slot item-slot" :style="gridStyles[index]">
-            <img
-              :src="getImageUrl(slot.itemId)"
+            <AnimatedItemIcon
+              :item-id="slot.itemId"
+              :render-asset-ref="slot.renderAssetRef || null"
+              :image-file-name="slot.imageFileName || null"
+              :size="44"
               class="item-icon"
-              @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
             />
             <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
           </div>
@@ -262,10 +265,12 @@ watch(
         @click="handleItemClick(outputSlot.itemId)"
       >
         <div class="slot output-slot" :style="outputStyle">
-          <img
-            :src="getImageUrl(outputSlot.itemId)"
+          <AnimatedItemIcon
+            :item-id="outputSlot.itemId"
+            :render-asset-ref="outputSlot.renderAssetRef || null"
+            :image-file-name="outputSlot.imageFileName || null"
+            :size="56"
             class="item-icon"
-            @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
           />
           <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
         </div>

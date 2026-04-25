@@ -6,6 +6,7 @@ import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
 import { readPositiveIntegerMeta } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -97,7 +98,12 @@ watch(() => props.recipe, () => void initAltar(), { deep: true });
           @click="onItemClick(inputSlot.itemId)"
         >
           <button class="item-slot" type="button">
-            <img :src="getImageUrl(inputSlot.itemId)" :alt="inputSlot.itemId" @error="imageError" />
+            <AnimatedItemIcon
+              :item-id="inputSlot.itemId"
+              :render-asset-ref="inputSlot.renderAssetRef || null"
+              :image-file-name="inputSlot.imageFileName || null"
+              :size="60"
+            />
             <span v-if="inputSlot.count > 1">{{ inputSlot.count }}</span>
           </button>
         </RecipeItemTooltip>
@@ -177,7 +183,12 @@ watch(() => props.recipe, () => void initAltar(), { deep: true });
           @click="onItemClick(outputSlot.itemId)"
         >
           <button class="item-slot is-output" type="button">
-            <img :src="getImageUrl(outputSlot.itemId)" :alt="outputSlot.itemId" @error="imageError" />
+            <AnimatedItemIcon
+              :item-id="outputSlot.itemId"
+              :render-asset-ref="outputSlot.renderAssetRef || null"
+              :image-file-name="outputSlot.imageFileName || null"
+              :size="60"
+            />
             <span v-if="outputSlot.count > 1">{{ outputSlot.count }}</span>
           </button>
         </RecipeItemTooltip>

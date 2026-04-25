@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { getImageUrl, type Recipe } from '../services/api';
+import { type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -16,6 +17,8 @@ interface Emits {
 interface ItemStack {
   itemId: string;
   count: number;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
 }
 
 const props = defineProps<Props>();
@@ -36,10 +39,27 @@ function extractItemStack(node: unknown): ItemStack | null {
   };
 
   if (typeof obj.itemId === 'string' && obj.itemId.length > 0) {
-    return { itemId: obj.itemId, count: normalizeCount(obj.count ?? obj.stackSize) };
+    return {
+      itemId: obj.itemId,
+      count: normalizeCount(obj.count ?? obj.stackSize),
+      renderAssetRef: typeof obj.renderAssetRef === 'string' ? obj.renderAssetRef : null,
+      imageFileName: typeof obj.imageFileName === 'string' ? obj.imageFileName : null,
+    };
   }
   if (obj.item && typeof obj.item.itemId === 'string' && obj.item.itemId.length > 0) {
-    return { itemId: obj.item.itemId, count: normalizeCount(obj.count ?? obj.stackSize) };
+    const nested = obj.item as { itemId: string; renderAssetRef?: unknown; imageFileName?: unknown };
+    return {
+      itemId: nested.itemId,
+      count: normalizeCount(obj.count ?? obj.stackSize),
+      renderAssetRef:
+        typeof obj.renderAssetRef === 'string'
+          ? obj.renderAssetRef
+          : (typeof nested.renderAssetRef === 'string' ? nested.renderAssetRef : null),
+      imageFileName:
+        typeof obj.imageFileName === 'string'
+          ? obj.imageFileName
+          : (typeof nested.imageFileName === 'string' ? nested.imageFileName : null),
+    };
   }
   if (Array.isArray(obj.items)) {
     for (const it of obj.items) {
@@ -244,10 +264,12 @@ function onClickItem(itemId: string): void {
               @click="onClickItem(inputItem.itemId)"
             >
               <div class="slot item slot-input">
-                <img
-                  :src="getImageUrl(inputItem.itemId)"
+                <AnimatedItemIcon
+                  :item-id="inputItem.itemId"
+                  :render-asset-ref="inputItem.renderAssetRef || null"
+                  :image-file-name="inputItem.imageFileName || null"
+                  :size="42"
                   class="icon"
-                  @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
                 />
                 <span v-if="inputItem.count > 1" class="count">{{ inputItem.count }}</span>
               </div>
@@ -289,10 +311,12 @@ function onClickItem(itemId: string): void {
               @click="onClickItem(outputItem.itemId)"
             >
               <div class="slot item slot-output">
-                <img
-                  :src="getImageUrl(outputItem.itemId)"
+                <AnimatedItemIcon
+                  :item-id="outputItem.itemId"
+                  :render-asset-ref="outputItem.renderAssetRef || null"
+                  :image-file-name="outputItem.imageFileName || null"
+                  :size="42"
                   class="icon"
-                  @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
                 />
                 <span v-if="outputItem.count > 1" class="count">{{ outputItem.count }}</span>
               </div>

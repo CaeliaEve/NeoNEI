@@ -45,6 +45,24 @@ export function useAnimatedItem(options: AnimatedItemOptions) {
   let lastFrameTime = 0;
   const frameInterval = 1000 / fps;
 
+  const getSpriteSheetPhysicalFrameCount = (
+    timeline: Array<{ frameIndex?: number; index?: number }> | undefined,
+    fallback?: number | null,
+  ): number => {
+    const timelineMax =
+      timeline?.reduce((max, frame, idx) => {
+        const frameIndex =
+          typeof frame.frameIndex === 'number'
+            ? frame.frameIndex
+            : typeof frame.index === 'number'
+              ? frame.index
+              : idx;
+        return Math.max(max, frameIndex + 1);
+      }, 0) ?? 0;
+
+    return Math.max(Number(fallback ?? 0), timelineMax, 1);
+  };
+
   const renderFrame = () => {
     const canvas = canvasRef.value;
     if (!canvas || frames.value.length === 0) return;
@@ -99,9 +117,10 @@ export function useAnimatedItem(options: AnimatedItemOptions) {
       const atlasUrl = getNativeSpriteAtlasUrl(baseUrl, spriteMeta);
       const atlasImg = await loadImageAsset(atlasUrl);
       const width = spriteMeta.width || atlasImg.naturalWidth;
+      const physicalFrameCount = getSpriteSheetPhysicalFrameCount(spriteMeta.timeline, spriteMeta.frameCount);
       const height =
         spriteMeta.height ||
-        Math.floor(atlasImg.naturalHeight / Math.max(spriteMeta.timeline.length, 1));
+        Math.floor(atlasImg.naturalHeight / physicalFrameCount);
 
       const loadedFrames: HTMLImageElement[] = [];
       for (let idx = 0; idx < spriteMeta.timeline.length; idx++) {

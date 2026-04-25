@@ -16,6 +16,7 @@ import {
   normalizeCount,
 } from '../composables/ritualFamilyMetadata';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -415,10 +416,10 @@ const aspectEntries = computed(() => {
           @click="handleItemClick(primaryOutputId)"
         >
           <div class="result-slot">
-            <img
-              :src="getImageUrl(primaryOutputId)"
+            <AnimatedItemIcon
+              :item-id="primaryOutputId"
+              :size="60"
               class="item-icon result-icon"
-              @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
             />
             <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
           </div>
@@ -446,10 +447,10 @@ const aspectEntries = computed(() => {
             @click="handleItemClick(entry.item.itemId)"
           >
             <div class="slot pedestal-slot slot-fill">
-              <img
-                :src="getImageUrl(entry.item.itemId)"
+              <AnimatedItemIcon
+                :item-id="entry.item.itemId"
+                :size="42"
                 class="item-icon"
-                @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
               />
               <span v-if="entry.item.count > 1" class="count">{{ entry.item.count }}</span>
             </div>
@@ -463,10 +464,10 @@ const aspectEntries = computed(() => {
             @click="handleItemClick(centerItem.itemId)"
           >
             <div class="slot center-slot slot-fill">
-              <img
-                :src="getImageUrl(centerItem.itemId)"
+              <AnimatedItemIcon
+                :item-id="centerItem.itemId"
+                :size="52"
                 class="item-icon center-icon"
-                @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
               />
               <span v-if="centerItem.count > 1" class="count">{{ centerItem.count }}</span>
             </div>

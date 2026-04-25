@@ -6,6 +6,7 @@ import { collectRecipeItemStacks, isThaumcraftAspectItem, type RitualItemStack }
 import { buildOutputSlots, parseAdditionalData, type ResolvedSlot } from '../composables/useRecipeSlots';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipe: Recipe;
@@ -111,10 +112,12 @@ watch(
         @click="handleItemClick(outputSlot.itemId)"
       >
         <div class="aspect-focus">
-          <img
-            :src="getImageUrl(outputSlot.itemId)"
+          <AnimatedItemIcon
+            :item-id="outputSlot.itemId"
+            :render-asset-ref="outputSlot.renderAssetRef || null"
+            :image-file-name="outputSlot.imageFileName || null"
+            :size="54"
             class="aspect-focus-icon"
-            @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
           />
           <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
         </div>
@@ -132,10 +135,10 @@ watch(
           @click="handleItemClick(aspect.itemId)"
         >
           <div class="aspect-input-slot">
-            <img
-              :src="getImageUrl(aspect.itemId)"
+            <AnimatedItemIcon
+              :item-id="aspect.itemId"
+              :size="38"
               class="aspect-icon"
-              @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
             />
             <span v-if="aspect.count > 1" class="count">{{ aspect.count }}</span>
           </div>
@@ -155,10 +158,10 @@ watch(
           @click="handleItemClick(item.itemId)"
         >
           <div class="source-slot">
-            <img
-              :src="getImageUrl(item.itemId)"
+            <AnimatedItemIcon
+              :item-id="item.itemId"
+              :size="38"
               class="source-icon"
-              @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
             />
             <span class="count aspect-source-count">{{ item.count }}</span>
           </div>
