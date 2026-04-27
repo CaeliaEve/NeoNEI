@@ -110,6 +110,7 @@ export function useItemBrowser(
   const browserEntries = ref<BrowserGridEntry[]>([]);
   const mods = ref<Mod[]>([]);
   const loading = ref(false);
+  const transitioning = ref(false);
   const modsLoading = ref(false);
   const loadError = ref('');
   const modsLoadError = ref('');
@@ -315,7 +316,7 @@ export function useItemBrowser(
       return;
     }
 
-    prewarmCachedBrowserPageMedia(response, { animatedEntryLimit: 48, atlasLimit: 6 });
+    prewarmCachedBrowserPageMedia(response, { animatedEntryLimit: 72, atlasLimit: 10 });
 
     browserEntries.value = response.data;
     items.value = response.items;
@@ -493,19 +494,29 @@ export function useItemBrowser(
 
   const loadItems = async () => {
     const requestId = ++loadItemsRequestId;
-    loading.value = true;
     loadError.value = '';
-    currentPageAtlas.value = undefined;
+    const requestParams = buildRequestParams(currentPage.value);
+    const cacheKey = buildPageCacheKey(requestParams);
+    const cached = pageCache.get(cacheKey);
+    const hadVisibleEntries = browserEntries.value.length > 0 && items.value.length > 0;
+
+    if (cached) {
+      loading.value = false;
+      transitioning.value = false;
+      applyBrowserResponse(cached, requestId);
+      return;
+    }
+
+    if (hadVisibleEntries) {
+      loading.value = false;
+      transitioning.value = true;
+    } else {
+      loading.value = true;
+      transitioning.value = false;
+      currentPageAtlas.value = undefined;
+    }
 
     try {
-      const requestParams = buildRequestParams(currentPage.value);
-      const cacheKey = buildPageCacheKey(requestParams);
-      const cached = pageCache.get(cacheKey);
-      if (cached) {
-        applyBrowserResponse(cached, requestId);
-        return;
-      }
-
       const signaturePromise = resolvePublishSignature();
 
       if (!hasActiveSearch()) {
@@ -540,14 +551,17 @@ export function useItemBrowser(
     } catch (error) {
       console.error('Failed to load items:', error);
       loadError.value = '????????????????????';
-      browserEntries.value = [];
-      items.value = [];
-      currentPageAtlas.value = null;
-      totalItems.value = 0;
-      totalPages.value = 0;
+      if (!hadVisibleEntries) {
+        browserEntries.value = [];
+        items.value = [];
+        currentPageAtlas.value = null;
+        totalItems.value = 0;
+        totalPages.value = 0;
+      }
     } finally {
       if (requestId === loadItemsRequestId) {
         loading.value = false;
+        transitioning.value = false;
       }
     }
   };
@@ -555,6 +569,7 @@ export function useItemBrowser(
   const loadInitialHomeState = async () => {
     const requestId = ++loadItemsRequestId;
     loading.value = true;
+    transitioning.value = false;
     modsLoading.value = true;
     loadError.value = '';
     modsLoadError.value = '';
@@ -714,7 +729,7 @@ export function useItemBrowser(
         ? await loadSearchPage(requestParams)
         : await loadDefaultPage(requestParams, { signaturePromise });
       pageCache.set(cacheKey, normalized);
-      prewarmCachedBrowserPageMedia(normalized, { animatedEntryLimit: 24, atlasLimit: 4 });
+      prewarmCachedBrowserPageMedia(normalized, { animatedEntryLimit: 40, atlasLimit: 6 });
     } catch {
       // best-effort prefetch only
     }
@@ -777,6 +792,7 @@ export function useItemBrowser(
     browserEntries,
     mods,
     loading,
+    transitioning,
     modsLoading,
     loadError,
     modsLoadError,

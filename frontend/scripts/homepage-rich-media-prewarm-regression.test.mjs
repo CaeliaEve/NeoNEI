@@ -29,7 +29,7 @@ test('homepage browser pages prewarm atlas plus animated-only rich media without
     'browser page application should prewarm shared animated atlas images from the page manifest',
   );
   assert.equal(
-    source.includes('prewarmCachedBrowserPageMedia(normalized, { animatedEntryLimit: 24, atlasLimit: 4 })'),
+    source.includes('prewarmCachedBrowserPageMedia(normalized, { animatedEntryLimit: 40, atlasLimit: 6 })'),
     true,
     'neighbor page prefetches should also prewarm atlas and animated rich media before the user flips pages',
   );

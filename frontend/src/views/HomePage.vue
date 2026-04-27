@@ -63,6 +63,7 @@ const {
   browserEntries: browserGridEntries,
   mods,
   loading,
+  transitioning,
   modsLoading,
   loadError,
   modsLoadError,
@@ -87,6 +88,7 @@ const {
 let itemGridResizeObserver: ResizeObserver | null = null;
 let neighborPrefetchTimer: number | null = null;
 let neighborPrefetchIdleHandle: number | null = null;
+const BROWSER_PREFETCH_RADIUS = 2;
 const currentGroupId = ref<string | undefined>(undefined);
 const currentGroupName = ref<string>('');
 const latestCreatedPatternId = ref<string | undefined>(undefined);
@@ -255,12 +257,7 @@ watch(
 
     if (view !== "items" || atlasPending || total <= 1 || activeSearch) return;
 
-    const candidatePages = Array.from(
-      new Set([
-        page >= total ? 1 : page + 1,
-        page <= 1 ? total : page - 1,
-      ]),
-    ).filter((candidate) => candidate >= 1 && candidate <= total && candidate !== page);
+    const candidatePages = collectWrappedPageCandidates(page, total, BROWSER_PREFETCH_RADIUS);
     neighborPrefetchTimer = window.setTimeout(() => {
       neighborPrefetchTimer = null;
       const runPrefetch = () => {
@@ -275,12 +272,12 @@ watch(
         }).requestIdleCallback(() => {
           neighborPrefetchIdleHandle = null;
           runPrefetch();
-        }, { timeout: 900 });
+        }, { timeout: 600 });
         return;
       }
 
       runPrefetch();
-    }, 420);
+    }, 180);
   },
   { immediate: true },
 );
@@ -372,6 +369,26 @@ const changeItemsPageWrapped = (targetPage: number) => {
   }
 
   changePage(targetPage);
+};
+
+const collectWrappedPageCandidates = (page: number, total: number, radius: number) => {
+  const normalizedTotal = Math.max(0, Math.floor(total));
+  const normalizedPage = Math.max(1, Math.floor(page));
+  const normalizedRadius = Math.max(1, Math.floor(radius));
+  if (normalizedTotal <= 1) {
+    return [] as number[];
+  }
+
+  const wrap = (value: number) => ((value - 1 + normalizedTotal) % normalizedTotal) + 1;
+  const candidates = new Set<number>();
+
+  for (let offset = 1; offset <= normalizedRadius; offset += 1) {
+    candidates.add(wrap(normalizedPage + offset));
+    candidates.add(wrap(normalizedPage - offset));
+  }
+
+  candidates.delete(normalizedPage);
+  return Array.from(candidates).filter((candidate) => candidate >= 1 && candidate <= normalizedTotal);
 };
 
 const handleItemsWheel = (event: WheelEvent) => {
@@ -1063,13 +1080,13 @@ const saveSettings = () => {
               ref="itemGridViewportRef"
               class="item-grid-shell w-full p-4 flex-1 min-h-0 overflow-hidden"
             >
-              <div v-if="loading" class="state-panel list-state-panel">
+              <div v-if="loading && items.length === 0" class="state-panel list-state-panel">
                 <div class="state-spinner"></div>
                 <p class="state-title">加载数据中...</p>
                 <p class="state-subtitle">正在同步物品列表，请稍候。</p>
               </div>
 
-              <div v-else-if="loadError" class="state-panel list-state-panel state-panel-error">
+              <div v-else-if="loadError && items.length === 0" class="state-panel list-state-panel state-panel-error">
                 <p class="state-title">{{ loadError }}</p>
                 <p class="state-subtitle">可立即重试，或重置筛选条件后重新加载。</p>
                 <div class="state-actions">
@@ -1087,18 +1104,39 @@ const saveSettings = () => {
                 </div>
               </div>
 
-              <HomeCanvasGrid
-                v-else
-                :entries="browserGridEntries"
-                :item-size="itemSize"
-                :atlas="currentPageAtlas"
-                :enable-animation="true"
-                :prefer-atlas="true"
-                @item-click="openCraftingRecipes"
-                @item-contextmenu="handleCardContextMenu"
-                @group-click="handleBrowserGroupClick"
-                @group-contextmenu="handleBrowserGroupContextMenu"
-              />
+              <div v-else class="relative h-full w-full">
+                <HomeCanvasGrid
+                  :entries="browserGridEntries"
+                  :item-size="itemSize"
+                  :atlas="currentPageAtlas"
+                  :enable-animation="true"
+                  :prefer-atlas="true"
+                  @item-click="openCraftingRecipes"
+                  @item-contextmenu="handleCardContextMenu"
+                  @group-click="handleBrowserGroupClick"
+                  @group-contextmenu="handleBrowserGroupContextMenu"
+                />
+
+                <div
+                  v-if="transitioning"
+                  class="pointer-events-none absolute right-3 top-3 z-20 rounded-xl border border-cyan-300/25 bg-slate-950/82 px-3 py-2 text-xs text-cyan-100 shadow-[0_10px_30px_rgba(15,23,42,0.45)] backdrop-blur-md"
+                >
+                  正在预热第 {{ currentPage }} 页资源...
+                </div>
+
+                <div
+                  v-else-if="loadError && items.length > 0"
+                  class="absolute inset-x-3 top-3 z-20"
+                >
+                  <div class="state-panel list-state-panel state-panel-error !px-3 !py-2">
+                    <p class="state-title text-xs">{{ loadError }}</p>
+                    <p class="state-subtitle">上一页内容已保留，可立即重试当前页加载。</p>
+                    <div class="state-actions">
+                      <button class="mini-pager-btn" @click="loadItems">重试当前页</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
 
             <!-- View History（位于物品浏览区底部，固定高度） -->

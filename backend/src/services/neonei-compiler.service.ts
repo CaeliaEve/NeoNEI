@@ -783,7 +783,7 @@ export class NeoNeiCompilerService {
     this.options = {
       hotPageAtlas: {
         enabled: options.hotPageAtlas?.enabled ?? true,
-        pages: options.hotPageAtlas?.pages ?? 8,
+        pages: options.hotPageAtlas?.pages ?? 12,
         pageSize: options.hotPageAtlas?.pageSize ?? 55,
         slotSizes: options.hotPageAtlas?.slotSizes ?? [45],
         atlasOutputDir: options.hotPageAtlas?.atlasOutputDir ?? path.join(DATA_DIR, 'page-atlas-cache'),
@@ -793,9 +793,9 @@ export class NeoNeiCompilerService {
         firstPageSize: options.publishHotPayloads?.firstPageSize ?? 256,
         slotSizes: options.publishHotPayloads?.slotSizes ?? [45],
         includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? true,
-        windowCount: options.publishHotPayloads?.windowCount ?? 4,
-        windowStride: options.publishHotPayloads?.windowStride ?? 128,
-        searchHotShardSize: options.publishHotPayloads?.searchHotShardSize ?? 4096,
+        windowCount: options.publishHotPayloads?.windowCount ?? 10,
+        windowStride: options.publishHotPayloads?.windowStride ?? 64,
+        searchHotShardSize: options.publishHotPayloads?.searchHotShardSize ?? 8192,
       },
       bootstrap: {
         hotItemLimit: 5000,

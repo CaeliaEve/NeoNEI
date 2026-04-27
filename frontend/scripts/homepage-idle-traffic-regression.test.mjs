@@ -12,31 +12,31 @@ const itemBrowserSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-test('homepage prefetch stays immediate-neighbor-only and idle-scheduled instead of eager multi-page fanout', () => {
+test('homepage prefetch stays idle-scheduled while expanding to a small wrapped hot-page ring', () => {
   assert.equal(
-    homePageSource.includes('[page - 1, page + 1, page + 2]'),
+    homePageSource.includes('const BROWSER_PREFETCH_RADIUS = 2;'),
+    true,
+    'homepage should declare a bounded wrapped prefetch radius instead of unbounded fanout',
+  );
+  assert.equal(
+    homePageSource.includes('collectWrappedPageCandidates(page, total, BROWSER_PREFETCH_RADIUS)'),
+    true,
+    'homepage should derive nearby wrapped prefetch candidates from the active page',
+  );
+  assert.equal(
+    homePageSource.includes('for (let offset = 1; offset <= normalizedRadius; offset += 1)'),
+    true,
+    'homepage should prefetch a small forward/backward ring instead of only a single neighbor',
+  );
+  assert.equal(
+    homePageSource.includes('const BROWSER_PREFETCH_RADIUS = 3;'),
     false,
-    'homepage should no longer eagerly prefetch previous/next/two-ahead pages on first paint',
-  );
-  assert.equal(
-    homePageSource.includes('const candidatePages = Array.from('),
-    true,
-    'homepage should compute only the immediate wrapped neighbor pages',
-  );
-  assert.equal(
-    homePageSource.includes('page >= total ? 1 : page + 1'),
-    true,
-    'homepage should prefetch the wrapped next page',
-  );
-  assert.equal(
-    homePageSource.includes('page <= 1 ? total : page - 1'),
-    true,
-    'homepage should also prefetch the wrapped previous page for instant reverse paging',
+    'homepage should keep the hot ring bounded instead of expanding to a larger eager radius by default',
   );
   assert.equal(
     homePageSource.includes('requestIdleCallback'),
     true,
-    'homepage should delay neighbor page prefetch until the browser is idle',
+    'homepage should still delay hot-ring prefetch until the browser is idle',
   );
 });
 

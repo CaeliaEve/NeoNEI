@@ -40,7 +40,7 @@ import {
   buildModsListPayloadKey,
 } from './publish-payload.service';
 
-export const PUBLISH_PAYLOAD_REVISION = '2026-04-28-publish-static-bundle-v7';
+export const PUBLISH_PAYLOAD_REVISION = '2026-04-28-publish-static-bundle-v8';
 
 export interface PublishPayloadHotOptions {
   enabled?: boolean;
@@ -352,15 +352,15 @@ export class PublishPayloadMaterializerService {
       firstPageSize: Math.max(1, Math.floor(options.publishHotPayloads?.firstPageSize ?? 256)),
       slotSizes: normalizeSlotSizes(options.publishHotPayloads?.slotSizes),
       includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? true,
-      windowCount: Math.max(1, Math.floor(options.publishHotPayloads?.windowCount ?? 4)),
+      windowCount: Math.max(1, Math.floor(options.publishHotPayloads?.windowCount ?? 10)),
       windowStride: Math.max(
         1,
         Math.floor(
           options.publishHotPayloads?.windowStride
-          ?? Math.max(64, Math.floor((options.publishHotPayloads?.firstPageSize ?? 256) / 2)),
+          ?? Math.max(48, Math.floor((options.publishHotPayloads?.firstPageSize ?? 256) / 4)),
         ),
       ),
-      searchHotShardSize: Math.max(512, Math.floor(options.publishHotPayloads?.searchHotShardSize ?? 4096)),
+      searchHotShardSize: Math.max(512, Math.floor(options.publishHotPayloads?.searchHotShardSize ?? 8192)),
       recipeBootstrapHotItemLimit: Math.max(0, Math.floor(options.publishHotPayloads?.recipeBootstrapHotItemLimit ?? 256)),
     };
   }

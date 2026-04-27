@@ -18,18 +18,14 @@ async function run(): Promise<void> {
     },
   });
   console.log(
-    JSON.stringify(
-      {
-        ok: true,
-        stage: 'stage-4',
-        itemsImported: result.itemsImported,
-        recipesImported: result.recipesImported,
-        hotAtlasesGenerated: result.hotAtlasesGenerated,
-        signature: result.signature,
-      },
-      null,
-      2,
-    ),
+    `ACCEL_COMPILE_RESULT ${JSON.stringify({
+      ok: true,
+      stage: 'stage-4',
+      itemsImported: result.itemsImported,
+      recipesImported: result.recipesImported,
+      hotAtlasesGenerated: result.hotAtlasesGenerated,
+      signature: result.signature,
+    })}`,
   );
 }
 

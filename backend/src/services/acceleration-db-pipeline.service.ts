@@ -15,6 +15,11 @@ export interface EnsureAccelerationDatabaseReadyOptions {
   compilerOptions?: CompilerOptions;
 }
 
+export interface PromoteCompiledAccelerationDatabaseOptions {
+  manager: DatabaseManager;
+  compiledDbPath: string;
+}
+
 function cleanupSqliteSidecars(basePath: string): void {
   for (const suffix of ['-wal', '-shm']) {
     const filePath = `${basePath}${suffix}`;
@@ -87,6 +92,36 @@ export async function ensureAccelerationDatabaseReady(
   });
   await manager.init();
   return result;
+}
+
+export async function promoteCompiledAccelerationDatabase(
+  options: PromoteCompiledAccelerationDatabaseOptions,
+): Promise<void> {
+  const { manager, compiledDbPath } = options;
+  const targetDbPath = manager.getDbPath();
+  if (compiledDbPath === targetDbPath) {
+    await manager.init();
+    return;
+  }
+
+  if (!fs.existsSync(compiledDbPath)) {
+    throw new Error(`Compiled acceleration database not found: ${compiledDbPath}`);
+  }
+
+  manager.close();
+  try {
+    cleanupSqliteSidecars(targetDbPath);
+    if (fs.existsSync(targetDbPath)) {
+      fs.rmSync(targetDbPath, { force: true });
+    }
+    fs.renameSync(compiledDbPath, targetDbPath);
+    cleanupSqliteSidecars(compiledDbPath);
+  } catch (error) {
+    await manager.init();
+    throw error;
+  }
+
+  await manager.init();
 }
 
 export async function ensurePublishPayloadsReady(
