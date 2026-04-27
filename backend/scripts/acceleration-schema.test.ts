@@ -26,8 +26,10 @@ test('database bootstrap creates stage-one acceleration tables', async () => {
     'recipe_edges',
     'recipe_bootstrap',
     'recipe_machine_groups',
+    'recipe_category_groups',
     'assets_manifest',
     'hot_items',
+    'publish_payloads',
   ];
 
   for (const tableName of requiredTables) {

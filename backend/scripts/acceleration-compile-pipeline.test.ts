@@ -5,7 +5,7 @@ import path from 'path';
 import zlib from 'zlib';
 import test from 'node:test';
 import { DatabaseManager } from '../src/models/database';
-import { compileAccelerationDatabase } from '../src/services/acceleration-db-pipeline.service';
+import { compileAccelerationDatabase, ensurePublishPayloadsReady } from '../src/services/acceleration-db-pipeline.service';
 
 function writeGzipJson(filePath: string, payload: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -80,6 +80,70 @@ test('compileAccelerationDatabase rebuilds into a fresh file and swaps target da
   assert.deepEqual(itemIds, ['i~Botania~manaResource~4']);
   assert.equal(fs.existsSync(`${targetDbPath}.wal`), false);
   assert.equal(fs.existsSync(`${targetDbPath}.shm`), false);
+
+  manager.close();
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+
+test('ensurePublishPayloadsReady backfills publish payloads in-place without forcing a full rebuild', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-publish-backfill-'));
+  const targetDbPath = path.join(tempDir, 'acceleration.db');
+  const itemsDir = path.join(tempDir, 'items');
+  const recipesDir = path.join(tempDir, 'recipes');
+  const canonicalDir = path.join(tempDir, 'canonical');
+  const imageRoot = path.join(tempDir, 'image');
+
+  writeGzipJson(path.join(itemsDir, 'GregTech', 'items.json.gz'), [
+    {
+      itemId: 'i~GregTech~metaItem01~0',
+      modId: 'GregTech',
+      internalName: 'metaItem01',
+      localizedName: 'Test Item',
+      searchTerms: 'test item',
+      imageFileName: 'GregTech/metaItem01~0.png',
+    },
+  ]);
+
+  writeGzipJson(path.join(recipesDir, 'gregtech', 'GregTech', 'recipes.json.gz'), []);
+  fs.mkdirSync(canonicalDir, { recursive: true });
+  fs.mkdirSync(path.join(imageRoot, 'item', 'GregTech'), { recursive: true });
+  fs.writeFileSync(path.join(imageRoot, 'item', 'GregTech', 'metaItem01~0.png'), Buffer.from(''));
+
+  await compileAccelerationDatabase({
+    targetDbPath,
+    sourceRoots: {
+      itemsDir,
+      recipesDir,
+      canonicalDir,
+      imageRoot,
+    },
+  });
+
+  const manager = new DatabaseManager(targetDbPath);
+  await manager.init();
+  const db = manager.getDatabase();
+  const originalSourceSignature = (db.prepare("SELECT state_value FROM compiler_state WHERE state_key = 'source_signature'").get() as { state_value: string }).state_value;
+  db.exec("DELETE FROM publish_payloads");
+  db.prepare("DELETE FROM compiler_state WHERE state_key LIKE 'publish_payload%'").run();
+
+  const materialized = await ensurePublishPayloadsReady({
+    manager,
+    sourceRoots: {
+      itemsDir,
+      recipesDir,
+      canonicalDir,
+      imageRoot,
+    },
+  });
+
+  assert.equal(materialized, true);
+  const publishPayloadCount = (db.prepare('SELECT COUNT(*) AS c FROM publish_payloads').get() as { c: number }).c;
+  const sourceSignature = (db.prepare("SELECT state_value FROM compiler_state WHERE state_key = 'source_signature'").get() as { state_value: string }).state_value;
+  const publishPayloadSignature = (db.prepare("SELECT state_value FROM compiler_state WHERE state_key = 'publish_payload_signature'").get() as { state_value: string }).state_value;
+  assert.ok(publishPayloadCount > 0);
+  assert.equal(sourceSignature, originalSourceSignature);
+  assert.equal(publishPayloadSignature, originalSourceSignature);
 
   manager.close();
   fs.rmSync(tempDir, { recursive: true, force: true });

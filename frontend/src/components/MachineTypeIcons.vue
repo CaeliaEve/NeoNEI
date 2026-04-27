@@ -8,6 +8,9 @@ export interface MachineCategory {
   recipeType: string;
   machineIcon: string | null;
   recipes: Recipe[];
+  recipeCount?: number;
+  machineKey?: string | null;
+  voltageTier?: string | null;
 }
 
 interface Props {
@@ -39,6 +42,9 @@ const handleSelect = (index: number) => {
 const setOptionRef = (element: unknown, index: number) => {
   optionRefs.value[index] = element instanceof HTMLButtonElement ? element : null;
 };
+
+const getCategoryCount = (category: MachineCategory): number =>
+  typeof category.recipeCount === 'number' ? category.recipeCount : category.recipes.length;
 
 const focusOption = (index: number) => {
   optionRefs.value[index]?.focus();
@@ -87,7 +93,7 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
         role="option"
         :aria-selected="modelValue === index"
         :tabindex="modelValue === index ? 0 : -1"
-        :aria-label="`${category.name} (${category.recipes.length} 个)`"
+        :aria-label="`${category.name} (${getCategoryCount(category)} 个)`"
         @click="handleSelect(index)"
         @keydown="handleOptionKeydown($event, index)"
       >
@@ -117,8 +123,8 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
           <span v-else class="fallback-icon">?</span>
         </span>
 
-        <span class="recipe-count-badge" aria-hidden="true">{{ category.recipes.length }}</span>
-        <span class="icon-tooltip" role="tooltip">{{ category.name }} ({{ category.recipes.length }} 个)</span>
+        <span class="recipe-count-badge" aria-hidden="true">{{ getCategoryCount(category) }}</span>
+        <span class="icon-tooltip" role="tooltip">{{ category.name }} ({{ getCategoryCount(category) }} 个)</span>
       </button>
     </div>
   </div>

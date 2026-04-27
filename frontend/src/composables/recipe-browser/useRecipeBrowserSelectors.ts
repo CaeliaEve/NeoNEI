@@ -1,11 +1,13 @@
 ﻿import { computed, type Ref } from 'vue';
-import type { Recipe, RecipeVariantGroup } from '../../services/api';
+import type { Recipe, RecipeVariantGroup, indexedItemRecipeSummaryResponse } from '../../services/api';
 import { resolveRecipePresentationProfile } from '../../services/uiTypeMapping';
 import type { RecipeGraph } from '../../domain/recipeGraph';
 import type { RecipeIndexes } from '../../utils/recipeIndexing';
 import {
   applySelectedVariants,
+  buildCategorySkeletonsFromSummary,
   buildMachineCategories,
+  buildMachineCategorySkeletonsFromSummary,
   extractVariantGroups,
   recipeMatchesTextQuery,
   type MachineCategory,
@@ -20,6 +22,10 @@ interface RecipeBrowserSelectorsOptions {
   usedInGraph: Ref<RecipeGraph>;
   recipeSearchQuery: Ref<string>;
   searchMatchedItemIds: Ref<Set<string>>;
+  searchMatchedRecipeIds: Ref<Set<string> | null>;
+  indexedSummary: Ref<indexedItemRecipeSummaryResponse | null>;
+  tabRecipeTotals: Ref<{ usedIn: number; producedBy: number }>;
+  categoryRecipeIdsByKey: Ref<Record<string, string[]>>;
   selectedMachineIndex: Ref<number>;
   currentPage: Ref<number>;
   detailRequestsInFlight: Ref<Set<string>>;
@@ -38,6 +44,10 @@ export const useRecipeBrowserSelectors = ({
   usedInGraph,
   recipeSearchQuery,
   searchMatchedItemIds,
+  searchMatchedRecipeIds,
+  indexedSummary,
+  tabRecipeTotals,
+  categoryRecipeIdsByKey,
   selectedMachineIndex,
   currentPage,
   detailRequestsInFlight,
@@ -64,6 +74,14 @@ export const useRecipeBrowserSelectors = ({
     return currentTab.value === 'usedIn' ? recipes.value.usedIn : recipes.value.producedBy;
   });
 
+  const currentRecipesById = computed(() => {
+    const map = new Map<string, Recipe>();
+    for (const recipe of currentRecipesInTab.value) {
+      map.set(recipe.recipeId, recipe);
+    }
+    return map;
+  });
+
   const currentTabIndexes = computed(() => {
     return currentTab.value === 'usedIn' ? usedInIndexes.value : producedByIndexes.value;
   });
@@ -77,6 +95,11 @@ export const useRecipeBrowserSelectors = ({
     const query = recipeSearchQuery.value.trim();
     if (!query) {
       return base;
+    }
+
+    const matchedRecipeIds = searchMatchedRecipeIds.value;
+    if (matchedRecipeIds) {
+      return base.filter((recipe) => matchedRecipeIds.has(recipe.recipeId));
     }
 
     const normalizedQuery = query.toLowerCase();
@@ -130,10 +153,80 @@ export const useRecipeBrowserSelectors = ({
   });
 
   const machineCategories = computed<MachineCategory[]>(() => {
-    return buildMachineCategories(filteredRecipes.value, getImagePath);
+    const loadedCategories = buildMachineCategories(filteredRecipes.value, getImagePath);
+    const summary = indexedSummary.value;
+    const summaryCategoryGroups = currentTab.value === 'producedBy'
+      ? (summary?.producedByCategoryGroups ?? [])
+      : (summary?.usedInCategoryGroups ?? []);
+    const summaryGroups = currentTab.value === 'producedBy'
+      ? (summary?.producedByMachineGroups ?? summary?.machineGroups ?? [])
+      : (summary?.usedInMachineGroups ?? []);
+
+    if ((!summaryGroups.length && !summaryCategoryGroups.length) || recipeSearchQuery.value.trim()) {
+      return loadedCategories;
+    }
+
+    const summaryCategories = summaryCategoryGroups.length > 0
+      ? buildCategorySkeletonsFromSummary(summaryCategoryGroups, getImagePath)
+      : buildMachineCategorySkeletonsFromSummary(summaryGroups, getImagePath);
+    if (summaryCategories.length === 0) {
+      return loadedCategories;
+    }
+
+    const getCategoryKey = (category: MachineCategory) =>
+      category.categoryKey?.trim() || category.machineKey?.trim() || `${category.type}:${category.name.trim().toLowerCase()}`;
+
+    const loadedByKey = new Map<string, MachineCategory>();
+    for (const category of loadedCategories) {
+      loadedByKey.set(getCategoryKey(category), category);
+    }
+
+    const usedKeys = new Set<string>();
+    const merged: MachineCategory[] = [];
+    for (const summaryCategory of summaryCategories) {
+      const key = getCategoryKey(summaryCategory);
+      const loaded = loadedByKey.get(key);
+      if (loaded) {
+        merged.push({
+          ...loaded,
+          machineKey: loaded.machineKey ?? summaryCategory.machineKey ?? null,
+          voltageTier: loaded.voltageTier ?? summaryCategory.voltageTier ?? null,
+          machineIcon: loaded.machineIcon || summaryCategory.machineIcon,
+          recipeCount: Math.max(loaded.recipeCount ?? loaded.recipes.length, summaryCategory.recipeCount ?? 0),
+        });
+      } else {
+        merged.push(summaryCategory);
+      }
+      usedKeys.add(key);
+    }
+
+    for (const category of loadedCategories) {
+      const key = getCategoryKey(category);
+      if (usedKeys.has(key)) continue;
+      merged.push(category);
+    }
+
+    return merged;
   });
 
   const currentCategory = computed(() => machineCategories.value[selectedMachineIndex.value] || null);
+
+  const currentCategoryLookupKey = computed(() => {
+    if (!currentCategory.value) return '';
+    const categoryKey = currentCategory.value.categoryKey?.trim();
+    if (!categoryKey) return '';
+    return `${currentTab.value}:${categoryKey}`;
+  });
+
+  const currentCategoryOrderedRecipeIds = computed(() => {
+    const lookupKey = currentCategoryLookupKey.value;
+    if (!lookupKey) return [] as string[];
+    const orderedRecipeIds = categoryRecipeIdsByKey.value[lookupKey];
+    if (Array.isArray(orderedRecipeIds) && orderedRecipeIds.length > 0) {
+      return orderedRecipeIds;
+    }
+    return currentCategory.value?.recipes.map((recipe) => recipe.recipeId) ?? [];
+  });
 
   const currentCategoryPages = computed(() => {
     if (!currentCategory.value) return [];
@@ -156,14 +249,27 @@ export const useRecipeBrowserSelectors = ({
   });
 
   const currentBaseRecipe = computed(() => {
-    if (!currentCategory.value || currentCategoryPages.value.length === 0) return null;
+    if (!currentCategory.value || totalPages.value <= 0) return null;
     const recipeIndex = (currentPage.value % totalPages.value) * recipesPerPage.value;
+    const orderedRecipeIds = currentCategoryOrderedRecipeIds.value;
+    if (orderedRecipeIds.length > 0) {
+      const recipeId = orderedRecipeIds[recipeIndex];
+      return recipeId ? currentRecipesById.value.get(recipeId) ?? null : null;
+    }
     return currentCategoryPages.value[recipeIndex] || null;
   });
 
   const currentPageRecipes = computed(() => {
-    if (!currentCategory.value || currentCategoryPages.value.length === 0) return [];
+    if (!currentCategory.value || totalPages.value <= 0) return [];
     const startIndex = (currentPage.value % totalPages.value) * recipesPerPage.value;
+    const orderedRecipeIds = currentCategoryOrderedRecipeIds.value;
+    if (orderedRecipeIds.length > 0) {
+      return orderedRecipeIds
+        .slice(startIndex, startIndex + recipesPerPage.value)
+        .map((recipeId) => currentRecipesById.value.get(recipeId) ?? null)
+        .filter((recipe): recipe is Recipe => Boolean(recipe))
+        .map((recipe) => applySelectedVariants(recipe, getSelectedVariant));
+    }
     return currentCategoryPages.value
       .slice(startIndex, startIndex + recipesPerPage.value)
       .map((recipe) => applySelectedVariants(recipe, getSelectedVariant));
@@ -210,17 +316,33 @@ export const useRecipeBrowserSelectors = ({
 
   const totalPages = computed(() => {
     if (!currentCategory.value) return 0;
-    return Math.ceil(currentCategory.value.recipeVariants.size / recipesPerPage.value);
+    const orderedRecipeIds = currentCategoryOrderedRecipeIds.value;
+    if (orderedRecipeIds.length > 0) {
+      return Math.ceil(orderedRecipeIds.length / recipesPerPage.value);
+    }
+    const categoryCount = Math.max(currentCategory.value.recipeCount ?? 0, currentCategory.value.recipeVariants.size);
+    return Math.ceil(categoryCount / recipesPerPage.value);
   });
 
-  const filteredRecipeCount = computed(() => filteredRecipes.value.length);
-  const totalRecipeCount = computed(() => currentRecipesInTab.value.length);
+  const totalRecipeCount = computed(() => {
+    const totalFromBootstrap = currentTab.value === 'usedIn'
+      ? tabRecipeTotals.value.usedIn
+      : tabRecipeTotals.value.producedBy;
+    return Math.max(totalFromBootstrap, currentRecipesInTab.value.length);
+  });
+  const filteredRecipeCount = computed(() => {
+    if (!recipeSearchQuery.value.trim()) {
+      return totalRecipeCount.value;
+    }
+    return filteredRecipes.value.length;
+  });
 
   return {
     currentRecipesInTab,
     filteredRecipes,
     machineCategories,
     currentCategory,
+    currentCategoryOrderedRecipeIds,
     currentCategoryPages,
     currentBaseRecipe,
     currentPageRecipes,

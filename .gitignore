@@ -59,6 +59,7 @@ analyze_*.py
 verify_*.py
 
 # Large data files (exceeds GitHub limits)
+backend/data/
 backend/data/all_recipes.json
 backend/data/all_items.json
 backend/data/item_recipe_index.json

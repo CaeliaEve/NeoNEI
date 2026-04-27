@@ -119,8 +119,25 @@ const detectedPresentationProfile = computed<RecipePresentationProfile>(() => re
   preferDetailedCrafting: props.preferDetailedCrafting,
 }));
 
+const inlineRecipeUiPayload = computed<RecipeUiPayload | null>(() => {
+  const additionalData =
+    props.recipe.additionalData && typeof props.recipe.additionalData === 'object'
+      ? props.recipe.additionalData as Record<string, unknown>
+      : null;
+  const candidate =
+    additionalData?.uiPayload && typeof additionalData.uiPayload === 'object'
+      ? additionalData.uiPayload as Record<string, unknown>
+      : null;
+  if (!candidate || typeof candidate.recipeId !== 'string' || typeof candidate.familyKey !== 'string') {
+    return null;
+  }
+  return candidate as unknown as RecipeUiPayload;
+});
+
+const resolvedRecipeUiPayload = computed<RecipeUiPayload | null>(() => inlineRecipeUiPayload.value ?? recipeUiPayload.value);
+
 const presentationProfile = computed<RecipePresentationProfile>(() => {
-  const payloadProfile = resolveRecipePresentationProfileFromUiPayload(recipeUiPayload.value);
+  const payloadProfile = resolveRecipePresentationProfileFromUiPayload(resolvedRecipeUiPayload.value);
   return payloadProfile ?? detectedPresentationProfile.value;
 });
 
@@ -226,6 +243,11 @@ const displayedComponentName = computed(() => {
 });
 
 const refreshRecipeUiPayload = async () => {
+  if (inlineRecipeUiPayload.value) {
+    recipeUiPayload.value = inlineRecipeUiPayload.value;
+    return;
+  }
+
   const uiType = detectedPresentationProfile.value.uiConfig.uiType;
   const shouldFetch = [
     'botania_terra_plate',
@@ -314,7 +336,7 @@ watch(
 );
 
 watch(
-  () => props.recipe.recipeId,
+  () => [props.recipe.recipeId, inlineRecipeUiPayload.value?.familyKey ?? ''],
   () => {
     void refreshRecipeUiPayload();
   },

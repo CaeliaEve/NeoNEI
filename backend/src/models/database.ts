@@ -313,8 +313,25 @@ export class DatabaseManager {
       CREATE TABLE IF NOT EXISTS recipe_machine_groups (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         item_id TEXT NOT NULL,
+        relation_type TEXT NOT NULL DEFAULT 'produced_by',
         machine_key TEXT NOT NULL,
         family TEXT,
+        voltage_tier TEXT,
+        recipe_ids_blob TEXT,
+        recipe_count INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS recipe_category_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id TEXT NOT NULL,
+        relation_type TEXT NOT NULL DEFAULT 'produced_by',
+        category_key TEXT NOT NULL,
+        category_type TEXT NOT NULL,
+        category_name TEXT NOT NULL,
+        machine_key TEXT,
         voltage_tier TEXT,
         recipe_ids_blob TEXT,
         recipe_count INTEGER DEFAULT 0,
@@ -352,6 +369,29 @@ export class DatabaseManager {
     `);
 
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS mods_summary (
+        mod_id TEXT PRIMARY KEY,
+        mod_name TEXT NOT NULL,
+        item_count INTEGER DEFAULT 0,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS browser_default_entries (
+        entry_order INTEGER PRIMARY KEY,
+        entry_kind TEXT NOT NULL,
+        item_id TEXT NOT NULL,
+        mod_id TEXT NOT NULL,
+        group_key TEXT,
+        group_label TEXT,
+        group_size INTEGER DEFAULT 1,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (item_id) REFERENCES items_core(item_id) ON DELETE CASCADE
+      )
+    `);
+
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS recipe_summary_compact (
         item_id TEXT PRIMARY KEY,
         summary_payload TEXT NOT NULL,
@@ -371,6 +411,22 @@ export class DatabaseManager {
       )
     `);
 
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS publish_payloads (
+        payload_key TEXT PRIMARY KEY,
+        payload_type TEXT NOT NULL,
+        payload_json TEXT NOT NULL,
+        signature TEXT,
+        updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+
+    const recipeMachineGroupsColumns = this.db.pragma(`table_info(recipe_machine_groups)`) as TableInfoRow[];
+    const hasRecipeMachineGroupsRelationType = recipeMachineGroupsColumns.some((col) => col.name === 'relation_type');
+    if (!hasRecipeMachineGroupsRelationType) {
+      this.db.exec("ALTER TABLE recipe_machine_groups ADD COLUMN relation_type TEXT NOT NULL DEFAULT 'produced_by'");
+    }
+
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_core_mod_id ON items_core(mod_id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_items_core_localized_name ON items_core(localized_name)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_item_browser_groups_key ON item_browser_groups(group_key)');
@@ -384,11 +440,19 @@ export class DatabaseManager {
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_edges_item_relation ON recipe_edges(item_id, relation_type)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_edges_recipe_id ON recipe_edges(recipe_id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_machine_groups_item_id ON recipe_machine_groups(item_id)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_machine_groups_item_relation ON recipe_machine_groups(item_id, relation_type)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_machine_groups_lookup ON recipe_machine_groups(item_id, relation_type, machine_key, voltage_tier)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_category_groups_item_relation ON recipe_category_groups(item_id, relation_type)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_category_groups_lookup ON recipe_category_groups(item_id, relation_type, category_key)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_assets_manifest_type_mod ON assets_manifest(asset_type, mod_id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_hot_items_home_rank ON hot_items(home_rank)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_mods_summary_item_count ON mods_summary(item_count DESC)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_browser_default_entries_mod_id ON browser_default_entries(mod_id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_summary_compact_signature ON recipe_summary_compact(signature)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_ui_payloads_recipe_id ON ui_payloads(recipe_id)');
     this.db.exec('CREATE INDEX IF NOT EXISTS idx_ui_payloads_family_key ON ui_payloads(family_key)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_publish_payloads_type ON publish_payloads(payload_type)');
+    this.db.exec('CREATE INDEX IF NOT EXISTS idx_publish_payloads_signature ON publish_payloads(signature)');
   }
 
   private async migrateDatabase(): Promise<void> {
@@ -529,6 +593,49 @@ export class DatabaseManager {
         this.db.exec('CREATE INDEX IF NOT EXISTS idx_ui_payloads_family_key ON ui_payloads(family_key)');
       }
 
+      if (!tableNames.includes('publish_payloads')) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS publish_payloads (
+            payload_key TEXT PRIMARY KEY,
+            payload_type TEXT NOT NULL,
+            payload_json TEXT NOT NULL,
+            signature TEXT,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+      }
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_publish_payloads_type ON publish_payloads(payload_type)');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_publish_payloads_signature ON publish_payloads(signature)');
+
+      if (!tableNames.includes('mods_summary')) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS mods_summary (
+            mod_id TEXT PRIMARY KEY,
+            mod_name TEXT NOT NULL,
+            item_count INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+      }
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_mods_summary_item_count ON mods_summary(item_count DESC)');
+
+      if (!tableNames.includes('browser_default_entries')) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS browser_default_entries (
+            entry_order INTEGER PRIMARY KEY,
+            entry_kind TEXT NOT NULL,
+            item_id TEXT NOT NULL,
+            mod_id TEXT NOT NULL,
+            group_key TEXT,
+            group_label TEXT,
+            group_size INTEGER DEFAULT 1,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (item_id) REFERENCES items_core(item_id) ON DELETE CASCADE
+          )
+        `);
+      }
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_browser_default_entries_mod_id ON browser_default_entries(mod_id)');
+
       if (!tableNames.includes('item_browser_groups')) {
         this.db.exec(`
           CREATE TABLE IF NOT EXISTS item_browser_groups (
@@ -544,6 +651,29 @@ export class DatabaseManager {
       }
       this.db.exec('CREATE INDEX IF NOT EXISTS idx_item_browser_groups_key ON item_browser_groups(group_key)');
       this.db.exec('CREATE INDEX IF NOT EXISTS idx_item_browser_groups_sort ON item_browser_groups(group_sort_order)');
+
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_machine_groups_item_relation ON recipe_machine_groups(item_id, relation_type)');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_machine_groups_lookup ON recipe_machine_groups(item_id, relation_type, machine_key, voltage_tier)');
+
+      if (!tableNames.includes('recipe_category_groups')) {
+        this.db.exec(`
+          CREATE TABLE IF NOT EXISTS recipe_category_groups (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_id TEXT NOT NULL,
+            relation_type TEXT NOT NULL DEFAULT 'produced_by',
+            category_key TEXT NOT NULL,
+            category_type TEXT NOT NULL,
+            category_name TEXT NOT NULL,
+            machine_key TEXT,
+            voltage_tier TEXT,
+            recipe_ids_blob TEXT,
+            recipe_count INTEGER DEFAULT 0,
+            updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+      }
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_category_groups_item_relation ON recipe_category_groups(item_id, relation_type)');
+      this.db.exec('CREATE INDEX IF NOT EXISTS idx_recipe_category_groups_lookup ON recipe_category_groups(item_id, relation_type, category_key)');
 
     } catch (error) {
       console.error('❌ Database migration failed:', error);

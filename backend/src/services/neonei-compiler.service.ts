@@ -5,12 +5,19 @@ import zlib from 'zlib';
 import { pinyin } from 'pinyin-pro';
 import { DatabaseManager } from '../models/database';
 import { DATA_DIR } from '../config/runtime-paths';
-import { ItemsService } from './items.service';
+import { ItemsService, type Item } from './items.service';
 import { PageAtlasService } from './page-atlas.service';
+import { PublishPayloadMaterializerService } from './publish-payload-materializer.service';
 import { buildCollapsibleItemAssignments, type CollapsibleItemCandidate } from './gtnh-collapsible-items.service';
 import { compareGtnhBrowserOrder } from './gtnh-browser-order.service';
 import { getMachineIconItem } from './machine-icon-mapping.service';
 import { transformRecipeMetadata } from './recipe-metadata';
+import {
+  buildRecipeCategorySummaries,
+  describeRecipeCategory,
+  type RecipeCategorySummary,
+  type RecipeLike,
+} from './recipe-category-grouping.service';
 
 export interface CompilerSourceRoots {
   itemsDir: string;
@@ -34,6 +41,12 @@ export interface CompilerOptions {
     slotSizes?: number[];
     atlasOutputDir?: string;
   };
+  publishHotPayloads?: {
+    enabled?: boolean;
+    firstPageSize?: number;
+    slotSizes?: number[];
+    includeBrowserSearchPack?: boolean;
+  };
 }
 
 type NormalizedCompilerOptions = {
@@ -43,6 +56,12 @@ type NormalizedCompilerOptions = {
     pageSize: number;
     slotSizes: number[];
     atlasOutputDir: string;
+  };
+  publishHotPayloads: {
+    enabled: boolean;
+    firstPageSize: number;
+    slotSizes: number[];
+    includeBrowserSearchPack: boolean;
   };
   bootstrap: {
     hotItemLimit: number;
@@ -154,6 +173,19 @@ type UiPayloadRecord = {
   recipeId: string;
   familyKey: string;
   payloadJson: string;
+};
+
+type RecipeRelationType = 'produced_by' | 'used_in';
+
+type MaterializedRecipeGroupState = {
+  family: string;
+  voltageTier: string | null;
+  recipeIds: string[];
+};
+
+type MaterializedCategoryGroupState = {
+  descriptor: RecipeCategorySummary;
+  recipeIds: string[];
 };
 
 type MaterializedItemRecord = {
@@ -448,6 +480,51 @@ function extractOutputItemIds(recipe: SplitRecipeRecord): string[] {
   return Array.from(result);
 }
 
+function addRecipeToMachineGroupsMap(
+  machineGroupsMap: Map<string, Map<string, MaterializedRecipeGroupState>>,
+  itemId: string,
+  machineType: string,
+  family: string,
+  voltageTier: string | null,
+  recipeId: string,
+): void {
+  if (!itemId || !machineType || !recipeId) {
+    return;
+  }
+
+  const machineKey = `${machineType}::${voltageTier ?? ''}`;
+  const itemMachineGroups = machineGroupsMap.get(itemId) ?? new Map<string, MaterializedRecipeGroupState>();
+  const group = itemMachineGroups.get(machineKey) ?? {
+    family,
+    voltageTier,
+    recipeIds: [],
+  };
+  group.recipeIds.push(recipeId);
+  itemMachineGroups.set(machineKey, group);
+  machineGroupsMap.set(itemId, itemMachineGroups);
+}
+
+function addRecipeToCategoryGroupsMap(
+  categoryGroupsMap: Map<string, Map<string, MaterializedCategoryGroupState>>,
+  itemId: string,
+  descriptor: RecipeCategorySummary,
+  recipeId: string,
+): void {
+  if (!itemId || !descriptor.categoryKey || !recipeId) {
+    return;
+  }
+
+  const itemCategoryGroups = categoryGroupsMap.get(itemId) ?? new Map<string, MaterializedCategoryGroupState>();
+  const group = itemCategoryGroups.get(descriptor.categoryKey) ?? {
+    descriptor: { ...descriptor, recipeCount: 0 },
+    recipeIds: [],
+  };
+  group.recipeIds.push(recipeId);
+  group.descriptor.recipeCount = group.recipeIds.length;
+  itemCategoryGroups.set(descriptor.categoryKey, group);
+  categoryGroupsMap.set(itemId, itemCategoryGroups);
+}
+
 function detectUiFamilyKey(recipe: SplitRecipeRecord): string | null {
   const machineType = `${recipe.machineInfo?.machineType ?? ''}`.trim().toLowerCase();
   const recipeType = `${recipe.recipeType ?? ''}`.trim().toLowerCase();
@@ -487,6 +564,24 @@ function buildUiPayload(recipe: SplitRecipeRecord, familyKey: string): UiPayload
     familyKey,
     payloadJson: JSON.stringify(payload),
   };
+}
+
+function toMachineGroupSummaryEntries(
+  groups: Map<string, MaterializedRecipeGroupState> | undefined,
+): Array<{
+  machineType: string;
+  category: string;
+  voltageTier: string | null;
+  voltage: null;
+  recipeCount: number;
+}> {
+  return Array.from(groups?.entries() ?? []).map(([machineKey, group]) => ({
+    machineType: machineKey.split('::')[0],
+    category: group.family,
+    voltageTier: group.voltageTier,
+    voltage: null,
+    recipeCount: group.recipeIds.length,
+  }));
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -662,6 +757,8 @@ function chunkArray<T>(items: T[], chunkSize: number): T[][] {
   return chunks;
 }
 
+const ACCELERATION_COMPILER_VERSION = '2026-04-26-publish-hot-payloads-v1';
+
 export class NeoNeiCompilerService {
   private options: NormalizedCompilerOptions;
   private readonly bootstrapChunkSize = 500;
@@ -680,10 +777,16 @@ export class NeoNeiCompilerService {
     this.options = {
       hotPageAtlas: {
         enabled: options.hotPageAtlas?.enabled ?? true,
-        pages: options.hotPageAtlas?.pages ?? 2,
-        pageSize: options.hotPageAtlas?.pageSize ?? 120,
+        pages: options.hotPageAtlas?.pages ?? 8,
+        pageSize: options.hotPageAtlas?.pageSize ?? 55,
         slotSizes: options.hotPageAtlas?.slotSizes ?? [45],
         atlasOutputDir: options.hotPageAtlas?.atlasOutputDir ?? path.join(DATA_DIR, 'page-atlas-cache'),
+      },
+      publishHotPayloads: {
+        enabled: options.publishHotPayloads?.enabled ?? true,
+        firstPageSize: options.publishHotPayloads?.firstPageSize ?? 256,
+        slotSizes: options.publishHotPayloads?.slotSizes ?? [45],
+        includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? false,
       },
       bootstrap: {
         hotItemLimit: 5000,
@@ -694,7 +797,13 @@ export class NeoNeiCompilerService {
 
   private buildSignature(itemFiles: string[]): string {
     const hash = crypto.createHash('sha1');
-    hash.update(JSON.stringify(this.sourceRoots));
+    hash.update(JSON.stringify({
+      compilerVersion: ACCELERATION_COMPILER_VERSION,
+      sourceRoots: this.sourceRoots,
+      hotPageAtlas: this.options.hotPageAtlas,
+      publishHotPayloads: this.options.publishHotPayloads,
+      bootstrap: this.options.bootstrap,
+    }));
     for (const filePath of itemFiles) {
       const stat = fs.statSync(filePath);
       hash.update(`${filePath}:${stat.size}:${stat.mtimeMs}`);
@@ -797,9 +906,17 @@ export class NeoNeiCompilerService {
 
     const insertMachineGroup = db.prepare(`
       INSERT INTO recipe_machine_groups (
-        item_id, machine_key, family, voltage_tier, recipe_ids_blob, recipe_count, updated_at
+        item_id, relation_type, machine_key, family, voltage_tier, recipe_ids_blob, recipe_count, updated_at
       ) VALUES (
-        @item_id, @machine_key, @family, @voltage_tier, @recipe_ids_blob, @recipe_count, CURRENT_TIMESTAMP
+        @item_id, @relation_type, @machine_key, @family, @voltage_tier, @recipe_ids_blob, @recipe_count, CURRENT_TIMESTAMP
+      )
+    `);
+
+    const insertCategoryGroup = db.prepare(`
+      INSERT INTO recipe_category_groups (
+        item_id, relation_type, category_key, category_type, category_name, machine_key, voltage_tier, recipe_ids_blob, recipe_count, updated_at
+      ) VALUES (
+        @item_id, @relation_type, @category_key, @category_type, @category_name, @machine_key, @voltage_tier, @recipe_ids_blob, @recipe_count, CURRENT_TIMESTAMP
       )
     `);
 
@@ -835,18 +952,53 @@ export class NeoNeiCompilerService {
       )
     `);
 
+    const insertModsSummary = db.prepare(`
+      INSERT OR REPLACE INTO mods_summary (
+        mod_id, mod_name, item_count, updated_at
+      ) VALUES (
+        @mod_id, @mod_name, @item_count, CURRENT_TIMESTAMP
+      )
+    `);
+
+    const insertBrowserDefaultEntry = db.prepare(`
+      INSERT OR REPLACE INTO browser_default_entries (
+        entry_order,
+        entry_kind,
+        item_id,
+        mod_id,
+        group_key,
+        group_label,
+        group_size,
+        updated_at
+      ) VALUES (
+        @entry_order,
+        @entry_kind,
+        @item_id,
+        @mod_id,
+        @group_key,
+        @group_label,
+        @group_size,
+        CURRENT_TIMESTAMP
+      )
+    `);
+
     let itemsImported = 0;
     let recipesImported = 0;
     let recipesCorePayloadBytes = 0;
     let recipeBootstrapPayloadBytes = 0;
     let recipeSummaryCompactBytes = 0;
     let uiPayloadBytes = 0;
+    let publishPayloadBytes = 0;
+    let publishPayloadCount = 0;
     const itemRecords = new Map<string, MaterializedItemRecord>();
     const itemSourceOrder = new Map<string, number>();
     const itemOreDictionaryNames = new Map<string, Set<string>>();
     const producedByMap = new Map<string, MaterializedRecipePayload[]>();
     const usedInMap = new Map<string, MaterializedRecipePayload[]>();
-    const machineGroupsMap = new Map<string, Map<string, { family: string; voltageTier: string | null; recipeIds: string[] }>>();
+    const producedByMachineGroupsMap = new Map<string, Map<string, MaterializedRecipeGroupState>>();
+    const usedInMachineGroupsMap = new Map<string, Map<string, MaterializedRecipeGroupState>>();
+    const producedByCategoryGroupsMap = new Map<string, Map<string, MaterializedCategoryGroupState>>();
+    const usedInCategoryGroupsMap = new Map<string, Map<string, MaterializedCategoryGroupState>>();
     let allBootstrapItemIds: string[] = [];
     let hotBootstrapItemIds: string[] = [];
 
@@ -856,11 +1008,15 @@ export class NeoNeiCompilerService {
       db.exec('DELETE FROM recipes_core');
       db.exec('DELETE FROM recipe_edges');
       db.exec('DELETE FROM recipe_machine_groups');
+      db.exec('DELETE FROM recipe_category_groups');
       db.exec('DELETE FROM item_browser_groups');
       db.exec('DELETE FROM recipe_bootstrap');
       db.exec('DELETE FROM recipe_summary_compact');
       db.exec('DELETE FROM ui_payloads');
       db.exec('DELETE FROM hot_items');
+      db.exec('DELETE FROM mods_summary');
+      db.exec('DELETE FROM browser_default_entries');
+      db.exec('DELETE FROM publish_payloads');
       db.exec("DELETE FROM assets_manifest WHERE asset_type = 'page_atlas'");
     });
 
@@ -939,6 +1095,7 @@ export class NeoNeiCompilerService {
         const voltageTier = recipe.machineInfo?.parsedVoltageTier ?? null;
         const uiFamilyKey = detectUiFamilyKey(recipe);
         const materializedRecipe = buildMaterializedRecipe(recipe, family, itemRecords);
+        const categoryDescriptor = describeRecipeCategory(materializedRecipe as RecipeLike);
         const materializedRecipeJson = JSON.stringify(materializedRecipe);
         recipesCorePayloadBytes += Buffer.byteLength(materializedRecipeJson, 'utf8');
 
@@ -966,6 +1123,22 @@ export class NeoNeiCompilerService {
           const list = usedInMap.get(itemId) ?? [];
           list.push(materializedRecipe);
           usedInMap.set(itemId, list);
+          addRecipeToCategoryGroupsMap(
+            usedInCategoryGroupsMap,
+            itemId,
+            categoryDescriptor,
+            recipeId,
+          );
+          if (machineType) {
+            addRecipeToMachineGroupsMap(
+              usedInMachineGroupsMap,
+              itemId,
+              machineType,
+              family,
+              voltageTier,
+              recipeId,
+            );
+          }
         });
 
         outputIds.forEach((itemId, index) => {
@@ -979,18 +1152,22 @@ export class NeoNeiCompilerService {
           const list = producedByMap.get(itemId) ?? [];
           list.push(materializedRecipe);
           producedByMap.set(itemId, list);
+          addRecipeToCategoryGroupsMap(
+            producedByCategoryGroupsMap,
+            itemId,
+            categoryDescriptor,
+            recipeId,
+          );
 
           if (machineType) {
-            const machineKey = `${machineType}::${voltageTier ?? ''}`;
-            const itemMachineGroups = machineGroupsMap.get(itemId) ?? new Map<string, { family: string; voltageTier: string | null; recipeIds: string[] }>();
-            const group = itemMachineGroups.get(machineKey) ?? {
+            addRecipeToMachineGroupsMap(
+              producedByMachineGroupsMap,
+              itemId,
+              machineType,
               family,
               voltageTier,
-              recipeIds: [],
-            };
-            group.recipeIds.push(recipeId);
-            itemMachineGroups.set(machineKey, group);
-            machineGroupsMap.set(itemId, itemMachineGroups);
+              recipeId,
+            );
           }
         });
 
@@ -1056,6 +1233,8 @@ export class NeoNeiCompilerService {
       }));
 
       const assignments = buildCollapsibleItemAssignments(candidates);
+      const seenCollapsedGroups = new Set<string>();
+      let browserDefaultEntryOrder = 0;
 
       for (const candidate of candidates) {
         const assignment = assignments.get(candidate.itemId);
@@ -1067,22 +1246,104 @@ export class NeoNeiCompilerService {
           group_size: assignment.groupSize,
           group_sort_order: assignment.groupSortOrder,
         });
+
+        if (!assignment.groupKey || assignment.groupSize <= 1) {
+          insertBrowserDefaultEntry.run({
+            entry_order: browserDefaultEntryOrder,
+            entry_kind: 'item',
+            item_id: assignment.itemId,
+            mod_id: candidate.modId,
+            group_key: null,
+            group_label: null,
+            group_size: 1,
+          });
+          browserDefaultEntryOrder += 1;
+          continue;
+        }
+
+        if (seenCollapsedGroups.has(assignment.groupKey)) {
+          continue;
+        }
+
+        seenCollapsedGroups.add(assignment.groupKey);
+        insertBrowserDefaultEntry.run({
+          entry_order: browserDefaultEntryOrder,
+          entry_kind: 'group-collapsed',
+          item_id: assignment.itemId,
+          mod_id: candidate.modId,
+          group_key: assignment.groupKey,
+          group_label: assignment.groupLabel ?? candidate.localizedName,
+          group_size: assignment.groupSize,
+        });
+        browserDefaultEntryOrder += 1;
+      }
+    });
+
+    const modsSummaryTransaction = db.transaction(() => {
+      const modRows = db.prepare(`
+        SELECT mod_id, COUNT(*) AS item_count
+        FROM items_core
+        GROUP BY mod_id
+        ORDER BY mod_id COLLATE NOCASE ASC
+      `).all() as Array<{ mod_id: string; item_count: number }>;
+
+      for (const row of modRows) {
+        insertModsSummary.run({
+          mod_id: row.mod_id,
+          mod_name: row.mod_id,
+          item_count: Number(row.item_count ?? 0),
+        });
       }
     });
 
     const machineGroupsTransaction = db.transaction(() => {
-      for (const [itemId, groups] of machineGroupsMap.entries()) {
-        for (const [machineKey, group] of groups.entries()) {
-          insertMachineGroup.run({
-            item_id: itemId,
-            machine_key: machineKey,
-            family: group.family,
-            voltage_tier: group.voltageTier,
-            recipe_ids_blob: JSON.stringify(group.recipeIds),
-            recipe_count: group.recipeIds.length,
-          });
+      const writeRelationGroups = (
+        relationType: RecipeRelationType,
+        groupsMap: Map<string, Map<string, MaterializedRecipeGroupState>>,
+      ) => {
+        for (const [itemId, groups] of groupsMap.entries()) {
+          for (const [machineKey, group] of groups.entries()) {
+            insertMachineGroup.run({
+              item_id: itemId,
+              relation_type: relationType,
+              machine_key: machineKey,
+              family: group.family,
+              voltage_tier: group.voltageTier,
+              recipe_ids_blob: JSON.stringify(group.recipeIds),
+              recipe_count: group.recipeIds.length,
+            });
+          }
         }
-      }
+      };
+
+      writeRelationGroups('produced_by', producedByMachineGroupsMap);
+      writeRelationGroups('used_in', usedInMachineGroupsMap);
+    });
+
+    const categoryGroupsTransaction = db.transaction(() => {
+      const writeRelationGroups = (
+        relationType: RecipeRelationType,
+        groupsMap: Map<string, Map<string, MaterializedCategoryGroupState>>,
+      ) => {
+        for (const [itemId, groups] of groupsMap.entries()) {
+          for (const group of groups.values()) {
+            insertCategoryGroup.run({
+              item_id: itemId,
+              relation_type: relationType,
+              category_key: group.descriptor.categoryKey,
+              category_type: group.descriptor.type,
+              category_name: group.descriptor.name,
+              machine_key: group.descriptor.machineKey ?? null,
+              voltage_tier: group.descriptor.voltageTier ?? null,
+              recipe_ids_blob: JSON.stringify(group.recipeIds),
+              recipe_count: group.recipeIds.length,
+            });
+          }
+        }
+      };
+
+      writeRelationGroups('produced_by', producedByCategoryGroupsMap);
+      writeRelationGroups('used_in', usedInCategoryGroupsMap);
     });
 
     const hotItemsTransaction = db.transaction(() => {
@@ -1139,7 +1400,7 @@ export class NeoNeiCompilerService {
       for (const itemId of allBootstrapItemIds) {
         const produced = producedByMap.get(itemId)?.length ?? 0;
         const used = usedInMap.get(itemId)?.length ?? 0;
-        const machineCount = machineGroupsMap.get(itemId)?.size ?? 0;
+        const machineCount = (producedByMachineGroupsMap.get(itemId)?.size ?? 0) + (usedInMachineGroupsMap.get(itemId)?.size ?? 0);
         const popularityRow = selectPopularity.get(itemId) as { popularity_score?: number } | undefined;
         const popularity = Number(popularityRow?.popularity_score ?? 0);
         const score = produced * 5 + used * 3 + machineCount * 7 + popularity;
@@ -1212,6 +1473,10 @@ export class NeoNeiCompilerService {
           .filter(Boolean);
         const inlineProducedBy = indexedCrafting.slice(0, this.options.bootstrap.inlineSeedLimit);
         const inlineUsedIn = indexedUsage.slice(0, this.options.bootstrap.inlineSeedLimit);
+        const producedByMachineGroups = toMachineGroupSummaryEntries(producedByMachineGroupsMap.get(itemId));
+        const usedInMachineGroups = toMachineGroupSummaryEntries(usedInMachineGroupsMap.get(itemId));
+        const producedByCategoryGroups = buildRecipeCategorySummaries(indexedCrafting as RecipeLike[]);
+        const usedInCategoryGroups = buildRecipeCategorySummaries(indexedUsage as RecipeLike[]);
         const payload = {
           item: itemPayload,
           recipeIndex: {
@@ -1228,18 +1493,15 @@ export class NeoNeiCompilerService {
             counts: {
               producedBy: indexedCrafting.length,
               usedIn: indexedUsage.length,
-              machineGroups: (machineGroupsMap.get(itemId)?.size ?? 0),
+              machineGroups: producedByMachineGroups.length,
             },
-            machineGroups: Array.from(machineGroupsMap.get(itemId)?.entries() ?? []).map(([machineKey, group]) => ({
-              machineType: machineKey.split('::')[0],
-              category: group.family,
-              voltageTier: group.voltageTier,
-              voltage: null,
-              recipeCount: group.recipeIds.length,
-            })),
+            machineGroups: producedByMachineGroups,
+            producedByMachineGroups,
+            usedInMachineGroups,
+            producedByCategoryGroups,
+            usedInCategoryGroups,
           },
         };
-
         insertSummaryCompact.run({
           item_id: itemId,
           summary_payload: JSON.stringify(payload.indexedSummary),
@@ -1278,15 +1540,37 @@ export class NeoNeiCompilerService {
       upsertState.run({ state_key: 'recipes_dir', state_value: this.sourceRoots.recipesDir });
       upsertState.run({ state_key: 'canonical_dir', state_value: this.sourceRoots.canonicalDir });
       upsertState.run({ state_key: 'image_root', state_value: this.sourceRoots.imageRoot });
+      upsertState.run({ state_key: 'compiler_version', state_value: ACCELERATION_COMPILER_VERSION });
       upsertState.run({ state_key: 'items_core_count', state_value: String(itemsImported) });
       upsertState.run({ state_key: 'recipes_core_count', state_value: String(recipesImported) });
       upsertState.run({ state_key: 'recipe_edges_count', state_value: String(Array.from(producedByMap.values()).reduce((sum, recipes) => sum + recipes.length, 0) + Array.from(usedInMap.values()).reduce((sum, recipes) => sum + recipes.length, 0)) });
       upsertState.run({ state_key: 'recipe_bootstrap_count', state_value: String(hotBootstrapItemIds.length) });
       upsertState.run({ state_key: 'recipe_summary_compact_count', state_value: String(allBootstrapItemIds.length) });
-      upsertState.run({ state_key: 'recipe_machine_groups_count', state_value: String(Array.from(machineGroupsMap.values()).reduce((sum, groups) => sum + groups.size, 0)) });
+      upsertState.run({
+        state_key: 'recipe_machine_groups_count',
+        state_value: String(
+          Array.from(producedByMachineGroupsMap.values()).reduce((sum, groups) => sum + groups.size, 0)
+          + Array.from(usedInMachineGroupsMap.values()).reduce((sum, groups) => sum + groups.size, 0),
+        ),
+      });
+      upsertState.run({
+        state_key: 'recipe_category_groups_count',
+        state_value: String(
+          Array.from(producedByCategoryGroupsMap.values()).reduce((sum, groups) => sum + groups.size, 0)
+          + Array.from(usedInCategoryGroupsMap.values()).reduce((sum, groups) => sum + groups.size, 0),
+        ),
+      });
       upsertState.run({
         state_key: 'item_browser_groups_count',
         state_value: String((db.prepare('SELECT COUNT(*) AS c FROM item_browser_groups').get() as { c: number }).c),
+      });
+      upsertState.run({
+        state_key: 'browser_default_entries_count',
+        state_value: String((db.prepare('SELECT COUNT(*) AS c FROM browser_default_entries').get() as { c: number }).c),
+      });
+      upsertState.run({
+        state_key: 'mods_summary_count',
+        state_value: String((db.prepare('SELECT COUNT(*) AS c FROM mods_summary').get() as { c: number }).c),
       });
       upsertState.run({ state_key: 'hot_items_count', state_value: String(allBootstrapItemIds.length) });
       upsertState.run({ state_key: 'recipes_core_payload_bytes', state_value: String(recipesCorePayloadBytes) });
@@ -1313,8 +1597,19 @@ export class NeoNeiCompilerService {
     itemBrowserGroupsTransaction();
     this.logStage('item-browser-groups-done');
     db.pragma('wal_checkpoint(PASSIVE)');
+    modsSummaryTransaction();
+    this.logStage('mods-summary-done');
+    db.pragma('wal_checkpoint(PASSIVE)');
     machineGroupsTransaction();
-    this.logStage('machine-groups-done', { machineGroupItems: machineGroupsMap.size });
+    this.logStage('machine-groups-done', {
+      producedByMachineGroupItems: producedByMachineGroupsMap.size,
+      usedInMachineGroupItems: usedInMachineGroupsMap.size,
+    });
+    categoryGroupsTransaction();
+    this.logStage('category-groups-done', {
+      producedByCategoryGroupItems: producedByCategoryGroupsMap.size,
+      usedInCategoryGroupItems: usedInCategoryGroupsMap.size,
+    });
     db.pragma('wal_checkpoint(PASSIVE)');
     hotItemsTransaction();
     this.logStage('hot-items-done');
@@ -1350,25 +1645,29 @@ export class NeoNeiCompilerService {
 
     let hotAtlasesGenerated = 0;
     const hotPageAtlas = this.options.hotPageAtlas;
-    if (hotPageAtlas.enabled) {
-      const itemsService = new ItemsService({
-        databaseManager: this.databaseManager,
-        splitExportFallback: false,
-      });
-      const pageAtlasService = new PageAtlasService({
-        databaseManager: this.databaseManager,
-        itemsService,
-        imageRoot: this.sourceRoots.imageRoot,
-        atlasDir: hotPageAtlas.atlasOutputDir,
-      });
+    const publishHotPayloads = this.options.publishHotPayloads;
+    const runtimeItemsService = new ItemsService({
+      databaseManager: this.databaseManager,
+      splitExportFallback: false,
+    });
+    const runtimePageAtlasService = new PageAtlasService({
+      databaseManager: this.databaseManager,
+      itemsService: runtimeItemsService,
+      imageRoot: this.sourceRoots.imageRoot,
+      atlasDir: hotPageAtlas.atlasOutputDir,
+    });
 
+    if (hotPageAtlas.enabled) {
       for (const slotSize of hotPageAtlas.slotSizes) {
         for (let page = 1; page <= hotPageAtlas.pages; page += 1) {
           // eslint-disable-next-line no-await-in-loop
-          const result = await itemsService.getItems({ page, pageSize: hotPageAtlas.pageSize });
-          if (!result.data.length) break;
+          const pageItems = await runtimeItemsService.getBrowserDisplayItemsForPage({
+            page,
+            pageSize: hotPageAtlas.pageSize,
+          });
+          if (!pageItems.length) break;
           // eslint-disable-next-line no-await-in-loop
-          const atlas = await pageAtlasService.buildAtlas(result.data, slotSize);
+          const atlas = await runtimePageAtlasService.buildAtlas(pageItems, slotSize);
           if (atlas) {
             hotAtlasesGenerated += 1;
           }
@@ -1377,8 +1676,27 @@ export class NeoNeiCompilerService {
     }
 
     this.logStage('hot-atlas-done', { hotAtlasesGenerated });
+
+    if (publishHotPayloads.enabled) {
+      const publishPayloadMaterializer = new PublishPayloadMaterializerService({
+        databaseManager: this.databaseManager,
+        imageRoot: this.sourceRoots.imageRoot,
+        atlasOutputDir: hotPageAtlas.atlasOutputDir,
+        publishHotPayloads,
+      });
+      const publishPayloadResult = await publishPayloadMaterializer.materialize(signature);
+      publishPayloadCount = publishPayloadResult.count;
+      publishPayloadBytes = publishPayloadResult.bytes;
+    }
+
+    this.logStage('publish-payloads-done', {
+      publishPayloadCount,
+      publishPayloadBytes,
+    });
     const finalStateTransaction = db.transaction(() => {
       upsertState.run({ state_key: 'page_atlas_assets_count', state_value: String(hotAtlasesGenerated) });
+      upsertState.run({ state_key: 'publish_payloads_count', state_value: String(publishPayloadCount) });
+      upsertState.run({ state_key: 'publish_payload_bytes', state_value: String(publishPayloadBytes) });
     });
     finalStateTransaction();
     db.pragma('wal_checkpoint(PASSIVE)');

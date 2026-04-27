@@ -3,6 +3,7 @@ import {
   type Item,
   type Recipe,
   type RecipeBootstrapPayload,
+  type indexedItemRecipeSummaryResponse,
   type indexedRecipe,
 } from '../services/api';
 import { convertIndexedRecipe } from '../domain/recipeNormalization';
@@ -15,10 +16,14 @@ type RecipeIndex = {
 export interface RecipeBootstrapResult {
   item: Item;
   recipeIndex: RecipeIndex;
+  indexedSummary: indexedItemRecipeSummaryResponse | null;
   recipes: {
     usedIn: Recipe[];
     producedBy: Recipe[];
   };
+  pendingProducedByRecipeIds: string[];
+  pendingUsageRecipeIds: string[];
+  pendingRecipeIds: string[];
 }
 
 const appendIndexedRecipes = (target: Map<string, Recipe>, indexedRecipes: indexedRecipe[]): string[] => {
@@ -62,18 +67,19 @@ export async function loadRecipeBootstrap(itemId: string): Promise<RecipeBootstr
       [...recipeIndex.producedByRecipes, ...recipeIndex.usedInRecipes].filter((recipeId) => !recipesById.has(recipeId)),
     ),
   );
-
-  if (missingRecipeIds.length > 0) {
-    const missingRecipes = await api.getIndexedRecipesByIds(missingRecipeIds);
-    appendIndexedRecipes(recipesById, missingRecipes);
-  }
+  const pendingProducedByRecipeIds = recipeIndex.producedByRecipes.filter((recipeId) => !recipesById.has(recipeId));
+  const pendingUsageRecipeIds = recipeIndex.usedInRecipes.filter((recipeId) => !recipesById.has(recipeId));
 
   return {
     item,
     recipeIndex,
+    indexedSummary: bootstrap.indexedSummary ?? null,
     recipes: {
       usedIn: orderRecipes(recipeIndex.usedInRecipes, recipesById),
       producedBy: orderRecipes(recipeIndex.producedByRecipes, recipesById),
     },
+    pendingProducedByRecipeIds,
+    pendingUsageRecipeIds,
+    pendingRecipeIds: missingRecipeIds,
   };
 }

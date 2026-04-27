@@ -12,6 +12,7 @@ import gtDiagramsRoutes from './routes/gt-diagrams.routes';
 import forestryGeneticsRoutes from './routes/forestry-genetics.routes';
 import renderContractRoutes from './routes/render-contract.routes';
 import recipeBootstrapRoutes from './routes/recipe-bootstrap.routes';
+import publishRoutes from './routes/publish.routes';
 import { getAccelerationDatabaseManager, getDatabaseManager } from './models/database';
 import { DATA_DIR, IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from './config/runtime-paths';
 import { requestObservability } from './middleware/request-observability';
@@ -20,7 +21,7 @@ import { logger } from './utils/logger';
 import { getRecipeBootstrapService } from './services/recipe-bootstrap.service';
 import { getPageAtlasService } from './services/page-atlas.service';
 import { getAutowarmPolicy } from './config/autowarm-policy';
-import { ensureAccelerationDatabaseReady } from './services/acceleration-db-pipeline.service';
+import { ensureAccelerationDatabaseReady, ensurePublishPayloadsReady } from './services/acceleration-db-pipeline.service';
 
 const app = express();
 const parsedPort = Number(process.env.PORT);
@@ -237,6 +238,7 @@ app.get('/api', (_req, res) => {
       gtDiagrams: '/api/gt-diagrams/overview',
       forestryGenetics: '/api/forestry-genetics/overview',
       patterns: '/api/patterns',
+      publishManifest: '/api/publish/manifest',
     },
   });
 });
@@ -250,6 +252,7 @@ app.use('/api/gt-diagrams', gtDiagramsRoutes);
 app.use('/api/forestry-genetics', forestryGeneticsRoutes);
 app.use('/api/render-contract', renderContractRoutes);
 app.use('/api/recipe-bootstrap', recipeBootstrapRoutes);
+app.use('/api/publish', publishRoutes);
 app.use(errorHandler);
 
 async function startServer() {
@@ -280,6 +283,21 @@ async function startServer() {
       logger.info('[ACCELERATION_DB] already fresh');
     }
 
+    const publishPayloadsMaterialized = await ensurePublishPayloadsReady({
+      manager: accelerationDbManager,
+      sourceRoots: {
+        itemsDir: SPLIT_ITEMS_DIR,
+        recipesDir: SPLIT_RECIPES_DIR,
+        canonicalDir: NESQL_CANONICAL_DIR,
+        imageRoot: IMAGES_PATH,
+      },
+    });
+    if (publishPayloadsMaterialized) {
+      logger.info('[PUBLISH_PAYLOADS] materialized in-place');
+    } else {
+      logger.info('[PUBLISH_PAYLOADS] already fresh');
+    }
+
     app.listen(PORT, HOST, () => {
       if (!fs.existsSync(IMAGES_PATH)) {
         logger.warn(`[WARN] IMAGES_PATH does not exist: ${IMAGES_PATH}`);
@@ -306,6 +324,23 @@ async function startServer() {
               logger.warn('[RECIPE_BOOTSTRAP_AUTOWARM] failed', error);
             });
         }, 500);
+      }
+
+      if (autowarmPolicy.recipeShard.enabled) {
+        setTimeout(() => {
+          void getRecipeBootstrapService()
+            .prewarmShardCache({ limit: autowarmPolicy.recipeShard.limit })
+            .then((result) => {
+              logger.info('[RECIPE_SHARD_AUTOWARM] completed', {
+                warmed: result.warmed,
+                skipped: result.skipped,
+                limit: autowarmPolicy.recipeShard.limit,
+              });
+            })
+            .catch((error) => {
+              logger.warn('[RECIPE_SHARD_AUTOWARM] failed', error);
+            });
+        }, 1800);
       }
 
       if (autowarmPolicy.pageAtlas.enabled) {

@@ -23,6 +23,21 @@ export interface SearchIndexEntry extends SearchIndexSource {
   pinyinAcronym: string;
 }
 
+export interface BrowserSearchPackEntry {
+  itemId: string;
+  localizedName: string;
+  modId: string;
+  normalizedLocalizedName: string;
+  normalizedInternalName: string;
+  normalizedItemId: string;
+  normalizedSearchTerms: string;
+  pinyinFull: string;
+  pinyinAcronym: string;
+  aliases: string;
+  popularityScore: number;
+  searchRank: number;
+}
+
 type AccelerationSearchRow = {
   item_id: string;
   localized_name: string;
@@ -33,6 +48,21 @@ type AccelerationItemRow = {
   item_id: string;
   localized_name: string;
   mod_id: string;
+};
+
+type AccelerationSearchPackRow = {
+  item_id: string;
+  localized_name: string;
+  mod_id: string;
+  localized_name_norm: string | null;
+  internal_name_norm: string | null;
+  item_id_norm: string | null;
+  search_terms_norm: string | null;
+  pinyin_full: string | null;
+  pinyin_acronym: string | null;
+  aliases: string | null;
+  popularity_score: number | null;
+  search_rank: number | null;
 };
 
 export interface ItemsSearchServiceOptions {
@@ -192,6 +222,7 @@ export class ItemsSearchService {
   private splitExportService = getNesqlSplitExportService();
   private allItemsCache: ItemBasicInfo[] | null = null;
   private searchIndexCache: SearchIndexEntry[] | null = null;
+  private browserSearchPackCache: BrowserSearchPackEntry[] | null = null;
   private splitExportFallback: boolean;
   private readonly databaseProvider: () => Database.Database | null;
 
@@ -269,6 +300,73 @@ export class ItemsSearchService {
       }),
     );
     return this.searchIndexCache;
+  }
+
+  async getBrowserSearchPack(): Promise<BrowserSearchPackEntry[]> {
+    if (this.browserSearchPackCache) {
+      return this.browserSearchPackCache;
+    }
+
+    const db = this.getAccelerationDatabase();
+    if (canUseAccelerationItems(db)) {
+      const rows = db.prepare(`
+        SELECT
+          ic.item_id,
+          ic.localized_name,
+          ic.mod_id,
+          s.localized_name_norm,
+          s.internal_name_norm,
+          s.item_id_norm,
+          s.search_terms_norm,
+          s.pinyin_full,
+          s.pinyin_acronym,
+          s.aliases,
+          COALESCE(h.popularity_score, s.popularity_score, 0) AS popularity_score,
+          COALESCE(h.search_rank, 999999) AS search_rank
+        FROM items_core AS ic
+        INNER JOIN items_search AS s
+          ON s.item_id = ic.item_id
+        LEFT JOIN hot_items AS h
+          ON h.item_id = ic.item_id
+        ORDER BY
+          COALESCE(h.search_rank, 999999) ASC,
+          COALESCE(h.popularity_score, s.popularity_score, 0) DESC,
+          ic.localized_name COLLATE NOCASE ASC
+      `).all() as AccelerationSearchPackRow[];
+
+      this.browserSearchPackCache = rows.map((row) => ({
+        itemId: row.item_id,
+        localizedName: row.localized_name,
+        modId: row.mod_id,
+        normalizedLocalizedName: row.localized_name_norm ?? '',
+        normalizedInternalName: row.internal_name_norm ?? '',
+        normalizedItemId: row.item_id_norm ?? '',
+        normalizedSearchTerms: row.search_terms_norm ?? '',
+        pinyinFull: row.pinyin_full ?? '',
+        pinyinAcronym: row.pinyin_acronym ?? '',
+        aliases: row.aliases ?? '',
+        popularityScore: Number(row.popularity_score ?? 0),
+        searchRank: Number(row.search_rank ?? 999999),
+      }));
+      return this.browserSearchPackCache;
+    }
+
+    this.ensureSplitItemsAvailable();
+    this.browserSearchPackCache = this.getSearchIndex().map((entry, index) => ({
+      itemId: entry.itemId,
+      localizedName: entry.localizedName,
+      modId: entry.modId,
+      normalizedLocalizedName: entry.normalizedLocalizedName,
+      normalizedInternalName: entry.normalizedInternalName,
+      normalizedItemId: entry.normalizedItemId,
+      normalizedSearchTerms: entry.normalizedSearchTerms,
+      pinyinFull: entry.pinyinFull,
+      pinyinAcronym: entry.pinyinAcronym,
+      aliases: '',
+      popularityScore: 0,
+      searchRank: index,
+    }));
+    return this.browserSearchPackCache;
   }
 
   async searchItems(keyword: string, limit: number = 100): Promise<ItemBasicInfo[]> {

@@ -310,7 +310,9 @@ const scheduleAnimationEnhancement = () => {
         return;
       }
 
-      const supportsDirectGifPlayback = await probeDirectGifPlayback(baseUrl);
+      const supportsDirectGifPlayback = /\.gif(?:$|\?)/i.test(baseUrl)
+        ? await probeDirectGifPlayback(baseUrl)
+        : false;
       if (token !== animationProbeToken || !supportsDirectGifPlayback) return;
       preferDirectAnimatedImage.value = true;
       hasAnimation.value = true;

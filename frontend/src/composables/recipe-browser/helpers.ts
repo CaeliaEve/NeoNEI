@@ -1,13 +1,25 @@
-import { getImageUrlFromFileName, getImageUrlFromRenderAssetRef, type Recipe, type RecipeItem, type RecipeVariantGroup } from '../../services/api';
+import {
+  getImageUrlFromFileName,
+  getImageUrlFromRenderAssetRef,
+  type Recipe,
+  type RecipeItem,
+  type RecipeVariantGroup,
+  type indexedRecipeCategorySummary,
+  type indexedMachineGroupSummary,
+} from '../../services/api';
 import { resolveRecipePresentationProfile } from '../../services/uiTypeMapping';
 
 export interface MachineCategory {
   type: 'crafting' | 'machine';
   name: string;
+  categoryKey: string;
   recipeType: string;
   machineIcon: string | null;
   recipes: Recipe[];
   recipeVariants: Map<string, Recipe[]>;
+  recipeCount: number;
+  machineKey?: string | null;
+  voltageTier?: string | null;
 }
 
 const isCircuitRecipeType = (recipeType: string): boolean => {
@@ -575,6 +587,30 @@ const resolveMachineIcon = (recipe: Recipe, getImagePath: (itemId: string) => st
   return null;
 };
 
+const getMachineKey = (machineName: string, voltageTier?: string | null): string | null => {
+  const normalized = normalizeMachineCategoryName(machineName);
+  if (!normalized) return null;
+  return `${normalized}::${voltageTier ?? ''}`;
+};
+
+const getMachineIconPathFromSummary = (
+  group: indexedMachineGroupSummary,
+  getImagePath: (itemId: string) => string,
+): string | null => {
+  const machineIcon = group.machineIcon;
+  if (machineIcon?.renderAssetRef) {
+    const renderAssetUrl = getImageUrlFromRenderAssetRef(machineIcon.renderAssetRef);
+    if (renderAssetUrl) return renderAssetUrl;
+  }
+  if (machineIcon?.itemId) {
+    return getImagePath(machineIcon.itemId);
+  }
+  if (machineIcon?.imageFileName) {
+    return getImageUrlFromFileName(machineIcon.imageFileName);
+  }
+  return resolveFallbackMachineIconByName(group.machineType, getImagePath);
+};
+
 export const buildMachineCategories = (
   recipes: Recipe[],
   getImagePath: (itemId: string) => string,
@@ -598,13 +634,21 @@ export const buildMachineCategories = (
       : normalizeMachineCategoryName(explicitMachineName || getMachineName(recipe.recipeType));
 
     if (!categories.has(categoryName)) {
+      const voltageTier = recipe.machineInfo?.parsedVoltageTier ?? null;
+      const machineKey = isCrafting ? null : getMachineKey(explicitMachineName || getMachineName(recipe.recipeType), voltageTier);
       categories.set(categoryName, {
         type: isCrafting ? 'crafting' : 'machine',
         name: categoryName,
+        categoryKey: isCrafting
+          ? `crafting:${categoryName.trim().toLowerCase()}`
+          : `machine:${machineKey ?? `${categoryName}::${voltageTier ?? ''}`}`,
         recipeType: recipe.recipeType,
         machineIcon: getCategoryMachineIcon(recipe, getImagePath),
         recipes: [],
         recipeVariants: new Map(),
+        recipeCount: 0,
+        machineKey,
+        voltageTier,
       });
     }
 
@@ -645,7 +689,12 @@ export const buildMachineCategories = (
     }
     const sortedRecipeVariants = new Map(sortedSignatureEntries);
     const dedupedRecipes = sortedSignatureEntries.map(([, group]) => group[0]);
-    return { ...category, recipeVariants: sortedRecipeVariants, recipes: dedupedRecipes };
+    return {
+      ...category,
+      recipeVariants: sortedRecipeVariants,
+      recipes: dedupedRecipes,
+      recipeCount: dedupedRecipes.length,
+    };
   });
 
   const getCategoryPriority = (category: MachineCategory): number => {
@@ -705,6 +754,57 @@ export const buildMachineCategories = (
   });
 
   return ranked;
+};
+
+export const buildMachineCategorySkeletonsFromSummary = (
+  machineGroups: indexedMachineGroupSummary[],
+  getImagePath: (itemId: string) => string,
+): MachineCategory[] => {
+  return machineGroups.map((group) => {
+    const normalizedName = normalizeMachineCategoryName(group.machineType);
+    return {
+      type: 'machine',
+      name: normalizedName,
+      recipeType: group.category || normalizedName,
+      machineIcon: getMachineIconPathFromSummary(group, getImagePath),
+      recipes: [],
+      recipeVariants: new Map(),
+      recipeCount: Math.max(0, Number(group.recipeCount ?? 0)),
+      categoryKey: typeof group.machineKey === 'string' && group.machineKey.trim()
+        ? `machine:${group.machineKey.trim()}`
+        : `machine:${getMachineKey(normalizedName, group.voltageTier) ?? `${normalizedName}::${group.voltageTier ?? ''}`}`,
+      machineKey: typeof group.machineKey === 'string' && group.machineKey.trim()
+        ? group.machineKey.trim()
+        : getMachineKey(normalizedName, group.voltageTier),
+      voltageTier: group.voltageTier ?? null,
+    };
+  });
+};
+
+export const buildCategorySkeletonsFromSummary = (
+  categories: indexedRecipeCategorySummary[],
+  getImagePath: (itemId: string) => string,
+): MachineCategory[] => {
+  return categories.map((group) => ({
+    type: group.type,
+    name: group.name,
+    categoryKey: group.categoryKey,
+    recipeType: group.recipeType || group.name,
+    machineIcon: getMachineIconPathFromSummary({
+      machineType: group.name,
+      category: group.recipeType,
+      voltageTier: group.voltageTier ?? null,
+      voltage: null,
+      recipeCount: group.recipeCount,
+      machineKey: group.machineKey ?? undefined,
+      machineIcon: group.machineIcon ?? null,
+    }, getImagePath),
+    recipes: [],
+    recipeVariants: new Map(),
+    recipeCount: Math.max(0, Number(group.recipeCount ?? 0)),
+    machineKey: group.machineKey ?? null,
+    voltageTier: group.voltageTier ?? null,
+  }));
 };
 
 export const applySelectedVariants = (

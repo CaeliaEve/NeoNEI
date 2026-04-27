@@ -1,4 +1,5 @@
 import type { Recipe, RecipeVariantGroup, indexedRecipe } from '../services/api';
+import { primeRenderAnimationHintsFromUnknown } from '../services/animationBudget';
 
 type ItemInputDimension = { width?: number; height?: number } | undefined;
 
@@ -7,11 +8,71 @@ type IndexedLikeCell = {
   count?: unknown;
   stackSize?: unknown;
   probability?: unknown;
-  item?: { itemId?: unknown };
-  items?: Array<{ item?: { itemId?: unknown }; stackSize?: unknown; probability?: unknown }>;
+  renderAssetRef?: unknown;
+  imageFileName?: unknown;
+  localizedName?: unknown;
+  renderHint?: unknown;
+  item?: {
+    itemId?: unknown;
+    renderAssetRef?: unknown;
+    imageFileName?: unknown;
+    localizedName?: unknown;
+    renderHint?: unknown;
+  };
+  items?: Array<{
+    item?: {
+      itemId?: unknown;
+      renderAssetRef?: unknown;
+      imageFileName?: unknown;
+      localizedName?: unknown;
+      renderHint?: unknown;
+    };
+    stackSize?: unknown;
+    probability?: unknown;
+  }>;
   slotIndex?: unknown;
   isOreDictionary?: unknown;
   oreDictName?: unknown;
+};
+
+type InlineRecipeItem = {
+  itemId: string;
+  count: number;
+  probability?: number;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
+  localizedName?: string | null;
+  renderHint?: Record<string, unknown> | null;
+};
+
+const toInlineRecipeItem = (
+  candidate: {
+    itemId?: unknown;
+    count?: unknown;
+    stackSize?: unknown;
+    probability?: unknown;
+    renderAssetRef?: unknown;
+    imageFileName?: unknown;
+    localizedName?: unknown;
+    renderHint?: unknown;
+  } | null | undefined,
+): InlineRecipeItem | null => {
+  if (!candidate) return null;
+  const itemId = typeof candidate.itemId === 'string' ? candidate.itemId : '';
+  if (!itemId) return null;
+
+  return {
+    itemId,
+    count: Number(candidate.count ?? candidate.stackSize) || 1,
+    probability: Number(candidate.probability) || 1,
+    renderAssetRef: typeof candidate.renderAssetRef === 'string' ? candidate.renderAssetRef : null,
+    imageFileName: typeof candidate.imageFileName === 'string' ? candidate.imageFileName : null,
+    localizedName: typeof candidate.localizedName === 'string' ? candidate.localizedName : null,
+    renderHint:
+      candidate.renderHint && typeof candidate.renderHint === 'object'
+        ? (candidate.renderHint as Record<string, unknown>)
+        : null,
+  };
 };
 
 const isExtremeMachineText = (value: string): boolean => {
@@ -36,36 +97,72 @@ const toRecipeCell = (cell: unknown): Recipe['inputs'][number][number] => {
     const alternatives = cell
       .map((it) => {
         if (!it || typeof it !== 'object') return null;
-        const candidate = it as { itemId?: unknown; count?: unknown; stackSize?: unknown; item?: { itemId?: unknown } };
-        if (typeof candidate.itemId === 'string' && candidate.itemId.length > 0) {
-          return { itemId: candidate.itemId, count: Number(candidate.count ?? candidate.stackSize) || 1 };
-        }
-        const nestedItemId = candidate.item?.itemId;
-        if (typeof nestedItemId === 'string' && nestedItemId.length > 0) {
-          return { itemId: nestedItemId, count: Number(candidate.count ?? candidate.stackSize) || 1 };
-        }
-        return null;
+        const candidate = it as {
+          itemId?: unknown;
+          count?: unknown;
+          stackSize?: unknown;
+          probability?: unknown;
+          renderAssetRef?: unknown;
+          imageFileName?: unknown;
+          localizedName?: unknown;
+          renderHint?: unknown;
+          item?: {
+            itemId?: unknown;
+            renderAssetRef?: unknown;
+            imageFileName?: unknown;
+            localizedName?: unknown;
+            renderHint?: unknown;
+          };
+        };
+        return (
+          toInlineRecipeItem(candidate)
+          ?? toInlineRecipeItem({
+            itemId: candidate.item?.itemId,
+            count: candidate.count ?? candidate.stackSize,
+            probability: candidate.probability,
+            renderAssetRef: candidate.item?.renderAssetRef,
+            imageFileName: candidate.item?.imageFileName,
+            localizedName: candidate.item?.localizedName,
+            renderHint: candidate.item?.renderHint,
+          })
+        );
       })
-      .filter((it): it is { itemId: string; count: number } => it !== null);
+      .filter((it): it is InlineRecipeItem => it !== null);
     return alternatives.length ? (alternatives as unknown as Recipe['inputs'][number][number]) : null;
   }
 
   const group = cell as IndexedLikeCell;
 
-  if (typeof group.itemId === 'string' && group.itemId.length > 0) {
-    return [{ itemId: group.itemId, count: Number(group.count ?? group.stackSize) || 1 }] as unknown as Recipe['inputs'][number][number];
+  const directCandidate = toInlineRecipeItem(group);
+  if (directCandidate) {
+    return [directCandidate] as unknown as Recipe['inputs'][number][number];
   }
-  if (group.item && typeof group.item.itemId === 'string' && group.item.itemId.length > 0) {
-    return [{ itemId: group.item.itemId, count: Number(group.count ?? group.stackSize) || 1 }] as unknown as Recipe['inputs'][number][number];
+  const nestedCandidate = toInlineRecipeItem({
+    itemId: group.item?.itemId,
+    count: group.count ?? group.stackSize,
+    probability: group.probability,
+    renderAssetRef: group.item?.renderAssetRef,
+    imageFileName: group.item?.imageFileName,
+    localizedName: group.item?.localizedName,
+    renderHint: group.item?.renderHint,
+  });
+  if (nestedCandidate) {
+    return [nestedCandidate] as unknown as Recipe['inputs'][number][number];
   }
   if (Array.isArray(group.items)) {
     const alternatives = group.items
       .map((it) => {
-        const itemId = it?.item?.itemId;
-        if (typeof itemId !== 'string' || itemId.length === 0) return null;
-        return { itemId, count: Number(it.stackSize) || 1 };
+        return toInlineRecipeItem({
+          itemId: it?.item?.itemId,
+          count: it?.stackSize,
+          probability: it?.probability,
+          renderAssetRef: (it?.item as { renderAssetRef?: unknown } | undefined)?.renderAssetRef,
+          imageFileName: (it?.item as { imageFileName?: unknown } | undefined)?.imageFileName,
+          localizedName: (it?.item as { localizedName?: unknown } | undefined)?.localizedName,
+          renderHint: (it?.item as { renderHint?: unknown } | undefined)?.renderHint,
+        });
       })
-      .filter((it): it is { itemId: string; count: number } => it !== null);
+      .filter((it): it is InlineRecipeItem => it !== null);
     return alternatives.length ? (alternatives as unknown as Recipe['inputs'][number][number]) : null;
   }
   return null;
@@ -230,25 +327,27 @@ export const normalizeRecipeOutputs = (rawOutputs: unknown): Recipe['outputs'] =
       };
 
       if (typeof candidate.itemId === 'string' && candidate.itemId.length > 0) {
-        return {
-          itemId: candidate.itemId,
-          count: Number(candidate.count ?? candidate.stackSize) || 1,
-          probability: Number(candidate.probability) || 1,
-        };
+        return toInlineRecipeItem(candidate);
       }
 
       const itemId = candidate.item?.itemId;
       if (typeof itemId !== 'string' || itemId.length === 0) return null;
-      return {
+      return toInlineRecipeItem({
         itemId,
-        count: Number(candidate.stackSize ?? candidate.count) || 1,
-        probability: Number(candidate.probability) || 1,
-      };
+        count: candidate.stackSize ?? candidate.count,
+        probability: candidate.probability,
+        renderAssetRef: (candidate.item as { renderAssetRef?: unknown } | undefined)?.renderAssetRef,
+        imageFileName: (candidate.item as { imageFileName?: unknown } | undefined)?.imageFileName,
+        localizedName: (candidate.item as { localizedName?: unknown } | undefined)?.localizedName,
+        renderHint: (candidate.item as { renderHint?: unknown } | undefined)?.renderHint,
+      });
     })
-    .filter((out): out is { itemId: string; count: number; probability: number } => out !== null);
+    .filter((out): out is InlineRecipeItem => out !== null);
 };
 
 export const convertIndexedRecipe = (indexed: indexedRecipe): Recipe => {
+  primeRenderAnimationHintsFromUnknown(indexed);
+
   const recipeTypeData =
     indexed && typeof indexed === 'object' && 'recipeTypeData' in indexed
       ? (indexed.recipeTypeData as Recipe['recipeTypeData'])

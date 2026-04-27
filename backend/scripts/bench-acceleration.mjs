@@ -70,8 +70,11 @@ async function main() {
   }
 
   await sample('mods', '/api/items/mods', 5);
+  await sample('home-bootstrap', '/api/publish/home-bootstrap?page=1&pageSize=108&slotSize=45', 5);
+  await sample('browser-page-pack', '/api/items/browser/page-pack?page=1&pageSize=108&slotSize=45', 5);
   await sample('search-tailagang', '/api/items/search/fast?q=tailagang&limit=10', 5);
   await sample('search-terrasteel', '/api/items/search/fast?q=terrasteel&limit=10', 5);
+  await sample('browser-search-pack', '/api/items/search/pack', 3);
   await sample('recipe-summary', `/api/recipes-indexed/item/${encodeURIComponent(sampleItemId)}/summary`, 5);
   await sample('page-atlas-precomputed', '/api/items/page-atlas/precomputed?page=1&pageSize=108&slotSize=45', 5);
 

@@ -98,6 +98,17 @@ export interface RenderContractAssetEntry {
   captureContract: Record<string, unknown> | null;
 }
 
+export interface RenderAnimationHint {
+  renderMode: string | null;
+  animationMode: string | null;
+  playbackHint: string | null;
+  frameCount: number | null;
+  explicitStatic: boolean;
+  prefersNativeSprite: boolean;
+  prefersCapturedAtlas: boolean;
+  hasAnimation: boolean;
+}
+
 type AnimatedAtlasManifestJson = {
   groups?: Array<{
     atlasGroup?: string;
@@ -203,6 +214,26 @@ export class RenderContractService {
       throw notFound(`Render contract asset not found: ${assetId}`);
     }
     return entry;
+  }
+
+  getRenderAnimationHint(assetId: string): RenderAnimationHint | null {
+    if (!assetId) return null;
+    const entry = this.getRenderAssetEntryCache().get(assetId);
+    return entry ? deriveRenderAnimationHint(entry) : null;
+  }
+
+  getRenderAnimationHints(assetIds: string[]): Map<string, RenderAnimationHint> {
+    const cache = this.getRenderAssetEntryCache();
+    const hints = new Map<string, RenderAnimationHint>();
+
+    for (const assetId of assetIds) {
+      if (!assetId) continue;
+      const entry = cache.get(assetId);
+      if (!entry) continue;
+      hints.set(assetId, deriveRenderAnimationHint(entry));
+    }
+
+    return hints;
   }
 
   private getAnimatedAtlasEntryCache(): Map<string, AnimatedAtlasAssetEntry> {
@@ -341,6 +372,54 @@ function normalizeRenderAssetEntry(asset: Record<string, unknown>): RenderContra
       asset.captureContract && typeof asset.captureContract === 'object'
         ? (asset.captureContract as Record<string, unknown>)
         : null,
+  };
+}
+
+function deriveRenderAnimationHint(entry: RenderContractAssetEntry): RenderAnimationHint {
+  const captureContract = entry.captureContract as { multiFrame?: unknown } | null;
+  const rendererContract = entry.rendererContract as {
+    needsMultipleFrames?: unknown;
+    shouldPreferNativeSpriteAnimation?: unknown;
+    nativeFrameCount?: unknown;
+  } | null;
+
+  const explicitStatic =
+    entry.animationMode === 'none'
+    || entry.playbackHint === 'static'
+    || (
+      typeof entry.frameCount === 'number'
+      && entry.frameCount <= 1
+      && entry.animationMode !== 'native_sprite'
+    )
+    || (captureContract?.multiFrame === false && rendererContract?.needsMultipleFrames === false)
+    || (
+      rendererContract?.shouldPreferNativeSpriteAnimation === false
+      && Number(rendererContract?.nativeFrameCount ?? 0) <= 1
+    );
+
+  const prefersNativeSprite =
+    entry.renderMode === 'native_sprite'
+    || entry.animationMode === 'native_sprite'
+    || entry.playbackHint === 'native_sprite'
+    || rendererContract?.shouldPreferNativeSpriteAnimation === true
+    || Number(rendererContract?.nativeFrameCount ?? 0) > 1;
+
+  const prefersCapturedAtlas =
+    entry.renderMode === 'captured_final_atlas'
+    || entry.mode === 'rendered_frames'
+    || entry.animationMode === 'captured_atlas'
+    || captureContract?.multiFrame === true
+    || rendererContract?.needsMultipleFrames === true;
+
+  return {
+    renderMode: entry.renderMode,
+    animationMode: entry.animationMode,
+    playbackHint: entry.playbackHint,
+    frameCount: entry.frameCount,
+    explicitStatic,
+    prefersNativeSprite,
+    prefersCapturedAtlas,
+    hasAnimation: !explicitStatic && (prefersNativeSprite || prefersCapturedAtlas || (typeof entry.frameCount === 'number' && entry.frameCount > 1)),
   };
 }
 

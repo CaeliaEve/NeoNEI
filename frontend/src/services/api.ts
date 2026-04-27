@@ -1,4 +1,10 @@
 import { http } from './api/core/http';
+import {
+  getStoredRuntimeSignature,
+  primeRuntimeCacheSignature,
+  readPersistentRuntimeCache,
+  writePersistentRuntimeCache,
+} from './persistentRuntimeCache';
 
 export { API_BASE_URL, BACKEND_BASE_URL } from './api/core/http';
 export {
@@ -23,8 +29,12 @@ const indexedUsageInFlight = new Map<string, Promise<indexedRecipe[]>>();
 const indexedSummaryInFlight = new Map<string, Promise<indexedItemRecipeSummaryResponse>>();
 const recipeBootstrapCache = new Map<string, RecipeBootstrapPayload>();
 const recipeBootstrapInFlight = new Map<string, Promise<RecipeBootstrapPayload>>();
+const recipeBootstrapShardCache = new Map<string, RecipeBootstrapPayload>();
+const recipeBootstrapShardInFlight = new Map<string, Promise<RecipeBootstrapPayload>>();
 const uiPayloadCache = new Map<string, RecipeUiPayload>();
 const uiPayloadInFlight = new Map<string, Promise<RecipeUiPayload>>();
+let publishManifestCache: PublicRuntimeManifest | null = null;
+let publishManifestInFlight: Promise<PublicRuntimeManifest> | null = null;
 let ecosystemOverviewCache: EcosystemOverview | null = null;
 let ecosystemOverviewInFlight: Promise<EcosystemOverview> | null = null;
 
@@ -34,6 +44,16 @@ const CACHE_LIMITS = {
   indexedUsage: 3000,
   indexedSummary: 3000
 } as const;
+
+function getRuntimeCacheSignature(manifest: Pick<PublicRuntimeManifest, 'runtimeCacheKey' | 'sourceSignature'> | null | undefined): string | null {
+  const runtimeCacheKey = `${manifest?.runtimeCacheKey ?? ''}`.trim();
+  if (runtimeCacheKey) {
+    return runtimeCacheKey;
+  }
+
+  const sourceSignature = `${manifest?.sourceSignature ?? ''}`.trim();
+  return sourceSignature || null;
+}
 
 function setCacheWithLimit<K, V>(cache: Map<K, V>, key: K, value: V, limit: number): void {
   if (cache.has(key)) {
@@ -48,10 +68,75 @@ function setCacheWithLimit<K, V>(cache: Map<K, V>, key: K, value: V, limit: numb
   }
 }
 
+function buildRuntimePayloadCacheKey(
+  kind: string,
+  signature: string,
+  identity: Record<string, unknown>,
+): string {
+  return JSON.stringify({
+    type: kind,
+    version: 1,
+    signature,
+    ...identity,
+  });
+}
+
+async function resolveRuntimeSignature(): Promise<string | null> {
+  const cached = getRuntimeCacheSignature(publishManifestCache);
+  if (cached) {
+    primeRuntimeCacheSignature(cached);
+    return cached;
+  }
+  try {
+    const manifest = await api.getPublishManifest();
+    const signature = getRuntimeCacheSignature(manifest);
+    if (signature) {
+      primeRuntimeCacheSignature(signature);
+    }
+    return signature;
+  } catch {
+    return getStoredRuntimeSignature();
+  }
+}
+
+async function readPersistentRuntimePayload<T>(
+  kind: string,
+  identity: Record<string, unknown>,
+): Promise<T | null> {
+  const signature = getRuntimeCacheSignature(publishManifestCache) || getStoredRuntimeSignature();
+  if (!signature) {
+    return null;
+  }
+  return readPersistentRuntimeCache<T>(buildRuntimePayloadCacheKey(kind, signature, identity));
+}
+
+function persistRuntimePayload(
+  kind: string,
+  identity: Record<string, unknown>,
+  payload: unknown,
+): void {
+  void resolveRuntimeSignature()
+    .then(async (signature) => {
+      if (!signature) {
+        return;
+      }
+      await writePersistentRuntimeCache(
+        buildRuntimePayloadCacheKey(kind, signature, identity),
+        payload,
+      );
+    })
+    .catch(() => {
+      // best-effort only
+    });
+}
+
 export interface RecipeItem {
   itemId: string;
   count: number;
   renderAssetRef?: string | null;
+  renderHint?: Item['renderHint'];
+  localizedName?: string | null;
+  imageFileName?: string | null;
   damage?: number;
   nbt?: string;
   probability?: number;
@@ -179,6 +264,16 @@ export interface Item {
   internalName: string;
   localizedName: string;
   renderAssetRef?: string | null;
+  renderHint?: {
+    renderMode: string | null;
+    animationMode: string | null;
+    playbackHint: string | null;
+    frameCount: number | null;
+    explicitStatic: boolean;
+    prefersNativeSprite: boolean;
+    prefersCapturedAtlas: boolean;
+    hasAnimation: boolean;
+  } | null;
   preferredImageUrl?: string | null;
   unlocalizedName?: string;
   damage?: number;
@@ -223,6 +318,47 @@ export interface PageAtlasResult {
   atlasHeight: number;
   slotSize: number;
   entries: Record<string, PageAtlasSpriteEntry>;
+}
+
+export interface BrowserPagePackResponse extends PaginatedResponse<BrowserGridEntry> {
+  atlas: PageAtlasResult | null;
+}
+
+export interface HomeBootstrapResponse {
+  manifest: PublicRuntimeManifest;
+  mods: Mod[];
+  pagePack: BrowserPagePackResponse;
+}
+
+export interface BrowserSearchPackEntry {
+  itemId: string;
+  localizedName: string;
+  modId: string;
+  normalizedLocalizedName: string;
+  normalizedInternalName: string;
+  normalizedItemId: string;
+  normalizedSearchTerms: string;
+  pinyinFull: string;
+  pinyinAcronym: string;
+  aliases: string;
+  popularityScore: number;
+  searchRank: number;
+}
+
+export interface BrowserSearchPackResponse {
+  version: number;
+  signature?: string;
+  total: number;
+  items: BrowserSearchPackEntry[];
+}
+
+export interface PublicRuntimeManifest {
+  version: number;
+  sourceSignature: string;
+  compiledAt: string | null;
+  publishRevision?: string | null;
+  publishCompiledAt?: string | null;
+  runtimeCacheKey?: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -280,6 +416,7 @@ export interface indexedItem {
   internalName: string;
   localizedName: string;
   renderAssetRef?: string | null;
+  renderHint?: Item['renderHint'];
   damage: number;
   stackSize: number;
   maxStackSize: number;
@@ -325,6 +462,8 @@ export interface indexedMachineInfo {
     modId: string;
     internalName: string;
     localizedName: string;
+    renderAssetRef?: string | null;
+    renderHint?: Item['renderHint'];
     imageFileName: string;
   };
 }
@@ -376,6 +515,19 @@ export interface indexedMachineGroupSummary {
   voltageTier: string | null;
   voltage: number | null;
   recipeCount: number;
+  machineKey?: string;
+  machineIcon?: indexedMachineInfo['machineIcon'] | null;
+}
+
+export interface indexedRecipeCategorySummary {
+  type: 'crafting' | 'machine';
+  name: string;
+  recipeType: string;
+  recipeCount: number;
+  categoryKey: string;
+  machineKey?: string | null;
+  voltageTier?: string | null;
+  machineIcon?: indexedMachineInfo['machineIcon'] | null;
 }
 
 export interface indexedItemMachinesResponse {
@@ -388,6 +540,10 @@ export interface indexedItemRecipeSummaryResponse {
   itemId: string;
   itemName: string;
   machineGroups: indexedMachineGroupSummary[];
+  producedByMachineGroups?: indexedMachineGroupSummary[];
+  usedInMachineGroups?: indexedMachineGroupSummary[];
+  producedByCategoryGroups?: indexedRecipeCategorySummary[];
+  usedInCategoryGroups?: indexedRecipeCategorySummary[];
   counts: {
     producedBy: number;
     usedIn: number;
@@ -404,6 +560,38 @@ export interface RecipeBootstrapPayload {
   indexedCrafting: indexedRecipe[];
   indexedUsage: indexedRecipe[];
   indexedSummary: indexedItemRecipeSummaryResponse | null;
+}
+
+export interface RecipeBootstrapMachineGroupPayload {
+  itemId: string;
+  machineType: string;
+  voltageTier: string | null;
+  recipeCount: number;
+  recipes: indexedRecipe[];
+  recipeIds?: string[];
+  offset?: number;
+  limit?: number;
+  hasMore?: boolean;
+}
+
+export interface RecipeBootstrapCategoryGroupPayload {
+  itemId: string;
+  categoryKey: string;
+  tab: 'usedIn' | 'producedBy';
+  recipeCount: number;
+  recipes: indexedRecipe[];
+  recipeIds?: string[];
+  offset?: number;
+  limit?: number;
+  hasMore?: boolean;
+}
+
+export interface RecipeBootstrapSearchPayload {
+  itemId: string;
+  tab: 'usedIn' | 'producedBy';
+  query: string;
+  recipeIds: string[];
+  itemMatches: ItemSearchBasic[];
 }
 
 export interface RecipeUiPayload {
@@ -675,6 +863,44 @@ export interface RenderContractAssetEntry {
 }
 
 export const api = {
+  async getPublishManifest(): Promise<PublicRuntimeManifest> {
+    if (publishManifestCache) {
+      return publishManifestCache;
+    }
+    if (publishManifestInFlight) {
+      return publishManifestInFlight;
+    }
+    publishManifestInFlight = http.get('/publish/manifest')
+      .then((response) => {
+        publishManifestCache = response.data;
+        primeRuntimeCacheSignature(getRuntimeCacheSignature(response.data));
+        return response.data;
+      })
+      .finally(() => {
+        publishManifestInFlight = null;
+      });
+    return publishManifestInFlight;
+  },
+
+  async getHomeBootstrap(params: {
+    page?: number;
+    pageSize?: number;
+    slotSize?: number;
+    modId?: string;
+  }): Promise<HomeBootstrapResponse> {
+    const response = await http.get('/publish/home-bootstrap', {
+      params,
+    });
+    if (response.data?.manifest) {
+      publishManifestCache = response.data.manifest;
+      primeRuntimeCacheSignature(getRuntimeCacheSignature(response.data.manifest));
+    }
+    if (Array.isArray(response.data?.mods)) {
+      persistRuntimePayload('mods-list', { scope: 'all' }, response.data.mods);
+    }
+    return response.data;
+  },
+
   // Get items with pagination
   async getItems(params: {
     page?: number;
@@ -702,6 +928,36 @@ export const api = {
     return response.data;
   },
 
+  async getBrowserPagePack(params: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    modId?: string;
+    expandedGroups?: string[];
+    slotSize?: number;
+  }): Promise<BrowserPagePackResponse> {
+    const response = await http.get('/items/browser/page-pack', {
+      params: {
+        ...params,
+        expandedGroups: (params.expandedGroups ?? []).join(','),
+      },
+    });
+    return response.data;
+  },
+
+  async getBrowserSearchPack(): Promise<BrowserSearchPackResponse> {
+    const response = await http.get('/items/search/pack');
+    return response.data;
+  },
+
+  async getBrowserPagePackByIds(params: {
+    itemIds: string[];
+    slotSize?: number;
+  }): Promise<{ data: Array<{ key: string; kind: 'item'; item: Item }>; atlas: PageAtlasResult | null }> {
+    const response = await http.post('/items/browser/by-ids-pack', params);
+    return response.data;
+  },
+
   // Get item by ID
   async getItem(itemId: string): Promise<Item> {
     const cached = itemDetailCache.get(itemId);
@@ -726,7 +982,15 @@ export const api = {
 
   // Get all mods
   async getMods(): Promise<Mod[]> {
+    const persistent = await readPersistentRuntimePayload<Mod[]>(
+      'mods-list',
+      { scope: 'all' },
+    );
+    if (persistent) {
+      return persistent;
+    }
     const response = await http.get('/items/mods');
+    persistRuntimePayload('mods-list', { scope: 'all' }, response.data);
     return response.data;
   },
 
@@ -908,16 +1172,24 @@ export const api = {
     if (existingRequest) {
       return existingRequest;
     }
-    const request = http.get('/render-contract/ui-payload', {
-      params: { recipeId },
-    })
-      .then((response) => {
-        uiPayloadCache.set(recipeId, response.data);
-        return response.data;
-      })
-      .finally(() => {
-        uiPayloadInFlight.delete(recipeId);
+    const request = (async () => {
+      const persistent = await readPersistentRuntimePayload<RecipeUiPayload>(
+        'recipe-ui-payload',
+        { recipeId },
+      );
+      if (persistent) {
+        uiPayloadCache.set(recipeId, persistent);
+        return persistent;
+      }
+      const response = await http.get('/render-contract/ui-payload', {
+        params: { recipeId },
       });
+      uiPayloadCache.set(recipeId, response.data);
+      persistRuntimePayload('recipe-ui-payload', { recipeId }, response.data);
+      return response.data;
+    })().finally(() => {
+      uiPayloadInFlight.delete(recipeId);
+    });
     uiPayloadInFlight.set(recipeId, request);
     return request;
   },
@@ -931,16 +1203,201 @@ export const api = {
     if (existingRequest) {
       return existingRequest;
     }
-    const request = http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}`)
-      .then((response) => {
-        setCacheWithLimit(recipeBootstrapCache, itemId, response.data, CACHE_LIMITS.indexedSummary);
-        return response.data;
-      })
-      .finally(() => {
-        recipeBootstrapInFlight.delete(itemId);
-      });
+    const request = (async () => {
+      const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
+        'recipe-bootstrap',
+        { itemId },
+      );
+      if (persistent) {
+        setCacheWithLimit(recipeBootstrapCache, itemId, persistent, CACHE_LIMITS.indexedSummary);
+        return persistent;
+      }
+      const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}`);
+      setCacheWithLimit(recipeBootstrapCache, itemId, response.data, CACHE_LIMITS.indexedSummary);
+      persistRuntimePayload('recipe-bootstrap', { itemId }, response.data);
+      return response.data;
+    })().finally(() => {
+      recipeBootstrapInFlight.delete(itemId);
+    });
     recipeBootstrapInFlight.set(itemId, request);
     return request;
+  },
+
+  async getRecipeBootstrapShard(itemId: string): Promise<RecipeBootstrapPayload> {
+    const cached = recipeBootstrapShardCache.get(itemId);
+    if (cached) {
+      return cached;
+    }
+    const existingRequest = recipeBootstrapShardInFlight.get(itemId);
+    if (existingRequest) {
+      return existingRequest;
+    }
+    const request = (async () => {
+      const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
+        'recipe-bootstrap-shard',
+        { itemId },
+      );
+      if (persistent) {
+        setCacheWithLimit(recipeBootstrapShardCache, itemId, persistent, CACHE_LIMITS.indexedSummary);
+        return persistent;
+      }
+      const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/shard`);
+      setCacheWithLimit(recipeBootstrapShardCache, itemId, response.data, CACHE_LIMITS.indexedSummary);
+      persistRuntimePayload('recipe-bootstrap-shard', { itemId }, response.data);
+      return response.data;
+    })().finally(() => {
+      recipeBootstrapShardInFlight.delete(itemId);
+    });
+    recipeBootstrapShardInFlight.set(itemId, request);
+    return request;
+  },
+
+  async getRecipeBootstrapProducedByGroup(
+    itemId: string,
+    machineType: string,
+    voltageTier?: string | null,
+    options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
+  ): Promise<RecipeBootstrapMachineGroupPayload> {
+    const persistent = await readPersistentRuntimePayload<RecipeBootstrapMachineGroupPayload>(
+      'recipe-bootstrap-produced-by-group',
+      {
+        itemId,
+        machineType,
+        voltageTier: voltageTier ?? null,
+        offset: options?.offset ?? 0,
+        limit: options?.limit ?? null,
+        includeRecipeIds: options?.includeRecipeIds === true,
+      },
+    );
+    if (persistent) {
+      return persistent;
+    }
+    const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/produced-by-group`, {
+      params: {
+        machineType,
+        ...(voltageTier ? { voltageTier } : {}),
+        ...(typeof options?.offset === 'number' ? { offset: options.offset } : {}),
+        ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
+        ...(options?.includeRecipeIds ? { includeRecipeIds: 1 } : {}),
+      },
+    });
+    persistRuntimePayload(
+      'recipe-bootstrap-produced-by-group',
+      {
+        itemId,
+        machineType,
+        voltageTier: voltageTier ?? null,
+        offset: options?.offset ?? 0,
+        limit: options?.limit ?? null,
+        includeRecipeIds: options?.includeRecipeIds === true,
+      },
+      response.data,
+    );
+    return response.data;
+  },
+
+  async getRecipeBootstrapUsedInGroup(
+    itemId: string,
+    machineType: string,
+    voltageTier?: string | null,
+    options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
+  ): Promise<RecipeBootstrapMachineGroupPayload> {
+    const persistent = await readPersistentRuntimePayload<RecipeBootstrapMachineGroupPayload>(
+      'recipe-bootstrap-used-in-group',
+      {
+        itemId,
+        machineType,
+        voltageTier: voltageTier ?? null,
+        offset: options?.offset ?? 0,
+        limit: options?.limit ?? null,
+        includeRecipeIds: options?.includeRecipeIds === true,
+      },
+    );
+    if (persistent) {
+      return persistent;
+    }
+    const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/used-in-group`, {
+      params: {
+        machineType,
+        ...(voltageTier ? { voltageTier } : {}),
+        ...(typeof options?.offset === 'number' ? { offset: options.offset } : {}),
+        ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
+        ...(options?.includeRecipeIds ? { includeRecipeIds: 1 } : {}),
+      },
+    });
+    persistRuntimePayload(
+      'recipe-bootstrap-used-in-group',
+      {
+        itemId,
+        machineType,
+        voltageTier: voltageTier ?? null,
+        offset: options?.offset ?? 0,
+        limit: options?.limit ?? null,
+        includeRecipeIds: options?.includeRecipeIds === true,
+      },
+      response.data,
+    );
+    return response.data;
+  },
+
+  async getRecipeBootstrapCategoryGroup(
+    itemId: string,
+    tab: 'usedIn' | 'producedBy',
+    categoryKey: string,
+    options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
+  ): Promise<RecipeBootstrapCategoryGroupPayload> {
+    const persistent = await readPersistentRuntimePayload<RecipeBootstrapCategoryGroupPayload>(
+      'recipe-bootstrap-category-group',
+      {
+        itemId,
+        tab,
+        categoryKey,
+        offset: options?.offset ?? 0,
+        limit: options?.limit ?? null,
+        includeRecipeIds: options?.includeRecipeIds === true,
+      },
+    );
+    if (persistent) {
+      return persistent;
+    }
+    const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/category-group`, {
+      params: {
+        tab,
+        categoryKey,
+        ...(typeof options?.offset === 'number' ? { offset: options.offset } : {}),
+        ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
+        ...(options?.includeRecipeIds ? { includeRecipeIds: 1 } : {}),
+      },
+    });
+    persistRuntimePayload(
+      'recipe-bootstrap-category-group',
+      {
+        itemId,
+        tab,
+        categoryKey,
+        offset: options?.offset ?? 0,
+        limit: options?.limit ?? null,
+        includeRecipeIds: options?.includeRecipeIds === true,
+      },
+      response.data,
+    );
+    return response.data;
+  },
+
+  async getRecipeBootstrapSearch(
+    itemId: string,
+    tab: 'usedIn' | 'producedBy',
+    query: string,
+    options?: SearchItemsFastOptions,
+  ): Promise<RecipeBootstrapSearchPayload> {
+    const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/search`, {
+      params: {
+        tab,
+        q: query.trim(),
+      },
+      signal: options?.signal,
+    });
+    return response.data;
   },
 
   // === indexed Recipes API ===
@@ -972,12 +1429,14 @@ export const api = {
     return response.data;
   },
 
-  async getIndexedRecipesByIds(recipeIds: string[]): Promise<indexedRecipe[]> {
+  async getIndexedRecipesByIds(recipeIds: string[], options?: SearchItemsFastOptions): Promise<indexedRecipe[]> {
     const uniqueIds = Array.from(new Set(recipeIds.map((id) => id.trim()).filter(Boolean)));
     if (uniqueIds.length === 0) {
       return [];
     }
-    const response = await http.post('/recipes-indexed/batch', { recipeIds: uniqueIds });
+    const response = await http.post('/recipes-indexed/batch', { recipeIds: uniqueIds }, {
+      signal: options?.signal,
+    });
     return response.data;
   },
 

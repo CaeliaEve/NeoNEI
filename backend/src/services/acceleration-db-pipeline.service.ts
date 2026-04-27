@@ -1,6 +1,7 @@
 import fs from 'fs';
 import { DatabaseManager } from '../models/database';
 import { NeoNeiCompilerService, type CompilerOptions, type CompilerRunResult, type CompilerSourceRoots } from './neonei-compiler.service';
+import { PublishPayloadMaterializerService } from './publish-payload-materializer.service';
 
 export interface CompileAccelerationDatabaseOptions {
   targetDbPath: string;
@@ -86,4 +87,29 @@ export async function ensureAccelerationDatabaseReady(
   });
   await manager.init();
   return result;
+}
+
+export async function ensurePublishPayloadsReady(
+  options: EnsureAccelerationDatabaseReadyOptions,
+): Promise<boolean> {
+  const { manager, sourceRoots, compilerOptions } = options;
+  const compiler = new NeoNeiCompilerService(manager, sourceRoots, compilerOptions);
+  if (!compiler.isAccelerationStateFresh()) {
+    return false;
+  }
+
+  const sourceSignature = compiler.getCurrentSourceSignature();
+  const materializer = new PublishPayloadMaterializerService({
+    databaseManager: manager,
+    imageRoot: sourceRoots.imageRoot,
+    atlasOutputDir: compilerOptions?.hotPageAtlas?.atlasOutputDir,
+    publishHotPayloads: compilerOptions?.publishHotPayloads,
+  });
+
+  if (materializer.isFresh(sourceSignature)) {
+    return false;
+  }
+
+  await materializer.materialize(sourceSignature);
+  return true;
 }

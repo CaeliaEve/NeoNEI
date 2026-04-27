@@ -23,4 +23,28 @@ test('homepage page-size calculation reserves space for pagination and history r
     true,
     'page-size calculation should only subtract the right-column pager/history chrome instead of unrelated shell heights',
   );
+  assert.equal(
+    browserSource.includes('return clampNumber(viewportWidth * 0.38, 520, 1240);'),
+    true,
+    'homepage fallback sizing should mirror the base CSS clamp width for the right browser column',
+  );
+  assert.equal(
+    browserSource.includes('return clampNumber(viewportWidth * 0.38, 580, 1360);'),
+    true,
+    'homepage fallback sizing should mirror the large-screen CSS clamp width for the right browser column',
+  );
+  assert.equal(
+    browserSource.includes(
+      'const measuredCapacity = allowMeasuredPageCapacity\n'
+      + '      ? options?.measureVisiblePageCapacity?.()\n'
+      + '      : null;',
+    ),
+    true,
+    'item browser should accept an exact measured capacity before falling back to viewport heuristics',
+  );
+  assert.equal(
+    browserSource.includes('await nextTick();\n    pageSize.value = calculatePageSize();'),
+    true,
+    'initial home bootstrap should wait one tick so the measured grid viewport can seed the first page-size request',
+  );
 });

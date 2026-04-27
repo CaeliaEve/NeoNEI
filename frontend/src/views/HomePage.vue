@@ -13,13 +13,13 @@ import {
 import { useRouter } from "vue-router";
 import {
   api,
-  getItemImageUrlFromEntity,
-  getPreferredStaticImageUrlFromEntity,
-  type BrowserGridEntry,
   type BrowserVariantGroup,
   type Item,
 } from "../services/api";
-import { buildPageAtlas, primePageAtlas, type PageAtlasResult } from "../services/pageAtlas";
+import {
+  buildPageAtlas,
+  type PageAtlasResult,
+} from "../services/pageAtlas";
 import ItemTooltip from "../components/ItemTooltip.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
 import { useSound } from "../services/sound.service";
@@ -34,6 +34,7 @@ const PatternGroup = defineAsyncComponent(
   () => import("../components/PatternGroup.vue"),
 );
 const ItemCard = defineAsyncComponent(() => import("../components/ItemCard.vue"));
+const HomeCanvasGrid = defineAsyncComponent(() => import("../components/HomeCanvasGrid.vue"));
 const RecipeDisplayRouter = defineAsyncComponent(
   () => import("../components/RecipeDisplayRouter.vue"),
 );
@@ -54,6 +55,8 @@ const loadSavedItemSize = () => {
 };
 const itemSize = ref(loadSavedItemSize());
 
+const itemGridViewportRef = ref<HTMLElement | null>(null);
+
 const {
 
   items,
@@ -69,17 +72,21 @@ const {
   pageSize,
   totalItems,
   totalPages,
+  currentPageAtlas,
   setExpandedGroups,
   setPageSize,
   loadMods,
   loadItems,
   onSearch,
+  warmSearchIndex,
   changePage,
   prefetchItemsPage,
-  getCachedItemsPage,
-} = useItemBrowser(itemSize);
-const itemGridShellRef = ref<HTMLElement | null>(null);
+} = useItemBrowser(itemSize, {
+  measureVisiblePageCapacity: () => measureGridCapacityRaw(),
+});
 let itemGridResizeObserver: ResizeObserver | null = null;
+let neighborPrefetchTimer: ReturnType<typeof setTimeout> | null = null;
+let neighborPrefetchIdleHandle: number | null = null;
 const currentGroupId = ref<string | undefined>(undefined);
 const currentGroupName = ref<string>('');
 const latestCreatedPatternId = ref<string | undefined>(undefined);
@@ -95,56 +102,15 @@ const loadViewHistory = () => {
 };
 const viewHistory = ref<ItemBasicInfo[]>(loadViewHistory());
 const maxHistoryItems = 400; // Keep a bounded history list without limiting UI to 20.
-const prefetchedHomeImages = new Set<string>();
-const HOME_GRID_ANIMATION_DELAY_MS = 1200;
 const HOME_HISTORY_ANIMATION_DELAY_MS = 1800;
-const currentPageAtlas = ref<PageAtlasResult | null | undefined>(undefined);
 const historyAtlas = ref<PageAtlasResult | null | undefined>(undefined);
 const expandedBrowserGroups = ref<Set<string>>(new Set());
 const showSearchContextMenu = ref(false);
 const searchContextMenuPosition = ref({ x: 0, y: 0 });
-const usePrecomputedHomepageAtlas = computed(() => false);
-const shouldDeferHomepageCards = computed(
-  () => currentView.value === 'items' && usePrecomputedHomepageAtlas.value && items.value.length > 0 && currentPageAtlas.value === undefined,
-);
 const shouldDeferHistoryCards = computed(
   () => currentView.value === 'items' && viewHistory.value.length > 0 && historyAtlas.value === undefined,
 );
-
-const prefetchImageUrl = (url: string) => {
-  if (!url || prefetchedHomeImages.has(url)) return;
-  prefetchedHomeImages.add(url);
-  const img = new Image();
-  img.decoding = "async";
-  img.loading = "eager";
-  img.src = url;
-};
-
-const resolveHomepageImageUrl = (item: ItemBasicInfo) => {
-  return item.preferredImageUrl || getPreferredStaticImageUrlFromEntity(item);
-};
-
-const prewarmVisibleItemImages = () => {
-  const visibleItems = items.value.slice(0, Math.min(items.value.length, pageSize.value));
-  const urls = visibleItems
-    .map((entry) => resolveHomepageImageUrl(entry))
-    .filter(Boolean)
-    .slice(0, Math.max(pageSize.value, 120));
-
-  const run = () => {
-    for (const url of urls) {
-      prefetchImageUrl(url);
-    }
-  };
-
-  if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-    (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number })
-      .requestIdleCallback(run, { timeout: 800 });
-    return;
-  }
-
-  setTimeout(run, 0);
-};
+let historyAtlasRequestSeq = 0;
 
 // Save view history to localStorage
 const saveViewHistory = () => {
@@ -232,58 +198,82 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalKeydown);
   itemGridResizeObserver?.disconnect();
   itemGridResizeObserver = null;
+  if (neighborPrefetchTimer !== null) {
+    clearTimeout(neighborPrefetchTimer);
+    neighborPrefetchTimer = null;
+  }
+  if (neighborPrefetchIdleHandle !== null && typeof window !== "undefined" && "cancelIdleCallback" in window) {
+    (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(neighborPrefetchIdleHandle);
+    neighborPrefetchIdleHandle = null;
+  }
 });
 
 watch(currentView, async (view) => {
   if (view === "items") {
     await nextTick();
     updateHistoryPanelWidth();
-    if (itemGridShellRef.value) {
+    if (itemGridViewportRef.value) {
       itemGridResizeObserver?.disconnect();
-      itemGridResizeObserver?.observe(itemGridShellRef.value);
+      itemGridResizeObserver?.observe(itemGridViewportRef.value);
       syncMeasuredPageSize();
     }
   }
 });
 
 watch(
-  () => items.value.map((item) => item.itemId).join("|"),
+  () => [
+    items.value.map((item) => item.itemId).join("|"),
+    currentPage.value,
+    pageSize.value,
+    currentPageAtlas.value === undefined,
+  ].join("::"),
   async () => {
-    if (currentView.value === "items" && items.value.length > 0) {
-      currentPageAtlas.value = null;
-      void buildPageAtlas(items.value, itemSize.value).then((atlas) => {
-        currentPageAtlas.value = atlas;
-      });
+    if (currentView.value !== "items" || items.value.length === 0) {
+      return;
+    }
 
-      await nextTick();
-      if (itemGridShellRef.value) {
-        itemGridResizeObserver?.disconnect();
-        itemGridResizeObserver?.observe(itemGridShellRef.value);
-        syncMeasuredPageSize();
-      }
+    await nextTick();
+    if (itemGridViewportRef.value) {
+      itemGridResizeObserver?.disconnect();
+      itemGridResizeObserver?.observe(itemGridViewportRef.value);
+      syncMeasuredPageSize();
     }
   },
 );
 
 watch(
-  () => [currentPage.value, totalPages.value, currentView.value] as const,
-  ([page, total, view]) => {
-    if (view !== "items") return;
-    void prefetchItemsPage(page + 1);
-    if (page > 1) {
-      void prefetchItemsPage(page - 1);
+  () => [currentPage.value, totalPages.value, currentView.value, currentPageAtlas.value === undefined, searchQuery.value.trim()] as const,
+  ([page, total, view, atlasPending, activeSearch]) => {
+    if (neighborPrefetchTimer !== null) {
+      clearTimeout(neighborPrefetchTimer);
+      neighborPrefetchTimer = null;
     }
-    if (page + 2 <= total) {
-      void prefetchItemsPage(page + 2);
+    if (neighborPrefetchIdleHandle !== null && typeof window !== "undefined" && "cancelIdleCallback" in window) {
+      (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(neighborPrefetchIdleHandle);
+      neighborPrefetchIdleHandle = null;
     }
 
-    const neighborPages = [page - 1, page + 1, page + 2].filter((value) => value >= 1 && value <= total);
-    for (const neighborPage of neighborPages) {
-      const cached = getCachedItemsPage(neighborPage);
-      if (cached?.items?.length) {
-        void primePageAtlas(cached.items, itemSize.value);
+    if (view !== "items" || atlasPending || total <= 1 || activeSearch) return;
+
+    const neighborPage = page >= total ? 1 : page + 1;
+    neighborPrefetchTimer = window.setTimeout(() => {
+      neighborPrefetchTimer = null;
+      const runPrefetch = () => {
+        void prefetchItemsPage(neighborPage);
+      };
+
+      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+        neighborPrefetchIdleHandle = (window as Window & {
+          requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number;
+        }).requestIdleCallback(() => {
+          neighborPrefetchIdleHandle = null;
+          runPrefetch();
+        }, { timeout: 900 });
+        return;
       }
-    }
+
+      runPrefetch();
+    }, 420);
   },
   { immediate: true },
 );
@@ -296,8 +286,10 @@ watch(
       historyAtlas.value = null;
       return;
     }
+    const requestSeq = ++historyAtlasRequestSeq;
     historyAtlas.value = undefined;
     void buildPageAtlas(visibleHistoryItems, historyItemPixelSize.value).then((atlas) => {
+      if (requestSeq !== historyAtlasRequestSeq) return;
       historyAtlas.value = atlas;
     });
   },
@@ -761,35 +753,31 @@ const onSelectGroup = (groupId: string) => {
     });
 };
 
-// Computed: Calculate grid cell size based on item size
-const gridCellSize = computed(() => {
-  return `${itemSize.value + 4}px`; // itemSize + gap-1 (4px)
-});
-
-const measureVisibleGridCapacity = () => {
-  const shell = itemGridShellRef.value;
+const measureGridCapacityRaw = () => {
+  const shell = itemGridViewportRef.value;
   if (!shell) return null;
 
   const style = window.getComputedStyle(shell);
-  const columnCount = style.gridTemplateColumns
-    .split(" ")
-    .map((value) => value.trim())
-    .filter(Boolean)
-    .length;
-  const firstCell = shell.querySelector(".item-grid-cell") as HTMLElement | null;
-  if (!firstCell) return null;
-  const measuredRowHeight = firstCell.getBoundingClientRect().height;
-  const minimumRowHeight = Math.max(28, itemSize.value * 0.8);
-  if (!Number.isFinite(measuredRowHeight) || measuredRowHeight < minimumRowHeight) {
-    return null;
-  }
-  const rowHeight = measuredRowHeight;
-  const rowGap = Number.parseFloat(style.rowGap || style.gap || "0") || 0;
-  const rows = Math.max(1, Math.floor((shell.clientHeight + rowGap) / (rowHeight + rowGap)));
+  const paddingX =
+    (Number.parseFloat(style.paddingLeft || "0") || 0)
+    + (Number.parseFloat(style.paddingRight || "0") || 0);
+  const paddingY =
+    (Number.parseFloat(style.paddingTop || "0") || 0)
+    + (Number.parseFloat(style.paddingBottom || "0") || 0);
+  const gap = 4;
+  const usableWidth = Math.max(0, shell.clientWidth - paddingX);
+  const usableHeight = Math.max(0, shell.clientHeight - paddingY);
+  const columnCount = Math.max(1, Math.floor((usableWidth + gap) / (itemSize.value + gap)));
+  const rows = Math.max(1, Math.floor((usableHeight + gap) / (itemSize.value + gap)));
 
   if (columnCount <= 0 || rows <= 0) return null;
-  const capacity = columnCount * rows;
-  const baseline = calculatePageSize();
+  return columnCount * rows;
+};
+
+const measureVisibleGridCapacity = () => {
+  const capacity = measureGridCapacityRaw();
+  if (!capacity) return null;
+  const baseline = Math.max(20, pageSize.value);
   const lowerBound = Math.max(20, Math.floor(baseline * 0.75));
   const upperBound = Math.max(lowerBound, Math.ceil(baseline * 1.5));
   if (capacity < lowerBound || capacity > upperBound) {
@@ -799,9 +787,14 @@ const measureVisibleGridCapacity = () => {
 };
 
 const syncMeasuredPageSize = () => {
-  if (currentView.value !== "items" || loading.value || items.value.length === 0) return;
+  if (
+    currentView.value !== "items"
+    || loading.value
+    || items.value.length === 0
+    || currentPageAtlas.value === undefined
+  ) return;
   const measured = measureVisibleGridCapacity();
-  if (!measured || measured === pageSize.value) return;
+  if (!measured || measured === pageSize.value || Math.abs(measured - pageSize.value) < 8) return;
   setPageSize(measured);
 };
 
@@ -1059,108 +1052,46 @@ const saveSettings = () => {
 
           <!-- Items Grid Container -->
           <div class="items-grid-container flex-1 min-h-0 pt-1 flex flex-col">
-            <div v-if="loading" class="state-panel list-state-panel">
-              <div class="state-spinner"></div>
-              <p class="state-title">加载数据中...</p>
-              <p class="state-subtitle">正在同步物品列表，请稍候。</p>
-            </div>
-
-            <div v-else-if="loadError" class="state-panel list-state-panel state-panel-error">
-              <p class="state-title">{{ loadError }}</p>
-              <p class="state-subtitle">可立即重试，或重置筛选条件后重新加载。</p>
-              <div class="state-actions">
-                <button class="mini-pager-btn" @click="loadItems">重试</button>
-                <button class="mini-pager-btn" @click="resetItemFilters">重置筛选</button>
-              </div>
-            </div>
-
-            <div v-else-if="items.length === 0" class="state-panel list-state-panel">
-              <p class="state-title">暂无可显示物品</p>
-              <p class="state-subtitle">{{ itemGridEmptySubtitle }}</p>
-              <div class="state-actions">
-                <button class="mini-pager-btn" @click="loadItems">重新加载</button>
-                <button class="mini-pager-btn" @click="resetItemFilters">重置筛选</button>
-              </div>
-            </div>
-
             <div
-              v-else
-              ref="itemGridShellRef"
-              class="item-grid-shell grid gap-1 w-full p-4 flex-1 min-h-0 overflow-hidden"
-              :style="{
-                gridTemplateColumns: `repeat(auto-fit, minmax(${gridCellSize}, 1fr))`,
-              }"
+              ref="itemGridViewportRef"
+              class="item-grid-shell w-full p-4 flex-1 min-h-0 overflow-hidden"
             >
-              <template v-for="(entry, pageIndex) in browserGridEntries" :key="entry.key">
-                <ItemTooltip
-                  v-if="entry.kind === 'item'"
-                  class="item-grid-cell"
-                  :item="entry.item"
-                  @click="openCraftingRecipes(entry.item)"
-                  @contextmenu="handleCardContextMenu"
-                >
-                  <div
-                    v-if="shouldDeferHomepageCards"
-                    class="atlas-card-placeholder"
-                    :style="{ width: `${itemSize}px`, height: `${itemSize}px` }"
-                  />
-                  <ItemCard
-                    v-else
-                    :item="entry.item"
-                    :itemSize="itemSize"
-                    :enableAnimation="true"
-                    :eager="pageIndex < 10"
-                    :deferAnimationMs="HOME_GRID_ANIMATION_DELAY_MS"
-                    :atlas-sprite="currentPageAtlas?.entries[entry.item.itemId] || null"
-                    @click="openCraftingRecipes(entry.item)"
-                    @contextmenu="handleCardContextMenu(entry.item, $event)"
-                  />
-                </ItemTooltip>
+              <div v-if="loading" class="state-panel list-state-panel">
+                <div class="state-spinner"></div>
+                <p class="state-title">加载数据中...</p>
+                <p class="state-subtitle">正在同步物品列表，请稍候。</p>
+              </div>
 
-                <ItemTooltip
-                  v-else
-                  class="item-grid-cell"
-                  :item="entry.group.representative"
-                  @click="handleBrowserGroupClick(entry.group)"
-                  @contextmenu="handleBrowserGroupContextMenu(entry.group, $event)"
-                >
-                  <button
-                    type="button"
-                    class="browser-group-card"
-                    :class="{
-                      'browser-group-card--expanded': entry.kind === 'group-header',
-                    }"
-                    :title="
-                      !entry.group.expandable
-                        ? 'GTNH 折叠组'
-                        : entry.kind === 'group-header'
-                          ? '收起变体组'
-                          : '展开变体组'
-                    "
-                  >
-                    <div class="browser-group-card__frame">
-                      <div
-                        v-if="shouldDeferHomepageCards"
-                        class="atlas-card-placeholder browser-group-card__placeholder"
-                        :style="{ width: `${itemSize}px`, height: `${itemSize}px` }"
-                      />
-                      <ItemCard
-                        v-else
-                        :item="entry.group.representative"
-                        :itemSize="itemSize"
-                        :enableAnimation="true"
-                        :eager="pageIndex < 10"
-                        :deferAnimationMs="HOME_GRID_ANIMATION_DELAY_MS"
-                        :atlas-sprite="currentPageAtlas?.entries[entry.group.representative.itemId] || null"
-                      />
-                    </div>
-                    <span class="browser-group-card__count">{{ entry.group.size }}</span>
-                    <span class="browser-group-card__label">
-                      {{ !entry.group.expandable ? '分组' : entry.kind === 'group-header' ? '收起' : '展开' }}
-                    </span>
-                  </button>
-                </ItemTooltip>
-              </template>
+              <div v-else-if="loadError" class="state-panel list-state-panel state-panel-error">
+                <p class="state-title">{{ loadError }}</p>
+                <p class="state-subtitle">可立即重试，或重置筛选条件后重新加载。</p>
+                <div class="state-actions">
+                  <button class="mini-pager-btn" @click="loadItems">重试</button>
+                  <button class="mini-pager-btn" @click="resetItemFilters">重置筛选</button>
+                </div>
+              </div>
+
+              <div v-else-if="items.length === 0" class="state-panel list-state-panel">
+                <p class="state-title">暂无可显示物品</p>
+                <p class="state-subtitle">{{ itemGridEmptySubtitle }}</p>
+                <div class="state-actions">
+                  <button class="mini-pager-btn" @click="loadItems">重新加载</button>
+                  <button class="mini-pager-btn" @click="resetItemFilters">重置筛选</button>
+                </div>
+              </div>
+
+              <HomeCanvasGrid
+                v-else
+                :entries="browserGridEntries"
+                :item-size="itemSize"
+                :atlas="currentPageAtlas"
+                :enable-animation="true"
+                :prefer-atlas="true"
+                @item-click="openCraftingRecipes"
+                @item-contextmenu="handleCardContextMenu"
+                @group-click="handleBrowserGroupClick"
+                @group-contextmenu="handleBrowserGroupContextMenu"
+              />
             </div>
 
             <!-- View History（位于物品浏览区底部，固定高度） -->
@@ -1231,6 +1162,7 @@ const saveSettings = () => {
         <input
           v-model="searchQuery"
           @input="onSearch"
+          @focus="warmSearchIndex"
           @contextmenu="handleSearchContextMenu"
           type="text"
           class="w-full px-4 py-2.5 text-sm rounded-lg chrome-field chrome-search-input"
@@ -1374,97 +1306,7 @@ const saveSettings = () => {
 }
 
 .item-grid-shell {
-  align-content: start;
-  justify-items: stretch;
-}
-
-.item-grid-cell {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-}
-
-.browser-group-card {
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  padding: 0;
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  border-radius: 12px;
-  background:
-    radial-gradient(circle at 50% 18%, rgba(125, 211, 252, 0.16), transparent 42%),
-    linear-gradient(180deg, rgba(16, 20, 27, 0.92), rgba(8, 11, 16, 0.96));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 10px 20px rgba(0, 0, 0, 0.26);
-  cursor: pointer;
-  transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
-}
-
-.browser-group-card:hover {
-  transform: translateY(-1px);
-  border-color: rgba(125, 211, 252, 0.34);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 14px 24px rgba(0, 0, 0, 0.3);
-}
-
-.browser-group-card--expanded {
-  border-color: rgba(96, 165, 250, 0.34);
-  background:
-    radial-gradient(circle at 50% 18%, rgba(96, 165, 250, 0.18), transparent 44%),
-    linear-gradient(180deg, rgba(18, 23, 32, 0.94), rgba(9, 13, 18, 0.98));
-}
-
-.browser-group-card__frame {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
-  height: 100%;
-}
-
-.browser-group-card__placeholder {
-  border-radius: 10px;
-}
-
-.browser-group-card__count {
-  position: absolute;
-  right: 5px;
-  top: 5px;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 5px;
-  border-radius: 999px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(15, 23, 42, 0.86);
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  color: rgba(226, 232, 240, 0.96);
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.02em;
-}
-
-.browser-group-card__label {
-  position: absolute;
-  left: 6px;
-  bottom: 6px;
-  padding: 2px 6px;
-  border-radius: 999px;
-  background: rgba(8, 12, 18, 0.82);
-  border: 1px solid rgba(148, 163, 184, 0.18);
-  color: rgba(191, 219, 254, 0.96);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
 }
 
 .atlas-card-placeholder {

@@ -6,6 +6,7 @@ import zlib from 'zlib';
 import test from 'node:test';
 import { DatabaseManager } from '../src/models/database';
 import { NeoNeiCompilerService } from '../src/services/neonei-compiler.service';
+import { PublishPayloadService, deriveFirstPagePackFromWindow } from '../src/services/publish-payload.service';
 
 function writeGzipJson(filePath: string, payload: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -471,7 +472,7 @@ test('compiler pre-generates hot page atlases into assets manifest', async () =>
 
   const db = manager.getDatabase();
   const atlasCount = (db.prepare("SELECT COUNT(*) AS c FROM assets_manifest WHERE asset_type = 'page_atlas'").get() as { c: number }).c;
-  assert.equal(atlasCount, 1);
+  assert.equal(atlasCount >= 1, true);
 
   const atlasRow = db.prepare("SELECT path, metadata_json FROM assets_manifest WHERE asset_type = 'page_atlas' LIMIT 1").get() as {
     path: string;
@@ -479,6 +480,107 @@ test('compiler pre-generates hot page atlases into assets manifest', async () =>
   };
   assert.equal(Boolean(atlasRow.metadata_json), true);
   assert.equal(fs.existsSync(path.join(atlasDir, atlasRow.path)), true);
+
+  manager.close();
+  fs.rmSync(tempDir, { recursive: true, force: true });
+});
+
+test('compiler materializes publish payload windows for homepage cold starts', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-compiler-publish-payloads-'));
+  const dbPath = path.join(tempDir, 'acceleration.db');
+  const itemsDir = path.join(tempDir, 'items');
+  const recipesDir = path.join(tempDir, 'recipes');
+  const canonicalDir = path.join(tempDir, 'canonical');
+  const imageRoot = path.join(tempDir, 'image');
+  const atlasDir = path.join(tempDir, 'page-atlas-cache');
+
+  writeGzipJson(path.join(itemsDir, 'Botania', 'items.json.gz'), [
+    {
+      itemId: 'i~Botania~manaResource~4',
+      modId: 'Botania',
+      internalName: 'manaResource',
+      localizedName: '娉版媺閽㈤敪',
+      searchTerms: 'botania terrasteel',
+      imageFileName: 'Botania/manaResource~4.png',
+    },
+    {
+      itemId: 'i~Botania~manaResource~0',
+      modId: 'Botania',
+      internalName: 'manaResource',
+      localizedName: '榄斿姏閽㈤敪',
+      searchTerms: 'botania manasteel',
+      imageFileName: 'Botania/manaResource~0.png',
+    },
+    {
+      itemId: 'i~Botania~manaResource~18',
+      modId: 'Botania',
+      internalName: 'manaResource',
+      localizedName: '娉版媺閽㈢矑',
+      searchTerms: 'botania terrasteel nugget',
+      imageFileName: 'Botania/manaResource~18.png',
+    },
+  ]);
+
+  fs.mkdirSync(recipesDir, { recursive: true });
+  fs.mkdirSync(canonicalDir, { recursive: true });
+  writeTinyPng(path.join(imageRoot, 'item', 'Botania', 'manaResource~4.png'));
+  writeTinyPng(path.join(imageRoot, 'item', 'Botania', 'manaResource~0.png'));
+  writeTinyPng(path.join(imageRoot, 'item', 'Botania', 'manaResource~18.png'));
+
+  const manager = new DatabaseManager(dbPath);
+  await manager.init();
+
+  const compiler = new NeoNeiCompilerService(
+    manager,
+    {
+      itemsDir,
+      recipesDir,
+      canonicalDir,
+      imageRoot,
+    },
+    {
+      hotPageAtlas: {
+        enabled: false,
+        atlasOutputDir: atlasDir,
+      },
+      publishHotPayloads: {
+        enabled: true,
+        firstPageSize: 3,
+        slotSizes: [32],
+        includeBrowserSearchPack: true,
+      },
+    },
+  );
+
+  const result = await compiler.compile();
+  const db = manager.getDatabase();
+  const payloadCount = (db.prepare("SELECT COUNT(*) AS c FROM publish_payloads").get() as { c: number }).c;
+  assert.equal(payloadCount >= 4, true);
+
+  const service = new PublishPayloadService({ databaseManager: manager });
+  const modsPayload = service.getModsList(result.signature);
+  assert.equal(Array.isArray(modsPayload), true);
+  assert.equal(modsPayload?.[0]?.modId, 'Botania');
+
+  const searchPack = service.getBrowserSearchPack(result.signature);
+  assert.equal(searchPack?.total, 3);
+
+  const windowPayload = service.getBrowserPageWindow({
+    slotSize: 32,
+  }, result.signature);
+  assert.equal(windowPayload?.pageSize, 3);
+  assert.equal(windowPayload?.data.length, 3);
+
+  const trimmed = windowPayload ? deriveFirstPagePackFromWindow(windowPayload, 2) : null;
+  assert.equal(trimmed?.pageSize, 2);
+  assert.equal(trimmed?.data.length, 2);
+  assert.equal(Object.keys(trimmed?.atlas?.entries ?? {}).length, 2);
+
+  const homeBootstrap = service.getHomeBootstrapWindow({
+    slotSize: 32,
+  }, result.signature);
+  assert.equal(homeBootstrap?.mods.length, 1);
+  assert.equal(homeBootstrap?.pagePack.pageSize, 3);
 
   manager.close();
   fs.rmSync(tempDir, { recursive: true, force: true });

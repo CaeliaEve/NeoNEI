@@ -128,6 +128,8 @@ const {
   currentRecipeVariantSelections,
   filteredRecipeCount,
   totalRecipeCount,
+  producedByTotalCount,
+  usedInTotalCount,
   totalPages,
   getImagePath,
   selectMachine,
@@ -179,16 +181,16 @@ const browseTabs = computed(() => [
   {
     key: 'producedBy',
     label: copy.producedByTab,
-    count: recipes.value.producedBy.length,
-    disabled: recipes.value.producedBy.length === 0,
-    visible: recipes.value.producedBy.length > 0,
+    count: producedByTotalCount.value,
+    disabled: producedByTotalCount.value === 0,
+    visible: producedByTotalCount.value > 0,
   },
   {
     key: 'usedIn',
     label: copy.usedInTab,
-    count: recipes.value.usedIn.length,
-    disabled: recipes.value.usedIn.length === 0,
-    visible: recipes.value.usedIn.length > 0,
+    count: usedInTotalCount.value,
+    disabled: usedInTotalCount.value === 0,
+    visible: usedInTotalCount.value > 0,
   },
 ]);
 
@@ -198,8 +200,8 @@ const ecosystemStats = computed(() => {
   }
   return [
     { label: copy.sourceMod, value: item.value.modId },
-    { label: copy.producedByCount, value: String(recipes.value.producedBy.length) },
-    { label: copy.usedInCount, value: String(recipes.value.usedIn.length) },
+    { label: copy.producedByCount, value: String(producedByTotalCount.value) },
+    { label: copy.usedInCount, value: String(usedInTotalCount.value) },
   ];
 });
 

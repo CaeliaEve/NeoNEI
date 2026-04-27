@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
-import { api, getFluidImageUrlFromFluid, type Recipe } from '../services/api';
+import { getFluidImageUrlFromFluid, type Item, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
@@ -20,6 +20,7 @@ interface SlotVariant {
   count: number;
   renderAssetRef?: string | null;
   imageFileName?: string | null;
+  renderHint?: Item['renderHint'];
 }
 
 interface SlotItem {
@@ -155,46 +156,6 @@ const cycleAlternatives = () => {
 
 const initGrid = async () => {
   const flatInputs = recipeData.value.inputs.flatMap((row) => row);
-  const itemIds = new Set<string>();
-
-  for (const cell of flatInputs) {
-    if (!cell) continue;
-    const variants = Array.isArray(cell) ? cell : [cell];
-    for (const variant of variants) {
-      if (variant?.itemId) {
-        itemIds.add(variant.itemId);
-      }
-    }
-  }
-
-  if (itemIds.size > 0) {
-    const items = await api.getItemsByIds(Array.from(itemIds));
-    const itemById = new Map(items.map((item) => [item.itemId, item]));
-
-    const nextSlots: Array<SlotItem | null> = [];
-    for (let slotIndex = 0; slotIndex < 16; slotIndex++) {
-      const cell = flatInputs[slotIndex];
-      if (!cell) {
-        nextSlots.push(null);
-        continue;
-      }
-
-      const variants = (Array.isArray(cell) ? cell : [cell])
-        .filter((variant): variant is { itemId: string; count?: number; renderAssetRef?: string | null; imageFileName?: string | null } => Boolean(variant?.itemId))
-        .map((variant) => ({
-          itemId: variant.itemId,
-          count: typeof variant.count === 'number' && variant.count > 0 ? variant.count : 1,
-          renderAssetRef: itemById.get(variant.itemId)?.renderAssetRef ?? variant.renderAssetRef ?? null,
-          imageFileName: itemById.get(variant.itemId)?.imageFileName ?? variant.imageFileName ?? null,
-        }));
-
-      nextSlots.push(variants.length > 0 ? { items: variants, primaryIndex: 0 } : null);
-    }
-
-    craftingSlots.value = nextSlots;
-    return;
-  }
-
   const nextSlots: Array<SlotItem | null> = [];
   for (let slotIndex = 0; slotIndex < 16; slotIndex++) {
     const cell = flatInputs[slotIndex];
@@ -204,12 +165,13 @@ const initGrid = async () => {
     }
 
     const variants = (Array.isArray(cell) ? cell : [cell])
-      .filter((variant): variant is { itemId: string; count?: number; renderAssetRef?: string | null; imageFileName?: string | null } => Boolean(variant?.itemId))
+      .filter((variant): variant is { itemId: string; count?: number; renderAssetRef?: string | null; imageFileName?: string | null; renderHint?: Item['renderHint'] } => Boolean(variant?.itemId))
       .map((variant) => ({
         itemId: variant.itemId,
         count: typeof variant.count === 'number' && variant.count > 0 ? variant.count : 1,
         renderAssetRef: variant.renderAssetRef ?? null,
         imageFileName: variant.imageFileName ?? null,
+        renderHint: variant.renderHint ?? null,
       }));
 
     nextSlots.push(variants.length > 0 ? { items: variants, primaryIndex: 0 } : null);

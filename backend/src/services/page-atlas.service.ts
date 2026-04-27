@@ -346,9 +346,9 @@ export class PageAtlasService {
 
     let warmed = 0;
     for (let page = 1; page <= pages; page += 1) {
-      const result = await this.itemsService.getItems({ page, pageSize });
-      if (!result.data.length) break;
-      await this.buildAtlas(result.data, slotSize);
+      const items = await this.itemsService.getBrowserDisplayItemsForPage({ page, pageSize });
+      if (!items.length) break;
+      await this.buildAtlas(items, slotSize);
       warmed += 1;
     }
 
@@ -361,15 +361,15 @@ export class PageAtlasService {
     slotSize: number;
     modId?: string;
   }): Promise<PageAtlasResponse | null> {
-    const result = await this.itemsService.getItems({
+    const items = await this.itemsService.getBrowserDisplayItemsForPage({
       page: params.page,
       pageSize: params.pageSize,
       modId: params.modId,
     });
-    if (!result.data.length) {
+    if (!items.length) {
       return null;
     }
-    return this.buildAtlas(result.data, params.slotSize);
+    return this.buildAtlas(items, params.slotSize);
   }
 }
 

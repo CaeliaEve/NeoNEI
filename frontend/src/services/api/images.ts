@@ -231,10 +231,16 @@ export interface AnimatedAtlasAssetEntry {
 }
 
 export function getSpriteMetadataUrlFromImageUrl(imageUrl: string): string {
+  if (/\.sprite-atlas\.png(?:\?.*)?$/i.test(imageUrl)) {
+    return imageUrl.replace(/\.sprite-atlas\.png(\?.*)?$/i, '.sprite.json$1');
+  }
   return imageUrl.replace(/\.(png|gif)(\?.*)?$/i, '.sprite.json$2');
 }
 
 export function getSpriteAtlasUrlFromImageUrl(imageUrl: string): string {
+  if (/\.sprite-atlas\.png(?:\?.*)?$/i.test(imageUrl)) {
+    return imageUrl;
+  }
   return imageUrl.replace(/\.(png|gif)(\?.*)?$/i, '.sprite-atlas.png$2');
 }
 

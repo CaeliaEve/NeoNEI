@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onBeforeUnmount, shallowRef, triggerRef, watch } from 'vue';
-import { api, type Recipe } from '../services/api';
+import { type Item, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
@@ -18,9 +18,9 @@ interface Emits {
 interface SlotVariant {
   itemId: string;
   count: number;
-  localizedName: string;
   renderAssetRef?: string | null;
   imageFileName?: string | null;
+  renderHint?: Item['renderHint'];
 }
 
 interface SlotItem {
@@ -38,7 +38,6 @@ const totalSlots = computed(() => gridDims.value.width * gridDims.value.height);
 const craftingGrid = shallowRef<Array<SlotItem | null>>([]);
 const hoveredSlot = ref<number | null>(null);
 
-let initToken = 0;
 let alternativeCycleTimer: number | null = null;
 
 const stopAlternativeCycle = () => {
@@ -65,30 +64,9 @@ const startAlternativeCycle = () => {
 };
 
 const initGrid = async () => {
-  const token = ++initToken;
   const gridSize = totalSlots.value;
   const newGrid: Array<SlotItem | null> = Array.from({ length: gridSize }, () => null);
   const gridWidth = gridDims.value.width;
-  const itemIds = new Set<string>();
-
-  for (let slotIndex = 0; slotIndex < gridSize; slotIndex++) {
-    const row = Math.floor(slotIndex / gridWidth);
-    const col = slotIndex % gridWidth;
-    if (row >= recipeData.value.inputs.length || col >= recipeData.value.inputs[row].length) continue;
-
-    const itemOrArray = recipeData.value.inputs[row][col];
-    if (!itemOrArray) continue;
-
-    const itemsArray = Array.isArray(itemOrArray) ? itemOrArray : [itemOrArray];
-    for (const item of itemsArray) {
-      if (item?.itemId) itemIds.add(item.itemId);
-    }
-  }
-
-  const items = await api.getItemsByIds(Array.from(itemIds));
-  if (token !== initToken) return;
-
-  const itemById = new Map(items.map((item) => [item.itemId, item]));
 
   for (let slotIndex = 0; slotIndex < gridSize; slotIndex++) {
     const row = Math.floor(slotIndex / gridWidth);
@@ -106,9 +84,9 @@ const initGrid = async () => {
       slotItems.push({
         itemId: item.itemId,
         count: item.count,
-        localizedName: itemById.get(item.itemId)?.localizedName || item.itemId,
-        renderAssetRef: itemById.get(item.itemId)?.renderAssetRef ?? null,
-        imageFileName: itemById.get(item.itemId)?.imageFileName ?? null,
+        renderAssetRef: typeof item.renderAssetRef === 'string' ? item.renderAssetRef : null,
+        imageFileName: typeof item.imageFileName === 'string' ? item.imageFileName : null,
+        renderHint: item.renderHint ?? null,
       });
     }
 
@@ -224,6 +202,7 @@ onBeforeUnmount(() => {
             <AnimatedItemIcon
               :item-id="outputItem!.itemId"
               :render-asset-ref="outputItem!.renderAssetRef || null"
+              :image-file-name="outputItem!.imageFileName || null"
               :size="74"
               class="item-icon output-icon"
             />

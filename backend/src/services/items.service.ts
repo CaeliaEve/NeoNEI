@@ -11,6 +11,16 @@ export interface Item {
   internalName: string;
   localizedName: string;
   renderAssetRef?: string | null;
+  renderHint?: {
+    renderMode: string | null;
+    animationMode: string | null;
+    playbackHint: string | null;
+    frameCount: number | null;
+    explicitStatic: boolean;
+    prefersNativeSprite: boolean;
+    prefersCapturedAtlas: boolean;
+    hasAnimation: boolean;
+  } | null;
   preferredImageUrl?: string | null;
   unlocalizedName: string;
   damage: number;
@@ -69,7 +79,14 @@ type BrowserCatalogRow = ItemRow & {
 
 type ModRow = {
   mod_id: string;
+  mod_name?: string;
   item_count: number;
+};
+
+type BrowserDefaultEntryRow = ItemRow & {
+  entry_order: number;
+  entry_kind: 'item' | 'group-collapsed';
+  browser_group_sort_order: number | null;
 };
 
 export interface ItemsServiceOptions {
@@ -87,8 +104,10 @@ export class ItemsService {
     { value: BrowserCatalogRow[]; expiresAt: number }
   >();
   private static imageUrlCache = new Map<string, string>();
+  private static modsCache: { value: Array<{ modId: string; modName: string; itemCount: number }>; expiresAt: number } | null = null;
   private static readonly ITEM_CACHE_TTL_MS = 60 * 1000;
   private static readonly BROWSER_CATALOG_CACHE_TTL_MS = 60 * 1000;
+  private static readonly MODS_CACHE_TTL_MS = 5 * 60 * 1000;
 
   constructor(options: ItemsServiceOptions = {}) {
     this.databaseManager = options.databaseManager ?? getAccelerationDatabaseManager();
@@ -119,6 +138,47 @@ export class ItemsService {
     } catch {
       return false;
     }
+  }
+
+  private canUseModsSummary(db: Database.Database | null): boolean {
+    if (!db) return false;
+    try {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'mods_summary'")
+        .get() as { name?: string } | undefined;
+      return row?.name === 'mods_summary';
+    } catch {
+      return false;
+    }
+  }
+
+  private canUseBrowserDefaultEntries(db: Database.Database | null): boolean {
+    if (!db) return false;
+    try {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'browser_default_entries'")
+        .get() as { name?: string } | undefined;
+      return row?.name === 'browser_default_entries';
+    } catch {
+      return false;
+    }
+  }
+
+  private getCachedMods(): Array<{ modId: string; modName: string; itemCount: number }> | null {
+    const hit = ItemsService.modsCache;
+    if (!hit) return null;
+    if (Date.now() > hit.expiresAt) {
+      ItemsService.modsCache = null;
+      return null;
+    }
+    return hit.value;
+  }
+
+  private setCachedMods(mods: Array<{ modId: string; modName: string; itemCount: number }>): void {
+    ItemsService.modsCache = {
+      value: mods,
+      expiresAt: Date.now() + ItemsService.MODS_CACHE_TTL_MS,
+    };
   }
 
   private getCachedItem(itemId: string): Item | null {
@@ -165,7 +225,140 @@ export class ItemsService {
     });
   }
 
-  private transformDatabaseItem(row: ItemRow): Item {
+  private ensureModsSummaryMaterialized(db: Database.Database): void {
+    if (!this.canUseModsSummary(db) || !this.canUseAccelerationItems(db)) {
+      return;
+    }
+
+    const countRow = db.prepare('SELECT COUNT(*) AS c FROM mods_summary').get() as { c?: number } | undefined;
+    if (Number(countRow?.c ?? 0) > 0) {
+      return;
+    }
+
+    const writeTransaction = db.transaction(() => {
+      db.exec('DELETE FROM mods_summary');
+      db.prepare(`
+        INSERT INTO mods_summary (mod_id, mod_name, item_count, updated_at)
+        SELECT
+          mod_id,
+          mod_id AS mod_name,
+          COUNT(*) AS item_count,
+          CURRENT_TIMESTAMP
+        FROM items_core
+        GROUP BY mod_id
+        ORDER BY mod_id COLLATE NOCASE ASC
+      `).run();
+    });
+
+    writeTransaction();
+  }
+
+  private ensureBrowserDefaultEntriesMaterialized(db: Database.Database): void {
+    if (!this.canUseBrowserDefaultEntries(db) || !this.canUseAccelerationItems(db)) {
+      return;
+    }
+
+    const countRow = db
+      .prepare('SELECT COUNT(*) AS c FROM browser_default_entries')
+      .get() as { c?: number } | undefined;
+    if (Number(countRow?.c ?? 0) > 0) {
+      return;
+    }
+
+    const rows = db.prepare(`
+      SELECT
+        ic.item_id,
+        ic.mod_id,
+        ic.internal_name,
+        ic.localized_name,
+        ic.unlocalized_name,
+        ic.damage,
+        ic.image_file_name,
+        ic.render_asset_ref,
+        ic.preferred_image_url,
+        ic.tooltip,
+        ic.search_terms,
+        bg.group_key AS browser_group_key,
+        bg.group_label AS browser_group_label,
+        bg.group_size AS browser_group_size,
+        bg.group_sort_order AS browser_group_sort_order
+      FROM items_core AS ic
+      LEFT JOIN item_browser_groups AS bg
+        ON bg.item_id = ic.item_id
+      ORDER BY
+        COALESCE(bg.group_sort_order, 2147483647) ASC,
+        ic.damage ASC,
+        ic.localized_name COLLATE NOCASE ASC,
+        ic.item_id COLLATE NOCASE ASC
+    `).all() as BrowserCatalogRow[];
+
+    const writeTransaction = db.transaction((catalog: BrowserCatalogRow[]) => {
+      db.exec('DELETE FROM browser_default_entries');
+      const insertEntry = db.prepare(`
+        INSERT INTO browser_default_entries (
+          entry_order,
+          entry_kind,
+          item_id,
+          mod_id,
+          group_key,
+          group_label,
+          group_size,
+          updated_at
+        ) VALUES (
+          @entry_order,
+          @entry_kind,
+          @item_id,
+          @mod_id,
+          @group_key,
+          @group_label,
+          @group_size,
+          CURRENT_TIMESTAMP
+        )
+      `);
+
+      const seenGroups = new Set<string>();
+      let entryOrder = 0;
+      for (const row of catalog) {
+        const groupKey = `${row.browser_group_key ?? ''}`.trim();
+        const groupSize = Math.max(1, Number(row.browser_group_size ?? 1));
+        if (!groupKey || groupSize <= 1) {
+          insertEntry.run({
+            entry_order: entryOrder,
+            entry_kind: 'item',
+            item_id: row.item_id,
+            mod_id: row.mod_id,
+            group_key: null,
+            group_label: null,
+            group_size: 1,
+          });
+          entryOrder += 1;
+          continue;
+        }
+
+        if (seenGroups.has(groupKey)) {
+          continue;
+        }
+        seenGroups.add(groupKey);
+        insertEntry.run({
+          entry_order: entryOrder,
+          entry_kind: 'group-collapsed',
+          item_id: row.item_id,
+          mod_id: row.mod_id,
+          group_key: groupKey,
+          group_label: `${row.browser_group_label ?? ''}`.trim() || row.localized_name,
+          group_size: groupSize,
+        });
+        entryOrder += 1;
+      }
+    });
+
+    writeTransaction(rows);
+  }
+
+  private transformDatabaseItem(
+    row: ItemRow,
+    options?: { trustPreferredImageUrl?: boolean },
+  ): Item {
     const item: Item = {
       itemId: row.item_id,
       modId: row.mod_id,
@@ -185,7 +378,9 @@ export class ItemsService {
       browserGroupLabel: row.browser_group_label,
       browserGroupSize: row.browser_group_size != null ? Number(row.browser_group_size) : null,
     };
-    item.preferredImageUrl = this.resolveUsablePreferredImageUrl(item.preferredImageUrl, item);
+    item.preferredImageUrl = options?.trustPreferredImageUrl
+      ? (item.preferredImageUrl || this.resolvePreferredStaticImageUrl(item))
+      : this.resolveUsablePreferredImageUrl(item.preferredImageUrl, item);
     return item;
   }
 
@@ -316,6 +511,129 @@ export class ItemsService {
     };
   }
 
+  private getBrowserDefaultEntriesPage(params: {
+    page: number;
+    pageSize: number;
+    modId?: string;
+  }): PaginatedResponse<BrowserPageEntry> | null {
+    const db = this.getAccelerationDatabase();
+    if (!this.canUseBrowserDefaultEntries(db) || !this.canUseAccelerationItems(db)) {
+      return null;
+    }
+
+    this.ensureBrowserDefaultEntriesMaterialized(db);
+
+    const page = Math.max(1, params.page);
+    const pageSize = Math.min(Math.max(1, params.pageSize), 500);
+    const normalizedModId = `${params.modId ?? ''}`.trim();
+    const bindings: Record<string, unknown> = {};
+    const whereClause =
+      normalizedModId && normalizedModId !== 'all'
+        ? 'WHERE e.mod_id = @modId'
+        : '';
+
+    if (whereClause) {
+      bindings.modId = normalizedModId;
+    }
+
+    const totalRow = db.prepare(`
+      SELECT COUNT(*) AS total
+      FROM browser_default_entries AS e
+      ${whereClause}
+    `).get(bindings) as { total?: number } | undefined;
+
+    const total = Math.max(0, Number(totalRow?.total ?? 0));
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const normalizedPage = Math.min(page, totalPages);
+    const offset = Math.max(0, (normalizedPage - 1) * pageSize);
+
+    const rows = db.prepare(`
+      SELECT
+        e.entry_order,
+        e.entry_kind,
+        ic.item_id,
+        ic.mod_id,
+        ic.internal_name,
+        ic.localized_name,
+        ic.unlocalized_name,
+        ic.damage,
+        ic.image_file_name,
+        ic.render_asset_ref,
+        ic.preferred_image_url,
+        ic.tooltip,
+        ic.search_terms,
+        e.group_key AS browser_group_key,
+        e.group_label AS browser_group_label,
+        e.group_size AS browser_group_size,
+        NULL AS browser_group_sort_order
+      FROM browser_default_entries AS e
+      INNER JOIN items_core AS ic
+        ON ic.item_id = e.item_id
+      ${whereClause}
+      ORDER BY e.entry_order ASC
+      LIMIT @limit OFFSET @offset
+    `).all({
+      ...bindings,
+      limit: pageSize,
+      offset,
+    }) as BrowserDefaultEntryRow[];
+
+    const entries = rows.map((row) => {
+      const item = this.transformDatabaseItem(row, { trustPreferredImageUrl: true });
+      if (row.entry_kind === 'item') {
+        this.setCachedItem(item);
+        return {
+          key: item.itemId,
+          kind: 'item',
+          item,
+        } satisfies BrowserPageEntry;
+      }
+
+      const size = Math.max(1, Number(row.browser_group_size ?? 1));
+      const label = `${row.browser_group_label ?? ''}`.trim() || item.localizedName;
+      this.setCachedItem(item);
+      return {
+        key: `collapsed:${row.browser_group_key ?? item.itemId}`,
+        kind: 'group-collapsed',
+        group: {
+          key: `${row.browser_group_key ?? ''}`.trim(),
+          representative: item,
+          size,
+          visibleCount: 1,
+          expandable: size > 1,
+          label,
+        },
+      } satisfies BrowserPageEntry;
+    });
+
+    return {
+      data: entries,
+      total,
+      page: normalizedPage,
+      pageSize,
+      totalPages,
+    };
+  }
+
+  async getBrowserDisplayItemsForPage(params: {
+    page: number;
+    pageSize: number;
+    modId?: string;
+  }): Promise<Item[]> {
+    const fastPage = this.getBrowserDefaultEntriesPage(params);
+    if (fastPage) {
+      return fastPage.data.map((entry) => (entry.kind === 'item' ? entry.item : entry.group.representative));
+    }
+
+    const fallback = await this.getBrowserItems({
+      page: params.page,
+      pageSize: params.pageSize,
+      modId: params.modId,
+      expandedGroups: [],
+    });
+    return fallback.data.map((entry) => (entry.kind === 'item' ? entry.item : entry.group.representative));
+  }
+
   private projectBrowserEntries(
     catalog: BrowserCatalogRow[],
     expandedGroupKeys: Set<string>,
@@ -344,7 +662,7 @@ export class ItemsService {
     for (const row of catalog) {
       const groupKey = `${row.browser_group_key ?? ''}`.trim();
       const groupSize = Math.max(1, Number(row.browser_group_size ?? 1));
-      const item = this.transformDatabaseItem(row);
+      const item = this.transformDatabaseItem(row, { trustPreferredImageUrl: true });
 
       if (!groupKey || groupSize <= 1) {
         pushEntry({
@@ -487,7 +805,7 @@ export class ItemsService {
         `)
         .all(bindings) as ItemRow[];
 
-      const data = rows.map((row) => this.transformDatabaseItem(row));
+      const data = rows.map((row) => this.transformDatabaseItem(row, { trustPreferredImageUrl: true }));
       for (const item of data) {
         this.setCachedItem(item);
       }
@@ -554,15 +872,28 @@ export class ItemsService {
   }): Promise<PaginatedResponse<BrowserPageEntry>> {
     const page = Math.max(1, params.page || 1);
     const pageSize = Math.min(params.pageSize || 50, 500);
-    const catalog = this.getBrowserCatalog({
-      search: params.search,
-      modId: params.modId,
-    });
+    const normalizedSearch = `${params.search ?? ''}`.trim();
     const expandedGroups = new Set(
       (params.expandedGroups ?? [])
         .map((entry) => `${entry ?? ''}`.trim())
         .filter(Boolean),
     );
+
+    if (!normalizedSearch && expandedGroups.size === 0) {
+      const fastPage = this.getBrowserDefaultEntriesPage({
+        page,
+        pageSize,
+        modId: params.modId,
+      });
+      if (fastPage) {
+        return fastPage;
+      }
+    }
+
+    const catalog = this.getBrowserCatalog({
+      search: params.search,
+      modId: params.modId,
+    });
 
     const response = this.projectBrowserEntries(catalog, expandedGroups, page, pageSize);
 
@@ -607,7 +938,7 @@ export class ItemsService {
         `)
         .get(itemId) as ItemRow | undefined;
       if (row) {
-        const item = this.transformDatabaseItem(row);
+        const item = this.transformDatabaseItem(row, { trustPreferredImageUrl: true });
         this.setCachedItem(item);
         return item;
       }
@@ -672,7 +1003,7 @@ export class ItemsService {
         `)
         .all(...missing) as ItemRow[];
       for (const row of rows) {
-        const item = this.transformDatabaseItem(row);
+        const item = this.transformDatabaseItem(row, { trustPreferredImageUrl: true });
         byId.set(item.itemId, item);
         this.setCachedItem(item);
       }
@@ -869,9 +1200,35 @@ export class ItemsService {
   }
 
   async getMods(): Promise<Array<{ modId: string; modName: string; itemCount: number }>> {
+    const cached = this.getCachedMods();
+    if (cached) {
+      return cached;
+    }
+
     const db = this.getAccelerationDatabase();
     if (this.canUseAccelerationItems(db)) {
-      const rows = db
+      const accelDb = db;
+      this.ensureModsSummaryMaterialized(accelDb);
+
+      if (this.canUseModsSummary(accelDb)) {
+        const rows = accelDb
+          .prepare(`
+            SELECT mod_id, mod_name, item_count
+            FROM mods_summary
+            ORDER BY mod_id COLLATE NOCASE ASC
+          `)
+          .all() as ModRow[];
+
+        const mods = rows.map((row) => ({
+          modId: row.mod_id,
+          modName: row.mod_name ?? row.mod_id,
+          itemCount: row.item_count,
+        }));
+        this.setCachedMods(mods);
+        return mods;
+      }
+
+      const rows = accelDb
         .prepare(`
           SELECT mod_id, COUNT(*) AS item_count
           FROM items_core
@@ -880,11 +1237,13 @@ export class ItemsService {
         `)
         .all() as ModRow[];
 
-      return rows.map((row) => ({
+      const mods = rows.map((row) => ({
         modId: row.mod_id,
         modName: row.mod_id,
         itemCount: row.item_count,
       }));
+      this.setCachedMods(mods);
+      return mods;
     }
 
     if (!this.splitExportFallback) {
@@ -892,7 +1251,9 @@ export class ItemsService {
     }
 
     this.ensureSplitItemsAvailable();
-    return this.splitExportService.getModsFast();
+    const mods = this.splitExportService.getModsFast();
+    this.setCachedMods(mods);
+    return mods;
   }
 
   private transformSplitItem(raw: Record<string, unknown>): Item {
