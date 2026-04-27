@@ -23,6 +23,8 @@ interface StackItem {
   itemId: string;
   count?: number;
   probability?: number;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
 }
 
 interface PositionedStack {
@@ -153,7 +155,7 @@ const outputStacks = computed(() => {
   return stacks;
 });
 
-const catalystStacks = computed(() => {
+const catalystStacks = computed<PositionedStack[]>(() => {
   if (!props.recipe.additionalData?.catalyst) return [];
 
   const laneCenterX = Math.round((PANEL_PADDING_X + inputGridWidth.value + outputLeft.value - SLOT_SIZE) / 2);
@@ -165,7 +167,7 @@ const catalystStacks = computed(() => {
   return [{
     x: laneCenterX,
     y: Math.max(PANEL_PADDING_Y, catalystTop),
-    item: { itemId: props.recipe.additionalData.catalyst },
+    item: { itemId: props.recipe.additionalData.catalyst, renderAssetRef: null, imageFileName: null },
     count: 1
   }];
 });

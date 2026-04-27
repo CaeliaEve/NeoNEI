@@ -88,10 +88,10 @@ const pendingAnimations = new Map<string, Promise<void>>();
 let resizeObserver: ResizeObserver | null = null;
 let renderFrameHandle: number | null = null;
 let animationLoopHandle: number | null = null;
-let idleAnimationKickHandle: number | null = null;
+let idleAnimationKickHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
 let atlasLoadSeq = 0;
-let animationDelayTimer: number | null = null;
-let atlasFallbackTimer: number | null = null;
+let animationDelayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+let atlasFallbackTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
 const gap = 4;
 const cardSize = computed(() => Math.max(28, Math.floor(props.itemSize)));

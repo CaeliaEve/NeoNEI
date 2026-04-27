@@ -3,6 +3,7 @@ import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/
 import type { BrowserSearchPackEntry } from './items-search.service';
 import type { BrowserPageEntry } from './items.service';
 import type { PageAtlasResponse } from './page-atlas.service';
+import type { BrowserPageRichMediaManifest } from './browser-render-hints.service';
 
 export interface PublishModSummary {
   modId: string;
@@ -17,6 +18,9 @@ export interface BrowserPageWindowPayload {
   pageSize: number;
   totalPages: number;
   atlas: PageAtlasResponse | null;
+  mediaManifest?: BrowserPageRichMediaManifest | null;
+  windowOffset?: number;
+  windowLength?: number;
 }
 
 export interface HomeBootstrapWindowPayload {
@@ -29,6 +33,67 @@ export interface BrowserSearchPackPayload {
   signature?: string;
   total: number;
   items: BrowserSearchPackEntry[];
+}
+
+export interface PublishBundleWindowPathEntry {
+  scope: string;
+  slotSize: number;
+  path: string;
+  offset: number;
+  length: number;
+}
+
+export interface PublishBundleSearchShardPathEntry {
+  scope: string;
+  shardId: string;
+  path: string;
+  total: number;
+}
+
+export type PublishBundleSidecarEncoding = 'br' | 'gzip';
+
+export interface PublishBundleCompressedVariant {
+  path: string;
+  contentEncoding: PublishBundleSidecarEncoding;
+  extension: '.br' | '.gz';
+  sizeBytes: number;
+}
+
+export interface PublishBundleAssetMetadata {
+  path: string;
+  relativePath: string;
+  contentType: string;
+  sizeBytes: number;
+  compressedVariants: PublishBundleCompressedVariant[];
+}
+
+export interface PublishStaticBundleManifest {
+  version: 1;
+  sourceSignature: string;
+  revision: string;
+  compiledAt: string;
+  publicBasePath: string;
+  firstPageSize: number;
+  slotSizes: number[];
+  includeBrowserSearchPack: boolean;
+  files: {
+    manifest: string;
+    modsList: string | null;
+    browserSearchPack: string | null;
+    browserSearchShards: PublishBundleSearchShardPathEntry[];
+    recipeBootstrapBasePath: string | null;
+    recipeBootstrapShardBasePath: string | null;
+    recipeBootstrapItems: string[];
+    recipeGroupIndexBasePath: string | null;
+    recipeSearchBasePath: string | null;
+    recipeSearchItems: string[];
+    browserPageWindows: PublishBundleWindowPathEntry[];
+    homeBootstrapWindows: PublishBundleWindowPathEntry[];
+  };
+  compression: {
+    sidecars: PublishBundleSidecarEncoding[];
+    assets: Record<string, PublishBundleAssetMetadata>;
+  };
 }
 
 type PublishPayloadRow = {
@@ -49,6 +114,134 @@ function normalizeScope(value?: string): string {
     return 'all';
   }
   return normalized;
+}
+
+function isAbsolutePublicUrl(value: string): boolean {
+  return /^https?:\/\//i.test(`${value ?? ''}`.trim());
+}
+
+function joinPublicPath(...parts: string[]): string {
+  const normalizedParts = parts
+    .filter(Boolean)
+    .map((part) => `${part}`.trim())
+    .filter(Boolean);
+  if (normalizedParts.length <= 0) {
+    return '/';
+  }
+
+  const [first, ...rest] = normalizedParts;
+  const normalizedRest = rest
+    .map((part) => part.replace(/^\/+|\/+$/g, ''))
+    .filter(Boolean);
+
+  if (isAbsolutePublicUrl(first)) {
+    const base = first.replace(/\/+$/g, '');
+    return normalizedRest.length > 0 ? `${base}/${normalizedRest.join('/')}` : base;
+  }
+
+  return `/${[first, ...normalizedRest]
+    .map((part) => part.replace(/^\/+|\/+$/g, ''))
+    .filter(Boolean)
+    .join('/')}`;
+}
+
+export function normalizePublishPublicPath(value: string): string {
+  const normalized = `${value ?? ''}`.trim().replace(/\/+$/, '');
+  if (!normalized) {
+    return '/publish';
+  }
+  if (isAbsolutePublicUrl(normalized)) {
+    return normalized;
+  }
+  return normalized.startsWith('/') ? normalized : `/${normalized}`;
+}
+
+export function buildPublishBundleBasePublicPath(publicPath: string, sourceSignature: string): string {
+  return joinPublicPath(normalizePublishPublicPath(publicPath), encodeURIComponent(sourceSignature));
+}
+
+export function buildPublishModsListRelativePath(modId?: string): string {
+  return `mods/${normalizeScope(modId)}.json`;
+}
+
+export function buildPublishBrowserSearchPackRelativePath(modId?: string): string {
+  return `search/${normalizeScope(modId)}.json`;
+}
+
+export function buildPublishBrowserSearchShardRelativePath(params: {
+  modId?: string;
+  shardId: string;
+}): string {
+  return `search/shards/${normalizeScope(params.modId)}/${encodeURIComponent(`${params.shardId ?? ''}`.trim() || 'default')}.json`;
+}
+
+export function buildPublishBrowserPageWindowRelativePath(params: {
+  modId?: string;
+  slotSize: number;
+}): string {
+  return `browser/page-window/${normalizeScope(params.modId)}/slot-${Math.max(1, Math.floor(params.slotSize))}.json`;
+}
+
+export function buildPublishHomeBootstrapWindowRelativePath(params: {
+  modId?: string;
+  slotSize: number;
+}): string {
+  return `browser/home-bootstrap/${normalizeScope(params.modId)}/slot-${Math.max(1, Math.floor(params.slotSize))}.json`;
+}
+
+export function buildPublishRecipeBootstrapBaseRelativePath(): string {
+  return 'recipes/bootstrap';
+}
+
+export function buildPublishRecipeBootstrapShardBaseRelativePath(): string {
+  return 'recipes/shard';
+}
+
+export function buildPublishRecipeBootstrapRelativePath(itemId: string): string {
+  return `${buildPublishRecipeBootstrapBaseRelativePath()}/${encodeURIComponent(`${itemId ?? ''}`.trim())}.json`;
+}
+
+export function buildPublishRecipeBootstrapShardRelativePath(itemId: string): string {
+  return `${buildPublishRecipeBootstrapShardBaseRelativePath()}/${encodeURIComponent(`${itemId ?? ''}`.trim())}.json`;
+}
+
+export function buildPublishRecipeGroupIndexBaseRelativePath(): string {
+  return 'recipes/groups/index';
+}
+
+export function buildPublishRecipeSearchBaseRelativePath(): string {
+  return 'recipes/search';
+}
+
+export function buildPublishRecipeSearchRelativePath(params: {
+  itemId: string;
+  relation: 'produced-by' | 'used-in';
+}): string {
+  return `${buildPublishRecipeSearchBaseRelativePath()}/${encodeURIComponent(`${params.itemId ?? ''}`.trim())}/${params.relation}.json`;
+}
+
+export function buildPublishRecipeMachineGroupIndexRelativePath(params: {
+  itemId: string;
+  relation: 'produced-by' | 'used-in';
+  machineKey: string;
+}): string {
+  return `${buildPublishRecipeGroupIndexBaseRelativePath()}/machine/${encodeURIComponent(`${params.itemId ?? ''}`.trim())}/${params.relation}/${encodeURIComponent(`${params.machineKey ?? ''}`.trim())}.json`;
+}
+
+export function buildPublishRecipeCategoryGroupIndexRelativePath(params: {
+  itemId: string;
+  relation: 'produced-by' | 'used-in';
+  categoryKey: string;
+}): string {
+  return `${buildPublishRecipeGroupIndexBaseRelativePath()}/category/${encodeURIComponent(`${params.itemId ?? ''}`.trim())}/${params.relation}/${encodeURIComponent(`${params.categoryKey ?? ''}`.trim())}.json`;
+}
+
+export function buildPublishBundleManifestRelativePath(): string {
+  return 'manifest.json';
+}
+
+export function buildPublishBundlePublicAssetPath(basePublicPath: string, relativePath: string): string {
+  return joinPublicPath(basePublicPath, relativePath);
 }
 
 function buildPayloadKey(type: PublishPayloadType, scope: Record<string, string | number>): string {
@@ -123,6 +316,36 @@ function trimAtlasEntries(
   };
 }
 
+function trimRichMediaManifest(
+  mediaManifest: BrowserPageRichMediaManifest | null | undefined,
+  entries: BrowserPageEntry[],
+): BrowserPageRichMediaManifest | null {
+  if (!mediaManifest) {
+    return null;
+  }
+
+  const renderAssetRefs = new Set(
+    entries
+      .map((entry) => {
+        const item = entry.kind === 'item' ? entry.item : entry.group.representative;
+        return `${item?.renderAssetRef ?? ''}`.trim();
+      })
+      .filter(Boolean),
+  );
+
+  const animatedAtlases = Object.fromEntries(
+    Object.entries(mediaManifest.animatedAtlases ?? {}).filter(([assetId]) => renderAssetRefs.has(assetId)),
+  );
+
+  if (Object.keys(animatedAtlases).length === 0) {
+    return null;
+  }
+
+  return {
+    animatedAtlases,
+  };
+}
+
 export function derivePagePackFromWindow(
   window: BrowserPageWindowPayload,
   requestedPage: number,
@@ -130,17 +353,24 @@ export function derivePagePackFromWindow(
 ): BrowserPageWindowPayload | null {
   const normalizedPage = Math.max(1, Math.floor(requestedPage));
   const normalizedPageSize = Math.max(1, Math.floor(requestedPageSize));
-  if (window.page !== 1 || normalizedPageSize > window.pageSize) {
-    return null;
-  }
-
   const startIndex = (normalizedPage - 1) * normalizedPageSize;
   const endIndex = startIndex + normalizedPageSize;
-  if (startIndex >= window.data.length || endIndex > window.data.length) {
+  const windowOffset = Number.isFinite(window.windowOffset)
+    ? Math.max(0, Math.floor(window.windowOffset ?? 0))
+    : window.page > 1
+      ? Math.max(0, Math.floor((window.page - 1) * window.pageSize))
+      : 0;
+  const windowLength = Number.isFinite(window.windowLength)
+    ? Math.max(0, Math.floor(window.windowLength ?? window.data.length))
+    : window.data.length;
+  const windowEnd = windowOffset + windowLength;
+  if (startIndex < windowOffset || endIndex > windowEnd) {
     return null;
   }
 
-  const data = window.data.slice(startIndex, endIndex);
+  const relativeStartIndex = startIndex - windowOffset;
+  const relativeEndIndex = relativeStartIndex + normalizedPageSize;
+  const data = window.data.slice(relativeStartIndex, relativeEndIndex);
   return {
     data,
     total: window.total,
@@ -148,6 +378,9 @@ export function derivePagePackFromWindow(
     pageSize: normalizedPageSize,
     totalPages: Math.max(1, Math.ceil(window.total / normalizedPageSize)),
     atlas: trimAtlasEntries(window.atlas, data),
+    mediaManifest: trimRichMediaManifest(window.mediaManifest, data),
+    windowOffset,
+    windowLength: data.length,
   };
 }
 

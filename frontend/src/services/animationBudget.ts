@@ -8,7 +8,7 @@ import {
   type AnimatedAtlasAssetEntry,
   type NativeSpriteMetadata,
 } from './api/images';
-import { api, type Item } from './api';
+import { api, type Item, type PageRichMediaManifest } from './api';
 
 const MAX_ANIMATION_WORKERS = 3;
 const MAX_CACHED_IMAGE_ASSETS = 384;
@@ -434,6 +434,22 @@ export const fetchRenderContractAsset = async (
   return request;
 };
 
+export const primeAnimatedAtlasManifest = (
+  manifest?: PageRichMediaManifest | null,
+): void => {
+  if (!manifest?.animatedAtlases) {
+    return;
+  }
+
+  for (const [assetId, entry] of Object.entries(manifest.animatedAtlases)) {
+    const normalizedAssetId = `${assetId ?? ''}`.trim();
+    if (!normalizedAssetId || !entry) {
+      continue;
+    }
+    animatedAtlasCache.set(normalizedAssetId, entry);
+  }
+};
+
 export const primeRenderAnimationHint = (
   renderAssetRef?: string | null,
   renderHint?: Item['renderHint'],
@@ -679,9 +695,37 @@ export const prewarmRenderableEntityMedia = async (
   await prewarmImageAsset(fluidImageUrl);
 };
 
+function shouldQueueRenderableCandidate(
+  candidate: RenderableEntityLike,
+  options?: { animatedOnly?: boolean },
+): boolean {
+  if (
+    !candidate.itemId
+    && !candidate.fluidId
+    && !candidate.renderAssetRef
+    && !candidate.imageFileName
+    && !candidate.preferredImageUrl
+  ) {
+    return false;
+  }
+
+  if (!options?.animatedOnly) {
+    return true;
+  }
+
+  const renderHint = candidate.renderHint;
+  return Boolean(
+    candidate.renderAssetRef
+    || candidate.preferredImageUrl
+    || renderHint?.hasAnimation
+    || renderHint?.prefersNativeSprite
+    || renderHint?.prefersCapturedAtlas,
+  );
+}
+
 export const queueRenderableMediaPrewarmFromUnknown = (
   value: unknown,
-  options?: { limit?: number },
+  options?: { limit?: number; animatedOnly?: boolean },
 ): void => {
   const limit = Math.max(1, options?.limit ?? 40);
   const seenNodes = new Set<unknown>();
@@ -717,13 +761,7 @@ export const queueRenderableMediaPrewarmFromUnknown = (
           : undefined,
     };
 
-    if (
-      candidate.itemId
-      || candidate.fluidId
-      || candidate.renderAssetRef
-      || candidate.imageFileName
-      || candidate.preferredImageUrl
-    ) {
+    if (shouldQueueRenderableCandidate(candidate, options)) {
       const candidateKey = getRenderableEntityKey(candidate);
       if (!candidates.has(candidateKey)) {
         candidates.set(candidateKey, candidate);

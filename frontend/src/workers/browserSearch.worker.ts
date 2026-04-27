@@ -11,6 +11,11 @@ type InitMessage = {
   payload: SearchPackPayload;
 };
 
+type AppendMessage = {
+  type: "append";
+  payload: SearchPackPayload;
+};
+
 type QueryMessage = {
   type: "query";
   id: number;
@@ -22,7 +27,7 @@ type QueryMessage = {
   };
 };
 
-type RequestMessage = InitMessage | QueryMessage;
+type RequestMessage = InitMessage | AppendMessage | QueryMessage;
 
 type QueryResult = {
   id: number;
@@ -33,6 +38,20 @@ type QueryResult = {
 };
 
 let searchPack: BrowserSearchPackEntry[] = [];
+
+function mergeEntries(base: BrowserSearchPackEntry[], incoming: BrowserSearchPackEntry[]): BrowserSearchPackEntry[] {
+  if (base.length === 0) return [...incoming];
+  if (incoming.length === 0) return [...base];
+
+  const seen = new Set(base.map((entry) => entry.itemId));
+  const merged = [...base];
+  for (const entry of incoming) {
+    if (seen.has(entry.itemId)) continue;
+    seen.add(entry.itemId);
+    merged.push(entry);
+  }
+  return merged;
+}
 
 function normalizeKeyword(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "");
@@ -108,6 +127,11 @@ self.onmessage = (event: MessageEvent<RequestMessage>) => {
   const message = event.data;
   if (message.type === "init") {
     searchPack = message.payload.items || [];
+    return;
+  }
+
+  if (message.type === "append") {
+    searchPack = mergeEntries(searchPack, message.payload.items || []);
     return;
   }
 

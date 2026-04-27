@@ -7,6 +7,12 @@ import {
   type indexedRecipe,
 } from '../services/api';
 import { convertIndexedRecipe } from '../domain/recipeNormalization';
+import {
+  getAnimatedAtlasImageUrl,
+  loadImageAsset,
+  primeAnimatedAtlasManifest,
+  primeRenderAnimationHintsFromUnknown,
+} from '../services/animationBudget';
 
 type RecipeIndex = {
   usedInRecipes: string[];
@@ -49,6 +55,17 @@ const orderRecipes = (recipeIds: string[], recipesById: Map<string, Recipe>): Re
 
 export async function loadRecipeBootstrap(itemId: string): Promise<RecipeBootstrapResult> {
   const bootstrap: RecipeBootstrapPayload = await api.getRecipeBootstrap(itemId);
+  primeRenderAnimationHintsFromUnknown(bootstrap);
+  primeAnimatedAtlasManifest(bootstrap.mediaManifest);
+  for (const url of Array.from(
+    new Set(
+      Object.values(bootstrap.mediaManifest?.animatedAtlases ?? {})
+        .map((entry) => getAnimatedAtlasImageUrl(entry))
+        .filter((entry): entry is string => Boolean(entry)),
+    ),
+  ).slice(0, 6)) {
+    void loadImageAsset(url);
+  }
   const item = bootstrap.item;
   const indexedCrafting = bootstrap.indexedCrafting;
   const indexedUsage = bootstrap.indexedUsage;

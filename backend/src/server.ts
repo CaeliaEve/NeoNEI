@@ -14,7 +14,7 @@ import renderContractRoutes from './routes/render-contract.routes';
 import recipeBootstrapRoutes from './routes/recipe-bootstrap.routes';
 import publishRoutes from './routes/publish.routes';
 import { getAccelerationDatabaseManager, getDatabaseManager } from './models/database';
-import { DATA_DIR, IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from './config/runtime-paths';
+import { DATA_DIR, IMAGES_PATH, NESQL_CANONICAL_DIR, PUBLISH_OUTPUT_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from './config/runtime-paths';
 import { requestObservability } from './middleware/request-observability';
 import { errorHandler } from './middleware/error-handler';
 import { logger } from './utils/logger';
@@ -176,6 +176,108 @@ function createArtifactFallbackRoute(family: 'item' | 'fluid') {
   };
 }
 
+function createRawStaticRoute(rootDir: string, options?: { maxAge?: string; immutable?: boolean }) {
+  const resolvedRoot = path.resolve(rootDir);
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const rawPath = `${req.url ?? ''}`.split('?')[0] || '/';
+      const normalizedRelativePath = rawPath.replace(/^\/+/, '');
+      if (!normalizedRelativePath) {
+        return next();
+      }
+
+      const segments = normalizedRelativePath.split('/').filter(Boolean);
+      if (segments.some((segment) => segment === '.' || segment === '..')) {
+        return next();
+      }
+
+      const absolutePath = path.resolve(resolvedRoot, ...segments);
+      if (!isSafeUnderRoot(resolvedRoot, absolutePath) || !isExistingFile(absolutePath)) {
+        return next();
+      }
+
+      return res.sendFile(absolutePath, {
+        cacheControl: true,
+        immutable: options?.immutable ?? false,
+        maxAge: options?.maxAge ?? 0,
+        lastModified: true,
+      });
+    } catch {
+      return next();
+    }
+  };
+}
+
+const PUBLISH_STATIC_SIDECAR_VARIANTS = [
+  { encoding: 'br' as const, extension: '.br' as const },
+  { encoding: 'gzip' as const, extension: '.gz' as const },
+];
+
+function canServePrecompressedPublishAsset(relativePath: string): boolean {
+  return relativePath.toLowerCase().endsWith('.json');
+}
+
+function acceptsEncoding(rawHeader: string | string[] | undefined, encoding: 'br' | 'gzip'): boolean {
+  const header = Array.isArray(rawHeader) ? rawHeader.join(',') : `${rawHeader ?? ''}`;
+  return header
+    .split(',')
+    .map((token) => token.trim().toLowerCase())
+    .some((token) => token === encoding || token.startsWith(`${encoding};`) || token === '*');
+}
+
+function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string; immutable?: boolean }) {
+  const resolvedRoot = path.resolve(rootDir);
+  return (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const rawPath = `${req.url ?? ''}`.split('?')[0] || '/';
+      const normalizedRelativePath = rawPath.replace(/^\/+/, '');
+      if (!normalizedRelativePath) {
+        return next();
+      }
+
+      const segments = normalizedRelativePath.split('/').filter(Boolean);
+      if (segments.some((segment) => segment === '.' || segment === '..')) {
+        return next();
+      }
+
+      const absolutePath = path.resolve(resolvedRoot, ...segments);
+      if (!isSafeUnderRoot(resolvedRoot, absolutePath) || !isExistingFile(absolutePath)) {
+        return next();
+      }
+
+      let responsePath = absolutePath;
+      let contentEncoding: 'br' | 'gzip' | null = null;
+      if (!req.headers['x-no-compression'] && canServePrecompressedPublishAsset(normalizedRelativePath)) {
+        for (const variant of PUBLISH_STATIC_SIDECAR_VARIANTS) {
+          const candidatePath = `${absolutePath}${variant.extension}`;
+          if (acceptsEncoding(req.headers['accept-encoding'], variant.encoding) && isExistingFile(candidatePath)) {
+            responsePath = candidatePath;
+            contentEncoding = variant.encoding;
+            break;
+          }
+        }
+      }
+
+      if (canServePrecompressedPublishAsset(normalizedRelativePath)) {
+        res.setHeader('Vary', 'Accept-Encoding');
+      }
+      if (contentEncoding) {
+        res.setHeader('Content-Encoding', contentEncoding);
+        res.type(path.extname(absolutePath));
+      }
+
+      return res.sendFile(responsePath, {
+        cacheControl: true,
+        immutable: options?.immutable ?? false,
+        maxAge: options?.maxAge ?? 0,
+        lastModified: true,
+      });
+    } catch {
+      return next();
+    }
+  };
+}
+
 app.get('/images/item/:modId/:fileName', createArtifactFallbackRoute('item'));
 app.get('/images/fluid/:modId/:fileName', createArtifactFallbackRoute('fluid'));
 
@@ -199,6 +301,23 @@ app.use(
   '/api/generated/page-atlas',
   express.static(path.join(DATA_DIR, 'page-atlas-cache'), {
     maxAge: '7d',
+    etag: true,
+  })
+);
+
+app.use(
+  '/publish',
+  createPublishStaticRoute(PUBLISH_OUTPUT_DIR, {
+    maxAge: '365d',
+    immutable: true,
+  }),
+);
+
+app.use(
+  '/publish',
+  express.static(PUBLISH_OUTPUT_DIR, {
+    maxAge: '365d',
+    immutable: true,
     etag: true,
   })
 );

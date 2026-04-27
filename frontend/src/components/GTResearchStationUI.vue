@@ -34,6 +34,8 @@ function extractItemStack(node: unknown): ItemStack | null {
     itemId?: unknown;
     count?: unknown;
     stackSize?: unknown;
+    renderAssetRef?: unknown;
+    imageFileName?: unknown;
     item?: { itemId?: unknown };
     items?: unknown[];
   };

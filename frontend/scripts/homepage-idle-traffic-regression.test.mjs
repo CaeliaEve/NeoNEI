@@ -12,16 +12,26 @@ const itemBrowserSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-test('homepage prefetch stays single-page and idle-scheduled instead of eager multi-page fanout', () => {
+test('homepage prefetch stays immediate-neighbor-only and idle-scheduled instead of eager multi-page fanout', () => {
   assert.equal(
     homePageSource.includes('[page - 1, page + 1, page + 2]'),
     false,
     'homepage should no longer eagerly prefetch previous/next/two-ahead pages on first paint',
   );
   assert.equal(
-    homePageSource.includes('const neighborPage = page >= total ? 1 : page + 1;'),
+    homePageSource.includes('const candidatePages = Array.from('),
     true,
-    'homepage should only prefetch the next wrapped browser page',
+    'homepage should compute only the immediate wrapped neighbor pages',
+  );
+  assert.equal(
+    homePageSource.includes('page >= total ? 1 : page + 1'),
+    true,
+    'homepage should prefetch the wrapped next page',
+  );
+  assert.equal(
+    homePageSource.includes('page <= 1 ? total : page - 1'),
+    true,
+    'homepage should also prefetch the wrapped previous page for instant reverse paging',
   );
   assert.equal(
     homePageSource.includes('requestIdleCallback'),

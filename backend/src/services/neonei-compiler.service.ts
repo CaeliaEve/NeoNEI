@@ -46,6 +46,9 @@ export interface CompilerOptions {
     firstPageSize?: number;
     slotSizes?: number[];
     includeBrowserSearchPack?: boolean;
+    windowCount?: number;
+    windowStride?: number;
+    searchHotShardSize?: number;
   };
 }
 
@@ -62,6 +65,9 @@ type NormalizedCompilerOptions = {
     firstPageSize: number;
     slotSizes: number[];
     includeBrowserSearchPack: boolean;
+    windowCount: number;
+    windowStride: number;
+    searchHotShardSize: number;
   };
   bootstrap: {
     hotItemLimit: number;
@@ -786,7 +792,10 @@ export class NeoNeiCompilerService {
         enabled: options.publishHotPayloads?.enabled ?? true,
         firstPageSize: options.publishHotPayloads?.firstPageSize ?? 256,
         slotSizes: options.publishHotPayloads?.slotSizes ?? [45],
-        includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? false,
+        includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? true,
+        windowCount: options.publishHotPayloads?.windowCount ?? 4,
+        windowStride: options.publishHotPayloads?.windowStride ?? 128,
+        searchHotShardSize: options.publishHotPayloads?.searchHotShardSize ?? 4096,
       },
       bootstrap: {
         hotItemLimit: 5000,

@@ -252,7 +252,7 @@ export async function buildOutputSlots(recipe: Recipe, maxCount?: number): Promi
         imageFileName: typeof asRecord.imageFileName === 'string' ? asRecord.imageFileName : null,
       };
     })
-    .filter((slot): slot is SlotCandidate => Boolean(slot));
+    .filter((slot): slot is NonNullable<typeof slot> => slot !== null);
 
   const sliced = typeof maxCount === 'number' ? prepared.slice(0, maxCount) : prepared;
   return resolveSlots(sliced);

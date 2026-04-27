@@ -165,7 +165,7 @@ const initGrid = async () => {
     }
 
     const variants = (Array.isArray(cell) ? cell : [cell])
-      .filter((variant): variant is { itemId: string; count?: number; renderAssetRef?: string | null; imageFileName?: string | null; renderHint?: Item['renderHint'] } => Boolean(variant?.itemId))
+      .filter((variant): variant is { itemId: string; count: number; renderAssetRef?: string | null; imageFileName?: string | null; renderHint?: Item['renderHint'] } => typeof variant?.itemId === 'string' && variant.itemId.length > 0)
       .map((variant) => ({
         itemId: variant.itemId,
         count: typeof variant.count === 'number' && variant.count > 0 ? variant.count : 1,

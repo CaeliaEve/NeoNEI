@@ -1,4 +1,11 @@
+import fs from 'fs';
+import path from 'path';
+import { PUBLISH_OUTPUT_DIR } from '../config/runtime-paths';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
+import {
+  buildPublishBundleManifestRelativePath,
+  type PublishStaticBundleManifest,
+} from './publish-payload.service';
 
 export interface PublicRuntimeManifest {
   version: 1;
@@ -7,6 +14,7 @@ export interface PublicRuntimeManifest {
   publishRevision: string | null;
   publishCompiledAt: string | null;
   runtimeCacheKey: string;
+  publishBundle: PublishStaticBundleManifest | null;
 }
 
 export interface PublishManifestServiceOptions {
@@ -36,6 +44,32 @@ export class PublishManifestService {
     }
   }
 
+  private readPublishBundleManifest(sourceSignature: string): PublishStaticBundleManifest | null {
+    const normalizedSignature = `${sourceSignature ?? ''}`.trim();
+    if (!normalizedSignature) {
+      return null;
+    }
+
+    const manifestPath = path.join(
+      PUBLISH_OUTPUT_DIR,
+      normalizedSignature,
+      buildPublishBundleManifestRelativePath(),
+    );
+    if (!fs.existsSync(manifestPath)) {
+      return null;
+    }
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf8')) as PublishStaticBundleManifest;
+      if (parsed?.sourceSignature !== normalizedSignature) {
+        return null;
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
+  }
+
   getRuntimeManifest(): PublicRuntimeManifest {
     const now = Date.now();
     if (this.cache && this.cache.expiresAt > now) {
@@ -51,6 +85,7 @@ export class PublishManifestService {
         publishRevision: null,
         publishCompiledAt: null,
         runtimeCacheKey: 'bootstrap-missing::publish-revision-missing::publish-compiled-at-missing',
+        publishBundle: null,
       };
       this.cache = {
         value: fallback,
@@ -71,6 +106,7 @@ export class PublishManifestService {
     const sourceSignature = `${sourceSignatureRow?.state_value ?? ''}`.trim() || 'source-signature-missing';
     const publishRevision = `${publishRevisionRow?.state_value ?? ''}`.trim() || null;
     const publishCompiledAt = `${publishCompiledAtRow?.state_value ?? ''}`.trim() || null;
+    const publishBundle = this.readPublishBundleManifest(sourceSignature);
     const manifest: PublicRuntimeManifest = {
       version: 1,
       sourceSignature,
@@ -78,6 +114,7 @@ export class PublishManifestService {
       publishRevision,
       publishCompiledAt,
       runtimeCacheKey: [sourceSignature, publishRevision ?? 'publish-revision-missing', publishCompiledAt ?? 'publish-compiled-at-missing'].join('::'),
+      publishBundle,
     };
 
     this.cache = {

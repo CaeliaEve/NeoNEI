@@ -54,12 +54,22 @@ function cellToItemStack(cell: RecipeInputCell): RitualItemStack | null {
   if (!cell) return null;
   if (Array.isArray(cell)) {
     const first = cell[0];
-    return first ? { itemId: first.itemId, count: normalizeCount(first.count), localizedName: undefined } : null;
+    return first
+      ? {
+          itemId: first.itemId,
+          count: normalizeCount(first.count),
+          localizedName: undefined,
+          renderAssetRef: first.renderAssetRef ?? null,
+          imageFileName: first.imageFileName ?? null,
+        }
+      : null;
   }
   return {
     itemId: cell.itemId,
     count: normalizeCount(cell.count),
     localizedName: undefined,
+    renderAssetRef: cell.renderAssetRef ?? null,
+    imageFileName: cell.imageFileName ?? null,
   };
 }
 
@@ -71,6 +81,8 @@ function rawEntryToItemStack(entry: unknown): RitualItemStack | null {
     count?: unknown;
     stackSize?: unknown;
     localizedName?: unknown;
+    renderAssetRef?: unknown;
+    imageFileName?: unknown;
     item?: { itemId?: unknown; localizedName?: unknown };
     items?: Array<{
       item?: { itemId?: unknown; localizedName?: unknown };
@@ -78,6 +90,8 @@ function rawEntryToItemStack(entry: unknown): RitualItemStack | null {
       count?: unknown;
       stackSize?: unknown;
       localizedName?: unknown;
+      renderAssetRef?: unknown;
+      imageFileName?: unknown;
     }>;
   };
   const first = Array.isArray(record.items) ? record.items[0] : null;
@@ -97,6 +111,14 @@ function rawEntryToItemStack(entry: unknown): RitualItemStack | null {
       (typeof record.item?.localizedName === 'string' ? record.item.localizedName : undefined) ||
       (typeof first?.localizedName === 'string' ? first.localizedName : undefined) ||
       (typeof first?.item?.localizedName === 'string' ? first.item.localizedName : undefined),
+    renderAssetRef:
+      (typeof record.renderAssetRef === 'string' && record.renderAssetRef) ||
+      (typeof first?.renderAssetRef === 'string' ? first.renderAssetRef : null) ||
+      null,
+    imageFileName:
+      (typeof record.imageFileName === 'string' && record.imageFileName) ||
+      (typeof first?.imageFileName === 'string' ? first.imageFileName : null) ||
+      null,
     slotIndex: typeof record.slotIndex === 'number' ? record.slotIndex : undefined,
   } as RitualItemStack & { slotIndex?: number };
 }

@@ -4,7 +4,11 @@ import { getItemsSearchService } from '../services/items-search.service';
 import { getPageAtlasService } from '../services/page-atlas.service';
 import { getPublishManifestService } from '../services/publish-manifest.service';
 import { derivePagePackFromWindow, getPublishPayloadService } from '../services/publish-payload.service';
-import { attachRenderHintsToEntries, attachRenderHintsToItems } from '../services/browser-render-hints.service';
+import {
+  attachRenderHintsToEntries,
+  attachRenderHintsToItems,
+  buildBrowserRichMediaManifest,
+} from '../services/browser-render-hints.service';
 import { createWeakEtag, sendNotModifiedIfEtagMatches, setPublicCacheHeaders } from '../utils/http-cache';
 import { asyncHandler, badRequest, notFound } from '../utils/http';
 
@@ -164,15 +168,17 @@ router.get(
       expandedGroups,
     });
     attachRenderHintsToEntries(result.data);
+    const displayItems = collectDisplayItems(result.data);
 
     const atlas = await getPageAtlasService().buildAtlas(
-      collectDisplayItems(result.data),
+      displayItems,
       Math.max(24, Math.min(128, Number(slotSize))),
     );
 
     res.json({
       ...result,
       atlas,
+      mediaManifest: buildBrowserRichMediaManifest(displayItems),
     });
   })
 );
@@ -342,6 +348,7 @@ router.post(
         item,
       })),
       atlas,
+      mediaManifest: buildBrowserRichMediaManifest(orderedItems),
     });
   })
 );

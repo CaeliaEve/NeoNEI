@@ -54,6 +54,10 @@ export const DATA_DIR = resolvedDataDir;
 export const DB_FILE = process.env.DB_FILE || path.join(DATA_DIR, 'database.db');
 export const ACCELERATION_DB_FILE =
   process.env.ACCELERATION_DB_FILE || path.join(DATA_DIR, 'acceleration.db');
+export const PUBLISH_OUTPUT_DIR =
+  process.env.PUBLISH_OUTPUT_DIR || path.join(DATA_DIR, 'publish');
+export const PUBLISH_PUBLIC_PATH =
+  (process.env.PUBLISH_PUBLIC_PATH || '/publish').trim().replace(/\/+$/, '') || '/publish';
 export const RECIPE_SUMMARIES_FILE =
   process.env.RECIPE_SUMMARIES_FILE || path.join(DATA_DIR, 'recipe_summaries.csv');
 export const REBUILD_PROGRESS_FILE =

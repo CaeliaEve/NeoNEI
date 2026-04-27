@@ -14,11 +14,20 @@ import {
   readPersistentRuntimeCache,
   writePersistentRuntimeCache,
 } from '../services/persistentRuntimeCache';
+import { preloadBrowserSearchWorker } from '../services/browserSearchWorker';
+import {
+  getAnimatedAtlasImageUrl,
+  loadImageAsset,
+  primeAnimatedAtlasManifest,
+  queueRenderableMediaPrewarmFromUnknown,
+} from '../services/animationBudget';
+import { markPerfEvent, resetPerfTimeline } from '../services/perfMarks';
 
 type CachedBrowserPage = {
   data: BrowserGridEntry[];
   items: Item[];
   atlas: PageAtlasResult | null;
+  mediaManifest?: BrowserPagePackResponse['mediaManifest'];
   total: number;
   totalPages: number;
   page: number;
@@ -45,6 +54,16 @@ function collectDisplayItems(entries: BrowserGridEntry[]): Item[] {
   }
 
   return ordered;
+}
+
+function collectAnimatedAtlasUrls(page: CachedBrowserPage): string[] {
+  return Array.from(
+    new Set(
+      Object.values(page.mediaManifest?.animatedAtlases ?? {})
+        .map((entry) => getAnimatedAtlasImageUrl(entry))
+        .filter((url): url is string => Boolean(url)),
+    ),
+  );
 }
 
 function normalizeExpandedGroups(groups?: string[]): string[] {
@@ -106,6 +125,8 @@ export function useItemBrowser(
   let loadItemsRequestId = 0;
   let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
   let searchTimeout: ReturnType<typeof setTimeout> | undefined;
+  let initialHomeBootstrapMarked = false;
+  let firstBrowserTileVisibleMarked = false;
 
   const buildPageCacheKey = (params: {
     page: number;
@@ -294,18 +315,64 @@ export function useItemBrowser(
       return;
     }
 
+    prewarmCachedBrowserPageMedia(response, { animatedEntryLimit: 48, atlasLimit: 6 });
+
     browserEntries.value = response.data;
     items.value = response.items;
     currentPageAtlas.value = response.atlas;
     totalItems.value = response.total;
     totalPages.value = response.totalPages;
     currentPage.value = response.page;
+
+    if (!firstBrowserTileVisibleMarked && response.items.length > 0) {
+      firstBrowserTileVisibleMarked = true;
+      void nextTick().then(() => {
+        markPerfEvent('first-browser-tile-visible', {
+          itemId: response.items[0]?.itemId ?? null,
+          page: response.page,
+          total: response.total,
+        });
+      });
+    }
+  };
+
+  const markInitialHomeBootstrapDone = (source: 'cache' | 'persistent-cache' | 'network-home-bootstrap' | 'network-page-pack') => {
+    if (initialHomeBootstrapMarked) {
+      return;
+    }
+    initialHomeBootstrapMarked = true;
+    markPerfEvent('home-bootstrap-done', {
+      source,
+      page: currentPage.value,
+      pageSize: pageSize.value,
+      totalItems: totalItems.value,
+      totalPages: totalPages.value,
+    });
+  };
+
+  const prewarmCachedBrowserPageMedia = (
+    response: CachedBrowserPage,
+    options?: { animatedEntryLimit?: number; atlasLimit?: number },
+  ) => {
+    if (response.atlas?.atlasUrl) {
+      void loadImageAsset(response.atlas.atlasUrl).catch(() => undefined);
+    }
+    primeAnimatedAtlasManifest(response.mediaManifest);
+    const animatedAtlasUrls = collectAnimatedAtlasUrls(response).slice(0, Math.max(1, options?.atlasLimit ?? 6));
+    for (const atlasUrl of animatedAtlasUrls) {
+      void loadImageAsset(atlasUrl).catch(() => undefined);
+    }
+    queueRenderableMediaPrewarmFromUnknown(response.data, {
+      limit: Math.max(1, options?.animatedEntryLimit ?? 48),
+      animatedOnly: true,
+    });
   };
 
   const toCachedBrowserPage = (response: BrowserPagePackResponse): CachedBrowserPage => ({
     data: response.data,
     items: collectDisplayItems(response.data),
     atlas: response.atlas ?? null,
+    mediaManifest: response.mediaManifest ?? null,
     total: response.total,
     totalPages: response.totalPages,
     page: response.page,
@@ -331,6 +398,7 @@ export function useItemBrowser(
     mods.value = response.mods;
     persistDefaultPage(requestParams, normalized, Promise.resolve(`${response.manifest.runtimeCacheKey ?? response.manifest.sourceSignature ?? ''}`.trim() || null));
     applyBrowserResponse(normalized, requestId);
+    markInitialHomeBootstrapDone('network-home-bootstrap');
   };
 
   const loadDefaultPageNetwork = async (
@@ -368,6 +436,7 @@ export function useItemBrowser(
       data: response.data,
       items: collectDisplayItems(response.data),
       atlas: response.atlas ?? null,
+      mediaManifest: response.mediaManifest ?? null,
       total: response.total,
       totalPages: response.totalPages,
       page: response.page,
@@ -497,6 +566,7 @@ export function useItemBrowser(
       const cached = pageCache.get(cacheKey);
       if (cached) {
         applyBrowserResponse(cached, requestId);
+        markInitialHomeBootstrapDone('cache');
         try {
           mods.value = await api.getMods();
         } catch (error) {
@@ -515,6 +585,7 @@ export function useItemBrowser(
         const signaturePromise = resolvePublishSignature();
         pageCache.set(cacheKey, persistent.page);
         applyBrowserResponse(persistent.page, requestId);
+        markInitialHomeBootstrapDone('persistent-cache');
         const modsPromise = api.getMods()
           .then((loadedMods) => {
             mods.value = loadedMods;
@@ -564,6 +635,9 @@ export function useItemBrowser(
         normalized,
       );
       applyBrowserResponse(normalized, requestId);
+      if (requestParams.page === 1 && !requestParams.search?.trim() && requestParams.expandedGroups.length === 0) {
+        markInitialHomeBootstrapDone('network-page-pack');
+      }
 
       try {
         mods.value = await loadedModsPromise;
@@ -599,7 +673,9 @@ export function useItemBrowser(
   };
 
   const warmSearchIndex = () => {
-    // Search now hydrates directly from the backend browser page-pack fast path.
+    void preloadBrowserSearchWorker().catch(() => {
+      // best-effort warmup only
+    });
   };
 
   const changePage = (page: number) => {
@@ -638,6 +714,7 @@ export function useItemBrowser(
         ? await loadSearchPage(requestParams)
         : await loadDefaultPage(requestParams, { signaturePromise });
       pageCache.set(cacheKey, normalized);
+      prewarmCachedBrowserPageMedia(normalized, { animatedEntryLimit: 24, atlasLimit: 4 });
     } catch {
       // best-effort prefetch only
     }
@@ -680,6 +757,9 @@ export function useItemBrowser(
 
   onMounted(async () => {
     window.addEventListener('resize', handleResize);
+    resetPerfTimeline();
+    initialHomeBootstrapMarked = false;
+    firstBrowserTileVisibleMarked = false;
     await nextTick();
     pageSize.value = calculatePageSize();
     await loadInitialHomeState();

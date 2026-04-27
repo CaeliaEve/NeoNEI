@@ -5,7 +5,7 @@ import { derivePagePackFromWindow, getPublishPayloadService } from '../services/
 import { createWeakEtag, sendNotModifiedIfEtagMatches, setPublicCacheHeaders } from '../utils/http-cache';
 import { ItemsService, type BrowserPageEntry, type Item } from '../services/items.service';
 import { getPageAtlasService } from '../services/page-atlas.service';
-import { attachRenderHintsToEntries } from '../services/browser-render-hints.service';
+import { attachRenderHintsToEntries, buildBrowserRichMediaManifest } from '../services/browser-render-hints.service';
 
 const router = Router();
 const itemsService = new ItemsService({ splitExportFallback: false });
@@ -97,9 +97,10 @@ router.get(
       }),
     ]);
     attachRenderHintsToEntries(pagePack.data);
+    const displayItems = collectDisplayItems(pagePack.data);
 
     const atlas = await getPageAtlasService().buildAtlas(
-      collectDisplayItems(pagePack.data),
+      displayItems,
       Math.max(24, Math.min(128, Number(slotSize))),
     );
 
@@ -109,6 +110,7 @@ router.get(
       pagePack: {
         ...pagePack,
         atlas,
+        mediaManifest: buildBrowserRichMediaManifest(displayItems),
       },
     });
   }),

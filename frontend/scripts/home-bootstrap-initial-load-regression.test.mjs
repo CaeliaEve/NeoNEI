@@ -34,3 +34,93 @@ test('initial homepage load can use a single home-bootstrap payload for first-pa
     'measured grid capacity should only be enabled after the initial homepage payload has settled',
   );
 });
+
+test('homepage bootstrap keeps the publish-bundle fast path available before falling back to API bootstrap', () => {
+  const apiSource = fs.readFileSync(
+    'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+    'utf8',
+  );
+
+  assert.equal(
+    apiSource.includes('manifest.publishBundle?.files.homeBootstrapWindows'),
+    true,
+    'api.getHomeBootstrap should consult the published home-bootstrap bundle when available',
+  );
+  assert.equal(
+    apiSource.includes('fetchPublishedJson'),
+    true,
+    'published bootstrap assets should be read through the shared published-json helper',
+  );
+});
+
+test('search warmup preloads the browser search worker through published search shards', () => {
+  assert.equal(
+    source.includes('preloadBrowserSearchWorker'),
+    true,
+    'item browser warmSearchIndex should prewarm the browser search worker',
+  );
+  const apiSource = fs.readFileSync(
+    'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+    'utf8',
+  );
+  assert.equal(
+    apiSource.includes('browserSearchShards'),
+    true,
+    'publish bundle manifest should expose browser search shard metadata to the frontend',
+  );
+});
+
+test('recipe bootstrap fast path can resolve published hot-item bootstrap shards before API fallback', () => {
+  const apiSource = fs.readFileSync(
+    'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+    'utf8',
+  );
+
+  assert.equal(
+    apiSource.includes('resolvePublishedRecipeBootstrapPath'),
+    true,
+    'api should resolve published recipe bootstrap assets when the manifest advertises them',
+  );
+  assert.equal(
+    apiSource.includes("manifest, itemId, 'bootstrap'"),
+    true,
+    'recipe bootstrap calls should consult the published bootstrap asset before falling back to the API route',
+  );
+  assert.equal(
+    apiSource.includes("manifest, itemId, 'shard'"),
+    true,
+    'recipe bootstrap shard calls should consult the published shard asset before falling back to the API route',
+  );
+});
+
+test('recipe group index packs can use published hot-item static assets for first id-probe group pages', () => {
+  const apiSource = fs.readFileSync(
+    'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+    'utf8',
+  );
+  const viewerSource = fs.readFileSync(
+    'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeViewer.ts',
+    'utf8',
+  );
+
+  assert.equal(
+    apiSource.includes('resolvePublishedRecipeGroupIndexPath'),
+    true,
+    'api should resolve published recipe group index assets when the bundle advertises them',
+  );
+  assert.equal(
+    apiSource.includes('recipeGroupIndexBasePath'),
+    true,
+    'publish bundle manifest should expose a recipe group index asset base path',
+  );
+  assert.equal(
+    viewerSource.includes('machineKey,'),
+    true,
+    'recipe viewer should forward machine keys so machine-group lead assets can be addressed without client-side alias guessing',
+  );
+  assert.equal(
+    viewerSource.includes('prefetchCurrentCategoryAdjacentPages'),
+    true,
+    'recipe viewer should also prefetch adjacent pages within the active category to reduce next-page latency after first open',
+  );
+});

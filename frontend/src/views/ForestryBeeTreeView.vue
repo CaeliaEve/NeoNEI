@@ -159,7 +159,7 @@ function layoutTree(root: BeeTreeNode | null) {
   const leafGap = 152;
   const leafCount = countLeaves(root);
 
-  const place = (node: BeeTreeNode, startLeaf: number, depth: number): number => {
+  const place = (node: BeeTreeNode, startLeaf: number, depth: number): string => {
     const leafSpan = countLeaves(node);
     const centerLeaf = startLeaf + (leafSpan - 1) / 2;
     const x = marginX + centerLeaf * leafGap;

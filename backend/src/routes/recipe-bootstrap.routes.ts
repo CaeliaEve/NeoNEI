@@ -43,22 +43,12 @@ router.get(
       return;
     }
 
-    const pack = await getIndexedRecipesService().getProducedByRecipePackForMachineGroup(itemId, machineType, voltageTier, {
+    const pack = await getRecipeBootstrapService().getProducedByGroup(itemId, machineType, voltageTier, {
       offset,
       limit,
       includeRecipeIds,
     });
-    res.json({
-      itemId,
-      machineType,
-      voltageTier,
-      recipeCount: pack.recipeCount,
-      recipes: pack.recipes,
-      recipeIds: pack.recipeIds,
-      offset: pack.offset,
-      limit: pack.limit,
-      hasMore: pack.hasMore,
-    });
+    res.json(pack);
   })
 );
 
@@ -84,22 +74,12 @@ router.get(
       return;
     }
 
-    const pack = await getIndexedRecipesService().getUsedInRecipePackForMachineGroup(itemId, machineType, voltageTier, {
+    const pack = await getRecipeBootstrapService().getUsedInGroup(itemId, machineType, voltageTier, {
       offset,
       limit,
       includeRecipeIds,
     });
-    res.json({
-      itemId,
-      machineType,
-      voltageTier,
-      recipeCount: pack.recipeCount,
-      recipes: pack.recipes,
-      recipeIds: pack.recipeIds,
-      offset: pack.offset,
-      limit: pack.limit,
-      hasMore: pack.hasMore,
-    });
+    res.json(pack);
   })
 );
 
@@ -131,22 +111,12 @@ router.get(
       return;
     }
 
-    const pack = await getIndexedRecipesService().getRecipePackForCategoryGroup(itemId, relationType, categoryKey, {
+    const pack = await getRecipeBootstrapService().getCategoryGroup(itemId, tab as 'usedIn' | 'producedBy', categoryKey, {
       offset,
       limit,
       includeRecipeIds,
     });
-    res.json({
-      itemId,
-      categoryKey,
-      tab,
-      recipeCount: pack.recipeCount,
-      recipes: pack.recipes,
-      recipeIds: pack.recipeIds,
-      offset: pack.offset,
-      limit: pack.limit,
-      hasMore: pack.hasMore,
-    });
+    res.json(pack);
   })
 );
 

@@ -1,4 +1,4 @@
-import type { Recipe, RecipeVariantGroup, indexedRecipe } from '../services/api';
+import type { Item, Recipe, RecipeVariantGroup, indexedRecipe } from '../services/api';
 import { primeRenderAnimationHintsFromUnknown } from '../services/animationBudget';
 
 type ItemInputDimension = { width?: number; height?: number } | undefined;
@@ -42,7 +42,7 @@ type InlineRecipeItem = {
   renderAssetRef?: string | null;
   imageFileName?: string | null;
   localizedName?: string | null;
-  renderHint?: Record<string, unknown> | null;
+  renderHint?: Item['renderHint'];
 };
 
 const toInlineRecipeItem = (
@@ -70,7 +70,7 @@ const toInlineRecipeItem = (
     localizedName: typeof candidate.localizedName === 'string' ? candidate.localizedName : null,
     renderHint:
       candidate.renderHint && typeof candidate.renderHint === 'object'
-        ? (candidate.renderHint as Record<string, unknown>)
+        ? (candidate.renderHint as Item['renderHint'])
         : null,
   };
 };

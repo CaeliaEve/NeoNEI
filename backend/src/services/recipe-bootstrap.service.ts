@@ -2,11 +2,15 @@ import fs from 'fs';
 import path from 'path';
 import type Database from 'better-sqlite3';
 import { ItemsService, type Item } from './items.service';
+import type { BrowserPageRichMediaManifest } from './browser-render-hints.service';
+import { buildRichMediaManifestFromUnknown } from './browser-render-hints.service';
 import {
   getIndexedRecipesService,
   type IndexedRecipe,
   type IndexedRecipesService,
   type ItemRecipeSummaryResponse,
+  type RecipeGroupPackOptions,
+  type RecipeGroupPackResponse,
   normalizeItemRecipeSummary,
 } from './recipes-indexed.service';
 import { getNesqlSplitExportService } from './nesql-split-export.service';
@@ -25,6 +29,33 @@ export interface RecipeBootstrapPayload {
   indexedCrafting: IndexedRecipe[];
   indexedUsage: IndexedRecipe[];
   indexedSummary: ItemRecipeSummaryResponse | null;
+  mediaManifest?: BrowserPageRichMediaManifest | null;
+}
+
+export interface RecipeBootstrapMachineGroupPayload {
+  itemId: string;
+  machineType: string;
+  voltageTier: string | null;
+  recipeCount: number;
+  recipes: IndexedRecipe[];
+  recipeIds?: string[];
+  offset?: number;
+  limit?: number;
+  hasMore?: boolean;
+  mediaManifest?: BrowserPageRichMediaManifest | null;
+}
+
+export interface RecipeBootstrapCategoryGroupPayload {
+  itemId: string;
+  categoryKey: string;
+  tab: 'usedIn' | 'producedBy';
+  recipeCount: number;
+  recipes: IndexedRecipe[];
+  recipeIds?: string[];
+  offset?: number;
+  limit?: number;
+  hasMore?: boolean;
+  mediaManifest?: BrowserPageRichMediaManifest | null;
 }
 
 type CompactRecipeBootstrapPayload = {
@@ -52,6 +83,9 @@ type RecipeUiPayloadRow = {
 
 const BOOTSTRAP_EAGER_MISSING_RECIPE_LIMIT = Number(
   process.env.RECIPE_BOOTSTRAP_EAGER_MISSING_RECIPE_LIMIT || 6,
+);
+const RECIPE_MEDIA_MANIFEST_MAX_ASSETS = Number(
+  process.env.RECIPE_MEDIA_MANIFEST_MAX_ASSETS || 24,
 );
 
 export interface RecipeBootstrapServiceOptions {
@@ -229,7 +263,60 @@ export class RecipeBootstrapService {
       this.attachRenderHintsToIndexedRecipe(recipe);
     }
     this.attachRenderHintsToSummary(payload.indexedSummary);
+    payload.mediaManifest = buildRichMediaManifestFromUnknown(payload, {
+      maxAssets: RECIPE_MEDIA_MANIFEST_MAX_ASSETS,
+    });
     return payload;
+  }
+
+  private enrichIndexedRecipes(recipes: IndexedRecipe[]): IndexedRecipe[] {
+    return recipes.map((recipe) => this.attachRenderHintsToIndexedRecipe(this.normalizeRecipeMachineIcon(recipe)));
+  }
+
+  private buildMachineGroupPayload(
+    itemId: string,
+    machineType: string,
+    voltageTier: string | null | undefined,
+    pack: RecipeGroupPackResponse,
+  ): RecipeBootstrapMachineGroupPayload {
+    const recipes = this.enrichIndexedRecipes(pack.recipes);
+    return {
+      itemId,
+      machineType,
+      voltageTier: voltageTier ?? null,
+      recipeCount: pack.recipeCount,
+      recipes,
+      recipeIds: pack.recipeIds,
+      offset: pack.offset,
+      limit: pack.limit,
+      hasMore: pack.hasMore,
+      mediaManifest: buildRichMediaManifestFromUnknown(recipes, {
+        maxAssets: RECIPE_MEDIA_MANIFEST_MAX_ASSETS,
+      }),
+    };
+  }
+
+  private buildCategoryGroupPayload(
+    itemId: string,
+    tab: 'usedIn' | 'producedBy',
+    categoryKey: string,
+    pack: RecipeGroupPackResponse,
+  ): RecipeBootstrapCategoryGroupPayload {
+    const recipes = this.enrichIndexedRecipes(pack.recipes);
+    return {
+      itemId,
+      categoryKey,
+      tab,
+      recipeCount: pack.recipeCount,
+      recipes,
+      recipeIds: pack.recipeIds,
+      offset: pack.offset,
+      limit: pack.limit,
+      hasMore: pack.hasMore,
+      mediaManifest: buildRichMediaManifestFromUnknown(recipes, {
+        maxAssets: RECIPE_MEDIA_MANIFEST_MAX_ASSETS,
+      }),
+    };
   }
 
   private getBootstrapSignature(itemId: string): string {
@@ -596,6 +683,51 @@ export class RecipeBootstrapService {
 
     this.fullCache.set(itemId, { value: payload, expiresAt: Date.now() + this.cacheTtlMs });
     return payload;
+  }
+
+  async getProducedByGroup(
+    itemId: string,
+    machineType: string,
+    voltageTier?: string | null,
+    options?: RecipeGroupPackOptions,
+  ): Promise<RecipeBootstrapMachineGroupPayload> {
+    const pack = await this.indexedRecipesService.getProducedByRecipePackForMachineGroup(
+      itemId,
+      machineType,
+      voltageTier,
+      options,
+    );
+    return this.buildMachineGroupPayload(itemId, machineType, voltageTier ?? null, pack);
+  }
+
+  async getUsedInGroup(
+    itemId: string,
+    machineType: string,
+    voltageTier?: string | null,
+    options?: RecipeGroupPackOptions,
+  ): Promise<RecipeBootstrapMachineGroupPayload> {
+    const pack = await this.indexedRecipesService.getUsedInRecipePackForMachineGroup(
+      itemId,
+      machineType,
+      voltageTier,
+      options,
+    );
+    return this.buildMachineGroupPayload(itemId, machineType, voltageTier ?? null, pack);
+  }
+
+  async getCategoryGroup(
+    itemId: string,
+    tab: 'usedIn' | 'producedBy',
+    categoryKey: string,
+    options?: RecipeGroupPackOptions,
+  ): Promise<RecipeBootstrapCategoryGroupPayload> {
+    const pack = await this.indexedRecipesService.getRecipePackForCategoryGroup(
+      itemId,
+      tab === 'usedIn' ? 'used_in' : 'produced_by',
+      categoryKey,
+      options,
+    );
+    return this.buildCategoryGroupPayload(itemId, tab, categoryKey, pack);
   }
 
   async prewarmBootstrapCache(options?: { limit?: number }): Promise<{ warmed: number; skipped: number }> {

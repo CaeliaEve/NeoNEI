@@ -38,6 +38,8 @@ function extractItem(node: unknown): ItemSlot | null {
     itemId?: unknown;
     count?: unknown;
     stackSize?: unknown;
+    renderAssetRef?: unknown;
+    imageFileName?: unknown;
     item?: { itemId?: unknown };
     items?: unknown[];
   };

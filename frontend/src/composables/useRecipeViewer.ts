@@ -1,6 +1,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 import {
   api,
+  type PageRichMediaManifest,
   getImageUrl,
   type ItemSearchBasic,
   type indexedItemRecipeSummaryResponse,
@@ -17,13 +18,21 @@ import type { MachineCategory } from './recipe-browser/helpers';
 import { loadRecipeBootstrap } from './useRecipeBootstrap';
 import { useRecipeDetailHydrator } from './useRecipeDetailHydrator';
 import { convertIndexedRecipe } from '../domain/recipeNormalization';
-import { queueRenderableMediaPrewarmFromUnknown } from '../services/animationBudget';
+import {
+  getAnimatedAtlasImageUrl,
+  loadImageAsset,
+  primeAnimatedAtlasManifest,
+  primeRenderAnimationHintsFromUnknown,
+  queueRenderableMediaPrewarmFromUnknown,
+} from '../services/animationBudget';
+import { markPerfEvent } from '../services/perfMarks';
 
 const CATEGORY_PACK_PAGE_SIZE = 8;
 const CATEGORY_PACK_IDS_ONLY_LIMIT = 0;
 const RECIPE_PAGE_PREWARM_LOOKAHEAD = 6;
 const RECIPE_PAGE_PREWARM_LOOKBEHIND = 2;
 const RECIPE_PAGE_PREWARM_MAX_RECIPES = 18;
+const RECIPE_MEDIA_MANIFEST_PREWARM_LIMIT = 8;
 
 export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: () => void) {
   const { loading, item, recipes } = useRecipeDataState();
@@ -86,6 +95,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   let backgroundHydrationSeq = 0;
   let searchDebounce: ReturnType<typeof setTimeout> | null = null;
   let searchAbortController: AbortController | null = null;
+  let recipeFirstPageVisibleItemId: string | null = null;
 
   const getNow = (): number =>
     typeof performance !== 'undefined' && typeof performance.now === 'function'
@@ -330,6 +340,25 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     return new Map(loadedRecipes.map((recipe) => [recipe.recipeId, recipe] as const));
   };
 
+  const primeRecipePayloadMedia = (payload: { mediaManifest?: PageRichMediaManifest | null } | unknown) => {
+    primeRenderAnimationHintsFromUnknown(payload);
+    const mediaManifest =
+      payload && typeof payload === 'object' && 'mediaManifest' in payload
+        ? ((payload as { mediaManifest?: PageRichMediaManifest | null }).mediaManifest ?? null)
+        : null;
+    primeAnimatedAtlasManifest(mediaManifest);
+    const urls = Array.from(
+      new Set(
+        Object.values(mediaManifest?.animatedAtlases ?? {})
+          .map((entry) => getAnimatedAtlasImageUrl(entry))
+          .filter((url): url is string => Boolean(url)),
+      ),
+    ).slice(0, RECIPE_MEDIA_MANIFEST_PREWARM_LIMIT);
+    for (const url of urls) {
+      void loadImageAsset(url);
+    }
+  };
+
   const buildCategoryPrewarmPageSequence = (pageCount: number, currentPageIndex: number): number[] => {
     if (pageCount <= 0) {
       return [];
@@ -430,6 +459,17 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     });
   };
 
+  const prefetchRecipeSearchPack = () => {
+    const itemId = itemIdRef.value;
+    const tab = currentTab.value;
+    if (!itemId || loading.value) {
+      return;
+    }
+    void api.prefetchRecipeBootstrapSearchPack(itemId, tab).catch(() => {
+      // best-effort only
+    });
+  };
+
   const applyMergedRecipes = (mergedById: Map<string, typeof recipes.value.producedBy[number]>) => {
     const producedBy = bootstrapRecipeIndex.value.producedByRecipes
       .map((recipeId) => mergedById.get(recipeId))
@@ -519,7 +559,10 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     requestedProducedByGroupKeys.value = nextRequestedKeys;
 
     try {
-      const payload = await api.getRecipeBootstrapProducedByGroup(itemId, machineType, voltageTier ?? null, options);
+      const payload = await api.getRecipeBootstrapProducedByGroup(itemId, machineType, voltageTier ?? null, {
+        ...options,
+        machineKey,
+      });
       if (
         disposed
         || requestSeq !== loadRequestSeq
@@ -527,6 +570,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       ) {
         return;
       }
+      primeRecipePayloadMedia(payload);
       setCategoryOrderedRecipeIds('producedBy', options?.category ?? currentCategory.value, payload.recipeIds);
       mergeIndexedRecipesIntoState(payload.recipes);
       removePendingRecipeIds('producedBy', payload.recipes.map((recipe) => recipe.id));
@@ -553,7 +597,10 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     requestedUsageGroupKeys.value = nextRequestedKeys;
 
     try {
-      const payload = await api.getRecipeBootstrapUsedInGroup(itemId, machineType, voltageTier ?? null, options);
+      const payload = await api.getRecipeBootstrapUsedInGroup(itemId, machineType, voltageTier ?? null, {
+        ...options,
+        machineKey,
+      });
       if (
         disposed
         || requestSeq !== loadRequestSeq
@@ -561,6 +608,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       ) {
         return;
       }
+      primeRecipePayloadMedia(payload);
       setCategoryOrderedRecipeIds('usedIn', options?.category ?? currentCategory.value, payload.recipeIds);
       mergeIndexedRecipesIntoState(payload.recipes);
       removePendingRecipeIds('usedIn', payload.recipes.map((recipe) => recipe.id));
@@ -594,6 +642,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       ) {
         return;
       }
+      primeRecipePayloadMedia(payload);
       setCategoryOrderedRecipeIds(tab, options?.category ?? currentCategory.value, payload.recipeIds);
       mergeIndexedRecipesIntoState(payload.recipes);
       removePendingRecipeIds(tab === 'producedBy' ? 'producedBy' : 'usedIn', payload.recipes.map((recipe) => recipe.id));
@@ -836,6 +885,26 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     }
   };
 
+  const prefetchCurrentCategoryAdjacentPages = () => {
+    const itemId = itemIdRef.value;
+    const category = currentCategory.value;
+    if (!itemId || !category || loading.value || recipeSearchQuery.value.trim()) {
+      return;
+    }
+
+    const pageCount = Math.max(0, totalPages.value);
+    if (pageCount <= 1) {
+      return;
+    }
+
+    const normalizedPage = Math.max(0, Math.floor(currentPage.value));
+    const candidatePages = [normalizedPage + 1, normalizedPage - 1]
+      .filter((page, index, values) => page >= 0 && page < pageCount && values.indexOf(page) === index);
+    for (const page of candidatePages) {
+      void ensureCategoryPageReady(itemId, loadRequestSeq, category, page, 'prefetch');
+    }
+  };
+
   const hydrateRemainingRecipesInBackground = async (
     itemId: string,
     requestSeq: number,
@@ -863,6 +932,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       ) {
         return;
       }
+      primeRecipePayloadMedia(shard);
 
       for (const indexedRecipe of [...shard.indexedCrafting, ...shard.indexedUsage]) {
         const normalizedRecipe = convertIndexedRecipe(indexedRecipe);
@@ -953,6 +1023,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     try {
       if (lastItemId.value !== itemId) {
         backgroundHydrationSeq += 1;
+        recipeFirstPageVisibleItemId = null;
         resetDetailHydrationContext();
         clearCurrentRecipeState();
         resetRecipeCache();
@@ -1276,6 +1347,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     () => {
       ensureVisibleRecipePack();
       prefetchNeighborRecipePacks();
+      prefetchCurrentCategoryAdjacentPages();
+      prefetchRecipeSearchPack();
       queueRecipePageMediaPrewarm();
     },
     { immediate: true },
@@ -1294,6 +1367,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       loading.value,
     ] as const,
     () => {
+      prefetchCurrentCategoryAdjacentPages();
       queueRecipePageMediaPrewarm();
     },
     { immediate: true },
@@ -1316,8 +1390,22 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
 
   watch(
     () => currentBaseRecipe.value?.recipeId,
-    (recipeId) => {
+    async (recipeId) => {
       if (!recipeId) return;
+      const itemId = itemIdRef.value ?? null;
+      if (itemId && recipeFirstPageVisibleItemId !== itemId) {
+        await waitForPaint();
+        if (recipeFirstPageVisibleItemId === itemId || itemIdRef.value !== itemId || currentBaseRecipe.value?.recipeId !== recipeId) {
+          return;
+        }
+        recipeFirstPageVisibleItemId = itemId;
+        markPerfEvent('recipe-first-page-visible', {
+          itemId,
+          recipeId,
+          tab: currentTab.value,
+          page: currentPage.value,
+        });
+      }
       const neighbors = currentCategoryPages.value;
       const idx = neighbors.findIndex((recipe) => recipe.recipeId === recipeId);
       const candidateIds = [recipeId];

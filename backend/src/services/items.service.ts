@@ -578,7 +578,19 @@ export class ItemsService {
       offset,
     }) as BrowserDefaultEntryRow[];
 
-    const entries = rows.map((row) => {
+    const entries = this.mapBrowserDefaultEntryRows(rows);
+
+    return {
+      data: entries,
+      total,
+      page: normalizedPage,
+      pageSize,
+      totalPages,
+    };
+  }
+
+  private mapBrowserDefaultEntryRows(rows: BrowserDefaultEntryRow[]): BrowserPageEntry[] {
+    return rows.map((row) => {
       const item = this.transformDatabaseItem(row, { trustPreferredImageUrl: true });
       if (row.entry_kind === 'item') {
         this.setCachedItem(item);
@@ -605,13 +617,135 @@ export class ItemsService {
         },
       } satisfies BrowserPageEntry;
     });
+  }
+
+  private buildBrowserDefaultEntriesFromCatalog(catalog: BrowserCatalogRow[]): BrowserPageEntry[] {
+    const entries: BrowserPageEntry[] = [];
+    const seenGroups = new Set<string>();
+
+    for (const row of catalog) {
+      const groupKey = `${row.browser_group_key ?? ''}`.trim();
+      const groupSize = Math.max(1, Number(row.browser_group_size ?? 1));
+      const item = this.transformDatabaseItem(row, { trustPreferredImageUrl: true });
+
+      if (!groupKey || groupSize <= 1) {
+        this.setCachedItem(item);
+        entries.push({
+          key: item.itemId,
+          kind: 'item',
+          item,
+        });
+        continue;
+      }
+
+      if (seenGroups.has(groupKey)) {
+        continue;
+      }
+
+      seenGroups.add(groupKey);
+      this.setCachedItem(item);
+      entries.push({
+        key: `collapsed:${groupKey}`,
+        kind: 'group-collapsed',
+        group: {
+          key: groupKey,
+          representative: item,
+          size: groupSize,
+          visibleCount: 1,
+          expandable: groupSize > 1,
+          label: `${row.browser_group_label ?? ''}`.trim() || item.localizedName,
+        },
+      });
+    }
+
+    return entries;
+  }
+
+  async getBrowserItemsWindow(params: {
+    offset: number;
+    limit: number;
+    modId?: string;
+  }): Promise<{
+    data: BrowserPageEntry[];
+    total: number;
+    offset: number;
+    limit: number;
+  }> {
+    const db = this.getAccelerationDatabase();
+    const normalizedOffset = Math.max(0, Math.floor(params.offset));
+    const normalizedLimit = Math.min(Math.max(1, Math.floor(params.limit)), 5000);
+    const normalizedModId = `${params.modId ?? ''}`.trim();
+
+    if (this.canUseBrowserDefaultEntries(db) && this.canUseAccelerationItems(db)) {
+      this.ensureBrowserDefaultEntriesMaterialized(db);
+      const bindings: Record<string, unknown> = {};
+      const whereClause =
+        normalizedModId && normalizedModId !== 'all'
+          ? 'WHERE e.mod_id = @modId'
+          : '';
+
+      if (whereClause) {
+        bindings.modId = normalizedModId;
+      }
+
+      const totalRow = db.prepare(`
+        SELECT COUNT(*) AS total
+        FROM browser_default_entries AS e
+        ${whereClause}
+      `).get(bindings) as { total?: number } | undefined;
+
+      const total = Math.max(0, Number(totalRow?.total ?? 0));
+      const rows = db.prepare(`
+        SELECT
+          e.entry_order,
+          e.entry_kind,
+          ic.item_id,
+          ic.mod_id,
+          ic.internal_name,
+          ic.localized_name,
+          ic.unlocalized_name,
+          ic.damage,
+          ic.image_file_name,
+          ic.render_asset_ref,
+          ic.preferred_image_url,
+          ic.tooltip,
+          ic.search_terms,
+          e.group_key AS browser_group_key,
+          e.group_label AS browser_group_label,
+          e.group_size AS browser_group_size,
+          NULL AS browser_group_sort_order
+        FROM browser_default_entries AS e
+        INNER JOIN items_core AS ic
+          ON ic.item_id = e.item_id
+        ${whereClause}
+        ORDER BY e.entry_order ASC
+        LIMIT @limit OFFSET @offset
+      `).all({
+        ...bindings,
+        limit: normalizedLimit,
+        offset: normalizedOffset,
+      }) as BrowserDefaultEntryRow[];
+
+      const data = this.mapBrowserDefaultEntryRows(rows);
+
+      return {
+        data,
+        total,
+        offset: normalizedOffset,
+        limit: normalizedLimit,
+      };
+    }
+
+    const catalog = this.getBrowserCatalog({ modId: normalizedModId || undefined });
+    const defaultEntries = this.buildBrowserDefaultEntriesFromCatalog(catalog);
+    const total = defaultEntries.length;
+    const data = defaultEntries.slice(normalizedOffset, normalizedOffset + normalizedLimit);
 
     return {
-      data: entries,
+      data,
       total,
-      page: normalizedPage,
-      pageSize,
-      totalPages,
+      offset: normalizedOffset,
+      limit: normalizedLimit,
     };
   }
 

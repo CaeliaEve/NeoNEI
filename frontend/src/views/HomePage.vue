@@ -85,7 +85,7 @@ const {
   measureVisiblePageCapacity: () => measureGridCapacityRaw(),
 });
 let itemGridResizeObserver: ResizeObserver | null = null;
-let neighborPrefetchTimer: ReturnType<typeof setTimeout> | null = null;
+let neighborPrefetchTimer: number | null = null;
 let neighborPrefetchIdleHandle: number | null = null;
 const currentGroupId = ref<string | undefined>(undefined);
 const currentGroupName = ref<string>('');
@@ -255,11 +255,18 @@ watch(
 
     if (view !== "items" || atlasPending || total <= 1 || activeSearch) return;
 
-    const neighborPage = page >= total ? 1 : page + 1;
+    const candidatePages = Array.from(
+      new Set([
+        page >= total ? 1 : page + 1,
+        page <= 1 ? total : page - 1,
+      ]),
+    ).filter((candidate) => candidate >= 1 && candidate <= total && candidate !== page);
     neighborPrefetchTimer = window.setTimeout(() => {
       neighborPrefetchTimer = null;
       const runPrefetch = () => {
-        void prefetchItemsPage(neighborPage);
+        for (const candidatePage of candidatePages) {
+          void prefetchItemsPage(candidatePage);
+        }
       };
 
       if (typeof window !== "undefined" && "requestIdleCallback" in window) {

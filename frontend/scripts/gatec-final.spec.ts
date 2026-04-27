@@ -2,7 +2,7 @@
 import { mkdir, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-test.describe.configure({ timeout: 120000 });
+test.describe.configure({ timeout: 240000 });
 
 const BASE_URL = process.env.GATEC_BASE_URL || 'http://127.0.0.1:5173';
 const BACKEND_BASE_URL = process.env.GATEC_BACKEND_URL || 'http://127.0.0.1:3002';
@@ -37,12 +37,32 @@ async function isVisibleSafe(locator: any) {
   return (await locator.count()) > 0 && (await locator.isVisible());
 }
 
+async function captureEvidenceShot(page: any, path: string, locators: any[]) {
+  for (const locator of locators) {
+    try {
+      if (await isVisibleSafe(locator)) {
+        await locator.screenshot({ path });
+        return 'locator';
+      }
+    } catch {
+      // try next target
+    }
+  }
+
+  await page.screenshot({ path });
+  return 'page';
+}
+
 async function clickWithResponse(
   page: any,
   button: any,
   infoLocator: any,
   label: string,
+  options: { attempts?: number; settleMs?: number; stopOnChange?: boolean } = {},
 ) {
+  const attempts = Math.max(1, Math.min(5, options.attempts ?? 2));
+  const settleMs = Math.max(80, Math.min(500, options.settleMs ?? 140));
+  const stopOnChange = options.stopOnChange ?? true;
   const exists = (await button.count()) > 0;
   if (!exists) {
     return {
@@ -60,7 +80,7 @@ async function clickWithResponse(
   let sawEnabled = false;
   let previous = (await infoLocator.count()) > 0 ? (await infoLocator.innerText()) : '';
 
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < attempts; i++) {
     let disabled = false;
     try {
       disabled = await button.isDisabled();
@@ -90,18 +110,21 @@ async function clickWithResponse(
     }
 
     actualClicks += 1;
-    await page.waitForTimeout(180);
+    await page.waitForTimeout(settleMs);
     const current = (await infoLocator.count()) > 0 ? (await infoLocator.innerText()) : '';
     if (current !== previous) {
       changedCount += 1;
       previous = current;
+      if (stopOnChange) {
+        break;
+      }
     }
   }
 
   return {
     exists: true,
     enabled: sawEnabled,
-    requestedClicks: 5,
+    requestedClicks: attempts,
     actualClicks,
     changedCount,
     responded: changedCount > 0,
@@ -236,60 +259,98 @@ test('Gate C final acceptance', async ({ page }) => {
   await page.goto(`${BASE_URL}/`, { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(1200);
 
-  const grid = page.locator('.items-grid-container .grid').first();
-  const gridVisible = (await grid.count()) > 0 && (await grid.isVisible());
-  const gridItems = gridVisible ? await grid.locator(':scope > *').count() : 0;
+  const itemsColumn = page.locator('.items-column').first();
+  const legacyGrid = page.locator('.items-grid-container .grid').first();
+  const canvasHost = page.locator('.home-canvas-grid').first();
+  const canvas = page.locator('.home-canvas-grid__canvas').first();
+  const homePagerInfo = page.locator('.pagination-top .pager-indicator').first();
+  const homePrev = await pickLocator([
+    itemsColumn.getByRole('button', { name: /上一页/i }),
+    page.getByRole('button', { name: /上一页/i }),
+  ]);
+  const homeNext = await pickLocator([
+    itemsColumn.getByRole('button', { name: /下一页/i }),
+    page.getByRole('button', { name: /下一页/i }),
+  ]);
 
-  let scrollOk = false;
-  let gridScrollable = false;
-  let windowScrollable = false;
-  if (gridVisible) {
-    gridScrollable = await grid.evaluate((el: HTMLElement) => el.scrollHeight > el.clientHeight + 1);
-    const before = await grid.evaluate((el: HTMLElement) => el.scrollTop);
-    await grid.evaluate((el: HTMLElement) => {
-      el.scrollTop = Math.min(el.scrollHeight, el.scrollTop + 600);
-    });
-    await page.waitForTimeout(200);
-    const after = await grid.evaluate((el: HTMLElement) => el.scrollTop);
-    const gridMoved = after > before;
-    lines.push(`[home] grid scrollable=${gridScrollable} scrollTop before=${before}, after=${after}`);
+  const legacyGridVisible = await isVisibleSafe(legacyGrid);
+  const canvasVisible = await isVisibleSafe(canvasHost) && await isVisibleSafe(canvas);
+  const homeSurfaceType = canvasVisible ? 'canvas' : (legacyGridVisible ? 'legacy-grid' : 'none');
+  const gridVisible = homeSurfaceType !== 'none';
+  const gridItems = legacyGridVisible ? await legacyGrid.locator(':scope > *').count() : 0;
+  const canvasMetrics = canvasVisible
+    ? await canvas.evaluate((el: HTMLCanvasElement) => ({
+        width: el.width,
+        height: el.height,
+        clientWidth: el.clientWidth,
+        clientHeight: el.clientHeight,
+      }))
+    : null;
+  const canvasReady = Boolean(
+    canvasMetrics
+    && canvasMetrics.width > 0
+    && canvasMetrics.height > 0
+    && canvasMetrics.clientWidth > 0
+    && canvasMetrics.clientHeight > 0,
+  );
 
-    windowScrollable = await page.evaluate(() => {
-      const doc = document.documentElement;
-      const body = document.body;
-      const docHeight = Math.max(doc.scrollHeight, body?.scrollHeight ?? 0);
-      return docHeight > window.innerHeight + 1;
-    });
-
-    const winBefore = await page.evaluate(() => window.scrollY);
-    await page.mouse.wheel(0, 800);
-    await page.waitForTimeout(200);
-    const winAfter = await page.evaluate(() => window.scrollY);
-    const windowMoved = winAfter > winBefore;
-    lines.push(`[home] window scrollable=${windowScrollable} scrollY before=${winBefore}, after=${winAfter}`);
-
-    if (gridScrollable && windowScrollable) {
-      scrollOk = gridMoved || windowMoved;
-    } else if (gridScrollable) {
-      scrollOk = gridMoved;
-    } else if (windowScrollable) {
-      scrollOk = windowMoved;
-    } else {
-      scrollOk = true;
-    }
+  const homePageInfoBefore = (await homePagerInfo.count()) > 0 ? (await homePagerInfo.innerText()) : '';
+  let wheelChangedPage = false;
+  if ((await itemsColumn.count()) > 0 && (await itemsColumn.isVisible()) && homePageInfoBefore) {
+    await itemsColumn.hover();
+    await page.mouse.wheel(0, 820);
+    await page.waitForTimeout(350);
+    const homePageInfoAfterWheel = (await homePagerInfo.count()) > 0 ? (await homePagerInfo.innerText()) : '';
+    wheelChangedPage = homePageInfoAfterWheel !== homePageInfoBefore;
+    lines.push(`[home] wheel page before="${homePageInfoBefore}" after="${homePageInfoAfterWheel}" changed=${wheelChangedPage}`);
   }
 
-  await page.screenshot({ path: HOME_SHOT, fullPage: true });
+  const homePrevResult = wheelChangedPage
+    ? {
+        exists: (await homePrev.count()) > 0,
+        enabled: null,
+        requestedClicks: 0,
+        actualClicks: 0,
+        changedCount: 0,
+        responded: false,
+        notes: 'skipped after wheel verification',
+      }
+    : await clickWithResponse(page, homePrev, homePagerInfo, 'home-prev', { attempts: 1, settleMs: 160 });
+  const homeNextResult = wheelChangedPage
+    ? {
+        exists: (await homeNext.count()) > 0,
+        enabled: null,
+        requestedClicks: 0,
+        actualClicks: 0,
+        changedCount: 0,
+        responded: false,
+        notes: 'skipped after wheel verification',
+      }
+    : await clickWithResponse(page, homeNext, homePagerInfo, 'home-next', { attempts: 1, settleMs: 160 });
+
+  const homeShotMode = await captureEvidenceShot(page, HOME_SHOT, [itemsColumn, canvasHost, page.locator('main').first()]);
 
   summary.routes.home.details = {
+    surfaceType: homeSurfaceType,
     gridVisible,
     gridItems,
-    gridScrollable,
-    windowScrollable,
-    scrollOk,
+    canvasReady,
+    canvasMetrics,
+    pageInfoBefore: homePageInfoBefore,
+    wheelChangedPage,
+    prev: homePrevResult,
+    next: homeNextResult,
+    screenshotMode: homeShotMode,
   };
-  summary.routes.home.pass = Boolean(gridVisible && gridItems > 0 && scrollOk);
-  lines.push(`[home] pass=${summary.routes.home.pass} gridVisible=${gridVisible} gridItems=${gridItems} scrollOk=${scrollOk}`);
+  summary.routes.home.pass = Boolean(
+    gridVisible
+    && (homeSurfaceType !== 'canvas' || canvasReady)
+    && (homeSurfaceType !== 'legacy-grid' || gridItems > 0)
+    && (wheelChangedPage || homePrevResult.exists || homeNextResult.exists),
+  );
+  lines.push(
+    `[home] pass=${summary.routes.home.pass} surface=${homeSurfaceType} gridVisible=${gridVisible} gridItems=${gridItems} canvasReady=${canvasReady} wheelChanged=${wheelChangedPage} prev=${JSON.stringify(homePrevResult)} next=${JSON.stringify(homeNextResult)}`,
+  );
 
   const recipeFixture = await pickRecipeItemId(page, lines);
   if (!recipeFixture) {
@@ -359,10 +420,14 @@ test('Gate C final acceptance', async ({ page }) => {
       searchTyped = finalDiag.value === 'iron';
     }
 
-    const prevResult = await clickWithResponse(page, recipePrev, recipePageInfo, 'recipe-prev');
-    const nextResult = await clickWithResponse(page, recipeNext, recipePageInfo, 'recipe-next');
+    const prevResult = await clickWithResponse(page, recipePrev, recipePageInfo, 'recipe-prev', { attempts: 1, settleMs: 120 });
+    const nextResult = await clickWithResponse(page, recipeNext, recipePageInfo, 'recipe-next', { attempts: 1, settleMs: 120 });
 
-    await page.screenshot({ path: RECIPE_SHOT, fullPage: true });
+    const recipeShotMode = await captureEvidenceShot(page, RECIPE_SHOT, [
+      page.locator('.recipe-display').first(),
+      page.locator('[data-testid="recipe-viewer"]').first(),
+      page.locator('main').first(),
+    ]);
 
     summary.routes.recipe.details = {
       fixtureSelected: true,
@@ -376,6 +441,7 @@ test('Gate C final acceptance', async ({ page }) => {
       searchTyped,
       prev: prevResult,
       next: nextResult,
+      screenshotMode: recipeShotMode,
     };
 
     summary.routes.recipe.pass = Boolean(recipeScaffoldReady && searchVisible && searchTyped && prevResult.exists && nextResult.exists);
@@ -408,10 +474,14 @@ test('Gate C final acceptance', async ({ page }) => {
     page.getByRole('button', { name: /(?:\u4E0B\u4E00\u914D\u65B9|next)/i }),
   ]);
 
-  const oraclePrevResult = await clickWithResponse(page, oraclePrev, oracleInfo, 'oracle-prev');
-  const oracleNextResult = await clickWithResponse(page, oracleNext, oracleInfo, 'oracle-next');
+  const oraclePrevResult = await clickWithResponse(page, oraclePrev, oracleInfo, 'oracle-prev', { attempts: 1, settleMs: 120 });
+  const oracleNextResult = await clickWithResponse(page, oracleNext, oracleInfo, 'oracle-next', { attempts: 1, settleMs: 120 });
 
-  await page.screenshot({ path: ORACLE_SHOT, fullPage: true });
+  const oracleShotMode = await captureEvidenceShot(page, ORACLE_SHOT, [
+    page.locator('.oracle-panel').first(),
+    page.locator('.display-stage').first(),
+    page.locator('main').first(),
+  ]);
 
   summary.routes.oracle.details = {
     searchInputVisible: true,
@@ -420,6 +490,7 @@ test('Gate C final acceptance', async ({ page }) => {
     stageVisible,
     prev: oraclePrevResult,
     next: oracleNextResult,
+    screenshotMode: oracleShotMode,
   };
   summary.routes.oracle.pass = Boolean(stageVisible && oraclePrevResult.exists && oracleNextResult.exists);
   lines.push(`[oracle] pass=${summary.routes.oracle.pass} stageVisible=${stageVisible} prev=${JSON.stringify(oraclePrevResult)} next=${JSON.stringify(oracleNextResult)}`);

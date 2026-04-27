@@ -207,6 +207,20 @@ export class RenderContractService {
     return entry;
   }
 
+  getAnimatedAtlasEntries(assetIds: string[]): Map<string, AnimatedAtlasAssetEntry> {
+    const cache = this.getAnimatedAtlasEntryCache();
+    const entries = new Map<string, AnimatedAtlasAssetEntry>();
+
+    for (const assetId of assetIds) {
+      if (!assetId) continue;
+      const entry = cache.get(assetId);
+      if (!entry) continue;
+      entries.set(assetId, entry);
+    }
+
+    return entries;
+  }
+
   getRenderAssetEntry(assetId: string): RenderContractAssetEntry {
     const cache = this.getRenderAssetEntryCache();
     const entry = cache.get(assetId);

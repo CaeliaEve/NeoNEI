@@ -12,6 +12,8 @@ export interface RitualItemStack {
   itemId: string;
   count: number;
   localizedName?: string;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
 }
 
 export interface RitualAspectCost {
@@ -59,6 +61,8 @@ export function collectRecipeItemStacks(node: unknown, output: RitualItemStack[]
     count?: unknown;
     stackSize?: unknown;
     localizedName?: unknown;
+    renderAssetRef?: unknown;
+    imageFileName?: unknown;
     item?: { itemId?: unknown; localizedName?: unknown };
     items?: unknown[];
   };
@@ -68,6 +72,8 @@ export function collectRecipeItemStacks(node: unknown, output: RitualItemStack[]
       itemId: obj.itemId,
       count: normalizeCount(obj.count ?? obj.stackSize),
       localizedName: typeof obj.localizedName === 'string' ? obj.localizedName : undefined,
+      renderAssetRef: typeof obj.renderAssetRef === 'string' ? obj.renderAssetRef : null,
+      imageFileName: typeof obj.imageFileName === 'string' ? obj.imageFileName : null,
     });
     return;
   }
@@ -77,6 +83,10 @@ export function collectRecipeItemStacks(node: unknown, output: RitualItemStack[]
       itemId: obj.item.itemId,
       count: normalizeCount(obj.count ?? obj.stackSize),
       localizedName: typeof obj.item.localizedName === 'string' ? obj.item.localizedName : undefined,
+      renderAssetRef:
+        typeof obj.renderAssetRef === 'string' ? obj.renderAssetRef : null,
+      imageFileName:
+        typeof obj.imageFileName === 'string' ? obj.imageFileName : null,
     });
     return;
   }
