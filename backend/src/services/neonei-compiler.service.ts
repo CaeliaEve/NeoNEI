@@ -793,7 +793,7 @@ export class NeoNeiCompilerService {
         firstPageSize: options.publishHotPayloads?.firstPageSize ?? 256,
         slotSizes: options.publishHotPayloads?.slotSizes ?? [45],
         includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? true,
-        windowCount: options.publishHotPayloads?.windowCount ?? 10,
+        windowCount: options.publishHotPayloads?.windowCount ?? 48,
         windowStride: options.publishHotPayloads?.windowStride ?? 64,
         searchHotShardSize: options.publishHotPayloads?.searchHotShardSize ?? 8192,
       },
@@ -809,8 +809,6 @@ export class NeoNeiCompilerService {
     hash.update(JSON.stringify({
       compilerVersion: ACCELERATION_COMPILER_VERSION,
       sourceRoots: this.sourceRoots,
-      hotPageAtlas: this.options.hotPageAtlas,
-      publishHotPayloads: this.options.publishHotPayloads,
       bootstrap: this.options.bootstrap,
     }));
     for (const filePath of itemFiles) {

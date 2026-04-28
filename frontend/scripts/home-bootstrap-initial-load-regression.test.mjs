@@ -11,7 +11,7 @@ test('initial homepage load can use a single home-bootstrap payload for first-pa
   assert.equal(
     source.includes('const measuredCapacity = allowMeasuredPageCapacity'),
     true,
-    'initial page-size calculation should stay on the heuristic path until the first home bootstrap finishes',
+    'item browser should support switching between measured-capacity and heuristic page sizing paths',
   );
   assert.equal(
     source.includes('api.getHomeBootstrap({'),
@@ -29,9 +29,27 @@ test('initial homepage load can use a single home-bootstrap payload for first-pa
     'home bootstrap should remain constrained to the simple first-page no-search state to avoid incorrect expanded/search hydration',
   );
   assert.equal(
-    source.includes('await loadInitialHomeState();\n    allowMeasuredPageCapacity = true;'),
+    source.includes('allowMeasuredPageCapacity = true;\n    await nextTick();\n    pageSize.value = calculatePageSize();\n    await loadInitialHomeState();'),
     true,
-    'measured grid capacity should only be enabled after the initial homepage payload has settled',
+    'initial homepage load should try to use the mounted viewport capacity before issuing the first browser-page request',
+  );
+});
+
+test('browser page caches survive homepage remounts through a bounded shared cache', () => {
+  assert.equal(
+    source.includes('const sharedPageCache = new Map<string, CachedBrowserPage>();'),
+    true,
+    'browser pages should be retained across route exits instead of rebuilding from scratch on every return to the homepage',
+  );
+  assert.equal(
+    source.includes('const SHARED_BROWSER_PAGE_CACHE_LIMIT = 48;'),
+    true,
+    'shared browser page cache should stay bounded to avoid unbounded memory growth while the SPA remains open',
+  );
+  assert.equal(
+    source.includes('setSharedBrowserPageCache(cacheKey, normalized);'),
+    true,
+    'browser page responses should be inserted through the shared bounded cache helper',
   );
 });
 

@@ -190,13 +190,23 @@ export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
       if (!pendingMachineName) return;
       const names = options.machineCategoryNames?.value ?? [];
       if (names.length <= 0) return;
-      const normalized = pendingMachineName.trim().toLowerCase();
-      const index = names.findIndex((name) => name.trim().toLowerCase() === normalized);
+      const normalizeMachineName = (value: string) => value.trim().replace(/\s+/g, '').toLowerCase();
+      const normalized = normalizeMachineName(pendingMachineName);
+      const index = names.findIndex((name) => normalizeMachineName(name) === normalized);
       if (index >= 0) {
         options.selectedMachineIndex.value = index;
         pendingMachineIndexFromQuery.value = null;
         pendingMachineNameFromQuery.value = null;
+        return;
       }
+
+      const fallbackIndex = pendingMachineIndexFromQuery.value;
+      const safeMachineIndex = Number.isFinite(fallbackIndex)
+        ? Math.min(Math.max(0, fallbackIndex ?? 0), names.length - 1)
+        : 0;
+      options.selectedMachineIndex.value = safeMachineIndex;
+      pendingMachineIndexFromQuery.value = null;
+      pendingMachineNameFromQuery.value = null;
     },
     { immediate: true },
   );
@@ -215,10 +225,21 @@ export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
 
   watch(
     () => [pendingRecipeIdFromQuery.value, options.currentCategoryPageCount.value] as const,
-    ([pendingRecipeId]) => {
+    ([pendingRecipeId, currentCategoryPageCount]) => {
       if (!pendingRecipeId) return;
       const applied = options.selectRecipeById(pendingRecipeId);
       if (applied) {
+        pendingRecipeIdFromQuery.value = null;
+        return;
+      }
+
+      if (
+        currentCategoryPageCount > 0
+        && pendingMachineIndexFromQuery.value === null
+        && pendingMachineNameFromQuery.value === null
+        && pendingPageFromQuery.value === null
+        && options.currentRecipeId.value
+      ) {
         pendingRecipeIdFromQuery.value = null;
       }
     },

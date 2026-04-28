@@ -265,7 +265,10 @@ function selectSpecies(uid: string) {
 
 function openItem(itemId: string) {
   playClick();
-  void router.push(`/recipe/${itemId}`);
+  void router.push({
+    name: 'recipe',
+    params: { itemId },
+  });
 }
 
 function renderChance(drop: ForestryGeneticsItemDrop) {

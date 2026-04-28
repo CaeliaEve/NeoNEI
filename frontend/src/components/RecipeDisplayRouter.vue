@@ -264,7 +264,7 @@ const refreshRecipeUiPayload = async () => {
 
   const requestSeq = ++uiPayloadRequestSeq;
   try {
-    const payload = await api.getRecipeUiPayload(props.recipe.recipeId);
+    const payload = await api.getOptionalRecipeUiPayload(props.recipe.recipeId);
     if (requestSeq !== uiPayloadRequestSeq) return;
     recipeUiPayload.value = payload;
   } catch {

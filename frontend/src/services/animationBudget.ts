@@ -12,6 +12,7 @@ import { api, type Item, type PageRichMediaManifest } from './api';
 
 const MAX_ANIMATION_WORKERS = 3;
 const MAX_CACHED_IMAGE_ASSETS = 384;
+const MAX_WARM_IMAGE_HISTORY = 8192;
 const MAX_PREPARED_FRAME_SETS = 192;
 
 class AsyncWorkQueue {
@@ -66,6 +67,7 @@ const directGifProbeCache = new Map<string, boolean>();
 const directGifProbeInFlight = new Map<string, Promise<boolean>>();
 const imageAssetCache = new Map<string, HTMLImageElement>();
 const imageAssetInFlight = new Map<string, Promise<HTMLImageElement>>();
+const warmImageAssetHistory = new Map<string, true>();
 const preparedAnimationFrameCache = new Map<string, PreparedAnimationFrame[]>();
 const preparedAnimationFrameInFlight = new Map<string, Promise<PreparedAnimationFrame[]>>();
 const queuedRenderablePrewarmTasks = new Map<string, Promise<void>>();
@@ -147,6 +149,7 @@ const loadImageCached = async (src: string): Promise<HTMLImageElement> => {
   if (imageAssetCache.has(src)) {
     const cached = imageAssetCache.get(src)!;
     touchBoundedCache(imageAssetCache, src, cached, MAX_CACHED_IMAGE_ASSETS);
+    touchBoundedCache(warmImageAssetHistory, src, true, MAX_WARM_IMAGE_HISTORY);
     return cached;
   }
 
@@ -158,6 +161,7 @@ const loadImageCached = async (src: string): Promise<HTMLImageElement> => {
   const request = loadImage(src)
     .then((image) => {
       touchBoundedCache(imageAssetCache, src, image, MAX_CACHED_IMAGE_ASSETS);
+      touchBoundedCache(warmImageAssetHistory, src, true, MAX_WARM_IMAGE_HISTORY);
       return image;
     })
     .finally(() => {
@@ -649,6 +653,16 @@ export const prewarmImageAsset = async (src?: string | null): Promise<void> => {
   } catch {
     // Ignore prewarm failures; visible render paths will retry on demand.
   }
+};
+
+export const isImageAssetWarm = (src?: string | null): boolean => {
+  const normalizedSrc = `${src ?? ''}`.trim();
+  if (!normalizedSrc) {
+    return false;
+  }
+  return warmImageAssetHistory.has(normalizedSrc)
+    || imageAssetCache.has(normalizedSrc)
+    || imageAssetInFlight.has(normalizedSrc);
 };
 
 export const prewarmRenderableEntityMedia = async (

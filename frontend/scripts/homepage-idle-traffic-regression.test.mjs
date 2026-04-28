@@ -14,6 +14,11 @@ const itemBrowserSource = fs.readFileSync(
 
 test('homepage prefetch stays idle-scheduled while expanding to a small wrapped hot-page ring', () => {
   assert.equal(
+    homePageSource.includes('const scheduleNeighborPrefetch = ('),
+    true,
+    'homepage should move neighbor-page prefetch behind an explicit scheduling helper instead of lifecycle auto-runs',
+  );
+  assert.equal(
     homePageSource.includes('const BROWSER_PREFETCH_FORWARD_RADIUS = 4;'),
     true,
     'homepage should bias the hot ring forward so rapid next-page browsing warms farther ahead',
@@ -24,14 +29,26 @@ test('homepage prefetch stays idle-scheduled while expanding to a small wrapped 
     'homepage should still keep the backward ring bounded while spending more budget in the active browsing direction',
   );
   assert.equal(
-    homePageSource.includes('collectWrappedPageCandidates(\n      page,\n      total,\n      direction >= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,\n      direction <= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,\n    )'),
+    homePageSource.includes('const candidatePages = collectWrappedPageCandidates(')
+      && homePageSource.includes('direction >= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS')
+      && homePageSource.includes('direction <= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS'),
     true,
     'homepage should derive wrapped prefetch candidates from the active page plus the latest browsing direction',
   );
   assert.equal(
-    homePageSource.includes('void prefetchItemsPage(targetPage);'),
+    homePageSource.includes('void prefetchItemsPage(resolvedTargetPage);'),
     true,
     'homepage should kick the target-page fetch immediately when the user flips pages so the request is already in flight before the next render tick',
+  );
+  assert.equal(
+    homePageSource.includes('scheduleNeighborPrefetch(resolvedTargetPage, total, direction);'),
+    true,
+    'homepage should only schedule the neighbor prefetch ring after an explicit page-flip interaction',
+  );
+  assert.equal(
+    homePageSource.includes('currentView.value !== "items" || total <= 1 || searchQuery.value.trim()'),
+    true,
+    'homepage should skip neighbor prefetch entirely outside the normal item-browser browsing state',
   );
   assert.equal(
     homePageSource.includes('requestIdleCallback'),

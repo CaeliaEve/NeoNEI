@@ -40,7 +40,7 @@ import {
   buildModsListPayloadKey,
 } from './publish-payload.service';
 
-export const PUBLISH_PAYLOAD_REVISION = '2026-04-28-publish-static-bundle-v8';
+export const PUBLISH_PAYLOAD_REVISION = '2026-04-28-publish-static-bundle-v9';
 
 export interface PublishPayloadHotOptions {
   enabled?: boolean;
@@ -352,7 +352,7 @@ export class PublishPayloadMaterializerService {
       firstPageSize: Math.max(1, Math.floor(options.publishHotPayloads?.firstPageSize ?? 256)),
       slotSizes: normalizeSlotSizes(options.publishHotPayloads?.slotSizes),
       includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? true,
-      windowCount: Math.max(1, Math.floor(options.publishHotPayloads?.windowCount ?? 10)),
+      windowCount: Math.max(1, Math.floor(options.publishHotPayloads?.windowCount ?? 48)),
       windowStride: Math.max(
         1,
         Math.floor(

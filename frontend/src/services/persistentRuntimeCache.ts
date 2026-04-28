@@ -69,6 +69,17 @@ function setStoredCleanupSignature(signature: string): void {
   }
 }
 
+function clearStoredCleanupSignature(): void {
+  if (!canUseLocalStorage()) {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(RUNTIME_CLEANUP_SIGNATURE_STORAGE_KEY);
+  } catch {
+    // best-effort only
+  }
+}
+
 function openDb(): Promise<IDBDatabase | null> {
   if (!canUseIndexedDb()) {
     return Promise.resolve(null);
@@ -185,6 +196,88 @@ export async function cleanupPersistentRuntimeCacheForSignature(activeSignature:
       transaction.onabort = () => resolve();
     } catch {
       resolve();
+    }
+  });
+}
+
+export async function clearPersistentRuntimeCache(): Promise<void> {
+  const db = await openDb();
+  if (!db) {
+    setStoredRuntimeSignature(null);
+    clearStoredCleanupSignature();
+    cleanupInFlightBySignature.clear();
+    return;
+  }
+
+  await new Promise<void>((resolve) => {
+    try {
+      const transaction = db.transaction(STORE_NAME, 'readwrite');
+      const store = transaction.objectStore(STORE_NAME);
+      store.clear();
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => resolve();
+      transaction.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+
+  setStoredRuntimeSignature(null);
+  clearStoredCleanupSignature();
+  cleanupInFlightBySignature.clear();
+}
+
+export async function getPersistentRuntimeCacheStats(): Promise<{
+  entryCount: number;
+  approxBytes: number;
+}> {
+  const db = await openDb();
+  if (!db) {
+    return {
+      entryCount: 0,
+      approxBytes: 0,
+    };
+  }
+
+  return new Promise<{ entryCount: number; approxBytes: number }>((resolve) => {
+    try {
+      let entryCount = 0;
+      let approxBytes = 0;
+      const transaction = db.transaction(STORE_NAME, 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const cursorRequest = store.openCursor();
+
+      cursorRequest.onsuccess = () => {
+        const cursor = cursorRequest.result;
+        if (!cursor) {
+          return;
+        }
+        const record = cursor.value as CachedPackRecord | undefined;
+        entryCount += 1;
+        try {
+          approxBytes += new Blob([
+            JSON.stringify({
+              cacheKey: record?.cacheKey ?? '',
+              payload: record?.payload ?? null,
+              updatedAt: record?.updatedAt ?? 0,
+            }),
+          ]).size;
+        } catch {
+          approxBytes += `${record?.cacheKey ?? ''}`.length;
+        }
+        cursor.continue();
+      };
+
+      const finish = () => resolve({ entryCount, approxBytes });
+      cursorRequest.onerror = finish;
+      transaction.oncomplete = finish;
+      transaction.onerror = finish;
+      transaction.onabort = finish;
+    } catch {
+      resolve({
+        entryCount: 0,
+        approxBytes: 0,
+      });
     }
   });
 }

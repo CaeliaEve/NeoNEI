@@ -17,6 +17,7 @@ import {
 import { preloadBrowserSearchWorker } from '../services/browserSearchWorker';
 import {
   getAnimatedAtlasImageUrl,
+  isImageAssetWarm,
   loadImageAsset,
   primeAnimatedAtlasManifest,
   queueRenderableMediaPrewarmFromUnknown,
@@ -41,6 +42,30 @@ type BrowserPageRequestParams = {
   expandedGroups: string[];
   slotSize: number;
 };
+
+const SHARED_BROWSER_PAGE_CACHE_LIMIT = 48;
+const sharedPageCache = new Map<string, CachedBrowserPage>();
+const sharedPageRequestInFlight = new Map<string, Promise<CachedBrowserPage>>();
+const sharedPageRevalidationInFlight = new Map<string, Promise<void>>();
+const sharedPagePresentationReady = new Set<string>();
+const sharedPagePresentationWarmInFlight = new Map<string, Promise<void>>();
+
+function setSharedBrowserPageCache(cacheKey: string, page: CachedBrowserPage): void {
+  if (sharedPageCache.has(cacheKey)) {
+    sharedPageCache.delete(cacheKey);
+  }
+  sharedPageCache.set(cacheKey, page);
+
+  while (sharedPageCache.size > SHARED_BROWSER_PAGE_CACHE_LIMIT) {
+    const oldestKey = sharedPageCache.keys().next().value;
+    if (typeof oldestKey !== 'string' || !oldestKey) {
+      break;
+    }
+    sharedPageCache.delete(oldestKey);
+    sharedPagePresentationReady.delete(oldestKey);
+    sharedPagePresentationWarmInFlight.delete(oldestKey);
+  }
+}
 
 function collectDisplayItems(entries: BrowserGridEntry[]): Item[] {
   const ordered: Item[] = [];
@@ -103,11 +128,11 @@ export function useItemBrowser(
     measureVisiblePageCapacity?: () => number | null;
   },
 ) {
-  const pageCache = new Map<string, CachedBrowserPage>();
-  const pageRequestInFlight = new Map<string, Promise<CachedBrowserPage>>();
-  const pageRevalidationInFlight = new Map<string, Promise<void>>();
-  const pagePresentationReady = new Set<string>();
-  const pagePresentationWarmInFlight = new Map<string, Promise<void>>();
+  const pageCache = sharedPageCache;
+  const pageRequestInFlight = sharedPageRequestInFlight;
+  const pageRevalidationInFlight = sharedPageRevalidationInFlight;
+  const pagePresentationReady = sharedPagePresentationReady;
+  const pagePresentationWarmInFlight = sharedPagePresentationWarmInFlight;
   const items = ref<Item[]>([]);
   const browserEntries = ref<BrowserGridEntry[]>([]);
   const mods = ref<Mod[]>([]);
@@ -204,7 +229,7 @@ export function useItemBrowser(
     } catch (error) {
       console.error('Failed to load mods:', error);
       mods.value = [];
-      modsLoadError.value = '????????????????????';
+      modsLoadError.value = '\u52a0\u8f7d\u6a21\u7ec4\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u8fde\u63a5\u540e\u91cd\u8bd5';
     } finally {
       modsLoading.value = false;
     }
@@ -321,6 +346,16 @@ export function useItemBrowser(
       return Promise.resolve();
     }
 
+    const atlasUrls = [
+      response.atlas?.atlasUrl ?? null,
+      ...collectAnimatedAtlasUrls(response).slice(0, Math.max(1, options?.atlasLimit ?? 6)),
+    ].filter((url): url is string => Boolean(url));
+
+    if (atlasUrls.length > 0 && atlasUrls.every((url) => isImageAssetWarm(url))) {
+      pagePresentationReady.add(cacheKey);
+      return Promise.resolve();
+    }
+
     const existing = pagePresentationWarmInFlight.get(cacheKey);
     if (existing) {
       return existing;
@@ -358,6 +393,15 @@ export function useItemBrowser(
       return;
     }
 
+    const atlasUrls = [
+      response.atlas.atlasUrl,
+      ...collectAnimatedAtlasUrls(response).slice(0, 10),
+    ].filter((url): url is string => Boolean(url));
+    if (atlasUrls.length > 0 && atlasUrls.every((url) => isImageAssetWarm(url))) {
+      pagePresentationReady.add(cacheKey);
+      return;
+    }
+
     const warmPromise = ensureBrowserPagePresentationWarm(cacheKey, response, {
       animatedEntryLimit: 72,
       atlasLimit: 10,
@@ -373,6 +417,8 @@ export function useItemBrowser(
 
   const clearBrowserPageState = () => {
     pageCache.clear();
+    pageRequestInFlight.clear();
+    pageRevalidationInFlight.clear();
     pagePresentationReady.clear();
     pagePresentationWarmInFlight.clear();
   };
@@ -472,7 +518,7 @@ export function useItemBrowser(
       ...requestParams,
       page: normalized.page,
     });
-    pageCache.set(cacheKey, normalized);
+    setSharedBrowserPageCache(cacheKey, normalized);
     mods.value = response.mods;
     persistDefaultPage(requestParams, normalized, Promise.resolve(`${response.manifest.runtimeCacheKey ?? response.manifest.sourceSignature ?? ''}`.trim() || null));
     applyBrowserResponse(normalized, requestId, cacheKey);
@@ -551,7 +597,7 @@ export function useItemBrowser(
         buildPersistentBrowserPageKey(activeSignature, requestParams),
       );
       if (persistent) {
-        pageCache.set(cacheKey, persistent);
+        setSharedBrowserPageCache(cacheKey, persistent);
         applyBrowserResponse(persistent, requestId, cacheKey);
         return;
       }
@@ -559,7 +605,7 @@ export function useItemBrowser(
       const refreshed = await loadDefaultPage(requestParams, {
         signaturePromise: Promise.resolve(activeSignature),
       });
-      pageCache.set(cacheKey, refreshed);
+      setSharedBrowserPageCache(cacheKey, refreshed);
       applyBrowserResponse(refreshed, requestId, cacheKey);
     })().finally(() => {
       pageRevalidationInFlight.delete(cacheKey);
@@ -608,7 +654,7 @@ export function useItemBrowser(
       if (!hasActiveSearch()) {
         const persistent = await readPersistentDefaultPage(requestParams);
         if (persistent) {
-          pageCache.set(cacheKey, persistent.page);
+          setSharedBrowserPageCache(cacheKey, persistent.page);
           if (hadVisibleEntries) {
             await waitForBrowserPagePresentation(cacheKey, persistent.page, 260);
           }
@@ -633,14 +679,14 @@ export function useItemBrowser(
         ...requestParams,
         page: normalized.page,
       });
-      pageCache.set(normalizedCacheKey, normalized);
+      setSharedBrowserPageCache(normalizedCacheKey, normalized);
       if (hadVisibleEntries) {
         await waitForBrowserPagePresentation(normalizedCacheKey, normalized, 260);
       }
       applyBrowserResponse(normalized, requestId, normalizedCacheKey);
     } catch (error) {
       console.error('Failed to load items:', error);
-      loadError.value = '????????????????????';
+      loadError.value = '\u52a0\u8f7d\u7269\u54c1\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u8fde\u63a5\u540e\u91cd\u8bd5';
       if (!hadVisibleEntries) {
         browserEntries.value = [];
         items.value = [];
@@ -677,7 +723,7 @@ export function useItemBrowser(
         } catch (error) {
           console.error('Failed to load mods:', error);
           mods.value = [];
-          modsLoadError.value = '????????????????????';
+          modsLoadError.value = '\u52a0\u8f7d\u6a21\u7ec4\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u8fde\u63a5\u540e\u91cd\u8bd5';
         }
         return;
       }
@@ -688,7 +734,7 @@ export function useItemBrowser(
 
       if (persistent) {
         const signaturePromise = resolvePublishSignature();
-        pageCache.set(cacheKey, persistent.page);
+        setSharedBrowserPageCache(cacheKey, persistent.page);
         applyBrowserResponse(persistent.page, requestId, cacheKey);
         markInitialHomeBootstrapDone('persistent-cache');
         const modsPromise = api.getMods()
@@ -698,7 +744,7 @@ export function useItemBrowser(
           .catch((error) => {
             console.error('Failed to load mods:', error);
             mods.value = [];
-            modsLoadError.value = '????????????????????';
+            modsLoadError.value = '\u52a0\u8f7d\u6a21\u7ec4\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u8fde\u63a5\u540e\u91cd\u8bd5';
           })
           .finally(() => {
             modsLoading.value = false;
@@ -736,7 +782,7 @@ export function useItemBrowser(
         ...requestParams,
         page: normalized.page,
       });
-      pageCache.set(normalizedCacheKey, normalized);
+      setSharedBrowserPageCache(normalizedCacheKey, normalized);
       applyBrowserResponse(normalized, requestId, normalizedCacheKey);
       if (requestParams.page === 1 && !requestParams.search?.trim() && requestParams.expandedGroups.length === 0) {
         markInitialHomeBootstrapDone('network-page-pack');
@@ -747,18 +793,18 @@ export function useItemBrowser(
       } catch (error) {
         console.error('Failed to load mods:', error);
         mods.value = [];
-        modsLoadError.value = '????????????????????';
+        modsLoadError.value = '\u52a0\u8f7d\u6a21\u7ec4\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u8fde\u63a5\u540e\u91cd\u8bd5';
       }
     } catch (error) {
       console.error('Failed to load initial home state:', error);
       mods.value = [];
-      modsLoadError.value = '????????????????????';
+      modsLoadError.value = '\u52a0\u8f7d\u6a21\u7ec4\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u8fde\u63a5\u540e\u91cd\u8bd5';
       browserEntries.value = [];
       items.value = [];
       currentPageAtlas.value = null;
       totalItems.value = 0;
       totalPages.value = 0;
-      loadError.value = '????????????????????';
+      loadError.value = '\u52a0\u8f7d\u7269\u54c1\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u8fde\u63a5\u540e\u91cd\u8bd5';
     } finally {
       if (requestId === loadItemsRequestId) {
         loading.value = false;
@@ -816,7 +862,7 @@ export function useItemBrowser(
       const normalized = hasActiveSearch()
         ? await loadSearchPage(requestParams)
         : await loadDefaultPage(requestParams, { signaturePromise });
-      pageCache.set(cacheKey, normalized);
+      setSharedBrowserPageCache(cacheKey, normalized);
       void ensureBrowserPagePresentationWarm(cacheKey, normalized, { animatedEntryLimit: 40, atlasLimit: 6 });
     } catch {
       // best-effort prefetch only
@@ -863,10 +909,10 @@ export function useItemBrowser(
     resetPerfTimeline();
     initialHomeBootstrapMarked = false;
     firstBrowserTileVisibleMarked = false;
+    allowMeasuredPageCapacity = true;
     await nextTick();
     pageSize.value = calculatePageSize();
     await loadInitialHomeState();
-    allowMeasuredPageCapacity = true;
   });
 
   onUnmounted(() => {
@@ -901,5 +947,6 @@ export function useItemBrowser(
     changePage,
     prefetchItemsPage,
     getCachedItemsPage,
+    clearCachedPages: clearBrowserPageState,
   };
 }

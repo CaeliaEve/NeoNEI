@@ -135,7 +135,10 @@ function selectMaterial(materialId: string) {
 
 function openItem(itemId: string) {
   playClick();
-  void router.push(`/recipe/${itemId}`);
+  void router.push({
+    name: 'recipe',
+    params: { itemId },
+  });
 }
 
 onMounted(() => {

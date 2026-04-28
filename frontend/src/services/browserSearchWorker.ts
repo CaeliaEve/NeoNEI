@@ -66,6 +66,21 @@ function resetWorkerState(nextRuntimeCacheKey: string): void {
   readyMarkIssuedForRuntime = false;
 }
 
+export function resetBrowserSearchWorker(): void {
+  if (worker) {
+    worker.terminate();
+    worker = null;
+  }
+  rejectPendingRequests(new Error("Browser search worker was manually reset"));
+  activeRuntimeCacheKey = null;
+  activePack = null;
+  searchWorkerStage = "empty";
+  warmInitPromise = null;
+  fullInitPromise = null;
+  backgroundFullLoadQueued = false;
+  readyMarkIssuedForRuntime = false;
+}
+
 function getWorker(): Worker {
   if (worker) {
     return worker;

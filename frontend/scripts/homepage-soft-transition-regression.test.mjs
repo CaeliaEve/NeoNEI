@@ -57,8 +57,23 @@ test('homepage only shows the full blocking loader on true cold starts', () => {
     'homepage should only replace the grid with an error state when no prior content is available',
   );
   assert.equal(
-    homePageSource.includes('v-if="transitioning"'),
+    homePageSource.includes('const showTransitionOverlay = ref(false);'),
+    true,
+    'homepage should keep the in-grid transition hint behind a dedicated delayed-visibility state',
+  );
+  assert.equal(
+    homePageSource.includes('transitionOverlayTimer = window.setTimeout(() => {\n      showTransitionOverlay.value = true;\n      transitionOverlayTimer = null;\n    }, TRANSITION_OVERLAY_DELAY_MS);'),
+    true,
+    'short-lived warm-page flips should not flash the transition hint before the delay expires',
+  );
+  assert.equal(
+    homePageSource.includes('v-if="showTransitionOverlay"'),
     true,
     'homepage should render a lightweight in-grid transition indicator during warm page flips',
+  );
+  assert.equal(
+    homePageSource.includes('正在切换到第 {{ currentPage }} 页...'),
+    true,
+    'homepage should describe warm-page flips as a neutral page switch instead of a resource preheat warning',
   );
 });

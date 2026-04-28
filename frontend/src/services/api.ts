@@ -36,7 +36,10 @@ const recipeBootstrapSearchPackInFlight = new Map<string, Promise<PublishedRecip
 const browserSearchShardCache = new Map<string, BrowserSearchPackResponse>();
 const browserSearchShardInFlight = new Map<string, Promise<BrowserSearchPackResponse | null>>();
 const uiPayloadCache = new Map<string, RecipeUiPayload>();
-const uiPayloadInFlight = new Map<string, Promise<RecipeUiPayload>>();
+const uiPayloadInFlight = new Map<string, Promise<RecipeUiPayload | null>>();
+const missingUiPayloadCache = new Set<string>();
+const publishedJsonValueCache = new Map<string, unknown>();
+const publishedJsonInFlight = new Map<string, Promise<unknown>>();
 let publishManifestCache: PublicRuntimeManifest | null = null;
 let publishManifestInFlight: Promise<PublicRuntimeManifest> | null = null;
 let ecosystemOverviewCache: EcosystemOverview | null = null;
@@ -46,7 +49,12 @@ const CACHE_LIMITS = {
   itemDetail: 10000,
   indexedCrafting: 3000,
   indexedUsage: 3000,
-  indexedSummary: 3000
+  indexedSummary: 3000,
+  recipeBootstrap: 512,
+  recipeBootstrapShard: 512,
+  recipeBootstrapSearchPack: 96,
+  uiPayload: 256,
+  publishedJson: 96,
 } as const;
 
 function getRuntimeCacheSignature(manifest: Pick<PublicRuntimeManifest, 'runtimeCacheKey' | 'sourceSignature'> | null | undefined): string | null {
@@ -70,6 +78,15 @@ function setCacheWithLimit<K, V>(cache: Map<K, V>, key: K, value: V, limit: numb
       cache.delete(oldest);
     }
   }
+}
+
+function isHttpNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') {
+    return false;
+  }
+
+  const response = (error as { response?: { status?: number } }).response;
+  return Number(response?.status ?? 0) === 404;
 }
 
 function buildRuntimePayloadCacheKey(
@@ -105,6 +122,27 @@ function isPublishStaticFastPathDisabled(): boolean {
   return false;
 }
 
+function buildPublishedAssetUrl(assetPath: string): string {
+  const normalizedPath = `${assetPath ?? ''}`.trim();
+  if (!normalizedPath) {
+    throw new Error('Missing publish asset path');
+  }
+
+  return /^https?:\/\//i.test(normalizedPath)
+    ? normalizedPath
+    : `${getBackendOrigin()}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`;
+}
+
+function isPublishedJsonWarm(assetPath: string | null | undefined): boolean {
+  const normalizedPath = `${assetPath ?? ''}`.trim();
+  if (!normalizedPath) {
+    return false;
+  }
+
+  const url = buildPublishedAssetUrl(normalizedPath);
+  return publishedJsonValueCache.has(url) || publishedJsonInFlight.has(url);
+}
+
 async function fetchPublishedJson<T>(assetPath: string): Promise<T> {
   if (isPublishStaticFastPathDisabled()) {
     throw new Error('Static publish fast path disabled');
@@ -114,14 +152,30 @@ async function fetchPublishedJson<T>(assetPath: string): Promise<T> {
     throw new Error('Missing publish asset path');
   }
 
-  const url = /^https?:\/\//i.test(normalizedPath)
-    ? normalizedPath
-    : `${getBackendOrigin()}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Published asset request failed (${response.status}) for ${normalizedPath}`);
+  const url = buildPublishedAssetUrl(normalizedPath);
+  if (publishedJsonValueCache.has(url)) {
+    return publishedJsonValueCache.get(url) as T;
   }
-  return response.json() as Promise<T>;
+  const existingRequest = publishedJsonInFlight.get(url);
+  if (existingRequest) {
+    return existingRequest as Promise<T>;
+  }
+
+  const request = fetch(url)
+    .then(async (response) => {
+      if (!response.ok) {
+        throw new Error(`Published asset request failed (${response.status}) for ${normalizedPath}`);
+      }
+      const payload = await response.json();
+      setCacheWithLimit(publishedJsonValueCache, url, payload, CACHE_LIMITS.publishedJson);
+      return payload;
+    })
+    .finally(() => {
+      publishedJsonInFlight.delete(url);
+    });
+
+  publishedJsonInFlight.set(url, request);
+  return request as Promise<T>;
 }
 
 async function resolveRuntimeSignature(): Promise<string | null> {
@@ -374,6 +428,16 @@ export interface BrowserPagePackResponse extends PaginatedResponse<BrowserGridEn
   windowLength?: number;
 }
 
+type PersistentBrowserPageCacheRecord = {
+  data: BrowserGridEntry[];
+  items: Item[];
+  atlas: PageAtlasResult | null;
+  mediaManifest?: PageRichMediaManifest | null;
+  total: number;
+  totalPages: number;
+  page: number;
+};
+
 export interface HomeBootstrapResponse {
   manifest: PublicRuntimeManifest;
   mods: Mod[];
@@ -448,6 +512,57 @@ function deriveBrowserPagePackFromWindow(
   };
 }
 
+function normalizeExpandedGroups(groups?: string[]): string[] {
+  return Array.from(
+    new Set(
+      (groups ?? [])
+        .map((entry) => `${entry ?? ''}`.trim())
+        .filter(Boolean),
+    ),
+  ).sort();
+}
+
+function buildPersistentBrowserPageKey(
+  signature: string,
+  params: {
+    page: number;
+    pageSize: number;
+    search?: string;
+    modId?: string;
+    expandedGroups?: string[];
+    slotSize?: number;
+  },
+): string {
+  return JSON.stringify({
+    type: 'browser-page-pack',
+    version: 1,
+    signature,
+    page: params.page,
+    pageSize: params.pageSize,
+    search: params.search?.trim() || '',
+    modId: params.modId || 'all',
+    expandedGroups: normalizeExpandedGroups(params.expandedGroups),
+    slotSize: params.slotSize,
+  });
+}
+
+function collectDisplayItemsFromBrowserEntries(entries: BrowserGridEntry[]): Item[] {
+  const ordered: Item[] = [];
+  const seen = new Set<string>();
+
+  for (const entry of entries) {
+    const item = entry.kind === 'item' ? entry.item : entry.group.representative;
+    const itemId = `${item?.itemId ?? ''}`.trim();
+    if (!item || !itemId || seen.has(itemId)) {
+      continue;
+    }
+    seen.add(itemId);
+    ordered.push(item);
+  }
+
+  return ordered;
+}
+
 function resolvePublishedWindowPath(
   entries: PublishBundleWindowPathEntry[] | undefined,
   slotSize: number | undefined,
@@ -461,30 +576,60 @@ function resolvePublishedWindowPath(
   const normalizedSlotSize = Math.max(1, Math.floor(Number(slotSize) || 0));
   const startIndex = (Math.max(1, Math.floor(requestedPage)) - 1) * Math.max(1, Math.floor(requestedPageSize));
   const endIndex = startIndex + Math.max(1, Math.floor(requestedPageSize));
-  const candidates = entries.filter((entry) => entry.scope === 'all');
-  const exactCoverage = candidates.find((entry) =>
-    entry.slotSize === normalizedSlotSize
+  const candidates = entries.filter((entry) =>
+    entry.scope === 'all'
     && startIndex >= Math.max(0, Math.floor(entry.offset ?? 0))
     && endIndex <= Math.max(0, Math.floor(entry.offset ?? 0)) + Math.max(0, Math.floor(entry.length ?? 0)),
   );
-  if (exactCoverage?.path) {
-    return exactCoverage.path;
+  if (candidates.length <= 0) {
+    return null;
   }
 
-  const nearest = candidates
-    .filter((entry) =>
-      startIndex >= Math.max(0, Math.floor(entry.offset ?? 0))
-      && endIndex <= Math.max(0, Math.floor(entry.offset ?? 0)) + Math.max(0, Math.floor(entry.length ?? 0)),
-    )
-    .slice()
-    .sort((left, right) => {
-      const distanceDelta = Math.abs(left.slotSize - normalizedSlotSize) - Math.abs(right.slotSize - normalizedSlotSize);
-      if (distanceDelta !== 0) {
-        return distanceDelta;
-      }
-      return left.slotSize - right.slotSize;
-    })[0];
-  return nearest?.path ?? null;
+  const pickBestCoverage = (coverageEntries: PublishBundleWindowPathEntry[]): PublishBundleWindowPathEntry | null => {
+    if (coverageEntries.length <= 0) {
+      return null;
+    }
+    return coverageEntries
+      .slice()
+      .sort((left, right) => {
+        const warmDelta = Number(isPublishedJsonWarm(right.path)) - Number(isPublishedJsonWarm(left.path));
+        if (warmDelta !== 0) {
+          return warmDelta;
+        }
+
+        const slotDelta = Math.abs(left.slotSize - normalizedSlotSize) - Math.abs(right.slotSize - normalizedSlotSize);
+        if (slotDelta !== 0) {
+          return slotDelta;
+        }
+
+        const leftTrailingSlack = Math.max(
+          0,
+          Math.floor(left.offset ?? 0) + Math.floor(left.length ?? 0) - endIndex,
+        );
+        const rightTrailingSlack = Math.max(
+          0,
+          Math.floor(right.offset ?? 0) + Math.floor(right.length ?? 0) - endIndex,
+        );
+        const trailingSlackDelta = rightTrailingSlack - leftTrailingSlack;
+        if (trailingSlackDelta !== 0) {
+          return trailingSlackDelta;
+        }
+
+        const leftLeadingSlack = Math.max(0, startIndex - Math.floor(left.offset ?? 0));
+        const rightLeadingSlack = Math.max(0, startIndex - Math.floor(right.offset ?? 0));
+        const leadingSlackDelta = leftLeadingSlack - rightLeadingSlack;
+        if (leadingSlackDelta !== 0) {
+          return leadingSlackDelta;
+        }
+
+        return Math.floor(right.offset ?? 0) - Math.floor(left.offset ?? 0);
+      })[0] ?? null;
+  };
+
+  const exactSlotCoverage = candidates.filter((entry) => entry.slotSize === normalizedSlotSize);
+  return pickBestCoverage(exactSlotCoverage)?.path
+    ?? pickBestCoverage(candidates)?.path
+    ?? null;
 }
 
 function resolvePublishedRecipeBootstrapPath(
@@ -1374,7 +1519,12 @@ async function getPublishedRecipeBootstrapSearchPack(
       { itemId: normalizedItemId, tab },
     );
     if (persistent) {
-      recipeBootstrapSearchPackCache.set(cacheKey, persistent);
+      setCacheWithLimit(
+        recipeBootstrapSearchPackCache,
+        cacheKey,
+        persistent,
+        CACHE_LIMITS.recipeBootstrapSearchPack,
+      );
       return persistent;
     }
 
@@ -1390,7 +1540,12 @@ async function getPublishedRecipeBootstrapSearchPack(
 
     try {
       const published = await fetchPublishedJson<PublishedRecipeBootstrapSearchPack>(staticPath);
-      recipeBootstrapSearchPackCache.set(cacheKey, published);
+      setCacheWithLimit(
+        recipeBootstrapSearchPackCache,
+        cacheKey,
+        published,
+        CACHE_LIMITS.recipeBootstrapSearchPack,
+      );
       persistRuntimePayload('recipe-bootstrap-search-pack', { itemId: normalizedItemId, tab }, published);
       return published;
     } catch {
@@ -1405,6 +1560,52 @@ async function getPublishedRecipeBootstrapSearchPack(
 }
 
 export const api = {
+  trimPreheatRuntimeCaches(): void {
+    itemDetailCache.clear();
+    itemDetailInFlight.clear();
+    recipeBootstrapCache.clear();
+    recipeBootstrapInFlight.clear();
+    recipeBootstrapShardCache.clear();
+    recipeBootstrapShardInFlight.clear();
+    recipeBootstrapSearchPackCache.clear();
+    recipeBootstrapSearchPackInFlight.clear();
+    browserSearchShardCache.clear();
+    browserSearchShardInFlight.clear();
+    uiPayloadCache.clear();
+    uiPayloadInFlight.clear();
+    missingUiPayloadCache.clear();
+    publishedJsonValueCache.clear();
+    publishedJsonInFlight.clear();
+  },
+
+  resetRuntimeCaches(): void {
+    itemDetailCache.clear();
+    indexedCraftingCache.clear();
+    indexedUsageCache.clear();
+    indexedSummaryCache.clear();
+    itemDetailInFlight.clear();
+    indexedCraftingInFlight.clear();
+    indexedUsageInFlight.clear();
+    indexedSummaryInFlight.clear();
+    recipeBootstrapCache.clear();
+    recipeBootstrapInFlight.clear();
+    recipeBootstrapShardCache.clear();
+    recipeBootstrapShardInFlight.clear();
+    recipeBootstrapSearchPackCache.clear();
+    recipeBootstrapSearchPackInFlight.clear();
+    browserSearchShardCache.clear();
+    browserSearchShardInFlight.clear();
+    uiPayloadCache.clear();
+    uiPayloadInFlight.clear();
+    missingUiPayloadCache.clear();
+    publishedJsonValueCache.clear();
+    publishedJsonInFlight.clear();
+    publishManifestCache = null;
+    publishManifestInFlight = null;
+    ecosystemOverviewCache = null;
+    ecosystemOverviewInFlight = null;
+  },
+
   async getPublishManifest(): Promise<PublicRuntimeManifest> {
     if (publishManifestCache) {
       return publishManifestCache;
@@ -1551,6 +1752,37 @@ export const api = {
       },
     });
     return response.data;
+  },
+
+  async primeDefaultBrowserPagePack(params: {
+    page: number;
+    pageSize: number;
+    slotSize?: number;
+  }): Promise<BrowserPagePackResponse> {
+    const normalized = {
+      page: Math.max(1, Math.floor(params.page)),
+      pageSize: Math.max(1, Math.floor(params.pageSize)),
+      slotSize: params.slotSize,
+    };
+    const response = await api.getBrowserPagePack(normalized);
+    const signature = await resolveRuntimeSignature();
+    if (signature) {
+      primeRuntimeCacheSignature(signature);
+      const payload: PersistentBrowserPageCacheRecord = {
+        data: response.data,
+        items: collectDisplayItemsFromBrowserEntries(response.data),
+        atlas: response.atlas ?? null,
+        mediaManifest: response.mediaManifest ?? null,
+        total: response.total,
+        totalPages: response.totalPages,
+        page: response.page,
+      };
+      await writePersistentRuntimeCache(
+        buildPersistentBrowserPageKey(signature, normalized),
+        payload,
+      );
+    }
+    return response;
   },
 
   async getBrowserSearchPack(): Promise<BrowserSearchPackResponse> {
@@ -1832,10 +2064,13 @@ export const api = {
     return response.data;
   },
 
-  async getRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload> {
+  async getOptionalRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload | null> {
     const cached = uiPayloadCache.get(recipeId);
     if (cached) {
       return cached;
+    }
+    if (missingUiPayloadCache.has(recipeId)) {
+      return null;
     }
     const existingRequest = uiPayloadInFlight.get(recipeId);
     if (existingRequest) {
@@ -1847,20 +2082,37 @@ export const api = {
         { recipeId },
       );
       if (persistent) {
-        uiPayloadCache.set(recipeId, persistent);
+        setCacheWithLimit(uiPayloadCache, recipeId, persistent, CACHE_LIMITS.uiPayload);
         return persistent;
       }
-      const response = await http.get('/render-contract/ui-payload', {
-        params: { recipeId },
-      });
-      uiPayloadCache.set(recipeId, response.data);
-      persistRuntimePayload('recipe-ui-payload', { recipeId }, response.data);
-      return response.data;
+      try {
+        const response = await http.get('/render-contract/ui-payload', {
+          params: { recipeId },
+        });
+        missingUiPayloadCache.delete(recipeId);
+        setCacheWithLimit(uiPayloadCache, recipeId, response.data, CACHE_LIMITS.uiPayload);
+        persistRuntimePayload('recipe-ui-payload', { recipeId }, response.data);
+        return response.data;
+      } catch (error) {
+        if (isHttpNotFoundError(error)) {
+          missingUiPayloadCache.add(recipeId);
+          return null;
+        }
+        throw error;
+      }
     })().finally(() => {
       uiPayloadInFlight.delete(recipeId);
     });
     uiPayloadInFlight.set(recipeId, request);
     return request;
+  },
+
+  async getRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload> {
+    const payload = await api.getOptionalRecipeUiPayload(recipeId);
+    if (!payload) {
+      throw new Error(`Missing recipe UI payload for ${recipeId}`);
+    }
+    return payload;
   },
 
   async getRecipeBootstrap(itemId: string): Promise<RecipeBootstrapPayload> {
@@ -1878,25 +2130,25 @@ export const api = {
         { itemId },
       );
       if (persistent) {
-        setCacheWithLimit(recipeBootstrapCache, itemId, persistent, CACHE_LIMITS.indexedSummary);
+        setCacheWithLimit(recipeBootstrapCache, itemId, persistent, CACHE_LIMITS.recipeBootstrap);
         return persistent;
       }
 
       const manifest = await api.getPublishManifest();
       const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap');
-      if (staticPath) {
-        try {
-          const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
-          setCacheWithLimit(recipeBootstrapCache, itemId, published, CACHE_LIMITS.indexedSummary);
-          persistRuntimePayload('recipe-bootstrap', { itemId }, published);
-          return published;
+        if (staticPath) {
+          try {
+            const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
+            setCacheWithLimit(recipeBootstrapCache, itemId, published, CACHE_LIMITS.recipeBootstrap);
+            persistRuntimePayload('recipe-bootstrap', { itemId }, published);
+            return published;
         } catch {
           // Fall back to the API route when the static publish bundle is unavailable.
         }
       }
 
       const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}`);
-      setCacheWithLimit(recipeBootstrapCache, itemId, response.data, CACHE_LIMITS.indexedSummary);
+      setCacheWithLimit(recipeBootstrapCache, itemId, response.data, CACHE_LIMITS.recipeBootstrap);
       persistRuntimePayload('recipe-bootstrap', { itemId }, response.data);
       return response.data;
     })().finally(() => {
@@ -1921,25 +2173,25 @@ export const api = {
         { itemId },
       );
       if (persistent) {
-        setCacheWithLimit(recipeBootstrapShardCache, itemId, persistent, CACHE_LIMITS.indexedSummary);
+        setCacheWithLimit(recipeBootstrapShardCache, itemId, persistent, CACHE_LIMITS.recipeBootstrapShard);
         return persistent;
       }
 
       const manifest = await api.getPublishManifest();
       const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'shard');
-      if (staticPath) {
-        try {
-          const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
-          setCacheWithLimit(recipeBootstrapShardCache, itemId, published, CACHE_LIMITS.indexedSummary);
-          persistRuntimePayload('recipe-bootstrap-shard', { itemId }, published);
-          return published;
+        if (staticPath) {
+          try {
+            const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
+            setCacheWithLimit(recipeBootstrapShardCache, itemId, published, CACHE_LIMITS.recipeBootstrapShard);
+            persistRuntimePayload('recipe-bootstrap-shard', { itemId }, published);
+            return published;
         } catch {
           // Fall back to the API route when the static publish bundle is unavailable.
         }
       }
 
       const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/shard`);
-      setCacheWithLimit(recipeBootstrapShardCache, itemId, response.data, CACHE_LIMITS.indexedSummary);
+      setCacheWithLimit(recipeBootstrapShardCache, itemId, response.data, CACHE_LIMITS.recipeBootstrapShard);
       persistRuntimePayload('recipe-bootstrap-shard', { itemId }, response.data);
       return response.data;
     })().finally(() => {

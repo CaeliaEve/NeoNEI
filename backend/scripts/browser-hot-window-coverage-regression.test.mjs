@@ -19,9 +19,9 @@ test('compiler defaults expand browser hot-window and search hot-shard coverage'
     'compiler should prebuild more hot atlas pages for the browser surface',
   );
   assert.equal(
-    compilerSource.includes('windowCount: options.publishHotPayloads?.windowCount ?? 10,'),
+    compilerSource.includes('windowCount: options.publishHotPayloads?.windowCount ?? 48,'),
     true,
-    'compiler should materialize a wider hot-page window ring by default',
+    'compiler should materialize a much wider hot-page window ring by default',
   );
   assert.equal(
     compilerSource.includes('windowStride: options.publishHotPayloads?.windowStride ?? 64,'),
@@ -37,14 +37,14 @@ test('compiler defaults expand browser hot-window and search hot-shard coverage'
 
 test('publish payload materializer keeps standalone defaults aligned with the expanded hot ring', () => {
   assert.equal(
-    materializerSource.includes("export const PUBLISH_PAYLOAD_REVISION = '2026-04-28-publish-static-bundle-v8';"),
+    materializerSource.includes("export const PUBLISH_PAYLOAD_REVISION = '2026-04-28-publish-static-bundle-v9';"),
     true,
     'publish payload revision should advance when the bundle hot-window layout changes',
   );
   assert.equal(
-    materializerSource.includes('windowCount: Math.max(1, Math.floor(options.publishHotPayloads?.windowCount ?? 10)),'),
+    materializerSource.includes('windowCount: Math.max(1, Math.floor(options.publishHotPayloads?.windowCount ?? 48)),'),
     true,
-    'materializer should keep the wider hot-window count as the standalone default',
+    'materializer should keep the much wider hot-window count as the standalone default',
   );
   assert.equal(
     materializerSource.includes('?? Math.max(48, Math.floor((options.publishHotPayloads?.firstPageSize ?? 256) / 4)),'),

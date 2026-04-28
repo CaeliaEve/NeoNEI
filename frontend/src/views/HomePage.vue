@@ -21,7 +21,9 @@ import {
   type PageAtlasResult,
 } from "../services/pageAtlas";
 import ItemTooltip from "../components/ItemTooltip.vue";
+import RecipeDisplayRouter from "../components/RecipeDisplayRouter.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
+import { useSitePreheater } from "../composables/useSitePreheater";
 import { useSound } from "../services/sound.service";
 import { useRecipeViewer } from "../composables/useRecipeViewer";
 import { resolveRecipePresentationProfile } from "../services/uiTypeMapping";
@@ -35,9 +37,6 @@ const PatternGroup = defineAsyncComponent(
 );
 const ItemCard = defineAsyncComponent(() => import("../components/ItemCard.vue"));
 const HomeCanvasGrid = defineAsyncComponent(() => import("../components/HomeCanvasGrid.vue"));
-const RecipeDisplayRouter = defineAsyncComponent(
-  () => import("../components/RecipeDisplayRouter.vue"),
-);
 const MachineTypeIcons = defineAsyncComponent(
   () => import("../components/MachineTypeIcons.vue"),
 );
@@ -82,18 +81,21 @@ const {
   warmSearchIndex,
   changePage,
   prefetchItemsPage,
+  clearCachedPages,
 } = useItemBrowser(itemSize, {
   measureVisiblePageCapacity: () => measureGridCapacityRaw(),
 });
 let itemGridResizeObserver: ResizeObserver | null = null;
 let neighborPrefetchTimer: number | null = null;
 let neighborPrefetchIdleHandle: number | null = null;
+let transitionOverlayTimer: number | null = null;
 const BROWSER_PREFETCH_FORWARD_RADIUS = 4;
 const BROWSER_PREFETCH_BACKWARD_RADIUS = 2;
-const browserPrefetchDirection = ref<1 | -1 | 0>(0);
+const TRANSITION_OVERLAY_DELAY_MS = 140;
 const currentGroupId = ref<string | undefined>(undefined);
 const currentGroupName = ref<string>('');
 const latestCreatedPatternId = ref<string | undefined>(undefined);
+const showTransitionOverlay = ref(false);
 
 // View history cache persisted in localStorage.
 const loadViewHistory = () => {
@@ -154,6 +156,53 @@ const clearViewHistory = () => {
   saveViewHistory();
 };
 
+const preheatHistoryItems = computed(() =>
+  viewHistory.value.map((entry) => ({ itemId: entry.itemId })),
+);
+
+const formatCacheSize = (bytes: number) => {
+  const normalized = Math.max(0, Number(bytes) || 0);
+  if (normalized < 1024) return `${normalized} B`;
+  if (normalized < 1024 * 1024) return `${(normalized / 1024).toFixed(1)} KB`;
+  if (normalized < 1024 * 1024 * 1024) return `${(normalized / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(normalized / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+};
+
+const formatPreheatModeLabel = (mode: string | null | undefined) => {
+  if (mode === "quick") return "快速预热";
+  if (mode === "deep") return "深度预热";
+  if (mode === "full") return "全站预热";
+  return "预热";
+};
+
+const {
+  running: sitePreheatRunning,
+  stopping: sitePreheatStopping,
+  currentPhase: sitePreheatPhase,
+  statusText: sitePreheatStatus,
+  progressCurrent: sitePreheatProgressCurrent,
+  progressTotal: sitePreheatProgressTotal,
+  progressPercent: sitePreheatProgressPercent,
+  lastCompletedAt: sitePreheatLastCompletedAt,
+  lastCompletedMode: sitePreheatLastCompletedMode,
+  lastError: sitePreheatError,
+  cacheEntryCount: sitePreheatCacheEntryCount,
+  cacheApproxBytes: sitePreheatCacheApproxBytes,
+  recipeCoverageHint: sitePreheatCoverageHint,
+  startPreheat,
+  stopPreheat,
+  clearPreheatCaches,
+} = useSitePreheater({
+  itemSize,
+  pageSize,
+  currentPage,
+  totalPages,
+  totalItems,
+  visibleItems: items,
+  historyItems: preheatHistoryItems,
+  clearCachedPages,
+});
+
 const historyPanelRef = ref<HTMLElement | null>(null);
 const historyPanelWidth = ref(0);
 const historyRows = 2 as const; // 强制固定两行
@@ -210,7 +259,32 @@ onBeforeUnmount(() => {
     (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(neighborPrefetchIdleHandle);
     neighborPrefetchIdleHandle = null;
   }
+  if (transitionOverlayTimer !== null) {
+    clearTimeout(transitionOverlayTimer);
+    transitionOverlayTimer = null;
+  }
 });
+
+watch(
+  transitioning,
+  (active) => {
+    if (transitionOverlayTimer !== null) {
+      clearTimeout(transitionOverlayTimer);
+      transitionOverlayTimer = null;
+    }
+
+    if (!active) {
+      showTransitionOverlay.value = false;
+      return;
+    }
+
+    transitionOverlayTimer = window.setTimeout(() => {
+      showTransitionOverlay.value = true;
+      transitionOverlayTimer = null;
+    }, TRANSITION_OVERLAY_DELAY_MS);
+  },
+  { immediate: true },
+);
 
 watch(currentView, async (view) => {
   if (view === "items") {
@@ -243,50 +317,6 @@ watch(
       syncMeasuredPageSize();
     }
   },
-);
-
-watch(
-  () => [currentPage.value, totalPages.value, currentView.value, currentPageAtlas.value === undefined, searchQuery.value.trim(), browserPrefetchDirection.value] as const,
-  ([page, total, view, atlasPending, activeSearch, direction]) => {
-    if (neighborPrefetchTimer !== null) {
-      clearTimeout(neighborPrefetchTimer);
-      neighborPrefetchTimer = null;
-    }
-    if (neighborPrefetchIdleHandle !== null && typeof window !== "undefined" && "cancelIdleCallback" in window) {
-      (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(neighborPrefetchIdleHandle);
-      neighborPrefetchIdleHandle = null;
-    }
-
-    if (view !== "items" || atlasPending || total <= 1 || activeSearch) return;
-
-    const candidatePages = collectWrappedPageCandidates(
-      page,
-      total,
-      direction >= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,
-      direction <= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,
-    );
-    neighborPrefetchTimer = window.setTimeout(() => {
-      neighborPrefetchTimer = null;
-      const runPrefetch = () => {
-        for (const candidatePage of candidatePages) {
-          void prefetchItemsPage(candidatePage);
-        }
-      };
-
-      if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-        neighborPrefetchIdleHandle = (window as Window & {
-          requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number;
-        }).requestIdleCallback(() => {
-          neighborPrefetchIdleHandle = null;
-          runPrefetch();
-        }, { timeout: 600 });
-        return;
-      }
-
-      runPrefetch();
-    }, 180);
-  },
-  { immediate: true },
 );
 
 watch(
@@ -364,24 +394,24 @@ const handleRecipePreviewContextMenu = (event: MouseEvent) => {
 const changeItemsPageWrapped = (targetPage: number) => {
   const total = totalPages.value;
   if (total <= 0) return;
+  const resolvedTargetPage = targetPage < 1
+    ? total
+    : targetPage > total
+      ? 1
+      : targetPage;
+  const direction: 1 | -1 | 0 = targetPage < 1
+    ? -1
+    : targetPage > total
+      ? 1
+      : resolvedTargetPage > currentPage.value
+        ? 1
+        : resolvedTargetPage < currentPage.value
+          ? -1
+          : 0;
 
-  if (targetPage < 1) {
-    browserPrefetchDirection.value = -1;
-    void prefetchItemsPage(total);
-    changePage(total);
-    return;
-  }
-
-  if (targetPage > total) {
-    browserPrefetchDirection.value = 1;
-    void prefetchItemsPage(1);
-    changePage(1);
-    return;
-  }
-
-  browserPrefetchDirection.value = targetPage > currentPage.value ? 1 : targetPage < currentPage.value ? -1 : browserPrefetchDirection.value;
-  void prefetchItemsPage(targetPage);
-  changePage(targetPage);
+  void prefetchItemsPage(resolvedTargetPage);
+  changePage(resolvedTargetPage);
+  scheduleNeighborPrefetch(resolvedTargetPage, total, direction);
 };
 
 const collectWrappedPageCandidates = (
@@ -411,6 +441,56 @@ const collectWrappedPageCandidates = (
 
   candidates.delete(normalizedPage);
   return Array.from(candidates).filter((candidate) => candidate >= 1 && candidate <= normalizedTotal);
+};
+
+const scheduleNeighborPrefetch = (
+  page: number,
+  total: number,
+  direction: 1 | -1 | 0,
+) => {
+  if (neighborPrefetchTimer !== null) {
+    clearTimeout(neighborPrefetchTimer);
+    neighborPrefetchTimer = null;
+  }
+  if (neighborPrefetchIdleHandle !== null && typeof window !== "undefined" && "cancelIdleCallback" in window) {
+    (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(neighborPrefetchIdleHandle);
+    neighborPrefetchIdleHandle = null;
+  }
+
+  if (currentView.value !== "items" || total <= 1 || searchQuery.value.trim()) {
+    return;
+  }
+
+  const candidatePages = collectWrappedPageCandidates(
+    page,
+    total,
+    direction >= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,
+    direction <= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,
+  );
+  if (candidatePages.length === 0) {
+    return;
+  }
+
+  neighborPrefetchTimer = window.setTimeout(() => {
+    neighborPrefetchTimer = null;
+    const runPrefetch = () => {
+      for (const candidatePage of candidatePages) {
+        void prefetchItemsPage(candidatePage);
+      }
+    };
+
+    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+      neighborPrefetchIdleHandle = (window as Window & {
+        requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number;
+      }).requestIdleCallback(() => {
+        neighborPrefetchIdleHandle = null;
+        runPrefetch();
+      }, { timeout: 600 });
+      return;
+    }
+
+    runPrefetch();
+  }, 180);
 };
 
 const handleItemsWheel = (event: WheelEvent) => {
@@ -1140,10 +1220,10 @@ const saveSettings = () => {
                 />
 
                 <div
-                  v-if="transitioning"
+                  v-if="showTransitionOverlay"
                   class="pointer-events-none absolute right-3 top-3 z-20 rounded-xl border border-cyan-300/25 bg-slate-950/82 px-3 py-2 text-xs text-cyan-100 shadow-[0_10px_30px_rgba(15,23,42,0.45)] backdrop-blur-md"
                 >
-                  正在预热第 {{ currentPage }} 页资源...
+                  正在切换到第 {{ currentPage }} 页...
                 </div>
 
                 <div
@@ -1275,7 +1355,7 @@ const saveSettings = () => {
         <!-- Gear Menu Dropdown -->
         <div
           v-if="showGearMenu"
-          class="gear-menu absolute bottom-full left-0 mb-3 w-72 surface-glass rounded-xl border border-slate-300/50 shadow-lg overflow-hidden animate-scale-in"
+          class="gear-menu absolute bottom-full left-0 mb-3 w-80 surface-glass rounded-xl border border-slate-300/50 shadow-lg overflow-hidden animate-scale-in"
         >
           <!-- View Toggle -->
           <div class="p-4 border-b border-slate-200/40">
@@ -1340,6 +1420,135 @@ const saveSettings = () => {
             >
               保存设置
             </button>
+          </div>
+
+          <!-- Site Preheat -->
+          <div class="p-4 border-b border-slate-200/40">
+            <div class="flex items-start justify-between gap-3 mb-3">
+              <div>
+                <p class="text-slate-200/60 text-xs uppercase tracking-wider">
+                  全站预热
+                </p>
+                <p class="text-[11px] leading-5 text-slate-300/70 mt-1">
+                  预先缓存浏览分页、搜索索引与热配方入口，尽量把网页翻页体验压到更接近游戏内 NEI。
+                </p>
+              </div>
+              <div
+                class="rounded-lg border border-cyan-400/25 bg-cyan-500/10 px-2 py-1 text-[11px] font-semibold text-cyan-200"
+              >
+                {{ sitePreheatRunning ? "运行中" : "可选" }}
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-2">
+              <button
+                @click="startPreheat('quick')"
+                :disabled="sitePreheatRunning"
+                class="rounded-lg border border-slate-300/25 bg-slate-900/45 px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 hover:border-cyan-400/40 hover:bg-cyan-500/10"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-sm font-semibold text-slate-100">快速预热</span>
+                  <span class="text-[11px] text-cyan-200/90">首屏 / 热页 / 常用入口</span>
+                </div>
+              </button>
+              <button
+                @click="startPreheat('deep')"
+                :disabled="sitePreheatRunning"
+                class="rounded-lg border border-slate-300/25 bg-slate-900/45 px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 hover:border-violet-400/40 hover:bg-violet-500/10"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-sm font-semibold text-slate-100">深度预热</span>
+                  <span class="text-[11px] text-violet-200/90">更多分页 / 热配方 / 全搜索包</span>
+                </div>
+              </button>
+              <button
+                @click="startPreheat('full')"
+                :disabled="sitePreheatRunning"
+                class="rounded-lg border border-slate-300/25 bg-slate-900/45 px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 hover:border-amber-400/40 hover:bg-amber-500/10"
+              >
+                <div class="flex items-center justify-between gap-3">
+                  <span class="text-sm font-semibold text-slate-100">全站预热</span>
+                  <span class="text-[11px] text-amber-200/90">全部浏览分页 + 当前热配方包</span>
+                </div>
+              </button>
+            </div>
+
+            <p class="mt-3 text-[11px] leading-5 text-slate-300/65">
+              {{ sitePreheatCoverageHint }}
+            </p>
+
+            <div class="mt-4 rounded-xl border border-slate-300/20 bg-slate-950/55 p-3">
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <p class="text-sm font-semibold text-slate-100">
+                    {{ sitePreheatPhase }}
+                  </p>
+                  <p class="text-[11px] text-slate-300/70 mt-1">
+                    {{ sitePreheatStatus }}
+                  </p>
+                </div>
+                <div class="text-right">
+                  <p class="text-sm font-bold text-slate-100">
+                    {{ sitePreheatProgressPercent }}%
+                  </p>
+                  <p class="text-[11px] text-slate-400">
+                    {{ sitePreheatProgressCurrent }}/{{ sitePreheatProgressTotal }}
+                  </p>
+                </div>
+              </div>
+
+              <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-800/90">
+                <div
+                  class="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 transition-[width] duration-300"
+                  :style="{ width: `${sitePreheatProgressPercent}%` }"
+                />
+              </div>
+
+              <div class="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-300/70">
+                <div class="rounded-lg border border-slate-300/10 bg-slate-900/35 px-3 py-2">
+                  <p class="text-slate-400">缓存条目</p>
+                  <p class="mt-1 text-sm font-semibold text-slate-100">
+                    {{ sitePreheatCacheEntryCount.toLocaleString() }}
+                  </p>
+                </div>
+                <div class="rounded-lg border border-slate-300/10 bg-slate-900/35 px-3 py-2">
+                  <p class="text-slate-400">估算体积</p>
+                  <p class="mt-1 text-sm font-semibold text-slate-100">
+                    {{ formatCacheSize(sitePreheatCacheApproxBytes) }}
+                  </p>
+                </div>
+              </div>
+
+              <p
+                v-if="sitePreheatLastCompletedAt"
+                class="mt-3 text-[11px] text-emerald-300/80"
+              >
+                最近完成：{{ formatPreheatModeLabel(sitePreheatLastCompletedMode) }} · {{ new Date(sitePreheatLastCompletedAt).toLocaleString() }}
+              </p>
+              <p
+                v-if="sitePreheatError"
+                class="mt-3 text-[11px] text-rose-300/90"
+              >
+                {{ sitePreheatError }}
+              </p>
+
+              <div class="mt-3 flex gap-2">
+                <button
+                  @click="stopPreheat"
+                  :disabled="!sitePreheatRunning"
+                  class="flex-1 rounded-lg bg-amber-500/85 px-3 py-2 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-45 hover:bg-amber-400"
+                >
+                  {{ sitePreheatStopping ? "停止中…" : "停止预热" }}
+                </button>
+                <button
+                  @click="clearPreheatCaches"
+                  :disabled="sitePreheatRunning"
+                  class="flex-1 rounded-lg bg-rose-500/85 px-3 py-2 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-45 hover:bg-rose-400"
+                >
+                  清空预热缓存
+                </button>
+              </div>
+            </div>
           </div>
 
           <!-- Stats & Actions -->

@@ -300,7 +300,8 @@ const goBack = () => {
 const handleItemClick = (clickedItemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => {
   playClick();
   router.push({
-    path: `/recipe/${clickedItemId}`,
+    name: 'recipe',
+    params: { itemId: clickedItemId },
     query: options?.tab
       ? {
           tab: options.tab,
@@ -362,7 +363,10 @@ const handleFastSearchSelect = (clickedItemId: string) => {
   if (!clickedItemId) return;
   playClick();
   clearRecipeSearch();
-  router.push(`/recipe/${clickedItemId}`);
+  router.push({
+    name: 'recipe',
+    params: { itemId: clickedItemId },
+  });
 };
 
 
