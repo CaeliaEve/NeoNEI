@@ -33,6 +33,16 @@ test('browser page transitions keep the previous grid alive while the next page 
     true,
     'hard clears should only happen when no previous page is available to keep on screen',
   );
+  assert.equal(
+    browserSource.includes('await waitForBrowserPagePresentation(cacheKey, cached, 260);'),
+    true,
+    'cached warm-page flips should briefly wait for atlas readiness before swapping away from the previous grid',
+  );
+  assert.equal(
+    browserSource.includes('await waitForBrowserPagePresentation(normalizedCacheKey, normalized, 260);'),
+    true,
+    'network page flips should hold the previous grid until the incoming atlas gets a short warmup window',
+  );
 });
 
 test('homepage only shows the full blocking loader on true cold starts', () => {

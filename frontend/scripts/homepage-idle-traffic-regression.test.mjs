@@ -14,24 +14,24 @@ const itemBrowserSource = fs.readFileSync(
 
 test('homepage prefetch stays idle-scheduled while expanding to a small wrapped hot-page ring', () => {
   assert.equal(
-    homePageSource.includes('const BROWSER_PREFETCH_RADIUS = 2;'),
+    homePageSource.includes('const BROWSER_PREFETCH_FORWARD_RADIUS = 4;'),
     true,
-    'homepage should declare a bounded wrapped prefetch radius instead of unbounded fanout',
+    'homepage should bias the hot ring forward so rapid next-page browsing warms farther ahead',
   );
   assert.equal(
-    homePageSource.includes('collectWrappedPageCandidates(page, total, BROWSER_PREFETCH_RADIUS)'),
+    homePageSource.includes('const BROWSER_PREFETCH_BACKWARD_RADIUS = 2;'),
     true,
-    'homepage should derive nearby wrapped prefetch candidates from the active page',
+    'homepage should still keep the backward ring bounded while spending more budget in the active browsing direction',
   );
   assert.equal(
-    homePageSource.includes('for (let offset = 1; offset <= normalizedRadius; offset += 1)'),
+    homePageSource.includes('collectWrappedPageCandidates(\n      page,\n      total,\n      direction >= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,\n      direction <= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,\n    )'),
     true,
-    'homepage should prefetch a small forward/backward ring instead of only a single neighbor',
+    'homepage should derive wrapped prefetch candidates from the active page plus the latest browsing direction',
   );
   assert.equal(
-    homePageSource.includes('const BROWSER_PREFETCH_RADIUS = 3;'),
-    false,
-    'homepage should keep the hot ring bounded instead of expanding to a larger eager radius by default',
+    homePageSource.includes('void prefetchItemsPage(targetPage);'),
+    true,
+    'homepage should kick the target-page fetch immediately when the user flips pages so the request is already in flight before the next render tick',
   );
   assert.equal(
     homePageSource.includes('requestIdleCallback'),

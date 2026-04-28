@@ -106,6 +106,8 @@ export function useItemBrowser(
   const pageCache = new Map<string, CachedBrowserPage>();
   const pageRequestInFlight = new Map<string, Promise<CachedBrowserPage>>();
   const pageRevalidationInFlight = new Map<string, Promise<void>>();
+  const pagePresentationReady = new Set<string>();
+  const pagePresentationWarmInFlight = new Map<string, Promise<void>>();
   const items = ref<Item[]>([]);
   const browserEntries = ref<BrowserGridEntry[]>([]);
   const mods = ref<Mod[]>([]);
@@ -308,15 +310,90 @@ export function useItemBrowser(
     return request;
   };
 
+  const ensureBrowserPagePresentationWarm = (
+    cacheKey: string,
+    response: CachedBrowserPage,
+    options?: { animatedEntryLimit?: number; atlasLimit?: number },
+  ): Promise<void> => {
+    prewarmCachedBrowserPageMedia(response, options);
+
+    if (pagePresentationReady.has(cacheKey)) {
+      return Promise.resolve();
+    }
+
+    const existing = pagePresentationWarmInFlight.get(cacheKey);
+    if (existing) {
+      return existing;
+    }
+
+    const atlasTasks: Array<Promise<unknown>> = [];
+    if (response.atlas?.atlasUrl) {
+      atlasTasks.push(loadImageAsset(response.atlas.atlasUrl));
+    }
+
+    const animatedAtlasUrls = collectAnimatedAtlasUrls(response).slice(0, Math.max(1, options?.atlasLimit ?? 6));
+    for (const atlasUrl of animatedAtlasUrls) {
+      atlasTasks.push(loadImageAsset(atlasUrl).catch(() => undefined));
+    }
+
+    const request = Promise.allSettled(atlasTasks)
+      .then(() => {
+        pagePresentationReady.add(cacheKey);
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        pagePresentationWarmInFlight.delete(cacheKey);
+      });
+
+    pagePresentationWarmInFlight.set(cacheKey, request);
+    return request;
+  };
+
+  const waitForBrowserPagePresentation = async (
+    cacheKey: string,
+    response: CachedBrowserPage,
+    waitMs: number,
+  ) => {
+    if (!response.atlas?.atlasUrl || waitMs <= 0 || pagePresentationReady.has(cacheKey)) {
+      return;
+    }
+
+    const warmPromise = ensureBrowserPagePresentationWarm(cacheKey, response, {
+      animatedEntryLimit: 72,
+      atlasLimit: 10,
+    });
+
+    await Promise.race([
+      warmPromise,
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, waitMs);
+      }),
+    ]);
+  };
+
+  const clearBrowserPageState = () => {
+    pageCache.clear();
+    pagePresentationReady.clear();
+    pagePresentationWarmInFlight.clear();
+  };
+
   const applyBrowserResponse = (
     response: CachedBrowserPage,
     requestId: number,
+    cacheKey?: string,
   ) => {
     if (requestId !== loadItemsRequestId) {
       return;
     }
 
-    prewarmCachedBrowserPageMedia(response, { animatedEntryLimit: 72, atlasLimit: 10 });
+    if (cacheKey) {
+      void ensureBrowserPagePresentationWarm(cacheKey, response, {
+        animatedEntryLimit: 72,
+        atlasLimit: 10,
+      });
+    } else {
+      prewarmCachedBrowserPageMedia(response, { animatedEntryLimit: 72, atlasLimit: 10 });
+    }
 
     browserEntries.value = response.data;
     items.value = response.items;
@@ -398,7 +475,7 @@ export function useItemBrowser(
     pageCache.set(cacheKey, normalized);
     mods.value = response.mods;
     persistDefaultPage(requestParams, normalized, Promise.resolve(`${response.manifest.runtimeCacheKey ?? response.manifest.sourceSignature ?? ''}`.trim() || null));
-    applyBrowserResponse(normalized, requestId);
+    applyBrowserResponse(normalized, requestId, cacheKey);
     markInitialHomeBootstrapDone('network-home-bootstrap');
   };
 
@@ -475,7 +552,7 @@ export function useItemBrowser(
       );
       if (persistent) {
         pageCache.set(cacheKey, persistent);
-        applyBrowserResponse(persistent, requestId);
+        applyBrowserResponse(persistent, requestId, cacheKey);
         return;
       }
 
@@ -483,7 +560,7 @@ export function useItemBrowser(
         signaturePromise: Promise.resolve(activeSignature),
       });
       pageCache.set(cacheKey, refreshed);
-      applyBrowserResponse(refreshed, requestId);
+      applyBrowserResponse(refreshed, requestId, cacheKey);
     })().finally(() => {
       pageRevalidationInFlight.delete(cacheKey);
     });
@@ -501,9 +578,18 @@ export function useItemBrowser(
     const hadVisibleEntries = browserEntries.value.length > 0 && items.value.length > 0;
 
     if (cached) {
-      loading.value = false;
-      transitioning.value = false;
-      applyBrowserResponse(cached, requestId);
+      if (hadVisibleEntries) {
+        loading.value = false;
+        transitioning.value = true;
+        await waitForBrowserPagePresentation(cacheKey, cached, 260);
+      } else {
+        loading.value = false;
+        transitioning.value = false;
+      }
+      applyBrowserResponse(cached, requestId, cacheKey);
+      if (requestId === loadItemsRequestId) {
+        transitioning.value = false;
+      }
       return;
     }
 
@@ -523,7 +609,10 @@ export function useItemBrowser(
         const persistent = await readPersistentDefaultPage(requestParams);
         if (persistent) {
           pageCache.set(cacheKey, persistent.page);
-          applyBrowserResponse(persistent.page, requestId);
+          if (hadVisibleEntries) {
+            await waitForBrowserPagePresentation(cacheKey, persistent.page, 260);
+          }
+          applyBrowserResponse(persistent.page, requestId, cacheKey);
           loading.value = false;
           void revalidatePersistentDefaultPage(
             requestParams,
@@ -540,14 +629,15 @@ export function useItemBrowser(
         ? await loadSearchPage(requestParams)
         : await loadDefaultPage(requestParams, { signaturePromise });
 
-      pageCache.set(
-        buildPageCacheKey({
-          ...requestParams,
-          page: normalized.page,
-        }),
-        normalized,
-      );
-      applyBrowserResponse(normalized, requestId);
+      const normalizedCacheKey = buildPageCacheKey({
+        ...requestParams,
+        page: normalized.page,
+      });
+      pageCache.set(normalizedCacheKey, normalized);
+      if (hadVisibleEntries) {
+        await waitForBrowserPagePresentation(normalizedCacheKey, normalized, 260);
+      }
+      applyBrowserResponse(normalized, requestId, normalizedCacheKey);
     } catch (error) {
       console.error('Failed to load items:', error);
       loadError.value = '????????????????????';
@@ -580,7 +670,7 @@ export function useItemBrowser(
       const cacheKey = buildPageCacheKey(requestParams);
       const cached = pageCache.get(cacheKey);
       if (cached) {
-        applyBrowserResponse(cached, requestId);
+        applyBrowserResponse(cached, requestId, cacheKey);
         markInitialHomeBootstrapDone('cache');
         try {
           mods.value = await api.getMods();
@@ -599,7 +689,7 @@ export function useItemBrowser(
       if (persistent) {
         const signaturePromise = resolvePublishSignature();
         pageCache.set(cacheKey, persistent.page);
-        applyBrowserResponse(persistent.page, requestId);
+        applyBrowserResponse(persistent.page, requestId, cacheKey);
         markInitialHomeBootstrapDone('persistent-cache');
         const modsPromise = api.getMods()
           .then((loadedMods) => {
@@ -642,14 +732,12 @@ export function useItemBrowser(
         ? await loadSearchPage(requestParams)
         : await loadDefaultPage(requestParams, { signaturePromise });
 
-      pageCache.set(
-        buildPageCacheKey({
-          ...requestParams,
-          page: normalized.page,
-        }),
-        normalized,
-      );
-      applyBrowserResponse(normalized, requestId);
+      const normalizedCacheKey = buildPageCacheKey({
+        ...requestParams,
+        page: normalized.page,
+      });
+      pageCache.set(normalizedCacheKey, normalized);
+      applyBrowserResponse(normalized, requestId, normalizedCacheKey);
       if (requestParams.page === 1 && !requestParams.search?.trim() && requestParams.expandedGroups.length === 0) {
         markInitialHomeBootstrapDone('network-page-pack');
       }
@@ -700,7 +788,7 @@ export function useItemBrowser(
 
   const setExpandedGroups = (groupKeys: string[]) => {
     expandedGroupKeys.value = Array.from(new Set(groupKeys.filter(Boolean)));
-    pageCache.clear();
+    clearBrowserPageState();
     void loadItems();
   };
 
@@ -708,7 +796,7 @@ export function useItemBrowser(
     const normalized = Math.max(20, Math.floor(newSize));
     if (normalized === pageSize.value) return;
     pageSize.value = normalized;
-    pageCache.clear();
+    clearBrowserPageState();
     if (options?.resetPage) {
       currentPage.value = 1;
     }
@@ -729,7 +817,7 @@ export function useItemBrowser(
         ? await loadSearchPage(requestParams)
         : await loadDefaultPage(requestParams, { signaturePromise });
       pageCache.set(cacheKey, normalized);
-      prewarmCachedBrowserPageMedia(normalized, { animatedEntryLimit: 40, atlasLimit: 6 });
+      void ensureBrowserPagePresentationWarm(cacheKey, normalized, { animatedEntryLimit: 40, atlasLimit: 6 });
     } catch {
       // best-effort prefetch only
     }
@@ -763,7 +851,7 @@ export function useItemBrowser(
         return;
       }
       if (slotSizeChanged) {
-        pageCache.clear();
+        clearBrowserPageState();
         void loadItems();
       }
     },

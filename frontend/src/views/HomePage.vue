@@ -88,7 +88,9 @@ const {
 let itemGridResizeObserver: ResizeObserver | null = null;
 let neighborPrefetchTimer: number | null = null;
 let neighborPrefetchIdleHandle: number | null = null;
-const BROWSER_PREFETCH_RADIUS = 2;
+const BROWSER_PREFETCH_FORWARD_RADIUS = 4;
+const BROWSER_PREFETCH_BACKWARD_RADIUS = 2;
+const browserPrefetchDirection = ref<1 | -1 | 0>(0);
 const currentGroupId = ref<string | undefined>(undefined);
 const currentGroupName = ref<string>('');
 const latestCreatedPatternId = ref<string | undefined>(undefined);
@@ -244,8 +246,8 @@ watch(
 );
 
 watch(
-  () => [currentPage.value, totalPages.value, currentView.value, currentPageAtlas.value === undefined, searchQuery.value.trim()] as const,
-  ([page, total, view, atlasPending, activeSearch]) => {
+  () => [currentPage.value, totalPages.value, currentView.value, currentPageAtlas.value === undefined, searchQuery.value.trim(), browserPrefetchDirection.value] as const,
+  ([page, total, view, atlasPending, activeSearch, direction]) => {
     if (neighborPrefetchTimer !== null) {
       clearTimeout(neighborPrefetchTimer);
       neighborPrefetchTimer = null;
@@ -257,7 +259,12 @@ watch(
 
     if (view !== "items" || atlasPending || total <= 1 || activeSearch) return;
 
-    const candidatePages = collectWrappedPageCandidates(page, total, BROWSER_PREFETCH_RADIUS);
+    const candidatePages = collectWrappedPageCandidates(
+      page,
+      total,
+      direction >= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,
+      direction <= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,
+    );
     neighborPrefetchTimer = window.setTimeout(() => {
       neighborPrefetchTimer = null;
       const runPrefetch = () => {
@@ -359,22 +366,34 @@ const changeItemsPageWrapped = (targetPage: number) => {
   if (total <= 0) return;
 
   if (targetPage < 1) {
+    browserPrefetchDirection.value = -1;
+    void prefetchItemsPage(total);
     changePage(total);
     return;
   }
 
   if (targetPage > total) {
+    browserPrefetchDirection.value = 1;
+    void prefetchItemsPage(1);
     changePage(1);
     return;
   }
 
+  browserPrefetchDirection.value = targetPage > currentPage.value ? 1 : targetPage < currentPage.value ? -1 : browserPrefetchDirection.value;
+  void prefetchItemsPage(targetPage);
   changePage(targetPage);
 };
 
-const collectWrappedPageCandidates = (page: number, total: number, radius: number) => {
+const collectWrappedPageCandidates = (
+  page: number,
+  total: number,
+  forwardRadius: number,
+  backwardRadius: number,
+) => {
   const normalizedTotal = Math.max(0, Math.floor(total));
   const normalizedPage = Math.max(1, Math.floor(page));
-  const normalizedRadius = Math.max(1, Math.floor(radius));
+  const normalizedForwardRadius = Math.max(1, Math.floor(forwardRadius));
+  const normalizedBackwardRadius = Math.max(1, Math.floor(backwardRadius));
   if (normalizedTotal <= 1) {
     return [] as number[];
   }
@@ -382,8 +401,11 @@ const collectWrappedPageCandidates = (page: number, total: number, radius: numbe
   const wrap = (value: number) => ((value - 1 + normalizedTotal) % normalizedTotal) + 1;
   const candidates = new Set<number>();
 
-  for (let offset = 1; offset <= normalizedRadius; offset += 1) {
+  for (let offset = 1; offset <= normalizedForwardRadius; offset += 1) {
     candidates.add(wrap(normalizedPage + offset));
+  }
+
+  for (let offset = 1; offset <= normalizedBackwardRadius; offset += 1) {
     candidates.add(wrap(normalizedPage - offset));
   }
 
