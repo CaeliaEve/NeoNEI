@@ -4,6 +4,7 @@ import zlib from 'zlib';
 import { ACCELERATION_DB_FILE, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from '../config/runtime-paths';
 import { DatabaseManager } from '../models/database';
 import { buildCollapsibleItemAssignments, type CollapsibleItemCandidate } from '../services/gtnh-collapsible-items.service';
+import { buildSyntheticBrowserVariantAssignments, mergeBrowserGroupAssignments } from '../services/browser-variant-grouping.service';
 import { compareGtnhBrowserOrder } from '../services/gtnh-browser-order.service';
 
 type SplitRecipeRecord = {
@@ -134,24 +135,41 @@ async function run(): Promise<void> {
     ),
   );
 
-  const assignments = buildCollapsibleItemAssignments(
-    candidates.map(
-      (row): CollapsibleItemCandidate => ({
-        itemId: row.item_id,
-        modId: row.mod_id,
-        internalName: row.internal_name,
-        localizedName: row.localized_name,
-        damage: Number(row.damage ?? 0),
-        oreDictionaryNames: Array.from(oreMap.get(row.item_id) ?? []),
-      }),
-    ),
+  const browserCandidates = candidates.map(
+    (row): CollapsibleItemCandidate & { sourceOrder?: number | null } => ({
+      itemId: row.item_id,
+      modId: row.mod_id,
+      internalName: row.internal_name,
+      localizedName: row.localized_name,
+      damage: Number(row.damage ?? 0),
+      oreDictionaryNames: Array.from(oreMap.get(row.item_id) ?? []),
+      sourceOrder: sourceOrderMap.get(row.item_id) ?? null,
+    }),
   );
+
+  const curatedAssignments = buildCollapsibleItemAssignments(browserCandidates);
+  const blockedItemIds = new Set(
+    Array.from(curatedAssignments.values())
+      .filter((assignment) => Boolean(assignment.groupKey) && assignment.groupSize > 1)
+      .map((assignment) => assignment.itemId),
+  );
+  const syntheticAssignments = buildSyntheticBrowserVariantAssignments(browserCandidates, { blockedItemIds });
+  const assignments = mergeBrowserGroupAssignments(browserCandidates, curatedAssignments, syntheticAssignments);
+  const candidateByItemId = new Map(browserCandidates.map((candidate) => [candidate.itemId, candidate]));
 
   const insert = db.prepare(`
     INSERT OR REPLACE INTO item_browser_groups (
       item_id, group_key, group_label, group_size, group_sort_order, updated_at
     ) VALUES (
       @item_id, @group_key, @group_label, @group_size, @group_sort_order, CURRENT_TIMESTAMP
+    )
+  `);
+
+  const insertBrowserDefaultEntry = db.prepare(`
+    INSERT OR REPLACE INTO browser_default_entries (
+      entry_order, entry_kind, item_id, mod_id, group_key, group_label, group_size, updated_at
+    ) VALUES (
+      @entry_order, @entry_kind, @item_id, @mod_id, @group_key, @group_label, @group_size, CURRENT_TIMESTAMP
     )
   `);
 
@@ -165,6 +183,7 @@ async function run(): Promise<void> {
 
   const tx = db.transaction(() => {
     db.exec('DELETE FROM item_browser_groups');
+    db.exec('DELETE FROM browser_default_entries');
     for (const assignment of assignments.values()) {
       insert.run({
         item_id: assignment.itemId,
@@ -174,9 +193,59 @@ async function run(): Promise<void> {
         group_sort_order: assignment.groupSortOrder,
       });
     }
+
+    const seenCollapsedGroups = new Set<string>();
+    let entryOrder = 0;
+    for (const candidate of browserCandidates) {
+      const assignment = assignments.get(candidate.itemId);
+      if (!assignment) {
+        continue;
+      }
+
+      if (!assignment.groupKey || assignment.groupSize <= 1) {
+        insertBrowserDefaultEntry.run({
+          entry_order: entryOrder,
+          entry_kind: 'item',
+          item_id: candidate.itemId,
+          mod_id: candidate.modId,
+          group_key: null,
+          group_label: null,
+          group_size: 1,
+        });
+        entryOrder += 1;
+        continue;
+      }
+
+      if (seenCollapsedGroups.has(assignment.groupKey)) {
+        continue;
+      }
+
+      seenCollapsedGroups.add(assignment.groupKey);
+      const syntheticRepresentativeItemId = syntheticAssignments.get(candidate.itemId)?.representativeItemId;
+      const representativeCandidate =
+        (syntheticRepresentativeItemId
+          ? candidateByItemId.get(syntheticRepresentativeItemId)
+          : null)
+        ?? candidate;
+      insertBrowserDefaultEntry.run({
+        entry_order: entryOrder,
+        entry_kind: 'group-collapsed',
+        item_id: representativeCandidate.itemId,
+        mod_id: representativeCandidate.modId,
+        group_key: assignment.groupKey,
+        group_label: assignment.groupLabel ?? representativeCandidate.localizedName,
+        group_size: assignment.groupSize,
+      });
+      entryOrder += 1;
+    }
+
     updateState.run({
       state_key: 'item_browser_groups_count',
       state_value: String(assignments.size),
+    });
+    updateState.run({
+      state_key: 'browser_default_entries_count',
+      state_value: String(entryOrder),
     });
   });
 

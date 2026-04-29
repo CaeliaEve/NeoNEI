@@ -6,10 +6,12 @@ import {
   fetchAnimatedAtlasEntry,
   fetchNativeSpriteMetadata,
   getAnimatedAtlasImageUrl,
+  getSharedAnimationNowMs,
   getNativeSpriteAtlasUrl,
   loadImageAsset,
   probeDirectGifPlayback,
   probeAnimationSupport,
+  resolvePreparedAnimationFrameIndex,
 } from "../services/animationBudget";
 
 interface Props {
@@ -46,7 +48,6 @@ const animationFrames = ref<Array<{ image: HTMLImageElement; durationMs: number 
 const isVisible = ref(false);
 
 let animationFrameId: number | null = null;
-let lastFrameTime = 0;
 let currentFrameIndex = 0;
 let animationProbeToken = 0;
 let visibilityObserver: IntersectionObserver | null = null;
@@ -126,31 +127,12 @@ const animate = (timestamp: number) => {
     return;
   }
 
-  if (!lastFrameTime) {
-    lastFrameTime = timestamp;
-    renderFrame(currentFrameIndex);
-    animationFrameId = requestAnimationFrame(animate);
-    return;
-  }
-
-  let elapsed = timestamp - lastFrameTime;
-  let frameDuration = normalizeFrameDuration(animationFrames.value[currentFrameIndex]?.durationMs);
-  let advanced = false;
-  let guard = 0;
-
-  while (elapsed >= frameDuration && guard < animationFrames.value.length * 2) {
-    elapsed -= frameDuration;
-    currentFrameIndex = (currentFrameIndex + 1) % animationFrames.value.length;
-    frameDuration = normalizeFrameDuration(animationFrames.value[currentFrameIndex]?.durationMs);
-    advanced = true;
-    guard += 1;
-  }
-
-  if (advanced) {
+  const nextFrameIndex = resolvePreparedAnimationFrameIndex(animationFrames.value, timestamp);
+  if (nextFrameIndex !== currentFrameIndex) {
+    currentFrameIndex = nextFrameIndex;
     renderFrame(currentFrameIndex);
   }
 
-  lastFrameTime = timestamp - elapsed;
   animationFrameId = requestAnimationFrame(animate);
 };
 
@@ -159,13 +141,12 @@ const stopAnimation = () => {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
   }
-  lastFrameTime = 0;
   currentFrameIndex = 0;
 };
 
 const startAnimation = () => {
   if (animationFrames.value.length <= 1 || animationFrameId !== null) return;
-  currentFrameIndex = 0;
+  currentFrameIndex = resolvePreparedAnimationFrameIndex(animationFrames.value, getSharedAnimationNowMs());
   renderFrame(currentFrameIndex);
   animationFrameId = requestAnimationFrame(animate);
 };

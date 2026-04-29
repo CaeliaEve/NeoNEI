@@ -9,6 +9,7 @@ import { ItemsService, type Item } from './items.service';
 import { PageAtlasService } from './page-atlas.service';
 import { PublishPayloadMaterializerService } from './publish-payload-materializer.service';
 import { buildCollapsibleItemAssignments, type CollapsibleItemCandidate } from './gtnh-collapsible-items.service';
+import { buildSyntheticBrowserVariantAssignments, mergeBrowserGroupAssignments } from './browser-variant-grouping.service';
 import { compareGtnhBrowserOrder } from './gtnh-browser-order.service';
 import { getMachineIconItem } from './machine-icon-mapping.service';
 import { transformRecipeMetadata } from './recipe-metadata';
@@ -1239,7 +1240,15 @@ export class NeoNeiCompilerService {
         oreDictionaryNames: Array.from(itemOreDictionaryNames.get(row.item_id) ?? []),
       }));
 
-      const assignments = buildCollapsibleItemAssignments(candidates);
+      const curatedAssignments = buildCollapsibleItemAssignments(candidates);
+      const blockedItemIds = new Set(
+        Array.from(curatedAssignments.values())
+          .filter((assignment) => Boolean(assignment.groupKey) && assignment.groupSize > 1)
+          .map((assignment) => assignment.itemId),
+      );
+      const syntheticAssignments = buildSyntheticBrowserVariantAssignments(candidates, { blockedItemIds });
+      const assignments = mergeBrowserGroupAssignments(candidates, curatedAssignments, syntheticAssignments);
+      const candidateByItemId = new Map(candidates.map((candidate) => [candidate.itemId, candidate]));
       const seenCollapsedGroups = new Set<string>();
       let browserDefaultEntryOrder = 0;
 
@@ -1273,13 +1282,19 @@ export class NeoNeiCompilerService {
         }
 
         seenCollapsedGroups.add(assignment.groupKey);
+        const syntheticRepresentativeItemId = syntheticAssignments.get(candidate.itemId)?.representativeItemId;
+        const representativeCandidate =
+          (syntheticRepresentativeItemId
+            ? candidateByItemId.get(syntheticRepresentativeItemId)
+            : null)
+          ?? candidate;
         insertBrowserDefaultEntry.run({
           entry_order: browserDefaultEntryOrder,
           entry_kind: 'group-collapsed',
-          item_id: assignment.itemId,
-          mod_id: candidate.modId,
+          item_id: representativeCandidate.itemId,
+          mod_id: representativeCandidate.modId,
           group_key: assignment.groupKey,
-          group_label: assignment.groupLabel ?? candidate.localizedName,
+          group_label: assignment.groupLabel ?? representativeCandidate.localizedName,
           group_size: assignment.groupSize,
         });
         browserDefaultEntryOrder += 1;

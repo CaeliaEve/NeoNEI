@@ -80,6 +80,12 @@ export interface PreparedAnimationFrame {
   durationMs: number;
 }
 
+interface TimelineFrameLike {
+  frameIndex?: number;
+  index?: number;
+  durationMs?: number | null;
+}
+
 interface RenderableEntityLike {
   itemId?: string | null;
   fluidId?: string | null;
@@ -94,6 +100,98 @@ const normalizeFrameDuration = (durationMs?: number | null): number => {
     return DEFAULT_FRAME_DURATION_MS;
   }
   return Math.max(16, Math.round(durationMs));
+};
+
+const SHARED_ANIMATION_EPOCH_MS =
+  typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+
+export const getSharedAnimationNowMs = (): number => {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now();
+  }
+  return Date.now();
+};
+
+const getSharedAnimationElapsedMs = (nowMs: number): number => {
+  return Math.max(0, nowMs - SHARED_ANIMATION_EPOCH_MS);
+};
+
+const resolveTimelineFrameSlotIndex = (frame: TimelineFrameLike | undefined, fallbackIndex: number): number => {
+  if (!frame) {
+    return fallbackIndex;
+  }
+  if (typeof frame.frameIndex === 'number') {
+    return frame.frameIndex;
+  }
+  if (typeof frame.index === 'number') {
+    return frame.index;
+  }
+  return fallbackIndex;
+};
+
+export const resolveTimelineFrameIndex = (
+  timeline: TimelineFrameLike[] | undefined,
+  nowMs: number = getSharedAnimationNowMs(),
+): number => {
+  if (!(timeline?.length)) {
+    return 0;
+  }
+  if (timeline.length === 1) {
+    return resolveTimelineFrameSlotIndex(timeline[0], 0);
+  }
+
+  const totalDuration = timeline.reduce(
+    (sum, frame) => sum + normalizeFrameDuration(frame.durationMs),
+    0,
+  );
+  if (totalDuration <= 0) {
+    return resolveTimelineFrameSlotIndex(timeline[0], 0);
+  }
+
+  let elapsed = getSharedAnimationElapsedMs(nowMs) % totalDuration;
+  for (let idx = 0; idx < timeline.length; idx += 1) {
+    const frame = timeline[idx];
+    const duration = normalizeFrameDuration(frame.durationMs);
+    if (elapsed < duration) {
+      return resolveTimelineFrameSlotIndex(frame, idx);
+    }
+    elapsed -= duration;
+  }
+
+  return resolveTimelineFrameSlotIndex(timeline[timeline.length - 1], timeline.length - 1);
+};
+
+export const resolvePreparedAnimationFrameIndex = (
+  frames: Array<Pick<PreparedAnimationFrame, 'durationMs'>> | undefined,
+  nowMs: number = getSharedAnimationNowMs(),
+): number => {
+  if (!(frames?.length)) {
+    return 0;
+  }
+  if (frames.length === 1) {
+    return 0;
+  }
+
+  const totalDuration = frames.reduce(
+    (sum, frame) => sum + normalizeFrameDuration(frame.durationMs),
+    0,
+  );
+  if (totalDuration <= 0) {
+    return 0;
+  }
+
+  let elapsed = getSharedAnimationElapsedMs(nowMs) % totalDuration;
+  for (let idx = 0; idx < frames.length; idx += 1) {
+    const duration = normalizeFrameDuration(frames[idx]?.durationMs);
+    if (elapsed < duration) {
+      return idx;
+    }
+    elapsed -= duration;
+  }
+
+  return frames.length - 1;
 };
 
 const getSpriteSheetPhysicalFrameCount = (
@@ -539,6 +637,22 @@ export const probeAnimationSupport = async (baseUrl: string, renderAssetRef?: st
 
     const renderContract = renderAssetRef ? await fetchRenderContractAsset(renderAssetRef) : null;
     if (renderContract) {
+      const captureContract = renderContract.captureContract as { multiFrame?: unknown; frameCount?: unknown } | null;
+      const rendererContract = renderContract.rendererContract as {
+        needsMultipleFrames?: unknown;
+        shouldPreferNativeSpriteAnimation?: unknown;
+        nativeFrameCount?: unknown;
+      } | null;
+      const hasAuxNativeSprite =
+        renderContract.animationMode === 'native_sprite_aux'
+        || (
+          typeof renderContract.spriteMetadataFile === 'string'
+          && renderContract.spriteMetadataFile.length > 0
+          && typeof renderContract.nativeSpriteAtlasFile === 'string'
+          && renderContract.nativeSpriteAtlasFile.length > 0
+          && Number(rendererContract?.nativeFrameCount ?? renderContract.frameCount ?? 0) > 1
+        );
+
       if (
         renderContract.renderMode === 'native_sprite'
         && typeof renderContract.frameCount === 'number'
@@ -559,18 +673,21 @@ export const probeAnimationSupport = async (baseUrl: string, renderAssetRef?: st
         return true;
       }
 
-      const captureContract = renderContract.captureContract as { multiFrame?: unknown; frameCount?: unknown } | null;
-      const rendererContract = renderContract.rendererContract as {
-        needsMultipleFrames?: unknown;
-        shouldPreferNativeSpriteAnimation?: unknown;
-        nativeFrameCount?: unknown;
-      } | null;
       const explicitStatic =
-        renderContract.animationMode === 'none'
+        (renderContract.animationMode === 'none' && !hasAuxNativeSprite)
         || renderContract.playbackHint === 'static'
-        || (typeof renderContract.frameCount === 'number' && renderContract.frameCount <= 1 && renderContract.animationMode !== 'native_sprite')
-        || (captureContract?.multiFrame === false && rendererContract?.needsMultipleFrames === false)
-        || (rendererContract?.shouldPreferNativeSpriteAnimation === false && Number(rendererContract?.nativeFrameCount ?? 0) <= 1);
+        || (
+          typeof renderContract.frameCount === 'number'
+          && renderContract.frameCount <= 1
+          && renderContract.animationMode !== 'native_sprite'
+          && renderContract.animationMode !== 'native_sprite_aux'
+        )
+        || (captureContract?.multiFrame === false && rendererContract?.needsMultipleFrames === false && !hasAuxNativeSprite)
+        || (
+          rendererContract?.shouldPreferNativeSpriteAnimation === false
+          && !hasAuxNativeSprite
+          && Number(rendererContract?.nativeFrameCount ?? 0) <= 1
+        );
 
       if (explicitStatic) {
         animationProbeCache.set(baseUrl, false);

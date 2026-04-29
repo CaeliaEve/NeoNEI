@@ -396,27 +396,39 @@ function deriveRenderAnimationHint(entry: RenderContractAssetEntry): RenderAnima
     shouldPreferNativeSpriteAnimation?: unknown;
     nativeFrameCount?: unknown;
   } | null;
+  const hasAuxNativeSprite =
+    entry.animationMode === 'native_sprite_aux'
+    || (
+      typeof entry.spriteMetadataFile === 'string'
+      && entry.spriteMetadataFile.length > 0
+      && typeof entry.nativeSpriteAtlasFile === 'string'
+      && entry.nativeSpriteAtlasFile.length > 0
+      && Number(rendererContract?.nativeFrameCount ?? entry.frameCount ?? 0) > 1
+    );
 
   const explicitStatic =
-    entry.animationMode === 'none'
+    (entry.animationMode === 'none' && !hasAuxNativeSprite)
     || entry.playbackHint === 'static'
     || (
       typeof entry.frameCount === 'number'
       && entry.frameCount <= 1
       && entry.animationMode !== 'native_sprite'
+      && entry.animationMode !== 'native_sprite_aux'
     )
-    || (captureContract?.multiFrame === false && rendererContract?.needsMultipleFrames === false)
+    || (captureContract?.multiFrame === false && rendererContract?.needsMultipleFrames === false && !hasAuxNativeSprite)
     || (
       rendererContract?.shouldPreferNativeSpriteAnimation === false
+      && !hasAuxNativeSprite
       && Number(rendererContract?.nativeFrameCount ?? 0) <= 1
     );
 
   const prefersNativeSprite =
     entry.renderMode === 'native_sprite'
     || entry.animationMode === 'native_sprite'
+    || entry.animationMode === 'native_sprite_aux'
     || entry.playbackHint === 'native_sprite'
     || rendererContract?.shouldPreferNativeSpriteAnimation === true
-    || Number(rendererContract?.nativeFrameCount ?? 0) > 1;
+    || hasAuxNativeSprite;
 
   const prefersCapturedAtlas =
     entry.renderMode === 'captured_final_atlas'

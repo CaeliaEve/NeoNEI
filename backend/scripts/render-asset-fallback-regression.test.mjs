@@ -58,4 +58,10 @@ test('render contract animated atlas service preserves per-frame timeline metada
     true,
     'render contract service should parse timeline entries from animated atlas manifests',
   );
+
+  assert.equal(
+    source.includes("entry.animationMode === 'native_sprite_aux'"),
+    true,
+    'render contract hints should recognize auxiliary native sprite timelines exported alongside custom renderer assets',
+  );
 });

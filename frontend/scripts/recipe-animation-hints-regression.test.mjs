@@ -27,6 +27,16 @@ const animatedItemIconSource = fs.readFileSync(
   'utf8',
 );
 
+const homeCanvasGridSource = fs.readFileSync(
+  'E:/codex/ae2/NeoNEI/frontend/src/components/HomeCanvasGrid.vue',
+  'utf8',
+);
+
+const itemCardSource = fs.readFileSync(
+  'E:/codex/ae2/NeoNEI/frontend/src/components/ItemCard.vue',
+  'utf8',
+);
+
 const recipeViewerSource = fs.readFileSync(
   'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeViewer.ts',
   'utf8',
@@ -50,6 +60,13 @@ test('animation probing consults primed render hints before falling back to per-
     animationBudgetSource.includes('const atlasEntry = await fetchAnimatedAtlasEntry(renderAssetRef);'),
     true,
     'animation probe should prefer atlas-manifest detection before contract fallback',
+  );
+
+  assert.equal(
+    animationBudgetSource.includes("renderContract.animationMode === 'native_sprite_aux'")
+      || animationBudgetSource.includes('renderContract.animationMode === \"native_sprite_aux\"'),
+    true,
+    'animation probe should treat auxiliary native sprite timelines as animated instead of collapsing them to static',
   );
 });
 
@@ -81,6 +98,39 @@ test('animated item icons reuse prepared frame caches instead of rebuilding fram
     animationBudgetSource.includes('const preparedAnimationFrameCache = new Map<string, PreparedAnimationFrame[]>()'),
     true,
     'animation budget should keep a shared prepared animation frame cache',
+  );
+});
+
+test('homepage and card animations advance from a shared animation clock instead of per-mount local timers', () => {
+  assert.equal(
+    animationBudgetSource.includes('export const getSharedAnimationNowMs = (): number => {'),
+    true,
+    'animation budget should expose a shared animation clock',
+  );
+  assert.equal(
+    animationBudgetSource.includes('export const resolveTimelineFrameIndex = ('),
+    true,
+    'animation budget should expose shared native sprite timeline resolution',
+  );
+  assert.equal(
+    animationBudgetSource.includes('export const resolvePreparedAnimationFrameIndex = ('),
+    true,
+    'animation budget should expose shared prepared-frame timeline resolution',
+  );
+  assert.equal(
+    homeCanvasGridSource.includes('resolveTimelineFrameIndex(animation.timeline, now)'),
+    true,
+    'homepage browser grid should render native/captured animations from the shared clock',
+  );
+  assert.equal(
+    itemCardSource.includes('resolvePreparedAnimationFrameIndex(animationFrames.value, timestamp)'),
+    true,
+    'homepage fallback item cards should reuse the shared prepared-frame animation clock',
+  );
+  assert.equal(
+    animatedItemIconSource.includes('resolvePreparedAnimationFrameIndex(animationFrames.value, timestamp)'),
+    true,
+    'recipe item icons should reuse the shared prepared-frame animation clock',
   );
 });
 

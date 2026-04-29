@@ -2,7 +2,9 @@
 import { onMounted, onUnmounted, ref, watch } from 'vue';
 import { getItemImageUrlFromEntity } from '../services/api';
 import {
+  getSharedAnimationNowMs,
   prepareItemAnimationFrames,
+  resolvePreparedAnimationFrameIndex,
   type PreparedAnimationFrame,
 } from '../services/animationBudget';
 
@@ -30,7 +32,6 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const animationFrames = ref<PreparedAnimationFrame[]>([]);
 
 let animationFrameId: number | null = null;
-let lastFrameTime = 0;
 let currentFrameIndex = 0;
 
 const renderFrame = (frameIndex: number) => {
@@ -55,33 +56,12 @@ const animate = (timestamp: number) => {
     return;
   }
 
-  if (!lastFrameTime) {
-    lastFrameTime = timestamp;
-    renderFrame(currentFrameIndex);
-    if (isAnimating.value) {
-      animationFrameId = requestAnimationFrame(animate);
-    }
-    return;
-  }
-
-  let elapsed = timestamp - lastFrameTime;
-  let frameDuration = Math.max(16, Math.round(animationFrames.value[currentFrameIndex]?.durationMs ?? 50));
-  let advanced = false;
-  let guard = 0;
-
-  while (elapsed >= frameDuration && guard < animationFrames.value.length * 2) {
-    elapsed -= frameDuration;
-    currentFrameIndex = (currentFrameIndex + 1) % animationFrames.value.length;
-    frameDuration = Math.max(16, Math.round(animationFrames.value[currentFrameIndex]?.durationMs ?? 50));
-    advanced = true;
-    guard += 1;
-  }
-
-  if (advanced) {
+  const nextFrameIndex = resolvePreparedAnimationFrameIndex(animationFrames.value, timestamp);
+  if (nextFrameIndex !== currentFrameIndex) {
+    currentFrameIndex = nextFrameIndex;
     renderFrame(currentFrameIndex);
   }
 
-  lastFrameTime = timestamp - elapsed;
   if (isAnimating.value) {
     animationFrameId = requestAnimationFrame(animate);
   }
@@ -90,9 +70,8 @@ const animate = (timestamp: number) => {
 const startAnimation = () => {
   if (animationFrames.value.length <= 1 || isAnimating.value) return;
   isAnimating.value = true;
-  currentFrameIndex = 0;
+  currentFrameIndex = resolvePreparedAnimationFrameIndex(animationFrames.value, getSharedAnimationNowMs());
   renderFrame(currentFrameIndex);
-  lastFrameTime = 0;
   animationFrameId = requestAnimationFrame(animate);
 };
 

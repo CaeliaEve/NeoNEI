@@ -7,10 +7,12 @@ import {
   fetchNativeSpriteMetadata,
   fetchRenderContractAsset,
   getAnimatedAtlasImageUrl,
+  getSharedAnimationNowMs,
   getNativeSpriteAtlasUrl,
   loadImageAsset,
   probeDirectGifPlayback,
   probeAnimationSupport,
+  resolveTimelineFrameIndex,
 } from "../services/animationBudget";
 
 type GridRect = {
@@ -29,7 +31,6 @@ type NativeSpriteAnimationState = {
   width: number;
   height: number;
   timeline: Array<{ frameIndex: number; durationMs: number }>;
-  startedAt: number;
 };
 
 type CapturedAtlasAnimationState = {
@@ -37,7 +38,6 @@ type CapturedAtlasAnimationState = {
   atlasImage: HTMLImageElement;
   frames: Array<{ index: number; x: number; y: number; width: number; height: number }>;
   timeline: Array<{ frameIndex: number; durationMs: number }>;
-  startedAt: number;
 };
 
 type DirectGifAnimationState = {
@@ -189,25 +189,6 @@ function stopAnimationLoop() {
   }
 }
 
-function normalizeTimelineIndex(
-  timeline: Array<{ frameIndex: number; durationMs: number }>,
-  startedAt: number,
-  now: number,
-): number {
-  if (timeline.length <= 1) return timeline[0]?.frameIndex ?? 0;
-  const totalDuration = timeline.reduce((sum, frame) => sum + Math.max(16, frame.durationMs), 0);
-  if (totalDuration <= 0) return timeline[0]?.frameIndex ?? 0;
-  let elapsed = (now - startedAt) % totalDuration;
-  for (const frame of timeline) {
-    const duration = Math.max(16, frame.durationMs);
-    if (elapsed < duration) {
-      return frame.frameIndex;
-    }
-    elapsed -= duration;
-  }
-  return timeline[timeline.length - 1]?.frameIndex ?? 0;
-}
-
 function getItemForEntry(entry: BrowserGridEntry): Item {
   return entry.kind === "item" ? entry.item : entry.group.representative;
 }
@@ -349,7 +330,7 @@ function drawAnimation(
   }
 
   if (animation.kind === "native") {
-    const frameIndex = normalizeTimelineIndex(animation.timeline, animation.startedAt, now);
+    const frameIndex = resolveTimelineFrameIndex(animation.timeline, now);
     ctx.drawImage(
       animation.atlasImage,
       0,
@@ -364,7 +345,7 @@ function drawAnimation(
     return;
   }
 
-  const frameIndex = normalizeTimelineIndex(animation.timeline, animation.startedAt, now);
+  const frameIndex = resolveTimelineFrameIndex(animation.timeline, now);
   const frame = animation.frames.find((entry) => entry.index === frameIndex) ?? animation.frames[0];
   if (!frame) return;
   ctx.drawImage(
@@ -392,7 +373,7 @@ function draw() {
   ctx.imageSmoothingEnabled = false;
 
   const nextRects: GridRect[] = [];
-  const now = performance.now();
+  const now = getSharedAnimationNowMs();
 
   for (let index = 0; index < props.entries.length; index += 1) {
     const entry = props.entries[index];
@@ -519,18 +500,29 @@ async function ensureAnimationState(item: Item): Promise<void> {
         shouldPreferNativeSpriteAnimation?: unknown;
         nativeFrameCount?: unknown;
       } | null;
+      const hasAuxNativeSprite =
+        renderContract?.animationMode === "native_sprite_aux"
+        || (
+          typeof renderContract?.spriteMetadataFile === "string"
+          && renderContract.spriteMetadataFile.length > 0
+          && typeof renderContract?.nativeSpriteAtlasFile === "string"
+          && renderContract.nativeSpriteAtlasFile.length > 0
+          && Number(rendererContract?.nativeFrameCount ?? renderContract?.frameCount ?? 0) > 1
+        );
 
       const explicitStatic = renderHint?.explicitStatic ?? (
-        renderContract?.animationMode === "none"
+        ((renderContract?.animationMode === "none") && !hasAuxNativeSprite)
         || renderContract?.playbackHint === "static"
         || (
           typeof renderContract?.frameCount === "number"
           && renderContract.frameCount <= 1
           && renderContract.animationMode !== "native_sprite"
+          && renderContract.animationMode !== "native_sprite_aux"
         )
-        || (captureContract?.multiFrame === false && rendererContract?.needsMultipleFrames === false)
+        || (captureContract?.multiFrame === false && rendererContract?.needsMultipleFrames === false && !hasAuxNativeSprite)
         || (
           rendererContract?.shouldPreferNativeSpriteAnimation === false
+          && !hasAuxNativeSprite
           && Number(rendererContract?.nativeFrameCount ?? 0) <= 1
         )
       );
@@ -542,9 +534,10 @@ async function ensureAnimationState(item: Item): Promise<void> {
       const prefersNativeSprite = renderHint?.prefersNativeSprite ?? (
         renderContract?.renderMode === "native_sprite"
         || renderContract?.animationMode === "native_sprite"
+        || renderContract?.animationMode === "native_sprite_aux"
         || renderContract?.playbackHint === "native_sprite"
         || rendererContract?.shouldPreferNativeSpriteAnimation === true
-        || Number(rendererContract?.nativeFrameCount ?? 0) > 1
+        || hasAuxNativeSprite
       );
 
       const prefersCapturedAtlas = renderHint?.prefersCapturedAtlas ?? (
@@ -579,7 +572,6 @@ async function ensureAnimationState(item: Item): Promise<void> {
                   height: frame.height,
                 })),
                 timeline,
-                startedAt: performance.now(),
               });
               startAnimationLoop();
               scheduleRender();
@@ -630,7 +622,6 @@ async function ensureAnimationState(item: Item): Promise<void> {
             width: frameWidth,
             height: frameHeight,
             timeline,
-            startedAt: performance.now(),
           });
           startAnimationLoop();
           scheduleRender();
@@ -662,7 +653,6 @@ async function ensureAnimationState(item: Item): Promise<void> {
                   height: frame.height,
                 })),
                 timeline,
-                startedAt: performance.now(),
               });
               startAnimationLoop();
               scheduleRender();
