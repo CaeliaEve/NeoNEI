@@ -175,6 +175,15 @@ type SplitRecipeRecord = {
   recipeTypeData?: Record<string, unknown> | null;
 };
 
+type SplitFluidRecord = {
+  fluidId?: string;
+  modId?: string;
+  internalName?: string;
+  localizedName?: string;
+  renderAssetRef?: string | null;
+  temperature?: number;
+};
+
 type UiPayloadRecord = {
   payloadId: string;
   recipeId: string;
@@ -207,6 +216,7 @@ type MaterializedItemRecord = {
 };
 
 type MaterializedRecipePayload = Record<string, unknown>;
+type ImageFamily = 'item' | 'fluid';
 
 function readGzipJsonArray(filePath: string): SplitItemRecord[] {
   if (!fs.existsSync(filePath)) return [];
@@ -316,37 +326,52 @@ function deriveAliasesAndPopularity(
   };
 }
 
-function toPublicImageUrl(imageFileName: string | null | undefined): string | null {
+function toPublicImageUrl(
+  imageFileName: string | null | undefined,
+  family: ImageFamily = 'item',
+): string | null {
   if (!imageFileName) return null;
   const normalized = imageFileName
     .replace(/\\/g, '/')
     .replace(/^\/+/, '')
-    .replace(/^images\/item\//, '')
-    .replace(/^api\/images\/item\//, '');
+    .replace(new RegExp(`^images/${family}/`, 'i'), '')
+    .replace(new RegExp(`^api/images/${family}/`, 'i'), '');
   if (!normalized) return null;
-  return `/images/item/${normalized.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
+  return `/images/${family}/${normalized.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
 }
 
-function normalizeCompilerImagePath(imageFileName: string | null | undefined): string | null {
+function normalizeCompilerImagePath(
+  imageFileName: string | null | undefined,
+  family: ImageFamily = 'item',
+): string | null {
   if (!imageFileName) return null;
   const normalized = imageFileName
     .replace(/\\/g, '/')
     .replace(/^\/+/, '')
-    .replace(/^images\/item\//, '')
-    .replace(/^api\/images\/item\//, '');
+    .replace(new RegExp(`^images/${family}/`, 'i'), '')
+    .replace(new RegExp(`^api/images/${family}/`, 'i'), '');
   return normalized || null;
 }
 
-function compilerImageExists(imageRoot: string, relativePath: string): boolean {
-  const itemRoot = path.resolve(imageRoot, 'item');
-  const absolute = path.resolve(itemRoot, relativePath);
-  return absolute.startsWith(itemRoot) && fs.existsSync(absolute);
+function compilerImageExists(
+  imageRoot: string,
+  relativePath: string,
+  family: ImageFamily = 'item',
+): boolean {
+  const familyRoot = path.resolve(imageRoot, family);
+  const absolute = path.resolve(familyRoot, relativePath);
+  return absolute.startsWith(familyRoot) && fs.existsSync(absolute);
 }
 
-function resolveCompilerSiblingVariant(imageRoot: string, modId: string, stem: string): string | null {
-  const itemRoot = path.resolve(imageRoot, 'item');
-  const directory = path.resolve(itemRoot, modId);
-  if (!directory.startsWith(itemRoot) || !fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) {
+function resolveCompilerSiblingVariant(
+  imageRoot: string,
+  modId: string,
+  stem: string,
+  family: ImageFamily = 'item',
+): string | null {
+  const familyRoot = path.resolve(imageRoot, family);
+  const directory = path.resolve(familyRoot, modId);
+  if (!directory.startsWith(familyRoot) || !fs.existsSync(directory) || !fs.statSync(directory).isDirectory()) {
     return null;
   }
 
@@ -370,14 +395,14 @@ function resolveMaterializedPreferredItemUrl(
   imageRoot: string,
   record: Pick<SplitItemRecord, 'imageFileName' | 'modId' | 'internalName' | 'damage' | 'itemId'>,
 ): string | null {
-  const normalizedImagePath = normalizeCompilerImagePath(record.imageFileName ?? null);
+  const normalizedImagePath = normalizeCompilerImagePath(record.imageFileName ?? null, 'item');
   if (normalizedImagePath) {
-    if (compilerImageExists(imageRoot, normalizedImagePath)) {
+    if (compilerImageExists(imageRoot, normalizedImagePath, 'item')) {
       return `/images/item/${normalizedImagePath.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
     }
 
     const spriteAtlasPath = normalizedImagePath.replace(/\.(png|gif)$/i, '.sprite-atlas.png');
-    if (spriteAtlasPath !== normalizedImagePath && compilerImageExists(imageRoot, spriteAtlasPath)) {
+    if (spriteAtlasPath !== normalizedImagePath && compilerImageExists(imageRoot, spriteAtlasPath, 'item')) {
       return `/images/item/${spriteAtlasPath.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
     }
 
@@ -385,7 +410,7 @@ function resolveMaterializedPreferredItemUrl(
     if (slash > 0) {
       const modId = normalizedImagePath.slice(0, slash);
       const stem = normalizedImagePath.slice(slash + 1).replace(/\.(png|gif)$/i, '');
-      const sibling = resolveCompilerSiblingVariant(imageRoot, modId, stem);
+      const sibling = resolveCompilerSiblingVariant(imageRoot, modId, stem, 'item');
       if (sibling) {
         return `/images/item/${sibling.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
       }
@@ -406,17 +431,70 @@ function resolveMaterializedPreferredItemUrl(
   ];
 
   for (const candidate of directCandidates) {
-    if (compilerImageExists(imageRoot, candidate)) {
+    if (compilerImageExists(imageRoot, candidate, 'item')) {
       return `/images/item/${candidate.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
     }
   }
 
-  const sibling = resolveCompilerSiblingVariant(imageRoot, modId, `${internalName}~${damage}`);
+  const sibling = resolveCompilerSiblingVariant(imageRoot, modId, `${internalName}~${damage}`, 'item');
   if (sibling) {
     return `/images/item/${sibling.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
   }
 
-  return toPublicImageUrl(record.imageFileName ?? null);
+  return toPublicImageUrl(record.imageFileName ?? null, 'item');
+}
+
+function resolveMaterializedPreferredFluidUrl(
+  imageRoot: string,
+  record: {
+    fluidId?: string;
+    modId?: string;
+    internalName?: string;
+    renderAssetRef?: string | null;
+  },
+): string | null {
+  const fluidId = `${record.fluidId ?? ''}`.trim();
+  const fluidParts = fluidId.split('~');
+  const modId = `${record.modId ?? fluidParts[1] ?? ''}`.trim();
+  const internalName = `${record.internalName ?? fluidParts.slice(2).join('~') ?? ''}`.trim();
+  if (!modId || !internalName) {
+    return null;
+  }
+
+  const directCandidates = [
+    `${modId}/${internalName}.png`,
+    `${modId}/${internalName}.gif`,
+    `${modId}/${internalName}.sprite-atlas.png`,
+  ];
+
+  for (const candidate of directCandidates) {
+    if (compilerImageExists(imageRoot, candidate, 'fluid')) {
+      return `/images/fluid/${candidate.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
+    }
+  }
+
+  const sibling = resolveCompilerSiblingVariant(imageRoot, modId, internalName, 'fluid');
+  if (sibling) {
+    return `/images/fluid/${sibling.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
+  }
+
+  const renderAssetRef = `${record.renderAssetRef ?? ''}`.trim();
+  const renderAssetMatch = renderAssetRef.match(/^nesqlpp:fluid\/(.+)$/i);
+  if (!renderAssetMatch?.[1]) {
+    return null;
+  }
+
+  const assetParts = renderAssetMatch[1].split('~');
+  if (assetParts.length < 3) {
+    return null;
+  }
+
+  const assetCandidate = `${assetParts[1]}/${assetParts.slice(2).join('~')}.png`;
+  if (compilerImageExists(imageRoot, assetCandidate, 'fluid')) {
+    return `/images/fluid/${assetCandidate.split('/').map((part) => encodeURIComponent(part)).join('/')}`;
+  }
+
+  return null;
 }
 
 function listModItemFiles(itemsDir: string): string[] {
@@ -485,6 +563,114 @@ function extractOutputItemIds(recipe: SplitRecipeRecord): string[] {
     }
   }
   return Array.from(result);
+}
+
+function extractInputFluidIds(recipe: SplitRecipeRecord): string[] {
+  const result = new Set<string>();
+  for (const slot of recipe.fluidInputs ?? []) {
+    for (const stack of slot.fluids ?? []) {
+      const fluidId = stack.fluid?.fluidId;
+      if (fluidId?.trim()) {
+        result.add(fluidId.trim());
+      }
+    }
+  }
+  return Array.from(result);
+}
+
+function extractOutputFluidIds(recipe: SplitRecipeRecord): string[] {
+  const result = new Set<string>();
+  for (const stack of recipe.fluidOutputs ?? []) {
+    const fluidId = stack.fluid?.fluidId;
+    if (fluidId?.trim()) {
+      result.add(fluidId.trim());
+    }
+  }
+  return Array.from(result);
+}
+
+function mergeSplitEntityRecord(base: SplitItemRecord, incoming: SplitItemRecord): SplitItemRecord {
+  const mergeText = (current: string | null | undefined, candidate: string | null | undefined): string | null => {
+    const normalizedCurrent = `${current ?? ''}`.trim();
+    if (normalizedCurrent) return normalizedCurrent;
+    const normalizedCandidate = `${candidate ?? ''}`.trim();
+    return normalizedCandidate || null;
+  };
+
+  return {
+    itemId: base.itemId ?? incoming.itemId,
+    modId: mergeText(base.modId, incoming.modId) ?? undefined,
+    internalName: mergeText(base.internalName, incoming.internalName) ?? undefined,
+    localizedName: mergeText(base.localizedName, incoming.localizedName) ?? undefined,
+    unlocalizedName: mergeText(base.unlocalizedName, incoming.unlocalizedName) ?? undefined,
+    damage: Number(base.damage ?? incoming.damage ?? 0),
+    imageFileName: mergeText(base.imageFileName, incoming.imageFileName),
+    renderAssetRef: mergeText(base.renderAssetRef, incoming.renderAssetRef),
+    preferredImageUrl: mergeText(base.preferredImageUrl, incoming.preferredImageUrl),
+    tooltip: mergeText(base.tooltip, incoming.tooltip),
+    searchTerms: mergeText(base.searchTerms, incoming.searchTerms),
+  };
+}
+
+function buildFluidPseudoItemRecord(
+  fluid: SplitFluidRecord | undefined,
+  imageRoot: string,
+): SplitItemRecord | null {
+  const fluidId = `${fluid?.fluidId ?? ''}`.trim();
+  if (!fluidId) return null;
+
+  const parts = fluidId.split('~');
+  const modId = `${fluid?.modId ?? parts[1] ?? ''}`.trim();
+  const internalName = `${fluid?.internalName ?? parts.slice(2).join('~') ?? ''}`.trim();
+  const localizedName = `${fluid?.localizedName ?? ''}`.trim() || internalName || fluidId;
+  const preferredImageUrl = resolveMaterializedPreferredFluidUrl(imageRoot, {
+    fluidId,
+    modId,
+    internalName,
+    renderAssetRef: typeof fluid?.renderAssetRef === 'string' ? fluid.renderAssetRef : null,
+  });
+  const tooltipParts = [
+    modId ? `Mod: ${modId}` : '',
+    typeof fluid?.temperature === 'number' && Number.isFinite(fluid.temperature)
+      ? `Temperature: ${Math.round(fluid.temperature)} K`
+      : '',
+  ].filter(Boolean);
+
+  return {
+    itemId: fluidId,
+    modId,
+    internalName,
+    localizedName,
+    unlocalizedName: internalName || fluidId,
+    damage: 0,
+    imageFileName: null,
+    renderAssetRef: typeof fluid?.renderAssetRef === 'string' ? fluid.renderAssetRef : null,
+    preferredImageUrl,
+    tooltip: tooltipParts.length > 0 ? tooltipParts.join(' | ') : null,
+    searchTerms: [localizedName, internalName, fluidId, modId, 'fluid', '液体'].filter(Boolean).join(' '),
+  };
+}
+
+function collectFluidPseudoItemRecords(recipe: SplitRecipeRecord, imageRoot: string): SplitItemRecord[] {
+  const records = new Map<string, SplitItemRecord>();
+  const visit = (fluid: SplitFluidRecord | undefined): void => {
+    const built = buildFluidPseudoItemRecord(fluid, imageRoot);
+    if (!built?.itemId) return;
+    const existing = records.get(built.itemId);
+    records.set(built.itemId, existing ? mergeSplitEntityRecord(existing, built) : built);
+  };
+
+  for (const group of recipe.fluidInputs ?? []) {
+    for (const stack of group.fluids ?? []) {
+      visit(stack.fluid);
+    }
+  }
+
+  for (const stack of recipe.fluidOutputs ?? []) {
+    visit(stack.fluid);
+  }
+
+  return Array.from(records.values());
 }
 
 function addRecipeToMachineGroupsMap(
@@ -764,7 +950,7 @@ function chunkArray<T>(items: T[], chunkSize: number): T[][] {
   return chunks;
 }
 
-const ACCELERATION_COMPILER_VERSION = '2026-04-26-publish-hot-payloads-v1';
+const ACCELERATION_COMPILER_VERSION = '2026-04-30-fluid-entity-index-v1';
 
 export class NeoNeiCompilerService {
   private options: NormalizedCompilerOptions;
@@ -1028,6 +1214,61 @@ export class NeoNeiCompilerService {
       db.exec("DELETE FROM assets_manifest WHERE asset_type = 'page_atlas'");
     });
 
+    const materializeEntityRecord = (record: SplitItemRecord, sourceOrder?: number): void => {
+      const itemId = String(record.itemId ?? '').trim();
+      if (!itemId) return;
+
+      const localizedName = String(record.localizedName ?? '');
+      const internalName = String(record.internalName ?? '');
+      const pinyinFields = buildPinyinFields(localizedName);
+      const aliasMetadata = deriveAliasesAndPopularity(record);
+
+      insertItemCore.run({
+        item_id: itemId,
+        mod_id: String(record.modId ?? ''),
+        internal_name: internalName,
+        localized_name: localizedName,
+        unlocalized_name: String(record.unlocalizedName ?? ''),
+        damage: Number(record.damage ?? 0),
+        image_file_name: record.imageFileName ?? null,
+        render_asset_ref: record.renderAssetRef ?? null,
+        preferred_image_url:
+          itemId.startsWith('f~')
+            ? (record.preferredImageUrl ?? null)
+            : (
+              resolveMaterializedPreferredItemUrl(this.sourceRoots.imageRoot, record)
+              ?? record.preferredImageUrl
+              ?? toPublicImageUrl(record.imageFileName ?? null, 'item')
+            ),
+        tooltip: record.tooltip ?? null,
+        search_terms: record.searchTerms ?? null,
+      });
+
+      insertItemSearch.run({
+        item_id: itemId,
+        localized_name_norm: normalizeLooseText(localizedName),
+        internal_name_norm: normalizeCompactText(internalName),
+        item_id_norm: normalizeCompactText(itemId),
+        search_terms_norm: normalizeLooseText(record.searchTerms ?? ''),
+        pinyin_full: pinyinFields.pinyinFull,
+        pinyin_acronym: pinyinFields.pinyinAcronym,
+        aliases: aliasMetadata.aliases,
+        popularity_score: aliasMetadata.popularityScore,
+        family_score: 0,
+      });
+
+      const materializedItem = toMaterializedItemRecord(record);
+      if (materializedItem) {
+        itemRecords.set(materializedItem.itemId, materializedItem);
+      }
+
+      if (typeof sourceOrder === 'number' && Number.isFinite(sourceOrder) && !itemSourceOrder.has(itemId)) {
+        itemSourceOrder.set(itemId, sourceOrder);
+      }
+
+      itemsImported += 1;
+    };
+
     const itemsTransaction = db.transaction(() => {
       let sourceOrder = 0;
       for (const filePath of itemFiles) {
@@ -1035,53 +1276,8 @@ export class NeoNeiCompilerService {
         for (const record of records) {
           const itemId = String(record.itemId ?? '').trim();
           if (!itemId) continue;
-
-          const localizedName = String(record.localizedName ?? '');
-          const internalName = String(record.internalName ?? '');
-          const pinyinFields = buildPinyinFields(localizedName);
-          const aliasMetadata = deriveAliasesAndPopularity(record);
-
-          insertItemCore.run({
-            item_id: itemId,
-            mod_id: String(record.modId ?? ''),
-            internal_name: internalName,
-            localized_name: localizedName,
-            unlocalized_name: String(record.unlocalizedName ?? ''),
-            damage: Number(record.damage ?? 0),
-            image_file_name: record.imageFileName ?? null,
-            render_asset_ref: record.renderAssetRef ?? null,
-            preferred_image_url:
-              resolveMaterializedPreferredItemUrl(this.sourceRoots.imageRoot, record)
-              ?? record.preferredImageUrl
-              ?? toPublicImageUrl(record.imageFileName ?? null),
-            tooltip: record.tooltip ?? null,
-            search_terms: record.searchTerms ?? null,
-          });
-
-          insertItemSearch.run({
-            item_id: itemId,
-            localized_name_norm: normalizeLooseText(localizedName),
-            internal_name_norm: normalizeCompactText(internalName),
-            item_id_norm: normalizeCompactText(itemId),
-            search_terms_norm: normalizeLooseText(record.searchTerms ?? ''),
-            pinyin_full: pinyinFields.pinyinFull,
-            pinyin_acronym: pinyinFields.pinyinAcronym,
-            aliases: aliasMetadata.aliases,
-            popularity_score: aliasMetadata.popularityScore,
-            family_score: 0,
-          });
-
-          const materializedItem = toMaterializedItemRecord(record);
-          if (materializedItem) {
-            itemRecords.set(materializedItem.itemId, materializedItem);
-          }
-
-          if (!itemSourceOrder.has(itemId)) {
-            itemSourceOrder.set(itemId, sourceOrder);
-          }
+          materializeEntityRecord(record, sourceOrder);
           sourceOrder += 1;
-
-          itemsImported += 1;
         }
       }
     });
@@ -1097,8 +1293,22 @@ export class NeoNeiCompilerService {
         const recipeId = `${recipe.id ?? ''}`.trim();
         if (!recipeId) continue;
 
-        const inputIds = extractInputItemIds(recipe);
-        const outputIds = extractOutputItemIds(recipe);
+        for (const fluidRecord of collectFluidPseudoItemRecords(recipe, this.sourceRoots.imageRoot)) {
+          const fluidId = String(fluidRecord.itemId ?? '').trim();
+          if (!fluidId || itemRecords.has(fluidId)) {
+            continue;
+          }
+          materializeEntityRecord(fluidRecord);
+        }
+
+        const inputIds = [
+          ...extractInputItemIds(recipe),
+          ...extractInputFluidIds(recipe),
+        ];
+        const outputIds = [
+          ...extractOutputItemIds(recipe),
+          ...extractOutputFluidIds(recipe),
+        ];
         const machineType = `${recipe.machineInfo?.machineType ?? ''}`.trim() || null;
         const voltageTier = recipe.machineInfo?.parsedVoltageTier ?? null;
         const uiFamilyKey = detectUiFamilyKey(recipe);
@@ -1199,6 +1409,7 @@ export class NeoNeiCompilerService {
       const orderedRows = db.prepare(`
         SELECT item_id, mod_id, internal_name, localized_name, damage, tooltip
         FROM items_core
+        WHERE item_id LIKE 'i~%'
       `).all() as Array<{
         item_id: string;
         mod_id: string;
@@ -1305,6 +1516,7 @@ export class NeoNeiCompilerService {
       const modRows = db.prepare(`
         SELECT mod_id, COUNT(*) AS item_count
         FROM items_core
+        WHERE item_id LIKE 'i~%'
         GROUP BY mod_id
         ORDER BY mod_id COLLATE NOCASE ASC
       `).all() as Array<{ mod_id: string; item_count: number }>;
@@ -1372,6 +1584,7 @@ export class NeoNeiCompilerService {
       const selectHomeOrder = db.prepare(`
         SELECT item_id, mod_id, internal_name, localized_name, damage, tooltip
         FROM items_core
+        WHERE item_id LIKE 'i~%'
       `);
       const selectPopularity = db.prepare(`
         SELECT popularity_score

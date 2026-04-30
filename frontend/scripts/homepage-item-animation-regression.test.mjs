@@ -15,6 +15,32 @@ test('homepage item browser keeps animation enabled for right-side item cards', 
   );
 });
 
+test('homepage history rail reuses the shared canvas grid and browser pack hydration path', () => {
+  const source = read('frontend/src/views/HomePage.vue');
+
+  assert.equal(
+    source.includes('const historyBrowserEntries = computed<BrowserGridEntry[]>(() =>'),
+    true,
+    'history rail should project visible history items into browser grid entries so it can reuse the shared canvas host',
+  );
+
+  assert.equal(
+    source.includes('<HomeCanvasGrid')
+      && source.includes(':entries="historyBrowserEntries"')
+      && source.includes(':atlas="historyAtlas"')
+      && source.includes(':enable-animation="true"')
+      && source.includes(':prefer-atlas="true"')
+      && source.includes('peekBrowserPagePackByIds')
+      && source.includes('getBrowserPagePackByIds')
+      && source.includes('primeAnimatedAtlasManifest')
+      && source.includes('queueRenderableMediaPrewarmFromUnknown')
+      && !source.includes('<ItemTooltip')
+      && !source.includes('<ItemCard'),
+    true,
+    'history rail should hydrate atlas/media data through the shared browser pack pipeline and render through the same canvas grid as the main browser',
+  );
+});
+
 test('homepage no longer exposes a manual animation speed setting', () => {
   const source = read('frontend/src/views/HomePage.vue');
 
@@ -35,8 +61,8 @@ test('atlas-backed item cards still schedule animation enhancement once visible'
   );
 
   assert.equal(
-    source.includes('normalizeFrameDuration'),
+    source.includes('prepareItemAnimationFrames'),
     true,
-    'item cards should normalize timing from exported metadata instead of a manual fps prop',
+    'item cards should reuse the shared prepared animation pipeline so history cards match the main browser animation behavior',
   );
 });

@@ -91,7 +91,7 @@ export function getItemImageUrlFromEntity(item: {
   imageFileName?: string | null;
   itemId?: string | null;
 } | null | undefined): string {
-  if (item?.preferredImageUrl && item.preferredImageUrl.includes('/images/item/')) {
+  if (item?.preferredImageUrl && item.preferredImageUrl.includes('/images/')) {
     return item.preferredImageUrl;
   }
   if (item?.imageFileName) {
@@ -113,7 +113,7 @@ export function getPreferredStaticImageUrlFromEntity(item: {
   imageFileName?: string | null;
   itemId?: string | null;
 } | null | undefined): string {
-  if (item?.preferredImageUrl && item.preferredImageUrl.includes('/images/item/')) {
+  if (item?.preferredImageUrl && item.preferredImageUrl.includes('/images/')) {
     return item.preferredImageUrl;
   }
   if (item?.imageFileName) {

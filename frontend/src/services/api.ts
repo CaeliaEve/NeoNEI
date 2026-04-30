@@ -35,6 +35,14 @@ const recipeBootstrapSearchPackCache = new Map<string, PublishedRecipeBootstrapS
 const recipeBootstrapSearchPackInFlight = new Map<string, Promise<PublishedRecipeBootstrapSearchPack | null>>();
 const browserSearchShardCache = new Map<string, BrowserSearchPackResponse>();
 const browserSearchShardInFlight = new Map<string, Promise<BrowserSearchPackResponse | null>>();
+const browserDefaultCatalogCache = new Map<string, BrowserDefaultCatalogResponse>();
+const browserDefaultCatalogInFlight = new Map<string, Promise<BrowserDefaultCatalogResponse>>();
+const browserSearchCatalogCache = new Map<string, BrowserSearchCatalogResponse>();
+const browserSearchCatalogInFlight = new Map<string, Promise<BrowserSearchCatalogResponse>>();
+const browserGroupItemsCache = new Map<string, BrowserGroupItemsResponse>();
+const browserGroupItemsInFlight = new Map<string, Promise<BrowserGroupItemsResponse>>();
+const browserByIdsPackCache = new Map<string, BrowserByIdsPackResponse>();
+const browserByIdsPackInFlight = new Map<string, Promise<BrowserByIdsPackResponse>>();
 const uiPayloadCache = new Map<string, RecipeUiPayload>();
 const uiPayloadInFlight = new Map<string, Promise<RecipeUiPayload | null>>();
 const missingUiPayloadCache = new Set<string>();
@@ -53,9 +61,41 @@ const CACHE_LIMITS = {
   recipeBootstrap: 512,
   recipeBootstrapShard: 512,
   recipeBootstrapSearchPack: 96,
+  browserByIdsPack: 96,
   uiPayload: 256,
   publishedJson: 96,
 } as const;
+
+function shouldPreferLiveRecipeBootstrap(): boolean {
+  if (import.meta.env.DEV) {
+    return true;
+  }
+
+  if (import.meta.env.VITE_PREFER_LIVE_RECIPE_BOOTSTRAP === '1') {
+    return true;
+  }
+
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    const override = window.localStorage.getItem('neonei:prefer-live-recipe-bootstrap');
+    if (override === '1') {
+      return true;
+    }
+    if (override === '0') {
+      return false;
+    }
+  } catch {
+    // Ignore storage access failures and fall back to hostname-based detection.
+  }
+
+  const hostname = `${window.location.hostname ?? ''}`.trim().toLowerCase();
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
+const PREFER_LIVE_RECIPE_BOOTSTRAP = shouldPreferLiveRecipeBootstrap();
 
 function getRuntimeCacheSignature(manifest: Pick<PublicRuntimeManifest, 'runtimeCacheKey' | 'sourceSignature'> | null | undefined): string | null {
   const runtimeCacheKey = `${manifest?.runtimeCacheKey ?? ''}`.trim();
@@ -428,6 +468,21 @@ export interface BrowserPagePackResponse extends PaginatedResponse<BrowserGridEn
   windowLength?: number;
 }
 
+export interface BrowserDefaultCatalogResponse extends PaginatedResponse<BrowserGridEntry> {}
+export interface BrowserSearchCatalogResponse extends PaginatedResponse<BrowserGridEntry> {}
+
+export interface BrowserGroupItemsResponse {
+  groupKey: string;
+  total: number;
+  items: Item[];
+}
+
+export interface BrowserByIdsPackResponse {
+  data: Array<{ key: string; kind: 'item'; item: Item }>;
+  atlas: PageAtlasResult | null;
+  mediaManifest?: PageRichMediaManifest | null;
+}
+
 type PersistentBrowserPageCacheRecord = {
   data: BrowserGridEntry[];
   items: Item[];
@@ -543,6 +598,25 @@ function buildPersistentBrowserPageKey(
     modId: params.modId || 'all',
     expandedGroups: normalizeExpandedGroups(params.expandedGroups),
     slotSize: params.slotSize,
+  });
+}
+
+function getBrowserDefaultCatalogCacheKey(modId?: string): string {
+  return `${modId ?? 'all'}`.trim().toLowerCase() || 'all';
+}
+
+function getBrowserGroupItemsCacheKey(groupKey: string, modId?: string): string {
+  return `${groupKey ?? ''}`.trim().toLowerCase() + `::${`${modId ?? 'all'}`.trim().toLowerCase() || 'all'}`;
+}
+
+function getBrowserSearchCatalogCacheKey(search: string, modId?: string): string {
+  return `${`${search ?? ''}`.trim().toLowerCase()}::${`${modId ?? 'all'}`.trim().toLowerCase() || 'all'}`;
+}
+
+function buildBrowserByIdsPackCacheKey(params: { itemIds: string[]; slotSize?: number }): string {
+  return JSON.stringify({
+    itemIds: params.itemIds.map((itemId) => `${itemId ?? ''}`.trim()).filter(Boolean),
+    slotSize: Number.isFinite(Number(params.slotSize)) ? Number(params.slotSize) : null,
   });
 }
 
@@ -1497,6 +1571,10 @@ async function getPublishedRecipeBootstrapSearchPack(
   itemId: string,
   tab: 'usedIn' | 'producedBy',
 ): Promise<PublishedRecipeBootstrapSearchPack | null> {
+  if (PREFER_LIVE_RECIPE_BOOTSTRAP) {
+    return null;
+  }
+
   const normalizedItemId = `${itemId ?? ''}`.trim();
   if (!normalizedItemId) {
     return null;
@@ -1571,6 +1649,8 @@ export const api = {
     recipeBootstrapSearchPackInFlight.clear();
     browserSearchShardCache.clear();
     browserSearchShardInFlight.clear();
+    browserSearchCatalogCache.clear();
+    browserSearchCatalogInFlight.clear();
     uiPayloadCache.clear();
     uiPayloadInFlight.clear();
     missingUiPayloadCache.clear();
@@ -1595,6 +1675,8 @@ export const api = {
     recipeBootstrapSearchPackInFlight.clear();
     browserSearchShardCache.clear();
     browserSearchShardInFlight.clear();
+    browserSearchCatalogCache.clear();
+    browserSearchCatalogInFlight.clear();
     uiPayloadCache.clear();
     uiPayloadInFlight.clear();
     missingUiPayloadCache.clear();
@@ -1706,6 +1788,149 @@ export const api = {
       },
     });
     return response.data;
+  },
+
+  async getBrowserDefaultCatalog(params?: {
+    modId?: string;
+  }): Promise<BrowserDefaultCatalogResponse> {
+    const cacheKey = getBrowserDefaultCatalogCacheKey(params?.modId);
+    const cached = browserDefaultCatalogCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const inflight = browserDefaultCatalogInFlight.get(cacheKey);
+    if (inflight) {
+      return inflight;
+    }
+
+    const request = (async () => {
+      const persistent = await readPersistentRuntimePayload<BrowserDefaultCatalogResponse>(
+        'browser-default-catalog',
+        { scope: cacheKey },
+      );
+      if (persistent?.data?.length) {
+        browserDefaultCatalogCache.set(cacheKey, persistent);
+        return persistent;
+      }
+
+      const response = await http.get('/items/browser/default-catalog', {
+        params,
+      });
+      browserDefaultCatalogCache.set(cacheKey, response.data);
+      persistRuntimePayload('browser-default-catalog', { scope: cacheKey }, response.data);
+      return response.data;
+    })().finally(() => {
+      browserDefaultCatalogInFlight.delete(cacheKey);
+    });
+
+    browserDefaultCatalogInFlight.set(cacheKey, request);
+    return request;
+  },
+
+  peekBrowserDefaultCatalog(modId?: string): BrowserDefaultCatalogResponse | null {
+    return browserDefaultCatalogCache.get(getBrowserDefaultCatalogCacheKey(modId)) ?? null;
+  },
+
+  async getBrowserSearchCatalog(params: {
+    search: string;
+    modId?: string;
+  }): Promise<BrowserSearchCatalogResponse> {
+    const normalizedSearch = `${params.search ?? ''}`.trim();
+    if (!normalizedSearch) {
+      return api.getBrowserDefaultCatalog({ modId: params.modId });
+    }
+
+    const cacheKey = getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId);
+    const cached = browserSearchCatalogCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const inflight = browserSearchCatalogInFlight.get(cacheKey);
+    if (inflight) {
+      return inflight;
+    }
+
+    const request = http.get('/items/browser/search-catalog', {
+      params: {
+        q: normalizedSearch,
+        ...(params.modId ? { modId: params.modId } : {}),
+      },
+    }).then((response) => {
+      browserSearchCatalogCache.set(cacheKey, response.data);
+      return response.data;
+    }).finally(() => {
+      browserSearchCatalogInFlight.delete(cacheKey);
+    });
+
+    browserSearchCatalogInFlight.set(cacheKey, request);
+    return request;
+  },
+
+  peekBrowserSearchCatalog(search: string, modId?: string): BrowserSearchCatalogResponse | null {
+    const normalizedSearch = `${search ?? ''}`.trim();
+    if (!normalizedSearch) {
+      return api.peekBrowserDefaultCatalog(modId);
+    }
+    return browserSearchCatalogCache.get(getBrowserSearchCatalogCacheKey(normalizedSearch, modId)) ?? null;
+  },
+
+  async getBrowserGroupItems(groupKey: string, modId?: string): Promise<BrowserGroupItemsResponse> {
+    const normalizedGroupKey = `${groupKey ?? ''}`.trim();
+    if (!normalizedGroupKey) {
+      return {
+        groupKey: '',
+        total: 0,
+        items: [],
+      };
+    }
+
+    const cacheKey = getBrowserGroupItemsCacheKey(normalizedGroupKey, modId);
+    const cached = browserGroupItemsCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const inflight = browserGroupItemsInFlight.get(cacheKey);
+    if (inflight) {
+      return inflight;
+    }
+
+    const request = (async () => {
+      const persistent = await readPersistentRuntimePayload<BrowserGroupItemsResponse>(
+        'browser-group-items',
+        { groupKey: normalizedGroupKey, scope: getBrowserDefaultCatalogCacheKey(modId) },
+      );
+      if (persistent?.items?.length) {
+        browserGroupItemsCache.set(cacheKey, persistent);
+        return persistent;
+      }
+
+      const response = await http.get(`/items/browser/group/${encodeURIComponent(normalizedGroupKey)}`, {
+        params: modId ? { modId } : undefined,
+      });
+      browserGroupItemsCache.set(cacheKey, response.data);
+      persistRuntimePayload(
+        'browser-group-items',
+        { groupKey: normalizedGroupKey, scope: getBrowserDefaultCatalogCacheKey(modId) },
+        response.data,
+      );
+      return response.data;
+    })().finally(() => {
+      browserGroupItemsInFlight.delete(cacheKey);
+    });
+
+    browserGroupItemsInFlight.set(cacheKey, request);
+    return request;
+  },
+
+  peekBrowserGroupItems(groupKey: string, modId?: string): BrowserGroupItemsResponse | null {
+    const normalizedGroupKey = `${groupKey ?? ''}`.trim();
+    if (!normalizedGroupKey) {
+      return null;
+    }
+    return browserGroupItemsCache.get(getBrowserGroupItemsCacheKey(normalizedGroupKey, modId)) ?? null;
   },
 
   async getBrowserPagePack(params: {
@@ -1841,9 +2066,44 @@ export const api = {
   async getBrowserPagePackByIds(params: {
     itemIds: string[];
     slotSize?: number;
-  }): Promise<{ data: Array<{ key: string; kind: 'item'; item: Item }>; atlas: PageAtlasResult | null }> {
-    const response = await http.post('/items/browser/by-ids-pack', params);
-    return response.data;
+  }): Promise<BrowserByIdsPackResponse> {
+    const normalizedParams = {
+      itemIds: params.itemIds.map((itemId) => `${itemId ?? ''}`.trim()).filter(Boolean),
+      slotSize: params.slotSize,
+    };
+    const cacheKey = buildBrowserByIdsPackCacheKey(normalizedParams);
+    const cached = browserByIdsPackCache.get(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const inflight = browserByIdsPackInFlight.get(cacheKey);
+    if (inflight) {
+      return inflight;
+    }
+
+    const request = http.post('/items/browser/by-ids-pack', normalizedParams)
+      .then((response) => {
+        setCacheWithLimit(browserByIdsPackCache, cacheKey, response.data, CACHE_LIMITS.browserByIdsPack);
+        return response.data;
+      })
+      .finally(() => {
+        browserByIdsPackInFlight.delete(cacheKey);
+      });
+
+    browserByIdsPackInFlight.set(cacheKey, request);
+    return request;
+  },
+
+  peekBrowserPagePackByIds(params: {
+    itemIds: string[];
+    slotSize?: number;
+  }): BrowserByIdsPackResponse | null {
+    const normalizedParams = {
+      itemIds: params.itemIds.map((itemId) => `${itemId ?? ''}`.trim()).filter(Boolean),
+      slotSize: params.slotSize,
+    };
+    return browserByIdsPackCache.get(buildBrowserByIdsPackCacheKey(normalizedParams)) ?? null;
   },
 
   // Get item by ID
@@ -2125,25 +2385,27 @@ export const api = {
       return existingRequest;
     }
     const request = (async () => {
-      const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
-        'recipe-bootstrap',
-        { itemId },
-      );
-      if (persistent) {
-        setCacheWithLimit(recipeBootstrapCache, itemId, persistent, CACHE_LIMITS.recipeBootstrap);
-        return persistent;
-      }
+      if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
+        const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
+          'recipe-bootstrap',
+          { itemId },
+        );
+        if (persistent) {
+          setCacheWithLimit(recipeBootstrapCache, itemId, persistent, CACHE_LIMITS.recipeBootstrap);
+          return persistent;
+        }
 
-      const manifest = await api.getPublishManifest();
-      const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap');
+        const manifest = await api.getPublishManifest();
+        const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap');
         if (staticPath) {
           try {
             const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
             setCacheWithLimit(recipeBootstrapCache, itemId, published, CACHE_LIMITS.recipeBootstrap);
             persistRuntimePayload('recipe-bootstrap', { itemId }, published);
             return published;
-        } catch {
-          // Fall back to the API route when the static publish bundle is unavailable.
+          } catch {
+            // Fall back to the API route when the static publish bundle is unavailable.
+          }
         }
       }
 
@@ -2168,25 +2430,27 @@ export const api = {
       return existingRequest;
     }
     const request = (async () => {
-      const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
-        'recipe-bootstrap-shard',
-        { itemId },
-      );
-      if (persistent) {
-        setCacheWithLimit(recipeBootstrapShardCache, itemId, persistent, CACHE_LIMITS.recipeBootstrapShard);
-        return persistent;
-      }
+      if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
+        const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
+          'recipe-bootstrap-shard',
+          { itemId },
+        );
+        if (persistent) {
+          setCacheWithLimit(recipeBootstrapShardCache, itemId, persistent, CACHE_LIMITS.recipeBootstrapShard);
+          return persistent;
+        }
 
-      const manifest = await api.getPublishManifest();
-      const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'shard');
+        const manifest = await api.getPublishManifest();
+        const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'shard');
         if (staticPath) {
           try {
             const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
             setCacheWithLimit(recipeBootstrapShardCache, itemId, published, CACHE_LIMITS.recipeBootstrapShard);
             persistRuntimePayload('recipe-bootstrap-shard', { itemId }, published);
             return published;
-        } catch {
-          // Fall back to the API route when the static publish bundle is unavailable.
+          } catch {
+            // Fall back to the API route when the static publish bundle is unavailable.
+          }
         }
       }
 
@@ -2209,50 +2473,52 @@ export const api = {
   ): Promise<RecipeBootstrapMachineGroupPayload> {
     const normalizedMachineKey = `${options?.machineKey ?? ''}`.trim();
     const machineKey = normalizedMachineKey || (`${machineType ?? ''}`.trim() ? `${machineType}::${voltageTier ?? ''}` : '');
-    const persistent = await readPersistentRuntimePayload<RecipeBootstrapMachineGroupPayload>(
-      'recipe-bootstrap-produced-by-group',
-      {
-        itemId,
-        machineType,
-        machineKey: machineKey || null,
-        voltageTier: voltageTier ?? null,
-        offset: options?.offset ?? 0,
-        limit: options?.limit ?? null,
-        includeRecipeIds: options?.includeRecipeIds === true,
-      },
-    );
-    if (persistent) {
-      return persistent;
-    }
+    if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
+      const persistent = await readPersistentRuntimePayload<RecipeBootstrapMachineGroupPayload>(
+        'recipe-bootstrap-produced-by-group',
+        {
+          itemId,
+          machineType,
+          machineKey: machineKey || null,
+          voltageTier: voltageTier ?? null,
+          offset: options?.offset ?? 0,
+          limit: options?.limit ?? null,
+          includeRecipeIds: options?.includeRecipeIds === true,
+        },
+      );
+      if (persistent) {
+        return persistent;
+      }
 
-    const manifest = await api.getPublishManifest();
-    if (canUsePublishedRecipeGroupIndex(manifest, itemId, options) && machineKey) {
-      const staticPath = resolvePublishedRecipeGroupIndexPath({
-        manifest,
-        itemId,
-        tab: 'producedBy',
-        kind: 'machine',
-        key: machineKey,
-      });
-      if (staticPath) {
-        try {
-          const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
-          persistRuntimePayload(
-            'recipe-bootstrap-produced-by-group',
-            {
-              itemId,
-              machineType,
-              machineKey: machineKey || null,
-              voltageTier: voltageTier ?? null,
-              offset: options?.offset ?? 0,
-              limit: options?.limit ?? null,
-              includeRecipeIds: options?.includeRecipeIds === true,
-            },
-            published,
-          );
-          return published;
-        } catch {
-          // Fall back to the API route when the static publish bundle is unavailable.
+      const manifest = await api.getPublishManifest();
+      if (canUsePublishedRecipeGroupIndex(manifest, itemId, options) && machineKey) {
+        const staticPath = resolvePublishedRecipeGroupIndexPath({
+          manifest,
+          itemId,
+          tab: 'producedBy',
+          kind: 'machine',
+          key: machineKey,
+        });
+        if (staticPath) {
+          try {
+            const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
+            persistRuntimePayload(
+              'recipe-bootstrap-produced-by-group',
+              {
+                itemId,
+                machineType,
+                machineKey: machineKey || null,
+                voltageTier: voltageTier ?? null,
+                offset: options?.offset ?? 0,
+                limit: options?.limit ?? null,
+                includeRecipeIds: options?.includeRecipeIds === true,
+              },
+              published,
+            );
+            return published;
+          } catch {
+            // Fall back to the API route when the static publish bundle is unavailable.
+          }
         }
       }
     }
@@ -2290,50 +2556,52 @@ export const api = {
   ): Promise<RecipeBootstrapMachineGroupPayload> {
     const normalizedMachineKey = `${options?.machineKey ?? ''}`.trim();
     const machineKey = normalizedMachineKey || (`${machineType ?? ''}`.trim() ? `${machineType}::${voltageTier ?? ''}` : '');
-    const persistent = await readPersistentRuntimePayload<RecipeBootstrapMachineGroupPayload>(
-      'recipe-bootstrap-used-in-group',
-      {
-        itemId,
-        machineType,
-        machineKey: machineKey || null,
-        voltageTier: voltageTier ?? null,
-        offset: options?.offset ?? 0,
-        limit: options?.limit ?? null,
-        includeRecipeIds: options?.includeRecipeIds === true,
-      },
-    );
-    if (persistent) {
-      return persistent;
-    }
+    if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
+      const persistent = await readPersistentRuntimePayload<RecipeBootstrapMachineGroupPayload>(
+        'recipe-bootstrap-used-in-group',
+        {
+          itemId,
+          machineType,
+          machineKey: machineKey || null,
+          voltageTier: voltageTier ?? null,
+          offset: options?.offset ?? 0,
+          limit: options?.limit ?? null,
+          includeRecipeIds: options?.includeRecipeIds === true,
+        },
+      );
+      if (persistent) {
+        return persistent;
+      }
 
-    const manifest = await api.getPublishManifest();
-    if (canUsePublishedRecipeGroupIndex(manifest, itemId, options) && machineKey) {
-      const staticPath = resolvePublishedRecipeGroupIndexPath({
-        manifest,
-        itemId,
-        tab: 'usedIn',
-        kind: 'machine',
-        key: machineKey,
-      });
-      if (staticPath) {
-        try {
-          const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
-          persistRuntimePayload(
-            'recipe-bootstrap-used-in-group',
-            {
-              itemId,
-              machineType,
-              machineKey: machineKey || null,
-              voltageTier: voltageTier ?? null,
-              offset: options?.offset ?? 0,
-              limit: options?.limit ?? null,
-              includeRecipeIds: options?.includeRecipeIds === true,
-            },
-            published,
-          );
-          return published;
-        } catch {
-          // Fall back to the API route when the static publish bundle is unavailable.
+      const manifest = await api.getPublishManifest();
+      if (canUsePublishedRecipeGroupIndex(manifest, itemId, options) && machineKey) {
+        const staticPath = resolvePublishedRecipeGroupIndexPath({
+          manifest,
+          itemId,
+          tab: 'usedIn',
+          kind: 'machine',
+          key: machineKey,
+        });
+        if (staticPath) {
+          try {
+            const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
+            persistRuntimePayload(
+              'recipe-bootstrap-used-in-group',
+              {
+                itemId,
+                machineType,
+                machineKey: machineKey || null,
+                voltageTier: voltageTier ?? null,
+                offset: options?.offset ?? 0,
+                limit: options?.limit ?? null,
+                includeRecipeIds: options?.includeRecipeIds === true,
+              },
+              published,
+            );
+            return published;
+          } catch {
+            // Fall back to the API route when the static publish bundle is unavailable.
+          }
         }
       }
     }
@@ -2369,48 +2637,50 @@ export const api = {
     categoryKey: string,
     options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
   ): Promise<RecipeBootstrapCategoryGroupPayload> {
-    const persistent = await readPersistentRuntimePayload<RecipeBootstrapCategoryGroupPayload>(
-      'recipe-bootstrap-category-group',
-      {
-        itemId,
-        tab,
-        categoryKey,
-        offset: options?.offset ?? 0,
-        limit: options?.limit ?? null,
-        includeRecipeIds: options?.includeRecipeIds === true,
-      },
-    );
-    if (persistent) {
-      return persistent;
-    }
+    if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
+      const persistent = await readPersistentRuntimePayload<RecipeBootstrapCategoryGroupPayload>(
+        'recipe-bootstrap-category-group',
+        {
+          itemId,
+          tab,
+          categoryKey,
+          offset: options?.offset ?? 0,
+          limit: options?.limit ?? null,
+          includeRecipeIds: options?.includeRecipeIds === true,
+        },
+      );
+      if (persistent) {
+        return persistent;
+      }
 
-    const manifest = await api.getPublishManifest();
-    if (canUsePublishedRecipeGroupIndex(manifest, itemId, options)) {
-      const staticPath = resolvePublishedRecipeGroupIndexPath({
-        manifest,
-        itemId,
-        tab,
-        kind: 'category',
-        key: categoryKey,
-      });
-      if (staticPath) {
-        try {
-          const published = await fetchPublishedJson<RecipeBootstrapCategoryGroupPayload>(staticPath);
-          persistRuntimePayload(
-            'recipe-bootstrap-category-group',
-            {
-              itemId,
-              tab,
-              categoryKey,
-              offset: options?.offset ?? 0,
-              limit: options?.limit ?? null,
-              includeRecipeIds: options?.includeRecipeIds === true,
-            },
-            published,
-          );
-          return published;
-        } catch {
-          // Fall back to the API route when the static publish bundle is unavailable.
+      const manifest = await api.getPublishManifest();
+      if (canUsePublishedRecipeGroupIndex(manifest, itemId, options)) {
+        const staticPath = resolvePublishedRecipeGroupIndexPath({
+          manifest,
+          itemId,
+          tab,
+          kind: 'category',
+          key: categoryKey,
+        });
+        if (staticPath) {
+          try {
+            const published = await fetchPublishedJson<RecipeBootstrapCategoryGroupPayload>(staticPath);
+            persistRuntimePayload(
+              'recipe-bootstrap-category-group',
+              {
+                itemId,
+                tab,
+                categoryKey,
+                offset: options?.offset ?? 0,
+                limit: options?.limit ?? null,
+                includeRecipeIds: options?.includeRecipeIds === true,
+              },
+              published,
+            );
+            return published;
+          } catch {
+            // Fall back to the API route when the static publish bundle is unavailable.
+          }
         }
       }
     }
@@ -2456,21 +2726,23 @@ export const api = {
       };
     }
 
-    const persistent = await readPersistentRuntimePayload<RecipeBootstrapSearchPayload>(
-      'recipe-bootstrap-search',
-      { itemId, tab, query: normalizedQuery },
-    );
-    if (persistent) {
-      return persistent;
-    }
+    if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
+      const persistent = await readPersistentRuntimePayload<RecipeBootstrapSearchPayload>(
+        'recipe-bootstrap-search',
+        { itemId, tab, query: normalizedQuery },
+      );
+      if (persistent) {
+        return persistent;
+      }
 
-    const publishedPack = await getPublishedRecipeBootstrapSearchPack(itemId, tab);
-    if (publishedPack) {
-      const itemMatches = await searchPublishedItemMatches(normalizedQuery, 80, { signal: options?.signal })
-        .catch(() => []);
-      const result = searchPublishedRecipeBootstrapPack(publishedPack, normalizedQuery, itemMatches);
-      persistRuntimePayload('recipe-bootstrap-search', { itemId, tab, query: normalizedQuery }, result);
-      return result;
+      const publishedPack = await getPublishedRecipeBootstrapSearchPack(itemId, tab);
+      if (publishedPack) {
+        const itemMatches = await searchPublishedItemMatches(normalizedQuery, 80, { signal: options?.signal })
+          .catch(() => []);
+        const result = searchPublishedRecipeBootstrapPack(publishedPack, normalizedQuery, itemMatches);
+        persistRuntimePayload('recipe-bootstrap-search', { itemId, tab, query: normalizedQuery }, result);
+        return result;
+      }
     }
 
     const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/search`, {

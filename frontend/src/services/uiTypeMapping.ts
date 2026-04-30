@@ -108,6 +108,13 @@ const GT_ALLOY_SMELTER: UITypeConfig = {
   hasEnergyBar: true,
 };
 
+const GT_CHEMICAL_REACTOR: UITypeConfig = {
+  uiType: 'gt_chemical_reactor',
+  component: 'GTChemicalReactorUI',
+  hasFluidSlots: true,
+  hasEnergyBar: true,
+};
+
 const GT_MOLECULAR: UITypeConfig = {
   uiType: 'gt_molecular',
   component: 'GTMolecularUI',
@@ -281,6 +288,11 @@ const PRESENTATION_BY_UI_TYPE: Record<string, UIPresentationMeta> = {
     surface: 'machine',
     density: 'standard',
   },
+  gt_chemical_reactor: {
+    family: 'gregtech',
+    surface: 'machine',
+    density: 'oversized',
+  },
   gt_molecular: {
     family: 'gregtech',
     surface: 'machine',
@@ -417,9 +429,17 @@ const EXACT_ALIASES: Array<[string, UITypeConfig]> = [
   ['centrifuge', GT_GENERIC],
 
   ['alloy smelter', GT_ALLOY_SMELTER],
-  ['合金炉', GT_ALLOY_SMELTER],
-  ['合金炉', GT_ALLOY_SMELTER],
-  ['合金冶炼炉', GT_GENERIC],
+  ['\u5408\u91d1\u7089', GT_ALLOY_SMELTER],
+  ['\u5408\u91d1\u7089', GT_ALLOY_SMELTER],
+  ['\u5408\u91d1\u51b6\u70bc\u7089', GT_GENERIC],
+
+  ['chemical reactor', GT_CHEMICAL_REACTOR],
+  ['large chemical reactor', GT_CHEMICAL_REACTOR],
+  ['chemical reactor (lv)', GT_CHEMICAL_REACTOR],
+  ['large chemical reactor (lv)', GT_CHEMICAL_REACTOR],
+  ['\u5316\u5b66\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
+  ['\u5927\u578b\u5316\u5b66\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
+  ['\u5316\u5de5\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
 
   ['molecular', GT_MOLECULAR],
   ['分子', GT_MOLECULAR],
@@ -523,7 +543,12 @@ const KEYWORD_ALIASES: Array<[string, UITypeConfig]> = [
   ['extruder', GT_GENERIC],
   ['centrifuge', GT_GENERIC],
   ['alloy smelter', GT_ALLOY_SMELTER],
-  ['合金', GT_GENERIC],
+  ['\u5408\u91d1', GT_GENERIC],
+  ['chemical reactor', GT_CHEMICAL_REACTOR],
+  ['large chemical reactor', GT_CHEMICAL_REACTOR],
+  ['\u5316\u5b66\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
+  ['\u5927\u578b\u5316\u5b66\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
+  ['\u5316\u5de5\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
   ['molecular', GT_MOLECULAR],
   ['分子', GT_GENERIC],
   ['electroly', GT_ELECTROLYZER],
@@ -698,8 +723,17 @@ function detectBaseUIType(machineType: string): UITypeConfig {
     return BLOOD_MAGIC_ALTAR;
   }
   if (
+    normalized.includes('chemical reactor') ||
+    normalized.includes('large chemical reactor') ||
+    normalized.includes('\u5316\u5b66\u53cd\u5e94\u91dc') ||
+    normalized.includes('\u5927\u578b\u5316\u5b66\u53cd\u5e94\u91dc') ||
+    normalized.includes('\u5316\u5de5\u53cd\u5e94\u91dc')
+  ) {
+    return GT_CHEMICAL_REACTOR;
+  }
+  if (
     normalized.includes('gregtech') &&
-    (normalized.includes('assembly line') || normalized.includes('装配线'))
+    (normalized.includes('assembly line') || normalized.includes('\u88c5\u914d\u7ebf'))
   ) {
     return GT_ASSEMBLY_LINE;
   }
@@ -853,10 +887,22 @@ export function resolveRecipePresentationProfile(
 
   if (
     combined.includes('alloy smelter') ||
-    combined.includes('合金炉')
+    combined.includes('\u5408\u91d1\u7089')
   ) {
     return createPresentationProfile(GT_ALLOY_SMELTER, {
       reason: 'combined:gt_alloy_smelter',
+    });
+  }
+
+  if (
+    combined.includes('chemical reactor') ||
+    combined.includes('large chemical reactor') ||
+    combined.includes('\u5316\u5b66\u53cd\u5e94\u91dc') ||
+    combined.includes('\u5927\u578b\u5316\u5b66\u53cd\u5e94\u91dc') ||
+    combined.includes('\u5316\u5de5\u53cd\u5e94\u91dc')
+  ) {
+    return createPresentationProfile(GT_CHEMICAL_REACTOR, {
+      reason: 'combined:gt_chemical_reactor',
     });
   }
 
@@ -1111,6 +1157,7 @@ export function getAllUITypes(): string[] {
         GT_ASSEMBLER,
         GT_ASSEMBLY_LINE,
         GT_ALLOY_SMELTER,
+        GT_CHEMICAL_REACTOR,
         GT_MOLECULAR,
         GT_ELECTROLYZER,
         GT_BLAST_FURNACE,
@@ -1148,6 +1195,7 @@ const UI_CONFIG_BY_TYPE: Record<string, UITypeConfig> = {
   [GT_ASSEMBLER.uiType]: GT_ASSEMBLER,
   [GT_ASSEMBLY_LINE.uiType]: GT_ASSEMBLY_LINE,
   [GT_ALLOY_SMELTER.uiType]: GT_ALLOY_SMELTER,
+  [GT_CHEMICAL_REACTOR.uiType]: GT_CHEMICAL_REACTOR,
   [GT_MOLECULAR.uiType]: GT_MOLECULAR,
   [GT_ELECTROLYZER.uiType]: GT_ELECTROLYZER,
   [GT_BLAST_FURNACE.uiType]: GT_BLAST_FURNACE,

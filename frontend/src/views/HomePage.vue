@@ -13,14 +13,18 @@ import {
 import { useRouter } from "vue-router";
 import {
   api,
+  type BrowserGridEntry,
   type BrowserVariantGroup,
   type Item,
 } from "../services/api";
 import {
-  buildPageAtlas,
   type PageAtlasResult,
 } from "../services/pageAtlas";
-import ItemTooltip from "../components/ItemTooltip.vue";
+import {
+  primeAnimatedAtlasManifest,
+  primeRenderAnimationHintsFromUnknown,
+  queueRenderableMediaPrewarmFromUnknown,
+} from "../services/animationBudget";
 import RecipeDisplayRouter from "../components/RecipeDisplayRouter.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
 import { useSitePreheater } from "../composables/useSitePreheater";
@@ -35,7 +39,6 @@ const router = useRouter();
 const PatternGroup = defineAsyncComponent(
   () => import("../components/PatternGroup.vue"),
 );
-const ItemCard = defineAsyncComponent(() => import("../components/ItemCard.vue"));
 const HomeCanvasGrid = defineAsyncComponent(() => import("../components/HomeCanvasGrid.vue"));
 const MachineTypeIcons = defineAsyncComponent(
   () => import("../components/MachineTypeIcons.vue"),
@@ -108,14 +111,11 @@ const loadViewHistory = () => {
 };
 const viewHistory = ref<ItemBasicInfo[]>(loadViewHistory());
 const maxHistoryItems = 400; // Keep a bounded history list without limiting UI to 20.
-const HOME_HISTORY_ANIMATION_DELAY_MS = 1800;
 const historyAtlas = ref<PageAtlasResult | null | undefined>(undefined);
+const historyItems = ref<Item[]>([]);
 const expandedBrowserGroups = ref<Set<string>>(new Set());
 const showSearchContextMenu = ref(false);
 const searchContextMenuPosition = ref({ x: 0, y: 0 });
-const shouldDeferHistoryCards = computed(
-  () => currentView.value === 'items' && viewHistory.value.length > 0 && historyAtlas.value === undefined,
-);
 let historyAtlasRequestSeq = 0;
 
 // Save view history to localStorage
@@ -232,6 +232,19 @@ const historyColumns = computed(() => {
 });
 
 const historyVisibleCount = computed(() => historyColumns.value * historyRows);
+const visibleHistorySeeds = computed(() => viewHistory.value.slice(0, historyVisibleCount.value));
+const visibleHistoryItems = computed<Item[]>(() =>
+  historyItems.value.length > 0
+    ? historyItems.value
+    : (visibleHistorySeeds.value as Item[]),
+);
+const historyBrowserEntries = computed<BrowserGridEntry[]>(() =>
+  visibleHistoryItems.value.map((item) => ({
+    key: item.itemId,
+    kind: "item",
+    item,
+  })),
+);
 
 onMounted(() => {
   updateHistoryPanelWidth();
@@ -320,20 +333,58 @@ watch(
 );
 
 watch(
-  () => viewHistory.value.slice(0, historyVisibleCount.value).map((item) => item.itemId).join("|"),
+  () => [
+    visibleHistorySeeds.value.map((item) => item.itemId).join("|"),
+    historyItemPixelSize.value,
+  ].join("::"),
   () => {
-    const visibleHistoryItems = viewHistory.value.slice(0, historyVisibleCount.value) as Item[];
-    if (visibleHistoryItems.length === 0) {
+    const seedItems = visibleHistorySeeds.value;
+    if (seedItems.length === 0) {
+      historyItems.value = [];
       historyAtlas.value = null;
       return;
     }
+
     const requestSeq = ++historyAtlasRequestSeq;
-    historyAtlas.value = undefined;
-    void buildPageAtlas(visibleHistoryItems, historyItemPixelSize.value).then((atlas) => {
+    const slotSize = Math.max(32, Math.ceil(historyItemPixelSize.value * 0.9));
+    const cachedPack = api.peekBrowserPagePackByIds({
+      itemIds: seedItems.map((item) => item.itemId),
+      slotSize,
+    });
+    if (cachedPack) {
+      historyItems.value = cachedPack.data.map((entry) => entry.item);
+      historyAtlas.value = cachedPack.atlas ?? null;
+      primeRenderAnimationHintsFromUnknown(cachedPack.data);
+      primeAnimatedAtlasManifest(cachedPack.mediaManifest);
+      queueRenderableMediaPrewarmFromUnknown(cachedPack.data, {
+        limit: 24,
+        animatedOnly: true,
+      });
+    } else {
+      historyItems.value = seedItems as Item[];
+      historyAtlas.value = undefined;
+    }
+
+    void api.getBrowserPagePackByIds({
+      itemIds: seedItems.map((item) => item.itemId),
+      slotSize,
+    }).then((pack) => {
       if (requestSeq !== historyAtlasRequestSeq) return;
-      historyAtlas.value = atlas;
+      historyItems.value = pack.data.map((entry) => entry.item);
+      historyAtlas.value = pack.atlas ?? null;
+      primeRenderAnimationHintsFromUnknown(pack.data);
+      primeAnimatedAtlasManifest(pack.mediaManifest);
+      queueRenderableMediaPrewarmFromUnknown(pack.data, {
+        limit: 24,
+        animatedOnly: true,
+      });
+    }).catch(() => {
+      if (requestSeq !== historyAtlasRequestSeq) return;
+      historyItems.value = seedItems as Item[];
+      historyAtlas.value = null;
     });
   },
+  { immediate: true },
 );
 
 const itemGridEmptySubtitle = computed(() => {
@@ -1253,36 +1304,17 @@ const saveSettings = () => {
             >
               <div
                 v-if="viewHistory.length > 0"
-                class="grid gap-1 overflow-hidden content-start"
-                :style="{
-                  gridTemplateColumns: `repeat(${historyColumns}, ${historyGridCellSize}px)`,
-                  gridTemplateRows: `repeat(${historyRows}, ${historyItemPixelSize}px)`,
-                }"
+                class="h-full w-full overflow-hidden"
               >
-                <ItemTooltip
-                  v-for="(historyItem, historyIndex) in viewHistory.slice(0, historyVisibleCount)"
-                  :key="historyItem.itemId"
-                  :item="historyItem"
-                  @click="openCraftingRecipes(historyItem)"
-                  @contextmenu="handleCardContextMenu"
-                >
-                  <div
-                    v-if="shouldDeferHistoryCards"
-                    class="atlas-card-placeholder"
-                    :style="{ width: `${historyItemPixelSize}px`, height: `${historyItemPixelSize}px` }"
-                  />
-                  <ItemCard
-                    v-else
-                    :item="historyItem"
-                    :itemSize="historyItemPixelSize"
-                    :enableAnimation="true"
-                    :eager="historyIndex < 8"
-                    :deferAnimationMs="HOME_HISTORY_ANIMATION_DELAY_MS"
-                    :atlas-sprite="historyAtlas?.entries[historyItem.itemId] || null"
-                    @click="openCraftingRecipes(historyItem)"
-                  @contextmenu="handleCardContextMenu"
-                  />
-                </ItemTooltip>
+                <HomeCanvasGrid
+                  :entries="historyBrowserEntries"
+                  :item-size="historyItemPixelSize"
+                  :atlas="historyAtlas"
+                  :enable-animation="true"
+                  :prefer-atlas="true"
+                  @item-click="openCraftingRecipes"
+                  @item-contextmenu="handleCardContextMenu"
+                />
               </div>
             </div>
           </div>

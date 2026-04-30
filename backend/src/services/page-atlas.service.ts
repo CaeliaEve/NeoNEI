@@ -107,17 +107,18 @@ export class PageAtlasService {
   }
 
   private resolveImageFilePath(imageUrl: string): string | null {
-    const match = imageUrl.match(/^\/images\/item\/(.+)$/);
+    const match = imageUrl.match(/^\/images\/(item|fluid)\/(.+)$/);
     if (!match) return null;
-    const relativePath = match[1]
+    const family = match[1];
+    const relativePath = match[2]
       .split('/')
       .map((part) => decodeURIComponent(part))
       .join(path.sep);
-    const itemRoot = path.resolve(this.imageRoot, 'item');
+    const familyRoot = path.resolve(this.imageRoot, family);
 
     const resolveCandidate = (relativeCandidatePath: string): string | null => {
-      const absolute = path.resolve(this.imageRoot, 'item', relativeCandidatePath);
-      if (!absolute.startsWith(itemRoot) || !fs.existsSync(absolute)) {
+      const absolute = path.resolve(this.imageRoot, family, relativeCandidatePath);
+      if (!absolute.startsWith(familyRoot) || !fs.existsSync(absolute)) {
         return null;
       }
       return absolute;
@@ -147,8 +148,8 @@ export class PageAtlasService {
       return spriteAtlas;
     }
 
-    const parentDir = path.dirname(path.resolve(this.imageRoot, 'item', relativePath));
-    if (parentDir.startsWith(itemRoot) && fs.existsSync(parentDir)) {
+    const parentDir = path.dirname(path.resolve(this.imageRoot, family, relativePath));
+    if (parentDir.startsWith(familyRoot) && fs.existsSync(parentDir)) {
       const requestedFile = path.basename(relativePath);
       const baseName = requestedFile.replace(/\.(png|gif)$/i, '');
       const escapedBaseName = baseName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -162,7 +163,7 @@ export class PageAtlasService {
           ?? siblings.find((name) => name.toLowerCase().endsWith('.sprite-atlas.png'))
           ?? siblings[0];
         const preferredAbsolute = path.resolve(parentDir, preferred);
-        if (preferredAbsolute.startsWith(itemRoot) && fs.existsSync(preferredAbsolute)) {
+        if (preferredAbsolute.startsWith(familyRoot) && fs.existsSync(preferredAbsolute)) {
           return preferredAbsolute;
         }
       }

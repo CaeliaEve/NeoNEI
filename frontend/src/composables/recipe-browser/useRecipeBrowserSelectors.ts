@@ -56,6 +56,87 @@ export const useRecipeBrowserSelectors = ({
   getSelectedVariant,
   getImagePath,
 }: RecipeBrowserSelectorsOptions) => {
+  const normalizeSummaryMachineKey = (
+    entry: {
+      machineKey?: string | null;
+      categoryKey?: string;
+      name?: string;
+      voltageTier?: string | null;
+    },
+  ): string => {
+    const machineKey = `${entry.machineKey ?? ''}`.trim();
+    if (machineKey) {
+      return machineKey;
+    }
+
+    const categoryKey = `${entry.categoryKey ?? ''}`.trim();
+    if (categoryKey.startsWith('machine:')) {
+      return categoryKey.slice('machine:'.length);
+    }
+
+    const name = `${entry.name ?? ''}`.trim();
+    if (!name) {
+      return '';
+    }
+
+    return `${name}::${entry.voltageTier ?? ''}`;
+  };
+
+  const shouldPreferMachineSummaryGroups = (
+    summaryCategoryGroups: Array<{
+      type?: string;
+      categoryKey?: string;
+      machineKey?: string | null;
+      name?: string;
+      voltageTier?: string | null;
+      recipeCount?: number;
+    }>,
+    summaryMachineGroups: Array<{
+      machineType?: string;
+      machineKey?: string | null;
+      voltageTier?: string | null;
+      recipeCount?: number;
+    }>,
+  ): boolean => {
+    if (!summaryMachineGroups.length || !summaryCategoryGroups.length) {
+      return false;
+    }
+
+    if (!summaryCategoryGroups.every((group) => group.type === 'machine')) {
+      return false;
+    }
+
+    const machineCounts = new Map<string, number>();
+    for (const group of summaryMachineGroups) {
+      const key = normalizeSummaryMachineKey({
+        machineKey: group.machineKey ?? null,
+        name: group.machineType,
+        voltageTier: group.voltageTier ?? null,
+      });
+      if (!key) continue;
+      machineCounts.set(key, Math.max(0, Number(group.recipeCount ?? 0)));
+    }
+
+    const categoryCounts = new Map<string, number>();
+    for (const group of summaryCategoryGroups) {
+      const key = normalizeSummaryMachineKey(group);
+      if (!key) continue;
+      categoryCounts.set(key, Math.max(0, Number(group.recipeCount ?? 0)));
+    }
+
+    if (machineCounts.size !== categoryCounts.size) {
+      return true;
+    }
+
+    for (const [key, recipeCount] of machineCounts.entries()) {
+      if (categoryCounts.get(key) !== recipeCount) {
+        return true;
+      }
+    }
+
+    return false;
+  };
+
   const hasBootstrapRichData = (recipe: Recipe | null | undefined) => {
     if (!recipe) return false;
     const additionalData =
@@ -155,36 +236,120 @@ export const useRecipeBrowserSelectors = ({
   const machineCategories = computed<MachineCategory[]>(() => {
     const loadedCategories = buildMachineCategories(filteredRecipes.value, getImagePath);
     const summary = indexedSummary.value;
-    const summaryCategoryGroups = currentTab.value === 'producedBy'
+    const rawSummaryCategoryGroups = currentTab.value === 'producedBy'
       ? (summary?.producedByCategoryGroups ?? [])
       : (summary?.usedInCategoryGroups ?? []);
     const summaryGroups = currentTab.value === 'producedBy'
       ? (summary?.producedByMachineGroups ?? summary?.machineGroups ?? [])
       : (summary?.usedInMachineGroups ?? []);
+    const loadedRecipeCount = currentRecipesInTab.value.length;
+    const expectedRecipeCount = currentTab.value === 'producedBy'
+      ? (summary?.counts?.producedBy ?? 0)
+      : (summary?.counts?.usedIn ?? 0);
+    if (!recipeSearchQuery.value.trim() && expectedRecipeCount > 0 && loadedRecipeCount >= expectedRecipeCount) {
+      return loadedCategories;
+    }
+    const preferMachineSummaryCategories = shouldPreferMachineSummaryGroups(rawSummaryCategoryGroups, summaryGroups);
+    const summaryCategoryGroups = preferMachineSummaryCategories
+      ? []
+      : rawSummaryCategoryGroups;
 
     if ((!summaryGroups.length && !summaryCategoryGroups.length) || recipeSearchQuery.value.trim()) {
       return loadedCategories;
     }
 
-    const summaryCategories = summaryCategoryGroups.length > 0
+    const machineSummaryByKey = new Map(
+      summaryGroups
+        .map((group) => {
+          const key = normalizeSummaryMachineKey({
+            machineKey: group.machineKey ?? null,
+            name: group.machineType,
+            voltageTier: group.voltageTier ?? null,
+          });
+          return key ? [key, group] as const : null;
+        })
+        .filter((entry): entry is readonly [string, typeof summaryGroups[number]] => Boolean(entry)),
+    );
+
+    let summaryCategories = summaryCategoryGroups.length > 0
       ? buildCategorySkeletonsFromSummary(summaryCategoryGroups, getImagePath)
       : buildMachineCategorySkeletonsFromSummary(summaryGroups, getImagePath);
+    if (machineSummaryByKey.size > 0 && summaryCategories.length > 0) {
+      const remainingMachineSummaries = new Map(machineSummaryByKey);
+      summaryCategories = summaryCategories.map((category) => {
+        if (category.type !== 'machine') {
+          return category;
+        }
+
+        const summaryKey = normalizeSummaryMachineKey({
+          categoryKey: category.categoryKey,
+          machineKey: category.machineKey,
+          name: category.name,
+          voltageTier: category.voltageTier,
+        });
+        const machineSummary = summaryKey ? remainingMachineSummaries.get(summaryKey) : null;
+        if (!machineSummary) {
+          return category;
+        }
+
+        remainingMachineSummaries.delete(summaryKey);
+        return {
+          ...category,
+          machineKey: machineSummary.machineKey ?? category.machineKey ?? null,
+          voltageTier: machineSummary.voltageTier ?? category.voltageTier ?? null,
+          recipeCount: Math.max(0, Number(machineSummary.recipeCount ?? category.recipeCount ?? 0)),
+        };
+      });
+
+      if (remainingMachineSummaries.size > 0) {
+        summaryCategories = [
+          ...summaryCategories,
+          ...buildMachineCategorySkeletonsFromSummary(Array.from(remainingMachineSummaries.values()), getImagePath),
+        ];
+      }
+    }
     if (summaryCategories.length === 0) {
       return loadedCategories;
     }
 
     const getCategoryKey = (category: MachineCategory) =>
       category.categoryKey?.trim() || category.machineKey?.trim() || `${category.type}:${category.name.trim().toLowerCase()}`;
+    const getCategoryMatchKey = (category: MachineCategory) =>
+      normalizeSummaryMachineKey({
+        categoryKey: category.categoryKey,
+        machineKey: category.machineKey,
+        name: category.name,
+        voltageTier: category.voltageTier,
+      }) || getCategoryKey(category);
 
     const loadedByKey = new Map<string, MachineCategory>();
     for (const category of loadedCategories) {
-      loadedByKey.set(getCategoryKey(category), category);
+      loadedByKey.set(getCategoryMatchKey(category), category);
+    }
+
+    if (preferMachineSummaryCategories) {
+      return summaryCategories.map((summaryCategory) => {
+        const loaded = loadedByKey.get(getCategoryMatchKey(summaryCategory));
+        if (!loaded) {
+          return summaryCategory;
+        }
+
+        return {
+          ...loaded,
+          name: summaryCategory.name,
+          categoryKey: summaryCategory.categoryKey,
+          machineKey: summaryCategory.machineKey ?? loaded.machineKey ?? null,
+          voltageTier: summaryCategory.voltageTier ?? loaded.voltageTier ?? null,
+          machineIcon: loaded.machineIcon || summaryCategory.machineIcon,
+          recipeCount: summaryCategory.recipeCount ?? loaded.recipeCount ?? loaded.recipes.length,
+        };
+      });
     }
 
     const usedKeys = new Set<string>();
     const merged: MachineCategory[] = [];
     for (const summaryCategory of summaryCategories) {
-      const key = getCategoryKey(summaryCategory);
+      const key = getCategoryMatchKey(summaryCategory);
       const loaded = loadedByKey.get(key);
       if (loaded) {
         merged.push({
@@ -192,7 +357,9 @@ export const useRecipeBrowserSelectors = ({
           machineKey: loaded.machineKey ?? summaryCategory.machineKey ?? null,
           voltageTier: loaded.voltageTier ?? summaryCategory.voltageTier ?? null,
           machineIcon: loaded.machineIcon || summaryCategory.machineIcon,
-          recipeCount: Math.max(loaded.recipeCount ?? loaded.recipes.length, summaryCategory.recipeCount ?? 0),
+          recipeCount: summaryCategory.machineKey
+            ? (summaryCategory.recipeCount ?? loaded.recipeCount ?? loaded.recipes.length)
+            : Math.max(loaded.recipeCount ?? loaded.recipes.length, summaryCategory.recipeCount ?? 0),
         });
       } else {
         merged.push(summaryCategory);
@@ -201,7 +368,7 @@ export const useRecipeBrowserSelectors = ({
     }
 
     for (const category of loadedCategories) {
-      const key = getCategoryKey(category);
+      const key = getCategoryMatchKey(category);
       if (usedKeys.has(key)) continue;
       merged.push(category);
     }

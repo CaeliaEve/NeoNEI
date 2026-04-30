@@ -13,7 +13,8 @@ test('normalizeMachineFamilyName merges gt cryogenic and vacuum freezer machine 
 test('normalizeMachineFamilyName merges other gt machine family variants', () => {
   assert.equal(normalizeMachineFamilyName('工业电解机 (MV)'), '电解机');
   assert.equal(normalizeMachineFamilyName('工业离心机 (ULV)'), '离心机');
-  assert.equal(normalizeMachineFamilyName('大型化学反应釜 (LV)'), '化学反应釜');
+  assert.equal(normalizeMachineFamilyName('大型化学反应釜 (LV)'), '大型化学反应釜');
+  assert.equal(normalizeMachineFamilyName('化学反应釜 (LV)'), '化学反应釜');
   assert.equal(normalizeMachineFamilyName('工业高炉 (EV)'), '高炉');
   assert.equal(normalizeMachineFamilyName('工业搅拌机 (MV)'), '搅拌机');
 });

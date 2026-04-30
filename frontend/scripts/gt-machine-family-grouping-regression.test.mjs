@@ -19,3 +19,15 @@ test('recipe browser defines gt machine family aliases for merged category tabs'
     'cryo freezer and vacuum freezer should be merged into the same category family',
   );
 });
+
+test('recipe browser keeps standard and large chemical reactors as separate tabs', () => {
+  const aliasBlock = helpersSource.match(
+    /const GT_MACHINE_CATEGORY_ALIAS_GROUPS: string\[\]\[\] = \[[\s\S]*?\n\];/,
+  )?.[0] ?? '';
+
+  assert.equal(
+    aliasBlock.includes("['化学反应釜', '大型化学反应釜']"),
+    false,
+    'standard and large chemical reactors should stay split instead of being normalized into one family',
+  );
+});

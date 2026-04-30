@@ -3,14 +3,10 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { getItemImageUrlFromEntity, getPreferredStaticImageUrlFromEntity, type Item } from "../services/api";
 import type { PageAtlasSpriteEntry } from "../services/pageAtlas";
 import {
-  fetchAnimatedAtlasEntry,
-  fetchNativeSpriteMetadata,
-  getAnimatedAtlasImageUrl,
   getSharedAnimationNowMs,
-  getNativeSpriteAtlasUrl,
-  loadImageAsset,
+  prepareItemAnimationFrames,
+  type PreparedAnimationFrame,
   probeDirectGifPlayback,
-  probeAnimationSupport,
   resolvePreparedAnimationFrameIndex,
 } from "../services/animationBudget";
 
@@ -44,14 +40,13 @@ const staticImageError = ref(false);
 const isAnimationLoaded = ref(false);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const rootRef = ref<HTMLElement | null>(null);
-const animationFrames = ref<Array<{ image: HTMLImageElement; durationMs: number }>>([]);
+const animationFrames = ref<PreparedAnimationFrame[]>([]);
 const isVisible = ref(false);
 
 let animationFrameId: number | null = null;
 let currentFrameIndex = 0;
 let animationProbeToken = 0;
 let visibilityObserver: IntersectionObserver | null = null;
-const DEFAULT_FRAME_DURATION_MS = 50;
 const spriteScale = computed(() => (props.atlasSprite ? (props.itemSize * 0.9) / props.atlasSprite.slotSize : 1));
 const atlasSpriteStyle = computed<Record<string, string> | null>(() => {
   if (!props.atlasSprite) return null;
@@ -72,31 +67,10 @@ const getImageSrc = (item: Item): string => {
 
 const getAnimationBaseUrl = (item: Item): string => {
   const preferred = typeof item.preferredImageUrl === "string" ? item.preferredImageUrl : "";
-  if (preferred && preferred.includes("/images/item/")) {
+  if (preferred && preferred.includes("/images/")) {
     return preferred;
   }
   return getItemImageUrlFromEntity(item);
-};
-
-const normalizeFrameDuration = (durationMs?: number | null): number => {
-  if (typeof durationMs !== "number" || !Number.isFinite(durationMs) || durationMs <= 0) {
-    return DEFAULT_FRAME_DURATION_MS;
-  }
-  return Math.max(16, Math.round(durationMs));
-};
-
-const getSpriteSheetPhysicalFrameCount = (timeline: Array<{ frameIndex?: number; index?: number }> | undefined, fallback?: number | null): number => {
-  const timelineMax =
-    timeline?.reduce((max, frame, idx) => {
-      const frameIndex =
-        typeof frame.frameIndex === "number"
-          ? frame.frameIndex
-          : typeof frame.index === "number"
-            ? frame.index
-            : idx;
-      return Math.max(max, frameIndex + 1);
-    }, 0) ?? 0;
-  return Math.max(Number(fallback ?? 0), timelineMax, 1);
 };
 
 const imageSrc = computed(() => getImageSrc(props.item));
@@ -109,16 +83,26 @@ const shouldRenderFallbackImage = computed(() => {
 
 const renderFrame = (frameIndex: number) => {
   const canvas = canvasRef.value;
-  const currentImg = animationFrames.value[frameIndex]?.image;
-  if (!canvas || !currentImg || !currentImg.complete) return;
+  const currentFrame = animationFrames.value[frameIndex];
+  if (!canvas || !currentFrame) return;
 
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  canvas.width = currentImg.naturalWidth;
-  canvas.height = currentImg.naturalHeight;
+  canvas.width = currentFrame.width;
+  canvas.height = currentFrame.height;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(currentImg, 0, 0);
+  ctx.drawImage(
+    currentFrame.source,
+    0,
+    0,
+    currentFrame.width,
+    currentFrame.height,
+    0,
+    0,
+    currentFrame.width,
+    currentFrame.height,
+  );
 };
 
 const animate = (timestamp: number) => {
@@ -161,119 +145,39 @@ const resetAnimationState = () => {
 };
 
 const loadAnimationFrames = async (token: number): Promise<void> => {
-  const animatedAtlasEntry = await fetchAnimatedAtlasEntry(props.item.renderAssetRef);
+  const frames = await prepareItemAnimationFrames({
+    itemId: props.item.itemId,
+    preferredImageUrl: props.item.preferredImageUrl ?? null,
+    renderAssetRef: props.item.renderAssetRef ?? null,
+    imageFileName: props.item.imageFileName ?? null,
+    renderHint: props.item.renderHint ?? null,
+  });
   if (token !== animationProbeToken) return;
 
-  if (animatedAtlasEntry && animatedAtlasEntry.frames.length > 0) {
-    const atlasUrl = getAnimatedAtlasImageUrl(animatedAtlasEntry);
-    if (atlasUrl) {
-      const atlasImg = await loadImageAsset(atlasUrl);
-      if (token !== animationProbeToken) return;
-
-      const frames: Array<{ image: HTMLImageElement; durationMs: number }> = [];
-      for (const frame of animatedAtlasEntry.frames) {
-        const frameCanvas = document.createElement("canvas");
-        frameCanvas.width = frame.width;
-        frameCanvas.height = frame.height;
-        const frameCtx = frameCanvas.getContext("2d");
-        if (frameCtx) {
-          frameCtx.drawImage(
-            atlasImg,
-            frame.x,
-            frame.y,
-            frame.width,
-            frame.height,
-            0,
-            0,
-            frame.width,
-            frame.height,
-          );
-        }
-
-        const img = new Image();
-        img.src = frameCanvas.toDataURL("image/png");
-        await new Promise<void>((resolve, reject) => {
-          img.onload = () => resolve();
-          img.onerror = () => reject();
-        });
-        const timelineEntry = animatedAtlasEntry.timeline?.find((entry) => entry.index === frame.index)
-          ?? animatedAtlasEntry.timeline?.find((entry) => entry.frameIndex === frame.index);
-        frames.push({
-          image: img,
-          durationMs: normalizeFrameDuration(timelineEntry?.durationMs ?? animatedAtlasEntry.frameDurationMs),
-        });
-      }
-
-      if (token !== animationProbeToken) return;
-      animationFrames.value = frames;
-      isAnimationLoaded.value = true;
-      showAnimation.value = frames.length > 1;
-      hasAnimation.value = frames.length > 1;
-      if (frames.length > 1) {
-        startAnimation();
-      }
-      return;
-    }
+  if (frames.length > 1) {
+    animationFrames.value = frames;
+    isAnimationLoaded.value = true;
+    showAnimation.value = true;
+    hasAnimation.value = true;
+    startAnimation();
+    return;
   }
 
   const animationBaseUrl = getAnimationBaseUrl(props.item);
-  const spriteMeta = await fetchNativeSpriteMetadata(animationBaseUrl);
+  const supportsDirectGifPlayback = /\.gif(?:$|\?)/i.test(animationBaseUrl)
+    ? await probeDirectGifPlayback(animationBaseUrl)
+    : false;
   if (token !== animationProbeToken) return;
-
-  if (spriteMeta?.animated && (spriteMeta.timeline?.length ?? 0) > 0) {
-    const atlasUrl = getNativeSpriteAtlasUrl(animationBaseUrl, spriteMeta);
-    const atlasImg = await loadImageAsset(atlasUrl);
-    if (token !== animationProbeToken) return;
-
-    const width = spriteMeta.width || atlasImg.naturalWidth;
-    const physicalFrameCount = getSpriteSheetPhysicalFrameCount(spriteMeta.timeline, spriteMeta.frameCount);
-    const height =
-      spriteMeta.height || Math.floor(atlasImg.naturalHeight / physicalFrameCount);
-    const frames: Array<{ image: HTMLImageElement; durationMs: number }> = [];
-    const defaultFrameDurationMs = normalizeFrameDuration(
-      typeof spriteMeta.defaultFrameTime === "number" ? spriteMeta.defaultFrameTime * 50 : undefined,
-    );
-
-    for (let idx = 0; idx < spriteMeta.timeline.length; idx++) {
-      const frame = spriteMeta.timeline[idx];
-      const frameIndex =
-        typeof frame.frameIndex === "number"
-          ? frame.frameIndex
-          : typeof frame.index === "number"
-            ? frame.index
-            : idx;
-
-      const frameCanvas = document.createElement("canvas");
-      frameCanvas.width = width;
-      frameCanvas.height = height;
-      const frameCtx = frameCanvas.getContext("2d");
-      if (frameCtx) {
-        frameCtx.drawImage(atlasImg, 0, frameIndex * height, width, height, 0, 0, width, height);
-      }
-
-      const img = new Image();
-      img.src = frameCanvas.toDataURL("image/png");
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject();
-      });
-      frames.push({
-        image: img,
-        durationMs: normalizeFrameDuration(
-          typeof frame.durationMs === "number" ? frame.durationMs : defaultFrameDurationMs,
-        ),
-      });
-    }
-
-    if (token !== animationProbeToken) return;
-    animationFrames.value = frames;
-    isAnimationLoaded.value = true;
-    showAnimation.value = frames.length > 1;
-    hasAnimation.value = frames.length > 1;
-    if (frames.length > 1) {
-      startAnimation();
-    }
+  if (supportsDirectGifPlayback) {
+    preferDirectAnimatedImage.value = true;
+    hasAnimation.value = true;
+    return;
   }
+
+  animationFrames.value = [];
+  isAnimationLoaded.value = false;
+  showAnimation.value = false;
+  hasAnimation.value = false;
 };
 
 const scheduleAnimationEnhancement = () => {
@@ -283,20 +187,7 @@ const scheduleAnimationEnhancement = () => {
   const run = async () => {
     if (!isVisible.value || !isStaticImageLoaded.value) return;
     try {
-      const baseUrl = getAnimationBaseUrl(props.item);
-      const supportsAnimation = await probeAnimationSupport(baseUrl, props.item.renderAssetRef);
-      if (token !== animationProbeToken) return;
-      if (supportsAnimation) {
-        await loadAnimationFrames(token);
-        return;
-      }
-
-      const supportsDirectGifPlayback = /\.gif(?:$|\?)/i.test(baseUrl)
-        ? await probeDirectGifPlayback(baseUrl)
-        : false;
-      if (token !== animationProbeToken || !supportsDirectGifPlayback) return;
-      preferDirectAnimatedImage.value = true;
-      hasAnimation.value = true;
+      await loadAnimationFrames(token);
     } catch {
       // Keep static image visible on any animation-path failure.
     }

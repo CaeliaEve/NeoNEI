@@ -139,18 +139,6 @@ function canUseAccelerationItems(db: Database.Database | null): db is Database.D
   }
 }
 
-function canUseBrowserDefaultEntries(db: Database.Database | null): db is Database.Database {
-  if (!db) return false;
-  try {
-    const row = db
-      .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'browser_default_entries'")
-      .get() as { name?: string } | undefined;
-    return row?.name === 'browser_default_entries';
-  } catch {
-    return false;
-  }
-}
-
 export function queryAccelerationSearch(
   db: Database.Database,
   keyword: string,
@@ -161,16 +149,12 @@ export function queryAccelerationSearch(
   if (!normalized) return [];
 
   const safeLimit = Math.min(Math.max(Number.isFinite(limit) ? limit : 100, 1), 500);
-  const browserFilterJoin = options?.browserOnly
-    ? 'INNER JOIN browser_default_entries AS be ON be.item_id = s.item_id'
-    : '';
   const statement = db.prepare(`
     SELECT
       ic.item_id,
       ic.localized_name,
       ic.mod_id
     FROM items_search AS s
-    ${browserFilterJoin}
     INNER JOIN items_core AS ic
       ON ic.item_id = s.item_id
     LEFT JOIN hot_items AS h
@@ -291,7 +275,7 @@ export class ItemsSearchService {
     }
 
     this.ensureSplitItemsAvailable();
-    const items = this.splitExportService.getAllItems().map((raw) => ({
+    const items = this.splitExportService.getAllItems({ includeFluids: true }).map((raw) => ({
       itemId: String(raw.itemId ?? raw.id ?? ''),
       localizedName: String(raw.localizedName ?? raw.localized_name ?? ''),
       modId: String(raw.modId ?? raw.mod_id ?? ''),
@@ -307,7 +291,7 @@ export class ItemsSearchService {
       return this.searchIndexCache;
     }
 
-    this.searchIndexCache = this.splitExportService.getAllItems().map((raw) =>
+    this.searchIndexCache = this.splitExportService.getAllItems({ includeFluids: true }).map((raw) =>
       buildSearchIndexEntry({
         itemId: String(raw.itemId ?? raw.id ?? ''),
         localizedName: String(raw.localizedName ?? raw.localized_name ?? ''),
@@ -326,7 +310,7 @@ export class ItemsSearchService {
 
     const db = this.getAccelerationDatabase();
     if (canUseAccelerationItems(db)) {
-      const runBrowserPackQuery = (browserOnly: boolean): AccelerationSearchPackRow[] => db.prepare(`
+      const rows = db.prepare(`
         SELECT
           ic.item_id,
           ic.localized_name,
@@ -340,37 +324,18 @@ export class ItemsSearchService {
           s.aliases,
           COALESCE(h.popularity_score, s.popularity_score, 0) AS popularity_score,
           COALESCE(h.search_rank, 999999) AS search_rank
-        ${browserOnly
-          ? `
-        FROM browser_default_entries AS be
-        INNER JOIN items_core AS ic
-          ON ic.item_id = be.item_id
-        INNER JOIN items_search AS s
-          ON s.item_id = be.item_id
-        LEFT JOIN hot_items AS h
-          ON h.item_id = be.item_id
-        `
-          : `
         FROM items_core AS ic
         INNER JOIN items_search AS s
           ON s.item_id = ic.item_id
         LEFT JOIN hot_items AS h
           ON h.item_id = ic.item_id
-        `}
         ORDER BY
           COALESCE(h.search_rank, 999999) ASC,
           COALESCE(h.popularity_score, s.popularity_score, 0) DESC,
           ic.localized_name COLLATE NOCASE ASC
       `).all() as AccelerationSearchPackRow[];
-      const browserOnly = canUseBrowserDefaultEntries(db);
-      const rows = browserOnly
-        ? runBrowserPackQuery(true)
-        : runBrowserPackQuery(false);
-      const effectiveRows = browserOnly && rows.length === 0
-        ? runBrowserPackQuery(false)
-        : rows;
 
-      this.browserSearchPackCache = effectiveRows.map((row) => ({
+      this.browserSearchPackCache = rows.map((row) => ({
         itemId: row.item_id,
         localizedName: row.localized_name,
         modId: row.mod_id,
@@ -414,7 +379,7 @@ export class ItemsSearchService {
     const db = this.getAccelerationDatabase();
     if (canUseAccelerationItems(db)) {
       const accelerated = queryAccelerationSearch(db, trimmed, limit, {
-        browserOnly: canUseBrowserDefaultEntries(db),
+        browserOnly: false,
       });
       if (accelerated.length > 0) {
         return accelerated;
@@ -485,7 +450,7 @@ export class ItemsSearchService {
 
     this.ensureSplitItemsAvailable();
 
-    let items = this.splitExportService.getAllItems().map((raw) => ({
+    let items = this.splitExportService.getAllItems({ includeFluids: true }).map((raw) => ({
       itemId: String(raw.itemId ?? raw.id ?? ''),
       localizedName: String(raw.localizedName ?? raw.localized_name ?? ''),
       modId: String(raw.modId ?? raw.mod_id ?? ''),

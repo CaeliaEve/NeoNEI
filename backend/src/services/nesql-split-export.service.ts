@@ -6,13 +6,14 @@ import { SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from '../config/runtime-paths';
 type JsonObject = Record<string, unknown>;
 type RecipeCacheFileEntry = { relativePath: string; size: number; mtimeMs: number };
 type RecipeIndexCachePayload = {
-  version: 2;
+  version: 3;
   root: string;
   files: RecipeCacheFileEntry[];
   recipeLocations: Record<string, string>;
   producedByIndex: Record<string, string[]>;
   usedInIndex: Record<string, string[]>;
   machineIndex: Record<string, string[]>;
+  fluids: Record<string, JsonObject>;
 };
 
 function readMaybeGzipJson(filePath: string): JsonObject | JsonObject[] | null {
@@ -32,6 +33,8 @@ function writeGzipJson(filePath: string, payload: unknown): void {
 class NesqlSplitExportService {
   private itemsIndex = new Map<string, JsonObject>();
   private itemsList: JsonObject[] = [];
+  private fluidIndex = new Map<string, JsonObject>();
+  private fluidList: JsonObject[] = [];
   private loadedItemMods = new Set<string>();
   private itemMods = new Map<string, JsonObject[]>();
   private itemsSorted = true;
@@ -71,6 +74,25 @@ class NesqlSplitExportService {
     return parts.length >= 3 && parts[1] ? parts[1] : null;
   }
 
+  private isFluidEntityId(itemId: string): boolean {
+    return itemId.startsWith('f~');
+  }
+
+  private compareLocalizedName(left: JsonObject, right: JsonObject): number {
+    return String(left.localizedName ?? left.localized_name ?? '').localeCompare(
+      String(right.localizedName ?? right.localized_name ?? ''),
+    );
+  }
+
+  private indexFluidPseudoItem(raw: JsonObject): void {
+    const fluidId = typeof raw.itemId === 'string' ? raw.itemId : '';
+    if (!fluidId || this.fluidIndex.has(fluidId)) {
+      return;
+    }
+    this.fluidIndex.set(fluidId, raw);
+    this.fluidList.push(raw);
+  }
+
   private loadItemModIfNeeded(modId: string): void {
     if (!this.hasSplitItems() || !modId || this.loadedItemMods.has(modId)) return;
 
@@ -95,9 +117,7 @@ class NesqlSplitExportService {
 
   private ensureItemsSorted(): void {
     if (this.itemsSorted) return;
-    this.itemsList.sort((a, b) =>
-      String(a.localizedName ?? '').localeCompare(String(b.localizedName ?? ''))
-    );
+    this.itemsList.sort((a, b) => this.compareLocalizedName(a, b));
     this.itemsSorted = true;
   }
 
@@ -130,7 +150,7 @@ class NesqlSplitExportService {
 
     try {
       const payload = readMaybeGzipJson(cachePath) as RecipeIndexCachePayload | null;
-      if (!payload || payload.version !== 2 || payload.root !== SPLIT_RECIPES_DIR) {
+      if (!payload || payload.version !== 3 || payload.root !== SPLIT_RECIPES_DIR) {
         return false;
       }
 
@@ -160,6 +180,8 @@ class NesqlSplitExportService {
       this.producedByIndex = new Map(Object.entries(payload.producedByIndex));
       this.usedInIndex = new Map(Object.entries(payload.usedInIndex));
       this.machineIndex = new Map(Object.entries(payload.machineIndex ?? {}));
+      this.fluidIndex = new Map(Object.entries(payload.fluids ?? {}));
+      this.fluidList = Array.from(this.fluidIndex.values()).sort((a, b) => this.compareLocalizedName(a, b));
       this.loadedRecipes = true;
       return true;
     } catch {
@@ -171,7 +193,7 @@ class NesqlSplitExportService {
     if (!this.hasSplitRecipes()) return;
     try {
       const payload: RecipeIndexCachePayload = {
-        version: 2,
+        version: 3,
         root: SPLIT_RECIPES_DIR,
         files: this.getRecipeFileEntries(),
         recipeLocations: Object.fromEntries(
@@ -183,6 +205,7 @@ class NesqlSplitExportService {
         producedByIndex: Object.fromEntries(this.producedByIndex),
         usedInIndex: Object.fromEntries(this.usedInIndex),
         machineIndex: Object.fromEntries(this.machineIndex),
+        fluids: Object.fromEntries(this.fluidIndex),
       };
       writeGzipJson(this.getRecipeIndexCachePath(), payload);
     } catch {
@@ -267,6 +290,7 @@ class NesqlSplitExportService {
       }
     }
 
+    this.fluidList.sort((a, b) => this.compareLocalizedName(a, b));
     this.loadedRecipes = true;
     this.writeRecipeIndexCache();
   }
@@ -360,9 +384,126 @@ class NesqlSplitExportService {
     return Array.from(result);
   }
 
+  private extractFluidIdsFromInputs(fluidInputs: unknown): string[] {
+    const result = new Set<string>();
+    if (!Array.isArray(fluidInputs)) return [];
+
+    for (const group of fluidInputs) {
+      const fluids = (group as { fluids?: Array<{ fluid?: { fluidId?: string } }> })?.fluids;
+      if (!Array.isArray(fluids)) continue;
+      for (const entry of fluids) {
+        const fluidId = entry?.fluid?.fluidId;
+        if (typeof fluidId === 'string' && fluidId.trim()) {
+          result.add(fluidId.trim());
+        }
+      }
+    }
+
+    return Array.from(result);
+  }
+
+  private extractFluidIdsFromOutputs(fluidOutputs: unknown): string[] {
+    const result = new Set<string>();
+    if (!Array.isArray(fluidOutputs)) return [];
+
+    for (const group of fluidOutputs) {
+      const fluidId = (group as { fluid?: { fluidId?: string } })?.fluid?.fluidId;
+      if (typeof fluidId === 'string' && fluidId.trim()) {
+        result.add(fluidId.trim());
+      }
+    }
+
+    return Array.from(result);
+  }
+
+  private buildFluidPseudoItem(raw: {
+    fluidId?: string;
+    modId?: string;
+    internalName?: string;
+    localizedName?: string;
+    renderAssetRef?: string | null;
+    temperature?: number;
+  }): JsonObject | null {
+    const fluidId = typeof raw.fluidId === 'string' ? raw.fluidId.trim() : '';
+    if (!fluidId) return null;
+    const parts = fluidId.split('~');
+    const modId = (typeof raw.modId === 'string' ? raw.modId : parts[1] ?? '').trim();
+    const internalName = (typeof raw.internalName === 'string' ? raw.internalName : parts.slice(2).join('~')).trim();
+    const localizedName =
+      (typeof raw.localizedName === 'string' ? raw.localizedName : '').trim()
+      || internalName
+      || fluidId;
+    return {
+      itemId: fluidId,
+      modId,
+      internalName,
+      localizedName,
+      unlocalizedName: internalName || fluidId,
+      damage: 0,
+      imageFileName: null,
+      renderAssetRef: typeof raw.renderAssetRef === 'string' ? raw.renderAssetRef : null,
+      preferredImageUrl: modId && internalName ? `/images/fluid/${encodeURIComponent(modId)}/${encodeURIComponent(internalName)}.png` : null,
+      tooltip:
+        typeof raw.temperature === 'number' && Number.isFinite(raw.temperature)
+          ? `Temperature: ${Math.round(raw.temperature)} K`
+          : null,
+      searchTerms: [localizedName, internalName, fluidId, modId, 'fluid', '液体'].filter(Boolean).join(' '),
+    };
+  }
+
+  private indexRecipeFluidRecords(recipe: JsonObject): void {
+    const visit = (fluid: {
+      fluidId?: string;
+      modId?: string;
+      internalName?: string;
+      localizedName?: string;
+      renderAssetRef?: string | null;
+      temperature?: number;
+    } | undefined): void => {
+      const built = this.buildFluidPseudoItem(fluid ?? {});
+      if (built) {
+        this.indexFluidPseudoItem(built);
+      }
+    };
+
+    const fluidInputs = Array.isArray(recipe.fluidInputs) ? recipe.fluidInputs : [];
+    for (const group of fluidInputs) {
+      const fluids = (group as { fluids?: Array<{ fluid?: JsonObject }> })?.fluids;
+      if (!Array.isArray(fluids)) continue;
+      for (const entry of fluids) {
+        visit((entry?.fluid ?? undefined) as {
+          fluidId?: string;
+          modId?: string;
+          internalName?: string;
+          localizedName?: string;
+          renderAssetRef?: string | null;
+          temperature?: number;
+        } | undefined);
+      }
+    }
+
+    const fluidOutputs = Array.isArray(recipe.fluidOutputs) ? recipe.fluidOutputs : [];
+    for (const output of fluidOutputs) {
+      visit((output as { fluid?: JsonObject })?.fluid as {
+        fluidId?: string;
+        modId?: string;
+        internalName?: string;
+        localizedName?: string;
+        renderAssetRef?: string | null;
+        temperature?: number;
+      } | undefined);
+    }
+  }
+
   private indexRecipeItemLinks(recipeId: string, recipe: JsonObject): void {
-    const inputIds = this.extractItemIdsFromInputs(recipe.inputs);
-    const outputIds = this.extractItemIdsFromOutputs(recipe.outputs);
+    const inputIds = [
+      ...this.extractItemIdsFromInputs(recipe.inputs),
+      ...this.extractFluidIdsFromInputs(recipe.fluidInputs),
+    ];
+    const outputIds = [
+      ...this.extractItemIdsFromOutputs(recipe.outputs),
+      ...this.extractFluidIdsFromOutputs(recipe.fluidOutputs),
+    ];
 
     for (const itemId of inputIds) {
       this.addIndexedRecipeLink(this.usedInIndex, itemId, recipeId);
@@ -375,6 +516,7 @@ class NesqlSplitExportService {
   private indexRecipeRecord(recipeId: string, recipe: JsonObject, filePath: string): void {
     this.recipeLocations.set(recipeId, filePath);
     this.recipeById.set(recipeId, recipe);
+    this.indexRecipeFluidRecords(recipe);
     this.indexRecipeItemLinks(recipeId, recipe);
 
     const machineInfo = recipe.machineInfo as { machineType?: string; parsedVoltageTier?: string } | undefined;
@@ -386,6 +528,11 @@ class NesqlSplitExportService {
   }
 
   getItemById(itemId: string): JsonObject | null {
+    if (this.isFluidEntityId(itemId)) {
+      this.loadRecipesIfNeeded();
+      return this.fluidIndex.get(itemId) ?? null;
+    }
+
     const modId = this.extractModIdFromItemId(itemId);
     if (modId) {
       this.loadItemModIfNeeded(modId);
@@ -396,21 +543,33 @@ class NesqlSplitExportService {
   }
 
   getItemsByIds(itemIds: string[]): JsonObject[] {
+    const needsFluids = itemIds.some((itemId) => this.isFluidEntityId(itemId));
     for (const itemId of itemIds) {
+      if (this.isFluidEntityId(itemId)) {
+        continue;
+      }
       const modId = this.extractModIdFromItemId(itemId);
       if (modId) {
         this.loadItemModIfNeeded(modId);
       }
     }
+    if (needsFluids) {
+      this.loadRecipesIfNeeded();
+    }
     return itemIds
-      .map((itemId) => this.itemsIndex.get(itemId))
+      .map((itemId) => this.itemsIndex.get(itemId) ?? this.fluidIndex.get(itemId))
       .filter((item): item is JsonObject => Boolean(item));
   }
 
-  getAllItems(): JsonObject[] {
+  getAllItems(options?: { includeFluids?: boolean }): JsonObject[] {
     this.loadItemsIfNeeded();
     this.ensureItemsSorted();
-    return this.itemsList;
+    if (!options?.includeFluids) {
+      return this.itemsList;
+    }
+
+    this.loadRecipesIfNeeded();
+    return [...this.itemsList, ...this.fluidList].sort((a, b) => this.compareLocalizedName(a, b));
   }
 
   getItemsPageFast(page: number, pageSize: number): { items: JsonObject[]; total: number | null } {
@@ -447,9 +606,8 @@ class NesqlSplitExportService {
     }));
   }
 
-  getAllItemIds(): string[] {
-    this.loadItemsIfNeeded();
-    return this.itemsList
+  getAllItemIds(options?: { includeFluids?: boolean }): string[] {
+    return this.getAllItems(options)
       .map((item) => (typeof item.itemId === 'string' ? item.itemId : ''))
       .filter(Boolean);
   }

@@ -275,7 +275,6 @@ const MACHINE_TYPE_ALIAS_GROUPS: string[][] = [
   ['真空冷冻机', '凛冰冷冻机'],
   ['电解机', '工业电解机'],
   ['离心机', '工业离心机'],
-  ['化学反应釜', '大型化学反应釜'],
   ['高炉', '工业高炉'],
   ['搅拌机', '工业搅拌机'],
 ];
@@ -312,15 +311,103 @@ function normalizeMachineGroups(groups: MachineGroupSummary[]): MachineGroupSumm
   return Array.from(merged.values());
 }
 
+function toMachineGroupKey(
+  value: Pick<MachineGroupSummary, 'machineType' | 'machineKey' | 'voltageTier'>
+    | Pick<RecipeCategorySummary, 'name' | 'machineKey' | 'voltageTier'>,
+): string {
+  const machineKey = `${value.machineKey ?? ''}`.trim();
+  if (machineKey) {
+    return machineKey;
+  }
+
+  const machineType = 'machineType' in value
+    ? `${value.machineType ?? ''}`.trim()
+    : `${value.name ?? ''}`.trim();
+  const normalizedMachineType = normalizeMachineFamilyName(machineType);
+  return normalizedMachineType ? `${normalizedMachineType}::${value.voltageTier ?? ''}` : '';
+}
+
+function shouldProjectMachineGroupsToCategorySummaries(
+  categoryGroups: RecipeCategorySummary[],
+  machineGroups: MachineGroupSummary[],
+): boolean {
+  if (!machineGroups.length) {
+    return false;
+  }
+
+  if (!categoryGroups.length) {
+    return true;
+  }
+
+  if (!categoryGroups.every((group) => group.type === 'machine')) {
+    return false;
+  }
+
+  const machineCounts = new Map<string, number>();
+  for (const group of machineGroups) {
+    const key = toMachineGroupKey(group);
+    if (!key) continue;
+    machineCounts.set(key, Math.max(0, Number(group.recipeCount ?? 0)));
+  }
+
+  const categoryCounts = new Map<string, number>();
+  for (const group of categoryGroups) {
+    const key = toMachineGroupKey(group);
+    if (!key) continue;
+    categoryCounts.set(key, Math.max(0, Number(group.recipeCount ?? 0)));
+  }
+
+  if (machineCounts.size !== categoryCounts.size) {
+    return true;
+  }
+
+  for (const [key, recipeCount] of machineCounts.entries()) {
+    if (categoryCounts.get(key) !== recipeCount) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function projectMachineGroupsToCategorySummaries(machineGroups: MachineGroupSummary[]): RecipeCategorySummary[] {
+  return machineGroups.map((group) => {
+    const machineKey = toMachineGroupKey(group);
+    const machineType = normalizeMachineFamilyName(group.machineType);
+    return {
+      type: 'machine',
+      name: machineType,
+      recipeType: `${group.category ?? ''}`.trim() || machineType,
+      recipeCount: Math.max(0, Number(group.recipeCount ?? 0)),
+      categoryKey: `machine:${machineKey}`,
+      machineKey,
+      voltageTier: group.voltageTier ?? null,
+      machineIcon: group.machineIcon ?? getMachineIconItem(machineType) ?? null,
+    };
+  });
+}
+
 export function normalizeItemRecipeSummary(summary: ItemRecipeSummaryResponse): ItemRecipeSummaryResponse {
   const producedByMachineGroups = normalizeMachineGroups(summary.producedByMachineGroups || summary.machineGroups || []);
   const usedInMachineGroups = normalizeMachineGroups(summary.usedInMachineGroups || []);
-  const producedByCategoryGroups = Array.isArray(summary.producedByCategoryGroups)
+  const rawProducedByCategoryGroups = Array.isArray(summary.producedByCategoryGroups)
     ? summary.producedByCategoryGroups
     : [];
-  const usedInCategoryGroups = Array.isArray(summary.usedInCategoryGroups)
+  const rawUsedInCategoryGroups = Array.isArray(summary.usedInCategoryGroups)
     ? summary.usedInCategoryGroups
     : [];
+  const producedByCategoryGroups = shouldProjectMachineGroupsToCategorySummaries(
+    rawProducedByCategoryGroups,
+    producedByMachineGroups,
+  )
+    ? projectMachineGroupsToCategorySummaries(producedByMachineGroups)
+    : rawProducedByCategoryGroups;
+  const usedInCategoryGroups = shouldProjectMachineGroupsToCategorySummaries(
+    rawUsedInCategoryGroups,
+    usedInMachineGroups,
+  )
+    ? projectMachineGroupsToCategorySummaries(usedInMachineGroups)
+    : rawUsedInCategoryGroups;
   return {
     ...summary,
     counts: {

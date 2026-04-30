@@ -2,12 +2,20 @@ import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 import {
   api,
   type BrowserGridEntry,
+  type BrowserDefaultCatalogResponse,
+  type BrowserSearchCatalogResponse,
+  type BrowserGroupItemsResponse,
   type BrowserPagePackResponse,
   type HomeBootstrapResponse,
   type Item,
   type Mod,
   type PageAtlasResult,
 } from '../services/api';
+import { peekPageAtlas } from '../services/pageAtlas';
+import {
+  projectBrowserEntriesFromDefaultCatalog,
+  type BrowserDefaultCatalogEntry,
+} from '../services/browserLocalProjection';
 import {
   getStoredRuntimeSignature,
   primeRuntimeCacheSignature,
@@ -44,11 +52,15 @@ type BrowserPageRequestParams = {
 };
 
 const SHARED_BROWSER_PAGE_CACHE_LIMIT = 48;
+const SEARCH_LOCAL_PROJECTION_MAX_TOTAL = 1600;
 const sharedPageCache = new Map<string, CachedBrowserPage>();
 const sharedPageRequestInFlight = new Map<string, Promise<CachedBrowserPage>>();
 const sharedPageRevalidationInFlight = new Map<string, Promise<void>>();
 const sharedPagePresentationReady = new Set<string>();
 const sharedPagePresentationWarmInFlight = new Map<string, Promise<void>>();
+
+let browserCatalogWarmTimer: ReturnType<typeof setTimeout> | null = null;
+let browserGroupWarmTimer: ReturnType<typeof setTimeout> | null = null;
 
 function setSharedBrowserPageCache(cacheKey: string, page: CachedBrowserPage): void {
   if (sharedPageCache.has(cacheKey)) {
@@ -99,6 +111,17 @@ function normalizeExpandedGroups(groups?: string[]): string[] {
         .filter(Boolean),
     ),
   ).sort();
+}
+
+function collectBrowserGroupKeys(entries: BrowserGridEntry[]): string[] {
+  return Array.from(
+    new Set(
+      entries
+        .filter((entry): entry is Extract<BrowserGridEntry, { kind: 'group-collapsed' | 'group-header' }> => entry.kind !== 'item')
+        .map((entry) => `${entry.group.key ?? ''}`.trim())
+        .filter(Boolean),
+    ),
+  );
 }
 
 function buildPersistentBrowserPageKey(
@@ -175,8 +198,237 @@ export function useItemBrowser(
 
   const buildSlotSize = () => Math.max(32, Math.ceil(itemSize.value * 0.9));
   const hasActiveSearch = () => Boolean(searchQuery.value.trim());
+  const isSearchLocalProjectionEligible = (params?: { search?: string; total?: number }) => {
+    const search = `${params?.search ?? searchQuery.value ?? ''}`.trim();
+    if (!search) {
+      return false;
+    }
+    const total = Number(params?.total ?? totalItems.value ?? 0);
+    return Number.isFinite(total) && total > 0 && total <= SEARCH_LOCAL_PROJECTION_MAX_TOTAL;
+  };
   let lastSlotSize = buildSlotSize();
   let allowMeasuredPageCapacity = false;
+  const getActiveBrowserScope = () => selectedMod.value === 'all' ? undefined : selectedMod.value;
+
+  const prewarmVisibleBrowserGroups = (entries: BrowserGridEntry[]) => {
+    if (hasActiveSearch() && !isSearchLocalProjectionEligible()) {
+      return;
+    }
+    const groupKeys = collectBrowserGroupKeys(entries).slice(0, 12);
+    if (groupKeys.length === 0) {
+      return;
+    }
+
+    if (browserGroupWarmTimer !== null) {
+      clearTimeout(browserGroupWarmTimer);
+      browserGroupWarmTimer = null;
+    }
+
+    browserGroupWarmTimer = setTimeout(() => {
+      browserGroupWarmTimer = null;
+      for (const groupKey of groupKeys) {
+        void api.getBrowserGroupItems(groupKey, getActiveBrowserScope()).catch(() => {
+          // best-effort warmup only
+        });
+      }
+    }, 40);
+  };
+
+  const prewarmBrowserDefaultCatalog = () => {
+    if (browserCatalogWarmTimer !== null) {
+      clearTimeout(browserCatalogWarmTimer);
+      browserCatalogWarmTimer = null;
+    }
+
+    browserCatalogWarmTimer = setTimeout(() => {
+      browserCatalogWarmTimer = null;
+      const task = hasActiveSearch()
+        ? (
+          isSearchLocalProjectionEligible()
+            ? api.getBrowserSearchCatalog({
+              search: searchQuery.value.trim(),
+              modId: getActiveBrowserScope(),
+            })
+            : null
+        )
+        : api.getBrowserDefaultCatalog({
+          modId: getActiveBrowserScope(),
+        });
+      void task?.catch(() => {
+        // best-effort warmup only
+      });
+    }, 60);
+  };
+
+  const buildProjectedBrowserPage = (
+    catalogEntries: BrowserDefaultCatalogEntry[],
+    params: BrowserPageRequestParams,
+    groupItemsByKey: Map<string, Item[]>,
+  ): CachedBrowserPage => {
+    const projected = projectBrowserEntriesFromDefaultCatalog(
+      catalogEntries,
+      {
+        expandedGroups: params.expandedGroups,
+        groupItemsByKey,
+        page: params.page,
+        pageSize: params.pageSize,
+      },
+    );
+    const displayItems = collectDisplayItems(projected.data);
+    return {
+      data: projected.data,
+      items: displayItems,
+      atlas: peekPageAtlas(displayItems, itemSize.value) ?? null,
+      mediaManifest: null,
+      total: projected.total,
+      totalPages: projected.totalPages,
+      page: projected.page,
+    };
+  };
+
+  const attachCachedBrowserByIdsPresentation = (
+    params: BrowserPageRequestParams,
+    basePage: CachedBrowserPage,
+  ): CachedBrowserPage => {
+    if (basePage.items.length <= 0) {
+      return basePage;
+    }
+
+    const cachedPack = api.peekBrowserPagePackByIds({
+      itemIds: basePage.items.map((item) => item.itemId),
+      slotSize: params.slotSize,
+    });
+    if (!cachedPack) {
+      return basePage;
+    }
+
+    return {
+      ...basePage,
+      atlas: cachedPack.atlas ?? basePage.atlas ?? null,
+      mediaManifest: cachedPack.mediaManifest ?? basePage.mediaManifest ?? null,
+    };
+  };
+
+  const hydrateProjectedBrowserPageMedia = (
+    cacheKey: string,
+    params: BrowserPageRequestParams,
+    basePage: CachedBrowserPage,
+    requestId: number,
+  ) => {
+    if (basePage.items.length === 0) {
+      return;
+    }
+
+    const currentCached = pageCache.get(cacheKey);
+    if (currentCached?.atlas && currentCached.mediaManifest) {
+      return;
+    }
+
+    void api.getBrowserPagePackByIds({
+      itemIds: basePage.items.map((item) => item.itemId),
+      slotSize: params.slotSize,
+    }).then((pack) => {
+      const hydratedPage: CachedBrowserPage = {
+        ...basePage,
+        atlas: pack.atlas ?? basePage.atlas ?? null,
+        mediaManifest: pack.mediaManifest ?? basePage.mediaManifest ?? null,
+      };
+      setSharedBrowserPageCache(cacheKey, hydratedPage);
+      const activeCacheKey = buildPageCacheKey(buildRequestParams(currentPage.value));
+      if (requestId === loadItemsRequestId && activeCacheKey === cacheKey) {
+        applyBrowserResponse(hydratedPage, requestId, cacheKey);
+      }
+    }).catch(() => {
+      // best-effort only
+    });
+  };
+
+  const tryProjectExpandedGroupsFromLocalCaches = (
+    params: BrowserPageRequestParams,
+  ): { cacheKey: string; page: CachedBrowserPage } | null => {
+    if (params.expandedGroups.length === 0) {
+      return null;
+    }
+
+    const normalizedSearch = `${params.search ?? ''}`.trim();
+    if (normalizedSearch && !isSearchLocalProjectionEligible({ search: normalizedSearch })) {
+      return null;
+    }
+
+    const catalog = normalizedSearch
+      ? api.peekBrowserSearchCatalog(normalizedSearch, params.modId)
+      : api.peekBrowserDefaultCatalog(params.modId);
+    if (!catalog?.data?.length) {
+      return null;
+    }
+
+    const groupItemsByKey = new Map<string, Item[]>();
+    for (const groupKey of params.expandedGroups) {
+      const response = api.peekBrowserGroupItems(groupKey, params.modId);
+      if (!response?.items?.length) {
+        return null;
+      }
+      groupItemsByKey.set(response.groupKey, response.items);
+    }
+
+    const page = buildProjectedBrowserPage(
+      catalog.data as BrowserDefaultCatalogEntry[],
+      params,
+      groupItemsByKey,
+    );
+    const cacheKey = buildPageCacheKey({
+      ...params,
+      page: page.page,
+    });
+    return { cacheKey, page: attachCachedBrowserByIdsPresentation(params, page) };
+  };
+
+  const tryLoadExpandedProjection = async (
+    params: BrowserPageRequestParams,
+  ): Promise<{ cacheKey: string; page: CachedBrowserPage } | null> => {
+    if (params.expandedGroups.length === 0) {
+      return null;
+    }
+
+    const normalizedSearch = `${params.search ?? ''}`.trim();
+    if (normalizedSearch && !isSearchLocalProjectionEligible({ search: normalizedSearch })) {
+      return null;
+    }
+
+    const [catalog, groupResponses] = await Promise.all([
+      normalizedSearch
+        ? api.getBrowserSearchCatalog({
+          search: normalizedSearch,
+          modId: params.modId,
+        })
+        : api.getBrowserDefaultCatalog({
+          modId: params.modId,
+        }),
+      Promise.allSettled(
+        params.expandedGroups.map((groupKey) => api.getBrowserGroupItems(groupKey, params.modId)),
+      ),
+    ]) as [(BrowserDefaultCatalogResponse | BrowserSearchCatalogResponse), PromiseSettledResult<BrowserGroupItemsResponse>[]];
+    const groupItemsByKey = new Map<string, Item[]>();
+    for (const response of groupResponses) {
+      if (response.status !== 'fulfilled') {
+        continue;
+      }
+      groupItemsByKey.set(response.value.groupKey, response.value.items);
+    }
+
+    const page = buildProjectedBrowserPage(
+      catalog.data as BrowserDefaultCatalogEntry[],
+      params,
+      groupItemsByKey,
+    );
+    return {
+      cacheKey: buildPageCacheKey({
+        ...params,
+        page: page.page,
+      }),
+      page: attachCachedBrowserByIdsPresentation(params, page),
+    };
+  };
 
   const estimateHomeRightColumnWidth = () => {
     const viewportWidth = window.innerWidth;
@@ -447,6 +699,8 @@ export function useItemBrowser(
     totalItems.value = response.total;
     totalPages.value = response.totalPages;
     currentPage.value = response.page;
+    prewarmVisibleBrowserGroups(response.data);
+    prewarmBrowserDefaultCatalog();
 
     if (!firstBrowserTileVisibleMarked && response.items.length > 0) {
       firstBrowserTileVisibleMarked = true;
@@ -651,6 +905,22 @@ export function useItemBrowser(
     try {
       const signaturePromise = resolvePublishSignature();
 
+      const expandedProjection = await tryLoadExpandedProjection(requestParams);
+      if (expandedProjection) {
+        setSharedBrowserPageCache(expandedProjection.cacheKey, expandedProjection.page);
+        if (hadVisibleEntries) {
+          await waitForBrowserPagePresentation(expandedProjection.cacheKey, expandedProjection.page, 80);
+        }
+        applyBrowserResponse(expandedProjection.page, requestId, expandedProjection.cacheKey);
+        hydrateProjectedBrowserPageMedia(
+          expandedProjection.cacheKey,
+          requestParams,
+          expandedProjection.page,
+          requestId,
+        );
+        return;
+      }
+
       if (!hasActiveSearch()) {
         const persistent = await readPersistentDefaultPage(requestParams);
         if (persistent) {
@@ -834,7 +1104,23 @@ export function useItemBrowser(
 
   const setExpandedGroups = (groupKeys: string[]) => {
     expandedGroupKeys.value = Array.from(new Set(groupKeys.filter(Boolean)));
-    clearBrowserPageState();
+    const requestParams = buildRequestParams(currentPage.value);
+    const localProjection = tryProjectExpandedGroupsFromLocalCaches(requestParams);
+    if (localProjection) {
+      const requestId = ++loadItemsRequestId;
+      loadError.value = '';
+      loading.value = false;
+      transitioning.value = false;
+      setSharedBrowserPageCache(localProjection.cacheKey, localProjection.page);
+      applyBrowserResponse(localProjection.page, requestId, localProjection.cacheKey);
+      hydrateProjectedBrowserPageMedia(
+        localProjection.cacheKey,
+        requestParams,
+        localProjection.page,
+        requestId,
+      );
+      return;
+    }
     void loadItems();
   };
 
@@ -856,6 +1142,19 @@ export function useItemBrowser(
     if (pageCache.has(cacheKey)) return;
 
     try {
+      const expandedProjection = await tryLoadExpandedProjection(requestParams);
+      if (expandedProjection) {
+        setSharedBrowserPageCache(expandedProjection.cacheKey, expandedProjection.page);
+        void ensureBrowserPagePresentationWarm(expandedProjection.cacheKey, expandedProjection.page, { animatedEntryLimit: 40, atlasLimit: 6 });
+        hydrateProjectedBrowserPageMedia(
+          expandedProjection.cacheKey,
+          requestParams,
+          expandedProjection.page,
+          loadItemsRequestId,
+        );
+        return;
+      }
+
       const signaturePromise = hasActiveSearch()
         ? undefined
         : resolvePublishSignature();
@@ -919,6 +1218,14 @@ export function useItemBrowser(
     window.removeEventListener('resize', handleResize);
     if (resizeTimeout) clearTimeout(resizeTimeout);
     if (searchTimeout) clearTimeout(searchTimeout);
+    if (browserCatalogWarmTimer) {
+      clearTimeout(browserCatalogWarmTimer);
+      browserCatalogWarmTimer = null;
+    }
+    if (browserGroupWarmTimer) {
+      clearTimeout(browserGroupWarmTimer);
+      browserGroupWarmTimer = null;
+    }
   });
 
   return {

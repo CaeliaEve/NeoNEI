@@ -103,11 +103,27 @@ export class ItemsService {
     string,
     { value: BrowserCatalogRow[]; expiresAt: number }
   >();
+  private static browserDefaultCatalogCache = new Map<
+    string,
+    { value: BrowserPageEntry[]; total: number; expiresAt: number }
+  >();
+  private static browserSearchCatalogCache = new Map<
+    string,
+    { value: BrowserPageEntry[]; total: number; expiresAt: number }
+  >();
+  private static browserGroupItemsCache = new Map<
+    string,
+    { value: Item[]; expiresAt: number }
+  >();
   private static imageUrlCache = new Map<string, string>();
   private static modsCache: { value: Array<{ modId: string; modName: string; itemCount: number }>; expiresAt: number } | null = null;
   private static readonly ITEM_CACHE_TTL_MS = 60 * 1000;
   private static readonly BROWSER_CATALOG_CACHE_TTL_MS = 60 * 1000;
+  private static readonly BROWSER_DEFAULT_CATALOG_CACHE_TTL_MS = 5 * 60 * 1000;
+  private static readonly BROWSER_SEARCH_CATALOG_CACHE_TTL_MS = 60 * 1000;
+  private static readonly BROWSER_GROUP_ITEMS_CACHE_TTL_MS = 5 * 60 * 1000;
   private static readonly MODS_CACHE_TTL_MS = 5 * 60 * 1000;
+  private static readonly PRIMARY_BROWSER_ID_PREFIX = 'i~';
 
   constructor(options: ItemsServiceOptions = {}) {
     this.databaseManager = options.databaseManager ?? getAccelerationDatabaseManager();
@@ -164,6 +180,117 @@ export class ItemsService {
     }
   }
 
+  private isPrimaryBrowserEntityId(itemId: string | null | undefined): boolean {
+    return `${itemId ?? ''}`.startsWith(ItemsService.PRIMARY_BROWSER_ID_PREFIX);
+  }
+
+  private buildSearchAliases(values: Array<string | null | undefined>): string[] {
+    const aliases = new Set<string>();
+
+    for (const value of values) {
+      const normalized = `${value ?? ''}`.trim().toLowerCase();
+      if (!normalized) continue;
+
+      aliases.add(normalized);
+
+      if (normalized.startsWith('熔融') && normalized.length > 2) {
+        aliases.add(normalized.slice(2));
+      }
+
+      for (const prefix of ['molten.', 'molten_', 'fluid.', 'fluid_']) {
+        if (normalized.startsWith(prefix) && normalized.length > prefix.length) {
+          aliases.add(normalized.slice(prefix.length));
+        }
+      }
+    }
+
+    return Array.from(aliases);
+  }
+
+  private getSearchMatchMeta(values: Array<string | null | undefined>, normalizedSearch: string): {
+    tier: number;
+    length: number;
+  } {
+    const aliases = this.buildSearchAliases(values);
+    if (aliases.length === 0) {
+      return {
+        tier: 3,
+        length: Number.MAX_SAFE_INTEGER,
+      };
+    }
+
+    let bestTier = 3;
+    let bestLength = Number.MAX_SAFE_INTEGER;
+
+    for (const alias of aliases) {
+      if (!alias) continue;
+
+      let tier = 3;
+      if (alias === normalizedSearch) {
+        tier = 0;
+      } else if (alias.startsWith(normalizedSearch)) {
+        tier = 1;
+      } else if (alias.includes(normalizedSearch)) {
+        tier = 2;
+      }
+
+      if (tier < bestTier) {
+        bestTier = tier;
+        bestLength = alias.length;
+        continue;
+      }
+
+      if (tier === bestTier && alias.length < bestLength) {
+        bestLength = alias.length;
+      }
+    }
+
+    return {
+      tier: bestTier,
+      length: bestLength,
+    };
+  }
+
+  private compareBrowserSearchRows(
+    left: BrowserCatalogRow,
+    right: BrowserCatalogRow,
+    normalizedSearch: string,
+  ): number {
+    const leftMeta = this.getSearchMatchMeta(
+      [left.localized_name, left.internal_name, left.item_id, left.search_terms],
+      normalizedSearch,
+    );
+    const rightMeta = this.getSearchMatchMeta(
+      [right.localized_name, right.internal_name, right.item_id, right.search_terms],
+      normalizedSearch,
+    );
+
+    if (leftMeta.tier !== rightMeta.tier) {
+      return leftMeta.tier - rightMeta.tier;
+    }
+
+    if (leftMeta.length !== rightMeta.length) {
+      return leftMeta.length - rightMeta.length;
+    }
+
+    const leftGroupOrder = left.browser_group_sort_order ?? Number.MAX_SAFE_INTEGER;
+    const rightGroupOrder = right.browser_group_sort_order ?? Number.MAX_SAFE_INTEGER;
+    if (leftGroupOrder !== rightGroupOrder) {
+      return leftGroupOrder - rightGroupOrder;
+    }
+
+    const leftLocalized = `${left.localized_name ?? ''}`;
+    const rightLocalized = `${right.localized_name ?? ''}`;
+    const localizedCompare = leftLocalized.localeCompare(rightLocalized, 'zh-Hans-CN');
+    if (localizedCompare !== 0) {
+      return localizedCompare;
+    }
+
+    const leftId = `${left.item_id ?? ''}`;
+    const rightId = `${right.item_id ?? ''}`;
+    return leftId.localeCompare(rightId);
+  }
+
   private getCachedMods(): Array<{ modId: string; modName: string; itemCount: number }> | null {
     const hit = ItemsService.modsCache;
     if (!hit) return null;
@@ -208,6 +335,18 @@ export class ItemsService {
     });
   }
 
+  private getBrowserDefaultCatalogCacheKey(modId?: string): string {
+    return `${modId ?? 'all'}`.trim().toLowerCase() || 'all';
+  }
+
+  private getBrowserGroupItemsCacheKey(groupKey: string, modId?: string): string {
+    return `${groupKey ?? ''}`.trim().toLowerCase() + `::${`${modId ?? 'all'}`.trim().toLowerCase() || 'all'}`;
+  }
+
+  private getBrowserSearchCatalogCacheKey(search: string, modId?: string): string {
+    return `${`${search ?? ''}`.trim().toLowerCase()}::${`${modId ?? 'all'}`.trim().toLowerCase() || 'all'}`;
+  }
+
   private getCachedBrowserCatalog(cacheKey: string): BrowserCatalogRow[] | null {
     const hit = ItemsService.browserCatalogCache.get(cacheKey);
     if (!hit) return null;
@@ -222,6 +361,73 @@ export class ItemsService {
     ItemsService.browserCatalogCache.set(cacheKey, {
       value: rows,
       expiresAt: Date.now() + ItemsService.BROWSER_CATALOG_CACHE_TTL_MS,
+    });
+  }
+
+  private getCachedBrowserDefaultCatalog(cacheKey: string): { value: BrowserPageEntry[]; total: number } | null {
+    const hit = ItemsService.browserDefaultCatalogCache.get(cacheKey);
+    if (!hit) return null;
+    if (Date.now() > hit.expiresAt) {
+      ItemsService.browserDefaultCatalogCache.delete(cacheKey);
+      return null;
+    }
+    return {
+      value: hit.value,
+      total: hit.total,
+    };
+  }
+
+  private setCachedBrowserDefaultCatalog(
+    cacheKey: string,
+    value: BrowserPageEntry[],
+    total: number,
+  ): void {
+    ItemsService.browserDefaultCatalogCache.set(cacheKey, {
+      value,
+      total,
+      expiresAt: Date.now() + ItemsService.BROWSER_DEFAULT_CATALOG_CACHE_TTL_MS,
+    });
+  }
+
+  private getCachedBrowserSearchCatalog(cacheKey: string): { value: BrowserPageEntry[]; total: number } | null {
+    const hit = ItemsService.browserSearchCatalogCache.get(cacheKey);
+    if (!hit) return null;
+    if (Date.now() > hit.expiresAt) {
+      ItemsService.browserSearchCatalogCache.delete(cacheKey);
+      return null;
+    }
+    return {
+      value: hit.value,
+      total: hit.total,
+    };
+  }
+
+  private setCachedBrowserSearchCatalog(
+    cacheKey: string,
+    value: BrowserPageEntry[],
+    total: number,
+  ): void {
+    ItemsService.browserSearchCatalogCache.set(cacheKey, {
+      value,
+      total,
+      expiresAt: Date.now() + ItemsService.BROWSER_SEARCH_CATALOG_CACHE_TTL_MS,
+    });
+  }
+
+  private getCachedBrowserGroupItems(cacheKey: string): Item[] | null {
+    const hit = ItemsService.browserGroupItemsCache.get(cacheKey);
+    if (!hit) return null;
+    if (Date.now() > hit.expiresAt) {
+      ItemsService.browserGroupItemsCache.delete(cacheKey);
+      return null;
+    }
+    return hit.value;
+  }
+
+  private setCachedBrowserGroupItems(cacheKey: string, value: Item[]): void {
+    ItemsService.browserGroupItemsCache.set(cacheKey, {
+      value,
+      expiresAt: Date.now() + ItemsService.BROWSER_GROUP_ITEMS_CACHE_TTL_MS,
     });
   }
 
@@ -245,6 +451,7 @@ export class ItemsService {
           COUNT(*) AS item_count,
           CURRENT_TIMESTAMP
         FROM items_core
+        WHERE item_id LIKE 'i~%'
         GROUP BY mod_id
         ORDER BY mod_id COLLATE NOCASE ASC
       `).run();
@@ -285,6 +492,7 @@ export class ItemsService {
       FROM items_core AS ic
       LEFT JOIN item_browser_groups AS bg
         ON bg.item_id = ic.item_id
+      WHERE ic.item_id LIKE 'i~%'
       ORDER BY
         COALESCE(bg.group_sort_order, 2147483647) ASC,
         ic.damage ASC,
@@ -407,6 +615,10 @@ export class ItemsService {
     const conditions: string[] = [];
     const bindings: Record<string, unknown> = {};
 
+    if (!normalizedSearch) {
+      conditions.push("ic.item_id LIKE 'i~%'");
+    }
+
     if (normalizedModId && normalizedModId !== 'all') {
       conditions.push('ic.mod_id = @modId');
       bindings.modId = normalizedModId;
@@ -467,6 +679,10 @@ export class ItemsService {
           ic.item_id COLLATE NOCASE ASC
       `)
       .all(bindings) as BrowserCatalogRow[];
+
+    if (normalizedSearch) {
+      rows.sort((left, right) => this.compareBrowserSearchRows(left, right, normalizedSearch));
+    }
 
     this.setCachedBrowserCatalog(cacheKey, rows);
     return rows;
@@ -617,6 +833,196 @@ export class ItemsService {
         },
       } satisfies BrowserPageEntry;
     });
+  }
+
+  async getBrowserDefaultCatalog(params?: {
+    modId?: string;
+  }): Promise<PaginatedResponse<BrowserPageEntry>> {
+    const normalizedModId = `${params?.modId ?? ''}`.trim();
+    const cacheKey = this.getBrowserDefaultCatalogCacheKey(normalizedModId || 'all');
+    const cached = this.getCachedBrowserDefaultCatalog(cacheKey);
+    if (cached) {
+      return {
+        data: cached.value,
+        total: cached.total,
+        page: 1,
+        pageSize: Math.max(1, cached.total),
+        totalPages: 1,
+      };
+    }
+
+    const db = this.getAccelerationDatabase();
+    if (this.canUseBrowserDefaultEntries(db) && this.canUseAccelerationItems(db)) {
+      this.ensureBrowserDefaultEntriesMaterialized(db);
+      const bindings: Record<string, unknown> = {};
+      const whereClause =
+        normalizedModId && normalizedModId !== 'all'
+          ? 'WHERE e.mod_id = @modId'
+          : '';
+
+      if (whereClause) {
+        bindings.modId = normalizedModId;
+      }
+
+      const rows = db.prepare(`
+        SELECT
+          e.entry_order,
+          e.entry_kind,
+          ic.item_id,
+          ic.mod_id,
+          ic.internal_name,
+          ic.localized_name,
+          ic.unlocalized_name,
+          ic.damage,
+          ic.image_file_name,
+          ic.render_asset_ref,
+          ic.preferred_image_url,
+          ic.tooltip,
+          ic.search_terms,
+          e.group_key AS browser_group_key,
+          e.group_label AS browser_group_label,
+          e.group_size AS browser_group_size,
+          NULL AS browser_group_sort_order
+        FROM browser_default_entries AS e
+        INNER JOIN items_core AS ic
+          ON ic.item_id = e.item_id
+        ${whereClause}
+        ORDER BY e.entry_order ASC
+      `).all(bindings) as BrowserDefaultEntryRow[];
+
+      const data = this.mapBrowserDefaultEntryRows(rows);
+      this.setCachedBrowserDefaultCatalog(cacheKey, data, data.length);
+      return {
+        data,
+        total: data.length,
+        page: 1,
+        pageSize: Math.max(1, data.length),
+        totalPages: 1,
+      };
+    }
+
+    const catalog = this.getBrowserCatalog({ modId: normalizedModId || undefined });
+    const data = this.buildBrowserDefaultEntriesFromCatalog(catalog);
+    this.setCachedBrowserDefaultCatalog(cacheKey, data, data.length);
+    return {
+      data,
+      total: data.length,
+      page: 1,
+      pageSize: Math.max(1, data.length),
+      totalPages: 1,
+    };
+  }
+
+  async getBrowserSearchCatalog(params: {
+    search: string;
+    modId?: string;
+  }): Promise<PaginatedResponse<BrowserPageEntry>> {
+    const normalizedSearch = `${params.search ?? ''}`.trim();
+    if (!normalizedSearch) {
+      return this.getBrowserDefaultCatalog({ modId: params.modId });
+    }
+
+    const normalizedModId = `${params.modId ?? ''}`.trim();
+    const cacheKey = this.getBrowserSearchCatalogCacheKey(normalizedSearch, normalizedModId || 'all');
+    const cached = this.getCachedBrowserSearchCatalog(cacheKey);
+    if (cached) {
+      return {
+        data: cached.value,
+        total: cached.total,
+        page: 1,
+        pageSize: Math.max(1, cached.total),
+        totalPages: 1,
+      };
+    }
+
+    const catalog = this.getBrowserCatalog({
+      search: normalizedSearch,
+      modId: normalizedModId || undefined,
+    });
+    const data = this.buildBrowserDefaultEntriesFromCatalog(catalog);
+    this.setCachedBrowserSearchCatalog(cacheKey, data, data.length);
+    return {
+      data,
+      total: data.length,
+      page: 1,
+      pageSize: Math.max(1, data.length),
+      totalPages: 1,
+    };
+  }
+
+  async getBrowserGroupItems(groupKey: string, modId?: string): Promise<Item[]> {
+    const normalizedGroupKey = `${groupKey ?? ''}`.trim();
+    if (!normalizedGroupKey) {
+      return [];
+    }
+    const normalizedModId = `${modId ?? ''}`.trim();
+
+    const cacheKey = this.getBrowserGroupItemsCacheKey(normalizedGroupKey, normalizedModId || 'all');
+    const cached = this.getCachedBrowserGroupItems(cacheKey);
+    if (cached) {
+      return cached;
+    }
+
+    const db = this.getAccelerationDatabase();
+    if (this.canUseAccelerationItems(db)) {
+      const bindings: Record<string, unknown> = {
+        groupKey: normalizedGroupKey,
+      };
+      const modWhereClause =
+        normalizedModId && normalizedModId !== 'all'
+          ? 'AND ic.mod_id = @modId'
+          : '';
+      if (modWhereClause) {
+        bindings.modId = normalizedModId;
+      }
+      const rows = db.prepare(`
+        SELECT
+          ic.item_id,
+          ic.mod_id,
+          ic.internal_name,
+          ic.localized_name,
+          ic.unlocalized_name,
+          ic.damage,
+          ic.image_file_name,
+          ic.render_asset_ref,
+          ic.preferred_image_url,
+          ic.tooltip,
+          ic.search_terms,
+          bg.group_key AS browser_group_key,
+          bg.group_label AS browser_group_label,
+          bg.group_size AS browser_group_size
+        FROM items_core AS ic
+        INNER JOIN item_browser_groups AS bg
+          ON bg.item_id = ic.item_id
+        WHERE bg.group_key = @groupKey
+          ${modWhereClause}
+        ORDER BY
+          bg.group_sort_order ASC,
+          ic.damage ASC,
+          ic.localized_name COLLATE NOCASE ASC,
+          ic.item_id COLLATE NOCASE ASC
+      `).all(bindings) as ItemRow[];
+
+      const data = rows.map((row) => this.transformDatabaseItem(row, { trustPreferredImageUrl: true }));
+      for (const item of data) {
+        this.setCachedItem(item);
+      }
+      this.setCachedBrowserGroupItems(cacheKey, data);
+      return data;
+    }
+
+    const catalog = this.getBrowserCatalog({});
+    const data = catalog
+      .filter((row) =>
+        `${row.browser_group_key ?? ''}`.trim() === normalizedGroupKey
+        && (!normalizedModId || normalizedModId === 'all' || row.mod_id === normalizedModId)
+      )
+      .map((row) => this.transformDatabaseItem(row, { trustPreferredImageUrl: true }));
+    for (const item of data) {
+      this.setCachedItem(item);
+    }
+    this.setCachedBrowserGroupItems(cacheKey, data);
+    return data;
   }
 
   private buildBrowserDefaultEntriesFromCatalog(catalog: BrowserCatalogRow[]): BrowserPageEntry[] {
@@ -875,6 +1281,10 @@ export class ItemsService {
       const conditions: string[] = [];
       const bindings: Record<string, unknown> = { limit: pageSize, offset };
 
+      if (!normalizedSearch) {
+        conditions.push("ic.item_id LIKE 'i~%'");
+      }
+
       if (normalizedModId && normalizedModId !== 'all') {
         conditions.push('ic.mod_id = @modId');
         bindings.modId = normalizedModId;
@@ -971,7 +1381,9 @@ export class ItemsService {
       };
     }
 
-    let items = this.splitExportService.getAllItems().map((raw) => this.transformSplitItem(raw));
+    let items = this.splitExportService
+      .getAllItems({ includeFluids: Boolean(normalizedSearch) })
+      .map((raw) => this.transformSplitItem(raw));
 
     if (normalizedModId && normalizedModId !== 'all') {
       items = items.filter((item) => item.modId === normalizedModId);
@@ -1159,8 +1571,10 @@ export class ItemsService {
       .filter((item): item is Item => item !== undefined);
   }
 
-  resolvePreferredStaticImageUrl(item: Pick<Item, 'itemId' | 'imageFileName' | 'renderAssetRef'>): string {
-    const cacheKey = `${item.itemId}|${item.imageFileName ?? ''}|${item.renderAssetRef ?? ''}`;
+  resolvePreferredStaticImageUrl(
+    item: Pick<Item, 'itemId' | 'imageFileName' | 'renderAssetRef' | 'preferredImageUrl'>,
+  ): string {
+    const cacheKey = `${item.itemId}|${item.imageFileName ?? ''}|${item.renderAssetRef ?? ''}|${item.preferredImageUrl ?? ''}`;
     const cached = ItemsService.imageUrlCache.get(cacheKey);
     if (cached) {
       return cached;
@@ -1171,7 +1585,14 @@ export class ItemsService {
     return resolved;
   }
 
-  private resolvePreferredStaticImageUrlUncached(item: Pick<Item, 'itemId' | 'imageFileName' | 'renderAssetRef'>): string {
+  private resolvePreferredStaticImageUrlUncached(
+    item: Pick<Item, 'itemId' | 'imageFileName' | 'renderAssetRef' | 'preferredImageUrl'>,
+  ): string {
+    const preferred = `${item.preferredImageUrl ?? ''}`.trim();
+    if (preferred.startsWith('/images/')) {
+      return preferred;
+    }
+
     const fromImageFile = this.resolveFromImageFileName(item.imageFileName);
     if (fromImageFile) {
       return fromImageFile;
@@ -1366,6 +1787,7 @@ export class ItemsService {
         .prepare(`
           SELECT mod_id, COUNT(*) AS item_count
           FROM items_core
+          WHERE item_id LIKE 'i~%'
           GROUP BY mod_id
           ORDER BY mod_id COLLATE NOCASE ASC
         `)
@@ -1397,7 +1819,7 @@ export class ItemsService {
       internalName: String(raw.internalName ?? raw.internal_name ?? ''),
       localizedName: String(raw.localizedName ?? raw.localized_name ?? ''),
       renderAssetRef: typeof raw.renderAssetRef === 'string' ? raw.renderAssetRef : null,
-      preferredImageUrl: null,
+      preferredImageUrl: typeof raw.preferredImageUrl === 'string' ? raw.preferredImageUrl : null,
       unlocalizedName: String(raw.unlocalizedName ?? raw.unlocalized_name ?? ''),
       damage: Number(raw.damage ?? 0),
       maxStackSize: Number(raw.maxStackSize ?? raw.max_stack_size ?? 64),
@@ -1413,7 +1835,7 @@ export class ItemsService {
           ? Number(raw.browserGroupSize)
           : null,
     };
-    item.preferredImageUrl = this.resolvePreferredStaticImageUrl(item);
+    item.preferredImageUrl = this.resolveUsablePreferredImageUrl(item.preferredImageUrl, item);
     return item;
   }
 }

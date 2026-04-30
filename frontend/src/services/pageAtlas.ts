@@ -97,6 +97,12 @@ export async function buildPageAtlas(items: Item[], itemSize: number): Promise<P
   return request;
 }
 
+export function peekPageAtlas(items: Pick<Item, 'itemId'>[], itemSize: number): PageAtlasResult | null | undefined {
+  if (items.length === 0) return null;
+  const slotSize = Math.max(32, Math.ceil(itemSize * 0.9));
+  return atlasCache.get(createAtlasKey(items, slotSize));
+}
+
 export async function buildPrecomputedPageAtlas(params: {
   page: number;
   pageSize: number;

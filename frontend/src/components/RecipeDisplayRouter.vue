@@ -27,6 +27,7 @@ const GTResearchStationUI = defineAsyncComponent(() => import('./GTResearchStati
 const GTAssemblerUI = defineAsyncComponent(() => import('./GTAssemblerUI.vue'));
 const GTAssemblyLineUI = defineAsyncComponent(() => import('./GTAssemblyLineUI.vue'));
 const GTAlloySmelterUI = defineAsyncComponent(() => import('./GTAlloySmelterUI.vue'));
+const GTChemicalReactorUI = defineAsyncComponent(() => import('./GTChemicalReactorUI.vue'));
 const GTMolecularUI = defineAsyncComponent(() => import('./GTMolecularUI.vue'));
 const GTElectrolyzerUI = defineAsyncComponent(() => import('./GTElectrolyzerUI.vue'));
 const GTBlastFurnaceUI = defineAsyncComponent(() => import('./GTBlastFurnaceUI.vue'));
@@ -88,6 +89,7 @@ const componentRegistry: Record<string, Component> = {
   GTAssemblerUI,
   GTAssemblyLineUI,
   GTAlloySmelterUI,
+  GTChemicalReactorUI,
   GTMolecularUI,
   GTElectrolyzerUI,
   GTBlastFurnaceUI,

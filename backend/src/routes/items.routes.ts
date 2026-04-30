@@ -113,6 +113,51 @@ router.get(
 );
 
 router.get(
+  '/browser/default-catalog',
+  asyncHandler(async (req, res) => {
+    const modId = req.query.modId as string | undefined;
+    const result = await getItemsService().getBrowserDefaultCatalog({
+      modId,
+    });
+    attachRenderHintsToEntries(result.data);
+    res.json(result);
+  }),
+);
+
+router.get(
+  '/browser/search-catalog',
+  asyncHandler(async (req, res) => {
+    const search = `${req.query.q ?? ''}`.trim();
+    const modId = req.query.modId as string | undefined;
+    const result = await getItemsService().getBrowserSearchCatalog({
+      search,
+      modId,
+    });
+    attachRenderHintsToEntries(result.data);
+    res.json(result);
+  }),
+);
+
+router.get(
+  '/browser/group/:groupKey',
+  asyncHandler(async (req, res) => {
+    const groupKey = `${req.params.groupKey ?? ''}`.trim();
+    const modId = req.query.modId as string | undefined;
+    if (!groupKey) {
+      throw badRequest('Group key is required');
+    }
+
+    const items = await getItemsService().getBrowserGroupItems(groupKey, modId);
+    attachRenderHintsToItems(items);
+    res.json({
+      groupKey,
+      total: items.length,
+      items,
+    });
+  }),
+);
+
+router.get(
   '/browser/page-pack',
   asyncHandler(async (req, res) => {
     const page = parseInt(req.query.page as string) || 1;
