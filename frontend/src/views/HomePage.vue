@@ -1745,6 +1745,7 @@ const saveSettings = () => {
 .homepage-recipe-scale-shell :deep(.gt-electrolyzer-ui),
 .homepage-recipe-scale-shell :deep(.gt-blast-furnace-ui),
 .homepage-recipe-scale-shell :deep(.gt-electric-furnace-ui),
+.homepage-recipe-scale-shell :deep(.industrial-slaughterhouse-ui),
 .homepage-recipe-scale-shell :deep(.thaumcraft-infusion-ui),
 .homepage-recipe-scale-shell :deep(.thaumcraft-arcane-ui),
 .homepage-recipe-scale-shell :deep(.thaumcraft-crucible-ui),

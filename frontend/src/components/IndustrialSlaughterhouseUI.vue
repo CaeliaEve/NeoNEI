@@ -563,7 +563,7 @@ function handleEntityPreviewError(): void {
           <div v-if="shouldRenderEntityModel && entityModel" class="entity-model-card">
             <EntityModelViewer
               :model-url="entityModel.modelUrl"
-              :height="292"
+              :height="392"
               @ready="handleEntityModelReady"
               @error="handleEntityModelError"
             />
@@ -686,8 +686,10 @@ function handleEntityPreviewError(): void {
   --text-main: #eff7ff;
   --text-soft: rgba(224, 234, 246, 0.92);
   --text-dim: rgba(166, 182, 201, 0.68);
-  width: min(1180px, calc(100vw - 72px));
-  height: min(640px, calc(100vh - 300px));
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
   min-height: 560px;
   padding: 14px;
   border-radius: 24px;
@@ -850,8 +852,8 @@ function handleEntityPreviewError(): void {
   padding: 12px 14px 14px;
   overflow: hidden;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
   background:
     radial-gradient(circle at 50% 18%, rgba(123, 214, 255, 0.05), transparent 30%),
     linear-gradient(180deg, rgba(15, 21, 29, 0.98), rgba(8, 12, 18, 1));
@@ -952,34 +954,34 @@ function handleEntityPreviewError(): void {
   z-index: 2;
   display: grid;
   place-items: center;
+  width: 100%;
+  height: 100%;
   min-height: 0;
-  padding: 6px 0 0;
+  padding: 0 0 6px;
   overflow: hidden;
 }
 
 .entity-model-card {
-  width: min(100%, 360px);
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   display: grid;
-  gap: 6px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
+  overflow: hidden;
 }
 
 .entity-preview-card {
-  width: 188px;
-  min-height: 196px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 10px;
-  padding: 14px 12px 12px;
-  border-radius: 32px;
-  border: 1px solid rgba(171, 191, 214, 0.16);
-  background:
-    radial-gradient(circle at 50% 18%, rgba(123, 214, 255, 0.12), transparent 34%),
-    radial-gradient(circle at 50% 82%, rgba(255, 95, 117, 0.08), transparent 38%),
-    linear-gradient(180deg, rgba(31, 41, 52, 0.96), rgba(13, 19, 27, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 0 0 1px rgba(123, 214, 255, 0.08),
-    0 24px 48px rgba(0, 0, 0, 0.36);
+  padding: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .entity-preview-card--animated {
@@ -987,17 +989,24 @@ function handleEntityPreviewError(): void {
 }
 
 .entity-preview-card--error {
-  min-height: 192px;
+  min-height: 0;
   place-items: center;
-  background:
-    radial-gradient(circle at 50% 18%, rgba(255, 95, 117, 0.14), transparent 36%),
-    linear-gradient(180deg, rgba(35, 19, 24, 0.96), rgba(17, 11, 15, 0.98));
 }
 
 .entity-preview-card--fallback {
+  min-height: 0;
   align-content: center;
   justify-items: center;
   gap: 14px;
+  border-radius: 30px;
+  border: 1px solid rgba(171, 191, 214, 0.16);
+  background:
+    radial-gradient(circle at 50% 18%, rgba(123, 214, 255, 0.08), transparent 36%),
+    linear-gradient(180deg, rgba(31, 41, 52, 0.94), rgba(13, 19, 27, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(123, 214, 255, 0.08),
+    0 24px 48px rgba(0, 0, 0, 0.28);
 }
 
 .entity-preview-card__fallback-icon {
@@ -1035,15 +1044,20 @@ function handleEntityPreviewError(): void {
 .entity-preview-card__viewport {
   position: relative;
   width: 100%;
-  min-height: 160px;
+  height: 100%;
+  min-height: 0;
   display: grid;
   place-items: center;
-  border-radius: 24px;
+  border-radius: 30px;
   overflow: hidden;
   border: 1px solid rgba(190, 212, 236, 0.16);
   background:
-    radial-gradient(circle at 50% 50%, rgba(233, 243, 255, 0.94) 0%, rgba(150, 211, 255, 0.72) 20%, rgba(90, 131, 178, 0.28) 42%, rgba(19, 27, 37, 0.06) 64%, transparent 76%),
+    radial-gradient(circle at 50% 50%, rgba(233, 243, 255, 0.98) 0%, rgba(150, 211, 255, 0.74) 18%, rgba(90, 131, 178, 0.28) 40%, rgba(19, 27, 37, 0.06) 62%, transparent 76%),
     linear-gradient(180deg, rgba(24, 32, 42, 0.96), rgba(11, 17, 24, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(123, 214, 255, 0.08),
+    0 28px 54px rgba(0, 0, 0, 0.28);
 }
 
 .entity-preview-card__aura,
@@ -1084,8 +1098,10 @@ function handleEntityPreviewError(): void {
 .entity-preview-card__image {
   position: relative;
   z-index: 1;
-  width: min(100%, 138px);
-  height: 138px;
+  width: min(100%, 72%);
+  max-width: 300px;
+  height: auto;
+  max-height: 78%;
   object-fit: contain;
   image-rendering: pixelated;
   filter:
@@ -1099,16 +1115,35 @@ function handleEntityPreviewError(): void {
   display: grid;
   gap: 3px;
   text-align: center;
+  justify-items: center;
+  padding: 0 12px;
+  flex-shrink: 0;
 }
 
 .entity-preview-card__meta strong {
   color: var(--text-main);
   font-size: 13px;
+  line-height: 1.15;
 }
 
 .entity-preview-card__meta small {
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 10px;
+  line-height: 1.15;
+}
+
+.entity-model-card :deep(.entity-model-viewer) {
+  height: 100% !important;
+  min-height: 0;
+  border-radius: 30px;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 0 0 1px rgba(123, 214, 255, 0.08),
+    0 28px 54px rgba(0, 0, 0, 0.28);
+}
+
+.entity-model-card :deep(.entity-model-viewer__canvas) {
+  height: 100%;
 }
 
 .carrier-strip {
