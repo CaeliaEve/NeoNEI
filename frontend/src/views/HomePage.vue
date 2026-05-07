@@ -1052,7 +1052,7 @@ const saveSettings = () => {
           v-if="
             showRecipeModal
           "
-          :class="['recipe-preview-panel absolute flex flex-col overflow-visible surface-glass border border-slate-300/50 rounded-xl shadow-lg', { 'wide-stage': recipePreviewNeedsWideStage }]"
+          :class="['recipe-preview-panel recipe-preview-shell absolute flex flex-col overflow-visible rounded-xl shadow-lg', { 'wide-stage': recipePreviewNeedsWideStage }]"
           :style="recipeDockStyle"
         >
           <!-- Recipe Content (no scroll, compact) -->
@@ -1066,48 +1066,46 @@ const saveSettings = () => {
 
             <!-- Machine Name -->
             <div
-              class="text-center py-1 px-2 surface-glass rounded border border-blue-400/30"
-            >
-              <span
-                class="text-xs font-bold text-blue-500"
-                style="text-shadow: 0 0 20px rgba(191, 0, 255, 0.5)"
-              >
-                {{ currentCategory?.name || "未知分类" }}
-              </span>
-            </div>
-
-            <!-- Pagination (compact) -->
-            <div
-              v-if="totalRecipePages > 1"
-              class="flex items-center justify-center gap-1 py-0.5"
+              class="recipe-machine-banner rounded"
             >
               <button
+                v-if="totalRecipePages > 1"
                 @click="prevRecipePage"
                 :disabled="totalRecipePages <= 1"
-                class="px-1.5 py-0.5 text-[10px] mini-pager-btn disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                class="recipe-machine-banner__nav recipe-machine-banner__nav--left disabled:opacity-50 disabled:cursor-not-allowed"
                 title="上一页"
                 aria-label="上一页"
               >
                 ◀
               </button>
-              <span class="text-slate-200 text-[10px]">
-                {{ recipeModalPage + 1 }}/{{ totalRecipePages }}
+              <span
+                class="recipe-machine-banner__title text-xs font-bold text-cyan-300"
+                style="text-shadow: 0 0 18px rgba(69, 191, 255, 0.22)"
+              >
+                {{ currentCategory?.name || "未知分类" }}
               </span>
               <button
+                v-if="totalRecipePages > 1"
                 @click="nextRecipePage"
                 :disabled="totalRecipePages <= 1"
-                class="px-1.5 py-0.5 text-[10px] mini-pager-btn disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                class="recipe-machine-banner__nav recipe-machine-banner__nav--right disabled:opacity-50 disabled:cursor-not-allowed"
                 title="下一页"
                 aria-label="下一页"
               >
                 ▶
               </button>
+              <span
+                v-if="totalRecipePages > 1"
+                class="recipe-machine-banner__page text-[10px]"
+              >
+                {{ recipeModalPage + 1 }}/{{ totalRecipePages }}
+              </span>
             </div>
 
             <!-- Recipe Display (scaled to fit, flex-1 to fill remaining space) -->
               <div
                 :class="[
-                  'surface-glass rounded border border-slate-200/60 flex-1 flex items-center justify-center recipe-display-container p-2 min-h-0',
+                  'recipe-display-shell rounded flex-1 flex items-center justify-center recipe-display-container p-2 min-h-0',
                   {
                     'recipe-display-container--state': recipeStageIsStateView,
                     'recipe-display-container--homepage': !recipeStageIsStateView,
@@ -1649,6 +1647,30 @@ const saveSettings = () => {
   left: var(--home-center-left);
 }
 
+.recipe-preview-shell {
+  border: 1px solid rgba(133, 164, 206, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 12%),
+    radial-gradient(circle at 50% 0%, rgba(107, 211, 255, 0.05), transparent 28%),
+    linear-gradient(180deg, rgba(13, 18, 26, 0.985), rgba(7, 10, 16, 0.995));
+  box-shadow:
+    0 28px 58px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 0 1px rgba(89, 122, 166, 0.05);
+}
+
+.recipe-preview-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 14%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 52px);
+  opacity: 0.85;
+}
+
 .recipe-preview-panel.wide-stage {
   width: auto;
   left: 16px;
@@ -1668,6 +1690,139 @@ const saveSettings = () => {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+}
+
+.recipe-machine-banner {
+  position: relative;
+  z-index: 1;
+  min-height: 34px;
+  padding: 4px 52px 4px 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(108, 160, 218, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 20%),
+    linear-gradient(180deg, rgba(22, 28, 39, 0.95), rgba(11, 16, 24, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 12px 22px rgba(0, 0, 0, 0.14);
+}
+
+.recipe-machine-banner__title {
+  text-align: center;
+  line-height: 1.1;
+}
+
+.recipe-machine-banner__nav {
+  position: absolute;
+  top: 50%;
+  transform: translate3d(0, -50%, 0);
+  z-index: 2;
+  width: 28px;
+  min-width: 28px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  vertical-align: middle;
+  line-height: 1;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease,
+    box-shadow 140ms ease,
+    color 140ms ease;
+}
+
+.recipe-machine-banner__page {
+  position: absolute;
+  top: 50%;
+  transform: translate3d(0, -50%, 0);
+}
+
+.recipe-machine-banner__nav--left {
+  left: 6px;
+}
+
+.recipe-machine-banner__nav--right {
+  right: 42px;
+}
+
+.recipe-machine-banner__page {
+  right: 8px;
+  min-width: 32px;
+  height: 22px;
+  padding: 0 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid rgba(117, 157, 203, 0.16);
+  color: rgba(214, 230, 247, 0.95);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 26%),
+    linear-gradient(180deg, rgba(20, 27, 37, 0.94), rgba(10, 15, 22, 0.98));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 10px 18px rgba(0, 0, 0, 0.14);
+}
+
+.recipe-machine-banner__nav {
+  border-radius: 10px;
+  border-color: rgba(118, 158, 203, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 24%),
+    linear-gradient(180deg, rgba(21, 29, 39, 0.94), rgba(11, 16, 24, 0.98));
+  color: rgba(222, 235, 248, 0.95);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 10px 18px rgba(0, 0, 0, 0.14);
+}
+
+.recipe-machine-banner__nav:hover {
+  transform: translate3d(0, -50%, 0);
+  border-color: rgba(154, 190, 228, 0.24);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 24%),
+    linear-gradient(180deg, rgba(26, 35, 47, 0.96), rgba(14, 20, 29, 0.99));
+}
+
+.recipe-machine-banner__nav:focus,
+.recipe-machine-banner__nav:active {
+  transform: translate3d(0, -50%, 0);
+}
+
+.recipe-display-shell {
+  position: relative;
+  z-index: 1;
+  border: 1px solid rgba(143, 171, 211, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 14%),
+    radial-gradient(circle at 50% 0%, rgba(107, 211, 255, 0.035), transparent 28%),
+    linear-gradient(180deg, rgba(10, 15, 22, 0.985), rgba(6, 9, 14, 1));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    inset 0 0 0 1px rgba(86, 119, 162, 0.04),
+    0 18px 38px rgba(0, 0, 0, 0.24);
+}
+
+.recipe-display-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 12%),
+    radial-gradient(circle at 50% 100%, rgba(255, 189, 113, 0.03), transparent 24%);
 }
 
 .recipe-display-container--state {

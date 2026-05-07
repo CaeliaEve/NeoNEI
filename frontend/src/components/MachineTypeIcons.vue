@@ -133,18 +133,22 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
 .machine-type-icons {
   position: relative;
   z-index: 20;
-  background: linear-gradient(180deg, rgba(14, 18, 24, 0.84), rgba(10, 14, 19, 0.88));
-  border: 1px solid rgba(156, 174, 198, 0.14);
-  border-radius: 12px;
-  padding: 10px 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 18%),
+    radial-gradient(circle at 50% 0%, rgba(107, 211, 255, 0.04), transparent 30%),
+    linear-gradient(180deg, rgba(15, 20, 28, 0.92), rgba(8, 12, 18, 0.96));
+  border: 1px solid rgba(140, 170, 209, 0.16);
+  border-radius: 16px;
+  padding: 12px 14px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.03),
-    0 10px 24px rgba(0, 0, 0, 0.26);
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    inset 0 0 0 1px rgba(84, 114, 151, 0.04),
+    0 14px 28px rgba(0, 0, 0, 0.22);
 }
 
 .icons-container {
   display: flex;
-  gap: 10px;
+  gap: 12px;
   justify-content: center;
   flex-wrap: wrap;
   overflow: visible;
@@ -152,8 +156,8 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
 
 .icon-wrapper {
   position: relative;
-  width: 48px;
-  height: 48px;
+  width: 50px;
+  height: 50px;
   cursor: pointer;
   transition: transform 180ms ease;
   appearance: none;
@@ -163,7 +167,7 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .icon-wrapper:hover {
-  transform: translateY(-1px);
+  transform: translateY(-2px);
 }
 
 .icon-wrapper:focus-visible {
@@ -173,32 +177,43 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .machine-icon-container {
-  width: 48px;
-  height: 48px;
-  background: linear-gradient(180deg, rgba(22, 27, 35, 0.86), rgba(15, 19, 25, 0.9));
-  border: 1px solid rgba(147, 166, 191, 0.14);
-  border-radius: 10px;
+  width: 50px;
+  height: 50px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18%),
+    linear-gradient(180deg, rgba(24, 31, 41, 0.94), rgba(13, 18, 26, 0.98));
+  border: 1px solid rgba(147, 166, 191, 0.16);
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: border-color 170ms ease, background 170ms ease, box-shadow 170ms ease;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.02),
-    0 4px 10px rgba(0, 0, 0, 0.18);
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 8px 14px rgba(0, 0, 0, 0.18);
 }
 
 .icon-wrapper:hover .machine-icon-container {
-  background: linear-gradient(180deg, rgba(28, 34, 43, 0.9), rgba(19, 24, 31, 0.94));
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.026), transparent 18%),
+    linear-gradient(180deg, rgba(29, 37, 48, 0.96), rgba(18, 24, 33, 0.99));
   border-color: rgba(182, 199, 220, 0.26);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 0 0 1px rgba(107, 211, 255, 0.05),
+    0 12px 18px rgba(0, 0, 0, 0.22);
 }
 
 .icon-active .machine-icon-container {
-  background: linear-gradient(180deg, rgba(32, 39, 49, 0.92), rgba(22, 28, 36, 0.96));
-  border-color: rgba(190, 206, 226, 0.36);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 20%),
+    linear-gradient(180deg, rgba(31, 40, 53, 0.98), rgba(20, 28, 39, 1));
+  border-color: rgba(179, 213, 242, 0.34);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 0 0 1px rgba(183, 200, 220, 0.12),
-    0 8px 16px rgba(0, 0, 0, 0.22);
+    0 0 0 1px rgba(107, 211, 255, 0.1),
+    0 0 20px rgba(107, 211, 255, 0.08),
+    0 10px 18px rgba(0, 0, 0, 0.24);
 }
 
 .crafting-icon,
@@ -215,8 +230,8 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
 }
 
 .machine-icon {
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
 }
@@ -244,8 +259,10 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
   min-width: 20px;
   height: 20px;
   padding: 0 6px;
-  background: linear-gradient(180deg, rgba(60, 72, 90, 0.96), rgba(45, 56, 74, 0.98));
-  border: 1px solid rgba(188, 204, 224, 0.34);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent 20%),
+    linear-gradient(180deg, rgba(53, 66, 84, 0.98), rgba(38, 49, 66, 1));
+  border: 1px solid rgba(188, 204, 224, 0.28);
   border-radius: 10px;
   color: rgba(240, 246, 252, 0.96);
   font-size: 11px;
@@ -253,7 +270,9 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    0 4px 10px rgba(0, 0, 0, 0.24);
 }
 
 /* Tooltip */
@@ -263,9 +282,11 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
   left: 50%;
   transform: translateX(-50%) scale(0.8);
   padding: 6px 12px;
-  background: rgba(12, 16, 21, 0.96);
-  border: 1px solid rgba(157, 176, 198, 0.2);
-  border-radius: 6px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 20%),
+    rgba(10, 14, 20, 0.96);
+  border: 1px solid rgba(157, 176, 198, 0.18);
+  border-radius: 8px;
   color: rgba(223, 233, 245, 0.95);
   font-size: 12px;
   font-weight: 600;
@@ -274,7 +295,9 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
   opacity: 0;
   transition: all 0.2s ease;
   z-index: 1200;
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.36);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 12px 22px rgba(0, 0, 0, 0.34);
 }
 
 .icon-wrapper:hover .icon-tooltip {
