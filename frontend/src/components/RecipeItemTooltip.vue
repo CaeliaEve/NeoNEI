@@ -13,9 +13,11 @@ const props = withDefaults(defineProps<{
   count?: number;
   sizeMode?: TooltipSizeMode;
   motionLevel?: TooltipMotionLevel;
+  extraLines?: string[];
 }>(), {
   sizeMode: 'auto',
   motionLevel: 'auto',
+  extraLines: () => [],
 });
 
 const emit = defineEmits<{
@@ -93,6 +95,8 @@ const handleClick = () => {
   emit('click');
 };
 
+const extraLines = computed(() => props.extraLines.filter((line) => `${line ?? ''}`.trim().length > 0));
+
 const parsedItemId = computed(() => {
   const parts = props.itemId.split('~');
   if (parts.length >= 3) {
@@ -138,7 +142,7 @@ onBeforeUnmount(() => {
       >
         <div v-if="loading" class="tooltip-loading">
           <div class="mini-spinner"></div>
-          <span>Loading...</span>
+          <span>加载中...</span>
         </div>
 
         <template v-else-if="itemData">
@@ -157,17 +161,21 @@ onBeforeUnmount(() => {
           </div>
 
           <div v-if="count && count > 1" class="item-count-badge">
-            Count: {{ count }}
+            数量：{{ count }}
           </div>
 
           <div class="tooltip-details">
+            <div v-for="line in extraLines" :key="line" class="detail-row detail-row--extra">
+              <span class="detail-label">掉率</span>
+              <span class="detail-value">{{ line }}</span>
+            </div>
             <div class="detail-row">
-              <span class="detail-label">Stack</span>
+              <span class="detail-label">堆叠</span>
               <span class="detail-value">{{ itemData.maxStackSize }}</span>
             </div>
 
             <div v-if="itemData.maxDamage > 0" class="detail-row">
-              <span class="detail-label">Durability</span>
+              <span class="detail-label">耐久</span>
               <span class="detail-value">{{ itemData.maxDamage }}</span>
             </div>
 
@@ -185,7 +193,7 @@ onBeforeUnmount(() => {
           />
           <div class="fallback-info">
             <p class="fallback-id">{{ parsedItemId.modId }} / {{ parsedItemId.internalName }}</p>
-            <p v-if="count && count > 1" class="fallback-count">Count: {{ count }}</p>
+            <p v-if="count && count > 1" class="fallback-count">数量：{{ count }}</p>
           </div>
         </div>
       </div>
@@ -385,6 +393,7 @@ onBeforeUnmount(() => {
 }
 
 .detail-row {
+
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
@@ -396,6 +405,12 @@ onBeforeUnmount(() => {
   color: rgba(189, 209, 255, 0.76);
   font-weight: 600;
   flex-shrink: 0;
+}
+
+.detail-row--extra {
+  padding-bottom: 4px;
+  border-bottom: 1px solid rgba(145, 172, 230, 0.08);
+  margin-bottom: 2px;
 }
 
 .detail-value {

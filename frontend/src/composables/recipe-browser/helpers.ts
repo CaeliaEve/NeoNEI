@@ -115,6 +115,8 @@ const getCategoryMachineIcon = (recipe: Recipe, getImagePath: (itemId: string) =
   });
 
   switch (profile.uiConfig.uiType) {
+    case 'industrial_slaughterhouse':
+      return getImagePath('i~gregtech~gt.blockmachines~14201');
     case 'thaumcraft_arcane':
       return getImagePath('i~Thaumcraft~blockTable~15');
     case 'thaumcraft_infusion':
@@ -349,34 +351,53 @@ const getExplicitMachineName = (recipe: Recipe): string | null => {
 
   const machineType = recipe.machineInfo?.machineType;
   if (typeof machineType === 'string' && machineType.trim()) {
-    return machineType.trim();
+    const normalized = machineType.trim();
+    if (/extreme entity crusher|industrial slaughterhouse/i.test(normalized)) {
+      return '工业屠宰场';
+    }
+    return normalized;
   }
 
   const additionalMachineType = recipe.additionalData?.machineInfo?.machineType;
   if (typeof additionalMachineType === 'string' && additionalMachineType.trim()) {
-    return additionalMachineType.trim();
+    const normalized = additionalMachineType.trim();
+    if (/extreme entity crusher|industrial slaughterhouse/i.test(normalized)) {
+      return '工业屠宰场';
+    }
+    return normalized;
   }
 
   const recipeTypeMachine = recipe.recipeTypeData?.machineType;
   if (typeof recipeTypeMachine === 'string' && recipeTypeMachine.trim()) {
-    return recipeTypeMachine.trim();
+    const normalized = recipeTypeMachine.trim();
+    if (/extreme entity crusher|industrial slaughterhouse/i.test(normalized)) {
+      return '工业屠宰场';
+    }
+    return normalized;
   }
 
   return null;
 };
 
 export const isExtremeMachineText = (text: string): boolean => {
-  const lower = text.toLowerCase();
+  const source = `${text ?? ''}`;
+  const lower = source.toLowerCase();
+  if (
+    lower.includes('extreme entity crusher')
+    || lower.includes('industrial slaughterhouse')
+    || lower.includes('eec')
+    || source.includes('工业屠宰场')
+    || source.includes('实体处理')
+  ) {
+    return false;
+  }
   return (
     lower.includes('extreme crafting') ||
     lower.includes('dire crafting') ||
-    lower.includes('extreme') ||
+    lower.includes('avaritia') ||
     lower.includes('dire') ||
-    text.includes('终极合成') ||
-    text.includes('无尽') ||
-    text.includes('贪婪') ||
-    text.includes('缁堟瀬鍚堟垚') ||
-    text.includes('鏃犲敖')
+    source.includes('无尽工作台') ||
+    source.includes('终极合成')
   );
 };
 
@@ -389,6 +410,9 @@ const GT_MACHINE_CATEGORY_ALIAS_GROUPS: string[][] = [
 ];
 
 const normalizeMachineCategoryName = (name: string): string => {
+  if (/extreme entity crusher|industrial slaughterhouse/i.test(name) || name.includes('工业屠宰场')) {
+    return '工业屠宰场';
+  }
   if (isExtremeMachineText(name)) {
     return '无尽工作台';
   }
@@ -784,13 +808,15 @@ export const buildCategorySkeletonsFromSummary = (
   categories: indexedRecipeCategorySummary[],
   getImagePath: (itemId: string) => string,
 ): MachineCategory[] => {
-  return categories.map((group) => ({
+  return categories.map((group) => {
+    const normalizedName = normalizeMachineCategoryName(group.name);
+    return ({
     type: group.type,
-    name: group.name,
+    name: normalizedName,
     categoryKey: group.categoryKey,
-    recipeType: group.recipeType || group.name,
+    recipeType: group.recipeType || normalizedName,
     machineIcon: getMachineIconPathFromSummary({
-      machineType: group.name,
+      machineType: normalizedName,
       category: group.recipeType,
       voltageTier: group.voltageTier ?? null,
       voltage: null,
@@ -803,7 +829,8 @@ export const buildCategorySkeletonsFromSummary = (
     recipeCount: Math.max(0, Number(group.recipeCount ?? 0)),
     machineKey: group.machineKey ?? null,
     voltageTier: group.voltageTier ?? null,
-  }));
+  });
+  });
 };
 
 export const applySelectedVariants = (

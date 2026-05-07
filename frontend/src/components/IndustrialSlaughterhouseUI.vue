@@ -62,7 +62,7 @@ interface EntityModelDescriptor {
 interface DropSection {
   key: string;
   label: string;
-  accent: 'normal' | 'rare' | 'extra' | 'infernal' | 'misc';
+  accent: 'normal' | 'rare' | 'extra' | 'infernal' | 'misc' | 'fluid';
   items: DisplayItem[];
 }
 
@@ -70,24 +70,22 @@ const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 const { playClick } = useSound();
 const entityModelError = ref('');
+const entityPreviewError = ref('');
+let previewValidationToken: symbol | null = null;
 
 function normalizeCount(value: unknown): number {
   return typeof value === 'number' && Number.isFinite(value) && value > 0 ? Math.floor(value) : 1;
 }
 
 function normalizeProbability(value: unknown): number | null {
-  if (typeof value !== 'number' || !Number.isFinite(value)) {
-    return null;
-  }
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
   return Math.min(1, Math.max(0, value));
 }
 
 function pickNumber(...values: unknown[]): number | null {
   for (const value of values) {
     const number = Number(value);
-    if (Number.isFinite(number)) {
-      return number;
-    }
+    if (Number.isFinite(number)) return number;
   }
   return null;
 }
@@ -183,8 +181,9 @@ function uniqueItems(items: DisplayItem[]): DisplayItem[] {
   const seen = new Set<string>();
   const result: DisplayItem[] = [];
   for (const item of items) {
-    if (seen.has(item.itemId)) continue;
-    seen.add(item.itemId);
+    const key = `${item.itemId}:${item.count}:${item.probability ?? 'na'}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
     result.push(item);
   }
   return result;
@@ -205,7 +204,7 @@ function parseFluid(entry: FluidStack | null | undefined): DisplayFluid | null {
 }
 
 function formatProbability(probability: number | null): string {
-  if (probability === null) return '--';
+  if (probability === null) return '概率未记录';
   if (probability <= 0) return '0%';
   if (probability >= 1) return '100%';
   const percent = probability * 100;
@@ -213,11 +212,6 @@ function formatProbability(probability: number | null): string {
   if (percent < 1) return `${percent.toFixed(2)}%`;
   if (percent < 10) return `${percent.toFixed(1)}%`;
   return `${Math.round(percent * 10) / 10}%`;
-}
-
-function probabilityBarWidth(probability: number | null): string {
-  if (probability === null || probability <= 0) return '0%';
-  return `${Math.min(100, Math.max(probability * 100, 4))}%`;
 }
 
 function formatNumber(value: number | null, suffix = ''): string {
@@ -238,7 +232,6 @@ function normalizeInfoLine(value: string): string {
   return trimmed
     .replace(/\bsecs?\b/gi, '秒')
     .replace(/\bseconds?\b/gi, '秒')
-    .replace(/\s+秒\b/g, ' 秒')
     .replace(/\s{2,}/g, ' ');
 }
 
@@ -258,27 +251,6 @@ const mergedMeta = computed<Record<string, unknown>>(() => {
   return { ...recipeAdditionalData.value, ...metadata };
 });
 
-const machineIcon = computed(() => recipe.value.machineInfo?.machineIcon ?? recipe.value.recipeTypeData?.machineIcon ?? null);
-const machineTitle = computed(() => '工业屠宰场');
-const machineSubtitle = computed(() => {
-  const machineType = `${recipe.value.machineInfo?.machineType ?? recipe.value.recipeType ?? ''}`.trim();
-  return machineType || 'Extreme Entity Crusher';
-});
-
-const inputSource = computed<unknown>(() => {
-  const additional = parseAdditionalData(recipe.value);
-  if (additional && 'rawIndexedInputs' in additional) {
-    return (additional as Record<string, unknown>).rawIndexedInputs;
-  }
-  return recipe.value.inputs;
-});
-
-const inputCandidates = computed<DisplayItem[]>(() => {
-  const collected: DisplayItem[] = [];
-  collectDisplayItems(inputSource.value, collected);
-  return uniqueItems(collected);
-});
-
 const outputItems = computed<DisplayItem[]>(() => {
   const outputs = Array.isArray(recipe.value.outputs) ? recipe.value.outputs : [];
   return outputs
@@ -290,14 +262,10 @@ const fluidOutputs = computed<DisplayFluid[]>(() => {
   const direct = (Array.isArray(recipe.value.fluidOutputs) ? recipe.value.fluidOutputs : [])
     .map((entry) => parseFluid(entry))
     .filter((entry): entry is DisplayFluid => entry !== null);
-  if (direct.length > 0) {
-    return direct;
-  }
+  if (direct.length > 0) return direct;
 
   const fallbackXp = pickNumber(mergedMeta.value.xpJuiceMb);
-  if (fallbackXp === null || fallbackXp <= 0) {
-    return [];
-  }
+  if (fallbackXp === null || fallbackXp <= 0) return [];
 
   return [{
     fluidId: 'f~OpenBlocks~xpjuice',
@@ -312,10 +280,8 @@ const mobLocalizedName = computed(() => {
   const value = `${mergedMeta.value.localizedName ?? ''}`.trim();
   return value || '未知实体';
 });
-
 const mobName = computed(() => `${mergedMeta.value.mobName ?? ''}`.trim());
 const mobMod = computed(() => `${mergedMeta.value.mobMod ?? ''}`.trim() || `${mergedMeta.value.modName ?? ''}`.trim() || '--');
-const maxHealth = computed(() => pickNumber(mergedMeta.value.maxHealth));
 const spawnInfoCount = computed(() => pickNumber(mergedMeta.value.spawnInfoCount) ?? 0);
 const euPerTick = computed(() => pickNumber(mergedMeta.value.eecEuPerTick, mergedMeta.value.euPerTick, mergedMeta.value.EUt, mergedMeta.value.eut));
 const durationSeconds = computed(() => {
@@ -329,6 +295,7 @@ const bossLabel = computed(() => `${mergedMeta.value.bossLabel ?? ''}`.trim());
 const isUsableInVial = computed(() => Boolean(mergedMeta.value.isUsableInVial));
 const isPeacefulAllowed = computed(() => Boolean(mergedMeta.value.isPeacefulAllowed));
 const xpJuiceMb = computed(() => pickNumber(mergedMeta.value.xpJuiceMb));
+const maxHealth = computed(() => pickNumber(mergedMeta.value.maxHealth));
 const normalOutputsCount = computed(() => Math.max(0, Math.floor(pickNumber(mergedMeta.value.normalOutputsCount) ?? 0)));
 const rareOutputsCount = computed(() => Math.max(0, Math.floor(pickNumber(mergedMeta.value.rareOutputsCount) ?? 0)));
 const additionalOutputsCount = computed(() => Math.max(0, Math.floor(pickNumber(mergedMeta.value.additionalOutputsCount) ?? 0)));
@@ -337,44 +304,16 @@ const infernalOutputsCount = computed(() => Math.max(0, Math.floor(pickNumber(me
 const additionalInformation = computed<string[]>(() => {
   const raw = mergedMeta.value.additionalInformation;
   if (!Array.isArray(raw)) return [];
-  return raw
-    .map((entry) => normalizeInfoLine(`${entry ?? ''}`))
-    .filter(Boolean);
-});
-
-const healthBandWidth = computed(() => {
-  const health = maxHealth.value;
-  if (health === null || health <= 0) return '12%';
-  const scaled = 22 + Math.log10(health + 1) * 28;
-  return `${Math.max(12, Math.min(100, scaled))}%`;
-});
-
-const heroItem = computed<DisplayItem | null>(() => {
-  const priority = (entry: DisplayItem): number => {
-    const internal = entry.internalName.toLowerCase();
-    const localized = entry.localizedName.toLowerCase();
-    if (internal.includes('mobsoul') || localized.includes('灵魂')) return 400;
-    if (internal.includes('poweredspawner') || internal.includes('soulvessel') || internal.includes('brokenspawner')) return 300;
-    if (localized.includes(mobLocalizedName.value.toLowerCase())) return 260;
-    if (internal.includes('placer')) return 220;
-    return 100;
-  };
-
-  return [...outputItems.value, ...inputCandidates.value]
-    .sort((left, right) => priority(right) - priority(left))[0] ?? null;
+  return raw.map((entry) => normalizeInfoLine(`${entry ?? ''}`)).filter(Boolean);
 });
 
 const entityPreview = computed<EntityPreviewDescriptor | null>(() => {
   const candidate = uiPayload.value?.entityPreview;
-  if (!candidate || typeof candidate !== 'object') {
-    return null;
-  }
+  if (!candidate || typeof candidate !== 'object') return null;
 
   const record = candidate as Record<string, unknown>;
   const imageUrl = `${record.imageUrl ?? ''}`.trim();
-  if (!imageUrl) {
-    return null;
-  }
+  if (!imageUrl) return null;
 
   const parseNumber = (value: unknown): number | null => {
     const numeric = Number(value);
@@ -396,15 +335,11 @@ const entityPreview = computed<EntityPreviewDescriptor | null>(() => {
 
 const entityModel = computed<EntityModelDescriptor | null>(() => {
   const candidate = uiPayload.value?.entityModel;
-  if (!candidate || typeof candidate !== 'object') {
-    return null;
-  }
+  if (!candidate || typeof candidate !== 'object') return null;
 
   const record = candidate as Record<string, unknown>;
   const modelUrl = `${record.modelUrl ?? ''}`.trim();
-  if (!modelUrl) {
-    return null;
-  }
+  if (!modelUrl) return null;
 
   const componentCount = Number(record.componentCount);
   return {
@@ -418,25 +353,32 @@ const entityModel = computed<EntityModelDescriptor | null>(() => {
 });
 
 const shouldRenderEntityModel = computed(() => Boolean(entityModel.value) && !entityModelError.value);
-const shouldRenderEntityPreview = computed(() => Boolean(entityPreview.value) && !shouldRenderEntityModel.value);
+const shouldRenderEntityPreview = computed(() => Boolean(entityPreview.value) && !entityPreviewError.value && !shouldRenderEntityModel.value);
+
+const fluidAsDropItems = computed<DisplayItem[]>(() =>
+  fluidOutputs.value.map((fluid) => ({
+    itemId: fluid.fluidId,
+    localizedName: fluid.localizedName,
+    modId: 'fluid',
+    internalName: fluid.fluidId,
+    count: 1,
+    probability: null,
+    renderAssetRef: fluid.renderAssetRef ?? null,
+    imageFileName: null,
+    tooltip: `${formatNumber(fluid.amount, ' mB')}${fluid.temperature !== null ? ` · ${fluid.temperature}K` : ''}`,
+  })),
+);
 
 const dropSections = computed<DropSection[]>(() => {
   const outputs = outputItems.value;
   const sections: DropSection[] = [];
   let cursor = 0;
 
-  const consume = (
-    key: string,
-    label: string,
-    accent: DropSection['accent'],
-    count: number,
-  ) => {
+  const consume = (key: string, label: string, accent: DropSection['accent'], count: number) => {
     if (count <= 0) return;
     const slice = outputs.slice(cursor, cursor + count);
     cursor += count;
-    if (slice.length > 0) {
-      sections.push({ key, label, accent, items: slice });
-    }
+    if (slice.length > 0) sections.push({ key, label, accent, items: slice });
   };
 
   consume('normal', '普通掉落', 'normal', normalOutputsCount.value);
@@ -454,11 +396,15 @@ const dropSections = computed<DropSection[]>(() => {
   }
 
   if (sections.length === 0 && outputs.length > 0) {
+    sections.push({ key: 'all', label: '全部掉落', accent: 'normal', items: outputs });
+  }
+
+  if (fluidAsDropItems.value.length > 0) {
     sections.push({
-      key: 'all',
-      label: '全部掉落',
-      accent: 'normal',
-      items: outputs,
+      key: 'fluid',
+      label: '副产流体',
+      accent: 'fluid',
+      items: fluidAsDropItems.value,
     });
   }
 
@@ -484,16 +430,10 @@ const flagRows = computed(() => {
     label: isPeacefulAllowed.value ? '和平模式可生成' : '和平模式禁用',
     tone: isPeacefulAllowed.value ? 'good' : 'neutral',
   });
-  if (bossLabel.value) {
-    flags.push({ label: bossLabel.value, tone: 'danger' });
-  }
-  if (infernalType.value === 1) {
-    flags.push({ label: '精英词缀', tone: 'danger' });
-  } else if (infernalType.value === 2) {
-    flags.push({ label: '终极词缀', tone: 'danger' });
-  } else if (infernalType.value === 0) {
-    flags.push({ label: '无额外词缀', tone: 'neutral' });
-  }
+  if (bossLabel.value) flags.push({ label: bossLabel.value, tone: 'danger' });
+  if (infernalType.value === 1) flags.push({ label: '精英词缀', tone: 'danger' });
+  else if (infernalType.value === 2) flags.push({ label: '终极词缀', tone: 'danger' });
+  else if (infernalType.value === 0) flags.push({ label: '无额外词缀', tone: 'neutral' });
   return flags;
 });
 
@@ -503,13 +443,14 @@ const carrierLabel = computed(() => {
   return '未记录输入载体';
 });
 
-watch(
-  () => entityModel.value?.modelUrl ?? '',
-  () => {
-    entityModelError.value = '';
-  },
-  { immediate: true },
-);
+watch(() => entityModel.value?.modelUrl ?? '', () => {
+  entityModelError.value = '';
+}, { immediate: true });
+
+watch(() => entityPreview.value?.imageUrl ?? '', () => {
+  previewValidationToken = null;
+  entityPreviewError.value = '';
+}, { immediate: true });
 
 function handleEntityClick(itemId: string): void {
   playClick();
@@ -523,50 +464,61 @@ function handleEntityModelReady(): void {
 function handleEntityModelError(message: string): void {
   entityModelError.value = `${message ?? ''}`.trim() || '实体模型加载失败';
 }
+
+async function validateEntityPreview(url: string, token: symbol, event?: Event): Promise<void> {
+  const target = event?.target instanceof HTMLImageElement ? event.target : null;
+  const width = target?.naturalWidth ?? 0;
+  const height = target?.naturalHeight ?? 0;
+
+  if (width > 0 && width <= 2 && height > 0 && height <= 2) {
+    if (token === previewValidationToken) {
+      entityPreviewError.value = '实体预览不可用';
+    }
+    return;
+  }
+
+  try {
+    const response = await fetch(url, { cache: 'force-cache' });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    if (token !== previewValidationToken) return;
+    if (blob.size > 0 && blob.size <= 256) {
+      entityPreviewError.value = '实体预览不可用';
+      return;
+    }
+    entityPreviewError.value = '';
+  } catch (error) {
+    if (token !== previewValidationToken) return;
+    if (width <= 0 || height <= 0) {
+      entityPreviewError.value = error instanceof Error ? error.message : '实体预览不可用';
+    }
+  }
+}
+
+function handleEntityPreviewLoad(event: Event): void {
+  const preview = entityPreview.value;
+  if (!preview) {
+    entityPreviewError.value = '';
+    return;
+  }
+  const token = Symbol(preview.imageUrl);
+  previewValidationToken = token;
+  void validateEntityPreview(preview.imageUrl, token, event);
+}
+
+function handleEntityPreviewError(): void {
+  previewValidationToken = null;
+  entityPreviewError.value = '实体预览不可用';
+}
 </script>
 
 <template>
   <div class="slaughterhouse-ui">
-    <header class="machine-header">
-      <div class="machine-heading">
-        <div v-if="machineIcon" class="machine-icon">
-          <AnimatedItemIcon
-            :item-id="machineIcon.itemId"
-            :render-asset-ref="machineIcon.renderAssetRef || null"
-            :image-file-name="machineIcon.imageFileName || null"
-            :size="26"
-          />
-        </div>
-        <div class="machine-copy">
-          <span class="machine-eyebrow">NeoNEI 实体处理</span>
-          <h2>{{ machineTitle }}</h2>
-          <p>{{ machineSubtitle }}</p>
-        </div>
-      </div>
-
-      <div class="machine-chip-row">
-        <span class="machine-chip">{{ formatNumber(euPerTick, ' EU/t') }}</span>
-        <span class="machine-chip">{{ formatDurationSeconds(durationSeconds) }}</span>
-        <span class="machine-chip">{{ outputItems.length }} 个掉落</span>
-      </div>
-    </header>
-
     <div class="layout-shell">
       <aside class="profile-panel">
-        <div class="panel-header">
-          <span class="panel-kicker">目标实体</span>
+        <div class="panel-header panel-header--entity">
           <strong>{{ mobLocalizedName }}</strong>
           <small v-if="mobName">{{ mobName }}</small>
-        </div>
-
-        <div class="health-card">
-          <div class="health-card__row">
-            <span>生命值</span>
-            <strong>{{ formatNumber(maxHealth) }}</strong>
-          </div>
-          <div class="health-bar">
-            <span class="health-bar__fill" :style="{ width: healthBandWidth }"></span>
-          </div>
         </div>
 
         <dl class="profile-grid">
@@ -607,12 +559,6 @@ function handleEntityModelError(message: string): void {
           <span class="scan scan--bottom"></span>
         </div>
 
-        <div class="containment-copy">
-          <span class="containment-kicker">实体预览</span>
-          <h3>{{ mobLocalizedName }}</h3>
-          <p>{{ mobMod }}</p>
-        </div>
-
         <div class="hero-stage">
           <div v-if="shouldRenderEntityModel && entityModel" class="entity-model-card">
             <EntityModelViewer
@@ -637,14 +583,21 @@ function handleEntityModelError(message: string): void {
             class="entity-preview-card"
             :class="{ 'entity-preview-card--animated': (entityPreview.frameCount ?? 1) > 1 }"
           >
-            <img
-              class="entity-preview-card__image"
-              :src="entityPreview.imageUrl"
-              :alt="entityPreview.localizedName || mobLocalizedName"
-              loading="eager"
-              decoding="async"
-              draggable="false"
-            >
+            <div class="entity-preview-card__viewport">
+              <span class="entity-preview-card__aura entity-preview-card__aura--outer"></span>
+              <span class="entity-preview-card__aura entity-preview-card__aura--inner"></span>
+              <span class="entity-preview-card__grid"></span>
+              <img
+                class="entity-preview-card__image"
+                :src="entityPreview.imageUrl"
+                :alt="entityPreview.localizedName || mobLocalizedName"
+                loading="eager"
+                decoding="async"
+                draggable="false"
+                @load="handleEntityPreviewLoad"
+                @error="handleEntityPreviewError"
+              >
+            </div>
             <div class="entity-preview-card__meta">
               <strong>{{ mobLocalizedName }}</strong>
               <small>
@@ -658,86 +611,26 @@ function handleEntityModelError(message: string): void {
 
           <div v-else-if="entityModelError" class="entity-preview-card entity-preview-card--error">
             <div class="entity-preview-card__error-copy">
-              <strong>实体模型加载失败</strong>
+              <strong>模型不可用</strong>
               <small>{{ entityModelError }}</small>
             </div>
           </div>
 
-          <div v-else class="hero-slot" :class="{ 'hero-slot--empty': !heroItem }">
-            <RecipeItemTooltip
-              v-if="heroItem"
-              :item-id="heroItem.itemId"
-              :count="heroItem.count"
-              @click="handleEntityClick(heroItem.itemId)"
-            >
-              <button type="button" class="hero-button">
-                <AnimatedItemIcon
-                  :item-id="heroItem.itemId"
-                  :render-asset-ref="heroItem.renderAssetRef || null"
-                  :image-file-name="heroItem.imageFileName || null"
-                  :size="88"
-                />
-              </button>
-            </RecipeItemTooltip>
-            <span v-else class="hero-placeholder">?</span>
+          <div v-else-if="entityPreviewError" class="entity-preview-card entity-preview-card--fallback">
+            <div class="entity-preview-card__fallback-icon">?</div>
+            <div class="entity-preview-card__error-copy">
+              <strong>{{ mobLocalizedName }}</strong>
+              <small>{{ entityPreviewError }}</small>
+            </div>
           </div>
         </div>
 
-        <div class="carrier-strip">
-          <div class="carrier-strip__label">{{ carrierLabel }}</div>
-          <div class="carrier-grid">
-            <template v-for="carrier in inputCandidates" :key="carrier.itemId">
-              <RecipeItemTooltip
-                :item-id="carrier.itemId"
-                :count="carrier.count"
-                @click="handleEntityClick(carrier.itemId)"
-              >
-                <button type="button" class="carrier-slot">
-                  <AnimatedItemIcon
-                    :item-id="carrier.itemId"
-                    :render-asset-ref="carrier.renderAssetRef || null"
-                    :image-file-name="carrier.imageFileName || null"
-                    :size="34"
-                  />
-                  <span v-if="carrier.count > 1" class="carrier-slot__count">{{ carrier.count }}</span>
-                </button>
-              </RecipeItemTooltip>
-            </template>
-            <div v-if="inputCandidates.length === 0" class="carrier-empty">未记录输入载体</div>
-          </div>
-        </div>
-
-        <div v-if="fluidOutputs.length > 0" class="fluid-strip">
-          <div class="fluid-strip__label">副产流体</div>
-          <div class="fluid-strip__list">
-            <RecipeItemTooltip
-              v-for="fluid in fluidOutputs"
-              :key="fluid.fluidId"
-              :item-id="fluid.fluidId"
-              :count="1"
-              @click="handleEntityClick(fluid.fluidId)"
-            >
-              <button type="button" class="fluid-chip">
-                <AnimatedItemIcon
-                  :item-id="fluid.fluidId"
-                  :render-asset-ref="fluid.renderAssetRef || null"
-                  :size="28"
-                />
-                <span class="fluid-chip__copy">
-                  <strong>{{ fluid.localizedName }}</strong>
-                  <small>{{ formatNumber(fluid.amount, ' mB') }}</small>
-                </span>
-              </button>
-            </RecipeItemTooltip>
-          </div>
-        </div>
       </section>
 
       <aside class="drops-panel">
         <div class="panel-header panel-header--drops">
-          <span class="panel-kicker">掉落列表</span>
-          <strong>{{ outputItems.length }} 个掉落</strong>
-          <small>已按掉落池与概率分组</small>
+          <strong>掉落列表</strong>
+          <small>{{ outputItems.length }} 项物品产出</small>
         </div>
 
         <div class="drops-scroll">
@@ -752,15 +645,20 @@ function handleEntityModelError(message: string): void {
               <span>{{ section.items.length }} 项</span>
             </header>
 
-            <div class="drop-grid">
+            <div class="drop-icon-grid">
               <RecipeItemTooltip
                 v-for="(drop, dropIndex) in section.items"
                 :key="`${section.key}-${drop.itemId}-${dropIndex}-${drop.count}-${drop.probability ?? 'na'}`"
                 :item-id="drop.itemId"
                 :count="drop.count"
+                :extra-lines="[drop.probability !== null ? `掉落概率: ${formatProbability(drop.probability)}` : '', drop.tooltip || '']"
                 @click="handleEntityClick(drop.itemId)"
               >
-                <button type="button" class="drop-card">
+                <button
+                  type="button"
+                  class="drop-icon"
+                  :data-probability="formatProbability(drop.probability)"
+                >
                   <div class="drop-card__icon">
                     <AnimatedItemIcon
                       :item-id="drop.itemId"
@@ -769,16 +667,6 @@ function handleEntityModelError(message: string): void {
                       :size="32"
                     />
                     <span v-if="drop.count > 1" class="drop-card__count">{{ drop.count }}</span>
-                  </div>
-                  <div class="drop-card__copy">
-                    <strong>{{ drop.localizedName }}</strong>
-                    <small>{{ drop.modId || drop.internalName }}</small>
-                  </div>
-                  <div class="drop-card__chance">
-                    <span>{{ formatProbability(drop.probability) }}</span>
-                    <div class="chance-track">
-                      <span class="chance-fill" :style="{ width: probabilityBarWidth(drop.probability) }"></span>
-                    </div>
                   </div>
                 </button>
               </RecipeItemTooltip>
@@ -795,19 +683,18 @@ function handleEntityModelError(message: string): void {
   --panel-bg: linear-gradient(180deg, rgba(15, 21, 29, 0.98), rgba(8, 12, 18, 1));
   --panel-edge: rgba(168, 191, 212, 0.14);
   --soft-edge: rgba(142, 167, 196, 0.1);
-  --text-main: #eff6ff;
-  --text-soft: rgba(219, 231, 247, 0.76);
+  --text-main: #eff7ff;
+  --text-soft: rgba(224, 234, 246, 0.92);
   --text-dim: rgba(166, 182, 201, 0.68);
-  --cyan: #7bd6ff;
-  --amber: #f5c97c;
-  --blood: #ff5f75;
   width: min(1180px, calc(100vw - 72px));
-  min-height: 650px;
-  height: min(760px, calc(100vh - 210px));
-  padding: 18px;
+  height: min(640px, calc(100vh - 300px));
+  min-height: 560px;
+  padding: 14px;
   border-radius: 24px;
   border: 1px solid rgba(164, 190, 214, 0.14);
   background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.02) 0 1px, transparent 1px 48px),
     radial-gradient(circle at 8% 0%, rgba(123, 214, 255, 0.06), transparent 26%),
     radial-gradient(circle at 92% 100%, rgba(255, 95, 117, 0.06), transparent 28%),
     linear-gradient(180deg, rgba(11, 16, 23, 0.995), rgba(5, 8, 13, 1));
@@ -817,77 +704,12 @@ function handleEntityModelError(message: string): void {
   overflow: hidden;
 }
 
-.machine-header {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 18px;
-  align-items: center;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgba(167, 188, 209, 0.1);
-}
-
-.machine-heading {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-}
-
-.machine-icon {
-  width: 46px;
-  height: 46px;
-  display: grid;
-  place-items: center;
-  border-radius: 14px;
-  border: 1px solid rgba(169, 192, 216, 0.18);
-  background: linear-gradient(180deg, rgba(29, 37, 47, 0.96), rgba(17, 23, 31, 0.98));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-}
-
-.machine-copy h2 {
-  margin: 2px 0 0;
-  color: var(--text-main);
-  font-size: 28px;
-  line-height: 1;
-}
-
-.machine-copy p {
-  margin: 7px 0 0;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-
-.machine-eyebrow {
-  color: rgba(123, 214, 255, 0.86);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.machine-chip-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  justify-content: flex-end;
-}
-
-.machine-chip {
-  padding: 9px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(177, 197, 219, 0.16);
-  background: linear-gradient(180deg, rgba(26, 34, 43, 0.96), rgba(14, 19, 26, 0.98));
-  color: var(--text-soft);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-}
-
 .layout-shell {
-  height: calc(100% - 77px);
+  height: 100%;
   display: grid;
-  grid-template-columns: 288px minmax(0, 1fr) 360px;
-  gap: 16px;
-  padding-top: 16px;
+  grid-template-columns: 256px minmax(0, 1fr) 332px;
+  gap: 12px;
+  overflow: hidden;
 }
 
 .profile-panel,
@@ -897,11 +719,18 @@ function handleEntityModelError(message: string): void {
   border: 1px solid var(--panel-edge);
   background: var(--panel-bg);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  min-height: 0;
 }
 
 .profile-panel,
 .drops-panel {
-  padding: 16px;
+  padding: 10px;
+}
+
+.profile-panel,
+.drops-panel {
+  display: flex;
+  flex-direction: column;
 }
 
 .panel-header {
@@ -909,12 +738,9 @@ function handleEntityModelError(message: string): void {
   gap: 4px;
 }
 
-.panel-kicker {
-  color: rgba(123, 214, 255, 0.82);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+.panel-header--entity {
+  gap: 2px;
+  padding-bottom: 4px;
 }
 
 .panel-header strong {
@@ -928,52 +754,11 @@ function handleEntityModelError(message: string): void {
   font-size: 11px;
 }
 
-.health-card {
-  margin-top: 16px;
-  padding: 14px 15px;
-  border-radius: 16px;
-  border: 1px solid rgba(255, 95, 117, 0.16);
-  background:
-    radial-gradient(circle at 0% 50%, rgba(255, 95, 117, 0.08), transparent 52%),
-    linear-gradient(180deg, rgba(32, 23, 28, 0.96), rgba(16, 13, 17, 0.98));
-}
-
-.health-card__row {
-  display: flex;
-  justify-content: space-between;
-  gap: 12px;
-  color: var(--text-soft);
-  font-size: 12px;
-}
-
-.health-card__row strong {
-  color: #fff4f5;
-  font-size: 18px;
-}
-
-.health-bar {
-  position: relative;
-  height: 10px;
-  margin-top: 12px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.05);
-  overflow: hidden;
-}
-
-.health-bar__fill {
-  position: absolute;
-  inset: 0 auto 0 0;
-  border-radius: inherit;
-  background:
-    linear-gradient(90deg, rgba(255, 95, 117, 0.95), rgba(255, 160, 135, 0.92));
-  box-shadow: 0 0 16px rgba(255, 95, 117, 0.36);
-}
-
 .profile-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px 12px;
-  margin: 16px 0 0;
+  gap: 7px 9px;
+  margin: 10px 0 0;
 }
 
 .profile-grid dt,
@@ -988,7 +773,7 @@ function handleEntityModelError(message: string): void {
 }
 
 .profile-grid dd {
-  padding: 8px 10px 9px;
+  padding: 7px 9px 8px;
   border-radius: 12px;
   border: 1px solid var(--soft-edge);
   background: linear-gradient(180deg, rgba(24, 30, 39, 0.96), rgba(13, 18, 24, 0.98));
@@ -1000,8 +785,8 @@ function handleEntityModelError(message: string): void {
 .flag-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 16px;
+  gap: 6px;
+  margin-top: 10px;
 }
 
 .flag-chip {
@@ -1038,8 +823,8 @@ function handleEntityModelError(message: string): void {
 }
 
 .notes-card {
-  margin-top: 16px;
-  padding: 14px 15px;
+  margin-top: 10px;
+  padding: 10px 11px;
   border-radius: 16px;
   border: 1px solid rgba(175, 194, 217, 0.12);
   background: linear-gradient(180deg, rgba(22, 27, 35, 0.96), rgba(12, 16, 22, 0.98));
@@ -1062,37 +847,14 @@ function handleEntityModelError(message: string): void {
 
 .containment-panel {
   position: relative;
-  padding: 18px 20px;
+  padding: 12px 14px 14px;
   overflow: hidden;
   display: grid;
-  grid-template-rows: auto 1fr auto auto;
-  gap: 16px;
-}
-
-.containment-copy {
-  position: relative;
-  z-index: 2;
-  text-align: center;
-}
-
-.containment-kicker {
-  color: rgba(245, 201, 124, 0.88);
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-.containment-copy h3 {
-  margin: 6px 0 0;
-  color: var(--text-main);
-  font-size: 24px;
-}
-
-.containment-copy p {
-  margin: 6px 0 0;
-  color: var(--text-dim);
-  font-size: 12px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 10px;
+  background:
+    radial-gradient(circle at 50% 18%, rgba(123, 214, 255, 0.05), transparent 30%),
+    linear-gradient(180deg, rgba(15, 21, 29, 0.98), rgba(8, 12, 18, 1));
 }
 
 .containment-bg {
@@ -1190,17 +952,20 @@ function handleEntityModelError(message: string): void {
   z-index: 2;
   display: grid;
   place-items: center;
+  min-height: 0;
+  padding: 6px 0 0;
+  overflow: hidden;
 }
 
 .entity-model-card {
   width: min(100%, 360px);
   display: grid;
-  gap: 12px;
+  gap: 6px;
 }
 
 .entity-preview-card {
-  width: 192px;
-  min-height: 208px;
+  width: 188px;
+  min-height: 196px;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   gap: 10px;
@@ -1229,6 +994,26 @@ function handleEntityModelError(message: string): void {
     linear-gradient(180deg, rgba(35, 19, 24, 0.96), rgba(17, 11, 15, 0.98));
 }
 
+.entity-preview-card--fallback {
+  align-content: center;
+  justify-items: center;
+  gap: 14px;
+}
+
+.entity-preview-card__fallback-icon {
+  width: 72px;
+  height: 72px;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  color: rgba(238, 246, 255, 0.88);
+  font-size: 30px;
+  border: 1px solid rgba(178, 201, 225, 0.22);
+  background:
+    radial-gradient(circle at 50% 38%, rgba(123, 214, 255, 0.24), transparent 58%),
+    linear-gradient(180deg, rgba(28, 36, 47, 0.96), rgba(14, 18, 25, 0.98));
+}
+
 .entity-preview-card__error-copy {
   display: grid;
   gap: 8px;
@@ -1247,26 +1032,73 @@ function handleEntityModelError(message: string): void {
   line-height: 1.45;
 }
 
-.entity-preview-card__image {
+.entity-preview-card__viewport {
+  position: relative;
   width: 100%;
-  height: 176px;
+  min-height: 160px;
+  display: grid;
+  place-items: center;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid rgba(190, 212, 236, 0.16);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(233, 243, 255, 0.94) 0%, rgba(150, 211, 255, 0.72) 20%, rgba(90, 131, 178, 0.28) 42%, rgba(19, 27, 37, 0.06) 64%, transparent 76%),
+    linear-gradient(180deg, rgba(24, 32, 42, 0.96), rgba(11, 17, 24, 0.98));
+}
+
+.entity-preview-card__aura,
+.entity-preview-card__grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.entity-preview-card__aura--outer {
+  inset: 18px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(245, 250, 255, 0.98) 0%, rgba(188, 228, 255, 0.84) 22%, rgba(111, 175, 235, 0.28) 54%, transparent 76%);
+  filter: blur(10px);
+  opacity: 0.95;
+}
+
+.entity-preview-card__aura--inner {
+  inset: 38px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 248, 225, 0.92) 0%, rgba(255, 213, 146, 0.38) 36%, transparent 72%);
+  filter: blur(6px);
+  opacity: 0.88;
+}
+
+.entity-preview-card__grid {
+  inset: 12px;
+  border-radius: 20px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+  background-size: 14px 14px;
+  opacity: 0.4;
+  mix-blend-mode: screen;
+}
+
+.entity-preview-card__image {
+  position: relative;
+  z-index: 1;
+  width: min(100%, 138px);
+  height: 138px;
   object-fit: contain;
   image-rendering: pixelated;
   filter:
-    drop-shadow(0 8px 18px rgba(0, 0, 0, 0.46))
-    drop-shadow(0 0 18px rgba(123, 214, 255, 0.12));
-  user-select: none;
-  -webkit-user-drag: none;
+    drop-shadow(0 0 10px rgba(245, 250, 255, 0.92))
+    drop-shadow(0 0 22px rgba(123, 214, 255, 0.42))
+    drop-shadow(0 10px 18px rgba(0, 0, 0, 0.34))
+    contrast(1.08);
 }
 
 .entity-preview-card__meta {
   display: grid;
   gap: 3px;
   text-align: center;
-}
-
-.entity-preview-card__meta--model {
-  padding: 0 6px;
 }
 
 .entity-preview-card__meta strong {
@@ -1277,96 +1109,20 @@ function handleEntityModelError(message: string): void {
 .entity-preview-card__meta small {
   color: var(--text-dim);
   font-size: 11px;
-  letter-spacing: 0.04em;
 }
 
-.hero-slot {
-  width: 164px;
-  height: 164px;
-  display: grid;
-  place-items: center;
-  border-radius: 32px;
-  border: 1px solid rgba(171, 191, 214, 0.16);
-  background:
-    radial-gradient(circle at 50% 24%, rgba(255, 255, 255, 0.08), transparent 38%),
-    linear-gradient(180deg, rgba(30, 40, 51, 0.96), rgba(13, 19, 27, 0.98));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 0 0 1px rgba(123, 214, 255, 0.07),
-    0 24px 48px rgba(0, 0, 0, 0.34);
-}
-
-.hero-slot::before,
-.hero-slot::after {
-  content: '';
-  position: absolute;
-  border-radius: inherit;
-  pointer-events: none;
-}
-
-.hero-slot::before {
-  inset: 10px;
-  border: 1px solid rgba(123, 214, 255, 0.12);
-}
-
-.hero-slot::after {
-  inset: 26px;
-  border: 1px dashed rgba(255, 95, 117, 0.14);
-}
-
-.hero-button {
-  width: 100%;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.hero-button:hover {
-  transform: translateY(-1px);
-}
-
-.hero-slot--empty {
-  color: rgba(200, 214, 233, 0.45);
-}
-
-.hero-placeholder {
-  font-size: 48px;
-  font-weight: 700;
-}
-
-@keyframes entity-preview-breathe {
-  0%,
-  100% {
-    transform: translateY(0);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.04),
-      0 0 0 1px rgba(123, 214, 255, 0.08),
-      0 24px 48px rgba(0, 0, 0, 0.36);
-  }
-  50% {
-    transform: translateY(-2px);
-    box-shadow:
-      inset 0 1px 0 rgba(255, 255, 255, 0.05),
-      0 0 0 1px rgba(123, 214, 255, 0.12),
-      0 28px 56px rgba(0, 0, 0, 0.42);
-  }
-}
-
-.carrier-strip,
-.fluid-strip {
+.carrier-strip {
   position: relative;
   z-index: 2;
-  padding: 14px 16px;
+  padding: 11px 12px;
   border-radius: 16px;
   border: 1px solid rgba(166, 186, 208, 0.12);
   background: linear-gradient(180deg, rgba(19, 24, 31, 0.96), rgba(11, 15, 21, 0.98));
+  max-height: 92px;
+  overflow: hidden;
 }
 
-.carrier-strip__label,
-.fluid-strip__label {
+.carrier-strip__label {
   color: var(--text-soft);
   font-size: 11px;
   font-weight: 800;
@@ -1374,34 +1130,29 @@ function handleEntityModelError(message: string): void {
   text-transform: uppercase;
 }
 
-.carrier-grid,
-.fluid-strip__list {
+.carrier-grid {
   display: flex;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 12px;
-}
-
-.carrier-slot,
-.fluid-chip {
-  position: relative;
-  border: 1px solid rgba(171, 191, 214, 0.12);
-  background: linear-gradient(180deg, rgba(30, 38, 48, 0.96), rgba(15, 20, 27, 0.98));
-  cursor: pointer;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+  gap: 8px;
+  margin-top: 8px;
+  overflow: auto;
+  max-height: 52px;
+  padding-right: 2px;
 }
 
 .carrier-slot {
-  width: 58px;
-  height: 58px;
+  position: relative;
+  width: 52px;
+  height: 52px;
   display: grid;
   place-items: center;
   border-radius: 16px;
+  border: 1px solid rgba(171, 191, 214, 0.12);
+  background: linear-gradient(180deg, rgba(30, 38, 48, 0.96), rgba(15, 20, 27, 0.98));
+  cursor: pointer;
 }
 
-.carrier-slot:hover,
-.fluid-chip:hover,
-.drop-card:hover {
+.carrier-slot:hover {
   transform: translateY(-1px);
   border-color: rgba(196, 213, 231, 0.24);
 }
@@ -1422,58 +1173,26 @@ function handleEntityModelError(message: string): void {
   font-size: 12px;
 }
 
-.fluid-chip {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 160px;
-  padding: 10px 12px;
-  border-radius: 16px;
-}
-
-.fluid-chip__copy {
-  display: grid;
-  gap: 2px;
-  text-align: left;
-}
-
-.fluid-chip__copy strong {
-  color: var(--text-main);
-  font-size: 12px;
-}
-
-.fluid-chip__copy small {
-  color: var(--text-dim);
-  font-size: 11px;
-}
-
 .panel-header--drops {
-  padding-bottom: 12px;
+  gap: 2px;
+  padding-bottom: 10px;
   border-bottom: 1px solid rgba(171, 191, 214, 0.08);
 }
 
 .drops-scroll {
-  height: calc(100% - 66px);
+  flex: 1;
+  min-height: 0;
   overflow: auto;
-  margin-top: 14px;
+  margin-top: 10px;
   padding-right: 4px;
 }
 
-.drops-scroll::-webkit-scrollbar {
-  width: 8px;
-}
-
-.drops-scroll::-webkit-scrollbar-thumb {
-  border-radius: 999px;
-  background: rgba(161, 179, 201, 0.18);
-}
-
 .drop-section + .drop-section {
-  margin-top: 14px;
+  margin-top: 10px;
 }
 
 .drop-section {
-  padding: 12px;
+  padding: 10px;
   border-radius: 16px;
   border: 1px solid rgba(168, 189, 211, 0.1);
   background: linear-gradient(180deg, rgba(22, 28, 36, 0.96), rgba(12, 17, 23, 0.98));
@@ -1487,7 +1206,8 @@ function handleEntityModelError(message: string): void {
   box-shadow: inset 0 0 0 1px rgba(245, 201, 124, 0.05);
 }
 
-.drop-section--extra {
+.drop-section--extra,
+.drop-section--fluid {
   box-shadow: inset 0 0 0 1px rgba(132, 228, 175, 0.05);
 }
 
@@ -1500,7 +1220,7 @@ function handleEntityModelError(message: string): void {
   justify-content: space-between;
   gap: 12px;
   align-items: baseline;
-  margin-bottom: 10px;
+  margin-bottom: 8px;
 }
 
 .drop-section__header h4 {
@@ -1514,81 +1234,38 @@ function handleEntityModelError(message: string): void {
   font-size: 11px;
 }
 
-.drop-grid {
+.drop-icon-grid {
   display: grid;
-  gap: 10px;
+  grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+  gap: 8px;
 }
 
-.drop-card {
-  width: 100%;
-  display: grid;
-  grid-template-columns: 46px minmax(0, 1fr) 92px;
-  gap: 12px;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: 14px;
+.drop-icon {
+  position: relative;
+  width: 46px;
+  height: 46px;
+  padding: 0;
   border: 1px solid rgba(170, 190, 213, 0.1);
+  border-radius: 12px;
   background: linear-gradient(180deg, rgba(30, 37, 46, 0.96), rgba(15, 20, 27, 0.98));
   cursor: pointer;
   transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
 }
 
+.drop-icon:hover {
+  transform: translateY(-1px);
+  border-color: rgba(196, 213, 231, 0.24);
+}
+
+
 .drop-card__icon {
   position: relative;
-  width: 44px;
-  height: 44px;
+  width: 100%;
+  height: 100%;
   display: grid;
   place-items: center;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
-}
-
-.drop-card__copy {
-  min-width: 0;
-  display: grid;
-  gap: 3px;
-  text-align: left;
-}
-
-.drop-card__copy strong {
-  color: var(--text-main);
-  font-size: 12px;
-  line-height: 1.2;
-}
-
-.drop-card__copy small {
-  color: var(--text-dim);
-  font-size: 11px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.drop-card__chance {
-  display: grid;
-  gap: 6px;
-  justify-items: end;
-}
-
-.drop-card__chance span {
-  color: var(--text-soft);
-  font-size: 11px;
-  font-weight: 800;
-}
-
-.chance-track {
-  width: 100%;
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.06);
-  overflow: hidden;
-}
-
-.chance-fill {
-  display: block;
-  height: 100%;
-  border-radius: inherit;
-  background: linear-gradient(90deg, rgba(123, 214, 255, 0.95), rgba(245, 201, 124, 0.95));
 }
 
 @keyframes slaughter-pulse {
@@ -1603,31 +1280,26 @@ function handleEntityModelError(message: string): void {
   }
 }
 
-@media (max-width: 1280px) {
-  .slaughterhouse-ui {
-    width: min(1080px, calc(100vw - 40px));
-    min-height: 620px;
+@keyframes entity-preview-breathe {
+  0%,
+  100% {
+    transform: translateY(0);
   }
-
-  .layout-shell {
-    grid-template-columns: 260px minmax(0, 1fr) 330px;
+  50% {
+    transform: translateY(-2px);
   }
 }
 
 @media (max-width: 1120px) {
+  .slaughterhouse-ui {
+    height: auto;
+    min-height: 760px;
+  }
+
   .layout-shell {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto minmax(280px, 1fr);
-    overflow-y: auto;
-  }
-
-  .drops-scroll {
     height: auto;
-    max-height: 360px;
-  }
-
-  .containment-panel {
-    min-height: 520px;
+    overflow-y: auto;
   }
 }
 </style>
