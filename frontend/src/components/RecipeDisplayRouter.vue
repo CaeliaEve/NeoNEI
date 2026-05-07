@@ -28,6 +28,7 @@ const GTAssemblerUI = defineAsyncComponent(() => import('./GTAssemblerUI.vue'));
 const GTAssemblyLineUI = defineAsyncComponent(() => import('./GTAssemblyLineUI.vue'));
 const GTAlloySmelterUI = defineAsyncComponent(() => import('./GTAlloySmelterUI.vue'));
 const GTChemicalReactorUI = defineAsyncComponent(() => import('./GTChemicalReactorUI.vue'));
+const IndustrialSlaughterhouseUI = defineAsyncComponent(() => import('./IndustrialSlaughterhouseUI.vue'));
 const GTMolecularUI = defineAsyncComponent(() => import('./GTMolecularUI.vue'));
 const GTElectrolyzerUI = defineAsyncComponent(() => import('./GTElectrolyzerUI.vue'));
 const GTBlastFurnaceUI = defineAsyncComponent(() => import('./GTBlastFurnaceUI.vue'));
@@ -90,6 +91,7 @@ const componentRegistry: Record<string, Component> = {
   GTAssemblyLineUI,
   GTAlloySmelterUI,
   GTChemicalReactorUI,
+  IndustrialSlaughterhouseUI,
   GTMolecularUI,
   GTElectrolyzerUI,
   GTBlastFurnaceUI,
@@ -257,6 +259,7 @@ const refreshRecipeUiPayload = async () => {
     'botania_mana_pool',
     'thaumcraft_infusion',
     'blood_magic_altar',
+    'industrial_slaughterhouse',
   ].includes(uiType);
 
   if (!shouldFetch || !props.recipe.recipeId) {
@@ -493,6 +496,7 @@ if (isDev && typeof window !== 'undefined') {
         :is="currentComponent"
         :recipe="recipe"
         :ui-config="uiConfig"
+        :ui-payload="resolvedRecipeUiPayload"
         @item-click="(itemId: string) => emit('item-click', itemId)"
       />
     </div>

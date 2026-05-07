@@ -1,8 +1,12 @@
 import crypto from 'crypto';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 import zlib from 'zlib';
 import { pinyin } from 'pinyin-pro';
+import { chain } from 'stream-chain';
+import { parser } from 'stream-json';
+import { streamArray } from 'stream-json/streamers/StreamArray';
 import { DatabaseManager } from '../models/database';
 import { DATA_DIR } from '../config/runtime-paths';
 import { ItemsService, type Item } from './items.service';
@@ -216,7 +220,60 @@ type MaterializedItemRecord = {
 };
 
 type MaterializedRecipePayload = Record<string, unknown>;
-type ImageFamily = 'item' | 'fluid';
+type ImageFamily = 'item' | 'fluid' | 'entity';
+
+type EntityPreviewManifestEntry = {
+  mobName?: string;
+  localizedName?: string;
+  modId?: string;
+  relativeGifPath?: string;
+  frameCount?: number;
+  frameDurationMs?: number;
+  width?: number;
+  height?: number;
+  renderMode?: string | null;
+};
+
+type EntityPreviewRecord = {
+  mobName: string;
+  localizedName: string | null;
+  modId: string | null;
+  relativeGifPath: string;
+  frameCount: number | null;
+  frameDurationMs: number | null;
+  width: number | null;
+  height: number | null;
+  renderMode: string | null;
+};
+
+type EntityModelManifestEntry = {
+  mobName?: string;
+  localizedName?: string;
+  modId?: string;
+  relativeModelPath?: string;
+  componentCount?: number;
+  renderMode?: string | null;
+};
+
+type EntityModelRecord = {
+  mobName: string;
+  localizedName: string | null;
+  modId: string | null;
+  relativeModelPath: string;
+  componentCount: number | null;
+  renderMode: string | null;
+};
+
+type PreparedRecipeFileSet = {
+  files: string[];
+  splitSourceCount: number;
+  chunkFileCount: number;
+  cleanup: () => void;
+};
+
+const LARGE_RECIPE_FILE_COMPRESSED_THRESHOLD_BYTES = 32 * 1024 * 1024;
+const SPLIT_RECIPE_CHUNK_TARGET_BYTES = 48 * 1024 * 1024;
+const SPLIT_RECIPE_CHUNK_MAX_ENTRIES = 6000;
 
 function readGzipJsonArray(filePath: string): SplitItemRecord[] {
   if (!fs.existsSync(filePath)) return [];
@@ -228,6 +285,127 @@ function readGzipRecipeArray(filePath: string): SplitRecipeRecord[] {
   if (!fs.existsSync(filePath)) return [];
   const buffer = fs.readFileSync(filePath);
   return JSON.parse(zlib.gunzipSync(buffer).toString('utf8')) as SplitRecipeRecord[];
+}
+
+async function splitLargeRecipeFile(
+  filePath: string,
+  recipesRoot: string,
+  tempRoot: string,
+): Promise<string[]> {
+  const relativePath = path.relative(recipesRoot, filePath);
+  const relativeDir = path.dirname(relativePath);
+  const baseName = path.basename(filePath).replace(/\.json\.gz$/i, '');
+  const outputDir = path.join(tempRoot, relativeDir === '.' ? '' : relativeDir);
+  fs.mkdirSync(outputDir, { recursive: true });
+
+  const outputFiles: string[] = [];
+  let batch: SplitRecipeRecord[] = [];
+  let batchBytes = 0;
+  let chunkIndex = 0;
+
+  const flushBatch = () => {
+    if (batch.length === 0) return;
+    const chunkFilePath = path.join(
+      outputDir,
+      `${baseName}.__chunk_${String(++chunkIndex).padStart(4, '0')}.json.gz`,
+    );
+    const jsonBuffer = Buffer.from(JSON.stringify(batch), 'utf8');
+    fs.writeFileSync(chunkFilePath, zlib.gzipSync(jsonBuffer));
+    outputFiles.push(chunkFilePath);
+    batch = [];
+    batchBytes = 0;
+  };
+
+  await new Promise<void>((resolve, reject) => {
+    const pipeline = chain([
+      fs.createReadStream(filePath),
+      zlib.createGunzip(),
+      parser(),
+      streamArray(),
+    ]);
+
+    pipeline.on('data', (entry: { value?: unknown }) => {
+      const record = entry?.value as SplitRecipeRecord | undefined;
+      if (!record) return;
+      const recordBytes = Buffer.byteLength(JSON.stringify(record), 'utf8') + 1;
+      if (
+        batch.length > 0
+        && (batchBytes + recordBytes > SPLIT_RECIPE_CHUNK_TARGET_BYTES
+          || batch.length >= SPLIT_RECIPE_CHUNK_MAX_ENTRIES)
+      ) {
+        flushBatch();
+      }
+      batch.push(record);
+      batchBytes += recordBytes;
+    });
+
+    pipeline.on('end', () => {
+      flushBatch();
+      resolve();
+    });
+    pipeline.on('error', reject);
+  });
+
+  return outputFiles;
+}
+
+async function prepareRecipeFilesForCompilation(
+  recipeFiles: string[],
+  recipesRoot: string,
+): Promise<PreparedRecipeFileSet> {
+  const oversizedFiles = recipeFiles.filter((filePath) => {
+    try {
+      return fs.statSync(filePath).size >= LARGE_RECIPE_FILE_COMPRESSED_THRESHOLD_BYTES;
+    } catch {
+      return false;
+    }
+  });
+
+  if (oversizedFiles.length === 0) {
+    return {
+      files: recipeFiles,
+      splitSourceCount: 0,
+      chunkFileCount: 0,
+      cleanup: () => undefined,
+    };
+  }
+
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-recipes-'));
+  const preparedFiles: string[] = [];
+  let splitSourceCount = 0;
+  let chunkFileCount = 0;
+
+  try {
+    for (const filePath of recipeFiles) {
+      const isOversized = oversizedFiles.includes(filePath);
+      if (!isOversized) {
+        preparedFiles.push(filePath);
+        continue;
+      }
+
+      const chunkFiles = await splitLargeRecipeFile(filePath, recipesRoot, tempRoot);
+      if (chunkFiles.length === 0) {
+        preparedFiles.push(filePath);
+        continue;
+      }
+
+      preparedFiles.push(...chunkFiles);
+      splitSourceCount += 1;
+      chunkFileCount += chunkFiles.length;
+    }
+
+    return {
+      files: preparedFiles,
+      splitSourceCount,
+      chunkFileCount,
+      cleanup: () => {
+        fs.rmSync(tempRoot, { recursive: true, force: true });
+      },
+    };
+  } catch (error) {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+    throw error;
+  }
 }
 
 function normalizeLooseText(value: string | null | undefined): string {
@@ -351,6 +529,61 @@ function normalizeCompilerImagePath(
     .replace(new RegExp(`^images/${family}/`, 'i'), '')
     .replace(new RegExp(`^api/images/${family}/`, 'i'), '');
   return normalized || null;
+}
+
+function normalizeRelativePublicAssetPath(assetPath: string | null | undefined): string | null {
+  if (!assetPath) return null;
+  const normalized = assetPath.replace(/\\/g, '/').replace(/^\/+/, '');
+  return normalized || null;
+}
+
+function normalizeEntityPreviewRecord(
+  entry: EntityPreviewManifestEntry | null | undefined,
+): EntityPreviewRecord | null {
+  if (!entry) return null;
+  const mobName = `${entry.mobName ?? ''}`.trim();
+  const relativeGifPath = normalizeRelativePublicAssetPath(entry.relativeGifPath ?? null);
+  if (!mobName || !relativeGifPath) {
+    return null;
+  }
+
+  const toFiniteNumber = (value: unknown): number | null => {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : null;
+  };
+
+  return {
+    mobName,
+    localizedName: `${entry.localizedName ?? ''}`.trim() || null,
+    modId: `${entry.modId ?? ''}`.trim() || null,
+    relativeGifPath,
+    frameCount: toFiniteNumber(entry.frameCount),
+    frameDurationMs: toFiniteNumber(entry.frameDurationMs),
+    width: toFiniteNumber(entry.width),
+    height: toFiniteNumber(entry.height),
+    renderMode: `${entry.renderMode ?? ''}`.trim() || null,
+  };
+}
+
+function normalizeEntityModelRecord(
+  entry: EntityModelManifestEntry | null | undefined,
+): EntityModelRecord | null {
+  if (!entry) return null;
+  const mobName = `${entry.mobName ?? ''}`.trim();
+  const relativeModelPath = normalizeRelativePublicAssetPath(entry.relativeModelPath ?? null);
+  if (!mobName || !relativeModelPath) {
+    return null;
+  }
+
+  const componentCount = Number(entry.componentCount);
+  return {
+    mobName,
+    localizedName: `${entry.localizedName ?? ''}`.trim() || null,
+    modId: `${entry.modId ?? ''}`.trim() || null,
+    relativeModelPath,
+    componentCount: Number.isFinite(componentCount) ? componentCount : null,
+    renderMode: `${entry.renderMode ?? ''}`.trim() || null,
+  };
 }
 
 function compilerImageExists(
@@ -722,18 +955,39 @@ function detectUiFamilyKey(recipe: SplitRecipeRecord): string | null {
   const machineType = `${recipe.machineInfo?.machineType ?? ''}`.trim().toLowerCase();
   const recipeType = `${recipe.recipeType ?? ''}`.trim().toLowerCase();
   const combined = `${machineType} ${recipeType}`;
+  const additionalData = recipe.additionalData ?? {};
+  const specialRecipeType = `${additionalData.specialRecipeType ?? recipe.metadata?.specialRecipeType ?? ''}`.trim();
+  const handler = `${additionalData.handler ?? additionalData.handlerClass ?? additionalData.handlerId ?? ''}`.trim().toLowerCase();
 
-  if (combined.includes('terra plate') || combined.includes('泰拉凝聚板')) return 'botania_terra_plate';
-  if (combined.includes('rune altar') || combined.includes('符文祭坛')) return 'botania_rune_altar';
-  if (combined.includes('mana pool') || combined.includes('魔力池')) return 'botania_mana_pool';
-  if (combined.includes('infusion') || combined.includes('奥术注魔')) return 'thaumcraft_infusion';
-  if (combined.includes('blood altar') || combined.includes('血祭坛') || combined.includes('血之祭坛')) return 'blood_magic_altar';
+  if (combined.includes('terra plate') || combined.includes('\u6cf0\u62c9\u51dd\u805a\u677f')) return 'botania_terra_plate';
+  if (combined.includes('rune altar') || combined.includes('\u7b26\u6587\u796d\u575b')) return 'botania_rune_altar';
+  if (combined.includes('mana pool') || combined.includes('\u9b54\u529b\u6c60')) return 'botania_mana_pool';
+  if (combined.includes('infusion') || combined.includes('\u5965\u672f\u6ce8\u9b54')) return 'thaumcraft_infusion';
+  if (combined.includes('blood altar') || combined.includes('\u8840\u796d\u575b') || combined.includes('\u8840\u4e4b\u796d\u575b')) return 'blood_magic_altar';
+  if (
+    combined.includes('extreme entity crusher')
+    || combined.includes('industrial slaughterhouse')
+    || combined.includes('mob info')
+    || (specialRecipeType === 'NEI_Handler' && handler.includes('mobhandler'))
+  ) {
+    return 'mobsinfo_slaughterhouse';
+  }
   return null;
 }
 
-function buildUiPayload(recipe: SplitRecipeRecord, familyKey: string): UiPayloadRecord {
+function buildUiPayload(
+  recipe: SplitRecipeRecord,
+  familyKey: string,
+  entityPreviewIndex?: Map<string, EntityPreviewRecord>,
+  entityModelIndex?: Map<string, EntityModelRecord>,
+): UiPayloadRecord {
   const inputIds = extractInputItemIds(recipe);
   const outputIds = extractOutputItemIds(recipe);
+  const surface = familyKey.includes('botania')
+    ? 'nature_ritual'
+    : familyKey.includes('thaumcraft') || familyKey.includes('blood_magic')
+      ? 'ritual'
+      : 'machine';
   const payload = {
     recipeId: `${recipe.id ?? ''}`.trim(),
     familyKey,
@@ -746,10 +1000,51 @@ function buildUiPayload(recipe: SplitRecipeRecord, familyKey: string): UiPayload
       output: outputIds.length,
     },
     presentation: {
-      surface: familyKey.includes('botania') ? 'nature_ritual' : 'ritual',
+      surface,
       density: outputIds.length + inputIds.length > 8 ? 'wide' : 'default',
     },
   };
+
+  if (familyKey === 'mobsinfo_slaughterhouse') {
+    const mobName = `${recipe.additionalData?.mobName ?? recipe.metadata?.mobName ?? ''}`.trim();
+    const preview =
+      mobName && entityPreviewIndex && entityPreviewIndex.size > 0
+        ? entityPreviewIndex.get(mobName)
+        : undefined;
+    const entityModel =
+      mobName && entityModelIndex && entityModelIndex.size > 0
+        ? entityModelIndex.get(mobName)
+        : undefined;
+    if (entityModel) {
+      Object.assign(payload, {
+        entityModel: {
+          mobName: entityModel.mobName,
+          localizedName: entityModel.localizedName,
+          modId: entityModel.modId,
+          modelUrl: `/canonical/${entityModel.relativeModelPath.split('/').map((part) => encodeURIComponent(part)).join('/')}`,
+          relativeModelPath: entityModel.relativeModelPath,
+          componentCount: entityModel.componentCount,
+          renderMode: entityModel.renderMode ?? 'captured_entity_model',
+        },
+      });
+    }
+    if (preview) {
+      Object.assign(payload, {
+        entityPreview: {
+          mobName: preview.mobName,
+          localizedName: preview.localizedName,
+          modId: preview.modId,
+          imageUrl: toPublicImageUrl(preview.relativeGifPath, 'entity'),
+          relativeGifPath: preview.relativeGifPath,
+          frameCount: preview.frameCount,
+          frameDurationMs: preview.frameDurationMs,
+          width: preview.width,
+          height: preview.height,
+          renderMode: preview.renderMode ?? 'captured_entity_turntable',
+        },
+      });
+    }
+  }
 
   return {
     payloadId: `ui~${payload.recipeId}`,
@@ -1005,6 +1300,87 @@ export class NeoNeiCompilerService {
     return hash.digest('hex');
   }
 
+  private getEntityPreviewManifestFile(): string | null {
+    const canonicalDir = `${this.sourceRoots.canonicalDir ?? ''}`.trim();
+    if (!canonicalDir) {
+      return null;
+    }
+    return path.join(canonicalDir, 'entity-previews.json');
+  }
+
+  private getEntityModelManifestFile(): string | null {
+    const canonicalDir = `${this.sourceRoots.canonicalDir ?? ''}`.trim();
+    if (!canonicalDir) {
+      return null;
+    }
+    return path.join(canonicalDir, 'entity-models.json');
+  }
+
+  private getAuxiliarySignatureFiles(): string[] {
+    const files: string[] = [];
+    const entityPreviewManifest = this.getEntityPreviewManifestFile();
+    if (entityPreviewManifest && fs.existsSync(entityPreviewManifest)) {
+      files.push(entityPreviewManifest);
+    }
+    const entityModelManifest = this.getEntityModelManifestFile();
+    if (entityModelManifest && fs.existsSync(entityModelManifest)) {
+      files.push(entityModelManifest);
+    }
+    return files;
+  }
+
+  private loadEntityPreviewIndex(): Map<string, EntityPreviewRecord> {
+    const index = new Map<string, EntityPreviewRecord>();
+    const manifestFile = this.getEntityPreviewManifestFile();
+    if (!manifestFile || !fs.existsSync(manifestFile)) {
+      return index;
+    }
+
+    try {
+      const payload = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as {
+        entries?: EntityPreviewManifestEntry[];
+      };
+
+      for (const candidate of payload.entries ?? []) {
+        const record = normalizeEntityPreviewRecord(candidate);
+        if (!record) {
+          continue;
+        }
+        index.set(record.mobName, record);
+      }
+    } catch (error) {
+      console.warn('[NeoNeiCompilerService] Failed to read entity preview manifest:', manifestFile, error);
+    }
+
+    return index;
+  }
+
+  private loadEntityModelIndex(): Map<string, EntityModelRecord> {
+    const index = new Map<string, EntityModelRecord>();
+    const manifestFile = this.getEntityModelManifestFile();
+    if (!manifestFile || !fs.existsSync(manifestFile)) {
+      return index;
+    }
+
+    try {
+      const payload = JSON.parse(fs.readFileSync(manifestFile, 'utf8')) as {
+        entries?: EntityModelManifestEntry[];
+      };
+
+      for (const candidate of payload.entries ?? []) {
+        const record = normalizeEntityModelRecord(candidate);
+        if (!record) {
+          continue;
+        }
+        index.set(record.mobName, record);
+      }
+    } catch (error) {
+      console.warn('[NeoNeiCompilerService] Failed to read entity model manifest:', manifestFile, error);
+    }
+
+    return index;
+  }
+
   private getItemFiles(): string[] {
     return listModItemFiles(this.sourceRoots.itemsDir);
   }
@@ -1014,7 +1390,11 @@ export class NeoNeiCompilerService {
   }
 
   getCurrentSourceSignature(): string {
-    return this.buildSignature([...this.getItemFiles(), ...this.getRecipeFiles()]);
+    return this.buildSignature([
+      ...this.getItemFiles(),
+      ...this.getRecipeFiles(),
+      ...this.getAuxiliarySignatureFiles(),
+    ]);
   }
 
   isAccelerationStateFresh(): boolean {
@@ -1037,10 +1417,20 @@ export class NeoNeiCompilerService {
     const db = this.databaseManager.getDatabase();
     const itemFiles = this.getItemFiles();
     const recipeFiles = this.getRecipeFiles();
-    const signature = this.buildSignature([...itemFiles, ...recipeFiles]);
+    const preparedRecipeFiles = await prepareRecipeFilesForCompilation(recipeFiles, this.sourceRoots.recipesDir);
+    const auxiliaryFiles = this.getAuxiliarySignatureFiles();
+    const signature = this.buildSignature([...itemFiles, ...recipeFiles, ...auxiliaryFiles]);
+    const entityPreviewIndex = this.loadEntityPreviewIndex();
+    const entityModelIndex = this.loadEntityModelIndex();
     this.logStage('compile-start', {
       itemFiles: itemFiles.length,
       recipeFiles: recipeFiles.length,
+      preparedRecipeFiles: preparedRecipeFiles.files.length,
+      splitRecipeSourceFiles: preparedRecipeFiles.splitSourceCount,
+      splitRecipeChunks: preparedRecipeFiles.chunkFileCount,
+      auxiliaryFiles: auxiliaryFiles.length,
+      entityPreviewEntries: entityPreviewIndex.size,
+      entityModelEntries: entityModelIndex.size,
       signature,
     });
 
@@ -1390,7 +1780,7 @@ export class NeoNeiCompilerService {
         });
 
         if (uiFamilyKey) {
-          const uiPayload = buildUiPayload(recipe, uiFamilyKey);
+          const uiPayload = buildUiPayload(recipe, uiFamilyKey, entityPreviewIndex, entityModelIndex);
           uiPayloadBytes += Buffer.byteLength(uiPayload.payloadJson, 'utf8');
           insertUiPayload.run({
             payload_id: uiPayload.payloadId,
@@ -1818,129 +2208,133 @@ export class NeoNeiCompilerService {
       });
     });
 
-    resetTransaction();
-    this.logStage('reset-done');
-    db.pragma('wal_checkpoint(PASSIVE)');
-    itemsTransaction();
-    this.logStage('items-done', { itemsImported });
-    db.pragma('wal_checkpoint(PASSIVE)');
-    for (const filePath of recipeFiles) {
-      recipesTransaction(filePath);
+    try {
+      resetTransaction();
+      this.logStage('reset-done');
       db.pragma('wal_checkpoint(PASSIVE)');
-    }
-    this.logStage('recipes-done', { recipesImported });
-    itemBrowserGroupsTransaction();
-    this.logStage('item-browser-groups-done');
-    db.pragma('wal_checkpoint(PASSIVE)');
-    modsSummaryTransaction();
-    this.logStage('mods-summary-done');
-    db.pragma('wal_checkpoint(PASSIVE)');
-    machineGroupsTransaction();
-    this.logStage('machine-groups-done', {
-      producedByMachineGroupItems: producedByMachineGroupsMap.size,
-      usedInMachineGroupItems: usedInMachineGroupsMap.size,
-    });
-    categoryGroupsTransaction();
-    this.logStage('category-groups-done', {
-      producedByCategoryGroupItems: producedByCategoryGroupsMap.size,
-      usedInCategoryGroupItems: usedInCategoryGroupsMap.size,
-    });
-    db.pragma('wal_checkpoint(PASSIVE)');
-    hotItemsTransaction();
-    this.logStage('hot-items-done');
-    db.pragma('wal_checkpoint(PASSIVE)');
-    allBootstrapItemIds = Array.from(new Set<string>([
-      ...Array.from(producedByMap.keys()),
-      ...Array.from(usedInMap.keys()),
-    ]));
-    const hotBootstrapRows = db.prepare(`
+      itemsTransaction();
+      this.logStage('items-done', { itemsImported });
+      db.pragma('wal_checkpoint(PASSIVE)');
+      for (const filePath of preparedRecipeFiles.files) {
+        recipesTransaction(filePath);
+        db.pragma('wal_checkpoint(PASSIVE)');
+      }
+      this.logStage('recipes-done', { recipesImported });
+      itemBrowserGroupsTransaction();
+      this.logStage('item-browser-groups-done');
+      db.pragma('wal_checkpoint(PASSIVE)');
+      modsSummaryTransaction();
+      this.logStage('mods-summary-done');
+      db.pragma('wal_checkpoint(PASSIVE)');
+      machineGroupsTransaction();
+      this.logStage('machine-groups-done', {
+        producedByMachineGroupItems: producedByMachineGroupsMap.size,
+        usedInMachineGroupItems: usedInMachineGroupsMap.size,
+      });
+      categoryGroupsTransaction();
+      this.logStage('category-groups-done', {
+        producedByCategoryGroupItems: producedByCategoryGroupsMap.size,
+        usedInCategoryGroupItems: usedInCategoryGroupsMap.size,
+      });
+      db.pragma('wal_checkpoint(PASSIVE)');
+      hotItemsTransaction();
+      this.logStage('hot-items-done');
+      db.pragma('wal_checkpoint(PASSIVE)');
+      allBootstrapItemIds = Array.from(new Set<string>([
+        ...Array.from(producedByMap.keys()),
+        ...Array.from(usedInMap.keys()),
+      ]));
+      const hotBootstrapRows = db.prepare(`
       SELECT item_id
       FROM hot_items
       ORDER BY popularity_score DESC, search_rank ASC
       LIMIT ?
     `).all(this.options.bootstrap.hotItemLimit) as Array<{ item_id: string }>;
-    hotBootstrapItemIds = hotBootstrapRows.map((row) => row.item_id);
-    const hotBootstrapSet = new Set(hotBootstrapItemIds);
-    const coldBootstrapItemIds = allBootstrapItemIds.filter((itemId) => !hotBootstrapSet.has(itemId));
-    for (const itemIdChunk of chunkArray(hotBootstrapItemIds, this.bootstrapChunkSize)) {
-      bootstrapTransaction(itemIdChunk, true);
+      hotBootstrapItemIds = hotBootstrapRows.map((row) => row.item_id);
+      const hotBootstrapSet = new Set(hotBootstrapItemIds);
+      const coldBootstrapItemIds = allBootstrapItemIds.filter((itemId) => !hotBootstrapSet.has(itemId));
+      for (const itemIdChunk of chunkArray(hotBootstrapItemIds, this.bootstrapChunkSize)) {
+        bootstrapTransaction(itemIdChunk, true);
+        db.pragma('wal_checkpoint(PASSIVE)');
+      }
+      for (const itemIdChunk of chunkArray(coldBootstrapItemIds, this.bootstrapChunkSize)) {
+        bootstrapTransaction(itemIdChunk, false);
+        db.pragma('wal_checkpoint(PASSIVE)');
+      }
+      this.logStage('bootstrap-done', {
+        hotBootstrap: hotBootstrapItemIds.length,
+        coldBootstrap: coldBootstrapItemIds.length,
+      });
+      stateTransaction();
+      this.logStage('state-done');
       db.pragma('wal_checkpoint(PASSIVE)');
-    }
-    for (const itemIdChunk of chunkArray(coldBootstrapItemIds, this.bootstrapChunkSize)) {
-      bootstrapTransaction(itemIdChunk, false);
-      db.pragma('wal_checkpoint(PASSIVE)');
-    }
-    this.logStage('bootstrap-done', {
-      hotBootstrap: hotBootstrapItemIds.length,
-      coldBootstrap: coldBootstrapItemIds.length,
-    });
-    stateTransaction();
-    this.logStage('state-done');
-    db.pragma('wal_checkpoint(PASSIVE)');
 
-    let hotAtlasesGenerated = 0;
-    const hotPageAtlas = this.options.hotPageAtlas;
-    const publishHotPayloads = this.options.publishHotPayloads;
-    const runtimeItemsService = new ItemsService({
-      databaseManager: this.databaseManager,
-      splitExportFallback: false,
-    });
-    const runtimePageAtlasService = new PageAtlasService({
-      databaseManager: this.databaseManager,
-      itemsService: runtimeItemsService,
-      imageRoot: this.sourceRoots.imageRoot,
-      atlasDir: hotPageAtlas.atlasOutputDir,
-    });
+      let hotAtlasesGenerated = 0;
+      const hotPageAtlas = this.options.hotPageAtlas;
+      const publishHotPayloads = this.options.publishHotPayloads;
+      const runtimeItemsService = new ItemsService({
+        databaseManager: this.databaseManager,
+        splitExportFallback: false,
+      });
+      const runtimePageAtlasService = new PageAtlasService({
+        databaseManager: this.databaseManager,
+        itemsService: runtimeItemsService,
+        imageRoot: this.sourceRoots.imageRoot,
+        atlasDir: hotPageAtlas.atlasOutputDir,
+      });
 
-    if (hotPageAtlas.enabled) {
-      for (const slotSize of hotPageAtlas.slotSizes) {
-        for (let page = 1; page <= hotPageAtlas.pages; page += 1) {
-          // eslint-disable-next-line no-await-in-loop
-          const pageItems = await runtimeItemsService.getBrowserDisplayItemsForPage({
-            page,
-            pageSize: hotPageAtlas.pageSize,
-          });
-          if (!pageItems.length) break;
-          // eslint-disable-next-line no-await-in-loop
-          const atlas = await runtimePageAtlasService.buildAtlas(pageItems, slotSize);
-          if (atlas) {
-            hotAtlasesGenerated += 1;
+      if (hotPageAtlas.enabled) {
+        for (const slotSize of hotPageAtlas.slotSizes) {
+          for (let page = 1; page <= hotPageAtlas.pages; page += 1) {
+            // eslint-disable-next-line no-await-in-loop
+            const pageItems = await runtimeItemsService.getBrowserDisplayItemsForPage({
+              page,
+              pageSize: hotPageAtlas.pageSize,
+            });
+            if (!pageItems.length) break;
+            // eslint-disable-next-line no-await-in-loop
+            const atlas = await runtimePageAtlasService.buildAtlas(pageItems, slotSize);
+            if (atlas) {
+              hotAtlasesGenerated += 1;
+            }
           }
         }
       }
-    }
 
-    this.logStage('hot-atlas-done', { hotAtlasesGenerated });
+      this.logStage('hot-atlas-done', { hotAtlasesGenerated });
 
-    if (publishHotPayloads.enabled) {
-      const publishPayloadMaterializer = new PublishPayloadMaterializerService({
-        databaseManager: this.databaseManager,
-        imageRoot: this.sourceRoots.imageRoot,
-        atlasOutputDir: hotPageAtlas.atlasOutputDir,
-        publishHotPayloads,
+      if (publishHotPayloads.enabled) {
+        const publishPayloadMaterializer = new PublishPayloadMaterializerService({
+          databaseManager: this.databaseManager,
+          imageRoot: this.sourceRoots.imageRoot,
+          atlasOutputDir: hotPageAtlas.atlasOutputDir,
+          publishHotPayloads,
+        });
+        const publishPayloadResult = await publishPayloadMaterializer.materialize(signature);
+        publishPayloadCount = publishPayloadResult.count;
+        publishPayloadBytes = publishPayloadResult.bytes;
+      }
+
+      this.logStage('publish-payloads-done', {
+        publishPayloadCount,
+        publishPayloadBytes,
       });
-      const publishPayloadResult = await publishPayloadMaterializer.materialize(signature);
-      publishPayloadCount = publishPayloadResult.count;
-      publishPayloadBytes = publishPayloadResult.bytes;
+      const finalStateTransaction = db.transaction(() => {
+        upsertState.run({ state_key: 'page_atlas_assets_count', state_value: String(hotAtlasesGenerated) });
+        upsertState.run({ state_key: 'publish_payloads_count', state_value: String(publishPayloadCount) });
+        upsertState.run({ state_key: 'publish_payload_bytes', state_value: String(publishPayloadBytes) });
+      });
+      finalStateTransaction();
+      db.pragma('wal_checkpoint(PASSIVE)');
+
+      return {
+        signature,
+        itemsImported,
+        recipesImported,
+        hotAtlasesGenerated,
+      };
+    } finally {
+      preparedRecipeFiles.cleanup();
     }
-
-    this.logStage('publish-payloads-done', {
-      publishPayloadCount,
-      publishPayloadBytes,
-    });
-    const finalStateTransaction = db.transaction(() => {
-      upsertState.run({ state_key: 'page_atlas_assets_count', state_value: String(hotAtlasesGenerated) });
-      upsertState.run({ state_key: 'publish_payloads_count', state_value: String(publishPayloadCount) });
-      upsertState.run({ state_key: 'publish_payload_bytes', state_value: String(publishPayloadBytes) });
-    });
-    finalStateTransaction();
-    db.pragma('wal_checkpoint(PASSIVE)');
-
-    return {
-      signature,
-      itemsImported,
-      recipesImported,
-      hotAtlasesGenerated,
-    };
   }
 }

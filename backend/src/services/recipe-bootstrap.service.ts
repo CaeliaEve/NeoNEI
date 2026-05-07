@@ -5,9 +5,8 @@ import { ItemsService, type Item } from './items.service';
 import type { BrowserPageRichMediaManifest } from './browser-render-hints.service';
 import { buildRichMediaManifestFromUnknown } from './browser-render-hints.service';
 import {
-  getIndexedRecipesService,
+  IndexedRecipesService,
   type IndexedRecipe,
-  type IndexedRecipesService,
   type ItemRecipeSummaryResponse,
   type RecipeGroupPackOptions,
   type RecipeGroupPackResponse,
@@ -114,7 +113,12 @@ export class RecipeBootstrapService {
         databaseManager: this.databaseManager,
         splitExportFallback: this.splitExportFallback,
       });
-    this.indexedRecipesService = options.indexedRecipesService ?? getIndexedRecipesService();
+    this.indexedRecipesService =
+      options.indexedRecipesService ??
+      new IndexedRecipesService({
+        databaseManager: this.databaseManager,
+        splitExportFallback: this.splitExportFallback,
+      });
   }
 
   private getAccelerationDatabase(): Database.Database | null {

@@ -115,6 +115,14 @@ const GT_CHEMICAL_REACTOR: UITypeConfig = {
   hasEnergyBar: true,
 };
 
+const INDUSTRIAL_SLAUGHTERHOUSE: UITypeConfig = {
+  uiType: 'industrial_slaughterhouse',
+  component: 'IndustrialSlaughterhouseUI',
+  hasFluidSlots: true,
+  hasEnergyBar: true,
+  hasCentralElement: true,
+};
+
 const GT_MOLECULAR: UITypeConfig = {
   uiType: 'gt_molecular',
   component: 'GTMolecularUI',
@@ -293,6 +301,11 @@ const PRESENTATION_BY_UI_TYPE: Record<string, UIPresentationMeta> = {
     surface: 'machine',
     density: 'oversized',
   },
+  industrial_slaughterhouse: {
+    family: 'gregtech',
+    surface: 'machine',
+    density: 'oversized',
+  },
   gt_molecular: {
     family: 'gregtech',
     surface: 'machine',
@@ -440,6 +453,10 @@ const EXACT_ALIASES: Array<[string, UITypeConfig]> = [
   ['\u5316\u5b66\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
   ['\u5927\u578b\u5316\u5b66\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
   ['\u5316\u5de5\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
+  ['extreme entity crusher', INDUSTRIAL_SLAUGHTERHOUSE],
+  ['industrial slaughterhouse', INDUSTRIAL_SLAUGHTERHOUSE],
+  ['mob info', INDUSTRIAL_SLAUGHTERHOUSE],
+  ['\u5de5\u4e1a\u5c60\u5bb0\u573a', INDUSTRIAL_SLAUGHTERHOUSE],
 
   ['molecular', GT_MOLECULAR],
   ['分子', GT_MOLECULAR],
@@ -549,6 +566,10 @@ const KEYWORD_ALIASES: Array<[string, UITypeConfig]> = [
   ['\u5316\u5b66\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
   ['\u5927\u578b\u5316\u5b66\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
   ['\u5316\u5de5\u53cd\u5e94\u91dc', GT_CHEMICAL_REACTOR],
+  ['extreme entity crusher', INDUSTRIAL_SLAUGHTERHOUSE],
+  ['industrial slaughterhouse', INDUSTRIAL_SLAUGHTERHOUSE],
+  ['mob info', INDUSTRIAL_SLAUGHTERHOUSE],
+  ['\u5de5\u4e1a\u5c60\u5bb0\u573a', INDUSTRIAL_SLAUGHTERHOUSE],
   ['molecular', GT_MOLECULAR],
   ['分子', GT_GENERIC],
   ['electroly', GT_ELECTROLYZER],
@@ -732,6 +753,14 @@ function detectBaseUIType(machineType: string): UITypeConfig {
     return GT_CHEMICAL_REACTOR;
   }
   if (
+    normalized.includes('extreme entity crusher') ||
+    normalized.includes('industrial slaughterhouse') ||
+    normalized.includes('mob info') ||
+    normalized.includes('\u5de5\u4e1a\u5c60\u5bb0\u573a')
+  ) {
+    return INDUSTRIAL_SLAUGHTERHOUSE;
+  }
+  if (
     normalized.includes('gregtech') &&
     (normalized.includes('assembly line') || normalized.includes('\u88c5\u914d\u7ebf'))
   ) {
@@ -869,6 +898,26 @@ export function resolveRecipePresentationProfile(
   if (mergedMeta.isMultiblockBlueprint || mergedMeta.multiblockBlueprint) {
     return createPresentationProfile(MULTIBLOCK_BLUEPRINT, {
       reason: 'metadata:multiblock_blueprint',
+    });
+  }
+
+  if (
+    (
+      typeof mergedMeta.specialRecipeType === 'string'
+      && mergedMeta.specialRecipeType === 'NEI_Handler'
+      && (
+        `${mergedMeta.handler ?? ''}`.toLowerCase().includes('mobhandler')
+        || `${mergedMeta.handlerClass ?? ''}`.toLowerCase().includes('mobhandler')
+        || `${mergedMeta.handlerId ?? ''}`.toLowerCase().includes('mobhandler')
+      )
+    )
+    || combined.includes('extreme entity crusher')
+    || combined.includes('industrial slaughterhouse')
+    || combined.includes('mob info')
+    || combined.includes('\u5de5\u4e1a\u5c60\u5bb0\u573a')
+  ) {
+    return createPresentationProfile(INDUSTRIAL_SLAUGHTERHOUSE, {
+      reason: 'combined:industrial_slaughterhouse',
     });
   }
 
@@ -1158,6 +1207,7 @@ export function getAllUITypes(): string[] {
         GT_ASSEMBLY_LINE,
         GT_ALLOY_SMELTER,
         GT_CHEMICAL_REACTOR,
+        INDUSTRIAL_SLAUGHTERHOUSE,
         GT_MOLECULAR,
         GT_ELECTROLYZER,
         GT_BLAST_FURNACE,
@@ -1196,6 +1246,7 @@ const UI_CONFIG_BY_TYPE: Record<string, UITypeConfig> = {
   [GT_ASSEMBLY_LINE.uiType]: GT_ASSEMBLY_LINE,
   [GT_ALLOY_SMELTER.uiType]: GT_ALLOY_SMELTER,
   [GT_CHEMICAL_REACTOR.uiType]: GT_CHEMICAL_REACTOR,
+  [INDUSTRIAL_SLAUGHTERHOUSE.uiType]: INDUSTRIAL_SLAUGHTERHOUSE,
   [GT_MOLECULAR.uiType]: GT_MOLECULAR,
   [GT_ELECTROLYZER.uiType]: GT_ELECTROLYZER,
   [GT_BLAST_FURNACE.uiType]: GT_BLAST_FURNACE,
@@ -1223,6 +1274,8 @@ const FAMILY_KEY_TO_UI_TYPE: Record<string, string> = {
   botania_mana_pool: BOTANIA_MANA_POOL.uiType,
   thaumcraft_infusion: THAUMCRAFT_INFUSION.uiType,
   blood_magic_altar: BLOOD_MAGIC_ALTAR.uiType,
+  industrial_slaughterhouse: INDUSTRIAL_SLAUGHTERHOUSE.uiType,
+  mobsinfo_slaughterhouse: INDUSTRIAL_SLAUGHTERHOUSE.uiType,
 };
 
 export function resolveRecipePresentationProfileFromUiPayload(

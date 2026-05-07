@@ -697,6 +697,27 @@ export class PublishPayloadMaterializerService {
         fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
         fs.writeFileSync(absolutePath, payloadJson, 'utf8');
       };
+      const registerPayloadRow = (
+        payload_key: string,
+        payload_type: string,
+        payload_json: string,
+        bundle_relative_path: string,
+        options?: { prewrite?: boolean },
+      ) => {
+        const prewrite = options?.prewrite ?? true;
+        if (prewrite) {
+          prewrittenPayloadBytes += Buffer.byteLength(payload_json, 'utf8');
+          writeBundleJson(bundle_relative_path, payload_json);
+        }
+        rows.push({
+          payload_key,
+          payload_type,
+          payload_json: prewrite ? '{}' : payload_json,
+          signature: sourceSignature,
+          bundle_relative_path,
+          prewritten: prewrite || undefined,
+        });
+      };
 
       const itemsService = new ItemsService({
         databaseManager: this.databaseManager,
@@ -719,13 +740,12 @@ export class PublishPayloadMaterializerService {
       });
       attachRenderHintsToEntries(firstPageWindow.data);
 
-      rows.push({
-        payload_key: buildModsListPayloadKey(),
-        payload_type: 'mods-list',
-        payload_json: JSON.stringify(mods),
-        signature: sourceSignature,
-        bundle_relative_path: buildPublishModsListRelativePath(),
-      });
+      registerPayloadRow(
+        buildModsListPayloadKey(),
+        'mods-list',
+        JSON.stringify(mods),
+        buildPublishModsListRelativePath(),
+      );
 
       if (this.options.includeBrowserSearchPack) {
         const searchService = new ItemsSearchService({
@@ -735,48 +755,53 @@ export class PublishPayloadMaterializerService {
         const searchPack = await searchService.getBrowserSearchPack();
         const hotItems = searchPack.slice(0, this.options.searchHotShardSize);
         const tailItems = searchPack.slice(hotItems.length);
-        rows.push({
-          payload_key: buildBrowserSearchPackPayloadKey(),
-          payload_type: 'browser-search-pack',
-          payload_json: JSON.stringify({
+        registerPayloadRow(
+          buildBrowserSearchPackPayloadKey(),
+          'browser-search-pack',
+          JSON.stringify({
             version: 1,
             signature: sourceSignature,
             total: searchPack.length,
             items: searchPack,
           }),
-          signature: sourceSignature,
-          bundle_relative_path: buildPublishBrowserSearchPackRelativePath(),
-        });
-        rows.push({
-          payload_key: 'bundle-only:browser-search-pack-shard::mod=all::shard=hot',
-          payload_type: 'browser-search-pack-shard',
-          payload_json: JSON.stringify({
+          buildPublishBrowserSearchPackRelativePath(),
+        );
+        registerPayloadRow(
+          'bundle-only:browser-search-pack-shard::mod=all::shard=hot',
+          'browser-search-pack-shard',
+          JSON.stringify({
             version: 1,
             signature: sourceSignature,
             total: hotItems.length,
             items: hotItems,
           }),
-          signature: sourceSignature,
-          bundle_relative_path: buildPublishBrowserSearchShardRelativePath({
+          buildPublishBrowserSearchShardRelativePath({
             shardId: 'hot',
           }),
-        });
+        );
         if (tailItems.length > 0) {
-          rows.push({
-            payload_key: 'bundle-only:browser-search-pack-shard::mod=all::shard=tail',
-            payload_type: 'browser-search-pack-shard',
-            payload_json: JSON.stringify({
+          registerPayloadRow(
+            'bundle-only:browser-search-pack-shard::mod=all::shard=tail',
+            'browser-search-pack-shard',
+            JSON.stringify({
               version: 1,
               signature: sourceSignature,
               total: tailItems.length,
               items: tailItems,
             }),
-            signature: sourceSignature,
-            bundle_relative_path: buildPublishBrowserSearchShardRelativePath({
+            buildPublishBrowserSearchShardRelativePath({
               shardId: 'tail',
             }),
-          });
+          );
         }
+        const searchServiceCacheHolder = searchService as unknown as {
+          allItemsCache?: Item[] | null;
+          searchIndexCache?: unknown[] | null;
+          browserSearchPackCache?: unknown[] | null;
+        };
+        searchServiceCacheHolder.allItemsCache = null;
+        searchServiceCacheHolder.searchIndexCache = null;
+        searchServiceCacheHolder.browserSearchPackCache = null;
       }
 
       const hotRecipeBootstrapItemIds = this.selectHotRecipeBootstrapItemIds(db);
@@ -941,9 +966,25 @@ export class PublishPayloadMaterializerService {
         const recipeBootstrapCacheHolder = recipeBootstrapService as unknown as {
           cache?: Map<string, unknown>;
           fullCache?: Map<string, unknown>;
+          indexedRecipesService?: {
+            recipeIndexCache?: Map<string, unknown>;
+            recipeSummaryCache?: Map<string, unknown>;
+            transformedRecipeCache?: Map<string, unknown>;
+            recipeCollectionCache?: Map<string, unknown>;
+            relationDescriptorCache?: Map<string, unknown>;
+            machineTypesCache?: unknown;
+          };
         };
         recipeBootstrapCacheHolder.cache?.clear();
         recipeBootstrapCacheHolder.fullCache?.clear();
+        recipeBootstrapCacheHolder.indexedRecipesService?.recipeIndexCache?.clear();
+        recipeBootstrapCacheHolder.indexedRecipesService?.recipeSummaryCache?.clear();
+        recipeBootstrapCacheHolder.indexedRecipesService?.transformedRecipeCache?.clear();
+        recipeBootstrapCacheHolder.indexedRecipesService?.recipeCollectionCache?.clear();
+        recipeBootstrapCacheHolder.indexedRecipesService?.relationDescriptorCache?.clear();
+        if (recipeBootstrapCacheHolder.indexedRecipesService) {
+          recipeBootstrapCacheHolder.indexedRecipesService.machineTypesCache = null;
+        }
       }
 
       const displayItems = collectDisplayItems(firstPageWindow.data);
@@ -962,23 +1003,21 @@ export class PublishPayloadMaterializerService {
           windowLength: firstPageWindow.data.length,
         };
 
-        rows.push({
-          payload_key: buildBrowserPageWindowPayloadKey({ slotSize }),
-          payload_type: 'browser-page-window',
-          payload_json: JSON.stringify(pagePackPayload),
-          signature: sourceSignature,
-          bundle_relative_path: buildPublishBrowserPageWindowRelativePath({ slotSize }),
-        });
-        rows.push({
-          payload_key: buildHomeBootstrapWindowPayloadKey({ slotSize }),
-          payload_type: 'home-bootstrap-window',
-          payload_json: JSON.stringify({
+        registerPayloadRow(
+          buildBrowserPageWindowPayloadKey({ slotSize }),
+          'browser-page-window',
+          JSON.stringify(pagePackPayload),
+          buildPublishBrowserPageWindowRelativePath({ slotSize }),
+        );
+        registerPayloadRow(
+          buildHomeBootstrapWindowPayloadKey({ slotSize }),
+          'home-bootstrap-window',
+          JSON.stringify({
             mods,
             pagePack: pagePackPayload,
           }),
-          signature: sourceSignature,
-          bundle_relative_path: buildPublishHomeBootstrapWindowRelativePath({ slotSize }),
-        });
+          buildPublishHomeBootstrapWindowRelativePath({ slotSize }),
+        );
 
         for (let windowIndex = 1; windowIndex < this.options.windowCount; windowIndex += 1) {
           const offset = windowIndex * this.options.windowStride;
@@ -995,10 +1034,10 @@ export class PublishPayloadMaterializerService {
           const extraMediaManifest = buildBrowserRichMediaManifest(extraDisplayItems);
           // eslint-disable-next-line no-await-in-loop
           const extraAtlas = await pageAtlasService.buildAtlas(extraDisplayItems, slotSize);
-          rows.push({
-            payload_key: `bundle-only:${buildBrowserPageWindowPayloadKey({ slotSize })}:offset=${offset}`,
-            payload_type: 'browser-page-window',
-            payload_json: JSON.stringify({
+          registerPayloadRow(
+            `bundle-only:${buildBrowserPageWindowPayloadKey({ slotSize })}:offset=${offset}`,
+            'browser-page-window',
+            JSON.stringify({
               ...extraWindow,
               page: Math.floor(offset / this.options.firstPageSize) + 1,
               pageSize: this.options.firstPageSize,
@@ -1008,9 +1047,8 @@ export class PublishPayloadMaterializerService {
               windowOffset: extraWindow.offset,
               windowLength: extraWindow.data.length,
             }),
-            signature: sourceSignature,
-            bundle_relative_path: buildPublishBrowserPageWindowRelativePath({ slotSize }).replace(/\.json$/i, `-offset-${offset}.json`),
-          });
+            buildPublishBrowserPageWindowRelativePath({ slotSize }).replace(/\.json$/i, `-offset-${offset}.json`),
+          );
         }
       }
     }
@@ -1045,7 +1083,13 @@ export class PublishPayloadMaterializerService {
       `);
 
       for (const row of rows.filter((entry) => !entry.payload_key.startsWith('bundle-only:'))) {
-        insertPublishPayload.run(row);
+        const payloadJson = row.prewritten
+          ? fs.readFileSync(path.join(bundleOutputDir, row.bundle_relative_path), 'utf8')
+          : row.payload_json;
+        insertPublishPayload.run({
+          ...row,
+          payload_json: payloadJson,
+        });
       }
 
       upsertState.run({ state_key: 'publish_payload_revision', state_value: PUBLISH_PAYLOAD_REVISION });

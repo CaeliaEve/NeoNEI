@@ -286,7 +286,7 @@ function parseRequestedArtifact(fileName: string): RequestedArtifactDescriptor |
 }
 
 function resolveFamilyArtifact(
-  family: 'item' | 'fluid',
+  family: 'item' | 'fluid' | 'entity',
   modId: string,
   fileName: string,
 ): string | null {
@@ -352,7 +352,7 @@ function resolveFamilyArtifact(
   return null;
 }
 
-function createArtifactFallbackRoute(family: 'item' | 'fluid') {
+function createArtifactFallbackRoute(family: 'item' | 'fluid' | 'entity') {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
       const modId = decodeURIComponent(req.params.modId || '');
@@ -476,6 +476,7 @@ function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string; 
 
 app.get('/images/item/:modId/:fileName', createArtifactFallbackRoute('item'));
 app.get('/images/fluid/:modId/:fileName', createArtifactFallbackRoute('fluid'));
+app.get('/images/entity/:modId/:fileName', createArtifactFallbackRoute('entity'));
 
 app.use(
   '/images',
