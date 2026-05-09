@@ -377,6 +377,34 @@ function normalizeMachineGroups(groups: MachineGroupSummary[]): MachineGroupSumm
   return Array.from(merged.values());
 }
 
+function dedupeCategoryGroupsAgainstMachineGroups(
+  categoryGroups: RecipeCategorySummary[],
+  machineGroups: MachineGroupSummary[],
+): RecipeCategorySummary[] {
+  if (!categoryGroups.length || !machineGroups.length) {
+    return categoryGroups;
+  }
+
+  const machineGroupKeys = new Set(
+    machineGroups.map((group) => {
+      const normalizedMachineType = normalizeMachineFamilyName(group.machineType);
+      return `${normalizedMachineType}::${group.voltageTier ?? ''}::${Math.max(0, Number(group.recipeCount ?? 0))}`;
+    }),
+  );
+
+  return categoryGroups.filter((group) => {
+    if (group.type !== 'crafting') {
+      return true;
+    }
+
+    const normalizedCategoryName = normalizeMachineFamilyName(
+      normalizeCraftingCategoryName(group.name || group.recipeType || group.categoryKey),
+    );
+    const comparisonKey = `${normalizedCategoryName}::${group.voltageTier ?? ''}::${Math.max(0, Number(group.recipeCount ?? 0))}`;
+    return !machineGroupKeys.has(comparisonKey);
+  });
+}
+
 function toMachineGroupKey(
   value: Pick<MachineGroupSummary, 'machineType' | 'machineKey' | 'voltageTier'>
     | Pick<RecipeCategorySummary, 'name' | 'machineKey' | 'voltageTier'>,
@@ -467,13 +495,13 @@ export function normalizeItemRecipeSummary(summary: ItemRecipeSummaryResponse): 
     producedByMachineGroups,
   )
     ? projectMachineGroupsToCategorySummaries(producedByMachineGroups)
-    : rawProducedByCategoryGroups;
+    : dedupeCategoryGroupsAgainstMachineGroups(rawProducedByCategoryGroups, producedByMachineGroups);
   const usedInCategoryGroups = shouldProjectMachineGroupsToCategorySummaries(
     rawUsedInCategoryGroups,
     usedInMachineGroups,
   )
     ? projectMachineGroupsToCategorySummaries(usedInMachineGroups)
-    : rawUsedInCategoryGroups;
+    : dedupeCategoryGroupsAgainstMachineGroups(rawUsedInCategoryGroups, usedInMachineGroups);
   return {
     ...summary,
     counts: {
@@ -504,6 +532,21 @@ function chunkStrings(values: string[], maxChunkSize: number): string[][] {
     chunks.push(values.slice(index, index + chunkSize));
   }
   return chunks;
+}
+
+function stableSerializeRecipeValue(value: unknown): string {
+  if (value == null) return 'null';
+  if (typeof value === 'string') return JSON.stringify(value);
+  if (typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
+  if (Array.isArray(value)) {
+    return `[${value.map((entry) => stableSerializeRecipeValue(entry)).join(',')}]`;
+  }
+  if (typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    const keys = Object.keys(record).sort();
+    return `{${keys.map((key) => `${JSON.stringify(key)}:${stableSerializeRecipeValue(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(String(value));
 }
 
 export class IndexedRecipesService {
@@ -1443,6 +1486,114 @@ export class IndexedRecipesService {
       .filter((recipe): recipe is IndexedRecipe => Boolean(recipe)));
   }
 
+  private buildCanonicalMachineGroupRecipeSignature(recipe: IndexedRecipe): string {
+    const flattenInputGroups = (inputs: IndexedRecipe['inputs']): IndexedItemGroup[] => {
+      const flattened: IndexedItemGroup[] = [];
+      for (const entry of inputs ?? []) {
+        if (Array.isArray(entry)) {
+          flattened.push(...entry);
+          continue;
+        }
+        flattened.push(entry);
+      }
+      return flattened;
+    };
+
+    const normalizedInputs = flattenInputGroups(recipe.inputs ?? []).map((group) => ({
+      slotIndex: Number(group.slotIndex ?? 0),
+      isOreDictionary: Boolean(group.isOreDictionary),
+      oreDictName: group.oreDictName ?? null,
+      items: (group.items ?? []).map((entry: IndexedItemStack) => ({
+        itemId: entry.item?.itemId ?? '',
+        stackSize: Number(entry.stackSize ?? 0),
+        probability: Number(entry.probability ?? 0),
+      })),
+    }));
+    const normalizedOutputs = (recipe.outputs ?? []).map((entry) => ({
+      itemId: entry.item?.itemId ?? '',
+      stackSize: Number(entry.stackSize ?? 0),
+      probability: Number(entry.probability ?? 0),
+    }));
+    const normalizedFluidInputs = (recipe.fluidInputs ?? []).map((group) => ({
+      slotIndex: Number(group.slotIndex ?? 0),
+      fluids: (group.fluids ?? []).map((entry: IndexedFluidStack) => ({
+        fluidId: entry.fluid?.fluidId ?? '',
+        amount: Number(entry.amount ?? 0),
+        probability: Number(entry.probability ?? 0),
+      })),
+    }));
+    const normalizedFluidOutputs = (recipe.fluidOutputs ?? []).map((entry) => ({
+      fluidId: entry.fluid?.fluidId ?? '',
+      amount: Number(entry.amount ?? 0),
+      probability: Number(entry.probability ?? 0),
+    }));
+
+    return stableSerializeRecipeValue({
+      inputs: normalizedInputs,
+      outputs: normalizedOutputs,
+      fluidInputs: normalizedFluidInputs,
+      fluidOutputs: normalizedFluidOutputs,
+    });
+  }
+
+  private async dedupeMachineAliasRecipeIds(recipeIds: string[]): Promise<string[]> {
+    const normalizedIds = Array.from(new Set(recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean)));
+    if (normalizedIds.length <= 1) {
+      return normalizedIds;
+    }
+
+    const recipes = await this.getRecipesByIds(normalizedIds);
+    const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe] as const));
+    const dedupedRecipeIds: string[] = [];
+    const seenSignatures = new Set<string>();
+
+    for (const recipeId of normalizedIds) {
+      const recipe = recipeById.get(recipeId);
+      if (!recipe) {
+        if (!seenSignatures.has(`missing:${recipeId}`)) {
+          seenSignatures.add(`missing:${recipeId}`);
+          dedupedRecipeIds.push(recipeId);
+        }
+        continue;
+      }
+
+      const signature = this.buildCanonicalMachineGroupRecipeSignature(recipe);
+      if (seenSignatures.has(signature)) {
+        continue;
+      }
+
+      seenSignatures.add(signature);
+      dedupedRecipeIds.push(recipeId);
+    }
+
+    return dedupedRecipeIds;
+  }
+
+  private async reconcileMachineGroupSummaryCounts(
+    itemId: string,
+    relationType: RecipeRelationType,
+    groups: MachineGroupSummary[],
+  ): Promise<MachineGroupSummary[]> {
+    if (groups.length === 0) {
+      return groups;
+    }
+
+    const reconciledGroups: MachineGroupSummary[] = [];
+    for (const group of groups) {
+      const recipeIds = await this.getOrderedRecipeIdsForMachineGroup(
+        itemId,
+        relationType,
+        group.machineType,
+        group.voltageTier ?? null,
+      );
+      reconciledGroups.push({
+        ...group,
+        recipeCount: recipeIds.length,
+      });
+    }
+    return reconciledGroups;
+  }
+
   async getCraftingRecipesForItem(itemId: string): Promise<IndexedRecipe[]> {
     const cacheKey = `crafting:${itemId}`;
     const cached = this.getCachedRecipeCollection(cacheKey);
@@ -1503,7 +1654,7 @@ export class IndexedRecipesService {
       normalizedVoltageTier,
     );
     if (materializedRecipeIds && materializedRecipeIds.length > 0) {
-      return materializedRecipeIds;
+      return this.dedupeMachineAliasRecipeIds(materializedRecipeIds);
     }
 
     const descriptorMatchedRecipeIds = this.getRecipeIdsForMachineGroupFromDescriptors(
@@ -1513,14 +1664,14 @@ export class IndexedRecipesService {
       normalizedVoltageTier,
     );
     if (descriptorMatchedRecipeIds && descriptorMatchedRecipeIds.length > 0) {
-      return descriptorMatchedRecipeIds;
+      return this.dedupeMachineAliasRecipeIds(descriptorMatchedRecipeIds);
     }
 
     const groupedRecipes = relationType === 'produced_by'
       ? await this.getCraftingRecipesForItem(normalizedItemId)
       : await this.getUsageRecipesForItem(normalizedItemId);
     const machineAliases = new Set(expandMachineTypeAliases(normalizedMachineType).map((alias) => alias.trim()).filter(Boolean));
-    return groupedRecipes
+    const matchedRecipeIds = groupedRecipes
       .filter((recipe) => {
         const recipeMachineType = `${recipe.machineInfo?.machineType ?? ''}`.trim();
         if (!recipeMachineType || (!machineAliases.has(normalizeMachineFamilyName(recipeMachineType)) && !machineAliases.has(recipeMachineType))) {
@@ -1530,6 +1681,7 @@ export class IndexedRecipesService {
         return recipeVoltageTier === normalizedVoltageTier;
       })
       .map((recipe) => recipe.id);
+    return this.dedupeMachineAliasRecipeIds(matchedRecipeIds);
   }
 
   private async getOrderedRecipeIdsForCategoryGroup(
@@ -2129,12 +2281,23 @@ export class IndexedRecipesService {
           : this.buildCategoryGroupSummariesFromDescriptors(usedInDescriptors)
       );
 
+    const reconciledProducedByMachineGroups = await this.reconcileMachineGroupSummaryCounts(
+      itemId,
+      'produced_by',
+      producedByMachineGroups,
+    );
+    const reconciledUsedInMachineGroups = await this.reconcileMachineGroupSummaryCounts(
+      itemId,
+      'used_in',
+      usedInMachineGroups,
+    );
+
     return normalizeItemRecipeSummary({
       ...normalized,
-      machineGroups: producedByMachineGroups,
-      producedByMachineGroups,
+      machineGroups: reconciledProducedByMachineGroups,
+      producedByMachineGroups: reconciledProducedByMachineGroups,
       producedByCategoryGroups,
-      usedInMachineGroups,
+      usedInMachineGroups: reconciledUsedInMachineGroups,
       usedInCategoryGroups,
     });
   }

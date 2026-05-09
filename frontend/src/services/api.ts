@@ -96,6 +96,7 @@ function shouldPreferLiveRecipeBootstrap(): boolean {
 }
 
 const PREFER_LIVE_RECIPE_BOOTSTRAP = shouldPreferLiveRecipeBootstrap();
+const RECIPE_BOOTSTRAP_CACHE_SCHEMA = 'v3';
 
 function getRuntimeCacheSignature(manifest: Pick<PublicRuntimeManifest, 'runtimeCacheKey' | 'sourceSignature'> | null | undefined): string | null {
   const runtimeCacheKey = `${manifest?.runtimeCacheKey ?? ''}`.trim();
@@ -140,6 +141,13 @@ function buildRuntimePayloadCacheKey(
     signature,
     ...identity,
   });
+}
+
+function withRecipeBootstrapCacheSchema<T extends Record<string, unknown>>(identity: T): T & { schema: string } {
+  return {
+    ...identity,
+    schema: RECIPE_BOOTSTRAP_CACHE_SCHEMA,
+  };
 }
 
 function getBackendOrigin(): string {
@@ -2388,7 +2396,7 @@ export const api = {
       if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
         const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
           'recipe-bootstrap',
-          { itemId },
+          withRecipeBootstrapCacheSchema({ itemId }),
         );
         if (persistent) {
           setCacheWithLimit(recipeBootstrapCache, itemId, persistent, CACHE_LIMITS.recipeBootstrap);
@@ -2401,7 +2409,7 @@ export const api = {
           try {
             const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
             setCacheWithLimit(recipeBootstrapCache, itemId, published, CACHE_LIMITS.recipeBootstrap);
-            persistRuntimePayload('recipe-bootstrap', { itemId }, published);
+            persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), published);
             return published;
           } catch {
             // Fall back to the API route when the static publish bundle is unavailable.
@@ -2411,7 +2419,7 @@ export const api = {
 
       const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}`);
       setCacheWithLimit(recipeBootstrapCache, itemId, response.data, CACHE_LIMITS.recipeBootstrap);
-      persistRuntimePayload('recipe-bootstrap', { itemId }, response.data);
+      persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), response.data);
       return response.data;
     })().finally(() => {
       recipeBootstrapInFlight.delete(itemId);
@@ -2433,7 +2441,7 @@ export const api = {
       if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
         const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
           'recipe-bootstrap-shard',
-          { itemId },
+          withRecipeBootstrapCacheSchema({ itemId }),
         );
         if (persistent) {
           setCacheWithLimit(recipeBootstrapShardCache, itemId, persistent, CACHE_LIMITS.recipeBootstrapShard);
@@ -2446,7 +2454,7 @@ export const api = {
           try {
             const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
             setCacheWithLimit(recipeBootstrapShardCache, itemId, published, CACHE_LIMITS.recipeBootstrapShard);
-            persistRuntimePayload('recipe-bootstrap-shard', { itemId }, published);
+            persistRuntimePayload('recipe-bootstrap-shard', withRecipeBootstrapCacheSchema({ itemId }), published);
             return published;
           } catch {
             // Fall back to the API route when the static publish bundle is unavailable.
@@ -2456,7 +2464,7 @@ export const api = {
 
       const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/shard`);
       setCacheWithLimit(recipeBootstrapShardCache, itemId, response.data, CACHE_LIMITS.recipeBootstrapShard);
-      persistRuntimePayload('recipe-bootstrap-shard', { itemId }, response.data);
+      persistRuntimePayload('recipe-bootstrap-shard', withRecipeBootstrapCacheSchema({ itemId }), response.data);
       return response.data;
     })().finally(() => {
       recipeBootstrapShardInFlight.delete(itemId);
@@ -2476,7 +2484,7 @@ export const api = {
     if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
       const persistent = await readPersistentRuntimePayload<RecipeBootstrapMachineGroupPayload>(
         'recipe-bootstrap-produced-by-group',
-        {
+        withRecipeBootstrapCacheSchema({
           itemId,
           machineType,
           machineKey: machineKey || null,
@@ -2484,7 +2492,7 @@ export const api = {
           offset: options?.offset ?? 0,
           limit: options?.limit ?? null,
           includeRecipeIds: options?.includeRecipeIds === true,
-        },
+        }),
       );
       if (persistent) {
         return persistent;
@@ -2504,7 +2512,7 @@ export const api = {
             const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
             persistRuntimePayload(
               'recipe-bootstrap-produced-by-group',
-              {
+              withRecipeBootstrapCacheSchema({
                 itemId,
                 machineType,
                 machineKey: machineKey || null,
@@ -2512,7 +2520,7 @@ export const api = {
                 offset: options?.offset ?? 0,
                 limit: options?.limit ?? null,
                 includeRecipeIds: options?.includeRecipeIds === true,
-              },
+              }),
               published,
             );
             return published;
@@ -2534,7 +2542,7 @@ export const api = {
     });
     persistRuntimePayload(
       'recipe-bootstrap-produced-by-group',
-      {
+      withRecipeBootstrapCacheSchema({
         itemId,
         machineType,
         machineKey: machineKey || null,
@@ -2542,7 +2550,7 @@ export const api = {
         offset: options?.offset ?? 0,
         limit: options?.limit ?? null,
         includeRecipeIds: options?.includeRecipeIds === true,
-      },
+      }),
       response.data,
     );
     return response.data;
@@ -2559,7 +2567,7 @@ export const api = {
     if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
       const persistent = await readPersistentRuntimePayload<RecipeBootstrapMachineGroupPayload>(
         'recipe-bootstrap-used-in-group',
-        {
+        withRecipeBootstrapCacheSchema({
           itemId,
           machineType,
           machineKey: machineKey || null,
@@ -2567,7 +2575,7 @@ export const api = {
           offset: options?.offset ?? 0,
           limit: options?.limit ?? null,
           includeRecipeIds: options?.includeRecipeIds === true,
-        },
+        }),
       );
       if (persistent) {
         return persistent;
@@ -2587,7 +2595,7 @@ export const api = {
             const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
             persistRuntimePayload(
               'recipe-bootstrap-used-in-group',
-              {
+              withRecipeBootstrapCacheSchema({
                 itemId,
                 machineType,
                 machineKey: machineKey || null,
@@ -2595,7 +2603,7 @@ export const api = {
                 offset: options?.offset ?? 0,
                 limit: options?.limit ?? null,
                 includeRecipeIds: options?.includeRecipeIds === true,
-              },
+              }),
               published,
             );
             return published;
@@ -2617,7 +2625,7 @@ export const api = {
     });
     persistRuntimePayload(
       'recipe-bootstrap-used-in-group',
-      {
+      withRecipeBootstrapCacheSchema({
         itemId,
         machineType,
         machineKey: machineKey || null,
@@ -2625,7 +2633,7 @@ export const api = {
         offset: options?.offset ?? 0,
         limit: options?.limit ?? null,
         includeRecipeIds: options?.includeRecipeIds === true,
-      },
+      }),
       response.data,
     );
     return response.data;
@@ -2640,14 +2648,14 @@ export const api = {
     if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
       const persistent = await readPersistentRuntimePayload<RecipeBootstrapCategoryGroupPayload>(
         'recipe-bootstrap-category-group',
-        {
+        withRecipeBootstrapCacheSchema({
           itemId,
           tab,
           categoryKey,
           offset: options?.offset ?? 0,
           limit: options?.limit ?? null,
           includeRecipeIds: options?.includeRecipeIds === true,
-        },
+        }),
       );
       if (persistent) {
         return persistent;
@@ -2667,14 +2675,14 @@ export const api = {
             const published = await fetchPublishedJson<RecipeBootstrapCategoryGroupPayload>(staticPath);
             persistRuntimePayload(
               'recipe-bootstrap-category-group',
-              {
+              withRecipeBootstrapCacheSchema({
                 itemId,
                 tab,
                 categoryKey,
                 offset: options?.offset ?? 0,
                 limit: options?.limit ?? null,
                 includeRecipeIds: options?.includeRecipeIds === true,
-              },
+              }),
               published,
             );
             return published;
@@ -2696,14 +2704,14 @@ export const api = {
     });
     persistRuntimePayload(
       'recipe-bootstrap-category-group',
-      {
+      withRecipeBootstrapCacheSchema({
         itemId,
         tab,
         categoryKey,
         offset: options?.offset ?? 0,
         limit: options?.limit ?? null,
         includeRecipeIds: options?.includeRecipeIds === true,
-      },
+      }),
       response.data,
     );
     return response.data;

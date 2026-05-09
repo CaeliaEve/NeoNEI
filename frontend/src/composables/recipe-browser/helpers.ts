@@ -22,6 +22,76 @@ export interface MachineCategory {
   voltageTier?: string | null;
 }
 
+const MACHINE_CATEGORY_ALIAS_GROUPS: string[][] = [
+  ['工业屠宰场', 'Extreme Entity Crusher', 'Infernal Drops'],
+  ['熔炉', 'Furnace', '烧制', '燃料', 'Smelting', 'Fuel'],
+  ['有序合成', 'Crafting (Shaped)'],
+  ['无序合成', 'Crafting (Shapeless)'],
+  ['Terra Plate', '泰拉凝聚板'],
+  ['Rune Altar', '符文祭坛'],
+  ['Mana Pool', '魔力池'],
+  ['Pure Daisy', '白雏菊'],
+  ['Binding Ritual', '绑定仪式'],
+  ['Blood Altar', '血之祭坛', '血祭坛'],
+  ['Alchemy Array', '炼金阵', '炼金法阵'],
+  ['Alchemy Table', '炼金台'],
+  ['Arcane Infusion', '奥术注魔'],
+  ['Arcane Worktable', '奥术工作台', '奥术合成'],
+  ['Crucible', '坩埚'],
+  ['真空冷冻机', '凛冰冷冻机'],
+  ['电解机', '工业电解机'],
+  ['离心机', '工业离心机'],
+  ['高炉', '工业高炉'],
+  ['搅拌机', '工业搅拌机'],
+];
+
+export const normalizeMachineFamilyName = (name: string): string => {
+  const normalized = `${name ?? ''}`.trim();
+  if (!normalized) return normalized;
+
+  if (/extreme entity crusher|industrial slaughterhouse/i.test(normalized) || normalized.includes('工业屠宰场')) {
+    return '工业屠宰场';
+  }
+  if (isExtremeMachineText(normalized)) {
+    return '无尽工作台';
+  }
+
+  const withoutTier = normalized.replace(/\s*\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)\s*$/i, '').trim();
+  const aliasGroup = MACHINE_CATEGORY_ALIAS_GROUPS.find((aliases) => aliases.includes(withoutTier));
+  return aliasGroup?.[0] ?? withoutTier;
+};
+
+export const buildCanonicalMachineKey = (
+  entry: {
+    machineKey?: string | null;
+    categoryKey?: string | null;
+    name?: string | null;
+    voltageTier?: string | null;
+  },
+): string => {
+  const rawMachineKey = `${entry.machineKey ?? ''}`.trim();
+  if (rawMachineKey) {
+    const [machineType, ...rest] = rawMachineKey.split('::');
+    const normalizedMachineType = normalizeMachineFamilyName(machineType);
+    return `${normalizedMachineType}::${rest.join('::')}`;
+  }
+
+  const rawCategoryKey = `${entry.categoryKey ?? ''}`.trim();
+  if (rawCategoryKey.startsWith('machine:')) {
+    return buildCanonicalMachineKey({
+      machineKey: rawCategoryKey.slice('machine:'.length),
+      voltageTier: entry.voltageTier ?? null,
+    });
+  }
+
+  const normalizedMachineType = normalizeMachineFamilyName(`${entry.name ?? ''}`);
+  if (!normalizedMachineType) {
+    return '';
+  }
+
+  return `${normalizedMachineType}::${entry.voltageTier ?? ''}`;
+};
+
 const isCircuitRecipeType = (recipeType: string): boolean => {
   return (
     recipeType.includes('Circuit') ||
@@ -401,28 +471,8 @@ export const isExtremeMachineText = (text: string): boolean => {
   );
 };
 
-const GT_MACHINE_CATEGORY_ALIAS_GROUPS: string[][] = [
-  ['真空冷冻机', '凛冰冷冻机'],
-  ['电解机', '工业电解机'],
-  ['离心机', '工业离心机'],
-  ['高炉', '工业高炉'],
-  ['搅拌机', '工业搅拌机'],
-];
-
 const normalizeMachineCategoryName = (name: string): string => {
-  if (/extreme entity crusher|industrial slaughterhouse/i.test(name) || name.includes('工业屠宰场')) {
-    return '工业屠宰场';
-  }
-  if (isExtremeMachineText(name)) {
-    return '无尽工作台';
-  }
-
-  const normalized = name.trim();
-  if (!normalized) return normalized;
-
-  const withoutTier = normalized.replace(/\s*\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)\s*$/i, '').trim();
-  const aliasGroup = GT_MACHINE_CATEGORY_ALIAS_GROUPS.find((aliases) => aliases.includes(withoutTier));
-  return aliasGroup?.[0] ?? withoutTier;
+  return normalizeMachineFamilyName(name);
 };
 
 const generateGenericRecipeSignature = (recipe: Recipe): string => {
@@ -611,7 +661,7 @@ const resolveMachineIcon = (recipe: Recipe, getImagePath: (itemId: string) => st
 };
 
 const getMachineKey = (machineName: string, voltageTier?: string | null): string | null => {
-  const normalized = normalizeMachineCategoryName(machineName);
+  const normalized = normalizeMachineFamilyName(machineName);
   if (!normalized) return null;
   return `${normalized}::${voltageTier ?? ''}`;
 };
@@ -785,6 +835,11 @@ export const buildMachineCategorySkeletonsFromSummary = (
 ): MachineCategory[] => {
   return machineGroups.map((group) => {
     const normalizedName = normalizeMachineCategoryName(group.machineType);
+    const canonicalMachineKey = buildCanonicalMachineKey({
+      machineKey: typeof group.machineKey === 'string' ? group.machineKey : null,
+      name: normalizedName,
+      voltageTier: group.voltageTier ?? null,
+    }) || getMachineKey(normalizedName, group.voltageTier);
     return {
       type: 'machine',
       name: normalizedName,
@@ -793,12 +848,8 @@ export const buildMachineCategorySkeletonsFromSummary = (
       recipes: [],
       recipeVariants: new Map(),
       recipeCount: Math.max(0, Number(group.recipeCount ?? 0)),
-      categoryKey: typeof group.machineKey === 'string' && group.machineKey.trim()
-        ? `machine:${group.machineKey.trim()}`
-        : `machine:${getMachineKey(normalizedName, group.voltageTier) ?? `${normalizedName}::${group.voltageTier ?? ''}`}`,
-      machineKey: typeof group.machineKey === 'string' && group.machineKey.trim()
-        ? group.machineKey.trim()
-        : getMachineKey(normalizedName, group.voltageTier),
+      categoryKey: `machine:${canonicalMachineKey ?? `${normalizedName}::${group.voltageTier ?? ''}`}`,
+      machineKey: canonicalMachineKey,
       voltageTier: group.voltageTier ?? null,
     };
   });
@@ -810,10 +861,21 @@ export const buildCategorySkeletonsFromSummary = (
 ): MachineCategory[] => {
   return categories.map((group) => {
     const normalizedName = normalizeMachineCategoryName(group.name);
+    const canonicalMachineKey = group.type === 'machine'
+      ? buildCanonicalMachineKey({
+          machineKey: group.machineKey ?? null,
+          categoryKey: group.categoryKey,
+          name: normalizedName,
+          voltageTier: group.voltageTier ?? null,
+        }) || getMachineKey(normalizedName, group.voltageTier ?? null)
+      : null;
+    const categoryKey = group.type === 'machine'
+      ? `machine:${canonicalMachineKey ?? `${normalizedName}::${group.voltageTier ?? ''}`}`
+      : group.categoryKey;
     return ({
     type: group.type,
     name: normalizedName,
-    categoryKey: group.categoryKey,
+    categoryKey,
     recipeType: group.recipeType || normalizedName,
     machineIcon: getMachineIconPathFromSummary({
       machineType: normalizedName,
@@ -827,7 +889,7 @@ export const buildCategorySkeletonsFromSummary = (
     recipes: [],
     recipeVariants: new Map(),
     recipeCount: Math.max(0, Number(group.recipeCount ?? 0)),
-    machineKey: group.machineKey ?? null,
+    machineKey: canonicalMachineKey,
     voltageTier: group.voltageTier ?? null,
   });
   });

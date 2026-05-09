@@ -5,6 +5,7 @@ import type { RecipeGraph } from '../../domain/recipeGraph';
 import type { RecipeIndexes } from '../../utils/recipeIndexing';
 import {
   applySelectedVariants,
+  buildCanonicalMachineKey,
   buildCategorySkeletonsFromSummary,
   buildMachineCategories,
   buildMachineCategorySkeletonsFromSummary,
@@ -64,22 +65,7 @@ export const useRecipeBrowserSelectors = ({
       voltageTier?: string | null;
     },
   ): string => {
-    const machineKey = `${entry.machineKey ?? ''}`.trim();
-    if (machineKey) {
-      return machineKey;
-    }
-
-    const categoryKey = `${entry.categoryKey ?? ''}`.trim();
-    if (categoryKey.startsWith('machine:')) {
-      return categoryKey.slice('machine:'.length);
-    }
-
-    const name = `${entry.name ?? ''}`.trim();
-    if (!name) {
-      return '';
-    }
-
-    return `${name}::${entry.voltageTier ?? ''}`;
+    return buildCanonicalMachineKey(entry);
   };
 
   const shouldPreferMachineSummaryGroups = (
@@ -277,10 +263,6 @@ export const useRecipeBrowserSelectors = ({
     if (machineSummaryByKey.size > 0 && summaryCategories.length > 0) {
       const remainingMachineSummaries = new Map(machineSummaryByKey);
       summaryCategories = summaryCategories.map((category) => {
-        if (category.type !== 'machine') {
-          return category;
-        }
-
         const summaryKey = normalizeSummaryMachineKey({
           categoryKey: category.categoryKey,
           machineKey: category.machineKey,
@@ -293,6 +275,9 @@ export const useRecipeBrowserSelectors = ({
         }
 
         remainingMachineSummaries.delete(summaryKey);
+        if (category.type !== 'machine') {
+          return category;
+        }
         return {
           ...category,
           machineKey: machineSummary.machineKey ?? category.machineKey ?? null,

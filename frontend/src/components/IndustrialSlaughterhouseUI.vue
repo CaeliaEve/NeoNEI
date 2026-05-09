@@ -437,11 +437,6 @@ const flagRows = computed(() => {
   return flags;
 });
 
-const carrierLabel = computed(() => {
-  if (inputCandidates.value.length >= 3) return '容器 / 捕获载体';
-  if (inputCandidates.value.length > 0) return '输入载体';
-  return '未记录输入载体';
-});
 
 watch(() => entityModel.value?.modelUrl ?? '', () => {
   entityModelError.value = '';
