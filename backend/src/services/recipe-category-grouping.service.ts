@@ -111,13 +111,27 @@ function getCombinedRecipeText(recipe: RecipeLike): string {
 }
 
 function isExtremeMachineText(text: string): boolean {
-  const lower = text.toLowerCase();
+  const source = `${text ?? ''}`;
+  const lower = source.toLowerCase();
+
+  if (
+    lower.includes('extreme entity crusher')
+    || lower.includes('industrial slaughterhouse')
+    || lower.includes('infernal drops')
+    || lower.includes('eec')
+    || source.includes('?????')
+    || source.includes('????')
+  ) {
+    return false;
+  }
+
   return lower.includes('extreme crafting')
     || lower.includes('dire crafting')
+    || lower.includes('avaritia')
     || lower.includes('extreme')
     || lower.includes('dire')
-    || text.includes('终极合成')
-    || text.includes('无尽');
+    || source.includes('??????')
+    || source.includes('???');
 }
 
 function normalizeMachineCategoryName(name: string): string {
@@ -127,6 +141,19 @@ function normalizeMachineCategoryName(name: string): string {
 
   const normalized = normalizeText(name);
   if (!normalized) return normalized;
+  const lower = normalized.toLowerCase();
+  if (lower === 'extreme entity crusher' || lower === 'infernal drops') {
+    return '工业屠宰场';
+  }
+  if (lower === 'furnace' || lower === 'smelting' || lower === 'fuel' || normalized === '烧制' || normalized === '燃料') {
+    return '熔炉';
+  }
+  if (lower === 'crafting (shaped)') {
+    return '有序合成';
+  }
+  if (lower === 'crafting (shapeless)') {
+    return '无序合成';
+  }
 
   const withoutTier = normalized.replace(/\s*\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)\s*$/i, '').trim();
   const aliasGroup = GT_MACHINE_CATEGORY_ALIAS_GROUPS.find((aliases) => aliases.includes(withoutTier));
@@ -139,6 +166,9 @@ function isGenericCraftingLabel(name: string): boolean {
     || normalized === 'crafting table'
     || normalized === 'crafting (shaped)'
     || normalized === 'crafting (shapeless)'
+    || normalized === 'furnace'
+    || normalized === 'smelting'
+    || normalized === 'fuel'
     || normalized === 'workbench'
     || normalized === 'minecraft:crafting'
     || normalized === '有序合成'
@@ -185,8 +215,8 @@ function getCraftingCategoryName(recipe: RecipeLike): string {
     return '有序合成';
   }
 
-  if (combined.includes('smelting') || combined.includes('furnace') || combined.includes('烧制') || combined.includes('燃料')) {
-    return 'Furnace';
+  if (combined.includes('smelting') || combined.includes('furnace') || combined.includes('fuel') || combined.includes('???') || combined.includes('???')) {
+    return '??';
   }
 
   return 'Crafting Table';

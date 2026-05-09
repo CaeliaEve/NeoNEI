@@ -261,6 +261,10 @@ export interface IndexedRecipesServiceOptions {
 }
 
 const MACHINE_TYPE_ALIAS_GROUPS: string[][] = [
+  ['工业屠宰场', 'Extreme Entity Crusher', 'Infernal Drops'],
+  ['熔炉', 'Furnace', '烧制', '燃料'],
+  ['有序合成', 'Crafting (Shaped)'],
+  ['无序合成', 'Crafting (Shapeless)'],
   ['Terra Plate', '泰拉凝聚板'],
   ['Rune Altar', '符文祭坛'],
   ['Mana Pool', '魔力池'],
@@ -286,6 +290,68 @@ export function normalizeMachineFamilyName(machineType: string): string {
   const withoutTier = normalized.replace(/\s*\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)\s*$/i, '').trim();
   const group = MACHINE_TYPE_ALIAS_GROUPS.find((aliases) => aliases.includes(withoutTier));
   return group?.[0] ?? withoutTier;
+}
+
+function normalizeCraftingCategoryName(name: string): string {
+  const normalized = `${name ?? ''}`.trim();
+  const lower = normalized.toLowerCase();
+  if (!normalized) return normalized;
+  if (lower === 'crafting (shaped)') return '有序合成';
+  if (lower === 'crafting (shapeless)') return '无序合成';
+  if (lower === 'furnace' || lower === 'smelting' || lower === 'fuel') return '熔炉';
+  if (normalized === '烧制' || normalized === '燃料') return '熔炉';
+  return normalized;
+}
+
+function normalizeCategoryGroups(categoryGroups: RecipeCategorySummary[]): RecipeCategorySummary[] {
+  const merged = new Map<string, RecipeCategorySummary>();
+
+  for (const group of categoryGroups) {
+    if (group.type === 'machine') {
+      const machineSource = `${group.machineKey ?? ''}`.trim()
+        ? `${group.machineKey ?? ''}`.trim().split('::')[0]
+        : `${group.name ?? ''}`.trim();
+      const machineType = normalizeMachineFamilyName(machineSource);
+      if (!machineType) continue;
+      const voltageTier = group.voltageTier ?? null;
+      const machineKey = `${machineType}::${voltageTier ?? ''}`;
+      const categoryKey = `machine:${machineKey}`;
+      const existing = merged.get(categoryKey);
+      if (existing) {
+        existing.recipeCount += Math.max(0, Number(group.recipeCount ?? 0));
+        continue;
+      }
+      merged.set(categoryKey, {
+        ...group,
+        name: machineType,
+        recipeType: machineType,
+        categoryKey,
+        machineKey,
+        voltageTier,
+        machineIcon: group.machineIcon ?? getMachineIconItem(machineType) ?? null,
+      });
+      continue;
+    }
+
+    const normalizedName = normalizeCraftingCategoryName(group.name || group.recipeType || group.categoryKey);
+    const categoryKey = `crafting:${normalizedName}`;
+    const existing = merged.get(categoryKey);
+    if (existing) {
+      existing.recipeCount += Math.max(0, Number(group.recipeCount ?? 0));
+      continue;
+    }
+    merged.set(categoryKey, {
+      ...group,
+      type: 'crafting',
+      name: normalizedName,
+      recipeType: normalizedName,
+      categoryKey,
+      machineKey: null,
+      voltageTier: null,
+    });
+  }
+
+  return Array.from(merged.values());
 }
 
 function normalizeMachineGroups(groups: MachineGroupSummary[]): MachineGroupSummary[] {
@@ -390,12 +456,12 @@ function projectMachineGroupsToCategorySummaries(machineGroups: MachineGroupSumm
 export function normalizeItemRecipeSummary(summary: ItemRecipeSummaryResponse): ItemRecipeSummaryResponse {
   const producedByMachineGroups = normalizeMachineGroups(summary.producedByMachineGroups || summary.machineGroups || []);
   const usedInMachineGroups = normalizeMachineGroups(summary.usedInMachineGroups || []);
-  const rawProducedByCategoryGroups = Array.isArray(summary.producedByCategoryGroups)
+  const rawProducedByCategoryGroups = normalizeCategoryGroups(Array.isArray(summary.producedByCategoryGroups)
     ? summary.producedByCategoryGroups
-    : [];
-  const rawUsedInCategoryGroups = Array.isArray(summary.usedInCategoryGroups)
+    : []);
+  const rawUsedInCategoryGroups = normalizeCategoryGroups(Array.isArray(summary.usedInCategoryGroups)
     ? summary.usedInCategoryGroups
-    : [];
+    : []);
   const producedByCategoryGroups = shouldProjectMachineGroupsToCategorySummaries(
     rawProducedByCategoryGroups,
     producedByMachineGroups,
@@ -2002,11 +2068,28 @@ export class IndexedRecipesService {
     summary: ItemRecipeSummaryResponse,
   ): Promise<ItemRecipeSummaryResponse> {
     const normalized = normalizeItemRecipeSummary(summary);
+    const materializedProducedByMachineGroups = this.getMaterializedMachineGroupSummaries(itemId, 'produced_by');
+    const materializedUsedInMachineGroups = this.getMaterializedMachineGroupSummaries(itemId, 'used_in');
+    const materializedProducedByCategoryGroups = this.getMaterializedCategoryGroupSummaries(itemId, 'produced_by');
+    const materializedUsedInCategoryGroups = this.getMaterializedCategoryGroupSummaries(itemId, 'used_in');
     const hasProducedByMachineGroups = (normalized.producedByMachineGroups?.length ?? 0) > 0 || (normalized.counts.producedBy ?? 0) <= 0;
     const hasProducedByCategoryGroups = (normalized.producedByCategoryGroups?.length ?? 0) > 0 || (normalized.counts.producedBy ?? 0) <= 0;
     const hasUsedInMachineGroups = (normalized.usedInMachineGroups?.length ?? 0) > 0 || (normalized.counts.usedIn ?? 0) <= 0;
     const hasUsedInCategoryGroups = (normalized.usedInCategoryGroups?.length ?? 0) > 0 || (normalized.counts.usedIn ?? 0) <= 0;
-    if (hasProducedByMachineGroups && hasProducedByCategoryGroups && hasUsedInMachineGroups && hasUsedInCategoryGroups) {
+    const hasMaterializedProducedByMachineGroups = (materializedProducedByMachineGroups?.length ?? 0) > 0;
+    const hasMaterializedUsedInMachineGroups = (materializedUsedInMachineGroups?.length ?? 0) > 0;
+    const hasMaterializedProducedByCategoryGroups = (materializedProducedByCategoryGroups?.length ?? 0) > 0;
+    const hasMaterializedUsedInCategoryGroups = (materializedUsedInCategoryGroups?.length ?? 0) > 0;
+    if (
+      hasProducedByMachineGroups
+      && hasProducedByCategoryGroups
+      && hasUsedInMachineGroups
+      && hasUsedInCategoryGroups
+      && !hasMaterializedProducedByMachineGroups
+      && !hasMaterializedUsedInMachineGroups
+      && !hasMaterializedProducedByCategoryGroups
+      && !hasMaterializedUsedInCategoryGroups
+    ) {
       return normalized;
     }
 
@@ -2016,45 +2099,33 @@ export class IndexedRecipesService {
     const usedInDescriptors = (!hasUsedInMachineGroups || !hasUsedInCategoryGroups)
       ? this.getRelationRecipeDescriptors(itemId, 'used_in')
       : null;
-    const materializedProducedByMachineGroups = !hasProducedByMachineGroups
-      ? this.getMaterializedMachineGroupSummaries(itemId, 'produced_by')
-      : null;
-    const materializedUsedInMachineGroups = !hasUsedInMachineGroups
-      ? this.getMaterializedMachineGroupSummaries(itemId, 'used_in')
-      : null;
-    const materializedProducedByCategoryGroups = !hasProducedByCategoryGroups
-      ? this.getMaterializedCategoryGroupSummaries(itemId, 'produced_by')
-      : null;
-    const materializedUsedInCategoryGroups = !hasUsedInCategoryGroups
-      ? this.getMaterializedCategoryGroupSummaries(itemId, 'used_in')
-      : null;
 
-    const producedByMachineGroups = hasProducedByMachineGroups
-      ? (normalized.producedByMachineGroups ?? normalized.machineGroups ?? [])
+    const producedByMachineGroups = hasMaterializedProducedByMachineGroups
+      ? (materializedProducedByMachineGroups ?? [])
       : (
-        materializedProducedByMachineGroups?.length
-          ? materializedProducedByMachineGroups
+        hasProducedByMachineGroups
+          ? (normalized.producedByMachineGroups ?? normalized.machineGroups ?? [])
           : this.buildMachineGroupSummariesFromDescriptors(producedByDescriptors)
       );
-    const usedInMachineGroups = hasUsedInMachineGroups
-      ? (normalized.usedInMachineGroups ?? [])
+    const usedInMachineGroups = hasMaterializedUsedInMachineGroups
+      ? (materializedUsedInMachineGroups ?? [])
       : (
-        materializedUsedInMachineGroups?.length
-          ? materializedUsedInMachineGroups
+        hasUsedInMachineGroups
+          ? (normalized.usedInMachineGroups ?? [])
           : this.buildMachineGroupSummariesFromDescriptors(usedInDescriptors)
       );
-    const producedByCategoryGroups = hasProducedByCategoryGroups
-      ? (normalized.producedByCategoryGroups ?? [])
+    const producedByCategoryGroups = hasMaterializedProducedByCategoryGroups
+      ? (materializedProducedByCategoryGroups ?? [])
       : (
-        materializedProducedByCategoryGroups?.length
-          ? materializedProducedByCategoryGroups
+        hasProducedByCategoryGroups
+          ? (normalized.producedByCategoryGroups ?? [])
           : this.buildCategoryGroupSummariesFromDescriptors(producedByDescriptors)
       );
-    const usedInCategoryGroups = hasUsedInCategoryGroups
-      ? (normalized.usedInCategoryGroups ?? [])
+    const usedInCategoryGroups = hasMaterializedUsedInCategoryGroups
+      ? (materializedUsedInCategoryGroups ?? [])
       : (
-        materializedUsedInCategoryGroups?.length
-          ? materializedUsedInCategoryGroups
+        hasUsedInCategoryGroups
+          ? (normalized.usedInCategoryGroups ?? [])
           : this.buildCategoryGroupSummariesFromDescriptors(usedInDescriptors)
       );
 
