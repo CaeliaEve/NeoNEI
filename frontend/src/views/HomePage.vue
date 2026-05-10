@@ -1932,24 +1932,23 @@ const saveSettings = () => {
   position: relative;
   overflow: hidden;
   border-radius: 22px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.10);
   background:
-    radial-gradient(circle at 50% 50%, rgba(249, 115, 22, 0.08), transparent 34%),
-    linear-gradient(180deg, rgba(9, 14, 22, 0.96), rgba(4, 8, 14, 0.99));
+    linear-gradient(180deg, rgba(11, 16, 24, 0.94), rgba(7, 11, 17, 0.97));
   box-shadow:
     0 18px 42px rgba(2, 8, 23, 0.40),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
-.modal-stacked-furnace-recipes::after {
+.modal-stacked-furnace-recipes::before {
   content: '';
   position: absolute;
-  left: 26px;
-  right: 26px;
-  top: 50%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.18), transparent);
+  inset: 10px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.022);
   pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.008), transparent 20%, transparent 80%, rgba(255, 255, 255, 0.004));
 }
 
 .modal-stacked-furnace-recipes :deep(.furnace-ui) {
@@ -1958,57 +1957,8 @@ const saveSettings = () => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 6px 12px;
+  padding: 4px 10px;
   overflow: visible;
-}
-
-.modal-stacked-furnace-recipes :deep(.scene-bg) {
-  display: none;
-}
-
-.modal-stacked-furnace-recipes :deep(.furnace-shell) {
-  width: min(940px, 100%);
-  min-height: 0;
-  height: 100%;
-  grid-template-columns: 164px minmax(220px, 1fr) 164px;
-  gap: 26px;
-  padding: 16px 34px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.modal-stacked-furnace-recipes :deep(.furnace-shell::before) {
-  inset: 16px 28px;
-  border-color: rgba(148, 163, 184, 0.05);
-  background: radial-gradient(circle at 50% 50%, rgba(249, 115, 22, 0.045), transparent 30%);
-}
-
-.modal-stacked-furnace-recipes :deep(.furnace-panel) {
-  min-height: 136px;
-  padding: 24px 18px 18px;
-}
-
-.modal-stacked-furnace-recipes :deep(.heat-core) {
-  min-height: 190px;
-}
-
-.modal-stacked-furnace-recipes :deep(.thermal-core) {
-  width: 84px;
-  height: 84px;
-  border-radius: 22px;
-}
-
-.modal-stacked-furnace-recipes :deep(.thermal-track) {
-  left: 0;
-  right: 0;
-  height: 82px;
-}
-
-.modal-stacked-furnace-recipes :deep(.thermal-caption) {
-  bottom: 14px;
-  font-size: 8px;
 }
 
 .state-panel {

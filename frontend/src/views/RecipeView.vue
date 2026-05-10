@@ -1410,44 +1410,32 @@ onBeforeUnmount(() => {
   position: relative;
   overflow: hidden;
   border-radius: 28px;
-  border: 1px solid rgba(148, 163, 184, 0.18);
+  border: 1px solid rgba(148, 163, 184, 0.10);
   background:
-    radial-gradient(circle at 50% 50%, rgba(249, 115, 22, 0.08), transparent 34%),
-    linear-gradient(180deg, rgba(9, 14, 22, 0.96), rgba(4, 8, 14, 0.99));
+    linear-gradient(180deg, rgba(11, 16, 24, 0.94), rgba(7, 11, 17, 0.97));
   box-shadow:
-    0 22px 58px rgba(2, 8, 23, 0.46),
+    0 22px 58px rgba(2, 8, 23, 0.42),
     inset 0 1px 0 rgba(255, 255, 255, 0.05);
 }
 
 .stacked-furnace-recipes::before {
   content: '';
   position: absolute;
-  inset: 28px;
+  inset: 12px;
   border-radius: 22px;
-  border: 1px solid rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.025);
   pointer-events: none;
   background:
-    linear-gradient(rgba(180, 205, 235, 0.018) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(180, 205, 235, 0.018) 1px, transparent 1px);
-  background-size: 24px 24px;
-  mask-image: radial-gradient(circle at center, #000 0 64%, transparent 96%);
-}
-
-.stacked-furnace-recipes::after {
-  content: '';
-  position: absolute;
-  left: 36px;
-  right: 36px;
-  top: 50%;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.20), transparent);
-  pointer-events: none;
+    linear-gradient(180deg, rgba(255, 255, 255, 0.008), transparent 20%, transparent 80%, rgba(255, 255, 255, 0.004));
 }
 
 .stacked-furnace-recipes :deep(.recipe-display-wrapper) {
   position: relative;
   z-index: 1;
   min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .stacked-furnace-recipes :deep(.furnace-ui) {
@@ -1456,62 +1444,8 @@ onBeforeUnmount(() => {
   width: 100%;
   height: 100%;
   min-height: 0;
-  padding: 8px 16px;
+  padding: 6px 14px;
   overflow: visible;
-}
-
-.stacked-furnace-recipes :deep(.scene-bg) {
-  display: none;
-}
-
-.stacked-furnace-recipes :deep(.furnace-shell) {
-  width: min(1020px, 100%);
-  min-height: 0;
-  height: 100%;
-  grid-template-columns: 180px minmax(250px, 1fr) 180px;
-  gap: 34px;
-  padding: 18px 44px;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.stacked-furnace-recipes :deep(.furnace-shell::before) {
-  inset: 18px 32px;
-  border-color: rgba(148, 163, 184, 0.05);
-  background: radial-gradient(circle at 50% 50%, rgba(249, 115, 22, 0.045), transparent 30%);
-}
-
-.stacked-furnace-recipes :deep(.furnace-panel) {
-  min-height: 150px;
-  padding: 26px 20px 20px;
-  border-radius: 20px;
-}
-
-.stacked-furnace-recipes :deep(.heat-core) {
-  min-height: 210px;
-}
-
-.stacked-furnace-recipes :deep(.thermal-core) {
-  width: 92px;
-  height: 92px;
-  border-radius: 24px;
-}
-
-.stacked-furnace-recipes :deep(.thermal-track) {
-  left: 0;
-  right: 0;
-  height: 88px;
-}
-
-.stacked-furnace-recipes :deep(.thermal-line) {
-  opacity: 0.56;
-}
-
-.stacked-furnace-recipes :deep(.thermal-caption) {
-  bottom: 18px;
-  font-size: 9px;
 }
 
 .recipe-stage-state-panel {
