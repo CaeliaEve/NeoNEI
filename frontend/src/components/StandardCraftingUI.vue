@@ -38,6 +38,121 @@ const totalSlots = computed(() => gridDims.value.width * gridDims.value.height);
 const craftingGrid = shallowRef<Array<SlotItem | null>>([]);
 const hoveredSlot = ref<number | null>(null);
 
+// === Constellation Particle System (from FurnaceUI) ===
+const bgCanvas = ref<HTMLCanvasElement | null>(null);
+const uiRoot = ref<HTMLElement | null>(null);
+let animFrameId = 0;
+let resizeObs: ResizeObserver | null = null;
+
+interface Star {
+  x: number; y: number;
+  vx: number; vy: number;
+  radius: number;
+  baseAlpha: number;
+  phase: number;
+  phaseSpeed: number;
+}
+
+const STAR_COUNT = 36;
+const CONNECTION_DIST = 72;
+let stars: Star[] = [];
+let cW = 0;
+let cH = 0;
+
+const initStars = () => {
+  stars = [];
+  for (let i = 0; i < STAR_COUNT; i++) {
+    stars.push({
+      x: Math.random() * cW,
+      y: Math.random() * cH,
+      vx: (Math.random() - 0.5) * 0.15,
+      vy: (Math.random() - 0.5) * 0.15,
+      radius: 0.5 + Math.random() * 1.2,
+      baseAlpha: 0.15 + Math.random() * 0.35,
+      phase: Math.random() * Math.PI * 2,
+      phaseSpeed: 0.003 + Math.random() * 0.008,
+    });
+  }
+};
+
+const drawConstellations = () => {
+  const canvas = bgCanvas.value;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, cW, cH);
+  const centerX = cW / 2;
+  const centerY = cH / 2;
+  const now = performance.now() * 0.001;
+
+  for (const s of stars) {
+    s.phase += s.phaseSpeed;
+    s.x += s.vx + Math.sin(s.phase) * 0.08;
+    s.y += s.vy + Math.cos(s.phase * 0.7) * 0.06;
+    const dx = s.x - centerX;
+    const dy = s.y - centerY;
+    const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+    // Keep the star field alive instead of letting every particle slowly collapse
+    // into the center and disappear behind the workbench card. A very light
+    // orbital drift gives the background a stable, NEI-like ambient shimmer.
+    const orbit = 0.00045;
+    s.vx += (-dy / dist) * orbit;
+    s.vy += (dx / dist) * orbit;
+    s.vx *= 0.996;
+    s.vy *= 0.996;
+    if (s.x < -20) s.x = cW + 20;
+    if (s.x > cW + 20) s.x = -20;
+    if (s.y < -20) s.y = cH + 20;
+    if (s.y > cH + 20) s.y = -20;
+  }
+
+  for (let i = 0; i < stars.length; i++) {
+    for (let j = i + 1; j < stars.length; j++) {
+      const a = stars[i], b = stars[j];
+      const ddx = a.x - b.x, ddy = a.y - b.y;
+      const d = Math.sqrt(ddx * ddx + ddy * ddy);
+      if (d < CONNECTION_DIST) {
+        const alpha = (1 - d / CONNECTION_DIST) * 0.12;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.strokeStyle = `rgba(148, 180, 220, ${alpha})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+  }
+
+  for (const s of stars) {
+    const twinkle = s.baseAlpha + Math.sin(now * 2 + s.phase) * 0.1;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+    ctx.fillStyle = `rgba(180, 200, 230, ${twinkle})`;
+    ctx.fill();
+    if (s.radius > 1) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.radius * 3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(148, 180, 220, ${twinkle * 0.15})`;
+      ctx.fill();
+    }
+  }
+  animFrameId = requestAnimationFrame(drawConstellations);
+};
+
+const handleCanvasResize = () => {
+  const el = uiRoot.value;
+  const canvas = bgCanvas.value;
+  if (!el || !canvas) return;
+  const rect = el.getBoundingClientRect();
+  const oldW = cW;
+  cW = rect.width;
+  cH = rect.height;
+  canvas.width = cW;
+  canvas.height = cH;
+  if (stars.length === 0 || (oldW === 0 && cW > 0)) initStars();
+};
+
+// === Recipe Logic (preserved) ===
 let alternativeCycleTimer: number | null = null;
 
 const stopAlternativeCycle = () => {
@@ -60,7 +175,7 @@ const startAlternativeCycle = () => {
       };
     });
     triggerRef(craftingGrid);
-  }, 1800);
+  }, 3000);
 };
 
 const initGrid = async () => {
@@ -72,13 +187,10 @@ const initGrid = async () => {
     const row = Math.floor(slotIndex / gridWidth);
     const col = slotIndex % gridWidth;
     if (row >= recipeData.value.inputs.length || col >= recipeData.value.inputs[row].length) continue;
-
     const itemOrArray = recipeData.value.inputs[row][col];
     if (!itemOrArray) continue;
-
     const itemsArray = Array.isArray(itemOrArray) ? itemOrArray : [itemOrArray];
     const slotItems: SlotVariant[] = [];
-
     for (const item of itemsArray) {
       if (!item?.itemId) continue;
       slotItems.push({
@@ -89,15 +201,10 @@ const initGrid = async () => {
         renderHint: item.renderHint ?? null,
       });
     }
-
     if (slotItems.length > 0) {
-      newGrid[slotIndex] = {
-        items: slotItems,
-        primaryIndex: 0,
-      };
+      newGrid[slotIndex] = { items: slotItems, primaryIndex: 0 };
     }
   }
-
   craftingGrid.value = newGrid;
   triggerRef(craftingGrid);
   startAlternativeCycle();
@@ -105,46 +212,47 @@ const initGrid = async () => {
 
 const outputItem = computed(() => recipeData.value.outputs?.[0] ?? null);
 const hasOutput = computed(() => Boolean(outputItem.value?.itemId));
+const handleItemClick = (itemId: string) => { playClick(); emit('item-click', itemId); };
 
-const handleItemClick = (itemId: string) => {
-  playClick();
-  emit('item-click', itemId);
-};
-
-const totalAlternatives = computed(() => {
-  let total = 0;
-  craftingGrid.value.forEach((slot) => {
-    if (slot?.items && slot.items.length > 1) {
-      total += slot.items.length;
-    }
-  });
-  return total;
-});
-
-watch(
-  () => props.recipe,
-  async () => {
-    await initGrid();
-  },
-  { deep: true },
-);
+watch(() => props.recipe, async () => { await initGrid(); }, { deep: true });
 
 onMounted(async () => {
   await initGrid();
+  handleCanvasResize();
+  resizeObs = new ResizeObserver(handleCanvasResize);
+  if (uiRoot.value) resizeObs.observe(uiRoot.value);
+  animFrameId = requestAnimationFrame(drawConstellations);
 });
 
 onBeforeUnmount(() => {
   stopAlternativeCycle();
+  cancelAnimationFrame(animFrameId);
+  if (resizeObs) resizeObs.disconnect();
 });
 </script>
 
 <template>
-  <div class="workbench-ui" :style="{ '--grid-w': String(gridDims.width), '--grid-h': String(gridDims.height) }">
-    <div class="scene-bg" aria-hidden="true" />
+  <div class="synthesis-ui" ref="uiRoot">
 
-    <div class="matrix-shell">
-      <section class="matrix-panel">
-        <div class="slot-grid">
+    <div class="matte-backdrop" aria-hidden="true" />
+    <canvas ref="bgCanvas" class="constellation-canvas" aria-hidden="true" />
+    <div class="ambient-field" aria-hidden="true">
+      <span class="ambient-orb ambient-orb-a" />
+      <span class="ambient-orb ambient-orb-b" />
+      <span class="ambient-orb ambient-orb-c" />
+    </div>
+    <div class="volumetric-rays" aria-hidden="true">
+      <span class="light-ray ray-1" />
+      <span class="light-ray ray-2" />
+      <span class="light-ray ray-3" />
+      <span class="light-ray ray-4" />
+    </div>
+
+    <div class="synthesis-deck">
+      <div class="workbench-track">
+
+        <!-- 3脳3 GRID -->
+        <div class="grid-matrix">
           <template v-for="(slotItem, index) in craftingGrid" :key="`slot-${index}`">
             <div
               v-if="slotItem"
@@ -158,479 +266,510 @@ onBeforeUnmount(() => {
                 :count="slotItem.items[slotItem.primaryIndex].count"
                 @click="handleItemClick(slotItem.items[slotItem.primaryIndex].itemId)"
               >
-                <div class="slot-item">
+                <div class="slot-item magnetic-hover">
                   <AnimatedItemIcon
                     :item-id="slotItem.items[slotItem.primaryIndex].itemId"
                     :render-asset-ref="slotItem.items[slotItem.primaryIndex].renderAssetRef || null"
                     :image-file-name="slotItem.items[slotItem.primaryIndex].imageFileName || null"
-                    :size="58"
-                    class="item-icon"
-                    :class="{ 'cycling-icon': slotItem.items.length > 1 }"
+                    :size="42"
+                    class="item-icon dissolve-swap"
+                    :key="slotItem.primaryIndex"
                   />
-                  <span v-if="slotItem.items[slotItem.primaryIndex].count > 1" class="item-count">
-                    {{ slotItem.items[slotItem.primaryIndex].count }}
-                  </span>
                 </div>
               </RecipeItemTooltip>
-              <div v-if="slotItem.items.length > 1" class="alternative-indicator">
+              <span v-if="slotItem.items[slotItem.primaryIndex].count > 1" class="minimal-badge count-badge">
+                x{{ slotItem.items[slotItem.primaryIndex].count }}
+              </span>
+              <div v-if="slotItem.items.length > 1" class="minimal-badge alt-badge">
                 {{ slotItem.primaryIndex + 1 }}/{{ slotItem.items.length }}
               </div>
             </div>
             <div v-else class="craft-slot empty" />
           </template>
         </div>
-      </section>
 
-      <div class="fusion-lane" aria-hidden="true">
-        <div class="lane-arrow">
+        <!-- HEATING CORRIDOR -->
+        <div class="heating-corridor" aria-hidden="true">
           <span class="fusion-rail rail-top" />
           <span class="fusion-rail rail-bottom" />
           <span class="fusion-pulse pulse-a" />
           <span class="fusion-pulse pulse-b" />
           <span class="fusion-pulse pulse-c" />
         </div>
+
+        <!-- OUTPUT -->
+        <div class="track-node node-output">
+          <RecipeItemTooltip
+            v-if="hasOutput"
+            :item-id="outputItem!.itemId"
+            :count="outputItem!.count"
+            @click="handleItemClick(outputItem!.itemId)"
+          >
+            <div class="slot-item magnetic-hover output-lift">
+              <AnimatedItemIcon
+                :item-id="outputItem!.itemId"
+                :render-asset-ref="outputItem!.renderAssetRef || null"
+                :image-file-name="outputItem!.imageFileName || null"
+                :size="64"
+                class="item-icon"
+              />
+            </div>
+          </RecipeItemTooltip>
+          <span v-if="hasOutput && outputItem!.count > 1" class="minimal-badge count-badge">
+            x{{ outputItem!.count }}
+          </span>
+          <div class="slot-item empty" v-else-if="!hasOutput" />
+        </div>
+
       </div>
-
-      <section class="result-panel">
-        <RecipeItemTooltip
-          v-if="hasOutput"
-          :item-id="outputItem!.itemId"
-          :count="outputItem!.count"
-          @click="handleItemClick(outputItem!.itemId)"
-        >
-          <div class="output-slot" @mouseenter="hoveredSlot = -1" @mouseleave="hoveredSlot = null">
-            <AnimatedItemIcon
-              :item-id="outputItem!.itemId"
-              :render-asset-ref="outputItem!.renderAssetRef || null"
-              :image-file-name="outputItem!.imageFileName || null"
-              :size="74"
-              class="item-icon output-icon"
-            />
-            <span v-if="outputItem!.count > 1" class="item-count">{{ outputItem!.count }}</span>
-          </div>
-        </RecipeItemTooltip>
-        <div v-else class="output-slot empty" />
-      </section>
     </div>
-
   </div>
 </template>
 
 <style scoped>
-.workbench-ui {
-  --wb-accent-rgb: 148, 163, 184;
-  --wb-accent-strong-rgb: 225, 232, 241;
-  --wb-output-rgb: 245, 208, 138;
-  --slot-size: 82px;
-  --slot-icon-size: 58px;
-  --gap-size: 14px;
+.synthesis-ui {
+  --lab-bg: #0c121b;
+  --lab-surface: rgba(17, 24, 36, 0.92);
+  --lab-border: rgba(148, 163, 184, 0.12);
+  --lab-border-soft: rgba(148, 163, 184, 0.08);
+  --lab-heat: 245, 158, 11;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: min(1180px, calc(100vw - 56px));
-  min-height: 560px;
-  height: min(680px, calc(100vh - 220px));
+  width: 100%;
+  min-height: 480px;
+  height: 100%;
+  flex: 1;
   padding: 24px;
+  background: transparent;
   overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
 }
 
-.scene-bg {
+.constellation-canvas {
   position: absolute;
   inset: 0;
+  width: 100%;
+  height: 100%;
   pointer-events: none;
-  background:
-    radial-gradient(circle at 28% 28%, rgba(132, 180, 255, 0.10), transparent 34%),
-    radial-gradient(circle at 78% 64%, rgba(245, 208, 138, 0.08), transparent 30%),
-    linear-gradient(180deg, rgba(9, 13, 20, 0.96), rgba(5, 9, 15, 0.99));
+  z-index: 1;
 }
 
-.scene-bg::before {
-  content: '';
+.matte-backdrop {
   position: absolute;
   inset: 0;
-  background:
-    linear-gradient(rgba(170, 195, 225, 0.026) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(170, 195, 225, 0.026) 1px, transparent 1px);
-  background-size: 24px 24px;
-  opacity: 0.72;
-  mask-image: radial-gradient(circle at center, #000 0 62%, transparent 96%);
-}
-
-.scene-bg::after {
-  content: '';
-  position: absolute;
-  inset: -20%;
-  pointer-events: none;
-  background: linear-gradient(110deg, transparent 28%, rgba(128, 168, 220, 0.11) 46%, rgba(245, 208, 138, 0.08) 52%, transparent 68%);
-  transform: translateX(-26%);
-  animation: workbenchSweep 9s ease-in-out infinite;
-}
-
-.matrix-shell {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  grid-template-columns: 360px 118px 248px;
-  align-items: center;
-  gap: 34px;
-  width: min(960px, 100%);
-  justify-content: center;
-  min-height: 500px;
-  padding: 54px 64px 52px;
-  border-radius: 28px;
-  border: 1px solid rgba(var(--wb-accent-rgb), 0.22);
-  background:
-    radial-gradient(circle at 31% 36%, rgba(96, 165, 250, 0.12), transparent 44%),
-    radial-gradient(circle at 72% 50%, rgba(var(--wb-output-rgb), 0.12), transparent 30%),
-    linear-gradient(180deg, rgba(9, 13, 20, 0.95), rgba(6, 10, 16, 0.98));
-  box-shadow:
-    0 22px 58px rgba(2, 8, 23, 0.48),
-    0 0 0 1px rgba(96, 165, 250, 0.08),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
-}
-
-.matrix-shell::before {
-  content: '';
-  position: absolute;
-  inset: 28px;
-  border-radius: 22px;
-  pointer-events: none;
-  background:
-    linear-gradient(90deg, transparent 0 39%, rgba(148, 163, 184, 0.04) 50%, transparent 61%),
-    radial-gradient(circle at 38% 50%, rgba(96, 165, 250, 0.08), transparent 36%),
-    radial-gradient(circle at 68% 50%, rgba(var(--wb-output-rgb), 0.08), transparent 26%);
-  opacity: 0.9;
-}
-
-.matrix-panel,
-.result-panel {
-  position: relative;
-  z-index: 1;
-  min-height: 0;
-  padding: 32px;
-  border-radius: 24px;
-  border: 1px solid rgba(var(--wb-accent-rgb), 0.2);
-  background:
-    radial-gradient(circle at 50% 0%, rgba(148, 163, 184, 0.10), transparent 48%),
-    linear-gradient(180deg, rgba(22, 31, 45, 0.96), rgba(7, 13, 22, 0.99));
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
-    0 12px 28px rgba(2, 8, 23, 0.28),
-    0 0 22px rgba(96, 165, 250, 0.08);
-}
-
-.matrix-panel {
-  justify-self: end;
-  width: 360px;
-  height: 360px;
-  display: grid;
-  place-items: center;
-  border-color: rgba(128, 168, 220, 0.62);
-  background:
-    radial-gradient(circle at 50% 0%, rgba(128, 168, 220, 0.18), transparent 50%),
-    linear-gradient(180deg, rgba(23, 34, 50, 0.98), rgba(6, 12, 22, 0.99));
-}
-
-.result-panel {
-  width: 248px;
-  height: 248px;
-  display: grid;
-  place-items: center;
-  justify-self: start;
-  border-color: rgba(var(--wb-output-rgb), 0.62);
-  background:
-    radial-gradient(circle at 50% 0%, rgba(var(--wb-output-rgb), 0.24), transparent 50%),
-    linear-gradient(180deg, rgba(44, 34, 19, 0.98), rgba(13, 10, 7, 0.99));
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.04),
-    0 12px 28px rgba(2, 8, 23, 0.28),
-    0 0 26px rgba(var(--wb-output-rgb), 0.10);
-}
-
-.matrix-panel::after,
-.result-panel::after {
-  content: '';
-  position: absolute;
-  inset: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.04);
   border-radius: 18px;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(59, 130, 246, 0.028) 0%, transparent 40%),
+    linear-gradient(180deg, rgba(10, 15, 22, 0.28), rgba(8, 12, 18, 0.42));
   pointer-events: none;
 }
 
-.slot-grid {
-  display: grid;
-  grid-template-columns: repeat(var(--grid-w), var(--slot-size));
-  grid-template-rows: repeat(var(--grid-h), var(--slot-size));
-  gap: var(--gap-size);
+.matte-backdrop::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(148, 163, 184, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.035) 1px, transparent 1px);
+  background-size: 28px 28px;
+  opacity: 0.42;
+  mask-image: radial-gradient(ellipse at center, black 16%, transparent 72%);
 }
 
-.craft-slot,
-.output-slot {
-  width: var(--slot-size);
-  height: var(--slot-size);
-  border-radius: 16px;
+.ambient-field {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ambient-orb {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+  border-radius: 50%;
+  opacity: 0.42;
+  will-change: transform, opacity;
+  animation: ambientDrift 14s ease-in-out infinite alternate;
+}
+
+.ambient-orb-a {
+  top: 18%; left: 12%;
+  width: 200px; height: 200px;
+  background: radial-gradient(circle, rgba(96, 165, 250, 0.08) 0%, transparent 55%);
+}
+
+.ambient-orb-b {
+  right: 14%; bottom: 18%;
+  width: 180px; height: 180px;
+  background: radial-gradient(circle, rgba(var(--lab-heat), 0.07) 0%, transparent 55%);
+  animation-delay: -4s;
+}
+
+.ambient-orb-c {
+  top: 42%; left: 50%;
+  width: 140px; height: 140px;
+  background: radial-gradient(circle, rgba(148, 163, 184, 0.06) 0%, transparent 55%);
+  animation-delay: -8s;
+}
+
+.volumetric-rays {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.light-ray {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 4px; height: 160px;
+  transform-origin: center bottom;
+  background: linear-gradient(0deg, rgba(var(--lab-heat), 0.04), transparent 80%);
+  opacity: 0;
+  will-change: opacity;
+  animation: ray-pulse 8s ease-in-out infinite;
+}
+
+.ray-1 { transform: translate(-50%, -100%) rotate(-25deg); animation-delay: 0s; }
+.ray-2 { transform: translate(-50%, -100%) rotate(12deg); animation-delay: 2s; height: 120px; }
+.ray-3 { transform: translate(-50%, -100%) rotate(-8deg); animation-delay: 4.5s; height: 140px; }
+.ray-4 { transform: translate(-50%, -100%) rotate(30deg); animation-delay: 6s; height: 100px; }
+
+.synthesis-deck {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  width: 100%;
+}
+
+.synthesis-deck::before {
+  content: '';
+  position: absolute;
+  width: min(680px, 82vw);
+  height: 260px;
+  border-radius: 999px;
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(26, 38, 56, 0.42) 0%, rgba(20, 30, 44, 0.22) 36%, transparent 72%),
+    radial-gradient(ellipse at 36% 50%, rgba(96, 165, 250, 0.075) 0%, transparent 58%),
+    radial-gradient(ellipse at 70% 50%, rgba(var(--lab-heat), 0.06) 0%, transparent 56%);
+  filter: blur(10px);
+  opacity: 0.92;
+  pointer-events: none;
+}
+
+.synthesis-deck::after {
+  content: '';
+  position: absolute;
+  width: min(540px, 72vw);
+  height: 150px;
+  border-radius: 999px;
+  background: radial-gradient(ellipse at 50% 50%, rgba(148, 163, 184, 0.075) 0%, transparent 70%);
+  filter: blur(26px);
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.workbench-track {
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid rgba(150, 190, 245, 0.42);
   background:
-    radial-gradient(circle at 34% 28%, rgba(210, 230, 255, 0.16), transparent 42%),
-    linear-gradient(180deg, rgba(15, 26, 42, 0.98), rgba(4, 9, 18, 0.99));
+    radial-gradient(ellipse at 50% 50%, rgba(28, 40, 58, 0.64) 0%, rgba(18, 26, 39, 0.58) 46%, rgba(9, 14, 22, 0.45) 100%),
+    linear-gradient(180deg, rgba(17, 24, 36, 0.86), rgba(10, 15, 23, 0.78));
+  border-radius: 28px;
+  padding: 18px 28px;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.06),
-    0 6px 12px rgba(2, 8, 23, 0.32),
-    0 0 14px rgba(96, 165, 250, 0.12);
-  transition: transform 0.22s ease, border-color 0.22s ease, box-shadow 0.22s ease;
-  overflow: hidden;
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    inset 0 -14px 24px rgba(0,0,0,0.18),
+    inset 0 0 34px rgba(148, 163, 184, 0.025),
+    0 0 0 1px rgba(148, 163, 184, 0.075),
+    0 18px 38px rgba(2, 6, 12, 0.22),
+    0 0 64px rgba(15, 23, 42, 0.26);
+  width: fit-content;
+  max-width: 100%;
+  min-height: 112px;
+  gap: 32px;
+  backdrop-filter: blur(14px) saturate(116%);
+  overflow: visible;
+  isolation: isolate;
 }
 
-.craft-slot::before,
-.output-slot::before {
+.workbench-track::before {
   content: '';
   position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: radial-gradient(circle at 30% 25%, rgba(255, 255, 255, 0.14), transparent 48%);
-  opacity: 0.55;
+  inset: -22px -34px;
+  border-radius: 42px;
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(22, 32, 48, 0.44) 0%, rgba(14, 22, 34, 0.20) 44%, transparent 74%),
+    linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.045), transparent);
+  filter: blur(18px);
+  opacity: 0.9;
+  z-index: -2;
   pointer-events: none;
 }
 
-.craft-slot.empty,
-.output-slot.empty {
-  background:
-    linear-gradient(180deg, rgba(9, 15, 24, 0.82), rgba(4, 8, 15, 0.88));
-  border-color: rgba(150, 190, 245, 0.16);
-  opacity: 0.52;
+.workbench-track::after {
+  content: '';
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(255,255,255,0.055), rgba(148, 163, 184, 0.045) 45%, rgba(var(--lab-heat), 0.055));
+  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  pointer-events: none;
+  opacity: 0.72;
+}
+
+.grid-matrix {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, 56px);
+  grid-template-rows: repeat(3, 56px);
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.grid-matrix::before {
+  content: '';
+  position: absolute;
+  inset: -14px;
+  border-radius: 24px;
+  background: radial-gradient(ellipse at 50% 50%, rgba(2, 6, 12, 0.36), transparent 72%);
+  z-index: -1;
+  pointer-events: none;
+}
+
+.craft-slot {
+  width: 56px;
+  height: 56px;
+  border-radius: 14px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(180deg, rgba(6, 10, 16, 0.95), rgba(11, 17, 26, 0.98));
+  box-shadow:
+    inset 0 4px 10px rgba(0,0,0,0.68),
+    inset 0 1px 0 rgba(255,255,255,0.03),
+    0 0 0 1px var(--lab-border-soft);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease;
+}
+
+.craft-slot.empty {
+  opacity: 0.35;
+  background: linear-gradient(180deg, rgba(4, 7, 12, 0.85), rgba(8, 12, 20, 0.90));
 }
 
 .craft-slot.is-hovered,
-.craft-slot:hover,
-.output-slot:hover {
-  transform: translateY(-1px);
-  border-color: rgba(103, 232, 249, 0.7);
+.craft-slot:hover:not(.empty) {
+  transform: translateY(-1px) scale(1.04);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 0 0 1px rgba(34, 211, 238, 0.18),
-    0 10px 18px rgba(8, 145, 178, 0.2);
+    inset 0 4px 10px rgba(0,0,0,0.68),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    0 0 0 1px rgba(148, 190, 255, 0.22),
+    0 6px 14px rgba(96, 165, 250, 0.12);
 }
 
 .craft-slot.has-alternatives {
-  border-color: rgba(var(--wb-accent-strong-rgb), 0.48);
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 0 14px rgba(96, 165, 250, 0.12),
-    0 6px 12px rgba(2, 8, 23, 0.32);
+    inset 0 4px 10px rgba(0,0,0,0.68),
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    0 0 0 1px rgba(225, 232, 241, 0.18);
 }
 
+/* Slot item & hover */
 .slot-item {
-  width: 100%;
-  height: 100%;
+  position: relative;
+  width: 46px; height: 46px;
+  border-radius: 12px;
   display: flex;
   align-items: center;
   justify-content: center;
+  background: linear-gradient(180deg, rgba(15, 22, 33, 0.92), rgba(8, 12, 18, 0.98));
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.04),
+    inset 0 -6px 10px rgba(0,0,0,0.18);
+}
+
+.slot-item.empty {
+  opacity: 0.3;
+}
+
+.magnetic-hover {
+  transition: transform 0.5s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.5s ease;
+  cursor: pointer;
+}
+
+.craft-slot:hover .magnetic-hover {
+  transform: translateY(-1px) scale(1.03);
+  filter: drop-shadow(0 3px 6px rgba(0,0,0,0.5));
+}
+
+.node-output:hover .magnetic-hover {
+  transform: translateY(-3px) scale(1.04);
+  filter: drop-shadow(0 8px 14px rgba(var(--lab-heat), 0.12));
 }
 
 .item-icon {
-  width: var(--slot-icon-size);
-  height: var(--slot-icon-size);
   image-rendering: pixelated;
-  filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.6));
+  object-fit: contain;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
 }
 
-.output-icon {
-  width: 74px;
-  height: 74px;
+.dissolve-swap {
+  animation: dissolve-in 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.result-panel .output-slot {
-  border-color: rgba(245, 208, 138, 0.78);
-  background:
-    radial-gradient(circle at 34% 28%, rgba(255, 236, 178, 0.22), transparent 42%),
-    linear-gradient(180deg, rgba(42, 32, 18, 0.98), rgba(9, 7, 4, 0.99));
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.08),
-    0 0 24px rgba(var(--wb-output-rgb), 0.28),
-    0 6px 12px rgba(2, 8, 23, 0.32);
-}
-
-.result-panel .output-slot:hover {
-  border-color: rgba(var(--wb-output-rgb), 0.78);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.14),
-    0 0 0 1px rgba(var(--wb-output-rgb), 0.12),
-    0 10px 18px rgba(180, 83, 9, 0.18);
-}
-
-.cycling-icon {
-  animation: altSwap 0.24s ease;
-}
-
-.alternative-indicator {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  min-width: 18px;
-  padding: 1px 3px;
-  border-radius: 999px;
-  font-size: 8px;
-  font-weight: 700;
-  color: #9a3412;
-  background: rgba(255, 244, 214, 0.94);
-  border: 1px solid rgba(251, 191, 36, 0.24);
-  pointer-events: none;
-  z-index: 2;
-}
-
-.item-count {
-  position: absolute;
-  right: 2px;
-  bottom: 2px;
-  background: rgba(15, 23, 42, 0.82);
-  border: 1px solid rgba(var(--wb-accent-rgb), 0.24);
-  border-radius: 4px;
-  padding: 1px 3px;
-  font-size: 10px;
-  line-height: 1;
-  color: #f8fafc;
-  font-weight: 700;
-  text-shadow: 0 1px 1px rgba(15, 23, 42, 0.92);
-  pointer-events: none;
-  z-index: 2;
-}
-
-.fusion-lane {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 130px;
-  justify-self: center;
-  align-self: stretch;
-}
-
-.lane-arrow {
-  width: 120px;
-  height: 72px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+/* Heating corridor */
+.heating-corridor {
+  width: 140px;
+  flex: 0 0 140px;
+  height: 100%;
   position: relative;
-  color: rgba(245, 208, 138, 0.82);
-  filter: drop-shadow(0 0 18px rgba(96, 165, 250, 0.12));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 100px;
+  contain: layout style;
 }
 
-.lane-arrow::before {
+.heating-corridor::before {
   content: '';
   position: absolute;
-  left: 2px;
-  right: 2px;
+  left: -28px;
+  right: -28px;
   top: 50%;
-  height: 34px;
+  height: 74px;
   transform: translateY(-50%);
   border-radius: 999px;
-  border: 1px solid rgba(148, 163, 184, 0.14);
   background:
-    radial-gradient(circle at 78% 50%, rgba(var(--wb-output-rgb), 0.24), transparent 30%),
-    linear-gradient(90deg, rgba(96, 165, 250, 0.02), rgba(96, 165, 250, 0.10) 44%, rgba(var(--wb-output-rgb), 0.14) 70%, transparent);
-  box-shadow:
-    inset 0 0 18px rgba(96, 165, 250, 0.08),
-    0 0 22px rgba(var(--wb-output-rgb), 0.08);
-  opacity: 0.92;
-}
-
-.lane-arrow::after {
-  content: '';
-  position: absolute;
-  right: 9px;
-  top: 50%;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  transform: translateY(-50%);
-  background:
-    radial-gradient(circle, rgba(255, 247, 214, 0.86), rgba(var(--wb-output-rgb), 0.38) 38%, transparent 68%);
-  box-shadow:
-    0 0 18px rgba(var(--wb-output-rgb), 0.38),
-    0 0 38px rgba(var(--wb-output-rgb), 0.16);
-  animation: outputFocus 3.8s ease-in-out infinite;
+    radial-gradient(ellipse at 50% 50%, rgba(148, 190, 255, 0.07) 0%, rgba(var(--lab-heat), 0.045) 38%, transparent 76%);
+  filter: blur(10px);
+  opacity: 0.82;
+  pointer-events: none;
 }
 
 .fusion-rail {
   position: absolute;
-  left: 10px;
-  right: 17px;
+  left: 8px; right: 8px;
   height: 1px;
   border-radius: 999px;
   overflow: hidden;
-  background: linear-gradient(90deg, transparent, rgba(148, 190, 255, 0.30), rgba(var(--wb-output-rgb), 0.34), transparent);
+  background: linear-gradient(90deg, transparent, rgba(148, 190, 255, 0.25), rgba(var(--lab-heat), 0.30), transparent);
 }
 
 .fusion-rail::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(90deg, transparent 0 18%, rgba(232, 240, 255, 0.86) 32%, transparent 48%);
+  background: linear-gradient(90deg, transparent 0 18%, rgba(232, 240, 255, 0.8) 32%, transparent 48%);
   transform: translateX(-70%);
+  will-change: transform;
   animation: railCharge 2.9s cubic-bezier(0.42, 0, 0.18, 1) infinite;
 }
 
-.rail-top {
-  top: 24px;
-}
-
-.rail-bottom {
-  bottom: 24px;
-}
-
-.rail-bottom::after {
-  animation-delay: 0.52s;
-  opacity: 0.7;
-}
+.rail-top { top: 30%; }
+.rail-bottom { bottom: 30%; }
+.rail-bottom::after { animation-delay: 0.52s; opacity: 0.7; }
 
 .fusion-pulse {
   position: absolute;
-  left: 14px;
-  top: 50%;
-  width: 4px;
-  height: 4px;
+  left: 8px; top: 50%;
+  width: 4px; height: 4px;
   border-radius: 50%;
   transform: translate(-8px, -50%);
   background: rgba(229, 238, 255, 0.86);
   box-shadow:
-    0 0 8px rgba(148, 190, 255, 0.62),
-    0 0 18px rgba(var(--wb-output-rgb), 0.18);
+    0 0 8px rgba(148, 190, 255, 0.6),
+    0 0 18px rgba(var(--lab-heat), 0.2);
   opacity: 0;
+  will-change: transform, opacity;
   animation: fusionPulse 3.1s cubic-bezier(0.45, 0, 0.2, 1) infinite;
 }
 
-.pulse-b {
-  animation-delay: 0.62s;
-  width: 3px;
-  height: 3px;
-  top: calc(50% - 10px);
+.pulse-b { animation-delay: 0.62s; width: 3px; height: 3px; top: 30%; }
+.pulse-c { animation-delay: 1.16s; width: 5px; height: 5px; top: 70%; }
+
+/* Output node */
+.track-node {
+  width: 88px; height: 88px;
+  border-radius: 50%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
 }
 
-.pulse-c {
-  animation-delay: 1.16s;
-  width: 5px;
-  height: 5px;
-  top: calc(50% + 10px);
+.node-output {
+  background:
+    radial-gradient(circle at 50% 42%, rgba(35, 48, 66, 0.86), rgba(12, 17, 26, 0.72) 70%),
+    linear-gradient(180deg, rgba(18, 26, 39, 0.76), rgba(12, 17, 26, 0.72));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    inset 0 -12px 20px rgba(0,0,0,0.16),
+    0 10px 18px rgba(0,0,0,0.20),
+    0 0 0 1px rgba(148, 163, 184, 0.08),
+    0 0 34px rgba(var(--lab-heat), 0.035);
+  backdrop-filter: blur(8px);
 }
 
-@keyframes altSwap {
-  from { opacity: 0; transform: scale(0.9); }
-  to { opacity: 1; transform: scale(1); }
+.node-output::before {
+  content: '';
+  position: absolute;
+  inset: -24px;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle, rgba(var(--lab-heat), 0.08) 0%, rgba(148, 190, 255, 0.045) 40%, transparent 68%);
+  filter: blur(3px);
+  z-index: -1;
+  will-change: transform, opacity;
+  animation: heat-breathe 4s ease-in-out infinite alternate;
+  pointer-events: none;
 }
 
-@keyframes workbenchSweep {
-  0%, 100% { opacity: 0.12; transform: translateX(-28%); }
-  48%, 60% { opacity: 0.46; transform: translateX(18%); }
+.node-output .slot-item {
+  width: 68px; height: 68px;
+  border-radius: 50%;
 }
 
-@keyframes outputFocus {
-  0%, 100% { opacity: 0.58; transform: translateY(-50%) scale(0.9); }
-  50% { opacity: 0.96; transform: translateY(-50%) scale(1.08); }
+/* Badges */
+.minimal-badge {
+  position: absolute;
+  background: rgba(10, 15, 23, 0.92);
+  color: #b8c2cf;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 999px;
+  padding: 2px 6px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.18);
+  pointer-events: none;
+}
+
+.count-badge { right: -2px; bottom: -2px; }
+.alt-badge { top: -2px; left: 50%; transform: translateX(-50%); font-size: 9px; }
+
+/* Animations */
+@keyframes dissolve-in {
+  from { opacity: 0; filter: blur(3px); transform: scale(0.96); }
+  to { opacity: 1; filter: blur(0); transform: scale(1); }
+}
+
+@keyframes heat-breathe {
+  from { opacity: 0.5; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1.05); }
 }
 
 @keyframes railCharge {
@@ -644,23 +783,46 @@ onBeforeUnmount(() => {
   0% { opacity: 0; transform: translate(-8px, -50%) scale(0.65); }
   18% { opacity: 0.9; }
   72% { opacity: 0.72; }
-  100% { opacity: 0; transform: translate(82px, -50%) scale(1.08); }
+  100% { opacity: 0; transform: translate(100px, -50%) scale(1.08); }
 }
 
-@media (max-width: 980px) {
-  .matrix-shell {
+@keyframes ambientDrift {
+  from { transform: translate3d(0, 0, 0) scale(0.96); opacity: 0.24; }
+  to { transform: translate3d(6px, -8px, 0) scale(1.06); opacity: 0.42; }
+}
+
+@keyframes ray-pulse {
+  0%, 100% { opacity: 0; }
+  30% { opacity: 0.5; }
+  50% { opacity: 0.8; }
+  70% { opacity: 0.4; }
+}
+
+@media (max-width: 760px) {
+  .workbench-track {
     flex-direction: column;
+    width: 100%;
+    min-height: auto;
+    padding: 14px;
+    border-radius: 22px;
     gap: 10px;
-    width: min(100%, 620px);
   }
 
-  .fusion-lane {
+  .heating-corridor {
     min-width: 100%;
-    min-height: 18px;
-  }
-
-  .lane-arrow {
+    min-height: 32px;
     transform: rotate(90deg);
   }
+
+  .grid-matrix {
+    grid-template-columns: repeat(3, 50px);
+    grid-template-rows: repeat(3, 50px);
+  }
+
+  .craft-slot { width: 50px; height: 50px; }
+  .slot-item { width: 40px; height: 40px; }
+
+  .track-node { width: 76px; height: 76px; }
+  .node-output .slot-item { width: 58px; height: 58px; }
 }
 </style>
