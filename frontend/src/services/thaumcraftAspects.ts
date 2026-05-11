@@ -72,51 +72,61 @@
 };
 
 export const ASPECT_COLORS: Record<string, string> = {
-  Aer: '#f7fbff',
-  Terra: '#7c4b1f',
-  Ignis: '#ff6b2c',
-  Aqua: '#4cd6ff',
-  Ordo: '#f1d97a',
-  Perditio: '#4e4e56',
-  Vacuos: '#202080',
-  Praecantatio: '#be7dff',
-  Potentia: '#ffab57',
-  Lux: '#ffe26f',
-  Motus: '#d2ce84',
-  Victus: '#f65d63',
-  Bestia: '#deb887',
-  Herba: '#76d56d',
-  Sano: '#8de89b',
-  Gelum: '#9fdfff',
-  Tempestas: '#66cfd8',
-  Venenum: '#7ee25f',
-  Auram: '#ffe26f',
-  Volatus: '#cad6db',
-  Instrumentum: '#7a848d',
-  Metallum: '#b7bcc2',
-  Vinculum: '#ff79c8',
-  Cognitio: '#d8a7db',
-  Sensus: '#ff8094',
-  Permutatio: '#97cc65',
+  Aer: '#ffff7e',
+  Terra: '#56c000',
+  Ignis: '#ff5a01',
+  Aqua: '#3cd4fc',
+  Ordo: '#d5d4ec',
+  Perditio: '#404040',
+  Vacuos: '#888888',
+  Praecantatio: '#9700c0',
+  Potentia: '#c0ffff',
+  Lux: '#fff663',
+  Motus: '#cdccf4',
+  Victus: '#de0005',
+  Bestia: '#9f6409',
+  Herba: '#01ac00',
+  Sano: '#ff2f34',
+  Gelum: '#e1ffff',
+  Tempestas: '#ffffff',
+  Venenum: '#89f000',
+  Auram: '#ffc0ff',
+  Volatus: '#e7e7d7',
+  Instrumentum: '#4040ee',
+  Metallum: '#b5b5cd',
+  Vinculum: '#9a8080',
+  Cognitio: '#ffc2b3',
+  Sensus: '#0fd9ff',
+  Permutatio: '#578357',
   Praemunio: '#69c0b5',
-  Exanimis: '#9486c9',
+  Exanimis: '#3a4000',
   Gravitas: '#6f6f6f',
-  Iter: '#ffb06b',
-  Alienis: '#b57bd9',
-  Vitium: '#8b0000',
+  Iter: '#e0585b',
+  Alienis: '#805080',
+  Vitium: '#800080',
   Aversio: '#cf4d5f',
   Desiderium: '#ff5fbe',
-  Limus: '#9fba66',
-  Messis: '#daa56a',
+  Limus: '#01f800',
+  Messis: '#e1b371',
   Metumbo: '#b48658',
-  Tutamen: '#b7b070',
-  Lucrum: '#f0d16c',
-  Corpus: '#cd853f',
-  Humanus: '#ffb6c1',
-  Mortuus: '#8d7e96',
-  Fames: '#8b5e34',
+  Tutamen: '#00c0c0',
+  Lucrum: '#e6be44',
+  Corpus: '#ee478d',
+  Humanus: '#ffd7c0',
+  Mortuus: '#887788',
+  Fames: '#9a0305',
   Desidia: '#7f8a95',
   Caelum: '#87cefa',
+  Vitreus: '#80ffff',
+  Spiritus: '#ebebfb',
+  Tenebrae: '#222222',
+  Arbor: '#876531',
+  Perfodio: '#dcd2d8',
+  Meto: '#eead82',
+  Telum: '#c05050',
+  Fabrico: '#809d80',
+  Pannus: '#eaeac2',
+  Machina: '#8080a0',
 };
 
 export const ASPECT_ICON_DAMAGE: Record<string, number> = {
@@ -237,6 +247,57 @@ const ASPECT_NAME_MAP: Record<string, string> = {
   unknown: 'Unknown',
 };
 
+const NATIVE_ASPECT_TEXTURE_NAMES = new Set([
+  'aer',
+  'alienis',
+  'aqua',
+  'arbor',
+  'auram',
+  'bestia',
+  'cognitio',
+  'corpus',
+  'exanimis',
+  'fabrico',
+  'fames',
+  'gelum',
+  'herba',
+  'humanus',
+  'ignis',
+  'instrumentum',
+  'iter',
+  'limus',
+  'lucrum',
+  'lux',
+  'machina',
+  'messis',
+  'metallum',
+  'meto',
+  'mortuus',
+  'motus',
+  'ordo',
+  'pannus',
+  'perditio',
+  'perfodio',
+  'permutatio',
+  'potentia',
+  'praecantatio',
+  'sano',
+  'sensus',
+  'spiritus',
+  'telum',
+  'tempestas',
+  'tenebrae',
+  'terra',
+  'tutamen',
+  'vacuos',
+  'venenum',
+  'victus',
+  'vinculum',
+  'vitium',
+  'vitreus',
+  'volatus',
+]);
+
 export function normalizeAspectName(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return 'Unknown';
@@ -251,6 +312,23 @@ export function normalizeAspectName(name: string): string {
   }
 
   return trimmed;
+}
+
+export function getThaumcraftAspectTexturePath(
+  aspect: { name?: string | null; hash?: string | null } | string | null | undefined,
+): string | null {
+  const rawName =
+    typeof aspect === 'string'
+      ? aspect
+      : aspect?.name || (aspect?.hash ? ASPECT_HASH_TO_NAME[aspect.hash] : null);
+  if (!rawName) return null;
+
+  const normalized = normalizeAspectName(rawName);
+  if (!normalized || normalized === 'Unknown') return null;
+
+  const textureName = normalized.toLowerCase();
+  if (!NATIVE_ASPECT_TEXTURE_NAMES.has(textureName)) return null;
+  return `/textures/thaumcraft-aspects-exported/${textureName}.gif`;
 }
 
 export function parseAspectNameFromLocalized(localizedName?: string): string | null {
@@ -268,3 +346,4 @@ export function parseAspectNameFromLocalized(localizedName?: string): string | n
 
   return null;
 }
+

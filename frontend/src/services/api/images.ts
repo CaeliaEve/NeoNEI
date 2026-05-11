@@ -1,6 +1,9 @@
 import { BACKEND_BASE_URL } from './core/http';
+import { ASPECT_HASH_TO_NAME, getThaumcraftAspectTexturePath } from '../thaumcraftAspects';
 
 const FALLBACK_ITEM_IMAGE_PATH = 'minecraft/barrier~0.png';
+const THAUMCRAFT_ASPECT_MOD_ID = 'thaumcraftneiplugin';
+const THAUMCRAFT_ASPECT_INTERNAL_NAME = 'Aspect';
 
 function buildItemImageUrl(path: string): string {
   return `${BACKEND_BASE_URL}/images/item/${path}`;
@@ -37,7 +40,45 @@ function stripVariantSuffixFromImageFileName(imageFileName: string): string {
   return [...parts, baseName].join('/');
 }
 
+function getThaumcraftAspectHashFromItemId(itemId: string | null | undefined): string | null {
+  const parts = `${itemId ?? ''}`.split('~');
+  if (parts.length < 5) return null;
+  const [, modId, internalName, , hash] = parts;
+  if (
+    modId?.toLowerCase() !== THAUMCRAFT_ASPECT_MOD_ID ||
+    internalName !== THAUMCRAFT_ASPECT_INTERNAL_NAME ||
+    !hash
+  ) {
+    return null;
+  }
+  return hash;
+}
+
+function getThaumcraftAspectIconPath(hash: string): string {
+  return `${THAUMCRAFT_ASPECT_MOD_ID}/${THAUMCRAFT_ASPECT_INTERNAL_NAME}~0~${encodeURIComponent(hash)}.png`;
+}
+
+function getThaumcraftStaticAspectUrl(hash: string | null): string | null {
+  if (!hash) return null;
+  return getThaumcraftAspectTexturePath({ hash, name: ASPECT_HASH_TO_NAME[hash] });
+}
+
+function normalizeThaumcraftAspectImageFileName(imageFileName: string | null | undefined): string | null {
+  const normalized = imageFileName ? normalizeImageFileName(imageFileName) : '';
+  if (!normalized) return null;
+  const match = normalized.match(/^(.*?thaumcraftneiplugin\/)Aspect~\d+~([^/]+)\.(?:png|gif)$/i);
+  if (!match) return null;
+  return `${match[1]}Aspect~0~${match[2]}.png`;
+}
+
 export function getImageUrl(itemId: string): string {
+  const aspectHash = getThaumcraftAspectHashFromItemId(itemId);
+  if (aspectHash) {
+    const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHash);
+    if (staticAspectUrl) return staticAspectUrl;
+    return buildItemImageUrl(getThaumcraftAspectIconPath(aspectHash));
+  }
+
   const parts = itemId.split('~');
   if (parts.length >= 4) {
     const modId = encodeURIComponent(parts[1]);
@@ -91,6 +132,16 @@ export function getItemImageUrlFromEntity(item: {
   imageFileName?: string | null;
   itemId?: string | null;
 } | null | undefined): string {
+  const aspectHash = getThaumcraftAspectHashFromItemId(item?.itemId);
+  if (aspectHash) {
+    const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHash);
+    if (staticAspectUrl) return staticAspectUrl;
+    return buildItemImageUrl(getThaumcraftAspectIconPath(aspectHash));
+  }
+  const aspectImageFileName = normalizeThaumcraftAspectImageFileName(item?.imageFileName);
+  if (aspectImageFileName) {
+    return getImageUrlFromFileName(aspectImageFileName);
+  }
   if (item?.preferredImageUrl && item.preferredImageUrl.includes('/images/')) {
     return item.preferredImageUrl;
   }
@@ -113,6 +164,16 @@ export function getPreferredStaticImageUrlFromEntity(item: {
   imageFileName?: string | null;
   itemId?: string | null;
 } | null | undefined): string {
+  const aspectHash = getThaumcraftAspectHashFromItemId(item?.itemId);
+  if (aspectHash) {
+    const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHash);
+    if (staticAspectUrl) return staticAspectUrl;
+    return buildItemImageUrl(getThaumcraftAspectIconPath(aspectHash));
+  }
+  const aspectImageFileName = normalizeThaumcraftAspectImageFileName(item?.imageFileName);
+  if (aspectImageFileName) {
+    return getImageUrlFromFileName(aspectImageFileName);
+  }
   if (item?.preferredImageUrl && item.preferredImageUrl.includes('/images/')) {
     return item.preferredImageUrl;
   }

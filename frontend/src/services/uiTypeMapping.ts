@@ -828,6 +828,20 @@ function getMergedMeta(input: RecipePresentationInput): Record<string, unknown> 
   };
 }
 
+function isThaumcraftCrucibleMeta(meta: Record<string, unknown>): boolean {
+  if (meta.specialRecipeType !== 'NEI_Thaumcraft') return false;
+  const thaumcraftLayout = `${meta.thaumcraftLayout ?? ''}`.trim().toLowerCase();
+  const handler = [
+    meta.handler,
+    meta.handlerClass,
+    meta.handlerId,
+  ].map((value) => `${value ?? ''}`.trim().toLowerCase()).join(' ');
+
+  return thaumcraftLayout === 'crucible'
+    || handler.includes('crucible')
+    || handler.includes('tcnacruciblerecipehandler');
+}
+
 function getInputMetrics(inputs: RecipePresentationInput['inputs']): {
   width: number;
   height: number;
@@ -1065,6 +1079,14 @@ export function resolveRecipePresentationProfile(
   ) {
     return createPresentationProfile(BLOOD_MAGIC_ALTAR, {
       reason: 'combined:blood_magic_altar',
+    });
+  }
+
+  if (
+    isThaumcraftCrucibleMeta(mergedMeta)
+  ) {
+    return createPresentationProfile(THAUMCRAFT_CRUCIBLE, {
+      reason: 'metadata:nei_thaumcraft_crucible_handler',
     });
   }
 

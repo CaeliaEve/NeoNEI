@@ -957,11 +957,20 @@ function detectUiFamilyKey(recipe: SplitRecipeRecord): string | null {
   const combined = `${machineType} ${recipeType}`;
   const additionalData = recipe.additionalData ?? {};
   const specialRecipeType = `${additionalData.specialRecipeType ?? recipe.metadata?.specialRecipeType ?? ''}`.trim();
+  const thaumcraftLayout = `${additionalData.thaumcraftLayout ?? ''}`.trim().toLowerCase();
   const handler = `${additionalData.handler ?? additionalData.handlerClass ?? additionalData.handlerId ?? ''}`.trim().toLowerCase();
 
   if (combined.includes('terra plate') || combined.includes('\u6cf0\u62c9\u51dd\u805a\u677f')) return 'botania_terra_plate';
   if (combined.includes('rune altar') || combined.includes('\u7b26\u6587\u796d\u575b')) return 'botania_rune_altar';
   if (combined.includes('mana pool') || combined.includes('\u9b54\u529b\u6c60')) return 'botania_mana_pool';
+  if (
+    specialRecipeType === 'NEI_Thaumcraft'
+    && (
+      thaumcraftLayout === 'crucible'
+      || handler.includes('crucible')
+      || handler.includes('tcnacruciblerecipehandler')
+    )
+  ) return 'thaumcraft_crucible';
   if (combined.includes('infusion') || combined.includes('\u5965\u672f\u6ce8\u9b54')) return 'thaumcraft_infusion';
   if (combined.includes('blood altar') || combined.includes('\u8840\u796d\u575b') || combined.includes('\u8840\u4e4b\u796d\u575b')) return 'blood_magic_altar';
   if (
@@ -973,6 +982,26 @@ function detectUiFamilyKey(recipe: SplitRecipeRecord): string | null {
     return 'mobsinfo_slaughterhouse';
   }
   return null;
+}
+
+function resolveEffectiveMachineType(recipe: SplitRecipeRecord): string {
+  const additionalData = recipe.additionalData ?? {};
+  const specialRecipeType = `${additionalData.specialRecipeType ?? recipe.metadata?.specialRecipeType ?? ''}`.trim();
+  const thaumcraftLayout = `${additionalData.thaumcraftLayout ?? ''}`.trim().toLowerCase();
+  const handler = `${additionalData.handler ?? additionalData.handlerClass ?? additionalData.handlerId ?? ''}`.trim().toLowerCase();
+
+  if (
+    specialRecipeType === 'NEI_Thaumcraft'
+    && (
+      thaumcraftLayout === 'crucible'
+      || handler.includes('crucible')
+      || handler.includes('tcnacruciblerecipehandler')
+    )
+  ) {
+    return '\u5769\u57da';
+  }
+
+  return `${recipe.machineInfo?.machineType ?? ''}`.trim();
 }
 
 function buildUiPayload(
@@ -991,7 +1020,7 @@ function buildUiPayload(
   const payload = {
     recipeId: `${recipe.id ?? ''}`.trim(),
     familyKey,
-    machineType: `${recipe.machineInfo?.machineType ?? ''}`.trim(),
+    machineType: resolveEffectiveMachineType(recipe),
     recipeType: `${recipe.recipeType ?? ''}`.trim(),
     inputItemIds: inputIds,
     outputItemIds: outputIds,
@@ -1166,7 +1195,7 @@ function buildMaterializedRecipe(
   family: string,
   itemRecords: Map<string, MaterializedItemRecord>,
 ): MaterializedRecipePayload {
-  const machineType = `${recipe.machineInfo?.machineType ?? ''}`.trim();
+  const machineType = resolveEffectiveMachineType(recipe);
   const machineIcon = machineType ? getMachineIconItem(machineType) : null;
   const compactMetadata = compactObject(recipe.metadata ?? null);
   const transformedMetadata = transformRecipeMetadata(compactMetadata, (entry) =>
@@ -1699,7 +1728,7 @@ export class NeoNeiCompilerService {
           ...extractOutputItemIds(recipe),
           ...extractOutputFluidIds(recipe),
         ];
-        const machineType = `${recipe.machineInfo?.machineType ?? ''}`.trim() || null;
+        const machineType = resolveEffectiveMachineType(recipe) || null;
         const voltageTier = recipe.machineInfo?.parsedVoltageTier ?? null;
         const uiFamilyKey = detectUiFamilyKey(recipe);
         const materializedRecipe = buildMaterializedRecipe(recipe, family, itemRecords);

@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { api, getImageUrl, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
@@ -101,7 +101,7 @@ watch(
     <div class="crucible-grid" aria-hidden="true" />
 
     <section class="research-panel">
-      <div class="panel-pill">研究</div>
+      <div class="panel-pill">鐮旂┒</div>
       <div class="panel-title">CRUCIBLE</div>
       <div v-if="researchLines.length" class="research-lines">
         <span v-for="line in researchLines" :key="line">{{ line }}</span>
@@ -121,7 +121,7 @@ watch(
     </section>
 
     <section class="input-panel">
-      <div class="panel-pill">输入</div>
+      <div class="panel-pill">杈撳叆</div>
       <RecipeItemTooltip
         v-if="catalyst"
         :item-id="catalyst.itemId"
@@ -141,7 +141,7 @@ watch(
     </section>
 
     <section class="output-panel">
-      <div class="panel-pill">输出</div>
+      <div class="panel-pill">杈撳嚭</div>
       <RecipeItemTooltip
         v-if="outputSlot"
         :item-id="outputSlot.itemId"
@@ -433,3 +433,4 @@ watch(
   color: rgba(226, 232, 240, 0.94);
 }
 </style>
+

@@ -83,9 +83,29 @@ function getUiFamilyKey(recipe: RecipeLike): string {
   return typeof uiPayload?.familyKey === 'string' ? uiPayload.familyKey.trim() : '';
 }
 
+function isThaumcraftCrucibleRecipe(recipe: RecipeLike): boolean {
+  const specialRecipeType = normalizeText(recipe.additionalData?.specialRecipeType as string | undefined).toLowerCase();
+  const thaumcraftLayout = normalizeText(recipe.additionalData?.thaumcraftLayout as string | undefined).toLowerCase();
+  const handler = [
+    recipe.additionalData?.handler,
+    recipe.additionalData?.handlerClass,
+    recipe.additionalData?.handlerId,
+  ].map((value) => normalizeText(value as string | undefined).toLowerCase()).join(' ');
+
+  return specialRecipeType === 'nei_thaumcraft'
+    && (
+      thaumcraftLayout === 'crucible'
+      || handler.includes('crucible')
+      || handler.includes('tcnacruciblerecipehandler')
+    );
+}
+
 function getExplicitMachineName(recipe: RecipeLike): string | null {
   const thaumcraftLayout = normalizeText(recipe.additionalData?.thaumcraftLayout as string | undefined).toLowerCase();
   const specialRecipeType = normalizeText(recipe.additionalData?.specialRecipeType as string | undefined).toLowerCase();
+  if (isThaumcraftCrucibleRecipe(recipe)) {
+    return '\u5769\u57da';
+  }
   if (specialRecipeType === 'nei_thaumcraft') {
     if (thaumcraftLayout === 'infusion') return '奥术注魔';
     if (thaumcraftLayout === 'arcane') return normalizeText(recipe.machineInfo?.machineType) || '有序奥术合成';
@@ -310,6 +330,10 @@ function getSpecialMachineIcon(machineName: string): RecipeMachineIcon | null {
 function resolveMachineIcon(recipe: RecipeLike, categoryName: string, isCrafting: boolean): RecipeMachineIcon | null {
   if (isCrafting) {
     return getCraftingIcon(categoryName);
+  }
+
+  if (isThaumcraftCrucibleRecipe(recipe)) {
+    return buildIconFromItemId('i~Thaumcraft~blockMetalDevice~0', '\u5769\u57da');
   }
 
   const machineInfoIcon = recipe.machineInfo?.machineIcon;

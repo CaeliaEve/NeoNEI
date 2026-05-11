@@ -406,7 +406,19 @@ const getCraftingCategoryName = (recipe: Recipe): string => {
 };
 
 const getExplicitMachineName = (recipe: Recipe): string | null => {
+  const thaumcraftHandler = [
+    recipe.additionalData?.handler,
+    recipe.additionalData?.handlerClass,
+    recipe.additionalData?.handlerId,
+  ].map((value) => `${value ?? ''}`.trim().toLowerCase()).join(' ');
   if (recipe.additionalData?.specialRecipeType === 'NEI_Thaumcraft') {
+    if (
+      recipe.additionalData?.thaumcraftLayout === 'crucible' ||
+      thaumcraftHandler.includes('crucible') ||
+      thaumcraftHandler.includes('tcnacruciblerecipehandler')
+    ) {
+      return '\u5769\u57da';
+    }
     if (recipe.additionalData?.thaumcraftLayout === 'infusion') {
       return '奥术注魔';
     }
@@ -786,6 +798,7 @@ export const buildMachineCategories = (
     switch (profile.uiConfig.uiType) {
       case 'thaumcraft_arcane':
       case 'thaumcraft_infusion':
+      case 'thaumcraft_crucible':
       case 'botania_rune_altar':
       case 'botania_mana_pool':
       case 'botania_pure_daisy':

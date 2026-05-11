@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
 import { getImageUrl, type Recipe, type RecipeInputCell } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
@@ -238,8 +238,8 @@ watch(
   <div class="thaum-page">
     <div class="thaum-stage" :style="{ width: `${stageWidth}px`, height: `${stageHeight}px` }">
       <div class="top-strip">
-        <div class="top-pill left-pill">研究</div>
-        <div class="top-pill right-pill">查看全部</div>
+        <div class="top-pill left-pill">鐮旂┒</div>
+        <div class="top-pill right-pill">鏌ョ湅鍏ㄩ儴</div>
       </div>
 
       <div class="research-column">
@@ -305,6 +305,7 @@ watch(
             :key="`${entry.aspect.name}-${entry.aspect.hash || 'plain'}`"
             class="aspect-slot"
             :class="{ 'is-clickable': Boolean(getThaumcraftAspectItemId(entry.aspect)) }"
+            :style="{ '--accent': entry.aspect.color || '#8bdcff' }"
             @click="handleAspectClick(entry.aspect)"
           >
             <img
@@ -537,6 +538,7 @@ watch(
   height: 34px;
   image-rendering: pixelated;
   transition: transform 160ms ease, filter 160ms ease;
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 36%, transparent));
 }
 
 .aspect-amount {
@@ -545,3 +547,4 @@ watch(
   color: rgba(226, 232, 240, 0.88);
 }
 </style>
+

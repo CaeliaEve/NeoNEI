@@ -949,6 +949,7 @@ const aspectEntries = computed(() => {
   height: 24px;
   image-rendering: pixelated;
   flex: 0 0 auto;
+  filter: drop-shadow(0 0 7px color-mix(in srgb, var(--accent) 38%, transparent));
 }
 
 .aspect-name {

@@ -4,6 +4,7 @@ import {
   ASPECT_COLORS,
   ASPECT_HASH_TO_NAME,
   ASPECT_ICON_DAMAGE,
+  getThaumcraftAspectTexturePath,
   normalizeAspectName,
   parseAspectNameFromLocalized,
 } from '../services/thaumcraftAspects';
@@ -172,12 +173,16 @@ export function getThaumcraftAspectItemId(aspect: RitualAspectCost): string | nu
 }
 
 export function getThaumcraftAspectImagePath(aspect: RitualAspectCost): string {
+  const staticTexturePath = getThaumcraftAspectTexturePath(aspect);
+  if (staticTexturePath) {
+    return staticTexturePath;
+  }
   if (aspect.hash) {
-    return `${__BACKEND_BASE_URL__}/images/item/thaumcraftneiplugin/Aspect~0~${aspect.hash}.png`;
+    return `${__BACKEND_BASE_URL__}/images/item/thaumcraftneiplugin/Aspect~0~${encodeURIComponent(aspect.hash)}.png`;
   }
   const damage = ASPECT_ICON_DAMAGE[aspect.name];
   if (damage) {
-    return `${__BACKEND_BASE_URL__}/images/item/Thaumcraft/ItemResource~${damage}~0.png`;
+    return `${__BACKEND_BASE_URL__}/images/item/Thaumcraft/ItemResource~${damage}.gif`;
   }
   return '/placeholder.png';
 }
