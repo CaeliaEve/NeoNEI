@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue';
 import { getImageUrl, type Recipe, type RecipeInputCell } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
@@ -30,16 +30,106 @@ const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 const { playClick } = useSound();
 
-const SCALE = 3.45;
-const OFFSET_X = 36;
-const OFFSET_Y = 34;
-const SLOT_SIZE = 56;
-const stageWidth = Math.round(178 * SCALE + OFFSET_X * 2);
-const stageHeight = Math.round(160 * SCALE + OFFSET_Y * 2);
-
 const craftingGrid = ref<Array<RitualItemStack | null>>(Array.from({ length: 9 }, () => null));
 const outputSlot = ref<ResolvedSlot | null>(null);
 const aspectCosts = ref<RitualAspectCost[]>([]);
+
+// === Arcane Constellation Particle System ===
+const bgCanvas = ref<HTMLCanvasElement | null>(null);
+const uiRoot = ref<HTMLElement | null>(null);
+let animFrameId = 0;
+let resizeObs: ResizeObserver | null = null;
+
+interface Star {
+  x: number; y: number; vx: number; vy: number;
+  radius: number; baseAlpha: number; phase: number; phaseSpeed: number;
+}
+
+const STAR_COUNT = 30;
+const CONNECTION_DIST = 80;
+let stars: Star[] = [];
+let cW = 0;
+let cH = 0;
+
+const initStars = () => {
+  stars = [];
+  for (let i = 0; i < STAR_COUNT; i++) {
+    stars.push({
+      x: Math.random() * cW, y: Math.random() * cH,
+      vx: (Math.random() - 0.5) * 0.15, vy: (Math.random() - 0.5) * 0.15,
+      radius: 0.5 + Math.random() * 1.2, baseAlpha: 0.15 + Math.random() * 0.35,
+      phase: Math.random() * Math.PI * 2, phaseSpeed: 0.003 + Math.random() * 0.008,
+    });
+  }
+};
+
+const drawConstellations = () => {
+  const canvas = bgCanvas.value;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  ctx.clearRect(0, 0, cW, cH);
+  const centerX = cW / 2;
+  const centerY = cH / 2;
+  const now = performance.now() * 0.001;
+  for (const s of stars) {
+    s.phase += s.phaseSpeed;
+    s.x += s.vx + Math.sin(s.phase) * 0.08;
+    s.y += s.vy + Math.cos(s.phase * 0.7) * 0.06;
+    const dx = centerX - s.x;
+    const dy = centerY - s.y;
+    const dist = Math.sqrt(dx * dx + dy * dy) + 1;
+    s.vx += (dx / dist) * 0.0003;
+    s.vy += (dy / dist) * 0.0003;
+    s.vx *= 0.999;
+    s.vy *= 0.999;
+    if (s.x < -20) s.x = cW + 20;
+    if (s.x > cW + 20) s.x = -20;
+    if (s.y < -20) s.y = cH + 20;
+    if (s.y > cH + 20) s.y = -20;
+  }
+  for (let i = 0; i < stars.length; i++) {
+    for (let j = i + 1; j < stars.length; j++) {
+      const a = stars[i], b = stars[j];
+      const ddx = a.x - b.x, ddy = a.y - b.y;
+      const d = Math.sqrt(ddx * ddx + ddy * ddy);
+      if (d < CONNECTION_DIST) {
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        // Arcane Purple/Cyan tinted lines
+        ctx.strokeStyle = `rgba(168, 120, 230, ${(1 - d / CONNECTION_DIST) * 0.12})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+    }
+  }
+  for (const s of stars) {
+    const tw = s.baseAlpha + Math.sin(now * 2 + s.phase) * 0.1;
+    ctx.beginPath();
+    ctx.arc(s.x, s.y, s.radius, 0, Math.PI * 2);
+    // Arcane Purple/Cyan tinted stars
+    ctx.fillStyle = `rgba(192, 132, 252, ${tw})`;
+    ctx.fill();
+    if (s.radius > 1) {
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.radius * 3, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(34, 211, 238, ${tw * 0.15})`;
+      ctx.fill();
+    }
+  }
+  animFrameId = requestAnimationFrame(drawConstellations);
+};
+
+const handleCanvasResize = () => {
+  const el = uiRoot.value;
+  const canvas = bgCanvas.value;
+  if (!el || !canvas) return;
+  const rect = el.getBoundingClientRect();
+  cW = rect.width; cH = rect.height;
+  canvas.width = cW; canvas.height = cH;
+  if (stars.length === 0) initStars();
+};
 
 const mergedMetadata = computed(() => mergeRecipeMetadata(props.recipe));
 const researchLines = computed(() => {
@@ -175,26 +265,6 @@ function buildCraftingGrid(rawInputs: Recipe['inputs']): Array<RitualItemStack |
   return grid;
 }
 
-function stageStyle(x: number, y: number, width = SLOT_SIZE, height = SLOT_SIZE) {
-  return {
-    left: `${OFFSET_X + x * SCALE}px`,
-    top: `${OFFSET_Y + y * SCALE}px`,
-    width: `${width}px`,
-    height: `${height}px`,
-  };
-}
-
-const gridStyles = computed(() => {
-  const baseX = [50, 74, 98];
-  const baseY = [44, 68, 92];
-  return craftingGrid.value.map((_, index) => {
-    const row = Math.floor(index / 3);
-    const col = index % 3;
-    return stageStyle(baseX[col], baseY[row]);
-  });
-});
-
-const outputStyle = computed(() => stageStyle(74, 14, 60, 60));
 
 const aspectEntries = computed(() => {
   return aspectCosts.value.map((aspect) => ({ aspect }));
@@ -221,8 +291,18 @@ async function initialize() {
   outputSlot.value = resolvedOutput ?? null;
 }
 
-onMounted(() => {
-  void initialize();
+onMounted(async () => {
+  await initialize();
+  await nextTick();
+  handleCanvasResize();
+  resizeObs = new ResizeObserver(handleCanvasResize);
+  if (uiRoot.value) resizeObs.observe(uiRoot.value);
+  animFrameId = requestAnimationFrame(drawConstellations);
+});
+
+onBeforeUnmount(() => {
+  cancelAnimationFrame(animFrameId);
+  if (resizeObs) resizeObs.disconnect();
 });
 
 watch(
@@ -235,77 +315,122 @@ watch(
 </script>
 
 <template>
-  <div class="thaum-page">
-    <div class="thaum-stage" :style="{ width: `${stageWidth}px`, height: `${stageHeight}px` }">
-      <div class="top-strip">
-        <div class="top-pill left-pill">鐮旂┒</div>
-        <div class="top-pill right-pill">鏌ョ湅鍏ㄩ儴</div>
-      </div>
+  <div class="arcane-void-ui" ref="uiRoot">
+    
+    <!-- Canvas & Soft Background (No grid dots) -->
+    <div class="void-backdrop" aria-hidden="true" />
+    <canvas ref="bgCanvas" class="constellation-canvas" aria-hidden="true" />
+    
+    <!-- Massive mysterious ambient glow -->
+    <div class="ambient-field" aria-hidden="true">
+      <span class="ambient-orb void-orb" />
+      <span class="ambient-orb arcane-orb" />
+    </div>
 
-      <div class="research-column">
-        <div class="research-title">RESEARCH</div>
+    <!-- The floating deck, no borders, just soft shadows and flex layout -->
+    <div class="mystic-deck">
+      
+      <!-- Research (Floating Left, no box) -->
+      <div class="floating-research">
+        <div class="research-title">ARCANE LORE</div>
         <div v-if="researchLines.length" class="research-lines">
           <span v-for="line in researchLines" :key="line" class="research-line">{{ line }}</span>
         </div>
         <div v-else class="research-lines muted">
-          <span class="research-line">Arcane Study</span>
+          <span class="research-line">Uncharted Magic</span>
         </div>
       </div>
 
-      <div class="sigil-layer" aria-hidden="true">
-        <div class="sigil sigil-a" />
-        <div class="sigil sigil-b" />
-        <div class="sigil sigil-c" />
-      </div>
-
-      <template v-for="(slot, index) in craftingGrid" :key="`arcane-grid-${index}`">
-        <RecipeItemTooltip
-          v-if="slot"
-          :item-id="slot.itemId"
-          :count="slot.count"
-          @click="handleItemClick(slot.itemId)"
-        >
-          <div class="slot item-slot" :style="gridStyles[index]">
-            <AnimatedItemIcon
-              :item-id="slot.itemId"
-              :render-asset-ref="slot.renderAssetRef || null"
-              :image-file-name="slot.imageFileName || null"
-              :size="44"
-              class="item-icon"
-            />
-            <span v-if="slot.count > 1" class="count">{{ slot.count }}</span>
-          </div>
-        </RecipeItemTooltip>
-        <div v-else class="slot empty-slot" :style="gridStyles[index]" />
-      </template>
-
-      <div class="result-lane" />
-      <RecipeItemTooltip
-        v-if="outputSlot"
-        :item-id="outputSlot.itemId"
-        :count="outputSlot.count"
-        @click="handleItemClick(outputSlot.itemId)"
-      >
-        <div class="slot output-slot" :style="outputStyle">
-          <AnimatedItemIcon
-            :item-id="outputSlot.itemId"
-            :render-asset-ref="outputSlot.renderAssetRef || null"
-            :image-file-name="outputSlot.imageFileName || null"
-            :size="56"
-            class="item-icon"
-          />
-          <span v-if="outputSlot.count > 1" class="count">{{ outputSlot.count }}</span>
+      <!-- Center Altar -->
+      <div class="arcane-altar">
+        
+        <!-- Sacred Geometry Hexagram (replaces eclipse) -->
+        <div class="sacred-geometry" aria-hidden="true">
+          <!-- Expanding light waves -->
+          <div class="light-wave wave-1"></div>
+          <div class="light-wave wave-2"></div>
+          
+          <!-- High-order geometric astrolabe -->
+          <svg class="hexagram-svg" viewBox="0 0 200 200">
+            <defs>
+              <filter id="geo-glow" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="1.25" result="coloredBlur"/>
+                <feMerge>
+                  <feMergeNode in="coloredBlur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+              <linearGradient id="geo-rite-primary" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0%" stop-color="#cbd5e1" stop-opacity="0.48" />
+                <stop offset="52%" stop-color="#94a3b8" stop-opacity="0.34" />
+                <stop offset="100%" stop-color="#8b5cf6" stop-opacity="0.24" />
+              </linearGradient>
+              <linearGradient id="geo-rite-arc" x1="0" y1="1" x2="1" y2="0">
+                <stop offset="0%" stop-color="#64748b" stop-opacity="0.30" />
+                <stop offset="56%" stop-color="#a5b4fc" stop-opacity="0.20" />
+                <stop offset="100%" stop-color="#7c3aed" stop-opacity="0.18" />
+              </linearGradient>
+            </defs>
+            <g class="geo-orbit-outer">
+              <circle cx="100" cy="100" r="88" class="geo-line circle-line outer-bound" />
+              <circle cx="100" cy="100" r="78" class="geo-line circle-rune" />
+              <circle cx="100" cy="100" r="66" class="geo-line circle-inner" />
+              <path d="M25 119 C47 55 101 26 158 51" class="geo-line arc-rite" />
+              <path d="M43 158 C76 184 133 176 164 132" class="geo-line arc-rite arc-quiet" />
+            </g>
+            <g class="geo-orbit-middle">
+              <polygon points="100,20 169,140 31,140" class="geo-line tri-up" />
+              <polygon points="100,180 169,60 31,60" class="geo-line tri-down" />
+              <circle cx="100" cy="100" r="47" class="geo-line inner-seal" />
+            </g>
+            <g class="geo-static">
+              <path d="M100 27 L100 173" class="geo-axis axis-vertical" />
+              <path d="M27 100 L173 100" class="geo-axis axis-horizontal" />
+              <path d="M67 44 L67 156 M133 44 L133 156" class="geo-line pillar-lines" />
+              <path d="M67 44 L133 100 L67 156" class="geo-line rite-fold" />
+              <path d="M133 44 L67 100 L133 156" class="geo-line rite-fold fold-quiet" />
+              <path d="M72 74 C87 62 113 62 128 74 M72 126 C88 138 113 138 128 126" class="geo-line inner-arches" />
+            </g>
+          </svg>
         </div>
-      </RecipeItemTooltip>
 
-      <div class="aspects-band">
-        <div class="aspects-row">
+        <!-- 3x3 Grid (Soft Dark Voids) -->
+        <div class="void-matrix">
+          <template v-for="(slot, index) in craftingGrid" :key="`arcane-grid-${index}`">
+            <div class="void-slot" :class="{ 'empty': !slot }">
+              <RecipeItemTooltip
+                v-if="slot"
+                :item-id="slot.itemId"
+                :count="slot.count"
+                @click="handleItemClick(slot.itemId)"
+              >
+                <div class="slot-item magnetic-hover">
+                  <AnimatedItemIcon
+                    :item-id="slot.itemId"
+                    :render-asset-ref="slot.renderAssetRef || null"
+                    :image-file-name="slot.imageFileName || null"
+                    :size="58"
+                    class="item-icon"
+                  />
+                  <span v-if="slot.count > 1" class="mystic-badge">{{ slot.count }}</span>
+                </div>
+              </RecipeItemTooltip>
+            </div>
+          </template>
+        </div>
+
+        <!-- Aspects Orbiting Around the Matrix -->
+        <div class="aspect-constellation">
           <div
-            v-for="entry in aspectEntries"
+            v-for="(entry, index) in aspectEntries"
             :key="`${entry.aspect.name}-${entry.aspect.hash || 'plain'}`"
-            class="aspect-slot"
+            class="aspect-star"
             :class="{ 'is-clickable': Boolean(getThaumcraftAspectItemId(entry.aspect)) }"
-            :style="{ '--accent': entry.aspect.color || '#8bdcff' }"
+            :style="{ 
+              '--accent': entry.aspect.color || '#8bdcff',
+              '--angle': `${index * (360 / Math.max(1, aspectEntries.length))}deg`,
+              '--radius': '254px'
+            }"
             @click="handleAspectClick(entry.aspect)"
           >
             <img
@@ -317,234 +442,617 @@ watch(
             <span class="aspect-amount">{{ entry.aspect.amount }}</span>
           </div>
         </div>
+
       </div>
+
+      <!-- Arcane Flow (High-end Synthesis Animation) -->
+      <div class="arcane-flow-channel" aria-hidden="true">
+        <div class="flow-core"></div>
+        <div class="flow-particle p-a"></div>
+        <div class="flow-particle p-b"></div>
+        <div class="flow-particle p-c"></div>
+        <div class="flow-rune rune-1">◆</div>
+        <div class="flow-rune rune-2">◇</div>
+        <div class="flow-rune rune-3">✦</div>
+      </div>
+
+      <!-- Output (Floating Right) -->
+      <div class="floating-output">
+        <div class="output-void" :class="{ 'empty': !outputSlot }">
+          <RecipeItemTooltip
+            v-if="outputSlot"
+            :item-id="outputSlot.itemId"
+            :count="outputSlot.count"
+            @click="handleItemClick(outputSlot.itemId)"
+          >
+            <div class="slot-item magnetic-hover output-lift">
+              <AnimatedItemIcon
+                :item-id="outputSlot.itemId"
+                :render-asset-ref="outputSlot.renderAssetRef || null"
+                :image-file-name="outputSlot.imageFileName || null"
+                :size="84"
+                class="item-icon output-icon"
+              />
+              <span v-if="outputSlot.count > 1" class="mystic-badge">{{ outputSlot.count }}</span>
+            </div>
+          </RecipeItemTooltip>
+        </div>
+      </div>
+
     </div>
   </div>
 </template>
 
 <style scoped>
-.thaum-page {
+.arcane-void-ui {
+  --arcane-primary: 192, 132, 252;
+  --arcane-secondary: 34, 211, 238;
+  --void-bg: rgba(6, 9, 14, 0.95);
+  
+  position: relative;
   display: flex;
+  align-items: center;
   justify-content: center;
   width: 100%;
-  padding: 18px 0 24px;
-}
-
-.thaum-stage {
-  position: relative;
+  min-height: 580px;
+  height: 100%;
+  flex: 1;
+  padding: 24px;
+  background: transparent;
   overflow: hidden;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+}
+
+/* Background & Canvas */
+.constellation-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.void-backdrop {
+  position: absolute;
+  inset: 0;
   border-radius: 18px;
-  border: 1px solid rgba(100, 116, 139, 0.32);
   background:
-    linear-gradient(180deg, rgba(15, 23, 36, 0.96), rgba(8, 13, 22, 0.98)),
-    radial-gradient(circle at top, rgba(34, 211, 238, 0.08), transparent 38%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.04),
-    0 18px 36px rgba(2, 8, 23, 0.28);
-}
-
-.thaum-stage::before {
-  content: '';
-  position: absolute;
-  inset: 14px;
-  border-radius: 14px;
-  border: 1px solid rgba(71, 85, 105, 0.18);
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
-  background-size: 22px 22px;
+    radial-gradient(ellipse at 50% 50%, rgba(var(--arcane-primary), 0.04) 0%, transparent 50%),
+    linear-gradient(180deg, rgba(8, 12, 18, 0.35), rgba(4, 6, 10, 0.55));
   pointer-events: none;
 }
 
-.top-strip {
+.ambient-field {
   position: absolute;
-  inset: 20px 24px auto 24px;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.ambient-orb {
+  position: absolute;
+  display: block;
+  border-radius: 50%;
+  opacity: 0.42;
+  will-change: transform, opacity;
+  animation: ambientDrift 16s ease-in-out infinite alternate;
+}
+
+.void-orb {
+  top: 15%; left: 25%;
+  width: 260px; height: 260px;
+  background: radial-gradient(circle, rgba(var(--arcane-secondary), 0.06) 0%, transparent 60%);
+}
+
+.arcane-orb {
+  right: 25%; bottom: 15%;
+  width: 320px; height: 320px;
+  background: radial-gradient(circle, rgba(var(--arcane-primary), 0.06) 0%, transparent 60%);
+  animation-delay: -5s;
+}
+
+/* The Mystic Deck (No borders, pure layout) */
+.mystic-deck {
+  position: relative;
+  z-index: 10;
   display: flex;
-  justify-content: space-between;
-  pointer-events: none;
+  align-items: center;
+  justify-content: center;
+  gap: 64px;
+  width: 100%;
+  max-width: 1100px;
 }
 
-.top-pill {
-  min-width: 122px;
-  border-radius: 999px;
-  border: 1px solid rgba(71, 85, 105, 0.28);
-  background: rgba(15, 23, 42, 0.72);
-  color: rgba(226, 232, 240, 0.76);
-  padding: 8px 16px;
-  font-size: 13px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  text-align: center;
-}
-
-.research-column {
-  position: absolute;
-  left: 24px;
-  top: 86px;
-  width: 170px;
+/* Research text floating gracefully */
+.floating-research {
+  width: 180px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
+  text-shadow: 0 4px 12px rgba(0, 0, 0, 0.8);
 }
 
 .research-title {
-  font-size: 12px;
-  letter-spacing: 0.18em;
-  color: rgba(125, 211, 252, 0.78);
+  font-size: 13px;
+  letter-spacing: 0.25em;
+  color: rgba(var(--arcane-secondary), 0.9);
+  font-weight: 700;
+  text-transform: uppercase;
+  text-shadow: 0 0 16px rgba(var(--arcane-secondary), 0.4);
 }
 
 .research-lines {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .research-line {
-  font-size: 14px;
-  line-height: 1.25;
-  color: rgba(226, 232, 240, 0.88);
+  font-size: 15px;
+  line-height: 1.5;
+  color: rgba(226, 232, 240, 0.95);
+  font-family: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+  font-style: italic;
 }
 
 .research-lines.muted .research-line {
-  color: rgba(148, 163, 184, 0.74);
+  color: rgba(148, 163, 184, 0.6);
 }
 
-.sigil-layer {
-  position: absolute;
-  left: calc(36px + 74px * 3.45 + 28px);
-  top: calc(34px + 68px * 3.45 + 28px);
-  width: 230px;
-  height: 230px;
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-}
-
-.sigil {
-  position: absolute;
-  inset: 0;
-  border-radius: 20px;
-  border: 1px solid rgba(71, 85, 105, 0.2);
-  transform: rotate(45deg);
-}
-
-.sigil-a { inset: 34px; border-color: rgba(34, 211, 238, 0.16); }
-.sigil-b { inset: 66px; border-color: rgba(148, 163, 184, 0.18); }
-.sigil-c {
-  inset: 92px;
-  border-color: rgba(192, 132, 252, 0.18);
-  box-shadow: 0 0 18px rgba(34, 211, 238, 0.08);
-}
-
-.slot {
-  position: absolute;
+/* Center Altar */
+.arcane-altar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 14px;
-  border: 1px solid rgba(71, 85, 105, 0.38);
+  width: 380px;
+  height: 380px;
+}
+
+/* Sacred Geometry Hexagram Background */
+.sacred-geometry {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  width: 590px; height: 590px;
+  pointer-events: none;
+  z-index: -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter:
+    drop-shadow(0 0 18px rgba(148, 163, 184, 0.10))
+    drop-shadow(0 0 12px rgba(var(--arcane-primary), 0.06));
+  opacity: 0.82;
+}
+
+.sacred-geometry::before {
+  content: '';
+  position: absolute;
+  inset: 13%;
+  border-radius: 50%;
   background:
-    linear-gradient(180deg, rgba(18, 27, 42, 0.96), rgba(8, 14, 24, 0.98)),
-    radial-gradient(circle at top, rgba(255, 255, 255, 0.08), transparent 50%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.05),
-    0 8px 18px rgba(2, 8, 23, 0.2);
+    radial-gradient(circle at 50% 50%, rgba(255, 255, 255, 0.035) 0%, transparent 12%),
+    conic-gradient(from 18deg, transparent 0deg, rgba(148, 163, 184, 0.070) 32deg, transparent 70deg, rgba(var(--arcane-primary), 0.042) 122deg, transparent 170deg, rgba(99, 102, 241, 0.035) 236deg, transparent 306deg, rgba(203, 213, 225, 0.035) 344deg, transparent 360deg);
+  mask-image: radial-gradient(circle, transparent 0 31%, black 34% 60%, transparent 66%);
+  animation: geo-spin 140s linear infinite reverse;
+  opacity: 0.62;
 }
 
-.item-slot {
-  border-color: rgba(74, 222, 128, 0.28);
+.hexagram-svg {
+  width: 100%; height: 100%;
+  overflow: visible;
+  opacity: 0.94;
+  shape-rendering: geometricPrecision;
 }
 
-.empty-slot {
+.geo-line {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.32);
+  stroke-width: 0.42;
+  vector-effect: non-scaling-stroke;
+  filter: url(#geo-glow);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.circle-line {
+  stroke: rgba(203, 213, 225, 0.34);
+  stroke-width: 0.54;
+}
+
+.outer-bound {
+  stroke: rgba(71, 85, 105, 0.40);
+}
+
+.circle-rune {
+  stroke: rgba(148, 163, 184, 0.20);
+  stroke-width: 0.46;
+  stroke-dasharray: 1.2 7.6;
+  stroke-linecap: butt;
+}
+
+.circle-inner,
+.inner-seal {
+  stroke: rgba(139, 92, 246, 0.18);
+  stroke-dasharray: 13 11;
+}
+
+.tri-up {
+  stroke: url(#geo-rite-primary);
+  stroke-width: 0.70;
+}
+
+.tri-down {
+  stroke: rgba(100, 116, 139, 0.26);
+  stroke-width: 0.54;
+}
+
+.arc-rite {
+  stroke: url(#geo-rite-arc);
+  stroke-width: 0.58;
+}
+
+.arc-quiet,
+.fold-quiet {
+  opacity: 0.52;
+}
+
+.arc-white {
+  stroke: rgba(148, 163, 184, 0.24);
+  stroke-width: 0.56;
+}
+
+.pillar-lines,
+.rite-fold,
+.inner-arches {
+  stroke: rgba(100, 116, 139, 0.24);
+  stroke-width: 0.34;
+}
+
+.inner-arches {
+  stroke: rgba(165, 180, 252, 0.18);
+  stroke-width: 0.30;
+}
+
+.geo-axis {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.22);
+  stroke-width: 0.28;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+}
+
+.axis-faint {
+  stroke: rgba(139, 92, 246, 0.14);
+}
+
+.geo-orbit-outer,
+.geo-orbit-middle {
+  transform-origin: 100px 100px;
+}
+
+.geo-orbit-outer {
+  animation: geo-spin 128s linear infinite;
+}
+
+.geo-orbit-middle {
+  animation: geo-spin 172s linear infinite reverse;
+}
+
+@keyframes geo-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.light-wave {
   position: absolute;
-  border-radius: 12px;
-  border: 1px dashed rgba(71, 85, 105, 0.22);
-  background: rgba(15, 23, 42, 0.2);
-}
-
-.output-slot {
-  border-color: rgba(125, 211, 252, 0.42);
+  top: 50%; left: 50%;
+  width: 210px; height: 210px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  border: 1px solid rgba(148, 163, 184, 0.11);
   box-shadow:
-    0 10px 24px rgba(14, 165, 233, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+    0 0 22px rgba(148, 163, 184, 0.08),
+    inset 0 0 18px rgba(255, 255, 255, 0.045);
+  animation: wave-emit 8s cubic-bezier(0.1, 0.7, 0.3, 1) infinite;
+  opacity: 0;
 }
 
-.result-lane {
-  position: absolute;
-  left: calc(36px + 82px * 3.45);
-  top: calc(34px + 32px * 3.45);
-  width: 2px;
-  height: 124px;
-  background: linear-gradient(180deg, rgba(125, 211, 252, 0), rgba(125, 211, 252, 0.44), rgba(125, 211, 252, 0));
-  transform: translateX(-50%);
-  opacity: 0.6;
+.wave-2 { 
+  animation-delay: 4s; 
+  border-color: rgba(139, 92, 246, 0.08);
+  box-shadow:
+    0 0 26px rgba(139, 92, 246, 0.07),
+    inset 0 0 18px rgba(var(--arcane-primary), 0.06);
+}
+
+@keyframes wave-emit {
+  0% { width: 180px; height: 180px; opacity: 0; border-width: 1px; }
+  18% { opacity: 0.56; }
+  100% { width: 690px; height: 690px; opacity: 0; border-width: 0px; }
+}
+
+/* Void Matrix Grid */
+.void-matrix {
+  display: grid;
+  grid-template-columns: repeat(3, 72px);
+  grid-template-rows: repeat(3, 72px);
+  gap: 16px;
+  z-index: 2;
+  margin-bottom: 42px;
+}
+
+.void-slot {
+  width: 72px;
+  height: 72px;
+  border-radius: 20px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 50%, rgba(12, 16, 24, 0.5) 0%, rgba(4, 6, 10, 0.8) 100%);
+  box-shadow:
+    inset 0 8px 16px rgba(0,0,0,0.8),
+    inset 0 0 0 1px rgba(255,255,255,0.02),
+    0 0 24px rgba(0,0,0,0.4);
+  transition: transform 0.3s ease, box-shadow 0.3s ease;
+}
+
+.void-slot.empty {
+  opacity: 0.35;
+}
+
+.void-slot:hover:not(.empty) {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 8px 16px rgba(0,0,0,0.8),
+    inset 0 0 0 1px rgba(var(--arcane-secondary), 0.15),
+    0 8px 24px rgba(var(--arcane-secondary), 0.12);
+}
+
+.slot-item {
+  width: 100%; height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .item-icon {
-  width: 36px;
-  height: 36px;
   image-rendering: pixelated;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.8));
 }
 
-.count {
-  position: absolute;
-  right: 4px;
-  bottom: 2px;
-  font-size: 11px;
-  font-weight: 700;
-  color: #f8fafc;
-  text-shadow: 0 1px 2px rgba(2, 8, 23, 0.9);
-}
-
-.aspects-band {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 28px;
-  min-height: 126px;
-}
-
-.aspects-row {
-  display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  height: 112px;
-  margin-top: 10px;
-  width: 360px;
-  margin-left: calc(36px + 82px * 3.45 - 180px);
-}
-
-.aspect-slot {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
-  flex: 1 1 0;
-  width: 42px;
-  height: 58px;
-}
-
-.aspect-slot.is-clickable {
+.magnetic-hover {
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
   cursor: pointer;
 }
 
-.aspect-slot.is-clickable:hover .aspect-icon {
-  transform: translateY(-1px) scale(1.08);
-  filter: drop-shadow(0 0 10px rgba(125, 211, 252, 0.42));
+.void-slot:hover .magnetic-hover {
+  transform: scale(1.06);
+}
+
+.mystic-badge {
+  position: absolute;
+  right: -2px; bottom: -2px;
+  background: rgba(8, 12, 18, 0.9);
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  border: 1px solid rgba(var(--arcane-secondary), 0.25);
+  border-radius: 6px;
+  padding: 2px 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4), 0 0 8px rgba(var(--arcane-secondary), 0.15);
+  pointer-events: none;
+}
+
+/* Aspects Orbiting Constellation */
+.aspect-constellation {
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 1px; height: 1px;
+  z-index: 3;
+  pointer-events: none;
+}
+
+.aspect-star {
+  position: absolute;
+  top: 0; left: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  width: 64px;
+  pointer-events: auto;
+  /* Orbital transform calculation */
+  transform: 
+    rotate(var(--angle)) 
+    translateY(calc(-1 * var(--radius))) 
+    rotate(calc(-1 * var(--angle))) 
+    translate(-50%, -50%);
+}
+
+.aspect-star.is-clickable {
+  cursor: pointer;
+}
+
+.aspect-star.is-clickable:hover .aspect-icon {
+  transform: translateY(-6px) scale(1.15);
+  filter: drop-shadow(0 0 24px color-mix(in srgb, var(--accent) 80%, transparent));
 }
 
 .aspect-icon {
-  width: 34px;
-  height: 34px;
+  width: 56px; height: 56px;
   image-rendering: pixelated;
-  transition: transform 160ms ease, filter 160ms ease;
-  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--accent) 36%, transparent));
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), filter 0.3s ease;
+  filter: drop-shadow(0 0 16px color-mix(in srgb, var(--accent) 50%, transparent));
 }
 
 .aspect-amount {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 700;
-  color: rgba(226, 232, 240, 0.88);
+  color: #fff;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 1), 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* Arcane Flow Channel (High-end transition) */
+.arcane-flow-channel {
+  width: 160px;
+  height: 60px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+.flow-core {
+  position: absolute;
+  width: 100%; height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(var(--arcane-primary), 0.8), rgba(var(--arcane-secondary), 0.9), transparent);
+  box-shadow: 0 0 24px rgba(var(--arcane-secondary), 0.8);
+}
+
+.flow-core::after {
+  content: '';
+  position: absolute;
+  top: -1px; left: 0;
+  width: 50px; height: 4px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 32px 8px rgba(var(--arcane-secondary), 1);
+  animation: shooting-star 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.flow-particle {
+  position: absolute;
+  width: 4px; height: 4px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 12px 3px rgba(var(--arcane-primary), 0.9);
+  animation: drift-flow 2.5s linear infinite;
+  opacity: 0;
+}
+
+.p-a { top: 15px; left: 10%; animation-delay: 0.2s; animation-duration: 3s; }
+.p-b { bottom: 15px; left: 20%; animation-delay: 0.8s; background: rgba(var(--arcane-secondary), 1); box-shadow: 0 0 12px 3px rgba(var(--arcane-secondary), 0.9); }
+.p-c { top: 25px; left: 5%; animation-delay: 1.4s; animation-duration: 2.2s; }
+
+.flow-rune {
+  position: absolute;
+  color: rgba(var(--arcane-primary), 0.9);
+  font-family: serif;
+  font-size: 16px;
+  font-weight: bold;
+  text-shadow: 0 0 12px rgba(var(--arcane-primary), 1);
+  animation: float-rune 3.5s linear infinite;
+  opacity: 0;
+}
+
+.rune-1 { top: -20px; left: 15%; animation-delay: 0s; }
+.rune-2 { bottom: -20px; left: 45%; animation-delay: 1.2s; color: rgba(var(--arcane-secondary), 0.9); text-shadow: 0 0 12px rgba(var(--arcane-secondary), 1); }
+.rune-3 { top: 0px; left: 65%; animation-delay: 2.4s; }
+
+@keyframes shooting-star {
+  0% { transform: translateX(0) scale(0.5); opacity: 0; }
+  15% { opacity: 1; transform: translateX(20px) scale(1); }
+  85% { opacity: 1; transform: translateX(120px) scale(0.8); }
+  100% { transform: translateX(160px) scale(0); opacity: 0; }
+}
+
+@keyframes drift-flow {
+  0% { transform: translateX(0); opacity: 0; }
+  50% { opacity: 1; }
+  100% { transform: translateX(100px); opacity: 0; }
+}
+
+@keyframes float-rune {
+  0% { transform: translate(0, 0) scale(0.5) rotate(-20deg); opacity: 0; }
+  50% { opacity: 1; transform: translate(50px, -15px) scale(1.3) rotate(10deg); }
+  100% { transform: translate(100px, 0) scale(0.5) rotate(40deg); opacity: 0; }
+}
+
+/* Output Void */
+.floating-output {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.output-void {
+  width: 120px; height: 120px;
+  border-radius: 50%;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle at 50% 50%, rgba(16, 20, 28, 0.6) 0%, rgba(4, 6, 10, 0.85) 100%);
+  box-shadow:
+    inset 0 8px 24px rgba(0,0,0,0.9),
+    inset 0 0 0 1px rgba(var(--arcane-primary), 0.1),
+    0 0 32px rgba(0,0,0,0.6);
+  transition: box-shadow 0.4s ease;
+}
+
+.output-void::before {
+  content: '';
+  position: absolute;
+  inset: -30px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(var(--arcane-primary), 0.12) 0%, rgba(var(--arcane-secondary), 0.05) 40%, transparent 70%);
+  z-index: -1;
+  pointer-events: none;
+  animation: outputPulse 4s ease-in-out infinite alternate;
+}
+
+.output-void.empty {
+  opacity: 0.35;
+}
+
+.output-void:hover:not(.empty) {
+  box-shadow:
+    inset 0 8px 24px rgba(0,0,0,0.9),
+    inset 0 0 0 1px rgba(var(--arcane-primary), 0.25),
+    0 0 42px rgba(var(--arcane-primary), 0.18);
+}
+
+.output-lift {
+  width: 100%; height: 100%;
+}
+
+.output-void:hover .magnetic-hover {
+  transform: scale(1.08) translateY(-4px);
+  filter: drop-shadow(0 12px 24px rgba(var(--arcane-primary), 0.25));
+}
+
+@keyframes ambientDrift {
+  from { transform: translate3d(0, 0, 0) scale(0.96); opacity: 0.24; }
+  to { transform: translate3d(6px, -8px, 0) scale(1.06); opacity: 0.42; }
+}
+
+@keyframes outputPulse {
+  from { transform: scale(0.9); opacity: 0.6; }
+  to { transform: scale(1.05); opacity: 1; }
+}
+
+@media (max-width: 1080px) {
+  .mystic-deck {
+    flex-direction: column;
+    gap: 48px;
+    padding-top: 40px;
+  }
+  .floating-research {
+    width: auto;
+    text-align: center;
+  }
+  .void-gap {
+    transform: rotate(90deg);
+  }
 }
 </style>
+
+
 
