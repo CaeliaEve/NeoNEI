@@ -310,7 +310,7 @@ onBeforeUnmount(() => {
                 :item-id="outputItem!.itemId"
                 :render-asset-ref="outputItem!.renderAssetRef || null"
                 :image-file-name="outputItem!.imageFileName || null"
-                :size="64"
+                :size="72"
                 class="item-icon"
               />
             </div>
@@ -452,27 +452,12 @@ onBeforeUnmount(() => {
 .synthesis-deck::before {
   content: '';
   position: absolute;
-  width: min(680px, 82vw);
-  height: 260px;
-  border-radius: 999px;
+  width: min(780px, 90vw);
+  height: 380px;
+  border-radius: 50%;
   background:
-    radial-gradient(ellipse at 50% 50%, rgba(26, 38, 56, 0.42) 0%, rgba(20, 30, 44, 0.22) 36%, transparent 72%),
-    radial-gradient(ellipse at 36% 50%, rgba(96, 165, 250, 0.075) 0%, transparent 58%),
-    radial-gradient(ellipse at 70% 50%, rgba(var(--lab-heat), 0.06) 0%, transparent 56%);
-  filter: blur(10px);
+    radial-gradient(ellipse at 50% 50%, rgba(26, 38, 56, 0.35) 0%, rgba(20, 30, 44, 0.15) 36%, transparent 72%);
   opacity: 0.92;
-  pointer-events: none;
-}
-
-.synthesis-deck::after {
-  content: '';
-  position: absolute;
-  width: min(540px, 72vw);
-  height: 150px;
-  border-radius: 999px;
-  background: radial-gradient(ellipse at 50% 50%, rgba(148, 163, 184, 0.075) 0%, transparent 70%);
-  filter: blur(26px);
-  opacity: 0.7;
   pointer-events: none;
 }
 
@@ -482,22 +467,21 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(ellipse at 50% 50%, rgba(28, 40, 58, 0.64) 0%, rgba(18, 26, 39, 0.58) 46%, rgba(9, 14, 22, 0.45) 100%),
-    linear-gradient(180deg, rgba(17, 24, 36, 0.86), rgba(10, 15, 23, 0.78));
-  border-radius: 28px;
-  padding: 18px 28px;
+    radial-gradient(ellipse at 50% 50%, rgba(28, 40, 58, 0.45) 0%, rgba(14, 20, 32, 0.38) 46%, rgba(9, 14, 22, 0.32) 100%),
+    linear-gradient(180deg, rgba(17, 24, 36, 0.58), rgba(10, 15, 23, 0.65));
+  border-radius: 36px;
+  padding: 32px 48px;
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.04),
-    inset 0 -14px 24px rgba(0,0,0,0.18),
-    inset 0 0 34px rgba(148, 163, 184, 0.025),
-    0 0 0 1px rgba(148, 163, 184, 0.075),
-    0 18px 38px rgba(2, 6, 12, 0.22),
-    0 0 64px rgba(15, 23, 42, 0.26);
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    inset 0 0 24px rgba(148, 163, 184, 0.03),
+    0 0 0 1px rgba(148, 163, 184, 0.08),
+    0 24px 48px rgba(2, 6, 12, 0.42);
   width: fit-content;
   max-width: 100%;
-  min-height: 112px;
-  gap: 32px;
-  backdrop-filter: blur(14px) saturate(116%);
+  min-height: 140px;
+  gap: 42px;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   overflow: visible;
   isolation: isolate;
 }
@@ -505,100 +489,88 @@ onBeforeUnmount(() => {
 .workbench-track::before {
   content: '';
   position: absolute;
-  inset: -22px -34px;
-  border-radius: 42px;
-  background:
-    radial-gradient(ellipse at 50% 50%, rgba(22, 32, 48, 0.44) 0%, rgba(14, 22, 34, 0.20) 44%, transparent 74%),
-    linear-gradient(90deg, transparent, rgba(148, 163, 184, 0.045), transparent);
-  filter: blur(18px);
-  opacity: 0.9;
-  z-index: -2;
-  pointer-events: none;
-}
-
-.workbench-track::after {
-  content: '';
-  position: absolute;
   inset: -1px;
   border-radius: inherit;
   padding: 1px;
-  background: linear-gradient(135deg, rgba(255,255,255,0.055), rgba(148, 163, 184, 0.045) 45%, rgba(var(--lab-heat), 0.055));
+  background: linear-gradient(135deg, rgba(255,255,255,0.08), rgba(148, 163, 184, 0.02) 45%, rgba(var(--lab-heat), 0.06));
   mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
   mask-composite: exclude;
+  -webkit-mask-composite: xor;
   pointer-events: none;
-  opacity: 0.72;
+  opacity: 0.8;
 }
 
 .grid-matrix {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(3, 56px);
-  grid-template-rows: repeat(3, 56px);
-  gap: 6px;
+  grid-template-columns: repeat(3, 64px);
+  grid-template-rows: repeat(3, 64px);
+  gap: 12px;
   flex: 0 0 auto;
 }
 
 .grid-matrix::before {
   content: '';
   position: absolute;
-  inset: -14px;
-  border-radius: 24px;
-  background: radial-gradient(ellipse at 50% 50%, rgba(2, 6, 12, 0.36), transparent 72%);
+  inset: -18px;
+  border-radius: 28px;
+  background: radial-gradient(ellipse at 50% 50%, rgba(2, 6, 12, 0.26), transparent 72%);
   z-index: -1;
   pointer-events: none;
 }
 
 .craft-slot {
-  width: 56px;
-  height: 56px;
-  border-radius: 14px;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, rgba(6, 10, 16, 0.95), rgba(11, 17, 26, 0.98));
+  background: linear-gradient(180deg, rgba(6, 10, 16, 0.92), rgba(11, 17, 26, 0.96));
   box-shadow:
-    inset 0 4px 10px rgba(0,0,0,0.68),
+    inset 0 4px 12px rgba(0,0,0,0.4),
     inset 0 1px 0 rgba(255,255,255,0.03),
     0 0 0 1px var(--lab-border-soft);
   transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease;
 }
 
 .craft-slot.empty {
-  opacity: 0.35;
+  opacity: 0.4;
   background: linear-gradient(180deg, rgba(4, 7, 12, 0.85), rgba(8, 12, 20, 0.90));
 }
 
 .craft-slot.is-hovered,
 .craft-slot:hover:not(.empty) {
-  transform: translateY(-1px) scale(1.04);
+  transform: translateY(-2px) scale(1.02);
   box-shadow:
     inset 0 4px 10px rgba(0,0,0,0.68),
-    inset 0 1px 0 rgba(255,255,255,0.06),
-    0 0 0 1px rgba(148, 190, 255, 0.22),
-    0 6px 14px rgba(96, 165, 250, 0.12);
+    inset 0 1px 0 rgba(255,255,255,0.08),
+    0 0 0 1px rgba(148, 190, 255, 0.28),
+    0 8px 18px rgba(96, 165, 250, 0.16);
 }
 
 .craft-slot.has-alternatives {
   box-shadow:
     inset 0 4px 10px rgba(0,0,0,0.68),
-    inset 0 1px 0 rgba(255,255,255,0.04),
-    0 0 0 1px rgba(225, 232, 241, 0.18);
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 0 0 1px rgba(225, 232, 241, 0.22);
 }
 
 /* Slot item & hover */
 .slot-item {
   position: relative;
-  width: 46px; height: 46px;
-  border-radius: 12px;
+  width: 52px; height: 52px;
+  border-radius: 14px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(180deg, rgba(15, 22, 33, 0.92), rgba(8, 12, 18, 0.98));
+  background: linear-gradient(180deg, rgba(15, 22, 33, 0.88), rgba(8, 12, 18, 0.94));
   border: 1px solid rgba(148, 163, 184, 0.08);
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.04),
-    inset 0 -6px 10px rgba(0,0,0,0.18);
+    inset 0 1px 0 rgba(255,255,255,0.05),
+    0 4px 12px rgba(0,0,0,0.22);
 }
 
 .slot-item.empty {
@@ -632,14 +604,14 @@ onBeforeUnmount(() => {
 
 /* Heating corridor */
 .heating-corridor {
-  width: 140px;
-  flex: 0 0 140px;
+  width: 160px;
+  flex: 0 0 160px;
   height: 100%;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-width: 100px;
+  min-width: 120px;
   contain: layout style;
 }
 
@@ -649,13 +621,11 @@ onBeforeUnmount(() => {
   left: -28px;
   right: -28px;
   top: 50%;
-  height: 74px;
+  height: 120px;
   transform: translateY(-50%);
-  border-radius: 999px;
+  border-radius: 50%;
   background:
-    radial-gradient(ellipse at 50% 50%, rgba(148, 190, 255, 0.07) 0%, rgba(var(--lab-heat), 0.045) 38%, transparent 76%);
-  filter: blur(10px);
-  opacity: 0.82;
+    radial-gradient(circle, rgba(148, 190, 255, 0.05) 0%, rgba(var(--lab-heat), 0.03) 38%, transparent 70%);
   pointer-events: none;
 }
 
@@ -702,7 +672,7 @@ onBeforeUnmount(() => {
 
 /* Output node */
 .track-node {
-  width: 88px; height: 88px;
+  width: 104px; height: 104px;
   border-radius: 50%;
   position: relative;
   display: flex;
@@ -713,25 +683,23 @@ onBeforeUnmount(() => {
 
 .node-output {
   background:
-    radial-gradient(circle at 50% 42%, rgba(35, 48, 66, 0.86), rgba(12, 17, 26, 0.72) 70%),
-    linear-gradient(180deg, rgba(18, 26, 39, 0.76), rgba(12, 17, 26, 0.72));
+    radial-gradient(circle at 50% 42%, rgba(35, 48, 66, 0.72), rgba(12, 17, 26, 0.58) 70%),
+    linear-gradient(180deg, rgba(18, 26, 39, 0.65), rgba(12, 17, 26, 0.55));
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.05),
-    inset 0 -12px 20px rgba(0,0,0,0.16),
-    0 10px 18px rgba(0,0,0,0.20),
+    inset 0 1px 0 rgba(255,255,255,0.06),
+    inset 0 -12px 20px rgba(0,0,0,0.12),
+    0 10px 24px rgba(0,0,0,0.24),
     0 0 0 1px rgba(148, 163, 184, 0.08),
-    0 0 34px rgba(var(--lab-heat), 0.035);
-  backdrop-filter: blur(8px);
+    0 0 42px rgba(var(--lab-heat), 0.04);
 }
 
 .node-output::before {
   content: '';
   position: absolute;
-  inset: -24px;
+  inset: -48px;
   border-radius: 50%;
   background:
-    radial-gradient(circle, rgba(var(--lab-heat), 0.08) 0%, rgba(148, 190, 255, 0.045) 40%, transparent 68%);
-  filter: blur(3px);
+    radial-gradient(circle, rgba(var(--lab-heat), 0.06) 0%, rgba(148, 190, 255, 0.03) 40%, transparent 68%);
   z-index: -1;
   will-change: transform, opacity;
   animation: heat-breathe 4s ease-in-out infinite alternate;
@@ -739,23 +707,26 @@ onBeforeUnmount(() => {
 }
 
 .node-output .slot-item {
-  width: 68px; height: 68px;
+  width: 82px; height: 82px;
   border-radius: 50%;
 }
 
 /* Badges */
 .minimal-badge {
   position: absolute;
-  background: rgba(10, 15, 23, 0.92);
-  color: #b8c2cf;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.2px;
-  border: 1px solid rgba(148, 163, 184, 0.12);
-  border-radius: 999px;
-  padding: 2px 6px;
-  box-shadow: 0 4px 10px rgba(0,0,0,0.18);
+  background: rgba(10, 15, 23, 0.85);
+  color: #e2e8f0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.5px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 6px;
+  padding: 3px 8px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.25);
   pointer-events: none;
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .count-badge { right: -2px; bottom: -2px; }
