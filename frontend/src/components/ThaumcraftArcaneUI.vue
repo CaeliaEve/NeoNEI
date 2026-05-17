@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue';
 import { getImageUrl, type Recipe, type RecipeInputCell } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
@@ -445,15 +445,36 @@ watch(
 
       </div>
 
-      <!-- Arcane Flow (High-end Synthesis Animation) -->
-      <div class="arcane-flow-channel" aria-hidden="true">
-        <div class="flow-core"></div>
-        <div class="flow-particle p-a"></div>
-        <div class="flow-particle p-b"></div>
-        <div class="flow-particle p-c"></div>
-        <div class="flow-rune rune-1">◆</div>
-        <div class="flow-rune rune-2">◇</div>
-        <div class="flow-rune rune-3">✦</div>
+      <!-- Minimalist Armillary Bridge (High-end Ancient) -->
+      <div class="armillary-bridge" aria-hidden="true">
+        <!-- The pure focal thread -->
+        <div class="focal-thread"></div>
+        
+        <div class="armillary-tunnel">
+          <!-- Outer Ring (Lens) -->
+          <div class="armillary-ring r-outer">
+            <svg viewBox="0 0 100 100" class="ring-svg">
+              <circle cx="50" cy="50" r="48" class="ring-track thin" />
+              <circle cx="50" cy="50" r="42" class="ring-marks primary" stroke-dasharray="1 12" />
+            </svg>
+          </div>
+          <!-- Center Ring (Core) -->
+          <div class="armillary-ring r-core">
+            <svg viewBox="0 0 100 100" class="ring-svg">
+              <circle cx="50" cy="50" r="46" class="ring-track thin secondary" stroke-dasharray="4 4" />
+              <circle cx="50" cy="50" r="38" class="ring-track primary" />
+            </svg>
+          </div>
+          <!-- Inner Ring (Focus) -->
+          <div class="armillary-ring r-inner">
+            <svg viewBox="0 0 100 100" class="ring-svg">
+              <circle cx="50" cy="50" r="48" class="ring-track thin" />
+              <path d="M50,2 L50,8 M50,92 L50,98 M2,50 L8,50 M92,50 L98,50" class="ring-pointers primary" />
+            </svg>
+          </div>
+        </div>
+
+        <div class="celestial-pulse"></div>
       </div>
 
       <!-- Output (Floating Right) -->
@@ -898,81 +919,106 @@ watch(
   text-shadow: 0 2px 12px rgba(0, 0, 0, 1), 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
 }
 
-/* Arcane Flow Channel (High-end transition) */
-.arcane-flow-channel {
-  width: 160px;
-  height: 60px;
+/* Minimalist Armillary Bridge */
+.armillary-bridge {
+  width: 180px;
+  height: 90px;
   position: relative;
   display: flex;
   align-items: center;
   justify-content: center;
+  perspective: 700px;
   z-index: 10;
+  transform: translateX(45px);
 }
 
-.flow-core {
+.focal-thread {
   position: absolute;
-  width: 100%; height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(var(--arcane-primary), 0.8), rgba(var(--arcane-secondary), 0.9), transparent);
-  box-shadow: 0 0 24px rgba(var(--arcane-secondary), 0.8);
+  width: 100%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(var(--arcane-secondary), 0.2), rgba(var(--arcane-primary), 0.5), transparent);
+  box-shadow: 0 0 12px rgba(var(--arcane-primary), 0.6);
+  opacity: 0.8;
 }
 
-.flow-core::after {
-  content: '';
+.armillary-tunnel {
   position: absolute;
-  top: -1px; left: 0;
-  width: 50px; height: 4px;
-  border-radius: 50%;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  transform-style: preserve-3d;
+}
+
+.armillary-ring {
+  position: relative;
+  transform-style: preserve-3d;
+  transform: rotateY(70deg);
+  filter: drop-shadow(0 0 12px rgba(var(--arcane-primary), 0.25));
+}
+
+.ring-svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  overflow: visible;
+  stroke-linecap: round;
+}
+
+/* Elegant, razor-thin styling */
+.ring-track {
+  stroke: rgba(148, 163, 184, 0.2);
+  stroke-width: 1px;
+}
+.ring-track.thin {
+  stroke-width: 0.5px;
+}
+.ring-track.primary {
+  stroke: rgba(var(--arcane-primary), 0.6);
+}
+.ring-track.secondary {
+  stroke: rgba(var(--arcane-secondary), 0.4);
+}
+
+.ring-marks {
+  stroke: rgba(var(--arcane-primary), 0.8);
+  stroke-width: 1px;
+}
+
+.ring-pointers {
+  stroke: rgba(var(--arcane-primary), 0.9);
+  stroke-width: 1.5px;
+}
+
+/* 3 Minimal Rings */
+.r-outer { width: 75px; height: 75px; animation: spin-lens 24s linear infinite; }
+.r-core { width: 90px; height: 90px; margin-left: -25px; margin-right: -25px; animation: spin-core 18s linear infinite reverse; }
+.r-inner { width: 65px; height: 65px; animation: spin-focus 20s linear infinite; }
+
+@keyframes spin-lens { 0% { transform: rotateY(70deg) rotateZ(0deg); } 100% { transform: rotateY(70deg) rotateZ(360deg); } }
+@keyframes spin-core { 0% { transform: rotateY(75deg) rotateZ(360deg); } 100% { transform: rotateY(75deg) rotateZ(0deg); } }
+@keyframes spin-focus { 0% { transform: rotateY(65deg) rotateZ(0deg) rotateX(10deg); } 100% { transform: rotateY(65deg) rotateZ(360deg) rotateX(10deg); } }
+
+.celestial-pulse {
+  position: absolute;
+  left: 0;
+  width: 20px;
+  height: 2px;
   background: #fff;
-  box-shadow: 0 0 32px 8px rgba(var(--arcane-secondary), 1);
-  animation: shooting-star 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-.flow-particle {
-  position: absolute;
-  width: 4px; height: 4px;
-  background: #fff;
   border-radius: 50%;
-  box-shadow: 0 0 12px 3px rgba(var(--arcane-primary), 0.9);
-  animation: drift-flow 2.5s linear infinite;
+  box-shadow: 
+    0 0 16px 4px rgba(255,255,255,0.8),
+    0 0 32px 12px rgba(var(--arcane-primary), 0.8);
+  animation: celestial-transit 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   opacity: 0;
 }
 
-.p-a { top: 15px; left: 10%; animation-delay: 0.2s; animation-duration: 3s; }
-.p-b { bottom: 15px; left: 20%; animation-delay: 0.8s; background: rgba(var(--arcane-secondary), 1); box-shadow: 0 0 12px 3px rgba(var(--arcane-secondary), 0.9); }
-.p-c { top: 25px; left: 5%; animation-delay: 1.4s; animation-duration: 2.2s; }
-
-.flow-rune {
-  position: absolute;
-  color: rgba(var(--arcane-primary), 0.9);
-  font-family: serif;
-  font-size: 16px;
-  font-weight: bold;
-  text-shadow: 0 0 12px rgba(var(--arcane-primary), 1);
-  animation: float-rune 3.5s linear infinite;
-  opacity: 0;
-}
-
-.rune-1 { top: -20px; left: 15%; animation-delay: 0s; }
-.rune-2 { bottom: -20px; left: 45%; animation-delay: 1.2s; color: rgba(var(--arcane-secondary), 0.9); text-shadow: 0 0 12px rgba(var(--arcane-secondary), 1); }
-.rune-3 { top: 0px; left: 65%; animation-delay: 2.4s; }
-
-@keyframes shooting-star {
-  0% { transform: translateX(0) scale(0.5); opacity: 0; }
-  15% { opacity: 1; transform: translateX(20px) scale(1); }
-  85% { opacity: 1; transform: translateX(120px) scale(0.8); }
-  100% { transform: translateX(160px) scale(0); opacity: 0; }
-}
-
-@keyframes drift-flow {
-  0% { transform: translateX(0); opacity: 0; }
-  50% { opacity: 1; }
-  100% { transform: translateX(100px); opacity: 0; }
-}
-
-@keyframes float-rune {
-  0% { transform: translate(0, 0) scale(0.5) rotate(-20deg); opacity: 0; }
-  50% { opacity: 1; transform: translate(50px, -15px) scale(1.3) rotate(10deg); }
-  100% { transform: translate(100px, 0) scale(0.5) rotate(40deg); opacity: 0; }
+@keyframes celestial-transit {
+  0% { transform: translateX(0) scaleX(0.2); opacity: 0; }
+  25% { opacity: 1; transform: translateX(45px) scaleX(1); }
+  75% { opacity: 1; transform: translateX(135px) scaleX(1.5); }
+  100% { transform: translateX(180px) scaleX(0.2); opacity: 0; }
 }
 
 /* Output Void */
@@ -1053,6 +1099,3 @@ watch(
   }
 }
 </style>
-
-
-
