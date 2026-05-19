@@ -27,6 +27,10 @@ import {
   warmGlobalBrowserAtlasForItemsDetailed,
   type BrowserAtlasItemEntry,
 } from "../services/globalBrowserAtlas";
+import {
+  BrowserWebglAtlasRenderer,
+  type BrowserWebglAtlasDrawCommand,
+} from "../services/browserWebglAtlasRenderer";
 
 type GridRect = {
   entry: BrowserGridEntry;
@@ -91,6 +95,7 @@ const emit = defineEmits<{
 
 const hostRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const webglCanvasRef = ref<HTMLCanvasElement | null>(null);
 const hostWidth = ref(0);
 const itemRects = ref<GridRect[]>([]);
 const hoveredRect = ref<GridRect | null>(null);
@@ -111,6 +116,7 @@ let animationLoopHandle: number | null = null;
 let idleAnimationKickHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
 let atlasLoadSeq = 0;
 let animationDelayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
 
 const gap = 4;
 const cardSize = computed(() => Math.max(28, Math.floor(props.itemSize)));
@@ -341,6 +347,44 @@ function drawGlobalStaticSprite(
   return true;
 }
 
+function getIconDrawRect(rect: GridRect) {
+  return {
+    x: rect.x + Math.round((rect.size - iconSize.value) / 2),
+    y: rect.y + Math.round((rect.size - iconSize.value) / 2),
+    size: iconSize.value,
+  };
+}
+
+function queueGlobalStaticSprite(
+  commands: BrowserWebglAtlasDrawCommand[],
+  atlas: HTMLImageElement,
+  entry: BrowserAtlasItemEntry,
+  rect: GridRect,
+): boolean {
+  if (!webglAtlasRenderer?.canDrawImage(atlas)) return false;
+  const placement = getStaticPlacement(entry);
+  if (!placement) return false;
+  const sourceWidth = Math.max(1, Number(placement.width ?? 0));
+  const sourceHeight = Math.max(1, Number(placement.height ?? 0));
+  const sourceX = Math.max(0, Number(placement.x ?? 0));
+  const sourceY = Math.max(0, Number(placement.y ?? 0));
+  if (!sourceWidth || !sourceHeight) return false;
+
+  const drawRect = getIconDrawRect(rect);
+  commands.push({
+    image: atlas,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    destX: drawRect.x,
+    destY: drawRect.y,
+    destWidth: drawRect.size,
+    destHeight: drawRect.size,
+  });
+  return true;
+}
+
 function getPreparedGlobalAnimation(itemId: string, entry: BrowserAtlasItemEntry): PreparedGlobalAnimation | null {
   const atlasFile = `${entry.animatedAtlas?.atlasFile ?? ""}`.trim();
   if (!atlasFile) return null;
@@ -371,6 +415,7 @@ function drawGlobalAnimation(
   if (!prepared) return false;
   const atlas = getLoadedGlobalAtlasImage(prepared.atlasFile);
   if (!atlas) return false;
+  if (!webglAtlasRenderer?.canDrawImage(atlas)) return false;
 
   const frameIndex = resolveTimelineFrameIndex(prepared.timeline, now);
   const frame = prepared.frames.find((candidate) => candidate.index === frameIndex) ?? prepared.frames[0];
@@ -389,6 +434,36 @@ function drawGlobalAnimation(
     iconSize.value,
     iconSize.value,
   );
+  return true;
+}
+
+function queueGlobalAnimation(
+  commands: BrowserWebglAtlasDrawCommand[],
+  entry: BrowserAtlasItemEntry,
+  rect: GridRect,
+  now: number,
+): boolean {
+  const prepared = getPreparedGlobalAnimation(rect.item.itemId, entry);
+  if (!prepared) return false;
+  const atlas = getLoadedGlobalAtlasImage(prepared.atlasFile);
+  if (!atlas) return false;
+
+  const frameIndex = resolveTimelineFrameIndex(prepared.timeline, now);
+  const frame = prepared.frames.find((candidate) => candidate.index === frameIndex) ?? prepared.frames[0];
+  if (!frame) return false;
+
+  const drawRect = getIconDrawRect(rect);
+  commands.push({
+    image: atlas,
+    sourceX: frame.x,
+    sourceY: frame.y,
+    sourceWidth: frame.width,
+    sourceHeight: frame.height,
+    destX: drawRect.x,
+    destY: drawRect.y,
+    destWidth: drawRect.size,
+    destHeight: drawRect.size,
+  });
   return true;
 }
 
@@ -462,6 +537,8 @@ function draw() {
   const nextRects: GridRect[] = [];
   const now = getSharedAnimationNowMs();
   let drewAnimatedFrame = false;
+  const webglCommands: BrowserWebglAtlasDrawCommand[] = [];
+  const canUseWebglAtlas = Boolean(webglAtlasRenderer);
 
   for (let index = 0; index < props.entries.length; index += 1) {
     const entry = props.entries[index];
@@ -479,6 +556,25 @@ function draw() {
 
     const itemId = rect.item.itemId;
     const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(itemId) : null;
+    if (canUseWebglAtlas && globalEntry && queueGlobalAnimation(webglCommands, globalEntry, rect, now)) {
+      drewAnimatedFrame = true;
+      drawGroupOverlay(ctx, rect);
+      continue;
+    }
+
+    const webglGlobalStaticAtlas = canUseWebglAtlas
+      ? getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile)
+      : null;
+    if (
+      canUseWebglAtlas
+      && globalEntry
+      && webglGlobalStaticAtlas
+      && queueGlobalStaticSprite(webglCommands, webglGlobalStaticAtlas, globalEntry, rect)
+    ) {
+      drawGroupOverlay(ctx, rect);
+      continue;
+    }
+
     if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
       drewAnimatedFrame = true;
       drawGroupOverlay(ctx, rect);
@@ -519,6 +615,7 @@ function draw() {
   }
 
   itemRects.value = nextRects;
+  webglAtlasRenderer?.draw(canvasWidth.value, canvasHeight.value, webglCommands);
   if (drewAnimatedFrame) {
     startAnimationLoop();
   } else if (animationStates.size === 0) {
@@ -1023,6 +1120,9 @@ onMounted(() => {
   if (hostRef.value) {
     resizeObserver.observe(hostRef.value);
   }
+  if (webglCanvasRef.value) {
+    webglAtlasRenderer = BrowserWebglAtlasRenderer.create(webglCanvasRef.value);
+  }
   window.addEventListener("resize", updateHostWidth, { passive: true });
   scheduleRender();
 });
@@ -1044,6 +1144,8 @@ onUnmounted(() => {
     clearTimeout(animationDelayTimer);
     animationDelayTimer = null;
   }
+  webglAtlasRenderer?.dispose();
+  webglAtlasRenderer = null;
 });
 </script>
 
@@ -1057,6 +1159,7 @@ onUnmounted(() => {
     @mouseleave="handleMouseLeave"
   >
     <canvas ref="canvasRef" class="home-canvas-grid__canvas" />
+    <canvas ref="webglCanvasRef" class="home-canvas-grid__canvas home-canvas-grid__webgl" />
     <div v-if="hoveredRect && tooltipStyle" class="home-canvas-grid__tooltip" :style="tooltipStyle">
       <div class="home-canvas-grid__tooltip-title">{{ tooltipTitle }}</div>
       <div class="home-canvas-grid__tooltip-subtitle">{{ tooltipSubtitle }}</div>
@@ -1076,6 +1179,12 @@ onUnmounted(() => {
 .home-canvas-grid__canvas {
   display: block;
   image-rendering: pixelated;
+}
+
+.home-canvas-grid__webgl {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
 }
 
 .home-canvas-grid__tooltip {
