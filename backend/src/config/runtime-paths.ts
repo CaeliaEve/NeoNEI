@@ -137,6 +137,14 @@ export const NESQL_RENDER_INDEX_FILE = pickFirstExistingPath([
   process.env.NESQL_RENDER_INDEX_FILE,
   NESQL_CANONICAL_DIR ? path.join(NESQL_CANONICAL_DIR, 'render-index.json') : undefined,
 ]);
+export const NESQL_BROWSER_ATLAS_INDEX_FILE = pickFirstExistingPath([
+  process.env.NESQL_BROWSER_ATLAS_INDEX_FILE,
+  NESQL_CANONICAL_DIR ? path.join(NESQL_CANONICAL_DIR, 'browser-atlas-index.json') : undefined,
+]);
+export const NESQL_BROWSER_LAYOUT_INDEX_FILE = pickFirstExistingPath([
+  process.env.NESQL_BROWSER_LAYOUT_INDEX_FILE,
+  NESQL_CANONICAL_DIR ? path.join(NESQL_CANONICAL_DIR, 'browser-layout-index.json') : undefined,
+]);
 export const NESQL_ATLAS_REGISTRY_FILE = pickFirstExistingPath([
   process.env.NESQL_ATLAS_REGISTRY_FILE,
   NESQL_CANONICAL_DIR ? path.join(NESQL_CANONICAL_DIR, 'atlas-registry.json') : undefined,

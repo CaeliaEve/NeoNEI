@@ -25,11 +25,17 @@ import {
 import { preloadBrowserSearchWorker } from '../services/browserSearchWorker';
 import {
   getAnimatedAtlasImageUrl,
-  isImageAssetWarm,
+  isImageAssetDecoded,
   loadImageAsset,
   primeAnimatedAtlasManifest,
   queueRenderableMediaPrewarmFromUnknown,
 } from '../services/animationBudget';
+import {
+  getGlobalBrowserAtlasCoverageForItems,
+  hasGlobalBrowserAtlas,
+  warmGlobalBrowserAtlasForItems,
+  warmGlobalBrowserAtlasForItemsDetailed,
+} from '../services/globalBrowserAtlas';
 import { markPerfEvent, resetPerfTimeline } from '../services/perfMarks';
 
 type CachedBrowserPage = {
@@ -346,10 +352,6 @@ export function useItemBrowser(
   const tryProjectExpandedGroupsFromLocalCaches = (
     params: BrowserPageRequestParams,
   ): { cacheKey: string; page: CachedBrowserPage } | null => {
-    if (params.expandedGroups.length === 0) {
-      return null;
-    }
-
     const normalizedSearch = `${params.search ?? ''}`.trim();
     if (normalizedSearch && !isSearchLocalProjectionEligible({ search: normalizedSearch })) {
       return null;
@@ -598,12 +600,36 @@ export function useItemBrowser(
       return Promise.resolve();
     }
 
+    const itemIds = collectDisplayItems(response.data).map((item) => item.itemId).filter(Boolean);
+    if (hasGlobalBrowserAtlas()) {
+      const existing = pagePresentationWarmInFlight.get(cacheKey);
+      if (existing) {
+        return existing;
+      }
+      const request = warmGlobalBrowserAtlasForItemsDetailed(itemIds)
+        .then((result) => {
+          if (result.total > 0 && result.missingCount === 0) {
+            pagePresentationReady.add(cacheKey);
+            return;
+          }
+          return warmPageAtlasPresentation(response, options).then(() => {
+            pagePresentationReady.add(cacheKey);
+          });
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          pagePresentationWarmInFlight.delete(cacheKey);
+        });
+      pagePresentationWarmInFlight.set(cacheKey, request);
+      return request;
+    }
+
     const atlasUrls = [
       response.atlas?.atlasUrl ?? null,
       ...collectAnimatedAtlasUrls(response).slice(0, Math.max(1, options?.atlasLimit ?? 6)),
     ].filter((url): url is string => Boolean(url));
 
-    if (atlasUrls.length > 0 && atlasUrls.every((url) => isImageAssetWarm(url))) {
+    if (atlasUrls.length > 0 && atlasUrls.every((url) => isImageAssetDecoded(url))) {
       pagePresentationReady.add(cacheKey);
       return Promise.resolve();
     }
@@ -613,17 +639,10 @@ export function useItemBrowser(
       return existing;
     }
 
-    const atlasTasks: Array<Promise<unknown>> = [];
-    if (response.atlas?.atlasUrl) {
-      atlasTasks.push(loadImageAsset(response.atlas.atlasUrl));
-    }
-
-    const animatedAtlasUrls = collectAnimatedAtlasUrls(response).slice(0, Math.max(1, options?.atlasLimit ?? 6));
-    for (const atlasUrl of animatedAtlasUrls) {
-      atlasTasks.push(loadImageAsset(atlasUrl).catch(() => undefined));
-    }
-
-    const request = Promise.allSettled(atlasTasks)
+    const request = Promise.allSettled([
+      warmGlobalBrowserAtlasForItems(itemIds).catch(() => false),
+      warmPageAtlasPresentation(response, options),
+    ])
       .then(() => {
         pagePresentationReady.add(cacheKey);
       })
@@ -636,11 +655,45 @@ export function useItemBrowser(
     return request;
   };
 
+  const warmPageAtlasPresentation = async (
+    response: CachedBrowserPage,
+    options?: { atlasLimit?: number },
+  ): Promise<void> => {
+    const atlasTasks: Array<Promise<unknown>> = [];
+    if (response.atlas?.atlasUrl) {
+      atlasTasks.push(loadImageAsset(response.atlas.atlasUrl));
+    }
+
+    const animatedAtlasUrls = collectAnimatedAtlasUrls(response).slice(0, Math.max(1, options?.atlasLimit ?? 6));
+    for (const atlasUrl of animatedAtlasUrls) {
+      atlasTasks.push(loadImageAsset(atlasUrl).catch(() => undefined));
+    }
+
+    if (atlasTasks.length === 0) {
+      return;
+    }
+    await Promise.allSettled(atlasTasks);
+  };
+
   const waitForBrowserPagePresentation = async (
     cacheKey: string,
     response: CachedBrowserPage,
     waitMs: number,
   ) => {
+    const globalWarmPromise = warmGlobalBrowserAtlasForItemsDetailed(
+      collectDisplayItems(response.data).map((item) => item.itemId).filter(Boolean),
+    );
+    const globalWarmResult = await Promise.race([
+      globalWarmPromise,
+      new Promise<null>((resolve) => {
+        setTimeout(() => resolve(null), Math.min(120, Math.max(0, waitMs)));
+      }),
+    ]);
+    if (globalWarmResult && globalWarmResult.total > 0 && globalWarmResult.missingCount === 0) {
+      pagePresentationReady.add(cacheKey);
+      return;
+    }
+
     if (!response.atlas?.atlasUrl || waitMs <= 0 || pagePresentationReady.has(cacheKey)) {
       return;
     }
@@ -649,7 +702,7 @@ export function useItemBrowser(
       response.atlas.atlasUrl,
       ...collectAnimatedAtlasUrls(response).slice(0, 10),
     ].filter((url): url is string => Boolean(url));
-    if (atlasUrls.length > 0 && atlasUrls.every((url) => isImageAssetWarm(url))) {
+    if (atlasUrls.length > 0 && atlasUrls.every((url) => isImageAssetDecoded(url))) {
       pagePresentationReady.add(cacheKey);
       return;
     }
@@ -732,6 +785,17 @@ export function useItemBrowser(
     response: CachedBrowserPage,
     options?: { animatedEntryLimit?: number; atlasLimit?: number },
   ) => {
+    const displayItemIds = collectDisplayItems(response.data).map((item) => item.itemId).filter(Boolean);
+    void warmGlobalBrowserAtlasForItems(displayItemIds)
+      .then(() => {
+        if (hasGlobalBrowserAtlas()) {
+          markPerfEvent('browser-atlas-page-coverage', {
+            page: response.page,
+            ...getGlobalBrowserAtlasCoverageForItems(displayItemIds),
+          });
+        }
+      })
+      .catch(() => undefined);
     if (response.atlas?.atlasUrl) {
       void loadImageAsset(response.atlas.atlasUrl).catch(() => undefined);
     }
@@ -740,10 +804,15 @@ export function useItemBrowser(
     for (const atlasUrl of animatedAtlasUrls) {
       void loadImageAsset(atlasUrl).catch(() => undefined);
     }
-    queueRenderableMediaPrewarmFromUnknown(response.data, {
-      limit: Math.max(1, options?.animatedEntryLimit ?? 48),
-      animatedOnly: true,
-    });
+    // In the homepage/history browser, the global browser atlas is the animation source of truth.
+    // Falling back to per-item render-contract probes on atlas-backed exports causes request storms
+    // and 404s for static native-sprite snapshots in older data.
+    if (!hasGlobalBrowserAtlas()) {
+      queueRenderableMediaPrewarmFromUnknown(response.data, {
+        limit: Math.max(1, options?.animatedEntryLimit ?? 48),
+        animatedOnly: true,
+      });
+    }
   };
 
   const toCachedBrowserPage = (response: BrowserPagePackResponse): CachedBrowserPage => ({
@@ -887,6 +956,30 @@ export function useItemBrowser(
         transitioning.value = false;
       }
       applyBrowserResponse(cached, requestId, cacheKey);
+      if (requestId === loadItemsRequestId) {
+        transitioning.value = false;
+      }
+      return;
+    }
+
+    const localProjection = tryProjectExpandedGroupsFromLocalCaches(requestParams);
+    if (localProjection) {
+      if (hadVisibleEntries) {
+        loading.value = false;
+        transitioning.value = true;
+        await waitForBrowserPagePresentation(localProjection.cacheKey, localProjection.page, 80);
+      } else {
+        loading.value = false;
+        transitioning.value = false;
+      }
+      setSharedBrowserPageCache(localProjection.cacheKey, localProjection.page);
+      applyBrowserResponse(localProjection.page, requestId, localProjection.cacheKey);
+      hydrateProjectedBrowserPageMedia(
+        localProjection.cacheKey,
+        requestParams,
+        localProjection.page,
+        requestId,
+      );
       if (requestId === loadItemsRequestId) {
         transitioning.value = false;
       }
@@ -1142,6 +1235,19 @@ export function useItemBrowser(
     if (pageCache.has(cacheKey)) return;
 
     try {
+      const localProjection = tryProjectExpandedGroupsFromLocalCaches(requestParams);
+      if (localProjection) {
+        setSharedBrowserPageCache(localProjection.cacheKey, localProjection.page);
+        void ensureBrowserPagePresentationWarm(localProjection.cacheKey, localProjection.page, { animatedEntryLimit: 40, atlasLimit: 6 });
+        hydrateProjectedBrowserPageMedia(
+          localProjection.cacheKey,
+          requestParams,
+          localProjection.page,
+          loadItemsRequestId,
+        );
+        return;
+      }
+
       const expandedProjection = await tryLoadExpandedProjection(requestParams);
       if (expandedProjection) {
         setSharedBrowserPageCache(expandedProjection.cacheKey, expandedProjection.page);
@@ -1257,3 +1363,5 @@ export function useItemBrowser(
     clearCachedPages: clearBrowserPageState,
   };
 }
+
+

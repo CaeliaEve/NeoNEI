@@ -8,7 +8,7 @@ import { chain } from 'stream-chain';
 import { parser } from 'stream-json';
 import { streamArray } from 'stream-json/streamers/StreamArray';
 import { DatabaseManager } from '../models/database';
-import { DATA_DIR } from '../config/runtime-paths';
+import { DATA_DIR, NESQL_BROWSER_LAYOUT_INDEX_FILE } from '../config/runtime-paths';
 import { ItemsService, type Item } from './items.service';
 import { PageAtlasService } from './page-atlas.service';
 import { PublishPayloadMaterializerService } from './publish-payload-materializer.service';
@@ -217,6 +217,30 @@ type MaterializedItemRecord = {
   damage: number;
   imageFileName: string | null;
   tooltip: string | null;
+};
+
+type BrowserLayoutIndexItem = {
+  itemId?: string;
+  browserOrder?: number | null;
+  groupKey?: string | null;
+  groupLabel?: string | null;
+  groupSize?: number | null;
+  groupSortOrder?: number | null;
+};
+
+type BrowserLayoutDefaultEntry = {
+  entryOrder?: number | null;
+  entryKind?: string | null;
+  itemId?: string | null;
+  groupKey?: string | null;
+  groupLabel?: string | null;
+  groupSize?: number | null;
+};
+
+type BrowserLayoutIndex = {
+  schemaVersion?: string;
+  items?: BrowserLayoutIndexItem[];
+  defaultEntries?: BrowserLayoutDefaultEntry[];
 };
 
 type MaterializedRecipePayload = Record<string, unknown>;
@@ -1274,6 +1298,22 @@ function chunkArray<T>(items: T[], chunkSize: number): T[][] {
   return chunks;
 }
 
+function loadBrowserLayoutIndex(): BrowserLayoutIndex | null {
+  if (!NESQL_BROWSER_LAYOUT_INDEX_FILE || !fs.existsSync(NESQL_BROWSER_LAYOUT_INDEX_FILE)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(NESQL_BROWSER_LAYOUT_INDEX_FILE, 'utf8')) as BrowserLayoutIndex;
+    if (!Array.isArray(parsed.items) || !Array.isArray(parsed.defaultEntries)) {
+      return null;
+    }
+    return parsed;
+  } catch (error) {
+    console.warn('[compiler] Failed to read NESQL++ browser layout index; falling back to local projection', error);
+    return null;
+  }
+}
+
 const ACCELERATION_COMPILER_VERSION = '2026-04-30-fluid-entity-index-v1';
 
 export class NeoNeiCompilerService {
@@ -1825,6 +1865,7 @@ export class NeoNeiCompilerService {
     });
 
     const itemBrowserGroupsTransaction = db.transaction(() => {
+      const exportedLayout = loadBrowserLayoutIndex();
       const orderedRows = db.prepare(`
         SELECT item_id, mod_id, internal_name, localized_name, damage, tooltip
         FROM items_core
@@ -1837,6 +1878,59 @@ export class NeoNeiCompilerService {
         damage: number;
         tooltip: string | null;
       }>;
+
+      const rowByItemId = new Map(orderedRows.map((row) => [row.item_id, row]));
+      if (exportedLayout?.items?.length && exportedLayout.defaultEntries?.length) {
+        let importedAssignments = 0;
+        for (const item of exportedLayout.items) {
+          const itemId = String(item.itemId ?? '').trim();
+          if (!itemId || !rowByItemId.has(itemId)) continue;
+          const groupSize = Math.max(1, Number(item.groupSize ?? 1));
+          const groupKey = item.groupKey && groupSize > 1 ? String(item.groupKey) : null;
+          insertItemBrowserGroup.run({
+            item_id: itemId,
+            group_key: groupKey,
+            group_label: groupKey ? (item.groupLabel ?? null) : null,
+            group_size: groupKey ? groupSize : 1,
+            group_sort_order: Number.isFinite(Number(item.groupSortOrder))
+              ? Number(item.groupSortOrder)
+              : Number(item.browserOrder ?? importedAssignments),
+          });
+          importedAssignments += 1;
+        }
+
+        const sortedEntries = [...exportedLayout.defaultEntries].sort(
+          (left, right) => Number(left.entryOrder ?? 0) - Number(right.entryOrder ?? 0),
+        );
+        let importedEntries = 0;
+        for (const entry of sortedEntries) {
+          const itemId = String(entry.itemId ?? '').trim();
+          const row = rowByItemId.get(itemId);
+          if (!itemId || !row) continue;
+          const entryKind = entry.entryKind === 'group-collapsed' ? 'group-collapsed' : 'item';
+          const groupSize = Math.max(1, Number(entry.groupSize ?? 1));
+          insertBrowserDefaultEntry.run({
+            entry_order: importedEntries,
+            entry_kind: entryKind,
+            item_id: itemId,
+            mod_id: row.mod_id,
+            group_key: entryKind === 'group-collapsed' ? (entry.groupKey ?? null) : null,
+            group_label: entryKind === 'group-collapsed' ? (entry.groupLabel ?? row.localized_name) : null,
+            group_size: entryKind === 'group-collapsed' ? groupSize : 1,
+          });
+          importedEntries += 1;
+        }
+
+        if (importedAssignments > 0 && importedEntries > 0) {
+          upsertState.run({
+            state_key: 'browser_layout_source',
+            state_value: `nesql++:${exportedLayout.schemaVersion ?? 'unknown'}`,
+          });
+          return;
+        }
+        db.exec('DELETE FROM item_browser_groups');
+        db.exec('DELETE FROM browser_default_entries');
+      }
 
       orderedRows.sort((left, right) =>
         compareGtnhBrowserOrder(

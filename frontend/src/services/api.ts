@@ -46,6 +46,8 @@ const browserByIdsPackInFlight = new Map<string, Promise<BrowserByIdsPackRespons
 const uiPayloadCache = new Map<string, RecipeUiPayload>();
 const uiPayloadInFlight = new Map<string, Promise<RecipeUiPayload | null>>();
 const missingUiPayloadCache = new Set<string>();
+let browserAtlasIndexCache: BrowserAtlasIndexResponse | null = null;
+let browserAtlasIndexInFlight: Promise<BrowserAtlasIndexResponse | null> | null = null;
 const publishedJsonValueCache = new Map<string, unknown>();
 const publishedJsonInFlight = new Map<string, Promise<unknown>>();
 let publishManifestCache: PublicRuntimeManifest | null = null;
@@ -1384,6 +1386,70 @@ export interface AnimatedAtlasAssetEntry {
   atlasGroup: string;
 }
 
+export interface BrowserAtlasStaticPlacement {
+  atlasGroup?: string | null;
+  atlasFile?: string | null;
+  atlasWidth?: number | null;
+  atlasHeight?: number | null;
+  x?: number | null;
+  y?: number | null;
+  width?: number | null;
+  height?: number | null;
+  sourcePath?: string | null;
+}
+
+export interface BrowserAtlasAnimatedFrame {
+  index?: number;
+  frameIndex?: number;
+  timelineIndex?: number;
+  durationMs?: number;
+  sourcePath?: string;
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+}
+
+export interface BrowserAtlasAnimatedPlacement {
+  atlasGroup?: string | null;
+  atlasFile?: string | null;
+  atlasWidth?: number | null;
+  atlasHeight?: number | null;
+  variantKey?: string | null;
+  frameDurationMs?: number | null;
+  loopMode?: string | null;
+  frameCount?: number | null;
+  frames?: BrowserAtlasAnimatedFrame[] | null;
+  timeline?: BrowserAtlasAnimatedFrame[] | null;
+}
+
+export interface BrowserAtlasItemEntry {
+  itemId: string;
+  assetId?: string | null;
+  variantKey?: string | null;
+  mode?: string | null;
+  renderMode?: string | null;
+  resolutionMode?: string | null;
+  rendererFamily?: string | null;
+  playbackHint?: string | null;
+  hasStaticAtlas?: boolean;
+  hasAnimatedAtlas?: boolean;
+  staticAtlas?: BrowserAtlasStaticPlacement | null;
+  animatedAtlas?: BrowserAtlasAnimatedPlacement | null;
+}
+
+export interface BrowserAtlasIndexResponse {
+  schemaVersion?: string;
+  generatedAt?: number;
+  staticAtlasManifest?: string | null;
+  animatedAtlasManifest?: string | null;
+  renderIndex?: string | null;
+  itemCount?: number;
+  animatedItemCount?: number;
+  missingAtlasCount?: number;
+  items: BrowserAtlasItemEntry[];
+}
+
 export interface RenderContractAssetEntry {
   assetId: string;
   variantKey: string;
@@ -2330,6 +2396,30 @@ export const api = {
       params: { assetId },
     });
     return response.data;
+  },
+
+  async getBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
+    if (browserAtlasIndexCache) {
+      return browserAtlasIndexCache;
+    }
+    if (browserAtlasIndexInFlight) {
+      return browserAtlasIndexInFlight;
+    }
+    browserAtlasIndexInFlight = (async () => {
+      try {
+        const response = await http.get('/render-contract/browser-atlas-index');
+        browserAtlasIndexCache = response.data;
+        return browserAtlasIndexCache;
+      } catch (error) {
+        if (isHttpNotFoundError(error)) {
+          return null;
+        }
+        throw error;
+      } finally {
+        browserAtlasIndexInFlight = null;
+      }
+    })();
+    return browserAtlasIndexInFlight;
   },
 
   async getOptionalRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload | null> {

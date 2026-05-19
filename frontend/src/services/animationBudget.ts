@@ -782,6 +782,14 @@ export const isImageAssetWarm = (src?: string | null): boolean => {
     || imageAssetInFlight.has(normalizedSrc);
 };
 
+export const isImageAssetDecoded = (src?: string | null): boolean => {
+  const normalizedSrc = `${src ?? ''}`.trim();
+  if (!normalizedSrc) {
+    return false;
+  }
+  return imageAssetCache.has(normalizedSrc) || warmImageAssetHistory.has(normalizedSrc);
+};
+
 export const prewarmRenderableEntityMedia = async (
   entity: RenderableEntityLike,
 ): Promise<void> => {
@@ -846,9 +854,7 @@ function shouldQueueRenderableCandidate(
 
   const renderHint = candidate.renderHint;
   return Boolean(
-    candidate.renderAssetRef
-    || candidate.preferredImageUrl
-    || renderHint?.hasAnimation
+    renderHint?.hasAnimation
     || renderHint?.prefersNativeSprite
     || renderHint?.prefersCapturedAtlas,
   );

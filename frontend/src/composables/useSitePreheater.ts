@@ -18,6 +18,7 @@ import {
   loadImageAsset,
   primeAnimatedAtlasManifest,
 } from "../services/animationBudget";
+import { warmAllGlobalBrowserAtlases } from "../services/globalBrowserAtlas";
 import { loadRecipeBootstrap } from "./useRecipeBootstrap";
 
 export type SitePreheatMode = "quick" | "deep" | "full";
@@ -463,35 +464,58 @@ export function useSitePreheater(options: {
       if (spec.warmFullSearchPack) {
         await api.getBrowserSearchPack();
       }
+      await api.getBrowserDefaultCatalog();
       bumpProgress(1, spec.warmFullSearchPack ? "\u641c\u7d22\u7d22\u5f15\u5df2\u5b8c\u6574\u9884\u70ed" : "\u641c\u7d22\u7d22\u5f15\u70ed\u5206\u7247\u5df2\u9884\u70ed");
+
+      currentPhase.value = "\u5168\u5c40\u8d34\u56fe Atlas \u9884\u70ed";
+      const warmedGlobalAtlas = await warmAllGlobalBrowserAtlases((processed, total) => {
+        if (total > 0 && processed === 0) {
+          extendPlannedWork(total);
+        }
+        if (processed > 0) {
+          progressCurrent.value = Math.min(progressTotal.value, progressCurrent.value + 1);
+          statusText.value = `\u5168\u5c40 Atlas \u5df2\u52a0\u8f7d ${processed}/${total}`;
+        }
+      });
+      if (warmedGlobalAtlas) {
+        statusText.value = "\u5168\u5c40\u7269\u54c1 Atlas / \u52a8\u753b Atlas \u5df2\u9a7b\u7559\uff0c\u540e\u7eed\u7ffb\u9875\u4f18\u5148\u8d70 Canvas \u5feb\u8def\u5f84";
+      } else {
+        statusText.value = "\u5f53\u524d\u5bfc\u51fa\u672a\u5305\u542b\u5168\u5c40 Atlas \u7d22\u5f15\uff0c\u7ee7\u7eed\u4f7f\u7528\u5206\u9875 Atlas fallback";
+      }
 
       currentPhase.value = "\u6d4f\u89c8\u533a\u5206\u9875\u9884\u70ed";
       const pageTargets = buildWrappedPageSequence(
         universe.totalPages,
         options.currentPage.value,
-        spec.browserPageLimit === "all" ? universe.totalPages : spec.browserPageLimit,
+        warmedGlobalAtlas ? 1 : (spec.browserPageLimit === "all" ? universe.totalPages : spec.browserPageLimit),
       );
       extendPlannedWork(pageTargets.length);
-      await runConcurrentBatched(
-        pageTargets,
-        spec.browserConcurrency,
-        spec.browserBatchSize,
-        controller.signal,
-        async (page, index) => {
-          const pagePack = await api.primeDefaultBrowserPagePack({
-            page,
-            pageSize: Math.max(20, Math.floor(options.pageSize.value || 55)),
-            slotSize: currentSlotSize.value,
-          });
-          await prewarmBrowserPageVisuals(pagePack);
-          bumpProgress(1, `\u6d4f\u89c8\u533a\u5206\u9875\u9884\u70ed\u4e2d ${index + 1}/${pageTargets.length}`);
-        },
-        async (processed, total) => {
-          if (processed < total) {
-            await flushPreheatMemory(`\u6d4f\u89c8\u533a\u5206\u9875\u5df2\u5199\u5165 ${processed}/${total}\uff0c\u6b63\u5728\u91ca\u653e\u5185\u5b58\u2026`);
-          }
-        },
-      );
+      if (warmedGlobalAtlas) {
+        // Global atlas + browser layout catalog is the NEI-style fast path. Once both are warm,
+        // preheating every page pack only reintroduces thousands of page-atlas/single-image tasks.
+        bumpProgress(1, "\u6d4f\u89c8\u533a\u5df2\u5207\u5230\u5168\u5c40 Atlas + \u672c\u5730\u76ee\u5f55\u5feb\u8def\u5f84\uff0c\u8df3\u8fc7\u5168\u91cf\u5206\u9875\u56fe\u96c6\u9884\u70ed");
+      } else {
+        await runConcurrentBatched(
+          pageTargets,
+          spec.browserConcurrency,
+          spec.browserBatchSize,
+          controller.signal,
+          async (page, index) => {
+            const pagePack = await api.primeDefaultBrowserPagePack({
+              page,
+              pageSize: Math.max(20, Math.floor(options.pageSize.value || 55)),
+              slotSize: currentSlotSize.value,
+            });
+            await prewarmBrowserPageVisuals(pagePack);
+            bumpProgress(1, `\u6d4f\u89c8\u533a\u5206\u9875\u9884\u70ed\u4e2d ${index + 1}/${pageTargets.length}`);
+          },
+          async (processed, total) => {
+            if (processed < total) {
+              await flushPreheatMemory(`\u6d4f\u89c8\u533a\u5206\u9875\u5df2\u5199\u5165 ${processed}/${total}\uff0c\u6b63\u5728\u91ca\u653e\u5185\u5b58\u2026`);
+            }
+          },
+        );
+      }
 
       currentPhase.value = "\u70ed\u914d\u65b9\u5165\u53e3\u9884\u70ed";
       const recipeSeeds = buildRecipeSeedIds(manifest, spec);

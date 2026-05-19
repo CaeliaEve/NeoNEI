@@ -14,6 +14,17 @@ import {
   probeAnimationSupport,
   resolveTimelineFrameIndex,
 } from "../services/animationBudget";
+import {
+  getGlobalBrowserAtlasEntry,
+  getLoadedGlobalAtlasImage,
+  getStaticPlacement,
+  hasGlobalBrowserAtlas,
+  shouldUseLegacyBrowserAnimationProbe,
+  normalizeFrames,
+  normalizeTimeline,
+  warmGlobalBrowserAtlasForItems,
+  type BrowserAtlasItemEntry,
+} from "../services/globalBrowserAtlas";
 
 type GridRect = {
   entry: BrowserGridEntry;
@@ -50,6 +61,12 @@ type AnimationState =
   | CapturedAtlasAnimationState
   | DirectGifAnimationState;
 
+type PreparedGlobalAnimation = {
+  atlasFile: string;
+  frames: Array<{ index: number; x: number; y: number; width: number; height: number }>;
+  timeline: Array<{ frameIndex: number; durationMs: number }>;
+};
+
 const props = withDefaults(defineProps<{
   entries: BrowserGridEntry[];
   itemSize?: number;
@@ -84,6 +101,7 @@ const staticImages = new Map<string, HTMLImageElement>();
 const pendingStaticImages = new Map<string, Promise<HTMLImageElement | null>>();
 const animationStates = new Map<string, AnimationState>();
 const pendingAnimations = new Map<string, Promise<void>>();
+const preparedGlobalAnimations = new Map<string, PreparedGlobalAnimation>();
 
 let resizeObserver: ResizeObserver | null = null;
 let renderFrameHandle: number | null = null;
@@ -91,13 +109,11 @@ let animationLoopHandle: number | null = null;
 let idleAnimationKickHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
 let atlasLoadSeq = 0;
 let animationDelayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-let atlasFallbackTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
 const gap = 4;
 const cardSize = computed(() => Math.max(28, Math.floor(props.itemSize)));
 const iconSize = computed(() => Math.max(24, Math.floor(cardSize.value * 0.9)));
 const HOMEPAGE_ANIMATION_DELAY_MS = 1400;
-const ATLAS_GRACE_MS = 320;
 const columns = computed(() => {
   const width = Math.max(hostWidth.value, cardSize.value);
   return Math.max(1, Math.floor((width + gap) / (cardSize.value + gap)));
@@ -118,19 +134,8 @@ function updateHostWidth() {
 }
 
 function syncAtlasFallbackGate() {
-  if (atlasFallbackTimer !== null) {
-    clearTimeout(atlasFallbackTimer);
-    atlasFallbackTimer = null;
-  }
-
   if (hasAtlasSource.value && !atlasReady.value && !atlasLoadError.value) {
     allowFallbackBeforeAtlas.value = false;
-    atlasFallbackTimer = globalThis.setTimeout(() => {
-      allowFallbackBeforeAtlas.value = true;
-      atlasFallbackTimer = null;
-      warmStaticImages();
-      scheduleRender();
-    }, ATLAS_GRACE_MS);
     return;
   }
 
@@ -170,7 +175,7 @@ function scheduleRender() {
 }
 
 function startAnimationLoop() {
-  if (animationLoopHandle !== null || animationStates.size === 0) {
+  if (animationLoopHandle !== null) {
     return;
   }
 
@@ -305,6 +310,87 @@ function drawAtlasSprite(
   );
 }
 
+function drawGlobalStaticSprite(
+  ctx: CanvasRenderingContext2D,
+  atlas: HTMLImageElement,
+  entry: BrowserAtlasItemEntry,
+  rect: GridRect,
+): boolean {
+  const placement = getStaticPlacement(entry);
+  if (!placement) return false;
+  const sourceWidth = Math.max(1, Number(placement.width ?? 0));
+  const sourceHeight = Math.max(1, Number(placement.height ?? 0));
+  const sourceX = Math.max(0, Number(placement.x ?? 0));
+  const sourceY = Math.max(0, Number(placement.y ?? 0));
+  if (!sourceWidth || !sourceHeight) return false;
+
+  const drawX = rect.x + Math.round((rect.size - iconSize.value) / 2);
+  const drawY = rect.y + Math.round((rect.size - iconSize.value) / 2);
+  ctx.drawImage(
+    atlas,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    drawX,
+    drawY,
+    iconSize.value,
+    iconSize.value,
+  );
+  return true;
+}
+
+function getPreparedGlobalAnimation(itemId: string, entry: BrowserAtlasItemEntry): PreparedGlobalAnimation | null {
+  const atlasFile = `${entry.animatedAtlas?.atlasFile ?? ""}`.trim();
+  if (!atlasFile) return null;
+
+  const cached = preparedGlobalAnimations.get(itemId);
+  if (cached?.atlasFile === atlasFile) {
+    return cached;
+  }
+
+  const frames = normalizeFrames(entry.animatedAtlas?.frames);
+  const timeline = normalizeTimeline(entry.animatedAtlas?.timeline, entry.animatedAtlas?.frameDurationMs);
+  if (frames.length === 0 || timeline.length === 0) {
+    return null;
+  }
+
+  const prepared = { atlasFile, frames, timeline };
+  preparedGlobalAnimations.set(itemId, prepared);
+  return prepared;
+}
+
+function drawGlobalAnimation(
+  ctx: CanvasRenderingContext2D,
+  entry: BrowserAtlasItemEntry,
+  rect: GridRect,
+  now: number,
+): boolean {
+  const prepared = getPreparedGlobalAnimation(rect.item.itemId, entry);
+  if (!prepared) return false;
+  const atlas = getLoadedGlobalAtlasImage(prepared.atlasFile);
+  if (!atlas) return false;
+
+  const frameIndex = resolveTimelineFrameIndex(prepared.timeline, now);
+  const frame = prepared.frames.find((candidate) => candidate.index === frameIndex) ?? prepared.frames[0];
+  if (!frame) return false;
+
+  const drawX = rect.x + Math.round((rect.size - iconSize.value) / 2);
+  const drawY = rect.y + Math.round((rect.size - iconSize.value) / 2);
+  ctx.drawImage(
+    atlas,
+    frame.x,
+    frame.y,
+    frame.width,
+    frame.height,
+    drawX,
+    drawY,
+    iconSize.value,
+    iconSize.value,
+  );
+  return true;
+}
+
 function drawStaticImage(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
@@ -374,6 +460,7 @@ function draw() {
 
   const nextRects: GridRect[] = [];
   const now = getSharedAnimationNowMs();
+  let drewAnimatedFrame = false;
 
   for (let index = 0; index < props.entries.length; index += 1) {
     const entry = props.entries[index];
@@ -390,8 +477,22 @@ function draw() {
     drawSlotChrome(ctx, rect, hoveredRect.value?.entry.key === entry.key);
 
     const itemId = rect.item.itemId;
+    const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(itemId) : null;
+    if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
+      drewAnimatedFrame = true;
+      drawGroupOverlay(ctx, rect);
+      continue;
+    }
+
+    const globalStaticAtlas = getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile);
+    if (globalEntry && globalStaticAtlas && drawGlobalStaticSprite(ctx, globalStaticAtlas, globalEntry, rect)) {
+      drawGroupOverlay(ctx, rect);
+      continue;
+    }
+
     const animation = animationStates.get(itemId);
     if (animation) {
+      drewAnimatedFrame = true;
       drawAnimation(ctx, animation, rect, now);
       drawGroupOverlay(ctx, rect);
       continue;
@@ -417,6 +518,11 @@ function draw() {
   }
 
   itemRects.value = nextRects;
+  if (drewAnimatedFrame) {
+    startAnimationLoop();
+  } else if (animationStates.size === 0) {
+    stopAnimationLoop();
+  }
 }
 
 function findRectAt(clientX: number, clientY: number): GridRect | null {
@@ -469,6 +575,7 @@ async function loadAtlas() {
   } catch {
     if (sequence !== atlasLoadSeq) return;
     atlasLoadError.value = true;
+    warmStaticImages();
   } finally {
     if (sequence === atlasLoadSeq) {
       scheduleRender();
@@ -478,6 +585,9 @@ async function loadAtlas() {
 
 async function ensureAnimationState(item: Item): Promise<void> {
   if (!props.enableAnimation || !item.itemId || animationStates.has(item.itemId)) {
+    return;
+  }
+  if (!shouldUseLegacyBrowserAnimationProbe(item.itemId)) {
     return;
   }
   const existing = pendingAnimations.get(item.itemId);
@@ -711,6 +821,18 @@ function scheduleAnimationUpgrade() {
       }
     }
     uniqueItems.forEach((item) => {
+      const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(item.itemId) : null;
+      if (globalEntry && !shouldUseLegacyBrowserAnimationProbe(item.itemId)) {
+        return;
+      }
+      const renderHint = item.renderHint ?? null;
+      if (
+        renderHint?.hasAnimation !== true
+        && renderHint?.prefersNativeSprite !== true
+        && renderHint?.prefersCapturedAtlas !== true
+      ) {
+        return;
+      }
       void ensureAnimationState(item);
     });
   };
@@ -737,6 +859,22 @@ function warmStaticImages() {
       return;
     }
     void ensureStaticImage(item);
+  });
+}
+
+function warmGlobalAtlasImages() {
+  const itemIds = Array.from(
+    new Set(
+      props.entries
+        .map((entry) => getItemForEntry(entry)?.itemId)
+        .filter((itemId): itemId is string => Boolean(itemId)),
+    ),
+  );
+  if (itemIds.length === 0) {
+    return;
+  }
+  void warmGlobalBrowserAtlasForItems(itemIds).finally(() => {
+    scheduleRender();
   });
 }
 
@@ -827,6 +965,7 @@ watch(
   () => [props.entries.map((entry) => entry.key).join("|"), props.itemSize, props.atlas?.atlasUrl ?? "", shouldHoldFallbackImages.value].join("::"),
   () => {
     syncAtlasFallbackGate();
+    warmGlobalAtlasImages();
     warmStaticImages();
     scheduleAnimationUpgrade();
     scheduleRender();
@@ -877,10 +1016,6 @@ onUnmounted(() => {
   if (animationDelayTimer !== null) {
     clearTimeout(animationDelayTimer);
     animationDelayTimer = null;
-  }
-  if (atlasFallbackTimer !== null) {
-    clearTimeout(atlasFallbackTimer);
-    atlasFallbackTimer = null;
   }
 });
 </script>
@@ -943,3 +1078,5 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 </style>
+
+

@@ -3,6 +3,7 @@ param(
   [int]$FrontendPort = 5173,
   [ValidateSet('start', 'dev')]
   [string]$BackendMode = 'start',
+  [string]$DataRoot = '',
   [switch]$NoStopExisting
 )
 
@@ -73,6 +74,17 @@ $frontendLog = Join-Path $logDir 'frontend.log'
 $backendCommand = if ($BackendMode -eq 'dev') { 'npm run dev' } else { 'npm run start' }
 $frontendCommand = "npm run dev -- --host 127.0.0.1 --port $FrontendPort"
 
+if ($DataRoot.Trim()) {
+  $resolvedDataRoot = (Resolve-Path -LiteralPath $DataRoot).Path
+  $env:NESQL_REPOSITORY_PATH = $resolvedDataRoot
+  $env:NESQL_SPLIT_ITEMS_DIR = Join-Path $resolvedDataRoot 'items'
+  $env:NESQL_SPLIT_RECIPES_DIR = Join-Path $resolvedDataRoot 'recipes'
+  $env:NESQL_CANONICAL_DIR = Join-Path $resolvedDataRoot 'canonical'
+  $env:IMAGES_PATH = Join-Path $resolvedDataRoot 'image'
+  $env:NESQL_IMAGES_DIR = Join-Path $resolvedDataRoot 'image\item'
+  Write-Step "Using NESQL data root: $resolvedDataRoot"
+}
+
 Write-Step "Starting backend ($BackendMode) on http://127.0.0.1:$BackendPort ..."
 Start-Process -FilePath 'cmd.exe' `
   -ArgumentList '/c', "$backendCommand > `"$backendLog`" 2>&1" `
@@ -102,4 +114,3 @@ if ($backendOk -and $frontendOk) {
 Write-Host "Logs:"
 Write-Host "  $backendLog"
 Write-Host "  $frontendLog"
-
