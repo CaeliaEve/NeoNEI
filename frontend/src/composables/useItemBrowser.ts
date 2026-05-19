@@ -33,6 +33,7 @@ import {
 import {
   getGlobalBrowserAtlasCoverageForItems,
   hasGlobalBrowserAtlas,
+  inspectGlobalBrowserAtlasCoverageForItems,
   warmGlobalBrowserAtlasForItems,
   warmGlobalBrowserAtlasForItemsDetailed,
 } from '../services/globalBrowserAtlas';
@@ -680,9 +681,15 @@ export function useItemBrowser(
     response: CachedBrowserPage,
     waitMs: number,
   ) => {
-    const globalWarmPromise = warmGlobalBrowserAtlasForItemsDetailed(
-      collectDisplayItems(response.data).map((item) => item.itemId).filter(Boolean),
-    );
+    const pageItemIds = collectDisplayItems(response.data).map((item) => item.itemId).filter(Boolean);
+    const globalCoverage = await inspectGlobalBrowserAtlasCoverageForItems(pageItemIds).catch(() => null);
+    if (!globalCoverage || globalCoverage.total <= 0 || globalCoverage.missingCount > 0) {
+      if (!response.atlas?.atlasUrl || waitMs <= 0 || pagePresentationReady.has(cacheKey)) {
+        return;
+      }
+    }
+
+    const globalWarmPromise = warmGlobalBrowserAtlasForItemsDetailed(pageItemIds);
     const globalWarmResult = await Promise.race([
       globalWarmPromise,
       new Promise<null>((resolve) => {
@@ -786,33 +793,27 @@ export function useItemBrowser(
     options?: { animatedEntryLimit?: number; atlasLimit?: number },
   ) => {
     const displayItemIds = collectDisplayItems(response.data).map((item) => item.itemId).filter(Boolean);
-    void warmGlobalBrowserAtlasForItems(displayItemIds)
-      .then(() => {
+    void warmGlobalBrowserAtlasForItemsDetailed(displayItemIds)
+      .then((coverage) => {
         if (hasGlobalBrowserAtlas()) {
           markPerfEvent('browser-atlas-page-coverage', {
             page: response.page,
             ...getGlobalBrowserAtlasCoverageForItems(displayItemIds),
           });
         }
+        if (coverage.total > 0 && coverage.missingCount === 0) {
+          return;
+        }
+        void warmPageAtlasPresentation(response, options).catch(() => undefined);
+        primeAnimatedAtlasManifest(response.mediaManifest);
+        if (!hasGlobalBrowserAtlas()) {
+          queueRenderableMediaPrewarmFromUnknown(response.data, {
+            limit: Math.max(1, options?.animatedEntryLimit ?? 48),
+            animatedOnly: true,
+          });
+        }
       })
       .catch(() => undefined);
-    if (response.atlas?.atlasUrl) {
-      void loadImageAsset(response.atlas.atlasUrl).catch(() => undefined);
-    }
-    primeAnimatedAtlasManifest(response.mediaManifest);
-    const animatedAtlasUrls = collectAnimatedAtlasUrls(response).slice(0, Math.max(1, options?.atlasLimit ?? 6));
-    for (const atlasUrl of animatedAtlasUrls) {
-      void loadImageAsset(atlasUrl).catch(() => undefined);
-    }
-    // In the homepage/history browser, the global browser atlas is the animation source of truth.
-    // Falling back to per-item render-contract probes on atlas-backed exports causes request storms
-    // and 404s for static native-sprite snapshots in older data.
-    if (!hasGlobalBrowserAtlas()) {
-      queueRenderableMediaPrewarmFromUnknown(response.data, {
-        limit: Math.max(1, options?.animatedEntryLimit ?? 48),
-        animatedOnly: true,
-      });
-    }
   };
 
   const toCachedBrowserPage = (response: BrowserPagePackResponse): CachedBrowserPage => ({
@@ -1363,5 +1364,6 @@ export function useItemBrowser(
     clearCachedPages: clearBrowserPageState,
   };
 }
+
 
 

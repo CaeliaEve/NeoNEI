@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 
 
 import {
@@ -25,6 +25,7 @@ import {
   primeRenderAnimationHintsFromUnknown,
   queueRenderableMediaPrewarmFromUnknown,
 } from "../services/animationBudget";
+import { warmGlobalBrowserAtlasForItemsDetailed } from "../services/globalBrowserAtlas";
 import RecipeDisplayRouter from "../components/RecipeDisplayRouter.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
 import { useSitePreheater } from "../composables/useSitePreheater";
@@ -332,12 +333,21 @@ watch(
   },
 );
 
+function prewarmHistoryPagePackMedia(pack: { data: BrowserGridEntry[]; mediaManifest?: Parameters<typeof primeAnimatedAtlasManifest>[0] }) {
+  primeRenderAnimationHintsFromUnknown(pack.data);
+  primeAnimatedAtlasManifest(pack.mediaManifest);
+  queueRenderableMediaPrewarmFromUnknown(pack.data, {
+    limit: 24,
+    animatedOnly: true,
+  });
+}
+
 watch(
   () => [
     visibleHistorySeeds.value.map((item) => item.itemId).join("|"),
     historyItemPixelSize.value,
   ].join("::"),
-  () => {
+  async () => {
     const seedItems = visibleHistorySeeds.value;
     if (seedItems.length === 0) {
       historyItems.value = [];
@@ -346,38 +356,33 @@ watch(
     }
 
     const requestSeq = ++historyAtlasRequestSeq;
+    const itemIds = seedItems.map((item) => item.itemId);
     const slotSize = Math.max(32, Math.ceil(historyItemPixelSize.value * 0.9));
-    const cachedPack = api.peekBrowserPagePackByIds({
-      itemIds: seedItems.map((item) => item.itemId),
-      slotSize,
-    });
+    historyItems.value = seedItems as Item[];
+    historyAtlas.value = undefined;
+
+    const globalCoverage = await warmGlobalBrowserAtlasForItemsDetailed(itemIds).catch(() => null);
+    if (requestSeq !== historyAtlasRequestSeq) return;
+    if (globalCoverage && globalCoverage.total > 0 && globalCoverage.missingCount === 0) {
+      historyAtlas.value = null;
+      return;
+    }
+
+    const cachedPack = api.peekBrowserPagePackByIds({ itemIds, slotSize });
     if (cachedPack) {
       historyItems.value = cachedPack.data.map((entry) => entry.item);
       historyAtlas.value = cachedPack.atlas ?? null;
-      primeRenderAnimationHintsFromUnknown(cachedPack.data);
-      primeAnimatedAtlasManifest(cachedPack.mediaManifest);
-      queueRenderableMediaPrewarmFromUnknown(cachedPack.data, {
-        limit: 24,
-        animatedOnly: true,
-      });
-    } else {
-      historyItems.value = seedItems as Item[];
-      historyAtlas.value = undefined;
+      prewarmHistoryPagePackMedia(cachedPack);
     }
 
     void api.getBrowserPagePackByIds({
-      itemIds: seedItems.map((item) => item.itemId),
+      itemIds,
       slotSize,
     }).then((pack) => {
       if (requestSeq !== historyAtlasRequestSeq) return;
       historyItems.value = pack.data.map((entry) => entry.item);
       historyAtlas.value = pack.atlas ?? null;
-      primeRenderAnimationHintsFromUnknown(pack.data);
-      primeAnimatedAtlasManifest(pack.mediaManifest);
-      queueRenderableMediaPrewarmFromUnknown(pack.data, {
-        limit: 24,
-        animatedOnly: true,
-      });
+      prewarmHistoryPagePackMedia(pack);
     }).catch(() => {
       if (requestSeq !== historyAtlasRequestSeq) return;
       historyItems.value = seedItems as Item[];

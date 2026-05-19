@@ -18,7 +18,7 @@ import {
   loadImageAsset,
   primeAnimatedAtlasManifest,
 } from "../services/animationBudget";
-import { warmAllGlobalBrowserAtlases } from "../services/globalBrowserAtlas";
+import { warmAllGlobalBrowserAtlases, warmGlobalBrowserAtlasForItemsDetailed } from "../services/globalBrowserAtlas";
 import { loadRecipeBootstrap } from "./useRecipeBootstrap";
 
 export type SitePreheatMode = "quick" | "deep" | "full";
@@ -320,6 +320,18 @@ export function useSitePreheater(options: {
   };
 
   const prewarmBrowserPageVisuals = async (pagePack: BrowserPagePackResponse) => {
+    const itemIds = Array.from(
+      new Set(
+        (pagePack.data ?? [])
+          .map((entry) => entry.kind === "item" ? entry.item.itemId : entry.group.representative.itemId)
+          .filter((itemId): itemId is string => Boolean(itemId)),
+      ),
+    );
+    const globalCoverage = await warmGlobalBrowserAtlasForItemsDetailed(itemIds).catch(() => null);
+    if (globalCoverage && globalCoverage.total > 0 && globalCoverage.missingCount === 0) {
+      return;
+    }
+
     primeAnimatedAtlasManifest(pagePack.mediaManifest);
     const assetTasks: Array<Promise<unknown>> = [];
     if (pagePack.atlas?.atlasUrl) {
@@ -636,3 +648,5 @@ export function useSitePreheater(options: {
     clearPreheatCaches,
   };
 }
+
+

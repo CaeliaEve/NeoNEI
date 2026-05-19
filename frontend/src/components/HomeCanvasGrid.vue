@@ -19,10 +19,12 @@ import {
   getLoadedGlobalAtlasImage,
   getStaticPlacement,
   hasGlobalBrowserAtlas,
+  inspectGlobalBrowserAtlasCoverageForItems,
   shouldUseLegacyBrowserAnimationProbe,
   normalizeFrames,
   normalizeTimeline,
   warmGlobalBrowserAtlasForItems,
+  warmGlobalBrowserAtlasForItemsDetailed,
   type BrowserAtlasItemEntry,
 } from "../services/globalBrowserAtlas";
 
@@ -563,6 +565,27 @@ async function loadAtlas() {
   atlasImage.value = null;
   atlasLoadError.value = false;
 
+  if (props.preferAtlas && props.entries.length > 0) {
+    const itemIds = Array.from(
+      new Set(
+        props.entries
+          .map((entry) => getItemForEntry(entry)?.itemId)
+          .filter((itemId): itemId is string => Boolean(itemId)),
+      ),
+    );
+    if (itemIds.length > 0) {
+      const globalCoverage = await inspectGlobalBrowserAtlasCoverageForItems(itemIds).catch(() => null);
+      if (sequence !== atlasLoadSeq) return;
+      if (globalCoverage && globalCoverage.total > 0 && globalCoverage.missingCount === 0) {
+        await warmGlobalBrowserAtlasForItemsDetailed(itemIds).catch(() => null);
+        if (sequence !== atlasLoadSeq) return;
+        allowFallbackBeforeAtlas.value = true;
+        scheduleRender();
+        return;
+      }
+    }
+  }
+
   if (!atlasUrl) {
     scheduleRender();
     return;
@@ -1078,5 +1101,6 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 </style>
+
 
 

@@ -125,6 +125,31 @@ export async function warmGlobalBrowserAtlasForItems(itemIds: string[]): Promise
   return result.drawableCount > 0 && result.missingCount === 0;
 }
 
+export async function inspectGlobalBrowserAtlasCoverageForItems(itemIds: string[]): Promise<{
+  total: number;
+  indexedCount: number;
+  drawableCount: number;
+  missingCount: number;
+  animatedCount: number;
+  staticCount: number;
+  atlasFileCount: number;
+}> {
+  const available = await ensureGlobalBrowserAtlasIndex();
+  if (!available) {
+    const total = Array.from(new Set(itemIds.map((itemId) => `${itemId ?? ""}`.trim()).filter(Boolean))).length;
+    return {
+      total,
+      indexedCount: 0,
+      drawableCount: 0,
+      missingCount: total,
+      animatedCount: 0,
+      staticCount: 0,
+      atlasFileCount: 0,
+    };
+  }
+  return getGlobalBrowserAtlasCoverageForItems(itemIds);
+}
+
 export async function warmGlobalBrowserAtlasForItemsDetailed(itemIds: string[]): Promise<{
   total: number;
   drawableCount: number;
