@@ -283,14 +283,13 @@ function drawGroupOverlay(ctx: CanvasRenderingContext2D, rect: GridRect) {
   drawBadge(ctx, rect.x + rect.size - 24, rect.y + 5, String(rect.entry.group.size), {
     minWidth: 19,
   });
-  drawBadge(ctx, rect.x + 6, rect.y + rect.size - 24, rect.entry.kind === "group-header" ? "收起" : "展开", {
+  drawBadge(ctx, rect.x + 6, rect.y + rect.size - 24, rect.entry.kind === "group-header" ? "OPEN" : "GROUP", {
     fillStyle: "rgba(8, 12, 18, 0.82)",
     strokeStyle: "rgba(148, 163, 184, 0.2)",
     textStyle: "rgba(191, 219, 254, 0.98)",
     paddingX: 6,
   });
 }
-
 function drawAtlasSprite(
   ctx: CanvasRenderingContext2D,
   atlas: HTMLImageElement,
@@ -537,6 +536,9 @@ function findRectAt(clientX: number, clientY: number): GridRect | null {
 }
 
 async function ensureStaticImage(item: Item): Promise<HTMLImageElement | null> {
+  if (hasGlobalBrowserAtlas() && getGlobalBrowserAtlasEntry(item.itemId)) {
+    return null;
+  }
   const src = getPreferredStaticImageUrlFromEntity(item);
   if (!src) return null;
   const cached = staticImages.get(src);
@@ -877,6 +879,9 @@ function warmStaticImages() {
   }
   props.entries.forEach((entry) => {
     const item = getItemForEntry(entry);
+    if (hasGlobalBrowserAtlas() && getGlobalBrowserAtlasEntry(item.itemId)) {
+      return;
+    }
     const sprite = props.atlas?.entries?.[item.itemId];
     if (sprite && atlasReady.value) {
       return;
@@ -955,11 +960,10 @@ const tooltipSubtitle = computed(() => {
   const rect = hoveredRect.value;
   if (!rect) return "";
   if (rect.entry.kind === "item") {
-    return "左键查看合成 · 右键查看用途";
+    return "Left click: recipes · Right click: uses";
   }
-  return `组内 ${rect.entry.group.size} 项 · 左键展开/收起 · 右键查看用途`;
+  return `Group ${rect.entry.group.size} items · Left click: expand/collapse · Right click: uses`;
 });
-
 const tooltipStyle = computed<Record<string, string> | null>(() => {
   if (!hoveredRect.value) return null;
   const host = hostRef.value;

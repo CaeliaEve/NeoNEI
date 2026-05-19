@@ -16,6 +16,7 @@ type AtlasImageState = {
 };
 
 const itemEntries = new Map<string, BrowserAtlasItemEntry>();
+const itemEntryAliases = new Map<string, BrowserAtlasItemEntry>();
 const atlasImages = new Map<string, AtlasImageState>();
 let indexLoaded = false;
 let indexLoadPromise: Promise<boolean> | null = null;
@@ -24,6 +25,45 @@ let indexAvailable = false;
 function normalizeAtlasFile(atlasFile?: string | null): string | null {
   const normalized = `${atlasFile ?? ""}`.trim().replace(/\\/g, "/").replace(/^\/+/, "");
   return normalized || null;
+}
+
+function getItemIdAliases(itemId: string): string[] {
+  const normalized = `${itemId ?? ""}`.trim();
+  if (!normalized) {
+    return [];
+  }
+
+  const aliases: string[] = [];
+  const parts = normalized.split("~");
+  if (parts.length >= 4 && parts[0] === "i") {
+    const base = parts.slice(0, 4).join("~");
+    aliases.push(base);
+    aliases.push([parts[0], parts[1], parts[2], "0"].join("~"));
+  }
+  return Array.from(new Set(aliases.filter((alias) => alias && alias !== normalized)));
+}
+
+function getAtlasEntryForItemId(itemId: string): BrowserAtlasItemEntry | null {
+  const normalized = `${itemId ?? ""}`.trim();
+  if (!normalized) {
+    return null;
+  }
+  const exact = itemEntries.get(normalized);
+  if (exact) {
+    return exact;
+  }
+  const aliased = itemEntryAliases.get(normalized);
+  if (aliased) {
+    return aliased;
+  }
+  for (const alias of getItemIdAliases(normalized)) {
+    const entry = itemEntries.get(alias) ?? itemEntryAliases.get(alias);
+    if (entry) {
+      itemEntryAliases.set(normalized, entry);
+      return entry;
+    }
+  }
+  return null;
 }
 
 function getAtlasImageState(atlasFile: string): AtlasImageState {
@@ -84,9 +124,15 @@ export async function ensureGlobalBrowserAtlasIndex(): Promise<boolean> {
   indexLoadPromise = api.getBrowserAtlasIndex()
     .then((payload) => {
       itemEntries.clear();
+      itemEntryAliases.clear();
       for (const entry of payload?.items ?? []) {
         if (entry?.itemId) {
           itemEntries.set(entry.itemId, entry);
+          for (const alias of getItemIdAliases(entry.itemId)) {
+            if (!itemEntries.has(alias) && !itemEntryAliases.has(alias)) {
+              itemEntryAliases.set(alias, entry);
+            }
+          }
         }
       }
       indexAvailable = itemEntries.size > 0;
@@ -170,7 +216,7 @@ export async function warmGlobalBrowserAtlasForItemsDetailed(itemIds: string[]):
   let drawableCount = 0;
   let missingCount = 0;
   for (const itemId of itemIds) {
-    const entry = itemEntries.get(itemId);
+    const entry = getAtlasEntryForItemId(itemId);
     const animatedFile = normalizeAtlasFile(entry?.animatedAtlas?.atlasFile);
     const staticFile = normalizeAtlasFile(entry?.staticAtlas?.atlasFile);
     if (animatedFile || staticFile) {
@@ -236,7 +282,7 @@ export function getGlobalBrowserAtlasCoverageForItems(itemIds: string[]): {
   let staticCount = 0;
 
   for (const itemId of uniqueItemIds) {
-    const entry = itemEntries.get(itemId);
+    const entry = getAtlasEntryForItemId(itemId);
     if (!entry) {
       missingCount += 1;
       continue;
@@ -276,19 +322,19 @@ export function shouldUseLegacyBrowserAnimationProbe(itemId: string): boolean {
     return true;
   }
 
-  const entry = itemEntries.get(normalizedItemId);
+  const entry = getAtlasEntryForItemId(normalizedItemId);
   if (!entry) {
     return true;
   }
 
   // Once NESQL++ has emitted a browser atlas entry, it becomes the source of truth for
-  // homepage/history animation. If it has no animated atlas, probing legacy render
-  // contracts creates 404/request storms on old exports where static native sprites
-  // were marked as native_sprite but were not packed into the global atlas yet.
-  return Boolean(normalizeAtlasFile(entry.animatedAtlas?.atlasFile));
+  // homepage/history animation. Re-probing legacy render contracts during fast page
+  // flips creates sprite/json request storms and can compete with the resident atlas
+  // draw path. Items missing from the global index still keep the legacy fallback.
+  return false;
 }
 export function getGlobalBrowserAtlasEntry(itemId: string): BrowserAtlasItemEntry | null {
-  return itemEntries.get(itemId) ?? null;
+  return getAtlasEntryForItemId(itemId);
 }
 
 export function getLoadedGlobalAtlasImage(atlasFile?: string | null): HTMLImageElement | null {

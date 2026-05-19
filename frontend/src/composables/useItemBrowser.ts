@@ -331,25 +331,39 @@ export function useItemBrowser(
       return;
     }
 
-    void api.getBrowserPagePackByIds({
-      itemIds: basePage.items.map((item) => item.itemId),
-      slotSize: params.slotSize,
-    }).then((pack) => {
-      const hydratedPage: CachedBrowserPage = {
-        ...basePage,
-        atlas: pack.atlas ?? basePage.atlas ?? null,
-        mediaManifest: pack.mediaManifest ?? basePage.mediaManifest ?? null,
-      };
-      setSharedBrowserPageCache(cacheKey, hydratedPage);
-      const activeCacheKey = buildPageCacheKey(buildRequestParams(currentPage.value));
-      if (requestId === loadItemsRequestId && activeCacheKey === cacheKey) {
-        applyBrowserResponse(hydratedPage, requestId, cacheKey);
-      }
-    }).catch(() => {
-      // best-effort only
-    });
+    const itemIds = basePage.items.map((item) => item.itemId).filter(Boolean);
+    void warmGlobalBrowserAtlasForItemsDetailed(itemIds)
+      .then((globalCoverage) => {
+        if (hasGlobalBrowserAtlas()) {
+          return null;
+        }
+        if (globalCoverage.total > 0 && globalCoverage.missingCount === 0) {
+          return null;
+        }
+        return api.getBrowserPagePackByIds({
+          itemIds,
+          slotSize: params.slotSize,
+        });
+      })
+      .then((pack) => {
+        if (!pack) {
+          return;
+        }
+        const hydratedPage: CachedBrowserPage = {
+          ...basePage,
+          atlas: pack.atlas ?? basePage.atlas ?? null,
+          mediaManifest: pack.mediaManifest ?? basePage.mediaManifest ?? null,
+        };
+        setSharedBrowserPageCache(cacheKey, hydratedPage);
+        const activeCacheKey = buildPageCacheKey(buildRequestParams(currentPage.value));
+        if (requestId === loadItemsRequestId && activeCacheKey === cacheKey) {
+          applyBrowserResponse(hydratedPage, requestId, cacheKey);
+        }
+      })
+      .catch(() => {
+        // best-effort only
+      });
   };
-
   const tryProjectExpandedGroupsFromLocalCaches = (
     params: BrowserPageRequestParams,
   ): { cacheKey: string; page: CachedBrowserPage } | null => {
