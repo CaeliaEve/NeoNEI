@@ -23,6 +23,7 @@ import {
   shouldUseLegacyBrowserAnimationProbe,
   normalizeFrames,
   normalizeTimeline,
+  warmAllGlobalBrowserAtlases,
   warmGlobalBrowserAtlasForItems,
   warmGlobalBrowserAtlasForItemsDetailed,
   type BrowserAtlasItemEntry,
@@ -114,6 +115,8 @@ let resizeObserver: ResizeObserver | null = null;
 let renderFrameHandle: number | null = null;
 let animationLoopHandle: number | null = null;
 let idleAnimationKickHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
+let globalAtlasWarmHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
+let globalAtlasWarmStarted = false;
 let atlasLoadSeq = 0;
 let animationDelayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
@@ -415,8 +418,6 @@ function drawGlobalAnimation(
   if (!prepared) return false;
   const atlas = getLoadedGlobalAtlasImage(prepared.atlasFile);
   if (!atlas) return false;
-  if (!webglAtlasRenderer?.canDrawImage(atlas)) return false;
-
   const frameIndex = resolveTimelineFrameIndex(prepared.timeline, now);
   const frame = prepared.frames.find((candidate) => candidate.index === frameIndex) ?? prepared.frames[0];
   if (!frame) return false;
@@ -538,7 +539,12 @@ function draw() {
   const now = getSharedAnimationNowMs();
   let drewAnimatedFrame = false;
   const webglCommands: BrowserWebglAtlasDrawCommand[] = [];
-  const canUseWebglAtlas = Boolean(webglAtlasRenderer);
+  // Keep the homepage on the stable Canvas2D resident-atlas path for now.
+  // The experimental WebGL overlay can fail to present some atlas shards while
+  // still short-circuiting the Canvas fallback, which makes the browser look
+  // like textures are missing. Canvas2D still uses the global atlas and avoids
+  // per-item PNG loads, so it preserves the NEI-style fast path safely.
+  const canUseWebglAtlas = false;
 
   for (let index = 0; index < props.entries.length; index += 1) {
     const entry = props.entries[index];
@@ -974,6 +980,13 @@ function warmStaticImages() {
   if (shouldHoldFallbackImages.value) {
     return;
   }
+  // The homepage browser's intended steady state is resident atlas drawImage/WebGL.
+  // Letting per-item PNG requests race the atlas on first paint or fast page flips
+  // recreates the slow "one by one texture fill-in" behavior, so only use this
+  // legacy path when the page atlas/global atlas path has actually failed.
+  if (props.preferAtlas && !atlasLoadError.value) {
+    return;
+  }
   props.entries.forEach((entry) => {
     const item = getItemForEntry(entry);
     if (hasGlobalBrowserAtlas() && getGlobalBrowserAtlasEntry(item.itemId)) {
@@ -1001,6 +1014,27 @@ function warmGlobalAtlasImages() {
   void warmGlobalBrowserAtlasForItems(itemIds).finally(() => {
     scheduleRender();
   });
+}
+
+function warmAllGlobalAtlasesInBackground() {
+  if (globalAtlasWarmStarted) {
+    return;
+  }
+  globalAtlasWarmStarted = true;
+
+  const run = () => {
+    void warmAllGlobalBrowserAtlases().finally(() => {
+      scheduleRender();
+    });
+  };
+
+  if (typeof window !== "undefined" && "requestIdleCallback" in window) {
+    (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number })
+      .requestIdleCallback(run, { timeout: 2000 });
+    return;
+  }
+
+  globalAtlasWarmHandle = globalThis.setTimeout(run, 1600);
 }
 
 function handleClick(event: MouseEvent) {
@@ -1057,9 +1091,9 @@ const tooltipSubtitle = computed(() => {
   const rect = hoveredRect.value;
   if (!rect) return "";
   if (rect.entry.kind === "item") {
-    return "Left click: recipes · Right click: uses";
+    return "Left click: recipes 路 Right click: uses";
   }
-  return `Group ${rect.entry.group.size} items · Left click: expand/collapse · Right click: uses`;
+  return `Group ${rect.entry.group.size} items 路 Left click: expand/collapse 路 Right click: uses`;
 });
 const tooltipStyle = computed<Record<string, string> | null>(() => {
   if (!hoveredRect.value) return null;
@@ -1124,6 +1158,7 @@ onMounted(() => {
     webglAtlasRenderer = BrowserWebglAtlasRenderer.create(webglCanvasRef.value);
   }
   window.addEventListener("resize", updateHostWidth, { passive: true });
+  warmAllGlobalAtlasesInBackground();
   scheduleRender();
 });
 
@@ -1139,6 +1174,10 @@ onUnmounted(() => {
   if (idleAnimationKickHandle !== null) {
     clearTimeout(idleAnimationKickHandle);
     idleAnimationKickHandle = null;
+  }
+  if (globalAtlasWarmHandle !== null) {
+    clearTimeout(globalAtlasWarmHandle);
+    globalAtlasWarmHandle = null;
   }
   if (animationDelayTimer !== null) {
     clearTimeout(animationDelayTimer);
@@ -1214,6 +1253,4 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 </style>
-
-
 

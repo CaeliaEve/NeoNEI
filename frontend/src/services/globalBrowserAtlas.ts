@@ -21,6 +21,7 @@ const atlasImages = new Map<string, AtlasImageState>();
 let indexLoaded = false;
 let indexLoadPromise: Promise<boolean> | null = null;
 let indexAvailable = false;
+let atlasImageCacheVersion = "0";
 
 function normalizeAtlasFile(atlasFile?: string | null): string | null {
   const normalized = `${atlasFile ?? ""}`.trim().replace(/\\/g, "/").replace(/^\/+/, "");
@@ -76,12 +77,21 @@ function getAtlasImageState(atlasFile: string): AtlasImageState {
   return state;
 }
 
+function getAtlasImageCacheKey(atlasFile: string): string {
+  return `${atlasFile}?v=${encodeURIComponent(atlasImageCacheVersion)}`;
+}
+
+function withAtlasVersion(url: string): string {
+  const separator = url.includes("?") ? "&" : "?";
+  return `${url}${separator}v=${encodeURIComponent(atlasImageCacheVersion)}`;
+}
+
 async function loadAtlasImage(atlasFile?: string | null): Promise<HTMLImageElement | null> {
   const normalized = normalizeAtlasFile(atlasFile);
   if (!normalized) {
     return null;
   }
-  const state = getAtlasImageState(normalized);
+  const state = getAtlasImageState(getAtlasImageCacheKey(normalized));
   if (state.image) {
     return state.image;
   }
@@ -92,7 +102,8 @@ async function loadAtlasImage(atlasFile?: string | null): Promise<HTMLImageEleme
     return state.promise;
   }
 
-  const url = resolveCanonicalRelativePath(normalized);
+  const rawUrl = resolveCanonicalRelativePath(normalized);
+  const url = rawUrl ? withAtlasVersion(rawUrl) : null;
   if (!url) {
     state.failed = true;
     return null;
@@ -125,6 +136,13 @@ export async function ensureGlobalBrowserAtlasIndex(): Promise<boolean> {
     .then((payload) => {
       itemEntries.clear();
       itemEntryAliases.clear();
+      atlasImageCacheVersion = [
+        payload?.generatedAt ?? 0,
+        payload?.itemCount ?? 0,
+        payload?.animatedItemCount ?? 0,
+        payload?.missingAtlasCount ?? 0,
+      ].join("-");
+      atlasImages.clear();
       for (const entry of payload?.items ?? []) {
         if (entry?.itemId) {
           itemEntries.set(entry.itemId, entry);
@@ -342,7 +360,7 @@ export function getLoadedGlobalAtlasImage(atlasFile?: string | null): HTMLImageE
   if (!normalized) {
     return null;
   }
-  return atlasImages.get(normalized)?.image ?? null;
+  return atlasImages.get(getAtlasImageCacheKey(normalized))?.image ?? null;
 }
 
 export function hasGlobalBrowserAtlas(): boolean {
