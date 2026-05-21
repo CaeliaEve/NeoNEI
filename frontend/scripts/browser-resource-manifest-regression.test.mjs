@@ -57,3 +57,21 @@ test('browser prewarm uses precomputed resource manifests', () => {
     'browser prewarm should read animated atlas files from resource manifests',
   );
 });
+
+test('stale browser page prewarm is gated by the active page token', () => {
+  assert.equal(
+    itemBrowserSource.includes('let activeResourceWarmToken = 0;'),
+    true,
+    'item browser should track the active resource warm generation',
+  );
+  assert.equal(
+    itemBrowserSource.includes('activeResourceWarmToken += 1;'),
+    true,
+    'item browser should advance the warm generation for new visible page loads',
+  );
+  assert.equal(
+    itemBrowserSource.includes('if (warmToken !== activeResourceWarmToken)'),
+    true,
+    'item browser should ignore stale prewarm continuations',
+  );
+});

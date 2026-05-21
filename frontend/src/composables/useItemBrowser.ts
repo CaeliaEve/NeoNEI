@@ -199,6 +199,7 @@ export function useItemBrowser(
   let searchTimeout: ReturnType<typeof setTimeout> | undefined;
   let initialHomeBootstrapMarked = false;
   let firstBrowserTileVisibleMarked = false;
+  let activeResourceWarmToken = 0;
 
   const buildPageCacheKey = (params: {
     page: number;
@@ -327,6 +328,7 @@ export function useItemBrowser(
       ...basePage,
       atlas: cachedPack.atlas ?? basePage.atlas ?? null,
       mediaManifest: cachedPack.mediaManifest ?? basePage.mediaManifest ?? null,
+      resourceManifest: cachedPack.resourceManifest ?? basePage.resourceManifest,
     };
   };
 
@@ -345,9 +347,13 @@ export function useItemBrowser(
       return;
     }
 
-    const itemIds = basePage.items.map((item) => item.itemId).filter(Boolean);
+    const warmToken = activeResourceWarmToken;
+    const itemIds = collectBrowserPageResourceItemIds(basePage);
     void warmGlobalBrowserAtlasForItemsDetailed(itemIds)
       .then((globalCoverage) => {
+        if (warmToken !== activeResourceWarmToken || requestId !== loadItemsRequestId) {
+          return null;
+        }
         if (hasGlobalBrowserAtlas()) {
           return null;
         }
@@ -360,6 +366,9 @@ export function useItemBrowser(
         });
       })
       .then((pack) => {
+        if (warmToken !== activeResourceWarmToken || requestId !== loadItemsRequestId) {
+          return;
+        }
         if (!pack) {
           return;
         }
@@ -367,6 +376,7 @@ export function useItemBrowser(
           ...basePage,
           atlas: pack.atlas ?? basePage.atlas ?? null,
           mediaManifest: pack.mediaManifest ?? basePage.mediaManifest ?? null,
+          resourceManifest: pack.resourceManifest ?? basePage.resourceManifest,
         };
         setSharedBrowserPageCache(cacheKey, hydratedPage);
         const activeCacheKey = buildPageCacheKey(buildRequestParams(currentPage.value));
@@ -624,7 +634,8 @@ export function useItemBrowser(
     response: CachedBrowserPage,
     options?: { animatedEntryLimit?: number; atlasLimit?: number },
   ): Promise<void> => {
-    prewarmCachedBrowserPageMedia(response, options);
+    const warmToken = activeResourceWarmToken;
+    prewarmCachedBrowserPageMedia(response, { ...options, warmToken });
 
     if (pagePresentationReady.has(cacheKey)) {
       return Promise.resolve();
@@ -638,11 +649,17 @@ export function useItemBrowser(
       }
       const request = warmGlobalBrowserAtlasForItemsDetailed(itemIds)
         .then((result) => {
+          if (warmToken !== activeResourceWarmToken) {
+            return;
+          }
           if (result.total > 0 && result.missingCount === 0) {
             pagePresentationReady.add(cacheKey);
             return;
           }
           return warmPageAtlasPresentation(response, options).then(() => {
+            if (warmToken !== activeResourceWarmToken) {
+              return;
+            }
             pagePresentationReady.add(cacheKey);
           });
         })
@@ -674,6 +691,9 @@ export function useItemBrowser(
       warmPageAtlasPresentation(response, options),
     ])
       .then(() => {
+        if (warmToken !== activeResourceWarmToken) {
+          return;
+        }
         pagePresentationReady.add(cacheKey);
       })
       .catch(() => undefined)
@@ -823,11 +843,15 @@ export function useItemBrowser(
 
   const prewarmCachedBrowserPageMedia = (
     response: CachedBrowserPage,
-    options?: { animatedEntryLimit?: number; atlasLimit?: number },
+    options?: { animatedEntryLimit?: number; atlasLimit?: number; warmToken?: number },
   ) => {
+    const warmToken = options?.warmToken ?? activeResourceWarmToken;
     const displayItemIds = collectBrowserPageResourceItemIds(response);
     void warmGlobalBrowserAtlasForItemsDetailed(displayItemIds)
       .then((coverage) => {
+        if (warmToken !== activeResourceWarmToken) {
+          return;
+        }
         if (hasGlobalBrowserAtlas()) {
           markPerfEvent('browser-atlas-page-coverage', {
             page: response.page,
@@ -978,6 +1002,7 @@ export function useItemBrowser(
 
   const loadItems = async () => {
     const requestId = ++loadItemsRequestId;
+    activeResourceWarmToken += 1;
     loadError.value = '';
     const requestParams = buildRequestParams(currentPage.value);
     const cacheKey = buildPageCacheKey(requestParams);
@@ -1106,6 +1131,7 @@ export function useItemBrowser(
 
   const loadInitialHomeState = async () => {
     const requestId = ++loadItemsRequestId;
+    activeResourceWarmToken += 1;
     loading.value = true;
     transitioning.value = false;
     modsLoading.value = true;
@@ -1240,6 +1266,7 @@ export function useItemBrowser(
     const localProjection = tryProjectExpandedGroupsFromLocalCaches(requestParams);
     if (localProjection) {
       const requestId = ++loadItemsRequestId;
+      activeResourceWarmToken += 1;
       loadError.value = '';
       loading.value = false;
       transitioning.value = false;
