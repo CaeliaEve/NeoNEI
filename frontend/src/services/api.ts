@@ -139,7 +139,7 @@ function buildRuntimePayloadCacheKey(
 ): string {
   return JSON.stringify({
     type: kind,
-    version: 1,
+    version: 2,
     signature,
     ...identity,
   });
@@ -600,7 +600,7 @@ function buildPersistentBrowserPageKey(
 ): string {
   return JSON.stringify({
     type: 'browser-page-pack',
-    version: 1,
+    version: 3,
     signature,
     page: params.page,
     pageSize: params.pageSize,
@@ -847,6 +847,7 @@ export interface PublicRuntimeManifest {
   compiledAt: string | null;
   publishRevision?: string | null;
   publishCompiledAt?: string | null;
+  browserLayoutKey?: string | null;
   runtimeCacheKey?: string;
   publishBundle?: PublishStaticBundleManifest | null;
 }
@@ -1769,7 +1770,13 @@ export const api = {
     if (publishManifestInFlight) {
       return publishManifestInFlight;
     }
-    publishManifestInFlight = http.get('/publish/manifest')
+    publishManifestInFlight = http.get('/publish/manifest', {
+      params: { _runtime: Date.now() },
+      headers: {
+        'Cache-Control': 'no-cache',
+        Pragma: 'no-cache',
+      },
+    })
       .then((response) => {
         publishManifestCache = response.data;
         primeRuntimeCacheSignature(getRuntimeCacheSignature(response.data));

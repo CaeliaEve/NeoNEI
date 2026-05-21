@@ -13,6 +13,7 @@ export interface PublicRuntimeManifest {
   compiledAt: string | null;
   publishRevision: string | null;
   publishCompiledAt: string | null;
+  browserLayoutKey: string | null;
   runtimeCacheKey: string;
   publishBundle: PublishStaticBundleManifest | null;
 }
@@ -84,7 +85,8 @@ export class PublishManifestService {
         compiledAt: null,
         publishRevision: null,
         publishCompiledAt: null,
-        runtimeCacheKey: 'bootstrap-missing::publish-revision-missing::publish-compiled-at-missing',
+        browserLayoutKey: null,
+        runtimeCacheKey: 'bootstrap-missing::publish-revision-missing::publish-compiled-at-missing::browser-layout-missing',
         publishBundle: null,
       };
       this.cache = {
@@ -97,24 +99,60 @@ export class PublishManifestService {
     const rows = db.prepare(`
       SELECT state_key, state_value, updated_at
       FROM compiler_state
-      WHERE state_key IN ('source_signature', 'publish_payload_revision', 'publish_payload_compiled_at')
+      WHERE state_key IN (
+        'source_signature',
+        'publish_payload_revision',
+        'publish_payload_compiled_at',
+        'publish_payload_browser_layout_key',
+        'browser_layout_source',
+        'item_browser_groups_count',
+        'browser_default_entries_count'
+      )
     `).all() as CompilerStateRow[];
 
     const sourceSignatureRow = rows.find((row) => row.state_key === 'source_signature');
     const publishRevisionRow = rows.find((row) => row.state_key === 'publish_payload_revision');
     const publishCompiledAtRow = rows.find((row) => row.state_key === 'publish_payload_compiled_at');
+    const publishBrowserLayoutKeyRow = rows.find((row) => row.state_key === 'publish_payload_browser_layout_key');
+    const browserLayoutSourceRow = rows.find((row) => row.state_key === 'browser_layout_source');
+    const itemBrowserGroupsCountRow = rows.find((row) => row.state_key === 'item_browser_groups_count');
+    const browserDefaultEntriesCountRow = rows.find((row) => row.state_key === 'browser_default_entries_count');
     const sourceSignature = `${sourceSignatureRow?.state_value ?? ''}`.trim() || 'source-signature-missing';
     const publishRevision = `${publishRevisionRow?.state_value ?? ''}`.trim() || null;
     const publishCompiledAt = `${publishCompiledAtRow?.state_value ?? ''}`.trim() || null;
+    const browserLayoutKey = [
+      `${browserLayoutSourceRow?.state_value ?? ''}`.trim() || 'browser-layout-missing',
+      `${itemBrowserGroupsCountRow?.state_value ?? ''}`.trim() || 'groups-count-missing',
+      `${browserDefaultEntriesCountRow?.state_value ?? ''}`.trim() || 'entries-count-missing',
+      browserLayoutSourceRow?.updated_at ?? 'browser-layout-updated-at-missing',
+    ].join('::');
     const publishBundle = this.readPublishBundleManifest(sourceSignature);
+    const publishIsOlderThanBrowserLayout = `${publishBrowserLayoutKeyRow?.state_value ?? ''}`.trim() !== browserLayoutKey;
+    let runtimePublishBundle: PublishStaticBundleManifest | null = publishBundle;
+    if (publishBundle && publishIsOlderThanBrowserLayout) {
+      runtimePublishBundle = {
+        ...publishBundle,
+        files: {
+          ...publishBundle.files,
+          browserPageWindows: [],
+          homeBootstrapWindows: [],
+        },
+      };
+    }
     const manifest: PublicRuntimeManifest = {
       version: 1,
       sourceSignature,
       compiledAt: sourceSignatureRow?.updated_at ?? null,
       publishRevision,
       publishCompiledAt,
-      runtimeCacheKey: [sourceSignature, publishRevision ?? 'publish-revision-missing', publishCompiledAt ?? 'publish-compiled-at-missing'].join('::'),
-      publishBundle,
+      browserLayoutKey,
+      runtimeCacheKey: [
+        sourceSignature,
+        publishRevision ?? 'publish-revision-missing',
+        publishCompiledAt ?? 'publish-compiled-at-missing',
+        browserLayoutKey,
+      ].join('::'),
+      publishBundle: runtimePublishBundle,
     };
 
     this.cache = {

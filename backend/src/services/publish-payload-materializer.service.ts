@@ -384,17 +384,30 @@ export class PublishPayloadMaterializerService {
         'publish_payload_search_hot_shard_size',
         'publish_payload_recipe_bootstrap_hot_limit',
         'publish_payload_compiled_at',
-        'publish_payloads_count'
+        'publish_payloads_count',
+        'publish_payload_browser_layout_key',
+        'browser_layout_source',
+        'item_browser_groups_count',
+        'browser_default_entries_count'
       )
     `).all() as CompilerStateRow[];
 
     return new Map(rows.map((row) => [row.state_key, `${row.state_value ?? ''}`]));
   }
 
+  private getBrowserLayoutKey(state: Map<string, string>): string {
+    return [
+      (state.get('browser_layout_source') ?? '').trim() || 'browser-layout-missing',
+      (state.get('item_browser_groups_count') ?? '').trim() || 'groups-count-missing',
+      (state.get('browser_default_entries_count') ?? '').trim() || 'entries-count-missing',
+    ].join('::');
+  }
+
   isFresh(sourceSignature: string): boolean {
     const db = this.getAccelerationDatabase();
     const state = this.getStateMap(db);
     const payloadCount = Number(state.get('publish_payloads_count') ?? 0);
+    const browserLayoutKey = this.getBrowserLayoutKey(state);
     const bundleManifestPath = path.join(this.publishOutputDir, sourceSignature, buildPublishBundleManifestRelativePath());
 
     if (!this.options.enabled) {
@@ -412,6 +425,7 @@ export class PublishPayloadMaterializerService {
       && (state.get('publish_payload_window_stride') ?? '') === String(this.options.windowStride)
       && (state.get('publish_payload_search_hot_shard_size') ?? '') === String(this.options.searchHotShardSize)
       && (state.get('publish_payload_recipe_bootstrap_hot_limit') ?? '') === String(this.options.recipeBootstrapHotItemLimit)
+      && (state.get('publish_payload_browser_layout_key') ?? '') === browserLayoutKey
       && Boolean((state.get('publish_payload_compiled_at') ?? '').trim())
       && fs.existsSync(bundleManifestPath)
     );
@@ -676,6 +690,7 @@ export class PublishPayloadMaterializerService {
 
   async materialize(sourceSignature: string): Promise<PublishPayloadMaterializeResult> {
     const db = this.getAccelerationDatabase();
+    const browserLayoutKey = this.getBrowserLayoutKey(this.getStateMap(db));
     const compiledAt = new Date().toISOString();
     const bundleOutputDir = path.join(this.publishOutputDir, sourceSignature);
     const upsertState = db.prepare(`
@@ -1101,6 +1116,7 @@ export class PublishPayloadMaterializerService {
       upsertState.run({ state_key: 'publish_payload_window_stride', state_value: String(this.options.windowStride) });
       upsertState.run({ state_key: 'publish_payload_search_hot_shard_size', state_value: String(this.options.searchHotShardSize) });
       upsertState.run({ state_key: 'publish_payload_recipe_bootstrap_hot_limit', state_value: String(this.options.recipeBootstrapHotItemLimit) });
+      upsertState.run({ state_key: 'publish_payload_browser_layout_key', state_value: browserLayoutKey });
       upsertState.run({ state_key: 'publish_payload_compiled_at', state_value: compiledAt });
       upsertState.run({
         state_key: 'publish_payloads_count',

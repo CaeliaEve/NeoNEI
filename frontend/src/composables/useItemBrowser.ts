@@ -137,7 +137,7 @@ function buildPersistentBrowserPageKey(
 ): string {
   return JSON.stringify({
     type: 'browser-page-pack',
-    version: 1,
+    version: 3,
     signature,
     page: params.page,
     pageSize: params.pageSize,
@@ -528,12 +528,13 @@ export function useItemBrowser(
 
   const readPersistentDefaultPage = async (
     params: BrowserPageRequestParams,
+    activeSignature?: string | null,
   ): Promise<{ signature: string; page: CachedBrowserPage } | null> => {
     if (params.search?.trim()) {
       return null;
     }
 
-    const signature = getStoredRuntimeSignature();
+    const signature = activeSignature || getStoredRuntimeSignature();
     if (!signature) {
       return null;
     }
@@ -1030,7 +1031,8 @@ export function useItemBrowser(
       }
 
       if (!hasActiveSearch()) {
-        const persistent = await readPersistentDefaultPage(requestParams);
+        const activeSignature = await signaturePromise;
+        const persistent = await readPersistentDefaultPage(requestParams, activeSignature);
         if (persistent) {
           setSharedBrowserPageCache(cacheKey, persistent.page);
           if (hadVisibleEntries) {
@@ -1106,12 +1108,13 @@ export function useItemBrowser(
         return;
       }
 
+      const signaturePromise = !hasActiveSearch() ? resolvePublishSignature() : Promise.resolve(null);
+      const activeSignature = await signaturePromise;
       const persistent = !hasActiveSearch()
-        ? await readPersistentDefaultPage(requestParams)
+        ? await readPersistentDefaultPage(requestParams, activeSignature)
         : null;
 
       if (persistent) {
-        const signaturePromise = resolvePublishSignature();
         setSharedBrowserPageCache(cacheKey, persistent.page);
         applyBrowserResponse(persistent.page, requestId, cacheKey);
         markInitialHomeBootstrapDone('persistent-cache');
@@ -1151,7 +1154,6 @@ export function useItemBrowser(
       }
 
       const loadedModsPromise = api.getMods();
-      const signaturePromise = resolvePublishSignature();
       const normalized = hasActiveSearch()
         ? await loadSearchPage(requestParams)
         : await loadDefaultPage(requestParams, { signaturePromise });
@@ -1378,6 +1380,3 @@ export function useItemBrowser(
     clearCachedPages: clearBrowserPageState,
   };
 }
-
-
-

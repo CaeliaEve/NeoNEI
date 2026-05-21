@@ -29,11 +29,10 @@ router.get(
   asyncHandler(async (req, res) => {
     const manifest = getPublishManifestService().getRuntimeManifest();
     const etag = createWeakEtag('publish-manifest', manifest.version, manifest.sourceSignature, manifest.compiledAt, manifest.publishRevision, manifest.publishCompiledAt, manifest.runtimeCacheKey);
-    setPublicCacheHeaders(res, {
-      maxAgeSeconds: 60,
-      staleWhileRevalidateSeconds: 300,
-      staleIfErrorSeconds: 3600,
-    });
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
     if (sendNotModifiedIfEtagMatches(req, res, etag)) {
       return;
     }
@@ -70,7 +69,7 @@ router.get(
       return;
     }
 
-    if (page === 1 && !modId) {
+    if (page === 1 && !modId && (manifest.publishBundle?.files.homeBootstrapWindows?.length ?? 0) > 0) {
         const materialized = getPublishPayloadService().getHomeBootstrapWindow({
         slotSize: Math.max(24, Math.min(128, Number(slotSize))),
       }, manifest.sourceSignature);

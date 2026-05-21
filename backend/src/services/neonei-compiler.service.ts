@@ -239,6 +239,10 @@ type BrowserLayoutDefaultEntry = {
 
 type BrowserLayoutIndex = {
   schemaVersion?: string;
+  source?: {
+    order?: string | null;
+    grouping?: string | null;
+  };
   items?: BrowserLayoutIndexItem[];
   defaultEntries?: BrowserLayoutDefaultEntry[];
 };
@@ -1924,7 +1928,7 @@ export class NeoNeiCompilerService {
         if (importedAssignments > 0 && importedEntries > 0) {
           upsertState.run({
             state_key: 'browser_layout_source',
-            state_value: `nesql++:${exportedLayout.schemaVersion ?? 'unknown'}`,
+            state_value: `nesql++:${exportedLayout.schemaVersion ?? 'unknown'}:${exportedLayout.source?.order ?? 'unknown-order'}:${exportedLayout.source?.grouping ?? 'unknown-grouping'}`,
           });
           return;
         }
