@@ -152,6 +152,15 @@ function shouldParsePublishPayloadMetadata(payloadType: string): boolean {
     || payloadType === 'home-bootstrap-window';
 }
 
+function escapeHtml(value: unknown): string {
+  return `${value ?? ''}`
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function toPublishedRelationSegment(value: 'producedBy' | 'usedIn'): 'produced-by' | 'used-in' {
   return value === 'usedIn' ? 'used-in' : 'produced-by';
 }
@@ -681,11 +690,135 @@ export class PublishPayloadMaterializerService {
       JSON.stringify(bundleManifest, null, 2),
       'utf8',
     );
+    this.writeBuildReport(bundleOutputDir, bundleManifest, rows);
     for (const variant of PUBLISH_BUNDLE_SIDECAR_VARIANTS) {
       const compressedBuffer = variant.compress(fs.readFileSync(manifestAbsolutePath));
       fs.writeFileSync(`${manifestAbsolutePath}${variant.extension}`, compressedBuffer);
     }
     return bundleManifest;
+  }
+
+  private writeBuildReport(
+    bundleOutputDir: string,
+    bundleManifest: PublishStaticBundleManifest,
+    rows: PublishPayloadRecord[],
+  ): void {
+    const rowCounts = rows.reduce<Record<string, number>>((acc, row) => {
+      acc[row.payload_type] = (acc[row.payload_type] ?? 0) + 1;
+      return acc;
+    }, {});
+    const assetEntries = Object.values(bundleManifest.compression.assets);
+    const totalBytes = assetEntries.reduce((sum, asset) => sum + asset.sizeBytes, 0);
+    const compressedBytes = assetEntries.reduce((sum, asset) => {
+      const best = asset.compressedVariants.reduce<number | null>((current, variant) => {
+        if (current === null || variant.sizeBytes < current) return variant.sizeBytes;
+        return current;
+      }, null);
+      return sum + (best ?? asset.sizeBytes);
+    }, 0);
+    const warnings: string[] = [];
+    if (!bundleManifest.files.modsList) warnings.push('Missing mods list publish payload.');
+    if (!bundleManifest.files.browserSearchPack && bundleManifest.files.browserSearchShards.length <= 0) {
+      warnings.push('Missing browser search pack/shards.');
+    }
+    if (bundleManifest.files.browserPageWindows.length <= 0) warnings.push('Missing browser page windows.');
+    if (bundleManifest.files.homeBootstrapWindows.length <= 0) warnings.push('Missing home bootstrap windows.');
+    if (assetEntries.length <= 0) warnings.push('No compressed publish assets registered.');
+
+    const report = {
+      schemaVersion: 'neonei/publish-build-report/v1',
+      generatedAt: new Date().toISOString(),
+      sourceSignature: bundleManifest.sourceSignature,
+      revision: bundleManifest.revision,
+      compiledAt: bundleManifest.compiledAt,
+      firstPageSize: bundleManifest.firstPageSize,
+      slotSizes: bundleManifest.slotSizes,
+      rowCounts,
+      files: {
+        assetCount: assetEntries.length,
+        browserSearchShardCount: bundleManifest.files.browserSearchShards.length,
+        recipeBootstrapItemCount: bundleManifest.files.recipeBootstrapItems.length,
+        recipeSearchItemCount: bundleManifest.files.recipeSearchItems.length,
+        browserPageWindowCount: bundleManifest.files.browserPageWindows.length,
+        homeBootstrapWindowCount: bundleManifest.files.homeBootstrapWindows.length,
+      },
+      bytes: {
+        uncompressed: totalBytes,
+        bestCompressed: compressedBytes,
+        compressionRatio: totalBytes > 0 ? Number((compressedBytes / totalBytes).toFixed(4)) : null,
+      },
+      warnings,
+    };
+
+    fs.writeFileSync(path.join(bundleOutputDir, 'build-report.json'), JSON.stringify(report, null, 2), 'utf8');
+    fs.writeFileSync(
+      path.join(bundleOutputDir, 'build-report.html'),
+      this.renderBuildReportHtml(report),
+      'utf8',
+    );
+  }
+
+  private renderBuildReportHtml(report: {
+    schemaVersion: string;
+    generatedAt: string;
+    sourceSignature: string;
+    revision: string;
+    compiledAt: string;
+    rowCounts: Record<string, number>;
+    files: Record<string, number>;
+    bytes: { uncompressed: number; bestCompressed: number; compressionRatio: number | null };
+    warnings: string[];
+  }): string {
+    const rows = Object.entries(report.rowCounts)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => `<tr><td>${escapeHtml(key)}</td><td>${value}</td></tr>`)
+      .join('');
+    const fileRows = Object.entries(report.files)
+      .map(([key, value]) => `<tr><td>${escapeHtml(key)}</td><td>${value}</td></tr>`)
+      .join('');
+    const warnings = report.warnings.length > 0
+      ? report.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')
+      : '<li>无警告</li>';
+    return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>NeoNEI Publish Build Report</title>
+  <style>
+    body{margin:0;padding:32px;background:#071014;color:#d8f7ff;font-family:Inter,Segoe UI,Arial,sans-serif}
+    main{max-width:1120px;margin:0 auto}
+    section{margin:18px 0;padding:18px;border:1px solid rgba(83,219,255,.24);border-radius:16px;background:rgba(8,24,31,.72)}
+    h1,h2{margin:0 0 12px}
+    table{width:100%;border-collapse:collapse}
+    td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08)}
+    td:first-child{color:#8ed9ef}
+    code{color:#ffc66d}
+  </style>
+</head>
+<body>
+<main>
+  <h1>NeoNEI Publish Build Report</h1>
+  <section>
+    <h2>构建身份</h2>
+    <p>Source: <code>${escapeHtml(report.sourceSignature)}</code></p>
+    <p>Revision: <code>${escapeHtml(report.revision)}</code></p>
+    <p>Compiled: <code>${escapeHtml(report.compiledAt)}</code></p>
+    <p>Generated: <code>${escapeHtml(report.generatedAt)}</code></p>
+  </section>
+  <section><h2>产物数量</h2><table>${fileRows}</table></section>
+  <section><h2>Payload 类型</h2><table>${rows}</table></section>
+  <section>
+    <h2>体积</h2>
+    <table>
+      <tr><td>uncompressed</td><td>${report.bytes.uncompressed}</td></tr>
+      <tr><td>bestCompressed</td><td>${report.bytes.bestCompressed}</td></tr>
+      <tr><td>compressionRatio</td><td>${report.bytes.compressionRatio ?? 'n/a'}</td></tr>
+    </table>
+  </section>
+  <section><h2>警告</h2><ul>${warnings}</ul></section>
+</main>
+</body>
+</html>`;
   }
 
   async materialize(sourceSignature: string): Promise<PublishPayloadMaterializeResult> {
