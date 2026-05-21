@@ -78,6 +78,8 @@ export interface PublishStaticBundleManifest {
   includeBrowserSearchPack: boolean;
   files: {
     manifest: string;
+    buildReport: string | null;
+    buildReportHtml: string | null;
     modsList: string | null;
     browserSearchPack: string | null;
     browserSearchShards: PublishBundleSearchShardPathEntry[];

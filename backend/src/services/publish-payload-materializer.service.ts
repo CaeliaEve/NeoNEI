@@ -517,6 +517,8 @@ export class PublishPayloadMaterializerService {
       includeBrowserSearchPack: this.options.includeBrowserSearchPack,
       files: {
         manifest: buildPublishBundlePublicAssetPath(basePublicPath, buildPublishBundleManifestRelativePath()),
+        buildReport: null,
+        buildReportHtml: null,
         modsList: null,
         browserSearchPack: null,
         browserSearchShards: [],
@@ -685,12 +687,16 @@ export class PublishPayloadMaterializerService {
     bundleManifest.files.homeBootstrapWindows.sort((left, right) => (left.slotSize - right.slotSize) || (left.offset - right.offset));
 
     const manifestAbsolutePath = path.join(bundleOutputDir, buildPublishBundleManifestRelativePath());
+    const buildReportPaths = this.writeBuildReport(bundleOutputDir, basePublicPath, bundleManifest, rows);
+    bundleManifest.files.buildReport = buildReportPaths.jsonPublicPath;
+    bundleManifest.files.buildReportHtml = buildReportPaths.htmlPublicPath;
+    registerCompressedAsset(buildReportPaths.jsonRelativePath, buildReportPaths.jsonAbsolutePath, buildReportPaths.jsonPublicPath);
+    registerCompressedAsset(buildReportPaths.htmlRelativePath, buildReportPaths.htmlAbsolutePath, buildReportPaths.htmlPublicPath);
     fs.writeFileSync(
       manifestAbsolutePath,
       JSON.stringify(bundleManifest, null, 2),
       'utf8',
     );
-    this.writeBuildReport(bundleOutputDir, bundleManifest, rows);
     for (const variant of PUBLISH_BUNDLE_SIDECAR_VARIANTS) {
       const compressedBuffer = variant.compress(fs.readFileSync(manifestAbsolutePath));
       fs.writeFileSync(`${manifestAbsolutePath}${variant.extension}`, compressedBuffer);
@@ -700,9 +706,17 @@ export class PublishPayloadMaterializerService {
 
   private writeBuildReport(
     bundleOutputDir: string,
+    basePublicPath: string,
     bundleManifest: PublishStaticBundleManifest,
     rows: PublishPayloadRecord[],
-  ): void {
+  ): {
+    jsonRelativePath: string;
+    jsonAbsolutePath: string;
+    jsonPublicPath: string;
+    htmlRelativePath: string;
+    htmlAbsolutePath: string;
+    htmlPublicPath: string;
+  } {
     const rowCounts = rows.reduce<Record<string, number>>((acc, row) => {
       acc[row.payload_type] = (acc[row.payload_type] ?? 0) + 1;
       return acc;
@@ -750,12 +764,20 @@ export class PublishPayloadMaterializerService {
       warnings,
     };
 
-    fs.writeFileSync(path.join(bundleOutputDir, 'build-report.json'), JSON.stringify(report, null, 2), 'utf8');
-    fs.writeFileSync(
-      path.join(bundleOutputDir, 'build-report.html'),
-      this.renderBuildReportHtml(report),
-      'utf8',
-    );
+    const jsonRelativePath = 'build-report.json';
+    const htmlRelativePath = 'build-report.html';
+    const jsonAbsolutePath = path.join(bundleOutputDir, jsonRelativePath);
+    const htmlAbsolutePath = path.join(bundleOutputDir, htmlRelativePath);
+    fs.writeFileSync(jsonAbsolutePath, JSON.stringify(report, null, 2), 'utf8');
+    fs.writeFileSync(htmlAbsolutePath, this.renderBuildReportHtml(report), 'utf8');
+    return {
+      jsonRelativePath,
+      jsonAbsolutePath,
+      jsonPublicPath: buildPublishBundlePublicAssetPath(basePublicPath, jsonRelativePath),
+      htmlRelativePath,
+      htmlAbsolutePath,
+      htmlPublicPath: buildPublishBundlePublicAssetPath(basePublicPath, htmlRelativePath),
+    };
   }
 
   private renderBuildReportHtml(report: {
