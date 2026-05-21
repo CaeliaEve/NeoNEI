@@ -3,7 +3,11 @@ import { ItemsService, type BrowserPageEntry, type Item } from '../services/item
 import { getItemsSearchService } from '../services/items-search.service';
 import { getPageAtlasService } from '../services/page-atlas.service';
 import { getPublishManifestService } from '../services/publish-manifest.service';
-import { derivePagePackFromWindow, getPublishPayloadService } from '../services/publish-payload.service';
+import {
+  buildBrowserPageResourceManifest,
+  derivePagePackFromWindow,
+  getPublishPayloadService,
+} from '../services/publish-payload.service';
 import {
   attachRenderHintsToEntries,
   attachRenderHintsToItems,
@@ -220,10 +224,12 @@ router.get(
       Math.max(24, Math.min(128, Number(slotSize))),
     );
 
+    const mediaManifest = buildBrowserRichMediaManifest(displayItems);
     res.json({
       ...result,
       atlas,
-      mediaManifest: buildBrowserRichMediaManifest(displayItems),
+      mediaManifest,
+      resourceManifest: buildBrowserPageResourceManifest(result.data, atlas, mediaManifest),
     });
   })
 );
@@ -386,14 +392,17 @@ router.post(
       Number.isFinite(slotSize) ? Math.max(24, Math.min(128, Number(slotSize))) : 48,
     );
 
+    const mediaManifest = buildBrowserRichMediaManifest(orderedItems);
+    const data = orderedItems.map((item) => ({
+      key: item.itemId,
+      kind: 'item' as const,
+      item,
+    }));
     res.json({
-      data: orderedItems.map((item) => ({
-        key: item.itemId,
-        kind: 'item',
-        item,
-      })),
+      data,
       atlas,
-      mediaManifest: buildBrowserRichMediaManifest(orderedItems),
+      mediaManifest,
+      resourceManifest: buildBrowserPageResourceManifest(data, atlas, mediaManifest),
     });
   })
 );

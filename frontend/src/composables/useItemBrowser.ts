@@ -1,4 +1,4 @@
-import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
+﻿import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 import {
   api,
   type BrowserGridEntry,
@@ -11,6 +11,7 @@ import {
   type Mod,
   type PageAtlasResult,
 } from '../services/api';
+import { resolveCanonicalRelativePath } from '../services/api/images';
 import { peekPageAtlas } from '../services/pageAtlas';
 import {
   projectBrowserEntriesFromDefaultCatalog,
@@ -44,6 +45,7 @@ type CachedBrowserPage = {
   items: Item[];
   atlas: PageAtlasResult | null;
   mediaManifest?: BrowserPagePackResponse['mediaManifest'];
+  resourceManifest?: BrowserPagePackResponse['resourceManifest'];
   total: number;
   totalPages: number;
   page: number;
@@ -103,11 +105,23 @@ function collectDisplayItems(entries: BrowserGridEntry[]): Item[] {
 function collectAnimatedAtlasUrls(page: CachedBrowserPage): string[] {
   return Array.from(
     new Set(
-      Object.values(page.mediaManifest?.animatedAtlases ?? {})
-        .map((entry) => getAnimatedAtlasImageUrl(entry))
+      [
+        ...Object.values(page.mediaManifest?.animatedAtlases ?? {})
+          .map((entry) => getAnimatedAtlasImageUrl(entry)),
+        ...(page.resourceManifest?.animatedAtlasFiles ?? [])
+          .map((atlasFile) => resolveCanonicalRelativePath(atlasFile)),
+      ]
         .filter((url): url is string => Boolean(url)),
     ),
   );
+}
+
+function collectBrowserPageResourceItemIds(page: CachedBrowserPage): string[] {
+  const manifestItemIds = page.resourceManifest?.itemIds ?? [];
+  if (manifestItemIds.length > 0) {
+    return manifestItemIds.map((itemId) => `${itemId ?? ''}`.trim()).filter(Boolean);
+  }
+  return collectDisplayItems(page.data).map((item) => item.itemId).filter(Boolean);
 }
 
 function normalizeExpandedGroups(groups?: string[]): string[] {
@@ -616,7 +630,7 @@ export function useItemBrowser(
       return Promise.resolve();
     }
 
-    const itemIds = collectDisplayItems(response.data).map((item) => item.itemId).filter(Boolean);
+    const itemIds = collectBrowserPageResourceItemIds(response);
     if (hasGlobalBrowserAtlas()) {
       const existing = pagePresentationWarmInFlight.get(cacheKey);
       if (existing) {
@@ -676,8 +690,12 @@ export function useItemBrowser(
     options?: { atlasLimit?: number },
   ): Promise<void> => {
     const atlasTasks: Array<Promise<unknown>> = [];
-    if (response.atlas?.atlasUrl) {
-      atlasTasks.push(loadImageAsset(response.atlas.atlasUrl));
+    const atlasUrls = Array.from(new Set([
+      response.atlas?.atlasUrl ?? null,
+      ...(response.resourceManifest?.atlasUrls ?? []),
+    ].filter((url): url is string => Boolean(url))));
+    for (const atlasUrl of atlasUrls) {
+      atlasTasks.push(loadImageAsset(atlasUrl));
     }
 
     const animatedAtlasUrls = collectAnimatedAtlasUrls(response).slice(0, Math.max(1, options?.atlasLimit ?? 6));
@@ -696,7 +714,7 @@ export function useItemBrowser(
     response: CachedBrowserPage,
     waitMs: number,
   ) => {
-    const pageItemIds = collectDisplayItems(response.data).map((item) => item.itemId).filter(Boolean);
+    const pageItemIds = collectBrowserPageResourceItemIds(response);
     const globalCoverage = await inspectGlobalBrowserAtlasCoverageForItems(pageItemIds).catch(() => null);
     if (!globalCoverage || globalCoverage.total <= 0 || globalCoverage.missingCount > 0) {
       if (!response.atlas?.atlasUrl || waitMs <= 0 || pagePresentationReady.has(cacheKey)) {
@@ -807,7 +825,7 @@ export function useItemBrowser(
     response: CachedBrowserPage,
     options?: { animatedEntryLimit?: number; atlasLimit?: number },
   ) => {
-    const displayItemIds = collectDisplayItems(response.data).map((item) => item.itemId).filter(Boolean);
+    const displayItemIds = collectBrowserPageResourceItemIds(response);
     void warmGlobalBrowserAtlasForItemsDetailed(displayItemIds)
       .then((coverage) => {
         if (hasGlobalBrowserAtlas()) {
@@ -836,6 +854,7 @@ export function useItemBrowser(
     items: collectDisplayItems(response.data),
     atlas: response.atlas ?? null,
     mediaManifest: response.mediaManifest ?? null,
+    resourceManifest: response.resourceManifest,
     total: response.total,
     totalPages: response.totalPages,
     page: response.page,
@@ -874,6 +893,8 @@ export function useItemBrowser(
       data: response.data,
       items: collectDisplayItems(response.data),
       atlas: response.atlas ?? null,
+      mediaManifest: response.mediaManifest ?? null,
+      resourceManifest: response.resourceManifest,
       total: response.total,
       totalPages: response.totalPages,
       page: response.page,
@@ -900,6 +921,7 @@ export function useItemBrowser(
       items: collectDisplayItems(response.data),
       atlas: response.atlas ?? null,
       mediaManifest: response.mediaManifest ?? null,
+      resourceManifest: response.resourceManifest,
       total: response.total,
       totalPages: response.totalPages,
       page: response.page,
@@ -1380,3 +1402,4 @@ export function useItemBrowser(
     clearCachedPages: clearBrowserPageState,
   };
 }
+

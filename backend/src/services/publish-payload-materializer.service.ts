@@ -38,11 +38,12 @@ import {
   type PublishBundleAssetMetadata,
   buildBrowserPageWindowPayloadKey,
   buildBrowserSearchPackPayloadKey,
+  buildBrowserPageResourceManifest,
   buildHomeBootstrapWindowPayloadKey,
   buildModsListPayloadKey,
 } from './publish-payload.service';
 
-export const PUBLISH_PAYLOAD_REVISION = '2026-04-28-publish-static-bundle-v9';
+export const PUBLISH_PAYLOAD_REVISION = '2026-05-21-publish-static-bundle-v10-resource-manifest';
 
 export interface PublishPayloadHotOptions {
   enabled?: boolean;
@@ -1227,6 +1228,7 @@ export class PublishPayloadMaterializerService {
           totalPages: Math.max(1, Math.ceil(firstPageWindow.total / this.options.firstPageSize)),
           atlas,
           mediaManifest: firstPageMediaManifest,
+          resourceManifest: buildBrowserPageResourceManifest(firstPageWindow.data, atlas, firstPageMediaManifest),
           windowOffset: firstPageWindow.offset,
           windowLength: firstPageWindow.data.length,
         };
@@ -1272,6 +1274,7 @@ export class PublishPayloadMaterializerService {
               totalPages: Math.max(1, Math.ceil(extraWindow.total / this.options.firstPageSize)),
               atlas: extraAtlas,
               mediaManifest: extraMediaManifest,
+              resourceManifest: buildBrowserPageResourceManifest(extraWindow.data, extraAtlas, extraMediaManifest),
               windowOffset: extraWindow.offset,
               windowLength: extraWindow.data.length,
             }),

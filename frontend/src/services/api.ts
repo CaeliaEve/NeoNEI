@@ -471,9 +471,19 @@ export interface PageRichMediaManifest {
   animatedAtlases: Record<string, AnimatedAtlasAssetEntry>;
 }
 
+export interface BrowserPageResourceManifest {
+  itemIds: string[];
+  renderAssetRefs: string[];
+  atlasUrls: string[];
+  animatedAtlasFiles: string[];
+  atlasEntryCount: number;
+  animatedAtlasCount: number;
+}
+
 export interface BrowserPagePackResponse extends PaginatedResponse<BrowserGridEntry> {
   atlas: PageAtlasResult | null;
   mediaManifest?: PageRichMediaManifest | null;
+  resourceManifest?: BrowserPageResourceManifest;
   windowOffset?: number;
   windowLength?: number;
 }
@@ -498,6 +508,7 @@ type PersistentBrowserPageCacheRecord = {
   items: Item[];
   atlas: PageAtlasResult | null;
   mediaManifest?: PageRichMediaManifest | null;
+  resourceManifest?: BrowserPageResourceManifest;
   total: number;
   totalPages: number;
   page: number;
@@ -540,6 +551,57 @@ function trimAtlasEntries(
   };
 }
 
+function trimRichMediaManifest(
+  mediaManifest: PageRichMediaManifest | null | undefined,
+  entries: BrowserGridEntry[],
+): PageRichMediaManifest | null {
+  if (!mediaManifest) {
+    return null;
+  }
+
+  const renderAssetRefs = new Set(
+    entries
+      .map((entry) => {
+        const item = entry.kind === 'item' ? entry.item : entry.group.representative;
+        return `${item?.renderAssetRef ?? ''}`.trim();
+      })
+      .filter(Boolean),
+  );
+
+  const animatedAtlases = Object.fromEntries(
+    Object.entries(mediaManifest.animatedAtlases ?? {}).filter(([assetId]) => renderAssetRefs.has(assetId)),
+  );
+
+  return Object.keys(animatedAtlases).length > 0 ? { animatedAtlases } : null;
+}
+
+function buildBrowserPageResourceManifest(
+  entries: BrowserGridEntry[],
+  atlas: PageAtlasResult | null | undefined,
+  mediaManifest: PageRichMediaManifest | null | undefined,
+): BrowserPageResourceManifest {
+  const displayItems = entries
+    .map((entry) => (entry.kind === 'item' ? entry.item : entry.group.representative))
+    .filter(Boolean);
+  const itemIds = Array.from(new Set(displayItems.map((item) => `${item.itemId ?? ''}`.trim()).filter(Boolean)));
+  const renderAssetRefs = Array.from(new Set(displayItems.map((item) => `${item.renderAssetRef ?? ''}`.trim()).filter(Boolean)));
+  const atlasUrls = Array.from(new Set([atlas?.atlasUrl].map((url) => `${url ?? ''}`.trim()).filter(Boolean)));
+  const animatedAtlasFiles = Array.from(new Set(
+    Object.values(mediaManifest?.animatedAtlases ?? {})
+      .map((entry) => `${entry?.atlasFile ?? ''}`.trim())
+      .filter(Boolean),
+  ));
+
+  return {
+    itemIds,
+    renderAssetRefs,
+    atlasUrls,
+    animatedAtlasFiles,
+    atlasEntryCount: atlas ? Object.keys(atlas.entries ?? {}).length : 0,
+    animatedAtlasCount: Object.keys(mediaManifest?.animatedAtlases ?? {}).length,
+  };
+}
+
 function deriveBrowserPagePackFromWindow(
   window: BrowserPagePackResponse,
   requestedPage: number,
@@ -565,13 +627,17 @@ function deriveBrowserPagePackFromWindow(
   const relativeStartIndex = startIndex - windowOffset;
   const relativeEndIndex = relativeStartIndex + normalizedPageSize;
   const data = window.data.slice(relativeStartIndex, relativeEndIndex);
+  const atlas = trimAtlasEntries(window.atlas ?? null, data);
+  const mediaManifest = trimRichMediaManifest(window.mediaManifest, data);
   return {
     data,
     total: window.total,
     page: normalizedPage,
     pageSize: normalizedPageSize,
     totalPages: Math.max(1, Math.ceil(window.total / normalizedPageSize)),
-    atlas: trimAtlasEntries(window.atlas ?? null, data),
+    atlas,
+    mediaManifest,
+    resourceManifest: buildBrowserPageResourceManifest(data, atlas, mediaManifest),
     windowOffset,
     windowLength: data.length,
   };
@@ -2079,6 +2145,7 @@ export const api = {
         items: collectDisplayItemsFromBrowserEntries(response.data),
         atlas: response.atlas ?? null,
         mediaManifest: response.mediaManifest ?? null,
+        resourceManifest: response.resourceManifest,
         total: response.total,
         totalPages: response.totalPages,
         page: response.page,

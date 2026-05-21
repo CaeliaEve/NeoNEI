@@ -19,8 +19,18 @@ export interface BrowserPageWindowPayload {
   totalPages: number;
   atlas: PageAtlasResponse | null;
   mediaManifest?: BrowserPageRichMediaManifest | null;
+  resourceManifest?: BrowserPageResourceManifest;
   windowOffset?: number;
   windowLength?: number;
+}
+
+export interface BrowserPageResourceManifest {
+  itemIds: string[];
+  renderAssetRefs: string[];
+  atlasUrls: string[];
+  animatedAtlasFiles: string[];
+  atlasEntryCount: number;
+  animatedAtlasCount: number;
 }
 
 export interface HomeBootstrapWindowPayload {
@@ -358,6 +368,45 @@ function trimRichMediaManifest(
   };
 }
 
+export function buildBrowserPageResourceManifest(
+  entries: BrowserPageEntry[],
+  atlas: PageAtlasResponse | null | undefined,
+  mediaManifest: BrowserPageRichMediaManifest | null | undefined,
+): BrowserPageResourceManifest {
+  const displayItems = entries
+    .map((entry) => (entry.kind === 'item' ? entry.item : entry.group.representative))
+    .filter(Boolean);
+  const itemIds = Array.from(
+    new Set(displayItems.map((item) => `${item.itemId ?? ''}`.trim()).filter(Boolean)),
+  );
+  const renderAssetRefs = Array.from(
+    new Set(displayItems.map((item) => `${item.renderAssetRef ?? ''}`.trim()).filter(Boolean)),
+  );
+  const atlasUrls = Array.from(
+    new Set(
+      [atlas?.atlasUrl]
+        .map((entry) => `${entry ?? ''}`.trim())
+        .filter(Boolean),
+    ),
+  );
+  const animatedAtlasFiles = Array.from(
+    new Set(
+      Object.values(mediaManifest?.animatedAtlases ?? {})
+        .map((entry) => `${entry?.atlasFile ?? ''}`.trim())
+        .filter(Boolean),
+    ),
+  );
+
+  return {
+    itemIds,
+    renderAssetRefs,
+    atlasUrls,
+    animatedAtlasFiles,
+    atlasEntryCount: atlas ? Object.keys(atlas.entries ?? {}).length : 0,
+    animatedAtlasCount: Object.keys(mediaManifest?.animatedAtlases ?? {}).length,
+  };
+}
+
 export function derivePagePackFromWindow(
   window: BrowserPageWindowPayload,
   requestedPage: number,
@@ -383,14 +432,17 @@ export function derivePagePackFromWindow(
   const relativeStartIndex = startIndex - windowOffset;
   const relativeEndIndex = relativeStartIndex + normalizedPageSize;
   const data = window.data.slice(relativeStartIndex, relativeEndIndex);
+  const atlas = trimAtlasEntries(window.atlas, data);
+  const mediaManifest = trimRichMediaManifest(window.mediaManifest, data);
   return {
     data,
     total: window.total,
     page: normalizedPage,
     pageSize: normalizedPageSize,
     totalPages: Math.max(1, Math.ceil(window.total / normalizedPageSize)),
-    atlas: trimAtlasEntries(window.atlas, data),
-    mediaManifest: trimRichMediaManifest(window.mediaManifest, data),
+    atlas,
+    mediaManifest,
+    resourceManifest: buildBrowserPageResourceManifest(data, atlas, mediaManifest),
     windowOffset,
     windowLength: data.length,
   };
