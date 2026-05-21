@@ -86,7 +86,13 @@ export class PublishManifestService {
         publishRevision: null,
         publishCompiledAt: null,
         browserLayoutKey: null,
-        runtimeCacheKey: 'bootstrap-missing::publish-revision-missing::publish-compiled-at-missing::browser-layout-missing',
+        runtimeCacheKey: [
+          'bootstrap-missing',
+          'publish-revision-missing',
+          'publish-compiled-at-missing',
+          'browser-layout-missing',
+          'publish-identity-missing',
+        ].join('::'),
         publishBundle: null,
       };
       this.cache = {
@@ -139,6 +145,10 @@ export class PublishManifestService {
         },
       };
     }
+    const publishIdentityKey =
+      runtimePublishBundle?.identity?.contentHash ||
+      publishBundle?.identity?.contentHash ||
+      'publish-identity-missing';
     const manifest: PublicRuntimeManifest = {
       version: 1,
       sourceSignature,
@@ -151,6 +161,7 @@ export class PublishManifestService {
         publishRevision ?? 'publish-revision-missing',
         publishCompiledAt ?? 'publish-compiled-at-missing',
         browserLayoutKey,
+        publishIdentityKey,
       ].join('::'),
       publishBundle: runtimePublishBundle,
     };
