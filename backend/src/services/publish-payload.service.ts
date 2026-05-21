@@ -1,4 +1,4 @@
-import type Database from 'better-sqlite3';
+﻿import type Database from 'better-sqlite3';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import type { BrowserSearchPackEntry } from './items-search.service';
 import type { BrowserPageEntry } from './items.service';
@@ -109,6 +109,10 @@ export interface PublishStaticBundleManifest {
     recipeGroupIndexBasePath: string | null;
     recipeSearchBasePath: string | null;
     recipeSearchItems: string[];
+    itemRecipeBundleBasePath: string | null;
+    itemRecipeBundleItems: string[];
+    recipeUiBundleBasePath: string | null;
+    recipeUiBundleItems: string[];
     browserPageWindows: PublishBundleWindowPathEntry[];
     homeBootstrapWindows: PublishBundleWindowPathEntry[];
   };
@@ -242,6 +246,21 @@ export function buildPublishRecipeSearchRelativePath(params: {
   return `${buildPublishRecipeSearchBaseRelativePath()}/${encodeURIComponent(`${params.itemId ?? ''}`.trim())}/${params.relation}.json`;
 }
 
+export function buildPublishItemRecipeBundleBaseRelativePath(): string {
+  return 'recipes/item-bundles/shard';
+}
+
+export function buildPublishRecipeUiBundleBaseRelativePath(): string {
+  return 'recipes/ui-bundles/shard';
+}
+
+export function buildPublishItemRecipeBundleRelativePath(itemId: string): string {
+  return `${buildPublishItemRecipeBundleBaseRelativePath()}/${encodeURIComponent(`${itemId ?? ''}`.trim())}.json`;
+}
+
+export function buildPublishRecipeUiBundleRelativePath(itemId: string): string {
+  return `${buildPublishRecipeUiBundleBaseRelativePath()}/${encodeURIComponent(`${itemId ?? ''}`.trim())}.json`;
+}
 export function buildPublishRecipeMachineGroupIndexRelativePath(params: {
   itemId: string;
   relation: 'produced-by' | 'used-in';

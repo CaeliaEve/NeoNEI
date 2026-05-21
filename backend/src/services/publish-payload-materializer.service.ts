@@ -1,4 +1,4 @@
-import fs from 'fs';
+﻿import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import crypto from 'crypto';
@@ -34,6 +34,10 @@ import {
   buildPublishRecipeMachineGroupIndexRelativePath,
   buildPublishRecipeBootstrapShardBaseRelativePath,
   buildPublishRecipeBootstrapShardRelativePath,
+  buildPublishItemRecipeBundleBaseRelativePath,
+  buildPublishItemRecipeBundleRelativePath,
+  buildPublishRecipeUiBundleBaseRelativePath,
+  buildPublishRecipeUiBundleRelativePath,
   type PublishStaticBundleManifest,
   type PublishBundleAssetMetadata,
   buildBrowserPageWindowPayloadKey,
@@ -319,6 +323,93 @@ function collectSearchTokensFromFluid(
   pushSearchToken(tokens, fluid.modId);
 }
 
+function collectRenderAssetRefsFromUnknown(value: unknown, refs: Set<string>): void {
+  if (!value || typeof value !== 'object') {
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectRenderAssetRefsFromUnknown(entry, refs);
+    }
+    return;
+  }
+  const record = value as Record<string, unknown>;
+  const renderAssetRef = record.renderAssetRef;
+  if (typeof renderAssetRef === 'string' && renderAssetRef.trim()) {
+    refs.add(renderAssetRef.trim());
+  }
+  for (const child of Object.values(record)) {
+    if (child && typeof child === 'object') {
+      collectRenderAssetRefsFromUnknown(child, refs);
+    }
+  }
+}
+
+function collectRecipeIds(recipes: IndexedRecipe[]): string[] {
+  return recipes
+    .map((recipe) => `${recipe.id ?? ''}`.trim())
+    .filter(Boolean);
+}
+
+function buildPublishedItemRecipeBundle(params: {
+  sourceSignature: string;
+  itemId: string;
+  bootstrap: Awaited<ReturnType<RecipeBootstrapService['getBootstrap']>>;
+  fullBootstrap: Awaited<ReturnType<RecipeBootstrapService['getBootstrapShard']>>;
+}) {
+  const producedBy = params.fullBootstrap?.recipeIndex?.producedByRecipes
+    ?? params.bootstrap?.recipeIndex?.producedByRecipes
+    ?? [];
+  const usedIn = params.fullBootstrap?.recipeIndex?.usedInRecipes
+    ?? params.bootstrap?.recipeIndex?.usedInRecipes
+    ?? [];
+  const firstPageProducedBy = params.fullBootstrap?.indexedCrafting ?? params.bootstrap?.indexedCrafting ?? [];
+  const firstPageUsedIn = params.fullBootstrap?.indexedUsage ?? params.bootstrap?.indexedUsage ?? [];
+  const assetRefs = new Set<string>();
+  collectRenderAssetRefsFromUnknown(params.bootstrap?.item, assetRefs);
+  collectRenderAssetRefsFromUnknown(firstPageProducedBy, assetRefs);
+  collectRenderAssetRefsFromUnknown(firstPageUsedIn, assetRefs);
+  const uiPayloadRefs = Array.from(new Set([...collectRecipeIds(firstPageProducedBy), ...collectRecipeIds(firstPageUsedIn)]));
+
+  return {
+    version: 1,
+    sourceSignature: params.sourceSignature,
+    itemId: params.itemId,
+    item: params.bootstrap?.item ?? null,
+    producedBy,
+    usedIn,
+    summaryGroups: {
+      producedByMachineGroups: params.bootstrap?.indexedSummary?.producedByMachineGroups ?? params.bootstrap?.indexedSummary?.machineGroups ?? [],
+      usedInMachineGroups: params.bootstrap?.indexedSummary?.usedInMachineGroups ?? [],
+      producedByCategoryGroups: params.bootstrap?.indexedSummary?.producedByCategoryGroups ?? [],
+      usedInCategoryGroups: params.bootstrap?.indexedSummary?.usedInCategoryGroups ?? [],
+    },
+    machineGroups: params.bootstrap?.indexedSummary?.machineGroups ?? [],
+    firstPageRecipes: {
+      producedBy: firstPageProducedBy,
+      usedIn: firstPageUsedIn,
+    },
+    uiPayloadRefs,
+    assetRefs: Array.from(assetRefs).sort(),
+    bootstrap: params.bootstrap,
+  };
+}
+
+function buildPublishedRecipeUiBundle(params: {
+  sourceSignature: string;
+  itemId: string;
+  recipeIds: string[];
+  assetRefs: string[];
+}) {
+  return {
+    version: 1,
+    sourceSignature: params.sourceSignature,
+    itemId: params.itemId,
+    recipeIds: Array.from(new Set(params.recipeIds)).sort(),
+    uiPayloadRefs: Array.from(new Set(params.recipeIds)).sort(),
+    assetRefs: Array.from(new Set(params.assetRefs)).sort(),
+  };
+}
 function buildPublishedRecipeSearchEntries(recipes: IndexedRecipe[]): PublishedRecipeSearchEntry[] {
   return recipes
     .map((recipe) => {
@@ -584,6 +675,10 @@ export class PublishPayloadMaterializerService {
         recipeGroupIndexBasePath: null,
         recipeSearchBasePath: null,
         recipeSearchItems: [],
+        itemRecipeBundleBasePath: null,
+        itemRecipeBundleItems: [],
+        recipeUiBundleBasePath: null,
+        recipeUiBundleItems: [],
         browserPageWindows: [],
         homeBootstrapWindows: [],
       },
@@ -704,7 +799,34 @@ export class PublishPayloadMaterializerService {
           }
           break;
         }
-        case 'browser-page-window': {
+        case 'item-recipe-bundle': {
+          const match = row.bundle_relative_path.match(/recipes\/item-bundles\/shard\/([^/]+)\.json$/i);
+          const itemId = match?.[1] ? decodeURIComponent(match[1]) : '';
+          if (itemId && !bundleManifest.files.itemRecipeBundleItems.includes(itemId)) {
+            bundleManifest.files.itemRecipeBundleItems.push(itemId);
+          }
+          if (!bundleManifest.files.itemRecipeBundleBasePath) {
+            bundleManifest.files.itemRecipeBundleBasePath = buildPublishBundlePublicAssetPath(
+              basePublicPath,
+              buildPublishItemRecipeBundleBaseRelativePath(),
+            );
+          }
+          break;
+        }
+        case 'recipe-ui-bundle': {
+          const match = row.bundle_relative_path.match(/recipes\/ui-bundles\/shard\/([^/]+)\.json$/i);
+          const itemId = match?.[1] ? decodeURIComponent(match[1]) : '';
+          if (itemId && !bundleManifest.files.recipeUiBundleItems.includes(itemId)) {
+            bundleManifest.files.recipeUiBundleItems.push(itemId);
+          }
+          if (!bundleManifest.files.recipeUiBundleBasePath) {
+            bundleManifest.files.recipeUiBundleBasePath = buildPublishBundlePublicAssetPath(
+              basePublicPath,
+              buildPublishRecipeUiBundleBaseRelativePath(),
+            );
+          }
+          break;
+        }        case 'browser-page-window': {
           const match = row.bundle_relative_path.match(/slot-(\d+)(?:-offset-\d+)?\.json$/i);
           bundleManifest.files.browserPageWindows.push({
             scope: 'all',
@@ -1057,6 +1179,43 @@ export class PublishPayloadMaterializerService {
 
         // eslint-disable-next-line no-await-in-loop
         const fullBootstrap = await recipeBootstrapService.getBootstrapShard(itemId);
+        const itemRecipeBundle = buildPublishedItemRecipeBundle({
+          sourceSignature,
+          itemId,
+          bootstrap,
+          fullBootstrap,
+        });
+        const itemRecipeBundleJson = JSON.stringify(itemRecipeBundle);
+        const itemRecipeBundleRelativePath = buildPublishItemRecipeBundleRelativePath(itemId);
+        prewrittenPayloadBytes += Buffer.byteLength(itemRecipeBundleJson, 'utf8');
+        writeBundleJson(itemRecipeBundleRelativePath, itemRecipeBundleJson);
+        rows.push({
+          payload_key: `bundle-only:item-recipe-bundle::item=${itemId}`,
+          payload_type: 'item-recipe-bundle',
+          payload_json: '{}',
+          signature: sourceSignature,
+          bundle_relative_path: itemRecipeBundleRelativePath,
+          prewritten: true,
+        });
+
+        const recipeUiBundle = buildPublishedRecipeUiBundle({
+          sourceSignature,
+          itemId,
+          recipeIds: itemRecipeBundle.uiPayloadRefs,
+          assetRefs: itemRecipeBundle.assetRefs,
+        });
+        const recipeUiBundleJson = JSON.stringify(recipeUiBundle);
+        const recipeUiBundleRelativePath = buildPublishRecipeUiBundleRelativePath(itemId);
+        prewrittenPayloadBytes += Buffer.byteLength(recipeUiBundleJson, 'utf8');
+        writeBundleJson(recipeUiBundleRelativePath, recipeUiBundleJson);
+        rows.push({
+          payload_key: `bundle-only:recipe-ui-bundle::item=${itemId}`,
+          payload_type: 'recipe-ui-bundle',
+          payload_json: '{}',
+          signature: sourceSignature,
+          bundle_relative_path: recipeUiBundleRelativePath,
+          prewritten: true,
+        });
         if (fullBootstrap) {
           for (const [tab, relation, sourceRecipes] of [
             ['producedBy', 'produced-by', fullBootstrap.indexedCrafting],

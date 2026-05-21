@@ -1,4 +1,4 @@
-import { BACKEND_BASE_URL, http } from './api/core/http';
+﻿import { BACKEND_BASE_URL, http } from './api/core/http';
 import {
   getStoredRuntimeSignature,
   primeRuntimeCacheSignature,
@@ -810,6 +810,37 @@ function resolvePublishedRecipeBootstrapPath(
   return `${basePath.replace(/\/+$/g, '')}/${encodeURIComponent(normalizedItemId)}.json`;
 }
 
+function resolvePublishedItemRecipeBundlePath(
+  manifest: PublicRuntimeManifest | null | undefined,
+  itemId: string,
+): string | null {
+  const normalizedItemId = `${itemId ?? ''}`.trim();
+  if (!normalizedItemId) {
+    return null;
+  }
+
+  const bundle = manifest?.publishBundle;
+  const publishedItems = Array.isArray(bundle?.files.itemRecipeBundleItems)
+    ? bundle?.files.itemRecipeBundleItems
+    : [];
+  const basePath = `${bundle?.files.itemRecipeBundleBasePath ?? ''}`.trim();
+  if (!basePath || !publishedItems.includes(normalizedItemId)) {
+    return null;
+  }
+
+  return `${basePath.replace(/\/+$/g, '')}/${encodeURIComponent(normalizedItemId)}.json`;
+}
+
+function unwrapPublishedItemRecipeBundle(value: unknown): RecipeBootstrapPayload | null {
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+  const record = value as { bootstrap?: unknown };
+  if (!record.bootstrap || typeof record.bootstrap !== 'object') {
+    return null;
+  }
+  return record.bootstrap as RecipeBootstrapPayload;
+}
 function toPublishedRecipeRelationSegment(tab: 'usedIn' | 'producedBy'): 'used-in' | 'produced-by' {
   return tab === 'usedIn' ? 'used-in' : 'produced-by';
 }
@@ -953,6 +984,10 @@ export interface PublishStaticBundleManifest {
     recipeGroupIndexBasePath: string | null;
     recipeSearchBasePath: string | null;
     recipeSearchItems: string[];
+    itemRecipeBundleBasePath: string | null;
+    itemRecipeBundleItems: string[];
+    recipeUiBundleBasePath: string | null;
+    recipeUiBundleItems: string[];
     browserPageWindows: PublishBundleWindowPathEntry[];
     homeBootstrapWindows: PublishBundleWindowPathEntry[];
   };
@@ -2568,6 +2603,20 @@ export const api = {
         }
 
         const manifest = await api.getPublishManifest();
+        const itemRecipeBundlePath = resolvePublishedItemRecipeBundlePath(manifest, itemId);
+        if (itemRecipeBundlePath) {
+          try {
+            const publishedBundle = await fetchPublishedJson<unknown>(itemRecipeBundlePath);
+            const bundledBootstrap = unwrapPublishedItemRecipeBundle(publishedBundle);
+            if (bundledBootstrap) {
+              setCacheWithLimit(recipeBootstrapCache, itemId, bundledBootstrap, CACHE_LIMITS.recipeBootstrap);
+              persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), bundledBootstrap);
+              return bundledBootstrap;
+            }
+          } catch {
+            // Fall back to the legacy static bootstrap/API route when the item-centric bundle is unavailable.
+          }
+        }
         const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap');
         if (staticPath) {
           try {
