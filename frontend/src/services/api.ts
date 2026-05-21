@@ -5,6 +5,7 @@ import {
   readPersistentRuntimeCache,
   writePersistentRuntimeCache,
 } from './persistentRuntimeCache';
+import { markPerfEvent } from './perfMarks';
 
 export { API_BASE_URL, BACKEND_BASE_URL } from './api/core/http';
 export {
@@ -1189,6 +1190,33 @@ export interface indexedItemRecipeSummaryResponse {
   };
 }
 
+type RecipeBootstrapLoadSource =
+  | 'memory-cache'
+  | 'in-flight'
+  | 'persistent-cache'
+  | 'item-recipe-bundle'
+  | 'legacy-static-bootstrap'
+  | 'api-fallback';
+
+function markRecipeBootstrapResolved(
+  itemId: string,
+  source: RecipeBootstrapLoadSource,
+  startedAt: number,
+  payload: RecipeBootstrapPayload | null | undefined,
+): void {
+  const recipeIndex = payload?.recipeIndex;
+  const producedByCount = Array.isArray(recipeIndex?.producedByRecipes) ? recipeIndex.producedByRecipes.length : 0;
+  const usedInCount = Array.isArray(recipeIndex?.usedInRecipes) ? recipeIndex.usedInRecipes.length : 0;
+  markPerfEvent('recipe-bootstrap-resolved', {
+    itemId,
+    source,
+    durationMs: Math.max(0, getNow() - startedAt),
+    producedByCount,
+    usedInCount,
+    indexedCraftingCount: Array.isArray(payload?.indexedCrafting) ? payload.indexedCrafting.length : 0,
+    indexedUsageCount: Array.isArray(payload?.indexedUsage) ? payload.indexedUsage.length : 0,
+  });
+}
 export interface RecipeBootstrapPayload {
   item: Item;
   recipeIndex: {
@@ -2589,13 +2617,17 @@ export const api = {
   },
 
   async getRecipeBootstrap(itemId: string): Promise<RecipeBootstrapPayload> {
+    const startedAt = getNow();
     const cached = recipeBootstrapCache.get(itemId);
     if (cached) {
+      markRecipeBootstrapResolved(itemId, 'memory-cache', startedAt, cached);
       return cached;
     }
     const existingRequest = recipeBootstrapInFlight.get(itemId);
     if (existingRequest) {
-      return existingRequest;
+      const payload = await existingRequest;
+      markRecipeBootstrapResolved(itemId, 'in-flight', startedAt, payload);
+      return payload;
     }
     const request = (async () => {
       if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
@@ -2605,6 +2637,7 @@ export const api = {
         );
         if (persistent) {
           setCacheWithLimit(recipeBootstrapCache, itemId, persistent, CACHE_LIMITS.recipeBootstrap);
+          markRecipeBootstrapResolved(itemId, 'persistent-cache', startedAt, persistent);
           return persistent;
         }
 
@@ -2617,6 +2650,7 @@ export const api = {
             if (bundledBootstrap) {
               setCacheWithLimit(recipeBootstrapCache, itemId, bundledBootstrap, CACHE_LIMITS.recipeBootstrap);
               persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), bundledBootstrap);
+              markRecipeBootstrapResolved(itemId, 'item-recipe-bundle', startedAt, bundledBootstrap);
               return bundledBootstrap;
             }
           } catch {
@@ -2629,6 +2663,7 @@ export const api = {
             const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
             setCacheWithLimit(recipeBootstrapCache, itemId, published, CACHE_LIMITS.recipeBootstrap);
             persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), published);
+            markRecipeBootstrapResolved(itemId, 'legacy-static-bootstrap', startedAt, published);
             return published;
           } catch {
             // Fall back to the API route when the static publish bundle is unavailable.
@@ -2639,6 +2674,7 @@ export const api = {
       const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}`);
       setCacheWithLimit(recipeBootstrapCache, itemId, response.data, CACHE_LIMITS.recipeBootstrap);
       persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), response.data);
+      markRecipeBootstrapResolved(itemId, 'api-fallback', startedAt, response.data);
       return response.data;
     })().finally(() => {
       recipeBootstrapInFlight.delete(itemId);

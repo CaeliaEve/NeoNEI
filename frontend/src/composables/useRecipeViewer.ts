@@ -1,4 +1,4 @@
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
+﻿import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 import {
   api,
   type PageRichMediaManifest,
@@ -33,6 +33,8 @@ const RECIPE_PAGE_PREWARM_LOOKAHEAD = 6;
 const RECIPE_PAGE_PREWARM_LOOKBEHIND = 2;
 const RECIPE_PAGE_PREWARM_MAX_RECIPES = 18;
 const RECIPE_MEDIA_MANIFEST_PREWARM_LIMIT = 8;
+const RECIPE_BOOTSTRAP_SUMMARY_BUDGET_MS = 100;
+const RECIPE_FULL_GROUP_BUDGET_MS = 300;
 
 export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: () => void) {
   const { loading, item, recipes } = useRecipeDataState();
@@ -1050,6 +1052,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
         }
       }
 
+      const bootstrapStartedAt = getNow();
       const {
         item: bootstrappedItem,
         recipes: bootstrappedRecipes,
@@ -1062,6 +1065,15 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
         'loadRecipeData',
         () => loadRecipeBootstrap(itemId),
       );
+      const bootstrapDurationMs = getNow() - bootstrapStartedAt;
+      markPerfEvent('recipe-open-budget', {
+        itemId,
+        durationMs: bootstrapDurationMs,
+        summaryBudgetMs: RECIPE_BOOTSTRAP_SUMMARY_BUDGET_MS,
+        fullGroupBudgetMs: RECIPE_FULL_GROUP_BUDGET_MS,
+        withinSummaryBudget: bootstrapDurationMs <= RECIPE_BOOTSTRAP_SUMMARY_BUDGET_MS,
+        withinFullGroupBudget: bootstrapDurationMs <= RECIPE_FULL_GROUP_BUDGET_MS,
+      });
       if (disposed || requestSeq !== loadRequestSeq || itemIdRef.value !== itemId) {
         return;
       }
