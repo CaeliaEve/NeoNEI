@@ -76,6 +76,60 @@ export interface PublishPayloadMaterializeResult {
   compiledAt: string;
 }
 
+
+type IncrementalWriteStats = {
+  written: number;
+  skipped: number;
+  bytesWritten: number;
+};
+
+function createIncrementalWriteStats(): IncrementalWriteStats {
+  return { written: 0, skipped: 0, bytesWritten: 0 };
+}
+
+function writeUtf8IfChanged(filePath: string, content: string, stats?: IncrementalWriteStats): boolean {
+  const next = Buffer.from(content, 'utf8');
+  if (fs.existsSync(filePath)) {
+    try {
+      const current = fs.readFileSync(filePath);
+      if (current.length === next.length && current.equals(next)) {
+        if (stats) stats.skipped += 1;
+        return false;
+      }
+    } catch {
+      // Fall through and rewrite the file.
+    }
+  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, next);
+  if (stats) {
+    stats.written += 1;
+    stats.bytesWritten += next.byteLength;
+  }
+  return true;
+}
+
+function writeBufferIfChanged(filePath: string, content: Buffer, stats?: IncrementalWriteStats): boolean {
+  if (fs.existsSync(filePath)) {
+    try {
+      const current = fs.readFileSync(filePath);
+      if (current.length === content.length && current.equals(content)) {
+        if (stats) stats.skipped += 1;
+        return false;
+      }
+    } catch {
+      // Fall through and rewrite the file.
+    }
+  }
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, content);
+  if (stats) {
+    stats.written += 1;
+    stats.bytesWritten += content.byteLength;
+  }
+  return true;
+}
+
 type NormalizedPublishPayloadHotOptions = {
   enabled: boolean;
   firstPageSize: number;
@@ -641,6 +695,7 @@ export class PublishPayloadMaterializerService {
     sourceSignature: string,
     compiledAt: string,
     rows: PublishPayloadRecord[],
+    incrementalWriteStats: IncrementalWriteStats,
   ): PublishStaticBundleManifest {
     const bundleOutputDir = path.join(this.publishOutputDir, sourceSignature);
     fs.mkdirSync(bundleOutputDir, { recursive: true });
@@ -693,7 +748,7 @@ export class PublishPayloadMaterializerService {
       const sourceHash = sha256Hex(sourceBuffer);
       const compressedVariants = PUBLISH_BUNDLE_SIDECAR_VARIANTS.map((variant) => {
         const compressedBuffer = variant.compress(sourceBuffer);
-        fs.writeFileSync(`${absolutePath}${variant.extension}`, compressedBuffer);
+        writeBufferIfChanged(`${absolutePath}${variant.extension}`, compressedBuffer, incrementalWriteStats);
         return {
           path: `${publicPath}${variant.extension}`,
           contentEncoding: variant.contentEncoding,
@@ -718,8 +773,7 @@ export class PublishPayloadMaterializerService {
       }
       const absolutePath = path.join(bundleOutputDir, row.bundle_relative_path);
       if (!row.prewritten) {
-        fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-        fs.writeFileSync(absolutePath, row.payload_json, 'utf8');
+        writeUtf8IfChanged(absolutePath, row.payload_json, incrementalWriteStats);
       }
       const publicPath = buildPublishBundlePublicAssetPath(basePublicPath, row.bundle_relative_path);
       const payload = shouldParsePublishPayloadMetadata(row.payload_type)
@@ -867,20 +921,20 @@ export class PublishPayloadMaterializerService {
     bundleManifest.files.homeBootstrapWindows.sort((left, right) => (left.slotSize - right.slotSize) || (left.offset - right.offset));
 
     const manifestAbsolutePath = path.join(bundleOutputDir, buildPublishBundleManifestRelativePath());
-    const buildReportPaths = this.writeBuildReport(bundleOutputDir, basePublicPath, bundleManifest, rows);
+    const buildReportPaths = this.writeBuildReport(bundleOutputDir, basePublicPath, bundleManifest, rows, incrementalWriteStats);
     bundleManifest.files.buildReport = buildReportPaths.jsonPublicPath;
     bundleManifest.files.buildReportHtml = buildReportPaths.htmlPublicPath;
     registerCompressedAsset(buildReportPaths.jsonRelativePath, buildReportPaths.jsonAbsolutePath, buildReportPaths.jsonPublicPath);
     registerCompressedAsset(buildReportPaths.htmlRelativePath, buildReportPaths.htmlAbsolutePath, buildReportPaths.htmlPublicPath);
     bundleManifest.identity = buildPublishIdentity(bundleManifest.compression.assets);
-    fs.writeFileSync(
+    writeUtf8IfChanged(
       manifestAbsolutePath,
       JSON.stringify(bundleManifest, null, 2),
-      'utf8',
+      incrementalWriteStats,
     );
     for (const variant of PUBLISH_BUNDLE_SIDECAR_VARIANTS) {
       const compressedBuffer = variant.compress(fs.readFileSync(manifestAbsolutePath));
-      fs.writeFileSync(`${manifestAbsolutePath}${variant.extension}`, compressedBuffer);
+      writeBufferIfChanged(`${manifestAbsolutePath}${variant.extension}`, compressedBuffer, incrementalWriteStats);
     }
     return bundleManifest;
   }
@@ -890,6 +944,7 @@ export class PublishPayloadMaterializerService {
     basePublicPath: string,
     bundleManifest: PublishStaticBundleManifest,
     rows: PublishPayloadRecord[],
+    incrementalWriteStats: IncrementalWriteStats,
   ): {
     jsonRelativePath: string;
     jsonAbsolutePath: string;
@@ -942,6 +997,7 @@ export class PublishPayloadMaterializerService {
         bestCompressed: compressedBytes,
         compressionRatio: totalBytes > 0 ? Number((compressedBytes / totalBytes).toFixed(4)) : null,
       },
+      incremental: { ...incrementalWriteStats },
       warnings,
     };
 
@@ -949,8 +1005,8 @@ export class PublishPayloadMaterializerService {
     const htmlRelativePath = 'build-report.html';
     const jsonAbsolutePath = path.join(bundleOutputDir, jsonRelativePath);
     const htmlAbsolutePath = path.join(bundleOutputDir, htmlRelativePath);
-    fs.writeFileSync(jsonAbsolutePath, JSON.stringify(report, null, 2), 'utf8');
-    fs.writeFileSync(htmlAbsolutePath, this.renderBuildReportHtml(report), 'utf8');
+    writeUtf8IfChanged(jsonAbsolutePath, JSON.stringify(report, null, 2), incrementalWriteStats);
+    writeUtf8IfChanged(htmlAbsolutePath, this.renderBuildReportHtml(report), incrementalWriteStats);
     return {
       jsonRelativePath,
       jsonAbsolutePath,
@@ -970,6 +1026,7 @@ export class PublishPayloadMaterializerService {
     rowCounts: Record<string, number>;
     files: Record<string, number>;
     bytes: { uncompressed: number; bestCompressed: number; compressionRatio: number | null };
+    incremental?: IncrementalWriteStats;
     warnings: string[];
   }): string {
     const rows = Object.entries(report.rowCounts)
@@ -979,6 +1036,8 @@ export class PublishPayloadMaterializerService {
     const fileRows = Object.entries(report.files)
       .map(([key, value]) => `<tr><td>${escapeHtml(key)}</td><td>${value}</td></tr>`)
       .join('');
+    const incrementalRows = report.incremental
+      ? `<tr><td>写入文件</td><td>${report.incremental.written}</td></tr><tr><td>跳过未变化文件</td><td>${report.incremental.skipped}</td></tr><tr><td>写入字节</td><td>${report.incremental.bytesWritten}</td></tr>` : '';
     const warnings = report.warnings.length > 0
       ? report.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')
       : '<li>无警告</li>';
@@ -1039,14 +1098,13 @@ export class PublishPayloadMaterializerService {
 
     let rows: PublishPayloadRecord[] = [];
     let prewrittenPayloadBytes = 0;
+    const incrementalWriteStats = createIncrementalWriteStats();
 
     if (this.options.enabled) {
-      fs.rmSync(bundleOutputDir, { recursive: true, force: true });
       fs.mkdirSync(bundleOutputDir, { recursive: true });
       const writeBundleJson = (relativePath: string, payloadJson: string) => {
         const absolutePath = path.join(bundleOutputDir, relativePath);
-        fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
-        fs.writeFileSync(absolutePath, payloadJson, 'utf8');
+        writeUtf8IfChanged(absolutePath, payloadJson, incrementalWriteStats);
       };
       const registerPayloadRow = (
         payload_key: string,
@@ -1444,7 +1502,7 @@ export class PublishPayloadMaterializerService {
     }
 
     if (this.options.enabled) {
-      this.writeStaticBundle(sourceSignature, compiledAt, rows);
+      this.writeStaticBundle(sourceSignature, compiledAt, rows, incrementalWriteStats);
     } else {
       fs.rmSync(bundleOutputDir, { recursive: true, force: true });
     }

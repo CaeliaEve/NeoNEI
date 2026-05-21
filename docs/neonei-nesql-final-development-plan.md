@@ -63,7 +63,7 @@
 - [ ] 每阶段有 checksum，可跳过未变化输出。
 - [ ] 图片渲染按 item/render/texture signature 跳过。
 - [ ] Atlas packer 按 sprite hash / atlas page hash 跳过。
-- [ ] NeoNEI 编译按 item shard、recipe shard、search shard、atlas page、recipe bundle shard 增量跳过。
+- [x] NeoNEI 编译按 item shard、recipe shard、search shard、atlas page、recipe bundle shard 增量跳过（静态 bundle 已改为 write-if-changed，build report 输出 written/skipped 计数；atlas page 增量继续沿用内容 hash/manifest 校验）。
 
 ## P5：搜索体系升级
 
@@ -98,6 +98,7 @@
 4. P2 browser layout 与 atlas 资源依赖绑定。
 5. P3 item-centric recipe bundle。
 6. P4 增量导出与增量编译。
+
 
 
 
