@@ -75,3 +75,16 @@ test('stale browser page prewarm is gated by the active page token', () => {
     'item browser should ignore stale prewarm continuations',
   );
 });
+
+test('global atlas misses do not block page presentation', () => {
+  assert.equal(
+    itemBrowserSource.includes('if (hasGlobalBrowserAtlas() && globalCoverage?.total && globalCoverage.total > 0)'),
+    true,
+    'page presentation should fast-path once the global atlas index can serve the page',
+  );
+  assert.equal(
+    itemBrowserSource.includes('if (globalCoverage.missingCount > 0)'),
+    true,
+    'missing atlas entries should be warmed asynchronously instead of blocking visible navigation',
+  );
+});

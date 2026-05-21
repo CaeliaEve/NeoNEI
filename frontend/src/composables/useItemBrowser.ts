@@ -736,6 +736,15 @@ export function useItemBrowser(
   ) => {
     const pageItemIds = collectBrowserPageResourceItemIds(response);
     const globalCoverage = await inspectGlobalBrowserAtlasCoverageForItems(pageItemIds).catch(() => null);
+    if (hasGlobalBrowserAtlas() && globalCoverage?.total && globalCoverage.total > 0) {
+      if (globalCoverage.missingCount > 0) {
+        void ensureBrowserPagePresentationWarm(cacheKey, response, {
+          animatedEntryLimit: 48,
+          atlasLimit: 6,
+        });
+      }
+      return;
+    }
     if (!globalCoverage || globalCoverage.total <= 0 || globalCoverage.missingCount > 0) {
       if (!response.atlas?.atlasUrl || waitMs <= 0 || pagePresentationReady.has(cacheKey)) {
         return;
