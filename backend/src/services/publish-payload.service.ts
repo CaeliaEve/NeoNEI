@@ -64,7 +64,16 @@ export interface PublishBundleAssetMetadata {
   relativePath: string;
   contentType: string;
   sizeBytes: number;
+  sha256: string;
   compressedVariants: PublishBundleCompressedVariant[];
+}
+
+export interface PublishBundleIdentity {
+  algorithm: 'sha256';
+  assetCount: number;
+  totalBytes: number;
+  contentHash: string;
+  categories: Record<string, string>;
 }
 
 export interface PublishStaticBundleManifest {
@@ -76,6 +85,7 @@ export interface PublishStaticBundleManifest {
   firstPageSize: number;
   slotSizes: number[];
   includeBrowserSearchPack: boolean;
+  identity: PublishBundleIdentity;
   files: {
     manifest: string;
     buildReport: string | null;

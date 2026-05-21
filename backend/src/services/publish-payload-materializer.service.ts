@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
+import crypto from 'crypto';
 import type Database from 'better-sqlite3';
 import { DATA_DIR, PUBLISH_OUTPUT_DIR, PUBLISH_PUBLIC_PATH } from '../config/runtime-paths';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
@@ -34,6 +35,7 @@ import {
   buildPublishRecipeBootstrapShardBaseRelativePath,
   buildPublishRecipeBootstrapShardRelativePath,
   type PublishStaticBundleManifest,
+  type PublishBundleAssetMetadata,
   buildBrowserPageWindowPayloadKey,
   buildBrowserSearchPackPayloadKey,
   buildHomeBootstrapWindowPayloadKey,
@@ -159,6 +161,52 @@ function escapeHtml(value: unknown): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function sha256Hex(buffer: Buffer | string): string {
+  return crypto.createHash('sha256').update(buffer).digest('hex');
+}
+
+function classifyPublishAsset(relativePath: string): string {
+  if (relativePath === 'build-report.json' || relativePath === 'build-report.html') return 'build-report';
+  if (relativePath.startsWith('mods/')) return 'mods';
+  if (relativePath.startsWith('search/')) return 'search';
+  if (relativePath.startsWith('browser/pages/')) return 'browser-pages';
+  if (relativePath.startsWith('home/')) return 'home-bootstrap';
+  if (relativePath.startsWith('recipes/bootstrap/')) return 'recipe-bootstrap';
+  if (relativePath.startsWith('recipes/groups/')) return 'recipe-groups';
+  if (relativePath.startsWith('recipes/search/')) return 'recipe-search';
+  return 'other';
+}
+
+function buildPublishIdentity(assets: Record<string, PublishBundleAssetMetadata>) {
+  const entries = Object.values(assets).sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  const categoryInputs = new Map<string, string[]>();
+  const allInputs: string[] = [];
+  let totalBytes = 0;
+
+  for (const asset of entries) {
+    totalBytes += asset.sizeBytes;
+    const line = `${asset.relativePath}:${asset.sizeBytes}:${asset.sha256}`;
+    allInputs.push(line);
+    const category = classifyPublishAsset(asset.relativePath);
+    const categoryLines = categoryInputs.get(category) ?? [];
+    categoryLines.push(line);
+    categoryInputs.set(category, categoryLines);
+  }
+
+  const categories: Record<string, string> = {};
+  for (const [category, lines] of Array.from(categoryInputs.entries()).sort(([left], [right]) => left.localeCompare(right))) {
+    categories[category] = sha256Hex(lines.sort().join('\n'));
+  }
+
+  return {
+    algorithm: 'sha256' as const,
+    assetCount: entries.length,
+    totalBytes,
+    contentHash: sha256Hex(allInputs.join('\n')),
+    categories,
+  };
 }
 
 function toPublishedRelationSegment(value: 'producedBy' | 'usedIn'): 'produced-by' | 'used-in' {
@@ -515,6 +563,13 @@ export class PublishPayloadMaterializerService {
       firstPageSize: this.options.firstPageSize,
       slotSizes: [...this.options.slotSizes],
       includeBrowserSearchPack: this.options.includeBrowserSearchPack,
+      identity: {
+        algorithm: 'sha256',
+        assetCount: 0,
+        totalBytes: 0,
+        contentHash: '',
+        categories: {},
+      },
       files: {
         manifest: buildPublishBundlePublicAssetPath(basePublicPath, buildPublishBundleManifestRelativePath()),
         buildReport: null,
@@ -539,6 +594,7 @@ export class PublishPayloadMaterializerService {
 
     const registerCompressedAsset = (relativePath: string, absolutePath: string, publicPath: string) => {
       const sourceBuffer = fs.readFileSync(absolutePath);
+      const sourceHash = sha256Hex(sourceBuffer);
       const compressedVariants = PUBLISH_BUNDLE_SIDECAR_VARIANTS.map((variant) => {
         const compressedBuffer = variant.compress(sourceBuffer);
         fs.writeFileSync(`${absolutePath}${variant.extension}`, compressedBuffer);
@@ -555,6 +611,7 @@ export class PublishPayloadMaterializerService {
         relativePath,
         contentType: inferPublishContentType(relativePath),
         sizeBytes: sourceBuffer.byteLength,
+        sha256: sourceHash,
         compressedVariants,
       };
     };
@@ -692,6 +749,7 @@ export class PublishPayloadMaterializerService {
     bundleManifest.files.buildReportHtml = buildReportPaths.htmlPublicPath;
     registerCompressedAsset(buildReportPaths.jsonRelativePath, buildReportPaths.jsonAbsolutePath, buildReportPaths.jsonPublicPath);
     registerCompressedAsset(buildReportPaths.htmlRelativePath, buildReportPaths.htmlAbsolutePath, buildReportPaths.htmlPublicPath);
+    bundleManifest.identity = buildPublishIdentity(bundleManifest.compression.assets);
     fs.writeFileSync(
       manifestAbsolutePath,
       JSON.stringify(bundleManifest, null, 2),

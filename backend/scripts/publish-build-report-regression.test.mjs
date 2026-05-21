@@ -47,3 +47,44 @@ test('publish materializer registers build reports as compressed assets before w
     'HTML build report should be registered for compression metadata',
   );
 });
+
+test('publish manifest carries content identity hashes', () => {
+  assert.equal(
+    publishPayloadSource.includes('export interface PublishBundleIdentity'),
+    true,
+    'publish manifest should define a bundle identity contract',
+  );
+  assert.equal(
+    publishPayloadSource.includes("algorithm: 'sha256';"),
+    true,
+    'publish bundle identity should declare sha256 as the hash algorithm',
+  );
+  assert.equal(
+    publishPayloadSource.includes('identity: PublishBundleIdentity;'),
+    true,
+    'publish manifest should expose the bundle identity block',
+  );
+  assert.equal(
+    publishPayloadSource.includes('sha256: string;'),
+    true,
+    'each publish asset should expose its content sha256',
+  );
+});
+
+test('publish materializer derives identity from registered assets', () => {
+  assert.equal(
+    materializerSource.includes('function buildPublishIdentity(assets: Record<string, PublishBundleAssetMetadata>)'),
+    true,
+    'publish materializer should compute bundle identity from registered assets',
+  );
+  assert.equal(
+    materializerSource.includes('bundleManifest.identity = buildPublishIdentity(bundleManifest.compression.assets);'),
+    true,
+    'publish identity should be finalized before manifest serialization',
+  );
+  assert.equal(
+    materializerSource.includes('sha256: sourceHash,'),
+    true,
+    'registered publish assets should carry their source sha256',
+  );
+});
