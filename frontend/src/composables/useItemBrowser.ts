@@ -1,4 +1,4 @@
-﻿import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 import {
   api,
   type BrowserGridEntry,
@@ -67,6 +67,8 @@ const sharedPageRequestInFlight = new Map<string, Promise<CachedBrowserPage>>();
 const sharedPageRevalidationInFlight = new Map<string, Promise<void>>();
 const sharedPagePresentationReady = new Set<string>();
 const sharedPagePresentationWarmInFlight = new Map<string, Promise<void>>();
+const SHARED_EXPANDED_PROJECTION_CACHE_LIMIT = 96;
+const sharedExpandedProjectionCache = new Map<string, CachedBrowserPage>();
 
 let browserCatalogWarmTimer: ReturnType<typeof setTimeout> | null = null;
 let browserGroupWarmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -85,6 +87,21 @@ function setSharedBrowserPageCache(cacheKey: string, page: CachedBrowserPage): v
     sharedPageCache.delete(oldestKey);
     sharedPagePresentationReady.delete(oldestKey);
     sharedPagePresentationWarmInFlight.delete(oldestKey);
+  }
+}
+
+function setSharedExpandedProjectionCache(cacheKey: string, page: CachedBrowserPage): void {
+  if (sharedExpandedProjectionCache.has(cacheKey)) {
+    sharedExpandedProjectionCache.delete(cacheKey);
+  }
+  sharedExpandedProjectionCache.set(cacheKey, page);
+
+  while (sharedExpandedProjectionCache.size > SHARED_EXPANDED_PROJECTION_CACHE_LIMIT) {
+    const oldestKey = sharedExpandedProjectionCache.keys().next().value;
+    if (typeof oldestKey !== 'string' || !oldestKey) {
+      break;
+    }
+    sharedExpandedProjectionCache.delete(oldestKey);
   }
 }
 
@@ -282,6 +299,25 @@ export function useItemBrowser(
     }, 60);
   };
 
+  const buildExpandedProjectionCacheKey = (
+    params: BrowserPageRequestParams,
+    groupItemsByKey: Map<string, Item[]>,
+    catalogEntries?: BrowserDefaultCatalogEntry[],
+  ): string => JSON.stringify({
+    type: 'expanded-browser-projection',
+    version: 1,
+    page: params.page,
+    pageSize: params.pageSize,
+    search: params.search?.trim() || '',
+    modId: params.modId || 'all',
+    expandedGroups: normalizeExpandedGroups(params.expandedGroups),
+    slotSize: params.slotSize,
+    catalogSize: catalogEntries?.length ?? 0,
+    groups: Array.from(groupItemsByKey.entries())
+      .map(([groupKey, groupItems]) => [groupKey, groupItems.length] as const)
+      .sort(([left], [right]) => left.localeCompare(right)),
+  });
+
   const buildProjectedBrowserPage = (
     catalogEntries: BrowserDefaultCatalogEntry[],
     params: BrowserPageRequestParams,
@@ -306,6 +342,44 @@ export function useItemBrowser(
       totalPages: projected.totalPages,
       page: projected.page,
     };
+  };
+
+  const getOrBuildExpandedProjectionPage = (
+    catalogEntries: BrowserDefaultCatalogEntry[],
+    params: BrowserPageRequestParams,
+    groupItemsByKey: Map<string, Item[]>,
+  ): CachedBrowserPage => {
+    const projectionCacheKey = buildExpandedProjectionCacheKey(params, groupItemsByKey, catalogEntries);
+    const cachedProjection = sharedExpandedProjectionCache.get(projectionCacheKey);
+    if (cachedProjection) {
+      sharedExpandedProjectionCache.delete(projectionCacheKey);
+      sharedExpandedProjectionCache.set(projectionCacheKey, cachedProjection);
+      return cachedProjection;
+    }
+
+    const projectedPage = buildProjectedBrowserPage(catalogEntries, params, groupItemsByKey);
+    setSharedExpandedProjectionCache(projectionCacheKey, projectedPage);
+    return projectedPage;
+  };
+
+  const precomputeExpandedProjectionWindow = (
+    catalogEntries: BrowserDefaultCatalogEntry[],
+    params: BrowserPageRequestParams,
+    groupItemsByKey: Map<string, Item[]>,
+  ) => {
+    for (const page of [params.page - 1, params.page, params.page + 1]) {
+      if (page < 1) {
+        continue;
+      }
+      getOrBuildExpandedProjectionPage(
+        catalogEntries,
+        {
+          ...params,
+          page,
+        },
+        groupItemsByKey,
+      );
+    }
   };
 
   const attachCachedBrowserByIdsPresentation = (
@@ -412,8 +486,10 @@ export function useItemBrowser(
       groupItemsByKey.set(response.groupKey, response.items);
     }
 
-    const page = buildProjectedBrowserPage(
-      catalog.data as BrowserDefaultCatalogEntry[],
+    const catalogEntries = catalog.data as BrowserDefaultCatalogEntry[];
+    precomputeExpandedProjectionWindow(catalogEntries, params, groupItemsByKey);
+    const page = getOrBuildExpandedProjectionPage(
+      catalogEntries,
       params,
       groupItemsByKey,
     );
@@ -457,8 +533,10 @@ export function useItemBrowser(
       groupItemsByKey.set(response.value.groupKey, response.value.items);
     }
 
-    const page = buildProjectedBrowserPage(
-      catalog.data as BrowserDefaultCatalogEntry[],
+    const catalogEntries = catalog.data as BrowserDefaultCatalogEntry[];
+    precomputeExpandedProjectionWindow(catalogEntries, params, groupItemsByKey);
+    const page = getOrBuildExpandedProjectionPage(
+      catalogEntries,
       params,
       groupItemsByKey,
     );
@@ -795,6 +873,7 @@ export function useItemBrowser(
     pageRevalidationInFlight.clear();
     pagePresentationReady.clear();
     pagePresentationWarmInFlight.clear();
+    sharedExpandedProjectionCache.clear();
   };
 
   const applyBrowserResponse = (
