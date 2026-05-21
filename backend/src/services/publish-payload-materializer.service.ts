@@ -47,7 +47,7 @@ import {
   buildModsListPayloadKey,
 } from './publish-payload.service';
 
-export const PUBLISH_PAYLOAD_REVISION = '2026-05-21-publish-static-bundle-v10-resource-manifest';
+export const PUBLISH_PAYLOAD_REVISION = '2026-05-21-publish-static-bundle-v11-item-recipe-bundles';
 
 export interface PublishPayloadHotOptions {
   enabled?: boolean;
