@@ -206,6 +206,11 @@ async function fetchPublishedJson<T>(assetPath: string): Promise<T> {
   if (publishedJsonValueCache.has(url)) {
     return publishedJsonValueCache.get(url) as T;
   }
+  const persistent = await readPersistentRuntimePayload<T>('published-json', { url });
+  if (persistent) {
+    setCacheWithLimit(publishedJsonValueCache, url, persistent, CACHE_LIMITS.publishedJson);
+    return persistent;
+  }
   const existingRequest = publishedJsonInFlight.get(url);
   if (existingRequest) {
     return existingRequest as Promise<T>;
@@ -218,6 +223,7 @@ async function fetchPublishedJson<T>(assetPath: string): Promise<T> {
       }
       const payload = await response.json();
       setCacheWithLimit(publishedJsonValueCache, url, payload, CACHE_LIMITS.publishedJson);
+      persistRuntimePayload('published-json', { url }, payload);
       return payload;
     })
     .finally(() => {

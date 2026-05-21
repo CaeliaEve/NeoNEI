@@ -52,3 +52,9 @@ test('frontend prefers item-centric recipe bundle before legacy recipe bootstrap
   const legacyIndex = apiSource.indexOf("resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap')");
   assert.equal(bundleIndex > 0 && legacyIndex > bundleIndex, true, 'item recipe bundle should be tried before legacy bootstrap');
 });
+
+test('published JSON fast path is backed by persistent runtime cache', () => {
+  const fetchBlock = apiSource.match(/async function fetchPublishedJson[\s\S]*?\n}\n\nasync function resolveRuntimeSignature/)?.[0] ?? '';
+  assert.equal(fetchBlock.includes("readPersistentRuntimePayload<T>('published-json'"), true);
+  assert.equal(fetchBlock.includes("persistRuntimePayload('published-json'"), true);
+});
