@@ -252,6 +252,21 @@ function getItemForEntry(entry: BrowserGridEntry): Item {
   return entry.kind === "item" ? entry.item : entry.group.representative;
 }
 
+function shouldUseDirectStaticCorrection(item: Item): boolean {
+  const imageFileName = `${item.imageFileName ?? ""}`.replace(/\\/g, "/").toLowerCase();
+  // A subset of GT machine SVG page-atlas slots can decode as transparent even
+  // though their canonical PNG files are present and correct. Keep the atlas as
+  // the fast first paint path, then let the direct PNG correct these NEI slots.
+  return imageFileName.startsWith("gregtech/gt.blockmachines~");
+}
+
+function getStaticImageSrc(item: Item): string {
+  if (shouldUseDirectStaticCorrection(item) && item.imageFileName) {
+    return `/images/item/${item.imageFileName.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/")}`;
+  }
+  return getPreferredStaticImageUrlFromEntity(item);
+}
+
 function drawPlaceholder(ctx: CanvasRenderingContext2D, rect: GridRect) {
   const inset = 4;
   const size = rect.size - inset * 2;
@@ -589,12 +604,16 @@ function draw() {
   // per-item PNG loads, so it preserves the NEI-style fast path safely.
   const canUseWebglAtlas = false;
   const activeCommands = activeLayoutKey.value === layoutKey.value ? layoutCommands.value : null;
-  const commandCount = activeCommands?.length ?? props.entries.length;
+  const commandsByEntryIndex = new Map<number, HomeGridLayoutCommand>();
+  activeCommands?.forEach((command) => {
+    if (Number.isInteger(command.entryIndex) && command.entryIndex >= 0) {
+      commandsByEntryIndex.set(command.entryIndex, command);
+    }
+  });
 
-  for (let index = 0; index < commandCount; index += 1) {
-    const command = activeCommands?.[index] ?? null;
-    const entryIndex = command?.entryIndex ?? index;
-    const entry = props.entries[entryIndex];
+  for (let index = 0; index < props.entries.length; index += 1) {
+    const command = commandsByEntryIndex.get(index) ?? null;
+    const entry = props.entries[index];
     if (!entry) {
       continue;
     }
@@ -637,12 +656,6 @@ function draw() {
       continue;
     }
 
-    const globalStaticAtlas = getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile);
-    if (globalEntry && globalStaticAtlas && drawGlobalStaticSprite(ctx, globalStaticAtlas, globalEntry, rect)) {
-      drawGroupOverlay(ctx, rect);
-      continue;
-    }
-
     const animation = animationStates.get(itemId);
     if (animation) {
       drewAnimatedFrame = true;
@@ -658,8 +671,20 @@ function draw() {
       continue;
     }
 
-    const src = getPreferredStaticImageUrlFromEntity(rect.item);
+    const src = getStaticImageSrc(rect.item);
     const staticImage = staticImages.get(src);
+    if ((!props.atlas?.atlasUrl || shouldUseDirectStaticCorrection(rect.item)) && staticImage) {
+      drawStaticImage(ctx, staticImage, rect);
+      drawGroupOverlay(ctx, rect);
+      continue;
+    }
+
+    const globalStaticAtlas = getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile);
+    if (globalEntry && globalStaticAtlas && drawGlobalStaticSprite(ctx, globalStaticAtlas, globalEntry, rect)) {
+      drawGroupOverlay(ctx, rect);
+      continue;
+    }
+
     if (staticImage) {
       drawStaticImage(ctx, staticImage, rect);
       drawGroupOverlay(ctx, rect);
@@ -689,10 +714,11 @@ function findRectAt(clientX: number, clientY: number): GridRect | null {
 }
 
 async function ensureStaticImage(item: Item): Promise<HTMLImageElement | null> {
-  if (hasGlobalBrowserAtlas() && getGlobalBrowserAtlasEntry(item.itemId)) {
+  const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(item.itemId) : null;
+  if (!shouldUseDirectStaticCorrection(item) && globalEntry && getLoadedGlobalAtlasImage(globalEntry.staticAtlas?.atlasFile)) {
     return null;
   }
-  const src = getPreferredStaticImageUrlFromEntity(item);
+  const src = getStaticImageSrc(item);
   if (!src) return null;
   const cached = staticImages.get(src);
   if (cached) return cached;
@@ -1038,12 +1064,17 @@ function warmStaticImages() {
   // Letting per-item PNG requests race the atlas on first paint or fast page flips
   // recreates the slow "one by one texture fill-in" behavior, so only use this
   // legacy path when the page atlas/global atlas path has actually failed.
-  if (props.preferAtlas && !atlasLoadError.value) {
+  if (hasAtlasSource.value && !atlasLoadError.value) {
     return;
   }
   props.entries.forEach((entry) => {
     const item = getItemForEntry(entry);
-    if (hasGlobalBrowserAtlas() && getGlobalBrowserAtlasEntry(item.itemId)) {
+    if (shouldUseDirectStaticCorrection(item)) {
+      void ensureStaticImage(item);
+      return;
+    }
+    const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(item.itemId) : null;
+    if (globalEntry && getLoadedGlobalAtlasImage(globalEntry.staticAtlas?.atlasFile)) {
       return;
     }
     const sprite = props.atlas?.entries?.[item.itemId];
