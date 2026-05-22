@@ -10,6 +10,10 @@ import {
   getPersistentRuntimeCacheStats,
 } from "../services/persistentRuntimeCache";
 import {
+  clearOpfsAssetCache,
+  getOpfsAssetCacheStats,
+} from "../services/opfsAssetCache";
+import {
   preloadBrowserSearchWorker,
   resetBrowserSearchWorker,
 } from "../services/browserSearchWorker";
@@ -314,9 +318,12 @@ export function useSitePreheater(options: {
   });
 
   const refreshCacheStats = async () => {
-    const stats = await getPersistentRuntimeCacheStats();
-    cacheEntryCount.value = stats.entryCount;
-    cacheApproxBytes.value = stats.approxBytes;
+    const [runtimeStats, opfsStats] = await Promise.all([
+      getPersistentRuntimeCacheStats(),
+      getOpfsAssetCacheStats(),
+    ]);
+    cacheEntryCount.value = runtimeStats.entryCount + opfsStats.entryCount;
+    cacheApproxBytes.value = runtimeStats.approxBytes + opfsStats.approxBytes;
   };
 
   const prewarmBrowserPageVisuals = async (pagePack: BrowserPagePackResponse) => {
@@ -426,7 +433,10 @@ export function useSitePreheater(options: {
     if (running.value) {
       return;
     }
-    await clearPersistentRuntimeCache();
+    await Promise.all([
+      clearPersistentRuntimeCache(),
+      clearOpfsAssetCache(),
+    ]);
     clearStoredLastCompletion();
     api.resetRuntimeCaches();
     resetBrowserSearchWorker();

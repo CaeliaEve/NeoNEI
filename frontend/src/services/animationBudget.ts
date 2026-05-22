@@ -9,6 +9,7 @@ import {
   type NativeSpriteMetadata,
 } from './api/images';
 import { api, type Item, type PageRichMediaManifest } from './api';
+import { resolveOpfsCachedAssetUrl } from './opfsAssetCache';
 
 const MAX_ANIMATION_WORKERS = 3;
 const MAX_CACHED_IMAGE_ASSETS = 384;
@@ -256,7 +257,8 @@ const loadImageCached = async (src: string): Promise<HTMLImageElement> => {
     return inFlight;
   }
 
-  const request = loadImage(src)
+  const request = resolveOpfsCachedAssetUrl(src)
+    .then((cachedSrc) => loadImage(cachedSrc ?? src))
     .then((image) => {
       touchBoundedCache(imageAssetCache, src, image, MAX_CACHED_IMAGE_ASSETS);
       touchBoundedCache(warmImageAssetHistory, src, true, MAX_WARM_IMAGE_HISTORY);
