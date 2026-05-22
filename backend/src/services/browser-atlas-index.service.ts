@@ -91,9 +91,13 @@ export class BrowserAtlasIndexService {
         continue;
       }
       seen.add(itemId);
-      const entry = itemMap.get(itemId);
+      const entry = this.getEntryWithAliases(itemMap, itemId);
       if (entry) {
-        items.push(entry);
+        // Return the requested id as the key even when it was resolved through a
+        // GTNH/NEI variant alias. The old full-index frontend could resolve
+        // these locally; the new page-scoped API must preserve that behavior or
+        // hashed/NBT variants render as missing placeholders.
+        items.push(entry.itemId === itemId ? entry : { ...entry, itemId });
       }
     }
     return {
@@ -186,6 +190,34 @@ export class BrowserAtlasIndexService {
         Number(frame.durationMs ?? 50),
       ] as CompactBrowserAtlasFrame)
       .filter((frame) => Number.isFinite(frame[0]) && Number(frame[1]) > 0);
+  }
+
+  private getEntryWithAliases(itemMap: Map<string, BrowserAtlasItemEntry>, itemId: string): BrowserAtlasItemEntry | null {
+    const exact = itemMap.get(itemId);
+    if (exact) {
+      return exact;
+    }
+    for (const alias of this.getItemIdAliases(itemId)) {
+      const entry = itemMap.get(alias);
+      if (entry) {
+        return entry;
+      }
+    }
+    return null;
+  }
+
+  private getItemIdAliases(itemId: string): string[] {
+    const normalized = String(itemId || '').trim();
+    if (!normalized) {
+      return [];
+    }
+    const aliases: string[] = [];
+    const parts = normalized.split('~');
+    if (parts.length >= 4 && parts[0] === 'i') {
+      aliases.push(parts.slice(0, 4).join('~'));
+      aliases.push([parts[0], parts[1], parts[2], '0'].join('~'));
+    }
+    return Array.from(new Set(aliases.filter((alias) => alias && alias !== normalized)));
   }
 }
 
