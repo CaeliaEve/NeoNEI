@@ -412,11 +412,11 @@ export function normalizeFrames(frames?: BrowserAtlasAnimatedFrame[] | null): Ar
     .map((frame) => {
       const compact = Array.isArray(frame) ? frame as unknown[] : null;
       return {
-        index: Number(compact?.[0] ?? frame.index ?? 0),
-        x: Number(compact?.[1] ?? frame.x ?? 0),
-        y: Number(compact?.[2] ?? frame.y ?? 0),
-        width: Number(compact?.[3] ?? frame.width ?? 0),
-        height: Number(compact?.[4] ?? frame.height ?? 0),
+        index: toAtlasNumber(compact?.[0] ?? frame.index, 0),
+        x: toAtlasNumber(compact?.[1] ?? frame.x, 0),
+        y: toAtlasNumber(compact?.[2] ?? frame.y, 0),
+        width: toAtlasNumber(compact?.[3] ?? frame.width, 0),
+        height: toAtlasNumber(compact?.[4] ?? frame.height, 0),
       };
     })
     .filter((frame) => frame.width > 0 && frame.height > 0);
@@ -430,10 +430,24 @@ export function normalizeTimeline(
     .map((frame, index) => {
       const compact = Array.isArray(frame) ? frame as unknown[] : null;
       return {
-        frameIndex: Number(compact?.[0] ?? frame.frameIndex ?? frame.index ?? index),
-        durationMs: Math.max(16, Math.round(Number(compact?.[1] ?? frame.durationMs ?? fallbackDurationMs ?? 50))),
+        frameIndex: toAtlasNumber(compact?.[0] ?? frame.frameIndex ?? frame.index, index),
+        durationMs: Math.max(16, Math.round(toAtlasNumber(compact?.[1] ?? frame.durationMs ?? fallbackDurationMs, 50))),
       };
     })
     .filter((frame) => Number.isFinite(frame.frameIndex));
+}
+
+function toAtlasNumber(value: unknown, fallback: number): number {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : fallback;
+  }
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : fallback;
+  }
+  if (value && typeof value === "object" && "value" in value) {
+    return toAtlasNumber((value as { value?: unknown }).value, fallback);
+  }
+  return fallback;
 }
 

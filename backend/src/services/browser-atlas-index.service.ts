@@ -1,5 +1,9 @@
 import fs from 'fs';
-import { NESQL_BROWSER_ATLAS_INDEX_FILE } from '../config/runtime-paths';
+import {
+  NESQL_ANIMATED_ATLAS_MANIFEST_FILE,
+  NESQL_ATLAS_MANIFEST_FILE,
+  NESQL_BROWSER_ATLAS_INDEX_FILE,
+} from '../config/runtime-paths';
 import { notFound } from '../utils/http';
 
 export interface BrowserAtlasStaticPlacement {
@@ -67,6 +71,48 @@ export interface BrowserAtlasIndexResponse {
   items: BrowserAtlasItemEntry[];
 }
 
+interface AnimatedAtlasManifestAsset {
+  assetId?: string | null;
+  variantKey?: string | null;
+  frameDurationMs?: number | null;
+  loopMode?: string | null;
+  frameCount?: number | null;
+  frames?: BrowserAtlasAnimatedFrame[] | null;
+  timeline?: BrowserAtlasAnimatedFrame[] | null;
+}
+
+interface AnimatedAtlasManifestGroup {
+  atlasGroup?: string | null;
+  atlasFile?: string | null;
+  assets?: AnimatedAtlasManifestAsset[] | null;
+}
+
+interface AnimatedAtlasManifest {
+  groups?: AnimatedAtlasManifestGroup[] | null;
+}
+
+interface StaticAtlasManifestAsset {
+  assetId?: string | null;
+  variantKey?: string | null;
+  sourcePath?: string | null;
+  x?: number | string | { value?: unknown } | null;
+  y?: number | string | { value?: unknown } | null;
+  width?: number | string | { value?: unknown } | null;
+  height?: number | string | { value?: unknown } | null;
+}
+
+interface StaticAtlasManifestGroup {
+  atlasGroup?: string | null;
+  atlasFile?: string | null;
+  width?: number | string | { value?: unknown } | null;
+  height?: number | string | { value?: unknown } | null;
+  assets?: StaticAtlasManifestAsset[] | null;
+}
+
+interface StaticAtlasManifest {
+  groups?: StaticAtlasManifestGroup[] | null;
+}
+
 export class BrowserAtlasIndexService {
   private cache: { mtimeMs: number; payload: BrowserAtlasIndexResponse } | null = null;
   private itemMapCache: { mtimeMs: number; itemMap: Map<string, BrowserAtlasItemEntry>; meta: Omit<BrowserAtlasIndexResponse, 'items'> } | null = null;
@@ -106,6 +152,11 @@ export class BrowserAtlasIndexService {
     };
   }
 
+  hasEntryForItemId(itemId: string): boolean {
+    const { itemMap } = this.getItemMap();
+    return Boolean(this.getEntryWithAliases(itemMap, itemId));
+  }
+
   private getItemMap(): { mtimeMs: number; itemMap: Map<string, BrowserAtlasItemEntry>; meta: Omit<BrowserAtlasIndexResponse, 'items'> } {
     const filePath = NESQL_BROWSER_ATLAS_INDEX_FILE;
     if (!filePath || !fs.existsSync(filePath)) {
@@ -136,6 +187,16 @@ export class BrowserAtlasIndexService {
     const itemMap = new Map<string, BrowserAtlasItemEntry>();
     for (const item of items) {
       itemMap.set(item.itemId, item);
+    }
+    for (const [itemId, item] of this.getAuxiliaryAnimatedEntries()) {
+      if (!itemMap.has(itemId)) {
+        itemMap.set(itemId, item);
+      }
+    }
+    for (const [itemId, item] of this.getAuxiliaryStaticEntries()) {
+      if (!itemMap.has(itemId)) {
+        itemMap.set(itemId, item);
+      }
     }
     this.itemMapCache = { mtimeMs: stat.mtimeMs, itemMap, meta };
     this.cache = null;
@@ -174,11 +235,11 @@ export class BrowserAtlasIndexService {
   private toCompactFrames(frames?: BrowserAtlasAnimatedFrame[] | null): CompactBrowserAtlasFrame[] {
     return (frames ?? [])
       .map((frame) => [
-        Number(frame.index ?? 0),
-        Number(frame.x ?? 0),
-        Number(frame.y ?? 0),
-        Number(frame.width ?? 0),
-        Number(frame.height ?? 0),
+        this.toNumber(frame.index, 0),
+        this.toNumber(frame.x, 0),
+        this.toNumber(frame.y, 0),
+        this.toNumber(frame.width, 0),
+        this.toNumber(frame.height, 0),
       ] as CompactBrowserAtlasFrame)
       .filter((frame) => Number.isFinite(frame[0]) && Number(frame[3] ?? 0) > 0 && Number(frame[4] ?? 0) > 0);
   }
@@ -186,10 +247,142 @@ export class BrowserAtlasIndexService {
   private toCompactTimeline(frames?: BrowserAtlasAnimatedFrame[] | null): CompactBrowserAtlasFrame[] {
     return (frames ?? [])
       .map((frame, index) => [
-        Number(frame.frameIndex ?? frame.index ?? index),
-        Number(frame.durationMs ?? 50),
+        this.toNumber(frame.frameIndex ?? frame.index, index),
+        this.toNumber(frame.durationMs, 50),
       ] as CompactBrowserAtlasFrame)
       .filter((frame) => Number.isFinite(frame[0]) && Number(frame[1]) > 0);
+  }
+
+  private toNumber(value: unknown, fallback: number): number {
+    if (typeof value === 'number') {
+      return Number.isFinite(value) ? value : fallback;
+    }
+    if (typeof value === 'string') {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : fallback;
+    }
+    if (value && typeof value === 'object' && 'value' in value) {
+      return this.toNumber((value as { value?: unknown }).value, fallback);
+    }
+    return fallback;
+  }
+
+  private getAuxiliaryAnimatedEntries(): Map<string, BrowserAtlasItemEntry> {
+    const entries = new Map<string, BrowserAtlasItemEntry>();
+    const filePath = NESQL_ANIMATED_ATLAS_MANIFEST_FILE;
+    if (!filePath || !fs.existsSync(filePath)) {
+      return entries;
+    }
+
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as AnimatedAtlasManifest;
+    const groups = Array.isArray(parsed.groups) ? parsed.groups : [];
+    for (const group of groups) {
+      const atlasFile = `${group?.atlasFile ?? ''}`.trim();
+      const assets = Array.isArray(group?.assets) ? group.assets : [];
+      if (!atlasFile || assets.length === 0) {
+        continue;
+      }
+
+      for (const asset of assets) {
+        const assetId = `${asset?.assetId ?? ''}`.trim();
+        const itemId = assetId.startsWith('nesqlpp:fluid/')
+          ? assetId.slice('nesqlpp:fluid/'.length)
+          : '';
+        if (!itemId) {
+          continue;
+        }
+
+        const animatedAtlas: BrowserAtlasAnimatedPlacement = {
+          atlasGroup: group.atlasGroup ?? null,
+          atlasFile,
+          variantKey: asset.variantKey ?? null,
+          frameDurationMs: asset.frameDurationMs ?? null,
+          loopMode: asset.loopMode ?? null,
+          frameCount: asset.frameCount ?? null,
+          frames: asset.frames ?? null,
+          timeline: asset.timeline ?? null,
+        };
+        entries.set(itemId, this.toCompactEntry({
+          itemId,
+          assetId,
+          variantKey: asset.variantKey ?? null,
+          mode: 'native_sprite_animation',
+          renderMode: 'native_sprite',
+          resolutionMode: 'native_sprite',
+          playbackHint: 'native_sprite',
+          hasStaticAtlas: false,
+          hasAnimatedAtlas: true,
+          staticAtlas: null,
+          animatedAtlas,
+        }));
+      }
+    }
+    return entries;
+  }
+
+  private getAuxiliaryStaticEntries(): Map<string, BrowserAtlasItemEntry> {
+    const entries = new Map<string, BrowserAtlasItemEntry>();
+    const filePath = NESQL_ATLAS_MANIFEST_FILE;
+    if (!filePath || !fs.existsSync(filePath)) {
+      return entries;
+    }
+
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as StaticAtlasManifest;
+    const groups = Array.isArray(parsed.groups) ? parsed.groups : [];
+    for (const group of groups) {
+      const atlasFile = `${group?.atlasFile ?? ''}`.trim();
+      const assets = Array.isArray(group?.assets) ? group.assets : [];
+      if (!atlasFile || assets.length === 0) {
+        continue;
+      }
+
+      for (const asset of assets) {
+        const assetId = `${asset?.assetId ?? ''}`.trim();
+        const itemId = this.getItemIdFromAssetId(assetId);
+        if (!itemId) {
+          continue;
+        }
+
+        const staticAtlas: BrowserAtlasStaticPlacement = {
+          atlasGroup: group.atlasGroup ?? null,
+          atlasFile,
+          atlasWidth: this.toNumber(group.width, 0),
+          atlasHeight: this.toNumber(group.height, 0),
+          x: this.toNumber(asset.x, 0),
+          y: this.toNumber(asset.y, 0),
+          width: this.toNumber(asset.width, 0),
+          height: this.toNumber(asset.height, 0),
+          sourcePath: asset.sourcePath ?? null,
+        };
+        if (!staticAtlas.width || !staticAtlas.height) {
+          continue;
+        }
+
+        entries.set(itemId, this.toCompactEntry({
+          itemId,
+          assetId,
+          variantKey: asset.variantKey ?? null,
+          mode: 'native_sprite_static',
+          renderMode: 'native_sprite',
+          resolutionMode: 'native_sprite',
+          playbackHint: 'static',
+          hasStaticAtlas: true,
+          hasAnimatedAtlas: false,
+          staticAtlas,
+          animatedAtlas: null,
+        }));
+      }
+    }
+    return entries;
+  }
+
+  private getItemIdFromAssetId(assetId: string): string {
+    for (const prefix of ['nesqlpp:item/', 'nesqlpp:fluid/']) {
+      if (assetId.startsWith(prefix)) {
+        return assetId.slice(prefix.length);
+      }
+    }
+    return '';
   }
 
   private getEntryWithAliases(itemMap: Map<string, BrowserAtlasItemEntry>, itemId: string): BrowserAtlasItemEntry | null {

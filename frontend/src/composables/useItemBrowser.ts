@@ -813,10 +813,18 @@ export function useItemBrowser(
     const pageItemIds = collectBrowserPageResourceItemIds(response);
     const globalCoverage = await inspectGlobalBrowserAtlasCoverageForItems(pageItemIds).catch(() => null);
     if (hasGlobalBrowserAtlas() && globalCoverage?.total && globalCoverage.total > 0) {
-      void ensureBrowserPagePresentationWarm(cacheKey, response, {
+      const warmPromise = ensureBrowserPagePresentationWarm(cacheKey, response, {
         animatedEntryLimit: 0,
         atlasLimit: 0,
       });
+      if (waitMs > 0 && !pagePresentationReady.has(cacheKey)) {
+        await Promise.race([
+          warmPromise,
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, Math.min(180, Math.max(0, waitMs)));
+          }),
+        ]);
+      }
       return;
     }
     if (!globalCoverage || globalCoverage.total <= 0 || globalCoverage.missingCount > 0) {

@@ -4,6 +4,7 @@ import path from 'path';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import { getNesqlSplitExportService } from './nesql-split-export.service';
 import { IMAGES_PATH } from '../config/runtime-paths';
+import { getBrowserAtlasIndexService } from './browser-atlas-index.service';
 
 export interface Item {
   itemId: string;
@@ -684,8 +685,12 @@ export class ItemsService {
       rows.sort((left, right) => this.compareBrowserSearchRows(left, right, normalizedSearch));
     }
 
-    this.setCachedBrowserCatalog(cacheKey, rows);
-    return rows;
+    const atlasReadyRows = normalizedSearch
+      ? rows.filter((row) => getBrowserAtlasIndexService().hasEntryForItemId(row.item_id))
+      : rows;
+
+    this.setCachedBrowserCatalog(cacheKey, atlasReadyRows);
+    return atlasReadyRows;
   }
 
   private resolveForcedExpandedGroupKey(catalog: BrowserCatalogRow[]): string | null {
