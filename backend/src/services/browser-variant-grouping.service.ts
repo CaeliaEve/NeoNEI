@@ -21,6 +21,23 @@ function hasVariantPayload(itemId: string): boolean {
   return itemId.split('~').length > 4;
 }
 
+function buildSpecialVariantFamilyKey(candidate: BrowserVariantCandidate): { key: string; label: string } | null {
+  const modId = normalizeText(candidate.modId);
+  const internalName = normalizeText(candidate.internalName);
+
+  // Thaumcraft generates thousands of wand / sceptre / staff stacks from NBT combinations.
+  // GTNH NEI presents the whole generated wand family as one collapsible browser group;
+  // grouping by localizedName only leaves one entry per cap/core combination and floods the last pages.
+  if (modId === 'thaumcraft' && internalName === 'wandcasting') {
+    return {
+      key: `${modId}::${internalName}::generated-wands`,
+      label: '法杖 / 权杖',
+    };
+  }
+
+  return null;
+}
+
 function buildVariantFamilyKey(candidate: BrowserVariantCandidate): string | null {
   const modId = normalizeText(candidate.modId);
   const internalName = normalizeText(candidate.internalName);
@@ -77,7 +94,16 @@ export function buildSyntheticBrowserVariantAssignments(
 ): Map<string, SyntheticBrowserGroupAssignment> {
   const exactFamilies = new Map<string, BrowserVariantCandidate[]>();
   const internalFamilies = new Map<string, BrowserVariantCandidate[]>();
+  const specialFamilies = new Map<string, { label: string; family: BrowserVariantCandidate[] }>();
   for (const candidate of candidates) {
+    const specialFamily = buildSpecialVariantFamilyKey(candidate);
+    if (specialFamily) {
+      const current = specialFamilies.get(specialFamily.key) ?? { label: specialFamily.label, family: [] };
+      current.family.push(candidate);
+      specialFamilies.set(specialFamily.key, current);
+      continue;
+    }
+
     const exactFamilyKey = buildVariantFamilyKey(candidate);
     if (exactFamilyKey) {
       const family = exactFamilies.get(exactFamilyKey) ?? [];
@@ -135,6 +161,10 @@ export function buildSyntheticBrowserVariantAssignments(
     }
   };
 
+  for (const [familyKey, entry] of specialFamilies.entries()) {
+    const remainingFamily = entry.family.filter((candidate) => !assignments.has(candidate.itemId));
+    assignFamily(`special::${familyKey}`, remainingFamily, entry.label);
+  }
   for (const [familyKey, family] of internalFamilies.entries()) {
     if (!canGroupFamily(family)) {
       continue;
@@ -236,3 +266,4 @@ export function mergeBrowserGroupAssignments(
 
   return merged;
 }
+
