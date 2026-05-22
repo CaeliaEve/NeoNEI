@@ -2,7 +2,12 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { api, getImageUrl, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
-import { collectRecipeItemStacks, isThaumcraftAspectItem, type RitualItemStack } from '../composables/ritualFamilyMetadata';
+import {
+  collectRecipeItemStacks,
+  getThaumcraftAspectImagePath,
+  isThaumcraftAspectItem,
+  type RitualItemStack,
+} from '../composables/ritualFamilyMetadata';
 import { buildOutputSlots, parseAdditionalData, type ResolvedSlot } from '../composables/useRecipeSlots';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
@@ -72,6 +77,26 @@ async function initialize() {
   outputSlot.value = output ?? null;
 }
 
+function extractAspectHashFromItemId(itemId: string): string | undefined {
+  const parts = itemId.split('~');
+  const hash = parts[parts.length - 1];
+  return hash && hash.length > 8 ? hash : undefined;
+}
+
+function getAspectStaticImage(item: Pick<RitualItemStack, 'itemId' | 'count' | 'localizedName'>): string {
+  return getThaumcraftAspectImagePath({
+    name: item.localizedName || 'Unknown',
+    amount: item.count,
+    color: '#d7e0ff',
+    hash: extractAspectHashFromItemId(item.itemId),
+    itemId: item.itemId,
+  });
+}
+
+function isResolvedAspectSlot(slot: ResolvedSlot | null): slot is ResolvedSlot {
+  return !!slot && isThaumcraftAspectItem(slot.itemId, slot.localizedName);
+}
+
 function handleItemClick(itemId: string) {
   playClick();
   emit('item-click', itemId);
@@ -112,7 +137,14 @@ watch(
         @click="handleItemClick(outputSlot.itemId)"
       >
         <div class="aspect-focus">
+          <img
+            v-if="isResolvedAspectSlot(outputSlot)"
+            :src="getAspectStaticImage(outputSlot)"
+            class="aspect-focus-icon aspect-native-icon"
+            alt=""
+          />
           <AnimatedItemIcon
+            v-else
             :item-id="outputSlot.itemId"
             :render-asset-ref="outputSlot.renderAssetRef || null"
             :image-file-name="outputSlot.imageFileName || null"
@@ -135,10 +167,10 @@ watch(
           @click="handleItemClick(aspect.itemId)"
         >
           <div class="aspect-input-slot">
-            <AnimatedItemIcon
-              :item-id="aspect.itemId"
-              :size="38"
-              class="aspect-icon"
+            <img
+              :src="getAspectStaticImage(aspect)"
+              class="aspect-icon aspect-native-icon"
+              alt=""
             />
             <span v-if="aspect.count > 1" class="count">{{ aspect.count }}</span>
           </div>

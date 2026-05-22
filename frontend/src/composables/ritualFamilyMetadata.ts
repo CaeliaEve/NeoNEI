@@ -3,7 +3,6 @@ import { parseAdditionalData } from './useRecipeSlots';
 import {
   ASPECT_COLORS,
   ASPECT_HASH_TO_NAME,
-  ASPECT_ICON_DAMAGE,
   getThaumcraftAspectTexturePath,
   normalizeAspectName,
   parseAspectNameFromLocalized,
@@ -177,12 +176,9 @@ export function getThaumcraftAspectImagePath(aspect: RitualAspectCost): string {
   if (staticTexturePath) {
     return staticTexturePath;
   }
-  if (aspect.hash) {
-    return `${__BACKEND_BASE_URL__}/images/item/thaumcraftneiplugin/Aspect~0~${encodeURIComponent(aspect.hash)}.png`;
-  }
-  const damage = ASPECT_ICON_DAMAGE[aspect.name];
-  if (damage) {
-    return `${__BACKEND_BASE_URL__}/images/item/Thaumcraft/ItemResource~${damage}.gif`;
-  }
+
+  // Do not fall back to backend per-hash aspect images here. Missing aspects should be
+  // fixed in the native aspect texture set/manifest instead of triggering slow 404s
+  // while users flip recipe pages.
   return '/placeholder.png';
 }

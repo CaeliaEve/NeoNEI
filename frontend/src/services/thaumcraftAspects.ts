@@ -247,6 +247,9 @@ const ASPECT_NAME_MAP: Record<string, string> = {
   unknown: 'Unknown',
 };
 
+// Keep this list in sync with frontend/public/textures/thaumcraft-aspects-exported.
+// Aspect icons are a tiny fixed native resource pack: resolve them locally instead of
+// issuing per-aspect backend image fallbacks, so recipe pages keep NEI-like instant flips.
 const NATIVE_ASPECT_TEXTURE_NAMES = new Set([
   'aer',
   'alienis',
@@ -254,26 +257,41 @@ const NATIVE_ASPECT_TEXTURE_NAMES = new Set([
   'arbor',
   'auram',
   'bestia',
+  'caelum',
   'cognitio',
   'corpus',
+  'custom1',
+  'custom2',
+  'custom3',
+  'custom4',
+  'custom5',
+  'desidia',
+  'electrum',
   'exanimis',
   'fabrico',
   'fames',
   'gelum',
+  'gula',
   'herba',
   'humanus',
   'ignis',
+  'infernus',
   'instrumentum',
+  'invidia',
+  'ira',
   'iter',
   'limus',
   'lucrum',
   'lux',
+  'luxuria',
   'machina',
+  'magneto',
   'messis',
   'metallum',
   'meto',
   'mortuus',
   'motus',
+  'nebrisum',
   'ordo',
   'pannus',
   'perditio',
@@ -281,12 +299,18 @@ const NATIVE_ASPECT_TEXTURE_NAMES = new Set([
   'permutatio',
   'potentia',
   'praecantatio',
+  'radio',
   'sano',
   'sensus',
   'spiritus',
+  'strontio',
+  'superbia',
+  'tabernus',
   'telum',
   'tempestas',
+  'tempus',
   'tenebrae',
+  'terminus',
   'terra',
   'tutamen',
   'vacuos',
@@ -317,18 +341,26 @@ export function normalizeAspectName(name: string): string {
 export function getThaumcraftAspectTexturePath(
   aspect: { name?: string | null; hash?: string | null } | string | null | undefined,
 ): string | null {
-  const rawName =
+  const candidates =
     typeof aspect === 'string'
-      ? aspect
-      : aspect?.name || (aspect?.hash ? ASPECT_HASH_TO_NAME[aspect.hash] : null);
-  if (!rawName) return null;
+      ? [aspect]
+      : [
+          aspect?.name || null,
+          aspect?.hash ? ASPECT_HASH_TO_NAME[aspect.hash] || null : null,
+        ];
 
-  const normalized = normalizeAspectName(rawName);
-  if (!normalized || normalized === 'Unknown') return null;
+  for (const rawName of candidates) {
+    if (!rawName) continue;
+    const normalized = normalizeAspectName(rawName);
+    if (!normalized || normalized === 'Unknown') continue;
 
-  const textureName = normalized.toLowerCase();
-  if (!NATIVE_ASPECT_TEXTURE_NAMES.has(textureName)) return null;
-  return `/textures/thaumcraft-aspects-exported/${textureName}.gif`;
+    const textureName = normalized.toLowerCase();
+    if (NATIVE_ASPECT_TEXTURE_NAMES.has(textureName)) {
+      return `/textures/thaumcraft-aspects-exported/${textureName}.gif`;
+    }
+  }
+
+  return null;
 }
 
 export function parseAspectNameFromLocalized(localizedName?: string): string | null {

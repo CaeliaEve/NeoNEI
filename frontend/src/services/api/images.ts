@@ -4,6 +4,7 @@ import { ASPECT_HASH_TO_NAME, getThaumcraftAspectTexturePath } from '../thaumcra
 const FALLBACK_ITEM_IMAGE_PATH = 'minecraft/barrier~0.png';
 const THAUMCRAFT_ASPECT_MOD_ID = 'thaumcraftneiplugin';
 const THAUMCRAFT_ASPECT_INTERNAL_NAME = 'Aspect';
+const THAUMCRAFT_ASPECT_PLACEHOLDER_URL = '/placeholder.png';
 
 function buildItemImageUrl(path: string): string {
   return `${BACKEND_BASE_URL}/images/item/${path}`;
@@ -54,10 +55,6 @@ function getThaumcraftAspectHashFromItemId(itemId: string | null | undefined): s
   return hash;
 }
 
-function getThaumcraftAspectIconPath(hash: string): string {
-  return `${THAUMCRAFT_ASPECT_MOD_ID}/${THAUMCRAFT_ASPECT_INTERNAL_NAME}~0~${encodeURIComponent(hash)}.png`;
-}
-
 function getThaumcraftStaticAspectUrl(hash: string | null): string | null {
   if (!hash) return null;
   return getThaumcraftAspectTexturePath({ hash, name: ASPECT_HASH_TO_NAME[hash] });
@@ -75,8 +72,7 @@ export function getImageUrl(itemId: string): string {
   const aspectHash = getThaumcraftAspectHashFromItemId(itemId);
   if (aspectHash) {
     const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHash);
-    if (staticAspectUrl) return staticAspectUrl;
-    return buildItemImageUrl(getThaumcraftAspectIconPath(aspectHash));
+    return staticAspectUrl || THAUMCRAFT_ASPECT_PLACEHOLDER_URL;
   }
 
   const parts = itemId.split('~');
@@ -135,8 +131,7 @@ export function getItemImageUrlFromEntity(item: {
   const aspectHash = getThaumcraftAspectHashFromItemId(item?.itemId);
   if (aspectHash) {
     const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHash);
-    if (staticAspectUrl) return staticAspectUrl;
-    return buildItemImageUrl(getThaumcraftAspectIconPath(aspectHash));
+    return staticAspectUrl || THAUMCRAFT_ASPECT_PLACEHOLDER_URL;
   }
   const aspectImageFileName = normalizeThaumcraftAspectImageFileName(item?.imageFileName);
   if (aspectImageFileName) {
@@ -167,8 +162,7 @@ export function getPreferredStaticImageUrlFromEntity(item: {
   const aspectHash = getThaumcraftAspectHashFromItemId(item?.itemId);
   if (aspectHash) {
     const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHash);
-    if (staticAspectUrl) return staticAspectUrl;
-    return buildItemImageUrl(getThaumcraftAspectIconPath(aspectHash));
+    return staticAspectUrl || THAUMCRAFT_ASPECT_PLACEHOLDER_URL;
   }
   const aspectImageFileName = normalizeThaumcraftAspectImageFileName(item?.imageFileName);
   if (aspectImageFileName) {
