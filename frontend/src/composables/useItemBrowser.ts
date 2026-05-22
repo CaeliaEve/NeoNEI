@@ -730,16 +730,14 @@ export function useItemBrowser(
           if (warmToken !== activeResourceWarmToken) {
             return;
           }
-          if (result.total > 0 && result.missingCount === 0) {
-            pagePresentationReady.add(cacheKey);
-            return;
-          }
-          return warmPageAtlasPresentation(response, options).then(() => {
-            if (warmToken !== activeResourceWarmToken) {
-              return;
-            }
-            pagePresentationReady.add(cacheKey);
+          markPerfEvent('browser-atlas-page-coverage', {
+            page: response.page,
+            ...result,
           });
+          // Global browser atlas is the authoritative NEI-fast path. If entries
+          // are missing, keep the page interactive and surface the coverage gap;
+          // do not fall back to page atlases or per-item media requests.
+          pagePresentationReady.add(cacheKey);
         })
         .catch(() => undefined)
         .finally(() => {
@@ -815,12 +813,10 @@ export function useItemBrowser(
     const pageItemIds = collectBrowserPageResourceItemIds(response);
     const globalCoverage = await inspectGlobalBrowserAtlasCoverageForItems(pageItemIds).catch(() => null);
     if (hasGlobalBrowserAtlas() && globalCoverage?.total && globalCoverage.total > 0) {
-      if (globalCoverage.missingCount > 0) {
-        void ensureBrowserPagePresentationWarm(cacheKey, response, {
-          animatedEntryLimit: 48,
-          atlasLimit: 6,
-        });
-      }
+      void ensureBrowserPagePresentationWarm(cacheKey, response, {
+        animatedEntryLimit: 0,
+        atlasLimit: 0,
+      });
       return;
     }
     if (!globalCoverage || globalCoverage.total <= 0 || globalCoverage.missingCount > 0) {
@@ -896,7 +892,7 @@ export function useItemBrowser(
 
     browserEntries.value = response.data;
     items.value = response.items;
-    currentPageAtlas.value = response.atlas;
+    currentPageAtlas.value = hasGlobalBrowserAtlas() ? null : response.atlas;
     totalItems.value = response.total;
     totalPages.value = response.totalPages;
     currentPage.value = response.page;
@@ -945,6 +941,9 @@ export function useItemBrowser(
             page: response.page,
             ...getGlobalBrowserAtlasCoverageForItems(displayItemIds),
           });
+        }
+        if (hasGlobalBrowserAtlas()) {
+          return;
         }
         if (coverage.total > 0 && coverage.missingCount === 0) {
           return;

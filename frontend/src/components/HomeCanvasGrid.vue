@@ -23,7 +23,6 @@ import {
   shouldUseLegacyBrowserAnimationProbe,
   normalizeFrames,
   normalizeTimeline,
-  warmAllGlobalBrowserAtlases,
   warmGlobalBrowserAtlasForItems,
   warmGlobalBrowserAtlasForItemsDetailed,
   type BrowserAtlasItemEntry,
@@ -121,8 +120,6 @@ let resizeObserver: ResizeObserver | null = null;
 let renderFrameHandle: number | null = null;
 let animationLoopHandle: number | null = null;
 let idleAnimationKickHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
-let globalAtlasWarmHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
-let globalAtlasWarmStarted = false;
 let atlasLoadSeq = 0;
 let animationDelayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
@@ -253,11 +250,12 @@ function getItemForEntry(entry: BrowserGridEntry): Item {
 }
 
 function shouldUseDirectStaticCorrection(item: Item): boolean {
-  const imageFileName = `${item.imageFileName ?? ""}`.replace(/\\/g, "/").toLowerCase();
-  // A subset of GT machine SVG page-atlas slots can decode as transparent even
-  // though their canonical PNG files are present and correct. Keep the atlas as
-  // the fast first paint path, then let the direct PNG correct these NEI slots.
-  return imageFileName.startsWith("gregtech/gt.blockmachines~");
+  void item;
+  // Homepage item rendering is atlas-authoritative. Direct `/images/item/*`
+  // corrections reintroduce slow per-texture requests and hide NESQL++ atlas
+  // coverage defects, so missing GT machine textures must be fixed in the
+  // exported browser atlas instead.
+  return false;
 }
 
 function getStaticImageSrc(item: Item): string {
@@ -656,6 +654,18 @@ function draw() {
       continue;
     }
 
+    const globalStaticAtlas = getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile);
+    if (globalEntry && globalStaticAtlas && drawGlobalStaticSprite(ctx, globalStaticAtlas, globalEntry, rect)) {
+      drawGroupOverlay(ctx, rect);
+      continue;
+    }
+
+    if (hasGlobalBrowserAtlas()) {
+      drawPlaceholder(ctx, rect);
+      drawGroupOverlay(ctx, rect);
+      continue;
+    }
+
     const animation = animationStates.get(itemId);
     if (animation) {
       drewAnimatedFrame = true;
@@ -675,12 +685,6 @@ function draw() {
     const staticImage = staticImages.get(src);
     if ((!props.atlas?.atlasUrl || shouldUseDirectStaticCorrection(rect.item)) && staticImage) {
       drawStaticImage(ctx, staticImage, rect);
-      drawGroupOverlay(ctx, rect);
-      continue;
-    }
-
-    const globalStaticAtlas = getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile);
-    if (globalEntry && globalStaticAtlas && drawGlobalStaticSprite(ctx, globalStaticAtlas, globalEntry, rect)) {
       drawGroupOverlay(ctx, rect);
       continue;
     }
@@ -714,6 +718,9 @@ function findRectAt(clientX: number, clientY: number): GridRect | null {
 }
 
 async function ensureStaticImage(item: Item): Promise<HTMLImageElement | null> {
+  if (hasGlobalBrowserAtlas()) {
+    return null;
+  }
   const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(item.itemId) : null;
   if (!shouldUseDirectStaticCorrection(item) && globalEntry && getLoadedGlobalAtlasImage(globalEntry.staticAtlas?.atlasFile)) {
     return null;
@@ -758,10 +765,9 @@ async function loadAtlas() {
       const globalCoverage = await inspectGlobalBrowserAtlasCoverageForItems(itemIds).catch(() => null);
       if (sequence !== atlasLoadSeq) return;
       if (globalCoverage && globalCoverage.total > 0 && globalCoverage.missingCount === 0) {
-        // Do not block the current page on large resident-atlas image downloads.
-        // Fast NEI-style jumps need an immediate drawable path; the small page
-        // atlas can paint first while the global atlas warms in the background.
-        allowFallbackBeforeAtlas.value = true;
+        // The global atlas is authoritative for the homepage. Do not unlock the
+        // page atlas/static image fallback while resident atlas shards warm.
+        allowFallbackBeforeAtlas.value = false;
         void warmGlobalBrowserAtlasForItemsDetailed(itemIds).finally(() => {
           if (sequence === atlasLoadSeq) {
             scheduleRender();
@@ -769,6 +775,11 @@ async function loadAtlas() {
         });
       }
     }
+  }
+
+  if (props.preferAtlas && hasGlobalBrowserAtlas()) {
+    scheduleRender();
+    return;
   }
 
   if (!atlasUrl) {
@@ -1057,6 +1068,9 @@ function scheduleAnimationUpgrade() {
 }
 
 function warmStaticImages() {
+  if (hasGlobalBrowserAtlas()) {
+    return;
+  }
   if (shouldHoldFallbackImages.value) {
     return;
   }
@@ -1099,27 +1113,6 @@ function warmGlobalAtlasImages() {
   void warmGlobalBrowserAtlasForItems(itemIds).finally(() => {
     scheduleRender();
   });
-}
-
-function warmAllGlobalAtlasesInBackground() {
-  if (globalAtlasWarmStarted) {
-    return;
-  }
-  globalAtlasWarmStarted = true;
-
-  const run = () => {
-    void warmAllGlobalBrowserAtlases().finally(() => {
-      scheduleRender();
-    });
-  };
-
-  if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-    (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number })
-      .requestIdleCallback(run, { timeout: 2000 });
-    return;
-  }
-
-  globalAtlasWarmHandle = globalThis.setTimeout(run, 1600);
 }
 
 function handleClick(event: MouseEvent) {
@@ -1253,7 +1246,6 @@ onMounted(() => {
     webglAtlasRenderer = BrowserWebglAtlasRenderer.create(webglCanvasRef.value);
   }
   window.addEventListener("resize", updateHostWidth, { passive: true });
-  warmAllGlobalAtlasesInBackground();
   scheduleRender();
 });
 
@@ -1269,10 +1261,6 @@ onUnmounted(() => {
   if (idleAnimationKickHandle !== null) {
     clearTimeout(idleAnimationKickHandle);
     idleAnimationKickHandle = null;
-  }
-  if (globalAtlasWarmHandle !== null) {
-    clearTimeout(globalAtlasWarmHandle);
-    globalAtlasWarmHandle = null;
   }
   if (animationDelayTimer !== null) {
     clearTimeout(animationDelayTimer);

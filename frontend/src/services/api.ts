@@ -55,6 +55,7 @@ const uiPayloadInFlight = new Map<string, Promise<RecipeUiPayload | null>>();
 const missingUiPayloadCache = new Set<string>();
 let browserAtlasIndexCache: BrowserAtlasIndexResponse | null = null;
 let browserAtlasIndexInFlight: Promise<BrowserAtlasIndexResponse | null> | null = null;
+const browserAtlasEntriesInFlight = new Map<string, Promise<BrowserAtlasIndexResponse | null>>();
 const publishedJsonValueCache = new Map<string, unknown>();
 const publishedJsonInFlight = new Map<string, Promise<unknown>>();
 let publishManifestCache: PublicRuntimeManifest | null = null;
@@ -2567,6 +2568,36 @@ export const api = {
       }
     })();
     return browserAtlasIndexInFlight;
+  },
+
+  async getBrowserAtlasEntries(itemIds: string[]): Promise<BrowserAtlasIndexResponse | null> {
+    const uniqueItemIds = Array.from(new Set(itemIds.map((itemId) => `${itemId ?? ''}`.trim()).filter(Boolean)));
+    if (uniqueItemIds.length === 0) {
+      return {
+        schemaVersion: 'browser-atlas-entries',
+        items: [],
+      };
+    }
+    const cacheKey = uniqueItemIds.slice().sort().join('\n');
+    const existing = browserAtlasEntriesInFlight.get(cacheKey);
+    if (existing) {
+      return existing;
+    }
+    const request = (async () => {
+      try {
+        const response = await http.post('/render-contract/browser-atlas-entries', { itemIds: uniqueItemIds });
+        return response.data;
+      } catch (error) {
+        if (isHttpNotFoundError(error)) {
+          return null;
+        }
+        throw error;
+      } finally {
+        browserAtlasEntriesInFlight.delete(cacheKey);
+      }
+    })();
+    browserAtlasEntriesInFlight.set(cacheKey, request);
+    return request;
   },
 
   async getOptionalRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload | null> {

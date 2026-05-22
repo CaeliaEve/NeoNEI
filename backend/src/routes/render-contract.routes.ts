@@ -21,6 +21,14 @@ router.get(
   })
 );
 
+router.post(
+  '/browser-atlas-entries',
+  asyncHandler(async (req, res) => {
+    const itemIds = Array.isArray(req.body?.itemIds) ? req.body.itemIds : [];
+    res.json(getBrowserAtlasIndexService().getEntries(itemIds));
+  })
+);
+
 router.get(
   '/browser-layout-index',
   asyncHandler(async (_req, res) => {

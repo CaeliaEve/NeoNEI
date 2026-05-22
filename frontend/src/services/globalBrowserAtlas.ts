@@ -20,7 +20,7 @@ const itemEntryAliases = new Map<string, BrowserAtlasItemEntry>();
 const atlasImages = new Map<string, AtlasImageState>();
 let indexLoaded = false;
 let indexLoadPromise: Promise<boolean> | null = null;
-let indexAvailable = false;
+let indexAvailable = true;
 let atlasImageCacheVersion = "0";
 
 function normalizeAtlasFile(atlasFile?: string | null): string | null {
@@ -136,23 +136,9 @@ export async function ensureGlobalBrowserAtlasIndex(): Promise<boolean> {
     .then((payload) => {
       itemEntries.clear();
       itemEntryAliases.clear();
-      atlasImageCacheVersion = [
-        payload?.generatedAt ?? 0,
-        payload?.itemCount ?? 0,
-        payload?.animatedItemCount ?? 0,
-        payload?.missingAtlasCount ?? 0,
-      ].join("-");
+      updateAtlasCacheVersion(payload);
       atlasImages.clear();
-      for (const entry of payload?.items ?? []) {
-        if (entry?.itemId) {
-          itemEntries.set(entry.itemId, entry);
-          for (const alias of getItemIdAliases(entry.itemId)) {
-            if (!itemEntries.has(alias) && !itemEntryAliases.has(alias)) {
-              itemEntryAliases.set(alias, entry);
-            }
-          }
-        }
-      }
+      mergeAtlasEntries(payload?.items ?? []);
       indexAvailable = itemEntries.size > 0;
       indexLoaded = true;
       return indexAvailable;
@@ -166,6 +152,54 @@ export async function ensureGlobalBrowserAtlasIndex(): Promise<boolean> {
       indexLoadPromise = null;
     });
   return indexLoadPromise;
+}
+
+function updateAtlasCacheVersion(payload?: { generatedAt?: number; itemCount?: number; animatedItemCount?: number; missingAtlasCount?: number } | null) {
+  const nextVersion = [
+    payload?.generatedAt ?? atlasImageCacheVersion,
+    payload?.itemCount ?? 0,
+    payload?.animatedItemCount ?? 0,
+    payload?.missingAtlasCount ?? 0,
+  ].join("-");
+  if (nextVersion !== atlasImageCacheVersion) {
+    atlasImageCacheVersion = nextVersion;
+    atlasImages.clear();
+  }
+}
+
+function mergeAtlasEntries(entries: BrowserAtlasItemEntry[]) {
+  for (const entry of entries) {
+    if (entry?.itemId) {
+      itemEntries.set(entry.itemId, entry);
+      for (const alias of getItemIdAliases(entry.itemId)) {
+        if (!itemEntries.has(alias) && !itemEntryAliases.has(alias)) {
+          itemEntryAliases.set(alias, entry);
+        }
+      }
+    }
+  }
+}
+
+async function ensureGlobalBrowserAtlasEntries(itemIds: string[]): Promise<boolean> {
+  const missingItemIds = Array.from(new Set(
+    itemIds
+      .map((itemId) => `${itemId ?? ""}`.trim())
+      .filter((itemId) => itemId && !getAtlasEntryForItemId(itemId)),
+  ));
+  if (missingItemIds.length === 0) {
+    return true;
+  }
+
+  const payload = await api.getBrowserAtlasEntries(missingItemIds).catch(() => null);
+  if (!payload) {
+    indexAvailable = false;
+    return false;
+  }
+  updateAtlasCacheVersion(payload);
+  mergeAtlasEntries(payload.items ?? []);
+  indexLoaded = true;
+  indexAvailable = true;
+  return true;
 }
 
 async function runConcurrent<T>(
@@ -198,7 +232,7 @@ export async function inspectGlobalBrowserAtlasCoverageForItems(itemIds: string[
   staticCount: number;
   atlasFileCount: number;
 }> {
-  const available = await ensureGlobalBrowserAtlasIndex();
+  const available = await ensureGlobalBrowserAtlasEntries(itemIds);
   if (!available) {
     const total = Array.from(new Set(itemIds.map((itemId) => `${itemId ?? ""}`.trim()).filter(Boolean))).length;
     return {
@@ -220,7 +254,7 @@ export async function warmGlobalBrowserAtlasForItemsDetailed(itemIds: string[]):
   missingCount: number;
   atlasFileCount: number;
 }> {
-  const available = await ensureGlobalBrowserAtlasIndex();
+  const available = await ensureGlobalBrowserAtlasEntries(itemIds);
   if (!available) {
     return {
       total: itemIds.length,
@@ -336,19 +370,15 @@ export function getGlobalBrowserAtlasCoverageForItems(itemIds: string[]): {
 
 export function shouldUseLegacyBrowserAnimationProbe(itemId: string): boolean {
   const normalizedItemId = `${itemId ?? ""}`.trim();
-  if (!normalizedItemId || !indexAvailable) {
-    return true;
+  if (!normalizedItemId) {
+    return false;
   }
 
-  const entry = getAtlasEntryForItemId(normalizedItemId);
-  if (!entry) {
-    return true;
-  }
-
-  // Once NESQL++ has emitted a browser atlas entry, it becomes the source of truth for
-  // homepage/history animation. Re-probing legacy render contracts during fast page
-  // flips creates sprite/json request storms and can compete with the resident atlas
-  // draw path. Items missing from the global index still keep the legacy fallback.
+  // The browser item grid is now a native-NEI style atlas surface. Legacy probing
+  // fans out into per-item render-contract/sprite requests and is exactly the
+  // slow path that makes fast page flips show missing textures. Missing entries
+  // must be fixed in the NESQL++ browser-atlas export instead of hidden by an
+  // expensive frontend fallback.
   return false;
 }
 export function getGlobalBrowserAtlasEntry(itemId: string): BrowserAtlasItemEntry | null {
@@ -379,13 +409,16 @@ export function normalizeFrames(frames?: BrowserAtlasAnimatedFrame[] | null): Ar
   height: number;
 }> {
   return (frames ?? [])
-    .map((frame) => ({
-      index: Number(frame.index ?? 0),
-      x: Number(frame.x ?? 0),
-      y: Number(frame.y ?? 0),
-      width: Number(frame.width ?? 0),
-      height: Number(frame.height ?? 0),
-    }))
+    .map((frame) => {
+      const compact = Array.isArray(frame) ? frame as unknown[] : null;
+      return {
+        index: Number(compact?.[0] ?? frame.index ?? 0),
+        x: Number(compact?.[1] ?? frame.x ?? 0),
+        y: Number(compact?.[2] ?? frame.y ?? 0),
+        width: Number(compact?.[3] ?? frame.width ?? 0),
+        height: Number(compact?.[4] ?? frame.height ?? 0),
+      };
+    })
     .filter((frame) => frame.width > 0 && frame.height > 0);
 }
 
@@ -394,10 +427,13 @@ export function normalizeTimeline(
   fallbackDurationMs?: number | null,
 ): Array<{ frameIndex: number; durationMs: number }> {
   return (timeline ?? [])
-    .map((frame, index) => ({
-      frameIndex: Number(frame.frameIndex ?? frame.index ?? index),
-      durationMs: Math.max(16, Math.round(Number(frame.durationMs ?? fallbackDurationMs ?? 50))),
-    }))
+    .map((frame, index) => {
+      const compact = Array.isArray(frame) ? frame as unknown[] : null;
+      return {
+        frameIndex: Number(compact?.[0] ?? frame.frameIndex ?? frame.index ?? index),
+        durationMs: Math.max(16, Math.round(Number(compact?.[1] ?? frame.durationMs ?? fallbackDurationMs ?? 50))),
+      };
+    })
     .filter((frame) => Number.isFinite(frame.frameIndex));
 }
 

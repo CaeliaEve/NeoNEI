@@ -25,6 +25,7 @@ export interface BrowserAtlasAnimatedFrame {
   width?: number;
   height?: number;
 }
+type CompactBrowserAtlasFrame = [number, number, number?, number?, number?];
 
 export interface BrowserAtlasAnimatedPlacement {
   atlasGroup?: string | null;
@@ -68,27 +69,123 @@ export interface BrowserAtlasIndexResponse {
 
 export class BrowserAtlasIndexService {
   private cache: { mtimeMs: number; payload: BrowserAtlasIndexResponse } | null = null;
+  private itemMapCache: { mtimeMs: number; itemMap: Map<string, BrowserAtlasItemEntry>; meta: Omit<BrowserAtlasIndexResponse, 'items'> } | null = null;
 
   getIndex(): BrowserAtlasIndexResponse {
+    const { mtimeMs, itemMap, meta } = this.getItemMap();
+    const payload: BrowserAtlasIndexResponse = {
+      ...meta,
+      items: Array.from(itemMap.values()),
+    };
+    this.cache = { mtimeMs, payload };
+    return payload;
+  }
+
+  getEntries(itemIds: string[]): BrowserAtlasIndexResponse {
+    const { itemMap, meta } = this.getItemMap();
+    const items: BrowserAtlasItemEntry[] = [];
+    const seen = new Set<string>();
+    for (const rawItemId of itemIds) {
+      const itemId = String(rawItemId || '').trim();
+      if (!itemId || seen.has(itemId)) {
+        continue;
+      }
+      seen.add(itemId);
+      const entry = itemMap.get(itemId);
+      if (entry) {
+        items.push(entry);
+      }
+    }
+    return {
+      ...meta,
+      items,
+    };
+  }
+
+  private getItemMap(): { mtimeMs: number; itemMap: Map<string, BrowserAtlasItemEntry>; meta: Omit<BrowserAtlasIndexResponse, 'items'> } {
     const filePath = NESQL_BROWSER_ATLAS_INDEX_FILE;
     if (!filePath || !fs.existsSync(filePath)) {
       throw notFound('NESQL++ browser atlas index is not available. Re-export with a build that writes canonical/browser-atlas-index.json.');
     }
 
     const stat = fs.statSync(filePath);
-    if (this.cache && this.cache.mtimeMs === stat.mtimeMs) {
-      return this.cache.payload;
+    if (this.itemMapCache && this.itemMapCache.mtimeMs === stat.mtimeMs) {
+      return this.itemMapCache;
     }
 
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Partial<BrowserAtlasIndexResponse>;
-    const payload: BrowserAtlasIndexResponse = {
-      ...parsed,
-      items: Array.isArray(parsed.items)
-        ? parsed.items.filter((entry): entry is BrowserAtlasItemEntry => Boolean(entry?.itemId))
-        : [],
+    const meta: Omit<BrowserAtlasIndexResponse, 'items'> = {
+      schemaVersion: parsed.schemaVersion,
+      generatedAt: parsed.generatedAt,
+      staticAtlasManifest: parsed.staticAtlasManifest ?? null,
+      animatedAtlasManifest: parsed.animatedAtlasManifest ?? null,
+      renderIndex: parsed.renderIndex ?? null,
+      itemCount: parsed.itemCount,
+      animatedItemCount: parsed.animatedItemCount,
+      missingAtlasCount: parsed.missingAtlasCount,
     };
-    this.cache = { mtimeMs: stat.mtimeMs, payload };
-    return payload;
+    const items = Array.isArray(parsed.items)
+      ? parsed.items
+          .filter((entry): entry is BrowserAtlasItemEntry => Boolean(entry?.itemId))
+          .map((entry) => this.toCompactEntry(entry))
+      : [];
+    const itemMap = new Map<string, BrowserAtlasItemEntry>();
+    for (const item of items) {
+      itemMap.set(item.itemId, item);
+    }
+    this.itemMapCache = { mtimeMs: stat.mtimeMs, itemMap, meta };
+    this.cache = null;
+    return this.itemMapCache;
+  }
+
+  private toCompactEntry(entry: BrowserAtlasItemEntry): BrowserAtlasItemEntry {
+    const staticAtlas = entry.staticAtlas?.atlasFile
+      ? {
+        atlasFile: entry.staticAtlas.atlasFile,
+        x: entry.staticAtlas.x,
+        y: entry.staticAtlas.y,
+        width: entry.staticAtlas.width,
+        height: entry.staticAtlas.height,
+      }
+      : null;
+    const animatedAtlas = entry.animatedAtlas?.atlasFile
+      ? {
+        atlasFile: entry.animatedAtlas.atlasFile,
+        frameDurationMs: entry.animatedAtlas.frameDurationMs,
+        frameCount: entry.animatedAtlas.frameCount,
+        frames: this.toCompactFrames(entry.animatedAtlas.frames),
+        timeline: this.toCompactTimeline(entry.animatedAtlas.timeline),
+      } as unknown as BrowserAtlasAnimatedPlacement
+      : null;
+
+    return {
+      itemId: entry.itemId,
+      hasStaticAtlas: Boolean(staticAtlas),
+      hasAnimatedAtlas: Boolean(animatedAtlas),
+      staticAtlas,
+      animatedAtlas,
+    };
+  }
+
+  private toCompactFrames(frames?: BrowserAtlasAnimatedFrame[] | null): CompactBrowserAtlasFrame[] {
+    return (frames ?? [])
+      .map((frame) => [
+        Number(frame.index ?? 0),
+        Number(frame.x ?? 0),
+        Number(frame.y ?? 0),
+        Number(frame.width ?? 0),
+        Number(frame.height ?? 0),
+      ] as CompactBrowserAtlasFrame)
+      .filter((frame) => Number.isFinite(frame[0]) && Number(frame[3] ?? 0) > 0 && Number(frame[4] ?? 0) > 0);
+  }
+
+  private toCompactTimeline(frames?: BrowserAtlasAnimatedFrame[] | null): CompactBrowserAtlasFrame[] {
+    return (frames ?? [])
+      .map((frame, index) => [
+        Number(frame.frameIndex ?? frame.index ?? index),
+        Number(frame.durationMs ?? 50),
+      ] as CompactBrowserAtlasFrame)
+      .filter((frame) => Number.isFinite(frame[0]) && Number(frame[1]) > 0);
   }
 }
 
