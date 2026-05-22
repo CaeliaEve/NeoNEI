@@ -119,16 +119,19 @@ const preparedGlobalAnimations = new Map<string, PreparedGlobalAnimation>();
 let resizeObserver: ResizeObserver | null = null;
 let renderFrameHandle: number | null = null;
 let animationLoopHandle: number | null = null;
+let animationLoopTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let idleAnimationKickHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
 let atlasLoadSeq = 0;
 let animationDelayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
 let layoutRequestSeq = 0;
+let lastDrawHadAnimatedFrame = false;
 
 const gap = 4;
 const cardSize = computed(() => Math.max(28, Math.floor(props.itemSize)));
 const iconSize = computed(() => Math.max(24, Math.floor(cardSize.value * 0.9)));
 const HOMEPAGE_ANIMATION_DELAY_MS = 1400;
+const BROWSER_ANIMATION_FRAME_MS = 50;
 const columns = computed(() => {
   const width = Math.max(hostWidth.value, cardSize.value);
   return Math.max(1, Math.floor((width + gap) / (cardSize.value + gap)));
@@ -226,22 +229,32 @@ async function refreshHomeGridLayout() {
 }
 
 function startAnimationLoop() {
-  if (animationLoopHandle !== null) {
+  if (animationLoopHandle !== null || animationLoopTimer !== null) {
     return;
   }
 
   const tick = () => {
-    animationLoopHandle = requestAnimationFrame(tick);
-    draw();
+    animationLoopTimer = null;
+    animationLoopHandle = requestAnimationFrame(() => {
+      animationLoopHandle = null;
+      draw();
+      if (lastDrawHadAnimatedFrame || animationStates.size > 0) {
+        animationLoopTimer = globalThis.setTimeout(tick, BROWSER_ANIMATION_FRAME_MS);
+      }
+    });
   };
 
-  animationLoopHandle = requestAnimationFrame(tick);
+  tick();
 }
 
 function stopAnimationLoop() {
   if (animationLoopHandle !== null) {
     cancelAnimationFrame(animationLoopHandle);
     animationLoopHandle = null;
+  }
+  if (animationLoopTimer !== null) {
+    clearTimeout(animationLoopTimer);
+    animationLoopTimer = null;
   }
 }
 
@@ -700,6 +713,7 @@ function draw() {
   }
 
   itemRects.value = nextRects;
+  lastDrawHadAnimatedFrame = drewAnimatedFrame;
   webglAtlasRenderer?.draw(canvasWidth.value, canvasHeight.value, webglCommands);
   if (drewAnimatedFrame) {
     startAnimationLoop();

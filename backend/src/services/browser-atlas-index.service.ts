@@ -338,7 +338,9 @@ export class BrowserAtlasIndexService {
 
       for (const asset of assets) {
         const assetId = `${asset?.assetId ?? ''}`.trim();
-        const itemId = this.getItemIdFromAssetId(assetId);
+        const itemId = assetId.startsWith('nesqlpp:fluid/')
+          ? assetId.slice('nesqlpp:fluid/'.length)
+          : '';
         if (!itemId) {
           continue;
         }
@@ -374,15 +376,6 @@ export class BrowserAtlasIndexService {
       }
     }
     return entries;
-  }
-
-  private getItemIdFromAssetId(assetId: string): string {
-    for (const prefix of ['nesqlpp:item/', 'nesqlpp:fluid/']) {
-      if (assetId.startsWith(prefix)) {
-        return assetId.slice(prefix.length);
-      }
-    }
-    return '';
   }
 
   private getEntryWithAliases(itemMap: Map<string, BrowserAtlasItemEntry>, itemId: string): BrowserAtlasItemEntry | null {

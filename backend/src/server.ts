@@ -37,6 +37,12 @@ const ADMIN_TOKEN = process.env.NEONEI_ADMIN_TOKEN?.trim() || process.env.ADMIN_
 const ADMIN_RATE_LIMIT_WINDOW_MS = Number(process.env.NEONEI_ADMIN_RATE_LIMIT_WINDOW_MS ?? 60_000);
 const ADMIN_RATE_LIMIT_MAX = Number(process.env.NEONEI_ADMIN_RATE_LIMIT_MAX ?? 12);
 
+function isEnvEnabled(value: string | undefined): boolean {
+  return value === '1' || value?.toLowerCase() === 'true';
+}
+
+const PUBLISH_MATERIALIZE_ON_START = isEnvEnabled(process.env.NEONEI_PUBLISH_MATERIALIZE_ON_START);
+
 type AccelerationRuntimePhase =
   | 'initializing'
   | 'ready'
@@ -190,6 +196,7 @@ compileAccelerationDatabase({
     hotAtlasesGenerated: result.hotAtlasesGenerated,
     signature: result.signature,
   }));
+  process.exit(0);
 }).catch((error) => {
   console.error(error);
   process.exit(1);
@@ -227,6 +234,7 @@ const { ensurePublishPayloadsReady } = require('./dist/services/acceleration-db-
   } finally {
     manager.close();
   }
+  process.exit(0);
 })().catch((error) => {
   console.error(error);
   process.exit(1);
@@ -705,6 +713,15 @@ async function reconcileAccelerationRuntime(accelerationDbManager: ReturnType<ty
     return;
   }
 
+  if (!PUBLISH_MATERIALIZE_ON_START) {
+    logger.info('[PUBLISH_PAYLOADS] startup materialization skipped; set NEONEI_PUBLISH_MATERIALIZE_ON_START=1 to refresh publish bundles on boot');
+    setAccelerationRuntimePhase('ready', 'Acceleration runtime ready.', {
+      stale: false,
+      lastError: null,
+    });
+    return;
+  }
+
   setAccelerationRuntimePhase('materializing', 'Refreshing publish hot payloads.', {
     stale: false,
     lastError: null,
@@ -946,3 +963,4 @@ async function startServer() {
 }
 
 void startServer();
+
