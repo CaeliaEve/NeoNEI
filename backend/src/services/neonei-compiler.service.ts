@@ -1527,6 +1527,15 @@ export class NeoNeiCompilerService {
       )
     `);
 
+    const insertItemSearchFts = db.prepare(`
+      INSERT INTO items_search_fts (
+        item_id, localized_name, internal_name, mod_id, item_id_norm, search_terms,
+        pinyin_full, pinyin_acronym, aliases
+      ) VALUES (
+        @item_id, @localized_name, @internal_name, @mod_id, @item_id_norm, @search_terms,
+        @pinyin_full, @pinyin_acronym, @aliases
+      )
+    `);
     const insertItemBrowserGroup = db.prepare(`
       INSERT OR REPLACE INTO item_browser_groups (
         item_id, group_key, group_label, group_size, group_sort_order, updated_at
@@ -1662,6 +1671,7 @@ export class NeoNeiCompilerService {
     const resetTransaction = db.transaction(() => {
       db.exec('DELETE FROM items_core');
       db.exec('DELETE FROM items_search');
+      db.exec('DELETE FROM items_search_fts');
       db.exec('DELETE FROM recipes_core');
       db.exec('DELETE FROM recipe_edges');
       db.exec('DELETE FROM recipe_machine_groups');
@@ -1720,6 +1730,17 @@ export class NeoNeiCompilerService {
         family_score: 0,
       });
 
+      insertItemSearchFts.run({
+        item_id: itemId,
+        localized_name: normalizeLooseText(localizedName),
+        internal_name: normalizeCompactText(internalName),
+        mod_id: normalizeCompactText(record.modId ?? ''),
+        item_id_norm: normalizeCompactText(itemId),
+        search_terms: normalizeLooseText(record.searchTerms ?? ''),
+        pinyin_full: pinyinFields.pinyinFull,
+        pinyin_acronym: pinyinFields.pinyinAcronym,
+        aliases: aliasMetadata.aliases ?? '',
+      });
       const materializedItem = toMaterializedItemRecord(record);
       if (materializedItem) {
         itemRecords.set(materializedItem.itemId, materializedItem);

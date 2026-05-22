@@ -256,6 +256,29 @@ export class DatabaseManager {
       )
     `);
 
+    try {
+      const ftsColumns = this.db.prepare('PRAGMA table_info(items_search_fts)').all() as Array<{ name?: string }>;
+      if (ftsColumns.length > 0 && !ftsColumns.some((column) => column.name === 'mod_id')) {
+        this.db.exec('DROP TABLE items_search_fts');
+      }
+
+      this.db.exec(`
+        CREATE VIRTUAL TABLE IF NOT EXISTS items_search_fts USING fts5(
+          item_id UNINDEXED,
+          localized_name,
+          internal_name,
+          mod_id,
+          item_id_norm,
+          search_terms,
+          pinyin_full,
+          pinyin_acronym,
+          aliases,
+          tokenize = 'unicode61 remove_diacritics 2'
+        )
+      `);
+    } catch (error) {
+      console.warn('[NeoNEI] SQLite FTS5 unavailable; falling back to LIKE search indexes.', error);
+    }
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS item_browser_groups (
         item_id TEXT PRIMARY KEY,

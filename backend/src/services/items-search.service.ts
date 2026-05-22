@@ -138,6 +138,33 @@ function canUseAccelerationItems(db: Database.Database | null): db is Database.D
     return false;
   }
 }
+function canUseAccelerationSearchFts(db: Database.Database | null): db is Database.Database {
+  if (!db) return false;
+  try {
+    const ftsTable = db
+      .prepare("SELECT name FROM sqlite_master WHERE name = 'items_search_fts'")
+      .get() as { name?: string } | undefined;
+    return ftsTable?.name === 'items_search_fts';
+  } catch {
+    return false;
+  }
+}
+
+function toFtsPrefixQuery(keyword: string): string | null {
+  const tokens = keyword
+    .trim()
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}_]+/u)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  if (tokens.length === 0) {
+    return null;
+  }
+
+  return tokens.map((token) => `"${token.replace(/"/g, '""')}"*`).join(' OR ');
+}
 
 export function queryAccelerationSearch(
   db: Database.Database,
@@ -149,6 +176,46 @@ export function queryAccelerationSearch(
   if (!normalized) return [];
 
   const safeLimit = Math.min(Math.max(Number.isFinite(limit) ? limit : 100, 1), 500);
+  const ftsQuery = toFtsPrefixQuery(keyword);
+  if (ftsQuery && canUseAccelerationSearchFts(db)) {
+    try {
+      const ftsStatement = db.prepare(`
+        SELECT
+          ic.item_id,
+          ic.localized_name,
+          ic.mod_id,
+          bm25(items_search_fts) AS rank
+        FROM items_search_fts
+        INNER JOIN items_core AS ic
+          ON ic.item_id = items_search_fts.item_id
+        LEFT JOIN hot_items AS h
+          ON h.item_id = ic.item_id
+        WHERE items_search_fts MATCH @ftsQuery
+        ORDER BY
+          rank ASC,
+          COALESCE(h.search_rank, 999999) ASC,
+          COALESCE(h.recipe_rank, 0) DESC,
+          COALESCE(h.popularity_score, 0) DESC,
+          ic.localized_name COLLATE NOCASE ASC
+        LIMIT @limit
+      `);
+      const ftsRows = ftsStatement.all({
+        ftsQuery,
+        limit: safeLimit,
+      }) as AccelerationSearchRow[];
+
+      if (ftsRows.length > 0) {
+        return ftsRows.map((row) => ({
+          itemId: row.item_id,
+          localizedName: row.localized_name,
+          modId: row.mod_id,
+        }));
+      }
+    } catch {
+      // FTS5 is an acceleration path only. Keep the LIKE fallback authoritative.
+    }
+  }
+
   const statement = db.prepare(`
     SELECT
       ic.item_id,
