@@ -24,6 +24,7 @@ import { getPageAtlasService } from './services/page-atlas.service';
 import { getAutowarmPolicy } from './config/autowarm-policy';
 import { NeoNeiCompilerService, type CompilerSourceRoots } from './services/neonei-compiler.service';
 import { promoteCompiledAccelerationDatabase } from './services/acceleration-db-pipeline.service';
+import { setPublicCacheHeaders } from './utils/http-cache';
 
 const app = express();
 const parsedPort = Number(process.env.PORT);
@@ -32,6 +33,9 @@ const HOST = process.env.HOST?.trim() || '0.0.0.0';
 const PUBLIC_BASE_URL =
   process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, '') ||
   `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
+const ADMIN_TOKEN = process.env.NEONEI_ADMIN_TOKEN?.trim() || process.env.ADMIN_TOKEN?.trim() || '';
+const ADMIN_RATE_LIMIT_WINDOW_MS = Number(process.env.NEONEI_ADMIN_RATE_LIMIT_WINDOW_MS ?? 60_000);
+const ADMIN_RATE_LIMIT_MAX = Number(process.env.NEONEI_ADMIN_RATE_LIMIT_MAX ?? 12);
 
 type AccelerationRuntimePhase =
   | 'initializing'
@@ -51,6 +55,14 @@ const accelerationRuntime = {
   lastCompiledSignature: null as string | null,
   lastError: null as string | null,
 };
+let runtimeAccelerationDbManager: ReturnType<typeof getAccelerationDatabaseManager> | null = null;
+
+type AdminRateBucket = {
+  windowStartedAt: number;
+  count: number;
+};
+
+const adminRateBuckets = new Map<string, AdminRateBucket>();
 
 const ACCELERATION_SOURCE_ROOTS: CompilerSourceRoots = {
   itemsDir: SPLIT_ITEMS_DIR,
@@ -421,6 +433,14 @@ function acceptsEncoding(rawHeader: string | string[] | undefined, encoding: 'br
     .some((token) => token === encoding || token.startsWith(`${encoding};`) || token === '*');
 }
 
+function isPublishMutableArtifact(relativePath: string): boolean {
+  const normalized = relativePath.replace(/\\/g, '/').toLowerCase();
+  return normalized === 'manifest.json'
+    || normalized === 'build-report.json'
+    || normalized === 'build-report.html'
+    || normalized.endsWith('/manifest.json');
+}
+
 function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string; immutable?: boolean }) {
   const resolvedRoot = path.resolve(rootDir);
   return (req: Request, res: Response, next: NextFunction) => {
@@ -460,6 +480,17 @@ function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string; 
       if (contentEncoding) {
         res.setHeader('Content-Encoding', contentEncoding);
         res.type(path.extname(absolutePath));
+      }
+
+      if (isPublishMutableArtifact(normalizedRelativePath)) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        res.setHeader('Surrogate-Control', 'no-store');
+        return res.sendFile(responsePath, {
+          cacheControl: false,
+          lastModified: true,
+        });
       }
 
       return res.sendFile(responsePath, {
@@ -540,6 +571,50 @@ if (NESQL_CANONICAL_DIR && fs.existsSync(NESQL_CANONICAL_DIR)) {
 function isTrackedAccelerationApiRequest(req: Request): boolean {
   const routePath = `${req.originalUrl ?? req.url ?? ''}`.split('?')[0] || '';
   return routePath.startsWith('/api') && routePath !== '/api/health';
+}
+
+function getAdminRateLimitKey(req: Request): string {
+  return `${req.ip ?? req.socket.remoteAddress ?? 'unknown'}`;
+}
+
+function isAdminRateLimited(req: Request): boolean {
+  const now = Date.now();
+  const windowMs = Math.max(1_000, ADMIN_RATE_LIMIT_WINDOW_MS);
+  const maxRequests = Math.max(1, ADMIN_RATE_LIMIT_MAX);
+  const key = getAdminRateLimitKey(req);
+  const bucket = adminRateBuckets.get(key);
+  if (!bucket || now - bucket.windowStartedAt > windowMs) {
+    adminRateBuckets.set(key, { windowStartedAt: now, count: 1 });
+    return false;
+  }
+  bucket.count += 1;
+  return bucket.count > maxRequests;
+}
+
+function requireAdminToken(req: Request, res: Response): boolean {
+  if (isAdminRateLimited(req)) {
+    res.setHeader('Retry-After', String(Math.ceil(Math.max(1_000, ADMIN_RATE_LIMIT_WINDOW_MS) / 1000)));
+    res.status(429).json({ error: 'admin_rate_limited' });
+    logger.warn('[ADMIN] rate limited request', { route: req.originalUrl, ip: req.ip });
+    return false;
+  }
+
+  if (!ADMIN_TOKEN) {
+    res.status(503).json({
+      error: 'admin_token_not_configured',
+      message: 'Set NEONEI_ADMIN_TOKEN before enabling admin mutation endpoints.',
+    });
+    logger.warn('[ADMIN] rejected request because NEONEI_ADMIN_TOKEN is not configured', { route: req.originalUrl });
+    return false;
+  }
+
+  const provided = `${req.header('x-neonei-admin-token') ?? req.query.adminToken ?? ''}`;
+  if (provided !== ADMIN_TOKEN) {
+    res.status(401).json({ error: 'admin_token_required' });
+    logger.warn('[ADMIN] rejected unauthorized request', { route: req.originalUrl, ip: req.ip });
+    return false;
+  }
+  return true;
 }
 
 app.use((req, res, next) => {
@@ -680,6 +755,78 @@ app.get('/api', (_req, res) => {
   });
 });
 
+app.get('/api/openapi.json', (_req, res) => {
+  setPublicCacheHeaders(res, {
+    maxAgeSeconds: 300,
+    staleWhileRevalidateSeconds: 3600,
+    staleIfErrorSeconds: 86400,
+  });
+  res.json({
+    openapi: '3.1.0',
+    info: {
+      title: 'NeoNEI Public Runtime API',
+      version: '1.0.0',
+    },
+    paths: {
+      '/api/health': { get: { summary: 'Runtime health and acceleration status' } },
+      '/api/publish/manifest': { get: { summary: 'No-cache active publish manifest' } },
+      '/api/publish/home-bootstrap': { get: { summary: 'Fallback home bootstrap payload' } },
+      '/publish/{artifactPath}': { get: { summary: 'Immutable static publish artifacts except active manifests' } },
+      '/api/admin/acceleration/reconcile': { post: { summary: 'Token-protected rebuild/materialize trigger' } },
+      '/api/admin/runtime': { get: { summary: 'Token-protected runtime diagnostics' } },
+    },
+  });
+});
+
+app.get('/api/admin/runtime', (req, res) => {
+  if (!requireAdminToken(req, res)) {
+    return;
+  }
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    acceleration: accelerationRuntime,
+    publish: {
+      outputDir: PUBLISH_OUTPUT_DIR,
+      exists: fs.existsSync(PUBLISH_OUTPUT_DIR),
+    },
+  });
+});
+
+app.post('/api/admin/acceleration/reconcile', async (req, res) => {
+  if (!requireAdminToken(req, res)) {
+    return;
+  }
+  if (!runtimeAccelerationDbManager) {
+    res.status(503).json({ error: 'acceleration_manager_not_ready' });
+    return;
+  }
+  if (accelerationRuntime.phase === 'compiling' || accelerationRuntime.phase === 'promoting' || accelerationRuntime.blocking) {
+    res.status(409).json({
+      error: 'acceleration_reconcile_in_progress',
+      phase: accelerationRuntime.phase,
+      blocking: accelerationRuntime.blocking,
+    });
+    return;
+  }
+
+  logger.info('[ADMIN] acceleration reconcile requested', { ip: req.ip });
+  void reconcileAccelerationRuntime(runtimeAccelerationDbManager).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    setAccelerationRuntimePhase('error', 'Admin acceleration reconciliation failed.', {
+      stale: true,
+      lastError: message,
+    });
+    logger.error('[ADMIN] acceleration reconcile failed', error);
+  });
+
+  res.status(202).json({
+    status: 'accepted',
+    phase: accelerationRuntime.phase,
+    message: 'Acceleration reconciliation scheduled.',
+  });
+});
+
 app.use('/api/items', itemsRoutes);
 app.use('/api/patterns', patternsRoutes);
 app.use('/api/recipes-indexed', indexedRecipesRoutes);
@@ -708,6 +855,7 @@ async function startServer() {
     logger.info('Initializing acceleration database...');
     logger.info('Acceleration database ready');
     await accelerationDbManager.init();
+    runtimeAccelerationDbManager = accelerationDbManager;
     setAccelerationRuntimePhase('ready', 'Acceleration database opened; background reconciliation pending.', {
       stale: false,
       lastError: null,
