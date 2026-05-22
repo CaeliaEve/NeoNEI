@@ -33,6 +33,11 @@ test('publish static bundle advertises sidecar compression metadata', () => {
     true,
     'publish bundle manifest should centralize sidecar metadata in an asset map',
   );
+  assert.equal(
+    publishPayloadSource.includes('contentAddressedPath: string;'),
+    true,
+    'publish bundle asset metadata should expose immutable content-addressed URLs',
+  );
 });
 
 test('publish materializer writes both brotli and gzip sidecars', () => {
@@ -50,6 +55,39 @@ test('publish materializer writes both brotli and gzip sidecars', () => {
     materializerSource.includes('bundleManifest.compression.assets[relativePath] = {'),
     true,
     'publish materializer should capture sidecar metadata in the manifest asset map',
+  );
+  assert.equal(
+    materializerSource.includes('buildContentAddressedRelativePath'),
+    true,
+    'publish materializer should create hash-named aliases for CDN immutable caching',
+  );
+  assert.equal(
+    materializerSource.includes('contentAddressedPath: contentAddressedPublicPath'),
+    true,
+    'publish materializer should record content-addressed public paths',
+  );
+});
+
+test('publish build report verifies source contract and bundle matching', () => {
+  assert.equal(
+    materializerSource.includes('sourceSignaturePresent'),
+    true,
+    'build report should verify source signature presence',
+  );
+  assert.equal(
+    materializerSource.includes('browserLayoutPresent'),
+    true,
+    'build report should verify browser layout payload presence',
+  );
+  assert.equal(
+    materializerSource.includes('searchPackPresent'),
+    true,
+    'build report should verify search pack payload presence',
+  );
+  assert.equal(
+    materializerSource.includes('recipeBundlePresent'),
+    true,
+    'build report should verify recipe bundle payload presence',
   );
 });
 

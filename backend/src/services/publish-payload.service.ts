@@ -71,6 +71,7 @@ export interface PublishBundleCompressedVariant {
 
 export interface PublishBundleAssetMetadata {
   path: string;
+  contentAddressedPath: string;
   relativePath: string;
   contentType: string;
   sizeBytes: number;

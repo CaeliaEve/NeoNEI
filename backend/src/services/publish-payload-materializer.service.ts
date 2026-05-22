@@ -226,6 +226,13 @@ function sha256Hex(buffer: Buffer | string): string {
   return crypto.createHash('sha256').update(buffer).digest('hex');
 }
 
+function buildContentAddressedRelativePath(relativePath: string, sha256: string): string {
+  const extension = path.extname(relativePath) || '.bin';
+  const stem = path.basename(relativePath, extension).replace(/[^a-z0-9._-]+/gi, '-').slice(0, 48) || 'asset';
+  const prefix = sha256.slice(0, 2);
+  return `cas/${prefix}/${sha256}-${stem}${extension}`;
+}
+
 function classifyPublishAsset(relativePath: string): string {
   if (relativePath === 'build-report.json' || relativePath === 'build-report.html') return 'build-report';
   if (relativePath.startsWith('mods/')) return 'mods';
@@ -746,11 +753,16 @@ export class PublishPayloadMaterializerService {
     const registerCompressedAsset = (relativePath: string, absolutePath: string, publicPath: string) => {
       const sourceBuffer = fs.readFileSync(absolutePath);
       const sourceHash = sha256Hex(sourceBuffer);
+      const contentAddressedRelativePath = buildContentAddressedRelativePath(relativePath, sourceHash);
+      const contentAddressedAbsolutePath = path.join(bundleOutputDir, contentAddressedRelativePath);
+      const contentAddressedPublicPath = buildPublishBundlePublicAssetPath(basePublicPath, contentAddressedRelativePath);
+      writeBufferIfChanged(contentAddressedAbsolutePath, sourceBuffer, incrementalWriteStats);
       const compressedVariants = PUBLISH_BUNDLE_SIDECAR_VARIANTS.map((variant) => {
         const compressedBuffer = variant.compress(sourceBuffer);
         writeBufferIfChanged(`${absolutePath}${variant.extension}`, compressedBuffer, incrementalWriteStats);
+        writeBufferIfChanged(`${contentAddressedAbsolutePath}${variant.extension}`, compressedBuffer, incrementalWriteStats);
         return {
-          path: `${publicPath}${variant.extension}`,
+          path: `${contentAddressedPublicPath}${variant.extension}`,
           contentEncoding: variant.contentEncoding,
           extension: variant.extension,
           sizeBytes: compressedBuffer.byteLength,
@@ -759,6 +771,7 @@ export class PublishPayloadMaterializerService {
 
       bundleManifest.compression.assets[relativePath] = {
         path: publicPath,
+        contentAddressedPath: contentAddressedPublicPath,
         relativePath,
         contentType: inferPublishContentType(relativePath),
         sizeBytes: sourceBuffer.byteLength,
@@ -921,6 +934,7 @@ export class PublishPayloadMaterializerService {
     bundleManifest.files.homeBootstrapWindows.sort((left, right) => (left.slotSize - right.slotSize) || (left.offset - right.offset));
 
     const manifestAbsolutePath = path.join(bundleOutputDir, buildPublishBundleManifestRelativePath());
+    bundleManifest.identity = buildPublishIdentity(bundleManifest.compression.assets);
     const buildReportPaths = this.writeBuildReport(bundleOutputDir, basePublicPath, bundleManifest, rows, incrementalWriteStats);
     bundleManifest.files.buildReport = buildReportPaths.jsonPublicPath;
     bundleManifest.files.buildReportHtml = buildReportPaths.htmlPublicPath;
@@ -974,6 +988,24 @@ export class PublishPayloadMaterializerService {
     if (bundleManifest.files.browserPageWindows.length <= 0) warnings.push('Missing browser page windows.');
     if (bundleManifest.files.homeBootstrapWindows.length <= 0) warnings.push('Missing home bootstrap windows.');
     if (assetEntries.length <= 0) warnings.push('No compressed publish assets registered.');
+    const integrity = {
+      sourceSignaturePresent: Boolean(bundleManifest.sourceSignature),
+      identityPresent: Boolean(bundleManifest.identity.contentHash),
+      manifestMatchesAssets: bundleManifest.identity.assetCount === assetEntries.length
+        && bundleManifest.identity.totalBytes === totalBytes,
+      browserLayoutPresent: bundleManifest.files.browserPageWindows.length > 0
+        && bundleManifest.files.homeBootstrapWindows.length > 0,
+      searchPackPresent: Boolean(bundleManifest.files.browserSearchPack)
+        || bundleManifest.files.browserSearchShards.length > 0,
+      recipeBundlePresent: Boolean(bundleManifest.files.recipeBootstrapBasePath)
+        || Boolean(bundleManifest.files.itemRecipeBundleBasePath)
+        || Boolean(bundleManifest.files.recipeUiBundleBasePath),
+      contentAddressedAssets: assetEntries.length > 0
+        && assetEntries.every((asset) => asset.contentAddressedPath.includes(`/cas/${asset.sha256.slice(0, 2)}/`)),
+    };
+    for (const [key, value] of Object.entries(integrity)) {
+      if (!value) warnings.push(`Integrity check failed: ${key}.`);
+    }
 
     const report = {
       schemaVersion: 'neonei/publish-build-report/v1',
@@ -998,6 +1030,7 @@ export class PublishPayloadMaterializerService {
         compressionRatio: totalBytes > 0 ? Number((compressedBytes / totalBytes).toFixed(4)) : null,
       },
       incremental: { ...incrementalWriteStats },
+      integrity,
       warnings,
     };
 
@@ -1027,6 +1060,7 @@ export class PublishPayloadMaterializerService {
     files: Record<string, number>;
     bytes: { uncompressed: number; bestCompressed: number; compressionRatio: number | null };
     incremental?: IncrementalWriteStats;
+    integrity?: Record<string, boolean>;
     warnings: string[];
   }): string {
     const rows = Object.entries(report.rowCounts)
@@ -1038,6 +1072,9 @@ export class PublishPayloadMaterializerService {
       .join('');
     const incrementalRows = report.incremental
       ? `<tr><td>写入文件</td><td>${report.incremental.written}</td></tr><tr><td>跳过未变化文件</td><td>${report.incremental.skipped}</td></tr><tr><td>写入字节</td><td>${report.incremental.bytesWritten}</td></tr>` : '';
+    const integrityRows = Object.entries(report.integrity ?? {})
+      .map(([key, value]) => `<tr><td>${escapeHtml(key)}</td><td>${value ? '通过' : '失败'}</td></tr>`)
+      .join('');
     const warnings = report.warnings.length > 0
       ? report.warnings.map((warning) => `<li>${escapeHtml(warning)}</li>`).join('')
       : '<li>无警告</li>';
@@ -1069,6 +1106,7 @@ export class PublishPayloadMaterializerService {
   </section>
   <section><h2>产物数量</h2><table>${fileRows}</table></section>
   <section><h2>Payload 类型</h2><table>${rows}</table></section>
+  <section><h2>源契约匹配</h2><table>${integrityRows}</table></section>
   <section>
     <h2>体积</h2>
     <table>
