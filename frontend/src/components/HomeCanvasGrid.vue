@@ -32,6 +32,10 @@ import {
   BrowserWebglAtlasRenderer,
   type BrowserWebglAtlasDrawCommand,
 } from "../services/browserWebglAtlasRenderer";
+import {
+  computeHomeGridLayout,
+  type HomeGridLayoutCommand,
+} from "../services/homeGridLayoutWorker";
 
 type GridRect = {
   entry: BrowserGridEntry;
@@ -104,6 +108,8 @@ const hoveredPointer = ref({ x: 0, y: 0 });
 const atlasImage = ref<HTMLImageElement | null>(null);
 const atlasLoadError = ref(false);
 const allowFallbackBeforeAtlas = ref(false);
+const layoutCommands = ref<HomeGridLayoutCommand[] | null>(null);
+const activeLayoutKey = ref("");
 
 const staticImages = new Map<string, HTMLImageElement>();
 const pendingStaticImages = new Map<string, Promise<HTMLImageElement | null>>();
@@ -120,6 +126,7 @@ let globalAtlasWarmStarted = false;
 let atlasLoadSeq = 0;
 let animationDelayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
+let layoutRequestSeq = 0;
 
 const gap = 4;
 const cardSize = computed(() => Math.max(28, Math.floor(props.itemSize)));
@@ -132,6 +139,14 @@ const columns = computed(() => {
 const rows = computed(() => Math.max(1, Math.ceil(props.entries.length / columns.value)));
 const canvasWidth = computed(() => Math.max(columns.value * (cardSize.value + gap) - gap, cardSize.value));
 const canvasHeight = computed(() => Math.max(rows.value * (cardSize.value + gap) - gap, cardSize.value));
+const layoutKey = computed(() => [
+  props.entries.map((entry) => entry.key).join("|"),
+  columns.value,
+  cardSize.value,
+  iconSize.value,
+  canvasWidth.value,
+  canvasHeight.value,
+].join("::"));
 const atlasReady = computed(() => Boolean(props.atlas?.atlasUrl && atlasImage.value && !atlasLoadError.value));
 const hasAtlasSource = computed(
   () => props.preferAtlas && (props.atlas === undefined || Boolean(props.atlas?.atlasUrl)),
@@ -183,6 +198,34 @@ function scheduleRender() {
     renderFrameHandle = null;
     draw();
   });
+}
+
+async function refreshHomeGridLayout() {
+  const requestSeq = ++layoutRequestSeq;
+  const requestedLayoutKey = layoutKey.value;
+  const result = await computeHomeGridLayout({
+    entries: props.entries,
+    columns: columns.value,
+    cardSize: cardSize.value,
+    gap,
+    iconSize: iconSize.value,
+    canvasWidth: canvasWidth.value,
+    canvasHeight: canvasHeight.value,
+    layoutKey: requestedLayoutKey,
+  }).catch(() => null);
+
+  if (!result || requestSeq !== layoutRequestSeq || result.layoutKey !== layoutKey.value) {
+    return;
+  }
+
+  layoutCommands.value = result.drawCommands;
+  activeLayoutKey.value = result.layoutKey;
+  if (result.itemIds.length > 0) {
+    void warmGlobalBrowserAtlasForItems(result.itemIds).finally(() => {
+      scheduleRender();
+    });
+  }
+  scheduleRender();
 }
 
 function startAnimationLoop() {
@@ -545,17 +588,24 @@ function draw() {
   // like textures are missing. Canvas2D still uses the global atlas and avoids
   // per-item PNG loads, so it preserves the NEI-style fast path safely.
   const canUseWebglAtlas = false;
+  const activeCommands = activeLayoutKey.value === layoutKey.value ? layoutCommands.value : null;
+  const commandCount = activeCommands?.length ?? props.entries.length;
 
-  for (let index = 0; index < props.entries.length; index += 1) {
-    const entry = props.entries[index];
+  for (let index = 0; index < commandCount; index += 1) {
+    const command = activeCommands?.[index] ?? null;
+    const entryIndex = command?.entryIndex ?? index;
+    const entry = props.entries[entryIndex];
+    if (!entry) {
+      continue;
+    }
     const col = index % columns.value;
     const row = Math.floor(index / columns.value);
     const rect: GridRect = {
       entry,
       item: getItemForEntry(entry),
-      x: col * (cardSize.value + gap),
-      y: row * (cardSize.value + gap),
-      size: cardSize.value,
+      x: command?.x ?? col * (cardSize.value + gap),
+      y: command?.y ?? row * (cardSize.value + gap),
+      size: command?.size ?? cardSize.value,
     };
     nextRects.push(rect);
     drawSlotChrome(ctx, rect, hoveredRect.value?.entry.key === entry.key);
@@ -1115,6 +1165,16 @@ watch(
   () => {
     syncAtlasFallbackGate();
     void loadAtlas();
+  },
+  { immediate: true },
+);
+
+watch(
+  () => layoutKey.value,
+  () => {
+    layoutCommands.value = null;
+    activeLayoutKey.value = "";
+    void refreshHomeGridLayout();
   },
   { immediate: true },
 );
