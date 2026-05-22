@@ -732,11 +732,15 @@ async function loadAtlas() {
       const globalCoverage = await inspectGlobalBrowserAtlasCoverageForItems(itemIds).catch(() => null);
       if (sequence !== atlasLoadSeq) return;
       if (globalCoverage && globalCoverage.total > 0 && globalCoverage.missingCount === 0) {
-        await warmGlobalBrowserAtlasForItemsDetailed(itemIds).catch(() => null);
-        if (sequence !== atlasLoadSeq) return;
+        // Do not block the current page on large resident-atlas image downloads.
+        // Fast NEI-style jumps need an immediate drawable path; the small page
+        // atlas can paint first while the global atlas warms in the background.
         allowFallbackBeforeAtlas.value = true;
-        scheduleRender();
-        return;
+        void warmGlobalBrowserAtlasForItemsDetailed(itemIds).finally(() => {
+          if (sequence === atlasLoadSeq) {
+            scheduleRender();
+          }
+        });
       }
     }
   }

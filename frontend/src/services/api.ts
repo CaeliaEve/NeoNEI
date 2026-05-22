@@ -20,6 +20,12 @@ export {
 
 const BATCH_SIZE = 800;
 
+function getNow(): number {
+  return typeof performance !== 'undefined' && typeof performance.now === 'function'
+    ? performance.now()
+    : Date.now();
+}
+
 const itemDetailCache = new Map<string, Item>();
 const indexedCraftingCache = new Map<string, indexedRecipe[]>();
 const indexedUsageCache = new Map<string, indexedRecipe[]>();
@@ -70,10 +76,6 @@ const CACHE_LIMITS = {
 } as const;
 
 function shouldPreferLiveRecipeBootstrap(): boolean {
-  if (import.meta.env.DEV) {
-    return true;
-  }
-
   if (import.meta.env.VITE_PREFER_LIVE_RECIPE_BOOTSTRAP === '1') {
     return true;
   }
@@ -94,8 +96,10 @@ function shouldPreferLiveRecipeBootstrap(): boolean {
     // Ignore storage access failures and fall back to hostname-based detection.
   }
 
-  const hostname = `${window.location.hostname ?? ''}`.trim().toLowerCase();
-  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+  // Keep the published/static runtime as the default even during local development.
+  // NeoNEI's target browsing feel is closer to in-game NEI when recipe bootstrap
+  // reads hit the materialized publish payloads instead of live SQLite routes.
+  return false;
 }
 
 const PREFER_LIVE_RECIPE_BOOTSTRAP = shouldPreferLiveRecipeBootstrap();
@@ -2642,6 +2646,18 @@ export const api = {
         }
 
         const manifest = await api.getPublishManifest();
+        const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap');
+        if (staticPath) {
+          try {
+            const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
+            setCacheWithLimit(recipeBootstrapCache, itemId, published, CACHE_LIMITS.recipeBootstrap);
+            persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), published);
+            markRecipeBootstrapResolved(itemId, 'legacy-static-bootstrap', startedAt, published);
+            return published;
+          } catch {
+            // Fall back to the API route when the static publish bundle is unavailable.
+          }
+        }
         const itemRecipeBundlePath = resolvePublishedItemRecipeBundlePath(manifest, itemId);
         if (itemRecipeBundlePath) {
           try {
@@ -2654,19 +2670,7 @@ export const api = {
               return bundledBootstrap;
             }
           } catch {
-            // Fall back to the legacy static bootstrap/API route when the item-centric bundle is unavailable.
-          }
-        }
-        const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap');
-        if (staticPath) {
-          try {
-            const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
-            setCacheWithLimit(recipeBootstrapCache, itemId, published, CACHE_LIMITS.recipeBootstrap);
-            persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), published);
-            markRecipeBootstrapResolved(itemId, 'legacy-static-bootstrap', startedAt, published);
-            return published;
-          } catch {
-            // Fall back to the API route when the static publish bundle is unavailable.
+            // Fall back to the API route when the item-centric bundle is unavailable.
           }
         }
       }

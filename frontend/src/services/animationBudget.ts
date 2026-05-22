@@ -286,6 +286,14 @@ const getPreparedFrameCacheKey = (baseUrl: string, renderAssetRef?: string | nul
   return `${renderAssetRef?.trim() || baseUrl}`;
 };
 
+function getPrimedRenderHint(renderAssetRef?: string | null): NonNullable<Item['renderHint']> | null | undefined {
+  const assetId = `${renderAssetRef ?? ''}`.trim();
+  if (!assetId) {
+    return undefined;
+  }
+  return primedRenderHintCache.get(assetId);
+}
+
 const buildAnimatedAtlasFrames = async (
   atlasEntry: AnimatedAtlasAssetEntry,
 ): Promise<PreparedAnimationFrame[]> => {
@@ -405,15 +413,36 @@ const resolvePreparedAnimationFrames = async (
   const request = (async () => {
     const hasAnimation = await probeAnimationSupport(baseUrl, renderAssetRef);
     let frames: PreparedAnimationFrame[] = [];
+    const primedRenderHint = getPrimedRenderHint(renderAssetRef);
+    const shouldTryCapturedAtlasFirst = primedRenderHint
+      ? primedRenderHint.prefersCapturedAtlas === true && primedRenderHint.prefersNativeSprite !== true
+      : false;
+    const shouldTryNativeSpriteFirst = primedRenderHint
+      ? primedRenderHint.prefersNativeSprite === true || primedRenderHint.playbackHint === 'native_sprite'
+      : true;
 
-    if (hasAnimation && renderAssetRef) {
+    if (hasAnimation && renderAssetRef && shouldTryCapturedAtlasFirst) {
       const animatedAtlasEntry = await fetchAnimatedAtlasEntry(renderAssetRef);
       if (animatedAtlasEntry && animatedAtlasEntry.frames.length > 0) {
         frames = await buildAnimatedAtlasFrames(animatedAtlasEntry);
       }
     }
 
-    if (frames.length === 0 && hasAnimation) {
+    if (frames.length === 0 && hasAnimation && shouldTryNativeSpriteFirst) {
+      const spriteMeta = await fetchNativeSpriteMetadata(baseUrl);
+      if (spriteMeta) {
+        frames = await buildNativeSpriteFrames(baseUrl, spriteMeta);
+      }
+    }
+
+    if (frames.length === 0 && hasAnimation && renderAssetRef && !shouldTryCapturedAtlasFirst) {
+      const animatedAtlasEntry = await fetchAnimatedAtlasEntry(renderAssetRef);
+      if (animatedAtlasEntry && animatedAtlasEntry.frames.length > 0) {
+        frames = await buildAnimatedAtlasFrames(animatedAtlasEntry);
+      }
+    }
+
+    if (frames.length === 0 && hasAnimation && !shouldTryNativeSpriteFirst) {
       const spriteMeta = await fetchNativeSpriteMetadata(baseUrl);
       if (spriteMeta) {
         frames = await buildNativeSpriteFrames(baseUrl, spriteMeta);
@@ -613,18 +642,10 @@ export const probeAnimationSupport = async (baseUrl: string, renderAssetRef?: st
   }
 
   const request = (async () => {
-    const primedRenderHint = renderAssetRef ? primedRenderHintCache.get(renderAssetRef) : undefined;
+    const primedRenderHint = getPrimedRenderHint(renderAssetRef);
     if (primedRenderHint) {
       animationProbeCache.set(baseUrl, Boolean(primedRenderHint.hasAnimation));
       return Boolean(primedRenderHint.hasAnimation);
-    }
-
-    if (renderAssetRef) {
-      const atlasEntry = await fetchAnimatedAtlasEntry(renderAssetRef);
-      if (atlasEntry && atlasEntry.frames.length > 0) {
-        animationProbeCache.set(baseUrl, true);
-        return true;
-      }
     }
 
     const spriteMetadata = await fetchNativeSpriteMetadata(baseUrl);
@@ -635,6 +656,14 @@ export const probeAnimationSupport = async (baseUrl: string, renderAssetRef?: st
     if (spriteMetadata?.animated) {
       animationProbeCache.set(baseUrl, true);
       return true;
+    }
+
+    if (renderAssetRef) {
+      const atlasEntry = await fetchAnimatedAtlasEntry(renderAssetRef);
+      if (atlasEntry && atlasEntry.frames.length > 0) {
+        animationProbeCache.set(baseUrl, true);
+        return true;
+      }
     }
 
     const renderContract = renderAssetRef ? await fetchRenderContractAsset(renderAssetRef) : null;
