@@ -1871,6 +1871,7 @@ const saveSettings = () => {
 .homepage-recipe-scale-shell :deep(.botania-rune-altar-ui),
 .homepage-recipe-scale-shell :deep(.botania-terra-plate-ui),
 .homepage-recipe-scale-shell :deep(.botania-pool-ui),
+.homepage-recipe-scale-shell :deep(.mana-pool-ui),
 .homepage-recipe-scale-shell :deep(.botania-elven-trade-ui),
 .homepage-recipe-scale-shell :deep(.furnace-ui),
 .homepage-recipe-scale-shell :deep(.avaritia-extreme-ui),
