@@ -6,6 +6,7 @@ import {
 } from "./api";
 import { resolveCanonicalRelativePath } from "./api/images";
 import { loadImageAsset } from "./animationBudget";
+import { markPerfEvent } from "./perfMarks";
 
 export type { BrowserAtlasItemEntry } from "./api";
 
@@ -19,9 +20,12 @@ const itemEntries = new Map<string, BrowserAtlasItemEntry>();
 const itemEntryAliases = new Map<string, BrowserAtlasItemEntry>();
 const atlasImages = new Map<string, AtlasImageState>();
 let indexLoaded = false;
+let fullIndexLoaded = false;
 let indexLoadPromise: Promise<boolean> | null = null;
 let indexAvailable = true;
 let atlasImageCacheVersion = "0";
+let allAtlasWarmPromise: Promise<boolean> | null = null;
+let allAtlasWarmVersion = "";
 
 function normalizeAtlasFile(atlasFile?: string | null): string | null {
   const normalized = `${atlasFile ?? ""}`.trim().replace(/\\/g, "/").replace(/^\/+/, "");
@@ -125,7 +129,7 @@ async function loadAtlasImage(atlasFile?: string | null): Promise<HTMLImageEleme
 }
 
 export async function ensureGlobalBrowserAtlasIndex(): Promise<boolean> {
-  if (indexLoaded) {
+  if (fullIndexLoaded) {
     return indexAvailable;
   }
   if (indexLoadPromise) {
@@ -141,11 +145,13 @@ export async function ensureGlobalBrowserAtlasIndex(): Promise<boolean> {
       mergeAtlasEntries(payload?.items ?? []);
       indexAvailable = itemEntries.size > 0;
       indexLoaded = true;
+      fullIndexLoaded = true;
       return indexAvailable;
     })
     .catch(() => {
       indexAvailable = false;
       indexLoaded = true;
+      fullIndexLoaded = true;
       return false;
     })
     .finally(() => {
@@ -164,6 +170,8 @@ function updateAtlasCacheVersion(payload?: { generatedAt?: number; itemCount?: n
   if (nextVersion !== atlasImageCacheVersion) {
     atlasImageCacheVersion = nextVersion;
     atlasImages.clear();
+    allAtlasWarmPromise = null;
+    allAtlasWarmVersion = "";
   }
 }
 
@@ -198,6 +206,10 @@ async function ensureGlobalBrowserAtlasEntries(itemIds: string[]): Promise<boole
   updateAtlasCacheVersion(payload);
   mergeAtlasEntries(payload.items ?? []);
   indexLoaded = true;
+  // Partial entry hydration must not mark the full browser atlas index as
+  // loaded. The NEI-fast path relies on warmAllGlobalBrowserAtlases() fetching
+  // every atlas shard once; treating a one-page POST response as the full index
+  // made fast page flips wait for textures on first encounter.
   indexAvailable = true;
   return true;
 }
@@ -292,9 +304,16 @@ export async function warmGlobalBrowserAtlasForItemsDetailed(itemIds: string[]):
 export async function warmAllGlobalBrowserAtlases(
   onProgress?: (processed: number, total: number) => void,
 ): Promise<boolean> {
+  if (allAtlasWarmPromise) {
+    return allAtlasWarmPromise;
+  }
+
   const available = await ensureGlobalBrowserAtlasIndex();
   if (!available) {
     return false;
+  }
+  if (allAtlasWarmPromise) {
+    return allAtlasWarmPromise;
   }
 
   const atlasFiles = new Set<string>();
@@ -306,14 +325,38 @@ export async function warmAllGlobalBrowserAtlases(
   }
 
   const files = Array.from(atlasFiles);
+  if (
+    allAtlasWarmVersion === atlasImageCacheVersion
+    && files.length > 0
+    && files.every((atlasFile) => getAtlasImageState(getAtlasImageCacheKey(atlasFile)).image)
+  ) {
+    onProgress?.(files.length, files.length);
+    return true;
+  }
+
   let processed = 0;
   onProgress?.(processed, files.length);
-  await runConcurrent(files, 4, async (atlasFile) => {
-    await loadAtlasImage(atlasFile);
-    processed += 1;
-    onProgress?.(processed, files.length);
+  markPerfEvent("browser-atlas-resident-warm-start", {
+    itemCount: itemEntries.size,
+    atlasFileCount: files.length,
   });
-  return files.length > 0;
+  allAtlasWarmPromise = (async () => {
+    await runConcurrent(files, 4, async (atlasFile) => {
+      await loadAtlasImage(atlasFile);
+      processed += 1;
+      onProgress?.(processed, files.length);
+    });
+    allAtlasWarmVersion = atlasImageCacheVersion;
+    markPerfEvent("browser-atlas-resident-warm-complete", {
+      itemCount: itemEntries.size,
+      atlasFileCount: files.length,
+      loadedImageCount: getLoadedGlobalAtlasImages().length,
+    });
+    return files.length > 0;
+  })().finally(() => {
+    allAtlasWarmPromise = null;
+  });
+  return allAtlasWarmPromise;
 }
 
 export function getGlobalBrowserAtlasCoverageForItems(itemIds: string[]): {
@@ -391,6 +434,16 @@ export function getLoadedGlobalAtlasImage(atlasFile?: string | null): HTMLImageE
     return null;
   }
   return atlasImages.get(getAtlasImageCacheKey(normalized))?.image ?? null;
+}
+
+export function getLoadedGlobalAtlasImages(): HTMLImageElement[] {
+  const images: HTMLImageElement[] = [];
+  for (const state of atlasImages.values()) {
+    if (state.image) {
+      images.push(state.image);
+    }
+  }
+  return images;
 }
 
 export function hasGlobalBrowserAtlas(): boolean {

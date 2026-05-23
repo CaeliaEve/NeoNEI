@@ -134,6 +134,19 @@ export class BrowserWebglAtlasRenderer {
     return this.maxTextureSize > 0 && width <= this.maxTextureSize && height <= this.maxTextureSize;
   }
 
+  warmImages(images: HTMLImageElement[]): number {
+    let warmed = 0;
+    for (const image of images) {
+      if (!this.canDrawImage(image)) {
+        continue;
+      }
+      if (this.ensureTexture(image)) {
+        warmed += 1;
+      }
+    }
+    return warmed;
+  }
+
   draw(width: number, height: number, commands: BrowserWebglAtlasDrawCommand[]) {
     const gl = this.gl;
     const canvas = gl.canvas as HTMLCanvasElement;

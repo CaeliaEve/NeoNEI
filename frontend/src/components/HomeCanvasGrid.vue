@@ -16,12 +16,14 @@ import {
 } from "../services/animationBudget";
 import {
   getGlobalBrowserAtlasEntry,
+  getLoadedGlobalAtlasImages,
   getLoadedGlobalAtlasImage,
   getStaticPlacement,
   hasGlobalBrowserAtlas,
   shouldUseLegacyBrowserAnimationProbe,
   normalizeFrames,
   normalizeTimeline,
+  warmAllGlobalBrowserAtlases,
   warmGlobalBrowserAtlasForItemsDetailed,
   type BrowserAtlasItemEntry,
 } from "../services/globalBrowserAtlas";
@@ -124,9 +126,11 @@ let idleAnimationKickHandle: ReturnType<typeof globalThis.setTimeout> | null = n
 let atlasLoadSeq = 0;
 let animationDelayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let globalAtlasWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+let globalAtlasTextureWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
 let layoutRequestSeq = 0;
 let lastDrawHadAnimatedFrame = false;
+let globalAtlasResidentPromise: Promise<void> | null = null;
 
 const gap = 4;
 const cardSize = computed(() => Math.max(28, Math.floor(props.itemSize)));
@@ -253,6 +257,40 @@ function stopAnimationLoop() {
     animationLoopTimer = null;
   }
   clearAnimationOverlay();
+}
+
+function scheduleGlobalAtlasTextureWarm(delayMs = 0) {
+  if (!webglAtlasRenderer || !hasGlobalBrowserAtlas()) {
+    return;
+  }
+  if (globalAtlasTextureWarmTimer !== null) {
+    clearTimeout(globalAtlasTextureWarmTimer);
+    globalAtlasTextureWarmTimer = null;
+  }
+  globalAtlasTextureWarmTimer = globalThis.setTimeout(() => {
+    globalAtlasTextureWarmTimer = null;
+    const images = getLoadedGlobalAtlasImages();
+    if (images.length > 0) {
+      webglAtlasRenderer?.warmImages(images);
+    }
+  }, delayMs);
+}
+
+function ensureGlobalAtlasResident() {
+  if (!props.preferAtlas || !hasGlobalBrowserAtlas()) {
+    return;
+  }
+  if (!globalAtlasResidentPromise) {
+    globalAtlasResidentPromise = warmAllGlobalBrowserAtlases()
+      .then(() => {
+        scheduleGlobalAtlasTextureWarm(0);
+      })
+      .catch(() => undefined);
+  } else {
+    void globalAtlasResidentPromise.then(() => {
+      scheduleGlobalAtlasTextureWarm(0);
+    });
+  }
 }
 
 function getItemForEntry(entry: BrowserGridEntry): Item {
@@ -1353,6 +1391,7 @@ onMounted(() => {
   }
   // WebGL overlay stays disabled until it can present every atlas shard reliably.
   window.addEventListener("resize", updateHostWidth, { passive: true });
+  ensureGlobalAtlasResident();
   scheduleRender();
 });
 
@@ -1376,6 +1415,10 @@ onUnmounted(() => {
   if (globalAtlasWarmTimer !== null) {
     clearTimeout(globalAtlasWarmTimer);
     globalAtlasWarmTimer = null;
+  }
+  if (globalAtlasTextureWarmTimer !== null) {
+    clearTimeout(globalAtlasTextureWarmTimer);
+    globalAtlasTextureWarmTimer = null;
   }
   webglAtlasRenderer?.dispose();
   webglAtlasRenderer = null;

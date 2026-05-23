@@ -75,6 +75,7 @@ let browserCatalogWarmTimer: ReturnType<typeof setTimeout> | null = null;
 let browserGroupWarmTimer: ReturnType<typeof setTimeout> | null = null;
 let nativeBrowserWarmTimer: ReturnType<typeof setTimeout> | null = null;
 const nativeBrowserWarmScopes = new Set<string>();
+const nativeBrowserWarmPromises = new Map<string, Promise<void>>();
 
 function setSharedBrowserPageCache(cacheKey: string, page: CachedBrowserPage): void {
   if (sharedPageCache.has(cacheKey)) {
@@ -302,17 +303,61 @@ export function useItemBrowser(
     }, 60);
   };
 
+  const buildNativeBrowserWarmKey = () => `${getActiveBrowserScope() ?? 'all'}::${pageSize.value}::${itemSize.value}`;
+
+  const runNativeBrowserRuntimeWarm = async (warmKey: string, scope: string) => {
+    const startedAt = performance.now();
+    await Promise.allSettled([
+      api.getBrowserDefaultCatalog({ modId: getActiveBrowserScope() }),
+      hasGlobalBrowserAtlas()
+        ? warmAllGlobalBrowserAtlases()
+        : Promise.resolve(false),
+    ]).then((results) => {
+      markPerfEvent('browser-native-runtime-warm', {
+        scope,
+        durationMs: Math.round(performance.now() - startedAt),
+        catalog: results[0]?.status ?? 'unknown',
+        atlas: results[1]?.status ?? 'unknown',
+      });
+    }).catch(() => undefined);
+    nativeBrowserWarmScopes.add(warmKey);
+  };
+
+  const ensureNativeBrowserRuntimeReady = async () => {
+    if (hasActiveSearch()) {
+      return;
+    }
+
+    const scope = getActiveBrowserScope() ?? 'all';
+    const warmKey = buildNativeBrowserWarmKey();
+    if (nativeBrowserWarmScopes.has(warmKey)) {
+      return;
+    }
+
+    const existing = nativeBrowserWarmPromises.get(warmKey);
+    if (existing) {
+      await existing;
+      return;
+    }
+
+    const promise = runNativeBrowserRuntimeWarm(warmKey, scope)
+      .finally(() => {
+        nativeBrowserWarmPromises.delete(warmKey);
+      });
+    nativeBrowserWarmPromises.set(warmKey, promise);
+    await promise;
+  };
+
   const warmNativeBrowserRuntime = () => {
     if (hasActiveSearch()) {
       return;
     }
 
     const scope = getActiveBrowserScope() ?? 'all';
-    const warmKey = `${scope}::${pageSize.value}::${itemSize.value}`;
+    const warmKey = buildNativeBrowserWarmKey();
     if (nativeBrowserWarmScopes.has(warmKey)) {
       return;
     }
-    nativeBrowserWarmScopes.add(warmKey);
 
     if (nativeBrowserWarmTimer !== null) {
       clearTimeout(nativeBrowserWarmTimer);
@@ -321,20 +366,7 @@ export function useItemBrowser(
 
     nativeBrowserWarmTimer = setTimeout(() => {
       nativeBrowserWarmTimer = null;
-      const startedAt = performance.now();
-      void Promise.allSettled([
-        api.getBrowserDefaultCatalog({ modId: getActiveBrowserScope() }),
-        hasGlobalBrowserAtlas()
-          ? warmAllGlobalBrowserAtlases()
-          : Promise.resolve(false),
-      ]).then((results) => {
-        markPerfEvent('browser-native-runtime-warm', {
-          scope,
-          durationMs: Math.round(performance.now() - startedAt),
-          catalog: results[0]?.status ?? 'unknown',
-          atlas: results[1]?.status ?? 'unknown',
-        });
-      }).catch(() => undefined);
+      void ensureNativeBrowserRuntimeReady();
     }, 90);
   };
 
@@ -1300,8 +1332,12 @@ export function useItemBrowser(
     try {
       const requestParams = buildRequestParams(currentPage.value);
       const cacheKey = buildPageCacheKey(requestParams);
+      const nativeWarmPromise = hasActiveSearch()
+        ? Promise.resolve()
+        : ensureNativeBrowserRuntimeReady();
       const cached = pageCache.get(cacheKey);
       if (cached) {
+        await nativeWarmPromise;
         applyBrowserResponse(cached, requestId, cacheKey);
         markInitialHomeBootstrapDone('cache');
         try {
@@ -1321,6 +1357,7 @@ export function useItemBrowser(
         : null;
 
       if (persistent) {
+        await nativeWarmPromise;
         setSharedBrowserPageCache(cacheKey, persistent.page);
         applyBrowserResponse(persistent.page, requestId, cacheKey);
         markInitialHomeBootstrapDone('persistent-cache');
@@ -1355,6 +1392,7 @@ export function useItemBrowser(
           slotSize: requestParams.slotSize,
           modId: requestParams.modId,
         });
+        await nativeWarmPromise;
         applyHomeBootstrapResponse(response, requestParams, requestId);
         return;
       }
@@ -1363,6 +1401,7 @@ export function useItemBrowser(
       const normalized = hasActiveSearch()
         ? await loadSearchPage(requestParams)
         : await loadDefaultPage(requestParams, { signaturePromise });
+      await nativeWarmPromise;
 
       const normalizedCacheKey = buildPageCacheKey({
         ...requestParams,

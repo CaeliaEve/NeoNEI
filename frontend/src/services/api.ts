@@ -2555,8 +2555,12 @@ export const api = {
     }
     browserAtlasIndexInFlight = (async () => {
       try {
-        const response = await http.get('/render-contract/browser-atlas-index');
-        browserAtlasIndexCache = response.data;
+        const response = await http.get('/render-contract/browser-atlas-index', {
+          params: { _runtime: Date.now() },
+          headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
+        });
+        const payload = response.data;
+        browserAtlasIndexCache = payload && Array.isArray(payload.items) ? payload : null;
         return browserAtlasIndexCache;
       } catch (error) {
         if (isHttpNotFoundError(error)) {
