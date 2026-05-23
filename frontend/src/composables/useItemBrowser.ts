@@ -574,6 +574,69 @@ export function useItemBrowser(
     return { cacheKey, page: attachCachedBrowserByIdsPresentation(params, page) };
   };
 
+  const tryProjectUnexpandedPageFromLocalCatalog = (
+    params: BrowserPageRequestParams,
+  ): { cacheKey: string; page: CachedBrowserPage } | null => {
+    if (params.expandedGroups.length > 0) {
+      return null;
+    }
+
+    const normalizedSearch = `${params.search ?? ''}`.trim();
+    if (normalizedSearch && !isSearchLocalProjectionEligible({ search: normalizedSearch })) {
+      return null;
+    }
+
+    const catalog = normalizedSearch
+      ? api.peekBrowserSearchCatalog(normalizedSearch, params.modId)
+      : api.peekBrowserDefaultCatalog(params.modId);
+    if (!catalog?.data?.length) {
+      return null;
+    }
+
+    const catalogEntries = catalog.data as BrowserDefaultCatalogEntry[];
+    const page = buildProjectedBrowserPage(catalogEntries, params, new Map<string, Item[]>());
+    const cacheKey = buildPageCacheKey({
+      ...params,
+      page: page.page,
+    });
+    return { cacheKey, page };
+  };
+
+  const tryLoadUnexpandedPageProjection = async (
+    params: BrowserPageRequestParams,
+  ): Promise<{ cacheKey: string; page: CachedBrowserPage } | null> => {
+    if (params.expandedGroups.length > 0) {
+      return null;
+    }
+
+    const normalizedSearch = `${params.search ?? ''}`.trim();
+    if (normalizedSearch && !isSearchLocalProjectionEligible({ search: normalizedSearch })) {
+      return null;
+    }
+
+    const catalog = normalizedSearch
+      ? await api.getBrowserSearchCatalog({
+        search: normalizedSearch,
+        modId: params.modId,
+      })
+      : await api.getBrowserDefaultCatalog({
+        modId: params.modId,
+      });
+    const catalogEntries = catalog.data as BrowserDefaultCatalogEntry[];
+    if (catalogEntries.length <= 0) {
+      return null;
+    }
+
+    const page = buildProjectedBrowserPage(catalogEntries, params, new Map<string, Item[]>());
+    return {
+      cacheKey: buildPageCacheKey({
+        ...params,
+        page: page.page,
+      }),
+      page,
+    };
+  };
+
   const tryLoadExpandedProjection = async (
     params: BrowserPageRequestParams,
   ): Promise<{ cacheKey: string; page: CachedBrowserPage } | null> => {
@@ -1215,6 +1278,24 @@ export function useItemBrowser(
       return;
     }
 
+    const localUnexpandedProjection = tryProjectUnexpandedPageFromLocalCatalog(requestParams);
+    if (localUnexpandedProjection) {
+      if (hadVisibleEntries) {
+        loading.value = false;
+        transitioning.value = true;
+        void waitForBrowserPagePresentation(localUnexpandedProjection.cacheKey, localUnexpandedProjection.page, 0);
+      } else {
+        loading.value = false;
+        transitioning.value = false;
+      }
+      setSharedBrowserPageCache(localUnexpandedProjection.cacheKey, localUnexpandedProjection.page);
+      applyBrowserResponse(localUnexpandedProjection.page, requestId, localUnexpandedProjection.cacheKey);
+      if (requestId === loadItemsRequestId) {
+        transitioning.value = false;
+      }
+      return;
+    }
+
     const localProjection = tryProjectExpandedGroupsFromLocalCaches(requestParams);
     if (localProjection) {
       if (hadVisibleEntries) {
@@ -1264,6 +1345,16 @@ export function useItemBrowser(
           expandedProjection.page,
           requestId,
         );
+        return;
+      }
+
+      const unexpandedProjection = await tryLoadUnexpandedPageProjection(requestParams);
+      if (unexpandedProjection) {
+        setSharedBrowserPageCache(unexpandedProjection.cacheKey, unexpandedProjection.page);
+        if (hadVisibleEntries) {
+          void waitForBrowserPagePresentation(unexpandedProjection.cacheKey, unexpandedProjection.page, 0);
+        }
+        applyBrowserResponse(unexpandedProjection.page, requestId, unexpandedProjection.cacheKey);
         return;
       }
 
