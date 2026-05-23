@@ -3,6 +3,7 @@ import {
   NESQL_ANIMATED_ATLAS_MANIFEST_FILE,
   NESQL_ATLAS_MANIFEST_FILE,
   NESQL_BROWSER_ATLAS_INDEX_FILE,
+  NESQL_BROWSER_LAYOUT_INDEX_FILE,
 } from '../config/runtime-paths';
 import { notFound } from '../utils/http';
 
@@ -68,7 +69,16 @@ export interface BrowserAtlasIndexResponse {
   itemCount?: number;
   animatedItemCount?: number;
   missingAtlasCount?: number;
+  layoutCoverage?: BrowserAtlasLayoutCoverage;
   items: BrowserAtlasItemEntry[];
+}
+
+export interface BrowserAtlasLayoutCoverage {
+  layoutItemCount: number;
+  atlasItemCount: number;
+  coveredLayoutItemCount: number;
+  missingLayoutItemCount: number;
+  missingLayoutItemIds: string[];
 }
 
 interface AnimatedAtlasManifestAsset {
@@ -198,9 +208,53 @@ export class BrowserAtlasIndexService {
         itemMap.set(itemId, item);
       }
     }
+    meta.layoutCoverage = this.computeLayoutCoverage(itemMap);
     this.itemMapCache = { mtimeMs: stat.mtimeMs, itemMap, meta };
     this.cache = null;
     return this.itemMapCache;
+  }
+
+  private computeLayoutCoverage(itemMap: Map<string, BrowserAtlasItemEntry>): BrowserAtlasLayoutCoverage | undefined {
+    if (!NESQL_BROWSER_LAYOUT_INDEX_FILE || !fs.existsSync(NESQL_BROWSER_LAYOUT_INDEX_FILE)) {
+      return undefined;
+    }
+
+    try {
+      const parsed = JSON.parse(fs.readFileSync(NESQL_BROWSER_LAYOUT_INDEX_FILE, 'utf-8')) as {
+        items?: Array<{ itemId?: unknown }>;
+        defaultEntries?: Array<{ itemId?: unknown; representativeItemId?: unknown }>;
+      };
+      const layoutItemIds = new Set<string>();
+      for (const entry of parsed.items ?? []) {
+        const itemId = `${entry?.itemId ?? ''}`.trim();
+        if (itemId) layoutItemIds.add(itemId);
+      }
+      for (const entry of parsed.defaultEntries ?? []) {
+        const itemId = `${entry?.representativeItemId ?? entry?.itemId ?? ''}`.trim();
+        if (itemId) layoutItemIds.add(itemId);
+      }
+
+      const missingLayoutItemIds: string[] = [];
+      let coveredLayoutItemCount = 0;
+      for (const itemId of layoutItemIds) {
+        const entry = this.getEntryWithAliases(itemMap, itemId);
+        if (entry?.staticAtlas?.atlasFile || entry?.animatedAtlas?.atlasFile) {
+          coveredLayoutItemCount += 1;
+        } else if (missingLayoutItemIds.length < 100) {
+          missingLayoutItemIds.push(itemId);
+        }
+      }
+
+      return {
+        layoutItemCount: layoutItemIds.size,
+        atlasItemCount: itemMap.size,
+        coveredLayoutItemCount,
+        missingLayoutItemCount: layoutItemIds.size - coveredLayoutItemCount,
+        missingLayoutItemIds,
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   private toCompactEntry(entry: BrowserAtlasItemEntry): BrowserAtlasItemEntry {

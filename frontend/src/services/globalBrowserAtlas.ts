@@ -189,29 +189,12 @@ function mergeAtlasEntries(entries: BrowserAtlasItemEntry[]) {
 }
 
 async function ensureGlobalBrowserAtlasEntries(itemIds: string[]): Promise<boolean> {
-  const missingItemIds = Array.from(new Set(
-    itemIds
-      .map((itemId) => `${itemId ?? ""}`.trim())
-      .filter((itemId) => itemId && !getAtlasEntryForItemId(itemId)),
-  ));
-  if (missingItemIds.length === 0) {
-    return true;
-  }
-
-  const payload = await api.getBrowserAtlasEntries(missingItemIds).catch(() => null);
-  if (!payload) {
-    indexAvailable = false;
-    return false;
-  }
-  updateAtlasCacheVersion(payload);
-  mergeAtlasEntries(payload.items ?? []);
-  indexLoaded = true;
-  // Partial entry hydration must not mark the full browser atlas index as
-  // loaded. The NEI-fast path relies on warmAllGlobalBrowserAtlases() fetching
-  // every atlas shard once; treating a one-page POST response as the full index
-  // made fast page flips wait for textures on first encounter.
-  indexAvailable = true;
-  return true;
+  void itemIds;
+  // The homepage browser is now atlas-resident by contract: every visible item
+  // must be in the exported browser-atlas-index before the grid becomes hot.
+  // Do not hydrate page-scoped atlas entries through POST here; that recreates
+  // NEI-incompatible "load textures for the page I just reached" behavior.
+  return ensureGlobalBrowserAtlasIndex();
 }
 
 async function runConcurrent<T>(

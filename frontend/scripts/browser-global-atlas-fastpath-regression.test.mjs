@@ -61,3 +61,16 @@ test('global atlas is the homepage animation source of truth for indexed entries
     'indexed browser atlas entries should not trigger legacy sprite/render-contract probes during page flips',
   );
 });
+
+test('global atlas runtime never performs page-scoped atlas entry hydration', () => {
+  assert.equal(
+    globalAtlasSource.includes('api.getBrowserAtlasEntries('),
+    false,
+    'global atlas coverage/warm checks should load the full resident index, not POST page-scoped atlas entries',
+  );
+  assert.match(
+    globalAtlasSource,
+    /return ensureGlobalBrowserAtlasIndex\(\);/,
+    'per-page coverage probes should resolve against the full resident browser atlas index',
+  );
+});

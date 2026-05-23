@@ -1670,6 +1670,13 @@ export interface BrowserAtlasIndexResponse {
   itemCount?: number;
   animatedItemCount?: number;
   missingAtlasCount?: number;
+  layoutCoverage?: {
+    layoutItemCount: number;
+    atlasItemCount: number;
+    coveredLayoutItemCount: number;
+    missingLayoutItemCount: number;
+    missingLayoutItemIds: string[];
+  };
   items: BrowserAtlasItemEntry[];
 }
 
