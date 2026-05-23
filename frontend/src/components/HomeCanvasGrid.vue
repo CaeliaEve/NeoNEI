@@ -100,6 +100,7 @@ const canvasRef = ref<HTMLCanvasElement | null>(null);
 const webglCanvasRef = ref<HTMLCanvasElement | null>(null);
 const hostWidth = ref(0);
 let itemRects: GridRect[] = [];
+let animatedItemRects: GridRect[] = [];
 const hoveredRect = ref<GridRect | null>(null);
 const hoveredPointer = ref({ x: 0, y: 0 });
 const atlasImage = ref<HTMLImageElement | null>(null);
@@ -232,8 +233,8 @@ function startAnimationLoop() {
     animationLoopTimer = null;
     animationLoopHandle = requestAnimationFrame(() => {
       animationLoopHandle = null;
-      draw();
-      if (lastDrawHadAnimatedFrame || animationStates.size > 0) {
+      drawAnimationOverlay();
+      if (lastDrawHadAnimatedFrame && animatedItemRects.length > 0) {
         animationLoopTimer = globalThis.setTimeout(tick, BROWSER_ANIMATION_FRAME_MS);
       }
     });
@@ -251,6 +252,7 @@ function stopAnimationLoop() {
     clearTimeout(animationLoopTimer);
     animationLoopTimer = null;
   }
+  clearAnimationOverlay();
 }
 
 function getItemForEntry(entry: BrowserGridEntry): Item {
@@ -610,6 +612,51 @@ function drawAnimation(
   );
 }
 
+function ensureOverlayCanvasSize(canvas: HTMLCanvasElement) {
+  if (canvas.width !== canvasWidth.value) {
+    canvas.width = canvasWidth.value;
+  }
+  if (canvas.height !== canvasHeight.value) {
+    canvas.height = canvasHeight.value;
+  }
+}
+
+function clearAnimationOverlay() {
+  const canvas = webglCanvasRef.value;
+  if (!canvas) return;
+  ensureOverlayCanvasSize(canvas);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function drawAnimationOverlay() {
+  const canvas = webglCanvasRef.value;
+  if (!canvas) return;
+  ensureOverlayCanvasSize(canvas);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.imageSmoothingEnabled = false;
+  const now = getSharedAnimationNowMs();
+  let drewFrame = false;
+  for (const rect of animatedItemRects) {
+    const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(rect.item.itemId) : null;
+    if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
+      drawGroupOverlay(ctx, rect);
+      drewFrame = true;
+      continue;
+    }
+    const animation = animationStates.get(rect.item.itemId);
+    if (animation) {
+      drawAnimation(ctx, animation, rect, now);
+      drawGroupOverlay(ctx, rect);
+      drewFrame = true;
+    }
+  }
+  lastDrawHadAnimatedFrame = drewFrame;
+}
+
 function draw() {
   const canvas = canvasRef.value;
   if (!canvas) return;
@@ -626,6 +673,7 @@ function draw() {
   ctx.imageSmoothingEnabled = false;
 
   const nextRects: GridRect[] = [];
+  const nextAnimatedRects: GridRect[] = [];
   const now = getSharedAnimationNowMs();
   let drewAnimatedFrame = false;
   const webglCommands: BrowserWebglAtlasDrawCommand[] = [];
@@ -682,14 +730,19 @@ function draw() {
       continue;
     }
 
-    if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
-      drewAnimatedFrame = true;
+    const globalStaticAtlas = getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile);
+    if (globalEntry && globalStaticAtlas && drawGlobalStaticSprite(ctx, globalStaticAtlas, globalEntry, rect)) {
+      if (getPreparedGlobalAnimation(itemId, globalEntry) && getLoadedGlobalAtlasImage(globalEntry.animatedAtlas?.atlasFile)) {
+        nextAnimatedRects.push(rect);
+        drewAnimatedFrame = true;
+      }
       drawGroupOverlay(ctx, rect);
       continue;
     }
 
-    const globalStaticAtlas = getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile);
-    if (globalEntry && globalStaticAtlas && drawGlobalStaticSprite(ctx, globalStaticAtlas, globalEntry, rect)) {
+    if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
+      nextAnimatedRects.push(rect);
+      drewAnimatedFrame = true;
       drawGroupOverlay(ctx, rect);
       continue;
     }
@@ -702,6 +755,7 @@ function draw() {
 
     const animation = animationStates.get(itemId);
     if (animation) {
+      nextAnimatedRects.push(rect);
       drewAnimatedFrame = true;
       drawAnimation(ctx, animation, rect, now);
       drawGroupOverlay(ctx, rect);
@@ -734,14 +788,20 @@ function draw() {
   }
 
   itemRects = nextRects;
+  animatedItemRects = nextAnimatedRects;
   lastDrawHadAnimatedFrame = drewAnimatedFrame;
   if (canUseWebglAtlas) {
     webglAtlasRenderer?.draw(canvasWidth.value, canvasHeight.value, webglCommands);
   }
   if (drewAnimatedFrame) {
+    drawAnimationOverlay();
     startAnimationLoop();
-  } else if (animationStates.size === 0) {
-    stopAnimationLoop();
+  } else {
+    animatedItemRects = [];
+    clearAnimationOverlay();
+    if (animationStates.size === 0) {
+      stopAnimationLoop();
+    }
   }
 }
 
