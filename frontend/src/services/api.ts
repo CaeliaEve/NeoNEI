@@ -1076,6 +1076,15 @@ export interface PublishStaticBundleManifest {
     browserPageWindows: PublishBundleWindowPathEntry[];
     homeBootstrapWindows: PublishBundleWindowPathEntry[];
   };
+  recipeCoverage?: {
+    recipeBootstrapItems: number;
+    recipeGroupIndexItems: number;
+    recipeGroupWindowItems: number;
+    missingRecipeWindowItems: number;
+    recipeGroupIndexPayloads: number;
+    recipeGroupWindowPayloads: number;
+    missingRecipeWindowItemIds: string[];
+  };
 }
 
 export interface PaginatedResponse<T> {

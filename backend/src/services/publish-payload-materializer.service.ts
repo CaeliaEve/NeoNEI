@@ -86,6 +86,16 @@ type IncrementalWriteStats = {
   bytesWritten: number;
 };
 
+type RecipePublishCoverage = {
+  recipeBootstrapItems: number;
+  recipeGroupIndexItems: number;
+  recipeGroupWindowItems: number;
+  missingRecipeWindowItems: number;
+  recipeGroupIndexPayloads: number;
+  recipeGroupWindowPayloads: number;
+  missingRecipeWindowItemIds: string[];
+};
+
 function createIncrementalWriteStats(): IncrementalWriteStats {
   return { written: 0, skipped: 0, bytesWritten: 0 };
 }
@@ -131,6 +141,46 @@ function writeBufferIfChanged(filePath: string, content: Buffer, stats?: Increme
     stats.bytesWritten += content.byteLength;
   }
   return true;
+}
+
+function extractPublishRecipeItemId(bundleRelativePath: string): string | null {
+  const match = bundleRelativePath.match(/(?:^|\/)recipes\/(?:bootstrap|groups\/(?:index|windows)\/(?:machine|category))\/([^/]+)/i);
+  return match?.[1] ? decodeURIComponent(match[1]) : null;
+}
+
+function summarizeRecipePublishCoverage(rows: PublishPayloadRecord[], bootstrapItems: string[]): RecipePublishCoverage {
+  const bootstrapItemIds = new Set(bootstrapItems);
+  const groupIndexItemIds = new Set<string>();
+  const groupWindowItemIds = new Set<string>();
+  let recipeGroupIndexPayloads = 0;
+  let recipeGroupWindowPayloads = 0;
+
+  for (const row of rows) {
+    if (row.payload_type === 'recipe-machine-group-index' || row.payload_type === 'recipe-category-group-index') {
+      recipeGroupIndexPayloads += 1;
+      const itemId = extractPublishRecipeItemId(row.bundle_relative_path);
+      if (itemId) groupIndexItemIds.add(itemId);
+    } else if (row.payload_type === 'recipe-machine-group-window' || row.payload_type === 'recipe-category-group-window') {
+      recipeGroupWindowPayloads += 1;
+      const itemId = extractPublishRecipeItemId(row.bundle_relative_path);
+      if (itemId) groupWindowItemIds.add(itemId);
+    }
+  }
+
+  const missingRecipeWindowItemIds = [...bootstrapItemIds]
+    .filter((itemId) => groupIndexItemIds.has(itemId) && !groupWindowItemIds.has(itemId))
+    .sort((left, right) => left.localeCompare(right))
+    .slice(0, 100);
+
+  return {
+    recipeBootstrapItems: bootstrapItemIds.size,
+    recipeGroupIndexItems: groupIndexItemIds.size,
+    recipeGroupWindowItems: groupWindowItemIds.size,
+    missingRecipeWindowItems: [...bootstrapItemIds].filter((itemId) => groupIndexItemIds.has(itemId) && !groupWindowItemIds.has(itemId)).length,
+    recipeGroupIndexPayloads,
+    recipeGroupWindowPayloads,
+    missingRecipeWindowItemIds,
+  };
 }
 
 type NormalizedPublishPayloadHotOptions = {
@@ -749,6 +799,15 @@ export class PublishPayloadMaterializerService {
         browserPageWindows: [],
         homeBootstrapWindows: [],
       },
+      recipeCoverage: {
+        recipeBootstrapItems: 0,
+        recipeGroupIndexItems: 0,
+        recipeGroupWindowItems: 0,
+        missingRecipeWindowItems: 0,
+        recipeGroupIndexPayloads: 0,
+        recipeGroupWindowPayloads: 0,
+        missingRecipeWindowItemIds: [],
+      },
       compression: {
         sidecars: PUBLISH_BUNDLE_SIDECAR_VARIANTS.map((variant) => variant.contentEncoding),
         assets: {},
@@ -947,6 +1006,8 @@ export class PublishPayloadMaterializerService {
     bundleManifest.files.browserPageWindows.sort((left, right) => (left.slotSize - right.slotSize) || (left.offset - right.offset));
     bundleManifest.files.homeBootstrapWindows.sort((left, right) => (left.slotSize - right.slotSize) || (left.offset - right.offset));
 
+    bundleManifest.recipeCoverage = summarizeRecipePublishCoverage(rows, bundleManifest.files.recipeBootstrapItems);
+
     const manifestAbsolutePath = path.join(bundleOutputDir, buildPublishBundleManifestRelativePath());
     bundleManifest.identity = buildPublishIdentity(bundleManifest.compression.assets);
     const buildReportPaths = this.writeBuildReport(bundleOutputDir, basePublicPath, bundleManifest, rows, incrementalWriteStats);
@@ -1002,6 +1063,9 @@ export class PublishPayloadMaterializerService {
     if (bundleManifest.files.browserPageWindows.length <= 0) warnings.push('Missing browser page windows.');
     if (bundleManifest.files.homeBootstrapWindows.length <= 0) warnings.push('Missing home bootstrap windows.');
     if (assetEntries.length <= 0) warnings.push('No compressed publish assets registered.');
+    if (bundleManifest.recipeCoverage.missingRecipeWindowItems > 0) {
+      warnings.push(`Missing static recipe group windows for ${bundleManifest.recipeCoverage.missingRecipeWindowItems} item(s).`);
+    }
     const integrity = {
       sourceSignaturePresent: Boolean(bundleManifest.sourceSignature),
       identityPresent: Boolean(bundleManifest.identity.contentHash),
@@ -1034,10 +1098,16 @@ export class PublishPayloadMaterializerService {
         assetCount: assetEntries.length,
         browserSearchShardCount: bundleManifest.files.browserSearchShards.length,
         recipeBootstrapItemCount: bundleManifest.files.recipeBootstrapItems.length,
+        recipeGroupIndexItemCount: bundleManifest.recipeCoverage.recipeGroupIndexItems,
+        recipeGroupWindowItemCount: bundleManifest.recipeCoverage.recipeGroupWindowItems,
+        missingRecipeWindowItemCount: bundleManifest.recipeCoverage.missingRecipeWindowItems,
+        recipeGroupIndexPayloadCount: bundleManifest.recipeCoverage.recipeGroupIndexPayloads,
+        recipeGroupWindowPayloadCount: bundleManifest.recipeCoverage.recipeGroupWindowPayloads,
         recipeSearchItemCount: bundleManifest.files.recipeSearchItems.length,
         browserPageWindowCount: bundleManifest.files.browserPageWindows.length,
         homeBootstrapWindowCount: bundleManifest.files.homeBootstrapWindows.length,
       },
+      recipeCoverage: bundleManifest.recipeCoverage,
       bytes: {
         uncompressed: totalBytes,
         bestCompressed: compressedBytes,
@@ -1072,6 +1142,7 @@ export class PublishPayloadMaterializerService {
     compiledAt: string;
     rowCounts: Record<string, number>;
     files: Record<string, number>;
+    recipeCoverage?: RecipePublishCoverage;
     bytes: { uncompressed: number; bestCompressed: number; compressionRatio: number | null };
     incremental?: IncrementalWriteStats;
     integrity?: Record<string, boolean>;

@@ -12,6 +12,16 @@ const backendMaterializerSource = fs.readFileSync(
 test('published manifest exposes static recipe group window shards', () => {
   assert.match(
     backendManifestSource,
+    /recipeCoverage:\s*\{/,
+    'publish manifest should expose recipe coverage counters for static runtime audits',
+  );
+  assert.match(
+    backendManifestSource,
+    /missingRecipeWindowItems:\s*number/,
+    'publish manifest should count recipe items that still lack static group windows',
+  );
+  assert.match(
+    backendManifestSource,
     /recipeGroupWindowBasePath:\s*string\s*\|\s*null/,
     'publish manifest should advertise the base path for static recipe group windows',
   );
@@ -33,6 +43,16 @@ test('published manifest exposes static recipe group window shards', () => {
 });
 
 test('publish materializer writes bounded static recipe group windows', () => {
+  assert.match(
+    backendMaterializerSource,
+    /function summarizeRecipePublishCoverage\(rows:\s*PublishPayloadRecord\[\],\s*bootstrapItems:\s*string\[\]\):\s*RecipePublishCoverage/,
+    'materializer should summarize recipe bootstrap/group-window coverage into the manifest',
+  );
+  assert.match(
+    backendMaterializerSource,
+    /bundleManifest\.recipeCoverage\s*=\s*summarizeRecipePublishCoverage\(rows,\s*bundleManifest\.files\.recipeBootstrapItems\)/,
+    'static bundle manifest should be stamped with recipe coverage counters before it is written',
+  );
   assert.match(
     backendMaterializerSource,
     /RECIPE_GROUP_WINDOW_SIZE\s*=\s*8/,
@@ -61,6 +81,11 @@ test('publish materializer writes bounded static recipe group windows', () => {
 });
 
 test('frontend recipe group fetches prefer static windows before live API fallback', () => {
+  assert.match(
+    frontendApiSource,
+    /recipeCoverage\?:\s*\{/,
+    'frontend manifest type should accept recipe coverage counters from published bundles',
+  );
   assert.match(
     frontendApiSource,
     /recipeGroupWindowBasePath\?:\s*string\s*\|\s*null/,
