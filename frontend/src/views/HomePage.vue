@@ -25,10 +25,13 @@ import {
   primeRenderAnimationHintsFromUnknown,
   queueRenderableMediaPrewarmFromUnknown,
 } from "../services/animationBudget";
-import { warmGlobalBrowserAtlasForItemsDetailed } from "../services/globalBrowserAtlas";
+import {
+  inspectGlobalBrowserAtlasResidentState,
+  warmAllGlobalBrowserAtlases,
+  warmGlobalBrowserAtlasForItemsDetailed,
+} from "../services/globalBrowserAtlas";
 import RecipeDisplayRouter from "../components/RecipeDisplayRouter.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
-import { useSitePreheater } from "../composables/useSitePreheater";
 import { useSound } from "../services/sound.service";
 import { useRecipeViewer } from "../composables/useRecipeViewer";
 import { resolveRecipePresentationProfile } from "../services/uiTypeMapping";
@@ -85,7 +88,6 @@ const {
   warmSearchIndex,
   changePage,
   prefetchItemsPage,
-  clearCachedPages,
 } = useItemBrowser(itemSize, {
   measureVisiblePageCapacity: () => measureGridCapacityRaw(),
 });
@@ -157,52 +159,60 @@ const clearViewHistory = () => {
   saveViewHistory();
 };
 
-const preheatHistoryItems = computed(() =>
-  viewHistory.value.map((entry) => ({ itemId: entry.itemId })),
-);
+const atlasResidentRunning = ref(false);
+const atlasResidentProgressCurrent = ref(0);
+const atlasResidentProgressTotal = ref(0);
+const atlasResidentItemCount = ref(0);
+const atlasResidentStatus = ref("Atlas 将在主页打开后自动后台驻留");
+const atlasResidentError = ref<string | null>(null);
 
-const formatCacheSize = (bytes: number) => {
-  const normalized = Math.max(0, Number(bytes) || 0);
-  if (normalized < 1024) return `${normalized} B`;
-  if (normalized < 1024 * 1024) return `${(normalized / 1024).toFixed(1)} KB`;
-  if (normalized < 1024 * 1024 * 1024) return `${(normalized / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(normalized / (1024 * 1024 * 1024)).toFixed(2)} GB`;
-};
-
-const formatPreheatModeLabel = (mode: string | null | undefined) => {
-  if (mode === "quick") return "快速预热";
-  if (mode === "deep") return "深度预热";
-  if (mode === "full") return "全站预热";
-  return "预热";
-};
-
-const {
-  running: sitePreheatRunning,
-  stopping: sitePreheatStopping,
-  currentPhase: sitePreheatPhase,
-  statusText: sitePreheatStatus,
-  progressCurrent: sitePreheatProgressCurrent,
-  progressTotal: sitePreheatProgressTotal,
-  progressPercent: sitePreheatProgressPercent,
-  lastCompletedAt: sitePreheatLastCompletedAt,
-  lastCompletedMode: sitePreheatLastCompletedMode,
-  lastError: sitePreheatError,
-  cacheEntryCount: sitePreheatCacheEntryCount,
-  cacheApproxBytes: sitePreheatCacheApproxBytes,
-  recipeCoverageHint: sitePreheatCoverageHint,
-  startPreheat,
-  stopPreheat,
-  clearPreheatCaches,
-} = useSitePreheater({
-  itemSize,
-  pageSize,
-  currentPage,
-  totalPages,
-  totalItems,
-  visibleItems: items,
-  historyItems: preheatHistoryItems,
-  clearCachedPages,
+const atlasResidentPercent = computed(() => {
+  if (atlasResidentProgressTotal.value <= 0) return 0;
+  return Math.min(100, Math.round((atlasResidentProgressCurrent.value / atlasResidentProgressTotal.value) * 100));
 });
+
+const refreshAtlasResidentState = async () => {
+  const state = await inspectGlobalBrowserAtlasResidentState().catch(() => null);
+  if (!state) {
+    atlasResidentStatus.value = "Atlas 状态读取失败";
+    return;
+  }
+  atlasResidentItemCount.value = state.itemCount;
+  atlasResidentProgressCurrent.value = state.loadedAtlasFileCount;
+  atlasResidentProgressTotal.value = state.atlasFileCount;
+  if (!state.available) {
+    atlasResidentStatus.value = "当前导出未包含浏览区 Atlas 索引";
+  } else if (state.atlasFileCount > 0 && state.loadedAtlasFileCount >= state.atlasFileCount) {
+    atlasResidentStatus.value = "Atlas 已就绪，翻页将直接走常驻纹理快路径";
+  } else {
+    atlasResidentStatus.value = `Atlas 后台驻留中 ${state.loadedAtlasFileCount}/${state.atlasFileCount}`;
+  }
+};
+
+const warmResidentAtlas = async () => {
+  if (atlasResidentRunning.value) return;
+  atlasResidentRunning.value = true;
+  atlasResidentError.value = null;
+  atlasResidentStatus.value = "正在后台驻留浏览区 Atlas";
+  try {
+    const ok = await warmAllGlobalBrowserAtlases((processed, total) => {
+      atlasResidentProgressCurrent.value = processed;
+      atlasResidentProgressTotal.value = total;
+      atlasResidentStatus.value = total > 0
+        ? `Atlas 后台驻留中 ${processed}/${total}`
+        : "正在读取 Atlas 索引";
+    });
+    await refreshAtlasResidentState();
+    if (!ok) {
+      atlasResidentStatus.value = "Atlas 索引不可用，请检查 NESQL++ 导出";
+    }
+  } catch (error) {
+    atlasResidentError.value = error instanceof Error ? error.message : String(error);
+    atlasResidentStatus.value = "Atlas 驻留失败";
+  } finally {
+    atlasResidentRunning.value = false;
+  }
+};
 
 const historyPanelRef = ref<HTMLElement | null>(null);
 const historyPanelWidth = ref(0);
@@ -256,6 +266,9 @@ onMounted(() => {
   itemGridResizeObserver = new ResizeObserver(() => {
     syncMeasuredPageSize();
   });
+  window.setTimeout(() => {
+    void warmResidentAtlas();
+  }, 250);
 });
 
 onBeforeUnmount(() => {
@@ -1456,130 +1469,73 @@ const saveSettings = () => {
             </button>
           </div>
 
-          <!-- Site Preheat -->
+          <!-- Atlas Resident State -->
           <div class="p-4 border-b border-slate-200/40">
             <div class="flex items-start justify-between gap-3 mb-3">
               <div>
                 <p class="text-slate-200/60 text-xs uppercase tracking-wider">
-                  全站预热
+                  Atlas 驻留状态
                 </p>
                 <p class="text-[11px] leading-5 text-slate-300/70 mt-1">
-                  预先缓存浏览分页、搜索索引与热配方入口，尽量把网页翻页体验压到更接近游戏内 NEI。
+                  浏览区现在自动使用全局物品 Atlas / 动画 Atlas。普通使用不需要手动全站预热；这里仅保留诊断与重新驻留入口。
                 </p>
               </div>
               <div
-                class="rounded-lg border border-cyan-400/25 bg-cyan-500/10 px-2 py-1 text-[11px] font-semibold text-cyan-200"
+                class="rounded-lg border px-2 py-1 text-[11px] font-semibold"
+                :class="atlasResidentProgressTotal > 0 && atlasResidentProgressCurrent >= atlasResidentProgressTotal
+                  ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
+                  : 'border-cyan-400/25 bg-cyan-500/10 text-cyan-200'
+"
               >
-                {{ sitePreheatRunning ? "运行中" : "可选" }}
+                {{ atlasResidentRunning ? "后台驻留" : "自动" }}
               </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-2">
-              <button
-                @click="startPreheat('quick')"
-                :disabled="sitePreheatRunning"
-                class="rounded-lg border border-slate-300/25 bg-slate-900/45 px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 hover:border-cyan-400/40 hover:bg-cyan-500/10"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <span class="text-sm font-semibold text-slate-100">快速预热</span>
-                  <span class="text-[11px] text-cyan-200/90">首屏 / 热页 / 常用入口</span>
-                </div>
-              </button>
-              <button
-                @click="startPreheat('deep')"
-                :disabled="sitePreheatRunning"
-                class="rounded-lg border border-slate-300/25 bg-slate-900/45 px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 hover:border-violet-400/40 hover:bg-violet-500/10"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <span class="text-sm font-semibold text-slate-100">深度预热</span>
-                  <span class="text-[11px] text-violet-200/90">更多分页 / 热配方 / 全搜索包</span>
-                </div>
-              </button>
-              <button
-                @click="startPreheat('full')"
-                :disabled="sitePreheatRunning"
-                class="rounded-lg border border-slate-300/25 bg-slate-900/45 px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 hover:border-amber-400/40 hover:bg-amber-500/10"
-              >
-                <div class="flex items-center justify-between gap-3">
-                  <span class="text-sm font-semibold text-slate-100">全站预热</span>
-                  <span class="text-[11px] text-amber-200/90">全部浏览分页 + 当前热配方包</span>
-                </div>
-              </button>
-            </div>
-
-            <p class="mt-3 text-[11px] leading-5 text-slate-300/65">
-              {{ sitePreheatCoverageHint }}
-            </p>
-
-            <div class="mt-4 rounded-xl border border-slate-300/20 bg-slate-950/55 p-3">
+            <div class="rounded-xl border border-slate-300/20 bg-slate-950/55 p-3">
               <div class="flex items-center justify-between gap-3">
                 <div>
                   <p class="text-sm font-semibold text-slate-100">
-                    {{ sitePreheatPhase }}
+                    {{ atlasResidentStatus }}
                   </p>
                   <p class="text-[11px] text-slate-300/70 mt-1">
-                    {{ sitePreheatStatus }}
+                    物品索引 {{ atlasResidentItemCount.toLocaleString() }} · Atlas 分片 {{ atlasResidentProgressCurrent }}/{{ atlasResidentProgressTotal }}
                   </p>
                 </div>
                 <div class="text-right">
                   <p class="text-sm font-bold text-slate-100">
-                    {{ sitePreheatProgressPercent }}%
+                    {{ atlasResidentPercent }}%
                   </p>
-                  <p class="text-[11px] text-slate-400">
-                    {{ sitePreheatProgressCurrent }}/{{ sitePreheatProgressTotal }}
-                  </p>
+                  <p class="text-[11px] text-slate-400">常驻纹理</p>
                 </div>
               </div>
 
               <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-800/90">
                 <div
-                  class="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-400 to-violet-400 transition-[width] duration-300"
-                  :style="{ width: `${sitePreheatProgressPercent}%` }"
+                  class="h-full rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-400 transition-[width] duration-300"
+                  :style="{ width: `${atlasResidentPercent}%` }"
                 />
               </div>
 
-              <div class="mt-3 grid grid-cols-2 gap-2 text-[11px] text-slate-300/70">
-                <div class="rounded-lg border border-slate-300/10 bg-slate-900/35 px-3 py-2">
-                  <p class="text-slate-400">缓存条目</p>
-                  <p class="mt-1 text-sm font-semibold text-slate-100">
-                    {{ sitePreheatCacheEntryCount.toLocaleString() }}
-                  </p>
-                </div>
-                <div class="rounded-lg border border-slate-300/10 bg-slate-900/35 px-3 py-2">
-                  <p class="text-slate-400">估算体积</p>
-                  <p class="mt-1 text-sm font-semibold text-slate-100">
-                    {{ formatCacheSize(sitePreheatCacheApproxBytes) }}
-                  </p>
-                </div>
-              </div>
-
               <p
-                v-if="sitePreheatLastCompletedAt"
-                class="mt-3 text-[11px] text-emerald-300/80"
-              >
-                最近完成：{{ formatPreheatModeLabel(sitePreheatLastCompletedMode) }} · {{ new Date(sitePreheatLastCompletedAt).toLocaleString() }}
-              </p>
-              <p
-                v-if="sitePreheatError"
+                v-if="atlasResidentError"
                 class="mt-3 text-[11px] text-rose-300/90"
               >
-                {{ sitePreheatError }}
+                {{ atlasResidentError }}
               </p>
 
-              <div class="mt-3 flex gap-2">
+              <div class="mt-3 grid grid-cols-2 gap-2">
                 <button
-                  @click="stopPreheat"
-                  :disabled="!sitePreheatRunning"
-                  class="flex-1 rounded-lg bg-amber-500/85 px-3 py-2 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-45 hover:bg-amber-400"
+                  @click="warmResidentAtlas"
+                  :disabled="atlasResidentRunning"
+                  class="rounded-lg border border-cyan-300/25 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition-colors disabled:cursor-not-allowed disabled:opacity-45 hover:bg-cyan-500/20"
                 >
-                  {{ sitePreheatStopping ? "停止中…" : "停止预热" }}
+                  重新驻留 Atlas
                 </button>
                 <button
-                  @click="clearPreheatCaches"
-                  :disabled="sitePreheatRunning"
-                  class="flex-1 rounded-lg bg-rose-500/85 px-3 py-2 text-sm font-semibold text-white transition-colors disabled:cursor-not-allowed disabled:opacity-45 hover:bg-rose-400"
+                  @click="refreshAtlasResidentState"
+                  class="rounded-lg border border-slate-300/20 bg-slate-900/45 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-white/10"
                 >
-                  清空预热缓存
+                  刷新状态
                 </button>
               </div>
             </div>

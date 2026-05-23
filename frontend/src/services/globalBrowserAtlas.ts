@@ -428,6 +428,45 @@ export function getGlobalBrowserAtlasEntry(itemId: string): BrowserAtlasItemEntr
   return getAtlasEntryForItemId(itemId);
 }
 
+export async function inspectGlobalBrowserAtlasResidentState(): Promise<{
+  available: boolean;
+  itemCount: number;
+  atlasFileCount: number;
+  loadedAtlasFileCount: number;
+  cacheVersion: string;
+}> {
+  const available = await ensureGlobalBrowserAtlasIndex();
+  if (!available) {
+    return {
+      available: false,
+      itemCount: 0,
+      atlasFileCount: 0,
+      loadedAtlasFileCount: 0,
+      cacheVersion: atlasImageCacheVersion,
+    };
+  }
+
+  const atlasFiles = new Set<string>();
+  for (const entry of itemEntries.values()) {
+    const animatedFile = normalizeAtlasFile(entry.animatedAtlas?.atlasFile);
+    const staticFile = normalizeAtlasFile(entry.staticAtlas?.atlasFile);
+    if (animatedFile) atlasFiles.add(animatedFile);
+    if (staticFile) atlasFiles.add(staticFile);
+  }
+
+  const files = Array.from(atlasFiles);
+  const loadedAtlasFileCount = files.filter((atlasFile) =>
+    Boolean(getAtlasImageState(getAtlasImageCacheKey(atlasFile)).image),
+  ).length;
+
+  return {
+    available: true,
+    itemCount: itemEntries.size,
+    atlasFileCount: files.length,
+    loadedAtlasFileCount,
+    cacheVersion: atlasImageCacheVersion,
+  };
+}
 export function getLoadedGlobalAtlasImage(atlasFile?: string | null): HTMLImageElement | null {
   const normalized = normalizeAtlasFile(atlasFile);
   if (!normalized) {
@@ -503,4 +542,5 @@ function toAtlasNumber(value: unknown, fallback: number): number {
   }
   return fallback;
 }
+
 
