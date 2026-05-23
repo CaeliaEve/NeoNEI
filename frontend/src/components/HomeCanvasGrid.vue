@@ -19,11 +19,9 @@ import {
   getLoadedGlobalAtlasImage,
   getStaticPlacement,
   hasGlobalBrowserAtlas,
-  inspectGlobalBrowserAtlasCoverageForItems,
   shouldUseLegacyBrowserAnimationProbe,
   normalizeFrames,
   normalizeTimeline,
-  warmGlobalBrowserAtlasForItems,
   warmGlobalBrowserAtlasForItemsDetailed,
   type BrowserAtlasItemEntry,
 } from "../services/globalBrowserAtlas";
@@ -101,7 +99,7 @@ const hostRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const webglCanvasRef = ref<HTMLCanvasElement | null>(null);
 const hostWidth = ref(0);
-const itemRects = ref<GridRect[]>([]);
+let itemRects: GridRect[] = [];
 const hoveredRect = ref<GridRect | null>(null);
 const hoveredPointer = ref({ x: 0, y: 0 });
 const atlasImage = ref<HTMLImageElement | null>(null);
@@ -115,6 +113,7 @@ const pendingStaticImages = new Map<string, Promise<HTMLImageElement | null>>();
 const animationStates = new Map<string, AnimationState>();
 const pendingAnimations = new Map<string, Promise<void>>();
 const preparedGlobalAnimations = new Map<string, PreparedGlobalAnimation>();
+const slotChromeCache = new Map<string, HTMLCanvasElement>();
 
 let resizeObserver: ResizeObserver | null = null;
 let renderFrameHandle: number | null = null;
@@ -123,6 +122,7 @@ let animationLoopTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let idleAnimationKickHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
 let atlasLoadSeq = 0;
 let animationDelayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+let globalAtlasWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
 let layoutRequestSeq = 0;
 let lastDrawHadAnimatedFrame = false;
@@ -220,11 +220,6 @@ async function refreshHomeGridLayout() {
 
   layoutCommands.value = result.drawCommands;
   activeLayoutKey.value = result.layoutKey;
-  if (result.itemIds.length > 0) {
-    void warmGlobalBrowserAtlasForItems(result.itemIds).finally(() => {
-      scheduleRender();
-    });
-  }
   scheduleRender();
 }
 
@@ -288,46 +283,68 @@ function drawPlaceholder(ctx: CanvasRenderingContext2D, rect: GridRect) {
   ctx.restore();
 }
 
-function drawSlotChrome(ctx: CanvasRenderingContext2D, rect: GridRect, hovered: boolean) {
+function getSlotChromeKind(rect: GridRect): string {
+  return rect.entry.kind === "item" ? "item" : rect.entry.kind;
+}
+
+function buildSlotChrome(size: number, kind: string, hovered: boolean): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+
   ctx.save();
-  roundRect(ctx, rect.x, rect.y, rect.size, rect.size, 12);
-  const gradient = ctx.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.size);
+  roundRect(ctx, 0, 0, size, size, 12);
+  const gradient = ctx.createLinearGradient(0, 0, 0, size);
   gradient.addColorStop(0, "rgba(16, 20, 27, 0.94)");
   gradient.addColorStop(1, "rgba(8, 11, 16, 0.98)");
   ctx.fillStyle = gradient;
   ctx.fill();
   ctx.strokeStyle = hovered
     ? "rgba(125, 211, 252, 0.55)"
-    : rect.entry.kind === "item"
+    : kind === "item"
       ? "rgba(148, 163, 184, 0.16)"
       : "rgba(96, 165, 250, 0.28)";
   ctx.lineWidth = hovered ? 1.4 : 1;
   ctx.stroke();
 
-  if (rect.entry.kind !== "item") {
+  if (kind !== "item") {
     const halo = ctx.createRadialGradient(
-      rect.x + rect.size * 0.5,
-      rect.y + rect.size * 0.28,
+      size * 0.5,
+      size * 0.28,
       0,
-      rect.x + rect.size * 0.5,
-      rect.y + rect.size * 0.28,
-      rect.size * 0.55,
+      size * 0.5,
+      size * 0.28,
+      size * 0.55,
     );
-    halo.addColorStop(0, rect.entry.kind === "group-header" ? "rgba(96, 165, 250, 0.18)" : "rgba(125, 211, 252, 0.16)");
+    halo.addColorStop(0, kind === "group-header" ? "rgba(96, 165, 250, 0.18)" : "rgba(125, 211, 252, 0.16)");
     halo.addColorStop(1, "rgba(125, 211, 252, 0)");
     ctx.fillStyle = halo;
-    roundRect(ctx, rect.x, rect.y, rect.size, rect.size, 12);
+    roundRect(ctx, 0, 0, size, size, 12);
     ctx.fill();
   }
 
   if (hovered) {
     ctx.shadowColor = "rgba(56, 189, 248, 0.3)";
     ctx.shadowBlur = 10;
-    roundRect(ctx, rect.x + 1, rect.y + 1, rect.size - 2, rect.size - 2, 11);
+    roundRect(ctx, 1, 1, size - 2, size - 2, 11);
     ctx.strokeStyle = "rgba(125, 211, 252, 0.28)";
     ctx.stroke();
   }
   ctx.restore();
+  return canvas;
+}
+
+function drawSlotChrome(ctx: CanvasRenderingContext2D, rect: GridRect, hovered: boolean) {
+  const kind = getSlotChromeKind(rect);
+  const cacheKey = `${rect.size}:${kind}:${hovered ? 1 : 0}`;
+  let chrome = slotChromeCache.get(cacheKey);
+  if (!chrome) {
+    chrome = buildSlotChrome(rect.size, kind, hovered);
+    slotChromeCache.set(cacheKey, chrome);
+  }
+  ctx.drawImage(chrome, rect.x, rect.y);
 }
 
 function drawBadge(
@@ -599,8 +616,12 @@ function draw() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
 
-  canvas.width = canvasWidth.value;
-  canvas.height = canvasHeight.value;
+  if (canvas.width !== canvasWidth.value) {
+    canvas.width = canvasWidth.value;
+  }
+  if (canvas.height !== canvasHeight.value) {
+    canvas.height = canvasHeight.value;
+  }
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.imageSmoothingEnabled = false;
 
@@ -712,9 +733,11 @@ function draw() {
     drawGroupOverlay(ctx, rect);
   }
 
-  itemRects.value = nextRects;
+  itemRects = nextRects;
   lastDrawHadAnimatedFrame = drewAnimatedFrame;
-  webglAtlasRenderer?.draw(canvasWidth.value, canvasHeight.value, webglCommands);
+  if (canUseWebglAtlas) {
+    webglAtlasRenderer?.draw(canvasWidth.value, canvasHeight.value, webglCommands);
+  }
   if (drewAnimatedFrame) {
     startAnimationLoop();
   } else if (animationStates.size === 0) {
@@ -728,7 +751,7 @@ function findRectAt(clientX: number, clientY: number): GridRect | null {
   const bounds = host.getBoundingClientRect();
   const x = clientX - bounds.left;
   const y = clientY - bounds.top;
-  return itemRects.value.find((rect) => x >= rect.x && x <= rect.x + rect.size && y >= rect.y && y <= rect.y + rect.size) ?? null;
+  return itemRects.find((rect) => x >= rect.x && x <= rect.x + rect.size && y >= rect.y && y <= rect.y + rect.size) ?? null;
 }
 
 async function ensureStaticImage(item: Item): Promise<HTMLImageElement | null> {
@@ -767,7 +790,8 @@ async function loadAtlas() {
   atlasImage.value = null;
   atlasLoadError.value = false;
 
-  if (props.preferAtlas && props.entries.length > 0) {
+  if (props.preferAtlas && hasGlobalBrowserAtlas()) {
+    allowFallbackBeforeAtlas.value = false;
     const itemIds = Array.from(
       new Set(
         props.entries
@@ -775,23 +799,20 @@ async function loadAtlas() {
           .filter((itemId): itemId is string => Boolean(itemId)),
       ),
     );
+    if (globalAtlasWarmTimer !== null) {
+      clearTimeout(globalAtlasWarmTimer);
+      globalAtlasWarmTimer = null;
+    }
     if (itemIds.length > 0) {
-      const globalCoverage = await inspectGlobalBrowserAtlasCoverageForItems(itemIds).catch(() => null);
-      if (sequence !== atlasLoadSeq) return;
-      if (globalCoverage && globalCoverage.total > 0 && globalCoverage.missingCount === 0) {
-        // The global atlas is authoritative for the homepage. Do not unlock the
-        // page atlas/static image fallback while resident atlas shards warm.
-        allowFallbackBeforeAtlas.value = false;
+      globalAtlasWarmTimer = globalThis.setTimeout(() => {
+        globalAtlasWarmTimer = null;
         void warmGlobalBrowserAtlasForItemsDetailed(itemIds).finally(() => {
           if (sequence === atlasLoadSeq) {
             scheduleRender();
           }
         });
-      }
+      }, 450);
     }
-  }
-
-  if (props.preferAtlas && hasGlobalBrowserAtlas()) {
     scheduleRender();
     return;
   }
@@ -1124,9 +1145,15 @@ function warmGlobalAtlasImages() {
   if (itemIds.length === 0) {
     return;
   }
-  void warmGlobalBrowserAtlasForItems(itemIds).finally(() => {
-    scheduleRender();
-  });
+  if (globalAtlasWarmTimer !== null) {
+    clearTimeout(globalAtlasWarmTimer);
+  }
+  globalAtlasWarmTimer = globalThis.setTimeout(() => {
+    globalAtlasWarmTimer = null;
+    void warmGlobalBrowserAtlasForItemsDetailed(itemIds).finally(() => {
+      scheduleRender();
+    });
+  }, 450);
 }
 
 function handleClick(event: MouseEvent) {
@@ -1150,12 +1177,21 @@ function handleContextMenu(event: MouseEvent) {
   emit("groupContextmenu", rect.entry.group, event);
 }
 
+function getRectIdentity(rect: GridRect | null): string {
+  return rect?.entry.key ?? "";
+}
+
 function handleMouseMove(event: MouseEvent) {
-  hoveredRect.value = findRectAt(event.clientX, event.clientY);
+  const nextHoveredRect = findRectAt(event.clientX, event.clientY);
+  const hoverChanged = getRectIdentity(nextHoveredRect) !== getRectIdentity(hoveredRect.value);
+  if (!hoverChanged) {
+    return;
+  }
   hoveredPointer.value = {
     x: event.offsetX,
     y: event.offsetY,
   };
+  hoveredRect.value = nextHoveredRect;
   if (hostRef.value) {
     hostRef.value.style.cursor = hoveredRect.value ? "pointer" : "default";
   }
@@ -1183,9 +1219,9 @@ const tooltipSubtitle = computed(() => {
   const rect = hoveredRect.value;
   if (!rect) return "";
   if (rect.entry.kind === "item") {
-    return "Left click: recipes 路 Right click: uses";
+    return "Left click: recipes · Right click: uses";
   }
-  return `Group ${rect.entry.group.size} items 路 Left click: expand/collapse 路 Right click: uses`;
+  return `Group ${rect.entry.group.size} items · Left click: expand/collapse · Right click: uses`;
 });
 const tooltipStyle = computed<Record<string, string> | null>(() => {
   if (!hoveredRect.value) return null;
@@ -1197,8 +1233,7 @@ const tooltipStyle = computed<Record<string, string> | null>(() => {
   const left = Math.min(Math.max(hoveredPointer.value.x + 14, 8), Math.max(8, hostWidthValue - maxWidth - 8));
   const top = Math.max(8, hoveredPointer.value.y + 14);
   return {
-    left: `${left}px`,
-    top: `${top}px`,
+    transform: `translate3d(${left}px, ${top}px, 0)`,
   };
 });
 
@@ -1256,9 +1291,7 @@ onMounted(() => {
   if (hostRef.value) {
     resizeObserver.observe(hostRef.value);
   }
-  if (webglCanvasRef.value) {
-    webglAtlasRenderer = BrowserWebglAtlasRenderer.create(webglCanvasRef.value);
-  }
+  // WebGL overlay stays disabled until it can present every atlas shard reliably.
   window.addEventListener("resize", updateHostWidth, { passive: true });
   scheduleRender();
 });
@@ -1279,6 +1312,10 @@ onUnmounted(() => {
   if (animationDelayTimer !== null) {
     clearTimeout(animationDelayTimer);
     animationDelayTimer = null;
+  }
+  if (globalAtlasWarmTimer !== null) {
+    clearTimeout(globalAtlasWarmTimer);
+    globalAtlasWarmTimer = null;
   }
   webglAtlasRenderer?.dispose();
   webglAtlasRenderer = null;
@@ -1325,6 +1362,8 @@ onUnmounted(() => {
 
 .home-canvas-grid__tooltip {
   position: absolute;
+  left: 0;
+  top: 0;
   z-index: 12;
   max-width: 260px;
   pointer-events: none;
@@ -1334,6 +1373,7 @@ onUnmounted(() => {
   box-shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
   padding: 10px 12px;
   backdrop-filter: blur(10px);
+  will-change: transform;
 }
 
 .home-canvas-grid__tooltip-title {

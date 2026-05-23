@@ -412,6 +412,9 @@ export function useItemBrowser(
     basePage: CachedBrowserPage,
     requestId: number,
   ) => {
+    if (hasGlobalBrowserAtlas()) {
+      return;
+    }
     if (basePage.items.length === 0) {
       return;
     }
@@ -713,14 +716,11 @@ export function useItemBrowser(
     options?: { animatedEntryLimit?: number; atlasLimit?: number },
   ): Promise<void> => {
     const warmToken = activeResourceWarmToken;
-    prewarmCachedBrowserPageMedia(response, { ...options, warmToken });
-
-    if (pagePresentationReady.has(cacheKey)) {
-      return Promise.resolve();
-    }
-
     const itemIds = collectBrowserPageResourceItemIds(response);
     if (hasGlobalBrowserAtlas()) {
+      if (pagePresentationReady.has(cacheKey)) {
+        return Promise.resolve();
+      }
       const existing = pagePresentationWarmInFlight.get(cacheKey);
       if (existing) {
         return existing;
@@ -745,6 +745,12 @@ export function useItemBrowser(
         });
       pagePresentationWarmInFlight.set(cacheKey, request);
       return request;
+    }
+
+    prewarmCachedBrowserPageMedia(response, { ...options, warmToken });
+
+    if (pagePresentationReady.has(cacheKey)) {
+      return Promise.resolve();
     }
 
     const atlasUrls = [
@@ -810,6 +816,19 @@ export function useItemBrowser(
     response: CachedBrowserPage,
     waitMs: number,
   ) => {
+    if (waitMs <= 0) {
+      const warmToken = activeResourceWarmToken;
+      window.setTimeout(() => {
+        if (warmToken !== activeResourceWarmToken || pagePresentationReady.has(cacheKey)) {
+          return;
+        }
+        void ensureBrowserPagePresentationWarm(cacheKey, response, {
+          animatedEntryLimit: 0,
+          atlasLimit: 0,
+        });
+      }, 450);
+      return;
+    }
     const pageItemIds = collectBrowserPageResourceItemIds(response);
     const globalCoverage = await inspectGlobalBrowserAtlasCoverageForItems(pageItemIds).catch(() => null);
     if (hasGlobalBrowserAtlas() && globalCoverage?.total && globalCoverage.total > 0) {
@@ -890,11 +909,15 @@ export function useItemBrowser(
     }
 
     if (cacheKey) {
-      void ensureBrowserPagePresentationWarm(cacheKey, response, {
-        animatedEntryLimit: 72,
-        atlasLimit: 10,
-      });
-    } else {
+      if (hasGlobalBrowserAtlas()) {
+        void waitForBrowserPagePresentation(cacheKey, response, 0);
+      } else {
+        void ensureBrowserPagePresentationWarm(cacheKey, response, {
+          animatedEntryLimit: 72,
+          atlasLimit: 10,
+        });
+      }
+    } else if (!hasGlobalBrowserAtlas()) {
       prewarmCachedBrowserPageMedia(response, { animatedEntryLimit: 72, atlasLimit: 10 });
     }
 
@@ -1108,7 +1131,7 @@ export function useItemBrowser(
       if (hadVisibleEntries) {
         loading.value = false;
         transitioning.value = true;
-        await waitForBrowserPagePresentation(cacheKey, cached, 260);
+        void waitForBrowserPagePresentation(cacheKey, cached, 0);
       } else {
         loading.value = false;
         transitioning.value = false;
@@ -1125,7 +1148,7 @@ export function useItemBrowser(
       if (hadVisibleEntries) {
         loading.value = false;
         transitioning.value = true;
-        await waitForBrowserPagePresentation(localProjection.cacheKey, localProjection.page, 80);
+        void waitForBrowserPagePresentation(localProjection.cacheKey, localProjection.page, 0);
       } else {
         loading.value = false;
         transitioning.value = false;
@@ -1160,7 +1183,7 @@ export function useItemBrowser(
       if (expandedProjection) {
         setSharedBrowserPageCache(expandedProjection.cacheKey, expandedProjection.page);
         if (hadVisibleEntries) {
-          await waitForBrowserPagePresentation(expandedProjection.cacheKey, expandedProjection.page, 80);
+          void waitForBrowserPagePresentation(expandedProjection.cacheKey, expandedProjection.page, 0);
         }
         applyBrowserResponse(expandedProjection.page, requestId, expandedProjection.cacheKey);
         hydrateProjectedBrowserPageMedia(
@@ -1178,7 +1201,7 @@ export function useItemBrowser(
         if (persistent) {
           setSharedBrowserPageCache(cacheKey, persistent.page);
           if (hadVisibleEntries) {
-            await waitForBrowserPagePresentation(cacheKey, persistent.page, 260);
+            void waitForBrowserPagePresentation(cacheKey, persistent.page, 0);
           }
           applyBrowserResponse(persistent.page, requestId, cacheKey);
           loading.value = false;
@@ -1203,7 +1226,7 @@ export function useItemBrowser(
       });
       setSharedBrowserPageCache(normalizedCacheKey, normalized);
       if (hadVisibleEntries) {
-        await waitForBrowserPagePresentation(normalizedCacheKey, normalized, 260);
+        void waitForBrowserPagePresentation(normalizedCacheKey, normalized, 0);
       }
       applyBrowserResponse(normalized, requestId, normalizedCacheKey);
     } catch (error) {
@@ -1399,26 +1422,14 @@ export function useItemBrowser(
       const localProjection = tryProjectExpandedGroupsFromLocalCaches(requestParams);
       if (localProjection) {
         setSharedBrowserPageCache(localProjection.cacheKey, localProjection.page);
-        void ensureBrowserPagePresentationWarm(localProjection.cacheKey, localProjection.page, { animatedEntryLimit: 40, atlasLimit: 6 });
-        hydrateProjectedBrowserPageMedia(
-          localProjection.cacheKey,
-          requestParams,
-          localProjection.page,
-          loadItemsRequestId,
-        );
+        // Prefetch only caches lightweight page data; media warming is reserved for the active page.
         return;
       }
 
       const expandedProjection = await tryLoadExpandedProjection(requestParams);
       if (expandedProjection) {
         setSharedBrowserPageCache(expandedProjection.cacheKey, expandedProjection.page);
-        void ensureBrowserPagePresentationWarm(expandedProjection.cacheKey, expandedProjection.page, { animatedEntryLimit: 40, atlasLimit: 6 });
-        hydrateProjectedBrowserPageMedia(
-          expandedProjection.cacheKey,
-          requestParams,
-          expandedProjection.page,
-          loadItemsRequestId,
-        );
+        // Prefetch only caches lightweight page data; media warming is reserved for the active page.
         return;
       }
 
@@ -1429,7 +1440,7 @@ export function useItemBrowser(
         ? await loadSearchPage(requestParams)
         : await loadDefaultPage(requestParams, { signaturePromise });
       setSharedBrowserPageCache(cacheKey, normalized);
-      void ensureBrowserPagePresentationWarm(cacheKey, normalized, { animatedEntryLimit: 40, atlasLimit: 6 });
+      // Do not decode atlas images during neighbor prefetch; active-page rendering owns presentation warming.
     } catch {
       // best-effort prefetch only
     }

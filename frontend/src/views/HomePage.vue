@@ -93,8 +93,8 @@ let itemGridResizeObserver: ResizeObserver | null = null;
 let neighborPrefetchTimer: number | null = null;
 let neighborPrefetchIdleHandle: number | null = null;
 let transitionOverlayTimer: number | null = null;
-const BROWSER_PREFETCH_FORWARD_RADIUS = 4;
-const BROWSER_PREFETCH_BACKWARD_RADIUS = 2;
+const BROWSER_PREFETCH_FORWARD_RADIUS = 1;
+const BROWSER_PREFETCH_BACKWARD_RADIUS = 1;
 const TRANSITION_OVERLAY_DELAY_MS = 140;
 const currentGroupId = ref<string | undefined>(undefined);
 const currentGroupName = ref<string>('');
@@ -465,7 +465,6 @@ const changeItemsPageWrapped = (targetPage: number) => {
           ? -1
           : 0;
 
-  void prefetchItemsPage(resolvedTargetPage);
   changePage(resolvedTargetPage);
   scheduleNeighborPrefetch(resolvedTargetPage, total, direction);
 };
@@ -546,7 +545,7 @@ const scheduleNeighborPrefetch = (
     }
 
     runPrefetch();
-  }, 180);
+  }, 800);
 };
 
 const handleItemsWheel = (event: WheelEvent) => {
@@ -1313,7 +1312,7 @@ const saveSettings = () => {
                   :entries="historyBrowserEntries"
                   :item-size="historyItemPixelSize"
                   :atlas="historyAtlas"
-                  :enable-animation="true"
+                  :enable-animation="false"
                   :prefer-atlas="true"
                   @item-click="openCraftingRecipes"
                   @item-contextmenu="handleCardContextMenu"
