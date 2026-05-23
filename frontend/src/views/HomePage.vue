@@ -1382,187 +1382,219 @@ const saveSettings = () => {
       </div>
     </main>
 
-    <!-- Gear Button (Fixed Bottom-Left, Outside Main) -->
+    <!-- Settings Button + Floating Home Overlay -->
     <div class="fixed bottom-3 left-6 z-50">
-      <div class="relative">
+      <div
+        v-if="showGearMenu"
+        class="settings-panel-scrim fixed inset-0 z-[48]"
+        aria-hidden="true"
+        @click="showGearMenu = false"
+        @contextmenu.prevent
+      />
+
+      <div class="relative z-[51]">
         <button
           @click="showGearMenu = !showGearMenu"
-          class="gear-btn w-12 h-12 rounded-xl flex items-center justify-center text-2xl transition-all duration-300"
+          class="gear-btn settings-launcher w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300"
           :class="
             showGearMenu
-              ? 'bg-gradient-to-r from-slate-700 to-slate-600 text-white shadow-lg shadow-slate-900/35'
+              ? 'settings-launcher--active text-white'
               : 'surface-glass text-slate-300 hover:text-white border border-slate-200/20'
           "
-          title="设置菜单"
-          aria-label="设置菜单"
+          title="设置"
+          aria-label="打开设置中心"
+          :aria-expanded="showGearMenu"
         >
-          ⚙
+          <svg
+            class="h-5 w-5"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.8"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z" />
+            <path d="M19.43 12.98c.04-.32.07-.65.07-.98s-.02-.66-.07-.98l2.1-1.64-2-3.46-2.47 1a7.2 7.2 0 0 0-1.7-.98L15 3.28h-4l-.36 2.66c-.6.23-1.17.56-1.7.98l-2.47-1-2 3.46 2.1 1.64c-.04.32-.07.65-.07.98s.02.66.07.98l-2.1 1.64 2 3.46 2.47-1c.53.42 1.1.75 1.7.98L11 20.72h4l.36-2.66c.6-.23 1.17-.56 1.7-.98l2.47 1 2-3.46-2.1-1.64Z" />
+          </svg>
         </button>
 
-        <!-- Gear Menu Dropdown -->
-        <div
+        <section
           v-if="showGearMenu"
-          class="gear-menu absolute bottom-full left-0 mb-3 w-80 surface-glass rounded-xl border border-slate-300/50 shadow-lg overflow-hidden animate-scale-in"
+          class="gear-menu settings-panel fixed left-6 bottom-20 surface-glass rounded-2xl border border-slate-300/20 shadow-2xl overflow-hidden"
+          role="dialog"
+          aria-label="NeoNEI 设置中心"
+          @click.stop
+          @contextmenu.prevent
         >
-          <!-- View Toggle -->
-          <div class="p-4 border-b border-slate-200/40">
-            <p class="text-slate-200/60 text-xs uppercase tracking-wider mb-3">
-              视图切换
-            </p>
-            <div class="flex gap-2">
-              <button
-                @click="
-                  currentView = 'items';
-                  showGearMenu = false;
-                "
-                :class="[
-                  'flex-1 py-2.5 px-3 rounded-lg font-semibold text-sm transition-all duration-300',
-                  currentView === 'items'
-                    ? 'bg-gradient-to-r from-cyan-500 to-blue-500 text-white shadow-lg'
-                    : 'surface-glass text-slate-200 hover:bg-white/10 border border-slate-200/40',
-                ]"
-              >
-                物品浏览
-              </button>
-              <button
-                @click="
-                  currentView = 'patterns';
-                  showGearMenu = false;
-                "
-                :class="[
-                  'flex-1 py-2.5 px-3 rounded-lg font-semibold text-sm transition-all duration-300',
-                  currentView === 'patterns'
-                    ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white shadow-lg'
-                    : 'surface-glass text-slate-200 hover:bg-white/10 border border-slate-200/40',
-                ]"
-              >
-                模板管理
-              </button>
-            </div>
-          </div>
+          <div class="settings-panel__glow" aria-hidden="true" />
 
-          <!-- Item Size Slider -->
-          <div class="p-4 border-b border-slate-200/40">
-            <p class="text-slate-200/60 text-xs uppercase tracking-wider mb-3">
-              物品大小
-            </p>
-            <input
-              v-model.number="itemSize"
-              type="range"
-              min="24"
-              max="128"
-              step="4"
-              class="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer slider-modern"
-            />
-            <div
-              class="flex items-center justify-between text-xs text-slate-200/70 mt-2"
-            >
-              <span>小</span>
-              <span class="text-slate-200 font-bold">{{ itemSize }}px</span>
-              <span>大</span>
+          <header class="settings-panel__header">
+            <div>
+              <p class="settings-kicker">NEONEI CONTROL</p>
+              <h2 class="settings-title">设置中心</h2>
+              <p class="settings-subtitle">悬浮式主页控制台，预留更多调试与体验选项。</p>
             </div>
             <button
-              @click="saveSettings"
-              class="save-settings-btn w-full mt-4 py-2.5 px-4 rounded-lg bg-green-500 hover:bg-green-600 text-white font-bold text-sm transition-colors shadow-sm"
+              class="settings-close-btn"
+              type="button"
+              aria-label="关闭设置中心"
+              @click="showGearMenu = false"
             >
-              保存设置
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+                <path d="M6 6l12 12M18 6 6 18" />
+              </svg>
             </button>
-          </div>
+          </header>
 
-          <!-- Atlas Resident State -->
-          <div class="p-4 border-b border-slate-200/40">
-            <div class="flex items-start justify-between gap-3 mb-3">
-              <div>
-                <p class="text-slate-200/60 text-xs uppercase tracking-wider">
-                  Atlas 驻留状态
-                </p>
-                <p class="text-[11px] leading-5 text-slate-300/70 mt-1">
-                  浏览区现在自动使用全局物品 Atlas / 动画 Atlas。普通使用不需要手动全站预热；这里仅保留诊断与重新驻留入口。
-                </p>
-              </div>
-              <div
-                class="rounded-lg border px-2 py-1 text-[11px] font-semibold"
-                :class="atlasResidentProgressTotal > 0 && atlasResidentProgressCurrent >= atlasResidentProgressTotal
-                  ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200'
-                  : 'border-cyan-400/25 bg-cyan-500/10 text-cyan-200'
-"
-              >
-                {{ atlasResidentRunning ? "后台驻留" : "自动" }}
-              </div>
-            </div>
-
-            <div class="rounded-xl border border-slate-300/20 bg-slate-950/55 p-3">
-              <div class="flex items-center justify-between gap-3">
+          <div class="settings-panel__body">
+            <section class="settings-section">
+              <div class="settings-section__head">
                 <div>
-                  <p class="text-sm font-semibold text-slate-100">
-                    {{ atlasResidentStatus }}
-                  </p>
-                  <p class="text-[11px] text-slate-300/70 mt-1">
-                    物品索引 {{ atlasResidentItemCount.toLocaleString() }} · Atlas 分片 {{ atlasResidentProgressCurrent }}/{{ atlasResidentProgressTotal }}
-                  </p>
-                </div>
-                <div class="text-right">
-                  <p class="text-sm font-bold text-slate-100">
-                    {{ atlasResidentPercent }}%
-                  </p>
-                  <p class="text-[11px] text-slate-400">常驻纹理</p>
+                  <p class="settings-section__label">视图切换</p>
+                  <p class="settings-section__hint">选择主页当前工作区。</p>
                 </div>
               </div>
-
-              <div class="mt-3 h-2 overflow-hidden rounded-full bg-slate-800/90">
-                <div
-                  class="h-full rounded-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-blue-400 transition-[width] duration-300"
-                  :style="{ width: `${atlasResidentPercent}%` }"
-                />
-              </div>
-
-              <p
-                v-if="atlasResidentError"
-                class="mt-3 text-[11px] text-rose-300/90"
-              >
-                {{ atlasResidentError }}
-              </p>
-
-              <div class="mt-3 grid grid-cols-2 gap-2">
+              <div class="settings-segment" role="group" aria-label="视图切换">
                 <button
-                  @click="warmResidentAtlas"
-                  :disabled="atlasResidentRunning"
-                  class="rounded-lg border border-cyan-300/25 bg-cyan-500/10 px-3 py-2 text-sm font-semibold text-cyan-100 transition-colors disabled:cursor-not-allowed disabled:opacity-45 hover:bg-cyan-500/20"
+                  type="button"
+                  @click="
+                    currentView = 'items';
+                    showGearMenu = false;
+                  "
+                  :class="['settings-segment__btn', currentView === 'items' && 'settings-segment__btn--active']"
                 >
-                  重新驻留 Atlas
+                  物品浏览
                 </button>
                 <button
-                  @click="refreshAtlasResidentState"
-                  class="rounded-lg border border-slate-300/20 bg-slate-900/45 px-3 py-2 text-sm font-semibold text-slate-100 transition-colors hover:bg-white/10"
+                  type="button"
+                  @click="
+                    currentView = 'patterns';
+                    showGearMenu = false;
+                  "
+                  :class="['settings-segment__btn', currentView === 'patterns' && 'settings-segment__btn--active settings-segment__btn--violet']"
                 >
-                  刷新状态
+                  模板管理
                 </button>
               </div>
-            </div>
-          </div>
+            </section>
 
-          <!-- Stats & Actions -->
-          <div class="p-4">
-            <p class="text-slate-200/60 text-xs uppercase tracking-wider mb-3">
-              统计与操作
-            </p>
-            <div class="bg-slate-100 rounded-lg py-3 px-4 mb-3 border border-slate-200">
-              <p class="text-slate-600 text-xs">物品总数</p>
-              <p class="text-xl font-bold text-slate-900">
-                {{ totalItems.toLocaleString() }}
-              </p>
-            </div>
-            <button
-              @click="clearViewHistory"
-              class="w-full py-2.5 px-4 rounded-lg bg-red-500 hover:bg-red-600 text-white font-bold text-sm transition-colors shadow-sm"
-            >
-              清除历史记录
-            </button>
+            <section class="settings-section">
+              <div class="settings-section__head">
+                <div>
+                  <p class="settings-section__label">物品图标尺寸</p>
+                  <p class="settings-section__hint">调整右侧浏览区图标密度。</p>
+                </div>
+                <span class="settings-value-chip">{{ itemSize }}px</span>
+              </div>
+              <input
+                v-model.number="itemSize"
+                type="range"
+                min="24"
+                max="128"
+                step="4"
+                class="settings-slider"
+                aria-label="物品图标尺寸"
+              />
+              <div class="settings-scale" aria-hidden="true">
+                <span>紧凑</span>
+                <span>标准</span>
+                <span>展示</span>
+              </div>
+              <button type="button" @click="saveSettings" class="settings-primary-btn">
+                保存设置
+              </button>
+            </section>
+
+            <section class="settings-section settings-section--wide">
+              <div class="settings-section__head">
+                <div>
+                  <p class="settings-section__label">Atlas 驻留状态</p>
+                  <p class="settings-section__hint">
+                    浏览区已切换到全局 Atlas / 动画 Atlas 常驻模式；这里保留诊断和重新驻留入口。
+                  </p>
+                </div>
+                <span
+                  class="settings-status-pill"
+                  :class="atlasResidentProgressTotal > 0 && atlasResidentProgressCurrent >= atlasResidentProgressTotal
+                    ? 'settings-status-pill--ready'
+                    : 'settings-status-pill--running'"
+                >
+                  {{ atlasResidentRunning ? "后台驻留" : "自动" }}
+                </span>
+              </div>
+
+              <div class="settings-atlas-card">
+                <div class="settings-atlas-card__top">
+                  <div>
+                    <p class="settings-atlas-title">{{ atlasResidentStatus }}</p>
+                    <p class="settings-atlas-meta">
+                      物品索引 {{ atlasResidentItemCount.toLocaleString() }} · Atlas 分片 {{ atlasResidentProgressCurrent }}/{{ atlasResidentProgressTotal }}
+                    </p>
+                  </div>
+                  <div class="settings-atlas-percent">
+                    <strong>{{ atlasResidentPercent }}%</strong>
+                    <span>常驻进度</span>
+                  </div>
+                </div>
+
+                <div class="settings-progress" aria-hidden="true">
+                  <div
+                    class="settings-progress__bar"
+                    :style="{ width: atlasResidentPercent + '%' }"
+                  />
+                </div>
+
+                <p v-if="atlasResidentError" class="settings-error">
+                  {{ atlasResidentError }}
+                </p>
+
+                <div class="settings-action-grid">
+                  <button
+                    type="button"
+                    @click="warmResidentAtlas"
+                    :disabled="atlasResidentRunning"
+                    class="settings-secondary-btn settings-secondary-btn--cyan"
+                  >
+                    重新驻留 Atlas
+                  </button>
+                  <button
+                    type="button"
+                    @click="refreshAtlasResidentState"
+                    class="settings-secondary-btn"
+                  >
+                    刷新状态
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-section settings-section--wide settings-section--stats">
+              <div class="settings-section__head">
+                <div>
+                  <p class="settings-section__label">统计与维护</p>
+                  <p class="settings-section__hint">快速查看当前数据规模，并清理本地浏览历史。</p>
+                </div>
+              </div>
+              <div class="settings-stat-grid">
+                <div class="settings-stat-card">
+                  <span>物品总数</span>
+                  <strong>{{ totalItems.toLocaleString() }}</strong>
+                </div>
+                <div class="settings-stat-card">
+                  <span>历史记录</span>
+                  <strong>{{ viewHistory.length.toLocaleString() }}</strong>
+                </div>
+                <button type="button" @click="clearViewHistory" class="settings-danger-btn">
+                  清除历史记录
+                </button>
+              </div>
+            </section>
           </div>
-        </div>
+        </section>
       </div>
-    </div>
-  </div>
+    </div>  </div>
 </template>
 
 <style scoped>
@@ -2133,6 +2165,455 @@ const saveSettings = () => {
   backdrop-filter: blur(20px);
   animation: scaleIn 0.2s ease-out;
   width: clamp(290px, 22vw, 420px);
+}
+
+/* Floating Settings Panel */
+.settings-panel-scrim {
+  background:
+    radial-gradient(circle at 12% 86%, rgba(34, 211, 238, 0.11), transparent 30%),
+    radial-gradient(circle at 70% 18%, rgba(139, 92, 246, 0.10), transparent 34%),
+    rgba(2, 6, 18, 0.34);
+  backdrop-filter: blur(2px);
+}
+
+.settings-launcher {
+  position: relative;
+  color: rgba(226, 232, 240, 0.94);
+  background: linear-gradient(145deg, rgba(15, 23, 42, 0.82), rgba(2, 6, 23, 0.92));
+}
+
+.settings-launcher::before {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  padding: 1px;
+  background: linear-gradient(135deg, rgba(103, 232, 249, 0.55), rgba(129, 140, 248, 0.18), rgba(255, 255, 255, 0.10));
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+.settings-launcher--active {
+  background: linear-gradient(145deg, rgba(14, 116, 144, 0.92), rgba(30, 41, 59, 0.96));
+  box-shadow:
+    0 0 28px rgba(34, 211, 238, 0.24),
+    0 16px 34px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+.gear-menu.settings-panel {
+  width: min(760px, calc(100vw - 48px));
+  max-height: min(78vh, 690px);
+  background:
+    linear-gradient(135deg, rgba(15, 23, 42, 0.93), rgba(3, 7, 18, 0.96) 58%, rgba(12, 20, 38, 0.94)),
+    radial-gradient(circle at 20% 0%, rgba(34, 211, 238, 0.14), transparent 36%),
+    radial-gradient(circle at 92% 86%, rgba(168, 85, 247, 0.12), transparent 34%);
+  border-color: rgba(148, 163, 184, 0.22);
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.52),
+    0 0 0 1px rgba(255, 255, 255, 0.035) inset,
+    0 0 42px rgba(34, 211, 238, 0.10);
+  backdrop-filter: blur(24px) saturate(1.2);
+  transform-origin: bottom left;
+}
+
+.settings-panel__glow {
+  position: absolute;
+  inset: -35% auto auto -14%;
+  width: 360px;
+  height: 360px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(34, 211, 238, 0.18), transparent 64%);
+  filter: blur(8px);
+  pointer-events: none;
+}
+
+.settings-panel__header {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 22px 24px 18px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.16);
+  background:
+    linear-gradient(90deg, rgba(14, 165, 233, 0.08), rgba(99, 102, 241, 0.05), transparent),
+    rgba(15, 23, 42, 0.34);
+}
+
+.settings-kicker {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.24em;
+  color: rgba(103, 232, 249, 0.82);
+  text-shadow: 0 0 14px rgba(34, 211, 238, 0.32);
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 900;
+  line-height: 1.05;
+  color: rgba(248, 250, 252, 0.98);
+}
+
+.settings-subtitle {
+  margin: 8px 0 0;
+  max-width: 460px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(203, 213, 225, 0.72);
+}
+
+.settings-close-btn {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  color: rgba(226, 232, 240, 0.82);
+  background: rgba(15, 23, 42, 0.58);
+  transition: border-color 160ms ease, background 160ms ease, color 160ms ease, transform 160ms ease;
+}
+
+.settings-close-btn:hover {
+  transform: translateY(-1px);
+  border-color: rgba(103, 232, 249, 0.34);
+  background: rgba(15, 23, 42, 0.82);
+  color: #fff;
+}
+
+.settings-panel__body {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  padding: 16px;
+  overflow: auto;
+  max-height: calc(min(78vh, 690px) - 112px);
+}
+
+.settings-section {
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  background:
+    linear-gradient(180deg, rgba(30, 41, 59, 0.56), rgba(2, 6, 23, 0.44)),
+    rgba(15, 23, 42, 0.34);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.045),
+    0 12px 28px rgba(0, 0, 0, 0.18);
+  padding: 16px;
+}
+
+.settings-section--wide {
+  grid-column: 1 / -1;
+}
+
+.settings-section__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.settings-section__label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: rgba(241, 245, 249, 0.94);
+}
+
+.settings-section__hint {
+  margin: 5px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: rgba(203, 213, 225, 0.64);
+}
+
+.settings-segment {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  padding: 5px;
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(2, 6, 23, 0.42);
+}
+
+.settings-segment__btn {
+  min-height: 42px;
+  border-radius: 11px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: rgba(203, 213, 225, 0.78);
+  font-size: 13px;
+  font-weight: 800;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, box-shadow 160ms ease;
+}
+
+.settings-segment__btn:hover {
+  color: #fff;
+  background: rgba(148, 163, 184, 0.10);
+}
+
+.settings-segment__btn--active {
+  color: white;
+  border-color: rgba(103, 232, 249, 0.26);
+  background: linear-gradient(135deg, rgba(6, 182, 212, 0.82), rgba(37, 99, 235, 0.68));
+  box-shadow: 0 10px 22px rgba(14, 165, 233, 0.22);
+}
+
+.settings-segment__btn--violet {
+  border-color: rgba(216, 180, 254, 0.26);
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.82), rgba(219, 39, 119, 0.62));
+  box-shadow: 0 10px 22px rgba(168, 85, 247, 0.20);
+}
+
+.settings-value-chip,
+.settings-status-pill {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  border: 1px solid rgba(103, 232, 249, 0.24);
+  background: rgba(8, 47, 73, 0.36);
+  color: rgba(165, 243, 252, 0.96);
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.settings-status-pill--ready {
+  border-color: rgba(52, 211, 153, 0.26);
+  background: rgba(6, 78, 59, 0.34);
+  color: rgba(167, 243, 208, 0.96);
+}
+
+.settings-status-pill--running {
+  border-color: rgba(34, 211, 238, 0.26);
+}
+
+.settings-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+  background:
+    linear-gradient(90deg, rgba(34, 211, 238, 0.78), rgba(99, 102, 241, 0.72)),
+    rgba(15, 23, 42, 0.78);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.18);
+}
+
+.settings-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(248, 250, 252, 0.95);
+  background: #22d3ee;
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.55);
+}
+
+.settings-slider::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid rgba(248, 250, 252, 0.95);
+  background: #22d3ee;
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.55);
+}
+
+.settings-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 9px;
+  font-size: 11px;
+  color: rgba(148, 163, 184, 0.74);
+}
+
+.settings-primary-btn,
+.settings-secondary-btn,
+.settings-danger-btn {
+  border-radius: 12px;
+  min-height: 40px;
+  font-size: 13px;
+  font-weight: 850;
+  transition: transform 160ms ease, background 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
+}
+
+.settings-primary-btn {
+  width: 100%;
+  margin-top: 14px;
+  color: white;
+  border: 1px solid rgba(52, 211, 153, 0.26);
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.88), rgba(20, 184, 166, 0.62));
+  box-shadow: 0 12px 26px rgba(16, 185, 129, 0.18);
+}
+
+.settings-primary-btn:hover,
+.settings-secondary-btn:hover,
+.settings-danger-btn:hover {
+  transform: translateY(-1px);
+}
+
+.settings-atlas-card {
+  border-radius: 16px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background:
+    linear-gradient(135deg, rgba(2, 6, 23, 0.66), rgba(15, 23, 42, 0.54)),
+    radial-gradient(circle at 0% 0%, rgba(34, 211, 238, 0.09), transparent 38%);
+  padding: 14px;
+}
+
+.settings-atlas-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-atlas-title {
+  margin: 0;
+  color: rgba(248, 250, 252, 0.96);
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.settings-atlas-meta {
+  margin: 6px 0 0;
+  color: rgba(203, 213, 225, 0.68);
+  font-size: 12px;
+}
+
+.settings-atlas-percent {
+  min-width: 82px;
+  text-align: right;
+}
+
+.settings-atlas-percent strong {
+  display: block;
+  color: rgba(248, 250, 252, 0.96);
+  font-size: 18px;
+  line-height: 1;
+}
+
+.settings-atlas-percent span {
+  display: block;
+  margin-top: 5px;
+  color: rgba(148, 163, 184, 0.78);
+  font-size: 11px;
+}
+
+.settings-progress {
+  height: 9px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.74);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.13);
+}
+
+.settings-progress__bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #34d399, #22d3ee, #60a5fa);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.46);
+  transition: width 260ms ease;
+}
+
+.settings-error {
+  margin: 10px 0 0;
+  color: rgba(253, 164, 175, 0.95);
+  font-size: 12px;
+}
+
+.settings-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.settings-secondary-btn {
+  color: rgba(226, 232, 240, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.17);
+  background: rgba(15, 23, 42, 0.62);
+}
+
+.settings-secondary-btn:hover {
+  border-color: rgba(203, 213, 225, 0.28);
+  background: rgba(30, 41, 59, 0.72);
+}
+
+.settings-secondary-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+  transform: none;
+}
+
+.settings-secondary-btn--cyan {
+  color: rgba(207, 250, 254, 0.96);
+  border-color: rgba(34, 211, 238, 0.24);
+  background: rgba(8, 145, 178, 0.14);
+}
+
+.settings-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) minmax(150px, 0.72fr);
+  gap: 10px;
+}
+
+.settings-stat-card {
+  border-radius: 14px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(2, 6, 23, 0.44);
+  padding: 12px;
+}
+
+.settings-stat-card span {
+  display: block;
+  color: rgba(148, 163, 184, 0.78);
+  font-size: 11px;
+  margin-bottom: 4px;
+}
+
+.settings-stat-card strong {
+  color: rgba(248, 250, 252, 0.96);
+  font-size: 19px;
+  line-height: 1;
+}
+
+.settings-danger-btn {
+  color: rgba(255, 228, 230, 0.96);
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  background: linear-gradient(135deg, rgba(190, 18, 60, 0.70), rgba(127, 29, 29, 0.56));
+  box-shadow: 0 12px 24px rgba(244, 63, 94, 0.12);
+}
+
+@media (max-width: 760px) {
+  .gear-menu.settings-panel {
+    left: 12px;
+    right: 12px;
+    bottom: 76px;
+    width: auto;
+  }
+
+  .settings-panel__body {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-stat-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .recipe-entry-btn {
