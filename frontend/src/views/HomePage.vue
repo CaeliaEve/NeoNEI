@@ -1888,8 +1888,12 @@ const saveSettings = () => {
   min-height: 0;
 }
 
+.homepage-recipe-scale-shell :deep(.mana-pool-ui .altar-deck) {
+  transform: translateY(-18px);
+}
+
 .homepage-recipe-scale-shell :deep(.mana-pool-ui .mana-hud-overlay) {
-  bottom: 28px;
+  bottom: 58px;
 }
 
 .modal-stacked-furnace-recipes {
