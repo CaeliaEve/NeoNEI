@@ -29,8 +29,18 @@ test('recipe viewer keeps large category hydration paged instead of pulling full
     'viewer should request later category windows by offset instead of always hydrating the whole group',
   );
   assert.equal(
-    source.includes('await ensureCategoryPageReady'),
+    source.includes("markPerfEvent('recipe-page-switched-immediate'"),
     true,
-    'page navigation should ensure the target category page is hydrated before switching pages',
+    'page navigation should switch immediately instead of waiting for the target category window',
+  );
+  assert.equal(
+    source.includes("void ensureCategoryPageReady(itemId, loadRequestSeq, category, targetPage, 'visible')"),
+    true,
+    'page navigation should hydrate the target category window in the background after switching',
+  );
+  assert.equal(
+    source.includes("await ensureCategoryPageReady(itemId, loadRequestSeq, category, targetPage, 'visible')"),
+    false,
+    'page navigation must not block on category hydration before painting the target page',
   );
 });

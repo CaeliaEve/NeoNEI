@@ -27,11 +27,14 @@ import {
   buildPublishModsListRelativePath,
   buildPublishRecipeBootstrapBaseRelativePath,
   buildPublishRecipeCategoryGroupIndexRelativePath,
+  buildPublishRecipeCategoryGroupWindowRelativePath,
   buildPublishRecipeBootstrapRelativePath,
   buildPublishRecipeGroupIndexBaseRelativePath,
+  buildPublishRecipeGroupWindowBaseRelativePath,
   buildPublishRecipeSearchBaseRelativePath,
   buildPublishRecipeSearchRelativePath,
   buildPublishRecipeMachineGroupIndexRelativePath,
+  buildPublishRecipeMachineGroupWindowRelativePath,
   buildPublishRecipeBootstrapShardBaseRelativePath,
   buildPublishRecipeBootstrapShardRelativePath,
   buildPublishItemRecipeBundleBaseRelativePath,
@@ -47,7 +50,7 @@ import {
   buildModsListPayloadKey,
 } from './publish-payload.service';
 
-export const PUBLISH_PAYLOAD_REVISION = '2026-05-21-publish-static-bundle-v11-item-recipe-bundles';
+export const PUBLISH_PAYLOAD_REVISION = '2026-05-23-publish-static-bundle-v12-recipe-group-windows';
 
 export interface PublishPayloadHotOptions {
   enabled?: boolean;
@@ -181,6 +184,7 @@ function normalizeSlotSizes(values: number[] | undefined): number[] {
 }
 
 const RECIPE_GROUP_INDEX_ONLY_LIMIT = 0;
+const RECIPE_GROUP_WINDOW_SIZE = 8;
 const RECIPE_SEARCH_TEXT_MAX_LENGTH = Number(process.env.PUBLISHED_RECIPE_SEARCH_TEXT_MAX_LENGTH || 1024);
 const PUBLISHED_RECIPE_SEARCH_PACK_MAX_BYTES = Number(process.env.PUBLISHED_RECIPE_SEARCH_PACK_MAX_BYTES || (768 * 1024));
 
@@ -735,6 +739,7 @@ export class PublishPayloadMaterializerService {
         recipeBootstrapShardBasePath: null,
         recipeBootstrapItems: [],
         recipeGroupIndexBasePath: null,
+        recipeGroupWindowBasePath: null,
         recipeSearchBasePath: null,
         recipeSearchItems: [],
         itemRecipeBundleBasePath: null,
@@ -849,6 +854,15 @@ export class PublishPayloadMaterializerService {
             bundleManifest.files.recipeGroupIndexBasePath = buildPublishBundlePublicAssetPath(
               basePublicPath,
               buildPublishRecipeGroupIndexBaseRelativePath(),
+            );
+          }
+          break;
+        case 'recipe-machine-group-window':
+        case 'recipe-category-group-window':
+          if (!bundleManifest.files.recipeGroupWindowBasePath) {
+            bundleManifest.files.recipeGroupWindowBasePath = buildPublishBundlePublicAssetPath(
+              basePublicPath,
+              buildPublishRecipeGroupWindowBaseRelativePath(),
             );
           }
           break;
@@ -1398,6 +1412,51 @@ export class PublishPayloadMaterializerService {
               bundle_relative_path: machineRelativePath,
               prewritten: true,
             });
+
+            for (let offset = 0; offset < machinePayload.recipeCount; offset += RECIPE_GROUP_WINDOW_SIZE) {
+              const windowPayload = tab === 'usedIn'
+                // eslint-disable-next-line no-await-in-loop
+                ? await recipeBootstrapService.getUsedInGroup(itemId, machineGroup.machineType, machineGroup.voltageTier ?? null, {
+                    offset,
+                    limit: RECIPE_GROUP_WINDOW_SIZE,
+                    includeRecipeIds: false,
+                  })
+                // eslint-disable-next-line no-await-in-loop
+                : await recipeBootstrapService.getProducedByGroup(itemId, machineGroup.machineType, machineGroup.voltageTier ?? null, {
+                    offset,
+                    limit: RECIPE_GROUP_WINDOW_SIZE,
+                    includeRecipeIds: false,
+                  });
+              const windowPayloadJson = JSON.stringify({
+                itemId,
+                machineType: machineGroup.machineType,
+                voltageTier: machineGroup.voltageTier ?? null,
+                recipeCount: windowPayload.recipeCount,
+                recipes: windowPayload.recipes,
+                recipeIds: machinePayload.recipeIds,
+                offset: windowPayload.offset,
+                limit: windowPayload.limit,
+                hasMore: windowPayload.hasMore,
+                mediaManifest: windowPayload.mediaManifest ?? null,
+              });
+              const windowRelativePath = buildPublishRecipeMachineGroupWindowRelativePath({
+                itemId,
+                relation: relationSegment,
+                machineKey,
+                offset,
+                limit: RECIPE_GROUP_WINDOW_SIZE,
+              });
+              prewrittenPayloadBytes += Buffer.byteLength(windowPayloadJson, 'utf8');
+              writeBundleJson(windowRelativePath, windowPayloadJson);
+              rows.push({
+                payload_key: `bundle-only:recipe-machine-group-window::item=${itemId}::relation=${relationSegment}::machine=${machineKey}::offset=${offset}::limit=${RECIPE_GROUP_WINDOW_SIZE}`,
+                payload_type: 'recipe-machine-group-window',
+                payload_json: '{}',
+                signature: sourceSignature,
+                bundle_relative_path: windowRelativePath,
+                prewritten: true,
+              });
+            }
           }
 
           const categoryGroups = collectCategoryGroupSummaries(bootstrap.indexedSummary, tab);
@@ -1444,6 +1503,49 @@ export class PublishPayloadMaterializerService {
               bundle_relative_path: categoryRelativePath,
               prewritten: true,
             });
+
+            for (let offset = 0; offset < categoryPayload.recipeCount; offset += RECIPE_GROUP_WINDOW_SIZE) {
+              // eslint-disable-next-line no-await-in-loop
+              const windowPayload = await recipeBootstrapService.getCategoryGroup(
+                itemId,
+                tab,
+                categoryKey,
+                {
+                  offset,
+                  limit: RECIPE_GROUP_WINDOW_SIZE,
+                  includeRecipeIds: false,
+                },
+              );
+              const windowPayloadJson = JSON.stringify({
+                itemId,
+                categoryKey,
+                tab,
+                recipeCount: windowPayload.recipeCount,
+                recipes: windowPayload.recipes,
+                recipeIds: categoryPayload.recipeIds,
+                offset: windowPayload.offset,
+                limit: windowPayload.limit,
+                hasMore: windowPayload.hasMore,
+                mediaManifest: windowPayload.mediaManifest ?? null,
+              });
+              const windowRelativePath = buildPublishRecipeCategoryGroupWindowRelativePath({
+                itemId,
+                relation: relationSegment,
+                categoryKey,
+                offset,
+                limit: RECIPE_GROUP_WINDOW_SIZE,
+              });
+              prewrittenPayloadBytes += Buffer.byteLength(windowPayloadJson, 'utf8');
+              writeBundleJson(windowRelativePath, windowPayloadJson);
+              rows.push({
+                payload_key: `bundle-only:recipe-category-group-window::item=${itemId}::relation=${relationSegment}::category=${categoryKey}::offset=${offset}::limit=${RECIPE_GROUP_WINDOW_SIZE}`,
+                payload_type: 'recipe-category-group-window',
+                payload_json: '{}',
+                signature: sourceSignature,
+                bundle_relative_path: windowRelativePath,
+                prewritten: true,
+              });
+            }
           }
         }
 

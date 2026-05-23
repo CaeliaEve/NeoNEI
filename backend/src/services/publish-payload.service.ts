@@ -108,6 +108,7 @@ export interface PublishStaticBundleManifest {
     recipeBootstrapShardBasePath: string | null;
     recipeBootstrapItems: string[];
     recipeGroupIndexBasePath: string | null;
+    recipeGroupWindowBasePath: string | null;
     recipeSearchBasePath: string | null;
     recipeSearchItems: string[];
     itemRecipeBundleBasePath: string | null;
@@ -236,6 +237,10 @@ export function buildPublishRecipeGroupIndexBaseRelativePath(): string {
   return 'recipes/groups/index';
 }
 
+export function buildPublishRecipeGroupWindowBaseRelativePath(): string {
+  return 'recipes/groups/windows';
+}
+
 export function buildPublishRecipeSearchBaseRelativePath(): string {
   return 'recipes/search';
 }
@@ -270,12 +275,36 @@ export function buildPublishRecipeMachineGroupIndexRelativePath(params: {
   return `${buildPublishRecipeGroupIndexBaseRelativePath()}/machine/${encodeURIComponent(`${params.itemId ?? ''}`.trim())}/${params.relation}/${encodeURIComponent(`${params.machineKey ?? ''}`.trim())}.json`;
 }
 
+export function buildPublishRecipeMachineGroupWindowRelativePath(params: {
+  itemId: string;
+  relation: 'produced-by' | 'used-in';
+  machineKey: string;
+  offset: number;
+  limit: number;
+}): string {
+  const offset = Math.max(0, Math.floor(Number(params.offset) || 0));
+  const limit = Math.max(0, Math.floor(Number(params.limit) || 0));
+  return `${buildPublishRecipeGroupWindowBaseRelativePath()}/machine/${encodeURIComponent(`${params.itemId ?? ''}`.trim())}/${params.relation}/${encodeURIComponent(`${params.machineKey ?? ''}`.trim())}/${offset}-${limit}.json`;
+}
+
 export function buildPublishRecipeCategoryGroupIndexRelativePath(params: {
   itemId: string;
   relation: 'produced-by' | 'used-in';
   categoryKey: string;
 }): string {
   return `${buildPublishRecipeGroupIndexBaseRelativePath()}/category/${encodeURIComponent(`${params.itemId ?? ''}`.trim())}/${params.relation}/${encodeURIComponent(`${params.categoryKey ?? ''}`.trim())}.json`;
+}
+
+export function buildPublishRecipeCategoryGroupWindowRelativePath(params: {
+  itemId: string;
+  relation: 'produced-by' | 'used-in';
+  categoryKey: string;
+  offset: number;
+  limit: number;
+}): string {
+  const offset = Math.max(0, Math.floor(Number(params.offset) || 0));
+  const limit = Math.max(0, Math.floor(Number(params.limit) || 0));
+  return `${buildPublishRecipeGroupWindowBaseRelativePath()}/category/${encodeURIComponent(`${params.itemId ?? ''}`.trim())}/${params.relation}/${encodeURIComponent(`${params.categoryKey ?? ''}`.trim())}/${offset}-${limit}.json`;
 }
 
 export function buildPublishBundleManifestRelativePath(): string {

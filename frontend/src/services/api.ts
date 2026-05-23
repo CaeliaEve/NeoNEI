@@ -912,6 +912,25 @@ function canUsePublishedRecipeGroupIndex(
   return offset === 0 && options?.includeRecipeIds === true;
 }
 
+function canUsePublishedRecipeGroupWindow(
+  manifest: PublicRuntimeManifest | null | undefined,
+  itemId: string,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
+): boolean {
+  const normalizedItemId = `${itemId ?? ''}`.trim();
+  if (!normalizedItemId || options?.includeRecipeIds === true) {
+    return false;
+  }
+
+  const bundle = manifest?.publishBundle;
+  const windowBasePath = `${bundle?.files.recipeGroupWindowBasePath ?? ''}`.trim();
+  const publishedItems = Array.isArray(bundle?.files.recipeBootstrapItems)
+    ? bundle?.files.recipeBootstrapItems
+    : [];
+  const limit = Math.max(0, Math.floor(Number(options?.limit ?? 0) || 0));
+  return Boolean(windowBasePath && publishedItems.includes(normalizedItemId) && limit > 0);
+}
+
 function resolvePublishedRecipeGroupIndexPath(params: {
   manifest: PublicRuntimeManifest | null | undefined;
   itemId: string;
@@ -927,6 +946,27 @@ function resolvePublishedRecipeGroupIndexPath(params: {
   }
 
   return `${basePath.replace(/\/+$/g, '')}/${params.kind}/${encodeURIComponent(normalizedItemId)}/${toPublishedRecipeRelationSegment(params.tab)}/${encodeURIComponent(normalizedKey)}.json`;
+}
+
+function resolvePublishedRecipeGroupWindowPath(params: {
+  manifest: PublicRuntimeManifest | null | undefined;
+  itemId: string;
+  tab: 'usedIn' | 'producedBy';
+  kind: 'machine' | 'category';
+  key: string;
+  offset?: number;
+  limit?: number;
+}): string | null {
+  const normalizedItemId = `${params.itemId ?? ''}`.trim();
+  const normalizedKey = `${params.key ?? ''}`.trim();
+  const basePath = `${params.manifest?.publishBundle?.files.recipeGroupWindowBasePath ?? ''}`.trim();
+  const offset = Math.max(0, Math.floor(Number(params.offset ?? 0) || 0));
+  const limit = Math.max(0, Math.floor(Number(params.limit ?? 0) || 0));
+  if (!normalizedItemId || !normalizedKey || !basePath || limit <= 0) {
+    return null;
+  }
+
+  return `${basePath.replace(/\/+$/g, '')}/${params.kind}/${encodeURIComponent(normalizedItemId)}/${toPublishedRecipeRelationSegment(params.tab)}/${encodeURIComponent(normalizedKey)}/${offset}-${limit}.json`;
 }
 
 function canUsePublishedRecipeSearchPack(
@@ -1026,6 +1066,7 @@ export interface PublishStaticBundleManifest {
     recipeBootstrapShardBasePath: string | null;
     recipeBootstrapItems: string[];
     recipeGroupIndexBasePath: string | null;
+    recipeGroupWindowBasePath?: string | null;
     recipeSearchBasePath: string | null;
     recipeSearchItems: string[];
     itemRecipeBundleBasePath: string | null;
@@ -2855,6 +2896,38 @@ export const api = {
           }
         }
       }
+      if (canUsePublishedRecipeGroupWindow(manifest, itemId, options) && machineKey) {
+        const staticPath = resolvePublishedRecipeGroupWindowPath({
+          manifest,
+          itemId,
+          tab: 'producedBy',
+          kind: 'machine',
+          key: machineKey,
+          offset: options?.offset ?? 0,
+          limit: options?.limit ?? 0,
+        });
+        if (staticPath) {
+          try {
+            const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
+            persistRuntimePayload(
+              'recipe-bootstrap-produced-by-group',
+              withRecipeBootstrapCacheSchema({
+                itemId,
+                machineType,
+                machineKey: machineKey || null,
+                voltageTier: voltageTier ?? null,
+                offset: options?.offset ?? 0,
+                limit: options?.limit ?? null,
+                includeRecipeIds: options?.includeRecipeIds === true,
+              }),
+              published,
+            );
+            return published;
+          } catch {
+            // Fall back to the API route when the static publish bundle is unavailable.
+          }
+        }
+      }
     }
 
     const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/produced-by-group`, {
@@ -2938,6 +3011,38 @@ export const api = {
           }
         }
       }
+      if (canUsePublishedRecipeGroupWindow(manifest, itemId, options) && machineKey) {
+        const staticPath = resolvePublishedRecipeGroupWindowPath({
+          manifest,
+          itemId,
+          tab: 'usedIn',
+          kind: 'machine',
+          key: machineKey,
+          offset: options?.offset ?? 0,
+          limit: options?.limit ?? 0,
+        });
+        if (staticPath) {
+          try {
+            const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
+            persistRuntimePayload(
+              'recipe-bootstrap-used-in-group',
+              withRecipeBootstrapCacheSchema({
+                itemId,
+                machineType,
+                machineKey: machineKey || null,
+                voltageTier: voltageTier ?? null,
+                offset: options?.offset ?? 0,
+                limit: options?.limit ?? null,
+                includeRecipeIds: options?.includeRecipeIds === true,
+              }),
+              published,
+            );
+            return published;
+          } catch {
+            // Fall back to the API route when the static publish bundle is unavailable.
+          }
+        }
+      }
     }
 
     const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/used-in-group`, {
@@ -2995,6 +3100,37 @@ export const api = {
           tab,
           kind: 'category',
           key: categoryKey,
+        });
+        if (staticPath) {
+          try {
+            const published = await fetchPublishedJson<RecipeBootstrapCategoryGroupPayload>(staticPath);
+            persistRuntimePayload(
+              'recipe-bootstrap-category-group',
+              withRecipeBootstrapCacheSchema({
+                itemId,
+                tab,
+                categoryKey,
+                offset: options?.offset ?? 0,
+                limit: options?.limit ?? null,
+                includeRecipeIds: options?.includeRecipeIds === true,
+              }),
+              published,
+            );
+            return published;
+          } catch {
+            // Fall back to the API route when the static publish bundle is unavailable.
+          }
+        }
+      }
+      if (canUsePublishedRecipeGroupWindow(manifest, itemId, options)) {
+        const staticPath = resolvePublishedRecipeGroupWindowPath({
+          manifest,
+          itemId,
+          tab,
+          kind: 'category',
+          key: categoryKey,
+          offset: options?.offset ?? 0,
+          limit: options?.limit ?? 0,
         });
         if (staticPath) {
           try {
