@@ -148,13 +148,17 @@ export async function getOpfsAssetCacheStats(): Promise<{ entryCount: number; ap
   let entryCount = 0;
   let approxBytes = 0;
   try {
-    for await (const [, handle] of directory.entries()) {
+    const iterableDirectory = directory as FileSystemDirectoryHandle & {
+      entries: () => AsyncIterableIterator<[string, FileSystemHandle]>;
+    };
+    for await (const [, handle] of iterableDirectory.entries()) {
       if (handle.kind !== 'file') {
         continue;
       }
       entryCount += 1;
       try {
-        const file = await handle.getFile();
+        const fileHandle = handle as FileSystemFileHandle;
+        const file = await fileHandle.getFile();
         approxBytes += file.size;
       } catch {
         // ignore unreadable entries

@@ -1148,18 +1148,46 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     currentPage.value = 0;
   };
 
-  const navigateToPage = async (targetPage: number, source: 'page-next' | 'page-prev' | 'page-set') => {
+  const navigateToPage = (targetPage: number, source: 'page-next' | 'page-prev' | 'page-set') => {
     if (targetPage < 0 || targetPage >= totalPages.value || targetPage === currentPage.value) {
       return;
     }
     markRecipeSwitch(source);
     playClick();
+    currentPage.value = targetPage;
     const itemId = itemIdRef.value;
     const category = currentCategory.value;
     if (itemId && category) {
-      await ensureCategoryPageReady(itemId, loadRequestSeq, category, targetPage, 'visible');
+      const startedAt = getNow();
+      void ensureCategoryPageReady(itemId, loadRequestSeq, category, targetPage, 'visible')
+        .then(() => {
+          markPerfEvent('recipe-page-hydration-complete', {
+            itemId,
+            categoryKey: category.categoryKey,
+            machineKey: category.machineKey ?? null,
+            page: targetPage,
+            source,
+            durationMs: getNow() - startedAt,
+          });
+        })
+        .catch((error) => {
+          markPerfEvent('recipe-page-hydration-failed', {
+            itemId,
+            categoryKey: category.categoryKey,
+            machineKey: category.machineKey ?? null,
+            page: targetPage,
+            source,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        });
     }
-    currentPage.value = targetPage;
+    markPerfEvent('recipe-page-switched-immediate', {
+      itemId: itemId ?? null,
+      categoryKey: category?.categoryKey ?? null,
+      machineKey: category?.machineKey ?? null,
+      page: targetPage,
+      source,
+    });
   };
 
   const nextPage = () => {

@@ -93,7 +93,7 @@ function getAspectStaticImage(item: Pick<RitualItemStack, 'itemId' | 'count' | '
   });
 }
 
-function isResolvedAspectSlot(slot: ResolvedSlot | null): slot is ResolvedSlot {
+function isResolvedAspectSlot(slot: ResolvedSlot | null): boolean {
   return !!slot && isThaumcraftAspectItem(slot.itemId, slot.localizedName);
 }
 

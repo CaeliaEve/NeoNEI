@@ -853,6 +853,9 @@ function findRectAt(clientX: number, clientY: number): GridRect | null {
 }
 
 async function ensureStaticImage(item: Item): Promise<HTMLImageElement | null> {
+  if (hasGlobalBrowserAtlas() && getGlobalBrowserAtlasEntry(item.itemId)) {
+    return null;
+  }
   if (hasGlobalBrowserAtlas()) {
     return null;
   }
@@ -1216,6 +1219,9 @@ function warmStaticImages() {
   }
   props.entries.forEach((entry) => {
     const item = getItemForEntry(entry);
+    if (hasGlobalBrowserAtlas() && getGlobalBrowserAtlasEntry(item.itemId)) {
+      return;
+    }
     if (shouldUseDirectStaticCorrection(item)) {
       void ensureStaticImage(item);
       return;

@@ -513,6 +513,7 @@ export interface BrowserByIdsPackResponse {
   data: Array<{ key: string; kind: 'item'; item: Item }>;
   atlas: PageAtlasResult | null;
   mediaManifest?: PageRichMediaManifest | null;
+  resourceManifest?: BrowserPageResourceManifest;
 }
 
 type PersistentBrowserPageCacheRecord = {
@@ -847,11 +848,42 @@ function unwrapPublishedItemRecipeBundle(value: unknown): RecipeBootstrapPayload
   if (!value || typeof value !== 'object') {
     return null;
   }
-  const record = value as { bootstrap?: unknown };
+  const record = value as {
+    bootstrap?: unknown;
+    item?: unknown;
+    producedBy?: unknown;
+    usedIn?: unknown;
+    firstPageRecipes?: {
+      producedBy?: unknown;
+      usedIn?: unknown;
+    };
+  };
   if (!record.bootstrap || typeof record.bootstrap !== 'object') {
     return null;
   }
-  return record.bootstrap as RecipeBootstrapPayload;
+  const bootstrap = record.bootstrap as RecipeBootstrapPayload;
+  const producedByRecipeIds = Array.isArray(record.producedBy)
+    ? record.producedBy.map((entry) => `${entry ?? ''}`.trim()).filter(Boolean)
+    : bootstrap.recipeIndex?.producedByRecipes ?? [];
+  const usedInRecipeIds = Array.isArray(record.usedIn)
+    ? record.usedIn.map((entry) => `${entry ?? ''}`.trim()).filter(Boolean)
+    : bootstrap.recipeIndex?.usedInRecipes ?? [];
+  const bundledProducedBy = Array.isArray(record.firstPageRecipes?.producedBy)
+    ? record.firstPageRecipes.producedBy as indexedRecipe[]
+    : bootstrap.indexedCrafting ?? [];
+  const bundledUsedIn = Array.isArray(record.firstPageRecipes?.usedIn)
+    ? record.firstPageRecipes.usedIn as indexedRecipe[]
+    : bootstrap.indexedUsage ?? [];
+  return {
+    ...bootstrap,
+    item: (record.item && typeof record.item === 'object' ? record.item : bootstrap.item) as Item,
+    recipeIndex: {
+      producedByRecipes: producedByRecipeIds,
+      usedInRecipes: usedInRecipeIds,
+    },
+    indexedCrafting: bundledProducedBy,
+    indexedUsage: bundledUsedIn,
+  };
 }
 function toPublishedRecipeRelationSegment(tab: 'usedIn' | 'producedBy'): 'used-in' | 'produced-by' {
   return tab === 'usedIn' ? 'used-in' : 'produced-by';
