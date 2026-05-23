@@ -1883,6 +1883,15 @@ const saveSettings = () => {
   max-height: 100%;
 }
 
+.homepage-recipe-scale-shell :deep(.mana-pool-ui) {
+  box-sizing: border-box;
+  min-height: 0;
+}
+
+.homepage-recipe-scale-shell :deep(.mana-pool-ui .mana-hud-overlay) {
+  bottom: 28px;
+}
+
 .modal-stacked-furnace-recipes {
   width: 100%;
   height: 100%;
