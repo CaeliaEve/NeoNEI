@@ -91,6 +91,24 @@ export function projectBrowserEntriesFromDefaultCatalog(
     expandedGroups.add(forcedExpandedGroupKey);
   }
 
+  if (expandedGroups.size === 0) {
+    const total = entries.length;
+    const totalPages = Math.max(1, Math.ceil(total / normalizedPageSize));
+    const clampedPage = Math.min(normalizedPage, totalPages);
+    const start = (clampedPage - 1) * normalizedPageSize;
+    return {
+      data: entries.slice(start, start + normalizedPageSize).map((entry) => (
+        entry.kind === 'item'
+          ? entry
+          : createCollapsedGroupEntry(entry.group)
+      )),
+      total,
+      page: clampedPage,
+      pageSize: normalizedPageSize,
+      totalPages,
+    };
+  }
+
   const projected: BrowserGridEntry[] = [];
 
   for (const entry of entries) {

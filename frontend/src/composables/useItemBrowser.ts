@@ -35,6 +35,7 @@ import {
   getGlobalBrowserAtlasCoverageForItems,
   hasGlobalBrowserAtlas,
   inspectGlobalBrowserAtlasCoverageForItems,
+  warmAllGlobalBrowserAtlases,
   warmGlobalBrowserAtlasForItems,
   warmGlobalBrowserAtlasForItemsDetailed,
 } from '../services/globalBrowserAtlas';
@@ -60,18 +61,20 @@ type BrowserPageRequestParams = {
   slotSize: number;
 };
 
-const SHARED_BROWSER_PAGE_CACHE_LIMIT = 48;
+const SHARED_BROWSER_PAGE_CACHE_LIMIT = 256;
 const SEARCH_LOCAL_PROJECTION_MAX_TOTAL = 1600;
 const sharedPageCache = new Map<string, CachedBrowserPage>();
 const sharedPageRequestInFlight = new Map<string, Promise<CachedBrowserPage>>();
 const sharedPageRevalidationInFlight = new Map<string, Promise<void>>();
 const sharedPagePresentationReady = new Set<string>();
 const sharedPagePresentationWarmInFlight = new Map<string, Promise<void>>();
-const SHARED_EXPANDED_PROJECTION_CACHE_LIMIT = 96;
+const SHARED_EXPANDED_PROJECTION_CACHE_LIMIT = 256;
 const sharedExpandedProjectionCache = new Map<string, CachedBrowserPage>();
 
 let browserCatalogWarmTimer: ReturnType<typeof setTimeout> | null = null;
 let browserGroupWarmTimer: ReturnType<typeof setTimeout> | null = null;
+let nativeBrowserWarmTimer: ReturnType<typeof setTimeout> | null = null;
+const nativeBrowserWarmScopes = new Set<string>();
 
 function setSharedBrowserPageCache(cacheKey: string, page: CachedBrowserPage): void {
   if (sharedPageCache.has(cacheKey)) {
@@ -297,6 +300,42 @@ export function useItemBrowser(
         // best-effort warmup only
       });
     }, 60);
+  };
+
+  const warmNativeBrowserRuntime = () => {
+    if (hasActiveSearch()) {
+      return;
+    }
+
+    const scope = getActiveBrowserScope() ?? 'all';
+    const warmKey = `${scope}::${pageSize.value}::${itemSize.value}`;
+    if (nativeBrowserWarmScopes.has(warmKey)) {
+      return;
+    }
+    nativeBrowserWarmScopes.add(warmKey);
+
+    if (nativeBrowserWarmTimer !== null) {
+      clearTimeout(nativeBrowserWarmTimer);
+      nativeBrowserWarmTimer = null;
+    }
+
+    nativeBrowserWarmTimer = setTimeout(() => {
+      nativeBrowserWarmTimer = null;
+      const startedAt = performance.now();
+      void Promise.allSettled([
+        api.getBrowserDefaultCatalog({ modId: getActiveBrowserScope() }),
+        hasGlobalBrowserAtlas()
+          ? warmAllGlobalBrowserAtlases()
+          : Promise.resolve(false),
+      ]).then((results) => {
+        markPerfEvent('browser-native-runtime-warm', {
+          scope,
+          durationMs: Math.round(performance.now() - startedAt),
+          catalog: results[0]?.status ?? 'unknown',
+          atlas: results[1]?.status ?? 'unknown',
+        });
+      }).catch(() => undefined);
+    }, 90);
   };
 
   const buildExpandedProjectionCacheKey = (
@@ -929,6 +968,7 @@ export function useItemBrowser(
     currentPage.value = response.page;
     prewarmVisibleBrowserGroups(response.data);
     prewarmBrowserDefaultCatalog();
+    warmNativeBrowserRuntime();
 
     if (!firstBrowserTileVisibleMarked && response.items.length > 0) {
       firstBrowserTileVisibleMarked = true;
@@ -1503,6 +1543,10 @@ export function useItemBrowser(
     if (browserGroupWarmTimer) {
       clearTimeout(browserGroupWarmTimer);
       browserGroupWarmTimer = null;
+    }
+    if (nativeBrowserWarmTimer) {
+      clearTimeout(nativeBrowserWarmTimer);
+      nativeBrowserWarmTimer = null;
     }
   });
 
