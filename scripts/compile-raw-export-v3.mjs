@@ -1,4 +1,4 @@
-﻿import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -55,7 +55,7 @@ function stableNumber(value, fallback = 0) {
 
 function buildSearchEntry(item, index, renderByAssetId, layoutByItemId) {
   const layout = layoutByItemId.get(item.itemId) ?? {};
-  const renderAsset = renderByAssetId.get(item.renderAssetRef) ?? renderByAssetId.get(`nesqlpp:item/${item.itemId}`) ?? null;
+  const renderAsset = renderByAssetId.get(item.renderAssetRef) ?? renderByAssetId.get("nesqlpp:item/" + item.itemId) ?? null;
   const searchTerms = [
     item.localizedName,
     item.internalName,
@@ -94,6 +94,10 @@ function compileRawExport(inputDir, outputDir) {
   const neiOrder = readJsonl(join(inputDir, "nei_order.jsonl"));
   const textures = readJsonl(join(inputDir, "textures.jsonl"));
   const animations = readJsonl(join(inputDir, "animations.jsonl"));
+  const browserAtlasIndexPath = join(inputDir, "browser_atlas_index.json");
+  const browserAtlasIndex = existsSync(browserAtlasIndexPath)
+    ? JSON.parse(readFileSync(browserAtlasIndexPath, "utf8"))
+    : null;
 
   const renderByAssetId = new Map();
   for (const texture of textures) {
@@ -157,6 +161,7 @@ function compileRawExport(inputDir, outputDir) {
       neiOrderEntries: neiOrder.length,
       textures: textures.length,
       animations: animations.length,
+      browserAtlasItems: Array.isArray(browserAtlasIndex?.items) ? browserAtlasIndex.items.length : 0,
       recipeCategories: recipeCategories.size,
     },
     missing: {
@@ -182,6 +187,7 @@ function compileRawExport(inputDir, outputDir) {
       browserGroups: "browser/group-index.json",
       recipeCategories: "recipes/recipe-category-index.json",
       textureManifest: "textures/atlas-manifest.json",
+      browserAtlasIndex: "textures/browser-atlas-index.json",
       validationReport: "validation/report.json",
     },
   });
@@ -190,6 +196,7 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "browser", "group-index.json"), { schemaVersion: "neonei/group-index/v1", groups });
   writeJsonCompact(join(outputDir, "recipes", "recipe-category-index.json"), { schemaVersion: "neonei/recipe-category-index/v1", categories: Array.from(recipeCategories.values()) });
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations });
+  writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), browserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
   writeJson(join(outputDir, "validation", "report.json"), validation);
   return validation;
 }
@@ -208,6 +215,7 @@ function createSelfTestRawExport(root) {
   writeFileSync(join(root, "nei_order.jsonl"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n`, "utf8");
   writeFileSync(join(root, "textures.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
   writeFileSync(join(root, "animations.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
+  writeJson(join(root, "browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 1, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }] });
 }
 
 let inputDir = inputArg ? resolve(inputArg) : null;
@@ -223,6 +231,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1)) {
+if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }

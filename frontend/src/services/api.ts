@@ -7,6 +7,7 @@ import {
 } from './persistentRuntimeCache';
 import { markPerfEvent } from './perfMarks';
 import {
+  getDistDataBrowserAtlasIndex,
   getDistDataDefaultCatalog,
   getDistDataGroupItems,
   getDistDataSearchCatalog,
@@ -2651,6 +2652,12 @@ export const api = {
   },
 
   async getBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
+    const distDataAtlasIndex = await getDistDataBrowserAtlasIndex();
+    if (distDataAtlasIndex?.items?.length) {
+      browserAtlasIndexCache = distDataAtlasIndex;
+      return browserAtlasIndexCache;
+    }
+
     if (browserAtlasIndexCache) {
       return browserAtlasIndexCache;
     }

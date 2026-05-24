@@ -1,5 +1,6 @@
 import type {
   BrowserDefaultCatalogResponse,
+  BrowserAtlasIndexResponse,
   BrowserGridEntry,
   BrowserGroupItemsResponse,
   BrowserSearchCatalogResponse,
@@ -22,6 +23,7 @@ type DistDataManifest = {
     browserGroups?: string;
     recipeCategories?: string;
     textureManifest?: string;
+    browserAtlasIndex?: string;
     validationReport?: string;
   };
 };
@@ -85,6 +87,8 @@ let searchPackRequest: Promise<DistDataSearchPack | null> | null = null;
 let browserRuntimeRequest: Promise<DistDataBrowserRuntime | null> | null = null;
 let cachedSearchPack: DistDataSearchPack | null = null;
 let cachedBrowserRuntime: DistDataBrowserRuntime | null = null;
+let browserAtlasIndexRequest: Promise<BrowserAtlasIndexResponse | null> | null = null;
+let cachedBrowserAtlasIndex: BrowserAtlasIndexResponse | null = null;
 
 function trimSlashes(value: string): string {
   return value.replace(/^\/+|\/+$/g, "");
@@ -435,10 +439,40 @@ export async function getDistDataGroupItems(groupKey: string, modId?: string): P
   };
 }
 
+export async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
+  if (cachedBrowserAtlasIndex) {
+    return cachedBrowserAtlasIndex;
+  }
+  if (browserAtlasIndexRequest) {
+    return browserAtlasIndexRequest;
+  }
+
+  browserAtlasIndexRequest = (async () => {
+    const manifest = await getDistDataManifest();
+    const atlasPath = `${manifest?.files?.browserAtlasIndex ?? ""}`.trim();
+    if (!manifest || !atlasPath) {
+      return null;
+    }
+    const payload = await fetchJson<BrowserAtlasIndexResponse>(joinAssetPath(getConfiguredBasePath(), atlasPath));
+    if (!payload || !Array.isArray(payload.items)) {
+      return null;
+    }
+    cachedBrowserAtlasIndex = payload;
+    return cachedBrowserAtlasIndex;
+  })()
+    .catch(() => null)
+    .finally(() => {
+      browserAtlasIndexRequest = null;
+    });
+
+  return browserAtlasIndexRequest;
+}
 export function resetDistDataRuntimeCache(): void {
   manifestRequest = null;
   searchPackRequest = null;
   browserRuntimeRequest = null;
   cachedSearchPack = null;
   cachedBrowserRuntime = null;
+  browserAtlasIndexRequest = null;
+  cachedBrowserAtlasIndex = null;
 }
