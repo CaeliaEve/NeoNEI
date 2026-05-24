@@ -83,6 +83,63 @@ function buildSearchEntry(item, index, renderByAssetId, layoutByItemId) {
   };
 }
 
+function collectRecipeItemIds(value, output) {
+  if (!value || typeof value !== "object") return;
+  if (Array.isArray(value)) {
+    for (const entry of value) collectRecipeItemIds(entry, output);
+    return;
+  }
+
+  const direct = value.itemId ?? value.item?.itemId ?? value.stack?.itemId ?? value.representativeItemId;
+  if (typeof direct === "string" && direct.trim()) {
+    output.add(direct.trim());
+  }
+
+  for (const key of ["items", "stacks", "alternatives", "candidates", "variants"]) {
+    if (value[key]) collectRecipeItemIds(value[key], output);
+  }
+}
+
+function buildRecipeItemIndex(recipes) {
+  const byItemId = new Map();
+  const ensure = (itemId) => {
+    const normalized = `${itemId ?? ""}`.trim();
+    if (!normalized) return null;
+    const existing = byItemId.get(normalized);
+    if (existing) return existing;
+    const created = { itemId: normalized, producedBy: [], usedIn: [] };
+    byItemId.set(normalized, created);
+    return created;
+  };
+
+  for (const recipe of recipes) {
+    const recipeId = `${recipe.recipeId ?? recipe.id ?? recipe.key ?? ""}`.trim();
+    if (!recipeId) continue;
+    const categoryId = recipe.machine?.machineId ?? recipe.family ?? recipe.sourcePlugin ?? recipe.recipeType ?? "unknown";
+    const summary = {
+      recipeId,
+      categoryId,
+      displayName: recipe.machine?.displayName ?? recipe.displayName ?? categoryId,
+    };
+
+    const outputIds = new Set();
+    collectRecipeItemIds(recipe.outputs ?? recipe.outputItems ?? recipe.results ?? recipe.result ?? recipe.output, outputIds);
+    for (const itemId of outputIds) {
+      const bucket = ensure(itemId);
+      if (bucket) bucket.producedBy.push(summary);
+    }
+
+    const inputIds = new Set();
+    collectRecipeItemIds(recipe.inputs ?? recipe.inputItems ?? recipe.ingredients ?? recipe.catalysts ?? recipe.input, inputIds);
+    for (const itemId of inputIds) {
+      const bucket = ensure(itemId);
+      if (bucket) bucket.usedIn.push(summary);
+    }
+  }
+
+  return Array.from(byItemId.values())
+    .sort((left, right) => left.itemId.localeCompare(right.itemId));
+}
 function compileRawExport(inputDir, outputDir) {
   const startedAt = Date.now();
   const manifestPath = join(inputDir, "manifest.json");
@@ -140,6 +197,7 @@ function compileRawExport(inputDir, outputDir) {
     };
   }).sort((left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId));
 
+  const recipeItemIndex = buildRecipeItemIndex(recipes);
   const recipeCategories = new Map();
   for (const recipe of recipes) {
     const key = recipe.machine?.machineId ?? recipe.family ?? recipe.sourcePlugin ?? "unknown";
@@ -163,6 +221,7 @@ function compileRawExport(inputDir, outputDir) {
       animations: animations.length,
       browserAtlasItems: Array.isArray(browserAtlasIndex?.items) ? browserAtlasIndex.items.length : 0,
       recipeCategories: recipeCategories.size,
+      recipeItemIndexItems: recipeItemIndex.length,
     },
     missing: {
       itemId: items.filter((item) => !item.itemId).length,
@@ -186,6 +245,7 @@ function compileRawExport(inputDir, outputDir) {
       browserCatalog: "browser/item-catalog.json",
       browserGroups: "browser/group-index.json",
       recipeCategories: "recipes/recipe-category-index.json",
+      recipeItemIndex: "recipes/item-index.json",
       textureManifest: "textures/atlas-manifest.json",
       browserAtlasIndex: "textures/browser-atlas-index.json",
       validationReport: "validation/report.json",
@@ -195,6 +255,7 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "browser", "item-catalog.json"), { schemaVersion: "neonei/browser-catalog/v1", items: browserItems });
   writeJsonCompact(join(outputDir, "browser", "group-index.json"), { schemaVersion: "neonei/group-index/v1", groups });
   writeJsonCompact(join(outputDir, "recipes", "recipe-category-index.json"), { schemaVersion: "neonei/recipe-category-index/v1", categories: Array.from(recipeCategories.values()) });
+  writeJsonCompact(join(outputDir, "recipes", "item-index.json"), { schemaVersion: "neonei/recipe-item-index/v1", items: recipeItemIndex });
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations });
   writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), browserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
   writeJson(join(outputDir, "validation", "report.json"), validation);
@@ -206,18 +267,17 @@ function createSelfTestRawExport(root) {
   mkdirSync(root, { recursive: true });
   writeJson(join(root, "manifest.json"), { schemaVersion: "nesqlpp/raw-export/v3-alpha1", repositoryName: "self-test" });
   writeFileSync(join(root, "items.jsonl"), [
-    JSON.stringify({ itemId: "i~minecraft~iron_ingot~0", modId: "minecraft", internalName: "iron_ingot", localizedName: "铁锭", renderAssetRef: "nesqlpp:item/i~minecraft~iron_ingot~0", searchTerms: "iron ingot" }),
-    JSON.stringify({ itemId: "i~botania~manaResource~4", modId: "botania", internalName: "manaResource", localizedName: "泰拉钢锭", renderAssetRef: "nesqlpp:item/i~botania~manaResource~4", searchTerms: "terrasteel" }),
+    JSON.stringify({ itemId: "i~minecraft~iron_ingot~0", modId: "minecraft", internalName: "iron_ingot", localizedName: "Iron Ingot", renderAssetRef: "nesqlpp:item/i~minecraft~iron_ingot~0", searchTerms: "iron ingot" }),
+    JSON.stringify({ itemId: "i~botania~manaResource~4", modId: "botania", internalName: "manaResource", localizedName: "Terrasteel Ingot", renderAssetRef: "nesqlpp:item/i~botania~manaResource~4", searchTerms: "terrasteel" }),
   ].join("\n") + "\n", "utf8");
-  writeFileSync(join(root, "fluids.jsonl"), `${JSON.stringify({ fluidId: "f~gregtech~molten.iron", localizedName: "熔融铁" })}\n`, "utf8");
-  writeFileSync(join(root, "recipes.jsonl"), `${JSON.stringify({ recipeId: "r1", family: "minecraft", machine: { machineId: "furnace", displayName: "熔炉" } })}\n`, "utf8");
+  writeFileSync(join(root, "fluids.jsonl"), `${JSON.stringify({ fluidId: "f~gregtech~molten.iron", localizedName: "Molten Iron" })}\n`, "utf8");
+  writeFileSync(join(root, "recipes.jsonl"), `${JSON.stringify({ recipeId: "r1", family: "minecraft", machine: { machineId: "furnace", displayName: "Furnace" }, inputs: [{ itemId: "i~minecraft~iron_ore~0" }], outputs: [{ itemId: "i~minecraft~iron_ingot~0" }] })}\n`, "utf8");
   writeFileSync(join(root, "groups.jsonl"), `${JSON.stringify({ groupKey: "nei:iron", groupLabel: "Iron", groupSize: 1, representativeItemId: "i~minecraft~iron_ingot~0", memberItemIds: ["i~minecraft~iron_ingot~0"] })}\n`, "utf8");
   writeFileSync(join(root, "nei_order.jsonl"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n`, "utf8");
   writeFileSync(join(root, "textures.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
   writeFileSync(join(root, "animations.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
   writeJson(join(root, "browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 1, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }] });
 }
-
 let inputDir = inputArg ? resolve(inputArg) : null;
 let outputDir = outputArg ? resolve(outputArg) : null;
 if (selfTest) {
@@ -231,6 +291,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 1)) {
+if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 1 || report.counts.recipeItemIndexItems !== 2)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }

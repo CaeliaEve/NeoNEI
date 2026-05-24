@@ -1,4 +1,4 @@
-﻿# NeoNEI / NESQL++ 巨大重构最终方案
+# NeoNEI / NESQL++ 巨大重构最终方案
 
 日期：2026-05-24  
 状态：已批准，作为后续大重构主蓝图  
@@ -545,7 +545,7 @@ validation/report.json
 
 ### Phase 5：配方索引与 UI 协议
 
-- [ ] 设计 recipe-index。
+- [x] 设计 recipe-index。
 - [ ] 设计 recipe-ui-payload 协议。
 - [ ] 先接入 3-5 个复杂 handler 样本。
 - [ ] 保留现有高级手写 UI，但底层数据统一协议化。
@@ -664,5 +664,3 @@ validation/report.json
 完整落地后的目标体感：
 
 > **原生 NEI 的 85% - 95%。**
-
-
