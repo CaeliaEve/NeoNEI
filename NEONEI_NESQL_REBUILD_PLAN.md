@@ -546,6 +546,7 @@ validation/report.json
 ### Phase 5：配方索引与 UI 协议
 
 - [x] 设计 recipe-index。
+- [x] 前端配方 bootstrap 优先读取 dist-data V3 item-index。
 - [ ] 设计 recipe-ui-payload 协议。
 - [ ] 先接入 3-5 个复杂 handler 样本。
 - [ ] 保留现有高级手写 UI，但底层数据统一协议化。

@@ -10,6 +10,7 @@ import {
   getDistDataBrowserAtlasIndex,
   getDistDataDefaultCatalog,
   getDistDataGroupItems,
+  getDistDataRecipeBootstrap,
   getDistDataSearchCatalog,
 } from './distDataRuntime';
 
@@ -1284,6 +1285,7 @@ export interface indexedItemRecipeSummaryResponse {
 }
 
 type RecipeBootstrapLoadSource =
+  | 'dist-data-v3'
   | 'memory-cache'
   | 'in-flight'
   | 'persistent-cache'
@@ -2780,6 +2782,14 @@ export const api = {
       return payload;
     }
     const request = (async () => {
+      const distDataBootstrap = await getDistDataRecipeBootstrap(itemId);
+      if (distDataBootstrap) {
+        setCacheWithLimit(recipeBootstrapCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrap);
+        setCacheWithLimit(recipeBootstrapShardCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrapShard);
+        markRecipeBootstrapResolved(itemId, 'dist-data-v3', startedAt, distDataBootstrap);
+        return distDataBootstrap;
+      }
+
       if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
         const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
           'recipe-bootstrap',
@@ -2834,6 +2844,7 @@ export const api = {
   },
 
   async getRecipeBootstrapShard(itemId: string): Promise<RecipeBootstrapPayload> {
+    const startedAt = getNow();
     const cached = recipeBootstrapShardCache.get(itemId);
     if (cached) {
       return cached;
@@ -2843,6 +2854,14 @@ export const api = {
       return existingRequest;
     }
     const request = (async () => {
+      const distDataBootstrap = await getDistDataRecipeBootstrap(itemId);
+      if (distDataBootstrap) {
+        setCacheWithLimit(recipeBootstrapCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrap);
+        setCacheWithLimit(recipeBootstrapShardCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrapShard);
+        markRecipeBootstrapResolved(itemId, 'dist-data-v3', startedAt, distDataBootstrap);
+        return distDataBootstrap;
+      }
+
       if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
         const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
           'recipe-bootstrap-shard',

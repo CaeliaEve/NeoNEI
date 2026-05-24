@@ -8,6 +8,7 @@ import type {
   BrowserSearchPackResponse,
   BrowserVariantGroup,
   Item,
+  RecipeBootstrapPayload,
 } from "./api";
 
 type DistDataManifest = {
@@ -22,6 +23,7 @@ type DistDataManifest = {
     browserCatalog?: string;
     browserGroups?: string;
     recipeCategories?: string;
+    recipeItemIndex?: string;
     textureManifest?: string;
     browserAtlasIndex?: string;
     validationReport?: string;
@@ -67,6 +69,17 @@ type DistDataGroupPayload = {
   groups?: DistDataRawGroup[];
 };
 
+type DistDataRecipeItemIndexEntry = {
+  itemId: string;
+  producedBy?: Array<{ recipeId?: string; categoryId?: string; displayName?: string }>;
+  usedIn?: Array<{ recipeId?: string; categoryId?: string; displayName?: string }>;
+};
+
+type DistDataRecipeItemIndexPayload = {
+  schemaVersion?: string;
+  items?: DistDataRecipeItemIndexEntry[];
+};
+
 type DistDataBrowserRuntime = {
   catalog: DistDataBrowserItem[];
   groups: DistDataRawGroup[];
@@ -87,6 +100,8 @@ let searchPackRequest: Promise<DistDataSearchPack | null> | null = null;
 let browserRuntimeRequest: Promise<DistDataBrowserRuntime | null> | null = null;
 let cachedSearchPack: DistDataSearchPack | null = null;
 let cachedBrowserRuntime: DistDataBrowserRuntime | null = null;
+let recipeItemIndexRequest: Promise<Map<string, DistDataRecipeItemIndexEntry> | null> | null = null;
+let cachedRecipeItemIndex: Map<string, DistDataRecipeItemIndexEntry> | null = null;
 let browserAtlasIndexRequest: Promise<BrowserAtlasIndexResponse | null> | null = null;
 let cachedBrowserAtlasIndex: BrowserAtlasIndexResponse | null = null;
 
@@ -439,6 +454,116 @@ export async function getDistDataGroupItems(groupKey: string, modId?: string): P
   };
 }
 
+async function getRecipeItemIndex(): Promise<Map<string, DistDataRecipeItemIndexEntry> | null> {
+  if (cachedRecipeItemIndex) {
+    return cachedRecipeItemIndex;
+  }
+  if (recipeItemIndexRequest) {
+    return recipeItemIndexRequest;
+  }
+
+  recipeItemIndexRequest = (async () => {
+    const manifest = await getDistDataManifest();
+    const indexPath = `${manifest?.files?.recipeItemIndex ?? ""}`.trim();
+    if (!manifest || !indexPath) {
+      return null;
+    }
+    const payload = await fetchJson<DistDataRecipeItemIndexPayload>(joinAssetPath(getConfiguredBasePath(), indexPath));
+    const entries = Array.isArray(payload.items) ? payload.items.filter((entry) => entry?.itemId) : [];
+    if (!entries.length) {
+      return null;
+    }
+    cachedRecipeItemIndex = new Map(entries.map((entry) => [entry.itemId, entry]));
+    return cachedRecipeItemIndex;
+  })()
+    .catch(() => null)
+    .finally(() => {
+      recipeItemIndexRequest = null;
+    });
+
+  return recipeItemIndexRequest;
+}
+
+function collectRecipeIds(entries?: Array<{ recipeId?: string }>): string[] {
+  return Array.from(new Set(
+    (entries ?? [])
+      .map((entry) => `${entry?.recipeId ?? ""}`.trim())
+      .filter(Boolean),
+  ));
+}
+
+function buildCategorySummaries(entries?: Array<{ categoryId?: string; displayName?: string }>) {
+  const byCategory = new Map<string, { name: string; recipeCount: number }>();
+  for (const entry of entries ?? []) {
+    const categoryKey = `${entry?.categoryId ?? ""}`.trim();
+    if (!categoryKey) {
+      continue;
+    }
+    const existing = byCategory.get(categoryKey);
+    if (existing) {
+      existing.recipeCount += 1;
+      continue;
+    }
+    byCategory.set(categoryKey, {
+      name: `${entry?.displayName ?? categoryKey}`.trim() || categoryKey,
+      recipeCount: 1,
+    });
+  }
+  return Array.from(byCategory.entries())
+    .map(([categoryKey, summary]) => ({
+      type: "machine" as const,
+      name: summary.name,
+      recipeType: categoryKey,
+      recipeCount: summary.recipeCount,
+      categoryKey,
+      machineKey: categoryKey,
+      voltageTier: null,
+      machineIcon: null,
+    }))
+    .sort((left, right) => right.recipeCount - left.recipeCount || left.name.localeCompare(right.name));
+}
+
+export async function getDistDataRecipeBootstrap(itemId: string): Promise<RecipeBootstrapPayload | null> {
+  const normalizedItemId = `${itemId ?? ""}`.trim();
+  if (!normalizedItemId) {
+    return null;
+  }
+  const [runtime, recipeIndex] = await Promise.all([getBrowserRuntime(), getRecipeItemIndex()]);
+  const indexEntry = recipeIndex?.get(normalizedItemId);
+  const item = runtime?.itemById.get(normalizedItemId);
+  if (!indexEntry || !item) {
+    return null;
+  }
+
+  const producedByRecipes = collectRecipeIds(indexEntry.producedBy);
+  const usedInRecipes = collectRecipeIds(indexEntry.usedIn);
+  const producedByCategoryGroups = buildCategorySummaries(indexEntry.producedBy);
+  const usedInCategoryGroups = buildCategorySummaries(indexEntry.usedIn);
+  return {
+    item,
+    recipeIndex: {
+      producedByRecipes,
+      usedInRecipes,
+    },
+    indexedCrafting: [],
+    indexedUsage: [],
+    indexedSummary: {
+      itemId: normalizedItemId,
+      itemName: item.localizedName,
+      machineGroups: [],
+      producedByMachineGroups: [],
+      usedInMachineGroups: [],
+      producedByCategoryGroups,
+      usedInCategoryGroups,
+      counts: {
+        producedBy: producedByRecipes.length,
+        usedIn: usedInRecipes.length,
+        machineGroups: Math.max(producedByCategoryGroups.length, usedInCategoryGroups.length),
+      },
+    },
+    mediaManifest: null,
+  };
+}
 export async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
   if (cachedBrowserAtlasIndex) {
     return cachedBrowserAtlasIndex;
@@ -473,6 +598,8 @@ export function resetDistDataRuntimeCache(): void {
   browserRuntimeRequest = null;
   cachedSearchPack = null;
   cachedBrowserRuntime = null;
+  recipeItemIndexRequest = null;
+  cachedRecipeItemIndex = null;
   browserAtlasIndexRequest = null;
   cachedBrowserAtlasIndex = null;
 }
