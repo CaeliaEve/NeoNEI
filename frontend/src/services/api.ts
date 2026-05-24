@@ -2124,6 +2124,12 @@ export const api = {
     }
 
     const request = (async () => {
+      const distDataCatalog = await getDistDataDefaultCatalog(params?.modId);
+      if (distDataCatalog) {
+        browserDefaultCatalogCache.set(cacheKey, distDataCatalog);
+        return distDataCatalog;
+      }
+
       const persistent = await readPersistentRuntimePayload<BrowserDefaultCatalogResponse>(
         'browser-default-catalog',
         { scope: cacheKey },
@@ -2161,7 +2167,7 @@ export const api = {
     }
 
     const distDataCatalog = await getDistDataSearchCatalog(normalizedSearch, params.modId);
-    if (distDataCatalog?.data?.length) {
+    if (distDataCatalog) {
       return distDataCatalog;
     }
 
