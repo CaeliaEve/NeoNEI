@@ -104,6 +104,40 @@ function encodeRecipeFileName(recipeId) {
   return encodeURIComponent(recipeId).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
+function classifyRecipeFamilyKey(recipe, fallback) {
+  const descriptor = [
+    recipe.family,
+    recipe.sourcePlugin,
+    recipe.recipeType,
+    recipe.displayName,
+    recipe.machine?.machineId,
+    recipe.machine?.displayName,
+    recipe.metadata?.handlerId,
+    recipe.metadata?.handlerName,
+    recipe.additionalData?.handlerId,
+    recipe.additionalData?.handlerName,
+  ].filter(Boolean).join(" ").toLowerCase();
+
+  if (/industrial.*slaughter|extreme entity crusher|infernal drops|mobsinfo|kubatech|怪物屠宰|工业屠宰/.test(descriptor)) return "industrial_slaughterhouse";
+  if (/terra plate|terraplate|泰拉凝聚/.test(descriptor)) return "botania_terra_plate";
+  if (/rune altar|runic altar|符文祭坛/.test(descriptor)) return "botania_rune_altar";
+  if (/mana pool|魔力池/.test(descriptor)) return "botania_mana_pool";
+  if (/pure daisy|白雏菊/.test(descriptor)) return "botania_pure_daisy";
+  if (/elven trade|alfheim|精灵交易/.test(descriptor)) return "botania_elven_trade";
+  if (/thaumcraft.*infusion|arcane infusion|注魔/.test(descriptor)) return "thaumcraft_infusion";
+  if (/thaumcraft.*crucible|crucible|坩埚/.test(descriptor)) return "thaumcraft_crucible";
+  if (/arcane work|arcane crafting|奥术合成|奥数合成/.test(descriptor)) return "thaumcraft_arcane";
+  if (/aspect combination|aspects from items|物品中的要素|要素组合/.test(descriptor)) return "thaumcraft_aspect";
+  if (/research station|研究站/.test(descriptor)) return "gt_research_station";
+  if (/assembly line|装配线/.test(descriptor)) return "gt_assembly_line";
+  if (/chemical reactor|large chemical reactor|化学反应釜|化工反应/.test(descriptor)) return "gt_chemical_reactor";
+  if (/blood altar|血之祭坛|血祭坛/.test(descriptor)) return "blood_magic_altar";
+  if (/alchemy array|alchemy table|炼金法阵|炼金/.test(descriptor)) return "blood_alchemy_table";
+  if (/binding ritual|绑定仪式/.test(descriptor)) return "blood_binding_ritual";
+
+  return fallback;
+}
+
 function buildRecipeUiPayload(recipe) {
   const recipeId = `${recipe.recipeId ?? recipe.id ?? recipe.key ?? ""}`.trim();
   if (!recipeId) return null;
@@ -111,7 +145,8 @@ function buildRecipeUiPayload(recipe) {
   const outputItemIds = new Set();
   collectRecipeItemIds(recipe.inputs ?? recipe.inputItems ?? recipe.ingredients ?? recipe.catalysts ?? recipe.input, inputItemIds);
   collectRecipeItemIds(recipe.outputs ?? recipe.outputItems ?? recipe.results ?? recipe.result ?? recipe.output, outputItemIds);
-  const familyKey = `${recipe.family ?? recipe.sourcePlugin ?? recipe.recipeType ?? recipe.machine?.machineId ?? "unknown"}`.trim() || "unknown";
+  const rawFamilyKey = `${recipe.family ?? recipe.sourcePlugin ?? recipe.recipeType ?? recipe.machine?.machineId ?? "unknown"}`.trim() || "unknown";
+  const familyKey = classifyRecipeFamilyKey(recipe, rawFamilyKey);
   const recipeType = `${recipe.recipeType ?? recipe.machine?.machineId ?? familyKey}`.trim() || familyKey;
   const machineType = `${recipe.machine?.displayName ?? recipe.displayName ?? recipe.machine?.machineId ?? recipeType}`.trim() || recipeType;
   return {

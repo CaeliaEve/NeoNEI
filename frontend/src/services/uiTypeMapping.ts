@@ -1307,7 +1307,9 @@ export function resolveRecipePresentationProfileFromUiPayload(
     return null;
   }
 
-  const uiType = FAMILY_KEY_TO_UI_TYPE[uiPayload.familyKey];
+  const uiType = FAMILY_KEY_TO_UI_TYPE[uiPayload.familyKey] ?? (
+    UI_CONFIG_BY_TYPE[uiPayload.familyKey] ? uiPayload.familyKey : undefined
+  );
   if (!uiType) {
     return null;
   }
