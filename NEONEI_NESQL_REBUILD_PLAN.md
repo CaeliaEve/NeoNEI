@@ -550,7 +550,7 @@ validation/report.json
 - [x] 设计 recipe-ui-payload 协议。
 - [x] 编译器输出 dist-data V3 recipe-ui-payload index 与单配方 payload。
 - [x] 先接入 3-5 个复杂 handler 样本。
-- [ ] 保留现有高级手写 UI，但底层数据统一协议化。
+- [x] 保留现有高级手写 UI，但底层数据统一协议化。
 
 验收：
 
