@@ -23,7 +23,11 @@ import {
   readPersistentRuntimeCache,
   writePersistentRuntimeCache,
 } from '../services/persistentRuntimeCache';
-import { preloadBrowserSearchWorker } from '../services/browserSearchWorker';
+import {
+  preloadBrowserSearchWorker,
+  queryBrowserSearchWorker,
+  type WorkerQueryResult,
+} from '../services/browserSearchWorker';
 import {
   getAnimatedAtlasImageUrl,
   isImageAssetDecoded,
@@ -1181,28 +1185,59 @@ export function useItemBrowser(
     return normalized;
   };
 
+  const buildCachedSearchPageFromWorkerResult = (result: WorkerQueryResult): CachedBrowserPage => {
+    const entries = (result.entries ?? []).map((entry) => {
+      const item: Item = {
+        itemId: entry.itemId,
+        modId: entry.modId,
+        internalName: entry.normalizedInternalName || entry.normalizedItemId || entry.itemId,
+        localizedName: entry.localizedName || entry.itemId,
+        searchTerms: entry.normalizedSearchTerms,
+      };
+      return {
+        key: item.itemId,
+        kind: 'item',
+        item,
+      } satisfies BrowserGridEntry;
+    });
+    const displayItems = collectDisplayItems(entries);
+    return {
+      data: entries,
+      items: displayItems,
+      atlas: peekPageAtlas(displayItems, itemSize.value) ?? null,
+      mediaManifest: null,
+      total: result.total,
+      totalPages: result.totalPages,
+      page: result.page,
+    };
+  };
+
   const loadSearchPage = async (
     params: BrowserPageRequestParams,
   ): Promise<CachedBrowserPage> => fetchPageWithDedup(buildPageCacheKey(params), async () => {
-    const response = await api.getBrowserPagePack({
+    const startedAt = performance.now();
+    const result = await queryBrowserSearchWorker({
+      query: params.search ?? '',
+      modId: params.modId,
       page: params.page,
       pageSize: params.pageSize,
-      search: params.search,
-      modId: params.modId,
-      expandedGroups: params.expandedGroups,
-      slotSize: params.slotSize,
     });
-
-    return {
-      data: response.data,
-      items: collectDisplayItems(response.data),
-      atlas: response.atlas ?? null,
-      mediaManifest: response.mediaManifest ?? null,
-      resourceManifest: response.resourceManifest,
-      total: response.total,
-      totalPages: response.totalPages,
-      page: response.page,
-    };
+    const normalized = buildCachedSearchPageFromWorkerResult(result);
+    markPerfEvent('browser-search-local-page', {
+      page: normalized.page,
+      pageSize: params.pageSize,
+      total: normalized.total,
+      workerElapsedMs: result.elapsedMs ?? null,
+      candidateCount: result.candidateCount ?? null,
+      elapsedMs: performance.now() - startedAt,
+    });
+    hydrateProjectedBrowserPageMedia(
+      buildPageCacheKey({ ...params, page: normalized.page }),
+      params,
+      normalized,
+      loadItemsRequestId,
+    );
+    return normalized;
   });
 
   const loadDefaultPage = async (

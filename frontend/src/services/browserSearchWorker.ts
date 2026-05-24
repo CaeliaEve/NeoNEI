@@ -1,4 +1,4 @@
-import { api, type BrowserSearchPackResponse } from "./api";
+import { api, type BrowserSearchPackEntry, type BrowserSearchPackResponse } from "./api";
 import { readPersistentRuntimeCache, writePersistentRuntimeCache } from "./persistentRuntimeCache";
 import { markPerfEvent } from "./perfMarks";
 
@@ -9,12 +9,16 @@ type WorkerQueryParams = {
   pageSize: number;
 };
 
-type WorkerQueryResult = {
+export type WorkerQueryResult = {
   id: number;
   total: number;
   totalPages: number;
   page: number;
   itemIds: string[];
+  entries?: BrowserSearchPackEntry[];
+  elapsedMs?: number;
+  candidateCount?: number;
+  indexReady?: boolean;
 };
 
 type SearchWorkerStage = "empty" | "partial" | "full";
@@ -318,9 +322,21 @@ export async function preloadBrowserSearchWorker(): Promise<void> {
 }
 
 export async function queryBrowserSearchWorker(params: WorkerQueryParams): Promise<WorkerQueryResult> {
+  const queryStartedAt = performance.now();
   await ensureWarmInitialized();
 
   const partialResult = await dispatchQueryToWorker(params);
+  markPerfEvent("browser-search-worker-query", {
+    queryLength: params.query.length,
+    page: params.page,
+    pageSize: params.pageSize,
+    stage: searchWorkerStage,
+    workerElapsedMs: partialResult.elapsedMs ?? null,
+    totalElapsedMs: performance.now() - queryStartedAt,
+    candidateCount: partialResult.candidateCount ?? null,
+    total: partialResult.total,
+    indexReady: partialResult.indexReady ?? false,
+  });
   if (isFullSearchWorkerStage()) {
     return partialResult;
   }
@@ -338,5 +354,16 @@ export async function queryBrowserSearchWorker(params: WorkerQueryParams): Promi
     return partialResult;
   }
 
-  return dispatchQueryToWorker(params);
+  const fullResult = await dispatchQueryToWorker(params);
+  markPerfEvent("browser-search-worker-query-full", {
+    queryLength: params.query.length,
+    page: params.page,
+    pageSize: params.pageSize,
+    workerElapsedMs: fullResult.elapsedMs ?? null,
+    totalElapsedMs: performance.now() - queryStartedAt,
+    candidateCount: fullResult.candidateCount ?? null,
+    total: fullResult.total,
+    indexReady: fullResult.indexReady ?? false,
+  });
+  return fullResult;
 }

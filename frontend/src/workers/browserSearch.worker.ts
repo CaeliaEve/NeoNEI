@@ -35,9 +35,98 @@ type QueryResult = {
   totalPages: number;
   page: number;
   itemIds: string[];
+  entries: BrowserSearchPackEntry[];
+  elapsedMs: number;
+  candidateCount: number;
+  indexReady: boolean;
 };
 
 let searchPack: BrowserSearchPackEntry[] = [];
+let sourceIndexByItemId = new Map<string, number>();
+let exactIndex = new Map<string, number[]>();
+let prefixIndex = new Map<string, number[]>();
+let gramIndex = new Map<string, number[]>();
+let indexedItemCount = 0;
+
+const MAX_PREFIX_LENGTH = 32;
+const MAX_FIELD_LENGTH_FOR_GRAMS = 96;
+
+function appendIndexValue(index: Map<string, number[]>, key: string, sourceIndex: number): void {
+  if (!key) return;
+  const existing = index.get(key);
+  if (existing) {
+    const previous = existing[existing.length - 1];
+    if (previous !== sourceIndex) {
+      existing.push(sourceIndex);
+    }
+    return;
+  }
+  index.set(key, [sourceIndex]);
+}
+
+function getEntrySearchFields(entry: BrowserSearchPackEntry): string[] {
+  return [
+    entry.normalizedLocalizedName,
+    entry.pinyinFull,
+    entry.pinyinAcronym,
+    entry.aliases,
+    entry.normalizedInternalName,
+    entry.normalizedItemId,
+    entry.normalizedSearchTerms,
+  ]
+    .map((value) => normalizeKeyword(`${value ?? ""}`))
+    .filter(Boolean);
+}
+
+function addEntryToIndex(entry: BrowserSearchPackEntry, sourceIndex: number): void {
+  sourceIndexByItemId.set(entry.itemId, sourceIndex);
+  const seenKeys = new Set<string>();
+
+  for (const field of getEntrySearchFields(entry)) {
+    if (!field || seenKeys.has(`exact:${field}`)) {
+      continue;
+    }
+    seenKeys.add(`exact:${field}`);
+    appendIndexValue(exactIndex, field, sourceIndex);
+
+    const maxPrefixLength = Math.min(MAX_PREFIX_LENGTH, field.length);
+    for (let length = 1; length <= maxPrefixLength; length += 1) {
+      const prefix = field.slice(0, length);
+      const key = `prefix:${prefix}`;
+      if (seenKeys.has(key)) continue;
+      seenKeys.add(key);
+      appendIndexValue(prefixIndex, prefix, sourceIndex);
+    }
+
+    const gramSource = field.slice(0, MAX_FIELD_LENGTH_FOR_GRAMS);
+    const gramLengths = field.length <= 2 ? [field.length] : [1, 2, 3];
+    for (const gramLength of gramLengths) {
+      if (gramLength <= 0 || gramSource.length < gramLength) continue;
+      for (let offset = 0; offset <= gramSource.length - gramLength; offset += 1) {
+        const gram = gramSource.slice(offset, offset + gramLength);
+        const key = `gram:${gram}`;
+        if (seenKeys.has(key)) continue;
+        seenKeys.add(key);
+        appendIndexValue(gramIndex, gram, sourceIndex);
+      }
+    }
+  }
+}
+
+function rebuildIndexes(): void {
+  sourceIndexByItemId = new Map<string, number>();
+  exactIndex = new Map<string, number[]>();
+  prefixIndex = new Map<string, number[]>();
+  gramIndex = new Map<string, number[]>();
+  searchPack.forEach((entry, sourceIndex) => addEntryToIndex(entry, sourceIndex));
+  indexedItemCount = searchPack.length;
+}
+
+function ensureIndexReady(): void {
+  if (indexedItemCount !== searchPack.length) {
+    rebuildIndexes();
+  }
+}
 
 function mergeEntries(base: BrowserSearchPackEntry[], incoming: BrowserSearchPackEntry[]): BrowserSearchPackEntry[] {
   if (base.length === 0) return [...incoming];
@@ -89,16 +178,24 @@ function rankEntry(entry: BrowserSearchPackEntry, normalized: string): number | 
 }
 
 function queryPack(message: QueryMessage): QueryResult {
+  const startedAt = performance.now();
+  ensureIndexReady();
   const normalized = normalizeKeyword(message.payload.query);
   const normalizedModId = `${message.payload.modId ?? ""}`.trim();
   const pageSize = Math.min(Math.max(1, Math.floor(message.payload.pageSize || 50)), 500);
 
-  const ranked = searchPack
-    .filter((entry) => !normalizedModId || normalizedModId === "all" || entry.modId === normalizedModId)
-    .map((entry, sourceIndex) => ({
-      entry,
+  const candidateIndexes = collectCandidateIndexes(normalized);
+  const ranked = candidateIndexes
+    .map((sourceIndex) => ({
+      entry: searchPack[sourceIndex],
       sourceIndex,
-      rank: rankEntry(entry, normalized),
+    }))
+    .filter(({ entry }) => Boolean(entry))
+    .filter(({ entry }) => !normalizedModId || normalizedModId === "all" || entry.modId === normalizedModId)
+    .map((entry, sourceIndex) => ({
+      entry: entry.entry,
+      sourceIndex: entry.sourceIndex ?? sourceIndex,
+      rank: rankEntry(entry.entry, normalized),
     }))
     .filter((entry): entry is { entry: BrowserSearchPackEntry; sourceIndex: number; rank: number } => entry.rank !== null)
     .sort((left, right) =>
@@ -112,7 +209,8 @@ function queryPack(message: QueryMessage): QueryResult {
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(Math.max(1, Math.floor(message.payload.page || 1)), totalPages);
   const offset = (page - 1) * pageSize;
-  const itemIds = ranked.slice(offset, offset + pageSize).map((entry) => entry.entry.itemId);
+  const pageEntries = ranked.slice(offset, offset + pageSize).map((entry) => entry.entry);
+  const itemIds = pageEntries.map((entry) => entry.itemId);
 
   return {
     id: message.id,
@@ -120,18 +218,90 @@ function queryPack(message: QueryMessage): QueryResult {
     totalPages,
     page,
     itemIds,
+    entries: pageEntries,
+    elapsedMs: performance.now() - startedAt,
+    candidateCount: candidateIndexes.length,
+    indexReady: indexedItemCount === searchPack.length,
   };
+}
+
+function toUniqueSortedIndexes(values: Iterable<number>): number[] {
+  return Array.from(new Set(values)).sort((left, right) => left - right);
+}
+
+function intersectSortedIndexes(left: number[], right: number[]): number[] {
+  const result: number[] = [];
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    const leftValue = left[leftIndex];
+    const rightValue = right[rightIndex];
+    if (leftValue === rightValue) {
+      result.push(leftValue);
+      leftIndex += 1;
+      rightIndex += 1;
+    } else if (leftValue < rightValue) {
+      leftIndex += 1;
+    } else {
+      rightIndex += 1;
+    }
+  }
+  return result;
+}
+
+function collectQueryGrams(normalized: string): string[] {
+  if (!normalized) return [];
+  if (normalized.length <= 2) return [normalized];
+  const grams = new Set<string>();
+  for (let offset = 0; offset <= normalized.length - 3; offset += 1) {
+    grams.add(normalized.slice(offset, offset + 3));
+  }
+  return Array.from(grams);
+}
+
+function collectCandidateIndexes(normalized: string): number[] {
+  if (!normalized) {
+    return [];
+  }
+
+  const directCandidates = [
+    ...(exactIndex.get(normalized) ?? []),
+    ...(prefixIndex.get(normalized) ?? []),
+  ];
+
+  const grams = collectQueryGrams(normalized);
+  let gramCandidates: number[] = [];
+  for (const gram of grams) {
+    const indexed = gramIndex.get(gram) ?? [];
+    if (indexed.length === 0) {
+      gramCandidates = [];
+      break;
+    }
+    gramCandidates = gramCandidates.length === 0
+      ? indexed
+      : intersectSortedIndexes(gramCandidates, indexed);
+    if (gramCandidates.length === 0) {
+      break;
+    }
+  }
+
+  return toUniqueSortedIndexes([
+    ...directCandidates,
+    ...gramCandidates,
+  ]);
 }
 
 self.onmessage = (event: MessageEvent<RequestMessage>) => {
   const message = event.data;
   if (message.type === "init") {
     searchPack = message.payload.items || [];
+    rebuildIndexes();
     return;
   }
 
   if (message.type === "append") {
     searchPack = mergeEntries(searchPack, message.payload.items || []);
+    rebuildIndexes();
     return;
   }
 
