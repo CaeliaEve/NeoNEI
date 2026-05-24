@@ -17,7 +17,7 @@ const limits = {
 
 const queries = [
   { query: "iron", expectHits: true },
-  { query: "tieling", expectHits: false, note: "pinyin coverage probe for 铁锭" },
+  { query: "tieding", expectHits: true },
   { query: "tailagang", expectHits: true },
   { query: "terra", expectHits: true },
   { query: "wand", expectHits: true },
@@ -291,3 +291,4 @@ console.log(`Wrote ${reportPath}`);
 if (gateMode && failures.length > 0) {
   process.exitCode = 1;
 }
+
