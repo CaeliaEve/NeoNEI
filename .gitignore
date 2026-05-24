@@ -69,3 +69,6 @@ backend/data/*.db-shm
 backend/data/*.db-wal
 frontend/gatec-artifacts-final/
 frontend/test-results/
+
+# Runtime benchmark output
+.runtime-logs/

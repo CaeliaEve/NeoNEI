@@ -1695,6 +1695,7 @@ export function useItemBrowser(
     await nextTick();
     pageSize.value = calculatePageSize();
     await loadInitialHomeState();
+    warmSearchIndex();
   });
 
   onUnmounted(() => {

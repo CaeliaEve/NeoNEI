@@ -8,6 +8,7 @@
     "build": "vite build",
     "typecheck": "vue-tsc -b",
     "preview": "vite preview",
+    "bench:search-v3": "node ../scripts/bench-search-v3.mjs --gate",
     "bench:recipe-search": "node scripts/bench-recipe-search.mjs",
     "release:regression": "node scripts/release-regression-checklist.mjs",
     "gate:c": "playwright test -c scripts/pw-gatec.config.ts"
