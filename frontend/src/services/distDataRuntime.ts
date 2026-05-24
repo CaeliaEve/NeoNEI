@@ -9,6 +9,7 @@ import type {
   BrowserVariantGroup,
   Item,
   RecipeBootstrapPayload,
+  RecipeUiPayload,
 } from "./api";
 
 type DistDataManifest = {
@@ -24,6 +25,7 @@ type DistDataManifest = {
     browserGroups?: string;
     recipeCategories?: string;
     recipeItemIndex?: string;
+    recipeUiPayloadIndex?: string;
     textureManifest?: string;
     browserAtlasIndex?: string;
     validationReport?: string;
@@ -80,6 +82,19 @@ type DistDataRecipeItemIndexPayload = {
   items?: DistDataRecipeItemIndexEntry[];
 };
 
+type DistDataRecipeUiPayloadIndexEntry = {
+  recipeId: string;
+  path: string;
+  familyKey?: string;
+  recipeType?: string;
+  machineType?: string;
+};
+
+type DistDataRecipeUiPayloadIndexPayload = {
+  schemaVersion?: string;
+  recipes?: DistDataRecipeUiPayloadIndexEntry[];
+};
+
 type DistDataBrowserRuntime = {
   catalog: DistDataBrowserItem[];
   groups: DistDataRawGroup[];
@@ -102,6 +117,9 @@ let cachedSearchPack: DistDataSearchPack | null = null;
 let cachedBrowserRuntime: DistDataBrowserRuntime | null = null;
 let recipeItemIndexRequest: Promise<Map<string, DistDataRecipeItemIndexEntry> | null> | null = null;
 let cachedRecipeItemIndex: Map<string, DistDataRecipeItemIndexEntry> | null = null;
+let recipeUiPayloadIndexRequest: Promise<Map<string, DistDataRecipeUiPayloadIndexEntry> | null> | null = null;
+let cachedRecipeUiPayloadIndex: Map<string, DistDataRecipeUiPayloadIndexEntry> | null = null;
+const cachedRecipeUiPayloads = new Map<string, RecipeUiPayload>();
 let browserAtlasIndexRequest: Promise<BrowserAtlasIndexResponse | null> | null = null;
 let cachedBrowserAtlasIndex: BrowserAtlasIndexResponse | null = null;
 
@@ -564,6 +582,59 @@ export async function getDistDataRecipeBootstrap(itemId: string): Promise<Recipe
     mediaManifest: null,
   };
 }
+
+async function getRecipeUiPayloadIndex(): Promise<Map<string, DistDataRecipeUiPayloadIndexEntry> | null> {
+  if (cachedRecipeUiPayloadIndex) {
+    return cachedRecipeUiPayloadIndex;
+  }
+  if (recipeUiPayloadIndexRequest) {
+    return recipeUiPayloadIndexRequest;
+  }
+
+  recipeUiPayloadIndexRequest = (async () => {
+    const manifest = await getDistDataManifest();
+    const indexPath = `${manifest?.files?.recipeUiPayloadIndex ?? ""}`.trim();
+    if (!manifest || !indexPath) {
+      return null;
+    }
+    const payload = await fetchJson<DistDataRecipeUiPayloadIndexPayload>(joinAssetPath(getConfiguredBasePath(), indexPath));
+    const entries = Array.isArray(payload.recipes) ? payload.recipes.filter((entry) => entry?.recipeId && entry?.path) : [];
+    if (!entries.length) {
+      return null;
+    }
+    cachedRecipeUiPayloadIndex = new Map(entries.map((entry) => [entry.recipeId, entry]));
+    return cachedRecipeUiPayloadIndex;
+  })()
+    .catch(() => null)
+    .finally(() => {
+      recipeUiPayloadIndexRequest = null;
+    });
+
+  return recipeUiPayloadIndexRequest;
+}
+
+export async function getDistDataRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload | null> {
+  const normalizedRecipeId = `${recipeId ?? ""}`.trim();
+  if (!normalizedRecipeId) {
+    return null;
+  }
+  const cached = cachedRecipeUiPayloads.get(normalizedRecipeId);
+  if (cached) {
+    return cached;
+  }
+  const index = await getRecipeUiPayloadIndex();
+  const entry = index?.get(normalizedRecipeId);
+  const payloadPath = `${entry?.path ?? ""}`.trim();
+  if (!payloadPath) {
+    return null;
+  }
+  const payload = await fetchJson<RecipeUiPayload>(joinAssetPath(getConfiguredBasePath(), payloadPath)).catch(() => null);
+  if (!payload?.recipeId) {
+    return null;
+  }
+  cachedRecipeUiPayloads.set(normalizedRecipeId, payload);
+  return payload;
+}
 export async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
   if (cachedBrowserAtlasIndex) {
     return cachedBrowserAtlasIndex;
@@ -600,6 +671,9 @@ export function resetDistDataRuntimeCache(): void {
   cachedBrowserRuntime = null;
   recipeItemIndexRequest = null;
   cachedRecipeItemIndex = null;
+  recipeUiPayloadIndexRequest = null;
+  cachedRecipeUiPayloadIndex = null;
+  cachedRecipeUiPayloads.clear();
   browserAtlasIndexRequest = null;
   cachedBrowserAtlasIndex = null;
 }

@@ -11,6 +11,7 @@ import {
   getDistDataDefaultCatalog,
   getDistDataGroupItems,
   getDistDataRecipeBootstrap,
+  getDistDataRecipeUiPayload,
   getDistDataSearchCatalog,
 } from './distDataRuntime';
 
@@ -2730,6 +2731,13 @@ export const api = {
       return existingRequest;
     }
     const request = (async () => {
+      const distDataPayload = await getDistDataRecipeUiPayload(recipeId);
+      if (distDataPayload) {
+        missingUiPayloadCache.delete(recipeId);
+        setCacheWithLimit(uiPayloadCache, recipeId, distDataPayload, CACHE_LIMITS.uiPayload);
+        return distDataPayload;
+      }
+
       const persistent = await readPersistentRuntimePayload<RecipeUiPayload>(
         'recipe-ui-payload',
         { recipeId },

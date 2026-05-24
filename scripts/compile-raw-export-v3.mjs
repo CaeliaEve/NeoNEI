@@ -100,6 +100,38 @@ function collectRecipeItemIds(value, output) {
   }
 }
 
+function encodeRecipeFileName(recipeId) {
+  return encodeURIComponent(recipeId).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function buildRecipeUiPayload(recipe) {
+  const recipeId = `${recipe.recipeId ?? recipe.id ?? recipe.key ?? ""}`.trim();
+  if (!recipeId) return null;
+  const inputItemIds = new Set();
+  const outputItemIds = new Set();
+  collectRecipeItemIds(recipe.inputs ?? recipe.inputItems ?? recipe.ingredients ?? recipe.catalysts ?? recipe.input, inputItemIds);
+  collectRecipeItemIds(recipe.outputs ?? recipe.outputItems ?? recipe.results ?? recipe.result ?? recipe.output, outputItemIds);
+  const familyKey = `${recipe.family ?? recipe.sourcePlugin ?? recipe.recipeType ?? recipe.machine?.machineId ?? "unknown"}`.trim() || "unknown";
+  const recipeType = `${recipe.recipeType ?? recipe.machine?.machineId ?? familyKey}`.trim() || familyKey;
+  const machineType = `${recipe.machine?.displayName ?? recipe.displayName ?? recipe.machine?.machineId ?? recipeType}`.trim() || recipeType;
+  return {
+    recipeId,
+    familyKey,
+    machineType,
+    recipeType,
+    inputItemIds: Array.from(inputItemIds),
+    outputItemIds: Array.from(outputItemIds),
+    slotCount: {
+      input: inputItemIds.size,
+      output: outputItemIds.size,
+    },
+    presentation: {
+      surface: recipe.machine?.machineId ?? recipeType,
+      density: inputItemIds.size + outputItemIds.size > 12 ? "dense" : "normal",
+    },
+  };
+}
+
 function buildRecipeItemIndex(recipes) {
   const byItemId = new Map();
   const ensure = (itemId) => {
@@ -198,6 +230,16 @@ function compileRawExport(inputDir, outputDir) {
   }).sort((left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId));
 
   const recipeItemIndex = buildRecipeItemIndex(recipes);
+  const recipeUiPayloads = recipes
+    .map(buildRecipeUiPayload)
+    .filter(Boolean);
+  const recipeUiPayloadIndex = recipeUiPayloads.map((payload) => ({
+    recipeId: payload.recipeId,
+    path: `recipes/ui-payloads/${encodeRecipeFileName(payload.recipeId)}.json`,
+    familyKey: payload.familyKey,
+    recipeType: payload.recipeType,
+    machineType: payload.machineType,
+  }));
   const recipeCategories = new Map();
   for (const recipe of recipes) {
     const key = recipe.machine?.machineId ?? recipe.family ?? recipe.sourcePlugin ?? "unknown";
@@ -222,6 +264,7 @@ function compileRawExport(inputDir, outputDir) {
       browserAtlasItems: Array.isArray(browserAtlasIndex?.items) ? browserAtlasIndex.items.length : 0,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
+      recipeUiPayloads: recipeUiPayloads.length,
     },
     missing: {
       itemId: items.filter((item) => !item.itemId).length,
@@ -246,6 +289,7 @@ function compileRawExport(inputDir, outputDir) {
       browserGroups: "browser/group-index.json",
       recipeCategories: "recipes/recipe-category-index.json",
       recipeItemIndex: "recipes/item-index.json",
+      recipeUiPayloadIndex: "recipes/ui-payload-index.json",
       textureManifest: "textures/atlas-manifest.json",
       browserAtlasIndex: "textures/browser-atlas-index.json",
       validationReport: "validation/report.json",
@@ -256,6 +300,13 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "browser", "group-index.json"), { schemaVersion: "neonei/group-index/v1", groups });
   writeJsonCompact(join(outputDir, "recipes", "recipe-category-index.json"), { schemaVersion: "neonei/recipe-category-index/v1", categories: Array.from(recipeCategories.values()) });
   writeJsonCompact(join(outputDir, "recipes", "item-index.json"), { schemaVersion: "neonei/recipe-item-index/v1", items: recipeItemIndex });
+  writeJsonCompact(join(outputDir, "recipes", "ui-payload-index.json"), { schemaVersion: "neonei/recipe-ui-payload-index/v1", recipes: recipeUiPayloadIndex });
+  for (const payload of recipeUiPayloads) {
+    writeJsonCompact(join(outputDir, "recipes", "ui-payloads", `${encodeRecipeFileName(payload.recipeId)}.json`), {
+      schemaVersion: "neonei/recipe-ui-payload/v1",
+      ...payload,
+    });
+  }
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations });
   writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), browserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
   writeJson(join(outputDir, "validation", "report.json"), validation);
@@ -291,6 +342,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 1 || report.counts.recipeItemIndexItems !== 2)) {
+if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 1 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
