@@ -196,11 +196,11 @@ function scheduleBackgroundFullInitialization(): void {
   }).requestIdleCallback;
 
   if (typeof requestIdle === "function") {
-    requestIdle(() => run(), { timeout: 1200 });
+    requestIdle(() => run(), { timeout: 250 });
     return;
   }
 
-  globalThis.setTimeout(run, 600);
+  globalThis.setTimeout(run, 0);
 }
 
 function dispatchQueryToWorker(params: WorkerQueryParams): Promise<WorkerQueryResult> {
