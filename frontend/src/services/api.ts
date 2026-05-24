@@ -1,4 +1,4 @@
-﻿import { BACKEND_BASE_URL, http } from './api/core/http';
+import { BACKEND_BASE_URL, http } from './api/core/http';
 import {
   getStoredRuntimeSignature,
   primeRuntimeCacheSignature,
@@ -6,6 +6,11 @@ import {
   writePersistentRuntimeCache,
 } from './persistentRuntimeCache';
 import { markPerfEvent } from './perfMarks';
+import {
+  getDistDataDefaultCatalog,
+  getDistDataGroupItems,
+  getDistDataSearchCatalog,
+} from './distDataRuntime';
 
 export { API_BASE_URL, BACKEND_BASE_URL } from './api/core/http';
 export {
@@ -2151,6 +2156,11 @@ export const api = {
       return api.getBrowserDefaultCatalog({ modId: params.modId });
     }
 
+    const distDataCatalog = await getDistDataSearchCatalog(normalizedSearch, params.modId);
+    if (distDataCatalog?.data?.length) {
+      return distDataCatalog;
+    }
+
     const cacheKey = getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId);
     const cached = browserSearchCatalogCache.get(cacheKey);
     if (cached) {
@@ -2194,6 +2204,11 @@ export const api = {
         total: 0,
         items: [],
       };
+    }
+
+    const distDataGroupItems = await getDistDataGroupItems(normalizedGroupKey, modId);
+    if (distDataGroupItems?.items?.length) {
+      return distDataGroupItems;
     }
 
     const cacheKey = getBrowserGroupItemsCacheKey(normalizedGroupKey, modId);

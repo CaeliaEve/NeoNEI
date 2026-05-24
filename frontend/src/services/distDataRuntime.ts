@@ -1,4 +1,13 @@
-﻿import type { BrowserSearchPackResponse } from "./api";
+import type {
+  BrowserDefaultCatalogResponse,
+  BrowserGridEntry,
+  BrowserGroupItemsResponse,
+  BrowserSearchCatalogResponse,
+  BrowserSearchPackEntry,
+  BrowserSearchPackResponse,
+  BrowserVariantGroup,
+  Item,
+} from "./api";
 
 type DistDataManifest = {
   schemaVersion?: string;
@@ -22,7 +31,47 @@ type DistDataSearchPayload = {
   version?: number;
   signature?: string;
   total?: number;
-  items?: BrowserSearchPackResponse["items"];
+  items?: BrowserSearchPackEntry[];
+};
+
+type DistDataBrowserItem = {
+  itemId: string;
+  localizedName?: string | null;
+  internalName?: string | null;
+  modId?: string | null;
+  renderAssetRef?: string | null;
+  browserOrder?: number | null;
+  groupKey?: string | null;
+  groupLabel?: string | null;
+  groupSize?: number | null;
+  representativeItemId?: string | null;
+};
+
+type DistDataBrowserCatalogPayload = {
+  schemaVersion?: string;
+  items?: DistDataBrowserItem[];
+};
+
+type DistDataRawGroup = {
+  groupKey?: string | null;
+  groupLabel?: string | null;
+  groupSize?: number | null;
+  representativeItemId?: string | null;
+  memberItemIds?: string[];
+};
+
+type DistDataGroupPayload = {
+  schemaVersion?: string;
+  groups?: DistDataRawGroup[];
+};
+
+type DistDataBrowserRuntime = {
+  catalog: DistDataBrowserItem[];
+  groups: DistDataRawGroup[];
+  itemById: Map<string, Item>;
+  catalogEntryByItemId: Map<string, DistDataBrowserItem>;
+  searchEntryByItemId: Map<string, BrowserSearchPackEntry>;
+  memberItemsByGroupKey: Map<string, Item[]>;
 };
 
 export type DistDataSearchPack = {
@@ -33,7 +82,9 @@ export type DistDataSearchPack = {
 
 let manifestRequest: Promise<DistDataManifest | null> | null = null;
 let searchPackRequest: Promise<DistDataSearchPack | null> | null = null;
+let browserRuntimeRequest: Promise<DistDataBrowserRuntime | null> | null = null;
 let cachedSearchPack: DistDataSearchPack | null = null;
+let cachedBrowserRuntime: DistDataBrowserRuntime | null = null;
 
 function trimSlashes(value: string): string {
   return value.replace(/^\/+|\/+$/g, "");
@@ -112,6 +163,186 @@ function coerceSearchPack(manifest: DistDataManifest, payload: DistDataSearchPay
   };
 }
 
+function stableNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalizeNeedle(value: string): string {
+  return `${value ?? ""}`.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function matchesSearch(entry: BrowserSearchPackEntry | undefined, query: string): boolean {
+  const needle = normalizeNeedle(query);
+  if (!needle) {
+    return true;
+  }
+  if (!entry) {
+    return false;
+  }
+  const looseNeedle = `${query ?? ""}`.trim().toLowerCase();
+  return [
+    entry.normalizedLocalizedName,
+    entry.normalizedInternalName,
+    entry.normalizedItemId,
+    entry.normalizedSearchTerms,
+    entry.pinyinFull,
+    entry.pinyinAcronym,
+    entry.aliases,
+    entry.localizedName,
+    entry.modId,
+  ].some((value) => {
+    const normalized = normalizeNeedle(`${value ?? ""}`);
+    return normalized.includes(needle) || `${value ?? ""}`.toLowerCase().includes(looseNeedle);
+  });
+}
+
+function toItem(entry: DistDataBrowserItem, searchEntry?: BrowserSearchPackEntry): Item {
+  return {
+    itemId: entry.itemId,
+    modId: `${entry.modId ?? searchEntry?.modId ?? "unknown"}`,
+    internalName: `${entry.internalName ?? entry.itemId}`,
+    localizedName: `${entry.localizedName ?? searchEntry?.localizedName ?? entry.internalName ?? entry.itemId}`,
+    renderAssetRef: entry.renderAssetRef ?? (searchEntry as unknown as { renderAssetRef?: string | null } | undefined)?.renderAssetRef ?? null,
+    browserGroupKey: entry.groupKey ?? null,
+    browserGroupLabel: entry.groupLabel ?? null,
+    browserGroupSize: stableNumber(entry.groupSize, 1),
+  };
+}
+
+function buildGroup(group: DistDataRawGroup, representative: Item): BrowserVariantGroup {
+  const size = Math.max(1, stableNumber(group.groupSize, group.memberItemIds?.length ?? 1));
+  return {
+    key: `${group.groupKey ?? representative.browserGroupKey ?? representative.itemId}`,
+    representative,
+    size,
+    visibleCount: 1,
+    expandable: size > 1,
+    label: `${group.groupLabel ?? representative.browserGroupLabel ?? representative.localizedName}`,
+  };
+}
+
+function filterByModId(item: Item, modId?: string): boolean {
+  const scope = `${modId ?? ""}`.trim();
+  return !scope || scope === "all" || item.modId === scope;
+}
+
+function buildDefaultCatalog(runtime: DistDataBrowserRuntime, modId?: string): BrowserGridEntry[] {
+  const emittedGroups = new Set<string>();
+  const entries: BrowserGridEntry[] = [];
+  for (const catalogEntry of runtime.catalog) {
+    const item = runtime.itemById.get(catalogEntry.itemId);
+    if (!item || !filterByModId(item, modId)) {
+      continue;
+    }
+
+    const groupKey = `${catalogEntry.groupKey ?? ""}`.trim();
+    const representativeItemId = `${catalogEntry.representativeItemId ?? ""}`.trim();
+    if (groupKey && stableNumber(catalogEntry.groupSize, 1) > 1) {
+      if (representativeItemId && representativeItemId !== item.itemId) {
+        continue;
+      }
+      if (emittedGroups.has(groupKey)) {
+        continue;
+      }
+      const rawGroup = runtime.groups.find((entry) => entry.groupKey === groupKey) ?? {
+        groupKey,
+        groupLabel: catalogEntry.groupLabel,
+        groupSize: catalogEntry.groupSize,
+        representativeItemId: item.itemId,
+        memberItemIds: [item.itemId],
+      };
+      emittedGroups.add(groupKey);
+      entries.push({
+        key: `collapsed:${groupKey}`,
+        kind: "group-collapsed",
+        group: buildGroup(rawGroup, item),
+      });
+      continue;
+    }
+
+    entries.push({ key: item.itemId, kind: "item", item });
+  }
+  return entries;
+}
+
+function paginate<T>(data: T[]): BrowserDefaultCatalogResponse {
+  return {
+    data: data as BrowserDefaultCatalogResponse["data"],
+    total: data.length,
+    page: 1,
+    pageSize: data.length,
+    totalPages: 1,
+  };
+}
+
+async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
+  if (cachedBrowserRuntime) {
+    return cachedBrowserRuntime;
+  }
+  if (browserRuntimeRequest) {
+    return browserRuntimeRequest;
+  }
+
+  browserRuntimeRequest = (async () => {
+    const manifest = await getDistDataManifest();
+    const catalogPath = `${manifest?.files?.browserCatalog ?? ""}`.trim();
+    const groupPath = `${manifest?.files?.browserGroups ?? ""}`.trim();
+    if (!manifest || !catalogPath || !groupPath) {
+      return null;
+    }
+
+    const [catalogPayload, groupPayload, searchPack] = await Promise.all([
+      fetchJson<DistDataBrowserCatalogPayload>(joinAssetPath(getConfiguredBasePath(), catalogPath)),
+      fetchJson<DistDataGroupPayload>(joinAssetPath(getConfiguredBasePath(), groupPath)),
+      getDistDataSearchPack(),
+    ]);
+    const catalog = Array.isArray(catalogPayload.items) ? catalogPayload.items.filter((entry) => entry?.itemId) : [];
+    const groups = Array.isArray(groupPayload.groups) ? groupPayload.groups.filter((entry) => entry?.groupKey) : [];
+    if (!catalog.length) {
+      return null;
+    }
+
+    const searchEntryByItemId = new Map<string, BrowserSearchPackEntry>();
+    for (const searchEntry of searchPack?.pack.items ?? []) {
+      searchEntryByItemId.set(searchEntry.itemId, searchEntry);
+    }
+    const catalogEntryByItemId = new Map<string, DistDataBrowserItem>();
+    const itemById = new Map<string, Item>();
+    for (const entry of catalog) {
+      catalogEntryByItemId.set(entry.itemId, entry);
+      itemById.set(entry.itemId, toItem(entry, searchEntryByItemId.get(entry.itemId)));
+    }
+
+    const memberItemsByGroupKey = new Map<string, Item[]>();
+    for (const group of groups) {
+      const groupKey = `${group.groupKey ?? ""}`.trim();
+      const memberItems = (group.memberItemIds ?? [])
+        .map((itemId) => itemById.get(itemId))
+        .filter((item): item is Item => Boolean(item));
+      if (groupKey && memberItems.length) {
+        memberItemsByGroupKey.set(groupKey, memberItems);
+      }
+    }
+
+    cachedBrowserRuntime = {
+      catalog,
+      groups,
+      itemById,
+      catalogEntryByItemId,
+      searchEntryByItemId,
+      memberItemsByGroupKey,
+    };
+    return cachedBrowserRuntime;
+  })()
+    .catch(() => null)
+    .finally(() => {
+      browserRuntimeRequest = null;
+    });
+
+  return browserRuntimeRequest;
+}
+
 export async function getDistDataManifest(): Promise<DistDataManifest | null> {
   if (manifestRequest) {
     return manifestRequest;
@@ -161,8 +392,53 @@ export async function getDistDataSearchPack(): Promise<DistDataSearchPack | null
   return searchPackRequest;
 }
 
+export async function getDistDataDefaultCatalog(modId?: string): Promise<BrowserDefaultCatalogResponse | null> {
+  const runtime = await getBrowserRuntime();
+  if (!runtime) {
+    return null;
+  }
+  return paginate(buildDefaultCatalog(runtime, modId));
+}
+
+export async function getDistDataSearchCatalog(search: string, modId?: string): Promise<BrowserSearchCatalogResponse | null> {
+  const runtime = await getBrowserRuntime();
+  if (!runtime) {
+    return null;
+  }
+  const normalizedSearch = `${search ?? ""}`.trim();
+  if (!normalizedSearch) {
+    return getDistDataDefaultCatalog(modId) as Promise<BrowserSearchCatalogResponse | null>;
+  }
+  const baseEntries = buildDefaultCatalog(runtime, modId);
+  const filtered = baseEntries.filter((entry) => {
+    const item = entry.kind === "item" ? entry.item : entry.group.representative;
+    return matchesSearch(runtime.searchEntryByItemId.get(item.itemId), normalizedSearch);
+  });
+  return paginate(filtered) as BrowserSearchCatalogResponse;
+}
+
+export async function getDistDataGroupItems(groupKey: string, modId?: string): Promise<BrowserGroupItemsResponse | null> {
+  const runtime = await getBrowserRuntime();
+  const normalizedGroupKey = `${groupKey ?? ""}`.trim();
+  if (!runtime || !normalizedGroupKey) {
+    return null;
+  }
+  const items = (runtime.memberItemsByGroupKey.get(normalizedGroupKey) ?? [])
+    .filter((item) => filterByModId(item, modId));
+  if (!items.length) {
+    return null;
+  }
+  return {
+    groupKey: normalizedGroupKey,
+    total: items.length,
+    items,
+  };
+}
+
 export function resetDistDataRuntimeCache(): void {
   manifestRequest = null;
   searchPackRequest = null;
+  browserRuntimeRequest = null;
   cachedSearchPack = null;
+  cachedBrowserRuntime = null;
 }
