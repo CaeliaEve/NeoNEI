@@ -1,4 +1,5 @@
 import { api, type BrowserSearchPackEntry, type BrowserSearchPackResponse } from "./api";
+import { getDistDataSearchPack } from "./distDataRuntime";
 import { readPersistentRuntimeCache, writePersistentRuntimeCache } from "./persistentRuntimeCache";
 import { markPerfEvent } from "./perfMarks";
 
@@ -220,46 +221,56 @@ async function ensureWarmInitialized(): Promise<void> {
     return warmInitPromise;
   }
 
-  warmInitPromise = api.getPublishManifest()
-    .then(async (manifest) => {
-      const runtimeCacheKey = `${manifest.runtimeCacheKey ?? manifest.sourceSignature ?? ""}`.trim();
-      resetWorkerState(runtimeCacheKey);
-
-      const fullCacheKey = buildSearchPackCacheKey(runtimeCacheKey, "full");
-      const cachedFullPack = await readPersistentRuntimeCache<BrowserSearchPackResponse>(fullCacheKey);
-      if (cachedFullPack?.items?.length) {
-        initializeWorkerWithPack(cachedFullPack);
-        searchWorkerStage = "full";
-        markSearchWorkerReady("full", "persistent-full", cachedFullPack);
-        return;
-      }
-
-      const hotCacheKey = buildSearchPackCacheKey(runtimeCacheKey, "hot");
-      const cachedHotPack = await readPersistentRuntimeCache<BrowserSearchPackResponse>(hotCacheKey);
-      if (cachedHotPack?.items?.length) {
-        initializeWorkerWithPack(cachedHotPack);
-        searchWorkerStage = "partial";
-        markSearchWorkerReady("partial", "persistent-hot", cachedHotPack);
-        scheduleBackgroundFullInitialization();
-        return;
-      }
-
-      const hotShard = await api.getBrowserSearchPackShard(HOT_SHARD_ID);
-      if (hotShard?.items?.length) {
-        initializeWorkerWithPack(hotShard);
-        searchWorkerStage = "partial";
-        markSearchWorkerReady("partial", "published-hot", hotShard);
-        void writePersistentRuntimeCache(hotCacheKey, hotShard);
-        scheduleBackgroundFullInitialization();
-        return;
-      }
-
-      const fullPack = await api.getBrowserSearchPack();
-      initializeWorkerWithPack(fullPack);
+  warmInitPromise = (async () => {
+    const distData = await getDistDataSearchPack();
+    if (distData?.pack?.items?.length) {
+      resetWorkerState(distData.runtimeCacheKey);
+      initializeWorkerWithPack(distData.pack);
       searchWorkerStage = "full";
-      markSearchWorkerReady("full", "api-full", fullPack);
-      void writePersistentRuntimeCache(fullCacheKey, fullPack);
-    })
+      markSearchWorkerReady("full", "dist-data-v3", distData.pack);
+      void writePersistentRuntimeCache(buildSearchPackCacheKey(distData.runtimeCacheKey, "full"), distData.pack);
+      return;
+    }
+
+    const manifest = await api.getPublishManifest();
+    const runtimeCacheKey = `${manifest.runtimeCacheKey ?? manifest.sourceSignature ?? ""}`.trim();
+    resetWorkerState(runtimeCacheKey);
+
+    const fullCacheKey = buildSearchPackCacheKey(runtimeCacheKey, "full");
+    const cachedFullPack = await readPersistentRuntimeCache<BrowserSearchPackResponse>(fullCacheKey);
+    if (cachedFullPack?.items?.length) {
+      initializeWorkerWithPack(cachedFullPack);
+      searchWorkerStage = "full";
+      markSearchWorkerReady("full", "persistent-full", cachedFullPack);
+      return;
+    }
+
+    const hotCacheKey = buildSearchPackCacheKey(runtimeCacheKey, "hot");
+    const cachedHotPack = await readPersistentRuntimeCache<BrowserSearchPackResponse>(hotCacheKey);
+    if (cachedHotPack?.items?.length) {
+      initializeWorkerWithPack(cachedHotPack);
+      searchWorkerStage = "partial";
+      markSearchWorkerReady("partial", "persistent-hot", cachedHotPack);
+      scheduleBackgroundFullInitialization();
+      return;
+    }
+
+    const hotShard = await api.getBrowserSearchPackShard(HOT_SHARD_ID);
+    if (hotShard?.items?.length) {
+      initializeWorkerWithPack(hotShard);
+      searchWorkerStage = "partial";
+      markSearchWorkerReady("partial", "published-hot", hotShard);
+      void writePersistentRuntimeCache(hotCacheKey, hotShard);
+      scheduleBackgroundFullInitialization();
+      return;
+    }
+
+    const fullPack = await api.getBrowserSearchPack();
+    initializeWorkerWithPack(fullPack);
+    searchWorkerStage = "full";
+    markSearchWorkerReady("full", "api-full", fullPack);
+    void writePersistentRuntimeCache(fullCacheKey, fullPack);
+  })()
     .catch((error) => {
       warmInitPromise = null;
       throw error;

@@ -1,4 +1,4 @@
-# NeoNEI / NESQL++ 巨大重构最终方案
+﻿# NeoNEI / NESQL++ 巨大重构最终方案
 
 日期：2026-05-24  
 状态：已批准，作为后续大重构主蓝图  
@@ -491,17 +491,17 @@ validation/report.json
 
 ### Phase 1：Search Core V3
 
-- [ ] 设计 search-v3 schema。
-- [ ] 后端/编译阶段生成 search-v3 JSON 原型。
-- [ ] 新增 `SearchWorkerV3`。
-- [ ] 搜索关键路径切到 V3。
+- [x] 设计 search-v3 schema。
+- [x] 后端/编译阶段生成 search-v3 JSON 原型。
+- [x] 新增 `SearchWorkerV3`。
+- [x] 搜索关键路径切到 V3。
 - [ ] 移除搜索时旧后端请求。
 - [ ] 移除搜索时全表扫描。
 
 验收：
 
-- [ ] 搜索输入到刷新 p50 < 60ms。
-- [ ] 搜索输入到刷新 p95 < 120ms。
+- [x] 搜索输入到刷新 p50 < 60ms。
+- [x] 搜索输入到刷新 p95 < 120ms。
 - [ ] 搜索期间 Network 不出现 search-catalog 请求。
 
 ### Phase 2：浏览区索引 V3
@@ -532,16 +532,16 @@ validation/report.json
 
 ### Phase 4：Data Compiler 原型
 
-- [ ] 新建 `neonei-compiler`。
-- [ ] 读取 raw-export。
-- [ ] 输出 search/browser/texture 的第一版编译产物。
-- [ ] 输出 validation report。
+- [x] 新建 `neonei-compiler`。
+- [x] 读取 raw-export。
+- [x] 输出 search/browser/texture 的第一版编译产物。
+- [x] 输出 validation report。
 
 验收：
 
-- [ ] 编译器可重复运行。
-- [ ] 编译结果可被 NeoNEI 加载。
-- [ ] 校验报告可定位缺失项。
+- [x] 编译器可重复运行。
+- [x] 编译结果可被 NeoNEI 加载。
+- [x] 校验报告可定位缺失项。
 
 ### Phase 5：配方索引与 UI 协议
 
@@ -664,4 +664,5 @@ validation/report.json
 完整落地后的目标体感：
 
 > **原生 NEI 的 85% - 95%。**
+
 
