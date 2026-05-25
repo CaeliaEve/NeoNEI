@@ -554,8 +554,8 @@ validation/report.json
 
 验收：
 
-- [ ] 常见配方打开 p50 < 150ms。
-- [ ] 复杂配方打开 p95 < 300ms。
+- [x] 常见配方打开 p50 < 150ms（Recipe V3 benchmark：p50 0.84ms，2026-05-25）。
+- [x] 复杂配方打开 p95 < 300ms（Recipe V3 benchmark：p95 3.97ms，2026-05-25；覆盖本地 publish payload 解析/打开代理）。
 - [ ] 配方分类不再重复分裂。
 
 ### Phase 6：PostgreSQL 与发布系统
@@ -681,3 +681,4 @@ validation/report.json
 完整落地后的目标体感：
 
 > **原生 NEI 的 85% - 95%。**
+

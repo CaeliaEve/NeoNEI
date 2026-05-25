@@ -9,6 +9,7 @@
     "typecheck": "vue-tsc -b",
     "preview": "vite preview",
     "bench:search-v3": "node ../scripts/bench-search-v3.mjs --gate",
+    "bench:recipe-v3": "node ../scripts/bench-recipe-v3.mjs --gate",
     "compile:raw-export-v3": "node ../scripts/compile-raw-export-v3.mjs",
     "test:raw-export-v3": "node ../scripts/compile-raw-export-v3.mjs --self-test",
     "bench:recipe-search": "node scripts/bench-recipe-search.mjs",
