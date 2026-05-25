@@ -8,8 +8,11 @@ import type {
   BrowserSearchCatalogResponse,
   BrowserSearchPackEntry,
   BrowserSearchPackResponse,
+  HomeBootstrapResponse,
   BrowserVariantGroup,
   Item,
+  Mod,
+  PublicRuntimeManifest,
   RecipeBootstrapPayload,
   RecipeUiPayload,
 } from "./api";
@@ -389,6 +392,38 @@ function buildResourceManifest(entries: BrowserGridEntry[]) {
   };
 }
 
+function buildModsFromRuntime(runtime: DistDataBrowserRuntime): Mod[] {
+  const mods = new Map<string, Mod>();
+  for (const item of runtime.itemById.values()) {
+    const modId = `${item.modId ?? "unknown"}`.trim() || "unknown";
+    const existing = mods.get(modId);
+    if (existing) {
+      existing.itemCount += 1;
+      continue;
+    }
+    mods.set(modId, {
+      modId,
+      modName: modId,
+      itemCount: 1,
+    });
+  }
+  return Array.from(mods.values()).sort((left, right) => right.itemCount - left.itemCount || left.modName.localeCompare(right.modName));
+}
+
+function buildPublicManifestFromDistData(manifest: DistDataManifest): PublicRuntimeManifest {
+  const runtimeCacheKey = buildRuntimeCacheKey(manifest);
+  return {
+    version: 3,
+    sourceSignature: `${manifest.sourceSignature ?? manifest.runtimeCacheKey ?? runtimeCacheKey}`,
+    compiledAt: manifest.generatedAt ?? null,
+    publishRevision: manifest.source ?? null,
+    publishCompiledAt: manifest.generatedAt ?? null,
+    browserLayoutKey: runtimeCacheKey,
+    runtimeCacheKey,
+    publishBundle: null,
+  };
+}
+
 async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
   if (cachedBrowserRuntime) {
     return cachedBrowserRuntime;
@@ -528,6 +563,31 @@ export async function getDistDataSearchCatalog(search: string, modId?: string): 
     return matchesSearch(runtime.searchEntryByItemId.get(item.itemId), normalizedSearch);
   });
   return paginate(filtered) as BrowserSearchCatalogResponse;
+}
+
+export async function getDistDataHomeBootstrap(params: {
+  page?: number;
+  pageSize?: number;
+  slotSize?: number;
+  modId?: string;
+}): Promise<HomeBootstrapResponse | null> {
+  const [manifest, runtime] = await Promise.all([getDistDataManifest(), getBrowserRuntime()]);
+  if (!manifest || !runtime) {
+    return null;
+  }
+  const pagePack = await getDistDataBrowserPagePack({
+    page: params.page,
+    pageSize: params.pageSize,
+    modId: params.modId,
+  });
+  if (!pagePack) {
+    return null;
+  }
+  return {
+    manifest: buildPublicManifestFromDistData(manifest),
+    mods: buildModsFromRuntime(runtime),
+    pagePack,
+  };
 }
 
 export async function getDistDataBrowserPagePack(params: {

@@ -1,4 +1,4 @@
-# NeoNEI / NESQL++ 巨大重构最终方案
+﻿# NeoNEI / NESQL++ 巨大重构最终方案
 
 日期：2026-05-24  
 状态：已批准，作为后续大重构主蓝图  
@@ -506,15 +506,15 @@ validation/report.json
 
 ### Phase 2：浏览区索引 V3
 
-- [ ] 编译 NEI 顺序表。
-- [ ] 编译折叠分组表。
-- [ ] 浏览区分页改成本地投影。
-- [ ] 搜索结果分页和默认浏览分页使用同一套 item catalog。
+- [x] 编译 NEI 顺序表。
+- [x] 编译折叠分组表。
+- [x] 浏览区分页改成本地投影。
+- [x] 搜索结果分页和默认浏览分页使用同一套 item catalog。
 
 验收：
 
-- [ ] 默认翻页 p50 < 35ms。
-- [ ] 搜索翻页 p50 < 35ms。
+- [x] 默认翻页 p50 < 35ms。
+- [x] 搜索翻页 p50 < 35ms。
 - [ ] 分组位置与游戏内 NEI 基本一致。
 
 ### Phase 3：Atlas 与动画重构
@@ -575,6 +575,8 @@ validation/report.json
 
 ### Phase 7：旧路径清理
 
+- [x] 搜索关键路径优先使用 dist-data V3。
+- [x] 浏览区 page-pack / by-id-pack / home-bootstrap 优先使用 dist-data V3。
 - [ ] 搜索关键路径删除旧 fallback。
 - [ ] 浏览区删除低性能补图路径。
 - [ ] 清理历史 publish 产物保留策略。
@@ -654,6 +656,13 @@ validation/report.json
 4. 不把临时文件、日志、大型历史 publish 产物提交。
 5. 任何性能优化必须附带测量数据。
 6. 任何导出结构变化必须附带 validation report。
+
+
+#### 2026-05-25 Runtime V3 cleanup progress
+
+- 浏览区主页 bootstrap、分页 page-pack、by-id 资源包、默认/搜索 catalog、搜索 pack/shard 已优先走 dist-data V3。
+- 当前保留 backend / publish fallback 仅用于缺失 dist-data 时可诊断恢复；后续 Phase 7 继续改成明确错误与发布校验。
+- 验证：test:raw-export-v3、typecheck、build、bench:search-v3 通过；search-v3 gate max 约 12.35ms。
 
 ---
 

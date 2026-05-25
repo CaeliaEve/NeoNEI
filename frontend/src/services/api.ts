@@ -11,6 +11,8 @@ import {
   getDistDataBrowserPagePack,
   getDistDataBrowserPagePackByIds,
   getDistDataDefaultCatalog,
+  getDistDataHomeBootstrap,
+  getDistDataSearchPack,
   getDistDataGroupItems,
   getDistDataRecipeBootstrap,
   getDistDataRecipeUiPayload,
@@ -2034,6 +2036,11 @@ export const api = {
     slotSize?: number;
     modId?: string;
   }): Promise<HomeBootstrapResponse> {
+    const distDataBootstrap = await getDistDataHomeBootstrap(params);
+    if (distDataBootstrap) {
+      return distDataBootstrap;
+    }
+
     const manifest = await api.getPublishManifest();
     const requestedPage = Math.max(1, Math.floor(params.page ?? 1));
     const requestedPageSize = Math.max(1, Math.floor(params.pageSize ?? 50));
@@ -2102,6 +2109,17 @@ export const api = {
     modId?: string;
     expandedGroups?: string[];
   }): Promise<PaginatedResponse<BrowserGridEntry>> {
+    const distDataPage = await getDistDataBrowserPagePack(params);
+    if (distDataPage) {
+      return {
+        data: distDataPage.data,
+        total: distDataPage.total,
+        page: distDataPage.page,
+        pageSize: distDataPage.pageSize,
+        totalPages: distDataPage.totalPages,
+      };
+    }
+
     const response = await http.get('/items/browser', {
       params: {
         ...params,
@@ -2354,6 +2372,11 @@ export const api = {
   },
 
   async getBrowserSearchPack(): Promise<BrowserSearchPackResponse> {
+    const distDataSearch = await getDistDataSearchPack();
+    if (distDataSearch?.pack?.items?.length) {
+      return distDataSearch.pack;
+    }
+
     const manifest = await api.getPublishManifest();
     const staticPath = manifest.publishBundle?.files.browserSearchPack;
     if (staticPath) {
@@ -2371,6 +2394,11 @@ export const api = {
     const normalizedShardId = `${shardId ?? ''}`.trim();
     if (!normalizedShardId) {
       return null;
+    }
+
+    const distDataSearch = await getDistDataSearchPack();
+    if (distDataSearch?.pack?.items?.length) {
+      return distDataSearch.pack;
     }
 
     const cached = browserSearchShardCache.get(normalizedShardId);
