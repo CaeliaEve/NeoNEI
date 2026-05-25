@@ -478,11 +478,11 @@ validation/report.json
 
 ### Phase 0：基线与保护
 
-- [ ] 记录当前 NeoNEI / NESQL++ 分支和提交。
-- [ ] 建立重构专用分支。
-- [ ] 固化当前可运行数据集。
-- [ ] 建立性能基线：搜索、翻页、贴图、配方打开。
-- [ ] 建立最小回归样本：铁锭、泰拉钢、神秘法杖、奇点、EEC、生物掉落、GT 机器。
+- [x] 记录当前 NeoNEI / NESQL++ 分支和提交（`validation/runtime-v3-baseline.json`）。
+- [x] 建立重构专用分支（`rebuild/neonei-runtime-v3`）。
+- [x] 固化当前可运行数据集（`.tmp-runtime/dist-data-v3-self-test` smoke baseline；完整 GTNH 数据通过 `DIST_DATA_V3_DIR` 校验）。
+- [x] 建立性能基线：搜索、贴图、配方打开（baseline JSON + benchmark reports）。
+- [x] 建立最小回归样本：铁锭、泰拉钢、神秘法杖、奇点、EEC、生物掉落、GT 机器（`validation/runtime-v3-regression-samples.json` + `validate:runtime-v3`）。
 
 验收：
 

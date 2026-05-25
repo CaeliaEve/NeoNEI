@@ -1,0 +1,56 @@
+{
+    "schemaVersion":  "neonei/runtime-v3-baseline/v1",
+    "generatedAt":  "2026-05-25T15:14:20.3286155Z",
+    "repositories":  {
+                         "NeoNEI":  {
+                                        "branch":  "rebuild/neonei-runtime-v3",
+                                        "commit":  "27e54106ab16e19ad8cd219b3bdb17a2d7d57af4"
+                                    },
+                         "NESQL++":  {
+                                         "branch":  "rebuild/neonei-runtime-v3",
+                                         "commit":  "466f034b00ad939fe157430f2cd81c8fa18faa51"
+                                     }
+                     },
+    "dataset":  {
+                    "distDataDir":  ".tmp-runtime/dist-data-v3-self-test",
+                    "note":  "Self-test dataset is the stable local smoke baseline; full GTNH export should be supplied through DIST_DATA_V3_DIR for strict validation."
+                },
+    "benchmarks":  {
+                       "searchV3":  {
+                                        "itemCount":  129788,
+                                        "indexBuildElapsedMs":  8364.8716,
+                                        "avgQueryMs":  1.8460800000000746,
+                                        "maxQueryMs":  12.91400000000067,
+                                        "failures":  [
+
+                                                     ]
+                                    },
+                       "recipeV3":  {
+                                        "sourceSignature":  "d9f4c354afae3919dba8011c048e61b41a42cd05",
+                                        "sampled":  128,
+                                        "measured":  128,
+                                        "p50Ms":  0.8739000000000487,
+                                        "p95Ms":  3.511099999999999,
+                                        "maxMs":  5.485900000000015,
+                                        "failures":  [
+
+                                                     ]
+                                    },
+                       "browserAtlasV3":  {
+                                              "itemCount":  2,
+                                              "atlasEntryCount":  2,
+                                              "coverage":  1,
+                                              "animatedCount":  1,
+                                              "failures":  [
+
+                                                           ]
+                                          },
+                       "regression":  {
+                                          "samples":  6,
+                                          "passed":  6,
+                                          "failed":  0,
+                                          "warnings":  4
+                                      }
+                   },
+    "regressionSamples":  "validation/runtime-v3-regression-samples.json"
+}

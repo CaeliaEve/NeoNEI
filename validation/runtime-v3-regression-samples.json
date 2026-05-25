@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "neonei/runtime-v3-regression-samples/v1",
+  "samples": [
+    {
+      "id": "iron_ingot",
+      "label": "Iron Ingot baseline",
+      "required": true,
+      "match": { "itemIds": ["i~minecraft~iron_ingot~0"], "localizedIncludes": ["iron ingot"], "internalIncludes": ["iron_ingot"] },
+      "checks": { "atlas": true, "recipe": true }
+    },
+    {
+      "id": "terrasteel_ingot",
+      "label": "Botania Terrasteel animated sample",
+      "required": true,
+      "match": { "itemIds": ["i~botania~manaResource~4"], "localizedIncludes": ["terrasteel"], "internalIncludes": ["manaResource"] },
+      "checks": { "atlas": true, "animation": true }
+    },
+    {
+      "id": "thaumcraft_wand",
+      "label": "Thaumcraft wand/cap/staff grouping sample",
+      "required": false,
+      "match": { "modIds": ["Thaumcraft", "thaumcraft"], "localizedIncludes": ["wand", "staff", "sceptre", "法杖", "权杖"] },
+      "checks": { "atlas": true, "group": true }
+    },
+    {
+      "id": "singularity_animation",
+      "label": "Avaritia / AE singularity animation sample",
+      "required": false,
+      "match": { "localizedIncludes": ["singularity", "奇点"], "internalIncludes": ["singularity"] },
+      "checks": { "atlas": true, "animation": true }
+    },
+    {
+      "id": "eec_industrial_slaughterhouse",
+      "label": "Extreme Entity Crusher / Industrial Slaughterhouse sample",
+      "required": false,
+      "match": { "localizedIncludes": ["extreme entity crusher", "industrial slaughterhouse", "工业屠宰场"], "internalIncludes": ["crusher", "slaughter"] },
+      "checks": { "recipe": true }
+    },
+    {
+      "id": "gt_machine",
+      "label": "GregTech machine browser and recipe sample",
+      "required": false,
+      "match": { "modIds": ["gregtech"], "localizedIncludes": ["machine", "机器"], "internalIncludes": ["gt.blockmachines"] },
+      "checks": { "atlas": true, "recipe": true }
+    }
+  ]
+}
