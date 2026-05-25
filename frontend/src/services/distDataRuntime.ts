@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   BrowserDefaultCatalogResponse,
   BrowserAtlasIndexResponse,
   BrowserByIdsPackResponse,
@@ -107,6 +107,9 @@ type DistDataBrowserRuntime = {
   catalogEntryByItemId: Map<string, DistDataBrowserItem>;
   searchEntryByItemId: Map<string, BrowserSearchPackEntry>;
   memberItemsByGroupKey: Map<string, Item[]>;
+  groupByKey: Map<string, DistDataRawGroup>;
+  defaultCatalogByScope: Map<string, BrowserGridEntry[]>;
+  searchCatalogByScope: Map<string, BrowserGridEntry[]>;
 };
 
 export type DistDataSearchPack = {
@@ -269,7 +272,22 @@ function filterByModId(item: Item, modId?: string): boolean {
   return !scope || scope === "all" || item.modId === scope;
 }
 
+function getCatalogScopeKey(modId?: string): string {
+  const scope = `${modId ?? "all"}`.trim();
+  return scope || "all";
+}
+
+function getSearchCatalogScopeKey(search: string, modId?: string): string {
+  return `${getCatalogScopeKey(modId)}::${normalizeNeedle(search)}`;
+}
+
 function buildDefaultCatalog(runtime: DistDataBrowserRuntime, modId?: string): BrowserGridEntry[] {
+  const scopeKey = getCatalogScopeKey(modId);
+  const cached = runtime.defaultCatalogByScope.get(scopeKey);
+  if (cached) {
+    return cached;
+  }
+
   const emittedGroups = new Set<string>();
   const entries: BrowserGridEntry[] = [];
   for (const catalogEntry of runtime.catalog) {
@@ -287,7 +305,7 @@ function buildDefaultCatalog(runtime: DistDataBrowserRuntime, modId?: string): B
       if (emittedGroups.has(groupKey)) {
         continue;
       }
-      const rawGroup = runtime.groups.find((entry) => entry.groupKey === groupKey) ?? {
+      const rawGroup = runtime.groupByKey.get(groupKey) ?? {
         groupKey,
         groupLabel: catalogEntry.groupLabel,
         groupSize: catalogEntry.groupSize,
@@ -305,6 +323,7 @@ function buildDefaultCatalog(runtime: DistDataBrowserRuntime, modId?: string): B
 
     entries.push({ key: item.itemId, kind: "item", item });
   }
+  runtime.defaultCatalogByScope.set(scopeKey, entries);
   return entries;
 }
 
@@ -463,7 +482,12 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
     }
 
     const memberItemsByGroupKey = new Map<string, Item[]>();
+    const groupByKey = new Map<string, DistDataRawGroup>();
     for (const group of groups) {
+      const rawKey = `${group.groupKey ?? ""}`.trim();
+      if (rawKey) {
+        groupByKey.set(rawKey, group);
+      }
       const groupKey = `${group.groupKey ?? ""}`.trim();
       const memberItems = (group.memberItemIds ?? [])
         .map((itemId) => itemById.get(itemId))
@@ -480,6 +504,9 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
       catalogEntryByItemId,
       searchEntryByItemId,
       memberItemsByGroupKey,
+      groupByKey,
+      defaultCatalogByScope: new Map(),
+      searchCatalogByScope: new Map(),
     };
     return cachedBrowserRuntime;
   })()
@@ -557,11 +584,17 @@ export async function getDistDataSearchCatalog(search: string, modId?: string): 
   if (!normalizedSearch) {
     return getDistDataDefaultCatalog(modId) as Promise<BrowserSearchCatalogResponse | null>;
   }
+  const scopeKey = getSearchCatalogScopeKey(normalizedSearch, modId);
+  const cached = runtime.searchCatalogByScope.get(scopeKey);
+  if (cached) {
+    return paginate(cached) as BrowserSearchCatalogResponse;
+  }
   const baseEntries = buildDefaultCatalog(runtime, modId);
   const filtered = baseEntries.filter((entry) => {
     const item = entry.kind === "item" ? entry.item : entry.group.representative;
     return matchesSearch(runtime.searchEntryByItemId.get(item.itemId), normalizedSearch);
   });
+  runtime.searchCatalogByScope.set(scopeKey, filtered);
   return paginate(filtered) as BrowserSearchCatalogResponse;
 }
 
@@ -603,10 +636,7 @@ export async function getDistDataBrowserPagePack(params: {
   }
   const normalizedSearch = `${params.search ?? ""}`.trim();
   const baseEntries = normalizedSearch
-    ? buildDefaultCatalog(runtime, params.modId).filter((entry) => {
-      const item = entry.kind === "item" ? entry.item : entry.group.representative;
-      return matchesSearch(runtime.searchEntryByItemId.get(item.itemId), normalizedSearch);
-    })
+    ? (await getDistDataSearchCatalog(normalizedSearch, params.modId))?.data ?? []
     : buildDefaultCatalog(runtime, params.modId);
   const expandedEntries = expandCatalogGroups(baseEntries, runtime, params.expandedGroups);
   const page = paginateBrowserEntries(expandedEntries, params.page, params.pageSize);
@@ -867,3 +897,4 @@ export function resetDistDataRuntimeCache(): void {
   browserAtlasIndexRequest = null;
   cachedBrowserAtlasIndex = null;
 }
+
