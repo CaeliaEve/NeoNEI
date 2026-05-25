@@ -683,3 +683,10 @@ validation/report.json
 完整落地后的目标体感：
 
 > **原生 NEI 的 85% - 95%。**
+
+#### 2026-05-25 Runtime V3 animation-path tightening
+
+- [x] Homepage browser grid now treats global browser atlas as the authoritative animation path; legacy per-item render-contract, native-sprite probe, animated-atlas probe, and direct GIF probe imports/calls were removed from `HomeCanvasGrid.vue`.
+- [x] Browser animation redraw now follows `requestAnimationFrame` and uses the exported V3 timeline durations through `resolveTimelineFrameIndex`, instead of a fixed 50ms frontend timer.
+- [x] `validate:runtime-v3` now checks animated browser-atlas entries against `textures/animation-table.json`, flags missing timelines/table entries, invalid frame durations, and atlas/table timeline mismatches.
+- [x] Self-test validation has 1 animated atlas item and 0 animation timing failures; full GTNH dataset still needs `DIST_DATA_V3_DIR=<full dist-data>` validation for singularities, Avaritia, NASA rocket, Thaumcraft wand/staff, and EEC samples.

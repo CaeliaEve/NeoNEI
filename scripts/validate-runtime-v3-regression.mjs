@@ -100,6 +100,48 @@ for (let index = 1; index < catalogItems.length; index += 1) {
     if (browserOrderBreaks.length >= 25) break;
   }
 }
+const animatedAtlasEntries = [];
+const animationTimingFailures = [];
+const animationTimingWarnings = [];
+for (const entry of atlasPayload.items ?? []) {
+  if (!entry?.itemId || !entry?.animatedAtlas?.atlasFile) continue;
+  animatedAtlasEntries.push(entry);
+  const tableEntry = animationByItemId.get(entry.itemId);
+  if (!tableEntry) {
+    animationTimingFailures.push({ itemId: entry.itemId, reason: "missing-animation-table-entry" });
+    continue;
+  }
+  const atlasTimeline = Array.isArray(entry.animatedAtlas?.timeline) ? entry.animatedAtlas.timeline : [];
+  const tableTimeline = Array.isArray(tableEntry.timeline) ? tableEntry.timeline : [];
+  if (atlasTimeline.length === 0 || tableTimeline.length === 0) {
+    animationTimingFailures.push({ itemId: entry.itemId, reason: "missing-timeline" });
+    continue;
+  }
+  const badDurations = tableTimeline
+    .map((frame, index) => ({
+      index,
+      durationMs: stableNumber(Array.isArray(frame) ? frame[1] : frame?.durationMs, 0),
+    }))
+    .filter((frame) => frame.durationMs < 16);
+  if (badDurations.length > 0) {
+    animationTimingFailures.push({ itemId: entry.itemId, reason: "invalid-frame-duration", badDurations: badDurations.slice(0, 8) });
+  }
+  const atlasDurations = atlasTimeline.map((frame) => stableNumber(Array.isArray(frame) ? frame[1] : frame?.durationMs, 0));
+  const tableDurations = tableTimeline.map((frame) => stableNumber(Array.isArray(frame) ? frame[1] : frame?.durationMs, 0));
+  const mismatched = atlasDurations.length !== tableDurations.length
+    || atlasDurations.some((duration, index) => duration !== tableDurations[index]);
+  if (mismatched) {
+    animationTimingFailures.push({
+      itemId: entry.itemId,
+      reason: "atlas-animation-table-timeline-mismatch",
+      atlasDurations: atlasDurations.slice(0, 8),
+      tableDurations: tableDurations.slice(0, 8),
+    });
+  }
+  if (tableDurations.length > 0 && tableDurations.every((duration) => duration === 50) && tableEntry.mode !== "native_sprite") {
+    animationTimingWarnings.push({ itemId: entry.itemId, reason: "uniform-50ms-non-native-animation" });
+  }
+}
 const rawGroups = Array.isArray(groupPayload.groups) ? groupPayload.groups : [];
 const groupIntegrity = rawGroups.reduce((acc, group) => {
   const members = Array.isArray(group?.memberItemIds) ? group.memberItemIds : [];
@@ -160,6 +202,7 @@ for (const sample of sampleConfig.samples ?? []) {
 
 const failures = sampleResults.flatMap((sample) => sample.failures.map((failure) => `${sample.id}: ${failure}`));
 if (duplicateCatalogItemIds.length > 0) failures.push(`browser catalog has ${duplicateCatalogItemIds.length} duplicate item id(s)`);
+for (const failure of animationTimingFailures.slice(0, 25)) failures.push(`animation timing ${failure.reason} for ${failure.itemId}`);
 if (browserOrderBreaks.length > 0) failures.push(`browser catalog order has ${browserOrderBreaks.length} monotonic break(s)`);
 if (strict && groupIntegrity.missingRepresentatives.length > 0) failures.push(`browser groups have ${groupIntegrity.missingRepresentatives.length} missing representative(s)`);
 if (strict && groupIntegrity.groupsWithMissingMembers.length > 0) failures.push(`browser groups have ${groupIntegrity.groupsWithMissingMembers.length} missing-member group(s)`);
@@ -167,6 +210,7 @@ const warnings = sampleResults.flatMap((sample) => sample.warnings.map((warning)
 if (!strict && groupIntegrity.missingRepresentatives.length > 0) warnings.push(`browser groups have ${groupIntegrity.missingRepresentatives.length} missing representative(s)`);
 if (!strict && groupIntegrity.groupsWithMissingMembers.length > 0) warnings.push(`browser groups have ${groupIntegrity.groupsWithMissingMembers.length} missing-member group(s)`);
 if (groupIntegrity.sizeMismatches.length > 0) warnings.push(`browser groups have ${groupIntegrity.sizeMismatches.length} declared-size mismatch(es)`);
+for (const warning of animationTimingWarnings.slice(0, 25)) warnings.push(`animation timing warning ${warning.reason} for ${warning.itemId}`);
 const report = {
   schemaVersion: "neonei/runtime-v3-regression-report/v1",
   generatedAt: new Date().toISOString(),
@@ -179,9 +223,15 @@ const report = {
     groups: groupIntegrity.groups,
     collapsibleGroups: groupIntegrity.collapsibleGroups,
     samples: sampleResults.length,
+    animatedAtlasItems: animatedAtlasEntries.length,
+    animationTimingFailures: animationTimingFailures.length,
     passed: sampleResults.filter((sample) => sample.failures.length === 0).length,
     failed: sampleResults.filter((sample) => sample.failures.length > 0).length,
     warnings: warnings.length,
+  },
+  animationTiming: {
+    failures: animationTimingFailures.slice(0, 50),
+    warnings: animationTimingWarnings.slice(0, 50),
   },
   layoutIntegrity: {
     duplicateCatalogItemIds: Array.from(new Set(duplicateCatalogItemIds)).slice(0, 50),

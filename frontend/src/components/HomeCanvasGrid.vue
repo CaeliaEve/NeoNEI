@@ -3,15 +3,8 @@ import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { getPreferredStaticImageUrlFromEntity, type BrowserGridEntry, type Item } from "../services/api";
 import type { PageAtlasResult, PageAtlasSpriteEntry } from "../services/pageAtlas";
 import {
-  fetchAnimatedAtlasEntry,
-  fetchNativeSpriteMetadata,
-  fetchRenderContractAsset,
-  getAnimatedAtlasImageUrl,
   getSharedAnimationNowMs,
-  getNativeSpriteAtlasUrl,
   loadImageAsset,
-  probeDirectGifPlayback,
-  probeAnimationSupport,
   resolveTimelineFrameIndex,
 } from "../services/animationBudget";
 import {
@@ -20,7 +13,6 @@ import {
   getLoadedGlobalAtlasImage,
   getStaticPlacement,
   hasGlobalBrowserAtlas,
-  shouldUseLegacyBrowserAnimationProbe,
   normalizeFrames,
   normalizeTimeline,
   warmAllGlobalBrowserAtlases,
@@ -45,31 +37,6 @@ type GridRect = {
 };
 
 type BrowserGroupEntry = Extract<BrowserGridEntry, { kind: "group-collapsed" | "group-header" }>;
-
-type NativeSpriteAnimationState = {
-  kind: "native";
-  atlasImage: HTMLImageElement;
-  width: number;
-  height: number;
-  timeline: Array<{ frameIndex: number; durationMs: number }>;
-};
-
-type CapturedAtlasAnimationState = {
-  kind: "captured";
-  atlasImage: HTMLImageElement;
-  frames: Array<{ index: number; x: number; y: number; width: number; height: number }>;
-  timeline: Array<{ frameIndex: number; durationMs: number }>;
-};
-
-type DirectGifAnimationState = {
-  kind: "gif";
-  image: HTMLImageElement;
-};
-
-type AnimationState =
-  | NativeSpriteAnimationState
-  | CapturedAtlasAnimationState
-  | DirectGifAnimationState;
 
 type PreparedGlobalAnimation = {
   atlasFile: string;
@@ -113,18 +80,13 @@ const activeLayoutKey = ref("");
 
 const staticImages = new Map<string, HTMLImageElement>();
 const pendingStaticImages = new Map<string, Promise<HTMLImageElement | null>>();
-const animationStates = new Map<string, AnimationState>();
-const pendingAnimations = new Map<string, Promise<void>>();
 const preparedGlobalAnimations = new Map<string, PreparedGlobalAnimation>();
 const slotChromeCache = new Map<string, HTMLCanvasElement>();
 
 let resizeObserver: ResizeObserver | null = null;
 let renderFrameHandle: number | null = null;
 let animationLoopHandle: number | null = null;
-let animationLoopTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-let idleAnimationKickHandle: ReturnType<typeof globalThis.setTimeout> | null = null;
 let atlasLoadSeq = 0;
-let animationDelayTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let globalAtlasWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let globalAtlasTextureWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
@@ -135,8 +97,6 @@ let globalAtlasResidentPromise: Promise<void> | null = null;
 const gap = 4;
 const cardSize = computed(() => Math.max(28, Math.floor(props.itemSize)));
 const iconSize = computed(() => Math.max(24, Math.floor(cardSize.value * 0.9)));
-const HOMEPAGE_ANIMATION_DELAY_MS = 1400;
-const BROWSER_ANIMATION_FRAME_MS = 50;
 const columns = computed(() => {
   const width = Math.max(hostWidth.value, cardSize.value);
   return Math.max(1, Math.floor((width + gap) / (cardSize.value + gap)));
@@ -229,17 +189,16 @@ async function refreshHomeGridLayout() {
 }
 
 function startAnimationLoop() {
-  if (animationLoopHandle !== null || animationLoopTimer !== null) {
+  if (animationLoopHandle !== null) {
     return;
   }
 
   const tick = () => {
-    animationLoopTimer = null;
     animationLoopHandle = requestAnimationFrame(() => {
       animationLoopHandle = null;
       drawAnimationOverlay();
       if (lastDrawHadAnimatedFrame && animatedItemRects.length > 0) {
-        animationLoopTimer = globalThis.setTimeout(tick, BROWSER_ANIMATION_FRAME_MS);
+        tick();
       }
     });
   };
@@ -252,10 +211,7 @@ function stopAnimationLoop() {
     cancelAnimationFrame(animationLoopHandle);
     animationLoopHandle = null;
   }
-  if (animationLoopTimer !== null) {
-    clearTimeout(animationLoopTimer);
-    animationLoopTimer = null;
-  }
+
   clearAnimationOverlay();
 }
 
@@ -604,52 +560,6 @@ function drawStaticImage(
   ctx.drawImage(image, drawX, drawY, iconSize.value, iconSize.value);
 }
 
-function drawAnimation(
-  ctx: CanvasRenderingContext2D,
-  animation: AnimationState,
-  rect: GridRect,
-  now: number,
-) {
-  const drawX = rect.x + Math.round((rect.size - iconSize.value) / 2);
-  const drawY = rect.y + Math.round((rect.size - iconSize.value) / 2);
-
-  if (animation.kind === "gif") {
-    ctx.drawImage(animation.image, drawX, drawY, iconSize.value, iconSize.value);
-    return;
-  }
-
-  if (animation.kind === "native") {
-    const frameIndex = resolveTimelineFrameIndex(animation.timeline, now);
-    ctx.drawImage(
-      animation.atlasImage,
-      0,
-      frameIndex * animation.height,
-      animation.width,
-      animation.height,
-      drawX,
-      drawY,
-      iconSize.value,
-      iconSize.value,
-    );
-    return;
-  }
-
-  const frameIndex = resolveTimelineFrameIndex(animation.timeline, now);
-  const frame = animation.frames.find((entry) => entry.index === frameIndex) ?? animation.frames[0];
-  if (!frame) return;
-  ctx.drawImage(
-    animation.atlasImage,
-    frame.x,
-    frame.y,
-    frame.width,
-    frame.height,
-    drawX,
-    drawY,
-    iconSize.value,
-    iconSize.value,
-  );
-}
-
 function ensureOverlayCanvasSize(canvas: HTMLCanvasElement) {
   if (canvas.width !== canvasWidth.value) {
     canvas.width = canvasWidth.value;
@@ -680,17 +590,12 @@ function drawAnimationOverlay() {
   let drewFrame = false;
   for (const rect of animatedItemRects) {
     const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(rect.item.itemId) : null;
-    if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
+    if (props.enableAnimation && globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
       drawGroupOverlay(ctx, rect);
       drewFrame = true;
       continue;
     }
-    const animation = animationStates.get(rect.item.itemId);
-    if (animation) {
-      drawAnimation(ctx, animation, rect, now);
-      drawGroupOverlay(ctx, rect);
-      drewFrame = true;
-    }
+
   }
   lastDrawHadAnimatedFrame = drewFrame;
 }
@@ -749,7 +654,7 @@ function draw() {
 
     const itemId = rect.item.itemId;
     const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(itemId) : null;
-    if (canUseWebglAtlas && globalEntry && queueGlobalAnimation(webglCommands, globalEntry, rect, now)) {
+    if (props.enableAnimation && canUseWebglAtlas && globalEntry && queueGlobalAnimation(webglCommands, globalEntry, rect, now)) {
       drewAnimatedFrame = true;
       drawGroupOverlay(ctx, rect);
       continue;
@@ -770,7 +675,7 @@ function draw() {
 
     const globalStaticAtlas = getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile);
     if (globalEntry && globalStaticAtlas && drawGlobalStaticSprite(ctx, globalStaticAtlas, globalEntry, rect)) {
-      if (getPreparedGlobalAnimation(itemId, globalEntry) && getLoadedGlobalAtlasImage(globalEntry.animatedAtlas?.atlasFile)) {
+      if (props.enableAnimation && getPreparedGlobalAnimation(itemId, globalEntry) && getLoadedGlobalAtlasImage(globalEntry.animatedAtlas?.atlasFile)) {
         nextAnimatedRects.push(rect);
         drewAnimatedFrame = true;
       }
@@ -779,8 +684,10 @@ function draw() {
     }
 
     if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
-      nextAnimatedRects.push(rect);
-      drewAnimatedFrame = true;
+      if (props.enableAnimation) {
+        nextAnimatedRects.push(rect);
+        drewAnimatedFrame = true;
+      }
       drawGroupOverlay(ctx, rect);
       continue;
     }
@@ -791,14 +698,6 @@ function draw() {
       continue;
     }
 
-    const animation = animationStates.get(itemId);
-    if (animation) {
-      nextAnimatedRects.push(rect);
-      drewAnimatedFrame = true;
-      drawAnimation(ctx, animation, rect, now);
-      drawGroupOverlay(ctx, rect);
-      continue;
-    }
 
     const sprite = props.atlas?.entries?.[itemId];
     if (sprite && atlasReady.value && atlasImage.value) {
@@ -837,9 +736,7 @@ function draw() {
   } else {
     animatedItemRects = [];
     clearAnimationOverlay();
-    if (animationStates.size === 0) {
-      stopAnimationLoop();
-    }
+    stopAnimationLoop();
   }
 }
 
@@ -936,271 +833,6 @@ async function loadAtlas() {
       scheduleRender();
     }
   }
-}
-
-async function ensureAnimationState(item: Item): Promise<void> {
-  if (!props.enableAnimation || !item.itemId || animationStates.has(item.itemId)) {
-    return;
-  }
-  if (!shouldUseLegacyBrowserAnimationProbe(item.itemId)) {
-    return;
-  }
-  const existing = pendingAnimations.get(item.itemId);
-  if (existing) {
-    return existing;
-  }
-
-  const request = (async () => {
-    const baseUrl = getPreferredStaticImageUrlFromEntity(item);
-    const renderHint = item.renderHint ?? null;
-    const renderContract = item.renderAssetRef
-      && !renderHint
-      ? await fetchRenderContractAsset(item.renderAssetRef)
-      : null;
-
-    try {
-      const captureContract = renderContract?.captureContract as { multiFrame?: unknown } | null;
-      const rendererContract = renderContract?.rendererContract as {
-        needsMultipleFrames?: unknown;
-        shouldPreferNativeSpriteAnimation?: unknown;
-        nativeFrameCount?: unknown;
-      } | null;
-      const hasAuxNativeSprite =
-        renderContract?.animationMode === "native_sprite_aux"
-        || (
-          typeof renderContract?.spriteMetadataFile === "string"
-          && renderContract.spriteMetadataFile.length > 0
-          && typeof renderContract?.nativeSpriteAtlasFile === "string"
-          && renderContract.nativeSpriteAtlasFile.length > 0
-          && Number(rendererContract?.nativeFrameCount ?? renderContract?.frameCount ?? 0) > 1
-        );
-
-      const explicitStatic = renderHint?.explicitStatic ?? (
-        ((renderContract?.animationMode === "none") && !hasAuxNativeSprite)
-        || renderContract?.playbackHint === "static"
-        || (
-          typeof renderContract?.frameCount === "number"
-          && renderContract.frameCount <= 1
-          && renderContract.animationMode !== "native_sprite"
-          && renderContract.animationMode !== "native_sprite_aux"
-        )
-        || (captureContract?.multiFrame === false && rendererContract?.needsMultipleFrames === false && !hasAuxNativeSprite)
-        || (
-          rendererContract?.shouldPreferNativeSpriteAnimation === false
-          && !hasAuxNativeSprite
-          && Number(rendererContract?.nativeFrameCount ?? 0) <= 1
-        )
-      );
-
-      if (explicitStatic) {
-        return;
-      }
-
-      const prefersNativeSprite = renderHint?.prefersNativeSprite ?? (
-        renderContract?.renderMode === "native_sprite"
-        || renderContract?.animationMode === "native_sprite"
-        || renderContract?.animationMode === "native_sprite_aux"
-        || renderContract?.playbackHint === "native_sprite"
-        || rendererContract?.shouldPreferNativeSpriteAnimation === true
-        || hasAuxNativeSprite
-      );
-
-      const prefersCapturedAtlas = renderHint?.prefersCapturedAtlas ?? (
-        renderContract?.renderMode === "captured_final_atlas"
-        || renderContract?.mode === "rendered_frames"
-        || renderContract?.animationMode === "captured_atlas"
-        || captureContract?.multiFrame === true
-        || rendererContract?.needsMultipleFrames === true
-      );
-
-      if (item.renderAssetRef && prefersCapturedAtlas) {
-        const animatedAtlas = await fetchAnimatedAtlasEntry(item.renderAssetRef);
-        if (animatedAtlas?.frames?.length) {
-          const atlasUrl = getAnimatedAtlasImageUrl(animatedAtlas);
-          if (atlasUrl) {
-            const atlas = await loadImageAsset(atlasUrl);
-            const timeline = (animatedAtlas.timeline ?? [])
-              .map((frame) => ({
-                frameIndex: typeof frame.frameIndex === "number" ? frame.frameIndex : frame.index,
-                durationMs: Math.max(16, Math.round(frame.durationMs ?? animatedAtlas.frameDurationMs ?? 50)),
-              }))
-              .filter((frame) => Number.isFinite(frame.frameIndex));
-            if (timeline.length > 0) {
-              animationStates.set(item.itemId, {
-                kind: "captured",
-                atlasImage: atlas,
-                frames: animatedAtlas.frames.map((frame) => ({
-                  index: frame.index,
-                  x: frame.x,
-                  y: frame.y,
-                  width: frame.width,
-                  height: frame.height,
-                })),
-                timeline,
-              });
-              startAnimationLoop();
-              scheduleRender();
-              return;
-            }
-          }
-        }
-      }
-
-      const supportsAnimation = renderHint
-        ? renderHint.hasAnimation
-        : prefersNativeSprite
-          ? true
-          : await probeAnimationSupport(baseUrl, item.renderAssetRef);
-
-      const spriteMeta = supportsAnimation
-        ? await fetchNativeSpriteMetadata(baseUrl)
-        : null;
-      if (spriteMeta?.animated && (spriteMeta.timeline?.length ?? 0) > 0) {
-        const atlas = await loadImageAsset(getNativeSpriteAtlasUrl(baseUrl, spriteMeta));
-        const frameWidth = spriteMeta.width || atlas.naturalWidth;
-        const timeline = (spriteMeta.timeline ?? [])
-          .map((frame, index) => ({
-            frameIndex:
-              typeof frame.frameIndex === "number"
-                ? frame.frameIndex
-                : typeof frame.index === "number"
-                  ? frame.index
-                  : index,
-            durationMs: Math.max(
-              16,
-              Math.round(
-                typeof frame.durationMs === "number"
-                  ? frame.durationMs
-                  : typeof spriteMeta.defaultFrameTime === "number"
-                    ? spriteMeta.defaultFrameTime * 50
-                    : 50,
-              ),
-            ),
-          }))
-          .filter((frame) => Number.isFinite(frame.frameIndex));
-        if (timeline.length > 0) {
-          const physicalFrameCount = timeline.reduce((max, frame) => Math.max(max, frame.frameIndex + 1), 1);
-          const frameHeight = spriteMeta.height || Math.floor(atlas.naturalHeight / physicalFrameCount);
-          animationStates.set(item.itemId, {
-            kind: "native",
-            atlasImage: atlas,
-            width: frameWidth,
-            height: frameHeight,
-            timeline,
-          });
-          startAnimationLoop();
-          scheduleRender();
-          return;
-        }
-      }
-
-      if (item.renderAssetRef && !prefersNativeSprite) {
-        const animatedAtlas = await fetchAnimatedAtlasEntry(item.renderAssetRef);
-        if (animatedAtlas?.frames?.length) {
-          const atlasUrl = getAnimatedAtlasImageUrl(animatedAtlas);
-          if (atlasUrl) {
-            const atlas = await loadImageAsset(atlasUrl);
-            const timeline = (animatedAtlas.timeline ?? [])
-              .map((frame) => ({
-                frameIndex: typeof frame.frameIndex === "number" ? frame.frameIndex : frame.index,
-                durationMs: Math.max(16, Math.round(frame.durationMs ?? animatedAtlas.frameDurationMs ?? 50)),
-              }))
-              .filter((frame) => Number.isFinite(frame.frameIndex));
-            if (timeline.length > 0) {
-              animationStates.set(item.itemId, {
-                kind: "captured",
-                atlasImage: atlas,
-                frames: animatedAtlas.frames.map((frame) => ({
-                  index: frame.index,
-                  x: frame.x,
-                  y: frame.y,
-                  width: frame.width,
-                  height: frame.height,
-                })),
-                timeline,
-              });
-              startAnimationLoop();
-              scheduleRender();
-              return;
-            }
-          }
-        }
-      }
-
-      const supportsGif = /\.gif(?:$|\?)/i.test(baseUrl)
-        ? await probeDirectGifPlayback(baseUrl)
-        : false;
-      if (supportsGif) {
-        const gif = await loadImageAsset(baseUrl);
-        animationStates.set(item.itemId, {
-          kind: "gif",
-          image: gif,
-        });
-        startAnimationLoop();
-        scheduleRender();
-      }
-    } catch {
-      // Keep static atlas / static image fallback.
-    } finally {
-      pendingAnimations.delete(item.itemId);
-      if (animationStates.size === 0) {
-        stopAnimationLoop();
-      }
-    }
-  })();
-
-  pendingAnimations.set(item.itemId, request);
-  return request;
-}
-
-function scheduleAnimationUpgrade() {
-  if (!props.enableAnimation || shouldHoldFallbackImages.value) {
-    return;
-  }
-
-  if (idleAnimationKickHandle !== null) {
-    clearTimeout(idleAnimationKickHandle);
-    idleAnimationKickHandle = null;
-  }
-  if (animationDelayTimer !== null) {
-    clearTimeout(animationDelayTimer);
-    animationDelayTimer = null;
-  }
-
-  const run = () => {
-    const uniqueItems = new Map<string, Item>();
-    for (const entry of props.entries) {
-      const item = getItemForEntry(entry);
-      if (item?.itemId && !uniqueItems.has(item.itemId)) {
-        uniqueItems.set(item.itemId, item);
-      }
-    }
-    uniqueItems.forEach((item) => {
-      const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(item.itemId) : null;
-      if (globalEntry && !shouldUseLegacyBrowserAnimationProbe(item.itemId)) {
-        return;
-      }
-      const renderHint = item.renderHint ?? null;
-      if (
-        renderHint?.hasAnimation !== true
-        && renderHint?.prefersNativeSprite !== true
-        && renderHint?.prefersCapturedAtlas !== true
-      ) {
-        return;
-      }
-      void ensureAnimationState(item);
-    });
-  };
-
-  animationDelayTimer = globalThis.setTimeout(() => {
-    animationDelayTimer = null;
-    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      (window as Window & { requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number })
-        .requestIdleCallback(run, { timeout: 1200 });
-      return;
-    }
-    idleAnimationKickHandle = globalThis.setTimeout(run, 0);
-  }, HOMEPAGE_ANIMATION_DELAY_MS);
 }
 
 function warmStaticImages() {
@@ -1366,7 +998,6 @@ watch(
     syncAtlasFallbackGate();
     warmGlobalAtlasImages();
     warmStaticImages();
-    scheduleAnimationUpgrade();
     scheduleRender();
   },
   { immediate: true },
@@ -1376,12 +1007,8 @@ watch(
   () => props.enableAnimation,
   (enabled) => {
     if (enabled) {
-      scheduleAnimationUpgrade();
-      return;
-    }
-    animationStates.clear();
-    pendingAnimations.clear();
-    stopAnimationLoop();
+        return;
+    }    stopAnimationLoop();
     scheduleRender();
   },
 );
@@ -1410,14 +1037,6 @@ onUnmounted(() => {
     renderFrameHandle = null;
   }
   stopAnimationLoop();
-  if (idleAnimationKickHandle !== null) {
-    clearTimeout(idleAnimationKickHandle);
-    idleAnimationKickHandle = null;
-  }
-  if (animationDelayTimer !== null) {
-    clearTimeout(animationDelayTimer);
-    animationDelayTimer = null;
-  }
   if (globalAtlasWarmTimer !== null) {
     clearTimeout(globalAtlasWarmTimer);
     globalAtlasWarmTimer = null;
