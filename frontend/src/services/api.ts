@@ -2583,24 +2583,6 @@ export const api = {
       .filter((item): item is Item => item !== undefined);
   },
 
-  async postPageAtlas(itemIds: string[], slotSize: number): Promise<PageAtlasResult | null> {
-    const response = await http.post('/items/page-atlas', { itemIds, slotSize });
-    return response.data;
-  },
-
-  async getPrecomputedPageAtlas(params: {
-    page: number;
-    pageSize: number;
-    slotSize: number;
-    modId?: string;
-  }): Promise<PageAtlasResult | null> {
-    const response = await http.get('/items/page-atlas/precomputed', {
-      params,
-    });
-    return response.data;
-  },
-
-
   // === indexed Recipe API (with machine icons) ===
 
   // Get machines for an item (indexed recipe API with machineIcon support)

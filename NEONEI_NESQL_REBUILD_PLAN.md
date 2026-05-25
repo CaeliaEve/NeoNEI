@@ -580,7 +580,7 @@ validation/report.json
 - [x] 搜索关键路径删除旧 fallback。
 - [x] 浏览区删除低性能补图路径。
 - [ ] 清理历史 publish 产物保留策略。
-- [ ] 移除不再使用的 API。
+- [x] 移除不再使用的 API。
 
 验收：
 
@@ -666,7 +666,8 @@ validation/report.json
 - 浏览区 atlas index / atlas entries 不再请求旧 `/render-contract/browser-atlas-*` 热路径；全局 browser atlas 是主页贴图权威来源，缺项显示 coverage gap。
 - Data Compiler 已输出 `textures/animation-table.json`，manifest 暴露 `files.animationTable`，动画帧时长从 raw export / atlas index 归一化生成。
 - 快速翻页时 active page 的 atlas warm 由延迟 450ms 改为立即调度，避免“翻到页面后再等半秒补图”。
-- 验证：test:raw-export-v3、typecheck、build、bench:search-v3 通过；最新 search-v3 gate max 约 12.31ms。
+- 前端已移除 page-scoped atlas API 客户端调用；`pageAtlas.ts` 仅保留类型与显式空 peek，防止浏览区回到 `/items/page-atlas` 慢路径。
+- 验证：test:raw-export-v3、typecheck、build、bench:search-v3 通过；最新 search-v3 gate max 约 12.91ms。
 
 ---
 
