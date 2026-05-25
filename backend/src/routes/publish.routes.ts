@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../utils/http';
 import { getPublishManifestService } from '../services/publish-manifest.service';
+import { getPublishReleaseService } from '../services/publish-release.service';
 import { derivePagePackFromWindow, getPublishPayloadService } from '../services/publish-payload.service';
 import { createWeakEtag, sendNotModifiedIfEtagMatches, setPublicCacheHeaders } from '../utils/http-cache';
 import { ItemsService, type BrowserPageEntry, type Item } from '../services/items.service';
@@ -24,6 +25,25 @@ function collectDisplayItems(entries: BrowserPageEntry[]): Item[] {
   return ordered;
 }
 
+router.get(
+  '/releases',
+  asyncHandler(async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.json({
+      releases: getPublishReleaseService().listReleases(),
+    });
+  }),
+);
+
+router.post(
+  '/releases/:sourceSignature/activate',
+  asyncHandler(async (req, res) => {
+    const sourceSignature = `${req.params.sourceSignature ?? ''}`.trim();
+    const result = getPublishReleaseService().activateRelease(sourceSignature);
+    getPublishManifestService().invalidate();
+    res.json(result);
+  }),
+);
 router.get(
   '/manifest',
   asyncHandler(async (req, res) => {

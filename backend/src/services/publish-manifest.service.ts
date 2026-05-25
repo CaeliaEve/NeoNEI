@@ -173,6 +173,10 @@ export class PublishManifestService {
     return manifest;
   }
 
+  invalidate(): void {
+    this.cache = null;
+  }
+
   getSourceSignature(): string {
     return this.getRuntimeManifest().sourceSignature;
   }

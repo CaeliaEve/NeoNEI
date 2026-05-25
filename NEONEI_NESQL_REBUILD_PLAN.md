@@ -1,4 +1,4 @@
-﻿# NeoNEI / NESQL++ 巨大重构最终方案
+# NeoNEI / NESQL++ 巨大重构最终方案
 
 日期：2026-05-24  
 状态：已批准，作为后续大重构主蓝图  
@@ -569,9 +569,9 @@ validation/report.json
 
 验收：
 
-- [ ] 可保留多个 GTNH 数据版本。
-- [ ] 可查看每次导出/编译质量。
-- [ ] 可回滚到上一版数据。
+- [x] 可保留多个 GTNH 数据版本（publish retention 默认保留 3 个版本）。
+- [x] 可查看每次导出/编译质量（`GET /api/publish/releases` 返回 build-report 摘要、体积、警告、recipe coverage）。
+- [x] 可回滚到上一版数据（`POST /api/publish/releases/:sourceSignature/activate` 激活保留版本）。
 
 ### Phase 7：旧路径清理
 
@@ -681,4 +681,3 @@ validation/report.json
 完整落地后的目标体感：
 
 > **原生 NEI 的 85% - 95%。**
-
