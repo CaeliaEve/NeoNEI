@@ -25,12 +25,12 @@ test('HomePage does not prewarm per-item images when precomputed page atlas is a
   );
   assert.equal(
     source.includes('fetchRenderContractAsset'),
-    true,
-    'homepage canvas grid should inspect render contracts before probing animated atlas endpoints',
+    false,
+    'homepage canvas grid should not inspect per-item render contracts on the V3 browser hot path',
   );
   assert.equal(
     source.includes('probeAnimationSupport'),
-    true,
-    'homepage canvas grid should gate animation escalation behind shared animation support probing',
+    false,
+    'homepage canvas grid should not probe per-item animation support during fast page flips',
   );
 });
