@@ -552,12 +552,13 @@ validation/report.json
 - [x] 编译器输出 dist-data V3 recipe-ui-payload index 与单配方 payload。
 - [x] 先接入 3-5 个复杂 handler 样本。
 - [x] 保留现有高级手写 UI，但底层数据统一协议化。
+- [x] 新增配方分类分裂审计（duplicate display-name split 进入 validation report）。
 
 验收：
 
 - [x] 常见配方打开 p50 < 150ms（Recipe V3 benchmark：p50 0.84ms，2026-05-25）。
 - [x] 复杂配方打开 p95 < 300ms（Recipe V3 benchmark：p95 3.97ms，2026-05-25；覆盖本地 publish payload 解析/打开代理）。
-- [ ] 配方分类不再重复分裂。
+- [ ] 配方分类不再重复分裂（已补 validation 审计；仍需用完整 GTNH 数据清零验证）。
 
 ### Phase 6：PostgreSQL 与发布系统
 

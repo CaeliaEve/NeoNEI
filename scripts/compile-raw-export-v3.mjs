@@ -379,6 +379,16 @@ function compileRawExport(inputDir, outputDir) {
     recipeCategories.set(key, existing);
   }
 
+  const recipeCategorySplits = Array.from(
+    Array.from(recipeCategories.values()).reduce((acc, category) => {
+      const normalizedName = `${category.displayName ?? category.categoryId ?? ""}`.trim().toLowerCase().replace(/\s+/g, " ");
+      if (!normalizedName) return acc;
+      const bucket = acc.get(normalizedName) ?? { displayName: category.displayName ?? category.categoryId, categoryIds: [] };
+      bucket.categoryIds.push(category.categoryId);
+      acc.set(normalizedName, bucket);
+      return acc;
+    }, new Map()).values(),
+  ).filter((entry) => new Set(entry.categoryIds).size > 1);
   const validation = {
     schemaVersion: "neonei/compiler-validation/v3-alpha1",
     generatedAt: new Date().toISOString(),
@@ -399,6 +409,7 @@ function compileRawExport(inputDir, outputDir) {
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
+      recipeCategorySplits: recipeCategorySplits.length,
     },
     missing: {
       itemId: items.filter((item) => !item.itemId).length,
@@ -409,6 +420,7 @@ function compileRawExport(inputDir, outputDir) {
     },
     samples: {
       missingBrowserAtlasItemIds: missingBrowserAtlasItemIds.slice(0, 100),
+      recipeCategorySplits: recipeCategorySplits.slice(0, 50),
     },
     coverage: {
       browserAtlasRatio: browserItems.length > 0 ? Number(((browserItems.length - missingBrowserAtlasItemIds.length) / browserItems.length).toFixed(6)) : 1,
@@ -419,6 +431,7 @@ function compileRawExport(inputDir, outputDir) {
   if (items.length === 0) validation.warnings.push("items.jsonl is empty; compiler output is structural only.");
   if (recipes.length === 0) validation.warnings.push("recipes.jsonl is empty; recipe indexes cannot be complete.");
   if (missingBrowserAtlasItemIds.length > 0) validation.warnings.push(`Browser atlas is missing drawable entries for ${missingBrowserAtlasItemIds.length} browser item(s).`);
+  if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
 
   writeJson(outputDir + "/manifest.json", {
     schemaVersion: "neonei/dist-data/v3-alpha1",
