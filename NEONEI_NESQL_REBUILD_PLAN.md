@@ -496,7 +496,7 @@ validation/report.json
 - [x] 新增 `SearchWorkerV3`。
 - [x] 搜索关键路径切到 V3。
 - [x] 移除搜索时旧后端请求。
-- [ ] 移除搜索时全表扫描。
+- [x] 移除搜索时全表扫描。
 
 验收：
 
@@ -662,6 +662,7 @@ validation/report.json
 
 - 浏览区主页 bootstrap、分页 page-pack、by-id 资源包、默认/搜索 catalog、搜索 pack/shard 已优先走 dist-data V3。
 - 搜索 catalog 不再请求 `/items/browser/search-catalog`；缺失 dist-data 时只使用本地已驻留目录做空成本诊断，不再触发旧后端搜索。
+- `SearchWorkerV3` 已使用 exact / prefix / gram 候选索引，查询阶段只对候选集 rank/sort，不再对全量 search pack 做逐项扫描。
 - 浏览区 atlas index / atlas entries 不再请求旧 `/render-contract/browser-atlas-*` 热路径；全局 browser atlas 是主页贴图权威来源，缺项显示 coverage gap。
 - 快速翻页时 active page 的 atlas warm 由延迟 450ms 改为立即调度，避免“翻到页面后再等半秒补图”。
 - 验证：test:raw-export-v3、typecheck、build、bench:search-v3 通过；最新 search-v3 gate max 约 11.93ms。
