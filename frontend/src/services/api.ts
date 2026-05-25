@@ -118,6 +118,41 @@ function shouldPreferLiveRecipeBootstrap(): boolean {
 const PREFER_LIVE_RECIPE_BOOTSTRAP = shouldPreferLiveRecipeBootstrap();
 const RECIPE_BOOTSTRAP_CACHE_SCHEMA = 'v3';
 
+function shouldUseStrictRuntimeV3(): boolean {
+  if (import.meta.env.VITE_RUNTIME_V3_STRICT === '1') {
+    return true;
+  }
+
+  if (typeof window === 'undefined') {
+    return false;
+  }
+
+  try {
+    return window.localStorage.getItem('neonei:runtime-v3-strict') === '1';
+  } catch {
+    return false;
+  }
+}
+
+const STRICT_RUNTIME_V3 = shouldUseStrictRuntimeV3();
+
+function reportRuntimeV3Fallback(scope: string, route: string, reason: string): void {
+  markPerfEvent('runtime-v3-fallback', {
+    scope,
+    route,
+    reason,
+    strict: STRICT_RUNTIME_V3,
+  });
+
+  if (STRICT_RUNTIME_V3) {
+    throw new Error(`Runtime V3 data unavailable for ${scope}; blocked legacy route ${route} (${reason})`);
+  }
+
+  if (typeof console !== 'undefined' && typeof console.warn === 'function') {
+    console.warn(`[NeoNEI Runtime V3] ${scope} fell back to ${route}: ${reason}`);
+  }
+}
+
 function getRuntimeCacheSignature(manifest: Pick<PublicRuntimeManifest, 'runtimeCacheKey' | 'sourceSignature'> | null | undefined): string | null {
   const runtimeCacheKey = `${manifest?.runtimeCacheKey ?? ''}`.trim();
   if (runtimeCacheKey) {
@@ -2065,6 +2100,7 @@ export const api = {
     if (distDataBootstrap) {
       return distDataBootstrap;
     }
+    reportRuntimeV3Fallback('home-bootstrap', '/publish/home-bootstrap', 'dist-data home bootstrap missing');
 
     const manifest = await api.getPublishManifest();
     const requestedPage = Math.max(1, Math.floor(params.page ?? 1));
@@ -2144,6 +2180,7 @@ export const api = {
         totalPages: distDataPage.totalPages,
       };
     }
+    reportRuntimeV3Fallback('browser-items', '/items/browser', 'dist-data browser page missing');
 
     const response = await http.get('/items/browser', {
       params: {
@@ -2174,6 +2211,7 @@ export const api = {
         browserDefaultCatalogCache.set(cacheKey, distDataCatalog);
         return distDataCatalog;
       }
+      reportRuntimeV3Fallback('browser-default-catalog', '/items/browser/default-catalog', 'dist-data default catalog missing');
 
       const persistent = await readPersistentRuntimePayload<BrowserDefaultCatalogResponse>(
         'browser-default-catalog',
@@ -2216,6 +2254,7 @@ export const api = {
       browserSearchCatalogCache.set(getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId), distDataCatalog);
       return distDataCatalog;
     }
+    reportRuntimeV3Fallback('browser-search-catalog', 'local default-catalog projection', 'dist-data search catalog missing');
 
     const cacheKey = getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId);
     const cached = browserSearchCatalogCache.get(cacheKey);
@@ -2271,6 +2310,7 @@ export const api = {
     if (distDataGroupItems?.items?.length) {
       return distDataGroupItems;
     }
+    reportRuntimeV3Fallback('browser-group-items', `/items/browser/group/${normalizedGroupKey}`, 'dist-data group items missing');
 
     const cacheKey = getBrowserGroupItemsCacheKey(normalizedGroupKey, modId);
     const cached = browserGroupItemsCache.get(cacheKey);
@@ -2331,6 +2371,7 @@ export const api = {
     if (distDataPagePack) {
       return distDataPagePack;
     }
+    reportRuntimeV3Fallback('browser-page-pack', '/items/browser/page-pack', 'dist-data page pack missing');
 
     const normalizedExpandedGroups = params.expandedGroups ?? [];
     const canUseStaticBundle = !params.search?.trim()
@@ -2407,6 +2448,7 @@ export const api = {
     if (distDataSearch?.pack?.items?.length) {
       return distDataSearch.pack;
     }
+    reportRuntimeV3Fallback('browser-search-pack', '/items/search/pack', 'dist-data search pack missing');
 
     const manifest = await api.getPublishManifest();
     const staticPath = manifest.publishBundle?.files.browserSearchPack;
@@ -2431,6 +2473,7 @@ export const api = {
     if (distDataSearch?.pack?.items?.length) {
       return distDataSearch.pack;
     }
+    reportRuntimeV3Fallback('browser-search-shard', `publish search shard ${normalizedShardId}`, 'dist-data search pack missing');
 
     const cached = browserSearchShardCache.get(normalizedShardId);
     if (cached) {
@@ -2489,6 +2532,7 @@ export const api = {
       if (distDataPack) {
         return distDataPack;
       }
+      reportRuntimeV3Fallback('browser-by-ids-pack', '/items/browser/by-ids-pack', 'dist-data by-id pack missing');
       const response = await http.post('/items/browser/by-ids-pack', normalizedParams);
       return response.data;
     })()
