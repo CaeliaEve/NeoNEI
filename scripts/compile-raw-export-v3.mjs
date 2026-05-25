@@ -207,6 +207,86 @@ function buildRecipeItemIndex(recipes) {
   return Array.from(byItemId.values())
     .sort((left, right) => left.itemId.localeCompare(right.itemId));
 }
+
+function normalizeAnimationTimeline(sourceTimeline, frameCount, fallbackDurationMs) {
+  const timeline = Array.isArray(sourceTimeline) ? sourceTimeline : [];
+  if (timeline.length > 0) {
+    return timeline
+      .map((frame, index) => ({
+        frameIndex: stableNumber(frame.frameIndex ?? frame.index ?? index, index),
+        durationMs: Math.max(16, Math.round(stableNumber(frame.durationMs, fallbackDurationMs))),
+      }))
+      .filter((frame) => frame.frameIndex >= 0);
+  }
+
+  const count = Math.max(0, Math.floor(stableNumber(frameCount, 0)));
+  return Array.from({ length: count }, (_, index) => ({
+    frameIndex: index,
+    durationMs: Math.max(16, Math.round(stableNumber(fallbackDurationMs, 50))),
+  }));
+}
+
+function buildAnimationTable(searchItems, textures, animations, browserAtlasIndex) {
+  const itemIdByAssetId = new Map();
+  for (const item of searchItems) {
+    if (item.renderAssetRef) itemIdByAssetId.set(item.renderAssetRef, item.itemId);
+  }
+  const textureByAssetId = new Map();
+  for (const texture of textures) {
+    if (texture.assetId) textureByAssetId.set(texture.assetId, texture);
+  }
+  const animationByAssetId = new Map();
+  for (const animation of animations) {
+    if (animation.assetId) animationByAssetId.set(animation.assetId, animation);
+  }
+
+  const byItemId = new Map();
+  for (const entry of browserAtlasIndex?.items ?? []) {
+    if (!entry?.itemId || !entry?.animatedAtlas) continue;
+    const animated = entry.animatedAtlas;
+    const assetId = entry.assetId ?? null;
+    const animation = animationByAssetId.get(assetId) ?? {};
+    const texture = textureByAssetId.get(assetId) ?? {};
+    byItemId.set(entry.itemId, {
+      itemId: entry.itemId,
+      assetId,
+      variantKey: animated.variantKey ?? animation.variantKey ?? texture.variantKey ?? null,
+      mode: entry.mode ?? texture.mode ?? null,
+      playbackHint: entry.playbackHint ?? texture.playbackHint ?? null,
+      atlasFile: animated.atlasFile ?? texture.atlasFile ?? texture.atlasTexture ?? null,
+      atlasGroup: animated.atlasGroup ?? texture.atlasGroup ?? null,
+      atlasWidth: stableNumber(animated.atlasWidth, stableNumber(texture.atlasWidth, null)),
+      atlasHeight: stableNumber(animated.atlasHeight, stableNumber(texture.atlasHeight, null)),
+      frameCount: stableNumber(animated.frameCount, stableNumber(animation.frameCount, stableNumber(texture.frameCount, 0))),
+      frameDurationMs: stableNumber(animated.frameDurationMs, stableNumber(animation.frameDurationMs, stableNumber(texture.frameDurationMs, 50))),
+      timeline: normalizeAnimationTimeline(animated.timeline ?? animation.timeline, animated.frameCount ?? animation.frameCount ?? texture.frameCount, animated.frameDurationMs ?? animation.frameDurationMs ?? texture.frameDurationMs ?? 50),
+    });
+  }
+
+  for (const animation of animations) {
+    const itemId = itemIdByAssetId.get(animation.assetId);
+    if (!itemId || byItemId.has(itemId)) continue;
+    const texture = textureByAssetId.get(animation.assetId) ?? {};
+    byItemId.set(itemId, {
+      itemId,
+      assetId: animation.assetId,
+      variantKey: animation.variantKey ?? texture.variantKey ?? null,
+      mode: animation.mode ?? texture.mode ?? null,
+      playbackHint: animation.playbackHint ?? texture.playbackHint ?? null,
+      atlasFile: animation.atlasFile ?? texture.atlasFile ?? texture.atlasTexture ?? null,
+      atlasGroup: animation.atlasGroup ?? texture.atlasGroup ?? null,
+      atlasWidth: stableNumber(animation.atlasWidth, stableNumber(texture.atlasWidth, null)),
+      atlasHeight: stableNumber(animation.atlasHeight, stableNumber(texture.atlasHeight, null)),
+      frameCount: stableNumber(animation.frameCount, stableNumber(texture.frameCount, 0)),
+      frameDurationMs: stableNumber(animation.frameDurationMs, stableNumber(texture.frameDurationMs, 50)),
+      timeline: normalizeAnimationTimeline(animation.timeline, animation.frameCount ?? texture.frameCount, animation.frameDurationMs ?? texture.frameDurationMs ?? 50),
+    });
+  }
+
+  return Array.from(byItemId.values())
+    .filter((entry) => entry.frameCount > 1 || entry.timeline.length > 1)
+    .sort((left, right) => left.itemId.localeCompare(right.itemId));
+}
 function compileRawExport(inputDir, outputDir) {
   const startedAt = Date.now();
   const manifestPath = join(inputDir, "manifest.json");
@@ -248,6 +328,7 @@ function compileRawExport(inputDir, outputDir) {
   const searchItems = items
     .filter((item) => item && item.itemId)
     .map((item, index) => buildSearchEntry(item, index, renderByAssetId, layoutByItemId));
+  const animationTable = buildAnimationTable(searchItems, textures, animations, browserAtlasIndex);
 
   const browserItems = searchItems.map((entry, index) => {
     const layout = layoutByItemId.get(entry.itemId) ?? {};
@@ -296,6 +377,7 @@ function compileRawExport(inputDir, outputDir) {
       neiOrderEntries: neiOrder.length,
       textures: textures.length,
       animations: animations.length,
+      animationTableItems: animationTable.length,
       browserAtlasItems: Array.isArray(browserAtlasIndex?.items) ? browserAtlasIndex.items.length : 0,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
@@ -326,6 +408,7 @@ function compileRawExport(inputDir, outputDir) {
       recipeItemIndex: "recipes/item-index.json",
       recipeUiPayloadIndex: "recipes/ui-payload-index.json",
       textureManifest: "textures/atlas-manifest.json",
+      animationTable: "textures/animation-table.json",
       browserAtlasIndex: "textures/browser-atlas-index.json",
       validationReport: "validation/report.json",
     },
@@ -343,6 +426,7 @@ function compileRawExport(inputDir, outputDir) {
     });
   }
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations });
+  writeJsonCompact(join(outputDir, "textures", "animation-table.json"), { schemaVersion: "neonei/animation-table/v1", items: animationTable });
   writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), browserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
   writeJson(join(outputDir, "validation", "report.json"), validation);
   return validation;

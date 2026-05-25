@@ -32,6 +32,7 @@ type DistDataManifest = {
     recipeItemIndex?: string;
     recipeUiPayloadIndex?: string;
     textureManifest?: string;
+    animationTable?: string;
     browserAtlasIndex?: string;
     validationReport?: string;
   };
