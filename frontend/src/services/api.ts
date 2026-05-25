@@ -714,6 +714,31 @@ function getBrowserSearchCatalogCacheKey(search: string, modId?: string): string
   return `${`${search ?? ''}`.trim().toLowerCase()}::${`${modId ?? 'all'}`.trim().toLowerCase() || 'all'}`;
 }
 
+function normalizeSearchNeedle(value: string): string {
+  return `${value ?? ''}`.trim().toLowerCase().replace(/\s+/g, '');
+}
+
+function browserEntryMatchesLocalSearch(entry: BrowserGridEntry, query: string): boolean {
+  const needle = normalizeSearchNeedle(query);
+  if (!needle) {
+    return true;
+  }
+  const item = entry.kind === 'item' ? entry.item : entry.group.representative;
+  const haystack = [
+    item.localizedName,
+    item.internalName,
+    item.itemId,
+    item.modId,
+    item.searchTerms,
+    item.unlocalizedName,
+    entry.kind !== 'item' ? entry.group.label : '',
+  ]
+    .map((value) => normalizeSearchNeedle(`${value ?? ''}`))
+    .filter(Boolean)
+    .join('|');
+  return haystack.includes(needle);
+}
+
 function buildBrowserByIdsPackCacheKey(params: { itemIds: string[]; slotSize?: number }): string {
   return JSON.stringify({
     itemIds: params.itemIds.map((itemId) => `${itemId ?? ''}`.trim()).filter(Boolean),
@@ -2188,6 +2213,7 @@ export const api = {
 
     const distDataCatalog = await getDistDataSearchCatalog(normalizedSearch, params.modId);
     if (distDataCatalog) {
+      browserSearchCatalogCache.set(getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId), distDataCatalog);
       return distDataCatalog;
     }
 
@@ -2202,15 +2228,20 @@ export const api = {
       return inflight;
     }
 
-    const request = http.get('/items/browser/search-catalog', {
-      params: {
-        q: normalizedSearch,
-        ...(params.modId ? { modId: params.modId } : {}),
-      },
-    }).then((response) => {
-      browserSearchCatalogCache.set(cacheKey, response.data);
-      return response.data;
-    }).finally(() => {
+    const request = (async () => {
+      const defaultCatalog = browserDefaultCatalogCache.get(getBrowserDefaultCatalogCacheKey(params.modId));
+      const filtered = (defaultCatalog?.data ?? [])
+        .filter((entry) => browserEntryMatchesLocalSearch(entry, normalizedSearch));
+      const result: BrowserSearchCatalogResponse = {
+        data: filtered,
+        total: filtered.length,
+        page: 1,
+        pageSize: filtered.length,
+        totalPages: 1,
+      };
+      browserSearchCatalogCache.set(cacheKey, result);
+      return result;
+    })().finally(() => {
       browserSearchCatalogInFlight.delete(cacheKey);
     });
 
@@ -2715,24 +2746,9 @@ export const api = {
     if (browserAtlasIndexInFlight) {
       return browserAtlasIndexInFlight;
     }
-    browserAtlasIndexInFlight = (async () => {
-      try {
-        const response = await http.get('/render-contract/browser-atlas-index', {
-          params: { _runtime: Date.now() },
-          headers: { 'Cache-Control': 'no-cache', Pragma: 'no-cache' },
-        });
-        const payload = response.data;
-        browserAtlasIndexCache = payload && Array.isArray(payload.items) ? payload : null;
-        return browserAtlasIndexCache;
-      } catch (error) {
-        if (isHttpNotFoundError(error)) {
-          return null;
-        }
-        throw error;
-      } finally {
-        browserAtlasIndexInFlight = null;
-      }
-    })();
+    browserAtlasIndexInFlight = Promise.resolve(null).finally(() => {
+      browserAtlasIndexInFlight = null;
+    });
     return browserAtlasIndexInFlight;
   },
 
@@ -2750,18 +2766,19 @@ export const api = {
       return existing;
     }
     const request = (async () => {
-      try {
-        const response = await http.post('/render-contract/browser-atlas-entries', { itemIds: uniqueItemIds });
-        return response.data;
-      } catch (error) {
-        if (isHttpNotFoundError(error)) {
-          return null;
-        }
-        throw error;
-      } finally {
-        browserAtlasEntriesInFlight.delete(cacheKey);
+      const index = await api.getBrowserAtlasIndex();
+      if (!index?.items?.length) {
+        return null;
       }
-    })();
+      const wanted = new Set(uniqueItemIds);
+      return {
+        ...index,
+        schemaVersion: 'browser-atlas-entries',
+        items: index.items.filter((entry) => wanted.has(entry.itemId)),
+      };
+    })().finally(() => {
+      browserAtlasEntriesInFlight.delete(cacheKey);
+    });
     browserAtlasEntriesInFlight.set(cacheKey, request);
     return request;
   },

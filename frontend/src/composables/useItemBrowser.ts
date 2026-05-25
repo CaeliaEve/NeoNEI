@@ -964,7 +964,7 @@ export function useItemBrowser(
           animatedEntryLimit: 0,
           atlasLimit: 0,
         });
-      }, 450);
+      }, 0);
       return;
     }
     const pageItemIds = collectBrowserPageResourceItemIds(response);

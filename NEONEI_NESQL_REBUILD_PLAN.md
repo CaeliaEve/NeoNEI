@@ -486,8 +486,8 @@ validation/report.json
 
 验收：
 
-- [ ] 有可复测性能报告。
-- [ ] 有可回滚提交点。
+- [x] 有可复测性能报告。
+- [x] 有可回滚提交点。
 
 ### Phase 1：Search Core V3
 
@@ -495,14 +495,14 @@ validation/report.json
 - [x] 后端/编译阶段生成 search-v3 JSON 原型。
 - [x] 新增 `SearchWorkerV3`。
 - [x] 搜索关键路径切到 V3。
-- [ ] 移除搜索时旧后端请求。
+- [x] 移除搜索时旧后端请求。
 - [ ] 移除搜索时全表扫描。
 
 验收：
 
 - [x] 搜索输入到刷新 p50 < 60ms。
 - [x] 搜索输入到刷新 p95 < 120ms。
-- [ ] 搜索期间 Network 不出现 search-catalog 请求。
+- [x] 搜索期间 Network 不出现 search-catalog 请求。
 
 ### Phase 2：浏览区索引 V3
 
@@ -519,10 +519,10 @@ validation/report.json
 
 ### Phase 3：Atlas 与动画重构
 
-- [ ] 明确 static atlas 与 animated atlas 产物格式。
+- [x] 明确 static atlas 与 animated atlas 产物格式。
 - [ ] 编译 animation-table。
-- [ ] 浏览区贴图只走 global atlas。
-- [ ] 清理低性能单图 fallback。
+- [x] 浏览区贴图只走 global atlas。
+- [x] 清理低性能单图 fallback。
 
 验收：
 
@@ -577,15 +577,15 @@ validation/report.json
 
 - [x] 搜索关键路径优先使用 dist-data V3。
 - [x] 浏览区 page-pack / by-id-pack / home-bootstrap 优先使用 dist-data V3。
-- [ ] 搜索关键路径删除旧 fallback。
-- [ ] 浏览区删除低性能补图路径。
+- [x] 搜索关键路径删除旧 fallback。
+- [x] 浏览区删除低性能补图路径。
 - [ ] 清理历史 publish 产物保留策略。
 - [ ] 移除不再使用的 API。
 
 验收：
 
-- [ ] 没有旧慢路径拖慢 V3。
-- [ ] 失败时明确报错，不静默退化到低性能路径。
+- [x] 没有旧慢路径拖慢 V3。
+- [x] 失败时明确报错，不静默退化到低性能路径。
 
 ---
 
@@ -661,8 +661,10 @@ validation/report.json
 #### 2026-05-25 Runtime V3 cleanup progress
 
 - 浏览区主页 bootstrap、分页 page-pack、by-id 资源包、默认/搜索 catalog、搜索 pack/shard 已优先走 dist-data V3。
-- 当前保留 backend / publish fallback 仅用于缺失 dist-data 时可诊断恢复；后续 Phase 7 继续改成明确错误与发布校验。
-- 验证：test:raw-export-v3、typecheck、build、bench:search-v3 通过；search-v3 gate max 约 12.35ms。
+- 搜索 catalog 不再请求 `/items/browser/search-catalog`；缺失 dist-data 时只使用本地已驻留目录做空成本诊断，不再触发旧后端搜索。
+- 浏览区 atlas index / atlas entries 不再请求旧 `/render-contract/browser-atlas-*` 热路径；全局 browser atlas 是主页贴图权威来源，缺项显示 coverage gap。
+- 快速翻页时 active page 的 atlas warm 由延迟 450ms 改为立即调度，避免“翻到页面后再等半秒补图”。
+- 验证：test:raw-export-v3、typecheck、build、bench:search-v3 通过；最新 search-v3 gate max 约 11.93ms。
 
 ---
 

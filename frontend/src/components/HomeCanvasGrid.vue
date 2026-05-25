@@ -912,7 +912,7 @@ async function loadAtlas() {
             scheduleRender();
           }
         });
-      }, 450);
+      }, 0);
     }
     scheduleRender();
     return;
@@ -1257,7 +1257,7 @@ function warmGlobalAtlasImages() {
     void warmGlobalBrowserAtlasForItemsDetailed(itemIds).finally(() => {
       scheduleRender();
     });
-  }, 450);
+  }, 0);
 }
 
 function handleClick(event: MouseEvent) {
