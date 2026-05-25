@@ -41,6 +41,12 @@ type QueryResult = {
   indexReady: boolean;
 };
 
+type RankedSearchEntry = {
+  entry: BrowserSearchPackEntry;
+  sourceIndex: number;
+  rank: number;
+};
+
 let searchPack: BrowserSearchPackEntry[] = [];
 let sourceIndexByItemId = new Map<string, number>();
 let exactIndex = new Map<string, number[]>();
@@ -177,39 +183,98 @@ function rankEntry(entry: BrowserSearchPackEntry, normalized: string): number | 
   return null;
 }
 
+function compareRankedEntry(left: RankedSearchEntry, right: RankedSearchEntry): number {
+  return left.rank - right.rank
+    || left.entry.searchRank - right.entry.searchRank
+    || right.entry.popularityScore - left.entry.popularityScore
+    || left.sourceIndex - right.sourceIndex;
+}
+
+function isWorseRankedEntry(left: RankedSearchEntry, right: RankedSearchEntry): boolean {
+  return compareRankedEntry(left, right) > 0;
+}
+
+function siftWorstHeapUp(heap: RankedSearchEntry[], index: number): void {
+  let child = index;
+  while (child > 0) {
+    const parent = Math.floor((child - 1) / 2);
+    if (!isWorseRankedEntry(heap[child], heap[parent])) {
+      return;
+    }
+    const tmp = heap[parent];
+    heap[parent] = heap[child];
+    heap[child] = tmp;
+    child = parent;
+  }
+}
+
+function siftWorstHeapDown(heap: RankedSearchEntry[], index: number): void {
+  let parent = index;
+  while (true) {
+    const left = parent * 2 + 1;
+    const right = left + 1;
+    let worst = parent;
+    if (left < heap.length && isWorseRankedEntry(heap[left], heap[worst])) {
+      worst = left;
+    }
+    if (right < heap.length && isWorseRankedEntry(heap[right], heap[worst])) {
+      worst = right;
+    }
+    if (worst === parent) {
+      return;
+    }
+    const tmp = heap[parent];
+    heap[parent] = heap[worst];
+    heap[worst] = tmp;
+    parent = worst;
+  }
+}
+
+function pushBoundedRankedEntry(heap: RankedSearchEntry[], entry: RankedSearchEntry, limit: number): void {
+  if (limit <= 0) {
+    return;
+  }
+  if (heap.length < limit) {
+    heap.push(entry);
+    siftWorstHeapUp(heap, heap.length - 1);
+    return;
+  }
+  if (compareRankedEntry(entry, heap[0]) >= 0) {
+    return;
+  }
+  heap[0] = entry;
+  siftWorstHeapDown(heap, 0);
+}
+
 function queryPack(message: QueryMessage): QueryResult {
   const startedAt = performance.now();
   ensureIndexReady();
   const normalized = normalizeKeyword(message.payload.query);
   const normalizedModId = `${message.payload.modId ?? ""}`.trim();
   const pageSize = Math.min(Math.max(1, Math.floor(message.payload.pageSize || 50)), 500);
+  const requestedPage = Math.max(1, Math.floor(message.payload.page || 1));
+  const topLimit = Math.min(searchPack.length, requestedPage * pageSize);
 
   const candidateIndexes = collectCandidateIndexes(normalized);
-  const ranked = candidateIndexes
-    .map((sourceIndex) => ({
-      entry: searchPack[sourceIndex],
-      sourceIndex,
-    }))
-    .filter(({ entry }) => Boolean(entry))
-    .filter(({ entry }) => !normalizedModId || normalizedModId === "all" || entry.modId === normalizedModId)
-    .map((entry, sourceIndex) => ({
-      entry: entry.entry,
-      sourceIndex: entry.sourceIndex ?? sourceIndex,
-      rank: rankEntry(entry.entry, normalized),
-    }))
-    .filter((entry): entry is { entry: BrowserSearchPackEntry; sourceIndex: number; rank: number } => entry.rank !== null)
-    .sort((left, right) =>
-      left.rank - right.rank
-      || left.entry.searchRank - right.entry.searchRank
-      || right.entry.popularityScore - left.entry.popularityScore
-      || left.sourceIndex - right.sourceIndex,
-    );
+  const topRankedHeap: RankedSearchEntry[] = [];
+  let total = 0;
+  for (const sourceIndex of candidateIndexes) {
+    const entry = searchPack[sourceIndex];
+    if (!entry) continue;
+    if (normalizedModId && normalizedModId !== "all" && entry.modId !== normalizedModId) continue;
+    const rank = rankEntry(entry, normalized);
+    if (rank === null) continue;
+    total += 1;
+    pushBoundedRankedEntry(topRankedHeap, { entry, sourceIndex, rank }, topLimit);
+  }
 
-  const total = ranked.length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const page = Math.min(Math.max(1, Math.floor(message.payload.page || 1)), totalPages);
+  const page = Math.min(requestedPage, totalPages);
   const offset = (page - 1) * pageSize;
-  const pageEntries = ranked.slice(offset, offset + pageSize).map((entry) => entry.entry);
+  const pageEntries = topRankedHeap
+    .sort(compareRankedEntry)
+    .slice(offset, offset + pageSize)
+    .map((entry) => entry.entry);
   const itemIds = pageEntries.map((entry) => entry.itemId);
 
   return {
