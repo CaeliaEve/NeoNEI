@@ -16,7 +16,8 @@
     "bench:recipe-search": "node scripts/bench-recipe-search.mjs",
     "release:regression": "node scripts/release-regression-checklist.mjs",
     "gate:c": "playwright test -c scripts/pw-gatec.config.ts",
-    "validate:runtime-v3": "node ../scripts/validate-runtime-v3-regression.mjs --gate"
+    "validate:runtime-v3": "node ../scripts/validate-runtime-v3-regression.mjs --gate",
+    "bench:browser-v3": "node ../scripts/bench-browser-v3.mjs --gate"
   },
   "dependencies": {
     "axios": "^1.13.2",
