@@ -523,10 +523,11 @@ validation/report.json
 - [x] 编译 animation-table。
 - [x] 浏览区贴图只走 global atlas。
 - [x] 清理低性能单图 fallback。
+- [x] 新增 Browser Atlas V3 覆盖率门禁（catalog -> atlas -> animation-table 全链路 100% 覆盖）。
 
 验收：
 
-- [ ] 快速翻页时贴图一帧内显示。
+- [ ] 快速翻页时贴图一帧内显示（已补 Browser Atlas V3 coverage gate；仍需浏览器端视觉帧验证）。
 - [ ] 动图速度接近游戏内。
 - [ ] 奇点、无尽贪婪、NASA 火箭等动画样本正确。
 

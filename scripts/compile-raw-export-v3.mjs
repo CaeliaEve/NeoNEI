@@ -104,6 +104,10 @@ function encodeRecipeFileName(recipeId) {
   return encodeURIComponent(recipeId).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
+function includesAny(value, needles) {
+  return needles.some((needle) => value.includes(needle));
+}
+
 function classifyRecipeFamilyKey(recipe, fallback) {
   const descriptor = [
     recipe.family,
@@ -118,26 +122,25 @@ function classifyRecipeFamilyKey(recipe, fallback) {
     recipe.additionalData?.handlerName,
   ].filter(Boolean).join(" ").toLowerCase();
 
-  if (/industrial.*slaughter|extreme entity crusher|infernal drops|mobsinfo|kubatech|怪物屠宰|工业屠宰/.test(descriptor)) return "industrial_slaughterhouse";
-  if (/terra plate|terraplate|泰拉凝聚/.test(descriptor)) return "botania_terra_plate";
-  if (/rune altar|runic altar|符文祭坛/.test(descriptor)) return "botania_rune_altar";
-  if (/mana pool|魔力池/.test(descriptor)) return "botania_mana_pool";
-  if (/pure daisy|白雏菊/.test(descriptor)) return "botania_pure_daisy";
-  if (/elven trade|alfheim|精灵交易/.test(descriptor)) return "botania_elven_trade";
-  if (/thaumcraft.*infusion|arcane infusion|注魔/.test(descriptor)) return "thaumcraft_infusion";
-  if (/thaumcraft.*crucible|crucible|坩埚/.test(descriptor)) return "thaumcraft_crucible";
-  if (/arcane work|arcane crafting|奥术合成|奥数合成/.test(descriptor)) return "thaumcraft_arcane";
-  if (/aspect combination|aspects from items|物品中的要素|要素组合/.test(descriptor)) return "thaumcraft_aspect";
-  if (/research station|研究站/.test(descriptor)) return "gt_research_station";
-  if (/assembly line|装配线/.test(descriptor)) return "gt_assembly_line";
-  if (/chemical reactor|large chemical reactor|化学反应釜|化工反应/.test(descriptor)) return "gt_chemical_reactor";
-  if (/blood altar|血之祭坛|血祭坛/.test(descriptor)) return "blood_magic_altar";
-  if (/alchemy array|alchemy table|炼金法阵|炼金/.test(descriptor)) return "blood_alchemy_table";
-  if (/binding ritual|绑定仪式/.test(descriptor)) return "blood_binding_ritual";
+  if ((descriptor.includes("industrial") && descriptor.includes("slaughter")) || includesAny(descriptor, ["extreme entity crusher", "infernal drops", "mobsinfo", "kubatech", "工业屠宰场"])) return "industrial_slaughterhouse";
+  if (includesAny(descriptor, ["terra plate", "terraplate", "泰拉凝聚板"])) return "botania_terra_plate";
+  if (includesAny(descriptor, ["rune altar", "runic altar", "符文祭坛"])) return "botania_rune_altar";
+  if (includesAny(descriptor, ["mana pool", "魔力池"])) return "botania_mana_pool";
+  if (includesAny(descriptor, ["pure daisy", "白雏菊"])) return "botania_pure_daisy";
+  if (includesAny(descriptor, ["elven trade", "alfheim", "精灵交易"])) return "botania_elven_trade";
+  if ((descriptor.includes("thaumcraft") && descriptor.includes("infusion")) || includesAny(descriptor, ["arcane infusion", "奥数注魔"])) return "thaumcraft_infusion";
+  if ((descriptor.includes("thaumcraft") && descriptor.includes("crucible")) || includesAny(descriptor, ["crucible", "坩埚"])) return "thaumcraft_crucible";
+  if (includesAny(descriptor, ["arcane work", "arcane crafting", "奥数合成"])) return "thaumcraft_arcane";
+  if (includesAny(descriptor, ["aspect combination", "aspects from items", "要素组合", "物品中的要素"])) return "thaumcraft_aspect";
+  if (includesAny(descriptor, ["research station", "研究站"])) return "gt_research_station";
+  if (includesAny(descriptor, ["assembly line", "装配线"])) return "gt_assembly_line";
+  if (includesAny(descriptor, ["chemical reactor", "large chemical reactor", "化学反应釜", "大型化学反应釜"])) return "gt_chemical_reactor";
+  if (includesAny(descriptor, ["blood altar", "血之祭坛", "血祭坛"])) return "blood_magic_altar";
+  if (includesAny(descriptor, ["alchemy array", "alchemy table", "炼金阵"])) return "blood_alchemy_table";
+  if (includesAny(descriptor, ["binding ritual", "绑定仪式"])) return "blood_binding_ritual";
 
   return fallback;
 }
-
 function buildRecipeUiPayload(recipe) {
   const recipeId = `${recipe.recipeId ?? recipe.id ?? recipe.key ?? ""}`.trim();
   if (!recipeId) return null;
@@ -345,6 +348,18 @@ function compileRawExport(inputDir, outputDir) {
     };
   }).sort((left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId));
 
+  const browserAtlasItems = Array.isArray(browserAtlasIndex?.items) ? browserAtlasIndex.items : [];
+  const browserAtlasItemIds = new Set(
+    browserAtlasItems
+      .filter((entry) => entry?.itemId && (entry.staticAtlas?.atlasFile || entry.animatedAtlas?.atlasFile))
+      .map((entry) => entry.itemId),
+  );
+  const missingBrowserAtlasItemIds = browserItems
+    .map((item) => item.itemId)
+    .filter((itemId) => itemId && !browserAtlasItemIds.has(itemId));
+  const staticBrowserAtlasItems = browserAtlasItems.filter((entry) => entry?.staticAtlas?.atlasFile).length;
+  const animatedBrowserAtlasItems = browserAtlasItems.filter((entry) => entry?.animatedAtlas?.atlasFile).length;
+
   const recipeItemIndex = buildRecipeItemIndex(recipes);
   const recipeUiPayloads = recipes
     .map(buildRecipeUiPayload)
@@ -378,7 +393,9 @@ function compileRawExport(inputDir, outputDir) {
       textures: textures.length,
       animations: animations.length,
       animationTableItems: animationTable.length,
-      browserAtlasItems: Array.isArray(browserAtlasIndex?.items) ? browserAtlasIndex.items.length : 0,
+      browserAtlasItems: browserAtlasItems.length,
+      staticBrowserAtlasItems,
+      animatedBrowserAtlasItems,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
@@ -388,12 +405,20 @@ function compileRawExport(inputDir, outputDir) {
       localizedName: items.filter((item) => item.itemId && !item.localizedName).length,
       renderAssetRef: items.filter((item) => item.itemId && !item.renderAssetRef).length,
       textureRows: Math.max(0, items.length - textures.length),
+      browserAtlasItems: missingBrowserAtlasItemIds.length,
+    },
+    samples: {
+      missingBrowserAtlasItemIds: missingBrowserAtlasItemIds.slice(0, 100),
+    },
+    coverage: {
+      browserAtlasRatio: browserItems.length > 0 ? Number(((browserItems.length - missingBrowserAtlasItemIds.length) / browserItems.length).toFixed(6)) : 1,
     },
     warnings: [],
     elapsedMs: Date.now() - startedAt,
   };
   if (items.length === 0) validation.warnings.push("items.jsonl is empty; compiler output is structural only.");
   if (recipes.length === 0) validation.warnings.push("recipes.jsonl is empty; recipe indexes cannot be complete.");
+  if (missingBrowserAtlasItemIds.length > 0) validation.warnings.push(`Browser atlas is missing drawable entries for ${missingBrowserAtlasItemIds.length} browser item(s).`);
 
   writeJson(outputDir + "/manifest.json", {
     schemaVersion: "neonei/dist-data/v3-alpha1",
@@ -446,7 +471,7 @@ function createSelfTestRawExport(root) {
   writeFileSync(join(root, "nei_order.jsonl"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n`, "utf8");
   writeFileSync(join(root, "textures.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
   writeFileSync(join(root, "animations.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
-  writeJson(join(root, "browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 1, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }] });
+  writeJson(join(root, "browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 2, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }, { itemId: "i~botania~manaResource~4", assetId: "nesqlpp:item/i~botania~manaResource~4", hasAnimatedAtlas: true, animatedAtlas: { atlasFile: "animated-atlas-0.webp", atlasWidth: 16, atlasHeight: 128, frameCount: 8, frameDurationMs: 100, frames: [[0, 0, 0, 16, 16], [1, 0, 16, 16, 16]], timeline: [[0, 100], [1, 100]] } }] });
 }
 let inputDir = inputArg ? resolve(inputArg) : null;
 let outputDir = outputArg ? resolve(outputArg) : null;
@@ -461,6 +486,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 1 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1)) {
+if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 2 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
