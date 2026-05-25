@@ -3,7 +3,7 @@ import path from 'path';
 import zlib from 'zlib';
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
-import { DATA_DIR, PUBLISH_OUTPUT_DIR, PUBLISH_PUBLIC_PATH } from '../config/runtime-paths';
+import { DATA_DIR, PUBLISH_OUTPUT_DIR, PUBLISH_PUBLIC_PATH, PUBLISH_RETAIN_RELEASES } from '../config/runtime-paths';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import { ItemsSearchService } from './items-search.service';
 import { ItemsService, type BrowserPageEntry, type Item } from './items.service';
@@ -595,6 +595,54 @@ function buildPublishedRecipeSearchEntries(recipes: IndexedRecipe[]): PublishedR
       } satisfies PublishedRecipeSearchEntry;
     })
     .filter((entry): entry is PublishedRecipeSearchEntry => Boolean(entry));
+}
+
+function prunePublishOutputReleases(
+  publishOutputDir: string,
+  activeSourceSignature: string,
+  retainReleases = PUBLISH_RETAIN_RELEASES,
+): { retained: string[]; removed: string[] } {
+  const normalizedActive = `${activeSourceSignature ?? ''}`.trim();
+  if (!normalizedActive || !fs.existsSync(publishOutputDir)) {
+    return { retained: [], removed: [] };
+  }
+
+  const releases = fs.readdirSync(publishOutputDir, { withFileTypes: true })
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const releaseDir = path.join(publishOutputDir, entry.name);
+      const manifestPath = path.join(releaseDir, buildPublishBundleManifestRelativePath());
+      const stats = fs.statSync(releaseDir);
+      const manifestStats = fs.existsSync(manifestPath) ? fs.statSync(manifestPath) : null;
+      return {
+        name: entry.name,
+        dir: releaseDir,
+        mtimeMs: manifestStats?.mtimeMs ?? stats.mtimeMs,
+        hasManifest: Boolean(manifestStats),
+      };
+    })
+    .filter((entry) => entry.hasManifest || entry.name === normalizedActive)
+    .sort((left, right) => right.mtimeMs - left.mtimeMs || left.name.localeCompare(right.name));
+
+  const keep = new Set<string>([normalizedActive]);
+  for (const release of releases) {
+    if (keep.size >= retainReleases && release.name !== normalizedActive) {
+      continue;
+    }
+    keep.add(release.name);
+  }
+
+  const retained: string[] = [];
+  const removed: string[] = [];
+  for (const release of releases) {
+    if (keep.has(release.name)) {
+      retained.push(release.name);
+      continue;
+    }
+    fs.rmSync(release.dir, { recursive: true, force: true });
+    removed.push(release.name);
+  }
+  return { retained, removed };
 }
 
 export class PublishPayloadMaterializerService {
@@ -1771,6 +1819,15 @@ export class PublishPayloadMaterializerService {
 
     materializeTransaction();
     db.pragma('wal_checkpoint(PASSIVE)');
+    const retention = prunePublishOutputReleases(this.publishOutputDir, sourceSignature);
+    upsertState.run({
+      state_key: 'publish_payload_retention_retain',
+      state_value: String(PUBLISH_RETAIN_RELEASES),
+    });
+    upsertState.run({
+      state_key: 'publish_payload_retention_removed',
+      state_value: JSON.stringify(retention.removed),
+    });
 
     return {
       count: rows.length,

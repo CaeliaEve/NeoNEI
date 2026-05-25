@@ -579,7 +579,7 @@ validation/report.json
 - [x] 浏览区 page-pack / by-id-pack / home-bootstrap 优先使用 dist-data V3。
 - [x] 搜索关键路径删除旧 fallback。
 - [x] 浏览区删除低性能补图路径。
-- [ ] 清理历史 publish 产物保留策略。
+- [x] 清理历史 publish 产物保留策略。
 - [x] 移除不再使用的 API。
 
 验收：
@@ -667,6 +667,7 @@ validation/report.json
 - Data Compiler 已输出 `textures/animation-table.json`，manifest 暴露 `files.animationTable`，动画帧时长从 raw export / atlas index 归一化生成。
 - 快速翻页时 active page 的 atlas warm 由延迟 450ms 改为立即调度，避免“翻到页面后再等半秒补图”。
 - 前端已移除 page-scoped atlas API 客户端调用；`pageAtlas.ts` 仅保留类型与显式空 peek，防止浏览区回到 `/items/page-atlas` 慢路径。
+- 发布物料生成后自动保留最近 `PUBLISH_RETAIN_RELEASES` 个版本（默认 3，始终保留当前 source signature），避免历史 publish 无限膨胀。
 - 验证：test:raw-export-v3、typecheck、build、bench:search-v3 通过；最新 search-v3 gate max 约 12.91ms。
 
 ---

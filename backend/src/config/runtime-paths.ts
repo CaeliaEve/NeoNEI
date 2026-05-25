@@ -58,6 +58,10 @@ export const PUBLISH_OUTPUT_DIR =
   process.env.PUBLISH_OUTPUT_DIR || path.join(DATA_DIR, 'publish');
 export const PUBLISH_PUBLIC_PATH =
   (process.env.PUBLISH_PUBLIC_PATH || '/publish').trim().replace(/\/+$/, '') || '/publish';
+export const PUBLISH_RETAIN_RELEASES = Math.max(
+  1,
+  Math.floor(Number(process.env.PUBLISH_RETAIN_RELEASES || process.env.NEONEI_PUBLISH_RETAIN_RELEASES || 3)),
+);
 export const RECIPE_SUMMARIES_FILE =
   process.env.RECIPE_SUMMARIES_FILE || path.join(DATA_DIR, 'recipe_summaries.csv');
 export const REBUILD_PROGRESS_FILE =
