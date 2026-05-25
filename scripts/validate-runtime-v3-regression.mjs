@@ -48,7 +48,12 @@ function hasAnimatedDrawable(entry) {
   return Boolean(entry?.animatedAtlas?.atlasFile);
 }
 
-function getFirstNonEmptyMap(payload, key) {
+function stableNumber(value, fallback = 0) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function getFirstNonEmptyMap(payload) {
   const map = new Map();
   for (const entry of payload.items ?? []) {
     if (entry?.itemId) map.set(entry.itemId, entry);
@@ -75,6 +80,44 @@ for (const group of groupPayload.groups ?? []) {
   for (const member of group?.memberItemIds ?? []) groupsByRepresentative.set(member, group);
 }
 
+const catalogItemIds = catalogItems.map((item) => `${item?.itemId ?? ""}`.trim()).filter(Boolean);
+const catalogItemIdSet = new Set(catalogItemIds);
+const duplicateCatalogItemIds = catalogItemIds.filter((itemId, index) => catalogItemIds.indexOf(itemId) !== index);
+const browserOrderBreaks = [];
+for (let index = 1; index < catalogItems.length; index += 1) {
+  const previous = catalogItems[index - 1];
+  const current = catalogItems[index];
+  const previousOrder = stableNumber(previous?.browserOrder, index - 1);
+  const currentOrder = stableNumber(current?.browserOrder, index);
+  if (currentOrder < previousOrder) {
+    browserOrderBreaks.push({
+      index,
+      previousItemId: previous?.itemId ?? null,
+      previousOrder,
+      currentItemId: current?.itemId ?? null,
+      currentOrder,
+    });
+    if (browserOrderBreaks.length >= 25) break;
+  }
+}
+const rawGroups = Array.isArray(groupPayload.groups) ? groupPayload.groups : [];
+const groupIntegrity = rawGroups.reduce((acc, group) => {
+  const members = Array.isArray(group?.memberItemIds) ? group.memberItemIds : [];
+  const representativeItemId = `${group?.representativeItemId ?? ""}`.trim();
+  if (representativeItemId && !catalogItemIdSet.has(representativeItemId)) {
+    acc.missingRepresentatives.push({ groupKey: group?.groupKey ?? null, representativeItemId });
+  }
+  const missingMembers = members.filter((itemId) => !catalogItemIdSet.has(itemId)).slice(0, 20);
+  if (missingMembers.length > 0) {
+    acc.groupsWithMissingMembers.push({ groupKey: group?.groupKey ?? null, missingMembers });
+  }
+  const declaredSize = stableNumber(group?.groupSize, members.length || 1);
+  if (members.length > 0 && declaredSize !== members.length) {
+    acc.sizeMismatches.push({ groupKey: group?.groupKey ?? null, declaredSize, actualSize: members.length });
+  }
+  if (members.length > 1) acc.collapsibleGroups += 1;
+  return acc;
+}, { groups: rawGroups.length, collapsibleGroups: 0, missingRepresentatives: [], groupsWithMissingMembers: [], sizeMismatches: [] });
 const sampleResults = [];
 for (const sample of sampleConfig.samples ?? []) {
   const matches = catalogItems.filter((item) => matchesItem(item, sample.match)).slice(0, 20);
@@ -116,7 +159,14 @@ for (const sample of sampleConfig.samples ?? []) {
 }
 
 const failures = sampleResults.flatMap((sample) => sample.failures.map((failure) => `${sample.id}: ${failure}`));
+if (duplicateCatalogItemIds.length > 0) failures.push(`browser catalog has ${duplicateCatalogItemIds.length} duplicate item id(s)`);
+if (browserOrderBreaks.length > 0) failures.push(`browser catalog order has ${browserOrderBreaks.length} monotonic break(s)`);
+if (strict && groupIntegrity.missingRepresentatives.length > 0) failures.push(`browser groups have ${groupIntegrity.missingRepresentatives.length} missing representative(s)`);
+if (strict && groupIntegrity.groupsWithMissingMembers.length > 0) failures.push(`browser groups have ${groupIntegrity.groupsWithMissingMembers.length} missing-member group(s)`);
 const warnings = sampleResults.flatMap((sample) => sample.warnings.map((warning) => `${sample.id}: ${warning}`));
+if (!strict && groupIntegrity.missingRepresentatives.length > 0) warnings.push(`browser groups have ${groupIntegrity.missingRepresentatives.length} missing representative(s)`);
+if (!strict && groupIntegrity.groupsWithMissingMembers.length > 0) warnings.push(`browser groups have ${groupIntegrity.groupsWithMissingMembers.length} missing-member group(s)`);
+if (groupIntegrity.sizeMismatches.length > 0) warnings.push(`browser groups have ${groupIntegrity.sizeMismatches.length} declared-size mismatch(es)`);
 const report = {
   schemaVersion: "neonei/runtime-v3-regression-report/v1",
   generatedAt: new Date().toISOString(),
@@ -125,10 +175,20 @@ const report = {
   source: manifest.source ?? null,
   sourceRepository: manifest.sourceRepository ?? null,
   totals: {
+    catalogItems: catalogItems.length,
+    groups: groupIntegrity.groups,
+    collapsibleGroups: groupIntegrity.collapsibleGroups,
     samples: sampleResults.length,
     passed: sampleResults.filter((sample) => sample.failures.length === 0).length,
     failed: sampleResults.filter((sample) => sample.failures.length > 0).length,
     warnings: warnings.length,
+  },
+  layoutIntegrity: {
+    duplicateCatalogItemIds: Array.from(new Set(duplicateCatalogItemIds)).slice(0, 50),
+    browserOrderBreaks,
+    missingRepresentatives: groupIntegrity.missingRepresentatives.slice(0, 50),
+    groupsWithMissingMembers: groupIntegrity.groupsWithMissingMembers.slice(0, 50),
+    sizeMismatches: groupIntegrity.sizeMismatches.slice(0, 50),
   },
   samples: sampleResults,
   failures,

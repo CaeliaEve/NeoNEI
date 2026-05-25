@@ -515,7 +515,7 @@ validation/report.json
 
 - [x] 默认翻页 p50 < 35ms。
 - [x] 搜索翻页 p50 < 35ms。
-- [ ] 分组位置与游戏内 NEI 基本一致。
+- [ ] 分组位置与游戏内 NEI 基本一致（已补 catalog 顺序/分组完整性 gate；仍需完整 GTNH 导出对齐验证）。
 
 ### Phase 3：Atlas 与动画重构
 
