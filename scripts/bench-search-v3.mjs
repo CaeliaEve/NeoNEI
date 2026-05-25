@@ -42,6 +42,17 @@ function latestPublishDir() {
   if (dirs.length === 0) {
     throw new Error(`No publish bundles found in ${publishRoot}`);
   }
+  for (const dir of dirs) {
+    try {
+      const packPath = findSearchPack(dir);
+      const pack = loadJsonMaybeGzip(packPath);
+      if (Array.isArray(pack.items) && pack.items.length > 0) {
+        return dir;
+      }
+    } catch {
+      // Keep looking for the newest usable Runtime V3 bundle.
+    }
+  }
   return dirs[0];
 }
 

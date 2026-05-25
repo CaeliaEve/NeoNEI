@@ -8,6 +8,8 @@ import {
 import { markPerfEvent } from './perfMarks';
 import {
   getDistDataBrowserAtlasIndex,
+  getDistDataBrowserPagePack,
+  getDistDataBrowserPagePackByIds,
   getDistDataDefaultCatalog,
   getDistDataGroupItems,
   getDistDataRecipeBootstrap,
@@ -2276,6 +2278,11 @@ export const api = {
     expandedGroups?: string[];
     slotSize?: number;
   }): Promise<BrowserPagePackResponse> {
+    const distDataPagePack = await getDistDataBrowserPagePack(params);
+    if (distDataPagePack) {
+      return distDataPagePack;
+    }
+
     const normalizedExpandedGroups = params.expandedGroups ?? [];
     const canUseStaticBundle = !params.search?.trim()
       && !params.modId
@@ -2418,10 +2425,17 @@ export const api = {
       return inflight;
     }
 
-    const request = http.post('/items/browser/by-ids-pack', normalizedParams)
-      .then((response) => {
-        setCacheWithLimit(browserByIdsPackCache, cacheKey, response.data, CACHE_LIMITS.browserByIdsPack);
-        return response.data;
+    const request = (async () => {
+      const distDataPack = await getDistDataBrowserPagePackByIds(normalizedParams.itemIds);
+      if (distDataPack) {
+        return distDataPack;
+      }
+      const response = await http.post('/items/browser/by-ids-pack', normalizedParams);
+      return response.data;
+    })()
+      .then((data) => {
+        setCacheWithLimit(browserByIdsPackCache, cacheKey, data, CACHE_LIMITS.browserByIdsPack);
+        return data;
       })
       .finally(() => {
         browserByIdsPackInFlight.delete(cacheKey);

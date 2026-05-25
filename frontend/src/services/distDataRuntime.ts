@@ -1,8 +1,10 @@
 import type {
   BrowserDefaultCatalogResponse,
   BrowserAtlasIndexResponse,
+  BrowserByIdsPackResponse,
   BrowserGridEntry,
   BrowserGroupItemsResponse,
+  BrowserPagePackResponse,
   BrowserSearchCatalogResponse,
   BrowserSearchPackEntry,
   BrowserSearchPackResponse,
@@ -303,6 +305,28 @@ function buildDefaultCatalog(runtime: DistDataBrowserRuntime, modId?: string): B
   return entries;
 }
 
+function expandCatalogGroups(
+  entries: BrowserGridEntry[],
+  runtime: DistDataBrowserRuntime,
+  expandedGroups?: string[],
+): BrowserGridEntry[] {
+  const expanded = new Set((expandedGroups ?? []).map((groupKey) => `${groupKey ?? ""}`.trim()).filter(Boolean));
+  if (!expanded.size) {
+    return entries;
+  }
+  const result: BrowserGridEntry[] = [];
+  for (const entry of entries) {
+    if (entry.kind !== "group-collapsed" || !expanded.has(entry.group.key)) {
+      result.push(entry);
+      continue;
+    }
+    for (const member of runtime.memberItemsByGroupKey.get(entry.group.key) ?? [entry.group.representative]) {
+      result.push({ key: member.itemId, kind: "item", item: member });
+    }
+  }
+  return result;
+}
+
 function paginate<T>(data: T[]): BrowserDefaultCatalogResponse {
   return {
     data: data as BrowserDefaultCatalogResponse["data"],
@@ -310,6 +334,58 @@ function paginate<T>(data: T[]): BrowserDefaultCatalogResponse {
     page: 1,
     pageSize: data.length,
     totalPages: 1,
+  };
+}
+
+function paginateBrowserEntries(
+  data: BrowserGridEntry[],
+  page?: number,
+  pageSize?: number,
+): Pick<BrowserPagePackResponse, "data" | "total" | "page" | "pageSize" | "totalPages"> {
+  const normalizedPageSize = Math.max(1, Math.floor(Number(pageSize) || data.length || 1));
+  const totalPages = Math.max(1, Math.ceil(data.length / normalizedPageSize));
+  const normalizedPage = Math.min(totalPages, Math.max(1, Math.floor(Number(page) || 1)));
+  const start = (normalizedPage - 1) * normalizedPageSize;
+  return {
+    data: data.slice(start, start + normalizedPageSize),
+    total: data.length,
+    page: normalizedPage,
+    pageSize: normalizedPageSize,
+    totalPages,
+  };
+}
+
+function collectItemsFromEntries(entries: BrowserGridEntry[]): Item[] {
+  const items: Item[] = [];
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    if (entry.kind !== "item") {
+      if (!seen.has(entry.group.representative.itemId)) {
+        seen.add(entry.group.representative.itemId);
+        items.push(entry.group.representative);
+      }
+      continue;
+    }
+    if (!seen.has(entry.item.itemId)) {
+      seen.add(entry.item.itemId);
+      items.push(entry.item);
+    }
+  }
+  return items;
+}
+
+function buildResourceManifest(entries: BrowserGridEntry[]) {
+  const items = collectItemsFromEntries(entries);
+  const renderAssetRefs = items
+    .map((item) => `${item.renderAssetRef ?? ""}`.trim())
+    .filter(Boolean);
+  return {
+    itemIds: items.map((item) => item.itemId),
+    renderAssetRefs: Array.from(new Set(renderAssetRefs)),
+    atlasUrls: [],
+    animatedAtlasFiles: [],
+    atlasEntryCount: 0,
+    animatedAtlasCount: 0,
   };
 }
 
@@ -452,6 +528,60 @@ export async function getDistDataSearchCatalog(search: string, modId?: string): 
     return matchesSearch(runtime.searchEntryByItemId.get(item.itemId), normalizedSearch);
   });
   return paginate(filtered) as BrowserSearchCatalogResponse;
+}
+
+export async function getDistDataBrowserPagePack(params: {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  modId?: string;
+  expandedGroups?: string[];
+}): Promise<BrowserPagePackResponse | null> {
+  const runtime = await getBrowserRuntime();
+  if (!runtime) {
+    return null;
+  }
+  const normalizedSearch = `${params.search ?? ""}`.trim();
+  const baseEntries = normalizedSearch
+    ? buildDefaultCatalog(runtime, params.modId).filter((entry) => {
+      const item = entry.kind === "item" ? entry.item : entry.group.representative;
+      return matchesSearch(runtime.searchEntryByItemId.get(item.itemId), normalizedSearch);
+    })
+    : buildDefaultCatalog(runtime, params.modId);
+  const expandedEntries = expandCatalogGroups(baseEntries, runtime, params.expandedGroups);
+  const page = paginateBrowserEntries(expandedEntries, params.page, params.pageSize);
+  return {
+    ...page,
+    atlas: null,
+    mediaManifest: null,
+    resourceManifest: buildResourceManifest(page.data),
+  };
+}
+
+export async function getDistDataBrowserPagePackByIds(itemIds: string[]): Promise<BrowserByIdsPackResponse | null> {
+  const runtime = await getBrowserRuntime();
+  if (!runtime) {
+    return null;
+  }
+  const seen = new Set<string>();
+  const data = itemIds
+    .map((itemId) => `${itemId ?? ""}`.trim())
+    .filter((itemId) => {
+      if (!itemId || seen.has(itemId)) {
+        return false;
+      }
+      seen.add(itemId);
+      return true;
+    })
+    .map((itemId) => runtime.itemById.get(itemId))
+    .filter((item): item is Item => Boolean(item))
+    .map((item) => ({ key: item.itemId, kind: "item" as const, item }));
+  return {
+    data,
+    atlas: null,
+    mediaManifest: null,
+    resourceManifest: buildResourceManifest(data),
+  };
 }
 
 export async function getDistDataGroupItems(groupKey: string, modId?: string): Promise<BrowserGroupItemsResponse | null> {
