@@ -468,6 +468,142 @@ function normalizeAnimationTimeline(sourceTimeline, frameCount, fallbackDuration
   }));
 }
 
+function numericField(source, keys, fallback = null) {
+  for (const key of keys) {
+    if (source && source[key] !== undefined && source[key] !== null) {
+      const parsed = Number(source[key]);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return fallback;
+}
+
+function firstPresent(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    if (value !== undefined && value !== null && `${value}`.trim()) return value;
+  }
+  return null;
+}
+
+function normalizeAtlasFrames(frames, fallbackWidth, fallbackHeight) {
+  if (!Array.isArray(frames)) return [];
+  return frames
+    .map((frame, index) => {
+      if (Array.isArray(frame)) return frame;
+      const width = numericField(frame, ["width", "w"], fallbackWidth);
+      const height = numericField(frame, ["height", "h"], fallbackHeight);
+      return [
+        numericField(frame, ["frameIndex", "index"], index),
+        numericField(frame, ["x", "u"], 0),
+        numericField(frame, ["y", "v"], index * stableNumber(height, 16)),
+        stableNumber(width, 16),
+        stableNumber(height, 16),
+      ];
+    })
+    .filter((frame) => Array.isArray(frame) && frame.length >= 5);
+}
+
+function buildPlacementFromResource(resource, animation = null, animated = false) {
+  if (!resource && !animation) return null;
+  const source = { ...(resource ?? {}), ...(animation ?? {}) };
+  const atlasFile = normalizeAtlasFileRef(firstPresent(source, ["atlasFile", "atlasTexture", "atlasExportFile", "nativeSpriteAtlasFile"]));
+  if (!atlasFile) return null;
+
+  const rect = source.rect && typeof source.rect === "object" ? source.rect : {};
+  const baseSize = source.baseSize && typeof source.baseSize === "object" ? source.baseSize : {};
+  const width = numericField(rect, ["width", "w"], numericField(baseSize, ["width", "w"], 16));
+  const height = numericField(rect, ["height", "h"], numericField(baseSize, ["height", "h"], 16));
+  const placement = {
+    atlasFile,
+    atlasGroup: source.atlasGroup ?? null,
+    atlasWidth: numericField(source, ["atlasWidth"], null),
+    atlasHeight: numericField(source, ["atlasHeight"], null),
+    x: numericField(rect, ["x", "u"], 0),
+    y: numericField(rect, ["y", "v"], 0),
+    width: stableNumber(width, 16),
+    height: stableNumber(height, 16),
+  };
+
+  if (!animated) return placement;
+  const frameCount = stableNumber(source.frameCount ?? source.capturedFrameCount ?? source.configuredFrameCount, 0);
+  const frameDurationMs = stableNumber(source.frameDurationMs, 50);
+  return {
+    ...placement,
+    frameCount,
+    frameDurationMs,
+    frames: normalizeAtlasFrames(source.frames, placement.width, placement.height),
+    timeline: normalizeAnimationTimeline(source.timeline, frameCount, frameDurationMs),
+  };
+}
+
+function isAnimatedResource(resource, animation) {
+  const source = { ...(resource ?? {}), ...(animation ?? {}) };
+  return stableNumber(source.frameCount ?? source.capturedFrameCount ?? source.configuredFrameCount, 0) > 1
+    || Array.isArray(source.frames) && source.frames.length > 1
+    || Array.isArray(source.timeline) && source.timeline.length > 1
+    || [source.animationMode, source.mode, source.playbackHint].some((value) => `${value ?? ""}`.toLowerCase().includes("anim"));
+}
+
+function buildBrowserAtlasIndexFromResources(existingIndex, browserItems, textures, animationFacts) {
+  const textureByAssetId = new Map(textures.filter((entry) => entry?.assetId).map((entry) => [entry.assetId, entry]));
+  const animationByAssetId = new Map(animationFacts.filter((entry) => entry?.assetId).map((entry) => [entry.assetId, entry]));
+  const byItemId = new Map();
+  for (const entry of existingIndex?.items ?? []) {
+    if (entry?.itemId) byItemId.set(entry.itemId, { ...entry });
+  }
+
+  let generatedFromResourceIndex = 0;
+  let repairedFromResourceIndex = 0;
+  for (const item of browserItems) {
+    const itemId = `${item?.itemId ?? ""}`.trim();
+    if (!itemId) continue;
+    const assetId = `${item.renderAssetRef ?? ""}`.trim() || `nesqlpp:item/${itemId}`;
+    const texture = textureByAssetId.get(assetId);
+    const animation = animationByAssetId.get(assetId);
+    if (!texture && !animation) continue;
+
+    const animated = isAnimatedResource(texture, animation);
+    const placement = buildPlacementFromResource(texture, animation, animated);
+    if (!placement) continue;
+
+    const current = byItemId.get(itemId);
+    const needsDrawable = !current?.staticAtlas?.atlasFile && !current?.animatedAtlas?.atlasFile;
+    const needsAssetRepair = current?.assetId && current.assetId !== assetId;
+    if (!current || needsDrawable || needsAssetRepair) {
+      byItemId.set(itemId, {
+        ...(current ?? {}),
+        itemId,
+        assetId,
+        mode: current?.mode ?? texture?.mode ?? animation?.mode ?? null,
+        renderMode: current?.renderMode ?? texture?.renderMode ?? animation?.renderMode ?? null,
+        resolutionMode: current?.resolutionMode ?? texture?.resolutionMode ?? animation?.resolutionMode ?? null,
+        rendererFamily: current?.rendererFamily ?? texture?.family ?? animation?.family ?? null,
+        playbackHint: current?.playbackHint ?? texture?.playbackHint ?? animation?.playbackHint ?? null,
+        staticAtlas: animated ? (current?.staticAtlas ?? null) : placement,
+        animatedAtlas: animated ? placement : (current?.animatedAtlas ?? null),
+        hasStaticAtlas: animated ? Boolean(current?.staticAtlas?.atlasFile) : true,
+        hasAnimatedAtlas: animated ? true : Boolean(current?.animatedAtlas?.atlasFile),
+        generatedByCompiler: true,
+      });
+      if (current) repairedFromResourceIndex += 1;
+      else generatedFromResourceIndex += 1;
+    }
+  }
+
+  const items = Array.from(byItemId.values()).sort((left, right) => `${left.itemId}`.localeCompare(`${right.itemId}`));
+  return {
+    ...(existingIndex ?? {}),
+    schemaVersion: existingIndex?.schemaVersion ?? "neonei/browser-atlas-index/generated-from-raw-export",
+    generatedByCompiler: true,
+    generatedFromResourceIndex,
+    repairedFromResourceIndex,
+    itemCount: items.length,
+    animatedItemCount: items.filter((entry) => entry?.animatedAtlas?.atlasFile).length,
+    missingAtlasCount: items.filter((entry) => !entry?.staticAtlas?.atlasFile && !entry?.animatedAtlas?.atlasFile).length,
+    items,
+  };
+}
 function buildAnimationTable(searchItems, textures, animations, browserAtlasIndex) {
   const itemIdByAssetId = new Map();
   for (const item of searchItems) {
@@ -544,6 +680,7 @@ function compileRawExport(inputDir, outputDir) {
   const nativeSprites = readRawJsonl(inputDir, manifest, "nativeSprites", "native_sprites.jsonl");
   const renderedGifs = readRawJsonl(inputDir, manifest, "renderedGifs", "rendered_gifs.jsonl");
   const browserAtlasIndex = readRawJson(inputDir, manifest, "browserAtlasIndex", "browser_atlas_index.json");
+  const specialIndex = readRawJson(inputDir, manifest, "specialIndex", "special/index.json");
   const animationFacts = mergeAnimationFacts(animations, nativeSprites, renderedGifs);
 
   const renderByAssetId = new Map();
@@ -571,7 +708,7 @@ function compileRawExport(inputDir, outputDir) {
   const searchItems = items
     .filter((item) => item && item.itemId)
     .map((item, index) => buildSearchEntry(item, index, renderByAssetId, layoutByItemId));
-  const animationTable = buildAnimationTable(searchItems, textures, animationFacts, browserAtlasIndex);
+
   const missingAnimationTimingAssetIds = animationFacts
     .filter((entry) => entry?.assetId && stableNumber(entry.frameCount, 0) > 1 && !entry.timeline && !entry.frameDurationMs)
     .map((entry) => entry.assetId);
@@ -591,7 +728,9 @@ function compileRawExport(inputDir, outputDir) {
     };
   }).sort((left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId));
 
-  const browserAtlasItems = Array.isArray(browserAtlasIndex?.items) ? browserAtlasIndex.items : [];
+  const generatedBrowserAtlasIndex = buildBrowserAtlasIndexFromResources(browserAtlasIndex, browserItems, textures, animationFacts);
+  const browserAtlasItems = Array.isArray(generatedBrowserAtlasIndex?.items) ? generatedBrowserAtlasIndex.items : [];
+  const animationTable = buildAnimationTable(searchItems, textures, animationFacts, generatedBrowserAtlasIndex);
   const atlasAuthorityReport = buildAtlasAuthorityReport(inputDir, browserItems, browserAtlasItems, renderByAssetId);
   const missingBrowserAtlasItemIds = atlasAuthorityReport.samples.missingBrowserAtlasItemIds;
   const staticBrowserAtlasItems = browserAtlasItems.filter((entry) => entry?.staticAtlas?.atlasFile).length;
@@ -646,6 +785,9 @@ function compileRawExport(inputDir, outputDir) {
       browserAtlasItems: browserAtlasItems.length,
       staticBrowserAtlasItems,
       animatedBrowserAtlasItems,
+      browserAtlasGeneratedFromResourceIndex: stableNumber(generatedBrowserAtlasIndex?.generatedFromResourceIndex, 0),
+      browserAtlasRepairedFromResourceIndex: stableNumber(generatedBrowserAtlasIndex?.repairedFromResourceIndex, 0),
+      specialDomains: Array.isArray(specialIndex?.domains) ? specialIndex.domains.length : 0,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
@@ -710,6 +852,7 @@ function compileRawExport(inputDir, outputDir) {
       textureManifest: "textures/atlas-manifest.json",
       animationTable: "textures/animation-table.json",
       browserAtlasIndex: "textures/browser-atlas-index.json",
+      specialIndex: "special/index.json",
       validationReport: "validation/report.json",
     },
   });
@@ -727,7 +870,8 @@ function compileRawExport(inputDir, outputDir) {
   }
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations: animationFacts, nativeSprites, renderedGifs });
   writeJsonCompact(join(outputDir, "textures", "animation-table.json"), { schemaVersion: "neonei/animation-table/v1", items: animationTable });
-  writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), browserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
+  writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), generatedBrowserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
+  writeJsonCompact(join(outputDir, "special", "index.json"), specialIndex ?? { schemaVersion: "neonei/special-index/v1", domains: [] });
   writeJson(join(outputDir, "validation", "report.json"), validation);
   return validation;
 }
@@ -760,23 +904,28 @@ function createSelfTestRawExport(root) {
       nativeSprites: "assets/animations/native-sprites.jsonl",
       renderedGifs: "assets/animations/rendered-gifs.jsonl",
       browserAtlasIndex: "assets/textures/browser_atlas_index.json",
+      specialIndex: "special/index.json",
     },
   });
   writeFileSync(join(root, "facts/items.jsonl"), [
     JSON.stringify({ itemId: "i~minecraft~iron_ingot~0", modId: "minecraft", internalName: "iron_ingot", localizedName: "Iron Ingot", renderAssetRef: "nesqlpp:item/i~minecraft~iron_ingot~0", searchTerms: "iron ingot" }),
     JSON.stringify({ itemId: "i~botania~manaResource~4", modId: "botania", internalName: "manaResource", localizedName: "Terrasteel Ingot", renderAssetRef: "nesqlpp:item/i~botania~manaResource~4", searchTerms: "terrasteel" }),
+    JSON.stringify({ itemId: "i~minecraft~gold_ingot~0", modId: "minecraft", internalName: "gold_ingot", localizedName: "Gold Ingot", renderAssetRef: "nesqlpp:item/i~minecraft~gold_ingot~0", searchTerms: "gold ingot" }),
   ].join("\n") + "\n", "utf8");
   writeFileSync(join(root, "facts/fluids.jsonl"), `${JSON.stringify({ fluidId: "f~gregtech~molten.iron", localizedName: "Molten Iron" })}\n`, "utf8");
   writeFileSync(join(root, "facts/recipes/all.jsonl"), `${JSON.stringify({ recipeId: "r1", family: "minecraft", machine: { machineId: "furnace", displayName: "Furnace" }, inputs: [{ itemId: "i~minecraft~iron_ore~0" }], outputs: [{ itemId: "i~minecraft~iron_ingot~0" }] })}\n`, "utf8");
   writeJson(join(root, "facts/recipes/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/recipe-index", shards: [{ handlerId: "all", path: "facts/recipes/all.jsonl", recipeCount: 1 }] });
   writeFileSync(join(root, "facts/nei/groups.jsonl"), `${JSON.stringify({ groupKey: "nei:iron", groupLabel: "Iron", groupSize: 1, representativeItemId: "i~minecraft~iron_ingot~0", memberItemIds: ["i~minecraft~iron_ingot~0"] })}\n`, "utf8");
-  writeFileSync(join(root, "facts/nei/order.jsonl"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n`, "utf8");
-  writeFileSync(join(root, "assets/textures/index.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
+  writeFileSync(join(root, "facts/nei/order.jsonl"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n${JSON.stringify({ entryOrder: 2, entryKind: "item", itemId: "i~minecraft~gold_ingot~0" })}\n`, "utf8");
+  writeFileSync(join(root, "assets/textures/index.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", atlasFile: "generated-static-atlas-0.webp", rect: { x: 0, y: 0, width: 16, height: 16 } })}\n`, "utf8");
   writeFileSync(join(root, "assets/animations/index.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
   writeFileSync(join(root, "assets/animations/native-sprites.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`, "utf8");
   writeFileSync(join(root, "assets/animations/rendered-gifs.jsonl"), "", "utf8");
   writeFileSync(join(root, "static-atlas-0.webp"), "self-test-static", "utf8");
   writeFileSync(join(root, "animated-atlas-0.webp"), "self-test-animated", "utf8");
+  writeFileSync(join(root, "generated-static-atlas-0.webp"), "self-test-generated", "utf8");
+  mkdirSync(join(root, "special"), { recursive: true });
+  writeJson(join(root, "special/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-index", domains: [{ domain: "gregtech", recipeCount: 0, index: "special/gregtech/index.json", recipes: "special/gregtech/recipes.jsonl" }] });
   writeJson(join(root, "assets/textures/browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 2, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }, { itemId: "i~botania~manaResource~4", assetId: "nesqlpp:item/i~botania~manaResource~4", hasAnimatedAtlas: true, animatedAtlas: { atlasFile: "animated-atlas-0.webp", atlasWidth: 16, atlasHeight: 128, frameCount: 8, frameDurationMs: 100, frames: [[0, 0, 0, 16, 16], [1, 0, 16, 16, 16]], timeline: [[0, 100], [1, 100]] } }] });
 }
 let inputDir = inputArg ? resolve(inputArg) : null;
@@ -792,6 +941,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 2 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0)) {
+if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
