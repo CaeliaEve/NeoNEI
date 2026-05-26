@@ -665,6 +665,35 @@ function buildAnimationTable(searchItems, textures, animations, browserAtlasInde
     .filter((entry) => entry.frameCount > 1 || entry.timeline.length > 1)
     .sort((left, right) => left.itemId.localeCompare(right.itemId));
 }
+function sanitizePathSegment(value) {
+  return `${value ?? "unknown"}`.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
+}
+
+function readSpecialDomains(inputDir, specialIndex) {
+  const domains = [];
+  for (const domain of specialIndex?.domains ?? []) {
+    const domainId = sanitizePathSegment(domain?.domain);
+    const recipesPath = `${domain?.recipes ?? ""}`.trim();
+    const indexPath = `${domain?.index ?? ""}`.trim();
+    const summaryPath = `${domain?.summary ?? ""}`.trim();
+    const recipes = recipesPath ? readJsonl(join(inputDir, recipesPath)) : [];
+    const index = indexPath ? readJson(join(inputDir, indexPath)) : null;
+    const summary = summaryPath ? readJson(join(inputDir, summaryPath)) : (domain?.stats ?? index?.stats ?? null);
+    domains.push({
+      domain: domainId,
+      recipeCount: recipes.length,
+      declaredRecipeCount: stableNumber(domain?.recipeCount ?? index?.recipeCount, recipes.length),
+      recipesPath,
+      indexPath,
+      summaryPath,
+      outputRecipes: `special/${domainId}/recipes.json`,
+      outputSummary: `special/${domainId}/summary.json`,
+      summary: summary ?? { domain: domainId, recipeCount: recipes.length },
+      recipes,
+    });
+  }
+  return domains;
+}
 function compileRawExport(inputDir, outputDir) {
   const startedAt = Date.now();
   const manifestPath = join(inputDir, "manifest.json");
@@ -681,6 +710,7 @@ function compileRawExport(inputDir, outputDir) {
   const renderedGifs = readRawJsonl(inputDir, manifest, "renderedGifs", "rendered_gifs.jsonl");
   const browserAtlasIndex = readRawJson(inputDir, manifest, "browserAtlasIndex", "browser_atlas_index.json");
   const specialIndex = readRawJson(inputDir, manifest, "specialIndex", "special/index.json");
+  const specialDomains = readSpecialDomains(inputDir, specialIndex);
   const animationFacts = mergeAnimationFacts(animations, nativeSprites, renderedGifs);
 
   const renderByAssetId = new Map();
@@ -787,7 +817,8 @@ function compileRawExport(inputDir, outputDir) {
       animatedBrowserAtlasItems,
       browserAtlasGeneratedFromResourceIndex: stableNumber(generatedBrowserAtlasIndex?.generatedFromResourceIndex, 0),
       browserAtlasRepairedFromResourceIndex: stableNumber(generatedBrowserAtlasIndex?.repairedFromResourceIndex, 0),
-      specialDomains: Array.isArray(specialIndex?.domains) ? specialIndex.domains.length : 0,
+      specialDomains: specialDomains.length,
+      specialRecipes: specialDomains.reduce((sum, domain) => sum + domain.recipeCount, 0),
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
@@ -871,7 +902,16 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations: animationFacts, nativeSprites, renderedGifs });
   writeJsonCompact(join(outputDir, "textures", "animation-table.json"), { schemaVersion: "neonei/animation-table/v1", items: animationTable });
   writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), generatedBrowserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
-  writeJsonCompact(join(outputDir, "special", "index.json"), specialIndex ?? { schemaVersion: "neonei/special-index/v1", domains: [] });
+  const distSpecialIndex = {
+    schemaVersion: "neonei/special-index/v1",
+    sourceSchemaVersion: specialIndex?.schemaVersion ?? null,
+    domains: specialDomains.map(({ recipes, summary, ...domain }) => domain),
+  };
+  writeJsonCompact(join(outputDir, "special", "index.json"), distSpecialIndex);
+  for (const domain of specialDomains) {
+    writeJsonCompact(join(outputDir, domain.outputRecipes), { schemaVersion: "neonei/special-domain-recipes/v1", domain: domain.domain, recipes: domain.recipes });
+    writeJsonCompact(join(outputDir, domain.outputSummary), { schemaVersion: "neonei/special-domain-summary/v1", ...domain.summary });
+  }
   writeJson(join(outputDir, "validation", "report.json"), validation);
   return validation;
 }
@@ -925,7 +965,11 @@ function createSelfTestRawExport(root) {
   writeFileSync(join(root, "animated-atlas-0.webp"), "self-test-animated", "utf8");
   writeFileSync(join(root, "generated-static-atlas-0.webp"), "self-test-generated", "utf8");
   mkdirSync(join(root, "special"), { recursive: true });
-  writeJson(join(root, "special/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-index", domains: [{ domain: "gregtech", recipeCount: 0, index: "special/gregtech/index.json", recipes: "special/gregtech/recipes.jsonl" }] });
+  mkdirSync(join(root, "special/gregtech"), { recursive: true });
+  writeFileSync(join(root, "special/gregtech/recipes.jsonl"), `${JSON.stringify({ recipeId: "gt-test", family: "gregtech", machine: { machineId: "gregtech.assembler", displayName: "Assembler" } })}\n`, "utf8");
+  writeJson(join(root, "special/gregtech/summary.json"), { domain: "gregtech", recipeCount: 1, machineIds: [{ value: "gregtech.assembler", count: 1 }] });
+  writeJson(join(root, "special/gregtech/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-domain", domain: "gregtech", recipeCount: 1, recipes: "special/gregtech/recipes.jsonl", summary: "special/gregtech/summary.json" });
+  writeJson(join(root, "special/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-index", domains: [{ domain: "gregtech", recipeCount: 1, index: "special/gregtech/index.json", recipes: "special/gregtech/recipes.jsonl", summary: "special/gregtech/summary.json" }] });
   writeJson(join(root, "assets/textures/browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 2, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }, { itemId: "i~botania~manaResource~4", assetId: "nesqlpp:item/i~botania~manaResource~4", hasAnimatedAtlas: true, animatedAtlas: { atlasFile: "animated-atlas-0.webp", atlasWidth: 16, atlasHeight: 128, frameCount: 8, frameDurationMs: 100, frames: [[0, 0, 0, 16, 16], [1, 0, 16, 16, 16]], timeline: [[0, 100], [1, 100]] } }] });
 }
 let inputDir = inputArg ? resolve(inputArg) : null;
@@ -941,6 +985,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
+if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
