@@ -141,6 +141,117 @@ function validateRawManifest(inputDir, manifest) {
   return { warnings, missing, empty, unknownCapabilities, missingRecipeShards };
 }
 
+function normalizeAtlasFileRef(value) {
+  const normalized = `${value ?? ""}`.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  return normalized || null;
+}
+
+function resolveAtlasFileForValidation(inputDir, atlasFile) {
+  const normalized = normalizeAtlasFileRef(atlasFile);
+  if (!normalized) return null;
+  const candidates = [
+    join(inputDir, normalized),
+    join(inputDir, "..", normalized),
+  ];
+  return {
+    atlasFile: normalized,
+    exists: candidates.some((candidate) => existsSync(candidate)),
+  };
+}
+
+function buildAtlasAuthorityReport(inputDir, browserItems, browserAtlasItems, renderByAssetId) {
+  const byItemId = new Map();
+  const duplicates = [];
+  const duplicateSamples = [];
+  const atlasFiles = new Map();
+  const mismatchedAssetRefs = [];
+  const atlasEntriesWithoutDrawable = [];
+
+  for (const entry of browserAtlasItems) {
+    const itemId = `${entry?.itemId ?? ""}`.trim();
+    if (!itemId) continue;
+    const existing = byItemId.get(itemId);
+    if (existing) {
+      duplicates.push(itemId);
+      if (duplicateSamples.length < 50) {
+        duplicateSamples.push({
+          itemId,
+          firstAssetId: existing.assetId ?? null,
+          nextAssetId: entry.assetId ?? null,
+        });
+      }
+      continue;
+    }
+    byItemId.set(itemId, entry);
+
+    const files = [entry.staticAtlas?.atlasFile, entry.animatedAtlas?.atlasFile]
+      .map(normalizeAtlasFileRef)
+      .filter(Boolean);
+    if (files.length === 0) {
+      atlasEntriesWithoutDrawable.push(itemId);
+    }
+    for (const atlasFile of files) {
+      if (!atlasFiles.has(atlasFile)) atlasFiles.set(atlasFile, resolveAtlasFileForValidation(inputDir, atlasFile));
+    }
+  }
+
+  const missingBrowserAtlasItemIds = [];
+  const missingRenderAssetRefs = [];
+  const missingDrawableItemIds = [];
+
+  for (const item of browserItems) {
+    const itemId = `${item?.itemId ?? ""}`.trim();
+    if (!itemId) continue;
+    const atlasEntry = byItemId.get(itemId);
+    if (!atlasEntry) {
+      missingBrowserAtlasItemIds.push(itemId);
+      continue;
+    }
+    const hasDrawable = Boolean(atlasEntry.staticAtlas?.atlasFile || atlasEntry.animatedAtlas?.atlasFile);
+    if (!hasDrawable) {
+      missingDrawableItemIds.push(itemId);
+    }
+    const renderAssetRef = `${item.renderAssetRef ?? ""}`.trim();
+    if (renderAssetRef && !renderByAssetId.has(renderAssetRef)) {
+      missingRenderAssetRefs.push(renderAssetRef);
+    }
+    const atlasAssetId = `${atlasEntry.assetId ?? ""}`.trim();
+    if (renderAssetRef && atlasAssetId && renderAssetRef !== atlasAssetId) {
+      mismatchedAssetRefs.push({ itemId, renderAssetRef, atlasAssetId });
+    }
+  }
+
+  const referencedAtlasFiles = Array.from(atlasFiles.values()).filter(Boolean);
+  const missingAtlasFiles = referencedAtlasFiles
+    .filter((entry) => !entry.exists)
+    .map((entry) => entry.atlasFile);
+
+  const total = browserItems.length;
+  const drawable = total - missingBrowserAtlasItemIds.length - missingDrawableItemIds.length;
+  return {
+    totalBrowserItems: total,
+    indexedBrowserItems: total - missingBrowserAtlasItemIds.length,
+    drawableBrowserItems: drawable,
+    referencedAtlasFiles: referencedAtlasFiles.length,
+    presentAtlasFiles: referencedAtlasFiles.length - missingAtlasFiles.length,
+    duplicateItemIds: duplicates.length,
+    atlasEntriesWithoutDrawable: atlasEntriesWithoutDrawable.length,
+    missingDrawableItemIds: missingDrawableItemIds.length,
+    missingRenderAssetRefs: missingRenderAssetRefs.length,
+    mismatchedAssetRefs: mismatchedAssetRefs.length,
+    missingAtlasFiles: missingAtlasFiles.length,
+    coverageRatio: total > 0 ? Number((drawable / total).toFixed(6)) : 1,
+    samples: {
+      missingBrowserAtlasItemIds: missingBrowserAtlasItemIds.slice(0, 100),
+      missingDrawableItemIds: missingDrawableItemIds.slice(0, 100),
+      missingRenderAssetRefs: Array.from(new Set(missingRenderAssetRefs)).slice(0, 100),
+      mismatchedAssetRefs: mismatchedAssetRefs.slice(0, 50),
+      duplicateItemIds: duplicateSamples,
+      atlasEntriesWithoutDrawable: atlasEntriesWithoutDrawable.slice(0, 100),
+      missingAtlasFiles: missingAtlasFiles.slice(0, 100),
+    },
+  };
+}
 function writeJson(filePath, value) {
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -481,14 +592,8 @@ function compileRawExport(inputDir, outputDir) {
   }).sort((left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId));
 
   const browserAtlasItems = Array.isArray(browserAtlasIndex?.items) ? browserAtlasIndex.items : [];
-  const browserAtlasItemIds = new Set(
-    browserAtlasItems
-      .filter((entry) => entry?.itemId && (entry.staticAtlas?.atlasFile || entry.animatedAtlas?.atlasFile))
-      .map((entry) => entry.itemId),
-  );
-  const missingBrowserAtlasItemIds = browserItems
-    .map((item) => item.itemId)
-    .filter((itemId) => itemId && !browserAtlasItemIds.has(itemId));
+  const atlasAuthorityReport = buildAtlasAuthorityReport(inputDir, browserItems, browserAtlasItems, renderByAssetId);
+  const missingBrowserAtlasItemIds = atlasAuthorityReport.samples.missingBrowserAtlasItemIds;
   const staticBrowserAtlasItems = browserAtlasItems.filter((entry) => entry?.staticAtlas?.atlasFile).length;
   const animatedBrowserAtlasItems = browserAtlasItems.filter((entry) => entry?.animatedAtlas?.atlasFile).length;
 
@@ -552,17 +657,28 @@ function compileRawExport(inputDir, outputDir) {
       localizedName: items.filter((item) => item.itemId && !item.localizedName).length,
       renderAssetRef: items.filter((item) => item.itemId && !item.renderAssetRef).length,
       textureRows: Math.max(0, items.length - textures.length),
-      browserAtlasItems: missingBrowserAtlasItemIds.length,
+      browserAtlasItems: atlasAuthorityReport.totalBrowserItems - atlasAuthorityReport.indexedBrowserItems,
+      browserAtlasDrawableItems: atlasAuthorityReport.missingDrawableItemIds,
+      browserAtlasFiles: atlasAuthorityReport.missingAtlasFiles,
+      renderAssetRefs: atlasAuthorityReport.missingRenderAssetRefs,
+      atlasAssetRefs: atlasAuthorityReport.mismatchedAssetRefs,
+      browserAtlasDuplicateItemIds: atlasAuthorityReport.duplicateItemIds,
       animationTiming: missingAnimationTimingAssetIds.length,
     },
     samples: {
-      missingBrowserAtlasItemIds: missingBrowserAtlasItemIds.slice(0, 100),
+      missingBrowserAtlasItemIds: atlasAuthorityReport.samples.missingBrowserAtlasItemIds,
+      missingDrawableItemIds: atlasAuthorityReport.samples.missingDrawableItemIds,
+      missingRenderAssetRefs: atlasAuthorityReport.samples.missingRenderAssetRefs,
+      mismatchedAtlasAssetRefs: atlasAuthorityReport.samples.mismatchedAssetRefs,
+      duplicateBrowserAtlasItemIds: atlasAuthorityReport.samples.duplicateItemIds,
+      missingBrowserAtlasFiles: atlasAuthorityReport.samples.missingAtlasFiles,
       recipeCategorySplits: recipeCategorySplits.slice(0, 50),
       missingAnimationTimingAssetIds: missingAnimationTimingAssetIds.slice(0, 100),
     },
     coverage: {
-      browserAtlasRatio: browserItems.length > 0 ? Number(((browserItems.length - missingBrowserAtlasItemIds.length) / browserItems.length).toFixed(6)) : 1,
+      browserAtlasRatio: atlasAuthorityReport.coverageRatio,
     },
+    atlasAuthorityReport,
     warnings: [],
     elapsedMs: Date.now() - startedAt,
   };
@@ -571,7 +687,11 @@ function compileRawExport(inputDir, outputDir) {
   if (manifestValidation.empty.length > 0) validation.warnings.push(`Raw Export manifest declares empty core file(s): ${manifestValidation.empty.join(", ")}.`);
   if (items.length === 0) validation.warnings.push("items.jsonl is empty; compiler output is structural only.");
   if (recipes.length === 0) validation.warnings.push("recipes.jsonl is empty; recipe indexes cannot be complete.");
-  if (missingBrowserAtlasItemIds.length > 0) validation.warnings.push(`Browser atlas is missing drawable entries for ${missingBrowserAtlasItemIds.length} browser item(s).`);
+  if (atlasAuthorityReport.indexedBrowserItems < atlasAuthorityReport.totalBrowserItems) validation.warnings.push(`Browser atlas is missing indexed entries for ${atlasAuthorityReport.totalBrowserItems - atlasAuthorityReport.indexedBrowserItems} browser item(s).`);
+  if (atlasAuthorityReport.missingDrawableItemIds > 0) validation.warnings.push(`Browser atlas has ${atlasAuthorityReport.missingDrawableItemIds} indexed item(s) without drawable atlas files.`);
+  if (atlasAuthorityReport.missingAtlasFiles > 0) validation.warnings.push(`Browser atlas references ${atlasAuthorityReport.missingAtlasFiles} atlas file(s) that are not present beside the Raw Export.`);
+  if (atlasAuthorityReport.mismatchedAssetRefs > 0) validation.warnings.push(`Browser atlas has ${atlasAuthorityReport.mismatchedAssetRefs} item(s) whose atlas assetId differs from item renderAssetRef.`);
+  if (atlasAuthorityReport.duplicateItemIds > 0) validation.warnings.push(`Browser atlas contains ${atlasAuthorityReport.duplicateItemIds} duplicate itemId row(s).`);
   if (missingAnimationTimingAssetIds.length > 0) validation.warnings.push(`Animation timing metadata is missing for ${missingAnimationTimingAssetIds.length} animated asset(s).`);
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
 
@@ -655,6 +775,8 @@ function createSelfTestRawExport(root) {
   writeFileSync(join(root, "assets/animations/index.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
   writeFileSync(join(root, "assets/animations/native-sprites.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`, "utf8");
   writeFileSync(join(root, "assets/animations/rendered-gifs.jsonl"), "", "utf8");
+  writeFileSync(join(root, "static-atlas-0.webp"), "self-test-static", "utf8");
+  writeFileSync(join(root, "animated-atlas-0.webp"), "self-test-animated", "utf8");
   writeJson(join(root, "assets/textures/browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 2, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }, { itemId: "i~botania~manaResource~4", assetId: "nesqlpp:item/i~botania~manaResource~4", hasAnimatedAtlas: true, animatedAtlas: { atlasFile: "animated-atlas-0.webp", atlasWidth: 16, atlasHeight: 128, frameCount: 8, frameDurationMs: 100, frames: [[0, 0, 0, 16, 16], [1, 0, 16, 16, 16]], timeline: [[0, 100], [1, 100]] } }] });
 }
 let inputDir = inputArg ? resolve(inputArg) : null;
@@ -670,10 +792,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 2 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1)) {
+if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 2 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
-
-
-
-
