@@ -38,6 +38,55 @@ function readJsonl(filePath) {
     });
 }
 
+function readJson(filePath) {
+  if (!existsSync(filePath)) return null;
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function resolveRawFile(inputDir, manifest, logicalName, fallbackPath) {
+  const declared = manifest?.files?.[logicalName];
+  const relativePath = `${declared || fallbackPath || ""}`.trim();
+  return relativePath ? join(inputDir, relativePath) : null;
+}
+
+function readRawJsonl(inputDir, manifest, logicalName, fallbackPath) {
+  const declaredPath = resolveRawFile(inputDir, manifest, logicalName, fallbackPath);
+  if (declaredPath && existsSync(declaredPath)) {
+    return readJsonl(declaredPath);
+  }
+  if (fallbackPath) {
+    return readJsonl(join(inputDir, fallbackPath));
+  }
+  return [];
+}
+
+function readRawJson(inputDir, manifest, logicalName, fallbackPath) {
+  const declaredPath = resolveRawFile(inputDir, manifest, logicalName, fallbackPath);
+  if (declaredPath && existsSync(declaredPath)) {
+    return readJson(declaredPath);
+  }
+  if (fallbackPath) {
+    return readJson(join(inputDir, fallbackPath));
+  }
+  return null;
+}
+
+function readRawRecipes(inputDir, manifest) {
+  const direct = readRawJsonl(inputDir, manifest, "recipes", "recipes.jsonl");
+  if (direct.length > 0) {
+    return direct;
+  }
+  const index = readRawJson(inputDir, manifest, "recipeIndex", "facts/recipes/index.json");
+  const shards = Array.isArray(index?.shards) ? index.shards : [];
+  const recipes = [];
+  for (const shard of shards) {
+    const shardPath = `${shard?.path ?? ""}`.trim();
+    if (!shardPath) continue;
+    recipes.push(...readJsonl(join(inputDir, shardPath)));
+  }
+  return recipes;
+}
+
 function writeJson(filePath, value) {
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
@@ -293,18 +342,15 @@ function buildAnimationTable(searchItems, textures, animations, browserAtlasInde
 function compileRawExport(inputDir, outputDir) {
   const startedAt = Date.now();
   const manifestPath = join(inputDir, "manifest.json");
-  const manifest = existsSync(manifestPath) ? JSON.parse(readFileSync(manifestPath, "utf8")) : null;
-  const items = readJsonl(join(inputDir, "items.jsonl"));
-  const fluids = readJsonl(join(inputDir, "fluids.jsonl"));
-  const recipes = readJsonl(join(inputDir, "recipes.jsonl"));
-  const groups = readJsonl(join(inputDir, "groups.jsonl"));
-  const neiOrder = readJsonl(join(inputDir, "nei_order.jsonl"));
-  const textures = readJsonl(join(inputDir, "textures.jsonl"));
-  const animations = readJsonl(join(inputDir, "animations.jsonl"));
-  const browserAtlasIndexPath = join(inputDir, "browser_atlas_index.json");
-  const browserAtlasIndex = existsSync(browserAtlasIndexPath)
-    ? JSON.parse(readFileSync(browserAtlasIndexPath, "utf8"))
-    : null;
+  const manifest = readJson(manifestPath);
+  const items = readRawJsonl(inputDir, manifest, "items", "items.jsonl");
+  const fluids = readRawJsonl(inputDir, manifest, "fluids", "fluids.jsonl");
+  const recipes = readRawRecipes(inputDir, manifest);
+  const groups = readRawJsonl(inputDir, manifest, "groups", "groups.jsonl");
+  const neiOrder = readRawJsonl(inputDir, manifest, "neiOrder", "nei_order.jsonl");
+  const textures = readRawJsonl(inputDir, manifest, "textures", "textures.jsonl");
+  const animations = readRawJsonl(inputDir, manifest, "animations", "animations.jsonl");
+  const browserAtlasIndex = readRawJson(inputDir, manifest, "browserAtlasIndex", "browser_atlas_index.json");
 
   const renderByAssetId = new Map();
   for (const texture of textures) {
@@ -473,28 +519,53 @@ function compileRawExport(inputDir, outputDir) {
 function createSelfTestRawExport(root) {
   rmSync(root, { recursive: true, force: true });
   mkdirSync(root, { recursive: true });
-  writeJson(join(root, "manifest.json"), { schemaVersion: "nesqlpp/raw-export/v3-alpha1", repositoryName: "self-test" });
-  writeFileSync(join(root, "items.jsonl"), [
+  for (const relativeDir of [
+    "facts",
+    "facts/recipes",
+    "facts/nei",
+    "assets/textures",
+    "assets/animations",
+  ]) {
+    mkdirSync(join(root, relativeDir), { recursive: true });
+  }
+  writeJson(join(root, "manifest.json"), {
+    schemaVersion: "nesqlpp/raw-export/alpha1",
+    repositoryName: "self-test",
+    capabilities: ["facts", "assets", "validation"],
+    files: {
+      items: "facts/items.jsonl",
+      fluids: "facts/fluids.jsonl",
+      recipes: "facts/recipes/all.jsonl",
+      recipeIndex: "facts/recipes/index.json",
+      groups: "facts/nei/groups.jsonl",
+      neiOrder: "facts/nei/order.jsonl",
+      textures: "assets/textures/index.jsonl",
+      animations: "assets/animations/index.jsonl",
+      browserAtlasIndex: "assets/textures/browser_atlas_index.json",
+    },
+  });
+  writeFileSync(join(root, "facts/items.jsonl"), [
     JSON.stringify({ itemId: "i~minecraft~iron_ingot~0", modId: "minecraft", internalName: "iron_ingot", localizedName: "Iron Ingot", renderAssetRef: "nesqlpp:item/i~minecraft~iron_ingot~0", searchTerms: "iron ingot" }),
     JSON.stringify({ itemId: "i~botania~manaResource~4", modId: "botania", internalName: "manaResource", localizedName: "Terrasteel Ingot", renderAssetRef: "nesqlpp:item/i~botania~manaResource~4", searchTerms: "terrasteel" }),
   ].join("\n") + "\n", "utf8");
-  writeFileSync(join(root, "fluids.jsonl"), `${JSON.stringify({ fluidId: "f~gregtech~molten.iron", localizedName: "Molten Iron" })}\n`, "utf8");
-  writeFileSync(join(root, "recipes.jsonl"), `${JSON.stringify({ recipeId: "r1", family: "minecraft", machine: { machineId: "furnace", displayName: "Furnace" }, inputs: [{ itemId: "i~minecraft~iron_ore~0" }], outputs: [{ itemId: "i~minecraft~iron_ingot~0" }] })}\n`, "utf8");
-  writeFileSync(join(root, "groups.jsonl"), `${JSON.stringify({ groupKey: "nei:iron", groupLabel: "Iron", groupSize: 1, representativeItemId: "i~minecraft~iron_ingot~0", memberItemIds: ["i~minecraft~iron_ingot~0"] })}\n`, "utf8");
-  writeFileSync(join(root, "nei_order.jsonl"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n`, "utf8");
-  writeFileSync(join(root, "textures.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
-  writeFileSync(join(root, "animations.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
-  writeJson(join(root, "browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 2, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }, { itemId: "i~botania~manaResource~4", assetId: "nesqlpp:item/i~botania~manaResource~4", hasAnimatedAtlas: true, animatedAtlas: { atlasFile: "animated-atlas-0.webp", atlasWidth: 16, atlasHeight: 128, frameCount: 8, frameDurationMs: 100, frames: [[0, 0, 0, 16, 16], [1, 0, 16, 16, 16]], timeline: [[0, 100], [1, 100]] } }] });
+  writeFileSync(join(root, "facts/fluids.jsonl"), `${JSON.stringify({ fluidId: "f~gregtech~molten.iron", localizedName: "Molten Iron" })}\n`, "utf8");
+  writeFileSync(join(root, "facts/recipes/all.jsonl"), `${JSON.stringify({ recipeId: "r1", family: "minecraft", machine: { machineId: "furnace", displayName: "Furnace" }, inputs: [{ itemId: "i~minecraft~iron_ore~0" }], outputs: [{ itemId: "i~minecraft~iron_ingot~0" }] })}\n`, "utf8");
+  writeJson(join(root, "facts/recipes/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/recipe-index", shards: [{ handlerId: "all", path: "facts/recipes/all.jsonl", recipeCount: 1 }] });
+  writeFileSync(join(root, "facts/nei/groups.jsonl"), `${JSON.stringify({ groupKey: "nei:iron", groupLabel: "Iron", groupSize: 1, representativeItemId: "i~minecraft~iron_ingot~0", memberItemIds: ["i~minecraft~iron_ingot~0"] })}\n`, "utf8");
+  writeFileSync(join(root, "facts/nei/order.jsonl"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n`, "utf8");
+  writeFileSync(join(root, "assets/textures/index.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
+  writeFileSync(join(root, "assets/animations/index.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
+  writeJson(join(root, "assets/textures/browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 2, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }, { itemId: "i~botania~manaResource~4", assetId: "nesqlpp:item/i~botania~manaResource~4", hasAnimatedAtlas: true, animatedAtlas: { atlasFile: "animated-atlas-0.webp", atlasWidth: 16, atlasHeight: 128, frameCount: 8, frameDurationMs: 100, frames: [[0, 0, 0, 16, 16], [1, 0, 16, 16, 16]], timeline: [[0, 100], [1, 100]] } }] });
 }
 let inputDir = inputArg ? resolve(inputArg) : null;
 let outputDir = outputArg ? resolve(outputArg) : null;
 if (selfTest) {
-  inputDir = join(repoRoot, ".tmp-runtime", "raw-export-v3-self-test");
-  outputDir = join(repoRoot, ".tmp-runtime", "dist-data-v3-self-test");
+  inputDir = join(repoRoot, ".tmp-runtime", "raw-export-self-test");
+  outputDir = join(repoRoot, ".tmp-runtime", "dist-data-self-test");
   createSelfTestRawExport(inputDir);
 }
 if (!inputDir || !outputDir) {
-  console.error("Usage: node scripts/compile-raw-export-v3.mjs --input <raw-export> --output <dist-data> [--self-test]");
+  console.error("Usage: node scripts/compile-raw-export.mjs --input <raw-export> --output <dist-data> [--self-test]");
   process.exit(2);
 }
 const report = compileRawExport(inputDir, outputDir);
