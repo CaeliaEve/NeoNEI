@@ -146,6 +146,77 @@ function buildCanonicalCountMismatches(canonicalRepository, canonicalBrowserLayo
   return mismatches;
 }
 
+function buildMigrationReadiness(validation, exportReport, canonicalRepository, specialDomains, atlasAuthorityReport) {
+  const gate = (name, ok, summary, details = {}) => ({
+    name,
+    status: ok ? "ready" : "blocked",
+    summary,
+    ...details,
+  });
+  const hasCanonical = Boolean(canonicalRepository);
+  const specialPayloadMismatches = stableNumber(validation.counts.specialPayloadMismatches, 0);
+  const rawExportMismatches = stableNumber(validation.counts.rawExportCountMismatches, 0);
+  const canonicalMismatches = stableNumber(validation.counts.canonicalCountMismatches, 0);
+  const atlasMissing =
+    stableNumber(validation.missing.browserAtlasItems, 0) +
+    stableNumber(validation.missing.browserAtlasDrawableItems, 0) +
+    stableNumber(validation.missing.browserAtlasFiles, 0) +
+    stableNumber(validation.missing.renderAssetRefs, 0) +
+    stableNumber(validation.missing.atlasAssetRefs, 0) +
+    stableNumber(validation.missing.browserAtlasDuplicateItemIds, 0);
+  const coreMissing =
+    stableNumber(validation.missing.itemId, 0) +
+    stableNumber(validation.missing.renderAssetRef, 0) +
+    stableNumber(validation.missing.textureRows, 0);
+  const gates = [
+    gate(
+      "raw-report-parity",
+      Boolean(exportReport) && rawExportMismatches === 0,
+      rawExportMismatches === 0 ? "Compiler counts match exporter report." : `${rawExportMismatches} exporter/compiler count area(s) differ.`,
+      { mismatchCount: rawExportMismatches },
+    ),
+    gate(
+      "canonical-parity",
+      hasCanonical && canonicalMismatches === 0,
+      hasCanonical
+        ? canonicalMismatches === 0
+          ? "Raw Export output matches legacy canonical counts."
+          : `${canonicalMismatches} canonical count area(s) differ.`
+        : "Legacy canonical repository was not available for parity comparison.",
+      { mismatchCount: canonicalMismatches, canonicalAvailable: hasCanonical },
+    ),
+    gate(
+      "atlas-authority",
+      atlasMissing === 0 && atlasAuthorityReport.coverageRatio === 1,
+      atlasMissing === 0 ? "Browser atlas is complete and authoritative." : `${atlasMissing} atlas authority issue(s) remain.`,
+      { issueCount: atlasMissing, coverageRatio: atlasAuthorityReport.coverageRatio },
+    ),
+    gate(
+      "special-payloads",
+      specialPayloadMismatches === 0,
+      specialPayloadMismatches === 0 ? "Special-domain recipe rows and payload rows are aligned." : `${specialPayloadMismatches} special domain(s) have payload drift.`,
+      { mismatchCount: specialPayloadMismatches, domainCount: specialDomains.length },
+    ),
+    gate(
+      "core-fields",
+      coreMissing === 0,
+      coreMissing === 0 ? "Core item fields and texture rows are complete." : `${coreMissing} core field/texture issue(s) remain.`,
+      { issueCount: coreMissing },
+    ),
+  ];
+  const blocked = gates.filter((entry) => entry.status !== "ready");
+  return {
+    schemaVersion: "neonei/raw-export-migration-readiness/v1",
+    status: blocked.length === 0 ? "ready" : "blocked",
+    summary:
+      blocked.length === 0
+        ? "Raw Export is ready to be treated as the primary compiler source for covered data."
+        : `Raw Export is blocked by ${blocked.length} readiness gate(s).`,
+    gates,
+    blockedGates: blocked.map((entry) => entry.name),
+  };
+}
+
 function fileSizeIfPresent(filePath) {
   try {
     return filePath && existsSync(filePath) ? statSync(filePath).size : -1;
@@ -973,6 +1044,7 @@ function compileRawExport(inputDir, outputDir) {
       validation.warnings.push(`Special domain ${domain.domain} declares ${domain.declaredPayloadCount} payload row(s) but compiler read ${domain.payloads.length}.`);
     }
   }
+  validation.migrationReadiness = buildMigrationReadiness(validation, exportReport, canonicalRepository, specialDomains, atlasAuthorityReport);
 
   writeJson(outputDir + "/manifest.json", {
     schemaVersion: "neonei/dist-data/v3-alpha1",
@@ -992,6 +1064,7 @@ function compileRawExport(inputDir, outputDir) {
       entityModels: "models/entities/index.json",
       specialIndex: "special/index.json",
       validationReport: "validation/report.json",
+      migrationReadiness: "validation/migration-readiness.json",
     },
   });
   writeJsonCompact(join(outputDir, "search", "all.json"), { schemaVersion: "neonei/search-v3-json/v1", items: searchItems });
@@ -1022,6 +1095,7 @@ function compileRawExport(inputDir, outputDir) {
     writeJsonCompact(join(outputDir, domain.outputSummary), { schemaVersion: "neonei/special-domain-summary/v1", ...domain.summary });
   }
   writeJson(join(outputDir, "validation", "report.json"), validation);
+  writeJson(join(outputDir, "validation", "migration-readiness.json"), validation.migrationReadiness);
   return validation;
 }
 
@@ -1117,6 +1191,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.canonicalCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
+if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.canonicalCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1 || report.migrationReadiness?.status !== "ready")) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
