@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -72,19 +72,73 @@ function readRawJson(inputDir, manifest, logicalName, fallbackPath) {
 }
 
 function readRawRecipes(inputDir, manifest) {
-  const direct = readRawJsonl(inputDir, manifest, "recipes", "recipes.jsonl");
-  if (direct.length > 0) {
-    return direct;
-  }
   const index = readRawJson(inputDir, manifest, "recipeIndex", "facts/recipes/index.json");
   const shards = Array.isArray(index?.shards) ? index.shards : [];
   const recipes = [];
   for (const shard of shards) {
     const shardPath = `${shard?.path ?? ""}`.trim();
     if (!shardPath) continue;
-    recipes.push(...readJsonl(join(inputDir, shardPath)));
+    const shardFile = join(inputDir, shardPath);
+    if (!existsSync(shardFile)) continue;
+    recipes.push(...readJsonl(shardFile));
   }
-  return recipes;
+  if (recipes.length > 0 || shards.length > 0) {
+    return recipes;
+  }
+  return readRawJsonl(inputDir, manifest, "recipes", "recipes.jsonl");
+}
+
+function fileSizeIfPresent(filePath) {
+  try {
+    return filePath && existsSync(filePath) ? statSync(filePath).size : -1;
+  } catch {
+    return -1;
+  }
+}
+
+function validateRawManifest(inputDir, manifest) {
+  const knownCapabilities = new Set(["facts", "assets", "models", "special", "validation"]);
+  const warnings = [];
+  const missing = [];
+  const empty = [];
+  const unknownCapabilities = [];
+  if (!manifest) {
+    warnings.push("raw-export manifest.json is missing; compiler is using legacy file fallbacks.");
+    return { warnings, missing, empty, unknownCapabilities };
+  }
+
+  for (const capability of manifest.capabilities ?? []) {
+    if (!knownCapabilities.has(capability)) unknownCapabilities.push(capability);
+  }
+  if (unknownCapabilities.length > 0) {
+    warnings.push(`Raw Export manifest declares unknown capabilities: ${unknownCapabilities.join(", ")}.`);
+  }
+
+  const requiredFiles = ["items", "recipes", "recipeIndex", "groups", "neiOrder", "textures", "browserAtlasIndex"];
+  for (const logicalName of requiredFiles) {
+    const filePath = resolveRawFile(inputDir, manifest, logicalName, null);
+    if (!filePath || !existsSync(filePath)) {
+      missing.push(logicalName);
+      continue;
+    }
+    if (fileSizeIfPresent(filePath) === 0 && logicalName !== "groups" && logicalName !== "neiOrder") {
+      empty.push(logicalName);
+    }
+  }
+
+  const index = readRawJson(inputDir, manifest, "recipeIndex", "facts/recipes/index.json");
+  const shards = Array.isArray(index?.shards) ? index.shards : [];
+  const missingRecipeShards = [];
+  for (const shard of shards) {
+    const shardPath = `${shard?.path ?? ""}`.trim();
+    if (!shardPath || !existsSync(join(inputDir, shardPath))) {
+      missingRecipeShards.push(shard?.handlerId ?? shardPath ?? "unknown");
+    }
+  }
+  if (missingRecipeShards.length > 0) {
+    warnings.push(`Recipe index references ${missingRecipeShards.length} missing shard file(s).`);
+  }
+  return { warnings, missing, empty, unknownCapabilities, missingRecipeShards };
 }
 
 function writeJson(filePath, value) {
@@ -171,26 +225,25 @@ function classifyRecipeFamilyKey(recipe, fallback) {
     recipe.additionalData?.handlerName,
   ].filter(Boolean).join(" ").toLowerCase();
 
-  if ((descriptor.includes("industrial") && descriptor.includes("slaughter")) || includesAny(descriptor, ["extreme entity crusher", "infernal drops", "mobsinfo", "kubatech", "工业屠宰场"])) return "industrial_slaughterhouse";
-  if (includesAny(descriptor, ["terra plate", "terraplate", "泰拉凝聚板"])) return "botania_terra_plate";
-  if (includesAny(descriptor, ["rune altar", "runic altar", "符文祭坛"])) return "botania_rune_altar";
-  if (includesAny(descriptor, ["mana pool", "魔力池"])) return "botania_mana_pool";
-  if (includesAny(descriptor, ["pure daisy", "白雏菊"])) return "botania_pure_daisy";
-  if (includesAny(descriptor, ["elven trade", "alfheim", "精灵交易"])) return "botania_elven_trade";
-  if ((descriptor.includes("thaumcraft") && descriptor.includes("infusion")) || includesAny(descriptor, ["arcane infusion", "奥数注魔"])) return "thaumcraft_infusion";
-  if ((descriptor.includes("thaumcraft") && descriptor.includes("crucible")) || includesAny(descriptor, ["crucible", "坩埚"])) return "thaumcraft_crucible";
-  if (includesAny(descriptor, ["arcane work", "arcane crafting", "奥数合成"])) return "thaumcraft_arcane";
-  if (includesAny(descriptor, ["aspect combination", "aspects from items", "要素组合", "物品中的要素"])) return "thaumcraft_aspect";
-  if (includesAny(descriptor, ["research station", "研究站"])) return "gt_research_station";
-  if (includesAny(descriptor, ["assembly line", "装配线"])) return "gt_assembly_line";
-  if (includesAny(descriptor, ["chemical reactor", "large chemical reactor", "化学反应釜", "大型化学反应釜"])) return "gt_chemical_reactor";
-  if (includesAny(descriptor, ["blood altar", "血之祭坛", "血祭坛"])) return "blood_magic_altar";
-  if (includesAny(descriptor, ["alchemy array", "alchemy table", "炼金阵"])) return "blood_alchemy_table";
-  if (includesAny(descriptor, ["binding ritual", "绑定仪式"])) return "blood_binding_ritual";
+  if ((descriptor.includes("industrial") && descriptor.includes("slaughter")) || includesAny(descriptor, ["extreme entity crusher", "infernal drops", "mobsinfo", "kubatech"])) return "industrial_slaughterhouse";
+  if (includesAny(descriptor, ["terra plate", "terraplate"])) return "botania_terra_plate";
+  if (includesAny(descriptor, ["rune altar", "runic altar"])) return "botania_rune_altar";
+  if (includesAny(descriptor, ["mana pool"])) return "botania_mana_pool";
+  if (includesAny(descriptor, ["pure daisy"])) return "botania_pure_daisy";
+  if (includesAny(descriptor, ["elven trade", "alfheim"])) return "botania_elven_trade";
+  if ((descriptor.includes("thaumcraft") && descriptor.includes("infusion")) || includesAny(descriptor, ["arcane infusion"])) return "thaumcraft_infusion";
+  if ((descriptor.includes("thaumcraft") && descriptor.includes("crucible")) || includesAny(descriptor, ["crucible"])) return "thaumcraft_crucible";
+  if (includesAny(descriptor, ["arcane work", "arcane crafting"])) return "thaumcraft_arcane";
+  if (includesAny(descriptor, ["aspect combination", "aspects from items"])) return "thaumcraft_aspect";
+  if (includesAny(descriptor, ["research station"])) return "gt_research_station";
+  if (includesAny(descriptor, ["assembly line"])) return "gt_assembly_line";
+  if (includesAny(descriptor, ["chemical reactor", "large chemical reactor"])) return "gt_chemical_reactor";
+  if (includesAny(descriptor, ["blood altar"])) return "blood_magic_altar";
+  if (includesAny(descriptor, ["alchemy array", "alchemy table"])) return "blood_alchemy_table";
+  if (includesAny(descriptor, ["binding ritual"])) return "blood_binding_ritual";
 
   return fallback;
-}
-function buildRecipeUiPayload(recipe) {
+}function buildRecipeUiPayload(recipe) {
   const recipeId = `${recipe.recipeId ?? recipe.id ?? recipe.key ?? ""}`.trim();
   if (!recipeId) return null;
   const inputItemIds = new Set();
@@ -343,6 +396,7 @@ function compileRawExport(inputDir, outputDir) {
   const startedAt = Date.now();
   const manifestPath = join(inputDir, "manifest.json");
   const manifest = readJson(manifestPath);
+  const manifestValidation = validateRawManifest(inputDir, manifest);
   const items = readRawJsonl(inputDir, manifest, "items", "items.jsonl");
   const fluids = readRawJsonl(inputDir, manifest, "fluids", "fluids.jsonl");
   const recipes = readRawRecipes(inputDir, manifest);
@@ -457,6 +511,7 @@ function compileRawExport(inputDir, outputDir) {
       recipeUiPayloads: recipeUiPayloads.length,
       recipeCategorySplits: recipeCategorySplits.length,
     },
+    manifestValidation,
     missing: {
       itemId: items.filter((item) => !item.itemId).length,
       localizedName: items.filter((item) => item.itemId && !item.localizedName).length,
@@ -474,6 +529,9 @@ function compileRawExport(inputDir, outputDir) {
     warnings: [],
     elapsedMs: Date.now() - startedAt,
   };
+  validation.warnings.push(...manifestValidation.warnings);
+  if (manifestValidation.missing.length > 0) validation.warnings.push(`Raw Export manifest is missing declared core file(s): ${manifestValidation.missing.join(", ")}.`);
+  if (manifestValidation.empty.length > 0) validation.warnings.push(`Raw Export manifest declares empty core file(s): ${manifestValidation.empty.join(", ")}.`);
   if (items.length === 0) validation.warnings.push("items.jsonl is empty; compiler output is structural only.");
   if (recipes.length === 0) validation.warnings.push("recipes.jsonl is empty; recipe indexes cannot be complete.");
   if (missingBrowserAtlasItemIds.length > 0) validation.warnings.push(`Browser atlas is missing drawable entries for ${missingBrowserAtlasItemIds.length} browser item(s).`);
@@ -573,3 +631,7 @@ console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.m
 if (selfTest && (report.counts.items !== 2 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 2 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
+
+
+
+
