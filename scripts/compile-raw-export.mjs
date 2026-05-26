@@ -112,20 +112,35 @@ function buildRawExportCountMismatches(exportReport, actualCounts) {
   return mismatches;
 }
 
-function buildCanonicalCountMismatches(canonicalRepository, actualCounts) {
-  if (!canonicalRepository) return [];
+function readCanonicalSibling(inputDir, manifest, siblingFileName) {
+  const repositoryPath = resolveRawFile(inputDir, manifest, "canonicalRepository", null);
+  if (!repositoryPath) return null;
+  return readJson(join(dirname(repositoryPath), siblingFileName));
+}
+
+function buildCanonicalCountMismatches(canonicalRepository, canonicalBrowserLayout, canonicalRenderAssets, actualCounts) {
   const pairs = [
-    ["items", canonicalRepository.items, "items"],
-    ["fluids", canonicalRepository.fluids, "fluids"],
-    ["recipes", canonicalRepository.recipes, "recipes"],
+    ["items", canonicalRepository?.items, "items", "canonicalRepository"],
+    ["fluids", canonicalRepository?.fluids, "fluids", "canonicalRepository"],
+    ["recipes", canonicalRepository?.recipes, "recipes", "canonicalRepository"],
+    ["groups", canonicalBrowserLayout?.groups, "groups", "canonicalBrowserLayout"],
+    ["neiOrderEntries", canonicalBrowserLayout?.defaultEntries, "neiOrderEntries", "canonicalBrowserLayout"],
+    ["textures", canonicalRenderAssets?.assets, "textures", "canonicalRenderAssets"],
   ];
   const mismatches = [];
-  for (const [label, canonicalRows, actualKey] of pairs) {
+  for (const [label, canonicalRows, actualKey, source] of pairs) {
     if (!Array.isArray(canonicalRows)) continue;
     const expected = canonicalRows.length;
     const actual = stableNumber(actualCounts[actualKey], 0);
     if (expected !== actual) {
-      mismatches.push({ label, expected, actual, source: "canonicalRepository" });
+      mismatches.push({ label, expected, actual, source });
+    }
+  }
+  if (Array.isArray(canonicalRenderAssets?.assets)) {
+    const expected = canonicalRenderAssets.assets.filter((asset) => isAnimatedResource(asset, null)).length;
+    const actual = stableNumber(actualCounts.animations, 0);
+    if (expected !== actual) {
+      mismatches.push({ label: "animations", expected, actual, source: "canonicalRenderAssets" });
     }
   }
   return mismatches;
@@ -751,6 +766,8 @@ function compileRawExport(inputDir, outputDir) {
   const manifestValidation = validateRawManifest(inputDir, manifest);
   const exportReport = readRawJson(inputDir, manifest, "exportReport", "validation/export_report.json");
   const canonicalRepository = readRawJson(inputDir, manifest, "canonicalRepository", null);
+  const canonicalBrowserLayout = readCanonicalSibling(inputDir, manifest, "browser-layout-index.json");
+  const canonicalRenderAssets = readCanonicalSibling(inputDir, manifest, "render-assets.json");
   const items = readRawJsonl(inputDir, manifest, "items", "items.jsonl");
   const fluids = readRawJsonl(inputDir, manifest, "fluids", "fluids.jsonl");
   const recipes = readRawRecipes(inputDir, manifest);
@@ -858,10 +875,14 @@ function compileRawExport(inputDir, outputDir) {
     animations: animations.length,
     entities: entities.length,
   });
-  const canonicalCountMismatches = buildCanonicalCountMismatches(canonicalRepository, {
+  const canonicalCountMismatches = buildCanonicalCountMismatches(canonicalRepository, canonicalBrowserLayout, canonicalRenderAssets, {
     items: items.length,
     fluids: fluids.length,
     recipes: recipes.length,
+    groups: groups.length,
+    neiOrderEntries: neiOrder.length,
+    textures: textures.length,
+    animations: animations.length,
   });
   const validation = {
     schemaVersion: "neonei/compiler-validation/v3-alpha1",
@@ -1059,6 +1080,17 @@ function createSelfTestRawExport(root) {
     items: [{}, {}, {}],
     fluids: [{}],
     recipes: [{}],
+  });
+  writeJson(join(root, "..", "canonical", "browser-layout-index.json"), {
+    groups: [{ groupKey: "nei:iron" }],
+    defaultEntries: [{}, {}, {}],
+  });
+  writeJson(join(root, "..", "canonical", "render-assets.json"), {
+    assets: [
+      { assetId: "nesqlpp:item/i~minecraft~iron_ingot~0" },
+      { assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8 },
+      { assetId: "nesqlpp:item/i~minecraft~gold_ingot~0" },
+    ],
   });
   writeFileSync(join(root, "static-atlas-0.webp"), "self-test-static", "utf8");
   writeFileSync(join(root, "animated-atlas-0.webp"), "self-test-animated", "utf8");
