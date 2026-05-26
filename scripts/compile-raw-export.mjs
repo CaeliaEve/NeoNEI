@@ -674,9 +674,11 @@ function readSpecialDomains(inputDir, specialIndex) {
   for (const domain of specialIndex?.domains ?? []) {
     const domainId = sanitizePathSegment(domain?.domain);
     const recipesPath = `${domain?.recipes ?? ""}`.trim();
+    const payloadsPath = `${domain?.payloads ?? ""}`.trim();
     const indexPath = `${domain?.index ?? ""}`.trim();
     const summaryPath = `${domain?.summary ?? ""}`.trim();
     const recipes = recipesPath ? readJsonl(join(inputDir, recipesPath)) : [];
+    const payloads = payloadsPath ? readJsonl(join(inputDir, payloadsPath)) : [];
     const index = indexPath ? readJson(join(inputDir, indexPath)) : null;
     const summary = summaryPath ? readJson(join(inputDir, summaryPath)) : (domain?.stats ?? index?.stats ?? null);
     domains.push({
@@ -684,12 +686,15 @@ function readSpecialDomains(inputDir, specialIndex) {
       recipeCount: recipes.length,
       declaredRecipeCount: stableNumber(domain?.recipeCount ?? index?.recipeCount, recipes.length),
       recipesPath,
+      payloadsPath,
       indexPath,
       summaryPath,
       outputRecipes: `special/${domainId}/recipes.json`,
+      outputPayloads: `special/${domainId}/payloads.json`,
       outputSummary: `special/${domainId}/summary.json`,
       summary: summary ?? { domain: domainId, recipeCount: recipes.length },
       recipes,
+      payloads,
     });
   }
   return domains;
@@ -819,6 +824,7 @@ function compileRawExport(inputDir, outputDir) {
       browserAtlasRepairedFromResourceIndex: stableNumber(generatedBrowserAtlasIndex?.repairedFromResourceIndex, 0),
       specialDomains: specialDomains.length,
       specialRecipes: specialDomains.reduce((sum, domain) => sum + domain.recipeCount, 0),
+      specialPayloads: specialDomains.reduce((sum, domain) => sum + domain.payloads.length, 0),
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
@@ -905,11 +911,12 @@ function compileRawExport(inputDir, outputDir) {
   const distSpecialIndex = {
     schemaVersion: "neonei/special-index/v1",
     sourceSchemaVersion: specialIndex?.schemaVersion ?? null,
-    domains: specialDomains.map(({ recipes, summary, ...domain }) => domain),
+    domains: specialDomains.map(({ recipes, payloads, summary, ...domain }) => domain),
   };
   writeJsonCompact(join(outputDir, "special", "index.json"), distSpecialIndex);
   for (const domain of specialDomains) {
     writeJsonCompact(join(outputDir, domain.outputRecipes), { schemaVersion: "neonei/special-domain-recipes/v1", domain: domain.domain, recipes: domain.recipes });
+    writeJsonCompact(join(outputDir, domain.outputPayloads), { schemaVersion: "neonei/special-domain-payloads/v1", domain: domain.domain, payloads: domain.payloads });
     writeJsonCompact(join(outputDir, domain.outputSummary), { schemaVersion: "neonei/special-domain-summary/v1", ...domain.summary });
   }
   writeJson(join(outputDir, "validation", "report.json"), validation);
@@ -967,9 +974,10 @@ function createSelfTestRawExport(root) {
   mkdirSync(join(root, "special"), { recursive: true });
   mkdirSync(join(root, "special/gregtech"), { recursive: true });
   writeFileSync(join(root, "special/gregtech/recipes.jsonl"), `${JSON.stringify({ recipeId: "gt-test", family: "gregtech", machine: { machineId: "gregtech.assembler", displayName: "Assembler" } })}\n`, "utf8");
+  writeFileSync(join(root, "special/gregtech/payloads.jsonl"), `${JSON.stringify({ domain: "gregtech", recipeId: "gt-test", machineId: "gregtech.assembler", facts: { duration: 20 } })}\n`, "utf8");
   writeJson(join(root, "special/gregtech/summary.json"), { domain: "gregtech", recipeCount: 1, machineIds: [{ value: "gregtech.assembler", count: 1 }] });
-  writeJson(join(root, "special/gregtech/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-domain", domain: "gregtech", recipeCount: 1, recipes: "special/gregtech/recipes.jsonl", summary: "special/gregtech/summary.json" });
-  writeJson(join(root, "special/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-index", domains: [{ domain: "gregtech", recipeCount: 1, index: "special/gregtech/index.json", recipes: "special/gregtech/recipes.jsonl", summary: "special/gregtech/summary.json" }] });
+  writeJson(join(root, "special/gregtech/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-domain", domain: "gregtech", recipeCount: 1, recipes: "special/gregtech/recipes.jsonl", payloads: "special/gregtech/payloads.jsonl", summary: "special/gregtech/summary.json" });
+  writeJson(join(root, "special/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-index", domains: [{ domain: "gregtech", recipeCount: 1, index: "special/gregtech/index.json", recipes: "special/gregtech/recipes.jsonl", payloads: "special/gregtech/payloads.jsonl", summary: "special/gregtech/summary.json" }] });
   writeJson(join(root, "assets/textures/browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 2, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }, { itemId: "i~botania~manaResource~4", assetId: "nesqlpp:item/i~botania~manaResource~4", hasAnimatedAtlas: true, animatedAtlas: { atlasFile: "animated-atlas-0.webp", atlasWidth: 16, atlasHeight: 128, frameCount: 8, frameDurationMs: 100, frames: [[0, 0, 0, 16, 16], [1, 0, 16, 16, 16]], timeline: [[0, 100], [1, 100]] } }] });
 }
 let inputDir = inputArg ? resolve(inputArg) : null;
@@ -985,6 +993,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
+if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
