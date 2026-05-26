@@ -88,6 +88,30 @@ function readRawRecipes(inputDir, manifest) {
   return readRawJsonl(inputDir, manifest, "recipes", "recipes.jsonl");
 }
 
+function buildRawExportCountMismatches(exportReport, actualCounts) {
+  const reported = exportReport?.counts ?? {};
+  const pairs = [
+    ["items", "rawItems", "items"],
+    ["fluids", "rawFluids", "fluids"],
+    ["recipes", "rawRecipes", "recipes"],
+    ["groups", "rawGroups", "groups"],
+    ["neiOrderEntries", "rawNeiOrderEntries", "neiOrderEntries"],
+    ["textures", "rawTextures", "textures"],
+    ["animations", "rawAnimations", "animations"],
+    ["entities", "rawEntities", "entities"],
+  ];
+  const mismatches = [];
+  for (const [label, reportKey, actualKey] of pairs) {
+    if (reported[reportKey] === undefined || reported[reportKey] === null) continue;
+    const expected = stableNumber(reported[reportKey], 0);
+    const actual = stableNumber(actualCounts[actualKey], 0);
+    if (expected !== actual) {
+      mismatches.push({ label, expected, actual, reportKey });
+    }
+  }
+  return mismatches;
+}
+
 function fileSizeIfPresent(filePath) {
   try {
     return filePath && existsSync(filePath) ? statSync(filePath).size : -1;
@@ -706,6 +730,7 @@ function compileRawExport(inputDir, outputDir) {
   const manifestPath = join(inputDir, "manifest.json");
   const manifest = readJson(manifestPath);
   const manifestValidation = validateRawManifest(inputDir, manifest);
+  const exportReport = readRawJson(inputDir, manifest, "exportReport", "validation/export_report.json");
   const items = readRawJsonl(inputDir, manifest, "items", "items.jsonl");
   const fluids = readRawJsonl(inputDir, manifest, "fluids", "fluids.jsonl");
   const recipes = readRawRecipes(inputDir, manifest);
@@ -803,6 +828,16 @@ function compileRawExport(inputDir, outputDir) {
       return acc;
     }, new Map()).values(),
   ).filter((entry) => new Set(entry.categoryIds).size > 1);
+  const rawExportCountMismatches = buildRawExportCountMismatches(exportReport, {
+    items: items.length,
+    fluids: fluids.length,
+    recipes: recipes.length,
+    groups: groups.length,
+    neiOrderEntries: neiOrder.length,
+    textures: textures.length,
+    animations: animations.length,
+    entities: entities.length,
+  });
   const validation = {
     schemaVersion: "neonei/compiler-validation/v3-alpha1",
     generatedAt: new Date().toISOString(),
@@ -830,6 +865,7 @@ function compileRawExport(inputDir, outputDir) {
       specialRecipes: specialDomains.reduce((sum, domain) => sum + domain.recipeCount, 0),
       specialPayloads: specialDomains.reduce((sum, domain) => sum + domain.payloads.length, 0),
       specialPayloadMismatches: specialDomains.filter((domain) => domain.recipeCount !== domain.payloads.length || domain.declaredPayloadCount !== domain.payloads.length).length,
+      rawExportCountMismatches: rawExportCountMismatches.length,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
@@ -857,6 +893,7 @@ function compileRawExport(inputDir, outputDir) {
       duplicateBrowserAtlasItemIds: atlasAuthorityReport.samples.duplicateItemIds,
       missingBrowserAtlasFiles: atlasAuthorityReport.samples.missingAtlasFiles,
       recipeCategorySplits: recipeCategorySplits.slice(0, 50),
+      rawExportCountMismatches,
       missingAnimationTimingAssetIds: missingAnimationTimingAssetIds.slice(0, 100),
     },
     coverage: {
@@ -878,6 +915,7 @@ function compileRawExport(inputDir, outputDir) {
   if (atlasAuthorityReport.duplicateItemIds > 0) validation.warnings.push(`Browser atlas contains ${atlasAuthorityReport.duplicateItemIds} duplicate itemId row(s).`);
   if (missingAnimationTimingAssetIds.length > 0) validation.warnings.push(`Animation timing metadata is missing for ${missingAnimationTimingAssetIds.length} animated asset(s).`);
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
+  if (rawExportCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from exporter report in ${rawExportCountMismatches.length} area(s).`);
   for (const domain of specialDomains) {
     if (domain.recipeCount !== domain.payloads.length) {
       validation.warnings.push(`Special domain ${domain.domain} has ${domain.recipeCount} recipe row(s) but ${domain.payloads.length} payload row(s).`);
@@ -969,6 +1007,7 @@ function createSelfTestRawExport(root) {
       browserAtlasIndex: "assets/textures/browser_atlas_index.json",
       entities: "models/entities/index.jsonl",
       specialIndex: "special/index.json",
+      exportReport: "validation/export_report.json",
     },
   });
   writeFileSync(join(root, "facts/items.jsonl"), [
@@ -986,6 +1025,7 @@ function createSelfTestRawExport(root) {
   writeFileSync(join(root, "assets/animations/native-sprites.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`, "utf8");
   writeFileSync(join(root, "assets/animations/rendered-gifs.jsonl"), "", "utf8");
   writeFileSync(join(root, "models/entities/index.jsonl"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`, "utf8");
+  writeJson(join(root, "validation/export_report.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/report", counts: { rawItems: 3, rawFluids: 1, rawRecipes: 1, rawGroups: 1, rawNeiOrderEntries: 3, rawTextures: 3, rawAnimations: 1, rawEntities: 1 }, validation: { status: "ok" } });
   writeFileSync(join(root, "static-atlas-0.webp"), "self-test-static", "utf8");
   writeFileSync(join(root, "animated-atlas-0.webp"), "self-test-animated", "utf8");
   writeFileSync(join(root, "generated-static-atlas-0.webp"), "self-test-generated", "utf8");
@@ -1011,6 +1051,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
+if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
