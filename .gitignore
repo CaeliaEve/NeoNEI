@@ -72,3 +72,6 @@ frontend/test-results/
 
 # Runtime benchmark output
 .runtime-logs/
+
+# Local planning documents
+RAW_EXPORT_FOUNDATION_PLAN.md
