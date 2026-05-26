@@ -112,6 +112,25 @@ function buildRawExportCountMismatches(exportReport, actualCounts) {
   return mismatches;
 }
 
+function buildCanonicalCountMismatches(canonicalRepository, actualCounts) {
+  if (!canonicalRepository) return [];
+  const pairs = [
+    ["items", canonicalRepository.items, "items"],
+    ["fluids", canonicalRepository.fluids, "fluids"],
+    ["recipes", canonicalRepository.recipes, "recipes"],
+  ];
+  const mismatches = [];
+  for (const [label, canonicalRows, actualKey] of pairs) {
+    if (!Array.isArray(canonicalRows)) continue;
+    const expected = canonicalRows.length;
+    const actual = stableNumber(actualCounts[actualKey], 0);
+    if (expected !== actual) {
+      mismatches.push({ label, expected, actual, source: "canonicalRepository" });
+    }
+  }
+  return mismatches;
+}
+
 function fileSizeIfPresent(filePath) {
   try {
     return filePath && existsSync(filePath) ? statSync(filePath).size : -1;
@@ -731,6 +750,7 @@ function compileRawExport(inputDir, outputDir) {
   const manifest = readJson(manifestPath);
   const manifestValidation = validateRawManifest(inputDir, manifest);
   const exportReport = readRawJson(inputDir, manifest, "exportReport", "validation/export_report.json");
+  const canonicalRepository = readRawJson(inputDir, manifest, "canonicalRepository", null);
   const items = readRawJsonl(inputDir, manifest, "items", "items.jsonl");
   const fluids = readRawJsonl(inputDir, manifest, "fluids", "fluids.jsonl");
   const recipes = readRawRecipes(inputDir, manifest);
@@ -838,6 +858,11 @@ function compileRawExport(inputDir, outputDir) {
     animations: animations.length,
     entities: entities.length,
   });
+  const canonicalCountMismatches = buildCanonicalCountMismatches(canonicalRepository, {
+    items: items.length,
+    fluids: fluids.length,
+    recipes: recipes.length,
+  });
   const validation = {
     schemaVersion: "neonei/compiler-validation/v3-alpha1",
     generatedAt: new Date().toISOString(),
@@ -866,6 +891,7 @@ function compileRawExport(inputDir, outputDir) {
       specialPayloads: specialDomains.reduce((sum, domain) => sum + domain.payloads.length, 0),
       specialPayloadMismatches: specialDomains.filter((domain) => domain.recipeCount !== domain.payloads.length || domain.declaredPayloadCount !== domain.payloads.length).length,
       rawExportCountMismatches: rawExportCountMismatches.length,
+      canonicalCountMismatches: canonicalCountMismatches.length,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
@@ -894,6 +920,7 @@ function compileRawExport(inputDir, outputDir) {
       missingBrowserAtlasFiles: atlasAuthorityReport.samples.missingAtlasFiles,
       recipeCategorySplits: recipeCategorySplits.slice(0, 50),
       rawExportCountMismatches,
+      canonicalCountMismatches,
       missingAnimationTimingAssetIds: missingAnimationTimingAssetIds.slice(0, 100),
     },
     coverage: {
@@ -916,6 +943,7 @@ function compileRawExport(inputDir, outputDir) {
   if (missingAnimationTimingAssetIds.length > 0) validation.warnings.push(`Animation timing metadata is missing for ${missingAnimationTimingAssetIds.length} animated asset(s).`);
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
   if (rawExportCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from exporter report in ${rawExportCountMismatches.length} area(s).`);
+  if (canonicalCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from canonical repository in ${canonicalCountMismatches.length} area(s).`);
   for (const domain of specialDomains) {
     if (domain.recipeCount !== domain.payloads.length) {
       validation.warnings.push(`Special domain ${domain.domain} has ${domain.recipeCount} recipe row(s) but ${domain.payloads.length} payload row(s).`);
@@ -1008,6 +1036,7 @@ function createSelfTestRawExport(root) {
       entities: "models/entities/index.jsonl",
       specialIndex: "special/index.json",
       exportReport: "validation/export_report.json",
+      canonicalRepository: "../canonical/repository.json",
     },
   });
   writeFileSync(join(root, "facts/items.jsonl"), [
@@ -1026,6 +1055,11 @@ function createSelfTestRawExport(root) {
   writeFileSync(join(root, "assets/animations/rendered-gifs.jsonl"), "", "utf8");
   writeFileSync(join(root, "models/entities/index.jsonl"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`, "utf8");
   writeJson(join(root, "validation/export_report.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/report", counts: { rawItems: 3, rawFluids: 1, rawRecipes: 1, rawGroups: 1, rawNeiOrderEntries: 3, rawTextures: 3, rawAnimations: 1, rawEntities: 1 }, validation: { status: "ok" } });
+  writeJson(join(root, "..", "canonical", "repository.json"), {
+    items: [{}, {}, {}],
+    fluids: [{}],
+    recipes: [{}],
+  });
   writeFileSync(join(root, "static-atlas-0.webp"), "self-test-static", "utf8");
   writeFileSync(join(root, "animated-atlas-0.webp"), "self-test-animated", "utf8");
   writeFileSync(join(root, "generated-static-atlas-0.webp"), "self-test-generated", "utf8");
@@ -1051,6 +1085,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
+if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.canonicalCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
