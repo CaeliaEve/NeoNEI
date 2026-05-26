@@ -157,6 +157,9 @@ function buildMigrationReadiness(validation, exportReport, canonicalRepository, 
   const specialPayloadMismatches = stableNumber(validation.counts.specialPayloadMismatches, 0);
   const rawExportMismatches = stableNumber(validation.counts.rawExportCountMismatches, 0);
   const canonicalMismatches = stableNumber(validation.counts.canonicalCountMismatches, 0);
+  const exporterReadinessStatus = `${exportReport?.validation?.readinessStatus ?? ""}`.trim();
+  const exporterValidationStatus = `${exportReport?.validation?.status ?? ""}`.trim();
+  const exporterReady = Boolean(exportReport) && (!exporterReadinessStatus || exporterReadinessStatus === "ready");
   const atlasMissing =
     stableNumber(validation.missing.browserAtlasItems, 0) +
     stableNumber(validation.missing.browserAtlasDrawableItems, 0) +
@@ -171,9 +174,18 @@ function buildMigrationReadiness(validation, exportReport, canonicalRepository, 
   const gates = [
     gate(
       "raw-report-parity",
-      Boolean(exportReport) && rawExportMismatches === 0,
-      rawExportMismatches === 0 ? "Compiler counts match exporter report." : `${rawExportMismatches} exporter/compiler count area(s) differ.`,
-      { mismatchCount: rawExportMismatches },
+      exporterReady && rawExportMismatches === 0,
+      exporterReady && rawExportMismatches === 0
+        ? "Compiler counts match exporter report and exporter readiness is acceptable."
+        : `${rawExportMismatches} exporter/compiler count area(s) differ or exporter readiness is blocked.`,
+      {
+        mismatchCount: rawExportMismatches,
+        exporterReadinessStatus: exporterReadinessStatus || null,
+        exporterValidationStatus: exporterValidationStatus || null,
+        exporterBlockedGates: (exportReport?.validation?.gates ?? [])
+          .filter((entry) => entry?.status && entry.status !== "ready")
+          .map((entry) => entry.name ?? "unknown"),
+      },
     ),
     gate(
       "canonical-parity",
@@ -1149,7 +1161,11 @@ function createSelfTestRawExport(root) {
   writeFileSync(join(root, "assets/animations/native-sprites.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`, "utf8");
   writeFileSync(join(root, "assets/animations/rendered-gifs.jsonl"), "", "utf8");
   writeFileSync(join(root, "models/entities/index.jsonl"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`, "utf8");
-  writeJson(join(root, "validation/export_report.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/report", counts: { rawItems: 3, rawFluids: 1, rawRecipes: 1, rawGroups: 1, rawNeiOrderEntries: 3, rawTextures: 3, rawAnimations: 1, rawEntities: 1 }, validation: { status: "ok" } });
+  writeJson(join(root, "validation/export_report.json"), {
+    schemaVersion: "nesqlpp/raw-export/alpha1/report",
+    counts: { rawItems: 3, rawFluids: 1, rawRecipes: 1, rawGroups: 1, rawNeiOrderEntries: 3, rawTextures: 3, rawAnimations: 1, rawEntities: 1 },
+    validation: { status: "ok", readinessStatus: "ready", gates: [{ name: "core-counts", status: "ready" }] },
+  });
   writeJson(join(root, "..", "canonical", "repository.json"), {
     items: [{}, {}, {}],
     fluids: [{}],
