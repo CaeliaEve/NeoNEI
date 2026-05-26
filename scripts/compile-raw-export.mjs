@@ -715,6 +715,7 @@ function compileRawExport(inputDir, outputDir) {
   const animations = readRawJsonl(inputDir, manifest, "animations", "animations.jsonl");
   const nativeSprites = readRawJsonl(inputDir, manifest, "nativeSprites", "native_sprites.jsonl");
   const renderedGifs = readRawJsonl(inputDir, manifest, "renderedGifs", "rendered_gifs.jsonl");
+  const entities = readRawJsonl(inputDir, manifest, "entities", "models/entities/index.jsonl");
   const browserAtlasIndex = readRawJson(inputDir, manifest, "browserAtlasIndex", "browser_atlas_index.json");
   const specialIndex = readRawJson(inputDir, manifest, "specialIndex", "special/index.json");
   const specialDomains = readSpecialDomains(inputDir, specialIndex);
@@ -817,6 +818,7 @@ function compileRawExport(inputDir, outputDir) {
       animations: animations.length,
       nativeSprites: nativeSprites.length,
       renderedGifs: renderedGifs.length,
+      entities: entities.length,
       animationFacts: animationFacts.length,
       animationTableItems: animationTable.length,
       browserAtlasItems: browserAtlasItems.length,
@@ -900,6 +902,7 @@ function compileRawExport(inputDir, outputDir) {
       textureManifest: "textures/atlas-manifest.json",
       animationTable: "textures/animation-table.json",
       browserAtlasIndex: "textures/browser-atlas-index.json",
+      entityModels: "models/entities/index.json",
       specialIndex: "special/index.json",
       validationReport: "validation/report.json",
     },
@@ -919,6 +922,7 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations: animationFacts, nativeSprites, renderedGifs });
   writeJsonCompact(join(outputDir, "textures", "animation-table.json"), { schemaVersion: "neonei/animation-table/v1", items: animationTable });
   writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), generatedBrowserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
+  writeJsonCompact(join(outputDir, "models", "entities", "index.json"), { schemaVersion: "neonei/entity-model-index/v1", entities });
   const distSpecialIndex = {
     schemaVersion: "neonei/special-index/v1",
     sourceSchemaVersion: specialIndex?.schemaVersion ?? null,
@@ -943,6 +947,7 @@ function createSelfTestRawExport(root) {
     "facts/nei",
     "assets/textures",
     "assets/animations",
+    "models/entities",
   ]) {
     mkdirSync(join(root, relativeDir), { recursive: true });
   }
@@ -962,6 +967,7 @@ function createSelfTestRawExport(root) {
       nativeSprites: "assets/animations/native-sprites.jsonl",
       renderedGifs: "assets/animations/rendered-gifs.jsonl",
       browserAtlasIndex: "assets/textures/browser_atlas_index.json",
+      entities: "models/entities/index.jsonl",
       specialIndex: "special/index.json",
     },
   });
@@ -979,6 +985,7 @@ function createSelfTestRawExport(root) {
   writeFileSync(join(root, "assets/animations/index.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
   writeFileSync(join(root, "assets/animations/native-sprites.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`, "utf8");
   writeFileSync(join(root, "assets/animations/rendered-gifs.jsonl"), "", "utf8");
+  writeFileSync(join(root, "models/entities/index.jsonl"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`, "utf8");
   writeFileSync(join(root, "static-atlas-0.webp"), "self-test-static", "utf8");
   writeFileSync(join(root, "animated-atlas-0.webp"), "self-test-animated", "utf8");
   writeFileSync(join(root, "generated-static-atlas-0.webp"), "self-test-generated", "utf8");
@@ -1004,6 +1011,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
+if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
