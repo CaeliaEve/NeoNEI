@@ -685,6 +685,8 @@ function readSpecialDomains(inputDir, specialIndex) {
       domain: domainId,
       recipeCount: recipes.length,
       declaredRecipeCount: stableNumber(domain?.recipeCount ?? index?.recipeCount, recipes.length),
+      payloadCount: payloads.length,
+      declaredPayloadCount: stableNumber(domain?.payloadCount ?? index?.payloadCount, payloads.length),
       recipesPath,
       payloadsPath,
       indexPath,
@@ -825,6 +827,7 @@ function compileRawExport(inputDir, outputDir) {
       specialDomains: specialDomains.length,
       specialRecipes: specialDomains.reduce((sum, domain) => sum + domain.recipeCount, 0),
       specialPayloads: specialDomains.reduce((sum, domain) => sum + domain.payloads.length, 0),
+      specialPayloadMismatches: specialDomains.filter((domain) => domain.recipeCount !== domain.payloads.length || domain.declaredPayloadCount !== domain.payloads.length).length,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
@@ -873,6 +876,14 @@ function compileRawExport(inputDir, outputDir) {
   if (atlasAuthorityReport.duplicateItemIds > 0) validation.warnings.push(`Browser atlas contains ${atlasAuthorityReport.duplicateItemIds} duplicate itemId row(s).`);
   if (missingAnimationTimingAssetIds.length > 0) validation.warnings.push(`Animation timing metadata is missing for ${missingAnimationTimingAssetIds.length} animated asset(s).`);
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
+  for (const domain of specialDomains) {
+    if (domain.recipeCount !== domain.payloads.length) {
+      validation.warnings.push(`Special domain ${domain.domain} has ${domain.recipeCount} recipe row(s) but ${domain.payloads.length} payload row(s).`);
+    }
+    if (domain.declaredPayloadCount !== domain.payloads.length) {
+      validation.warnings.push(`Special domain ${domain.domain} declares ${domain.declaredPayloadCount} payload row(s) but compiler read ${domain.payloads.length}.`);
+    }
+  }
 
   writeJson(outputDir + "/manifest.json", {
     schemaVersion: "neonei/dist-data/v3-alpha1",
@@ -976,8 +987,8 @@ function createSelfTestRawExport(root) {
   writeFileSync(join(root, "special/gregtech/recipes.jsonl"), `${JSON.stringify({ recipeId: "gt-test", family: "gregtech", machine: { machineId: "gregtech.assembler", displayName: "Assembler" } })}\n`, "utf8");
   writeFileSync(join(root, "special/gregtech/payloads.jsonl"), `${JSON.stringify({ domain: "gregtech", recipeId: "gt-test", machineId: "gregtech.assembler", facts: { duration: 20 } })}\n`, "utf8");
   writeJson(join(root, "special/gregtech/summary.json"), { domain: "gregtech", recipeCount: 1, machineIds: [{ value: "gregtech.assembler", count: 1 }] });
-  writeJson(join(root, "special/gregtech/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-domain", domain: "gregtech", recipeCount: 1, recipes: "special/gregtech/recipes.jsonl", payloads: "special/gregtech/payloads.jsonl", summary: "special/gregtech/summary.json" });
-  writeJson(join(root, "special/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-index", domains: [{ domain: "gregtech", recipeCount: 1, index: "special/gregtech/index.json", recipes: "special/gregtech/recipes.jsonl", payloads: "special/gregtech/payloads.jsonl", summary: "special/gregtech/summary.json" }] });
+  writeJson(join(root, "special/gregtech/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-domain", domain: "gregtech", recipeCount: 1, payloadCount: 1, recipes: "special/gregtech/recipes.jsonl", payloads: "special/gregtech/payloads.jsonl", summary: "special/gregtech/summary.json" });
+  writeJson(join(root, "special/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-index", domains: [{ domain: "gregtech", recipeCount: 1, payloadCount: 1, index: "special/gregtech/index.json", recipes: "special/gregtech/recipes.jsonl", payloads: "special/gregtech/payloads.jsonl", summary: "special/gregtech/summary.json" }] });
   writeJson(join(root, "assets/textures/browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 2, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }, { itemId: "i~botania~manaResource~4", assetId: "nesqlpp:item/i~botania~manaResource~4", hasAnimatedAtlas: true, animatedAtlas: { atlasFile: "animated-atlas-0.webp", atlasWidth: 16, atlasHeight: 128, frameCount: 8, frameDurationMs: 100, frames: [[0, 0, 0, 16, 16], [1, 0, 16, 16, 16]], timeline: [[0, 100], [1, 100]] } }] });
 }
 let inputDir = inputArg ? resolve(inputArg) : null;
@@ -993,6 +1004,6 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
+if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1)) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
