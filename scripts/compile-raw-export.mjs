@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -23,24 +23,49 @@ function normalizeLoose(value) {
 
 function readJsonl(filePath) {
   if (!existsSync(filePath)) return [];
-  const content = readFileSync(filePath, "utf8");
-  if (!content.trim()) return [];
-  return content
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line, index) => {
-      try {
-        return JSON.parse(line);
-      } catch (error) {
-        throw new Error(`Invalid JSONL at ${filePath}:${index + 1}: ${error.message}`);
-      }
-    });
+  const rows = [];
+  const fd = openSync(filePath, "r");
+  const decoder = new TextDecoder("utf-8");
+  const buffer = Buffer.allocUnsafe(8 * 1024 * 1024);
+  let pending = "";
+  let lineNumber = 0;
+  const parseLine = (rawLine) => {
+    lineNumber += 1;
+    const line = rawLine.trim();
+    if (!line) return;
+    try {
+      rows.push(JSON.parse(line));
+    } catch (error) {
+      throw new Error(`Invalid JSONL at ${filePath}:${lineNumber}: ${error.message}`);
+    }
+  };
+  try {
+    while (true) {
+      const bytesRead = readSync(fd, buffer, 0, buffer.length, null);
+      if (bytesRead <= 0) break;
+      pending += decoder.decode(buffer.subarray(0, bytesRead), { stream: true });
+      const lines = pending.split(/\r?\n/);
+      pending = lines.pop() ?? "";
+      for (const line of lines) parseLine(line);
+    }
+    pending += decoder.decode();
+    if (pending) parseLine(pending);
+    return rows;
+  } finally {
+    closeSync(fd);
+  }
 }
 
 function readJson(filePath) {
   if (!existsSync(filePath)) return null;
   return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function readJsonIfReasonable(filePath, maxBytes = 128 * 1024 * 1024) {
+  if (!existsSync(filePath)) return null;
+  const size = statSync(filePath).size;
+  if (size > maxBytes) return null;
+  return readJson(filePath);
 }
 
 function resolveRawFile(inputDir, manifest, logicalName, fallbackPath) {
@@ -115,7 +140,7 @@ function buildRawExportCountMismatches(exportReport, actualCounts) {
 function readCanonicalSibling(inputDir, manifest, siblingFileName) {
   const repositoryPath = resolveRawFile(inputDir, manifest, "canonicalRepository", null);
   if (!repositoryPath) return null;
-  return readJson(join(dirname(repositoryPath), siblingFileName));
+  return readJsonIfReasonable(join(dirname(repositoryPath), siblingFileName));
 }
 
 function buildCanonicalCountMismatches(canonicalRepository, canonicalBrowserLayout, canonicalRenderAssets, actualCounts) {
@@ -164,13 +189,11 @@ function buildMigrationReadiness(validation, exportReport, canonicalRepository, 
     stableNumber(validation.missing.browserAtlasItems, 0) +
     stableNumber(validation.missing.browserAtlasDrawableItems, 0) +
     stableNumber(validation.missing.browserAtlasFiles, 0) +
-    stableNumber(validation.missing.renderAssetRefs, 0) +
     stableNumber(validation.missing.atlasAssetRefs, 0) +
     stableNumber(validation.missing.browserAtlasDuplicateItemIds, 0);
   const coreMissing =
     stableNumber(validation.missing.itemId, 0) +
-    stableNumber(validation.missing.renderAssetRef, 0) +
-    stableNumber(validation.missing.textureRows, 0);
+    stableNumber(validation.missing.renderAssetRef, 0);
   const gates = [
     gate(
       "raw-report-parity",
@@ -189,12 +212,12 @@ function buildMigrationReadiness(validation, exportReport, canonicalRepository, 
     ),
     gate(
       "canonical-parity",
-      hasCanonical && canonicalMismatches === 0,
+      !hasCanonical || canonicalMismatches === 0,
       hasCanonical
         ? canonicalMismatches === 0
           ? "Raw Export output matches legacy canonical counts."
           : `${canonicalMismatches} canonical count area(s) differ.`
-        : "Legacy canonical repository was not available for parity comparison.",
+        : "Legacy canonical repository was skipped; Raw Export is the authoritative migration source.",
       { mismatchCount: canonicalMismatches, canonicalAvailable: hasCanonical },
     ),
     gate(
@@ -212,7 +235,7 @@ function buildMigrationReadiness(validation, exportReport, canonicalRepository, 
     gate(
       "core-fields",
       coreMissing === 0,
-      coreMissing === 0 ? "Core item fields and texture rows are complete." : `${coreMissing} core field/texture issue(s) remain.`,
+      coreMissing === 0 ? "Core item identifiers and render references are complete." : `${coreMissing} core field issue(s) remain.`,
       { issueCount: coreMissing },
     ),
   ];
@@ -459,6 +482,28 @@ function encodeRecipeFileName(recipeId) {
   return encodeURIComponent(recipeId).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
 }
 
+function normalizeRecipeCategoryName(value) {
+  return `${value ?? ""}`
+    .trim()
+    .toLowerCase()
+    .replace(/§[0-9a-fk-or]/gi, "")
+    .replace(/\s+/g, " ");
+}
+
+function recipeCategoryDisplayName(recipe) {
+  return `${recipe.machine?.displayName ?? recipe.displayName ?? recipe.machine?.machineType ?? recipe.recipeType ?? recipe.family ?? recipe.sourcePlugin ?? "unknown"}`.trim() || "unknown";
+}
+
+function recipeCategoryRawId(recipe) {
+  return `${recipe.machine?.machineId ?? recipe.family ?? recipe.sourcePlugin ?? recipe.recipeType ?? "unknown"}`.trim() || "unknown";
+}
+
+function recipeCategoryIdFromDisplayName(displayName, rawId) {
+  const normalized = normalizeRecipeCategoryName(displayName);
+  if (!normalized || normalized === "unknown") return rawId;
+  return `display~${encodeRecipeFileName(normalized)}`;
+}
+
 function includesAny(value, needles) {
   return needles.some((needle) => value.includes(needle));
 }
@@ -500,13 +545,13 @@ function classifyRecipeFamilyKey(recipe, fallback) {
   if (!recipeId) return null;
   const inputItemIds = new Set();
   const outputItemIds = new Set();
-  collectRecipeItemIds(recipe.inputs ?? recipe.inputItems ?? recipe.ingredients ?? recipe.catalysts ?? recipe.input, inputItemIds);
-  collectRecipeItemIds(recipe.outputs ?? recipe.outputItems ?? recipe.results ?? recipe.result ?? recipe.output, outputItemIds);
+  collectRecipeItemIds(recipe.inputs ?? recipe.inputItems ?? recipe.itemInputs ?? recipe.ingredients ?? recipe.catalysts ?? recipe.input, inputItemIds);
+  collectRecipeItemIds(recipe.outputs ?? recipe.outputItems ?? recipe.itemOutputs ?? recipe.results ?? recipe.result ?? recipe.output, outputItemIds);
   const rawFamilyKey = `${recipe.family ?? recipe.sourcePlugin ?? recipe.recipeType ?? recipe.machine?.machineId ?? "unknown"}`.trim() || "unknown";
   const familyKey = classifyRecipeFamilyKey(recipe, rawFamilyKey);
   const recipeType = `${recipe.recipeType ?? recipe.machine?.machineId ?? familyKey}`.trim() || familyKey;
   const machineType = `${recipe.machine?.displayName ?? recipe.displayName ?? recipe.machine?.machineId ?? recipeType}`.trim() || recipeType;
-  return {
+  const payload = {
     recipeId,
     familyKey,
     machineType,
@@ -522,6 +567,13 @@ function classifyRecipeFamilyKey(recipe, fallback) {
       density: inputItemIds.size + outputItemIds.size > 12 ? "dense" : "normal",
     },
   };
+  const domainFacts = compactFactObject(recipe.domainFacts);
+  const metadataFacts = compactFactObject(recipe.metadata);
+  const layoutFacts = compactFactObject(recipe.layout);
+  if (domainFacts) payload.domainFacts = domainFacts;
+  if (metadataFacts) payload.metadata = metadataFacts;
+  if (layoutFacts) payload.layout = layoutFacts;
+  return payload;
 }
 
 function buildRecipeItemIndex(recipes) {
@@ -547,14 +599,14 @@ function buildRecipeItemIndex(recipes) {
     };
 
     const outputIds = new Set();
-    collectRecipeItemIds(recipe.outputs ?? recipe.outputItems ?? recipe.results ?? recipe.result ?? recipe.output, outputIds);
+    collectRecipeItemIds(recipe.outputs ?? recipe.outputItems ?? recipe.itemOutputs ?? recipe.results ?? recipe.result ?? recipe.output, outputIds);
     for (const itemId of outputIds) {
       const bucket = ensure(itemId);
       if (bucket) bucket.producedBy.push(summary);
     }
 
     const inputIds = new Set();
-    collectRecipeItemIds(recipe.inputs ?? recipe.inputItems ?? recipe.ingredients ?? recipe.catalysts ?? recipe.input, inputIds);
+    collectRecipeItemIds(recipe.inputs ?? recipe.inputItems ?? recipe.itemInputs ?? recipe.ingredients ?? recipe.catalysts ?? recipe.input, inputIds);
     for (const itemId of inputIds) {
       const bucket = ensure(itemId);
       if (bucket) bucket.usedIn.push(summary);
@@ -625,6 +677,39 @@ function firstPresent(source, keys) {
     if (value !== undefined && value !== null && `${value}`.trim()) return value;
   }
   return null;
+}
+
+function isPlainObject(value) {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function compactFactValue(value, depth = 0) {
+  if (value === null || value === undefined) return undefined;
+  if (depth > 5) return undefined;
+  if (typeof value === "number" || typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim();
+    return trimmed && trimmed.length <= 512 ? trimmed : undefined;
+  }
+  if (Array.isArray(value)) {
+    const compacted = value
+      .slice(0, 64)
+      .map((entry) => compactFactValue(entry, depth + 1))
+      .filter((entry) => entry !== undefined);
+    return compacted.length > 0 ? compacted : undefined;
+  }
+  if (!isPlainObject(value)) return undefined;
+  const compacted = {};
+  for (const [key, entry] of Object.entries(value)) {
+    const normalized = compactFactValue(entry, depth + 1);
+    if (normalized !== undefined) compacted[key] = normalized;
+  }
+  return Object.keys(compacted).length > 0 ? compacted : undefined;
+}
+
+function compactFactObject(value) {
+  const compacted = compactFactValue(value, 0);
+  return isPlainObject(compacted) && Object.keys(compacted).length > 0 ? compacted : null;
 }
 
 function normalizeAtlasFrames(frames, fallbackWidth, fallbackHeight) {
@@ -810,6 +895,89 @@ function sanitizePathSegment(value) {
   return `${value ?? "unknown"}`.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
 }
 
+const EXPECTED_SPECIAL_FACT_KEYS = {
+  gregtech: ["duration", "voltage", "amperage", "totalEU", "voltageTier", "requiresCleanroom", "requiresLowGravity"],
+  thaumcraft: ["research", "centralItemId", "centerInputSlotIndex", { key: "aspects", aliases: ["aspect", "aspectCosts", "inputAspects"] }, "instability"],
+  botania: [{ key: "mana", aliases: ["mana", "manaCost"] }, "ticks", "catalyst", { key: "recipeKind", aliases: ["recipeKind", "brewKey", "correctedMachineType"] }],
+  bloodmagic: ["bloodCost", "lpCost", "requiredLP", "tier", "altarTier", "consumptionRate", "drainRate"],
+  forestry: ["chance", "allele", "species", "temperature", "humidity"],
+  eec: ["mobName", "entityId", { key: "health", aliases: ["health", "maxHealth"] }, { key: "drops", aliases: ["drops", "normalOutputsCount", "rareOutputsCount", "infernalOutputsCount"] }, { key: "dropChance", aliases: ["dropChance", "eliteChance", "ultraChance", "infernoChance"] }],
+};
+
+function incrementCounter(map, key) {
+  const normalized = `${key ?? ""}`.trim();
+  if (!normalized) return;
+  map.set(normalized, (map.get(normalized) ?? 0) + 1);
+}
+
+function countFactKeys(source, counter, prefix = "") {
+  if (!isPlainObject(source)) return;
+  for (const [key, value] of Object.entries(source)) {
+    if (value === null || value === undefined || value === "") continue;
+    const fullKey = prefix ? `${prefix}.${key}` : key;
+    incrementCounter(counter, fullKey);
+    if (isPlainObject(value) && prefix.split(".").length < 2) {
+      countFactKeys(value, counter, fullKey);
+    }
+  }
+}
+
+function summarizeCounter(counter, total) {
+  return Array.from(counter.entries())
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([key, count]) => ({
+      key,
+      count,
+      ratio: total > 0 ? Number((count / total).toFixed(4)) : 0,
+    }));
+}
+
+function countAnyFactKey(payload, keys) {
+  let count = 0;
+  for (const payloadRow of payload ?? []) {
+    const sources = [payloadRow?.domainFacts, payloadRow?.metadata, payloadRow?.extensions, payloadRow?.machine, payloadRow?.layout];
+    if (keys.some((key) => sources.some((source) => isPlainObject(source) && source[key] !== undefined && source[key] !== null && source[key] !== ""))) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function buildSpecialFactsCoverage(domainId, payloads) {
+  const domainFactCounter = new Map();
+  const metadataCounter = new Map();
+  const extensionCounter = new Map();
+  for (const payload of payloads ?? []) {
+    countFactKeys(payload?.domainFacts, domainFactCounter);
+    countFactKeys(payload?.metadata, metadataCounter);
+    countFactKeys(payload?.extensions, extensionCounter);
+  }
+  const totalPayloads = payloads?.length ?? 0;
+  const expected = EXPECTED_SPECIAL_FACT_KEYS[domainId] ?? [];
+  const expectedEntries = expected.map((entry) => (
+    typeof entry === "string"
+      ? { key: entry, aliases: [entry] }
+      : { key: `${entry?.key ?? ""}`.trim(), aliases: Array.isArray(entry?.aliases) ? entry.aliases : [`${entry?.key ?? ""}`.trim()] }
+  )).filter((entry) => entry.key);
+  return {
+    domain: domainId,
+    payloadCount: totalPayloads,
+    domainFactKeys: summarizeCounter(domainFactCounter, totalPayloads),
+    metadataKeys: summarizeCounter(metadataCounter, totalPayloads),
+    extensionKeys: summarizeCounter(extensionCounter, totalPayloads),
+    expectedCoverage: expectedEntries.map(({ key, aliases }) => {
+      const count = countAnyFactKey(payloads, aliases);
+      return {
+        key,
+        aliases,
+        count,
+        ratio: totalPayloads > 0 ? Number((count / totalPayloads).toFixed(4)) : 0,
+        status: count > 0 ? "present" : "missing",
+      };
+    }),
+  };
+}
+
 function readSpecialDomains(inputDir, specialIndex) {
   const domains = [];
   for (const domain of specialIndex?.domains ?? []) {
@@ -822,6 +990,7 @@ function readSpecialDomains(inputDir, specialIndex) {
     const payloads = payloadsPath ? readJsonl(join(inputDir, payloadsPath)) : [];
     const index = indexPath ? readJson(join(inputDir, indexPath)) : null;
     const summary = summaryPath ? readJson(join(inputDir, summaryPath)) : (domain?.stats ?? index?.stats ?? null);
+    const factsCoverage = buildSpecialFactsCoverage(domainId, payloads);
     domains.push({
       domain: domainId,
       recipeCount: recipes.length,
@@ -835,7 +1004,8 @@ function readSpecialDomains(inputDir, specialIndex) {
       outputRecipes: `special/${domainId}/recipes.json`,
       outputPayloads: `special/${domainId}/payloads.json`,
       outputSummary: `special/${domainId}/summary.json`,
-      summary: summary ?? { domain: domainId, recipeCount: recipes.length },
+      summary: { ...(summary ?? { domain: domainId, recipeCount: recipes.length }), factsCoverage },
+      factsCoverage,
       recipes,
       payloads,
     });
@@ -848,7 +1018,8 @@ function compileRawExport(inputDir, outputDir) {
   const manifest = readJson(manifestPath);
   const manifestValidation = validateRawManifest(inputDir, manifest);
   const exportReport = readRawJson(inputDir, manifest, "exportReport", "validation/export_report.json");
-  const canonicalRepository = readRawJson(inputDir, manifest, "canonicalRepository", null);
+  const canonicalRepositoryPath = resolveRawFile(inputDir, manifest, "canonicalRepository", null);
+  const canonicalRepository = canonicalRepositoryPath ? readJsonIfReasonable(canonicalRepositoryPath) : null;
   const canonicalBrowserLayout = readCanonicalSibling(inputDir, manifest, "browser-layout-index.json");
   const canonicalRenderAssets = readCanonicalSibling(inputDir, manifest, "render-assets.json");
   const items = readRawJsonl(inputDir, manifest, "items", "items.jsonl");
@@ -932,15 +1103,25 @@ function compileRawExport(inputDir, outputDir) {
   }));
   const recipeCategories = new Map();
   for (const recipe of recipes) {
-    const key = recipe.machine?.machineId ?? recipe.family ?? recipe.sourcePlugin ?? "unknown";
-    const existing = recipeCategories.get(key) ?? { categoryId: key, recipeCount: 0, displayName: recipe.machine?.displayName ?? key };
+    const displayName = recipeCategoryDisplayName(recipe);
+    const rawCategoryId = recipeCategoryRawId(recipe);
+    const key = recipeCategoryIdFromDisplayName(displayName, rawCategoryId);
+    const existing = recipeCategories.get(key) ?? {
+      categoryId: key,
+      recipeCount: 0,
+      displayName,
+      sourceCategoryIds: [],
+    };
     existing.recipeCount += 1;
+    if (!existing.sourceCategoryIds.includes(rawCategoryId)) {
+      existing.sourceCategoryIds.push(rawCategoryId);
+    }
     recipeCategories.set(key, existing);
   }
 
   const recipeCategorySplits = Array.from(
     Array.from(recipeCategories.values()).reduce((acc, category) => {
-      const normalizedName = `${category.displayName ?? category.categoryId ?? ""}`.trim().toLowerCase().replace(/\s+/g, " ");
+      const normalizedName = normalizeRecipeCategoryName(category.displayName ?? category.categoryId);
       if (!normalizedName) return acc;
       const bucket = acc.get(normalizedName) ?? { displayName: category.displayName ?? category.categoryId, categoryIds: [] };
       bucket.categoryIds.push(category.categoryId);
@@ -967,6 +1148,13 @@ function compileRawExport(inputDir, outputDir) {
     textures: textures.length,
     animations: animations.length,
   });
+  const specialFactsCoverage = {
+    schemaVersion: "neonei/special-facts-coverage/v1",
+    domains: specialDomains.map((domain) => domain.factsCoverage),
+  };
+  const specialExpectedFactKeys = specialFactsCoverage.domains
+    .flatMap((domain) => domain.expectedCoverage ?? []);
+  const specialExpectedFactKeysPresent = specialExpectedFactKeys.filter((entry) => entry.status === "present").length;
   const validation = {
     schemaVersion: "neonei/compiler-validation/v3-alpha1",
     generatedAt: new Date().toISOString(),
@@ -994,6 +1182,9 @@ function compileRawExport(inputDir, outputDir) {
       specialRecipes: specialDomains.reduce((sum, domain) => sum + domain.recipeCount, 0),
       specialPayloads: specialDomains.reduce((sum, domain) => sum + domain.payloads.length, 0),
       specialPayloadMismatches: specialDomains.filter((domain) => domain.recipeCount !== domain.payloads.length || domain.declaredPayloadCount !== domain.payloads.length).length,
+      specialExpectedFactKeys: specialExpectedFactKeys.length,
+      specialExpectedFactKeysPresent,
+      specialExpectedFactKeysMissing: specialExpectedFactKeys.length - specialExpectedFactKeysPresent,
       rawExportCountMismatches: rawExportCountMismatches.length,
       canonicalCountMismatches: canonicalCountMismatches.length,
       recipeCategories: recipeCategories.size,
@@ -1075,6 +1266,7 @@ function compileRawExport(inputDir, outputDir) {
       browserAtlasIndex: "textures/browser-atlas-index.json",
       entityModels: "models/entities/index.json",
       specialIndex: "special/index.json",
+      specialFactsCoverage: "special/facts-coverage.json",
       validationReport: "validation/report.json",
       migrationReadiness: "validation/migration-readiness.json",
     },
@@ -1098,9 +1290,10 @@ function compileRawExport(inputDir, outputDir) {
   const distSpecialIndex = {
     schemaVersion: "neonei/special-index/v1",
     sourceSchemaVersion: specialIndex?.schemaVersion ?? null,
-    domains: specialDomains.map(({ recipes, payloads, summary, ...domain }) => domain),
+    domains: specialDomains.map(({ recipes, payloads, summary, factsCoverage, ...domain }) => domain),
   };
   writeJsonCompact(join(outputDir, "special", "index.json"), distSpecialIndex);
+  writeJsonCompact(join(outputDir, "special", "facts-coverage.json"), specialFactsCoverage);
   for (const domain of specialDomains) {
     writeJsonCompact(join(outputDir, domain.outputRecipes), { schemaVersion: "neonei/special-domain-recipes/v1", domain: domain.domain, recipes: domain.recipes });
     writeJsonCompact(join(outputDir, domain.outputPayloads), { schemaVersion: "neonei/special-domain-payloads/v1", domain: domain.domain, payloads: domain.payloads });

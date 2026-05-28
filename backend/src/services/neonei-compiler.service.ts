@@ -54,6 +54,8 @@ export interface CompilerOptions {
     windowCount?: number;
     windowStride?: number;
     searchHotShardSize?: number;
+    recipeBootstrapHotItemLimit?: number;
+    maxRecipeGroupWindowsPerGroup?: number;
   };
 }
 
@@ -73,6 +75,8 @@ type NormalizedCompilerOptions = {
     windowCount: number;
     windowStride: number;
     searchHotShardSize: number;
+    recipeBootstrapHotItemLimit: number;
+    maxRecipeGroupWindowsPerGroup: number;
   };
   bootstrap: {
     hotItemLimit: number;
@@ -261,6 +265,17 @@ type EntityPreviewManifestEntry = {
   height?: number;
   renderMode?: string | null;
 };
+
+function numberFromEnv(name: string, fallback: number): number {
+  const parsed = Number(process.env[name]);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function booleanFromEnv(name: string, fallback: boolean): boolean {
+  const raw = `${process.env[name] ?? ''}`.trim().toLowerCase();
+  if (!raw) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(raw);
+}
 
 type EntityPreviewRecord = {
   mobName: string;
@@ -1060,6 +1075,9 @@ function buildUiPayload(
       surface,
       density: outputIds.length + inputIds.length > 8 ? 'wide' : 'default',
     },
+    metadata: compactObject(recipe.metadata ?? null),
+    additionalData: compactObject(recipe.additionalData ?? null),
+    recipeTypeData: compactObject(recipe.recipeTypeData ?? null),
   };
 
   if (familyKey === 'mobsinfo_slaughterhouse') {
@@ -1344,13 +1362,15 @@ export class NeoNeiCompilerService {
         atlasOutputDir: options.hotPageAtlas?.atlasOutputDir ?? path.join(DATA_DIR, 'page-atlas-cache'),
       },
       publishHotPayloads: {
-        enabled: options.publishHotPayloads?.enabled ?? true,
-        firstPageSize: options.publishHotPayloads?.firstPageSize ?? 256,
+        enabled: options.publishHotPayloads?.enabled ?? booleanFromEnv('NEONEI_COMPILE_PUBLISH_HOT_PAYLOADS', true),
+        firstPageSize: options.publishHotPayloads?.firstPageSize ?? numberFromEnv('NEONEI_PUBLISH_FIRST_PAGE_SIZE', 256),
         slotSizes: options.publishHotPayloads?.slotSizes ?? [45],
-        includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? true,
-        windowCount: options.publishHotPayloads?.windowCount ?? 48,
-        windowStride: options.publishHotPayloads?.windowStride ?? 64,
-        searchHotShardSize: options.publishHotPayloads?.searchHotShardSize ?? 8192,
+        includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? booleanFromEnv('NEONEI_PUBLISH_INCLUDE_SEARCH_PACK', true),
+        windowCount: options.publishHotPayloads?.windowCount ?? numberFromEnv('NEONEI_PUBLISH_WINDOW_COUNT', 48),
+        windowStride: options.publishHotPayloads?.windowStride ?? numberFromEnv('NEONEI_PUBLISH_WINDOW_STRIDE', 64),
+        searchHotShardSize: options.publishHotPayloads?.searchHotShardSize ?? numberFromEnv('NEONEI_PUBLISH_SEARCH_HOT_SHARD_SIZE', 8192),
+        recipeBootstrapHotItemLimit: options.publishHotPayloads?.recipeBootstrapHotItemLimit ?? numberFromEnv('NEONEI_PUBLISH_RECIPE_BOOTSTRAP_HOT_LIMIT', 64),
+        maxRecipeGroupWindowsPerGroup: options.publishHotPayloads?.maxRecipeGroupWindowsPerGroup ?? numberFromEnv('NEONEI_PUBLISH_MAX_RECIPE_GROUP_WINDOWS', 2),
       },
       bootstrap: {
         hotItemLimit: 5000,

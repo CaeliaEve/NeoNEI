@@ -61,6 +61,7 @@ export interface PublishPayloadHotOptions {
   windowStride?: number;
   searchHotShardSize?: number;
   recipeBootstrapHotItemLimit?: number;
+  maxRecipeGroupWindowsPerGroup?: number;
 }
 
 export interface PublishPayloadMaterializerOptions {
@@ -192,6 +193,7 @@ type NormalizedPublishPayloadHotOptions = {
   windowStride: number;
   searchHotShardSize: number;
   recipeBootstrapHotItemLimit: number;
+  maxRecipeGroupWindowsPerGroup: number;
 };
 
 type PublishPayloadRecord = {
@@ -238,20 +240,23 @@ const RECIPE_GROUP_WINDOW_SIZE = 8;
 const RECIPE_SEARCH_TEXT_MAX_LENGTH = Number(process.env.PUBLISHED_RECIPE_SEARCH_TEXT_MAX_LENGTH || 1024);
 const PUBLISHED_RECIPE_SEARCH_PACK_MAX_BYTES = Number(process.env.PUBLISHED_RECIPE_SEARCH_PACK_MAX_BYTES || (768 * 1024));
 
+const PUBLISH_BROTLI_QUALITY = Math.max(0, Math.min(11, Math.floor(Number(process.env.NEONEI_PUBLISH_BROTLI_QUALITY ?? 5))));
+const PUBLISH_GZIP_LEVEL = Math.max(1, Math.min(9, Math.floor(Number(process.env.NEONEI_PUBLISH_GZIP_LEVEL ?? 6))));
+
 const PUBLISH_BUNDLE_SIDECAR_VARIANTS = [
   {
     contentEncoding: 'br' as const,
     extension: '.br' as const,
     compress: (buffer: Buffer) => zlib.brotliCompressSync(buffer, {
       params: {
-        [zlib.constants.BROTLI_PARAM_QUALITY]: 11,
+        [zlib.constants.BROTLI_PARAM_QUALITY]: PUBLISH_BROTLI_QUALITY,
       },
     }),
   },
   {
     contentEncoding: 'gzip' as const,
     extension: '.gz' as const,
-    compress: (buffer: Buffer) => zlib.gzipSync(buffer, { level: 9 }),
+    compress: (buffer: Buffer) => zlib.gzipSync(buffer, { level: PUBLISH_GZIP_LEVEL }),
   },
 ] as const;
 
@@ -674,6 +679,10 @@ export class PublishPayloadMaterializerService {
       ),
       searchHotShardSize: Math.max(512, Math.floor(options.publishHotPayloads?.searchHotShardSize ?? 8192)),
       recipeBootstrapHotItemLimit: Math.max(0, Math.floor(options.publishHotPayloads?.recipeBootstrapHotItemLimit ?? 256)),
+      maxRecipeGroupWindowsPerGroup: Math.max(
+        1,
+        Math.floor(Number(options.publishHotPayloads?.maxRecipeGroupWindowsPerGroup ?? process.env.NEONEI_PUBLISH_MAX_RECIPE_GROUP_WINDOWS ?? 2)),
+      ),
     };
   }
 
@@ -695,6 +704,7 @@ export class PublishPayloadMaterializerService {
         'publish_payload_window_stride',
         'publish_payload_search_hot_shard_size',
         'publish_payload_recipe_bootstrap_hot_limit',
+        'publish_payload_max_recipe_group_windows',
         'publish_payload_compiled_at',
         'publish_payloads_count',
         'publish_payload_browser_layout_key',
@@ -737,6 +747,7 @@ export class PublishPayloadMaterializerService {
       && (state.get('publish_payload_window_stride') ?? '') === String(this.options.windowStride)
       && (state.get('publish_payload_search_hot_shard_size') ?? '') === String(this.options.searchHotShardSize)
       && (state.get('publish_payload_recipe_bootstrap_hot_limit') ?? '') === String(this.options.recipeBootstrapHotItemLimit)
+      && (state.get('publish_payload_max_recipe_group_windows') ?? '') === String(this.options.maxRecipeGroupWindowsPerGroup)
       && (state.get('publish_payload_browser_layout_key') ?? '') === browserLayoutKey
       && Boolean((state.get('publish_payload_compiled_at') ?? '').trim())
       && fs.existsSync(bundleManifestPath)
@@ -1532,7 +1543,11 @@ export class PublishPayloadMaterializerService {
               prewritten: true,
             });
 
-            for (let offset = 0; offset < machinePayload.recipeCount; offset += RECIPE_GROUP_WINDOW_SIZE) {
+            for (
+              let offset = 0, windowIndex = 0;
+              offset < machinePayload.recipeCount && windowIndex < this.options.maxRecipeGroupWindowsPerGroup;
+              offset += RECIPE_GROUP_WINDOW_SIZE, windowIndex += 1
+            ) {
               const windowPayload = tab === 'usedIn'
                 // eslint-disable-next-line no-await-in-loop
                 ? await recipeBootstrapService.getUsedInGroup(itemId, machineGroup.machineType, machineGroup.voltageTier ?? null, {
@@ -1623,7 +1638,11 @@ export class PublishPayloadMaterializerService {
               prewritten: true,
             });
 
-            for (let offset = 0; offset < categoryPayload.recipeCount; offset += RECIPE_GROUP_WINDOW_SIZE) {
+            for (
+              let offset = 0, windowIndex = 0;
+              offset < categoryPayload.recipeCount && windowIndex < this.options.maxRecipeGroupWindowsPerGroup;
+              offset += RECIPE_GROUP_WINDOW_SIZE, windowIndex += 1
+            ) {
               // eslint-disable-next-line no-await-in-loop
               const windowPayload = await recipeBootstrapService.getCategoryGroup(
                 itemId,
@@ -1808,6 +1827,7 @@ export class PublishPayloadMaterializerService {
       upsertState.run({ state_key: 'publish_payload_window_stride', state_value: String(this.options.windowStride) });
       upsertState.run({ state_key: 'publish_payload_search_hot_shard_size', state_value: String(this.options.searchHotShardSize) });
       upsertState.run({ state_key: 'publish_payload_recipe_bootstrap_hot_limit', state_value: String(this.options.recipeBootstrapHotItemLimit) });
+      upsertState.run({ state_key: 'publish_payload_max_recipe_group_windows', state_value: String(this.options.maxRecipeGroupWindowsPerGroup) });
       upsertState.run({ state_key: 'publish_payload_browser_layout_key', state_value: browserLayoutKey });
       upsertState.run({ state_key: 'publish_payload_compiled_at', state_value: compiledAt });
       upsertState.run({
