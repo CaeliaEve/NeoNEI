@@ -104,7 +104,7 @@ export function collectRecipeItemStacks(node: unknown, output: RitualItemStack[]
 export function isThaumcraftAspectItem(itemId: string, localizedName?: string): boolean {
   if (itemId.includes('thaumcraftneiplugin~Aspect') || itemId.includes('~Aspect~')) return true;
   return typeof localizedName === 'string' && (
-    localizedName.includes('瑕佺礌:') ||
+    localizedName.includes('??:') ||
     /aspects?:/i.test(localizedName)
   );
 }

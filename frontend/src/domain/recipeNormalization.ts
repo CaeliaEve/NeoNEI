@@ -85,8 +85,7 @@ const isExtremeMachineText = (value: string): boolean => {
     value.includes('终极合成') ||
     value.includes('无尽') ||
     value.includes('贪婪') ||
-    value.includes('缁堟瀬鍚堟垚') ||
-    value.includes('鏃犲敖')
+    value.includes('????')
   );
 };
 

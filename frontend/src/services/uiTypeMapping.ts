@@ -716,15 +716,15 @@ function detectBaseUIType(machineType: string): UITypeConfig {
   }
   if (
     normalized.includes('binding ritual') ||
-    normalized.includes('缁戝畾浠紡')
+    normalized.includes('????')
   ) {
     return BLOOD_BINDING_RITUAL;
   }
   if (
     normalized.includes('blood orb') ||
-    normalized.includes('琛€瀹濈彔') ||
-    normalized.includes('鐗瑰畾琛€瀹濈彔鍚堟垚') ||
-    normalized.includes('涓嶅畾琛€瀹濈彔鍚堟垚')
+    normalized.includes('???') ||
+    normalized.includes('???????') ||
+    normalized.includes('???????')
   ) {
     return BLOOD_ORB_CRAFTING;
   }
@@ -1046,7 +1046,7 @@ export function resolveRecipePresentationProfile(
 
   if (
     combined.includes('binding ritual') ||
-    combined.includes('缁戝畾浠紡')
+    combined.includes('????')
   ) {
     return createPresentationProfile(BLOOD_BINDING_RITUAL, {
       reason: 'combined:blood_binding_ritual',

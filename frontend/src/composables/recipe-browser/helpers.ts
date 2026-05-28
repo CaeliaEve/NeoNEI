@@ -551,7 +551,6 @@ const getExtremeRecipePreference = (recipe: Recipe): number => {
   let score = 0;
   if (machineType.includes('有序终极合成')) score += 2200;
   if (machineType.includes('无序终极合成')) score += 2100;
-  if (machineType.includes('缁堟瀬鍚堟垚')) score += 2000;
   if (machineType.includes('extreme crafting')) score += 1000;
   if (machineType.includes('dire crafting')) score += 900;
   if (machineType.includes('终极合成')) score += 1200;
