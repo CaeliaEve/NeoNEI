@@ -453,6 +453,228 @@ export interface RecipeUiPayload {
   [key: string]: unknown;
 }
 
+export interface GTDiagramItemRef {
+  itemId: string;
+  localizedName: string;
+  tier?: number | null;
+  tierName?: string | null;
+}
+
+export interface GTCircuitLine {
+  startTier: number;
+  boards: GTDiagramItemRef[];
+  circuits: GTDiagramItemRef[];
+}
+
+export interface GTIndividualCircuit {
+  tier: number;
+  boards: GTDiagramItemRef[];
+  circuit: GTDiagramItemRef | null;
+}
+
+export interface GTCircuitPartGroup {
+  key: string;
+  parts: Array<{
+    prefix: string;
+    itemId: string;
+    localizedName: string;
+  }>;
+}
+
+export interface GTCircuitProgressionDocument {
+  generatedFrom: string;
+  circuitLines: GTCircuitLine[];
+  individualCircuits: GTIndividualCircuit[];
+  circuitParts: GTCircuitPartGroup[];
+}
+
+export interface GTMaterialPartRef {
+  prefix: string;
+  itemId: string;
+  localizedName: string;
+}
+
+export interface GTMaterialFluidRef {
+  kind: string;
+  fluidId: string;
+  localizedName: string;
+}
+
+export interface GTMaterialPartsEntry {
+  materialName: string;
+  materialId: string;
+  sections: Record<string, GTMaterialPartRef[]>;
+  fluids: GTMaterialFluidRef[];
+}
+
+export interface GTMaterialPartsDocument {
+  generatedFrom: string;
+  materials: GTMaterialPartsEntry[];
+}
+
+export interface GTDiagramsOverview {
+  circuits: GTCircuitProgressionDocument | null;
+  materials: GTMaterialPartsDocument | null;
+}
+
+export interface ForestryGeneticsItemDrop {
+  itemId: string;
+  localizedName: string;
+  chance: number;
+}
+
+export interface ForestryGeneticsSpecies {
+  uid: string;
+  name: string;
+  memberItemId: string;
+  products: ForestryGeneticsItemDrop[];
+  specialties: ForestryGeneticsItemDrop[];
+}
+
+export interface ForestryGeneticsMutation {
+  allele0: string;
+  allele1: string;
+  result: string;
+  chance: number;
+  restricted: boolean;
+  dimensions?: string[];
+  biomes?: string[];
+}
+
+export interface ForestryGeneticsBranch {
+  species: ForestryGeneticsSpecies[];
+  mutations: ForestryGeneticsMutation[];
+}
+
+export interface ForestryGeneticsOverview {
+  generatedFrom: string;
+  bees: ForestryGeneticsBranch | null;
+  trees: ForestryGeneticsBranch | null;
+}
+
+export interface MultiblockDimensions {
+  x: number;
+  y: number;
+  z: number;
+  raw?: string;
+}
+
+export interface MultiblockVoxelLegendEntry {
+  label: string;
+  color?: string;
+  textureUrl?: string;
+  blockId?: string;
+  faceIcons?: Record<string, string>;
+  faceTextureUrls?: Record<string, string>;
+  faceUv?: Record<
+    string,
+    {
+      minU: number;
+      maxU: number;
+      minV: number;
+      maxV: number;
+    }
+  >;
+  orientationKind?: string;
+}
+
+export interface MultiblockVoxelBlueprint {
+  size: { x: number; y: number; z: number };
+  // layers[ y ][ z ] = row string (x-axis tokens)
+  layers: string[][];
+  legend: Record<string, MultiblockVoxelLegendEntry>;
+}
+
+export interface MultiblockBlueprint {
+  metaTileId: number;
+  className: string;
+  controllerItemId: string;
+  controllerLocalizedName: string;
+  structureSource?: string;
+  supports?: {
+    inputSeparation?: boolean;
+    batchMode?: boolean;
+    recipeLocking?: boolean;
+    voidProtection?: boolean;
+  };
+  dimensions?: MultiblockDimensions | null;
+  information?: string[];
+  structureInformation?: string[];
+  structureHints?: string[];
+  voxelBlueprint?: MultiblockVoxelBlueprint;
+}
+
+export interface PatternExportData {
+  version: number;
+  modVersion: string;
+  exportedAt?: string;
+  patternCount: number;
+  compatibility?: {
+    target: 'oc-pattern';
+    itemIdFormat: 'minecraft-registry';
+    beSubstitute: 'pattern-field';
+    crafterUUID: 'synthetic-pattern-id';
+    author: 'default-exporter';
+  };
+  warnings?: string[];
+  patterns?: Array<{
+    crafting: boolean;
+    substitute: boolean;
+    beSubstitute: boolean;
+    patternId: string;
+    crafterUUID: string;
+    author: string;
+  }>;
+  [key: string]: unknown;
+}
+
+export interface EcosystemLaneDetail {
+  label: string;
+  value: string;
+  ok: boolean;
+}
+
+export interface EcosystemLaneStatus {
+  id: 'nesql-exporter-main' | 'neonei' | 'oc-pattern';
+  label: string;
+  role: string;
+  repoPath: string;
+  detected: boolean;
+  details: EcosystemLaneDetail[];
+}
+
+export interface EcosystemOverview {
+  hub: string;
+  workflow: string[];
+  lanes: EcosystemLaneStatus[];
+}
+
+export interface RenderContractAssetEntry {
+  assetId: string;
+  variantKey: string;
+  sourceType: string | null;
+  family: string | null;
+  mode: string | null;
+  renderMode: string | null;
+  animationMode: string | null;
+  captureMethod: string | null;
+  captureSource: string | null;
+  rendererFamily: string | null;
+  playbackHint: string | null;
+  staticFile: string | null;
+  primaryArtifact: string | null;
+  spriteMetadataFile: string | null;
+  nativeSpriteAtlasFile: string | null;
+  contractFile: string | null;
+  atlasGroup: string | null;
+  frameCount: number | null;
+  frameDurationMs: number | null;
+  layers: Array<Record<string, unknown>>;
+  rendererContract: Record<string, unknown> | null;
+  shaderContract: Record<string, unknown> | null;
+  captureContract: Record<string, unknown> | null;
+}
+
 export interface BrowserVariantGroup {
   key: string;
   representative: Item;

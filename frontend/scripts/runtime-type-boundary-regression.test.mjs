@@ -97,3 +97,17 @@ test('core recipe and item runtime contracts live outside the legacy api facade'
     'runtime/types.ts must not depend on the legacy api facade',
   );
 });
+
+test('special data and render contracts live outside the legacy api facade', () => {
+  for (const token of [
+    'export interface GTDiagramsOverview {',
+    'export interface ForestryGeneticsOverview {',
+    'export interface MultiblockBlueprint {',
+    'export interface PatternExportData {',
+    'export interface EcosystemOverview {',
+    'export interface RenderContractAssetEntry {',
+  ]) {
+    assert.equal(runtimeTypesSource.includes(token), true, `missing special runtime contract: ${token}`);
+    assert.equal(apiSource.includes(token), false, `services/api.ts should not re-own ${token}`);
+  }
+});
