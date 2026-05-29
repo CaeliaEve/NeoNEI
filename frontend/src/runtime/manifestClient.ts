@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { BACKEND_BASE_URL } from '../services/api/core/http';
+import type { PublicRuntimeManifest } from './types';
 
 const runtimeHttp = axios.create({
   baseURL: `${BACKEND_BASE_URL.replace(/\/+$/g, '')}/runtime`,
@@ -23,7 +24,7 @@ export function getRuntimeCacheSignature(
   return sourceSignature || null;
 }
 
-export function createRuntimeManifestClient<TManifest extends RuntimeManifestIdentity>(options?: {
+export function createRuntimeManifestClient<TManifest extends RuntimeManifestIdentity = PublicRuntimeManifest>(options?: {
   onManifest?: (manifest: TManifest) => void;
 }) {
   let cache: TManifest | null = null;

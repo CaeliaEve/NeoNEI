@@ -1,6 +1,7 @@
 import { BACKEND_BASE_URL } from './api/core/http';
 import { createPublishedJsonClient } from '../runtime/publishClient';
 import { createRuntimeManifestClient, getRuntimeCacheSignature } from '../runtime/manifestClient';
+import type { PublicRuntimeManifest, PublishBundleWindowPathEntry } from '../runtime/types';
 import { browserRuntimeClient } from '../runtime/browserClient';
 import { searchRuntimeClient } from '../runtime/searchClient';
 import {
@@ -19,6 +20,13 @@ import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canU
 import { createTextureRuntimeClient } from '../runtime/textureClient';
 import { deleteLabPayload, getLabPayload, postLabPayload, putLabPayload } from '../runtime/devCompatClient';
 import { getDistDataHomeBootstrap } from './distDataRuntime';
+
+export type {
+  PublicRuntimeManifest,
+  PublishBundleSearchShardPathEntry,
+  PublishBundleWindowPathEntry,
+  PublishStaticBundleManifest,
+} from '../runtime/types';
 
 export { API_BASE_URL, BACKEND_BASE_URL } from './api/core/http';
 export {
@@ -72,6 +80,12 @@ const browserAtlasEntriesInFlight = new Map<string, Promise<BrowserAtlasIndexRes
 const publishedJsonValueCache = new Map<string, unknown>();
 const publishedJsonInFlight = new Map<string, Promise<unknown>>();
 let publishManifestCache: PublicRuntimeManifest | null = null;
+const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>({
+  onManifest: (manifest) => {
+    publishManifestCache = manifest;
+    primeRuntimeCacheSignature(getRuntimeCacheSignature(manifest));
+  },
+});
 let ecosystemOverviewCache: EcosystemOverview | null = null;
 let ecosystemOverviewInFlight: Promise<EcosystemOverview> | null = null;
 
@@ -911,78 +925,6 @@ export interface BrowserSearchPackResponse {
   signature?: string;
   total: number;
   items: BrowserSearchPackEntry[];
-}
-
-export interface PublicRuntimeManifest {
-  version: number;
-  sourceSignature: string;
-  compiledAt: string | null;
-  publishRevision?: string | null;
-  publishCompiledAt?: string | null;
-  browserLayoutKey?: string | null;
-  runtimeCacheKey?: string;
-  publishBundle?: PublishStaticBundleManifest | null;
-}
-
-const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>({
-  onManifest: (manifest) => {
-    publishManifestCache = manifest;
-    primeRuntimeCacheSignature(getRuntimeCacheSignature(manifest));
-  },
-});
-
-export interface PublishBundleWindowPathEntry {
-  scope: string;
-  slotSize: number;
-  path: string;
-  offset: number;
-  length: number;
-}
-
-export interface PublishBundleSearchShardPathEntry {
-  scope: string;
-  shardId: string;
-  path: string;
-  total: number;
-}
-
-export interface PublishStaticBundleManifest {
-  version: number;
-  sourceSignature: string;
-  revision: string;
-  compiledAt: string;
-  publicBasePath: string;
-  firstPageSize: number;
-  slotSizes: number[];
-  includeBrowserSearchPack: boolean;
-  files: {
-    manifest: string;
-    modsList: string | null;
-    browserSearchPack: string | null;
-    browserSearchShards: PublishBundleSearchShardPathEntry[];
-    recipeBootstrapBasePath: string | null;
-    recipeBootstrapShardBasePath: string | null;
-    recipeBootstrapItems: string[];
-    recipeGroupIndexBasePath: string | null;
-    recipeGroupWindowBasePath?: string | null;
-    recipeSearchBasePath: string | null;
-    recipeSearchItems: string[];
-    itemRecipeBundleBasePath: string | null;
-    itemRecipeBundleItems: string[];
-    recipeUiBundleBasePath: string | null;
-    recipeUiBundleItems: string[];
-    browserPageWindows: PublishBundleWindowPathEntry[];
-    homeBootstrapWindows: PublishBundleWindowPathEntry[];
-  };
-  recipeCoverage?: {
-    recipeBootstrapItems: number;
-    recipeGroupIndexItems: number;
-    recipeGroupWindowItems: number;
-    missingRecipeWindowItems: number;
-    recipeGroupIndexPayloads: number;
-    recipeGroupWindowPayloads: number;
-    missingRecipeWindowItemIds: string[];
-  };
 }
 
 export interface PaginatedResponse<T> {

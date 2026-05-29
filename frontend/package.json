@@ -26,7 +26,8 @@
     "audit:api-runtime:gate": "node ../scripts/audit-api-runtime.mjs --gate --max-legacy-api-references=0 --max-fallback-references=0 --max-legacy-dynamic-routes=0",
     "test:path-portability-urls": "node --test scripts/path-portability-url-regression.test.mjs",
     "test:export-paths": "node ../scripts/audit-export-paths.mjs --self-test",
-    "test:runtime-diagnostics": "node --test scripts/runtime-diagnostics-regression.test.mjs"
+    "test:runtime-diagnostics": "node --test scripts/runtime-diagnostics-regression.test.mjs",
+    "test:runtime-type-boundary": "node --test scripts/runtime-type-boundary-regression.test.mjs"
   },
   "dependencies": {
     "axios": "^1.13.2",
