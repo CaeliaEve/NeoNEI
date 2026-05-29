@@ -78,3 +78,22 @@ test('browser/search/texture runtime clients consume browser contracts from runt
   assert.doesNotMatch(searchClientSource, /from '\.\.\/services\/api'/);
   assert.doesNotMatch(textureClientSource, /from '\.\.\/services\/api'/);
 });
+
+test('core recipe and item runtime contracts live outside the legacy api facade', () => {
+  for (const token of [
+    'export interface Item {',
+    'export interface Recipe {',
+    'export interface RecipeBootstrapPayload {',
+    'export interface RecipeUiPayload {',
+    'export interface indexedRecipe {',
+  ]) {
+    assert.equal(runtimeTypesSource.includes(token), true, `missing core runtime contract: ${token}`);
+    assert.equal(apiSource.includes(token), false, `services/api.ts should not re-own ${token}`);
+  }
+
+  assert.equal(
+    runtimeTypesSource.includes("from '../services/api'"),
+    false,
+    'runtime/types.ts must not depend on the legacy api facade',
+  );
+});
