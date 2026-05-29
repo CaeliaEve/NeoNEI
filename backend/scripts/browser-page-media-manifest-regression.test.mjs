@@ -1,19 +1,19 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const itemsRouteSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/routes/items.routes.ts',
+  'src/routes/items.routes.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const publishRouteSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/routes/publish.routes.ts',
+  'src/routes/publish.routes.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const materializerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload-materializer.service.ts',
+  'src/services/publish-payload-materializer.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -44,3 +44,4 @@ test('browser page payloads include a rich-media manifest for animated atlas fas
     'materialized follow-up windows should serialize their rich-media manifest',
   );
 });
+

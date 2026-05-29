@@ -1,9 +1,10 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
+import path from 'node:path';
 
 const read = (relativePath) =>
-  fs.readFileSync(`E:/codex/ae2/NeoNEI/${relativePath}`, 'utf8');
+  fs.readFileSync(path.resolve('..', relativePath), 'utf8');
 
 test('homepage item browser keeps animation enabled for right-side item cards', () => {
   const source = read('frontend/src/views/HomePage.vue');
@@ -66,3 +67,5 @@ test('atlas-backed item cards still schedule animation enhancement once visible'
     'item cards should reuse the shared prepared animation pipeline so history cards match the main browser animation behavior',
   );
 });
+
+

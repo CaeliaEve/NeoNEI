@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const sourcePath = path.resolve('E:/codex/ae2/NeoNEI/frontend/src/components/GTResearchStationUI.vue');
+const sourcePath = path.resolve('src/components/GTResearchStationUI.vue');
 const source = fs.readFileSync(sourcePath, 'utf8');
 
 test('research station UI uses the approved scan chamber layout markers', () => {
@@ -25,3 +25,4 @@ test('research station UI preserves item click emission and fallback marker', ()
   assert.match(source, /emit\('item-click', itemId\)/);
   assert.match(source, /: '--'/);
 });
+

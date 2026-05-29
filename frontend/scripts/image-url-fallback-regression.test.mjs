@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/api/images.ts',
+  'src/services/api/images.ts',
   'utf8',
 );
 
@@ -30,3 +30,4 @@ test('canonical assets resolve through api proxy when backend base is relative',
     'canonical animation assets should resolve through the /api proxy in preview deployments',
   );
 });
+

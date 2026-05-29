@@ -1,4 +1,4 @@
-import { BACKEND_BASE_URL } from './core/http';
+﻿import { BACKEND_BASE_URL } from './core/http';
 import { ASPECT_HASH_TO_NAME, getThaumcraftAspectTexturePath } from '../thaumcraftAspects';
 
 const FALLBACK_ITEM_IMAGE_PATH = 'minecraft/barrier~0.png';
@@ -25,8 +25,8 @@ function normalizeImageFileName(imageFileName: string): string {
     .replace(/^[a-zA-Z]:\//, '')
     .replace(/^images\/item\//, '')
     .replace(/^api\/images\/item\//, '')
-    .replace(/^.*?\.minecraft\/nesql\/nesql-repository\/image\//, '')
-    .replace(/^.*?nesql-repository\/image\//, '');
+    .replace(/^.*?\/image\/item\//i, '')
+    .replace(/^.*?\/image\//i, '');
 }
 
 function stripVariantSuffixFromImageFileName(imageFileName: string): string {
@@ -325,3 +325,5 @@ export function resolveCanonicalRelativePath(relativePath?: string | null): stri
 
   return `${getBackendOrigin()}/canonical/${canonicalPath}`;
 }
+
+

@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 );
 
@@ -35,3 +35,4 @@ test('homepage browser page packs use manifest-keyed persistent cache and slot-s
     'item browser should revalidate persisted browser page packs against the latest manifest signature',
   );
 });
+

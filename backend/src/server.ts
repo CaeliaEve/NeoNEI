@@ -14,8 +14,10 @@ import forestryGeneticsRoutes from './routes/forestry-genetics.routes';
 import renderContractRoutes from './routes/render-contract.routes';
 import recipeBootstrapRoutes from './routes/recipe-bootstrap.routes';
 import publishRoutes from './routes/publish.routes';
+import runtimeRoutes from './routes/runtime.routes';
+import v1Routes from './routes/v1.routes';
 import { getAccelerationDatabaseManager, getDatabaseManager } from './models/database';
-import { DATA_DIR, IMAGES_PATH, NESQL_CANONICAL_DIR, PUBLISH_OUTPUT_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from './config/runtime-paths';
+import { CONTRACTS_DIR, DATA_DIR, IMAGES_PATH, NESQL_CANONICAL_DIR, PUBLISH_OUTPUT_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from './config/runtime-paths';
 import { requestObservability } from './middleware/request-observability';
 import { errorHandler } from './middleware/error-handler';
 import { logger } from './utils/logger';
@@ -42,6 +44,7 @@ function isEnvEnabled(value: string | undefined): boolean {
 }
 
 const PUBLISH_MATERIALIZE_ON_START = isEnvEnabled(process.env.NEONEI_PUBLISH_MATERIALIZE_ON_START);
+const PUBLIC_RUNTIME_ONLY = isEnvEnabled(process.env.NEONEI_PUBLIC_RUNTIME_ONLY);
 
 type AccelerationRuntimePhase =
   | 'initializing'
@@ -265,6 +268,16 @@ app.use(
 );
 
 app.use(express.static(path.join(__dirname, '../public')));
+
+if (fs.existsSync(CONTRACTS_DIR)) {
+  app.use(
+    '/contracts',
+    express.static(CONTRACTS_DIR, {
+      maxAge: '1h',
+      etag: true,
+    }),
+  );
+}
 
 type RequestedArtifactDescriptor = {
   stem: string;
@@ -786,11 +799,37 @@ app.get('/api/openapi.json', (_req, res) => {
     },
     paths: {
       '/api/health': { get: { summary: 'Runtime health and acceleration status' } },
+      '/runtime/health': { get: { summary: 'Product-semantic runtime health endpoint' } },
+      '/runtime/manifest': { get: { summary: 'Active runtime manifest' } },
+      '/runtime/contracts': { get: { summary: 'Runtime contract index' } },
+      '/runtime/diagnostics': { get: { summary: 'Public runtime readiness diagnostics' } },
+      '/ops/runtime': { get: { summary: 'Token-protected runtime diagnostics' } },
+      '/ops/acceleration/reconcile': { post: { summary: 'Token-protected rebuild/materialize trigger' } },
+      '/lab/items': { get: { summary: 'Development compatibility item queries' } },
+      '/lab/recipes': { get: { summary: 'Development compatibility recipe queries' } },
+      '/api/v1/health': { get: { summary: 'Legacy compatibility runtime health endpoint' } },
+      '/api/v1/runtime/manifest': { get: { summary: 'Legacy compatibility active runtime manifest' } },
+      '/api/v1/runtime/contracts': { get: { summary: 'Legacy compatibility runtime contract index' } },
       '/api/publish/manifest': { get: { summary: 'No-cache active publish manifest' } },
       '/api/publish/home-bootstrap': { get: { summary: 'Fallback home bootstrap payload' } },
       '/publish/{artifactPath}': { get: { summary: 'Immutable static publish artifacts except active manifests' } },
       '/api/admin/acceleration/reconcile': { post: { summary: 'Token-protected rebuild/materialize trigger' } },
       '/api/admin/runtime': { get: { summary: 'Token-protected runtime diagnostics' } },
+    },
+  });
+});
+
+app.get('/ops/runtime', (req, res) => {
+  if (!requireAdminToken(req, res)) {
+    return;
+  }
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    acceleration: accelerationRuntime,
+    publish: {
+      outputDir: PUBLISH_OUTPUT_DIR,
+      exists: fs.existsSync(PUBLISH_OUTPUT_DIR),
     },
   });
 });
@@ -807,6 +846,40 @@ app.get('/api/admin/runtime', (req, res) => {
       outputDir: PUBLISH_OUTPUT_DIR,
       exists: fs.existsSync(PUBLISH_OUTPUT_DIR),
     },
+  });
+});
+
+app.post('/ops/acceleration/reconcile', async (req, res) => {
+  if (!requireAdminToken(req, res)) {
+    return;
+  }
+  if (!runtimeAccelerationDbManager) {
+    res.status(503).json({ error: 'acceleration_manager_not_ready' });
+    return;
+  }
+  if (accelerationRuntime.phase === 'compiling' || accelerationRuntime.phase === 'promoting' || accelerationRuntime.blocking) {
+    res.status(409).json({
+      error: 'acceleration_reconcile_in_progress',
+      phase: accelerationRuntime.phase,
+      blocking: accelerationRuntime.blocking,
+    });
+    return;
+  }
+
+  logger.info('[OPS] acceleration reconcile requested', { ip: req.ip });
+  void reconcileAccelerationRuntime(runtimeAccelerationDbManager).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    setAccelerationRuntimePhase('error', 'Ops acceleration reconciliation failed.', {
+      stale: true,
+      lastError: message,
+    });
+    logger.error('[OPS] acceleration reconcile failed', error);
+  });
+
+  res.status(202).json({
+    status: 'accepted',
+    phase: accelerationRuntime.phase,
+    message: 'Acceleration reconciliation scheduled.',
   });
 });
 
@@ -844,16 +917,55 @@ app.post('/api/admin/acceleration/reconcile', async (req, res) => {
   });
 });
 
-app.use('/api/items', itemsRoutes);
-app.use('/api/patterns', patternsRoutes);
-app.use('/api/recipes-indexed', indexedRecipesRoutes);
-app.use('/api/multiblocks', multiblocksRoutes);
-app.use('/api/ecosystem', ecosystemRoutes);
-app.use('/api/gt-diagrams', gtDiagramsRoutes);
-app.use('/api/forestry-genetics', forestryGeneticsRoutes);
-app.use('/api/render-contract', renderContractRoutes);
-app.use('/api/recipe-bootstrap', recipeBootstrapRoutes);
+app.use('/runtime', (_req, res, next) => {
+  res.setHeader('x-neonei-api-tier', 'public-runtime');
+  next();
+}, runtimeRoutes);
+if (!PUBLIC_RUNTIME_ONLY) {
+  app.use('/lab', (_req, res, next) => {
+    res.setHeader('x-neonei-api-tier', 'dev-compat');
+    next();
+  });
+  app.use('/lab/items', itemsRoutes);
+  app.use('/lab/patterns', patternsRoutes);
+  app.use('/lab/recipes', indexedRecipesRoutes);
+  app.use('/lab/recipe-bootstrap', recipeBootstrapRoutes);
+  app.use('/lab/publish', publishRoutes);
+  app.use('/lab/render-contract', renderContractRoutes);
+  app.use('/lab/multiblocks', multiblocksRoutes);
+  app.use('/lab/ecosystem', ecosystemRoutes);
+  app.use('/lab/gt-diagrams', gtDiagramsRoutes);
+  app.use('/lab/forestry-genetics', forestryGeneticsRoutes);
+}
+
+app.use('/api', (_req, res, next) => {
+  res.setHeader('x-neonei-api-tier', 'legacy-compat');
+  next();
+});
+if (!PUBLIC_RUNTIME_ONLY) {
+  app.use('/api/items', itemsRoutes);
+  app.use('/api/patterns', patternsRoutes);
+  app.use('/api/recipes-indexed', indexedRecipesRoutes);
+  app.use('/api/multiblocks', multiblocksRoutes);
+  app.use('/api/ecosystem', ecosystemRoutes);
+  app.use('/api/gt-diagrams', gtDiagramsRoutes);
+  app.use('/api/forestry-genetics', forestryGeneticsRoutes);
+  app.use('/api/render-contract', renderContractRoutes);
+  app.use('/api/recipe-bootstrap', recipeBootstrapRoutes);
+}
 app.use('/api/publish', publishRoutes);
+app.use('/api/v1', v1Routes);
+app.use((req, res) => {
+  const requestId = (req as Request & { requestId?: string }).requestId;
+  res.status(404).json({
+    error: {
+      code: 'NOT_FOUND',
+      message: 'Route not found',
+      requestId,
+      path: req.originalUrl ?? req.url,
+    },
+  });
+});
 app.use(errorHandler);
 
 async function startServer() {
@@ -887,6 +999,7 @@ async function startServer() {
       logger.info(`API endpoint: ${PUBLIC_BASE_URL}/api`);
       logger.info(`Items API: ${PUBLIC_BASE_URL}/api/items`);
       logger.info(`Images path: ${IMAGES_PATH}`);
+      logger.info(`Public runtime only: ${PUBLIC_RUNTIME_ONLY}`);
 
       setTimeout(() => {
         void reconcileAccelerationRuntime(accelerationDbManager).catch((error) => {
@@ -963,4 +1076,7 @@ async function startServer() {
 }
 
 void startServer();
+
+
+
 

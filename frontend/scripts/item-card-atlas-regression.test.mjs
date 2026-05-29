@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/ItemCard.vue',
+  'src/components/ItemCard.vue',
   'utf8',
 );
 
@@ -44,3 +44,4 @@ test('ItemCard can bypass atlas sprites for direct gif playback fallback', () =>
     'atlas-backed cards should unmount the static atlas layer once direct gif playback is selected',
   );
 });
+

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neonei.local/contracts/runtime/manifest.schema.json",
+  "title": "NeoNEI Runtime Manifest",
+  "type": "object",
+  "required": ["schemaVersion", "generatedAt", "source", "sourceRepository", "files"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": { "type": "string", "pattern": "^neonei/dist-data/" },
+    "generatedAt": { "type": "string" },
+    "source": { "type": "string" },
+    "sourceRepository": { "type": "string" },
+    "runtimeCacheKey": { "type": "string" },
+    "capabilities": { "type": "object", "additionalProperties": true },
+    "files": {
+      "type": "object",
+      "required": [
+        "searchAll",
+        "browserCatalog",
+        "browserGroups",
+        "recipeCategories",
+        "recipeItemIndex",
+        "recipeUiPayloadIndex",
+        "textureManifest",
+        "animationTable",
+        "browserAtlasIndex",
+        "validationReport",
+        "migrationReadiness"
+      ],
+      "additionalProperties": { "type": "string" }
+    }
+  }
+}

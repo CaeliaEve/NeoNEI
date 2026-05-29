@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const serverSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/server.ts',
+  'src/server.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -23,3 +23,4 @@ test('admin runtime endpoints require tokens, rate limiting, structured diagnost
   assert.match(serverSource, /app\.post\('\/api\/admin\/acceleration\/reconcile'/, 'server should expose token-protected rebuild reconcile endpoint');
   assert.match(serverSource, /logger\.info\('\[ADMIN\] acceleration reconcile requested'/, 'admin mutations should be logged');
 });
+

@@ -5,43 +5,152 @@
       "id": "iron_ingot",
       "label": "Iron Ingot baseline",
       "required": true,
-      "match": { "itemIds": ["i~minecraft~iron_ingot~0"], "localizedIncludes": ["iron ingot"], "internalIncludes": ["iron_ingot"] },
-      "checks": { "atlas": true, "recipe": true }
+      "match": {
+        "itemIds": [
+          "i~minecraft~iron_ingot~0"
+        ],
+        "localizedIncludes": [
+          "??",
+          "iron ingot"
+        ],
+        "internalIncludes": [
+          "iron_ingot"
+        ]
+      },
+      "checks": {
+        "atlas": true,
+        "recipe": true
+      }
     },
     {
       "id": "terrasteel_ingot",
-      "label": "Botania Terrasteel animated sample",
+      "label": "Botania Terrasteel ingot baseline",
       "required": true,
-      "match": { "itemIds": ["i~botania~manaResource~4"], "localizedIncludes": ["terrasteel"], "internalIncludes": ["manaResource"] },
-      "checks": { "atlas": true, "animation": true }
+      "match": {
+        "itemIds": [
+          "i~Botania~manaResource~4"
+        ],
+        "localizedIncludes": [
+          "????",
+          "terrasteel"
+        ],
+        "internalIncludes": [
+          "manaResource"
+        ]
+      },
+      "checks": {
+        "atlas": true,
+        "recipe": true
+      }
     },
     {
-      "id": "thaumcraft_wand",
-      "label": "Thaumcraft wand/cap/staff grouping sample",
+      "id": "thaumcraft_primal_crusher_animation",
+      "label": "Thaumcraft native sprite animation sample",
       "required": false,
-      "match": { "modIds": ["Thaumcraft", "thaumcraft"], "localizedIncludes": ["wand", "staff", "sceptre", "法杖", "权杖"] },
-      "checks": { "atlas": true, "group": true }
+      "match": {
+        "itemIds": [
+          "i~Thaumcraft~ItemPrimalCrusher~0"
+        ],
+        "localizedIncludes": [
+          "???"
+        ],
+        "internalIncludes": [
+          "ItemPrimalCrusher"
+        ]
+      },
+      "checks": {
+        "atlas": true,
+        "animation": true
+      }
     },
     {
-      "id": "singularity_animation",
-      "label": "Avaritia / AE singularity animation sample",
+      "id": "avaritia_singularity_animation",
+      "label": "Avaritia singularity rendered animation sample",
       "required": false,
-      "match": { "localizedIncludes": ["singularity", "奇点"], "internalIncludes": ["singularity"] },
-      "checks": { "atlas": true, "animation": true }
+      "match": {
+        "itemIds": [
+          "i~Avaritia~Singularity~0"
+        ],
+        "localizedIncludes": [
+          "???",
+          "singularity"
+        ],
+        "internalIncludes": [
+          "Singularity"
+        ]
+      },
+      "checks": {
+        "atlas": true,
+        "animation": true
+      }
+    },
+    {
+      "id": "nasa_rocket_animation",
+      "label": "Galacticraft / GalaxySpace rendered rocket animation sample",
+      "required": false,
+      "match": {
+        "itemIds": [
+          "i~GalaxySpace~item.Tier4Rocket~0",
+          "i~GalacticraftMars~item.itemTier3Rocket~0"
+        ],
+        "localizedIncludes": [
+          "4???",
+          "3???",
+          "rocket"
+        ],
+        "internalIncludes": [
+          "Rocket"
+        ]
+      },
+      "checks": {
+        "atlas": true,
+        "animation": true
+      }
     },
     {
       "id": "eec_industrial_slaughterhouse",
       "label": "Extreme Entity Crusher / Industrial Slaughterhouse sample",
       "required": false,
-      "match": { "localizedIncludes": ["extreme entity crusher", "industrial slaughterhouse", "工业屠宰场"], "internalIncludes": ["crusher", "slaughter"] },
-      "checks": { "recipe": true }
+      "match": {
+        "itemIds": [
+          "i~gregtech~gt.blockmachines~14201"
+        ],
+        "localizedIncludes": [
+          "?????",
+          "industrial slaughterhouse"
+        ],
+        "internalIncludes": [
+          "gt.blockmachines"
+        ]
+      },
+      "checks": {
+        "atlas": true,
+        "recipe": true
+      }
     },
     {
       "id": "gt_machine",
       "label": "GregTech machine browser and recipe sample",
       "required": false,
-      "match": { "modIds": ["gregtech"], "localizedIncludes": ["machine", "机器"], "internalIncludes": ["gt.blockmachines"] },
-      "checks": { "atlas": true, "recipe": true }
+      "match": {
+        "itemIds": [
+          "i~gregtech~gt.blockmachines~14"
+        ],
+        "modIds": [
+          "gregtech"
+        ],
+        "localizedIncludes": [
+          "????",
+          "machine"
+        ],
+        "internalIncludes": [
+          "gt.blockmachines"
+        ]
+      },
+      "checks": {
+        "atlas": true,
+        "recipe": true
+      }
     }
   ]
 }

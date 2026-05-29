@@ -1,14 +1,14 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const browserSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 );
 
 const animationBudgetSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/animationBudget.ts',
+  'src/services/animationBudget.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -62,3 +62,4 @@ test('animation budget remembers session-warm assets even after the short HTMLIm
     'page presentation gating should treat session-warmed assets as warm even after the short image cache rotates older entries out',
   );
 });
+

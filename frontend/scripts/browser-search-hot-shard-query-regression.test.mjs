@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/browserSearchWorker.ts',
+  'src/services/browserSearchWorker.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -29,3 +29,4 @@ test('browser search can answer page-1 hot-shard hits before full-pack hydration
     'search queries should still escalate to the full search pack when the hot shard is insufficient',
   );
 });
+

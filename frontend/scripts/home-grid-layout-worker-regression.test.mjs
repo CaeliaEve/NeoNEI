@@ -3,15 +3,15 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const componentSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/HomeCanvasGrid.vue',
+  'src/components/HomeCanvasGrid.vue',
   'utf8',
 );
 const serviceSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/homeGridLayoutWorker.ts',
+  'src/services/homeGridLayoutWorker.ts',
   'utf8',
 );
 const workerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/workers/homeGridLayout.worker.ts',
+  'src/workers/homeGridLayout.worker.ts',
   'utf8',
 );
 
@@ -30,3 +30,4 @@ test('homepage layout worker keeps an OffscreenCanvas enhancement path with sync
   assert.match(serviceSource, /computeFallbackLayout/, 'worker service should keep a no-worker fallback layout');
   assert.match(componentSource, /command\?\.x \?\? col \* \(cardSize\.value \+ gap\)/, 'component should keep inline fallback coordinates');
 });
+

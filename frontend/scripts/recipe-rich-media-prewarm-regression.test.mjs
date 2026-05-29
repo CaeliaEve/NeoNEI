@@ -1,14 +1,14 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const bootstrapSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeBootstrap.ts',
+  'src/composables/useRecipeBootstrap.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const viewerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeViewer.ts',
+  'src/composables/useRecipeViewer.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -44,3 +44,4 @@ test('recipe viewer primes atlas metadata and warmups from payload-level media m
     'recipe viewer should prime media manifests for full shard fallback payloads before merging recipes',
   );
 });
+

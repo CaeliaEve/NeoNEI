@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neonei.local/contracts/runtime/recipe.schema.json",
+  "title": "NeoNEI Runtime Recipe Index",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "items": { "type": "object", "additionalProperties": true },
+    "categories": { "type": "array" },
+    "payloads": { "type": "object", "additionalProperties": true }
+  }
+}

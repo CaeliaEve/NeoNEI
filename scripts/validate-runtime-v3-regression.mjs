@@ -138,7 +138,10 @@ for (const entry of atlasPayload.items ?? []) {
       tableDurations: tableDurations.slice(0, 8),
     });
   }
-  if (tableDurations.length > 0 && tableDurations.every((duration) => duration === 50) && tableEntry.mode !== "native_sprite") {
+  if (tableDurations.length > 0
+      && tableDurations.every((duration) => duration === 50)
+      && tableEntry.mode !== "native_sprite"
+      && !["minecraft_tick_capture", "native_sprite_metadata"].includes(tableEntry.frameDurationSource)) {
     animationTimingWarnings.push({ itemId: entry.itemId, reason: "uniform-50ms-non-native-animation" });
   }
 }

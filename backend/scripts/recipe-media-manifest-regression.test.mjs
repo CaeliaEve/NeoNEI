@@ -1,14 +1,14 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const serviceSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/recipe-bootstrap.service.ts',
+  'src/services/recipe-bootstrap.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const routeSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/routes/recipe-bootstrap.routes.ts',
+  'src/routes/recipe-bootstrap.routes.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -39,3 +39,4 @@ test('recipe bootstrap payloads include rich-media manifests for atlas-first ani
     'category-group route should use the bootstrap service so render hints/media manifest stay attached',
   );
 });
+

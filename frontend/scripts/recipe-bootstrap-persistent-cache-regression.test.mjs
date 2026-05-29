@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+  'src/services/api.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -29,3 +29,4 @@ test('recipe bootstrap API persists hot bootstrap packs behind runtime-signature
     'machine-group recipe packs should persist so revisiting large GT pages does not refetch them from scratch',
   );
 });
+

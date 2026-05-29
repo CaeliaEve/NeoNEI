@@ -1,44 +1,44 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const normalizationSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/domain/recipeNormalization.ts',
+  'src/domain/recipeNormalization.ts',
   'utf8',
 );
 
 const animationBudgetSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/animationBudget.ts',
+  'src/services/animationBudget.ts',
   'utf8',
 );
 
 const craftingUiSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/StandardCraftingUI.vue',
+  'src/components/StandardCraftingUI.vue',
   'utf8',
 );
 
 const assemblyLineUiSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/GTAssemblyLineUI.vue',
+  'src/components/GTAssemblyLineUI.vue',
   'utf8',
 );
 
 const animatedItemIconSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/AnimatedItemIcon.vue',
+  'src/components/AnimatedItemIcon.vue',
   'utf8',
 );
 
 const homeCanvasGridSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/HomeCanvasGrid.vue',
+  'src/components/HomeCanvasGrid.vue',
   'utf8',
 );
 
 const itemCardSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/ItemCard.vue',
+  'src/components/ItemCard.vue',
   'utf8',
 );
 
 const recipeViewerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeViewer.ts',
+  'src/composables/useRecipeViewer.ts',
   'utf8',
 );
 
@@ -146,3 +146,4 @@ test('recipe viewer prewarms current and nearby page media to reduce blank textu
     'recipe viewer should queue media prewarm from the visible recipe window',
   );
 });
+

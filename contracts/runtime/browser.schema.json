@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neonei.local/contracts/runtime/browser.schema.json",
+  "title": "NeoNEI Runtime Browser Catalog",
+  "type": "object",
+  "required": ["schemaVersion", "items"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["itemId", "localizedName", "modId", "renderAssetRef", "browserOrder"],
+        "additionalProperties": true,
+        "properties": {
+          "itemId": { "type": "string" },
+          "localizedName": { "type": "string" },
+          "modId": { "type": "string" },
+          "renderAssetRef": { "type": "string" },
+          "browserOrder": { "type": "number" },
+          "groupKey": { "type": ["string", "null"] },
+          "groupSize": { "type": ["number", "null"] },
+          "representativeItemId": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}

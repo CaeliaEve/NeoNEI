@@ -1,14 +1,14 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const homePageSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/views/HomePage.vue',
+  'src/views/HomePage.vue',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const itemBrowserSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -74,3 +74,4 @@ test('browser search pack no longer auto-warms during homepage idle bootstrap', 
     'homepage search field should explicitly warm the search index on user intent',
   );
 });
+

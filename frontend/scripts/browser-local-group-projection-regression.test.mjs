@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const useItemBrowserSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 );
 
@@ -68,3 +68,4 @@ test('item browser can locally project ordinary page flips from hot NEI catalogs
     'default and search browser scopes should both use hot catalog projection before live page-pack fallback',
   );
 });
+

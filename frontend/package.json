@@ -17,7 +17,15 @@
     "release:regression": "node scripts/release-regression-checklist.mjs",
     "gate:c": "playwright test -c scripts/pw-gatec.config.ts",
     "validate:runtime-v3": "node ../scripts/validate-runtime-v3-regression.mjs --gate",
-    "bench:browser-v3": "node ../scripts/bench-browser-v3.mjs --gate"
+    "bench:browser-v3": "node ../scripts/bench-browser-v3.mjs --gate",
+    "validate:runtime-contracts": "node ../scripts/validate-runtime-contracts.mjs --gate",
+    "audit:api-runtime": "node ../scripts/audit-api-runtime.mjs",
+    "audit:paths": "node ../scripts/audit-path-portability.mjs",
+    "gate:runtime": "node ../scripts/gate-runtime-release.mjs",
+    "gate:runtime:quick": "node ../scripts/gate-runtime-release.mjs --quick",
+    "audit:api-runtime:gate": "node ../scripts/audit-api-runtime.mjs --gate --max-legacy-api-references=0 --max-fallback-references=0 --max-legacy-dynamic-routes=0",
+    "test:path-portability-urls": "node --test scripts/path-portability-url-regression.test.mjs",
+    "test:export-paths": "node ../scripts/audit-export-paths.mjs --self-test"
   },
   "dependencies": {
     "axios": "^1.13.2",

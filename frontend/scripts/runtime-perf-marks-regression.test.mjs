@@ -1,19 +1,19 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const browserSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const searchWorkerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/browserSearchWorker.ts',
+  'src/services/browserSearchWorker.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const viewerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeViewer.ts',
+  'src/composables/useRecipeViewer.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -39,3 +39,4 @@ test('frontend emits key runtime performance markers for homepage, search worker
     'recipe viewer should mark when the first recipe page becomes visible',
   );
 });
+

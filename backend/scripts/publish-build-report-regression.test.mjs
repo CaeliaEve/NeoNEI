@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const materializerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload-materializer.service.ts',
+  'src/services/publish-payload-materializer.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const publishPayloadSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload.service.ts',
+  'src/services/publish-payload.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -88,3 +88,4 @@ test('publish materializer derives identity from registered assets', () => {
     'registered publish assets should carry their source sha256',
   );
 });
+

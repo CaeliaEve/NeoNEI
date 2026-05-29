@@ -61,6 +61,9 @@ verify_*.py
 
 # Large data files (exceeds GitHub limits)
 backend/data/
+backend/public/dist-data
+backend/public/dist-data/
+backend/public/dist-data.partial*/
 backend/data/all_recipes.json
 backend/data/all_items.json
 backend/data/item_recipe_index.json
@@ -75,3 +78,4 @@ frontend/test-results/
 
 # Local planning documents
 RAW_EXPORT_FOUNDATION_PLAN.md
+API_RUNTIME_MATURITY_FOLLOWUP_PLAN.md

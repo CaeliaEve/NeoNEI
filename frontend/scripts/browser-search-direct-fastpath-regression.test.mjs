@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -24,3 +24,4 @@ test('browser search hydrates directly from backend page-pack fast path instead 
     'item browser should not ship a full client-side search-pack query path on the critical search route',
   );
 });
+

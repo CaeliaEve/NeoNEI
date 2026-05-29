@@ -1,29 +1,32 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 
 const FRONTEND_BASE = process.env.FRONTEND_BASE ?? 'http://127.0.0.1:5173';
-const EXPORT_ROOT = process.env.NESQL_REPOSITORY_PATH ?? 'E:/GTNH/.minecraft/versions/GT New Horizons 2.8.0/nesql/ae2-test';
+const EXPORT_ROOT = process.env.NESQL_EXPORT_ROOT ?? process.env.NESQL_REPOSITORY_PATH;
+if (!EXPORT_ROOT) {
+  throw new Error('NESQL_EXPORT_ROOT or NESQL_REPOSITORY_PATH is required for recipe family audit.');
+}
 const RECIPES_ROOT = path.join(EXPORT_ROOT, 'recipes');
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const OUTPUT_DIR = process.env.RECIPE_AUDIT_DIR ?? path.resolve(SCRIPT_DIR, '../.audit/recipe-families');
 
 const FAMILY_RULES = [
-  { family: 'thaumcraft_arcane', match: ({ machineType, recipeType, recipe }) => /arcane|奥术|有序奥术|无序奥术/i.test(`${machineType} ${recipeType}`) || Boolean(recipe.metadata?.aspects || recipe.additionalData?.aspects) },
-  { family: 'thaumcraft_infusion', match: ({ machineType, recipeType }) => /infusion|注魔/i.test(`${machineType} ${recipeType}`) },
-  { family: 'botania_rune_altar', match: ({ machineType, recipeType }) => /rune altar|符文祭坛/i.test(`${machineType} ${recipeType}`) },
-  { family: 'botania_mana_pool', match: ({ machineType, recipeType }) => /mana pool|魔力池/i.test(`${machineType} ${recipeType}`) },
+  { family: 'thaumcraft_arcane', match: ({ machineType, recipeType, recipe }) => /arcane|濂ユ湳|鏈夊簭濂ユ湳|鏃犲簭濂ユ湳/i.test(`${machineType} ${recipeType}`) || Boolean(recipe.metadata?.aspects || recipe.additionalData?.aspects) },
+  { family: 'thaumcraft_infusion', match: ({ machineType, recipeType }) => /infusion|娉ㄩ瓟/i.test(`${machineType} ${recipeType}`) },
+  { family: 'botania_rune_altar', match: ({ machineType, recipeType }) => /rune altar|绗︽枃绁潧/i.test(`${machineType} ${recipeType}`) },
+  { family: 'botania_mana_pool', match: ({ machineType, recipeType }) => /mana pool|榄斿姏姹?i.test(`${machineType} ${recipeType}`) },
   { family: 'botania_terra_plate', match: ({ machineType, recipeType }) => /terra plate/i.test(`${machineType} ${recipeType}`) },
-  { family: 'botania_elven_trade', match: ({ machineType, recipeType }) => /elven trade|alfheim|精灵交易/i.test(`${machineType} ${recipeType}`) },
-  { family: 'blood_magic_altar', match: ({ machineType, recipeType }) => /blood altar|血祭坛/i.test(`${machineType} ${recipeType}`) },
-  { family: 'blood_alchemy_table', match: ({ machineType, recipeType }) => /alchemy table|炼金台|blood alchemy/i.test(`${machineType} ${recipeType}`) },
-  { family: 'blood_binding_ritual', match: ({ machineType, recipeType }) => /binding ritual|束缚仪式|绑定仪式/i.test(`${machineType} ${recipeType}`) },
-  { family: 'blood_orb_crafting', match: ({ machineType, recipeType }) => /blood orb|血宝珠|特定血宝珠合成|不定血宝珠合成/i.test(`${machineType} ${recipeType}`) },
-  { family: 'gt_assembly_line', match: ({ machineType, recipeType }) => /assembly line|装配线/i.test(`${machineType} ${recipeType}`) },
-  { family: 'gt_research_station', match: ({ machineType, recipeType }) => /research station|研究站/i.test(`${machineType} ${recipeType}`) },
-  { family: 'gt_blast_furnace', match: ({ machineType, recipeType }) => /blast furnace|高炉/i.test(`${machineType} ${recipeType}`) },
+  { family: 'botania_elven_trade', match: ({ machineType, recipeType }) => /elven trade|alfheim|绮剧伒浜ゆ槗/i.test(`${machineType} ${recipeType}`) },
+  { family: 'blood_magic_altar', match: ({ machineType, recipeType }) => /blood altar|琛€绁潧/i.test(`${machineType} ${recipeType}`) },
+  { family: 'blood_alchemy_table', match: ({ machineType, recipeType }) => /alchemy table|鐐奸噾鍙皘blood alchemy/i.test(`${machineType} ${recipeType}`) },
+  { family: 'blood_binding_ritual', match: ({ machineType, recipeType }) => /binding ritual|鏉熺細浠紡|缁戝畾浠紡/i.test(`${machineType} ${recipeType}`) },
+  { family: 'blood_orb_crafting', match: ({ machineType, recipeType }) => /blood orb|琛€瀹濈彔|鐗瑰畾琛€瀹濈彔鍚堟垚|涓嶅畾琛€瀹濈彔鍚堟垚/i.test(`${machineType} ${recipeType}`) },
+  { family: 'gt_assembly_line', match: ({ machineType, recipeType }) => /assembly line|瑁呴厤绾?i.test(`${machineType} ${recipeType}`) },
+  { family: 'gt_research_station', match: ({ machineType, recipeType }) => /research station|鐮旂┒绔?i.test(`${machineType} ${recipeType}`) },
+  { family: 'gt_blast_furnace', match: ({ machineType, recipeType }) => /blast furnace|楂樼倝/i.test(`${machineType} ${recipeType}`) },
   { family: 'gt_generic', match: ({ machineType, recipeType }) => /gregtech/i.test(`${machineType} ${recipeType}`) },
   { family: 'standard_crafting', match: ({ machineType, recipeType }) => !machineType && /crafting|shaped|shapeless/i.test(`${recipeType}`) },
 ];
@@ -137,3 +140,4 @@ main().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
+

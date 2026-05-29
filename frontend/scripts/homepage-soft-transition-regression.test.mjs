@@ -1,14 +1,14 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const browserSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const homePageSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/views/HomePage.vue',
+  'src/views/HomePage.vue',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -72,8 +72,9 @@ test('homepage only shows the full blocking loader on true cold starts', () => {
     'homepage should render a lightweight in-grid transition indicator during warm page flips',
   );
   assert.equal(
-    homePageSource.includes('正在切换到第 {{ currentPage }} 页...'),
+    homePageSource.includes('姝ｅ湪鍒囨崲鍒扮 {{ currentPage }} 椤?..'),
     true,
     'homepage should describe warm-page flips as a neutral page switch instead of a resource preheat warning',
   );
 });
+

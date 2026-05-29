@@ -1,9 +1,10 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
+import path from 'node:path';
 
 const read = (relativePath) =>
-  fs.readFileSync(`E:/codex/ae2/NeoNEI/${relativePath}`, 'utf8');
+  fs.readFileSync(path.resolve('..', relativePath), 'utf8');
 
 test('recipe slot resolver preserves render asset metadata for animated textures', () => {
   const source = read('frontend/src/composables/useRecipeSlots.ts');
@@ -72,3 +73,5 @@ test('AnimatedItemIcon replays exported frame timing instead of a fixed fps', ()
     'AnimatedItemIcon should honor per-frame timing from animated atlas manifests instead of a single fixed delay',
   );
 });
+
+

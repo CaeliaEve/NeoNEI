@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neonei.local/contracts/runtime/texture.schema.json",
+  "title": "NeoNEI Runtime Texture Atlas",
+  "type": "object",
+  "required": ["schemaVersion"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "atlases": { "type": "array" },
+    "items": { "type": "array" },
+    "entries": { "type": "array" }
+  }
+}

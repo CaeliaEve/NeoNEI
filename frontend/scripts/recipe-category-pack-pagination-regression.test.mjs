@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeViewer.ts',
+  'src/composables/useRecipeViewer.ts',
   'utf8',
 );
 
@@ -44,3 +44,4 @@ test('recipe viewer keeps large category hydration paged instead of pulling full
     'page navigation must not block on category hydration before painting the target page',
   );
 });
+

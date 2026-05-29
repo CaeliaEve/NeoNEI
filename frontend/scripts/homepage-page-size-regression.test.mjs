@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const browserSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 );
 
@@ -48,3 +48,4 @@ test('homepage page-size calculation reserves space for pagination and history r
     'initial home bootstrap should wait one tick so the measured grid viewport can seed the first page-size request',
   );
 });
+

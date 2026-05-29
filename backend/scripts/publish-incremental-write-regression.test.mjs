@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload-materializer.service.ts',
+  'src/services/publish-payload-materializer.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -39,3 +39,4 @@ test('publish compiler writes shards incrementally instead of deleting unchanged
     'compressed sidecars should use incremental binary writes',
   );
 });
+

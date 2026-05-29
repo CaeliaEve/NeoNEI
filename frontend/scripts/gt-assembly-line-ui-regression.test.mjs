@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const sourcePath = path.resolve('E:/codex/ae2/NeoNEI/frontend/src/components/GTAssemblyLineUI.vue');
+const sourcePath = path.resolve('src/components/GTAssemblyLineUI.vue');
 const source = fs.readFileSync(sourcePath, 'utf8');
 
 test('assembly line UI keeps the new three-zone structure', () => {
@@ -36,3 +36,4 @@ test('assembly line UI preserves click emission flow', () => {
   assert.match(source, /emit\('item-click', itemId\)/);
   assert.match(source, /playClick\(\)/);
 });
+

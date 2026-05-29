@@ -1,29 +1,29 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const recipeViewSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/views/RecipeView.vue',
+  'src/views/RecipeView.vue',
   'utf8',
 );
 
 const gtDiagramsSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/views/GTDiagramsView.vue',
+  'src/views/GTDiagramsView.vue',
   'utf8',
 );
 
 const beeTreeSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/views/ForestryBeeTreeView.vue',
+  'src/views/ForestryBeeTreeView.vue',
   'utf8',
 );
 
 const routeSyncSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeRouteSync.ts',
+  'src/composables/useRecipeRouteSync.ts',
   'utf8',
 );
 
 const mainSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/main.ts',
+  'src/main.ts',
   'utf8',
 );
 
@@ -75,3 +75,4 @@ test('frontend bootstraps chunk-load recovery for stale lazy imports', () => {
     'frontend should recover from router-level lazy chunk failures',
   );
 });
+

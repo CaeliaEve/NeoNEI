@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/persistentRuntimeCache.ts',
+  'src/services/persistentRuntimeCache.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -29,3 +29,4 @@ test('persistent runtime cache exposes explicit clear and stats helpers for user
     'cache stats should estimate stored payload size for the settings UI',
   );
 });
+

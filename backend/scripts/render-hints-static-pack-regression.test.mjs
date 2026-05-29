@@ -1,24 +1,24 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const materializerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload-materializer.service.ts',
+  'src/services/publish-payload-materializer.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const publishPayloadSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload.service.ts',
+  'src/services/publish-payload.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const itemsRouteSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/routes/items.routes.ts',
+  'src/routes/items.routes.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const publishRouteSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/routes/publish.routes.ts',
+  'src/routes/publish.routes.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -75,3 +75,4 @@ test('materialized browser windows can derive early follow-up pages from the sam
     'browser page-pack route should attempt to serve early follow-up pages from the hot payload window before hitting the DB',
   );
 });
+

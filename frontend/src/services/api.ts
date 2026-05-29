@@ -1,23 +1,20 @@
-import { BACKEND_BASE_URL, http } from './api/core/http';
+import { BACKEND_BASE_URL } from './api/core/http';
+import { createPublishedJsonClient } from '../runtime/publishClient';
+import { createRuntimeManifestClient, getRuntimeCacheSignature } from '../runtime/manifestClient';
+import { browserRuntimeClient } from '../runtime/browserClient';
+import { searchRuntimeClient } from '../runtime/searchClient';
 import {
   getStoredRuntimeSignature,
   primeRuntimeCacheSignature,
   readPersistentRuntimeCache,
   writePersistentRuntimeCache,
 } from './persistentRuntimeCache';
+import { reportRuntimeContractGap, isStrictRuntimeContractsEnabled } from '../runtime/diagnostics';
 import { markPerfEvent } from './perfMarks';
-import {
-  getDistDataBrowserAtlasIndex,
-  getDistDataBrowserPagePack,
-  getDistDataBrowserPagePackByIds,
-  getDistDataDefaultCatalog,
-  getDistDataHomeBootstrap,
-  getDistDataSearchPack,
-  getDistDataGroupItems,
-  getDistDataRecipeBootstrap,
-  getDistDataRecipeUiPayload,
-  getDistDataSearchCatalog,
-} from './distDataRuntime';
+import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRuntimeRecipeBootstrap, getRuntimeRecipeUiPayload, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
+import { createTextureRuntimeClient } from '../runtime/textureClient';
+import { deleteLabPayload, getLabPayload, postLabPayload, putLabPayload } from '../runtime/devCompatClient';
+import { getDistDataHomeBootstrap } from './distDataRuntime';
 
 export { API_BASE_URL, BACKEND_BASE_URL } from './api/core/http';
 export {
@@ -71,7 +68,6 @@ const browserAtlasEntriesInFlight = new Map<string, Promise<BrowserAtlasIndexRes
 const publishedJsonValueCache = new Map<string, unknown>();
 const publishedJsonInFlight = new Map<string, Promise<unknown>>();
 let publishManifestCache: PublicRuntimeManifest | null = null;
-let publishManifestInFlight: Promise<PublicRuntimeManifest> | null = null;
 let ecosystemOverviewCache: EcosystemOverview | null = null;
 let ecosystemOverviewInFlight: Promise<EcosystemOverview> | null = null;
 
@@ -118,49 +114,10 @@ function shouldPreferLiveRecipeBootstrap(): boolean {
 const PREFER_LIVE_RECIPE_BOOTSTRAP = shouldPreferLiveRecipeBootstrap();
 const RECIPE_BOOTSTRAP_CACHE_SCHEMA = 'v3';
 
-function shouldUseStrictRuntimeV3(): boolean {
-  if (import.meta.env.VITE_RUNTIME_V3_STRICT === '1') {
-    return true;
-  }
+const STRICT_RUNTIME_V3 = isStrictRuntimeContractsEnabled();
 
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    return window.localStorage.getItem('neonei:runtime-v3-strict') === '1';
-  } catch {
-    return false;
-  }
-}
-
-const STRICT_RUNTIME_V3 = shouldUseStrictRuntimeV3();
-
-function reportRuntimeV3Fallback(scope: string, route: string, reason: string): void {
-  markPerfEvent('runtime-v3-fallback', {
-    scope,
-    route,
-    reason,
-    strict: STRICT_RUNTIME_V3,
-  });
-
-  if (STRICT_RUNTIME_V3) {
-    throw new Error(`Runtime V3 data unavailable for ${scope}; blocked legacy route ${route} (${reason})`);
-  }
-
-  if (typeof console !== 'undefined' && typeof console.warn === 'function') {
-    console.warn(`[NeoNEI Runtime V3] ${scope} fell back to ${route}: ${reason}`);
-  }
-}
-
-function getRuntimeCacheSignature(manifest: Pick<PublicRuntimeManifest, 'runtimeCacheKey' | 'sourceSignature'> | null | undefined): string | null {
-  const runtimeCacheKey = `${manifest?.runtimeCacheKey ?? ''}`.trim();
-  if (runtimeCacheKey) {
-    return runtimeCacheKey;
-  }
-
-  const sourceSignature = `${manifest?.sourceSignature ?? ''}`.trim();
-  return sourceSignature || null;
+function reportRuntimeDevCompatGap(scope: string, route: string, reason: string): void {
+  reportRuntimeContractGap(scope, route, reason, { strict: STRICT_RUNTIME_V3 });
 }
 
 function setCacheWithLimit<K, V>(cache: Map<K, V>, key: K, value: V, limit: number): void {
@@ -205,86 +162,12 @@ function withRecipeBootstrapCacheSchema<T extends Record<string, unknown>>(ident
   };
 }
 
-function getBackendOrigin(): string {
-  return BACKEND_BASE_URL.replace(/\/api\/?$/i, '');
-}
-
-function isPublishStaticFastPathDisabled(): boolean {
-  if (import.meta.env.VITE_DISABLE_PUBLISH_STATIC_FASTPATH === '1') {
-    return true;
-  }
-
-  if (typeof window !== 'undefined') {
-    try {
-      return window.localStorage.getItem('neonei:disable-static-fastpath') === '1';
-    } catch {
-      return false;
-    }
-  }
-
-  return false;
-}
-
-function buildPublishedAssetUrl(assetPath: string): string {
-  const normalizedPath = `${assetPath ?? ''}`.trim();
-  if (!normalizedPath) {
-    throw new Error('Missing publish asset path');
-  }
-
-  return /^https?:\/\//i.test(normalizedPath)
-    ? normalizedPath
-    : `${getBackendOrigin()}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`;
-}
-
 function isPublishedJsonWarm(assetPath: string | null | undefined): boolean {
-  const normalizedPath = `${assetPath ?? ''}`.trim();
-  if (!normalizedPath) {
-    return false;
-  }
-
-  const url = buildPublishedAssetUrl(normalizedPath);
-  return publishedJsonValueCache.has(url) || publishedJsonInFlight.has(url);
+  return publishedJsonClient.isWarm(assetPath);
 }
 
 async function fetchPublishedJson<T>(assetPath: string): Promise<T> {
-  if (isPublishStaticFastPathDisabled()) {
-    throw new Error('Static publish fast path disabled');
-  }
-  const normalizedPath = `${assetPath ?? ''}`.trim();
-  if (!normalizedPath) {
-    throw new Error('Missing publish asset path');
-  }
-
-  const url = buildPublishedAssetUrl(normalizedPath);
-  if (publishedJsonValueCache.has(url)) {
-    return publishedJsonValueCache.get(url) as T;
-  }
-  const persistent = await readPersistentRuntimePayload<T>('published-json', { url });
-  if (persistent) {
-    setCacheWithLimit(publishedJsonValueCache, url, persistent, CACHE_LIMITS.publishedJson);
-    return persistent;
-  }
-  const existingRequest = publishedJsonInFlight.get(url);
-  if (existingRequest) {
-    return existingRequest as Promise<T>;
-  }
-
-  const request = fetch(url)
-    .then(async (response) => {
-      if (!response.ok) {
-        throw new Error(`Published asset request failed (${response.status}) for ${normalizedPath}`);
-      }
-      const payload = await response.json();
-      setCacheWithLimit(publishedJsonValueCache, url, payload, CACHE_LIMITS.publishedJson);
-      persistRuntimePayload('published-json', { url }, payload);
-      return payload;
-    })
-    .finally(() => {
-      publishedJsonInFlight.delete(url);
-    });
-
-  publishedJsonInFlight.set(url, request);
-  return request as Promise<T>;
+  return publishedJsonClient.fetchJson<T>(assetPath);
 }
 
 async function resolveRuntimeSignature(): Promise<string | null> {
@@ -335,6 +218,31 @@ function persistRuntimePayload(
       // best-effort only
     });
 }
+
+const publishedJsonClient = createPublishedJsonClient({
+  hasMemory: (url) => publishedJsonValueCache.has(url),
+  getMemory: <T>(url: string) => publishedJsonValueCache.get(url) as T | undefined,
+  setMemory: (url, payload) => setCacheWithLimit(publishedJsonValueCache, url, payload, CACHE_LIMITS.publishedJson),
+  getInFlight: <T>(url: string) => publishedJsonInFlight.get(url) as Promise<T> | undefined,
+  setInFlight: (url, request) => publishedJsonInFlight.set(url, request),
+  deleteInFlight: (url) => publishedJsonInFlight.delete(url),
+  readPersistent: <T>(url: string) => readPersistentRuntimePayload<T>('published-json', { url }),
+  writePersistent: (url, payload) => persistRuntimePayload('published-json', { url }, payload),
+});
+
+const textureRuntimeClient = createTextureRuntimeClient({
+  getCachedAtlasIndex: () => browserAtlasIndexCache,
+  setCachedAtlasIndex: (index) => {
+    browserAtlasIndexCache = index;
+  },
+  getAtlasIndexInFlight: () => browserAtlasIndexInFlight,
+  setAtlasIndexInFlight: (request) => {
+    browserAtlasIndexInFlight = request;
+  },
+  getAtlasEntriesInFlight: (key) => browserAtlasEntriesInFlight.get(key),
+  setAtlasEntriesInFlight: (key, request) => browserAtlasEntriesInFlight.set(key, request),
+  deleteAtlasEntriesInFlight: (key) => browserAtlasEntriesInFlight.delete(key),
+});
 
 export interface RecipeItem {
   itemId: string;
@@ -885,14 +793,10 @@ function resolvePublishedRecipeBootstrapPath(
     return null;
   }
 
-  const basePath = kind === 'bootstrap'
-    ? bundle?.files.recipeBootstrapBasePath
-    : bundle?.files.recipeBootstrapShardBasePath;
-  if (!basePath) {
-    return null;
-  }
-
-  return `${basePath.replace(/\/+$/g, '')}/${encodeURIComponent(normalizedItemId)}.json`;
+  return resolveRuntimeRecipeBootstrapPath(
+    kind === 'bootstrap' ? bundle?.files.recipeBootstrapBasePath : bundle?.files.recipeBootstrapShardBasePath,
+    normalizedItemId,
+  );
 }
 
 function resolvePublishedItemRecipeBundlePath(
@@ -957,121 +861,6 @@ function unwrapPublishedItemRecipeBundle(value: unknown): RecipeBootstrapPayload
     indexedUsage: bundledUsedIn,
   };
 }
-function toPublishedRecipeRelationSegment(tab: 'usedIn' | 'producedBy'): 'used-in' | 'produced-by' {
-  return tab === 'usedIn' ? 'used-in' : 'produced-by';
-}
-
-function canUsePublishedRecipeGroupIndex(
-  manifest: PublicRuntimeManifest | null | undefined,
-  itemId: string,
-  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
-): boolean {
-  const normalizedItemId = `${itemId ?? ''}`.trim();
-  if (!normalizedItemId) {
-    return false;
-  }
-
-  const bundle = manifest?.publishBundle;
-  const indexBasePath = `${bundle?.files.recipeGroupIndexBasePath ?? ''}`.trim();
-  const publishedItems = Array.isArray(bundle?.files.recipeBootstrapItems)
-    ? bundle?.files.recipeBootstrapItems
-    : [];
-  if (!indexBasePath || !publishedItems.includes(normalizedItemId)) {
-    return false;
-  }
-
-  const offset = Math.max(0, Math.floor(Number(options?.offset ?? 0) || 0));
-  return offset === 0 && options?.includeRecipeIds === true;
-}
-
-function canUsePublishedRecipeGroupWindow(
-  manifest: PublicRuntimeManifest | null | undefined,
-  itemId: string,
-  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
-): boolean {
-  const normalizedItemId = `${itemId ?? ''}`.trim();
-  if (!normalizedItemId || options?.includeRecipeIds === true) {
-    return false;
-  }
-
-  const bundle = manifest?.publishBundle;
-  const windowBasePath = `${bundle?.files.recipeGroupWindowBasePath ?? ''}`.trim();
-  const publishedItems = Array.isArray(bundle?.files.recipeBootstrapItems)
-    ? bundle?.files.recipeBootstrapItems
-    : [];
-  const limit = Math.max(0, Math.floor(Number(options?.limit ?? 0) || 0));
-  return Boolean(windowBasePath && publishedItems.includes(normalizedItemId) && limit > 0);
-}
-
-function resolvePublishedRecipeGroupIndexPath(params: {
-  manifest: PublicRuntimeManifest | null | undefined;
-  itemId: string;
-  tab: 'usedIn' | 'producedBy';
-  kind: 'machine' | 'category';
-  key: string;
-}): string | null {
-  const normalizedItemId = `${params.itemId ?? ''}`.trim();
-  const normalizedKey = `${params.key ?? ''}`.trim();
-  const basePath = `${params.manifest?.publishBundle?.files.recipeGroupIndexBasePath ?? ''}`.trim();
-  if (!normalizedItemId || !normalizedKey || !basePath) {
-    return null;
-  }
-
-  return `${basePath.replace(/\/+$/g, '')}/${params.kind}/${encodeURIComponent(normalizedItemId)}/${toPublishedRecipeRelationSegment(params.tab)}/${encodeURIComponent(normalizedKey)}.json`;
-}
-
-function resolvePublishedRecipeGroupWindowPath(params: {
-  manifest: PublicRuntimeManifest | null | undefined;
-  itemId: string;
-  tab: 'usedIn' | 'producedBy';
-  kind: 'machine' | 'category';
-  key: string;
-  offset?: number;
-  limit?: number;
-}): string | null {
-  const normalizedItemId = `${params.itemId ?? ''}`.trim();
-  const normalizedKey = `${params.key ?? ''}`.trim();
-  const basePath = `${params.manifest?.publishBundle?.files.recipeGroupWindowBasePath ?? ''}`.trim();
-  const offset = Math.max(0, Math.floor(Number(params.offset ?? 0) || 0));
-  const limit = Math.max(0, Math.floor(Number(params.limit ?? 0) || 0));
-  if (!normalizedItemId || !normalizedKey || !basePath || limit <= 0) {
-    return null;
-  }
-
-  return `${basePath.replace(/\/+$/g, '')}/${params.kind}/${encodeURIComponent(normalizedItemId)}/${toPublishedRecipeRelationSegment(params.tab)}/${encodeURIComponent(normalizedKey)}/${offset}-${limit}.json`;
-}
-
-function canUsePublishedRecipeSearchPack(
-  manifest: PublicRuntimeManifest | null | undefined,
-  itemId: string,
-): boolean {
-  const normalizedItemId = `${itemId ?? ''}`.trim();
-  if (!normalizedItemId) {
-    return false;
-  }
-
-  const bundle = manifest?.publishBundle;
-  const basePath = `${bundle?.files.recipeSearchBasePath ?? ''}`.trim();
-  const publishedItems = Array.isArray(bundle?.files.recipeSearchItems)
-    ? bundle?.files.recipeSearchItems
-    : [];
-  return Boolean(basePath) && publishedItems.includes(normalizedItemId);
-}
-
-function resolvePublishedRecipeSearchPath(
-  manifest: PublicRuntimeManifest | null | undefined,
-  itemId: string,
-  tab: 'usedIn' | 'producedBy',
-): string | null {
-  const normalizedItemId = `${itemId ?? ''}`.trim();
-  const basePath = `${manifest?.publishBundle?.files.recipeSearchBasePath ?? ''}`.trim();
-  if (!normalizedItemId || !basePath) {
-    return null;
-  }
-
-  return `${basePath.replace(/\/+$/g, '')}/${encodeURIComponent(normalizedItemId)}/${toPublishedRecipeRelationSegment(tab)}.json`;
-}
-
 export interface BrowserSearchPackEntry {
   itemId: string;
   localizedName: string;
@@ -1104,6 +893,13 @@ export interface PublicRuntimeManifest {
   runtimeCacheKey?: string;
   publishBundle?: PublishStaticBundleManifest | null;
 }
+
+const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>({
+  onManifest: (manifest) => {
+    publishManifestCache = manifest;
+    primeRuntimeCacheSignature(getRuntimeCacheSignature(manifest));
+  },
+});
 
 export interface PublishBundleWindowPathEntry {
   scope: string;
@@ -1356,7 +1152,7 @@ type RecipeBootstrapLoadSource =
   | 'persistent-cache'
   | 'item-recipe-bundle'
   | 'legacy-static-bootstrap'
-  | 'api-fallback';
+  | 'dev-compat-api';
 
 function markRecipeBootstrapResolved(
   itemId: string,
@@ -2060,34 +1856,13 @@ export const api = {
     publishedJsonValueCache.clear();
     publishedJsonInFlight.clear();
     publishManifestCache = null;
-    publishManifestInFlight = null;
+    runtimeManifestClient.clear();
     ecosystemOverviewCache = null;
     ecosystemOverviewInFlight = null;
   },
 
   async getPublishManifest(): Promise<PublicRuntimeManifest> {
-    if (publishManifestCache) {
-      return publishManifestCache;
-    }
-    if (publishManifestInFlight) {
-      return publishManifestInFlight;
-    }
-    publishManifestInFlight = http.get('/publish/manifest', {
-      params: { _runtime: Date.now() },
-      headers: {
-        'Cache-Control': 'no-cache',
-        Pragma: 'no-cache',
-      },
-    })
-      .then((response) => {
-        publishManifestCache = response.data;
-        primeRuntimeCacheSignature(getRuntimeCacheSignature(response.data));
-        return response.data;
-      })
-      .finally(() => {
-        publishManifestInFlight = null;
-      });
-    return publishManifestInFlight;
+    return runtimeManifestClient.getPublishManifest();
   },
 
   async getHomeBootstrap(params: {
@@ -2100,7 +1875,7 @@ export const api = {
     if (distDataBootstrap) {
       return distDataBootstrap;
     }
-    reportRuntimeV3Fallback('home-bootstrap', '/publish/home-bootstrap', 'dist-data home bootstrap missing');
+    reportRuntimeDevCompatGap('home-bootstrap', '/publish/home-bootstrap', 'dist-data home bootstrap missing');
 
     const manifest = await api.getPublishManifest();
     const requestedPage = Math.max(1, Math.floor(params.page ?? 1));
@@ -2139,9 +1914,9 @@ export const api = {
       }
     }
 
-    const response = await http.get('/publish/home-bootstrap', {
+    const response = { data: await getLabPayload<HomeBootstrapResponse>('/publish/home-bootstrap', {
       params,
-    });
+    }) };
     if (response.data?.manifest) {
       publishManifestCache = response.data.manifest;
       primeRuntimeCacheSignature(getRuntimeCacheSignature(response.data.manifest));
@@ -2159,8 +1934,7 @@ export const api = {
     search?: string;
     modId?: string;
   }): Promise<PaginatedResponse<Item>> {
-    const response = await http.get('/items', { params });
-    return response.data;
+    return getLabPayload<PaginatedResponse<Item>>('/items', { params });
   },
 
   async getBrowserItems(params: {
@@ -2170,7 +1944,7 @@ export const api = {
     modId?: string;
     expandedGroups?: string[];
   }): Promise<PaginatedResponse<BrowserGridEntry>> {
-    const distDataPage = await getDistDataBrowserPagePack(params);
+    const distDataPage = await browserRuntimeClient.getPagePack(params);
     if (distDataPage) {
       return {
         data: distDataPage.data,
@@ -2180,15 +1954,14 @@ export const api = {
         totalPages: distDataPage.totalPages,
       };
     }
-    reportRuntimeV3Fallback('browser-items', '/items/browser', 'dist-data browser page missing');
+    reportRuntimeDevCompatGap('browser-items', '/items/browser', 'dist-data browser page missing');
 
-    const response = await http.get('/items/browser', {
+    return getLabPayload<PaginatedResponse<BrowserGridEntry>>('/items/browser', {
       params: {
         ...params,
         expandedGroups: (params.expandedGroups ?? []).join(','),
       },
     });
-    return response.data;
   },
 
   async getBrowserDefaultCatalog(params?: {
@@ -2206,12 +1979,12 @@ export const api = {
     }
 
     const request = (async () => {
-      const distDataCatalog = await getDistDataDefaultCatalog(params?.modId);
+      const distDataCatalog = await browserRuntimeClient.getDefaultCatalog(params?.modId);
       if (distDataCatalog) {
         browserDefaultCatalogCache.set(cacheKey, distDataCatalog);
         return distDataCatalog;
       }
-      reportRuntimeV3Fallback('browser-default-catalog', '/items/browser/default-catalog', 'dist-data default catalog missing');
+      reportRuntimeDevCompatGap('browser-default-catalog', '/items/browser/default-catalog', 'dist-data default catalog missing');
 
       const persistent = await readPersistentRuntimePayload<BrowserDefaultCatalogResponse>(
         'browser-default-catalog',
@@ -2222,12 +1995,12 @@ export const api = {
         return persistent;
       }
 
-      const response = await http.get('/items/browser/default-catalog', {
+      const payload = await getLabPayload<BrowserDefaultCatalogResponse>('/items/browser/default-catalog', {
         params,
       });
-      browserDefaultCatalogCache.set(cacheKey, response.data);
-      persistRuntimePayload('browser-default-catalog', { scope: cacheKey }, response.data);
-      return response.data;
+      browserDefaultCatalogCache.set(cacheKey, payload);
+      persistRuntimePayload('browser-default-catalog', { scope: cacheKey }, payload);
+      return payload;
     })().finally(() => {
       browserDefaultCatalogInFlight.delete(cacheKey);
     });
@@ -2249,12 +2022,12 @@ export const api = {
       return api.getBrowserDefaultCatalog({ modId: params.modId });
     }
 
-    const distDataCatalog = await getDistDataSearchCatalog(normalizedSearch, params.modId);
+    const distDataCatalog = await browserRuntimeClient.getSearchCatalog(normalizedSearch, params.modId);
     if (distDataCatalog) {
       browserSearchCatalogCache.set(getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId), distDataCatalog);
       return distDataCatalog;
     }
-    reportRuntimeV3Fallback('browser-search-catalog', 'local default-catalog projection', 'dist-data search catalog missing');
+    reportRuntimeDevCompatGap('browser-search-catalog', 'local default-catalog projection', 'dist-data search catalog missing');
 
     const cacheKey = getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId);
     const cached = browserSearchCatalogCache.get(cacheKey);
@@ -2306,11 +2079,11 @@ export const api = {
       };
     }
 
-    const distDataGroupItems = await getDistDataGroupItems(normalizedGroupKey, modId);
+    const distDataGroupItems = await browserRuntimeClient.getGroupItems(normalizedGroupKey, modId);
     if (distDataGroupItems?.items?.length) {
       return distDataGroupItems;
     }
-    reportRuntimeV3Fallback('browser-group-items', `/items/browser/group/${normalizedGroupKey}`, 'dist-data group items missing');
+    reportRuntimeDevCompatGap('browser-group-items', `/items/browser/group/${normalizedGroupKey}`, 'dist-data group items missing');
 
     const cacheKey = getBrowserGroupItemsCacheKey(normalizedGroupKey, modId);
     const cached = browserGroupItemsCache.get(cacheKey);
@@ -2333,16 +2106,16 @@ export const api = {
         return persistent;
       }
 
-      const response = await http.get(`/items/browser/group/${encodeURIComponent(normalizedGroupKey)}`, {
+      const payload = await getLabPayload<BrowserGroupItemsResponse>(`/items/browser/group/${encodeURIComponent(normalizedGroupKey)}`, {
         params: modId ? { modId } : undefined,
       });
-      browserGroupItemsCache.set(cacheKey, response.data);
+      browserGroupItemsCache.set(cacheKey, payload);
       persistRuntimePayload(
         'browser-group-items',
         { groupKey: normalizedGroupKey, scope: getBrowserDefaultCatalogCacheKey(modId) },
-        response.data,
+        payload,
       );
-      return response.data;
+      return payload;
     })().finally(() => {
       browserGroupItemsInFlight.delete(cacheKey);
     });
@@ -2367,11 +2140,11 @@ export const api = {
     expandedGroups?: string[];
     slotSize?: number;
   }): Promise<BrowserPagePackResponse> {
-    const distDataPagePack = await getDistDataBrowserPagePack(params);
+    const distDataPagePack = await browserRuntimeClient.getPagePack(params);
     if (distDataPagePack) {
       return distDataPagePack;
     }
-    reportRuntimeV3Fallback('browser-page-pack', '/items/browser/page-pack', 'dist-data page pack missing');
+    reportRuntimeDevCompatGap('browser-page-pack', '/items/browser/page-pack', 'dist-data page pack missing');
 
     const normalizedExpandedGroups = params.expandedGroups ?? [];
     const canUseStaticBundle = !params.search?.trim()
@@ -2402,13 +2175,12 @@ export const api = {
       }
     }
 
-    const response = await http.get('/items/browser/page-pack', {
+    return getLabPayload<BrowserPagePackResponse>('/items/browser/page-pack', {
       params: {
         ...params,
         expandedGroups: (params.expandedGroups ?? []).join(','),
       },
     });
-    return response.data;
   },
 
   async primeDefaultBrowserPagePack(params: {
@@ -2444,11 +2216,11 @@ export const api = {
   },
 
   async getBrowserSearchPack(): Promise<BrowserSearchPackResponse> {
-    const distDataSearch = await getDistDataSearchPack();
-    if (distDataSearch?.pack?.items?.length) {
-      return distDataSearch.pack;
+    const distDataSearch = await searchRuntimeClient.getSearchPack();
+    if (distDataSearch?.items?.length) {
+      return distDataSearch;
     }
-    reportRuntimeV3Fallback('browser-search-pack', '/items/search/pack', 'dist-data search pack missing');
+    reportRuntimeDevCompatGap('browser-search-pack', '/items/search/pack', 'dist-data search pack missing');
 
     const manifest = await api.getPublishManifest();
     const staticPath = manifest.publishBundle?.files.browserSearchPack;
@@ -2459,8 +2231,7 @@ export const api = {
         // Fall back to the API route when the static publish bundle is unavailable.
       }
     }
-    const response = await http.get('/items/search/pack');
-    return response.data;
+    return getLabPayload<BrowserSearchPackResponse>('/items/search/pack');
   },
 
   async getBrowserSearchPackShard(shardId: string): Promise<BrowserSearchPackResponse | null> {
@@ -2469,11 +2240,11 @@ export const api = {
       return null;
     }
 
-    const distDataSearch = await getDistDataSearchPack();
-    if (distDataSearch?.pack?.items?.length) {
-      return distDataSearch.pack;
+    const distDataSearch = await searchRuntimeClient.getSearchPack();
+    if (distDataSearch?.items?.length) {
+      return distDataSearch;
     }
-    reportRuntimeV3Fallback('browser-search-shard', `publish search shard ${normalizedShardId}`, 'dist-data search pack missing');
+    reportRuntimeDevCompatGap('browser-search-shard', `publish search shard ${normalizedShardId}`, 'dist-data search pack missing');
 
     const cached = browserSearchShardCache.get(normalizedShardId);
     if (cached) {
@@ -2528,13 +2299,12 @@ export const api = {
     }
 
     const request = (async () => {
-      const distDataPack = await getDistDataBrowserPagePackByIds(normalizedParams.itemIds);
+      const distDataPack = await browserRuntimeClient.getByIdsPack(normalizedParams.itemIds);
       if (distDataPack) {
         return distDataPack;
       }
-      reportRuntimeV3Fallback('browser-by-ids-pack', '/items/browser/by-ids-pack', 'dist-data by-id pack missing');
-      const response = await http.post('/items/browser/by-ids-pack', normalizedParams);
-      return response.data;
+      reportRuntimeDevCompatGap('browser-by-ids-pack', '/items/browser/by-ids-pack', 'dist-data by-id pack missing');
+      return postLabPayload<BrowserByIdsPackResponse, typeof normalizedParams>('/items/browser/by-ids-pack', normalizedParams);
     })()
       .then((data) => {
         setCacheWithLimit(browserByIdsPackCache, cacheKey, data, CACHE_LIMITS.browserByIdsPack);
@@ -2569,10 +2339,10 @@ export const api = {
     if (existingRequest) {
       return existingRequest;
     }
-    const request = http.get(`/items/${itemId}`)
-      .then((response) => {
-        setCacheWithLimit(itemDetailCache, itemId, response.data, CACHE_LIMITS.itemDetail);
-        return response.data;
+    const request = getLabPayload<Item>(`/items/${itemId}`)
+      .then((payload) => {
+        setCacheWithLimit(itemDetailCache, itemId, payload, CACHE_LIMITS.itemDetail);
+        return payload;
       })
       .finally(() => {
         itemDetailInFlight.delete(itemId);
@@ -2603,9 +2373,9 @@ export const api = {
       }
     }
 
-    const response = await http.get('/items/mods');
-    persistRuntimePayload('mods-list', { scope: 'all' }, response.data);
-    return response.data;
+    const payload = await getLabPayload<Mod[]>('/items/mods');
+    persistRuntimePayload('mods-list', { scope: 'all' }, payload);
+    return payload;
   },
 
   async getItemsByIds(itemIds: string[]): Promise<Item[]> {
@@ -2615,8 +2385,8 @@ export const api = {
     if (missingIds.length > 0) {
       for (let i = 0; i < missingIds.length; i += BATCH_SIZE) {
         const chunk = missingIds.slice(i, i + BATCH_SIZE);
-        const response = await http.post('/items/batch', { itemIds: chunk });
-        for (const item of response.data as Item[]) {
+        const payload = await postLabPayload<Item[], { itemIds: string[] }>('/items/batch', { itemIds: chunk });
+        for (const item of payload) {
           itemDetailCache.set(item.itemId, item);
         }
       }
@@ -2642,42 +2412,48 @@ export const api = {
       recipes: Recipe[];
     }[];
   }> {
-    const response = await http.get(`/recipes-indexed/${itemId}/machines`);
-    return response.data;
+    return getLabPayload<{
+      itemId: string;
+      itemName: string;
+      machines: {
+        machineType: string;
+        category: string;
+        voltageTier: string | null;
+        voltage: number | null;
+        recipeCount: number;
+        recipes: Recipe[];
+      }[];
+    }>(`/recipes/${itemId}/machines`);
   },
 
   // === Pattern Management ===
 
   // Get all pattern groups
   async getPatternGroups(): Promise<PatternGroup[]> {
-    const response = await http.get('/patterns/groups');
-    return response.data;
+    return getLabPayload<PatternGroup[]>('/patterns/groups');
   },
 
   // Get single pattern group
   async getPatternGroup(groupId: string): Promise<PatternGroup> {
-    const response = await http.get(`/patterns/groups/${groupId}`);
-    return response.data;
+    return getLabPayload<PatternGroup>(`/patterns/groups/${groupId}`);
   },
 
   // Get pattern group with patterns
   async getPatternGroupWithPatterns(groupId: string): Promise<PatternGroupWithPatterns> {
-    const response = await http.get(`/patterns/groups/${groupId}/detail`);
-    return response.data;
+    return getLabPayload<PatternGroupWithPatterns>(`/patterns/groups/${groupId}/detail`);
   },
 
   // Create pattern group
   async createPatternGroup(groupName: string, description?: string): Promise<PatternGroup> {
-    const response = await http.post('/patterns/groups', {
+    return postLabPayload<PatternGroup>('/patterns/groups', {
       groupName,
       description
     });
-    return response.data;
   },
 
   // Update pattern group
   async updatePatternGroup(groupId: string, groupName: string, description?: string): Promise<void> {
-    await http.put(`/patterns/groups/${groupId}`, {
+    await putLabPayload(`/patterns/groups/${groupId}`, {
       groupName,
       description
     });
@@ -2685,7 +2461,7 @@ export const api = {
 
   // Delete pattern group
   async deletePatternGroup(groupId: string): Promise<void> {
-    await http.delete(`/patterns/groups/${groupId}`);
+    await deleteLabPayload(`/patterns/groups/${groupId}`);
   },
 
   // Create pattern
@@ -2699,13 +2475,12 @@ export const api = {
     beSubstitute?: number;
     priority?: number;
   }): Promise<Pattern> {
-    const response = await http.post('/patterns', data);
-    return response.data;
+    return postLabPayload<Pattern>('/patterns', data);
   },
 
   // Delete pattern
   async deletePattern(patternId: string): Promise<void> {
-    await http.delete(`/patterns/${patternId}`);
+    await deleteLabPayload(`/patterns/${patternId}`);
   },
 
   // Update pattern
@@ -2717,13 +2492,12 @@ export const api = {
     substitute?: number;
     beSubstitute?: number;
   }): Promise<void> {
-    await http.put(`/patterns/${patternId}`, updates);
+    await putLabPayload(`/patterns/${patternId}`, updates);
   },
 
   // Export pattern group to OC-AE JSON
   async exportPatternGroup(groupId: string): Promise<PatternExportData> {
-    const response = await http.get(`/patterns/groups/${groupId}/export`);
-    return response.data;
+    return getLabPayload<PatternExportData>(`/patterns/groups/${groupId}/export`);
   },
 
   async getEcosystemOverview(): Promise<EcosystemOverview> {
@@ -2733,10 +2507,10 @@ export const api = {
     if (ecosystemOverviewInFlight) {
       return ecosystemOverviewInFlight;
     }
-    const request = http.get('/ecosystem/overview')
-      .then((response) => {
-        ecosystemOverviewCache = response.data;
-        return response.data;
+    const request = getLabPayload<EcosystemOverview>('/ecosystem/overview')
+      .then((payload) => {
+        ecosystemOverviewCache = payload;
+        return payload;
       })
       .finally(() => {
         ecosystemOverviewInFlight = null;
@@ -2746,67 +2520,23 @@ export const api = {
   },
 
   async getAnimatedAtlasEntry(assetId: string): Promise<AnimatedAtlasAssetEntry> {
-    const response = await http.get('/render-contract/animated-atlas', {
+    return getLabPayload<AnimatedAtlasAssetEntry>('/render-contract/animated-atlas', {
       params: { assetId },
     });
-    return response.data;
   },
 
   async getRenderContractAsset(assetId: string): Promise<RenderContractAssetEntry> {
-    const response = await http.get('/render-contract/asset', {
+    return getLabPayload<RenderContractAssetEntry>('/render-contract/asset', {
       params: { assetId },
     });
-    return response.data;
   },
 
   async getBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
-    const distDataAtlasIndex = await getDistDataBrowserAtlasIndex();
-    if (distDataAtlasIndex?.items?.length) {
-      browserAtlasIndexCache = distDataAtlasIndex;
-      return browserAtlasIndexCache;
-    }
-
-    if (browserAtlasIndexCache) {
-      return browserAtlasIndexCache;
-    }
-    if (browserAtlasIndexInFlight) {
-      return browserAtlasIndexInFlight;
-    }
-    browserAtlasIndexInFlight = Promise.resolve(null).finally(() => {
-      browserAtlasIndexInFlight = null;
-    });
-    return browserAtlasIndexInFlight;
+    return textureRuntimeClient.getBrowserAtlasIndex();
   },
 
   async getBrowserAtlasEntries(itemIds: string[]): Promise<BrowserAtlasIndexResponse | null> {
-    const uniqueItemIds = Array.from(new Set(itemIds.map((itemId) => `${itemId ?? ''}`.trim()).filter(Boolean)));
-    if (uniqueItemIds.length === 0) {
-      return {
-        schemaVersion: 'browser-atlas-entries',
-        items: [],
-      };
-    }
-    const cacheKey = uniqueItemIds.slice().sort().join('\n');
-    const existing = browserAtlasEntriesInFlight.get(cacheKey);
-    if (existing) {
-      return existing;
-    }
-    const request = (async () => {
-      const index = await api.getBrowserAtlasIndex();
-      if (!index?.items?.length) {
-        return null;
-      }
-      const wanted = new Set(uniqueItemIds);
-      return {
-        ...index,
-        schemaVersion: 'browser-atlas-entries',
-        items: index.items.filter((entry) => wanted.has(entry.itemId)),
-      };
-    })().finally(() => {
-      browserAtlasEntriesInFlight.delete(cacheKey);
-    });
-    browserAtlasEntriesInFlight.set(cacheKey, request);
-    return request;
+    return textureRuntimeClient.getBrowserAtlasEntries(itemIds);
   },
 
   async getOptionalRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload | null> {
@@ -2822,7 +2552,7 @@ export const api = {
       return existingRequest;
     }
     const request = (async () => {
-      const distDataPayload = await getDistDataRecipeUiPayload(recipeId);
+      const distDataPayload = await getRuntimeRecipeUiPayload(recipeId);
       if (distDataPayload) {
         missingUiPayloadCache.delete(recipeId);
         setCacheWithLimit(uiPayloadCache, recipeId, distDataPayload, CACHE_LIMITS.uiPayload);
@@ -2838,13 +2568,13 @@ export const api = {
         return persistent;
       }
       try {
-        const response = await http.get('/render-contract/ui-payload', {
+        const payload = await getLabPayload<RecipeUiPayload>('/render-contract/ui-payload', {
           params: { recipeId },
         });
         missingUiPayloadCache.delete(recipeId);
-        setCacheWithLimit(uiPayloadCache, recipeId, response.data, CACHE_LIMITS.uiPayload);
-        persistRuntimePayload('recipe-ui-payload', { recipeId }, response.data);
-        return response.data;
+        setCacheWithLimit(uiPayloadCache, recipeId, payload, CACHE_LIMITS.uiPayload);
+        persistRuntimePayload('recipe-ui-payload', { recipeId }, payload);
+        return payload;
       } catch (error) {
         if (isHttpNotFoundError(error)) {
           missingUiPayloadCache.add(recipeId);
@@ -2881,7 +2611,7 @@ export const api = {
       return payload;
     }
     const request = (async () => {
-      const distDataBootstrap = await getDistDataRecipeBootstrap(itemId);
+      const distDataBootstrap = await getRuntimeRecipeBootstrap(itemId);
       if (distDataBootstrap) {
         setCacheWithLimit(recipeBootstrapCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrap);
         setCacheWithLimit(recipeBootstrapShardCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrapShard);
@@ -2930,11 +2660,11 @@ export const api = {
         }
       }
 
-      const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}`);
-      setCacheWithLimit(recipeBootstrapCache, itemId, response.data, CACHE_LIMITS.recipeBootstrap);
-      persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), response.data);
-      markRecipeBootstrapResolved(itemId, 'api-fallback', startedAt, response.data);
-      return response.data;
+      const payload = await getLabPayload<RecipeBootstrapPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}`);
+      setCacheWithLimit(recipeBootstrapCache, itemId, payload, CACHE_LIMITS.recipeBootstrap);
+      persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), payload);
+      markRecipeBootstrapResolved(itemId, 'dev-compat-api', startedAt, payload);
+      return payload;
     })().finally(() => {
       recipeBootstrapInFlight.delete(itemId);
     });
@@ -2953,7 +2683,7 @@ export const api = {
       return existingRequest;
     }
     const request = (async () => {
-      const distDataBootstrap = await getDistDataRecipeBootstrap(itemId);
+      const distDataBootstrap = await getRuntimeRecipeBootstrap(itemId);
       if (distDataBootstrap) {
         setCacheWithLimit(recipeBootstrapCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrap);
         setCacheWithLimit(recipeBootstrapShardCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrapShard);
@@ -2985,10 +2715,10 @@ export const api = {
         }
       }
 
-      const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/shard`);
-      setCacheWithLimit(recipeBootstrapShardCache, itemId, response.data, CACHE_LIMITS.recipeBootstrapShard);
-      persistRuntimePayload('recipe-bootstrap-shard', withRecipeBootstrapCacheSchema({ itemId }), response.data);
-      return response.data;
+      const payload = await getLabPayload<RecipeBootstrapPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/shard`);
+      setCacheWithLimit(recipeBootstrapShardCache, itemId, payload, CACHE_LIMITS.recipeBootstrapShard);
+      persistRuntimePayload('recipe-bootstrap-shard', withRecipeBootstrapCacheSchema({ itemId }), payload);
+      return payload;
     })().finally(() => {
       recipeBootstrapShardInFlight.delete(itemId);
     });
@@ -3086,7 +2816,7 @@ export const api = {
       }
     }
 
-    const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/produced-by-group`, {
+    const payload = await getLabPayload<RecipeBootstrapMachineGroupPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/produced-by-group`, {
       params: {
         machineType,
         ...(voltageTier ? { voltageTier } : {}),
@@ -3106,9 +2836,9 @@ export const api = {
         limit: options?.limit ?? null,
         includeRecipeIds: options?.includeRecipeIds === true,
       }),
-      response.data,
+      payload,
     );
-    return response.data;
+    return payload;
   },
 
   async getRecipeBootstrapUsedInGroup(
@@ -3201,7 +2931,7 @@ export const api = {
       }
     }
 
-    const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/used-in-group`, {
+    const payload = await getLabPayload<RecipeBootstrapMachineGroupPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/used-in-group`, {
       params: {
         machineType,
         ...(voltageTier ? { voltageTier } : {}),
@@ -3221,9 +2951,9 @@ export const api = {
         limit: options?.limit ?? null,
         includeRecipeIds: options?.includeRecipeIds === true,
       }),
-      response.data,
+      payload,
     );
-    return response.data;
+    return payload;
   },
 
   async getRecipeBootstrapCategoryGroup(
@@ -3311,7 +3041,7 @@ export const api = {
       }
     }
 
-    const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/category-group`, {
+    const payload = await getLabPayload<RecipeBootstrapCategoryGroupPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/category-group`, {
       params: {
         tab,
         categoryKey,
@@ -3330,9 +3060,9 @@ export const api = {
         limit: options?.limit ?? null,
         includeRecipeIds: options?.includeRecipeIds === true,
       }),
-      response.data,
+      payload,
     );
-    return response.data;
+    return payload;
   },
 
   async getRecipeBootstrapSearch(
@@ -3371,15 +3101,15 @@ export const api = {
       }
     }
 
-    const response = await http.get(`/recipe-bootstrap/${encodeURIComponent(itemId)}/search`, {
+    const payload = await getLabPayload<RecipeBootstrapSearchPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/search`, {
       params: {
         tab,
         q: normalizedQuery,
       },
       signal: options?.signal,
     });
-    persistRuntimePayload('recipe-bootstrap-search', { itemId, tab, query: normalizedQuery }, response.data);
-    return response.data;
+    persistRuntimePayload('recipe-bootstrap-search', { itemId, tab, query: normalizedQuery }, payload);
+    return payload;
   },
 
   async prefetchRecipeBootstrapSearchPack(
@@ -3400,10 +3130,10 @@ export const api = {
     if (existingRequest) {
       return existingRequest;
     }
-    const request = http.get(`/recipes-indexed/item/${encodeURIComponent(itemId)}/summary`)
-      .then((response) => {
-        setCacheWithLimit(indexedSummaryCache, itemId, response.data, CACHE_LIMITS.indexedSummary);
-        return response.data;
+    const request = getLabPayload<indexedItemRecipeSummaryResponse>(`/recipes/item/${encodeURIComponent(itemId)}/summary`)
+      .then((payload) => {
+        setCacheWithLimit(indexedSummaryCache, itemId, payload, CACHE_LIMITS.indexedSummary);
+        return payload;
       })
       .finally(() => {
         indexedSummaryInFlight.delete(itemId);
@@ -3414,8 +3144,7 @@ export const api = {
 
   // Get recipe by ID
   async getIndexedRecipe(recipeId: string): Promise<indexedRecipe> {
-    const response = await http.get(`/recipes-indexed/${recipeId}`);
-    return response.data;
+    return getLabPayload<indexedRecipe>(`/recipes/${recipeId}`);
   },
 
   async getIndexedRecipesByIds(recipeIds: string[], options?: SearchItemsFastOptions): Promise<indexedRecipe[]> {
@@ -3423,10 +3152,9 @@ export const api = {
     if (uniqueIds.length === 0) {
       return [];
     }
-    const response = await http.post('/recipes-indexed/batch', { recipeIds: uniqueIds }, {
+    return postLabPayload<indexedRecipe[], { recipeIds: string[] }>('/recipes/batch', { recipeIds: uniqueIds }, {
       signal: options?.signal,
     });
-    return response.data;
   },
 
   // Get crafting recipes for item
@@ -3439,10 +3167,10 @@ export const api = {
     if (existingRequest) {
       return existingRequest;
     }
-    const request = http.get(`/recipes-indexed/${itemId}/crafting`)
-      .then((response) => {
-        setCacheWithLimit(indexedCraftingCache, itemId, response.data, CACHE_LIMITS.indexedCrafting);
-        return response.data;
+    const request = getLabPayload<indexedRecipe[]>(`/recipes/${itemId}/crafting`)
+      .then((payload) => {
+        setCacheWithLimit(indexedCraftingCache, itemId, payload, CACHE_LIMITS.indexedCrafting);
+        return payload;
       })
       .finally(() => {
         indexedCraftingInFlight.delete(itemId);
@@ -3461,10 +3189,10 @@ export const api = {
     if (existingRequest) {
       return existingRequest;
     }
-    const request = http.get(`/recipes-indexed/${itemId}/usage`)
-      .then((response) => {
-        setCacheWithLimit(indexedUsageCache, itemId, response.data, CACHE_LIMITS.indexedUsage);
-        return response.data;
+    const request = getLabPayload<indexedRecipe[]>(`/recipes/${itemId}/usage`)
+      .then((payload) => {
+        setCacheWithLimit(indexedUsageCache, itemId, payload, CACHE_LIMITS.indexedUsage);
+        return payload;
       })
       .finally(() => {
         indexedUsageInFlight.delete(itemId);
@@ -3477,26 +3205,23 @@ export const api = {
     if (!keyword || !keyword.trim()) {
       return [];
     }
-    const response = await http.get('/items/search/fast', {
+    return getLabPayload<ItemSearchBasic[]>('/items/search/fast', {
       params: {
         q: keyword.trim(),
         limit,
       },
       signal: options?.signal,
     });
-    return response.data;
   },
 
   // Get all available machines for item
   async getIndexedMachinesForItem(itemId: string): Promise<indexedItemMachinesResponse> {
-    const response = await http.get(`/recipes-indexed/${itemId}/machines`);
-    return response.data;
+    return getLabPayload<indexedItemMachinesResponse>(`/recipes/${itemId}/machines`);
   },
 
   // Get all machine types
   async getIndexedMachineTypes(): Promise<string[]> {
-    const response = await http.get('/recipes-indexed/machines/list');
-    return response.data;
+    return getLabPayload<string[]>('/recipes/machines/list');
   },
 
   // Get recipes by machine type
@@ -3507,23 +3232,27 @@ export const api = {
     recipes: indexedRecipe[];
   }> {
     const params = voltageTier ? { voltageTier } : {};
-    const response = await http.get(`/recipes-indexed/machines/${encodeURIComponent(machineType)}/recipes`, { params });
-    return response.data;
+    return getLabPayload<{
+      machineType: string;
+      voltageTier: string;
+      recipeCount: number;
+      recipes: indexedRecipe[];
+    }>(`/recipes/machines/${encodeURIComponent(machineType)}/recipes`, { params });
   },
 
   // Get multiblock blueprint by controller item ID
   async getMultiblockBlueprint(controllerItemId: string): Promise<MultiblockBlueprint> {
-    const response = await http.get(`/multiblocks/${encodeURIComponent(controllerItemId)}`);
-    return response.data;
+    return getLabPayload<MultiblockBlueprint>(`/multiblocks/${encodeURIComponent(controllerItemId)}`);
   },
 
   async getGTDiagramsOverview(): Promise<GTDiagramsOverview> {
-    const response = await http.get('/gt-diagrams/overview');
-    return response.data;
+    return getLabPayload<GTDiagramsOverview>('/gt-diagrams/overview');
   },
 
   async getForestryGeneticsOverview(): Promise<ForestryGeneticsOverview> {
-    const response = await http.get('/forestry-genetics/overview');
-    return response.data;
+    return getLabPayload<ForestryGeneticsOverview>('/forestry-genetics/overview');
   }
 };
+
+
+

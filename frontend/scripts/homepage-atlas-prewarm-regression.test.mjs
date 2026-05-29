@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/HomeCanvasGrid.vue',
+  'src/components/HomeCanvasGrid.vue',
   'utf8',
 );
 
@@ -34,3 +34,4 @@ test('HomePage does not prewarm per-item images when precomputed page atlas is a
     'homepage canvas grid should not probe per-item animation support during fast page flips',
   );
 });
+

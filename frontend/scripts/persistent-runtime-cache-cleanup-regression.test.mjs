@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/persistentRuntimeCache.ts',
+  'src/services/persistentRuntimeCache.ts',
   'utf8',
 );
 
@@ -24,3 +24,4 @@ test('runtime cache store can prune stale signature entries when a new export si
     'manifest consumers should be able to prime the current signature and trigger one-time cleanup',
   );
 });
+

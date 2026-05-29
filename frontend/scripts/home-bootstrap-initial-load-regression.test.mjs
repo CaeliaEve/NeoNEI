@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 );
 
@@ -55,7 +55,7 @@ test('browser page caches survive homepage remounts through a bounded shared cac
 
 test('homepage bootstrap keeps the publish-bundle fast path available before falling back to API bootstrap', () => {
   const apiSource = fs.readFileSync(
-    'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+    'src/services/api.ts',
     'utf8',
   );
 
@@ -78,7 +78,7 @@ test('search warmup preloads the browser search worker through published search 
     'item browser warmSearchIndex should prewarm the browser search worker',
   );
   const apiSource = fs.readFileSync(
-    'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+    'src/services/api.ts',
     'utf8',
   );
   assert.equal(
@@ -90,7 +90,7 @@ test('search warmup preloads the browser search worker through published search 
 
 test('recipe bootstrap fast path can resolve published hot-item bootstrap shards before API fallback', () => {
   const apiSource = fs.readFileSync(
-    'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+    'src/services/api.ts',
     'utf8',
   );
 
@@ -113,11 +113,11 @@ test('recipe bootstrap fast path can resolve published hot-item bootstrap shards
 
 test('recipe group index packs can use published hot-item static assets for first id-probe group pages', () => {
   const apiSource = fs.readFileSync(
-    'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+    'src/services/api.ts',
     'utf8',
   );
   const viewerSource = fs.readFileSync(
-    'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeViewer.ts',
+    'src/composables/useRecipeViewer.ts',
     'utf8',
   );
 
@@ -142,3 +142,4 @@ test('recipe group index packs can use published hot-item static assets for firs
     'recipe viewer should also prefetch adjacent pages within the active category to reduce next-page latency after first open',
   );
 });
+

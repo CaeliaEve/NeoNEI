@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/HomeCanvasGrid.vue',
+  'src/components/HomeCanvasGrid.vue',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -24,3 +24,4 @@ test('homepage canvas grid consumes embedded render hints before falling back to
     'homepage grid should use baked animation hints to skip redundant animation support probing',
   );
 });
+

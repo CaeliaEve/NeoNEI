@@ -76,6 +76,7 @@ $frontendCommand = "npm run dev -- --host 127.0.0.1 --port $FrontendPort"
 
 if ($DataRoot.Trim()) {
   $resolvedDataRoot = (Resolve-Path -LiteralPath $DataRoot).Path
+  $env:NESQL_EXPORT_ROOT = $resolvedDataRoot
   $env:NESQL_REPOSITORY_PATH = $resolvedDataRoot
   $env:NESQL_SPLIT_ITEMS_DIR = Join-Path $resolvedDataRoot 'items'
   $env:NESQL_SPLIT_RECIPES_DIR = Join-Path $resolvedDataRoot 'recipes'
@@ -97,7 +98,7 @@ Start-Process -FilePath 'cmd.exe' `
   -WorkingDirectory $frontendDir `
   -WindowStyle Hidden
 
-$backendOk = Wait-HttpOk -Url "http://127.0.0.1:$BackendPort/api/health"
+$backendOk = Wait-HttpOk -Url "http://127.0.0.1:$BackendPort/runtime/health"
 $frontendOk = Wait-HttpOk -Url "http://127.0.0.1:$FrontendPort"
 
 Write-Host ''

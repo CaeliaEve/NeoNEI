@@ -1,17 +1,18 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
+import path from 'node:path';
 
 const materializerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload-materializer.service.ts',
+  'src/services/publish-payload-materializer.service.ts',
   'utf8',
 );
 const publishPayloadSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload.service.ts',
+  'src/services/publish-payload.service.ts',
   'utf8',
 );
 const apiSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+  path.resolve('..', 'frontend/src/services/api.ts'),
   'utf8',
 );
 
@@ -58,3 +59,4 @@ test('published JSON fast path is backed by persistent runtime cache', () => {
   assert.equal(fetchBlock.includes("readPersistentRuntimePayload<T>('published-json'"), true);
   assert.equal(fetchBlock.includes("persistRuntimePayload('published-json'"), true);
 });
+

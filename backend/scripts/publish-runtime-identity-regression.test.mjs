@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const runtimeManifestSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-manifest.service.ts',
+  'src/services/publish-manifest.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -34,3 +34,4 @@ test('runtime cache key is bound to publish bundle content identity', () => {
     'publish identity should be part of runtimeCacheKey after browser layout identity',
   );
 });
+

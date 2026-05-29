@@ -1,14 +1,14 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const compilerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/neonei-compiler.service.ts',
+  'src/services/neonei-compiler.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const materializerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload-materializer.service.ts',
+  'src/services/publish-payload-materializer.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -57,3 +57,4 @@ test('publish payload materializer keeps standalone defaults aligned with the ex
     'materializer should match the expanded hot search shard default',
   );
 });
+

@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const helpersSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/recipe-browser/helpers.ts',
+  'src/composables/recipe-browser/helpers.ts',
   'utf8',
 );
 
@@ -14,7 +14,7 @@ test('recipe browser defines gt machine family aliases for merged category tabs'
     'helpers should declare a gt machine family alias table',
   );
   assert.equal(
-    helpersSource.includes('凛冰冷冻机') && helpersSource.includes('真空冷冻机'),
+    helpersSource.includes('鍑涘啺鍐峰喕鏈?) && helpersSource.includes('鐪熺┖鍐峰喕鏈?),
     true,
     'cryo freezer and vacuum freezer should be merged into the same category family',
   );
@@ -26,8 +26,9 @@ test('recipe browser keeps standard and large chemical reactors as separate tabs
   )?.[0] ?? '';
 
   assert.equal(
-    aliasBlock.includes("['化学反应釜', '大型化学反应釜']"),
+    aliasBlock.includes("['鍖栧鍙嶅簲閲?, '澶у瀷鍖栧鍙嶅簲閲?]"),
     false,
     'standard and large chemical reactors should stay split instead of being normalized into one family',
   );
 });
+

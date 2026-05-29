@@ -3,12 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const apiSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+  'src/services/api.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const viewerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeViewer.ts',
+  'src/composables/useRecipeViewer.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -65,3 +65,4 @@ test('recipe viewer gates open latency budgets without changing UI behavior', ()
     'budget mark should compute whether the full group target was met',
   );
 });
+

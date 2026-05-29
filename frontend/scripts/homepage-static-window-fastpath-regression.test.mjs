@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const apiSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+  'src/services/api.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -47,3 +47,4 @@ test('browser window resolution prefers already-warm published windows before co
     'when multiple windows cover the same request, selection should prefer the one with more forward coverage for upcoming flips',
   );
 });
+

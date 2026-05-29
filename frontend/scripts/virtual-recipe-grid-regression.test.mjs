@@ -1,13 +1,13 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const gridSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/VirtualRecipeGrid.vue',
+  'src/components/VirtualRecipeGrid.vue',
   'utf8',
 );
 const viewSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/views/RecipeView.vue',
+  'src/views/RecipeView.vue',
   'utf8',
 );
 
@@ -31,3 +31,4 @@ test('VirtualRecipeGrid gates preview image rendering behind explicit prop', () 
     'preview image nodes must not mount unless explicitly enabled',
   );
 });
+

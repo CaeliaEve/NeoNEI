@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const homePageSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/views/HomePage.vue',
+  'src/views/HomePage.vue',
   'utf8',
 );
 
@@ -44,3 +44,4 @@ test('homepage item grid uses stretch-fit columns and does not enable vertical s
     'homepage should observe the rendered grid shell size to keep pageSize aligned with the visible rows and columns',
   );
 });
+

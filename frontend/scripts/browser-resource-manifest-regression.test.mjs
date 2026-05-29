@@ -1,14 +1,14 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const apiSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+  'src/services/api.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const itemBrowserSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -88,3 +88,4 @@ test('global atlas misses do not block page presentation', () => {
     'missing atlas entries should be warmed asynchronously instead of blocking visible navigation',
   );
 });
+

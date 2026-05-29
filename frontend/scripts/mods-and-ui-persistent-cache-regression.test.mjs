@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+  'src/services/api.ts',
   'utf8',
 );
 
@@ -29,3 +29,4 @@ test('mods list and recipe ui payload hot paths use runtime-signature persistent
     'recipe ui payloads should persist after first fetch to reduce repeat special-page latency',
   );
 });
+

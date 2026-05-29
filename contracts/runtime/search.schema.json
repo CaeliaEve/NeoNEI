@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neonei.local/contracts/runtime/search.schema.json",
+  "title": "NeoNEI Runtime Search Pack",
+  "type": "object",
+  "required": ["schemaVersion", "items"],
+  "additionalProperties": true,
+  "properties": {
+    "schemaVersion": { "type": "string" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["itemId"],
+        "additionalProperties": true,
+        "properties": {
+          "itemId": { "type": "string" },
+          "localizedName": { "type": "string" },
+          "modId": { "type": "string" },
+          "searchText": { "type": "string" },
+          "tokens": { "type": "array" }
+        }
+      }
+    }
+  }
+}

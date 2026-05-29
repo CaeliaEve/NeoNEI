@@ -427,6 +427,9 @@ function writeJsonCompact(filePath, value) {
 }
 
 function stableNumber(value, fallback = 0) {
+  if (value && typeof value === "object" && !Array.isArray(value) && "value" in value) {
+    return stableNumber(value.value, fallback);
+  }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
 }
@@ -486,7 +489,7 @@ function normalizeRecipeCategoryName(value) {
   return `${value ?? ""}`
     .trim()
     .toLowerCase()
-    .replace(/§[0-9a-fk-or]/gi, "")
+    .replace(/鎼俒0-9a-fk-or]/gi, "")
     .replace(/\s+/g, " ");
 }
 
@@ -664,7 +667,7 @@ function normalizeAnimationTimeline(sourceTimeline, frameCount, fallbackDuration
 function numericField(source, keys, fallback = null) {
   for (const key of keys) {
     if (source && source[key] !== undefined && source[key] !== null) {
-      const parsed = Number(source[key]);
+      const parsed = stableNumber(source[key], NaN);
       if (Number.isFinite(parsed)) return parsed;
     }
   }
@@ -728,6 +731,41 @@ function normalizeAtlasFrames(frames, fallbackWidth, fallbackHeight) {
       ];
     })
     .filter((frame) => Array.isArray(frame) && frame.length >= 5);
+}
+
+function normalizeBrowserAtlasPlacement(placement, animated = false) {
+  if (!placement || typeof placement !== "object") return null;
+  const width = stableNumber(placement.width, 16);
+  const height = stableNumber(placement.height, 16);
+  const normalized = {
+    ...placement,
+    atlasWidth: placement.atlasWidth === null || placement.atlasWidth === undefined ? null : stableNumber(placement.atlasWidth, null),
+    atlasHeight: placement.atlasHeight === null || placement.atlasHeight === undefined ? null : stableNumber(placement.atlasHeight, null),
+    x: stableNumber(placement.x, 0),
+    y: stableNumber(placement.y, 0),
+    width,
+    height,
+  };
+  if (animated) {
+    const frameCount = stableNumber(placement.frameCount, Array.isArray(placement.frames) ? placement.frames.length : 0);
+    const frameDurationMs = stableNumber(placement.frameDurationMs, 50);
+    normalized.frameCount = frameCount;
+    normalized.frameDurationMs = frameDurationMs;
+    normalized.frames = normalizeAtlasFrames(placement.frames, width, height);
+    normalized.timeline = normalizeAnimationTimeline(placement.timeline, frameCount, frameDurationMs);
+  }
+  return normalized;
+}
+
+function normalizeBrowserAtlasEntry(entry) {
+  if (!entry || typeof entry !== "object") return entry;
+  return {
+    ...entry,
+    staticAtlas: normalizeBrowserAtlasPlacement(entry.staticAtlas, false),
+    animatedAtlas: normalizeBrowserAtlasPlacement(entry.animatedAtlas, true),
+    hasStaticAtlas: Boolean(entry.staticAtlas?.atlasFile),
+    hasAnimatedAtlas: Boolean(entry.animatedAtlas?.atlasFile),
+  };
 }
 
 function buildPlacementFromResource(resource, animation = null, animated = false) {
@@ -817,7 +855,7 @@ function buildBrowserAtlasIndexFromResources(existingIndex, browserItems, textur
     }
   }
 
-  const items = Array.from(byItemId.values()).sort((left, right) => `${left.itemId}`.localeCompare(`${right.itemId}`));
+  const items = Array.from(byItemId.values()).map(normalizeBrowserAtlasEntry).sort((left, right) => `${left.itemId}`.localeCompare(`${right.itemId}`));
   return {
     ...(existingIndex ?? {}),
     schemaVersion: existingIndex?.schemaVersion ?? "neonei/browser-atlas-index/generated-from-raw-export",
@@ -857,6 +895,7 @@ function buildAnimationTable(searchItems, textures, animations, browserAtlasInde
       variantKey: animated.variantKey ?? animation.variantKey ?? texture.variantKey ?? null,
       mode: entry.mode ?? texture.mode ?? null,
       playbackHint: entry.playbackHint ?? texture.playbackHint ?? null,
+      frameDurationSource: normalizeFrameDurationSource(entry, animation, texture),
       atlasFile: animated.atlasFile ?? texture.atlasFile ?? texture.atlasTexture ?? null,
       atlasGroup: animated.atlasGroup ?? texture.atlasGroup ?? null,
       atlasWidth: stableNumber(animated.atlasWidth, stableNumber(texture.atlasWidth, null)),
@@ -877,6 +916,7 @@ function buildAnimationTable(searchItems, textures, animations, browserAtlasInde
       variantKey: animation.variantKey ?? texture.variantKey ?? null,
       mode: animation.mode ?? texture.mode ?? null,
       playbackHint: animation.playbackHint ?? texture.playbackHint ?? null,
+      frameDurationSource: normalizeFrameDurationSource(animation, animation, texture),
       atlasFile: animation.atlasFile ?? texture.atlasFile ?? texture.atlasTexture ?? null,
       atlasGroup: animation.atlasGroup ?? texture.atlasGroup ?? null,
       atlasWidth: stableNumber(animation.atlasWidth, stableNumber(texture.atlasWidth, null)),
@@ -888,20 +928,57 @@ function buildAnimationTable(searchItems, textures, animations, browserAtlasInde
   }
 
   return Array.from(byItemId.values())
-    .filter((entry) => entry.frameCount > 1 || entry.timeline.length > 1)
+    .filter((entry) => entry.atlasFile || entry.frameCount > 1 || entry.timeline.length > 1)
     .sort((left, right) => left.itemId.localeCompare(right.itemId));
 }
+
+function normalizeFrameDurationSource(entry, animation = {}, texture = {}) {
+  const inferred = inferFrameDurationSource(entry, animation, texture);
+  const declared = animation?.frameDurationSource ?? texture?.frameDurationSource ?? null;
+  if (declared === "gif_metadata" && inferred === "minecraft_tick_capture") return inferred;
+  return declared ?? inferred;
+}
+function inferFrameDurationSource(entry, animation = {}, texture = {}) {
+  const mode = `${entry?.mode ?? animation?.mode ?? texture?.mode ?? ""}`;
+  const animationMode = `${entry?.animationMode ?? animation?.animationMode ?? texture?.animationMode ?? ""}`;
+  const playbackHint = `${entry?.playbackHint ?? animation?.playbackHint ?? texture?.playbackHint ?? ""}`;
+  if (mode === "native_sprite_animation" || animationMode.includes("native_sprite") || playbackHint === "native_sprite") {
+    return "native_sprite_metadata";
+  }
+  if (mode === "rendered_frames" || playbackHint === "atlas_timeline") return "minecraft_tick_capture";
+  if (animationMode === "gif_sequence") return "gif_metadata";
+  return null;
+}
+
+function normalizeBrowserGroups(groups, availableItemIds) {
+  return (groups ?? [])
+    .filter((group) => group?.groupKey)
+    .map((group) => {
+      const members = Array.from(new Set((group.memberItemIds ?? []).filter((itemId) => availableItemIds.has(itemId))));
+      const representative = availableItemIds.has(group.representativeItemId)
+        ? group.representativeItemId
+        : (members[0] ?? group.representativeItemId ?? null);
+      const groupSize = members.length > 0 ? members.length : stableNumber(group.groupSize, 1);
+      return {
+        ...group,
+        representativeItemId: representative,
+        memberItemIds: members,
+        groupSize,
+      };
+    });
+}
+
 function sanitizePathSegment(value) {
   return `${value ?? "unknown"}`.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "unknown";
 }
 
 const EXPECTED_SPECIAL_FACT_KEYS = {
   gregtech: ["duration", "voltage", "amperage", "totalEU", "voltageTier", "requiresCleanroom", "requiresLowGravity"],
-  thaumcraft: ["research", "centralItemId", "centerInputSlotIndex", { key: "aspects", aliases: ["aspect", "aspectCosts", "inputAspects"] }, "instability"],
+  thaumcraft: ["research", "centralItemId", "centerInputSlotIndex", { key: "aspects", aliases: ["aspects", "aspect", "aspectCosts", "inputAspects"] }, "instability"],
   botania: [{ key: "mana", aliases: ["mana", "manaCost"] }, "ticks", "catalyst", { key: "recipeKind", aliases: ["recipeKind", "brewKey", "correctedMachineType"] }],
-  bloodmagic: ["bloodCost", "lpCost", "requiredLP", "tier", "altarTier", "consumptionRate", "drainRate"],
-  forestry: ["chance", "allele", "species", "temperature", "humidity"],
-  eec: ["mobName", "entityId", { key: "health", aliases: ["health", "maxHealth"] }, { key: "drops", aliases: ["drops", "normalOutputsCount", "rareOutputsCount", "infernalOutputsCount"] }, { key: "dropChance", aliases: ["dropChance", "eliteChance", "ultraChance", "infernoChance"] }],
+  bloodmagic: ["bloodCost", "lpCost", "requiredLP", "tier", { key: "altarTier", aliases: ["altarTier", "tier"] }, "consumptionRate", "drainRate"],
+  forestry: ["chance", { key: "allele", aliases: ["allele", "alleles"] }, { key: "species", aliases: ["species", "beeSpecies", "mutations"] }, "temperature", "humidity"],
+  eec: ["mobName", { key: "entityId", aliases: ["entityId", "mobName", "entityName"] }, { key: "health", aliases: ["health", "maxHealth"] }, { key: "drops", aliases: ["drops", "normalOutputsCount", "rareOutputsCount", "infernalOutputsCount"] }, { key: "dropChance", aliases: ["dropChance", "eliteChance", "ultraChance", "infernoChance"] }],
 };
 
 function incrementCounter(map, key) {
@@ -1025,7 +1102,7 @@ function compileRawExport(inputDir, outputDir) {
   const items = readRawJsonl(inputDir, manifest, "items", "items.jsonl");
   const fluids = readRawJsonl(inputDir, manifest, "fluids", "fluids.jsonl");
   const recipes = readRawRecipes(inputDir, manifest);
-  const groups = readRawJsonl(inputDir, manifest, "groups", "groups.jsonl");
+  const rawGroups = readRawJsonl(inputDir, manifest, "groups", "groups.jsonl");
   const neiOrder = readRawJsonl(inputDir, manifest, "neiOrder", "nei_order.jsonl");
   const textures = readRawJsonl(inputDir, manifest, "textures", "textures.jsonl");
   const animations = readRawJsonl(inputDir, manifest, "animations", "animations.jsonl");
@@ -1036,6 +1113,8 @@ function compileRawExport(inputDir, outputDir) {
   const specialIndex = readRawJson(inputDir, manifest, "specialIndex", "special/index.json");
   const specialDomains = readSpecialDomains(inputDir, specialIndex);
   const animationFacts = mergeAnimationFacts(animations, nativeSprites, renderedGifs);
+  const itemIds = new Set(items.map((item) => item?.itemId).filter(Boolean));
+  const groups = normalizeBrowserGroups(rawGroups, itemIds);
 
   const renderByAssetId = new Map();
   for (const texture of textures) {
@@ -1133,7 +1212,7 @@ function compileRawExport(inputDir, outputDir) {
     items: items.length,
     fluids: fluids.length,
     recipes: recipes.length,
-    groups: groups.length,
+    groups: rawGroups.length,
     neiOrderEntries: neiOrder.length,
     textures: textures.length,
     animations: animations.length,
@@ -1143,7 +1222,7 @@ function compileRawExport(inputDir, outputDir) {
     items: items.length,
     fluids: fluids.length,
     recipes: recipes.length,
-    groups: groups.length,
+    groups: rawGroups.length,
     neiOrderEntries: neiOrder.length,
     textures: textures.length,
     animations: animations.length,
@@ -1158,8 +1237,8 @@ function compileRawExport(inputDir, outputDir) {
   const validation = {
     schemaVersion: "neonei/compiler-validation/v3-alpha1",
     generatedAt: new Date().toISOString(),
-    inputDir,
-    outputDir,
+    inputDir: "<raw-export>",
+    outputDir: "<dist-data>",
     counts: {
       items: items.length,
       fluids: fluids.length,
@@ -1403,3 +1482,11 @@ console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.m
 if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 2 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.canonicalCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1 || report.migrationReadiness?.status !== "ready")) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
+if (selfTest) {
+  const validationText = readFileSync(join(outputDir, "validation", "report.json"), "utf8");
+  const portablePathViolation = /[A-Za-z]:[\\/]|\.minecraft[\\/]versions|GT New Horizons|E:[\\/]GTNH|E:[\\/]codex/i.test(validationText);
+  if (portablePathViolation) {
+    throw new Error("Self-test validation report leaked a machine-specific filesystem path");
+  }
+}
+

@@ -1,9 +1,10 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
+import path from 'node:path';
 
 const read = (relativePath) =>
-  fs.readFileSync(`E:/codex/ae2/NeoNEI/${relativePath}`, 'utf8');
+  fs.readFileSync(path.resolve('..', relativePath), 'utf8');
 
 test('backend item image fallback resolves hashed variant siblings and sidecars', () => {
   const source = read('backend/src/server.ts');
@@ -65,3 +66,5 @@ test('render contract animated atlas service preserves per-frame timeline metada
     'render contract hints should recognize auxiliary native sprite timelines exported alongside custom renderer assets',
   );
 });
+
+

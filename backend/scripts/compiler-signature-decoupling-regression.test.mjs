@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const compilerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/neonei-compiler.service.ts',
+  'src/services/neonei-compiler.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -24,3 +24,4 @@ test('acceleration source signature ignores publish-only and atlas-only tuning k
     'publish hot-payload options should not invalidate the acceleration database signature',
   );
 });
+

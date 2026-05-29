@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/components/RecipeDisplayRouter.vue',
+  'src/components/RecipeDisplayRouter.vue',
   'utf8',
 );
 
@@ -19,3 +19,4 @@ test('recipe display router prefers inline ui payload hints before network fallb
     'router should short-circuit ui payload fetch when inline payload is already present',
   );
 });
+

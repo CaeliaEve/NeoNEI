@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeBootstrap.ts',
+  'src/composables/useRecipeBootstrap.ts',
   'utf8',
 );
 
@@ -19,3 +19,4 @@ test('recipe bootstrap fast path avoids eager batch hydration on initial open', 
     'frontend eager recipe limit constant should be removed once bootstrap top-up moves server-side',
   );
 });
+

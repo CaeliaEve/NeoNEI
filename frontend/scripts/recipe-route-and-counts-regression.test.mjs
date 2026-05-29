@@ -1,14 +1,14 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const viewerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useRecipeViewer.ts',
+  'src/composables/useRecipeViewer.ts',
   'utf8',
 );
 
 const selectorsSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/recipe-browser/useRecipeBrowserSelectors.ts',
+  'src/composables/recipe-browser/useRecipeBrowserSelectors.ts',
   'utf8',
 );
 
@@ -52,3 +52,4 @@ test('recipe browser selectors use bootstrap totals for tab counts before full h
     'selectors should keep non-search result counts aligned with bootstrap totals',
   );
 });
+

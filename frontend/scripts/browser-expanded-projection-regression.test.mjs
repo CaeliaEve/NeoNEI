@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useItemBrowser.ts',
+  'src/composables/useItemBrowser.ts',
   'utf8',
 );
 
@@ -71,3 +71,4 @@ test('expanded browser projections precompute the current adjacent page window',
     'projection cache should clear with page geometry/runtime page cache resets',
   );
 });
+

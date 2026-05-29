@@ -1,19 +1,19 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const materializerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload-materializer.service.ts',
+  'src/services/publish-payload-materializer.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const publishPayloadSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload.service.ts',
+  'src/services/publish-payload.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const serverSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/server.ts',
+  'src/server.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -108,3 +108,4 @@ test('publish static route prefers precompressed sidecars when clients accept th
     'publish server should vary publish assets on Accept-Encoding',
   );
 });
+

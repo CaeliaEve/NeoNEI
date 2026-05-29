@@ -1,19 +1,19 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const homePageSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/views/HomePage.vue',
+  'src/views/HomePage.vue',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const preheaterSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/composables/useSitePreheater.ts',
+  'src/composables/useSitePreheater.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const apiSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/api.ts',
+  'src/services/api.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -113,3 +113,4 @@ test('full-site preheat stays memory-bounded by batching work and trimming heavy
     'recipe bootstrap search-pack cache should be bounded so a full preheat cannot grow without limit',
   );
 });
+

@@ -1,9 +1,9 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const source = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/frontend/src/services/browserSearchWorker.ts',
+  'src/services/browserSearchWorker.ts',
   'utf8',
 );
 
@@ -29,3 +29,4 @@ test('browser search worker seeds itself from publish-manifest keyed persistent 
     'browser search worker cache keys should follow the publish runtime cache key so in-place payload refreshes invalidate old search packs',
   );
 });
+

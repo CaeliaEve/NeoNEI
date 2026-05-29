@@ -1,19 +1,19 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
 const payloadSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload.service.ts',
+  'src/services/publish-payload.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const materializerSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/services/publish-payload-materializer.service.ts',
+  'src/services/publish-payload-materializer.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
 const itemRoutesSource = fs.readFileSync(
-  'E:/codex/ae2/NeoNEI/backend/src/routes/items.routes.ts',
+  'src/routes/items.routes.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -57,3 +57,4 @@ test('publish materializer and live route write resource manifests', () => {
     'live browser page pack route should include resource dependencies',
   );
 });
+
