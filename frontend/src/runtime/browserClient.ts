@@ -7,7 +7,7 @@
   BrowserSearchCatalogResponse,
   BrowserGridEntry,
   PaginatedResponse,
-} from '../services/api';
+} from './types';
 import {
   getDistDataBrowserAtlasIndex,
   getDistDataBrowserPagePack,

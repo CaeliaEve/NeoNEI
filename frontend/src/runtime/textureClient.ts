@@ -1,4 +1,4 @@
-import type { BrowserAtlasIndexResponse } from '../services/api';
+import type { BrowserAtlasIndexResponse } from './types';
 import { getDistDataBrowserAtlasIndex } from '../services/distDataRuntime';
 
 export function createTextureRuntimeClient(options: {
@@ -70,3 +70,4 @@ export function createTextureRuntimeClient(options: {
 
   return { getBrowserAtlasIndex, getBrowserAtlasEntries };
 }
+

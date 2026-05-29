@@ -1,21 +1,17 @@
-﻿import type {
-  BrowserDefaultCatalogResponse,
+﻿import type { HomeBootstrapResponse, Item, Mod, RecipeBootstrapPayload, RecipeUiPayload } from "./api";
+import type {
   BrowserAtlasIndexResponse,
   BrowserByIdsPackResponse,
+  BrowserDefaultCatalogResponse,
   BrowserGridEntry,
   BrowserGroupItemsResponse,
   BrowserPagePackResponse,
   BrowserSearchCatalogResponse,
   BrowserSearchPackEntry,
   BrowserSearchPackResponse,
-  HomeBootstrapResponse,
   BrowserVariantGroup,
-  Item,
-  Mod,
   PublicRuntimeManifest,
-  RecipeBootstrapPayload,
-  RecipeUiPayload,
-} from "./api";
+} from "../runtime/types";
 
 type DistDataManifest = {
   schemaVersion?: string;

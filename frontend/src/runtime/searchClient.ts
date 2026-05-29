@@ -1,4 +1,4 @@
-﻿import type { BrowserSearchPackResponse } from '../services/api';
+import type { BrowserSearchPackResponse } from './types';
 import { getDistDataSearchPack } from '../services/distDataRuntime';
 
 export function createSearchRuntimeClient() {
@@ -11,3 +11,4 @@ export function createSearchRuntimeClient() {
 }
 
 export const searchRuntimeClient = createSearchRuntimeClient();
+

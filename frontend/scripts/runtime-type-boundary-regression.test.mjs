@@ -6,6 +6,9 @@ const apiSource = fs.readFileSync('src/services/api.ts', 'utf8').replace(/\r\n/g
 const runtimeTypesSource = fs.readFileSync('src/runtime/types.ts', 'utf8').replace(/\r\n/g, '\n');
 const manifestClientSource = fs.readFileSync('src/runtime/manifestClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const recipeClientSource = fs.readFileSync('src/runtime/recipeClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const browserClientSource = fs.readFileSync('src/runtime/browserClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const searchClientSource = fs.readFileSync('src/runtime/searchClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('public runtime manifest types live outside the legacy api facade', () => {
   assert.equal(
@@ -24,9 +27,9 @@ test('public runtime manifest types live outside the legacy api facade', () => {
     'services/api.ts should not re-own the runtime manifest interface',
   );
   assert.equal(
-    apiSource.includes("export type {\n  PublicRuntimeManifest"),
+    apiSource.includes('export type {\n  AnimatedAtlasAssetEntry'),
     true,
-    'services/api.ts should only re-export runtime manifest types for compatibility',
+    'services/api.ts should only re-export runtime types for compatibility',
   );
 });
 
@@ -46,4 +49,32 @@ test('runtime clients consume runtime manifest types directly', () => {
     /import type \{[^}]*PublicRuntimeManifest[^}]*\} from '\.\.\/services\/api'/,
     'recipe runtime client should not import PublicRuntimeManifest from the legacy api facade',
   );
+});
+
+test('browser runtime contracts live outside the legacy api facade', () => {
+  for (const token of [
+    'export type BrowserGridEntry',
+    'export interface BrowserPagePackResponse',
+    'export interface BrowserSearchPackResponse',
+    'export interface BrowserAtlasIndexResponse',
+    'export interface PaginatedResponse<T>',
+  ]) {
+    assert.equal(runtimeTypesSource.includes(token), true, `missing runtime browser type: ${token}`);
+  }
+  for (const token of [
+    'export interface BrowserVariantGroup {',
+    'export interface BrowserSearchPackEntry {',
+    'export interface BrowserAtlasIndexResponse {',
+  ]) {
+    assert.equal(apiSource.includes(token), false, `services/api.ts should not re-own ${token}`);
+  }
+});
+
+test('browser/search/texture runtime clients consume browser contracts from runtime/types', () => {
+  assert.equal(browserClientSource.includes("} from './types';"), true);
+  assert.equal(searchClientSource.includes("from './types';"), true);
+  assert.equal(textureClientSource.includes("from './types';"), true);
+  assert.doesNotMatch(browserClientSource, /from '\.\.\/services\/api'/);
+  assert.doesNotMatch(searchClientSource, /from '\.\.\/services\/api'/);
+  assert.doesNotMatch(textureClientSource, /from '\.\.\/services\/api'/);
 });
