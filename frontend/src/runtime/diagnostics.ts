@@ -1,9 +1,36 @@
 import { markPerfEvent } from '../services/perfMarks';
 
+export type RuntimeDiagnosticKind =
+  | 'contract-gap'
+  | 'missing-asset'
+  | 'missing-payload'
+  | 'schema-mismatch';
+
+export interface RuntimeDiagnosticContext {
+  code: string;
+  kind: RuntimeDiagnosticKind;
+  message: string;
+  itemId?: string | null;
+  recipeId?: string | null;
+  assetId?: string | null;
+  path?: string | null;
+  sourceSignature?: string | null;
+  runtimeCacheKey?: string | null;
+  scope?: string | null;
+  route?: string | null;
+  reason?: string | null;
+  strict?: boolean;
+  details?: Record<string, unknown>;
+}
+
 export interface RuntimeContractGapOptions {
   strict?: boolean;
   logger?: Pick<Console, 'warn'>;
+  context?: Partial<RuntimeDiagnosticContext>;
 }
+
+const MAX_RUNTIME_DIAGNOSTICS = 200;
+const runtimeDiagnostics: RuntimeDiagnosticContext[] = [];
 
 export function isStrictRuntimeContractsEnabled(): boolean {
   if (import.meta.env.VITE_RUNTIME_V3_STRICT === '1') {
@@ -21,6 +48,113 @@ export function isStrictRuntimeContractsEnabled(): boolean {
   }
 }
 
+function normalizeRuntimeDiagnostic(
+  diagnostic: RuntimeDiagnosticContext,
+): RuntimeDiagnosticContext {
+  return {
+    ...diagnostic,
+    itemId: diagnostic.itemId ? `${diagnostic.itemId}` : undefined,
+    recipeId: diagnostic.recipeId ? `${diagnostic.recipeId}` : undefined,
+    assetId: diagnostic.assetId ? `${diagnostic.assetId}` : undefined,
+    path: diagnostic.path ? `${diagnostic.path}` : undefined,
+    sourceSignature: diagnostic.sourceSignature ? `${diagnostic.sourceSignature}` : undefined,
+    runtimeCacheKey: diagnostic.runtimeCacheKey ? `${diagnostic.runtimeCacheKey}` : undefined,
+    scope: diagnostic.scope ? `${diagnostic.scope}` : undefined,
+    route: diagnostic.route ? `${diagnostic.route}` : undefined,
+    reason: diagnostic.reason ? `${diagnostic.reason}` : undefined,
+  };
+}
+
+export function recordRuntimeDiagnostic(
+  diagnostic: RuntimeDiagnosticContext,
+): RuntimeDiagnosticContext {
+  const normalized = normalizeRuntimeDiagnostic(diagnostic);
+  runtimeDiagnostics.push(normalized);
+  if (runtimeDiagnostics.length > MAX_RUNTIME_DIAGNOSTICS) {
+    runtimeDiagnostics.splice(0, runtimeDiagnostics.length - MAX_RUNTIME_DIAGNOSTICS);
+  }
+
+  markPerfEvent('runtime-diagnostic', { ...normalized });
+
+  if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+    window.dispatchEvent(new CustomEvent('neonei:runtime-diagnostic', {
+      detail: normalized,
+    }));
+  }
+
+  return normalized;
+}
+
+export function getRuntimeDiagnosticsSnapshot(): RuntimeDiagnosticContext[] {
+  return runtimeDiagnostics.slice();
+}
+
+export function clearRuntimeDiagnostics(): void {
+  runtimeDiagnostics.length = 0;
+}
+
+export function reportMissingRuntimeAsset(context: {
+  assetId?: string | null;
+  itemId?: string | null;
+  path?: string | null;
+  sourceSignature?: string | null;
+  runtimeCacheKey?: string | null;
+  message?: string;
+  details?: Record<string, unknown>;
+}): RuntimeDiagnosticContext {
+  return recordRuntimeDiagnostic({
+    code: 'MISSING_RUNTIME_ASSET',
+    kind: 'missing-asset',
+    message: context.message ?? 'Runtime asset is missing',
+    assetId: context.assetId,
+    itemId: context.itemId,
+    path: context.path,
+    sourceSignature: context.sourceSignature,
+    runtimeCacheKey: context.runtimeCacheKey,
+    details: context.details,
+  });
+}
+
+export function reportMissingRuntimePayload(context: {
+  recipeId?: string | null;
+  itemId?: string | null;
+  path?: string | null;
+  sourceSignature?: string | null;
+  runtimeCacheKey?: string | null;
+  message?: string;
+  details?: Record<string, unknown>;
+}): RuntimeDiagnosticContext {
+  return recordRuntimeDiagnostic({
+    code: 'MISSING_RUNTIME_PAYLOAD',
+    kind: 'missing-payload',
+    message: context.message ?? 'Runtime payload is missing',
+    recipeId: context.recipeId,
+    itemId: context.itemId,
+    path: context.path,
+    sourceSignature: context.sourceSignature,
+    runtimeCacheKey: context.runtimeCacheKey,
+    details: context.details,
+  });
+}
+
+export function reportRuntimeSchemaMismatch(context: {
+  path?: string | null;
+  sourceSignature?: string | null;
+  runtimeCacheKey?: string | null;
+  message?: string;
+  details?: Record<string, unknown>;
+}): RuntimeDiagnosticContext {
+  return recordRuntimeDiagnostic({
+    code: 'RUNTIME_SCHEMA_MISMATCH',
+    kind: 'schema-mismatch',
+    message: context.message ?? 'Runtime payload schema mismatch',
+    path: context.path,
+    sourceSignature: context.sourceSignature,
+    runtimeCacheKey: context.runtimeCacheKey,
+    details: context.details,
+  });
+}
+
 export function reportRuntimeContractGap(
   scope: string,
   route: string,
@@ -28,11 +162,15 @@ export function reportRuntimeContractGap(
   options: RuntimeContractGapOptions = {},
 ): void {
   const strict = options.strict ?? isStrictRuntimeContractsEnabled();
-  markPerfEvent('runtime-contract-gap', {
+  const diagnostic = recordRuntimeDiagnostic({
+    code: 'RUNTIME_CONTRACT_GAP',
+    kind: 'contract-gap',
+    message: `${scope} required legacy route ${route}: ${reason}`,
     scope,
     route,
     reason,
     strict,
+    ...options.context,
   });
 
   if (strict) {
@@ -41,6 +179,6 @@ export function reportRuntimeContractGap(
 
   const logger = options.logger ?? (typeof console !== 'undefined' ? console : undefined);
   if (logger && typeof logger.warn === 'function') {
-    logger.warn(`[NeoNEI Runtime] ${scope} required legacy route ${route}: ${reason}`);
+    logger.warn('[NeoNEI Runtime]', diagnostic);
   }
 }

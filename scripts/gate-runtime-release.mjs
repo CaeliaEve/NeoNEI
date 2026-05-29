@@ -29,6 +29,7 @@ const steps = [
   { name: 'public runtime profile regression', cwd: backendDir, command: npm, args: ['run', 'test:public-runtime-profile'] },
   { name: 'path portability audit', cwd: frontendDir, command: npm, args: ['run', 'audit:paths'] },
   { name: 'path portability URL regression', cwd: frontendDir, command: npm, args: ['run', 'test:path-portability-urls'] },
+  { name: 'runtime diagnostics regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-diagnostics'] },
   { name: 'raw export compiler portability self-test', cwd: frontendDir, command: npm, args: ['run', 'test:raw-export'] },
   { name: 'raw export path hygiene self-test', cwd: frontendDir, command: npm, args: ['run', 'test:export-paths'] },
   { name: 'API/runtime audit gate', cwd: frontendDir, command: npm, args: ['run', 'audit:api-runtime:gate'] },

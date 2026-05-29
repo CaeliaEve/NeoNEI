@@ -9,7 +9,11 @@ import {
   readPersistentRuntimeCache,
   writePersistentRuntimeCache,
 } from './persistentRuntimeCache';
-import { reportRuntimeContractGap, isStrictRuntimeContractsEnabled } from '../runtime/diagnostics';
+import {
+  reportMissingRuntimePayload,
+  reportRuntimeContractGap,
+  isStrictRuntimeContractsEnabled,
+} from '../runtime/diagnostics';
 import { markPerfEvent } from './perfMarks';
 import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRuntimeRecipeBootstrap, getRuntimeRecipeUiPayload, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
 import { createTextureRuntimeClient } from '../runtime/textureClient';
@@ -116,8 +120,34 @@ const RECIPE_BOOTSTRAP_CACHE_SCHEMA = 'v3';
 
 const STRICT_RUNTIME_V3 = isStrictRuntimeContractsEnabled();
 
-function reportRuntimeDevCompatGap(scope: string, route: string, reason: string): void {
-  reportRuntimeContractGap(scope, route, reason, { strict: STRICT_RUNTIME_V3 });
+function reportRuntimeDevCompatGap(
+  scope: string,
+  route: string,
+  reason: string,
+  context?: {
+    itemId?: string | null;
+    recipeId?: string | null;
+    assetId?: string | null;
+    path?: string | null;
+    sourceSignature?: string | null;
+    runtimeCacheKey?: string | null;
+    details?: Record<string, unknown>;
+  },
+): void {
+  reportRuntimeContractGap(scope, route, reason, {
+    strict: STRICT_RUNTIME_V3,
+    context,
+  });
+}
+
+function getRuntimeDiagnosticIdentity(): {
+  sourceSignature?: string | null;
+  runtimeCacheKey?: string | null;
+} {
+  return {
+    sourceSignature: publishManifestCache?.sourceSignature ?? null,
+    runtimeCacheKey: getRuntimeCacheSignature(publishManifestCache) || getStoredRuntimeSignature(),
+  };
 }
 
 function setCacheWithLimit<K, V>(cache: Map<K, V>, key: K, value: V, limit: number): void {
@@ -1875,7 +1905,10 @@ export const api = {
     if (distDataBootstrap) {
       return distDataBootstrap;
     }
-    reportRuntimeDevCompatGap('home-bootstrap', '/publish/home-bootstrap', 'dist-data home bootstrap missing');
+    reportRuntimeDevCompatGap('home-bootstrap', '/publish/home-bootstrap', 'dist-data home bootstrap missing', {
+      ...getRuntimeDiagnosticIdentity(),
+      details: params,
+    });
 
     const manifest = await api.getPublishManifest();
     const requestedPage = Math.max(1, Math.floor(params.page ?? 1));
@@ -1954,7 +1987,10 @@ export const api = {
         totalPages: distDataPage.totalPages,
       };
     }
-    reportRuntimeDevCompatGap('browser-items', '/items/browser', 'dist-data browser page missing');
+    reportRuntimeDevCompatGap('browser-items', '/items/browser', 'dist-data browser page missing', {
+      ...getRuntimeDiagnosticIdentity(),
+      details: params,
+    });
 
     return getLabPayload<PaginatedResponse<BrowserGridEntry>>('/items/browser', {
       params: {
@@ -1984,7 +2020,10 @@ export const api = {
         browserDefaultCatalogCache.set(cacheKey, distDataCatalog);
         return distDataCatalog;
       }
-      reportRuntimeDevCompatGap('browser-default-catalog', '/items/browser/default-catalog', 'dist-data default catalog missing');
+      reportRuntimeDevCompatGap('browser-default-catalog', '/items/browser/default-catalog', 'dist-data default catalog missing', {
+        ...getRuntimeDiagnosticIdentity(),
+        details: params,
+      });
 
       const persistent = await readPersistentRuntimePayload<BrowserDefaultCatalogResponse>(
         'browser-default-catalog',
@@ -2027,7 +2066,10 @@ export const api = {
       browserSearchCatalogCache.set(getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId), distDataCatalog);
       return distDataCatalog;
     }
-    reportRuntimeDevCompatGap('browser-search-catalog', 'local default-catalog projection', 'dist-data search catalog missing');
+    reportRuntimeDevCompatGap('browser-search-catalog', 'local default-catalog projection', 'dist-data search catalog missing', {
+      ...getRuntimeDiagnosticIdentity(),
+      details: params,
+    });
 
     const cacheKey = getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId);
     const cached = browserSearchCatalogCache.get(cacheKey);
@@ -2083,7 +2125,10 @@ export const api = {
     if (distDataGroupItems?.items?.length) {
       return distDataGroupItems;
     }
-    reportRuntimeDevCompatGap('browser-group-items', `/items/browser/group/${normalizedGroupKey}`, 'dist-data group items missing');
+    reportRuntimeDevCompatGap('browser-group-items', `/items/browser/group/${normalizedGroupKey}`, 'dist-data group items missing', {
+      ...getRuntimeDiagnosticIdentity(),
+      details: { groupKey: normalizedGroupKey, modId },
+    });
 
     const cacheKey = getBrowserGroupItemsCacheKey(normalizedGroupKey, modId);
     const cached = browserGroupItemsCache.get(cacheKey);
@@ -2144,7 +2189,10 @@ export const api = {
     if (distDataPagePack) {
       return distDataPagePack;
     }
-    reportRuntimeDevCompatGap('browser-page-pack', '/items/browser/page-pack', 'dist-data page pack missing');
+    reportRuntimeDevCompatGap('browser-page-pack', '/items/browser/page-pack', 'dist-data page pack missing', {
+      ...getRuntimeDiagnosticIdentity(),
+      details: params,
+    });
 
     const normalizedExpandedGroups = params.expandedGroups ?? [];
     const canUseStaticBundle = !params.search?.trim()
@@ -2220,7 +2268,9 @@ export const api = {
     if (distDataSearch?.items?.length) {
       return distDataSearch;
     }
-    reportRuntimeDevCompatGap('browser-search-pack', '/items/search/pack', 'dist-data search pack missing');
+    reportRuntimeDevCompatGap('browser-search-pack', '/items/search/pack', 'dist-data search pack missing', {
+      ...getRuntimeDiagnosticIdentity(),
+    });
 
     const manifest = await api.getPublishManifest();
     const staticPath = manifest.publishBundle?.files.browserSearchPack;
@@ -2244,7 +2294,10 @@ export const api = {
     if (distDataSearch?.items?.length) {
       return distDataSearch;
     }
-    reportRuntimeDevCompatGap('browser-search-shard', `publish search shard ${normalizedShardId}`, 'dist-data search pack missing');
+    reportRuntimeDevCompatGap('browser-search-shard', `publish search shard ${normalizedShardId}`, 'dist-data search pack missing', {
+      ...getRuntimeDiagnosticIdentity(),
+      details: { shardId: normalizedShardId },
+    });
 
     const cached = browserSearchShardCache.get(normalizedShardId);
     if (cached) {
@@ -2303,7 +2356,10 @@ export const api = {
       if (distDataPack) {
         return distDataPack;
       }
-      reportRuntimeDevCompatGap('browser-by-ids-pack', '/items/browser/by-ids-pack', 'dist-data by-id pack missing');
+      reportRuntimeDevCompatGap('browser-by-ids-pack', '/items/browser/by-ids-pack', 'dist-data by-id pack missing', {
+        ...getRuntimeDiagnosticIdentity(),
+        details: { itemIds: normalizedParams.itemIds, slotSize: normalizedParams.slotSize },
+      });
       return postLabPayload<BrowserByIdsPackResponse, typeof normalizedParams>('/items/browser/by-ids-pack', normalizedParams);
     })()
       .then((data) => {
@@ -2558,6 +2614,7 @@ export const api = {
         setCacheWithLimit(uiPayloadCache, recipeId, distDataPayload, CACHE_LIMITS.uiPayload);
         return distDataPayload;
       }
+      const runtimeSignature = await resolveRuntimeSignature();
 
       const persistent = await readPersistentRuntimePayload<RecipeUiPayload>(
         'recipe-ui-payload',
@@ -2578,6 +2635,14 @@ export const api = {
       } catch (error) {
         if (isHttpNotFoundError(error)) {
           missingUiPayloadCache.add(recipeId);
+          reportMissingRuntimePayload({
+            recipeId,
+            runtimeCacheKey: runtimeSignature,
+            message: 'Recipe UI payload is missing from dist-data, persistent cache, and lab compatibility API',
+            details: {
+              labRoute: '/render-contract/ui-payload',
+            },
+          });
           return null;
         }
         throw error;
