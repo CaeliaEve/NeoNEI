@@ -1,21 +1,19 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { PatternsService } from '../services/patterns.service';
+import { sendErrorEnvelope } from '../utils/error-response';
 
 const router = Router();
 
-// Helper function to add cache headers for GET requests
 function addCacheHeaders(req: Request, res: Response, next: NextFunction) {
   if (req.method === 'GET') {
-    res.setHeader('Cache-Control', 'public, max-age=300'); // 5 minutes
+    res.setHeader('Cache-Control', 'public, max-age=300');
     res.setHeader('Vary', 'Accept-Encoding');
   }
   next();
 }
 
-// Apply cache headers to all routes in this router
 router.use(addCacheHeaders);
 
-// Helper function to get service instance
 function getService() {
   return new PatternsService();
 }
@@ -43,9 +41,6 @@ export function normalizePatternOptions(body: Record<string, unknown>): {
   };
 }
 
-// === 样板组管理 ===
-
-// GET /api/patterns/groups - 获取所有样板组
 router.get('/groups', async (req, res) => {
   try {
     const patternsService = getService();
@@ -53,51 +48,52 @@ router.get('/groups', async (req, res) => {
     res.json(groups);
   } catch (error) {
     console.error('Error fetching pattern groups:', error);
-    res.status(500).json({ error: 'Failed to fetch pattern groups' });
+    sendErrorEnvelope(req, res, 500, 'PATTERN_GROUPS_FETCH_FAILED', 'Failed to fetch pattern groups');
   }
 });
 
-// GET /api/patterns/groups/:groupId - 获取单个样板组
 router.get('/groups/:groupId', async (req, res) => {
   try {
     const patternsService = getService();
     const group = await patternsService.getPatternGroup(req.params.groupId);
 
     if (!group) {
-      return res.status(404).json({ error: 'Pattern group not found' });
+      return sendErrorEnvelope(req, res, 404, 'PATTERN_GROUP_NOT_FOUND', 'Pattern group not found', {
+        groupId: req.params.groupId,
+      });
     }
 
     res.json(group);
   } catch (error) {
     console.error('Error fetching pattern group:', error);
-    res.status(500).json({ error: 'Failed to fetch pattern group' });
+    sendErrorEnvelope(req, res, 500, 'PATTERN_GROUP_FETCH_FAILED', 'Failed to fetch pattern group');
   }
 });
 
-// GET /api/patterns/groups/:groupId/detail - 获取样板组及其所有样板
 router.get('/groups/:groupId/detail', async (req, res) => {
   try {
     const patternsService = getService();
     const groupWithPatterns = await patternsService.getPatternGroupWithPatterns(req.params.groupId);
 
     if (!groupWithPatterns) {
-      return res.status(404).json({ error: 'Pattern group not found' });
+      return sendErrorEnvelope(req, res, 404, 'PATTERN_GROUP_NOT_FOUND', 'Pattern group not found', {
+        groupId: req.params.groupId,
+      });
     }
 
     res.json(groupWithPatterns);
   } catch (error) {
     console.error('Error fetching pattern group details:', error);
-    res.status(500).json({ error: 'Failed to fetch pattern group details' });
+    sendErrorEnvelope(req, res, 500, 'PATTERN_GROUP_DETAIL_FETCH_FAILED', 'Failed to fetch pattern group details');
   }
 });
 
-// POST /api/patterns/groups - 创建样板组
 router.post('/groups', async (req, res) => {
   try {
     const { groupName, description } = req.body;
 
     if (!groupName) {
-      return res.status(400).json({ error: 'groupName is required' });
+      return sendErrorEnvelope(req, res, 400, 'PATTERN_GROUP_NAME_REQUIRED', 'groupName is required');
     }
 
     const patternsService = getService();
@@ -106,17 +102,16 @@ router.post('/groups', async (req, res) => {
     res.status(201).json(group);
   } catch (error) {
     console.error('Error creating pattern group:', error);
-    res.status(500).json({ error: 'Failed to create pattern group' });
+    sendErrorEnvelope(req, res, 500, 'PATTERN_GROUP_CREATE_FAILED', 'Failed to create pattern group');
   }
 });
 
-// PUT /api/patterns/groups/:groupId - 更新样板组
 router.put('/groups/:groupId', async (req, res) => {
   try {
     const { groupName, description } = req.body;
 
     if (!groupName) {
-      return res.status(400).json({ error: 'groupName is required' });
+      return sendErrorEnvelope(req, res, 400, 'PATTERN_GROUP_NAME_REQUIRED', 'groupName is required');
     }
 
     const patternsService = getService();
@@ -126,11 +121,10 @@ router.put('/groups/:groupId', async (req, res) => {
     res.json(updatedGroup);
   } catch (error) {
     console.error('Error updating pattern group:', error);
-    res.status(500).json({ error: 'Failed to update pattern group' });
+    sendErrorEnvelope(req, res, 500, 'PATTERN_GROUP_UPDATE_FAILED', 'Failed to update pattern group');
   }
 });
 
-// DELETE /api/patterns/groups/:groupId - 删除样板组
 router.delete('/groups/:groupId', async (req, res) => {
   try {
     const patternsService = getService();
@@ -139,13 +133,10 @@ router.delete('/groups/:groupId', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting pattern group:', error);
-    res.status(500).json({ error: 'Failed to delete pattern group' });
+    sendErrorEnvelope(req, res, 500, 'PATTERN_GROUP_DELETE_FAILED', 'Failed to delete pattern group');
   }
 });
 
-// === 样板管理 ===
-
-// POST /api/patterns - 创建样板
 router.post('/', async (req, res) => {
   try {
     const body = req.body as Record<string, unknown>;
@@ -156,7 +147,13 @@ router.post('/', async (req, res) => {
     const options = normalizePatternOptions(body);
 
     if (!recipeId || !patternName) {
-      return res.status(400).json({ error: 'recipeId and patternName are required' });
+      return sendErrorEnvelope(
+        req,
+        res,
+        400,
+        'PATTERN_REQUIRED_FIELDS_MISSING',
+        'recipeId and patternName are required',
+      );
     }
 
     const patternsService = getService();
@@ -165,17 +162,16 @@ router.post('/', async (req, res) => {
       recipeId,
       patternName,
       outputItemId,
-      options
+      options,
     );
 
     res.status(201).json(pattern);
   } catch (error) {
     console.error('Error creating pattern:', error);
-    res.status(500).json({ error: 'Failed to create pattern' });
+    sendErrorEnvelope(req, res, 500, 'PATTERN_CREATE_FAILED', 'Failed to create pattern');
   }
 });
 
-// DELETE /api/patterns/:patternId - 删除样板
 router.delete('/:patternId', async (req, res) => {
   try {
     const patternsService = getService();
@@ -184,11 +180,10 @@ router.delete('/:patternId', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting pattern:', error);
-    res.status(500).json({ error: 'Failed to delete pattern' });
+    sendErrorEnvelope(req, res, 500, 'PATTERN_DELETE_FAILED', 'Failed to delete pattern');
   }
 });
 
-// PUT /api/patterns/:patternId - 更新样板
 router.put('/:patternId', async (req, res) => {
   try {
     const patternsService = getService();
@@ -197,13 +192,10 @@ router.put('/:patternId', async (req, res) => {
     res.json({ success: true });
   } catch (error) {
     console.error('Error updating pattern:', error);
-    res.status(500).json({ error: 'Failed to update pattern' });
+    sendErrorEnvelope(req, res, 500, 'PATTERN_UPDATE_FAILED', 'Failed to update pattern');
   }
 });
 
-// === 导出 ===
-
-// GET /api/patterns/groups/:groupId/export - 导出样板组为 OC-AE JSON
 router.get('/groups/:groupId/export', async (req, res) => {
   try {
     const patternsService = getService();
@@ -215,9 +207,11 @@ router.get('/groups/:groupId/export', async (req, res) => {
     const message = error instanceof Error ? error.message : 'Failed to export pattern group';
 
     if (message === 'Pattern group not found') {
-      res.status(404).json({ error: 'Pattern group not found' });
+      sendErrorEnvelope(req, res, 404, 'PATTERN_GROUP_NOT_FOUND', 'Pattern group not found', {
+        groupId: req.params.groupId,
+      });
     } else {
-      res.status(500).json({ error: 'Failed to export pattern group' });
+      sendErrorEnvelope(req, res, 500, 'PATTERN_GROUP_EXPORT_FAILED', 'Failed to export pattern group');
     }
   }
 });

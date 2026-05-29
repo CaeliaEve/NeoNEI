@@ -27,6 +27,7 @@ import { getAutowarmPolicy } from './config/autowarm-policy';
 import { NeoNeiCompilerService, type CompilerSourceRoots } from './services/neonei-compiler.service';
 import { promoteCompiledAccelerationDatabase } from './services/acceleration-db-pipeline.service';
 import { setPublicCacheHeaders } from './utils/http-cache';
+import { sendErrorEnvelope } from './utils/error-response';
 
 const app = express();
 const parsedPort = Number(process.env.PORT);
@@ -615,23 +616,26 @@ function isAdminRateLimited(req: Request): boolean {
 function requireAdminToken(req: Request, res: Response): boolean {
   if (isAdminRateLimited(req)) {
     res.setHeader('Retry-After', String(Math.ceil(Math.max(1_000, ADMIN_RATE_LIMIT_WINDOW_MS) / 1000)));
-    res.status(429).json({ error: 'admin_rate_limited' });
+    sendErrorEnvelope(req, res, 429, 'ADMIN_RATE_LIMITED', 'Admin request rate limit exceeded');
     logger.warn('[ADMIN] rate limited request', { route: req.originalUrl, ip: req.ip });
     return false;
   }
 
   if (!ADMIN_TOKEN) {
-    res.status(503).json({
-      error: 'admin_token_not_configured',
-      message: 'Set NEONEI_ADMIN_TOKEN before enabling admin mutation endpoints.',
-    });
+    sendErrorEnvelope(
+      req,
+      res,
+      503,
+      'ADMIN_TOKEN_NOT_CONFIGURED',
+      'Set NEONEI_ADMIN_TOKEN before enabling admin mutation endpoints.',
+    );
     logger.warn('[ADMIN] rejected request because NEONEI_ADMIN_TOKEN is not configured', { route: req.originalUrl });
     return false;
   }
 
   const provided = `${req.header('x-neonei-admin-token') ?? req.query.adminToken ?? ''}`;
   if (provided !== ADMIN_TOKEN) {
-    res.status(401).json({ error: 'admin_token_required' });
+    sendErrorEnvelope(req, res, 401, 'ADMIN_TOKEN_REQUIRED', 'Admin token is required');
     logger.warn('[ADMIN] rejected unauthorized request', { route: req.originalUrl, ip: req.ip });
     return false;
   }
@@ -645,11 +649,17 @@ app.use((req, res, next) => {
 
   if (accelerationRuntime.blocking) {
     res.setHeader('Retry-After', '1');
-    return res.status(503).json({
-      status: 'warming',
-      phase: accelerationRuntime.phase,
-      message: 'Acceleration database is switching snapshots. Retry shortly.',
-    });
+    return sendErrorEnvelope(
+      req,
+      res,
+      503,
+      'ACCELERATION_RUNTIME_WARMING',
+      'Acceleration database is switching snapshots. Retry shortly.',
+      {
+        status: 'warming',
+        phase: accelerationRuntime.phase,
+      },
+    );
   }
 
   accelerationRuntime.activeApiRequests += 1;
@@ -854,12 +864,11 @@ app.post('/ops/acceleration/reconcile', async (req, res) => {
     return;
   }
   if (!runtimeAccelerationDbManager) {
-    res.status(503).json({ error: 'acceleration_manager_not_ready' });
+    sendErrorEnvelope(req, res, 503, 'ACCELERATION_MANAGER_NOT_READY', 'Acceleration manager is not ready');
     return;
   }
   if (accelerationRuntime.phase === 'compiling' || accelerationRuntime.phase === 'promoting' || accelerationRuntime.blocking) {
-    res.status(409).json({
-      error: 'acceleration_reconcile_in_progress',
+    sendErrorEnvelope(req, res, 409, 'ACCELERATION_RECONCILE_IN_PROGRESS', 'Acceleration reconcile is already in progress', {
       phase: accelerationRuntime.phase,
       blocking: accelerationRuntime.blocking,
     });
@@ -888,12 +897,11 @@ app.post('/api/admin/acceleration/reconcile', async (req, res) => {
     return;
   }
   if (!runtimeAccelerationDbManager) {
-    res.status(503).json({ error: 'acceleration_manager_not_ready' });
+    sendErrorEnvelope(req, res, 503, 'ACCELERATION_MANAGER_NOT_READY', 'Acceleration manager is not ready');
     return;
   }
   if (accelerationRuntime.phase === 'compiling' || accelerationRuntime.phase === 'promoting' || accelerationRuntime.blocking) {
-    res.status(409).json({
-      error: 'acceleration_reconcile_in_progress',
+    sendErrorEnvelope(req, res, 409, 'ACCELERATION_RECONCILE_IN_PROGRESS', 'Acceleration reconcile is already in progress', {
       phase: accelerationRuntime.phase,
       blocking: accelerationRuntime.blocking,
     });
@@ -956,14 +964,8 @@ if (!PUBLIC_RUNTIME_ONLY) {
 app.use('/api/publish', publishRoutes);
 app.use('/api/v1', v1Routes);
 app.use((req, res) => {
-  const requestId = (req as Request & { requestId?: string }).requestId;
-  res.status(404).json({
-    error: {
-      code: 'NOT_FOUND',
-      message: 'Route not found',
-      requestId,
-      path: req.originalUrl ?? req.url,
-    },
+  sendErrorEnvelope(req, res, 404, 'NOT_FOUND', 'Route not found', {
+    path: req.originalUrl ?? req.url,
   });
 });
 app.use(errorHandler);

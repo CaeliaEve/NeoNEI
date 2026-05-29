@@ -1,7 +1,8 @@
 import { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
+import { sendErrorEnvelope } from '../utils/error-response';
 
-type HttpError = Error & { statusCode?: number; code?: string };
+type HttpError = Error & { statusCode?: number; code?: string; details?: Record<string, unknown> };
 
 export function errorHandler(
   error: HttpError,
@@ -20,11 +21,5 @@ export function errorHandler(
     logger.warn(`[WARN] ${requestId || '-'} ${error.message}`);
   }
 
-  res.status(statusCode).json({
-    error: {
-      code,
-      message,
-      requestId,
-    },
-  });
+  sendErrorEnvelope(req, res, statusCode, code, message, error.details);
 }

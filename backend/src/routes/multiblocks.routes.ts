@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { getMultiblocksService } from '../services/multiblocks.service';
+import { sendErrorEnvelope } from '../utils/error-response';
 
 const router = Router();
 
@@ -9,13 +10,15 @@ router.get('/:controllerItemId', async (req, res) => {
     const service = getMultiblocksService();
     const blueprint = service.getBlueprintByControllerItemId(req.params.controllerItemId);
     if (!blueprint) {
-      return res.status(404).json({ error: 'Multiblock blueprint not found' });
+      return sendErrorEnvelope(req, res, 404, 'MULTIBLOCK_BLUEPRINT_NOT_FOUND', 'Multiblock blueprint not found', {
+        controllerItemId: req.params.controllerItemId,
+      });
     }
     res.json(blueprint);
   } catch (error) {
     console.error('Error fetching multiblock blueprint:', error);
     const message = error instanceof Error ? error.message : 'Failed to fetch multiblock blueprint';
-    res.status(500).json({ error: message });
+    sendErrorEnvelope(req, res, 500, 'MULTIBLOCK_BLUEPRINT_FETCH_FAILED', message);
   }
 });
 
