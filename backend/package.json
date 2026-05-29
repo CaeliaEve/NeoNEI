@@ -18,7 +18,8 @@
     "bench:acceleration": "node scripts/bench-acceleration.mjs",
     "regression:api": "node scripts/regression-api.mjs",
     "audit:paths": "node ../scripts/audit-path-portability.mjs",
-    "test:public-runtime-profile": "node --test scripts/public-runtime-profile-regression.test.mjs"
+    "test:public-runtime-profile": "node --test scripts/public-runtime-profile-regression.test.mjs",
+    "test:publish-compression-sidecar": "node --test scripts/publish-compression-sidecar-regression.test.mjs"
   },
   "keywords": [
     "ae2",

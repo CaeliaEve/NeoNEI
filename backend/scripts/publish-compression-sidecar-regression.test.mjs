@@ -97,6 +97,16 @@ test('publish static route prefers precompressed sidecars when clients accept th
     true,
     'publish server should declare the available precompressed variants',
   );
+  assert.match(
+    serverSource,
+    /const PUBLISH_STATIC_SIDECAR_VARIANTS = \[\s*\{\s*encoding: 'br'/,
+    'publish server should prefer brotli before gzip when both sidecars are available',
+  );
+  assert.equal(
+    serverSource.includes("if (!req.headers['x-no-compression'] && canServePrecompressedPublishAsset(normalizedRelativePath))"),
+    true,
+    'publish server should allow smoke tests and diagnostics to bypass sidecar compression explicitly',
+  );
   assert.equal(
     serverSource.includes("res.setHeader('Content-Encoding', contentEncoding);"),
     true,

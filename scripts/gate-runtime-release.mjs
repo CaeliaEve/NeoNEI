@@ -27,6 +27,7 @@ const steps = [
   { name: 'frontend build', cwd: frontendDir, command: npm, args: ['run', 'build'] },
   { name: 'backend build', cwd: backendDir, command: npm, args: ['run', 'build'] },
   { name: 'public runtime profile regression', cwd: backendDir, command: npm, args: ['run', 'test:public-runtime-profile'] },
+  { name: 'publish compression sidecar regression', cwd: backendDir, command: npm, args: ['run', 'test:publish-compression-sidecar'] },
   { name: 'path portability audit', cwd: frontendDir, command: npm, args: ['run', 'audit:paths'] },
   { name: 'path portability URL regression', cwd: frontendDir, command: npm, args: ['run', 'test:path-portability-urls'] },
   { name: 'runtime diagnostics regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-diagnostics'] },
