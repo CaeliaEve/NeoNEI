@@ -74,6 +74,7 @@ import {
   reportMissingRuntimePayload,
   reportRuntimeContractGap,
   isStrictRuntimeContractsEnabled,
+  setRuntimeDiagnosticIdentity,
 } from '../runtime/diagnostics';
 import { markPerfEvent } from './perfMarks';
 import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRuntimeRecipeBootstrap, getRuntimeRecipeUiPayload, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
@@ -243,7 +244,12 @@ let publishManifestCache: PublicRuntimeManifest | null = null;
 const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>({
   onManifest: (manifest) => {
     publishManifestCache = manifest;
-    primeRuntimeCacheSignature(getRuntimeCacheSignature(manifest));
+    const runtimeCacheKey = getRuntimeCacheSignature(manifest);
+    primeRuntimeCacheSignature(runtimeCacheKey);
+    setRuntimeDiagnosticIdentity({
+      sourceSignature: manifest.sourceSignature,
+      runtimeCacheKey,
+    });
   },
 });
 let ecosystemOverviewCache: EcosystemOverview | null = null;

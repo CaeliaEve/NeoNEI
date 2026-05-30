@@ -69,3 +69,22 @@ test('missing browser atlas assets use structured runtime diagnostics', () => {
     'texture runtime diagnostics should receive source signature and runtime cache key identity',
   );
 });
+
+
+test('manifest updates prime the runtime diagnostic identity', () => {
+  assert.equal(
+    apiSource.includes('setRuntimeDiagnosticIdentity({'),
+    true,
+    'api manifest client should prime the shared runtime diagnostic identity',
+  );
+  assert.equal(
+    apiSource.includes('sourceSignature: manifest.sourceSignature'),
+    true,
+    'diagnostic identity should include source signature from the active manifest',
+  );
+  assert.equal(
+    apiSource.includes('runtimeCacheKey,'),
+    true,
+    'diagnostic identity should include the active runtime cache key',
+  );
+});

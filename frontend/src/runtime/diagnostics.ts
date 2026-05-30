@@ -31,6 +31,17 @@ export interface RuntimeContractGapOptions {
 
 const MAX_RUNTIME_DIAGNOSTICS = 200;
 const runtimeDiagnostics: RuntimeDiagnosticContext[] = [];
+let runtimeDiagnosticIdentity: Pick<RuntimeDiagnosticContext, 'sourceSignature' | 'runtimeCacheKey'> = {};
+
+export function setRuntimeDiagnosticIdentity(identity: {
+  sourceSignature?: string | null;
+  runtimeCacheKey?: string | null;
+}): void {
+  runtimeDiagnosticIdentity = {
+    sourceSignature: identity.sourceSignature ? `${identity.sourceSignature}` : undefined,
+    runtimeCacheKey: identity.runtimeCacheKey ? `${identity.runtimeCacheKey}` : undefined,
+  };
+}
 
 export function isStrictRuntimeContractsEnabled(): boolean {
   if (import.meta.env.VITE_RUNTIME_V3_STRICT === '1') {
@@ -52,6 +63,7 @@ function normalizeRuntimeDiagnostic(
   diagnostic: RuntimeDiagnosticContext,
 ): RuntimeDiagnosticContext {
   return {
+    ...runtimeDiagnosticIdentity,
     ...diagnostic,
     itemId: diagnostic.itemId ? `${diagnostic.itemId}` : undefined,
     recipeId: diagnostic.recipeId ? `${diagnostic.recipeId}` : undefined,
