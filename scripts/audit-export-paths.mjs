@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, relative, extname, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -9,8 +9,8 @@ const inputArg = readArg('--input');
 const maxBytes = Number(readArg('--max-bytes') ?? 256 * 1024 * 1024);
 
 const deniedPatterns = [
-  { name: 'windows-backslash-absolute', pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\\/ },
-  { name: 'windows-slash-absolute', pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\// },
+  { name: 'windows-backslash-absolute', pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\\[A-Za-z0-9._ -]/ },
+  { name: 'windows-slash-absolute', pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\/[A-Za-z0-9._ -]/ },
   { name: 'minecraft-version-path', pattern: /\.minecraft[\\/]versions/i },
   { name: 'local-gtnh-path', pattern: /[A-Za-z]:[\\/]GTNH/i },
   { name: 'local-codex-path', pattern: /[A-Za-z]:[\\/]codex/i },
@@ -100,33 +100,45 @@ function* walkRuntimeFiles(dir) {
   }
 }
 
-function scanFile(filePath, inputDir) {
+async function scanFile(filePath, inputDir) {
   if (!existsSync(filePath) || isDiagnosticPath(filePath, inputDir)) return [];
-  const size = statSync(filePath).size;
-  if (size > maxBytes) {
-    return [{ file: filePath, line: 0, rule: 'file-too-large-to-audit', text: `${size} bytes` }];
-  }
-  const text = readFileSync(filePath, 'utf8');
-  const lines = text.split(/\r?\n/);
   const violations = [];
-  lines.forEach((line, index) => {
+  const stream = createReadStream(filePath, {
+    encoding: 'utf8',
+    highWaterMark: Math.max(64 * 1024, Math.min(maxBytes, 1024 * 1024)),
+  });
+  let carry = '';
+  let lineNumber = 1;
+  const scanText = (text, line) => {
     for (const denied of deniedPatterns) {
-      if (denied.pattern.test(line)) {
-        violations.push({ file: filePath, line: index + 1, rule: denied.name, text: line.trim().slice(0, 260) });
+      if (denied.pattern.test(text)) {
+        violations.push({ file: filePath, line, rule: denied.name, text: text.trim().slice(0, 260) });
       }
     }
-  });
+  };
+
+  try {
+    for await (const chunk of stream) {
+      const text = carry + chunk;
+      scanText(text, lineNumber);
+      lineNumber += (chunk.match(/\n/g) ?? []).length;
+      carry = text.slice(-512);
+    }
+  } finally {
+    stream.destroy();
+  }
   return violations;
 }
 
-function auditExport(inputDir) {
+async function auditExport(inputDir) {
+
   const manifest = readJson(resolve(inputDir, 'manifest.json'));
   const { files, declarationViolations } = collectDeclaredFiles(inputDir, manifest);
   const violations = [];
   for (const violation of declarationViolations) {
     violations.push({ file: 'manifest.json', line: 0, rule: 'absolute-runtime-file-declaration', text: `${violation.logicalName}: ${violation.declaredPath}` });
   }
-  for (const filePath of files) violations.push(...scanFile(filePath, inputDir));
+  for (const filePath of files) violations.push(...await scanFile(filePath, inputDir));
   return {
     schemaVersion: 'neonei/export-path-hygiene-report/v1',
     inputDir: '<raw-export>',
@@ -142,6 +154,7 @@ function auditExport(inputDir) {
 function createSelfTestExport(root, bad = false) {
   mkdirSync(join(root, 'facts'), { recursive: true });
   mkdirSync(join(root, 'validation'), { recursive: true });
+  mkdirSync(join(root, 'canonical'), { recursive: true });
   writeFileSync(join(root, 'manifest.json'), JSON.stringify({
     schemaVersion: 'nesqlpp/raw-export/alpha1',
     files: { items: 'facts/items.jsonl', exportReport: 'validation/export_report.json' },
@@ -150,30 +163,31 @@ function createSelfTestExport(root, bad = false) {
     ? { itemId: 'bad', imagePath: ['E:', 'GTNH', '.minecraft', 'versions', 'GT New Horizons 2.8.4', 'image', 'item', 'bad.png'].join('/') }
     : { itemId: 'good', imagePath: 'image/item/good.png' };
   writeFileSync(join(root, 'facts/items.jsonl'), `${JSON.stringify(item)}\n`, 'utf8');
+  writeFileSync(join(root, 'canonical/repository.json'), JSON.stringify({ note: 'escaped quote ' + 'i:' + '\" should not look like a Windows path' }), 'utf8');
   writeFileSync(join(root, 'validation/export_report.json'), JSON.stringify({ diagnosticPath: ['E:', 'GTNH', 'allowed', 'in', 'diagnostics'].join('/') }), 'utf8');
 }
 
-function runSelfTest() {
+async function runSelfTest() {
   const root = resolve(repoRoot, '.tmp-runtime', 'export-path-hygiene-self-test');
   rmSync(root, { recursive: true, force: true });
   const good = join(root, 'good');
   const bad = join(root, 'bad');
   createSelfTestExport(good, false);
   createSelfTestExport(bad, true);
-  const goodReport = auditExport(good);
-  const badReport = auditExport(bad);
+  const goodReport = await auditExport(good);
+  const badReport = await auditExport(bad);
   if (goodReport.status !== 'ok') throw new Error(`Expected good export to pass: ${JSON.stringify(goodReport.violations)}`);
   if (badReport.status !== 'failed' || badReport.violations.length === 0) throw new Error('Expected bad export to fail path hygiene audit');
   console.log(JSON.stringify({ schemaVersion: 'neonei/export-path-hygiene-self-test/v1', status: 'ok', good: goodReport, badViolationCount: badReport.violations.length }, null, 2));
 }
 
 if (selfTest) {
-  runSelfTest();
+  await runSelfTest();
 } else if (!inputArg) {
   console.error('Usage: node scripts/audit-export-paths.mjs --input <raw-export> [--max-bytes <bytes>]');
   process.exit(2);
 } else {
-  const report = auditExport(resolve(inputArg));
+  const report = await auditExport(resolve(inputArg));
   console.log(JSON.stringify(report, null, 2));
   if (report.status !== 'ok') process.exit(1);
 }
