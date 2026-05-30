@@ -10,6 +10,7 @@ const browserClientSource = fs.readFileSync('src/runtime/browserClient.ts', 'utf
 const searchClientSource = fs.readFileSync('src/runtime/searchClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const browserProjectionSource = fs.readFileSync('src/runtime/browserProjection.ts', 'utf8').replace(/\r\n/g, '\n');
+const browserSearchProjectionSource = fs.readFileSync('src/runtime/browserSearchProjection.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('public runtime manifest types live outside the legacy api facade', () => {
@@ -166,4 +167,17 @@ test('dist-data runtime consumes contracts without importing the legacy api faca
     /from ["']\.\/api["']/,
     'dist-data runtime should not import contracts from services/api.ts',
   );
+});
+
+
+test('browser search ranking logic lives outside the legacy api facade', () => {
+  for (const token of [
+    'function rankBrowserSearchPackEntry',
+    'function searchBrowserSearchPackEntries',
+    'function mergeBrowserSearchPackEntries',
+  ]) {
+    assert.equal(browserSearchProjectionSource.includes(token), true, `missing browser search projection helper: ${token}`);
+    assert.equal(apiSource.includes(token), false, `services/api.ts should not own ${token}`);
+  }
+  assert.doesNotMatch(browserSearchProjectionSource, /from '\.\.\/services\/api'/);
 });
