@@ -111,3 +111,15 @@ test('special data and render contracts live outside the legacy api facade', () 
     assert.equal(apiSource.includes(token), false, `services/api.ts should not re-own ${token}`);
   }
 });
+
+test('pattern management contracts live outside the legacy api facade', () => {
+  for (const token of [
+    'export interface PatternGroup {',
+    'export interface Pattern {',
+    'export interface PatternWithDetails extends Pattern {',
+    'export interface PatternGroupWithPatterns extends PatternGroup {',
+  ]) {
+    assert.equal(runtimeTypesSource.includes(token), true, `missing pattern runtime contract: ${token}`);
+    assert.equal(apiSource.includes(token), false, `services/api.ts should not re-own ${token}`);
+  }
+});

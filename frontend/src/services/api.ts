@@ -28,7 +28,11 @@ import type {
   PageAtlasResult,
   PageRichMediaManifest,
   PaginatedResponse,
+  Pattern,
   PatternExportData,
+  PatternGroup,
+  PatternGroupWithPatterns,
+  PatternWithDetails,
   PublicRuntimeManifest,
   PublishedRecipeBootstrapSearchPack,
   PublishBundleWindowPathEntry,
@@ -128,7 +132,11 @@ export type {
   PageAtlasSpriteEntry,
   PageRichMediaManifest,
   PaginatedResponse,
+  Pattern,
   PatternExportData,
+  PatternGroup,
+  PatternGroupWithPatterns,
+  PatternWithDetails,
   PublicRuntimeManifest,
   PublishedRecipeBootstrapSearchEntry,
   PublishedRecipeBootstrapSearchPack,
@@ -809,40 +817,6 @@ function unwrapPublishedItemRecipeBundle(value: unknown): RecipeBootstrapPayload
     indexedUsage: bundledUsedIn,
   };
 }
-// Pattern Management Interfaces
-export interface PatternGroup {
-  groupId: string;
-  groupName: string;
-  description: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Pattern {
-  patternId: string;
-  groupId: string | null;
-  recipeId: string;
-  patternName: string;
-  outputItemId: string | null;
-  priority: number;
-  enabled: number;
-  crafting: number;
-  substitute: number;
-  beSubstitute: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface PatternWithDetails extends Pattern {
-  recipe: Recipe | null;
-  outputItem: Item | null;
-}
-
-export interface PatternGroupWithPatterns extends PatternGroup {
-  patterns: PatternWithDetails[];
-  patternCount: number;
-}
-
 type RecipeBootstrapLoadSource =
   | 'dist-data-v3'
   | 'memory-cache'

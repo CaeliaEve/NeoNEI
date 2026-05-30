@@ -453,6 +453,39 @@ export interface RecipeUiPayload {
   [key: string]: unknown;
 }
 
+export interface PatternGroup {
+  groupId: string;
+  groupName: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Pattern {
+  patternId: string;
+  groupId: string | null;
+  recipeId: string;
+  patternName: string;
+  outputItemId: string | null;
+  priority: number;
+  enabled: number;
+  crafting: number;
+  substitute: number;
+  beSubstitute: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PatternWithDetails extends Pattern {
+  recipe: Recipe | null;
+  outputItem: Item | null;
+}
+
+export interface PatternGroupWithPatterns extends PatternGroup {
+  patterns: PatternWithDetails[];
+  patternCount: number;
+}
+
 export interface GTDiagramItemRef {
   itemId: string;
   localizedName: string;
