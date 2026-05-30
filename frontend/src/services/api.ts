@@ -442,6 +442,7 @@ const textureRuntimeClient = createTextureRuntimeClient({
   getAtlasEntriesInFlight: (key) => browserAtlasEntriesInFlight.get(key),
   setAtlasEntriesInFlight: (key, request) => browserAtlasEntriesInFlight.set(key, request),
   deleteAtlasEntriesInFlight: (key) => browserAtlasEntriesInFlight.delete(key),
+  getDiagnosticIdentity: getRuntimeDiagnosticIdentity,
 });
 
 type PersistentBrowserPageCacheRecord = {

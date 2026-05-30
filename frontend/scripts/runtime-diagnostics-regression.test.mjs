@@ -4,6 +4,7 @@ import fs from 'node:fs';
 
 const diagnosticsSource = fs.readFileSync('src/runtime/diagnostics.ts', 'utf8').replace(/\r\n/g, '\n');
 const apiSource = fs.readFileSync('src/services/api.ts', 'utf8').replace(/\r\n/g, '\n');
+const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('runtime diagnostics expose a structured copyable envelope', () => {
   for (const token of [
@@ -42,5 +43,29 @@ test('runtime contract gaps and missing payloads use the structured diagnostics 
     apiSource.includes('getRuntimeDiagnosticIdentity()'),
     true,
     'dev compatibility gaps should include runtime identity where available',
+  );
+});
+
+
+test('missing browser atlas assets use structured runtime diagnostics', () => {
+  assert.equal(
+    textureClientSource.includes('reportMissingRuntimeAsset({'),
+    true,
+    'texture runtime should report missing atlas/index assets through runtime diagnostics',
+  );
+  for (const token of [
+    "assetId: 'browser-atlas-index'",
+    'assetId: itemId',
+    'itemId,',
+    'path:',
+    'sourceSignature',
+    'runtimeCacheKey',
+  ]) {
+    assert.equal(textureClientSource.includes(token), true, `missing texture diagnostic token: ${token}`);
+  }
+  assert.equal(
+    apiSource.includes('getDiagnosticIdentity: getRuntimeDiagnosticIdentity'),
+    true,
+    'texture runtime diagnostics should receive source signature and runtime cache key identity',
   );
 });

@@ -10,6 +10,7 @@ const browserClientSource = fs.readFileSync('src/runtime/browserClient.ts', 'utf
 const searchClientSource = fs.readFileSync('src/runtime/searchClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const browserProjectionSource = fs.readFileSync('src/runtime/browserProjection.ts', 'utf8').replace(/\r\n/g, '\n');
+const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('public runtime manifest types live outside the legacy api facade', () => {
   assert.equal(
@@ -150,5 +151,19 @@ test('browser page projection logic lives outside the legacy api facade', () => 
     browserProjectionSource,
     /from '\.\.\/services\/api'/,
     'browser projection helpers should not import the legacy api facade',
+  );
+});
+
+
+test('dist-data runtime consumes contracts without importing the legacy api facade', () => {
+  assert.match(
+    distDataRuntimeSource,
+    /from ["']\.\.\/runtime\/types["'];/,
+    'dist-data runtime should import contracts from runtime/types',
+  );
+  assert.doesNotMatch(
+    distDataRuntimeSource,
+    /from ["']\.\/api["']/,
+    'dist-data runtime should not import contracts from services/api.ts',
   );
 });

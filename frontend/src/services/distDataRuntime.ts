@@ -1,5 +1,9 @@
-﻿import type { HomeBootstrapResponse, Item, Mod, RecipeBootstrapPayload, RecipeUiPayload } from "./api";
 import type {
+  HomeBootstrapResponse,
+  Item,
+  Mod,
+  RecipeBootstrapPayload,
+  RecipeUiPayload,
   BrowserAtlasIndexResponse,
   BrowserByIdsPackResponse,
   BrowserDefaultCatalogResponse,

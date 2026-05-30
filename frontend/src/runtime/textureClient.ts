@@ -1,5 +1,6 @@
 import type { BrowserAtlasIndexResponse } from './types';
 import { getDistDataBrowserAtlasIndex } from '../services/distDataRuntime';
+import { reportMissingRuntimeAsset } from './diagnostics';
 
 export function createTextureRuntimeClient(options: {
   getCachedAtlasIndex: () => BrowserAtlasIndexResponse | null;
@@ -9,6 +10,7 @@ export function createTextureRuntimeClient(options: {
   getAtlasEntriesInFlight: (key: string) => Promise<BrowserAtlasIndexResponse | null> | undefined;
   setAtlasEntriesInFlight: (key: string, request: Promise<BrowserAtlasIndexResponse | null>) => void;
   deleteAtlasEntriesInFlight: (key: string) => void;
+  getDiagnosticIdentity?: () => { sourceSignature?: string | null; runtimeCacheKey?: string | null };
 }) {
   async function getBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
     const distDataAtlasIndex = await getDistDataBrowserAtlasIndex();
@@ -27,7 +29,15 @@ export function createTextureRuntimeClient(options: {
       return existing;
     }
 
-    const request = Promise.resolve(null).finally(() => {
+    const request = Promise.resolve(null).then(() => {
+      reportMissingRuntimeAsset({
+        assetId: 'browser-atlas-index',
+        path: 'dist-data:textures/browser-atlas-index',
+        message: 'Browser atlas index is unavailable',
+        ...options.getDiagnosticIdentity?.(),
+      });
+      return null;
+    }).finally(() => {
       options.setAtlasIndexInFlight(null);
     });
     options.setAtlasIndexInFlight(request);
@@ -55,10 +65,23 @@ export function createTextureRuntimeClient(options: {
         return null;
       }
       const wanted = new Set(uniqueItemIds);
+      const items = index.items.filter((entry) => wanted.has(entry.itemId));
+      const found = new Set(items.map((entry) => entry.itemId));
+      for (const itemId of uniqueItemIds) {
+        if (!found.has(itemId)) {
+          reportMissingRuntimeAsset({
+            assetId: itemId,
+            itemId,
+            path: 'dist-data:textures/browser-atlas-index',
+            message: 'Browser atlas entry is unavailable for item',
+            ...options.getDiagnosticIdentity?.(),
+          });
+        }
+      }
       return {
         ...index,
         schemaVersion: 'browser-atlas-entries',
-        items: index.items.filter((entry) => wanted.has(entry.itemId)),
+        items,
       };
     })().finally(() => {
       options.deleteAtlasEntriesInFlight(cacheKey);
