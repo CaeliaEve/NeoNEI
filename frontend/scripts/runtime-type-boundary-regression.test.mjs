@@ -9,6 +9,7 @@ const recipeClientSource = fs.readFileSync('src/runtime/recipeClient.ts', 'utf8'
 const browserClientSource = fs.readFileSync('src/runtime/browserClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const searchClientSource = fs.readFileSync('src/runtime/searchClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const browserProjectionSource = fs.readFileSync('src/runtime/browserProjection.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('public runtime manifest types live outside the legacy api facade', () => {
   assert.equal(
@@ -132,4 +133,22 @@ test('pattern management contracts live outside the legacy api facade', () => {
     assert.equal(runtimeTypesSource.includes(token), true, `missing pattern runtime contract: ${token}`);
     assert.equal(apiSource.includes(token), false, `services/api.ts should not re-own ${token}`);
   }
+});
+
+
+test('browser page projection logic lives outside the legacy api facade', () => {
+  for (const token of [
+    'function deriveBrowserPagePackFromWindow',
+    'function buildPersistentBrowserPageKey',
+    'function resolvePublishedWindowPath',
+    'function browserEntryMatchesLocalSearch',
+  ]) {
+    assert.equal(browserProjectionSource.includes(token), true, `missing browser projection helper: ${token}`);
+    assert.equal(apiSource.includes(token), false, `services/api.ts should not own ${token}`);
+  }
+  assert.doesNotMatch(
+    browserProjectionSource,
+    /from '\.\.\/services\/api'/,
+    'browser projection helpers should not import the legacy api facade',
+  );
 });
