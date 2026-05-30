@@ -1,0 +1,29 @@
+[Unit]
+Description=NeoNEI public runtime backend
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/srv/neonei/backend
+Environment=NODE_ENV=production
+Environment=NEONEI_PUBLIC_RUNTIME_ONLY=1
+Environment=NEONEI_DATA_DIR=/srv/neonei/data
+Environment=NEONEI_RUNTIME_DIR=/srv/neonei/runtime
+Environment=NEONEI_CACHE_DIR=/srv/neonei/cache
+Environment=NEONEI_PUBLISH_DIR=/srv/neonei/publish
+Environment=NEONEI_CONTRACTS_DIR=/srv/neonei/contracts
+Environment=NESQL_EXPORT_ROOT=/srv/neonei/exports/current
+Environment=PORT=3002
+ExecStart=/usr/bin/node dist/server.js
+Restart=always
+RestartSec=5
+User=neonei
+Group=neonei
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/srv/neonei/data /srv/neonei/runtime /srv/neonei/cache /srv/neonei/publish /srv/neonei/contracts
+
+[Install]
+WantedBy=multi-user.target

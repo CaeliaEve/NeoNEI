@@ -1,0 +1,46 @@
+# NeoNEI public website reverse proxy / CDN origin example.
+# This profile serves immutable runtime artifacts and keeps GTNH/NESQL export paths off request-time hot paths.
+
+server {
+  listen 80;
+  server_name neonei.example.com;
+
+  root /srv/neonei/frontend/dist;
+  index index.html;
+
+  location / {
+    try_files $uri $uri/ /index.html;
+  }
+
+  location /runtime/ {
+    proxy_pass http://127.0.0.1:3002/runtime/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Request-Id $request_id;
+    add_header Cache-Control "public, max-age=60" always;
+  }
+
+  location /publish/ {
+    proxy_pass http://127.0.0.1:3002/publish/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Request-Id $request_id;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+  }
+
+  location /dist-data/ {
+    alias /srv/neonei/backend/public/dist-data/;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    try_files $uri =404;
+  }
+
+  location /canonical/ {
+    alias /srv/neonei/backend/public/canonical/;
+    add_header Cache-Control "public, max-age=31536000, immutable" always;
+    try_files $uri =404;
+  }
+
+  location /contracts/ {
+    alias /srv/neonei/contracts/;
+    add_header Cache-Control "public, max-age=300" always;
+    try_files $uri =404;
+  }
+}

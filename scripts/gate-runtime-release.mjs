@@ -34,6 +34,7 @@ const steps = [
   { name: 'runtime type boundary regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-type-boundary'] },
   { name: 'raw export compiler portability self-test', cwd: frontendDir, command: npm, args: ['run', 'test:raw-export'] },
   { name: 'raw export path hygiene self-test', cwd: frontendDir, command: npm, args: ['run', 'test:export-paths'] },
+  { name: 'deployment profile smoke', cwd: frontendDir, command: npm, args: ['run', 'test:deployment-profile'] },
   { name: 'API/runtime audit gate', cwd: frontendDir, command: npm, args: ['run', 'audit:api-runtime:gate'] },
   { name: 'runtime contract validation', cwd: frontendDir, command: npm, args: ['run', 'validate:runtime-contracts'] },
   { name: 'runtime v3 regression', cwd: frontendDir, command: npm, args: ['run', 'validate:runtime-v3'] },
