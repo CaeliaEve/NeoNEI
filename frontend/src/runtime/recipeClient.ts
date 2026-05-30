@@ -1,5 +1,4 @@
-import type { RecipeBootstrapPayload, RecipeUiPayload } from '../services/api';
-import type { PublicRuntimeManifest } from './types';
+import type { PublicRuntimeManifest, RecipeBootstrapPayload, RecipeUiPayload } from './types';
 import { getDistDataRecipeBootstrap, getDistDataRecipeUiPayload } from '../services/distDataRuntime';
 
 export type RecipeRelationTab = 'usedIn' | 'producedBy';

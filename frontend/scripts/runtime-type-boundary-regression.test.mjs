@@ -39,15 +39,25 @@ test('runtime clients consume runtime manifest types directly', () => {
     true,
     'manifest client should import runtime manifest type from runtime/types',
   );
-  assert.equal(
-    recipeClientSource.includes("import type { PublicRuntimeManifest } from './types';"),
-    true,
+  assert.match(
+    recipeClientSource,
+    /import type \{[^}]*PublicRuntimeManifest[^}]*\} from '\.\/types';/s,
     'recipe runtime client should import runtime manifest type from runtime/types',
   );
   assert.doesNotMatch(
     recipeClientSource,
     /import type \{[^}]*PublicRuntimeManifest[^}]*\} from '\.\.\/services\/api'/,
     'recipe runtime client should not import PublicRuntimeManifest from the legacy api facade',
+  );
+  assert.doesNotMatch(
+    recipeClientSource,
+    /from '\.\.\/services\/api'/,
+    'recipe runtime client should not import contract types from the legacy api facade',
+  );
+  assert.match(
+    recipeClientSource,
+    /import type \{[^}]*RecipeBootstrapPayload[^}]*RecipeUiPayload[^}]*\} from '\.\/types';/s,
+    'recipe runtime client should import recipe payload types from runtime/types',
   );
 });
 
