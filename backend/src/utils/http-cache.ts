@@ -50,3 +50,10 @@ export function sendNotModifiedIfEtagMatches(req: Request, res: Response, etag: 
   res.status(304).end();
   return true;
 }
+
+export function setNoStoreHeaders(res: Response): void {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+}

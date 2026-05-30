@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
@@ -119,3 +119,21 @@ test('publish static route prefers precompressed sidecars when clients accept th
   );
 });
 
+
+test('publish static route uses the shared cache header helpers', () => {
+  assert.equal(
+    serverSource.includes("import { setNoStoreHeaders, setPublicCacheHeaders } from './utils/http-cache';"),
+    true,
+    'server should import the shared cache header helpers',
+  );
+  assert.equal(
+    serverSource.includes('setNoStoreHeaders(res);'),
+    true,
+    'mutable publish artifacts should use the centralized no-store helper',
+  );
+  assert.equal(
+    serverSource.includes("res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');"),
+    false,
+    'server route code should not hand-roll no-store headers',
+  );
+});

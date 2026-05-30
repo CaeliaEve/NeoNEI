@@ -3,7 +3,7 @@ import { asyncHandler } from '../utils/http';
 import { getPublishManifestService } from '../services/publish-manifest.service';
 import { getPublishReleaseService } from '../services/publish-release.service';
 import { derivePagePackFromWindow, getPublishPayloadService } from '../services/publish-payload.service';
-import { createWeakEtag, sendNotModifiedIfEtagMatches, setPublicCacheHeaders } from '../utils/http-cache';
+import { createWeakEtag, sendNotModifiedIfEtagMatches, setNoStoreHeaders, setPublicCacheHeaders } from '../utils/http-cache';
 import { ItemsService, type BrowserPageEntry, type Item } from '../services/items.service';
 import { getPageAtlasService } from '../services/page-atlas.service';
 import { attachRenderHintsToEntries, buildBrowserRichMediaManifest } from '../services/browser-render-hints.service';
@@ -28,7 +28,7 @@ function collectDisplayItems(entries: BrowserPageEntry[]): Item[] {
 router.get(
   '/releases',
   asyncHandler(async (_req, res) => {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    setNoStoreHeaders(res);
     res.json({
       releases: getPublishReleaseService().listReleases(),
     });
@@ -49,10 +49,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const manifest = getPublishManifestService().getRuntimeManifest();
     const etag = createWeakEtag('publish-manifest', manifest.version, manifest.sourceSignature, manifest.compiledAt, manifest.publishRevision, manifest.publishCompiledAt, manifest.runtimeCacheKey);
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.setHeader('Surrogate-Control', 'no-store');
+    setNoStoreHeaders(res);
     if (sendNotModifiedIfEtagMatches(req, res, etag)) {
       return;
     }

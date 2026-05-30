@@ -26,7 +26,7 @@ import { getPageAtlasService } from './services/page-atlas.service';
 import { getAutowarmPolicy } from './config/autowarm-policy';
 import { NeoNeiCompilerService, type CompilerSourceRoots } from './services/neonei-compiler.service';
 import { promoteCompiledAccelerationDatabase } from './services/acceleration-db-pipeline.service';
-import { setPublicCacheHeaders } from './utils/http-cache';
+import { setNoStoreHeaders, setPublicCacheHeaders } from './utils/http-cache';
 import { sendErrorEnvelope } from './utils/error-response';
 
 const app = express();
@@ -505,10 +505,7 @@ function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string; 
       }
 
       if (isPublishMutableArtifact(normalizedRelativePath)) {
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
-        res.setHeader('Surrogate-Control', 'no-store');
+        setNoStoreHeaders(res);
         return res.sendFile(responsePath, {
           cacheControl: false,
           lastModified: true,
@@ -1078,7 +1075,3 @@ async function startServer() {
 }
 
 void startServer();
-
-
-
-

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { getPublishManifestService } from '../services/publish-manifest.service';
 import { asyncHandler } from '../utils/http';
-import { createWeakEtag, sendNotModifiedIfEtagMatches } from '../utils/http-cache';
+import { createWeakEtag, sendNotModifiedIfEtagMatches, setNoStoreHeaders } from '../utils/http-cache';
 
 const router = Router();
 
@@ -28,7 +28,7 @@ const runtimeContracts = {
 };
 
 router.get('/health', (_req, res) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  setNoStoreHeaders(res);
   res.json({
     status: 'ok',
     version: 1,
@@ -49,10 +49,7 @@ router.get(
       manifest.publishCompiledAt,
       manifest.runtimeCacheKey,
     );
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-    res.setHeader('Surrogate-Control', 'no-store');
+    setNoStoreHeaders(res);
     if (sendNotModifiedIfEtagMatches(req, res, etag)) {
       return;
     }
