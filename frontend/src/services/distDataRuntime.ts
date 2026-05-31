@@ -16,6 +16,7 @@ import type {
   BrowserVariantGroup,
   PublicRuntimeManifest,
 } from "../runtime/types";
+import { reportRuntimeSchemaMismatch } from "../runtime/diagnostics";
 
 type DistDataManifest = {
   schemaVersion?: string;
@@ -197,6 +198,21 @@ function buildRuntimeCacheKey(manifest: DistDataManifest): string {
   const generatedAt = `${manifest.generatedAt ?? "unknown"}`.trim();
   const source = `${manifest.source ?? "unknown"}`.trim();
   return `dist-data-v3:${schema}:${source}:${generatedAt}`;
+}
+
+function reportDistDataSchemaMismatch(
+  manifest: DistDataManifest,
+  path: string,
+  message: string,
+  details?: Record<string, unknown>,
+): void {
+  reportRuntimeSchemaMismatch({
+    path,
+    sourceSignature: manifest.sourceSignature ?? manifest.runtimeCacheKey ?? null,
+    runtimeCacheKey: buildRuntimeCacheKey(manifest),
+    message,
+    details,
+  });
 }
 
 function coerceSearchPack(manifest: DistDataManifest, payload: DistDataSearchPayload): BrowserSearchPackResponse {
@@ -467,6 +483,16 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
     ]);
     const catalog = Array.isArray(catalogPayload.items) ? catalogPayload.items.filter((entry) => entry?.itemId) : [];
     const groups = Array.isArray(groupPayload.groups) ? groupPayload.groups.filter((entry) => entry?.groupKey) : [];
+    if (!Array.isArray(catalogPayload.items)) {
+      reportDistDataSchemaMismatch(manifest, catalogPath, "Dist-data browser catalog is missing items[]", {
+        schemaVersion: catalogPayload.schemaVersion ?? null,
+      });
+    }
+    if (!Array.isArray(groupPayload.groups)) {
+      reportDistDataSchemaMismatch(manifest, groupPath, "Dist-data browser groups payload is missing groups[]", {
+        schemaVersion: groupPayload.schemaVersion ?? null,
+      });
+    }
     if (!catalog.length) {
       return null;
     }
@@ -709,6 +735,11 @@ async function getRecipeItemIndex(): Promise<Map<string, DistDataRecipeItemIndex
     }
     const payload = await fetchJson<DistDataRecipeItemIndexPayload>(joinAssetPath(getConfiguredBasePath(), indexPath));
     const entries = Array.isArray(payload.items) ? payload.items.filter((entry) => entry?.itemId) : [];
+    if (!Array.isArray(payload.items)) {
+      reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data recipe item index is missing items[]", {
+        schemaVersion: payload.schemaVersion ?? null,
+      });
+    }
     if (!entries.length) {
       return null;
     }
@@ -820,6 +851,11 @@ async function getRecipeUiPayloadIndex(): Promise<Map<string, DistDataRecipeUiPa
     }
     const payload = await fetchJson<DistDataRecipeUiPayloadIndexPayload>(joinAssetPath(getConfiguredBasePath(), indexPath));
     const entries = Array.isArray(payload.recipes) ? payload.recipes.filter((entry) => entry?.recipeId && entry?.path) : [];
+    if (!Array.isArray(payload.recipes)) {
+      reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data recipe UI payload index is missing recipes[]", {
+        schemaVersion: payload.schemaVersion ?? null,
+      });
+    }
     if (!entries.length) {
       return null;
     }
@@ -851,6 +887,12 @@ export async function getDistDataRecipeUiPayload(recipeId: string): Promise<Reci
   }
   const payload = await fetchJson<RecipeUiPayload>(joinAssetPath(getConfiguredBasePath(), payloadPath)).catch(() => null);
   if (!payload?.recipeId) {
+    const manifest = await getDistDataManifest();
+    if (manifest) {
+      reportDistDataSchemaMismatch(manifest, payloadPath, "Dist-data recipe UI payload is missing recipeId", {
+        requestedRecipeId: normalizedRecipeId,
+      });
+    }
     return null;
   }
   cachedRecipeUiPayloads.set(normalizedRecipeId, payload);
@@ -872,6 +914,9 @@ export async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexR
     }
     const payload = await fetchJson<BrowserAtlasIndexResponse>(joinAssetPath(getConfiguredBasePath(), atlasPath));
     if (!payload || !Array.isArray(payload.items)) {
+      reportDistDataSchemaMismatch(manifest, atlasPath, "Dist-data browser atlas index is missing items[]", {
+        schemaVersion: payload?.schemaVersion ?? null,
+      });
       return null;
     }
     cachedBrowserAtlasIndex = payload;

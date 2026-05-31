@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const diagnosticsSource = fs.readFileSync('src/runtime/diagnostics.ts', 'utf8').replace(/\r\n/g, '\n');
 const apiSource = fs.readFileSync('src/services/api.ts', 'utf8').replace(/\r\n/g, '\n');
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('runtime diagnostics expose a structured copyable envelope', () => {
   for (const token of [
@@ -44,6 +45,24 @@ test('runtime contract gaps and missing payloads use the structured diagnostics 
     true,
     'dev compatibility gaps should include runtime identity where available',
   );
+});
+
+test('dist-data schema mismatches include reproducible runtime identity', () => {
+  assert.equal(
+    distDataRuntimeSource.includes('reportRuntimeSchemaMismatch({'),
+    true,
+    'dist-data runtime should report malformed payloads through runtime diagnostics',
+  );
+  for (const token of [
+    'sourceSignature:',
+    'runtimeCacheKey:',
+    'path,',
+    'Dist-data browser catalog is missing items[]',
+    'Dist-data recipe UI payload is missing recipeId',
+    'Dist-data browser atlas index is missing items[]',
+  ]) {
+    assert.equal(distDataRuntimeSource.includes(token), true, `missing dist-data diagnostic token: ${token}`);
+  }
 });
 
 
