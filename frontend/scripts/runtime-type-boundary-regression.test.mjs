@@ -15,6 +15,7 @@ const patternClientSource = fs.readFileSync('src/runtime/patternClient.ts', 'utf
 const specialDataClientSource = fs.readFileSync('src/runtime/specialDataClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const renderContractClientSource = fs.readFileSync('src/runtime/renderContractClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const indexedRecipeClientSource = fs.readFileSync('src/runtime/indexedRecipeClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const itemClientSource = fs.readFileSync('src/runtime/itemClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('public runtime manifest types live outside the legacy api facade', () => {
@@ -288,6 +289,54 @@ test('indexed recipe client lives outside the legacy api facade', () => {
     apiSource.includes('getLabPayload<indexedRecipe'),
     false,
     'services/api.ts should not own indexed recipe HTTP calls',
+  );
+});
+
+test('item client keeps item HTTP and detail cache outside the legacy api facade', () => {
+  assert.equal(
+    itemClientSource.includes("from './types';"),
+    true,
+    'item client should consume contracts from runtime/types',
+  );
+  assert.equal(
+    itemClientSource.includes("from './devCompatClient';"),
+    true,
+    'item client should keep lab compatibility access behind the runtime dev client',
+  );
+  assert.doesNotMatch(
+    itemClientSource,
+    /from '\.\.\/services\/api'/,
+    'item client should not import the legacy api facade',
+  );
+  for (const token of [
+    'getItems(',
+    'getItem(',
+    'getItemsByIds(',
+    'getItemMachines(',
+    'searchItemsFast(',
+    'clearCaches()',
+  ]) {
+    assert.equal(itemClientSource.includes(token), true, `missing item client method: ${token}`);
+  }
+  assert.equal(
+    apiSource.includes('itemRuntimeClient.getItem(itemId)'),
+    true,
+    'services/api.ts should delegate item detail reads to the runtime item client',
+  );
+  assert.equal(
+    apiSource.includes("getLabPayload<Item>(`/items/${itemId}`)"),
+    false,
+    'services/api.ts should not own item detail HTTP calls',
+  );
+  assert.equal(
+    apiSource.includes("postLabPayload<Item[], { itemIds: string[] }>('/items/batch'"),
+    false,
+    'services/api.ts should not own item batch HTTP calls',
+  );
+  assert.equal(
+    apiSource.includes("getLabPayload<ItemSearchBasic[]>('/items/search/fast'"),
+    false,
+    'services/api.ts should not own fast item search HTTP calls',
   );
 });
 test('browser page projection logic lives outside the legacy api facade', () => {

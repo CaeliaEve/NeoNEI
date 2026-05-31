@@ -36,7 +36,6 @@ import type {
   PublicRuntimeManifest,
   PublishedRecipeBootstrapSearchPack,
   PublishBundleWindowPathEntry,
-  Recipe,
   RecipeBootstrapCategoryGroupPayload,
   RecipeBootstrapMachineGroupPayload,
   RecipeBootstrapPayload,
@@ -79,11 +78,12 @@ import {
 import { markPerfEvent } from './perfMarks';
 import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRuntimeRecipeBootstrap, getRuntimeRecipeUiPayload, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
 import { createTextureRuntimeClient } from '../runtime/textureClient';
-import { deleteLabPayload, getLabPayload, postLabPayload, putLabPayload } from '../runtime/devCompatClient';
+import { getLabPayload, postLabPayload } from '../runtime/devCompatClient';
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../runtime/patternClient';
 import { specialDataRuntimeClient } from '../runtime/specialDataClient';
 import { renderContractRuntimeClient } from '../runtime/renderContractClient';
 import { indexedRecipeRuntimeClient, type IndexedMachineRecipesResponse } from '../runtime/indexedRecipeClient';
+import { itemRuntimeClient, type ItemMachinesResponse } from '../runtime/itemClient';
 import { getDistDataHomeBootstrap } from './distDataRuntime';
 import {
   browserEntryMatchesLocalSearch,
@@ -206,19 +206,15 @@ export {
   getPreferredStaticImageUrlFromEntity,
 } from './api/images';
 
-const BATCH_SIZE = 800;
-
 function getNow(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
     : Date.now();
 }
 
-const itemDetailCache = new Map<string, Item>();
 const indexedCraftingCache = new Map<string, indexedRecipe[]>();
 const indexedUsageCache = new Map<string, indexedRecipe[]>();
 const indexedSummaryCache = new Map<string, indexedItemRecipeSummaryResponse>();
-const itemDetailInFlight = new Map<string, Promise<Item>>();
 const indexedCraftingInFlight = new Map<string, Promise<indexedRecipe[]>>();
 const indexedUsageInFlight = new Map<string, Promise<indexedRecipe[]>>();
 const indexedSummaryInFlight = new Map<string, Promise<indexedItemRecipeSummaryResponse>>();
@@ -260,7 +256,6 @@ const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>
 });
 
 const CACHE_LIMITS = {
-  itemDetail: 10000,
   indexedCrafting: 3000,
   indexedUsage: 3000,
   indexedSummary: 3000,
@@ -683,8 +678,7 @@ async function getPublishedRecipeBootstrapSearchPack(
 
 export const api = {
   trimPreheatRuntimeCaches(): void {
-    itemDetailCache.clear();
-    itemDetailInFlight.clear();
+    itemRuntimeClient.clearCaches();
     recipeBootstrapCache.clear();
     recipeBootstrapInFlight.clear();
     recipeBootstrapShardCache.clear();
@@ -703,11 +697,10 @@ export const api = {
   },
 
   resetRuntimeCaches(): void {
-    itemDetailCache.clear();
+    itemRuntimeClient.clearCaches();
     indexedCraftingCache.clear();
     indexedUsageCache.clear();
     indexedSummaryCache.clear();
-    itemDetailInFlight.clear();
     indexedCraftingInFlight.clear();
     indexedUsageInFlight.clear();
     indexedSummaryInFlight.clear();
@@ -808,7 +801,7 @@ export const api = {
     search?: string;
     modId?: string;
   }): Promise<PaginatedResponse<Item>> {
-    return getLabPayload<PaginatedResponse<Item>>('/items', { params });
+    return itemRuntimeClient.getItems(params);
   },
 
   async getBrowserItems(params: {
@@ -1229,24 +1222,7 @@ export const api = {
 
   // Get item by ID
   async getItem(itemId: string): Promise<Item> {
-    const cached = itemDetailCache.get(itemId);
-    if (cached) {
-      return cached;
-    }
-    const existingRequest = itemDetailInFlight.get(itemId);
-    if (existingRequest) {
-      return existingRequest;
-    }
-    const request = getLabPayload<Item>(`/items/${itemId}`)
-      .then((payload) => {
-        setCacheWithLimit(itemDetailCache, itemId, payload, CACHE_LIMITS.itemDetail);
-        return payload;
-      })
-      .finally(() => {
-        itemDetailInFlight.delete(itemId);
-      });
-    itemDetailInFlight.set(itemId, request);
-    return request;
+    return itemRuntimeClient.getItem(itemId);
   },
 
   // Get all mods
@@ -1277,51 +1253,14 @@ export const api = {
   },
 
   async getItemsByIds(itemIds: string[]): Promise<Item[]> {
-    const uniqueIds = Array.from(new Set(itemIds));
-    const missingIds = uniqueIds.filter((id) => !itemDetailCache.has(id));
-
-    if (missingIds.length > 0) {
-      for (let i = 0; i < missingIds.length; i += BATCH_SIZE) {
-        const chunk = missingIds.slice(i, i + BATCH_SIZE);
-        const payload = await postLabPayload<Item[], { itemIds: string[] }>('/items/batch', { itemIds: chunk });
-        for (const item of payload) {
-          itemDetailCache.set(item.itemId, item);
-        }
-      }
-    }
-
-    return itemIds
-      .map((id) => itemDetailCache.get(id))
-      .filter((item): item is Item => item !== undefined);
+    return itemRuntimeClient.getItemsByIds(itemIds);
   },
 
   // === indexed Recipe API (with machine icons) ===
 
   // Get machines for an item (indexed recipe API with machineIcon support)
-  async getItemMachines(itemId: string): Promise<{
-    itemId: string;
-    itemName: string;
-    machines: {
-      machineType: string;
-      category: string;
-      voltageTier: string | null;
-      voltage: number | null;
-      recipeCount: number;
-      recipes: Recipe[];
-    }[];
-  }> {
-    return getLabPayload<{
-      itemId: string;
-      itemName: string;
-      machines: {
-        machineType: string;
-        category: string;
-        voltageTier: string | null;
-        voltage: number | null;
-        recipeCount: number;
-        recipes: Recipe[];
-      }[];
-    }>(`/recipes/${itemId}/machines`);
+  async getItemMachines(itemId: string): Promise<ItemMachinesResponse> {
+    return itemRuntimeClient.getItemMachines(itemId);
   },
 
   // === Pattern Management ===
@@ -2064,16 +2003,7 @@ export const api = {
   },
 
   async searchItemsFast(keyword: string, limit: number = 60, options?: SearchItemsFastOptions): Promise<ItemSearchBasic[]> {
-    if (!keyword || !keyword.trim()) {
-      return [];
-    }
-    return getLabPayload<ItemSearchBasic[]>('/items/search/fast', {
-      params: {
-        q: keyword.trim(),
-        limit,
-      },
-      signal: options?.signal,
-    });
+    return itemRuntimeClient.searchItemsFast(keyword, limit, options);
   },
 
   // Get all available machines for item
@@ -2104,4 +2034,3 @@ export const api = {
     return specialDataRuntimeClient.getForestryGeneticsOverview();
   }
 };
-
