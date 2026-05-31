@@ -32,6 +32,7 @@ const steps = [
   { name: 'path portability URL regression', cwd: frontendDir, command: npm, args: ['run', 'test:path-portability-urls'] },
   { name: 'runtime diagnostics regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-diagnostics'] },
   { name: 'runtime type boundary regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-type-boundary'] },
+  { name: 'runtime release gate regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-release-gate'] },
   { name: 'raw export compiler portability self-test', cwd: frontendDir, command: npm, args: ['run', 'test:raw-export'] },
   { name: 'raw export path hygiene self-test', cwd: frontendDir, command: npm, args: ['run', 'test:export-paths'] },
   { name: 'deployment profile smoke', cwd: frontendDir, command: npm, args: ['run', 'test:deployment-profile'] },
