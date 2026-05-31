@@ -5,9 +5,11 @@
   BrowserGroupItemsResponse,
   BrowserPagePackResponse,
   BrowserSearchCatalogResponse,
+  BrowserSearchPackResponse,
   BrowserGridEntry,
   PaginatedResponse,
 } from './types';
+import { getLabPayload, postLabPayload } from './devCompatClient';
 import {
   getDistDataBrowserAtlasIndex,
   getDistDataBrowserPagePack,
@@ -74,6 +76,38 @@ export function createBrowserRuntimeClient() {
     },
     getAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
       return getDistDataBrowserAtlasIndex();
+    },
+    getItemsPageCompat(params: Omit<BrowserPageParams, 'slotSize'>): Promise<PaginatedResponse<BrowserGridEntry>> {
+      return getLabPayload<PaginatedResponse<BrowserGridEntry>>('/items/browser', {
+        params: {
+          ...params,
+          expandedGroups: (params.expandedGroups ?? []).join(','),
+        },
+      });
+    },
+    getDefaultCatalogCompat(params?: BrowserCatalogParams): Promise<BrowserDefaultCatalogResponse> {
+      return getLabPayload<BrowserDefaultCatalogResponse>('/items/browser/default-catalog', {
+        params,
+      });
+    },
+    getGroupItemsCompat(groupKey: string, modId?: string): Promise<BrowserGroupItemsResponse> {
+      return getLabPayload<BrowserGroupItemsResponse>(`/items/browser/group/${encodeURIComponent(groupKey)}`, {
+        params: modId ? { modId } : undefined,
+      });
+    },
+    getPagePackCompat(params: BrowserPageParams): Promise<BrowserPagePackResponse> {
+      return getLabPayload<BrowserPagePackResponse>('/items/browser/page-pack', {
+        params: {
+          ...params,
+          expandedGroups: (params.expandedGroups ?? []).join(','),
+        },
+      });
+    },
+    getSearchPackCompat(): Promise<BrowserSearchPackResponse> {
+      return getLabPayload<BrowserSearchPackResponse>('/items/search/pack');
+    },
+    getByIdsPackCompat(params: BrowserByIdsParams): Promise<BrowserByIdsPackResponse> {
+      return postLabPayload<BrowserByIdsPackResponse, BrowserByIdsParams>('/items/browser/by-ids-pack', params);
     },
   };
 }

@@ -78,7 +78,7 @@ import {
 import { markPerfEvent } from './perfMarks';
 import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRuntimeRecipeBootstrap, getRuntimeRecipeUiPayload, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
 import { createTextureRuntimeClient } from '../runtime/textureClient';
-import { getLabPayload, postLabPayload } from '../runtime/devCompatClient';
+import { getLabPayload } from '../runtime/devCompatClient';
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../runtime/patternClient';
 import { specialDataRuntimeClient } from '../runtime/specialDataClient';
 import { renderContractRuntimeClient } from '../runtime/renderContractClient';
@@ -826,12 +826,7 @@ export const api = {
       details: params,
     });
 
-    return getLabPayload<PaginatedResponse<BrowserGridEntry>>('/items/browser', {
-      params: {
-        ...params,
-        expandedGroups: (params.expandedGroups ?? []).join(','),
-      },
-    });
+    return browserRuntimeClient.getItemsPageCompat(params);
   },
 
   async getBrowserDefaultCatalog(params?: {
@@ -868,9 +863,7 @@ export const api = {
         return persistent;
       }
 
-      const payload = await getLabPayload<BrowserDefaultCatalogResponse>('/items/browser/default-catalog', {
-        params,
-      });
+      const payload = await browserRuntimeClient.getDefaultCatalogCompat(params);
       browserDefaultCatalogCache.set(cacheKey, payload);
       persistRuntimePayload('browser-default-catalog', { scope: cacheKey }, payload);
       return payload;
@@ -985,9 +978,7 @@ export const api = {
         return persistent;
       }
 
-      const payload = await getLabPayload<BrowserGroupItemsResponse>(`/items/browser/group/${encodeURIComponent(normalizedGroupKey)}`, {
-        params: modId ? { modId } : undefined,
-      });
+      const payload = await browserRuntimeClient.getGroupItemsCompat(normalizedGroupKey, modId);
       browserGroupItemsCache.set(cacheKey, payload);
       persistRuntimePayload(
         'browser-group-items',
@@ -1058,12 +1049,7 @@ export const api = {
       }
     }
 
-    return getLabPayload<BrowserPagePackResponse>('/items/browser/page-pack', {
-      params: {
-        ...params,
-        expandedGroups: (params.expandedGroups ?? []).join(','),
-      },
-    });
+    return browserRuntimeClient.getPagePackCompat(params);
   },
 
   async primeDefaultBrowserPagePack(params: {
@@ -1116,7 +1102,7 @@ export const api = {
         // Fall back to the API route when the static publish bundle is unavailable.
       }
     }
-    return getLabPayload<BrowserSearchPackResponse>('/items/search/pack');
+    return browserRuntimeClient.getSearchPackCompat();
   },
 
   async getBrowserSearchPackShard(shardId: string): Promise<BrowserSearchPackResponse | null> {
@@ -1195,7 +1181,7 @@ export const api = {
         ...getRuntimeDiagnosticIdentity(),
         details: { itemIds: normalizedParams.itemIds, slotSize: normalizedParams.slotSize },
       });
-      return postLabPayload<BrowserByIdsPackResponse, typeof normalizedParams>('/items/browser/by-ids-pack', normalizedParams);
+      return browserRuntimeClient.getByIdsPackCompat(normalizedParams);
     })()
       .then((data) => {
         setCacheWithLimit(browserByIdsPackCache, cacheKey, data, CACHE_LIMITS.browserByIdsPack);

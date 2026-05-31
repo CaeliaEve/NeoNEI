@@ -97,6 +97,33 @@ test('browser/search/texture runtime clients consume browser contracts from runt
   assert.doesNotMatch(textureClientSource, /from '\.\.\/services\/api'/);
 });
 
+test('browser runtime client owns browser lab compatibility reads', () => {
+  for (const token of [
+    'getItemsPageCompat(',
+    'getDefaultCatalogCompat(',
+    'getGroupItemsCompat(',
+    'getPagePackCompat(',
+    'getSearchPackCompat(',
+    'getByIdsPackCompat(',
+  ]) {
+    assert.equal(browserClientSource.includes(token), true, `missing browser compat method: ${token}`);
+  }
+  for (const token of [
+    "getLabPayload<PaginatedResponse<BrowserGridEntry>>('/items/browser'",
+    "getLabPayload<BrowserDefaultCatalogResponse>('/items/browser/default-catalog'",
+    "getLabPayload<BrowserPagePackResponse>('/items/browser/page-pack'",
+    "getLabPayload<BrowserSearchPackResponse>('/items/search/pack'",
+    "postLabPayload<BrowserByIdsPackResponse",
+  ]) {
+    assert.equal(apiSource.includes(token), false, `services/api.ts should not own browser lab call: ${token}`);
+  }
+  assert.equal(
+    apiSource.includes('browserRuntimeClient.getPagePackCompat(params)'),
+    true,
+    'services/api.ts should delegate browser page-pack compatibility calls to browserRuntimeClient',
+  );
+});
+
 test('core recipe and item runtime contracts live outside the legacy api facade', () => {
   for (const token of [
     'export interface Item {',
