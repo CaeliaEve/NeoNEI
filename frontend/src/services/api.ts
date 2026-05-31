@@ -97,6 +97,7 @@ import {
   searchBrowserSearchPackEntries,
 } from '../runtime/browserSearchProjection';
 import { buildRuntimePayloadCacheKey, setCacheWithLimit } from '../runtime/cacheUtils';
+import { shouldPreferLiveRecipeBootstrap } from '../runtime/recipeBootstrapPreference';
 
 export type {
   AnimatedAtlasAssetEntry,
@@ -268,33 +269,6 @@ const CACHE_LIMITS = {
   uiPayload: 256,
   publishedJson: 96,
 } as const;
-
-function shouldPreferLiveRecipeBootstrap(): boolean {
-  if (import.meta.env.VITE_PREFER_LIVE_RECIPE_BOOTSTRAP === '1') {
-    return true;
-  }
-
-  if (typeof window === 'undefined') {
-    return false;
-  }
-
-  try {
-    const override = window.localStorage.getItem('neonei:prefer-live-recipe-bootstrap');
-    if (override === '1') {
-      return true;
-    }
-    if (override === '0') {
-      return false;
-    }
-  } catch {
-    // Ignore storage access failures and fall back to hostname-based detection.
-  }
-
-  // Keep the published/static runtime as the default even during local development.
-  // NeoNEI's target browsing feel is closer to in-game NEI when recipe bootstrap
-  // reads hit the materialized publish payloads instead of live SQLite routes.
-  return false;
-}
 
 const PREFER_LIVE_RECIPE_BOOTSTRAP = shouldPreferLiveRecipeBootstrap();
 const RECIPE_BOOTSTRAP_CACHE_SCHEMA = 'v3';
@@ -2185,6 +2159,5 @@ export const api = {
     return getLabPayload<ForestryGeneticsOverview>('/forestry-genetics/overview');
   }
 };
-
 
 
