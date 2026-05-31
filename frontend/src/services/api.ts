@@ -81,6 +81,7 @@ import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canU
 import { createTextureRuntimeClient } from '../runtime/textureClient';
 import { deleteLabPayload, getLabPayload, postLabPayload, putLabPayload } from '../runtime/devCompatClient';
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../runtime/patternClient';
+import { specialDataRuntimeClient } from '../runtime/specialDataClient';
 import { getDistDataHomeBootstrap } from './distDataRuntime';
 import {
   browserEntryMatchesLocalSearch,
@@ -255,8 +256,6 @@ const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>
     });
   },
 });
-let ecosystemOverviewCache: EcosystemOverview | null = null;
-let ecosystemOverviewInFlight: Promise<EcosystemOverview> | null = null;
 
 const CACHE_LIMITS = {
   itemDetail: 10000,
@@ -727,8 +726,7 @@ export const api = {
     publishedJsonInFlight.clear();
     publishManifestCache = null;
     runtimeManifestClient.clear();
-    ecosystemOverviewCache = null;
-    ecosystemOverviewInFlight = null;
+    specialDataRuntimeClient.clear();
   },
 
   async getPublishManifest(): Promise<PublicRuntimeManifest> {
@@ -1377,22 +1375,7 @@ export const api = {
   },
 
   async getEcosystemOverview(): Promise<EcosystemOverview> {
-    if (ecosystemOverviewCache) {
-      return ecosystemOverviewCache;
-    }
-    if (ecosystemOverviewInFlight) {
-      return ecosystemOverviewInFlight;
-    }
-    const request = getLabPayload<EcosystemOverview>('/ecosystem/overview')
-      .then((payload) => {
-        ecosystemOverviewCache = payload;
-        return payload;
-      })
-      .finally(() => {
-        ecosystemOverviewInFlight = null;
-      });
-    ecosystemOverviewInFlight = request;
-    return request;
+    return specialDataRuntimeClient.getEcosystemOverview();
   },
 
   async getAnimatedAtlasEntry(assetId: string): Promise<AnimatedAtlasAssetEntry> {
@@ -2127,15 +2110,15 @@ export const api = {
 
   // Get multiblock blueprint by controller item ID
   async getMultiblockBlueprint(controllerItemId: string): Promise<MultiblockBlueprint> {
-    return getLabPayload<MultiblockBlueprint>(`/multiblocks/${encodeURIComponent(controllerItemId)}`);
+    return specialDataRuntimeClient.getMultiblockBlueprint(controllerItemId);
   },
 
   async getGTDiagramsOverview(): Promise<GTDiagramsOverview> {
-    return getLabPayload<GTDiagramsOverview>('/gt-diagrams/overview');
+    return specialDataRuntimeClient.getGTDiagramsOverview();
   },
 
   async getForestryGeneticsOverview(): Promise<ForestryGeneticsOverview> {
-    return getLabPayload<ForestryGeneticsOverview>('/forestry-genetics/overview');
+    return specialDataRuntimeClient.getForestryGeneticsOverview();
   }
 };
 

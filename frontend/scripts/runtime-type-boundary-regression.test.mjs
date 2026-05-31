@@ -12,6 +12,7 @@ const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf
 const browserProjectionSource = fs.readFileSync('src/runtime/browserProjection.ts', 'utf8').replace(/\r\n/g, '\n');
 const browserSearchProjectionSource = fs.readFileSync('src/runtime/browserSearchProjection.ts', 'utf8').replace(/\r\n/g, '\n');
 const patternClientSource = fs.readFileSync('src/runtime/patternClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const specialDataClientSource = fs.readFileSync('src/runtime/specialDataClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('public runtime manifest types live outside the legacy api facade', () => {
@@ -174,6 +175,46 @@ test('pattern management client lives outside the legacy api facade', () => {
 });
 
 
+test('special data client lives outside the legacy api facade', () => {
+  assert.equal(
+    specialDataClientSource.includes("from './types';"),
+    true,
+    'special data client should consume contracts from runtime/types',
+  );
+  assert.equal(
+    specialDataClientSource.includes("from './devCompatClient';"),
+    true,
+    'special data client should keep lab compatibility access behind the runtime dev client',
+  );
+  assert.doesNotMatch(
+    specialDataClientSource,
+    /from '\.\.\/services\/api'/,
+    'special data client should not import the legacy api facade',
+  );
+  for (const token of [
+    'getEcosystemOverview',
+    'getMultiblockBlueprint',
+    'getGTDiagramsOverview',
+    'getForestryGeneticsOverview',
+  ]) {
+    assert.equal(specialDataClientSource.includes(token), true, `missing special data client method: ${token}`);
+  }
+  assert.equal(
+    apiSource.includes('specialDataRuntimeClient.getEcosystemOverview()'),
+    true,
+    'services/api.ts should delegate ecosystem overview reads to the runtime special data client',
+  );
+  assert.equal(
+    apiSource.includes("getLabPayload<GTDiagramsOverview>('/gt-diagrams/overview')"),
+    false,
+    'services/api.ts should not own GT diagram overview HTTP calls',
+  );
+  assert.equal(
+    apiSource.includes("getLabPayload<ForestryGeneticsOverview>('/forestry-genetics/overview')"),
+    false,
+    'services/api.ts should not own forestry genetics overview HTTP calls',
+  );
+});
 test('browser page projection logic lives outside the legacy api facade', () => {
   for (const token of [
     'function deriveBrowserPagePackFromWindow',
