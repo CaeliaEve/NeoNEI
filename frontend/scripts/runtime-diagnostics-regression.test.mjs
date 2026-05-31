@@ -6,6 +6,40 @@ const diagnosticsSource = fs.readFileSync('src/runtime/diagnostics.ts', 'utf8').
 const apiSource = fs.readFileSync('src/services/api.ts', 'utf8').replace(/\r\n/g, '\n');
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
+const devCompatClientSource = fs.readFileSync('src/runtime/devCompatClient.ts', 'utf8').replace(/\r\n/g, '\n');
+
+test('public runtime profile blocks lab dev compatibility calls before network IO', () => {
+  for (const token of [
+    'VITE_PUBLIC_RUNTIME_ONLY',
+    'VITE_RUNTIME_DISABLE_DEV_COMPAT',
+    'LAB_DEV_COMPAT_BLOCKED',
+    'assertLabDevCompatibilityEnabled',
+    'public runtime profile must use compiled runtime artifacts',
+  ]) {
+    assert.equal(devCompatClientSource.includes(token), true, `missing lab compatibility guard token: ${token}`);
+  }
+
+  assert.match(
+    devCompatClientSource,
+    /assertLabDevCompatibilityEnabled\('get', path\);\n\s*const response = await labHttp\.get/s,
+    'GET lab calls should be blocked before HTTP execution',
+  );
+  assert.match(
+    devCompatClientSource,
+    /assertLabDevCompatibilityEnabled\('post', path\);\n\s*const response = await labHttp\.post/s,
+    'POST lab calls should be blocked before HTTP execution',
+  );
+  assert.match(
+    devCompatClientSource,
+    /assertLabDevCompatibilityEnabled\('put', path\);\n\s*const response = await labHttp\.put/s,
+    'PUT lab calls should be blocked before HTTP execution',
+  );
+  assert.match(
+    devCompatClientSource,
+    /assertLabDevCompatibilityEnabled\('delete', path\);\n\s*const response = await labHttp\.delete/s,
+    'DELETE lab calls should be blocked before HTTP execution',
+  );
+});
 
 test('runtime diagnostics expose a structured copyable envelope', () => {
   for (const token of [
