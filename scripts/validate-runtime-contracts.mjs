@@ -1,5 +1,5 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -31,6 +31,94 @@ function fail(failures, code, message, details = {}) {
 
 function firstArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+const localPathPatterns = [
+  { code: "WINDOWS_BACKSLASH_ABSOLUTE_PATH", pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\\[A-Za-z0-9._ -]/ },
+  { code: "WINDOWS_SLASH_ABSOLUTE_PATH", pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\/[A-Za-z0-9._ -]/ },
+  { code: "MINECRAFT_VERSION_PATH", pattern: /\.minecraft[\\/]versions/i },
+  { code: "LOCAL_GTNH_PATH", pattern: /[A-Za-z]:[\\/]GTNH/i },
+  { code: "LOCAL_CODEX_PATH", pattern: /[A-Za-z]:[\\/]codex/i },
+  { code: "LINUX_MACHINE_ABSOLUTE_PATH", pattern: /(^|[\s"'`([{:=,])\/(?:home|Users|mnt|opt|srv)\// },
+];
+
+function toPosix(pathText) {
+  return `${pathText ?? ""}`.replace(/\\/g, "/");
+}
+
+function isUrlSafeRuntimePath(value) {
+  const text = `${value ?? ""}`.trim();
+  if (!text) return false;
+  if (isAbsolute(text) || /^[A-Za-z]:[\\/]/.test(text)) return false;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return false;
+  if (text.includes("\\") || text.includes("\0")) return false;
+  const segments = text.split("/").filter(Boolean);
+  return !segments.some((segment) => segment === "." || segment === "..");
+}
+
+function validateRuntimePathDeclarations() {
+  for (const [key, declaredPath] of Object.entries(manifest?.files ?? {})) {
+    if (!isUrlSafeRuntimePath(declaredPath)) {
+      fail(failures, "DIST_MANIFEST_PATH_NOT_URL_SAFE", `manifest.files.${key} must be a URL-safe relative path`, {
+        path: declaredPath,
+      });
+    }
+  }
+}
+
+function* walkRuntimeJsonFiles(rootDir) {
+  if (!existsSync(rootDir)) return;
+  for (const entry of readdirSync(rootDir, { withFileTypes: true })) {
+    const fullPath = join(rootDir, entry.name);
+    if (entry.isDirectory()) {
+      yield* walkRuntimeJsonFiles(fullPath);
+      continue;
+    }
+    if (entry.isFile() && [".json", ".jsonl"].includes(extname(entry.name).toLowerCase())) {
+      yield fullPath;
+    }
+  }
+}
+
+function inspectPortableArtifactText(rootDir, filePath) {
+  const text = readFileSync(filePath, "utf8");
+  const rel = toPosix(relative(rootDir, filePath));
+  for (const rule of localPathPatterns) {
+    if (rule.pattern.test(text)) {
+      fail(failures, "RUNTIME_ARTIFACT_LOCAL_PATH_LEAK", `Runtime artifact contains machine-specific path text: ${rel}`, {
+        path: rel,
+        rule: rule.code,
+      });
+    }
+  }
+}
+
+function validatePortableArtifacts() {
+  const inspected = {
+    distDataDeclaredFiles: 0,
+    contractJsonFiles: 0,
+  };
+
+  const distDataFiles = new Set([manifestPath]);
+  for (const declaredPath of Object.values(manifest?.files ?? {})) {
+    if (isUrlSafeRuntimePath(declaredPath)) {
+      distDataFiles.add(join(distDataDir, declaredPath));
+    }
+  }
+  for (const filePath of distDataFiles) {
+    if (!existsSync(filePath) || ![".json", ".jsonl"].includes(extname(filePath).toLowerCase())) {
+      continue;
+    }
+    inspected.distDataDeclaredFiles += 1;
+    inspectPortableArtifactText(distDataDir, filePath);
+  }
+
+  for (const filePath of walkRuntimeJsonFiles(contractDir)) {
+    inspected.contractJsonFiles += 1;
+    inspectPortableArtifactText(contractDir, filePath);
+  }
+
+  return inspected;
 }
 
 const failures = [];
@@ -106,6 +194,8 @@ if (manifest) {
       fail(failures, "DIST_MANIFEST_FIELD_MISSING", `manifest.${field} is required`);
     }
   }
+
+  validateRuntimePathDeclarations();
 
   for (const fileKey of requiredFiles) {
     const relativePath = manifest.files?.[fileKey];
@@ -223,6 +313,7 @@ if (manifest && failures.length === 0) {
     checked.search = validateSearchPack();
     checked.textures = validateTexturePayloads();
     checked.recipes = validateRecipePayloads();
+    checked.portability = validatePortableArtifacts();
   } catch (error) {
     fail(failures, "DIST_PAYLOAD_VALIDATE_FAILED", "Runtime payload validation threw", {
       error: error instanceof Error ? error.message : String(error),
