@@ -194,6 +194,7 @@ function buildMigrationReadiness(validation, exportReport, canonicalRepository, 
   const coreMissing =
     stableNumber(validation.missing.itemId, 0) +
     stableNumber(validation.missing.renderAssetRef, 0);
+  const specialExpectedMissing = stableNumber(validation.counts.specialExpectedFactKeysMissing, 0);
   const gates = [
     gate(
       "raw-report-parity",
@@ -231,6 +232,16 @@ function buildMigrationReadiness(validation, exportReport, canonicalRepository, 
       specialPayloadMismatches === 0,
       specialPayloadMismatches === 0 ? "Special-domain recipe rows and payload rows are aligned." : `${specialPayloadMismatches} special domain(s) have payload drift.`,
       { mismatchCount: specialPayloadMismatches, domainCount: specialDomains.length },
+    ),
+    gate(
+      "special-facts-coverage",
+      specialExpectedMissing === 0,
+      specialExpectedMissing === 0 ? "Expected special-domain fact keys are machine-checkable and present." : `${specialExpectedMissing} expected special-domain fact key(s) are missing.`,
+      {
+        expectedFactKeys: stableNumber(validation.counts.specialExpectedFactKeys, 0),
+        presentFactKeys: stableNumber(validation.counts.specialExpectedFactKeysPresent, 0),
+        missingFactKeys: specialExpectedMissing,
+      },
     ),
     gate(
       "core-fields",
@@ -1106,7 +1117,7 @@ function summarizeCounter(counter, total) {
 function countAnyFactKey(payload, keys) {
   let count = 0;
   for (const payloadRow of payload ?? []) {
-    const sources = [payloadRow?.domainFacts, payloadRow?.metadata, payloadRow?.extensions, payloadRow?.machine, payloadRow?.layout];
+    const sources = [payloadRow?.domainFacts, payloadRow?.facts, payloadRow?.metadata, payloadRow?.extensions, payloadRow?.machine, payloadRow?.layout];
     if (keys.some((key) => sources.some((source) => isPlainObject(source) && source[key] !== undefined && source[key] !== null && source[key] !== ""))) {
       count += 1;
     }
@@ -1120,6 +1131,7 @@ function buildSpecialFactsCoverage(domainId, payloads) {
   const extensionCounter = new Map();
   for (const payload of payloads ?? []) {
     countFactKeys(payload?.domainFacts, domainFactCounter);
+    countFactKeys(payload?.facts, domainFactCounter);
     countFactKeys(payload?.metadata, metadataCounter);
     countFactKeys(payload?.extensions, extensionCounter);
   }
@@ -1561,7 +1573,7 @@ function createSelfTestRawExport(root) {
   mkdirSync(join(root, "special"), { recursive: true });
   mkdirSync(join(root, "special/gregtech"), { recursive: true });
   writeFileSync(join(root, "special/gregtech/recipes.jsonl"), `${JSON.stringify({ recipeId: "gt-test", family: "gregtech", machine: { machineId: "gregtech.assembler", displayName: "Assembler" } })}\n`, "utf8");
-  writeFileSync(join(root, "special/gregtech/payloads.jsonl"), `${JSON.stringify({ domain: "gregtech", recipeId: "gt-test", machineId: "gregtech.assembler", facts: { duration: 20 } })}\n`, "utf8");
+  writeFileSync(join(root, "special/gregtech/payloads.jsonl"), `${JSON.stringify({ domain: "gregtech", recipeId: "gt-test", machineId: "gregtech.assembler", facts: { duration: 20, voltage: 30, amperage: 1, totalEU: 600, voltageTier: "LV", requiresCleanroom: false, requiresLowGravity: false } })}\n`, "utf8");
   writeJson(join(root, "special/gregtech/summary.json"), { domain: "gregtech", recipeCount: 1, machineIds: [{ value: "gregtech.assembler", count: 1 }] });
   writeJson(join(root, "special/gregtech/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-domain", domain: "gregtech", recipeCount: 1, payloadCount: 1, recipes: "special/gregtech/recipes.jsonl", payloads: "special/gregtech/payloads.jsonl", summary: "special/gregtech/summary.json" });
   writeJson(join(root, "special/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-index", domains: [{ domain: "gregtech", recipeCount: 1, payloadCount: 1, index: "special/gregtech/index.json", recipes: "special/gregtech/recipes.jsonl", payloads: "special/gregtech/payloads.jsonl", summary: "special/gregtech/summary.json" }] });
@@ -1580,7 +1592,7 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 3 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.canonicalCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1 || report.migrationReadiness?.status !== "ready")) {
+if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 3 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.specialExpectedFactKeys !== 7 || report.counts.specialExpectedFactKeysMissing !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.canonicalCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1 || report.migrationReadiness?.status !== "ready")) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
 if (selfTest) {
