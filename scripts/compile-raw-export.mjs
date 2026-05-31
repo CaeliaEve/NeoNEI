@@ -1,5 +1,5 @@
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -303,6 +303,100 @@ function validateRawManifest(inputDir, manifest) {
     warnings.push(`Recipe index references ${missingRecipeShards.length} missing shard file(s).`);
   }
   return { warnings, missing, empty, unknownCapabilities, missingRecipeShards };
+}
+
+const deniedExportPathPatterns = [
+  { name: "windows-backslash-absolute", pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\\[A-Za-z0-9._ -]/ },
+  { name: "windows-slash-absolute", pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\/[A-Za-z0-9._ -]/ },
+  { name: "minecraft-version-path", pattern: /\.minecraft[\\/]versions/i },
+  { name: "local-gtnh-path", pattern: /[A-Za-z]:[\\/]GTNH/i },
+  { name: "local-codex-path", pattern: /[A-Za-z]:[\\/]codex/i },
+  { name: "linux-home-absolute", pattern: /(^|[\s"'`([{:=,])\/(?:home|Users|mnt|opt|srv)\// },
+];
+const runtimeExportExtensions = new Set([".json", ".jsonl"]);
+const diagnosticPathPattern = /(^|[\\/])(?:validation|diagnostics?|logs?)([\\/]|$)|(?:report|diagnostic|log)\.jsonl?$/i;
+
+function toPosixPath(pathText) {
+  return `${pathText ?? ""}`.replace(/\\/g, "/");
+}
+
+function isDiagnosticExportPath(filePath, inputDir) {
+  return diagnosticPathPattern.test(toPosixPath(relative(inputDir, filePath))) || diagnosticPathPattern.test(toPosixPath(filePath));
+}
+
+function* walkRuntimeExportFiles(dir) {
+  if (!existsSync(dir)) return;
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = resolve(dir, entry.name);
+    if (entry.isDirectory()) {
+      yield* walkRuntimeExportFiles(full);
+    } else if (entry.isFile() && runtimeExportExtensions.has(extname(entry.name))) {
+      yield full;
+    }
+  }
+}
+
+function resolveDeclaredExportFile(inputDir, relativePath) {
+  const text = `${relativePath ?? ""}`.trim();
+  if (!text) return null;
+  if (isAbsolute(text) || /^[A-Za-z]:[\\/]/.test(text)) {
+    return { filePath: resolve(text), declarationViolation: text };
+  }
+  return { filePath: resolve(inputDir, text), declarationViolation: null };
+}
+
+function collectPathHygieneFiles(inputDir, manifest) {
+  const files = new Set([resolve(inputDir, "manifest.json")]);
+  const declarationViolations = [];
+  for (const [logicalName, declaredPath] of Object.entries(manifest?.files ?? {})) {
+    const resolved = resolveDeclaredExportFile(inputDir, declaredPath);
+    if (!resolved) continue;
+    if (resolved.declarationViolation && !/report|diagnostic|log|validation/i.test(logicalName)) {
+      declarationViolations.push({
+        file: "manifest.json",
+        line: 0,
+        rule: "absolute-runtime-file-declaration",
+        text: `${logicalName}: ${resolved.declarationViolation}`,
+      });
+    }
+    if (!/report|diagnostic|log|validation/i.test(logicalName)) {
+      files.add(resolved.filePath);
+    }
+  }
+  for (const relRoot of ["facts", "assets", "special", "models"]) {
+    for (const filePath of walkRuntimeExportFiles(resolve(inputDir, relRoot))) {
+      files.add(filePath);
+    }
+  }
+  return { files: Array.from(files), declarationViolations };
+}
+
+function buildExportPathHygieneReport(inputDir, manifest) {
+  const { files, declarationViolations } = collectPathHygieneFiles(inputDir, manifest);
+  const violations = [...declarationViolations];
+  let auditedFiles = 0;
+  for (const filePath of files) {
+    if (!existsSync(filePath) || isDiagnosticExportPath(filePath, inputDir)) continue;
+    auditedFiles += 1;
+    const text = readFileSync(filePath, "utf8");
+    for (const denied of deniedExportPathPatterns) {
+      if (denied.pattern.test(text)) {
+        violations.push({
+          file: toPosixPath(relative(inputDir, filePath)),
+          line: 0,
+          rule: denied.name,
+          text: text.slice(0, 260).replace(/\s+/g, " ").trim(),
+        });
+      }
+    }
+  }
+  return {
+    schemaVersion: "neonei/export-path-hygiene-report/v1",
+    inputDir: "<raw-export>",
+    auditedFiles,
+    status: violations.length === 0 ? "ok" : "failed",
+    violations,
+  };
 }
 
 function normalizeAtlasFileRef(value) {
@@ -1094,6 +1188,7 @@ function compileRawExport(inputDir, outputDir) {
   const manifestPath = join(inputDir, "manifest.json");
   const manifest = readJson(manifestPath);
   const manifestValidation = validateRawManifest(inputDir, manifest);
+  const exportPathHygiene = buildExportPathHygieneReport(inputDir, manifest);
   const exportReport = readRawJson(inputDir, manifest, "exportReport", "validation/export_report.json");
   const canonicalRepositoryPath = resolveRawFile(inputDir, manifest, "canonicalRepository", null);
   const canonicalRepository = canonicalRepositoryPath ? readJsonIfReasonable(canonicalRepositoryPath) : null;
@@ -1272,6 +1367,7 @@ function compileRawExport(inputDir, outputDir) {
       recipeCategorySplits: recipeCategorySplits.length,
     },
     manifestValidation,
+    exportPathHygiene,
     missing: {
       itemId: items.filter((item) => !item.itemId).length,
       localizedName: items.filter((item) => item.itemId && !item.localizedName).length,
@@ -1305,6 +1401,9 @@ function compileRawExport(inputDir, outputDir) {
     elapsedMs: Date.now() - startedAt,
   };
   validation.warnings.push(...manifestValidation.warnings);
+  if (exportPathHygiene.status !== "ok") {
+    validation.warnings.push(`Raw Export path hygiene found ${exportPathHygiene.violations.length} machine-specific path leak(s).`);
+  }
   if (manifestValidation.missing.length > 0) validation.warnings.push(`Raw Export manifest is missing declared core file(s): ${manifestValidation.missing.join(", ")}.`);
   if (manifestValidation.empty.length > 0) validation.warnings.push(`Raw Export manifest declares empty core file(s): ${manifestValidation.empty.join(", ")}.`);
   if (items.length === 0) validation.warnings.push("items.jsonl is empty; compiler output is structural only.");
@@ -1348,6 +1447,7 @@ function compileRawExport(inputDir, outputDir) {
       specialFactsCoverage: "special/facts-coverage.json",
       validationReport: "validation/report.json",
       migrationReadiness: "validation/migration-readiness.json",
+      exportPathHygiene: "validation/export-path-hygiene.json",
     },
   });
   writeJsonCompact(join(outputDir, "search", "all.json"), { schemaVersion: "neonei/search-v3-json/v1", items: searchItems });
@@ -1380,6 +1480,7 @@ function compileRawExport(inputDir, outputDir) {
   }
   writeJson(join(outputDir, "validation", "report.json"), validation);
   writeJson(join(outputDir, "validation", "migration-readiness.json"), validation.migrationReadiness);
+  writeJson(join(outputDir, "validation", "export-path-hygiene.json"), exportPathHygiene);
   return validation;
 }
 
@@ -1487,6 +1588,10 @@ if (selfTest) {
   const portablePathViolation = /[A-Za-z]:[\\/]|\.minecraft[\\/]versions|GT New Horizons|E:[\\/]GTNH|E:[\\/]codex/i.test(validationText);
   if (portablePathViolation) {
     throw new Error("Self-test validation report leaked a machine-specific filesystem path");
+  }
+  const pathHygiene = readJson(join(outputDir, "validation", "export-path-hygiene.json"));
+  if (pathHygiene?.status !== "ok" || report.exportPathHygiene?.status !== "ok") {
+    throw new Error("Self-test export path hygiene report did not pass");
   }
 }
 
