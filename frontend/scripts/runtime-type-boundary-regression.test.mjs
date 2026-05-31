@@ -13,6 +13,7 @@ const browserProjectionSource = fs.readFileSync('src/runtime/browserProjection.t
 const browserSearchProjectionSource = fs.readFileSync('src/runtime/browserSearchProjection.ts', 'utf8').replace(/\r\n/g, '\n');
 const patternClientSource = fs.readFileSync('src/runtime/patternClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const specialDataClientSource = fs.readFileSync('src/runtime/specialDataClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const renderContractClientSource = fs.readFileSync('src/runtime/renderContractClient.ts', 'utf8').replace(/\\r\\n/g, '\\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('public runtime manifest types live outside the legacy api facade', () => {
@@ -213,6 +214,40 @@ test('special data client lives outside the legacy api facade', () => {
     apiSource.includes("getLabPayload<ForestryGeneticsOverview>('/forestry-genetics/overview')"),
     false,
     'services/api.ts should not own forestry genetics overview HTTP calls',
+  );
+});
+test('render contract client lives outside the legacy api facade', () => {
+  assert.equal(
+    renderContractClientSource.includes("from './types';"),
+    true,
+    'render contract client should consume contracts from runtime/types',
+  );
+  assert.equal(
+    renderContractClientSource.includes("from './devCompatClient';"),
+    true,
+    'render contract client should keep lab compatibility access behind the runtime dev client',
+  );
+  assert.doesNotMatch(
+    renderContractClientSource,
+    /from '\.\.\/services\/api'/,
+    'render contract client should not import the legacy api facade',
+  );
+  for (const token of [
+    'getAnimatedAtlasEntry',
+    'getAsset',
+    'getRecipeUiPayload',
+  ]) {
+    assert.equal(renderContractClientSource.includes(token), true, `missing render contract client method: ${token}`);
+  }
+  assert.equal(
+    apiSource.includes('renderContractRuntimeClient.getAnimatedAtlasEntry(assetId)'),
+    true,
+    'services/api.ts should delegate animated atlas reads to the runtime render contract client',
+  );
+  assert.equal(
+    apiSource.includes("getLabPayload<RecipeUiPayload>('/render-contract/ui-payload'"),
+    false,
+    'services/api.ts should not own recipe UI payload HTTP calls',
   );
 });
 test('browser page projection logic lives outside the legacy api facade', () => {

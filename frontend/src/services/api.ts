@@ -82,6 +82,7 @@ import { createTextureRuntimeClient } from '../runtime/textureClient';
 import { deleteLabPayload, getLabPayload, postLabPayload, putLabPayload } from '../runtime/devCompatClient';
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../runtime/patternClient';
 import { specialDataRuntimeClient } from '../runtime/specialDataClient';
+import { renderContractRuntimeClient } from '../runtime/renderContractClient';
 import { getDistDataHomeBootstrap } from './distDataRuntime';
 import {
   browserEntryMatchesLocalSearch,
@@ -1379,15 +1380,11 @@ export const api = {
   },
 
   async getAnimatedAtlasEntry(assetId: string): Promise<AnimatedAtlasAssetEntry> {
-    return getLabPayload<AnimatedAtlasAssetEntry>('/render-contract/animated-atlas', {
-      params: { assetId },
-    });
+    return renderContractRuntimeClient.getAnimatedAtlasEntry(assetId);
   },
 
   async getRenderContractAsset(assetId: string): Promise<RenderContractAssetEntry> {
-    return getLabPayload<RenderContractAssetEntry>('/render-contract/asset', {
-      params: { assetId },
-    });
+    return renderContractRuntimeClient.getAsset(assetId);
   },
 
   async getBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
@@ -1428,9 +1425,7 @@ export const api = {
         return persistent;
       }
       try {
-        const payload = await getLabPayload<RecipeUiPayload>('/render-contract/ui-payload', {
-          params: { recipeId },
-        });
+        const payload = await renderContractRuntimeClient.getRecipeUiPayload(recipeId);
         missingUiPayloadCache.delete(recipeId);
         setCacheWithLimit(uiPayloadCache, recipeId, payload, CACHE_LIMITS.uiPayload);
         persistRuntimePayload('recipe-ui-payload', { recipeId }, payload);
