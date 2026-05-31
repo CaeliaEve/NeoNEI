@@ -28,6 +28,7 @@ import { NeoNeiCompilerService, type CompilerSourceRoots } from './services/neon
 import { promoteCompiledAccelerationDatabase } from './services/acceleration-db-pipeline.service';
 import { setNoStoreHeaders, setPublicCacheHeaders } from './utils/http-cache';
 import { sendErrorEnvelope } from './utils/error-response';
+import { createAdminAccessGuard } from './utils/admin-access';
 
 const app = express();
 const parsedPort = Number(process.env.PORT);
@@ -36,9 +37,11 @@ const HOST = process.env.HOST?.trim() || '0.0.0.0';
 const PUBLIC_BASE_URL =
   process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, '') ||
   `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
-const ADMIN_TOKEN = process.env.NEONEI_ADMIN_TOKEN?.trim() || process.env.ADMIN_TOKEN?.trim() || '';
-const ADMIN_RATE_LIMIT_WINDOW_MS = Number(process.env.NEONEI_ADMIN_RATE_LIMIT_WINDOW_MS ?? 60_000);
-const ADMIN_RATE_LIMIT_MAX = Number(process.env.NEONEI_ADMIN_RATE_LIMIT_MAX ?? 12);
+const requireAdminToken = createAdminAccessGuard({
+  token: process.env.NEONEI_ADMIN_TOKEN?.trim() || process.env.ADMIN_TOKEN?.trim() || '',
+  rateLimitWindowMs: Number(process.env.NEONEI_ADMIN_RATE_LIMIT_WINDOW_MS ?? 60_000),
+  rateLimitMax: Number(process.env.NEONEI_ADMIN_RATE_LIMIT_MAX ?? 12),
+});
 
 function isEnvEnabled(value: string | undefined): boolean {
   return value === '1' || value?.toLowerCase() === 'true';
@@ -66,13 +69,6 @@ const accelerationRuntime = {
   lastError: null as string | null,
 };
 let runtimeAccelerationDbManager: ReturnType<typeof getAccelerationDatabaseManager> | null = null;
-
-type AdminRateBucket = {
-  windowStartedAt: number;
-  count: number;
-};
-
-const adminRateBuckets = new Map<string, AdminRateBucket>();
 
 const ACCELERATION_SOURCE_ROOTS: CompilerSourceRoots = {
   itemsDir: SPLIT_ITEMS_DIR,
@@ -590,53 +586,6 @@ if (NESQL_CANONICAL_DIR && fs.existsSync(NESQL_CANONICAL_DIR)) {
 function isTrackedAccelerationApiRequest(req: Request): boolean {
   const routePath = `${req.originalUrl ?? req.url ?? ''}`.split('?')[0] || '';
   return routePath.startsWith('/api') && routePath !== '/api/health';
-}
-
-function getAdminRateLimitKey(req: Request): string {
-  return `${req.ip ?? req.socket.remoteAddress ?? 'unknown'}`;
-}
-
-function isAdminRateLimited(req: Request): boolean {
-  const now = Date.now();
-  const windowMs = Math.max(1_000, ADMIN_RATE_LIMIT_WINDOW_MS);
-  const maxRequests = Math.max(1, ADMIN_RATE_LIMIT_MAX);
-  const key = getAdminRateLimitKey(req);
-  const bucket = adminRateBuckets.get(key);
-  if (!bucket || now - bucket.windowStartedAt > windowMs) {
-    adminRateBuckets.set(key, { windowStartedAt: now, count: 1 });
-    return false;
-  }
-  bucket.count += 1;
-  return bucket.count > maxRequests;
-}
-
-function requireAdminToken(req: Request, res: Response): boolean {
-  if (isAdminRateLimited(req)) {
-    res.setHeader('Retry-After', String(Math.ceil(Math.max(1_000, ADMIN_RATE_LIMIT_WINDOW_MS) / 1000)));
-    sendErrorEnvelope(req, res, 429, 'ADMIN_RATE_LIMITED', 'Admin request rate limit exceeded');
-    logger.warn('[ADMIN] rate limited request', { route: req.originalUrl, ip: req.ip });
-    return false;
-  }
-
-  if (!ADMIN_TOKEN) {
-    sendErrorEnvelope(
-      req,
-      res,
-      503,
-      'ADMIN_TOKEN_NOT_CONFIGURED',
-      'Set NEONEI_ADMIN_TOKEN before enabling admin mutation endpoints.',
-    );
-    logger.warn('[ADMIN] rejected request because NEONEI_ADMIN_TOKEN is not configured', { route: req.originalUrl });
-    return false;
-  }
-
-  const provided = `${req.header('x-neonei-admin-token') ?? req.query.adminToken ?? ''}`;
-  if (provided !== ADMIN_TOKEN) {
-    sendErrorEnvelope(req, res, 401, 'ADMIN_TOKEN_REQUIRED', 'Admin token is required');
-    logger.warn('[ADMIN] rejected unauthorized request', { route: req.originalUrl, ip: req.ip });
-    return false;
-  }
-  return true;
 }
 
 app.use((req, res, next) => {
