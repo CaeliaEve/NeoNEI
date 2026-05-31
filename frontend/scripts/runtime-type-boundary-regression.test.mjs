@@ -11,6 +11,7 @@ const searchClientSource = fs.readFileSync('src/runtime/searchClient.ts', 'utf8'
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const browserProjectionSource = fs.readFileSync('src/runtime/browserProjection.ts', 'utf8').replace(/\r\n/g, '\n');
 const browserSearchProjectionSource = fs.readFileSync('src/runtime/browserSearchProjection.ts', 'utf8').replace(/\r\n/g, '\n');
+const patternClientSource = fs.readFileSync('src/runtime/patternClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('public runtime manifest types live outside the legacy api facade', () => {
@@ -135,6 +136,41 @@ test('pattern management contracts live outside the legacy api facade', () => {
     assert.equal(runtimeTypesSource.includes(token), true, `missing pattern runtime contract: ${token}`);
     assert.equal(apiSource.includes(token), false, `services/api.ts should not re-own ${token}`);
   }
+});
+
+test('pattern management client lives outside the legacy api facade', () => {
+  assert.equal(
+    patternClientSource.includes("from './types';"),
+    true,
+    'pattern client should consume contracts from runtime/types',
+  );
+  assert.equal(
+    patternClientSource.includes("from './devCompatClient';"),
+    true,
+    'pattern client should keep lab compatibility access behind the runtime dev client',
+  );
+  assert.doesNotMatch(
+    patternClientSource,
+    /from '\.\.\/services\/api'/,
+    'pattern client should not import the legacy api facade',
+  );
+  for (const token of [
+    'patternRuntimeClient',
+    'CreatePatternPayload',
+    'UpdatePatternPayload',
+  ]) {
+    assert.equal(patternClientSource.includes(token), true, `missing pattern client token: ${token}`);
+  }
+  assert.equal(
+    apiSource.includes('patternRuntimeClient.getGroups()'),
+    true,
+    'services/api.ts should delegate pattern group reads to the runtime pattern client',
+  );
+  assert.equal(
+    apiSource.includes("postLabPayload<Pattern>('/patterns'"),
+    false,
+    'services/api.ts should not own pattern mutation HTTP calls',
+  );
 });
 
 

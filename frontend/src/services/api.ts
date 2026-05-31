@@ -80,6 +80,7 @@ import { markPerfEvent } from './perfMarks';
 import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRuntimeRecipeBootstrap, getRuntimeRecipeUiPayload, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
 import { createTextureRuntimeClient } from '../runtime/textureClient';
 import { deleteLabPayload, getLabPayload, postLabPayload, putLabPayload } from '../runtime/devCompatClient';
+import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../runtime/patternClient';
 import { getDistDataHomeBootstrap } from './distDataRuntime';
 import {
   browserEntryMatchesLocalSearch,
@@ -1327,74 +1328,52 @@ export const api = {
 
   // Get all pattern groups
   async getPatternGroups(): Promise<PatternGroup[]> {
-    return getLabPayload<PatternGroup[]>('/patterns/groups');
+    return patternRuntimeClient.getGroups();
   },
 
   // Get single pattern group
   async getPatternGroup(groupId: string): Promise<PatternGroup> {
-    return getLabPayload<PatternGroup>(`/patterns/groups/${groupId}`);
+    return patternRuntimeClient.getGroup(groupId);
   },
 
   // Get pattern group with patterns
   async getPatternGroupWithPatterns(groupId: string): Promise<PatternGroupWithPatterns> {
-    return getLabPayload<PatternGroupWithPatterns>(`/patterns/groups/${groupId}/detail`);
+    return patternRuntimeClient.getGroupWithPatterns(groupId);
   },
 
   // Create pattern group
   async createPatternGroup(groupName: string, description?: string): Promise<PatternGroup> {
-    return postLabPayload<PatternGroup>('/patterns/groups', {
-      groupName,
-      description
-    });
+    return patternRuntimeClient.createGroup(groupName, description);
   },
 
   // Update pattern group
   async updatePatternGroup(groupId: string, groupName: string, description?: string): Promise<void> {
-    await putLabPayload(`/patterns/groups/${groupId}`, {
-      groupName,
-      description
-    });
+    await patternRuntimeClient.updateGroup(groupId, groupName, description);
   },
 
   // Delete pattern group
   async deletePatternGroup(groupId: string): Promise<void> {
-    await deleteLabPayload(`/patterns/groups/${groupId}`);
+    await patternRuntimeClient.deleteGroup(groupId);
   },
 
   // Create pattern
-  async createPattern(data: {
-    groupId?: string;
-    recipeId: string;
-    patternName: string;
-    outputItemId?: string;
-    crafting?: number;
-    substitute?: number;
-    beSubstitute?: number;
-    priority?: number;
-  }): Promise<Pattern> {
-    return postLabPayload<Pattern>('/patterns', data);
+  async createPattern(data: CreatePatternPayload): Promise<Pattern> {
+    return patternRuntimeClient.createPattern(data);
   },
 
   // Delete pattern
   async deletePattern(patternId: string): Promise<void> {
-    await deleteLabPayload(`/patterns/${patternId}`);
+    await patternRuntimeClient.deletePattern(patternId);
   },
 
   // Update pattern
-  async updatePattern(patternId: string, updates: {
-    patternName?: string;
-    priority?: number;
-    enabled?: number;
-    crafting?: number;
-    substitute?: number;
-    beSubstitute?: number;
-  }): Promise<void> {
-    await putLabPayload(`/patterns/${patternId}`, updates);
+  async updatePattern(patternId: string, updates: UpdatePatternPayload): Promise<void> {
+    await patternRuntimeClient.updatePattern(patternId, updates);
   },
 
   // Export pattern group to OC-AE JSON
   async exportPatternGroup(groupId: string): Promise<PatternExportData> {
-    return getLabPayload<PatternExportData>(`/patterns/groups/${groupId}/export`);
+    return patternRuntimeClient.exportGroup(groupId);
   },
 
   async getEcosystemOverview(): Promise<EcosystemOverview> {
@@ -2159,5 +2138,4 @@ export const api = {
     return getLabPayload<ForestryGeneticsOverview>('/forestry-genetics/overview');
   }
 };
-
 
