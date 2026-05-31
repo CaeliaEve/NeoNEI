@@ -1,4 +1,6 @@
-﻿import { BACKEND_BASE_URL } from '../services/api/core/http';
+import { BACKEND_BASE_URL } from '../services/api/core/http';
+import type { HomeBootstrapResponse } from './types';
+import { getLabPayload } from './devCompatClient';
 
 export function getBackendOrigin(): string {
   return BACKEND_BASE_URL.replace(/\/api\/?$/i, '');
@@ -95,3 +97,14 @@ export function createPublishedJsonClient(options: {
 
   return { isWarm, fetchJson };
 }
+
+export function getHomeBootstrapCompat(params: {
+  page?: number;
+  pageSize?: number;
+  slotSize?: number;
+}): Promise<HomeBootstrapResponse> {
+  return getLabPayload<HomeBootstrapResponse>('/publish/home-bootstrap', {
+    params,
+  });
+}
+

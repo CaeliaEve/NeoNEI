@@ -1,5 +1,5 @@
 import { BACKEND_BASE_URL } from './api/core/http';
-import { createPublishedJsonClient } from '../runtime/publishClient';
+import { createPublishedJsonClient, getHomeBootstrapCompat } from '../runtime/publishClient';
 import { createRuntimeManifestClient, getRuntimeCacheSignature } from '../runtime/manifestClient';
 import type {
   AnimatedAtlasAssetEntry,
@@ -76,9 +76,8 @@ import {
   setRuntimeDiagnosticIdentity,
 } from '../runtime/diagnostics';
 import { markPerfEvent } from './perfMarks';
-import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRuntimeRecipeBootstrap, getRuntimeRecipeUiPayload, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
+import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRecipeBootstrapCategoryGroupCompat, getRecipeBootstrapCompat, getRecipeBootstrapProducedByGroupCompat, getRecipeBootstrapSearchCompat, getRecipeBootstrapShardCompat, getRecipeBootstrapUsedInGroupCompat, getRuntimeRecipeBootstrap, getRuntimeRecipeUiPayload, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
 import { createTextureRuntimeClient } from '../runtime/textureClient';
-import { getLabPayload } from '../runtime/devCompatClient';
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../runtime/patternClient';
 import { specialDataRuntimeClient } from '../runtime/specialDataClient';
 import { renderContractRuntimeClient } from '../runtime/renderContractClient';
@@ -781,9 +780,7 @@ export const api = {
       }
     }
 
-    const response = { data: await getLabPayload<HomeBootstrapResponse>('/publish/home-bootstrap', {
-      params,
-    }) };
+    const response = { data: await getHomeBootstrapCompat(params) };
     if (response.data?.manifest) {
       publishManifestCache = response.data.manifest;
       primeRuntimeCacheSignature(getRuntimeCacheSignature(response.data.manifest));
@@ -1233,7 +1230,7 @@ export const api = {
       }
     }
 
-    const payload = await getLabPayload<Mod[]>('/items/mods');
+    const payload = await itemRuntimeClient.getModsCompat();
     persistRuntimePayload('mods-list', { scope: 'all' }, payload);
     return payload;
   },
@@ -1449,7 +1446,7 @@ export const api = {
         }
       }
 
-      const payload = await getLabPayload<RecipeBootstrapPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}`);
+      const payload = await getRecipeBootstrapCompat(itemId);
       setCacheWithLimit(recipeBootstrapCache, itemId, payload, CACHE_LIMITS.recipeBootstrap);
       persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), payload);
       markRecipeBootstrapResolved(itemId, 'dev-compat-api', startedAt, payload);
@@ -1504,7 +1501,7 @@ export const api = {
         }
       }
 
-      const payload = await getLabPayload<RecipeBootstrapPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/shard`);
+      const payload = await getRecipeBootstrapShardCompat(itemId);
       setCacheWithLimit(recipeBootstrapShardCache, itemId, payload, CACHE_LIMITS.recipeBootstrapShard);
       persistRuntimePayload('recipe-bootstrap-shard', withRecipeBootstrapCacheSchema({ itemId }), payload);
       return payload;
@@ -1605,15 +1602,7 @@ export const api = {
       }
     }
 
-    const payload = await getLabPayload<RecipeBootstrapMachineGroupPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/produced-by-group`, {
-      params: {
-        machineType,
-        ...(voltageTier ? { voltageTier } : {}),
-        ...(typeof options?.offset === 'number' ? { offset: options.offset } : {}),
-        ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
-        ...(options?.includeRecipeIds ? { includeRecipeIds: 1 } : {}),
-      },
-    });
+    const payload = await getRecipeBootstrapProducedByGroupCompat(itemId, machineType, voltageTier, options);
     persistRuntimePayload(
       'recipe-bootstrap-produced-by-group',
       withRecipeBootstrapCacheSchema({
@@ -1720,15 +1709,7 @@ export const api = {
       }
     }
 
-    const payload = await getLabPayload<RecipeBootstrapMachineGroupPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/used-in-group`, {
-      params: {
-        machineType,
-        ...(voltageTier ? { voltageTier } : {}),
-        ...(typeof options?.offset === 'number' ? { offset: options.offset } : {}),
-        ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
-        ...(options?.includeRecipeIds ? { includeRecipeIds: 1 } : {}),
-      },
-    });
+    const payload = await getRecipeBootstrapUsedInGroupCompat(itemId, machineType, voltageTier, options);
     persistRuntimePayload(
       'recipe-bootstrap-used-in-group',
       withRecipeBootstrapCacheSchema({
@@ -1830,15 +1811,7 @@ export const api = {
       }
     }
 
-    const payload = await getLabPayload<RecipeBootstrapCategoryGroupPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/category-group`, {
-      params: {
-        tab,
-        categoryKey,
-        ...(typeof options?.offset === 'number' ? { offset: options.offset } : {}),
-        ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
-        ...(options?.includeRecipeIds ? { includeRecipeIds: 1 } : {}),
-      },
-    });
+    const payload = await getRecipeBootstrapCategoryGroupCompat(itemId, tab, categoryKey, options);
     persistRuntimePayload(
       'recipe-bootstrap-category-group',
       withRecipeBootstrapCacheSchema({
@@ -1890,13 +1863,7 @@ export const api = {
       }
     }
 
-    const payload = await getLabPayload<RecipeBootstrapSearchPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/search`, {
-      params: {
-        tab,
-        q: normalizedQuery,
-      },
-      signal: options?.signal,
-    });
+    const payload = await getRecipeBootstrapSearchCompat(itemId, tab, normalizedQuery, options);
     persistRuntimePayload('recipe-bootstrap-search', { itemId, tab, query: normalizedQuery }, payload);
     return payload;
   },

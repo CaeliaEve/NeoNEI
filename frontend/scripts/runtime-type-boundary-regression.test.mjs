@@ -5,6 +5,7 @@ import fs from 'node:fs';
 const apiSource = fs.readFileSync('src/services/api.ts', 'utf8').replace(/\r\n/g, '\n');
 const runtimeTypesSource = fs.readFileSync('src/runtime/types.ts', 'utf8').replace(/\r\n/g, '\n');
 const manifestClientSource = fs.readFileSync('src/runtime/manifestClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const publishClientSource = fs.readFileSync('src/runtime/publishClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const recipeClientSource = fs.readFileSync('src/runtime/recipeClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const browserClientSource = fs.readFileSync('src/runtime/browserClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const searchClientSource = fs.readFileSync('src/runtime/searchClient.ts', 'utf8').replace(/\r\n/g, '\n');
@@ -66,6 +67,52 @@ test('runtime clients consume runtime manifest types directly', () => {
     recipeClientSource,
     /import type \{[^}]*RecipeBootstrapPayload[^}]*RecipeUiPayload[^}]*\} from '\.\/types';/s,
     'recipe runtime client should import recipe payload types from runtime/types',
+  );
+  assert.equal(
+    recipeClientSource.includes("from './devCompatClient';"),
+    true,
+    'recipe runtime client should keep lab compatibility access behind the runtime dev client',
+  );
+  for (const token of [
+    'getRecipeBootstrapCompat(',
+    'getRecipeBootstrapShardCompat(',
+    'getRecipeBootstrapProducedByGroupCompat(',
+    'getRecipeBootstrapUsedInGroupCompat(',
+    'getRecipeBootstrapCategoryGroupCompat(',
+    'getRecipeBootstrapSearchCompat(',
+  ]) {
+    assert.equal(recipeClientSource.includes(token), true, `missing recipe compat method: ${token}`);
+  }
+  for (const token of [
+    "getLabPayload<RecipeBootstrapPayload>(`/recipe-bootstrap",
+    "getLabPayload<RecipeBootstrapMachineGroupPayload>(`/recipe-bootstrap",
+    "getLabPayload<RecipeBootstrapCategoryGroupPayload>(`/recipe-bootstrap",
+    "getLabPayload<RecipeBootstrapSearchPayload>(`/recipe-bootstrap",
+  ]) {
+    assert.equal(apiSource.includes(token), false, `services/api.ts should not own recipe lab call: ${token}`);
+  }
+});
+
+test('publish runtime client owns home bootstrap lab compatibility read', () => {
+  assert.equal(
+    publishClientSource.includes("from './types';"),
+    true,
+    'publish client should consume contracts from runtime/types',
+  );
+  assert.equal(
+    publishClientSource.includes("from './devCompatClient';"),
+    true,
+    'publish client should keep lab compatibility access behind the runtime dev client',
+  );
+  assert.equal(
+    publishClientSource.includes('getHomeBootstrapCompat('),
+    true,
+    'publish client should expose home bootstrap compatibility read',
+  );
+  assert.equal(
+    apiSource.includes("getLabPayload<HomeBootstrapResponse>('/publish/home-bootstrap'"),
+    false,
+    'services/api.ts should not own home bootstrap HTTP calls',
   );
 });
 
@@ -340,6 +387,7 @@ test('item client keeps item HTTP and detail cache outside the legacy api facade
     'getItem(',
     'getItemsByIds(',
     'getItemMachines(',
+    'getModsCompat(',
     'searchItemsFast(',
     'clearCaches()',
   ]) {
@@ -364,6 +412,11 @@ test('item client keeps item HTTP and detail cache outside the legacy api facade
     apiSource.includes("getLabPayload<ItemSearchBasic[]>('/items/search/fast'"),
     false,
     'services/api.ts should not own fast item search HTTP calls',
+  );
+  assert.equal(
+    apiSource.includes("getLabPayload<Mod[]>('/items/mods'"),
+    false,
+    'services/api.ts should not own mods-list HTTP calls',
   );
 });
 test('browser page projection logic lives outside the legacy api facade', () => {

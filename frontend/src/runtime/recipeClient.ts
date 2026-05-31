@@ -1,5 +1,14 @@
-import type { PublicRuntimeManifest, RecipeBootstrapPayload, RecipeUiPayload } from './types';
+import type {
+  PublicRuntimeManifest,
+  RecipeBootstrapCategoryGroupPayload,
+  RecipeBootstrapMachineGroupPayload,
+  RecipeBootstrapPayload,
+  RecipeBootstrapSearchPayload,
+  RecipeUiPayload,
+  SearchItemsFastOptions,
+} from './types';
 import { getDistDataRecipeBootstrap, getDistDataRecipeUiPayload } from '../services/distDataRuntime';
+import { getLabPayload } from './devCompatClient';
 
 export type RecipeRelationTab = 'usedIn' | 'producedBy';
 export type RecipeGroupKind = 'machine' | 'category';
@@ -10,6 +19,80 @@ export async function getRuntimeRecipeBootstrap(itemId: string): Promise<RecipeB
 
 export async function getRuntimeRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload | null> {
   return getDistDataRecipeUiPayload(recipeId);
+}
+
+export function getRecipeBootstrapCompat(itemId: string): Promise<RecipeBootstrapPayload> {
+  return getLabPayload<RecipeBootstrapPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}`);
+}
+
+export function getRecipeBootstrapShardCompat(itemId: string): Promise<RecipeBootstrapPayload> {
+  return getLabPayload<RecipeBootstrapPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/shard`);
+}
+
+export function getRecipeBootstrapProducedByGroupCompat(
+  itemId: string,
+  machineType: string,
+  voltageTier?: string | null,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
+): Promise<RecipeBootstrapMachineGroupPayload> {
+  return getLabPayload<RecipeBootstrapMachineGroupPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/produced-by-group`, {
+    params: {
+      machineType,
+      ...(voltageTier ? { voltageTier } : {}),
+      ...(typeof options?.offset === 'number' ? { offset: options.offset } : {}),
+      ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
+      ...(options?.includeRecipeIds ? { includeRecipeIds: 1 } : {}),
+    },
+  });
+}
+
+export function getRecipeBootstrapUsedInGroupCompat(
+  itemId: string,
+  machineType: string,
+  voltageTier?: string | null,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
+): Promise<RecipeBootstrapMachineGroupPayload> {
+  return getLabPayload<RecipeBootstrapMachineGroupPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/used-in-group`, {
+    params: {
+      machineType,
+      ...(voltageTier ? { voltageTier } : {}),
+      ...(typeof options?.offset === 'number' ? { offset: options.offset } : {}),
+      ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
+      ...(options?.includeRecipeIds ? { includeRecipeIds: 1 } : {}),
+    },
+  });
+}
+
+export function getRecipeBootstrapCategoryGroupCompat(
+  itemId: string,
+  tab: RecipeRelationTab,
+  categoryKey: string,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
+): Promise<RecipeBootstrapCategoryGroupPayload> {
+  return getLabPayload<RecipeBootstrapCategoryGroupPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/category-group`, {
+    params: {
+      tab,
+      categoryKey,
+      ...(typeof options?.offset === 'number' ? { offset: options.offset } : {}),
+      ...(typeof options?.limit === 'number' ? { limit: options.limit } : {}),
+      ...(options?.includeRecipeIds ? { includeRecipeIds: 1 } : {}),
+    },
+  });
+}
+
+export function getRecipeBootstrapSearchCompat(
+  itemId: string,
+  tab: RecipeRelationTab,
+  query: string,
+  options?: SearchItemsFastOptions,
+): Promise<RecipeBootstrapSearchPayload> {
+  return getLabPayload<RecipeBootstrapSearchPayload>(`/recipe-bootstrap/${encodeURIComponent(itemId)}/search`, {
+    params: {
+      tab,
+      q: query,
+    },
+    signal: options?.signal,
+  });
 }
 
 export function resolveRuntimeRecipeBootstrapPath(
