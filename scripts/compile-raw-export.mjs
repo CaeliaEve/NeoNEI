@@ -1,6 +1,7 @@
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gunzipSync, gzipSync } from "node:zlib";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -23,6 +24,9 @@ function normalizeLoose(value) {
 
 function readJsonl(filePath) {
   if (!existsSync(filePath)) return [];
+  if (filePath.endsWith(".gz")) {
+    return parseJsonlText(gunzipSync(readFileSync(filePath)).toString("utf8"), filePath);
+  }
   const rows = [];
   const fd = openSync(filePath, "r");
   const decoder = new TextDecoder("utf-8");
@@ -56,6 +60,22 @@ function readJsonl(filePath) {
   }
 }
 
+function parseJsonlText(text, filePath) {
+  const rows = [];
+  let lineNumber = 0;
+  for (const rawLine of `${text ?? ""}`.split(/\r?\n/)) {
+    lineNumber += 1;
+    const line = rawLine.trim();
+    if (!line) continue;
+    try {
+      rows.push(JSON.parse(line));
+    } catch (error) {
+      throw new Error(`Invalid JSONL at ${filePath}:${lineNumber}: ${error.message}`);
+    }
+  }
+  return rows;
+}
+
 function readJson(filePath) {
   if (!existsSync(filePath)) return null;
   return JSON.parse(readFileSync(filePath, "utf8"));
@@ -78,9 +98,6 @@ function readRawJsonl(inputDir, manifest, logicalName, fallbackPath) {
   const declaredPath = resolveRawFile(inputDir, manifest, logicalName, fallbackPath);
   if (declaredPath && existsSync(declaredPath)) {
     return readJsonl(declaredPath);
-  }
-  if (fallbackPath) {
-    return readJsonl(join(inputDir, fallbackPath));
   }
   return [];
 }
@@ -110,7 +127,7 @@ function readRawRecipes(inputDir, manifest) {
   if (recipes.length > 0 || shards.length > 0) {
     return recipes;
   }
-  return readRawJsonl(inputDir, manifest, "recipes", "recipes.jsonl");
+  return [];
 }
 
 function buildRawExportCountMismatches(exportReport, actualCounts) {
@@ -137,51 +154,15 @@ function buildRawExportCountMismatches(exportReport, actualCounts) {
   return mismatches;
 }
 
-function readCanonicalSibling(inputDir, manifest, siblingFileName) {
-  const repositoryPath = resolveRawFile(inputDir, manifest, "canonicalRepository", null);
-  if (!repositoryPath) return null;
-  return readJsonIfReasonable(join(dirname(repositoryPath), siblingFileName));
-}
-
-function buildCanonicalCountMismatches(canonicalRepository, canonicalBrowserLayout, canonicalRenderAssets, actualCounts) {
-  const pairs = [
-    ["items", canonicalRepository?.items, "items", "canonicalRepository"],
-    ["fluids", canonicalRepository?.fluids, "fluids", "canonicalRepository"],
-    ["recipes", canonicalRepository?.recipes, "recipes", "canonicalRepository"],
-    ["groups", canonicalBrowserLayout?.groups, "groups", "canonicalBrowserLayout"],
-    ["neiOrderEntries", canonicalBrowserLayout?.defaultEntries, "neiOrderEntries", "canonicalBrowserLayout"],
-    ["textures", canonicalRenderAssets?.assets, "textures", "canonicalRenderAssets"],
-  ];
-  const mismatches = [];
-  for (const [label, canonicalRows, actualKey, source] of pairs) {
-    if (!Array.isArray(canonicalRows)) continue;
-    const expected = canonicalRows.length;
-    const actual = stableNumber(actualCounts[actualKey], 0);
-    if (expected !== actual) {
-      mismatches.push({ label, expected, actual, source });
-    }
-  }
-  if (Array.isArray(canonicalRenderAssets?.assets)) {
-    const expected = canonicalRenderAssets.assets.filter((asset) => isAnimatedResource(asset, null)).length;
-    const actual = stableNumber(actualCounts.animations, 0);
-    if (expected !== actual) {
-      mismatches.push({ label: "animations", expected, actual, source: "canonicalRenderAssets" });
-    }
-  }
-  return mismatches;
-}
-
-function buildMigrationReadiness(validation, exportReport, canonicalRepository, specialDomains, atlasAuthorityReport) {
+function buildMigrationReadiness(validation, exportReport, specialDomains, atlasAuthorityReport) {
   const gate = (name, ok, summary, details = {}) => ({
     name,
     status: ok ? "ready" : "blocked",
     summary,
     ...details,
   });
-  const hasCanonical = Boolean(canonicalRepository);
   const specialPayloadMismatches = stableNumber(validation.counts.specialPayloadMismatches, 0);
   const rawExportMismatches = stableNumber(validation.counts.rawExportCountMismatches, 0);
-  const canonicalMismatches = stableNumber(validation.counts.canonicalCountMismatches, 0);
   const exporterReadinessStatus = `${exportReport?.validation?.readinessStatus ?? ""}`.trim();
   const exporterValidationStatus = `${exportReport?.validation?.status ?? ""}`.trim();
   const exporterReady = Boolean(exportReport) && (!exporterReadinessStatus || exporterReadinessStatus === "ready");
@@ -210,16 +191,6 @@ function buildMigrationReadiness(validation, exportReport, canonicalRepository, 
           .filter((entry) => entry?.status && entry.status !== "ready")
           .map((entry) => entry.name ?? "unknown"),
       },
-    ),
-    gate(
-      "canonical-parity",
-      !hasCanonical || canonicalMismatches === 0,
-      hasCanonical
-        ? canonicalMismatches === 0
-          ? "Raw Export output matches legacy canonical counts."
-          : `${canonicalMismatches} canonical count area(s) differ.`
-        : "Legacy canonical repository was skipped; Raw Export is the authoritative migration source.",
-      { mismatchCount: canonicalMismatches, canonicalAvailable: hasCanonical },
     ),
     gate(
       "atlas-authority",
@@ -278,7 +249,7 @@ function validateRawManifest(inputDir, manifest) {
   const empty = [];
   const unknownCapabilities = [];
   if (!manifest) {
-    warnings.push("raw-export manifest.json is missing; compiler is using legacy file fallbacks.");
+    warnings.push("raw-export manifest.json is missing; compiler requires authoritative raw-export declarations.");
     return { warnings, missing, empty, unknownCapabilities };
   }
 
@@ -289,7 +260,7 @@ function validateRawManifest(inputDir, manifest) {
     warnings.push(`Raw Export manifest declares unknown capabilities: ${unknownCapabilities.join(", ")}.`);
   }
 
-  const requiredFiles = ["items", "recipes", "recipeIndex", "groups", "neiOrder", "textures", "browserAtlasIndex"];
+  const requiredFiles = ["items", "fluids", "recipeIndex", "groups", "neiOrder", "textures", "browserAtlasIndex"];
   for (const logicalName of requiredFiles) {
     const filePath = resolveRawFile(inputDir, manifest, logicalName, null);
     if (!filePath || !existsSync(filePath)) {
@@ -324,8 +295,8 @@ const deniedExportPathPatterns = [
   { name: "local-codex-path", pattern: /[A-Za-z]:[\\/]codex/i },
   { name: "linux-home-absolute", pattern: /(^|[\s"'`([{:=,])\/(?:home|Users|mnt|opt|srv)\// },
 ];
-const runtimeExportExtensions = new Set([".json", ".jsonl"]);
-const diagnosticPathPattern = /(^|[\\/])(?:validation|diagnostics?|logs?)([\\/]|$)|(?:report|diagnostic|log)\.jsonl?$/i;
+const runtimeExportExtensions = new Set([".json", ".jsonl", ".gz"]);
+const diagnosticPathPattern = /(^|[\\/])(?:validation|diagnostics?|logs?)([\\/]|$)|(?:report|diagnostic|log)\.(?:jsonl?|jsonl\.gz)$/i;
 
 function toPosixPath(pathText) {
   return `${pathText ?? ""}`.replace(/\\/g, "/");
@@ -529,6 +500,11 @@ function writeJson(filePath, value) {
 function writeJsonCompact(filePath, value) {
   mkdirSync(dirname(filePath), { recursive: true });
   writeFileSync(filePath, `${JSON.stringify(value)}\n`, "utf8");
+}
+
+function writeGzipText(filePath, text) {
+  mkdirSync(dirname(filePath), { recursive: true });
+  writeFileSync(filePath, gzipSync(Buffer.from(`${text ?? ""}`, "utf8")));
 }
 
 function stableNumber(value, fallback = 0) {
@@ -1165,31 +1141,27 @@ function readSpecialDomains(inputDir, specialIndex) {
   const domains = [];
   for (const domain of specialIndex?.domains ?? []) {
     const domainId = sanitizePathSegment(domain?.domain);
-    const recipesPath = `${domain?.recipes ?? ""}`.trim();
     const payloadsPath = `${domain?.payloads ?? ""}`.trim();
     const indexPath = `${domain?.index ?? ""}`.trim();
     const summaryPath = `${domain?.summary ?? ""}`.trim();
-    const recipes = recipesPath ? readJsonl(join(inputDir, recipesPath)) : [];
     const payloads = payloadsPath ? readJsonl(join(inputDir, payloadsPath)) : [];
     const index = indexPath ? readJson(join(inputDir, indexPath)) : null;
     const summary = summaryPath ? readJson(join(inputDir, summaryPath)) : (domain?.stats ?? index?.stats ?? null);
+    const declaredRecipeCount = stableNumber(domain?.recipeCount ?? index?.recipeCount, payloads.length);
     const factsCoverage = buildSpecialFactsCoverage(domainId, payloads);
     domains.push({
       domain: domainId,
-      recipeCount: recipes.length,
-      declaredRecipeCount: stableNumber(domain?.recipeCount ?? index?.recipeCount, recipes.length),
+      recipeCount: declaredRecipeCount,
+      declaredRecipeCount,
       payloadCount: payloads.length,
       declaredPayloadCount: stableNumber(domain?.payloadCount ?? index?.payloadCount, payloads.length),
-      recipesPath,
       payloadsPath,
       indexPath,
       summaryPath,
-      outputRecipes: `special/${domainId}/recipes.json`,
       outputPayloads: `special/${domainId}/payloads.json`,
       outputSummary: `special/${domainId}/summary.json`,
-      summary: { ...(summary ?? { domain: domainId, recipeCount: recipes.length }), factsCoverage },
+      summary: { ...(summary ?? { domain: domainId, recipeCount: declaredRecipeCount }), factsCoverage },
       factsCoverage,
-      recipes,
       payloads,
     });
   }
@@ -1202,21 +1174,17 @@ function compileRawExport(inputDir, outputDir) {
   const manifestValidation = validateRawManifest(inputDir, manifest);
   const exportPathHygiene = buildExportPathHygieneReport(inputDir, manifest);
   const exportReport = readRawJson(inputDir, manifest, "exportReport", "validation/export_report.json");
-  const canonicalRepositoryPath = resolveRawFile(inputDir, manifest, "canonicalRepository", null);
-  const canonicalRepository = canonicalRepositoryPath ? readJsonIfReasonable(canonicalRepositoryPath) : null;
-  const canonicalBrowserLayout = readCanonicalSibling(inputDir, manifest, "browser-layout-index.json");
-  const canonicalRenderAssets = readCanonicalSibling(inputDir, manifest, "render-assets.json");
-  const items = readRawJsonl(inputDir, manifest, "items", "items.jsonl");
-  const fluids = readRawJsonl(inputDir, manifest, "fluids", "fluids.jsonl");
+  const items = readRawJsonl(inputDir, manifest, "items", "facts/items.jsonl.gz");
+  const fluids = readRawJsonl(inputDir, manifest, "fluids", "facts/fluids.jsonl.gz");
   const recipes = readRawRecipes(inputDir, manifest);
-  const rawGroups = readRawJsonl(inputDir, manifest, "groups", "groups.jsonl");
-  const neiOrder = readRawJsonl(inputDir, manifest, "neiOrder", "nei_order.jsonl");
-  const textures = readRawJsonl(inputDir, manifest, "textures", "textures.jsonl");
-  const animations = readRawJsonl(inputDir, manifest, "animations", "animations.jsonl");
-  const nativeSprites = readRawJsonl(inputDir, manifest, "nativeSprites", "native_sprites.jsonl");
-  const renderedGifs = readRawJsonl(inputDir, manifest, "renderedGifs", "rendered_gifs.jsonl");
-  const entities = readRawJsonl(inputDir, manifest, "entities", "models/entities/index.jsonl");
-  const browserAtlasIndex = readRawJson(inputDir, manifest, "browserAtlasIndex", "browser_atlas_index.json");
+  const rawGroups = readRawJsonl(inputDir, manifest, "groups", "facts/nei/groups.jsonl.gz");
+  const neiOrder = readRawJsonl(inputDir, manifest, "neiOrder", "facts/nei/order.jsonl.gz");
+  const textures = readRawJsonl(inputDir, manifest, "textures", "assets/textures/index.jsonl.gz");
+  const animations = readRawJsonl(inputDir, manifest, "animations", "assets/animations/index.jsonl.gz");
+  const nativeSprites = readRawJsonl(inputDir, manifest, "nativeSprites", "assets/animations/native-sprites.jsonl.gz");
+  const renderedGifs = readRawJsonl(inputDir, manifest, "renderedGifs", "assets/animations/rendered-gifs.jsonl.gz");
+  const entities = readRawJsonl(inputDir, manifest, "entities", "models/entities/index.jsonl.gz");
+  const browserAtlasIndex = readRawJson(inputDir, manifest, "browserAtlasIndex", "assets/textures/browser_atlas_index.json");
   const specialIndex = readRawJson(inputDir, manifest, "specialIndex", "special/index.json");
   const specialDomains = readSpecialDomains(inputDir, specialIndex);
   const animationFacts = mergeAnimationFacts(animations, nativeSprites, renderedGifs);
@@ -1325,15 +1293,6 @@ function compileRawExport(inputDir, outputDir) {
     animations: animations.length,
     entities: entities.length,
   });
-  const canonicalCountMismatches = buildCanonicalCountMismatches(canonicalRepository, canonicalBrowserLayout, canonicalRenderAssets, {
-    items: items.length,
-    fluids: fluids.length,
-    recipes: recipes.length,
-    groups: rawGroups.length,
-    neiOrderEntries: neiOrder.length,
-    textures: textures.length,
-    animations: animations.length,
-  });
   const specialFactsCoverage = {
     schemaVersion: "neonei/special-facts-coverage/v1",
     domains: specialDomains.map((domain) => domain.factsCoverage),
@@ -1372,7 +1331,6 @@ function compileRawExport(inputDir, outputDir) {
       specialExpectedFactKeysPresent,
       specialExpectedFactKeysMissing: specialExpectedFactKeys.length - specialExpectedFactKeysPresent,
       rawExportCountMismatches: rawExportCountMismatches.length,
-      canonicalCountMismatches: canonicalCountMismatches.length,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
@@ -1402,7 +1360,6 @@ function compileRawExport(inputDir, outputDir) {
       missingBrowserAtlasFiles: atlasAuthorityReport.samples.missingAtlasFiles,
       recipeCategorySplits: recipeCategorySplits.slice(0, 50),
       rawExportCountMismatches,
-      canonicalCountMismatches,
       missingAnimationTimingAssetIds: missingAnimationTimingAssetIds.slice(0, 100),
     },
     coverage: {
@@ -1418,8 +1375,8 @@ function compileRawExport(inputDir, outputDir) {
   }
   if (manifestValidation.missing.length > 0) validation.warnings.push(`Raw Export manifest is missing declared core file(s): ${manifestValidation.missing.join(", ")}.`);
   if (manifestValidation.empty.length > 0) validation.warnings.push(`Raw Export manifest declares empty core file(s): ${manifestValidation.empty.join(", ")}.`);
-  if (items.length === 0) validation.warnings.push("items.jsonl is empty; compiler output is structural only.");
-  if (recipes.length === 0) validation.warnings.push("recipes.jsonl is empty; recipe indexes cannot be complete.");
+  if (items.length === 0) validation.warnings.push("facts/items.jsonl.gz is empty; compiler output is structural only.");
+  if (recipes.length === 0) validation.warnings.push("Recipe shards are empty; recipe indexes cannot be complete.");
   if (atlasAuthorityReport.indexedBrowserItems < atlasAuthorityReport.totalBrowserItems) validation.warnings.push(`Browser atlas is missing indexed entries for ${atlasAuthorityReport.totalBrowserItems - atlasAuthorityReport.indexedBrowserItems} browser item(s).`);
   if (atlasAuthorityReport.missingDrawableItemIds > 0) validation.warnings.push(`Browser atlas has ${atlasAuthorityReport.missingDrawableItemIds} indexed item(s) without drawable atlas files.`);
   if (atlasAuthorityReport.missingAtlasFiles > 0) validation.warnings.push(`Browser atlas references ${atlasAuthorityReport.missingAtlasFiles} atlas file(s) that are not present beside the Raw Export.`);
@@ -1428,7 +1385,6 @@ function compileRawExport(inputDir, outputDir) {
   if (missingAnimationTimingAssetIds.length > 0) validation.warnings.push(`Animation timing metadata is missing for ${missingAnimationTimingAssetIds.length} animated asset(s).`);
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
   if (rawExportCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from exporter report in ${rawExportCountMismatches.length} area(s).`);
-  if (canonicalCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from canonical repository in ${canonicalCountMismatches.length} area(s).`);
   for (const domain of specialDomains) {
     if (domain.recipeCount !== domain.payloads.length) {
       validation.warnings.push(`Special domain ${domain.domain} has ${domain.recipeCount} recipe row(s) but ${domain.payloads.length} payload row(s).`);
@@ -1437,7 +1393,7 @@ function compileRawExport(inputDir, outputDir) {
       validation.warnings.push(`Special domain ${domain.domain} declares ${domain.declaredPayloadCount} payload row(s) but compiler read ${domain.payloads.length}.`);
     }
   }
-  validation.migrationReadiness = buildMigrationReadiness(validation, exportReport, canonicalRepository, specialDomains, atlasAuthorityReport);
+  validation.migrationReadiness = buildMigrationReadiness(validation, exportReport, specialDomains, atlasAuthorityReport);
 
   writeJson(outputDir + "/manifest.json", {
     schemaVersion: "neonei/dist-data/v3-alpha1",
@@ -1486,7 +1442,6 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "special", "index.json"), distSpecialIndex);
   writeJsonCompact(join(outputDir, "special", "facts-coverage.json"), specialFactsCoverage);
   for (const domain of specialDomains) {
-    writeJsonCompact(join(outputDir, domain.outputRecipes), { schemaVersion: "neonei/special-domain-recipes/v1", domain: domain.domain, recipes: domain.recipes });
     writeJsonCompact(join(outputDir, domain.outputPayloads), { schemaVersion: "neonei/special-domain-payloads/v1", domain: domain.domain, payloads: domain.payloads });
     writeJsonCompact(join(outputDir, domain.outputSummary), { schemaVersion: "neonei/special-domain-summary/v1", ...domain.summary });
   }
@@ -1514,69 +1469,50 @@ function createSelfTestRawExport(root) {
     repositoryName: "self-test",
     capabilities: ["facts", "assets", "validation"],
     files: {
-      items: "facts/items.jsonl",
-      fluids: "facts/fluids.jsonl",
-      recipes: "facts/recipes/all.jsonl",
+      items: "facts/items.jsonl.gz",
+      fluids: "facts/fluids.jsonl.gz",
       recipeIndex: "facts/recipes/index.json",
-      groups: "facts/nei/groups.jsonl",
-      neiOrder: "facts/nei/order.jsonl",
-      textures: "assets/textures/index.jsonl",
-      animations: "assets/animations/index.jsonl",
-      nativeSprites: "assets/animations/native-sprites.jsonl",
-      renderedGifs: "assets/animations/rendered-gifs.jsonl",
+      groups: "facts/nei/groups.jsonl.gz",
+      neiOrder: "facts/nei/order.jsonl.gz",
+      textures: "assets/textures/index.jsonl.gz",
+      animations: "assets/animations/index.jsonl.gz",
+      nativeSprites: "assets/animations/native-sprites.jsonl.gz",
+      renderedGifs: "assets/animations/rendered-gifs.jsonl.gz",
       browserAtlasIndex: "assets/textures/browser_atlas_index.json",
-      entities: "models/entities/index.jsonl",
+      entities: "models/entities/index.jsonl.gz",
       specialIndex: "special/index.json",
       exportReport: "validation/export_report.json",
-      canonicalRepository: "../canonical/repository.json",
     },
   });
-  writeFileSync(join(root, "facts/items.jsonl"), [
+  writeGzipText(join(root, "facts/items.jsonl.gz"), [
     JSON.stringify({ itemId: "i~minecraft~iron_ingot~0", modId: "minecraft", internalName: "iron_ingot", localizedName: "Iron Ingot", renderAssetRef: "nesqlpp:item/i~minecraft~iron_ingot~0", searchTerms: "iron ingot" }),
     JSON.stringify({ itemId: "i~botania~manaResource~4", modId: "botania", internalName: "manaResource", localizedName: "Terrasteel Ingot", renderAssetRef: "nesqlpp:item/i~botania~manaResource~4", searchTerms: "terrasteel" }),
     JSON.stringify({ itemId: "i~minecraft~gold_ingot~0", modId: "minecraft", internalName: "gold_ingot", localizedName: "Gold Ingot", renderAssetRef: "nesqlpp:item/i~minecraft~gold_ingot~0", searchTerms: "gold ingot" }),
-  ].join("\n") + "\n", "utf8");
-  writeFileSync(join(root, "facts/fluids.jsonl"), `${JSON.stringify({ fluidId: "f~gregtech~molten.iron", localizedName: "Molten Iron" })}\n`, "utf8");
-  writeFileSync(join(root, "facts/recipes/all.jsonl"), `${JSON.stringify({ recipeId: "r1", family: "minecraft", machine: { machineId: "furnace", displayName: "Furnace" }, inputs: [{ itemId: "i~minecraft~iron_ore~0" }], outputs: [{ itemId: "i~minecraft~iron_ingot~0" }, { itemId: "i~botania~manaResource~4" }] })}\n`, "utf8");
-  writeJson(join(root, "facts/recipes/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/recipe-index", shards: [{ handlerId: "all", path: "facts/recipes/all.jsonl", recipeCount: 1 }] });
-  writeFileSync(join(root, "facts/nei/groups.jsonl"), `${JSON.stringify({ groupKey: "nei:iron", groupLabel: "Iron", groupSize: 1, representativeItemId: "i~minecraft~iron_ingot~0", memberItemIds: ["i~minecraft~iron_ingot~0"] })}\n`, "utf8");
-  writeFileSync(join(root, "facts/nei/order.jsonl"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n${JSON.stringify({ entryOrder: 2, entryKind: "item", itemId: "i~minecraft~gold_ingot~0" })}\n`, "utf8");
-  writeFileSync(join(root, "assets/textures/index.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", atlasFile: "generated-static-atlas-0.webp", rect: { x: 0, y: 0, width: 16, height: 16 } })}\n`, "utf8");
-  writeFileSync(join(root, "assets/animations/index.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`, "utf8");
-  writeFileSync(join(root, "assets/animations/native-sprites.jsonl"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`, "utf8");
-  writeFileSync(join(root, "assets/animations/rendered-gifs.jsonl"), "", "utf8");
-  writeFileSync(join(root, "models/entities/index.jsonl"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`, "utf8");
+  ].join("\n") + "\n");
+  writeGzipText(join(root, "facts/fluids.jsonl.gz"), `${JSON.stringify({ fluidId: "f~gregtech~molten.iron", localizedName: "Molten Iron" })}\n`);
+  writeGzipText(join(root, "facts/recipes/furnace.jsonl.gz"), `${JSON.stringify({ recipeId: "r1", family: "minecraft", machine: { machineId: "furnace", displayName: "Furnace" }, inputs: [{ itemId: "i~minecraft~iron_ore~0" }], outputs: [{ itemId: "i~minecraft~iron_ingot~0" }, { itemId: "i~botania~manaResource~4" }] })}\n`);
+  writeJson(join(root, "facts/recipes/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/recipe-index", strategy: "by-handler", recipeCount: 1, shards: [{ handlerId: "furnace", path: "facts/recipes/furnace.jsonl.gz", recipeCount: 1 }] });
+  writeGzipText(join(root, "facts/nei/groups.jsonl.gz"), `${JSON.stringify({ groupKey: "nei:iron", groupLabel: "Iron", groupSize: 1, representativeItemId: "i~minecraft~iron_ingot~0", memberItemIds: ["i~minecraft~iron_ingot~0"] })}\n`);
+  writeGzipText(join(root, "facts/nei/order.jsonl.gz"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n${JSON.stringify({ entryOrder: 2, entryKind: "item", itemId: "i~minecraft~gold_ingot~0" })}\n`);
+  writeGzipText(join(root, "assets/textures/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", atlasFile: "generated-static-atlas-0.webp", rect: { x: 0, y: 0, width: 16, height: 16 } })}\n`);
+  writeGzipText(join(root, "assets/animations/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`);
+  writeGzipText(join(root, "assets/animations/native-sprites.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`);
+  writeGzipText(join(root, "assets/animations/rendered-gifs.jsonl.gz"), "");
+  writeGzipText(join(root, "models/entities/index.jsonl.gz"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`);
   writeJson(join(root, "validation/export_report.json"), {
     schemaVersion: "nesqlpp/raw-export/alpha1/report",
     counts: { rawItems: 3, rawFluids: 1, rawRecipes: 1, rawGroups: 1, rawNeiOrderEntries: 3, rawTextures: 3, rawAnimations: 1, rawEntities: 1 },
     validation: { status: "ok", readinessStatus: "ready", gates: [{ name: "core-counts", status: "ready" }] },
-  });
-  writeJson(join(root, "..", "canonical", "repository.json"), {
-    items: [{}, {}, {}],
-    fluids: [{}],
-    recipes: [{}],
-  });
-  writeJson(join(root, "..", "canonical", "browser-layout-index.json"), {
-    groups: [{ groupKey: "nei:iron" }],
-    defaultEntries: [{}, {}, {}],
-  });
-  writeJson(join(root, "..", "canonical", "render-assets.json"), {
-    assets: [
-      { assetId: "nesqlpp:item/i~minecraft~iron_ingot~0" },
-      { assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8 },
-      { assetId: "nesqlpp:item/i~minecraft~gold_ingot~0" },
-    ],
   });
   writeFileSync(join(root, "static-atlas-0.webp"), "self-test-static", "utf8");
   writeFileSync(join(root, "animated-atlas-0.webp"), "self-test-animated", "utf8");
   writeFileSync(join(root, "generated-static-atlas-0.webp"), "self-test-generated", "utf8");
   mkdirSync(join(root, "special"), { recursive: true });
   mkdirSync(join(root, "special/gregtech"), { recursive: true });
-  writeFileSync(join(root, "special/gregtech/recipes.jsonl"), `${JSON.stringify({ recipeId: "gt-test", family: "gregtech", machine: { machineId: "gregtech.assembler", displayName: "Assembler" } })}\n`, "utf8");
-  writeFileSync(join(root, "special/gregtech/payloads.jsonl"), `${JSON.stringify({ domain: "gregtech", recipeId: "gt-test", machineId: "gregtech.assembler", facts: { duration: 20, voltage: 30, amperage: 1, totalEU: 600, voltageTier: "LV", requiresCleanroom: false, requiresLowGravity: false } })}\n`, "utf8");
+  writeGzipText(join(root, "special/gregtech/payloads.jsonl.gz"), `${JSON.stringify({ domain: "gregtech", recipeId: "gt-test", machineId: "gregtech.assembler", facts: { duration: 20, voltage: 30, amperage: 1, totalEU: 600, voltageTier: "LV", requiresCleanroom: false, requiresLowGravity: false } })}\n`);
   writeJson(join(root, "special/gregtech/summary.json"), { domain: "gregtech", recipeCount: 1, machineIds: [{ value: "gregtech.assembler", count: 1 }] });
-  writeJson(join(root, "special/gregtech/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-domain", domain: "gregtech", recipeCount: 1, payloadCount: 1, recipes: "special/gregtech/recipes.jsonl", payloads: "special/gregtech/payloads.jsonl", summary: "special/gregtech/summary.json" });
-  writeJson(join(root, "special/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-index", domains: [{ domain: "gregtech", recipeCount: 1, payloadCount: 1, index: "special/gregtech/index.json", recipes: "special/gregtech/recipes.jsonl", payloads: "special/gregtech/payloads.jsonl", summary: "special/gregtech/summary.json" }] });
+  writeJson(join(root, "special/gregtech/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-domain", domain: "gregtech", recipeCount: 1, payloadCount: 1, payloads: "special/gregtech/payloads.jsonl.gz", summary: "special/gregtech/summary.json" });
+  writeJson(join(root, "special/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/special-index", domains: [{ domain: "gregtech", recipeCount: 1, payloadCount: 1, index: "special/gregtech/index.json", payloads: "special/gregtech/payloads.jsonl.gz", summary: "special/gregtech/summary.json" }] });
   writeJson(join(root, "assets/textures/browser_atlas_index.json"), { schemaVersion: "browser-atlas-index-self-test", itemCount: 2, items: [{ itemId: "i~minecraft~iron_ingot~0", assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", hasStaticAtlas: true, staticAtlas: { atlasFile: "static-atlas-0.webp", atlasWidth: 16, atlasHeight: 16, x: 0, y: 0, width: 16, height: 16 } }, { itemId: "i~botania~manaResource~4", assetId: "nesqlpp:item/i~botania~manaResource~4", hasAnimatedAtlas: true, animatedAtlas: { atlasFile: "animated-atlas-0.webp", atlasWidth: 16, atlasHeight: 128, frameCount: 8, frameDurationMs: 100, frames: [[0, 0, 0, 16, 16], [1, 0, 16, 16, 16]], timeline: [[0, 100], [1, 100]] } }] });
 }
 let inputDir = inputArg ? resolve(inputArg) : null;
@@ -1592,7 +1528,7 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 3 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.specialExpectedFactKeys !== 7 || report.counts.specialExpectedFactKeysMissing !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.canonicalCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1 || report.migrationReadiness?.status !== "ready")) {
+if (selfTest && (report.counts.items !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 3 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.specialExpectedFactKeys !== 7 || report.counts.specialExpectedFactKeysMissing !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1 || report.migrationReadiness?.status !== "ready")) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
 if (selfTest) {
