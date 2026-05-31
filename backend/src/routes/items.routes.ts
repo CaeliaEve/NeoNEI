@@ -21,8 +21,7 @@ const router = Router();
 // Helper function to add cache headers for GET requests
 function addCacheHeaders(req: Request, res: Response, next: NextFunction) {
   if (req.method === 'GET') {
-    res.setHeader('Cache-Control', 'public, max-age=300'); // 5 minutes
-    res.setHeader('Vary', 'Accept-Encoding');
+    setPublicCacheHeaders(res, { maxAgeSeconds: 300 }); // 5 minutes
   }
   next();
 }

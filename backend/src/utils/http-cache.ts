@@ -32,6 +32,55 @@ export function setPublicCacheHeaders(
   res.setHeader('Vary', 'Accept-Encoding');
 }
 
+export function parseCacheMaxAgeSeconds(value: string | number | undefined, fallbackSeconds = 0): number {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Math.max(0, Math.floor(value / 1000));
+  }
+
+  const raw = `${value ?? ''}`.trim().toLowerCase();
+  if (!raw) {
+    return Math.max(0, Math.floor(fallbackSeconds));
+  }
+
+  const match = raw.match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)?$/);
+  if (!match) {
+    return Math.max(0, Math.floor(fallbackSeconds));
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2] ?? 'ms';
+  const seconds = unit === 'd'
+    ? amount * 86400
+    : unit === 'h'
+      ? amount * 3600
+      : unit === 'm'
+        ? amount * 60
+        : unit === 's'
+          ? amount
+          : amount / 1000;
+  return Math.max(0, Math.floor(seconds));
+}
+
+export function setStaticAssetCacheHeaders(
+  res: Response,
+  options: {
+    maxAge?: string | number;
+    immutable?: boolean;
+    fallbackSeconds?: number;
+    varyAcceptEncoding?: boolean;
+  } = {},
+): void {
+  const maxAgeSeconds = parseCacheMaxAgeSeconds(options.maxAge, options.fallbackSeconds ?? 0);
+  const directives = ['public', `max-age=${maxAgeSeconds}`];
+  if (options.immutable) {
+    directives.push('immutable');
+  }
+  res.setHeader('Cache-Control', directives.join(', '));
+  if (options.varyAcceptEncoding ?? true) {
+    res.setHeader('Vary', 'Accept-Encoding');
+  }
+}
+
 export function sendNotModifiedIfEtagMatches(req: Request, res: Response, etag: string): boolean {
   res.setHeader('ETag', etag);
   const ifNoneMatch = req.header('if-none-match');

@@ -3,7 +3,12 @@ import path from 'path';
 import { Router } from 'express';
 import { getPublishManifestService } from '../services/publish-manifest.service';
 import { asyncHandler } from '../utils/http';
-import { createWeakEtag, sendNotModifiedIfEtagMatches, setNoStoreHeaders } from '../utils/http-cache';
+import {
+  createWeakEtag,
+  sendNotModifiedIfEtagMatches,
+  setNoStoreHeaders,
+  setPublicCacheHeaders,
+} from '../utils/http-cache';
 import { DATA_DIR, PUBLISH_OUTPUT_DIR } from '../config/runtime-paths';
 
 const router = Router();
@@ -66,7 +71,10 @@ router.get('/manifest',
 );
 
 router.get('/contracts', (_req, res) => {
-  res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
+  setPublicCacheHeaders(res, {
+    maxAgeSeconds: 300,
+    staleWhileRevalidateSeconds: 3600,
+  });
   res.json(runtimeContracts);
 });
 router.get('/diagnostics',

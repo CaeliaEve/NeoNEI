@@ -122,7 +122,7 @@ test('publish static route prefers precompressed sidecars when clients accept th
 
 test('publish static route uses the shared cache header helpers', () => {
   assert.equal(
-    serverSource.includes("import { setNoStoreHeaders, setPublicCacheHeaders } from './utils/http-cache';"),
+    serverSource.includes("import { setNoStoreHeaders, setPublicCacheHeaders, setStaticAssetCacheHeaders } from './utils/http-cache';"),
     true,
     'server should import the shared cache header helpers',
   );
@@ -135,5 +135,15 @@ test('publish static route uses the shared cache header helpers', () => {
     serverSource.includes("res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');"),
     false,
     'server route code should not hand-roll no-store headers',
+  );
+  assert.equal(
+    serverSource.includes('setStaticAssetCacheHeaders(res, {'),
+    true,
+    'static publish/raw artifacts should use the centralized static cache helper',
+  );
+  assert.equal(
+    serverSource.includes('cacheControl: true'),
+    false,
+    'server static routes should not split cache policy between Express sendFile and shared helpers',
   );
 });

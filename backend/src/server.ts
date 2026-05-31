@@ -26,7 +26,7 @@ import { getPageAtlasService } from './services/page-atlas.service';
 import { getAutowarmPolicy } from './config/autowarm-policy';
 import { NeoNeiCompilerService, type CompilerSourceRoots } from './services/neonei-compiler.service';
 import { promoteCompiledAccelerationDatabase } from './services/acceleration-db-pipeline.service';
-import { setNoStoreHeaders, setPublicCacheHeaders } from './utils/http-cache';
+import { setNoStoreHeaders, setPublicCacheHeaders, setStaticAssetCacheHeaders } from './utils/http-cache';
 import { sendErrorEnvelope } from './utils/error-response';
 import { createAdminAccessGuard } from './utils/admin-access';
 
@@ -422,10 +422,12 @@ function createRawStaticRoute(rootDir: string, options?: { maxAge?: string; immu
         return next();
       }
 
-      return res.sendFile(absolutePath, {
-        cacheControl: true,
-        immutable: options?.immutable ?? false,
+      setStaticAssetCacheHeaders(res, {
         maxAge: options?.maxAge ?? 0,
+        immutable: options?.immutable ?? false,
+      });
+      return res.sendFile(absolutePath, {
+        cacheControl: false,
         lastModified: true,
       });
     } catch {
@@ -508,10 +510,12 @@ function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string; 
         });
       }
 
-      return res.sendFile(responsePath, {
-        cacheControl: true,
-        immutable: options?.immutable ?? false,
+      setStaticAssetCacheHeaders(res, {
         maxAge: options?.maxAge ?? 0,
+        immutable: options?.immutable ?? false,
+      });
+      return res.sendFile(responsePath, {
+        cacheControl: false,
         lastModified: true,
       });
     } catch {

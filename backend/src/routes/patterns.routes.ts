@@ -1,13 +1,13 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { PatternsService } from '../services/patterns.service';
 import { sendErrorEnvelope } from '../utils/error-response';
+import { setPublicCacheHeaders } from '../utils/http-cache';
 
 const router = Router();
 
 function addCacheHeaders(req: Request, res: Response, next: NextFunction) {
   if (req.method === 'GET') {
-    res.setHeader('Cache-Control', 'public, max-age=300');
-    res.setHeader('Vary', 'Accept-Encoding');
+    setPublicCacheHeaders(res, { maxAgeSeconds: 300 });
   }
   next();
 }
