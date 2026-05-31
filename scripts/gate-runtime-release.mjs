@@ -40,6 +40,7 @@ const steps = [
   { name: 'API/runtime audit gate', cwd: frontendDir, command: npm, args: ['run', 'audit:api-runtime:gate'] },
   { name: 'runtime contract validation', cwd: frontendDir, command: npm, args: ['run', 'validate:runtime-contracts'] },
   { name: 'runtime v3 regression', cwd: frontendDir, command: npm, args: ['run', 'validate:runtime-v3'] },
+  { name: 'browser E2E Gate C', cwd: frontendDir, command: npm, args: ['run', 'gate:c'] },
   { name: 'browser v3 bench', cwd: frontendDir, command: npm, args: ['run', 'bench:browser-v3'] },
   { name: 'search v3 bench', cwd: frontendDir, command: npm, args: ['run', 'bench:search-v3'] },
   { name: 'recipe v3 bench', cwd: frontendDir, command: npm, args: ['run', 'bench:recipe-v3'] },
@@ -47,7 +48,7 @@ const steps = [
 ];
 
 const selected = process.argv.includes('--quick')
-  ? steps.filter((step) => !step.name.includes('bench') && step.name !== 'runtime v3 regression')
+  ? steps.filter((step) => !step.name.includes('bench') && !step.name.includes('E2E') && step.name !== 'runtime v3 regression')
   : steps;
 
 const startedAt = Date.now();

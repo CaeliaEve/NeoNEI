@@ -25,6 +25,11 @@ test('runtime release gate blocks malformed or non-portable release artifacts', 
     'full release gate must validate runtime-v3 artifact shape',
   );
   assert.equal(
+    hasStep('browser E2E Gate C', "args: ['run', 'gate:c']"),
+    true,
+    'full release gate must cover the browser critical-path E2E suite',
+  );
+  assert.equal(
     hasStep('raw export path hygiene self-test', "args: ['run', 'test:export-paths']"),
     true,
     'release gate must block machine-specific paths in consumed export payloads',
@@ -53,8 +58,8 @@ test('runtime release gate keeps publish/cache/API regressions in the quick prof
     'quick gate must block fallback and legacy dynamic hot-path regressions',
   );
   assert.equal(
-    gateSource.includes("? steps.filter((step) => !step.name.includes('bench') && step.name !== 'runtime v3 regression')"),
+    gateSource.includes("? steps.filter((step) => !step.name.includes('bench') && !step.name.includes('E2E') && step.name !== 'runtime v3 regression')"),
     true,
-    'quick gate should skip only benches and the heavier runtime-v3 regression',
+    'quick gate should skip only benches, browser E2E, and the heavier runtime-v3 regression',
   );
 });
