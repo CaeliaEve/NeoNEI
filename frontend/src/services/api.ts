@@ -96,6 +96,7 @@ import {
   mergeBrowserSearchPackEntries,
   searchBrowserSearchPackEntries,
 } from '../runtime/browserSearchProjection';
+import { buildRuntimePayloadCacheKey, setCacheWithLimit } from '../runtime/cacheUtils';
 
 export type {
   AnimatedAtlasAssetEntry,
@@ -330,19 +331,6 @@ function getRuntimeDiagnosticIdentity(): {
   };
 }
 
-function setCacheWithLimit<K, V>(cache: Map<K, V>, key: K, value: V, limit: number): void {
-  if (cache.has(key)) {
-    cache.delete(key);
-  }
-  cache.set(key, value);
-  if (cache.size > limit) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== undefined) {
-      cache.delete(oldest);
-    }
-  }
-}
-
 function isHttpNotFoundError(error: unknown): boolean {
   if (!error || typeof error !== 'object') {
     return false;
@@ -350,19 +338,6 @@ function isHttpNotFoundError(error: unknown): boolean {
 
   const response = (error as { response?: { status?: number } }).response;
   return Number(response?.status ?? 0) === 404;
-}
-
-function buildRuntimePayloadCacheKey(
-  kind: string,
-  signature: string,
-  identity: Record<string, unknown>,
-): string {
-  return JSON.stringify({
-    type: kind,
-    version: 2,
-    signature,
-    ...identity,
-  });
 }
 
 function withRecipeBootstrapCacheSchema<T extends Record<string, unknown>>(identity: T): T & { schema: string } {
@@ -2210,7 +2185,6 @@ export const api = {
     return getLabPayload<ForestryGeneticsOverview>('/forestry-genetics/overview');
   }
 };
-
 
 
 
