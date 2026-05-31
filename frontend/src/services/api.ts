@@ -83,6 +83,7 @@ import { deleteLabPayload, getLabPayload, postLabPayload, putLabPayload } from '
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../runtime/patternClient';
 import { specialDataRuntimeClient } from '../runtime/specialDataClient';
 import { renderContractRuntimeClient } from '../runtime/renderContractClient';
+import { indexedRecipeRuntimeClient, type IndexedMachineRecipesResponse } from '../runtime/indexedRecipeClient';
 import { getDistDataHomeBootstrap } from './distDataRuntime';
 import {
   browserEntryMatchesLocalSearch,
@@ -1993,7 +1994,7 @@ export const api = {
     if (existingRequest) {
       return existingRequest;
     }
-    const request = getLabPayload<indexedItemRecipeSummaryResponse>(`/recipes/item/${encodeURIComponent(itemId)}/summary`)
+    const request = indexedRecipeRuntimeClient.getItemSummary(itemId)
       .then((payload) => {
         setCacheWithLimit(indexedSummaryCache, itemId, payload, CACHE_LIMITS.indexedSummary);
         return payload;
@@ -2007,7 +2008,7 @@ export const api = {
 
   // Get recipe by ID
   async getIndexedRecipe(recipeId: string): Promise<indexedRecipe> {
-    return getLabPayload<indexedRecipe>(`/recipes/${recipeId}`);
+    return indexedRecipeRuntimeClient.getRecipe(recipeId);
   },
 
   async getIndexedRecipesByIds(recipeIds: string[], options?: SearchItemsFastOptions): Promise<indexedRecipe[]> {
@@ -2015,9 +2016,7 @@ export const api = {
     if (uniqueIds.length === 0) {
       return [];
     }
-    return postLabPayload<indexedRecipe[], { recipeIds: string[] }>('/recipes/batch', { recipeIds: uniqueIds }, {
-      signal: options?.signal,
-    });
+    return indexedRecipeRuntimeClient.getRecipesByIds(uniqueIds, options);
   },
 
   // Get crafting recipes for item
@@ -2030,7 +2029,7 @@ export const api = {
     if (existingRequest) {
       return existingRequest;
     }
-    const request = getLabPayload<indexedRecipe[]>(`/recipes/${itemId}/crafting`)
+    const request = indexedRecipeRuntimeClient.getCraftingRecipes(itemId)
       .then((payload) => {
         setCacheWithLimit(indexedCraftingCache, itemId, payload, CACHE_LIMITS.indexedCrafting);
         return payload;
@@ -2052,7 +2051,7 @@ export const api = {
     if (existingRequest) {
       return existingRequest;
     }
-    const request = getLabPayload<indexedRecipe[]>(`/recipes/${itemId}/usage`)
+    const request = indexedRecipeRuntimeClient.getUsageRecipes(itemId)
       .then((payload) => {
         setCacheWithLimit(indexedUsageCache, itemId, payload, CACHE_LIMITS.indexedUsage);
         return payload;
@@ -2079,28 +2078,17 @@ export const api = {
 
   // Get all available machines for item
   async getIndexedMachinesForItem(itemId: string): Promise<indexedItemMachinesResponse> {
-    return getLabPayload<indexedItemMachinesResponse>(`/recipes/${itemId}/machines`);
+    return indexedRecipeRuntimeClient.getMachinesForItem(itemId);
   },
 
   // Get all machine types
   async getIndexedMachineTypes(): Promise<string[]> {
-    return getLabPayload<string[]>('/recipes/machines/list');
+    return indexedRecipeRuntimeClient.getMachineTypes();
   },
 
   // Get recipes by machine type
-  async getIndexedRecipesByMachine(machineType: string, voltageTier?: string): Promise<{
-    machineType: string;
-    voltageTier: string;
-    recipeCount: number;
-    recipes: indexedRecipe[];
-  }> {
-    const params = voltageTier ? { voltageTier } : {};
-    return getLabPayload<{
-      machineType: string;
-      voltageTier: string;
-      recipeCount: number;
-      recipes: indexedRecipe[];
-    }>(`/recipes/machines/${encodeURIComponent(machineType)}/recipes`, { params });
+  async getIndexedRecipesByMachine(machineType: string, voltageTier?: string): Promise<IndexedMachineRecipesResponse> {
+    return indexedRecipeRuntimeClient.getRecipesByMachine(machineType, voltageTier);
   },
 
   // Get multiblock blueprint by controller item ID
