@@ -2,18 +2,6 @@ import express, { type Request, type Response } from 'express';
 import cors from 'cors';
 import fs from 'fs';
 import compression from 'compression';
-import itemsRoutes from './routes/items.routes';
-import patternsRoutes from './routes/patterns.routes';
-import indexedRecipesRoutes from './routes/recipes-indexed.routes';
-import multiblocksRoutes from './routes/multiblocks.routes';
-import ecosystemRoutes from './routes/ecosystem.routes';
-import gtDiagramsRoutes from './routes/gt-diagrams.routes';
-import forestryGeneticsRoutes from './routes/forestry-genetics.routes';
-import renderContractRoutes from './routes/render-contract.routes';
-import recipeBootstrapRoutes from './routes/recipe-bootstrap.routes';
-import publishRoutes from './routes/publish.routes';
-import runtimeRoutes from './routes/runtime.routes';
-import v1Routes from './routes/v1.routes';
 import { getAccelerationDatabaseManager, getDatabaseManager } from './models/database';
 import { IMAGES_PATH } from './config/runtime-paths';
 import { requestObservability } from './middleware/request-observability';
@@ -26,6 +14,7 @@ import { sendErrorEnvelope } from './utils/error-response';
 import { createAdminAccessGuard } from './utils/admin-access';
 import { registerStaticAssetRoutes } from './routes/static-assets.routes';
 import { registerRuntimeAdminRoutes } from './routes/runtime-admin.routes';
+import { registerApiNamespaces } from './routes/api-namespaces.routes';
 import {
   accelerationRuntime,
   createAccelerationRuntimeMiddleware,
@@ -85,44 +74,8 @@ registerRuntimeAdminRoutes(app, {
   setAccelerationRuntimePhase,
 });
 
-app.use('/runtime', (_req, res, next) => {
-  res.setHeader('x-neonei-api-tier', 'public-runtime');
-  next();
-}, runtimeRoutes);
-if (!PUBLIC_RUNTIME_ONLY) {
-  app.use('/lab', (_req, res, next) => {
-    res.setHeader('x-neonei-api-tier', 'dev-compat');
-    next();
-  });
-  app.use('/lab/items', itemsRoutes);
-  app.use('/lab/patterns', patternsRoutes);
-  app.use('/lab/recipes', indexedRecipesRoutes);
-  app.use('/lab/recipe-bootstrap', recipeBootstrapRoutes);
-  app.use('/lab/publish', publishRoutes);
-  app.use('/lab/render-contract', renderContractRoutes);
-  app.use('/lab/multiblocks', multiblocksRoutes);
-  app.use('/lab/ecosystem', ecosystemRoutes);
-  app.use('/lab/gt-diagrams', gtDiagramsRoutes);
-  app.use('/lab/forestry-genetics', forestryGeneticsRoutes);
-}
+registerApiNamespaces(app, { publicRuntimeOnly: PUBLIC_RUNTIME_ONLY });
 
-app.use('/api', (_req, res, next) => {
-  res.setHeader('x-neonei-api-tier', 'legacy-compat');
-  next();
-});
-if (!PUBLIC_RUNTIME_ONLY) {
-  app.use('/api/items', itemsRoutes);
-  app.use('/api/patterns', patternsRoutes);
-  app.use('/api/recipes-indexed', indexedRecipesRoutes);
-  app.use('/api/multiblocks', multiblocksRoutes);
-  app.use('/api/ecosystem', ecosystemRoutes);
-  app.use('/api/gt-diagrams', gtDiagramsRoutes);
-  app.use('/api/forestry-genetics', forestryGeneticsRoutes);
-  app.use('/api/render-contract', renderContractRoutes);
-  app.use('/api/recipe-bootstrap', recipeBootstrapRoutes);
-}
-app.use('/api/publish', publishRoutes);
-app.use('/api/v1', v1Routes);
 app.use((req, res) => {
   sendErrorEnvelope(req, res, 404, 'NOT_FOUND', 'Route not found', {
     path: req.originalUrl ?? req.url,

@@ -86,7 +86,10 @@ const staticAssetRoutes = existsSync(join(repoRoot, "backend/src/routes/static-a
 const runtimeAdminRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime-admin.routes.ts"))
   ? readText("backend/src/routes/runtime-admin.routes.ts")
   : "";
-const routeSource = [server, staticAssetRoutes, runtimeAdminRoutes].join("\n");
+const apiNamespaceRoutes = existsSync(join(repoRoot, "backend/src/routes/api-namespaces.routes.ts"))
+  ? readText("backend/src/routes/api-namespaces.routes.ts")
+  : "";
+const routeSource = [server, staticAssetRoutes, runtimeAdminRoutes, apiNamespaceRoutes].join("\n");
 const apiService = readText("frontend/src/services/api.ts");
 const runtimeRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime.routes.ts"))
   ? readText("backend/src/routes/runtime.routes.ts")
@@ -123,7 +126,7 @@ const runtimeCapabilities = {
   hasLabNamespace: productRuntimeRoutes.some((line) => /['"`]\/lab\b/.test(line)),
   hasRuntimeDiagnostics: /\/diagnostics/.test(runtimeRoutes) || /\/runtime\/diagnostics/.test(server),
   hasRuntimeContracts: /\/contracts/.test(runtimeRoutes) || /\/runtime\/contracts/.test(server),
-  hasApiTierHeaders: /x-neonei-api-tier/.test(server),
+  hasApiTierHeaders: /x-neonei-api-tier/.test(routeSource),
 };
 
 const dependencyMap = {
