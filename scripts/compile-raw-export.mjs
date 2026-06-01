@@ -360,7 +360,9 @@ function buildExportPathHygieneReport(inputDir, manifest) {
   for (const filePath of files) {
     if (!existsSync(filePath) || isDiagnosticExportPath(filePath, inputDir)) continue;
     auditedFiles += 1;
-    const text = readFileSync(filePath, "utf8");
+    const text = filePath.endsWith(".gz")
+      ? gunzipSync(readFileSync(filePath)).toString("utf8")
+      : readFileSync(filePath, "utf8");
     for (const denied of deniedExportPathPatterns) {
       if (denied.pattern.test(text)) {
         violations.push({
