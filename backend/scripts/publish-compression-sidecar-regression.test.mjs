@@ -12,8 +12,8 @@ const publishPayloadSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-const serverSource = fs.readFileSync(
-  'src/server.ts',
+const staticAssetsRouteSource = fs.readFileSync(
+  'src/routes/static-assets.routes.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -93,27 +93,27 @@ test('publish build report verifies source contract and bundle matching', () => 
 
 test('publish static route prefers precompressed sidecars when clients accept them', () => {
   assert.equal(
-    serverSource.includes("const PUBLISH_STATIC_SIDECAR_VARIANTS = ["),
+    staticAssetsRouteSource.includes("const PUBLISH_STATIC_SIDECAR_VARIANTS = ["),
     true,
     'publish server should declare the available precompressed variants',
   );
   assert.match(
-    serverSource,
+    staticAssetsRouteSource,
     /const PUBLISH_STATIC_SIDECAR_VARIANTS = \[\s*\{\s*encoding: 'br'/,
     'publish server should prefer brotli before gzip when both sidecars are available',
   );
   assert.equal(
-    serverSource.includes("if (!req.headers['x-no-compression'] && canServePrecompressedPublishAsset(normalizedRelativePath))"),
+    staticAssetsRouteSource.includes("if (!req.headers['x-no-compression'] && canServePrecompressedPublishAsset(normalizedRelativePath))"),
     true,
     'publish server should allow smoke tests and diagnostics to bypass sidecar compression explicitly',
   );
   assert.equal(
-    serverSource.includes("res.setHeader('Content-Encoding', contentEncoding);"),
+    staticAssetsRouteSource.includes("res.setHeader('Content-Encoding', contentEncoding);"),
     true,
     'publish server should send the selected content encoding header',
   );
   assert.equal(
-    serverSource.includes("res.setHeader('Vary', 'Accept-Encoding');"),
+    staticAssetsRouteSource.includes("res.setHeader('Vary', 'Accept-Encoding');"),
     true,
     'publish server should vary publish assets on Accept-Encoding',
   );
@@ -122,27 +122,27 @@ test('publish static route prefers precompressed sidecars when clients accept th
 
 test('publish static route uses the shared cache header helpers', () => {
   assert.equal(
-    serverSource.includes("import { setNoStoreHeaders, setPublicCacheHeaders, setStaticAssetCacheHeaders } from './utils/http-cache';"),
+    staticAssetsRouteSource.includes("import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';"),
     true,
-    'server should import the shared cache header helpers',
+    'static assets route should import the shared cache header helpers',
   );
   assert.equal(
-    serverSource.includes('setNoStoreHeaders(res);'),
+    staticAssetsRouteSource.includes('setNoStoreHeaders(res);'),
     true,
     'mutable publish artifacts should use the centralized no-store helper',
   );
   assert.equal(
-    serverSource.includes("res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');"),
+    staticAssetsRouteSource.includes("res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');"),
     false,
     'server route code should not hand-roll no-store headers',
   );
   assert.equal(
-    serverSource.includes('setStaticAssetCacheHeaders(res, {'),
+    staticAssetsRouteSource.includes('setStaticAssetCacheHeaders(res, {'),
     true,
     'static publish/raw artifacts should use the centralized static cache helper',
   );
   assert.equal(
-    serverSource.includes('cacheControl: true'),
+    staticAssetsRouteSource.includes('cacheControl: true'),
     false,
     'server static routes should not split cache policy between Express sendFile and shared helpers',
   );

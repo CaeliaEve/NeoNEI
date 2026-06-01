@@ -211,12 +211,6 @@ function getNow(): number {
     : Date.now();
 }
 
-const indexedCraftingCache = new Map<string, indexedRecipe[]>();
-const indexedUsageCache = new Map<string, indexedRecipe[]>();
-const indexedSummaryCache = new Map<string, indexedItemRecipeSummaryResponse>();
-const indexedCraftingInFlight = new Map<string, Promise<indexedRecipe[]>>();
-const indexedUsageInFlight = new Map<string, Promise<indexedRecipe[]>>();
-const indexedSummaryInFlight = new Map<string, Promise<indexedItemRecipeSummaryResponse>>();
 const recipeBootstrapCache = new Map<string, RecipeBootstrapPayload>();
 const recipeBootstrapInFlight = new Map<string, Promise<RecipeBootstrapPayload>>();
 const recipeBootstrapShardCache = new Map<string, RecipeBootstrapPayload>();
@@ -255,9 +249,6 @@ const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>
 });
 
 const CACHE_LIMITS = {
-  indexedCrafting: 3000,
-  indexedUsage: 3000,
-  indexedSummary: 3000,
   recipeBootstrap: 512,
   recipeBootstrapShard: 512,
   recipeBootstrapSearchPack: 96,
@@ -697,12 +688,7 @@ export const api = {
 
   resetRuntimeCaches(): void {
     itemRuntimeClient.clearCaches();
-    indexedCraftingCache.clear();
-    indexedUsageCache.clear();
-    indexedSummaryCache.clear();
-    indexedCraftingInFlight.clear();
-    indexedUsageInFlight.clear();
-    indexedSummaryInFlight.clear();
+    indexedRecipeRuntimeClient.clearCaches();
     recipeBootstrapCache.clear();
     recipeBootstrapInFlight.clear();
     recipeBootstrapShardCache.clear();
@@ -1878,24 +1864,7 @@ export const api = {
   // === indexed Recipes API ===
 
   async getIndexedItemRecipeSummary(itemId: string): Promise<indexedItemRecipeSummaryResponse> {
-    const cached = indexedSummaryCache.get(itemId);
-    if (cached) {
-      return cached;
-    }
-    const existingRequest = indexedSummaryInFlight.get(itemId);
-    if (existingRequest) {
-      return existingRequest;
-    }
-    const request = indexedRecipeRuntimeClient.getItemSummary(itemId)
-      .then((payload) => {
-        setCacheWithLimit(indexedSummaryCache, itemId, payload, CACHE_LIMITS.indexedSummary);
-        return payload;
-      })
-      .finally(() => {
-        indexedSummaryInFlight.delete(itemId);
-      });
-    indexedSummaryInFlight.set(itemId, request);
-    return request;
+    return indexedRecipeRuntimeClient.getItemSummary(itemId);
   },
 
   // Get recipe by ID
@@ -1913,46 +1882,12 @@ export const api = {
 
   // Get crafting recipes for item
   async getIndexedCraftingRecipes(itemId: string): Promise<indexedRecipe[]> {
-    const cached = indexedCraftingCache.get(itemId);
-    if (cached) {
-      return cached;
-    }
-    const existingRequest = indexedCraftingInFlight.get(itemId);
-    if (existingRequest) {
-      return existingRequest;
-    }
-    const request = indexedRecipeRuntimeClient.getCraftingRecipes(itemId)
-      .then((payload) => {
-        setCacheWithLimit(indexedCraftingCache, itemId, payload, CACHE_LIMITS.indexedCrafting);
-        return payload;
-      })
-      .finally(() => {
-        indexedCraftingInFlight.delete(itemId);
-      });
-    indexedCraftingInFlight.set(itemId, request);
-    return request;
+    return indexedRecipeRuntimeClient.getCraftingRecipes(itemId);
   },
 
   // Get usage recipes for item
   async getIndexedUsageRecipes(itemId: string): Promise<indexedRecipe[]> {
-    const cached = indexedUsageCache.get(itemId);
-    if (cached) {
-      return cached;
-    }
-    const existingRequest = indexedUsageInFlight.get(itemId);
-    if (existingRequest) {
-      return existingRequest;
-    }
-    const request = indexedRecipeRuntimeClient.getUsageRecipes(itemId)
-      .then((payload) => {
-        setCacheWithLimit(indexedUsageCache, itemId, payload, CACHE_LIMITS.indexedUsage);
-        return payload;
-      })
-      .finally(() => {
-        indexedUsageInFlight.delete(itemId);
-      });
-    indexedUsageInFlight.set(itemId, request);
-    return request;
+    return indexedRecipeRuntimeClient.getUsageRecipes(itemId);
   },
 
   async searchItemsFast(keyword: string, limit: number = 60, options?: SearchItemsFastOptions): Promise<ItemSearchBasic[]> {
