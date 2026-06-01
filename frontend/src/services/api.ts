@@ -74,7 +74,7 @@ import {
   setRuntimeDiagnosticIdentity,
 } from '../runtime/diagnostics';
 import { markPerfEvent } from './perfMarks';
-import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRecipeBootstrapCategoryGroupCompat, getRecipeBootstrapCompat, getRecipeBootstrapProducedByGroupCompat, getRecipeBootstrapSearchCompat, getRecipeBootstrapShardCompat, getRecipeBootstrapUsedInGroupCompat, getRuntimeRecipeBootstrap, getRuntimeRecipeUiPayload, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
+import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRecipeBootstrapCategoryGroupCompat, getRecipeBootstrapCompat, getRecipeBootstrapProducedByGroupCompat, getRecipeBootstrapSearchCompat, getRecipeBootstrapShardCompat, getRecipeBootstrapUsedInGroupCompat, getRuntimeRecipeBootstrap, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
 import { createTextureRuntimeClient } from '../runtime/textureClient';
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../runtime/patternClient';
 import { specialDataRuntimeClient } from '../runtime/specialDataClient';
@@ -92,6 +92,7 @@ import {
 } from '../runtime/browserSearchProjection';
 import { buildRuntimePayloadCacheKey, setCacheWithLimit } from '../runtime/cacheUtils';
 import { createBrowserCatalogClient } from '../runtime/browserCatalogClient';
+import { createRecipeUiPayloadClient } from '../runtime/recipeUiPayloadClient';
 import { shouldPreferLiveRecipeBootstrap } from '../runtime/recipeBootstrapPreference';
 
 export type {
@@ -210,9 +211,6 @@ const recipeBootstrapShardInFlight = new Map<string, Promise<RecipeBootstrapPayl
 const recipeBootstrapSearchPackCache = new Map<string, PublishedRecipeBootstrapSearchPack>();
 const recipeBootstrapSearchPackInFlight = new Map<string, Promise<PublishedRecipeBootstrapSearchPack | null>>();
 
-const uiPayloadCache = new Map<string, RecipeUiPayload>();
-const uiPayloadInFlight = new Map<string, Promise<RecipeUiPayload | null>>();
-const missingUiPayloadCache = new Set<string>();
 let browserAtlasIndexCache: BrowserAtlasIndexResponse | null = null;
 let browserAtlasIndexInFlight: Promise<BrowserAtlasIndexResponse | null> | null = null;
 const browserAtlasEntriesInFlight = new Map<string, Promise<BrowserAtlasIndexResponse | null>>();
@@ -388,6 +386,13 @@ const browserCatalogClient = createBrowserCatalogClient({
   resolveRuntimeSignature,
   primeRuntimeSignature: primeRuntimeCacheSignature,
   writePersistentRuntimeCache,
+});
+const recipeUiPayloadClient = createRecipeUiPayloadClient({
+  readPersistent: readPersistentRuntimePayload,
+  persist: persistRuntimePayload,
+  resolveRuntimeSignature,
+  reportMissing: reportMissingRuntimePayload,
+  isHttpNotFoundError,
 });
 function resolvePublishedRecipeBootstrapPath(
   manifest: PublicRuntimeManifest | null | undefined,
@@ -663,9 +668,7 @@ export const api = {
     recipeBootstrapSearchPackCache.clear();
     recipeBootstrapSearchPackInFlight.clear();
     browserCatalogClient.clearSearchCaches();
-    uiPayloadCache.clear();
-    uiPayloadInFlight.clear();
-    missingUiPayloadCache.clear();
+    recipeUiPayloadClient.clearCaches();
     publishedJsonValueCache.clear();
     publishedJsonInFlight.clear();
   },
@@ -680,9 +683,7 @@ export const api = {
     recipeBootstrapSearchPackCache.clear();
     recipeBootstrapSearchPackInFlight.clear();
     browserCatalogClient.clearAllCaches();
-    uiPayloadCache.clear();
-    uiPayloadInFlight.clear();
-    missingUiPayloadCache.clear();
+    recipeUiPayloadClient.clearCaches();
     publishedJsonValueCache.clear();
     publishedJsonInFlight.clear();
     publishManifestCache = null;
@@ -963,70 +964,12 @@ export const api = {
   },
 
   async getOptionalRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload | null> {
-    const cached = uiPayloadCache.get(recipeId);
-    if (cached) {
-      return cached;
-    }
-    if (missingUiPayloadCache.has(recipeId)) {
-      return null;
-    }
-    const existingRequest = uiPayloadInFlight.get(recipeId);
-    if (existingRequest) {
-      return existingRequest;
-    }
-    const request = (async () => {
-      const distDataPayload = await getRuntimeRecipeUiPayload(recipeId);
-      if (distDataPayload) {
-        missingUiPayloadCache.delete(recipeId);
-        setCacheWithLimit(uiPayloadCache, recipeId, distDataPayload, CACHE_LIMITS.uiPayload);
-        return distDataPayload;
-      }
-      const runtimeSignature = await resolveRuntimeSignature();
-
-      const persistent = await readPersistentRuntimePayload<RecipeUiPayload>(
-        'recipe-ui-payload',
-        { recipeId },
-      );
-      if (persistent) {
-        setCacheWithLimit(uiPayloadCache, recipeId, persistent, CACHE_LIMITS.uiPayload);
-        return persistent;
-      }
-      try {
-        const payload = await renderContractRuntimeClient.getRecipeUiPayload(recipeId);
-        missingUiPayloadCache.delete(recipeId);
-        setCacheWithLimit(uiPayloadCache, recipeId, payload, CACHE_LIMITS.uiPayload);
-        persistRuntimePayload('recipe-ui-payload', { recipeId }, payload);
-        return payload;
-      } catch (error) {
-        if (isHttpNotFoundError(error)) {
-          missingUiPayloadCache.add(recipeId);
-          reportMissingRuntimePayload({
-            recipeId,
-            runtimeCacheKey: runtimeSignature,
-            message: 'Recipe UI payload is missing from dist-data, persistent cache, and lab compatibility API',
-            details: {
-              labRoute: '/render-contract/ui-payload',
-            },
-          });
-          return null;
-        }
-        throw error;
-      }
-    })().finally(() => {
-      uiPayloadInFlight.delete(recipeId);
-    });
-    uiPayloadInFlight.set(recipeId, request);
-    return request;
+    return recipeUiPayloadClient.getOptionalRecipeUiPayload(recipeId);
   },
 
   async getRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload> {
-    const payload = await api.getOptionalRecipeUiPayload(recipeId);
-    if (!payload) {
-      throw new Error(`Missing recipe UI payload for ${recipeId}`);
-    }
-    return payload;
+    return recipeUiPayloadClient.getRecipeUiPayload(recipeId);
   },
-
   async getRecipeBootstrap(itemId: string): Promise<RecipeBootstrapPayload> {
     const startedAt = getNow();
     const cached = recipeBootstrapCache.get(itemId);
