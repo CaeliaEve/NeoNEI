@@ -177,6 +177,14 @@ function joinAssetPath(basePath: string, assetPath: string): string {
   return `${basePath.startsWith("/") ? basePath : `/${basePath}`}/${trimSlashes(normalizedAssetPath)}`;
 }
 
+export function resolveDistDataAssetPath(assetPath?: string | null): string | null {
+  const normalizedAssetPath = `${assetPath ?? ""}`.trim();
+  if (!normalizedAssetPath) {
+    return null;
+  }
+  return joinAssetPath(getConfiguredBasePath(), normalizedAssetPath);
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
     cache: "force-cache",

@@ -1,5 +1,6 @@
-﻿import { BACKEND_BASE_URL } from './core/http';
+import { BACKEND_BASE_URL } from './core/http';
 import { ASPECT_HASH_TO_NAME, getThaumcraftAspectTexturePath } from '../thaumcraftAspects';
+import { resolveDistDataAssetPath } from '../distDataRuntime';
 
 const FALLBACK_ITEM_IMAGE_PATH = 'minecraft/barrier~0.png';
 const THAUMCRAFT_ASPECT_MOD_ID = 'thaumcraftneiplugin';
@@ -310,6 +311,9 @@ export function resolveCanonicalRelativePath(relativePath?: string | null): stri
   if (!relativePath) return null;
   if (/^https?:\/\//i.test(relativePath)) return relativePath;
   const normalized = relativePath.replace(/^\/+/, '');
+  if (normalized.startsWith('textures/atlas-assets/')) {
+    return resolveDistDataAssetPath(normalized);
+  }
   const canonicalPath = normalized.startsWith('canonical/')
     ? normalized.slice('canonical/'.length)
     : normalized;

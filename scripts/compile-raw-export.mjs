@@ -1,4 +1,4 @@
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
@@ -951,6 +951,91 @@ function buildBrowserAtlasIndexFromResources(existingIndex, browserItems, textur
     items,
   };
 }
+
+function safeRelativePathSegments(relativePath) {
+  const normalized = normalizeAtlasFileRef(relativePath);
+  if (!normalized || /^[A-Za-z]:[\\/]/.test(normalized) || normalized.startsWith("../") || normalized.includes("/../")) {
+    return null;
+  }
+  return normalized.split("/").filter((segment) => segment && segment !== "." && segment !== "..");
+}
+
+function materializeBrowserAtlasAssets(inputDir, outputDir, browserAtlasIndex) {
+  if (!browserAtlasIndex || !Array.isArray(browserAtlasIndex.items)) {
+    return browserAtlasIndex;
+  }
+
+  const exportRoot = resolve(inputDir, "..");
+  const copied = new Map();
+
+  const rewriteAtlasFile = (atlasFile) => {
+    const normalized = normalizeAtlasFileRef(atlasFile);
+    const segments = safeRelativePathSegments(normalized);
+    if (!normalized || !segments) {
+      return normalized;
+    }
+    if (/^https?:\/\//i.test(normalized) || normalized.startsWith("textures/atlas-assets/")) {
+      return normalized;
+    }
+
+    const withoutCanonical = normalized.startsWith("canonical/")
+      ? normalized.slice("canonical/".length)
+      : normalized;
+    const outputSegments = safeRelativePathSegments(`textures/atlas-assets/${withoutCanonical}`);
+    if (!outputSegments) {
+      return normalized;
+    }
+    const outputRelative = outputSegments.join("/");
+
+    if (copied.has(normalized)) {
+      return copied.get(normalized);
+    }
+
+    const sourceCandidates = [
+      resolve(inputDir, ...segments),
+      resolve(exportRoot, ...segments),
+    ];
+    const sourcePath = sourceCandidates.find((candidate) => existsSync(candidate) && statSync(candidate).isFile());
+    if (!sourcePath) {
+      copied.set(normalized, normalized);
+      return normalized;
+    }
+
+    const outputPath = resolve(outputDir, ...outputSegments);
+    mkdirSync(dirname(outputPath), { recursive: true });
+    copyFileSync(sourcePath, outputPath);
+    copied.set(normalized, outputRelative);
+    return outputRelative;
+  };
+
+  const rewritePlacement = (placement) => {
+    if (!placement || typeof placement !== "object" || !placement.atlasFile) {
+      return placement ?? null;
+    }
+    return {
+      ...placement,
+      atlasFile: rewriteAtlasFile(placement.atlasFile),
+    };
+  };
+
+  const items = browserAtlasIndex.items.map((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return entry;
+    }
+    return {
+      ...entry,
+      staticAtlas: rewritePlacement(entry.staticAtlas),
+      animatedAtlas: rewritePlacement(entry.animatedAtlas),
+    };
+  });
+
+  return {
+    ...browserAtlasIndex,
+    materializedAtlasAssets: Array.from(new Set(copied.values())).filter((value) => value && value.startsWith("textures/atlas-assets/")).length,
+    items,
+  };
+}
+
 function buildAnimationTable(searchItems, textures, animations, browserAtlasIndex) {
   const itemIdByAssetId = new Map();
   for (const item of searchItems) {
@@ -1239,6 +1324,7 @@ function compileRawExport(inputDir, outputDir) {
   }).sort((left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId));
 
   const generatedBrowserAtlasIndex = buildBrowserAtlasIndexFromResources(browserAtlasIndex, browserItems, textures, animationFacts);
+  const materializedBrowserAtlasIndex = materializeBrowserAtlasAssets(inputDir, outputDir, generatedBrowserAtlasIndex);
   const browserAtlasItems = Array.isArray(generatedBrowserAtlasIndex?.items) ? generatedBrowserAtlasIndex.items : [];
   const animationTable = buildAnimationTable(searchItems, textures, animationFacts, generatedBrowserAtlasIndex);
   const atlasAuthorityReport = buildAtlasAuthorityReport(inputDir, browserItems, browserAtlasItems, renderByAssetId);
@@ -1434,7 +1520,7 @@ function compileRawExport(inputDir, outputDir) {
   }
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations: animationFacts, nativeSprites, renderedGifs });
   writeJsonCompact(join(outputDir, "textures", "animation-table.json"), { schemaVersion: "neonei/animation-table/v1", items: animationTable });
-  writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), generatedBrowserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
+  writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), materializedBrowserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
   writeJsonCompact(join(outputDir, "models", "entities", "index.json"), { schemaVersion: "neonei/entity-model-index/v1", entities });
   const distSpecialIndex = {
     schemaVersion: "neonei/special-index/v1",
