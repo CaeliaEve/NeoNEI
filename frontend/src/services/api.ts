@@ -73,8 +73,6 @@ import {
   isStrictRuntimeContractsEnabled,
   setRuntimeDiagnosticIdentity,
 } from '../runtime/diagnostics';
-import { markPerfEvent } from './perfMarks';
-import { canUsePublishedRecipeGroupIndex, canUsePublishedRecipeGroupWindow, canUsePublishedRecipeSearchPack, getRecipeBootstrapCategoryGroupCompat, getRecipeBootstrapCompat, getRecipeBootstrapProducedByGroupCompat, getRecipeBootstrapSearchCompat, getRecipeBootstrapShardCompat, getRecipeBootstrapUsedInGroupCompat, getRuntimeRecipeBootstrap, resolvePublishedRecipeGroupIndexPath, resolvePublishedRecipeGroupWindowPath, resolvePublishedRecipeSearchPath, resolveRuntimeRecipeBootstrapPath } from '../runtime/recipeClient';
 import { createTextureRuntimeClient } from '../runtime/textureClient';
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../runtime/patternClient';
 import { specialDataRuntimeClient } from '../runtime/specialDataClient';
@@ -86,14 +84,11 @@ import {
   deriveBrowserPagePackFromWindow,
   resolvePublishedWindowPath,
 } from '../runtime/browserProjection';
-import {
-  mergeBrowserSearchPackEntries,
-  searchBrowserSearchPackEntries,
-} from '../runtime/browserSearchProjection';
 import { buildRuntimePayloadCacheKey, setCacheWithLimit } from '../runtime/cacheUtils';
 import { createBrowserCatalogClient } from '../runtime/browserCatalogClient';
 import { createRecipeUiPayloadClient } from '../runtime/recipeUiPayloadClient';
 import { shouldPreferLiveRecipeBootstrap } from '../runtime/recipeBootstrapPreference';
+import { createRecipeBootstrapClient } from '../runtime/recipeBootstrapClient';
 
 export type {
   AnimatedAtlasAssetEntry,
@@ -198,18 +193,8 @@ export {
   getPreferredStaticImageUrlFromEntity,
 } from './api/images';
 
-function getNow(): number {
-  return typeof performance !== 'undefined' && typeof performance.now === 'function'
-    ? performance.now()
-    : Date.now();
-}
 
-const recipeBootstrapCache = new Map<string, RecipeBootstrapPayload>();
-const recipeBootstrapInFlight = new Map<string, Promise<RecipeBootstrapPayload>>();
-const recipeBootstrapShardCache = new Map<string, RecipeBootstrapPayload>();
-const recipeBootstrapShardInFlight = new Map<string, Promise<RecipeBootstrapPayload>>();
-const recipeBootstrapSearchPackCache = new Map<string, PublishedRecipeBootstrapSearchPack>();
-const recipeBootstrapSearchPackInFlight = new Map<string, Promise<PublishedRecipeBootstrapSearchPack | null>>();
+
 
 let browserAtlasIndexCache: BrowserAtlasIndexResponse | null = null;
 let browserAtlasIndexInFlight: Promise<BrowserAtlasIndexResponse | null> | null = null;
@@ -230,16 +215,10 @@ const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>
 });
 
 const CACHE_LIMITS = {
-  recipeBootstrap: 512,
-  recipeBootstrapShard: 512,
-  recipeBootstrapSearchPack: 96,
-  browserByIdsPack: 96,
-  uiPayload: 256,
   publishedJson: 96,
 } as const;
 
 const PREFER_LIVE_RECIPE_BOOTSTRAP = shouldPreferLiveRecipeBootstrap();
-const RECIPE_BOOTSTRAP_CACHE_SCHEMA = 'v3';
 
 const STRICT_RUNTIME_V3 = isStrictRuntimeContractsEnabled();
 
@@ -280,13 +259,6 @@ function isHttpNotFoundError(error: unknown): boolean {
 
   const response = (error as { response?: { status?: number } }).response;
   return Number(response?.status ?? 0) === 404;
-}
-
-function withRecipeBootstrapCacheSchema<T extends Record<string, unknown>>(identity: T): T & { schema: string } {
-  return {
-    ...identity,
-    schema: RECIPE_BOOTSTRAP_CACHE_SCHEMA,
-  };
 }
 
 function isPublishedJsonWarm(assetPath: string | null | undefined): boolean {
@@ -394,279 +366,19 @@ const recipeUiPayloadClient = createRecipeUiPayloadClient({
   reportMissing: reportMissingRuntimePayload,
   isHttpNotFoundError,
 });
-function resolvePublishedRecipeBootstrapPath(
-  manifest: PublicRuntimeManifest | null | undefined,
-  itemId: string,
-  kind: 'bootstrap' | 'shard',
-): string | null {
-  const normalizedItemId = `${itemId ?? ''}`.trim();
-  if (!normalizedItemId) {
-    return null;
-  }
-
-  const bundle = manifest?.publishBundle;
-  const publishedItems = Array.isArray(bundle?.files.recipeBootstrapItems)
-    ? bundle?.files.recipeBootstrapItems
-    : [];
-  if (!publishedItems.includes(normalizedItemId)) {
-    return null;
-  }
-
-  return resolveRuntimeRecipeBootstrapPath(
-    kind === 'bootstrap' ? bundle?.files.recipeBootstrapBasePath : bundle?.files.recipeBootstrapShardBasePath,
-    normalizedItemId,
-  );
-}
-
-function resolvePublishedItemRecipeBundlePath(
-  manifest: PublicRuntimeManifest | null | undefined,
-  itemId: string,
-): string | null {
-  const normalizedItemId = `${itemId ?? ''}`.trim();
-  if (!normalizedItemId) {
-    return null;
-  }
-
-  const bundle = manifest?.publishBundle;
-  const publishedItems = Array.isArray(bundle?.files.itemRecipeBundleItems)
-    ? bundle?.files.itemRecipeBundleItems
-    : [];
-  const basePath = `${bundle?.files.itemRecipeBundleBasePath ?? ''}`.trim();
-  if (!basePath || !publishedItems.includes(normalizedItemId)) {
-    return null;
-  }
-
-  return `${basePath.replace(/\/+$/g, '')}/${encodeURIComponent(normalizedItemId)}.json`;
-}
-
-function unwrapPublishedItemRecipeBundle(value: unknown): RecipeBootstrapPayload | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-  const record = value as {
-    bootstrap?: unknown;
-    item?: unknown;
-    producedBy?: unknown;
-    usedIn?: unknown;
-    firstPageRecipes?: {
-      producedBy?: unknown;
-      usedIn?: unknown;
-    };
-  };
-  if (!record.bootstrap || typeof record.bootstrap !== 'object') {
-    return null;
-  }
-  const bootstrap = record.bootstrap as RecipeBootstrapPayload;
-  const producedByRecipeIds = Array.isArray(record.producedBy)
-    ? record.producedBy.map((entry) => `${entry ?? ''}`.trim()).filter(Boolean)
-    : bootstrap.recipeIndex?.producedByRecipes ?? [];
-  const usedInRecipeIds = Array.isArray(record.usedIn)
-    ? record.usedIn.map((entry) => `${entry ?? ''}`.trim()).filter(Boolean)
-    : bootstrap.recipeIndex?.usedInRecipes ?? [];
-  const bundledProducedBy = Array.isArray(record.firstPageRecipes?.producedBy)
-    ? record.firstPageRecipes.producedBy as indexedRecipe[]
-    : bootstrap.indexedCrafting ?? [];
-  const bundledUsedIn = Array.isArray(record.firstPageRecipes?.usedIn)
-    ? record.firstPageRecipes.usedIn as indexedRecipe[]
-    : bootstrap.indexedUsage ?? [];
-  return {
-    ...bootstrap,
-    item: (record.item && typeof record.item === 'object' ? record.item : bootstrap.item) as Item,
-    recipeIndex: {
-      producedByRecipes: producedByRecipeIds,
-      usedInRecipes: usedInRecipeIds,
-    },
-    indexedCrafting: bundledProducedBy,
-    indexedUsage: bundledUsedIn,
-  };
-}
-type RecipeBootstrapLoadSource =
-  | 'dist-data-v3'
-  | 'memory-cache'
-  | 'in-flight'
-  | 'persistent-cache'
-  | 'item-recipe-bundle'
-  | 'legacy-static-bootstrap'
-  | 'dev-compat-api';
-
-function markRecipeBootstrapResolved(
-  itemId: string,
-  source: RecipeBootstrapLoadSource,
-  startedAt: number,
-  payload: RecipeBootstrapPayload | null | undefined,
-): void {
-  const recipeIndex = payload?.recipeIndex;
-  const producedByCount = Array.isArray(recipeIndex?.producedByRecipes) ? recipeIndex.producedByRecipes.length : 0;
-  const usedInCount = Array.isArray(recipeIndex?.usedInRecipes) ? recipeIndex.usedInRecipes.length : 0;
-  markPerfEvent('recipe-bootstrap-resolved', {
-    itemId,
-    source,
-    durationMs: Math.max(0, getNow() - startedAt),
-    producedByCount,
-    usedInCount,
-    indexedCraftingCount: Array.isArray(payload?.indexedCrafting) ? payload.indexedCrafting.length : 0,
-    indexedUsageCount: Array.isArray(payload?.indexedUsage) ? payload.indexedUsage.length : 0,
-  });
-}
-function buildRecipeBootstrapSearchPackKey(itemId: string, tab: 'usedIn' | 'producedBy'): string {
-  return `${`${itemId ?? ''}`.trim()}::${tab}`;
-}
-
-function searchPublishedRecipeBootstrapPack(
-  pack: PublishedRecipeBootstrapSearchPack,
-  query: string,
-  itemMatches: ItemSearchBasic[],
-): RecipeBootstrapSearchPayload {
-  const normalizedQuery = query.trim();
-  const lowerQuery = normalizedQuery.toLowerCase();
-  const candidateItemIds = new Set<string>([
-    ...itemMatches.map((item) => `${item.itemId ?? ''}`.trim()).filter(Boolean),
-    ...(normalizedQuery.includes('~') ? [normalizedQuery] : []),
-  ]);
-
-  const recipeIds = pack.entries
-    .filter((entry) => {
-      if (lowerQuery.startsWith('type:')) {
-        const typeQuery = lowerQuery.slice('type:'.length).trim();
-        return !typeQuery || `${entry.machineType ?? ''}`.toLowerCase().includes(typeQuery);
-      }
-
-      if (lowerQuery && `${entry.searchText ?? ''}`.includes(lowerQuery)) {
-        return true;
-      }
-      if (candidateItemIds.size <= 0) {
-        return false;
-      }
-      return (entry.referencedItemIds ?? []).some((itemId) => candidateItemIds.has(`${itemId ?? ''}`.trim()));
-    })
-    .map((entry) => entry.recipeId);
-
-  return {
-    itemId: pack.itemId,
-    tab: pack.tab,
-    query: normalizedQuery,
-    recipeIds,
-    itemMatches: itemMatches.slice(0, 12),
-  };
-}
-
-async function searchPublishedItemMatches(
-  query: string,
-  limit: number,
-  options?: SearchItemsFastOptions,
-): Promise<ItemSearchBasic[]> {
-  const normalizedQuery = query.trim();
-  if (!normalizedQuery || normalizedQuery.toLowerCase().startsWith('type:')) {
-    return [];
-  }
-
-  const ensureNotAborted = () => {
-    if (options?.signal?.aborted) {
-      throw new DOMException('The operation was aborted.', 'AbortError');
-    }
-  };
-
-  ensureNotAborted();
-  const hotShard = await api.getBrowserSearchPackShard('hot');
-  ensureNotAborted();
-
-  const hotMatches = searchBrowserSearchPackEntries(hotShard?.items ?? [], normalizedQuery, limit);
-  if (hotMatches.length >= limit) {
-    return hotMatches;
-  }
-
-  const tailShard = await api.getBrowserSearchPackShard('tail');
-  ensureNotAborted();
-  const mergedEntries = mergeBrowserSearchPackEntries(hotShard?.items ?? [], tailShard?.items ?? []);
-  const mergedMatches = searchBrowserSearchPackEntries(mergedEntries, normalizedQuery, limit);
-  if (mergedMatches.length > 0 || mergedEntries.length > 0) {
-    return mergedMatches;
-  }
-
-  const fullPack = await api.getBrowserSearchPack().catch(() => null);
-  ensureNotAborted();
-  return searchBrowserSearchPackEntries(fullPack?.items ?? [], normalizedQuery, limit);
-}
-
-async function getPublishedRecipeBootstrapSearchPack(
-  itemId: string,
-  tab: 'usedIn' | 'producedBy',
-): Promise<PublishedRecipeBootstrapSearchPack | null> {
-  if (PREFER_LIVE_RECIPE_BOOTSTRAP) {
-    return null;
-  }
-
-  const normalizedItemId = `${itemId ?? ''}`.trim();
-  if (!normalizedItemId) {
-    return null;
-  }
-
-  const cacheKey = buildRecipeBootstrapSearchPackKey(normalizedItemId, tab);
-  const cached = recipeBootstrapSearchPackCache.get(cacheKey);
-  if (cached) {
-    return cached;
-  }
-
-  const existingRequest = recipeBootstrapSearchPackInFlight.get(cacheKey);
-  if (existingRequest) {
-    return existingRequest;
-  }
-
-  const request = (async () => {
-    const persistent = await readPersistentRuntimePayload<PublishedRecipeBootstrapSearchPack>(
-      'recipe-bootstrap-search-pack',
-      { itemId: normalizedItemId, tab },
-    );
-    if (persistent) {
-      setCacheWithLimit(
-        recipeBootstrapSearchPackCache,
-        cacheKey,
-        persistent,
-        CACHE_LIMITS.recipeBootstrapSearchPack,
-      );
-      return persistent;
-    }
-
-    const manifest = await api.getPublishManifest();
-    if (!canUsePublishedRecipeSearchPack(manifest, normalizedItemId)) {
-      return null;
-    }
-
-    const staticPath = resolvePublishedRecipeSearchPath(manifest, normalizedItemId, tab);
-    if (!staticPath) {
-      return null;
-    }
-
-    try {
-      const published = await fetchPublishedJson<PublishedRecipeBootstrapSearchPack>(staticPath);
-      setCacheWithLimit(
-        recipeBootstrapSearchPackCache,
-        cacheKey,
-        published,
-        CACHE_LIMITS.recipeBootstrapSearchPack,
-      );
-      persistRuntimePayload('recipe-bootstrap-search-pack', { itemId: normalizedItemId, tab }, published);
-      return published;
-    } catch {
-      return null;
-    }
-  })().finally(() => {
-    recipeBootstrapSearchPackInFlight.delete(cacheKey);
-  });
-
-  recipeBootstrapSearchPackInFlight.set(cacheKey, request);
-  return request;
-}
-
+const recipeBootstrapClient = createRecipeBootstrapClient({
+  preferLive: PREFER_LIVE_RECIPE_BOOTSTRAP,
+  getManifest: () => runtimeManifestClient.getPublishManifest(),
+  fetchPublishedJson,
+  readPersistent: readPersistentRuntimePayload,
+  persist: persistRuntimePayload,
+  getBrowserSearchPackShard: (shardId) => browserCatalogClient.getBrowserSearchPackShard(shardId),
+  getBrowserSearchPack: () => browserCatalogClient.getBrowserSearchPack(),
+});
 export const api = {
   trimPreheatRuntimeCaches(): void {
     itemRuntimeClient.clearCaches();
-    recipeBootstrapCache.clear();
-    recipeBootstrapInFlight.clear();
-    recipeBootstrapShardCache.clear();
-    recipeBootstrapShardInFlight.clear();
-    recipeBootstrapSearchPackCache.clear();
-    recipeBootstrapSearchPackInFlight.clear();
+    recipeBootstrapClient.clearCaches();
     browserCatalogClient.clearSearchCaches();
     recipeUiPayloadClient.clearCaches();
     publishedJsonValueCache.clear();
@@ -676,12 +388,7 @@ export const api = {
   resetRuntimeCaches(): void {
     itemRuntimeClient.clearCaches();
     indexedRecipeRuntimeClient.clearCaches();
-    recipeBootstrapCache.clear();
-    recipeBootstrapInFlight.clear();
-    recipeBootstrapShardCache.clear();
-    recipeBootstrapShardInFlight.clear();
-    recipeBootstrapSearchPackCache.clear();
-    recipeBootstrapSearchPackInFlight.clear();
+    recipeBootstrapClient.clearCaches();
     browserCatalogClient.clearAllCaches();
     recipeUiPayloadClient.clearCaches();
     publishedJsonValueCache.clear();
@@ -971,132 +678,11 @@ export const api = {
     return recipeUiPayloadClient.getRecipeUiPayload(recipeId);
   },
   async getRecipeBootstrap(itemId: string): Promise<RecipeBootstrapPayload> {
-    const startedAt = getNow();
-    const cached = recipeBootstrapCache.get(itemId);
-    if (cached) {
-      markRecipeBootstrapResolved(itemId, 'memory-cache', startedAt, cached);
-      return cached;
-    }
-    const existingRequest = recipeBootstrapInFlight.get(itemId);
-    if (existingRequest) {
-      const payload = await existingRequest;
-      markRecipeBootstrapResolved(itemId, 'in-flight', startedAt, payload);
-      return payload;
-    }
-    const request = (async () => {
-      const distDataBootstrap = await getRuntimeRecipeBootstrap(itemId);
-      if (distDataBootstrap) {
-        setCacheWithLimit(recipeBootstrapCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrap);
-        setCacheWithLimit(recipeBootstrapShardCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrapShard);
-        markRecipeBootstrapResolved(itemId, 'dist-data-v3', startedAt, distDataBootstrap);
-        return distDataBootstrap;
-      }
-
-      if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
-        const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
-          'recipe-bootstrap',
-          withRecipeBootstrapCacheSchema({ itemId }),
-        );
-        if (persistent) {
-          setCacheWithLimit(recipeBootstrapCache, itemId, persistent, CACHE_LIMITS.recipeBootstrap);
-          markRecipeBootstrapResolved(itemId, 'persistent-cache', startedAt, persistent);
-          return persistent;
-        }
-
-        const manifest = await api.getPublishManifest();
-        const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap');
-        if (staticPath) {
-          try {
-            const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
-            setCacheWithLimit(recipeBootstrapCache, itemId, published, CACHE_LIMITS.recipeBootstrap);
-            persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), published);
-            markRecipeBootstrapResolved(itemId, 'legacy-static-bootstrap', startedAt, published);
-            return published;
-          } catch {
-            // Fall back to the API route when the static publish bundle is unavailable.
-          }
-        }
-        const itemRecipeBundlePath = resolvePublishedItemRecipeBundlePath(manifest, itemId);
-        if (itemRecipeBundlePath) {
-          try {
-            const publishedBundle = await fetchPublishedJson<unknown>(itemRecipeBundlePath);
-            const bundledBootstrap = unwrapPublishedItemRecipeBundle(publishedBundle);
-            if (bundledBootstrap) {
-              setCacheWithLimit(recipeBootstrapCache, itemId, bundledBootstrap, CACHE_LIMITS.recipeBootstrap);
-              persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), bundledBootstrap);
-              markRecipeBootstrapResolved(itemId, 'item-recipe-bundle', startedAt, bundledBootstrap);
-              return bundledBootstrap;
-            }
-          } catch {
-            // Fall back to the API route when the item-centric bundle is unavailable.
-          }
-        }
-      }
-
-      const payload = await getRecipeBootstrapCompat(itemId);
-      setCacheWithLimit(recipeBootstrapCache, itemId, payload, CACHE_LIMITS.recipeBootstrap);
-      persistRuntimePayload('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), payload);
-      markRecipeBootstrapResolved(itemId, 'dev-compat-api', startedAt, payload);
-      return payload;
-    })().finally(() => {
-      recipeBootstrapInFlight.delete(itemId);
-    });
-    recipeBootstrapInFlight.set(itemId, request);
-    return request;
+    return recipeBootstrapClient.getRecipeBootstrap(itemId);
   },
 
   async getRecipeBootstrapShard(itemId: string): Promise<RecipeBootstrapPayload> {
-    const startedAt = getNow();
-    const cached = recipeBootstrapShardCache.get(itemId);
-    if (cached) {
-      return cached;
-    }
-    const existingRequest = recipeBootstrapShardInFlight.get(itemId);
-    if (existingRequest) {
-      return existingRequest;
-    }
-    const request = (async () => {
-      const distDataBootstrap = await getRuntimeRecipeBootstrap(itemId);
-      if (distDataBootstrap) {
-        setCacheWithLimit(recipeBootstrapCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrap);
-        setCacheWithLimit(recipeBootstrapShardCache, itemId, distDataBootstrap, CACHE_LIMITS.recipeBootstrapShard);
-        markRecipeBootstrapResolved(itemId, 'dist-data-v3', startedAt, distDataBootstrap);
-        return distDataBootstrap;
-      }
-
-      if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
-        const persistent = await readPersistentRuntimePayload<RecipeBootstrapPayload>(
-          'recipe-bootstrap-shard',
-          withRecipeBootstrapCacheSchema({ itemId }),
-        );
-        if (persistent) {
-          setCacheWithLimit(recipeBootstrapShardCache, itemId, persistent, CACHE_LIMITS.recipeBootstrapShard);
-          return persistent;
-        }
-
-        const manifest = await api.getPublishManifest();
-        const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'shard');
-        if (staticPath) {
-          try {
-            const published = await fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
-            setCacheWithLimit(recipeBootstrapShardCache, itemId, published, CACHE_LIMITS.recipeBootstrapShard);
-            persistRuntimePayload('recipe-bootstrap-shard', withRecipeBootstrapCacheSchema({ itemId }), published);
-            return published;
-          } catch {
-            // Fall back to the API route when the static publish bundle is unavailable.
-          }
-        }
-      }
-
-      const payload = await getRecipeBootstrapShardCompat(itemId);
-      setCacheWithLimit(recipeBootstrapShardCache, itemId, payload, CACHE_LIMITS.recipeBootstrapShard);
-      persistRuntimePayload('recipe-bootstrap-shard', withRecipeBootstrapCacheSchema({ itemId }), payload);
-      return payload;
-    })().finally(() => {
-      recipeBootstrapShardInFlight.delete(itemId);
-    });
-    recipeBootstrapShardInFlight.set(itemId, request);
-    return request;
+    return recipeBootstrapClient.getRecipeBootstrapShard(itemId);
   },
 
   async getRecipeBootstrapProducedByGroup(
@@ -1105,105 +691,7 @@ export const api = {
     voltageTier?: string | null,
     options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; machineKey?: string | null },
   ): Promise<RecipeBootstrapMachineGroupPayload> {
-    const normalizedMachineKey = `${options?.machineKey ?? ''}`.trim();
-    const machineKey = normalizedMachineKey || (`${machineType ?? ''}`.trim() ? `${machineType}::${voltageTier ?? ''}` : '');
-    if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
-      const persistent = await readPersistentRuntimePayload<RecipeBootstrapMachineGroupPayload>(
-        'recipe-bootstrap-produced-by-group',
-        withRecipeBootstrapCacheSchema({
-          itemId,
-          machineType,
-          machineKey: machineKey || null,
-          voltageTier: voltageTier ?? null,
-          offset: options?.offset ?? 0,
-          limit: options?.limit ?? null,
-          includeRecipeIds: options?.includeRecipeIds === true,
-        }),
-      );
-      if (persistent) {
-        return persistent;
-      }
-
-      const manifest = await api.getPublishManifest();
-      if (canUsePublishedRecipeGroupIndex(manifest, itemId, options) && machineKey) {
-        const staticPath = resolvePublishedRecipeGroupIndexPath({
-          manifest,
-          itemId,
-          tab: 'producedBy',
-          kind: 'machine',
-          key: machineKey,
-        });
-        if (staticPath) {
-          try {
-            const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
-            persistRuntimePayload(
-              'recipe-bootstrap-produced-by-group',
-              withRecipeBootstrapCacheSchema({
-                itemId,
-                machineType,
-                machineKey: machineKey || null,
-                voltageTier: voltageTier ?? null,
-                offset: options?.offset ?? 0,
-                limit: options?.limit ?? null,
-                includeRecipeIds: options?.includeRecipeIds === true,
-              }),
-              published,
-            );
-            return published;
-          } catch {
-            // Fall back to the API route when the static publish bundle is unavailable.
-          }
-        }
-      }
-      if (canUsePublishedRecipeGroupWindow(manifest, itemId, options) && machineKey) {
-        const staticPath = resolvePublishedRecipeGroupWindowPath({
-          manifest,
-          itemId,
-          tab: 'producedBy',
-          kind: 'machine',
-          key: machineKey,
-          offset: options?.offset ?? 0,
-          limit: options?.limit ?? 0,
-        });
-        if (staticPath) {
-          try {
-            const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
-            persistRuntimePayload(
-              'recipe-bootstrap-produced-by-group',
-              withRecipeBootstrapCacheSchema({
-                itemId,
-                machineType,
-                machineKey: machineKey || null,
-                voltageTier: voltageTier ?? null,
-                offset: options?.offset ?? 0,
-                limit: options?.limit ?? null,
-                includeRecipeIds: options?.includeRecipeIds === true,
-              }),
-              published,
-            );
-            return published;
-          } catch {
-            // Fall back to the API route when the static publish bundle is unavailable.
-          }
-        }
-      }
-    }
-
-    const payload = await getRecipeBootstrapProducedByGroupCompat(itemId, machineType, voltageTier, options);
-    persistRuntimePayload(
-      'recipe-bootstrap-produced-by-group',
-      withRecipeBootstrapCacheSchema({
-        itemId,
-        machineType,
-        machineKey: machineKey || null,
-        voltageTier: voltageTier ?? null,
-        offset: options?.offset ?? 0,
-        limit: options?.limit ?? null,
-        includeRecipeIds: options?.includeRecipeIds === true,
-      }),
-      payload,
-    );
-    return payload;
+    return recipeBootstrapClient.getRecipeBootstrapProducedByGroup(itemId, machineType, voltageTier, options);
   },
 
   async getRecipeBootstrapUsedInGroup(
@@ -1212,105 +700,7 @@ export const api = {
     voltageTier?: string | null,
     options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; machineKey?: string | null },
   ): Promise<RecipeBootstrapMachineGroupPayload> {
-    const normalizedMachineKey = `${options?.machineKey ?? ''}`.trim();
-    const machineKey = normalizedMachineKey || (`${machineType ?? ''}`.trim() ? `${machineType}::${voltageTier ?? ''}` : '');
-    if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
-      const persistent = await readPersistentRuntimePayload<RecipeBootstrapMachineGroupPayload>(
-        'recipe-bootstrap-used-in-group',
-        withRecipeBootstrapCacheSchema({
-          itemId,
-          machineType,
-          machineKey: machineKey || null,
-          voltageTier: voltageTier ?? null,
-          offset: options?.offset ?? 0,
-          limit: options?.limit ?? null,
-          includeRecipeIds: options?.includeRecipeIds === true,
-        }),
-      );
-      if (persistent) {
-        return persistent;
-      }
-
-      const manifest = await api.getPublishManifest();
-      if (canUsePublishedRecipeGroupIndex(manifest, itemId, options) && machineKey) {
-        const staticPath = resolvePublishedRecipeGroupIndexPath({
-          manifest,
-          itemId,
-          tab: 'usedIn',
-          kind: 'machine',
-          key: machineKey,
-        });
-        if (staticPath) {
-          try {
-            const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
-            persistRuntimePayload(
-              'recipe-bootstrap-used-in-group',
-              withRecipeBootstrapCacheSchema({
-                itemId,
-                machineType,
-                machineKey: machineKey || null,
-                voltageTier: voltageTier ?? null,
-                offset: options?.offset ?? 0,
-                limit: options?.limit ?? null,
-                includeRecipeIds: options?.includeRecipeIds === true,
-              }),
-              published,
-            );
-            return published;
-          } catch {
-            // Fall back to the API route when the static publish bundle is unavailable.
-          }
-        }
-      }
-      if (canUsePublishedRecipeGroupWindow(manifest, itemId, options) && machineKey) {
-        const staticPath = resolvePublishedRecipeGroupWindowPath({
-          manifest,
-          itemId,
-          tab: 'usedIn',
-          kind: 'machine',
-          key: machineKey,
-          offset: options?.offset ?? 0,
-          limit: options?.limit ?? 0,
-        });
-        if (staticPath) {
-          try {
-            const published = await fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
-            persistRuntimePayload(
-              'recipe-bootstrap-used-in-group',
-              withRecipeBootstrapCacheSchema({
-                itemId,
-                machineType,
-                machineKey: machineKey || null,
-                voltageTier: voltageTier ?? null,
-                offset: options?.offset ?? 0,
-                limit: options?.limit ?? null,
-                includeRecipeIds: options?.includeRecipeIds === true,
-              }),
-              published,
-            );
-            return published;
-          } catch {
-            // Fall back to the API route when the static publish bundle is unavailable.
-          }
-        }
-      }
-    }
-
-    const payload = await getRecipeBootstrapUsedInGroupCompat(itemId, machineType, voltageTier, options);
-    persistRuntimePayload(
-      'recipe-bootstrap-used-in-group',
-      withRecipeBootstrapCacheSchema({
-        itemId,
-        machineType,
-        machineKey: machineKey || null,
-        voltageTier: voltageTier ?? null,
-        offset: options?.offset ?? 0,
-        limit: options?.limit ?? null,
-        includeRecipeIds: options?.includeRecipeIds === true,
-      }),
-      payload,
-    );
-    return payload;
+    return recipeBootstrapClient.getRecipeBootstrapUsedInGroup(itemId, machineType, voltageTier, options);
   },
 
   async getRecipeBootstrapCategoryGroup(
@@ -1319,99 +709,7 @@ export const api = {
     categoryKey: string,
     options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
   ): Promise<RecipeBootstrapCategoryGroupPayload> {
-    if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
-      const persistent = await readPersistentRuntimePayload<RecipeBootstrapCategoryGroupPayload>(
-        'recipe-bootstrap-category-group',
-        withRecipeBootstrapCacheSchema({
-          itemId,
-          tab,
-          categoryKey,
-          offset: options?.offset ?? 0,
-          limit: options?.limit ?? null,
-          includeRecipeIds: options?.includeRecipeIds === true,
-        }),
-      );
-      if (persistent) {
-        return persistent;
-      }
-
-      const manifest = await api.getPublishManifest();
-      if (canUsePublishedRecipeGroupIndex(manifest, itemId, options)) {
-        const staticPath = resolvePublishedRecipeGroupIndexPath({
-          manifest,
-          itemId,
-          tab,
-          kind: 'category',
-          key: categoryKey,
-        });
-        if (staticPath) {
-          try {
-            const published = await fetchPublishedJson<RecipeBootstrapCategoryGroupPayload>(staticPath);
-            persistRuntimePayload(
-              'recipe-bootstrap-category-group',
-              withRecipeBootstrapCacheSchema({
-                itemId,
-                tab,
-                categoryKey,
-                offset: options?.offset ?? 0,
-                limit: options?.limit ?? null,
-                includeRecipeIds: options?.includeRecipeIds === true,
-              }),
-              published,
-            );
-            return published;
-          } catch {
-            // Fall back to the API route when the static publish bundle is unavailable.
-          }
-        }
-      }
-      if (canUsePublishedRecipeGroupWindow(manifest, itemId, options)) {
-        const staticPath = resolvePublishedRecipeGroupWindowPath({
-          manifest,
-          itemId,
-          tab,
-          kind: 'category',
-          key: categoryKey,
-          offset: options?.offset ?? 0,
-          limit: options?.limit ?? 0,
-        });
-        if (staticPath) {
-          try {
-            const published = await fetchPublishedJson<RecipeBootstrapCategoryGroupPayload>(staticPath);
-            persistRuntimePayload(
-              'recipe-bootstrap-category-group',
-              withRecipeBootstrapCacheSchema({
-                itemId,
-                tab,
-                categoryKey,
-                offset: options?.offset ?? 0,
-                limit: options?.limit ?? null,
-                includeRecipeIds: options?.includeRecipeIds === true,
-              }),
-              published,
-            );
-            return published;
-          } catch {
-            // Fall back to the API route when the static publish bundle is unavailable.
-          }
-        }
-      }
-    }
-
-    const payload = await getRecipeBootstrapCategoryGroupCompat(itemId, tab, categoryKey, options);
-    persistRuntimePayload(
-      'recipe-bootstrap-category-group',
-      withRecipeBootstrapCacheSchema({
-        itemId,
-        tab,
-        categoryKey,
-        offset: options?.offset ?? 0,
-        limit: options?.limit ?? null,
-        includeRecipeIds: options?.includeRecipeIds === true,
-      }),
-      payload,
-    );
-    return payload;
+    return recipeBootstrapClient.getRecipeBootstrapCategoryGroup(itemId, tab, categoryKey, options);
   },
 
   async getRecipeBootstrapSearch(
@@ -1420,48 +718,15 @@ export const api = {
     query: string,
     options?: SearchItemsFastOptions,
   ): Promise<RecipeBootstrapSearchPayload> {
-    const normalizedQuery = query.trim();
-    if (!normalizedQuery) {
-      return {
-        itemId,
-        tab,
-        query: normalizedQuery,
-        recipeIds: [],
-        itemMatches: [],
-      };
-    }
-
-    if (!PREFER_LIVE_RECIPE_BOOTSTRAP) {
-      const persistent = await readPersistentRuntimePayload<RecipeBootstrapSearchPayload>(
-        'recipe-bootstrap-search',
-        { itemId, tab, query: normalizedQuery },
-      );
-      if (persistent) {
-        return persistent;
-      }
-
-      const publishedPack = await getPublishedRecipeBootstrapSearchPack(itemId, tab);
-      if (publishedPack) {
-        const itemMatches = await searchPublishedItemMatches(normalizedQuery, 80, { signal: options?.signal })
-          .catch(() => []);
-        const result = searchPublishedRecipeBootstrapPack(publishedPack, normalizedQuery, itemMatches);
-        persistRuntimePayload('recipe-bootstrap-search', { itemId, tab, query: normalizedQuery }, result);
-        return result;
-      }
-    }
-
-    const payload = await getRecipeBootstrapSearchCompat(itemId, tab, normalizedQuery, options);
-    persistRuntimePayload('recipe-bootstrap-search', { itemId, tab, query: normalizedQuery }, payload);
-    return payload;
+    return recipeBootstrapClient.getRecipeBootstrapSearch(itemId, tab, query, options);
   },
 
   async prefetchRecipeBootstrapSearchPack(
     itemId: string,
     tab: 'usedIn' | 'producedBy',
   ): Promise<void> {
-    await getPublishedRecipeBootstrapSearchPack(itemId, tab);
+    return recipeBootstrapClient.prefetchRecipeBootstrapSearchPack(itemId, tab);
   },
-
   // === indexed Recipes API ===
 
   async getIndexedItemRecipeSummary(itemId: string): Promise<indexedItemRecipeSummaryResponse> {
