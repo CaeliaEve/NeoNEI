@@ -980,7 +980,9 @@ function materializeBrowserAtlasAssets(inputDir, outputDir, browserAtlasIndex) {
 
     const withoutCanonical = normalized.startsWith("canonical/")
       ? normalized.slice("canonical/".length)
-      : normalized;
+      : normalized.startsWith("assets/textures/atlas-assets/")
+        ? normalized.slice("assets/textures/atlas-assets/".length)
+        : normalized;
     const outputSegments = safeRelativePathSegments(`textures/atlas-assets/${withoutCanonical}`);
     if (!outputSegments) {
       return normalized;
