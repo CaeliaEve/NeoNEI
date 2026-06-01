@@ -80,11 +80,18 @@ const requireRuntimeDiagnostics = !hasArg("--allow-missing-runtime-diagnostics")
 const requireApiTierHeaders = !hasArg("--allow-missing-api-tier-headers");
 
 const server = readText("backend/src/server.ts");
+const staticAssetRoutes = existsSync(join(repoRoot, "backend/src/routes/static-assets.routes.ts"))
+  ? readText("backend/src/routes/static-assets.routes.ts")
+  : "";
+const runtimeAdminRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime-admin.routes.ts"))
+  ? readText("backend/src/routes/runtime-admin.routes.ts")
+  : "";
+const routeSource = [server, staticAssetRoutes, runtimeAdminRoutes].join("\n");
 const apiService = readText("frontend/src/services/api.ts");
 const runtimeRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime.routes.ts"))
   ? readText("backend/src/routes/runtime.routes.ts")
   : "";
-const routeRegistrationsWithContext = collectRouteRegistrationsWithContext(server);
+const routeRegistrationsWithContext = collectRouteRegistrationsWithContext(routeSource);
 const routeRegistrations = routeRegistrationsWithContext.map((route) => route.line);
 const staticMounts = routeRegistrationsWithContext
   .filter((route) => /express\.static|createPublishStaticRoute|createRawStaticRoute/.test(route.line))

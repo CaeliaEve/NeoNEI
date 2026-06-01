@@ -17,7 +17,7 @@ import publishRoutes from './routes/publish.routes';
 import runtimeRoutes from './routes/runtime.routes';
 import v1Routes from './routes/v1.routes';
 import { getAccelerationDatabaseManager, getDatabaseManager } from './models/database';
-import { IMAGES_PATH, NESQL_CANONICAL_DIR, PUBLISH_OUTPUT_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from './config/runtime-paths';
+import { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from './config/runtime-paths';
 import { requestObservability } from './middleware/request-observability';
 import { errorHandler } from './middleware/error-handler';
 import { logger } from './utils/logger';
@@ -26,10 +26,10 @@ import { getPageAtlasService } from './services/page-atlas.service';
 import { getAutowarmPolicy } from './config/autowarm-policy';
 import { NeoNeiCompilerService, type CompilerSourceRoots } from './services/neonei-compiler.service';
 import { promoteCompiledAccelerationDatabase } from './services/acceleration-db-pipeline.service';
-import { setPublicCacheHeaders } from './utils/http-cache';
 import { sendErrorEnvelope } from './utils/error-response';
 import { createAdminAccessGuard } from './utils/admin-access';
 import { registerStaticAssetRoutes } from './routes/static-assets.routes';
+import { registerRuntimeAdminRoutes } from './routes/runtime-admin.routes';
 
 const app = express();
 const parsedPort = Number(process.env.PORT);
@@ -391,168 +391,12 @@ async function reconcileAccelerationRuntime(accelerationDbManager: ReturnType<ty
   });
 }
 
-app.get('/api/health', (_req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    acceleration: {
-      phase: accelerationRuntime.phase,
-      message: accelerationRuntime.message,
-      blocking: accelerationRuntime.blocking,
-      stale: accelerationRuntime.stale,
-      activeApiRequests: accelerationRuntime.activeApiRequests,
-      lastCompiledSignature: accelerationRuntime.lastCompiledSignature,
-      lastError: accelerationRuntime.lastError,
-    },
-  });
-});
-
-app.get('/api', (_req, res) => {
-  res.json({
-    message: 'NeoNEI API',
-    version: '1.0.0',
-    endpoints: {
-      health: '/api/health',
-      items: '/api/items',
-      mods: '/api/items/mods',
-      indexedRecipes: '/api/recipes-indexed',
-      multiblocks: '/api/multiblocks/:controllerItemId',
-      gtDiagrams: '/api/gt-diagrams/overview',
-      forestryGenetics: '/api/forestry-genetics/overview',
-      patterns: '/api/patterns',
-      publishManifest: '/api/publish/manifest',
-    },
-  });
-});
-
-app.get('/api/openapi.json', (_req, res) => {
-  setPublicCacheHeaders(res, {
-    maxAgeSeconds: 300,
-    staleWhileRevalidateSeconds: 3600,
-    staleIfErrorSeconds: 86400,
-  });
-  res.json({
-    openapi: '3.1.0',
-    info: {
-      title: 'NeoNEI Public Runtime API',
-      version: '1.0.0',
-    },
-    paths: {
-      '/api/health': { get: { summary: 'Runtime health and acceleration status' } },
-      '/runtime/health': { get: { summary: 'Product-semantic runtime health endpoint' } },
-      '/runtime/manifest': { get: { summary: 'Active runtime manifest' } },
-      '/runtime/contracts': { get: { summary: 'Runtime contract index' } },
-      '/runtime/diagnostics': { get: { summary: 'Public runtime readiness diagnostics' } },
-      '/ops/runtime': { get: { summary: 'Token-protected runtime diagnostics' } },
-      '/ops/acceleration/reconcile': { post: { summary: 'Token-protected rebuild/materialize trigger' } },
-      '/lab/items': { get: { summary: 'Development compatibility item queries' } },
-      '/lab/recipes': { get: { summary: 'Development compatibility recipe queries' } },
-      '/api/v1/health': { get: { summary: 'Legacy compatibility runtime health endpoint' } },
-      '/api/v1/runtime/manifest': { get: { summary: 'Legacy compatibility active runtime manifest' } },
-      '/api/v1/runtime/contracts': { get: { summary: 'Legacy compatibility runtime contract index' } },
-      '/api/publish/manifest': { get: { summary: 'No-cache active publish manifest' } },
-      '/api/publish/home-bootstrap': { get: { summary: 'Fallback home bootstrap payload' } },
-      '/publish/{artifactPath}': { get: { summary: 'Immutable static publish artifacts except active manifests' } },
-      '/api/admin/acceleration/reconcile': { post: { summary: 'Token-protected rebuild/materialize trigger' } },
-      '/api/admin/runtime': { get: { summary: 'Token-protected runtime diagnostics' } },
-    },
-  });
-});
-
-app.get('/ops/runtime', (req, res) => {
-  if (!requireAdminToken(req, res)) {
-    return;
-  }
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    acceleration: accelerationRuntime,
-    publish: {
-      outputDir: PUBLISH_OUTPUT_DIR,
-      exists: fs.existsSync(PUBLISH_OUTPUT_DIR),
-    },
-  });
-});
-
-app.get('/api/admin/runtime', (req, res) => {
-  if (!requireAdminToken(req, res)) {
-    return;
-  }
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    acceleration: accelerationRuntime,
-    publish: {
-      outputDir: PUBLISH_OUTPUT_DIR,
-      exists: fs.existsSync(PUBLISH_OUTPUT_DIR),
-    },
-  });
-});
-
-app.post('/ops/acceleration/reconcile', async (req, res) => {
-  if (!requireAdminToken(req, res)) {
-    return;
-  }
-  if (!runtimeAccelerationDbManager) {
-    sendErrorEnvelope(req, res, 503, 'ACCELERATION_MANAGER_NOT_READY', 'Acceleration manager is not ready');
-    return;
-  }
-  if (accelerationRuntime.phase === 'compiling' || accelerationRuntime.phase === 'promoting' || accelerationRuntime.blocking) {
-    sendErrorEnvelope(req, res, 409, 'ACCELERATION_RECONCILE_IN_PROGRESS', 'Acceleration reconcile is already in progress', {
-      phase: accelerationRuntime.phase,
-      blocking: accelerationRuntime.blocking,
-    });
-    return;
-  }
-
-  logger.info('[OPS] acceleration reconcile requested', { ip: req.ip });
-  void reconcileAccelerationRuntime(runtimeAccelerationDbManager).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    setAccelerationRuntimePhase('error', 'Ops acceleration reconciliation failed.', {
-      stale: true,
-      lastError: message,
-    });
-    logger.error('[OPS] acceleration reconcile failed', error);
-  });
-
-  res.status(202).json({
-    status: 'accepted',
-    phase: accelerationRuntime.phase,
-    message: 'Acceleration reconciliation scheduled.',
-  });
-});
-
-app.post('/api/admin/acceleration/reconcile', async (req, res) => {
-  if (!requireAdminToken(req, res)) {
-    return;
-  }
-  if (!runtimeAccelerationDbManager) {
-    sendErrorEnvelope(req, res, 503, 'ACCELERATION_MANAGER_NOT_READY', 'Acceleration manager is not ready');
-    return;
-  }
-  if (accelerationRuntime.phase === 'compiling' || accelerationRuntime.phase === 'promoting' || accelerationRuntime.blocking) {
-    sendErrorEnvelope(req, res, 409, 'ACCELERATION_RECONCILE_IN_PROGRESS', 'Acceleration reconcile is already in progress', {
-      phase: accelerationRuntime.phase,
-      blocking: accelerationRuntime.blocking,
-    });
-    return;
-  }
-
-  logger.info('[ADMIN] acceleration reconcile requested', { ip: req.ip });
-  void reconcileAccelerationRuntime(runtimeAccelerationDbManager).catch((error) => {
-    const message = error instanceof Error ? error.message : String(error);
-    setAccelerationRuntimePhase('error', 'Admin acceleration reconciliation failed.', {
-      stale: true,
-      lastError: message,
-    });
-    logger.error('[ADMIN] acceleration reconcile failed', error);
-  });
-
-  res.status(202).json({
-    status: 'accepted',
-    phase: accelerationRuntime.phase,
-    message: 'Acceleration reconciliation scheduled.',
-  });
+registerRuntimeAdminRoutes(app, {
+  accelerationRuntime,
+  requireAdminToken,
+  getRuntimeAccelerationDbManager: () => runtimeAccelerationDbManager,
+  reconcileAccelerationRuntime,
+  setAccelerationRuntimePhase,
 });
 
 app.use('/runtime', (_req, res, next) => {

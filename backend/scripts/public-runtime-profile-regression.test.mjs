@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const serverSource = readFileSync(join(repoRoot, 'backend/src/server.ts'), 'utf8');
+const staticAssetRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/static-assets.routes.ts'), 'utf8');
 const errorResponseSource = readFileSync(join(repoRoot, 'backend/src/utils/error-response.ts'), 'utf8');
 const patternsRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/patterns.routes.ts'), 'utf8');
 const multiblocksRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/multiblocks.routes.ts'), 'utf8');
@@ -17,7 +18,7 @@ test('public runtime profile is explicit and disables lab/dev dynamic mounts', (
   assert.match(serverSource, /if \(!PUBLIC_RUNTIME_ONLY\) \{\s*app\.use\('\/lab'/s);
   assert.match(serverSource, /if \(!PUBLIC_RUNTIME_ONLY\) \{\s*app\.use\('\/api\/items'/s);
   assert.match(serverSource, /app\.use\('\/runtime'[\s\S]*runtimeRoutes\)/);
-  assert.match(serverSource, /app\.use\(\s*'\/publish'/);
+  assert.match(staticAssetRoutesSource, /app\.use\(\s*'\/publish'/);
 });
 
 test('unmatched routes use the same diagnostic error envelope', () => {
