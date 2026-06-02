@@ -15,7 +15,6 @@ import {
   hasGlobalBrowserAtlas,
   normalizeFrames,
   normalizeTimeline,
-  warmAllGlobalBrowserAtlases,
   warmGlobalBrowserAtlasForItemsDetailed,
   type BrowserAtlasItemEntry,
 } from "../services/globalBrowserAtlas";
@@ -42,6 +41,8 @@ type PreparedGlobalAnimation = {
   atlasFile: string;
   frames: Array<{ index: number; x: number; y: number; width: number; height: number }>;
   timeline: Array<{ frameIndex: number; durationMs: number }>;
+  frameBitmaps: Map<string, ImageBitmap>;
+  pendingFrameBitmaps: Set<string>;
 };
 
 const props = withDefaults(defineProps<{
@@ -86,14 +87,14 @@ const slotChromeCache = new Map<string, HTMLCanvasElement>();
 let resizeObserver: ResizeObserver | null = null;
 let renderFrameHandle: number | null = null;
 let animationLoopHandle: number | null = null;
+let animationResumeTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+let lastEntriesChangedAt = 0;
 let atlasLoadSeq = 0;
 let globalAtlasWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let globalAtlasTextureWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
 let layoutRequestSeq = 0;
 let lastDrawHadAnimatedFrame = false;
-let globalAtlasResidentPromise: Promise<void> | null = null;
-
 const gap = 4;
 const cardSize = computed(() => Math.max(28, Math.floor(props.itemSize)));
 const iconSize = computed(() => Math.max(24, Math.floor(cardSize.value * 0.9)));
@@ -163,6 +164,20 @@ function scheduleRender() {
     renderFrameHandle = null;
     draw();
   });
+}
+
+function canRunAnimatedOverlay(): boolean {
+  return props.enableAnimation && performance.now() - lastEntriesChangedAt > 650;
+}
+
+function scheduleAnimationResume() {
+  if (animationResumeTimer !== null) {
+    clearTimeout(animationResumeTimer);
+  }
+  animationResumeTimer = globalThis.setTimeout(() => {
+    animationResumeTimer = null;
+    scheduleRender();
+  }, 720);
 }
 
 async function refreshHomeGridLayout() {
@@ -236,17 +251,7 @@ function ensureGlobalAtlasResident() {
   if (!props.preferAtlas || !hasGlobalBrowserAtlas()) {
     return;
   }
-  if (!globalAtlasResidentPromise) {
-    globalAtlasResidentPromise = warmAllGlobalBrowserAtlases()
-      .then(() => {
-        scheduleGlobalAtlasTextureWarm(0);
-      })
-      .catch(() => undefined);
-  } else {
-    void globalAtlasResidentPromise.then(() => {
-      scheduleGlobalAtlasTextureWarm(0);
-    });
-  }
+  scheduleGlobalAtlasTextureWarm(0);
 }
 
 function getItemForEntry(entry: BrowserGridEntry): Item {
@@ -485,7 +490,7 @@ function getPreparedGlobalAnimation(itemId: string, entry: BrowserAtlasItemEntry
     return null;
   }
 
-  const prepared = { atlasFile, frames, timeline };
+  const prepared = { atlasFile, frames, timeline, frameBitmaps: new Map<string, ImageBitmap>(), pendingFrameBitmaps: new Set<string>() };
   preparedGlobalAnimations.set(itemId, prepared);
   return prepared;
 }
@@ -506,18 +511,25 @@ function drawGlobalAnimation(
 
   const drawX = rect.x + Math.round((rect.size - iconSize.value) / 2);
   const drawY = rect.y + Math.round((rect.size - iconSize.value) / 2);
-  ctx.drawImage(
-    atlas,
-    frame.x,
-    frame.y,
-    frame.width,
-    frame.height,
-    drawX,
-    drawY,
-    iconSize.value,
-    iconSize.value,
-  );
-  return true;
+  const frameCacheKey = `${frame.index}`;
+  const bitmap = prepared.frameBitmaps.get(frameCacheKey);
+  if (bitmap) {
+    ctx.drawImage(bitmap, drawX, drawY, iconSize.value, iconSize.value);
+    return true;
+  }
+  if (typeof createImageBitmap === "function" && !prepared.pendingFrameBitmaps.has(frameCacheKey)) {
+    prepared.pendingFrameBitmaps.add(frameCacheKey);
+    void createImageBitmap(atlas, frame.x, frame.y, frame.width, frame.height)
+      .then((nextBitmap) => {
+        prepared.frameBitmaps.set(frameCacheKey, nextBitmap);
+        scheduleRender();
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        prepared.pendingFrameBitmaps.delete(frameCacheKey);
+      });
+  }
+  return false;
 }
 
 function queueGlobalAnimation(
@@ -579,6 +591,11 @@ function clearAnimationOverlay() {
 }
 
 function drawAnimationOverlay() {
+  if (!canRunAnimatedOverlay()) {
+    lastDrawHadAnimatedFrame = false;
+    clearAnimationOverlay();
+    return;
+  }
   const canvas = webglCanvasRef.value;
   if (!canvas) return;
   ensureOverlayCanvasSize(canvas);
@@ -588,6 +605,21 @@ function drawAnimationOverlay() {
   ctx.imageSmoothingEnabled = false;
   const now = getSharedAnimationNowMs();
   let drewFrame = false;
+  if (webglAtlasRenderer) {
+    const commands: BrowserWebglAtlasDrawCommand[] = [];
+    for (const rect of animatedItemRects) {
+      const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(rect.item.itemId) : null;
+      if (props.enableAnimation && globalEntry && queueGlobalAnimation(commands, globalEntry, rect, now)) {
+        drewFrame = true;
+      }
+    }
+    if (commands.length > 0) {
+      webglAtlasRenderer.draw(canvasWidth.value, canvasHeight.value, commands);
+      lastDrawHadAnimatedFrame = drewFrame;
+      return;
+    }
+  }
+
   for (const rect of animatedItemRects) {
     const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(rect.item.itemId) : null;
     if (props.enableAnimation && globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
@@ -619,6 +651,7 @@ function draw() {
   const nextAnimatedRects: GridRect[] = [];
   const now = getSharedAnimationNowMs();
   let drewAnimatedFrame = false;
+  const allowAnimatedOverlay = canRunAnimatedOverlay();
   const webglCommands: BrowserWebglAtlasDrawCommand[] = [];
   // Keep the homepage on the stable Canvas2D resident-atlas path for now.
   // The experimental WebGL overlay can fail to present some atlas shards while
@@ -654,7 +687,18 @@ function draw() {
 
     const itemId = rect.item.itemId;
     const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(itemId) : null;
-    if (props.enableAnimation && canUseWebglAtlas && globalEntry && queueGlobalAnimation(webglCommands, globalEntry, rect, now)) {
+    const sprite = props.atlas?.entries?.[itemId];
+    if (sprite && atlasReady.value && atlasImage.value) {
+      drawAtlasSprite(ctx, atlasImage.value, sprite, rect);
+      if (allowAnimatedOverlay && globalEntry && getPreparedGlobalAnimation(itemId, globalEntry) && getLoadedGlobalAtlasImage(globalEntry.animatedAtlas?.atlasFile)) {
+        nextAnimatedRects.push(rect);
+        drewAnimatedFrame = true;
+      }
+      drawGroupOverlay(ctx, rect);
+      continue;
+    }
+
+    if (allowAnimatedOverlay && canUseWebglAtlas && globalEntry && queueGlobalAnimation(webglCommands, globalEntry, rect, now)) {
       drewAnimatedFrame = true;
       drawGroupOverlay(ctx, rect);
       continue;
@@ -675,7 +719,7 @@ function draw() {
 
     const globalStaticAtlas = getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile);
     if (globalEntry && globalStaticAtlas && drawGlobalStaticSprite(ctx, globalStaticAtlas, globalEntry, rect)) {
-      if (props.enableAnimation && getPreparedGlobalAnimation(itemId, globalEntry) && getLoadedGlobalAtlasImage(globalEntry.animatedAtlas?.atlasFile)) {
+      if (allowAnimatedOverlay && getPreparedGlobalAnimation(itemId, globalEntry) && getLoadedGlobalAtlasImage(globalEntry.animatedAtlas?.atlasFile)) {
         nextAnimatedRects.push(rect);
         drewAnimatedFrame = true;
       }
@@ -684,7 +728,7 @@ function draw() {
     }
 
     if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
-      if (props.enableAnimation) {
+      if (allowAnimatedOverlay) {
         nextAnimatedRects.push(rect);
         drewAnimatedFrame = true;
       }
@@ -699,12 +743,6 @@ function draw() {
     }
 
 
-    const sprite = props.atlas?.entries?.[itemId];
-    if (sprite && atlasReady.value && atlasImage.value) {
-      drawAtlasSprite(ctx, atlasImage.value, sprite, rect);
-      drawGroupOverlay(ctx, rect);
-      continue;
-    }
 
     const src = getStaticImageSrc(rect.item);
     const staticImage = staticImages.get(src);
@@ -995,6 +1033,9 @@ watch(
 watch(
   () => [props.entries.map((entry) => entry.key).join("|"), props.itemSize, props.atlas?.atlasUrl ?? "", shouldHoldFallbackImages.value].join("::"),
   () => {
+    lastEntriesChangedAt = performance.now();
+    stopAnimationLoop();
+    scheduleAnimationResume();
     syncAtlasFallbackGate();
     warmGlobalAtlasImages();
     warmStaticImages();
@@ -1015,6 +1056,9 @@ watch(
 
 onMounted(() => {
   updateHostWidth();
+  if (webglCanvasRef.value) {
+    webglAtlasRenderer = BrowserWebglAtlasRenderer.create(webglCanvasRef.value);
+  }
   resizeObserver = new ResizeObserver(() => {
     updateHostWidth();
     scheduleRender();
@@ -1022,7 +1066,8 @@ onMounted(() => {
   if (hostRef.value) {
     resizeObserver.observe(hostRef.value);
   }
-  // WebGL overlay stays disabled until it can present every atlas shard reliably.
+  // Static browsing remains Canvas2D/page-atlas; WebGL is used only for the
+  // animated overlay so large native animated atlases do not block Canvas2D.
   window.addEventListener("resize", updateHostWidth, { passive: true });
   ensureGlobalAtlasResident();
   scheduleRender();
@@ -1040,6 +1085,10 @@ onUnmounted(() => {
   if (globalAtlasWarmTimer !== null) {
     clearTimeout(globalAtlasWarmTimer);
     globalAtlasWarmTimer = null;
+  }
+  if (animationResumeTimer !== null) {
+    clearTimeout(animationResumeTimer);
+    animationResumeTimer = null;
   }
   if (globalAtlasTextureWarmTimer !== null) {
     clearTimeout(globalAtlasTextureWarmTimer);
@@ -1118,4 +1167,3 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 </style>
-

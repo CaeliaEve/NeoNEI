@@ -36,10 +36,10 @@ import {
   queueRenderableMediaPrewarmFromUnknown,
 } from '../services/animationBudget';
 import {
+  ensureGlobalBrowserAtlasIndex,
   getGlobalBrowserAtlasCoverageForItems,
   hasGlobalBrowserAtlas,
   inspectGlobalBrowserAtlasCoverageForItems,
-  warmAllGlobalBrowserAtlases,
   warmGlobalBrowserAtlasForItems,
   warmGlobalBrowserAtlasForItemsDetailed,
 } from '../services/globalBrowserAtlas';
@@ -314,14 +314,15 @@ export function useItemBrowser(
     await Promise.allSettled([
       api.getBrowserDefaultCatalog({ modId: getActiveBrowserScope() }),
       hasGlobalBrowserAtlas()
-        ? warmAllGlobalBrowserAtlases()
+        ? ensureGlobalBrowserAtlasIndex()
         : Promise.resolve(false),
     ]).then((results) => {
       markPerfEvent('browser-native-runtime-warm', {
         scope,
         durationMs: Math.round(performance.now() - startedAt),
         catalog: results[0]?.status ?? 'unknown',
-        atlas: results[1]?.status ?? 'unknown',
+        atlasIndex: results[1]?.status ?? 'unknown',
+        atlasResident: 'background',
       });
     }).catch(() => undefined);
     nativeBrowserWarmScopes.add(warmKey);
@@ -1745,4 +1746,3 @@ export function useItemBrowser(
     clearCachedPages: clearBrowserPageState,
   };
 }
-
