@@ -19,6 +19,8 @@ const indexedRecipeClientSource = fs.readFileSync('src/runtime/indexedRecipeClie
 const itemClientSource = fs.readFileSync('src/runtime/itemClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\\r\\n/g, '\\n');
 const runtimeSessionSource = fs.readFileSync('src/services/api/runtimeSession.ts', 'utf8').replace(/\\r\\n/g, '\\n');
+const runtimeFacadeSource = fs.readFileSync('src/services/api/runtimeFacade.ts', 'utf8').replace(/\\r\\n/g, '\\n');
+const apiCompatibilityFacadeSource = apiSource + '\n' + runtimeFacadeSource;
 
 test('public runtime manifest types live outside the legacy api facade', () => {
   assert.equal(
@@ -166,9 +168,9 @@ test('browser runtime client owns browser lab compatibility reads', () => {
     assert.equal(apiSource.includes(token), false, `services/api.ts should not own browser lab call: ${token}`);
   }
   assert.equal(
-    runtimeSessionSource.includes('createBrowserCatalogClient({') && apiSource.includes('browserCatalogClient.getBrowserPagePack(params)'),
+    runtimeSessionSource.includes('createBrowserCatalogClient({') && apiCompatibilityFacadeSource.includes('browserCatalogClient.getBrowserPagePack(params)'),
     true,
-    'services/api.ts should delegate browser page-pack reads to browserCatalogClient configured in runtimeSession',
+    'api compatibility facade should delegate browser page-pack reads to browserCatalogClient configured in runtimeSession',
   );
 });
 
@@ -241,9 +243,9 @@ test('pattern management client lives outside the legacy api facade', () => {
     assert.equal(patternClientSource.includes(token), true, `missing pattern client token: ${token}`);
   }
   assert.equal(
-    apiSource.includes('patternRuntimeClient.getGroups()'),
+    apiCompatibilityFacadeSource.includes('patternRuntimeClient.getGroups()'),
     true,
-    'services/api.ts should delegate pattern group reads to the runtime pattern client',
+    'api compatibility facade should delegate pattern group reads to the runtime pattern client',
   );
   assert.equal(
     apiSource.includes("postLabPayload<Pattern>('/patterns'"),
@@ -278,9 +280,9 @@ test('special data client lives outside the legacy api facade', () => {
     assert.equal(specialDataClientSource.includes(token), true, `missing special data client method: ${token}`);
   }
   assert.equal(
-    apiSource.includes('specialDataRuntimeClient.getEcosystemOverview()'),
+    apiCompatibilityFacadeSource.includes('specialDataRuntimeClient.getEcosystemOverview()'),
     true,
-    'services/api.ts should delegate ecosystem overview reads to the runtime special data client',
+    'api compatibility facade should delegate ecosystem overview reads to the runtime special data client',
   );
   assert.equal(
     apiSource.includes("getLabPayload<GTDiagramsOverview>('/gt-diagrams/overview')"),
@@ -317,9 +319,9 @@ test('render contract client lives outside the legacy api facade', () => {
     assert.equal(renderContractClientSource.includes(token), true, `missing render contract client method: ${token}`);
   }
   assert.equal(
-    apiSource.includes('renderContractRuntimeClient.getAnimatedAtlasEntry(assetId)'),
+    apiCompatibilityFacadeSource.includes('renderContractRuntimeClient.getAnimatedAtlasEntry(assetId)'),
     true,
-    'services/api.ts should delegate animated atlas reads to the runtime render contract client',
+    'api compatibility facade should delegate animated atlas reads to the runtime render contract client',
   );
   assert.equal(
     apiSource.includes("getLabPayload<RecipeUiPayload>('/render-contract/ui-payload'"),
@@ -356,9 +358,9 @@ test('indexed recipe client lives outside the legacy api facade', () => {
     assert.equal(indexedRecipeClientSource.includes(token), true, `missing indexed recipe client method: ${token}`);
   }
   assert.equal(
-    apiSource.includes('indexedRecipeRuntimeClient.getCraftingRecipes(itemId)'),
+    apiCompatibilityFacadeSource.includes('indexedRecipeRuntimeClient.getCraftingRecipes(itemId)'),
     true,
-    'services/api.ts should delegate crafting recipe reads to the runtime indexed recipe client',
+    'api compatibility facade should delegate crafting recipe reads to the runtime indexed recipe client',
   );
   assert.equal(
     apiSource.includes('getLabPayload<indexedRecipe'),
@@ -395,9 +397,9 @@ test('item client keeps item HTTP and detail cache outside the legacy api facade
     assert.equal(itemClientSource.includes(token), true, `missing item client method: ${token}`);
   }
   assert.equal(
-    apiSource.includes('itemRuntimeClient.getItem(itemId)'),
+    apiCompatibilityFacadeSource.includes('itemRuntimeClient.getItem(itemId)'),
     true,
-    'services/api.ts should delegate item detail reads to the runtime item client',
+    'api compatibility facade should delegate item detail reads to the runtime item client',
   );
   assert.equal(
     apiSource.includes("getLabPayload<Item>(`/items/${itemId}`)"),
@@ -463,4 +465,8 @@ test('browser search ranking logic lives outside the legacy api facade', () => {
   }
   assert.doesNotMatch(browserSearchProjectionSource, /from '\.\.\/services\/api'/);
 });
+
+
+
+
 
