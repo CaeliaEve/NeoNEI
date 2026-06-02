@@ -359,6 +359,7 @@ function buildExportPathHygieneReport(inputDir, manifest) {
   let auditedFiles = 0;
   for (const filePath of files) {
     if (!existsSync(filePath) || isDiagnosticExportPath(filePath, inputDir)) continue;
+    if (!statSync(filePath).isFile()) continue;
     auditedFiles += 1;
     const text = filePath.endsWith(".gz")
       ? gunzipSync(readFileSync(filePath)).toString("utf8")
