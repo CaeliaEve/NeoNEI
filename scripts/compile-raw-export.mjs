@@ -1126,7 +1126,7 @@ function normalizeBrowserGroups(groups, availableItemIds) {
     .filter((group) => group?.groupKey)
     .map((group) => {
       const members = Array.from(new Set((group.memberItemIds ?? []).filter((itemId) => availableItemIds.has(itemId))));
-      const representative = availableItemIds.has(group.representativeItemId)
+      const representative = members.includes(group.representativeItemId)
         ? group.representativeItemId
         : (members[0] ?? group.representativeItemId ?? null);
       const groupSize = members.length > 0 ? members.length : stableNumber(group.groupSize, 1);
@@ -1137,6 +1137,141 @@ function normalizeBrowserGroups(groups, availableItemIds) {
         groupSize,
       };
     });
+}
+
+function buildBrowserContractReport({ groups, browserItems, neiOrder, exportReport }) {
+  const groupMap = new Map(groups.map((group) => [group.groupKey, group]));
+  let orderBreaks = 0;
+  let missingGroupRefs = 0;
+  let groupSizeMismatches = 0;
+  let duplicateMemberGroups = 0;
+  let representativeMismatches = 0;
+  let nativeGroups = 0;
+  let fallbackGroups = 0;
+  let syntheticGroups = 0;
+  let groupedMemberCount = 0;
+  const representativeMismatchSamples = [];
+
+  for (let index = 1; index < browserItems.length; index += 1) {
+    if (stableNumber(browserItems[index - 1].browserOrder, 0) > stableNumber(browserItems[index].browserOrder, 0)) {
+      orderBreaks += 1;
+    }
+  }
+
+  for (const item of browserItems) {
+    if (item.groupKey && !groupMap.has(item.groupKey)) {
+      missingGroupRefs += 1;
+    }
+  }
+
+  for (const group of groups) {
+    const groupKey = `${group.groupKey ?? ""}`;
+    if (groupKey.startsWith("nei:")) nativeGroups += 1;
+    else if (groupKey.startsWith("fallback:")) fallbackGroups += 1;
+    else syntheticGroups += 1;
+
+    const members = group.memberItemIds ?? [];
+    const uniqueMembers = new Set(members);
+    groupedMemberCount += members.length;
+    if (uniqueMembers.size !== members.length) duplicateMemberGroups += 1;
+    if (stableNumber(group.groupSize, 0) !== uniqueMembers.size) groupSizeMismatches += 1;
+    if (group.representativeItemId && !uniqueMembers.has(group.representativeItemId)) {
+      representativeMismatches += 1;
+      if (representativeMismatchSamples.length < 50) {
+        representativeMismatchSamples.push({
+          groupKey: group.groupKey,
+          groupLabel: group.groupLabel ?? null,
+          groupSize: group.groupSize ?? members.length,
+          representativeItemId: group.representativeItemId,
+          firstMemberItemIds: members.slice(0, 5),
+        });
+      }
+    }
+  }
+
+  const exporterContract = exportReport?.neiBrowserContract ?? null;
+  const exporterCounts = exportReport?.counts ?? {};
+  const runtimePanelItemCount = stableNumber(
+    exporterContract?.neiRuntimePanelItemCount,
+    stableNumber(exporterCounts.neiRuntimePanelItems, 0),
+  );
+  const exportOnlyItemCount = stableNumber(
+    exporterContract?.exportOnlyItemCount,
+    stableNumber(exporterCounts.neiExportOnlyItems, 0),
+  );
+  const exporterBrowserItemCount = stableNumber(
+    exporterContract?.browserItemCount,
+    stableNumber(exporterCounts.neiBrowserItems, browserItems.length),
+  );
+  const exporterGroupCount = stableNumber(
+    exporterContract?.groupCount,
+    stableNumber(exporterCounts.rawGroups, groups.length),
+  );
+  const exporterDefaultEntryCount = stableNumber(
+    exporterContract?.defaultEntryCount,
+    stableNumber(exporterCounts.neiDefaultEntries, neiOrder.length),
+  );
+
+  const countMismatches = [];
+  if (exporterBrowserItemCount !== browserItems.length) {
+    countMismatches.push({ key: "browserItems", exporter: exporterBrowserItemCount, compiler: browserItems.length });
+  }
+  if (exporterGroupCount !== groups.length) {
+    countMismatches.push({ key: "groups", exporter: exporterGroupCount, compiler: groups.length });
+  }
+  if (exporterDefaultEntryCount !== neiOrder.length) {
+    countMismatches.push({ key: "defaultEntries", exporter: exporterDefaultEntryCount, compiler: neiOrder.length });
+  }
+
+  const status = orderBreaks === 0
+    && missingGroupRefs === 0
+    && groupSizeMismatches === 0
+    && duplicateMemberGroups === 0
+    && representativeMismatches === 0
+    && countMismatches.length === 0
+    ? "ok"
+    : "warning";
+
+  return {
+    schemaVersion: "neonei/nei-browser-contract/v1",
+    generatedAt: new Date().toISOString(),
+    status,
+    summary: `NEI panel items=${runtimePanelItemCount}, NeoNEI browser items=${browserItems.length}, groups=${groups.length}, fallbackGroups=${fallbackGroups}, representativeMismatches=${representativeMismatches}.`,
+    exporter: {
+      status: exporterContract?.status ?? null,
+      summary: exporterContract?.summary ?? null,
+      neiRuntimeSnapshot: exporterContract?.neiRuntimeSnapshot ?? null,
+      orderSource: exporterContract?.orderSource ?? null,
+      groupingSource: exporterContract?.groupingSource ?? null,
+      runtimePanelItemCount,
+      exportOnlyItemCount,
+      browserItemCount: exporterBrowserItemCount,
+      groupCount: exporterGroupCount,
+      defaultEntryCount: exporterDefaultEntryCount,
+    },
+    compiler: {
+      browserItemCount: browserItems.length,
+      groupCount: groups.length,
+      defaultEntryCount: neiOrder.length,
+      nativeGroupCount: nativeGroups,
+      fallbackGroupCount: fallbackGroups,
+      syntheticGroupCount: syntheticGroups,
+      groupedMemberCount,
+      ungroupedBrowserItemCount: Math.max(0, browserItems.length - groupedMemberCount),
+    },
+    checks: {
+      orderBreaks,
+      missingGroupRefs,
+      groupSizeMismatches,
+      duplicateMemberGroups,
+      representativeMismatches,
+      countMismatches,
+    },
+    samples: {
+      representativeMismatchSamples,
+      exporterRepresentativeMismatchSamples: exporterContract?.representativeMismatchSamples ?? [],
+    },
+  };
 }
 
 function sanitizePathSegment(value) {
@@ -1325,6 +1460,7 @@ function compileRawExport(inputDir, outputDir) {
       representativeItemId: layout.representativeItemId ?? entry.itemId,
     };
   }).sort((left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId));
+  const browserContract = buildBrowserContractReport({ groups, browserItems, neiOrder, exportReport });
 
   const generatedBrowserAtlasIndex = buildBrowserAtlasIndexFromResources(browserAtlasIndex, browserItems, textures, animationFacts);
   const materializedBrowserAtlasIndex = materializeBrowserAtlasAssets(inputDir, outputDir, generatedBrowserAtlasIndex);
@@ -1426,6 +1562,9 @@ function compileRawExport(inputDir, outputDir) {
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
       recipeCategorySplits: recipeCategorySplits.length,
+      browserContractRepresentativeMismatches: browserContract.checks.representativeMismatches,
+      browserContractCountMismatches: browserContract.checks.countMismatches.length,
+      browserContractFallbackGroups: browserContract.compiler.fallbackGroupCount,
     },
     manifestValidation,
     exportPathHygiene,
@@ -1457,6 +1596,7 @@ function compileRawExport(inputDir, outputDir) {
       browserAtlasRatio: atlasAuthorityReport.coverageRatio,
     },
     atlasAuthorityReport,
+    browserContract,
     warnings: [],
     elapsedMs: Date.now() - startedAt,
   };
@@ -1476,6 +1616,7 @@ function compileRawExport(inputDir, outputDir) {
   if (missingAnimationTimingAssetIds.length > 0) validation.warnings.push(`Animation timing metadata is missing for ${missingAnimationTimingAssetIds.length} animated asset(s).`);
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
   if (rawExportCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from exporter report in ${rawExportCountMismatches.length} area(s).`);
+  if (browserContract.status !== "ok") validation.warnings.push(`NEI browser contract is ${browserContract.status}: ${browserContract.summary}`);
   for (const domain of specialDomains) {
     if (domain.recipeCount !== domain.payloads.length) {
       validation.warnings.push(`Special domain ${domain.domain} has ${domain.recipeCount} recipe row(s) but ${domain.payloads.length} payload row(s).`);
@@ -1507,6 +1648,7 @@ function compileRawExport(inputDir, outputDir) {
       validationReport: "validation/report.json",
       migrationReadiness: "validation/migration-readiness.json",
       exportPathHygiene: "validation/export-path-hygiene.json",
+      neiBrowserContract: "validation/nei-browser-contract.json",
     },
   });
   writeJsonCompact(join(outputDir, "search", "all.json"), { schemaVersion: "neonei/search-v3-json/v1", items: searchItems });
@@ -1539,6 +1681,7 @@ function compileRawExport(inputDir, outputDir) {
   writeJson(join(outputDir, "validation", "report.json"), validation);
   writeJson(join(outputDir, "validation", "migration-readiness.json"), validation.migrationReadiness);
   writeJson(join(outputDir, "validation", "export-path-hygiene.json"), exportPathHygiene);
+  writeJson(join(outputDir, "validation", "nei-browser-contract.json"), browserContract);
   return validation;
 }
 
