@@ -7,7 +7,13 @@ import type {
   RecipeUiPayload,
   SearchItemsFastOptions,
 } from './types';
-import { getDistDataRecipeBootstrap, getDistDataRecipeUiPayload } from '../services/distDataRuntime';
+import {
+  getDistDataRecipeBootstrap,
+  getDistDataRecipeBootstrapCategoryGroup,
+  getDistDataRecipeBootstrapProducedByGroup,
+  getDistDataRecipeBootstrapUsedInGroup,
+  getDistDataRecipeUiPayload,
+} from '../services/distDataRuntime';
 import { getLabPayload } from './devCompatClient';
 
 export type RecipeRelationTab = 'usedIn' | 'producedBy';
@@ -46,6 +52,15 @@ export function getRecipeBootstrapProducedByGroupCompat(
   });
 }
 
+export async function getRuntimeRecipeBootstrapProducedByGroup(
+  itemId: string,
+  machineType: string,
+  voltageTier?: string | null,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; machineKey?: string | null },
+): Promise<RecipeBootstrapMachineGroupPayload | null> {
+  return getDistDataRecipeBootstrapProducedByGroup(itemId, machineType, voltageTier, options);
+}
+
 export function getRecipeBootstrapUsedInGroupCompat(
   itemId: string,
   machineType: string,
@@ -63,6 +78,15 @@ export function getRecipeBootstrapUsedInGroupCompat(
   });
 }
 
+export async function getRuntimeRecipeBootstrapUsedInGroup(
+  itemId: string,
+  machineType: string,
+  voltageTier?: string | null,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; machineKey?: string | null },
+): Promise<RecipeBootstrapMachineGroupPayload | null> {
+  return getDistDataRecipeBootstrapUsedInGroup(itemId, machineType, voltageTier, options);
+}
+
 export function getRecipeBootstrapCategoryGroupCompat(
   itemId: string,
   tab: RecipeRelationTab,
@@ -78,6 +102,15 @@ export function getRecipeBootstrapCategoryGroupCompat(
       ...(options?.includeRecipeIds ? { includeRecipeIds: 1 } : {}),
     },
   });
+}
+
+export async function getRuntimeRecipeBootstrapCategoryGroup(
+  itemId: string,
+  tab: RecipeRelationTab,
+  categoryKey: string,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
+): Promise<RecipeBootstrapCategoryGroupPayload | null> {
+  return getDistDataRecipeBootstrapCategoryGroup(itemId, tab, categoryKey, options);
 }
 
 export function getRecipeBootstrapSearchCompat(

@@ -3,6 +3,8 @@ import type {
   Item,
   Mod,
   RecipeBootstrapPayload,
+  RecipeBootstrapCategoryGroupPayload,
+  RecipeBootstrapMachineGroupPayload,
   RecipeUiPayload,
   BrowserAtlasIndexResponse,
   BrowserByIdsPackResponse,
@@ -15,6 +17,7 @@ import type {
   BrowserSearchPackResponse,
   BrowserVariantGroup,
   PublicRuntimeManifest,
+  indexedRecipe,
 } from "../runtime/types";
 import { reportRuntimeSchemaMismatch } from "../runtime/diagnostics";
 
@@ -175,6 +178,14 @@ function joinAssetPath(basePath: string, assetPath: string): string {
     return `${basePath}/${trimSlashes(normalizedAssetPath)}`;
   }
   return `${basePath.startsWith("/") ? basePath : `/${basePath}`}/${trimSlashes(normalizedAssetPath)}`;
+}
+
+function preserveEncodedFileNamePath(assetPath: string): string {
+  // Raw-export payload indexes store filenames that already contain percent-encoded
+  // recipe IDs (for example "%3D%3D"). Browsers/Express decode one URL layer
+  // before static-file lookup, so encode literal percent signs once more to
+  // address the on-disk filename instead of a decoded variant.
+  return assetPath.replace(/%/g, "%25");
 }
 
 export function resolveDistDataAssetPath(assetPath?: string | null): string | null {
@@ -801,6 +812,196 @@ function buildCategorySummaries(entries?: Array<{ categoryId?: string; displayNa
     .sort((left, right) => right.recipeCount - left.recipeCount || left.name.localeCompare(right.name));
 }
 
+function toRecipeItemStack(itemId: string, runtime: DistDataBrowserRuntime, count = 1) {
+  const item = runtime.itemById.get(itemId);
+  return {
+    item: {
+      itemId,
+      modId: item?.modId ?? "unknown",
+      internalName: item?.internalName ?? itemId,
+      localizedName: item?.localizedName ?? itemId,
+      renderAssetRef: item?.renderAssetRef ?? null,
+      renderHint: item?.renderHint ?? null,
+      damage: 0,
+      stackSize: count,
+      maxStackSize: 64,
+      maxDamage: 0,
+      nbt: null,
+      imageFileName: null,
+      tooltip: null,
+    },
+    probability: 1,
+    stackSize: count,
+  };
+}
+
+function stableSlotDimension(value: unknown, fallback: number): number {
+  const parsed = Math.floor(Number(value));
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function buildIndexedRecipeFromUiPayload(
+  payload: RecipeUiPayload,
+  runtime: DistDataBrowserRuntime,
+): indexedRecipe | null {
+  const recipeId = `${payload.recipeId ?? ""}`.trim();
+  if (!recipeId) {
+    return null;
+  }
+
+  const layout = payload.layout && typeof payload.layout === "object"
+    ? payload.layout as {
+        itemInputWidth?: unknown;
+        itemInputHeight?: unknown;
+        itemOutputWidth?: unknown;
+        itemOutputHeight?: unknown;
+        itemSlots?: Array<{
+          role?: unknown;
+          itemId?: unknown;
+          count?: unknown;
+          stackSize?: unknown;
+          slotIndex?: unknown;
+        }>;
+      }
+    : null;
+  const metadata = payload.metadata && typeof payload.metadata === "object"
+    ? payload.metadata as Record<string, unknown>
+    : {};
+
+  const inputWidth = stableSlotDimension(layout?.itemInputWidth, Math.min(3, Math.max(1, Number(payload.slotCount?.input ?? 1) || 1)));
+  const inputHeight = stableSlotDimension(
+    layout?.itemInputHeight,
+    Math.max(1, Math.ceil((Number(payload.slotCount?.input ?? payload.inputItemIds?.length ?? 1) || 1) / inputWidth)),
+  );
+  const outputWidth = stableSlotDimension(layout?.itemOutputWidth, Math.min(3, Math.max(1, Number(payload.slotCount?.output ?? 1) || 1)));
+  const outputHeight = stableSlotDimension(
+    layout?.itemOutputHeight,
+    Math.max(1, Math.ceil((Number(payload.slotCount?.output ?? payload.outputItemIds?.length ?? 1) || 1) / outputWidth)),
+  );
+
+  const inputSlots = Array.isArray(layout?.itemSlots)
+    ? layout!.itemSlots.filter((slot) => `${slot?.role ?? ""}`.toLowerCase() === "input")
+    : [];
+  const outputSlots = Array.isArray(layout?.itemSlots)
+    ? layout!.itemSlots.filter((slot) => `${slot?.role ?? ""}`.toLowerCase() === "output")
+    : [];
+
+  const inputItemIds = inputSlots.length > 0
+    ? inputSlots.map((slot) => `${slot.itemId ?? ""}`.trim()).filter(Boolean)
+    : (payload.inputItemIds ?? []).map((itemId) => `${itemId ?? ""}`.trim()).filter(Boolean);
+  const outputItemIds = outputSlots.length > 0
+    ? outputSlots.map((slot) => `${slot.itemId ?? ""}`.trim()).filter(Boolean)
+    : (payload.outputItemIds ?? []).map((itemId) => `${itemId ?? ""}`.trim()).filter(Boolean);
+
+  const inputs = inputItemIds.map((itemId, index) => ({
+    slotIndex: index,
+    items: [toRecipeItemStack(itemId, runtime, 1)],
+    isOreDictionary: false,
+    oreDictName: null,
+  }));
+  const outputs = outputItemIds.map((itemId) => toRecipeItemStack(itemId, runtime, 1));
+
+  return {
+    id: recipeId,
+    recipeType: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
+    recipeTypeData: {
+      id: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
+      category: `${payload.machineType ?? payload.familyKey ?? "unknown"}`,
+      type: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
+      machineType: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
+      itemInputDimension: { width: inputWidth, height: inputHeight },
+      itemOutputDimension: { width: outputWidth, height: outputHeight },
+      fluidInputDimension: { width: 0, height: 0 },
+      fluidOutputDimension: { width: 0, height: 0 },
+      shapeless: Boolean(metadata.shapeless),
+    },
+    inputs,
+    outputs,
+    fluidInputs: Array.isArray((payload as { fluidInputs?: unknown[] }).fluidInputs)
+      ? (payload as { fluidInputs?: unknown[] }).fluidInputs
+      : [],
+    fluidOutputs: Array.isArray((payload as { fluidOutputs?: unknown[] }).fluidOutputs)
+      ? (payload as { fluidOutputs?: unknown[] }).fluidOutputs
+      : [],
+    machineInfo: {
+      machineId: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
+      category: `${payload.machineType ?? payload.familyKey ?? "unknown"}`,
+      machineType: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
+      iconInfo: `${metadata.handlerIcon ?? ""}`,
+      shapeless: Boolean(metadata.shapeless),
+      parsedVoltageTier: null,
+      parsedVoltage: null,
+    },
+    metadata: {
+      voltageTier: null,
+      voltage: null,
+      amperage: null,
+      duration: null,
+      totalEU: null,
+      requiresCleanroom: null,
+      requiresLowGravity: null,
+      additionalInfo: null,
+      ...metadata,
+      uiPayload: payload,
+      specialRecipeType: metadata.specialRecipeType ?? "NEI_Handler",
+    },
+  };
+}
+
+async function getIndexedRecipesFromUiPayloads(recipeIds: string[]): Promise<indexedRecipe[]> {
+  const runtime = await getBrowserRuntime();
+  if (!runtime || recipeIds.length <= 0) {
+    return [];
+  }
+  const payloads = await Promise.all(recipeIds.map((recipeId) => getDistDataRecipeUiPayload(recipeId)));
+  return payloads
+    .map((payload) => (payload ? buildIndexedRecipeFromUiPayload(payload, runtime) : null))
+    .filter((recipe): recipe is indexedRecipe => Boolean(recipe));
+}
+
+async function buildDistDataCategoryGroupPayload(
+  itemId: string,
+  tab: "usedIn" | "producedBy",
+  categoryKey: string,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
+): Promise<RecipeBootstrapCategoryGroupPayload | null> {
+  const normalizedItemId = `${itemId ?? ""}`.trim();
+  const normalizedCategoryKey = `${categoryKey ?? ""}`.trim();
+  if (!normalizedItemId || !normalizedCategoryKey) {
+    return null;
+  }
+  const recipeIndex = await getRecipeItemIndex();
+  const indexEntry = recipeIndex?.get(normalizedItemId);
+  if (!indexEntry) {
+    return null;
+  }
+  const entries = (tab === "usedIn" ? indexEntry.usedIn : indexEntry.producedBy) ?? [];
+  const recipeIds = collectRecipeIds(entries.filter((entry) => `${entry.categoryId ?? ""}`.trim() === normalizedCategoryKey));
+  if (recipeIds.length <= 0) {
+    return null;
+  }
+
+  const offset = Math.max(0, Math.floor(Number(options?.offset ?? 0) || 0));
+  const requestedLimit = Math.floor(Number(options?.limit ?? recipeIds.length) || 0);
+  const limit = requestedLimit > 0 ? requestedLimit : 0;
+  const windowRecipeIds = options?.includeRecipeIds && limit <= 0
+    ? []
+    : recipeIds.slice(offset, limit > 0 ? offset + limit : recipeIds.length);
+
+  return {
+    itemId: normalizedItemId,
+    categoryKey: normalizedCategoryKey,
+    tab,
+    recipeCount: recipeIds.length,
+    recipes: await getIndexedRecipesFromUiPayloads(windowRecipeIds),
+    recipeIds,
+    offset,
+    limit,
+    hasMore: limit > 0 ? offset + limit < recipeIds.length : false,
+    mediaManifest: null,
+  };
+}
+
 export async function getDistDataRecipeBootstrap(itemId: string): Promise<RecipeBootstrapPayload | null> {
   const normalizedItemId = `${itemId ?? ""}`.trim();
   if (!normalizedItemId) {
@@ -840,6 +1041,65 @@ export async function getDistDataRecipeBootstrap(itemId: string): Promise<Recipe
       },
     },
     mediaManifest: null,
+  };
+}
+
+export async function getDistDataRecipeBootstrapCategoryGroup(
+  itemId: string,
+  tab: "usedIn" | "producedBy",
+  categoryKey: string,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
+): Promise<RecipeBootstrapCategoryGroupPayload | null> {
+  return buildDistDataCategoryGroupPayload(itemId, tab, categoryKey, options);
+}
+
+export async function getDistDataRecipeBootstrapProducedByGroup(
+  itemId: string,
+  machineType: string,
+  _voltageTier?: string | null,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; machineKey?: string | null },
+): Promise<RecipeBootstrapMachineGroupPayload | null> {
+  const categoryKey = `${options?.machineKey ?? machineType ?? ""}`.trim();
+  const payload = await buildDistDataCategoryGroupPayload(itemId, "producedBy", categoryKey, options);
+  if (!payload) {
+    return null;
+  }
+  return {
+    itemId: payload.itemId,
+    machineType,
+    voltageTier: _voltageTier ?? null,
+    recipeCount: payload.recipeCount,
+    recipes: payload.recipes,
+    recipeIds: payload.recipeIds,
+    offset: payload.offset,
+    limit: payload.limit,
+    hasMore: payload.hasMore,
+    mediaManifest: payload.mediaManifest,
+  };
+}
+
+export async function getDistDataRecipeBootstrapUsedInGroup(
+  itemId: string,
+  machineType: string,
+  _voltageTier?: string | null,
+  options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; machineKey?: string | null },
+): Promise<RecipeBootstrapMachineGroupPayload | null> {
+  const categoryKey = `${options?.machineKey ?? machineType ?? ""}`.trim();
+  const payload = await buildDistDataCategoryGroupPayload(itemId, "usedIn", categoryKey, options);
+  if (!payload) {
+    return null;
+  }
+  return {
+    itemId: payload.itemId,
+    machineType,
+    voltageTier: _voltageTier ?? null,
+    recipeCount: payload.recipeCount,
+    recipes: payload.recipes,
+    recipeIds: payload.recipeIds,
+    offset: payload.offset,
+    limit: payload.limit,
+    hasMore: payload.hasMore,
+    mediaManifest: payload.mediaManifest,
   };
 }
 
@@ -893,7 +1153,9 @@ export async function getDistDataRecipeUiPayload(recipeId: string): Promise<Reci
   if (!payloadPath) {
     return null;
   }
-  const payload = await fetchJson<RecipeUiPayload>(joinAssetPath(getConfiguredBasePath(), payloadPath)).catch(() => null);
+  const payload = await fetchJson<RecipeUiPayload>(
+    joinAssetPath(getConfiguredBasePath(), preserveEncodedFileNamePath(payloadPath)),
+  ).catch(() => null);
   if (!payload?.recipeId) {
     const manifest = await getDistDataManifest();
     if (manifest) {

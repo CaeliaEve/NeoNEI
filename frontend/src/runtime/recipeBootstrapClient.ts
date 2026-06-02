@@ -21,6 +21,9 @@ import {
   getRecipeBootstrapSearchCompat,
   getRecipeBootstrapShardCompat,
   getRecipeBootstrapUsedInGroupCompat,
+  getRuntimeRecipeBootstrapCategoryGroup,
+  getRuntimeRecipeBootstrapProducedByGroup,
+  getRuntimeRecipeBootstrapUsedInGroup,
   getRuntimeRecipeBootstrap,
   resolvePublishedRecipeGroupIndexPath,
   resolvePublishedRecipeGroupWindowPath,
@@ -473,6 +476,11 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
     voltageTier?: string | null,
     groupOptions?: { offset?: number; limit?: number; includeRecipeIds?: boolean; machineKey?: string | null },
   ): Promise<RecipeBootstrapMachineGroupPayload> {
+    const runtimePayload = await getRuntimeRecipeBootstrapProducedByGroup(itemId, machineType, voltageTier, groupOptions);
+    if (runtimePayload) {
+      return runtimePayload;
+    }
+
     const normalizedMachineKey = `${groupOptions?.machineKey ?? ''}`.trim();
     const machineKey = normalizedMachineKey || (`${machineType ?? ''}`.trim() ? `${machineType}::${voltageTier ?? ''}` : '');
     const identity = withRecipeBootstrapCacheSchema({
@@ -510,6 +518,11 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
     voltageTier?: string | null,
     groupOptions?: { offset?: number; limit?: number; includeRecipeIds?: boolean; machineKey?: string | null },
   ): Promise<RecipeBootstrapMachineGroupPayload> {
+    const runtimePayload = await getRuntimeRecipeBootstrapUsedInGroup(itemId, machineType, voltageTier, groupOptions);
+    if (runtimePayload) {
+      return runtimePayload;
+    }
+
     const normalizedMachineKey = `${groupOptions?.machineKey ?? ''}`.trim();
     const machineKey = normalizedMachineKey || (`${machineType ?? ''}`.trim() ? `${machineType}::${voltageTier ?? ''}` : '');
     const identity = withRecipeBootstrapCacheSchema({
@@ -591,6 +604,11 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
     categoryKey: string,
     groupOptions?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
   ): Promise<RecipeBootstrapCategoryGroupPayload> {
+    const runtimePayload = await getRuntimeRecipeBootstrapCategoryGroup(itemId, tab, categoryKey, groupOptions);
+    if (runtimePayload) {
+      return runtimePayload;
+    }
+
     const identity = withRecipeBootstrapCacheSchema({
       itemId,
       tab,
