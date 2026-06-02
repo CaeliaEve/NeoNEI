@@ -781,6 +781,17 @@ function collectRecipeIds(entries?: Array<{ recipeId?: string }>): string[] {
   ));
 }
 
+function normalizeRecipeCategoryKey(value: unknown): string {
+  let key = `${value ?? ""}`.trim();
+  if (key.startsWith("machine:")) {
+    key = key.slice("machine:".length).trim();
+  }
+  if (key.endsWith("::")) {
+    key = key.slice(0, -2).trim();
+  }
+  return key;
+}
+
 function buildCategorySummaries(entries?: Array<{ categoryId?: string; displayName?: string }>) {
   const byCategory = new Map<string, { name: string; recipeCount: number }>();
   for (const entry of entries ?? []) {
@@ -966,7 +977,7 @@ async function buildDistDataCategoryGroupPayload(
   options?: { offset?: number; limit?: number; includeRecipeIds?: boolean },
 ): Promise<RecipeBootstrapCategoryGroupPayload | null> {
   const normalizedItemId = `${itemId ?? ""}`.trim();
-  const normalizedCategoryKey = `${categoryKey ?? ""}`.trim();
+  const normalizedCategoryKey = normalizeRecipeCategoryKey(categoryKey);
   if (!normalizedItemId || !normalizedCategoryKey) {
     return null;
   }
@@ -1059,7 +1070,7 @@ export async function getDistDataRecipeBootstrapProducedByGroup(
   _voltageTier?: string | null,
   options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; machineKey?: string | null },
 ): Promise<RecipeBootstrapMachineGroupPayload | null> {
-  const categoryKey = `${options?.machineKey ?? machineType ?? ""}`.trim();
+  const categoryKey = normalizeRecipeCategoryKey(options?.machineKey ?? machineType ?? "");
   const payload = await buildDistDataCategoryGroupPayload(itemId, "producedBy", categoryKey, options);
   if (!payload) {
     return null;
@@ -1084,7 +1095,7 @@ export async function getDistDataRecipeBootstrapUsedInGroup(
   _voltageTier?: string | null,
   options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; machineKey?: string | null },
 ): Promise<RecipeBootstrapMachineGroupPayload | null> {
-  const categoryKey = `${options?.machineKey ?? machineType ?? ""}`.trim();
+  const categoryKey = normalizeRecipeCategoryKey(options?.machineKey ?? machineType ?? "");
   const payload = await buildDistDataCategoryGroupPayload(itemId, "usedIn", categoryKey, options);
   if (!payload) {
     return null;

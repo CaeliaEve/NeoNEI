@@ -73,6 +73,9 @@ export const buildCanonicalMachineKey = (
   if (rawMachineKey) {
     const [machineType, ...rest] = rawMachineKey.split('::');
     const normalizedMachineType = normalizeMachineFamilyName(machineType);
+    if (!rest.length) {
+      return normalizedMachineType;
+    }
     return `${normalizedMachineType}::${rest.join('::')}`;
   }
 
