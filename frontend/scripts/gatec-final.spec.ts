@@ -134,21 +134,104 @@ async function clickWithResponse(
   };
 }
 
+type DistDataManifest = {
+  files?: {
+    browserCatalog?: string;
+    recipeItemIndex?: string;
+  };
+};
+
+type DistDataBrowserCatalogPayload = {
+  items?: Array<{ itemId?: string }>;
+};
+
+type DistDataRecipeItemIndexPayload = {
+  items?: Array<{
+    itemId?: string;
+    producedBy?: Array<{ recipeId?: string; categoryId?: string }>;
+    usedIn?: Array<{ recipeId?: string; categoryId?: string }>;
+  }>;
+};
+
+function joinDistDataPath(assetPath: string): string {
+  const base = BACKEND_BASE_URL.replace(/\/+$/g, '');
+  const normalizedAsset = String(assetPath ?? '').replace(/^\/+/, '');
+  return base + '/dist-data/' + normalizedAsset;
+}
+
+async function fetchDistDataJson<T>(page: any, assetPath: string, lines: string[]): Promise<T | null> {
+  const url = joinDistDataPath(assetPath);
+  try {
+    const res = await page.request.get(url);
+    lines.push('[dist-data] ' + assetPath + ' => ' + res.status());
+    if (res.status() < 200 || res.status() >= 300) {
+      return null;
+    }
+    return await res.json() as T;
+  } catch (error: any) {
+    lines.push('[dist-data] ' + assetPath + ' error=' + (error?.message || String(error)));
+    return null;
+  }
+}
+
+function relationCount(entry: { producedBy?: unknown[]; usedIn?: unknown[] }): number {
+  const producedBy = Array.isArray(entry.producedBy) ? entry.producedBy.length : 0;
+  const usedIn = Array.isArray(entry.usedIn) ? entry.usedIn.length : 0;
+  return producedBy + usedIn;
+}
+
 async function pickRecipeItemId(page: any, lines: string[]) {
+  const manifest = await fetchDistDataJson<DistDataManifest>(page, 'manifest.json', lines);
+  const recipeItemIndexPath = String(manifest?.files?.recipeItemIndex ?? '').trim();
+  const browserCatalogPath = String(manifest?.files?.browserCatalog ?? '').trim();
+
+  if (manifest && recipeItemIndexPath && browserCatalogPath) {
+    const [recipeIndex, browserCatalog] = await Promise.all([
+      fetchDistDataJson<DistDataRecipeItemIndexPayload>(page, recipeItemIndexPath, lines),
+      fetchDistDataJson<DistDataBrowserCatalogPayload>(page, browserCatalogPath, lines),
+    ]);
+    const catalogItemIds = new Set((browserCatalog?.items ?? []).map((entry) => String(entry?.itemId ?? '').trim()).filter(Boolean));
+    const candidates = (recipeIndex?.items ?? [])
+      .filter((entry) => entry?.itemId && catalogItemIds.has(entry.itemId) && relationCount(entry) > 0)
+      .map((entry) => ({
+        itemId: String(entry.itemId),
+        source: 'dist-data-recipe-item-index',
+        machinesCount: new Set([
+          ...(entry.producedBy ?? []).map((relation) => String(relation?.categoryId ?? '').trim()).filter(Boolean),
+          ...(entry.usedIn ?? []).map((relation) => String(relation?.categoryId ?? '').trim()).filter(Boolean),
+        ]).size,
+        recipeCount: relationCount(entry),
+        producedByCount: Array.isArray(entry.producedBy) ? entry.producedBy.length : 0,
+        usedInCount: Array.isArray(entry.usedIn) ? entry.usedIn.length : 0,
+      }))
+      .sort((left, right) => {
+        const leftBothTabs = left.producedByCount > 0 && left.usedInCount > 0 ? 1 : 0;
+        const rightBothTabs = right.producedByCount > 0 && right.usedInCount > 0 ? 1 : 0;
+        return rightBothTabs - leftBothTabs || right.recipeCount - left.recipeCount || right.machinesCount - left.machinesCount;
+      });
+
+    lines.push('[recipe-fixture] source=dist-data-recipe-item-index catalogItems=' + catalogItemIds.size + ' candidates=' + candidates.length);
+    const selected = candidates[0] ?? null;
+    if (selected) {
+      lines.push('[recipe-fixture] selected itemId=' + selected.itemId + ' source=' + selected.source + ' machines=' + selected.machinesCount + ' recipeCount=' + selected.recipeCount + ' producedBy=' + selected.producedByCount + ' usedIn=' + selected.usedInCount + ' strategy=dist-data-runtime');
+      return selected;
+    }
+  }
+
   const candidates = [
     {
       source: 'items-search-fast-afsu',
-      url: `${BACKEND_BASE_URL}/api/items/search/fast?q=AFSU&limit=50`,
+      url: BACKEND_BASE_URL + '/api/items/search/fast?q=AFSU&limit=50',
       extractor: (json: any) => (Array.isArray(json) ? json.map((x: any) => x?.itemId).filter(Boolean) : []),
     },
     {
       source: 'items-search-fast-iron',
-      url: `${BACKEND_BASE_URL}/api/items/search/fast?q=iron&limit=80`,
+      url: BACKEND_BASE_URL + '/api/items/search/fast?q=iron&limit=80',
       extractor: (json: any) => (Array.isArray(json) ? json.map((x: any) => x?.itemId).filter(Boolean) : []),
     },
     {
       source: 'items-page-1',
-      url: `${BACKEND_BASE_URL}/api/items?page=1&limit=200`,
+      url: BACKEND_BASE_URL + '/api/items?page=1&limit=200',
       extractor: (json: any) => (Array.isArray(json?.data) ? json.data.map((x: any) => x?.itemId).filter(Boolean) : []),
     },
   ];
@@ -157,65 +240,23 @@ async function pickRecipeItemId(page: any, lines: string[]) {
     try {
       const res = await page.request.get(candidate.url);
       if (res.status() < 200 || res.status() >= 300) {
-        lines.push(`[recipe-fixture] source=${candidate.source} status=${res.status()} skip`);
+        lines.push('[recipe-fixture] source=' + candidate.source + ' status=' + res.status() + ' skip');
         continue;
       }
 
       const json = await res.json();
       const itemIds: string[] = candidate.extractor(json);
-      lines.push(`[recipe-fixture] source=${candidate.source} status=${res.status()} candidates=${itemIds.length}`);
+      lines.push('[recipe-fixture] source=' + candidate.source + ' status=' + res.status() + ' candidates=' + itemIds.length);
 
-      let checked = 0;
-      const validated: Array<{ itemId: string; source: string; machinesCount: number; recipeCount: number }> = [];
-
-      for (const itemId of itemIds) {
-        if (checked >= 24) {
-          break;
+      for (const itemId of itemIds.slice(0, 24)) {
+        const itemRes = await page.request.get(BACKEND_BASE_URL + '/api/items/' + encodeURIComponent(itemId));
+        if (itemRes.status() >= 200 && itemRes.status() < 300) {
+          lines.push('[recipe-fixture] selected itemId=' + itemId + ' source=' + candidate.source + ' machines=1 recipeCount=1 strategy=item-api-smoke-fallback');
+          return { itemId, source: candidate.source, machinesCount: 1, recipeCount: 1 };
         }
-        checked += 1;
-
-        const recipeRes = await page.request.get(`${BACKEND_BASE_URL}/api/recipes-indexed/${encodeURIComponent(itemId)}/machines`);
-        if (recipeRes.status() < 200 || recipeRes.status() >= 300) {
-          continue;
-        }
-        const recipeJson = await recipeRes.json();
-        const machines = Array.isArray(recipeJson?.machines) ? recipeJson.machines : [];
-        const recipeCount = machines.reduce((sum: number, machine: any) => {
-          const count = Number(machine?.recipeCount ?? 0);
-          return sum + (Number.isFinite(count) ? count : 0);
-        }, 0);
-
-        if (machines.length <= 0 || recipeCount <= 0) {
-          continue;
-        }
-
-        const itemRes = await page.request.get(`${BACKEND_BASE_URL}/api/items/${encodeURIComponent(itemId)}`);
-        if (itemRes.status() < 200 || itemRes.status() >= 300) {
-          lines.push(`[recipe-fixture] candidate itemId=${itemId} source=${candidate.source} rejected=item-api-status-${itemRes.status()}`);
-          continue;
-        }
-
-        const itemJson = await itemRes.json();
-        const itemData = itemJson?.data ?? itemJson;
-        const hasItemData = Boolean(itemData && typeof itemData === 'object' && Object.keys(itemData).length > 0);
-        if (!hasItemData) {
-          lines.push(`[recipe-fixture] candidate itemId=${itemId} source=${candidate.source} rejected=item-api-empty`);
-          continue;
-        }
-
-        lines.push(`[recipe-fixture] candidate itemId=${itemId} source=${candidate.source} machines=${machines.length} recipeCount=${recipeCount} itemApi=ok`);
-        validated.push({ itemId, source: candidate.source, machinesCount: machines.length, recipeCount });
-      }
-
-      const selected = validated.sort((a, b) => b.recipeCount - a.recipeCount)[0] ?? null;
-      if (selected) {
-        lines.push(
-          `[recipe-fixture] selected itemId=${selected.itemId} source=${selected.source} machines=${selected.machinesCount} recipeCount=${selected.recipeCount} strategy=backend-validated`,
-        );
-        return selected;
       }
     } catch (error: any) {
-      lines.push(`[recipe-fixture] source=${candidate.source} error=${error?.message || String(error)}`);
+      lines.push('[recipe-fixture] source=' + candidate.source + ' error=' + (error?.message || String(error)));
     }
   }
 

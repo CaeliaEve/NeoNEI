@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -22,6 +22,9 @@ const ignoredDirNames = new Set([
   '.tmp-runtime',
   '.runtime-logs',
   'data',
+  'gatec-artifacts-final',
+  'test-results',
+  'playwright-report',
 ]);
 
 const sourceExtensions = new Set([
@@ -90,3 +93,4 @@ if (violations.length) {
 }
 
 console.log('[audit:paths] OK: no machine-specific hard paths found in portable source files.');
+

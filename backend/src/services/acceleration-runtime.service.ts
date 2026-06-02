@@ -1,4 +1,4 @@
-import fs from 'fs';
+﻿import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
 import type { Request, RequestHandler } from 'express';
@@ -195,8 +195,8 @@ function runBackgroundNodeJob<T extends { ok: true }>(
 
 function compileAccelerationSnapshotInChild(candidateDbPath: string): Promise<BackgroundCompileSummary> {
   const inlineCode = `
-const { compileAccelerationDatabase } = require('./dist/services/acceleration-db-pipeline.service.js');
-const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = require('./dist/config/runtime-paths.js');
+const { compileAccelerationDatabase } = require('./services/acceleration-db-pipeline.service.js');
+const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = require('./config/runtime-paths.js');
 compileAccelerationDatabase({
   targetDbPath: process.env.ACCELERATION_DB_FILE,
   sourceRoots: {
@@ -227,9 +227,9 @@ compileAccelerationDatabase({
 
 function materializePublishPayloadsInChild(): Promise<BackgroundPublishSummary> {
   const inlineCode = `
-const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = require('./dist/config/runtime-paths.js');
-const { getAccelerationDatabaseManager } = require('./dist/models/database.js');
-const { ensurePublishPayloadsReady } = require('./dist/services/acceleration-db-pipeline.service.js');
+const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = require('./config/runtime-paths.js');
+const { getAccelerationDatabaseManager } = require('./models/database.js');
+const { ensurePublishPayloadsReady } = require('./services/acceleration-db-pipeline.service.js');
 (async () => {
   const manager = getAccelerationDatabaseManager();
   await manager.init();
@@ -340,3 +340,4 @@ export async function reconcileAccelerationRuntime(
     lastError: null,
   });
 }
+

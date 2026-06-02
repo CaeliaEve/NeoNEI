@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const serverSource = readFileSync(join(repoRoot, 'backend/src/server.ts'), 'utf8');
 const bootstrapSource = readFileSync(join(repoRoot, 'backend/src/bootstrap-server.ts'), 'utf8');
+const appSource = readFileSync(join(repoRoot, 'backend/src/app.ts'), 'utf8');
 const serverSettingsSource = readFileSync(join(repoRoot, 'backend/src/config/server-settings.ts'), 'utf8');
 const apiNamespacesRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/api-namespaces.routes.ts'), 'utf8');
 const staticAssetRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/static-assets.routes.ts'), 'utf8');
@@ -18,7 +19,7 @@ const rootEnvExample = readFileSync(join(repoRoot, '.env.example'), 'utf8');
 
 test('public runtime profile is explicit and disables lab/dev dynamic mounts', () => {
   assert.match(serverSettingsSource, /publicRuntimeOnly: isEnvEnabled\(process\.env\.NEONEI_PUBLIC_RUNTIME_ONLY\)/);
-  assert.match(bootstrapSource, /registerApiNamespaces\(app, \{ publicRuntimeOnly: serverSettings\.publicRuntimeOnly \}\)/);
+  assert.equal(appSource.includes('registerApiNamespaces(app, { publicRuntimeOnly: options.serverSettings.publicRuntimeOnly })'), true);
   assert.match(apiNamespacesRoutesSource, /if \(!PUBLIC_RUNTIME_ONLY\) \{\s*app\.use\('\/lab'/s);
   assert.match(apiNamespacesRoutesSource, /if \(!PUBLIC_RUNTIME_ONLY\) \{[\s\S]*app\.use\('\/api\/items'/s);
   assert.match(apiNamespacesRoutesSource, /app\.use\('\/runtime'[\s\S]*runtimeRoutes\)/);
@@ -26,10 +27,10 @@ test('public runtime profile is explicit and disables lab/dev dynamic mounts', (
 });
 
 test('unmatched routes use the same diagnostic error envelope', () => {
-  assert.match(bootstrapSource, /app\.use\(\(req, res\) => \{/);
-  assert.match(bootstrapSource, /sendErrorEnvelope\(req, res, 404, 'NOT_FOUND'/);
-  assert.match(bootstrapSource, /path:\s*req\.originalUrl \?\? req\.url/);
-  assert.match(bootstrapSource, /app\.use\(errorHandler\)/);
+  assert.equal(appSource.includes('app.use((req, res) => {'), true);
+  assert.equal(appSource.includes("sendErrorEnvelope(req, res, 404, 'NOT_FOUND'"), true);
+  assert.match(appSource, /path:\s*req\.originalUrl \?\? req\.url/);
+  assert.equal(appSource.includes('app.use(errorHandler)'), true);
 });
 
 test('backend route errors use the uniform error envelope helper', () => {
@@ -45,6 +46,7 @@ test('portable env examples document public runtime only deployment', () => {
   assert.match(rootEnvExample, /NEONEI_PUBLIC_RUNTIME_ONLY=1/);
   assert.doesNotMatch(backendEnvExample, /E:\\|E:\//, 'backend production example must not require a Windows path');
 });
+
 
 
 
