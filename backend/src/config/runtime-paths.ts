@@ -61,6 +61,7 @@ function pickImageRootPath(candidates: Array<string | undefined>): string {
 }
 
 export const DATA_DIR = resolvedDataDir;
+export const PUBLIC_DIR = path.resolve(__dirname, '..', '..', 'public');
 export const RUNTIME_DIR = path.resolve(pickEnv('NEONEI_RUNTIME_DIR') || path.join(DATA_DIR, 'runtime'));
 export const CACHE_DIR = path.resolve(pickEnv('NEONEI_CACHE_DIR') || path.join(DATA_DIR, 'cache'));
 export const DB_FILE = pickEnv('DB_FILE') || path.join(DATA_DIR, 'database.db');

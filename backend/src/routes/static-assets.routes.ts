@@ -6,6 +6,7 @@ import {
   CONTRACTS_DIR,
   DATA_DIR,
   IMAGES_PATH,
+  PUBLIC_DIR,
   NESQL_CANONICAL_DIR,
   PUBLISH_OUTPUT_DIR,
 } from '../config/runtime-paths';
@@ -258,7 +259,7 @@ function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string; 
 }
 
 export function registerStaticAssetRoutes(app: Express): void {
-  app.use(express.static(path.join(__dirname, '../public')));
+  app.use(express.static(PUBLIC_DIR));
 
   if (fs.existsSync(CONTRACTS_DIR)) {
     app.use(
