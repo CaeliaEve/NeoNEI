@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import type { Recipe } from '../services/api';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 export interface MachineCategory {
   type: 'crafting' | 'machine';
@@ -30,8 +31,24 @@ const optionRefs = ref<Array<HTMLButtonElement | null>>([]);
 
 const getMachineIconPath = (icon: string | null): string => {
   if (!icon) return '/placeholder.png';
+  if (getMachineIconItemId(icon)) return '';
   if (icon.startsWith('http') || icon.startsWith('/')) return icon;
   return `${__BACKEND_BASE_URL__}/images/item/${icon}`;
+};
+
+const getMachineIconItemId = (icon: string | null): string | null => {
+  if (!icon) return null;
+  if (icon.startsWith('item:')) {
+    return icon.slice('item:'.length);
+  }
+  if (icon.startsWith('i~')) {
+    return icon;
+  }
+  const match = icon.match(/(?:^|\/)images\/item\/([^/]+)\/(.+?)\.png(?:$|\?)/i);
+  if (match) {
+    return `i~${decodeURIComponent(match[1])}~${decodeURIComponent(match[2])}`;
+  }
+  return null;
 };
 
 const handleSelect = (index: number) => {
@@ -45,6 +62,20 @@ const setOptionRef = (element: unknown, index: number) => {
 
 const getCategoryCount = (category: MachineCategory): number =>
   typeof category.recipeCount === 'number' ? category.recipeCount : category.recipes.length;
+
+const getDisplayName = (name: string): string => {
+  const normalized = `${name ?? ''}`.trim();
+  if (/mana\s*pool/i.test(normalized)) return '魔力池';
+  if (/crucible/i.test(normalized)) return '坩埚';
+  if (/crafting\s*\(shaped\)|codechicken.*shaped|crafting~shaped/i.test(normalized)) return '有序合成';
+  if (/crafting\s*\(shapeless\)|codechicken.*shapeless|crafting~shapeless/i.test(normalized)) return '无序合成';
+  if (/^rt~gregtech~gt\.recipe\.laserengraver/i.test(normalized)) return '激光蚀刻机';
+  if (/^rt~gregtech~gt\.recipe\.implosioncompressor/i.test(normalized)) return '聚爆压缩机';
+  if (/^rt~gregtech~gt\.recipe\.electricimplosioncompressor/i.test(normalized)) return '电动聚爆压缩机';
+  if (/^rt~gregtech~gt\.recipe\.compressor/i.test(normalized)) return '压缩机';
+  if (/^rt~gregtech~gt\.recipe\.bender/i.test(normalized)) return '压模机';
+  return normalized.replace(/^\s*[A-Za-z0-9_ -]+\s+-\s+/, '').replace(/\s*\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)\s*$/i, '').trim() || normalized;
+};
 
 const focusOption = (index: number) => {
   optionRefs.value[index]?.focus();
@@ -93,13 +124,20 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
         role="option"
         :aria-selected="modelValue === index"
         :tabindex="modelValue === index ? 0 : -1"
-        :aria-label="`${category.name} (${getCategoryCount(category)} 个)`"
+        :aria-label="`${getDisplayName(category.name)} (${getCategoryCount(category)} 个)`"
         @click="handleSelect(index)"
         @keydown="handleOptionKeydown($event, index)"
       >
         <span class="machine-icon-container" aria-hidden="true">
+          <AnimatedItemIcon
+            v-if="getMachineIconItemId(category.machineIcon)"
+            :item-id="getMachineIconItemId(category.machineIcon)!"
+            :size="38"
+            class="machine-icon"
+          />
+
           <img
-            v-if="category.machineIcon"
+            v-else-if="category.machineIcon"
             :src="getMachineIconPath(category.machineIcon)"
             class="machine-icon"
             @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png' }"
@@ -124,7 +162,7 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
         </span>
 
         <span class="recipe-count-badge" aria-hidden="true">{{ getCategoryCount(category) }}</span>
-        <span class="icon-tooltip" role="tooltip">{{ category.name }} ({{ getCategoryCount(category) }} 个)</span>
+        <span class="icon-tooltip" role="tooltip">{{ getDisplayName(category.name) }} ({{ getCategoryCount(category) }} 个)</span>
       </button>
     </div>
   </div>

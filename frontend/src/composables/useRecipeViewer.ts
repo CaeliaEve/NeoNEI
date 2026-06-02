@@ -2,7 +2,6 @@
 import {
   api,
   type PageRichMediaManifest,
-  getImageUrl,
   type ItemSearchBasic,
   type indexedItemRecipeSummaryResponse,
 } from '../services/api';
@@ -181,7 +180,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   };
 
   const getImagePath = (itemId: string) => {
-    return getImageUrl(itemId);
+    return `item:${itemId}`;
   };
 
   const {

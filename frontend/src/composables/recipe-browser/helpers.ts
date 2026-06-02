@@ -45,9 +45,86 @@ const MACHINE_CATEGORY_ALIAS_GROUPS: string[][] = [
   ['搅拌机', '工业搅拌机'],
 ];
 
+const GT_RECIPE_NAME_BY_KEY: Record<string, string> = {
+  implosioncompressor: '聚爆压缩机',
+  electricimplosioncompressor: '电动聚爆压缩机',
+  laserengraver: '激光蚀刻机',
+  compressor: '压缩机',
+  bender: '压模机',
+  alloysmelter: '合金炉',
+  centrifuge: '离心机',
+  electrolyzer: '电解机',
+  blastfurnace: '高炉',
+  electricblastfurnace: '电力高炉',
+  arcfurnace: '电弧炉',
+  assembler: '组装机',
+  assemblyline: '装配线',
+  fluidsolidifier: '流体固化机',
+  chemicalreactor: '化学反应釜',
+  largechemicalreactor: '大型化学反应釜',
+  macerator: '粉碎机',
+  extractor: '提取机',
+  extruder: '挤压机',
+  lathe: '车床',
+  mixer: '搅拌机',
+  autoclave: '高压釜',
+  distillery: '蒸馏室',
+  distillationtower: '蒸馏塔',
+  vacuumfreezer: '真空冷冻机',
+};
+
+const WELL_KNOWN_RECIPE_NAME_BY_ID: Array<[RegExp, string]> = [
+  [/codechicken_nei_recipe_shapedrecipehandler|crafting~shaped/i, '有序合成'],
+  [/codechicken_nei_recipe_shapelessrecipehandler|crafting~shapeless/i, '无序合成'],
+  [/minecraft~smelting|furnace|smelting/i, '熔炉'],
+  [/botania.*manapool|botania~mana_pool/i, '魔力池'],
+  [/mana pool/i, '魔力池'],
+  [/botania.*runic|rune/i, '符文祭坛'],
+  [/botania.*elven|elven/i, '精灵交易'],
+  [/botania.*lexica/i, '植物魔法辞典'],
+  [/thaumcraft.*crucible|crucible/i, '坩埚'],
+  [/crucible/i, '坩埚'],
+  [/thaumcraft.*infusion|infusion/i, '奥术注魔'],
+  [/thaumcraft.*arcane|arcane/i, '奥术合成'],
+];
+
+const stripRecipeDisplayDecorations = (value: string): string => {
+  return value
+    .replace(/^\s*[A-Za-z0-9_ -]+\s+-\s+/, '')
+    .replace(/\s*\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)\s*$/i, '')
+    .trim();
+};
+
+const humanizeRecipeCategoryName = (raw: string): string => {
+  const value = `${raw ?? ''}`.trim();
+  if (!value) return value;
+
+  const gtMatch = value.match(/gt\.recipe\.([a-z0-9_]+)(?:~|$)/i);
+  if (gtMatch) {
+    const key = gtMatch[1].toLowerCase().replace(/_/g, '');
+    return GT_RECIPE_NAME_BY_KEY[key] ?? stripRecipeDisplayDecorations(value);
+  }
+
+  for (const [pattern, label] of WELL_KNOWN_RECIPE_NAME_BY_ID) {
+    if (pattern.test(value)) return label;
+  }
+
+  const stripped = stripRecipeDisplayDecorations(value);
+  if (/^rt~/i.test(stripped)) {
+    return value;
+  }
+  if (/crafting \(shaped\)/i.test(stripped)) return '有序合成';
+  if (/crafting \(shapeless\)/i.test(stripped)) return '无序合成';
+  if (/mana pool/i.test(stripped)) return '魔力池';
+  if (/furnace|smelting/i.test(stripped)) return '熔炉';
+  return stripped || value;
+};
+
 export const normalizeMachineFamilyName = (name: string): string => {
-  const normalized = `${name ?? ''}`.trim();
+  const normalized = humanizeRecipeCategoryName(`${name ?? ''}`.trim());
   if (!normalized) return normalized;
+  if (/mana\s*pool/i.test(normalized)) return '魔力池';
+  if (/crucible/i.test(normalized)) return '坩埚';
 
   if (/extreme entity crusher|industrial slaughterhouse/i.test(normalized) || normalized.includes('工业屠宰场')) {
     return '工业屠宰场';
@@ -242,6 +319,31 @@ const GT_MACHINE_ICON_BY_FAMILY: Array<{
   fallback?: number;
 }> = [
   {
+    patterns: ['电动聚爆压缩机', 'electricimplosioncompressor', 'electric implosion compressor'],
+    tiers: {},
+    fallback: 12734,
+  },
+  {
+    patterns: ['聚爆压缩机', 'implosioncompressor', 'implosion compressor'],
+    tiers: {},
+    fallback: 1001,
+  },
+  {
+    patterns: ['激光蚀刻机', 'laserengraver', 'laser engraver'],
+    tiers: { LV: 591, MV: 592, HV: 593, EV: 594, IV: 595 },
+    fallback: 591,
+  },
+  {
+    patterns: ['压模机', 'bender'],
+    tiers: { ULV: 281, LV: 281, MV: 282, HV: 283, EV: 284, IV: 285 },
+    fallback: 281,
+  },
+  {
+    patterns: ['压缩机', 'compressor'],
+    tiers: { ULV: 114, LV: 115, MV: 116, EV: 118, IV: 119, LuV: 120, ZPM: 121, UV: 122, UHV: 123, UIV: 124, UMV: 125, UXV: 126 },
+    fallback: 115,
+  },
+  {
     patterns: ['研究站', 'research station'],
     tiers: { ULV: 30, LV: 31, MV: 32, HV: 33, EV: 34, IV: 35, LuV: 36, ZPM: 37, UV: 38, UHV: 39, UEV: 40, UIV: 41, UMV: 42, UXV: 43, MAX: 44 },
     fallback: 33,
@@ -337,6 +439,19 @@ const resolveFallbackMachineIconByName = (
     return getImagePath(`i~gregtech~gt.blockmachines~${metaId}`);
   }
 
+  return null;
+};
+
+const getKnownCategoryIcon = (name: string, getImagePath: (itemId: string) => string): string | null => {
+  const normalized = humanizeRecipeCategoryName(name).toLowerCase();
+  if (normalized.includes('魔力池')) return getImagePath('i~Botania~pool~0');
+  if (normalized.includes('植物魔法辞典')) return getImagePath('i~Botania~lexicon~0');
+  if (normalized.includes('坩埚')) return getImagePath('i~Thaumcraft~blockMetalDevice~0');
+  if (normalized.includes('奥术')) return getImagePath('i~Thaumcraft~blockTable~15');
+  if (normalized.includes('有序合成') || normalized.includes('无序合成') || normalized.includes('crafting')) {
+    return getImagePath('i~minecraft~crafting_table~0');
+  }
+  if (normalized.includes('熔炉')) return getImagePath('i~minecraft~furnace~0');
   return null;
 };
 
@@ -900,7 +1015,7 @@ export const buildCategorySkeletonsFromSummary = (
       recipeCount: group.recipeCount,
       machineKey: group.machineKey ?? undefined,
       machineIcon: group.machineIcon ?? null,
-    }, getImagePath),
+    }, getImagePath) ?? getKnownCategoryIcon(normalizedName, getImagePath),
     recipes: [],
     recipeVariants: new Map(),
     recipeCount: Math.max(0, Number(group.recipeCount ?? 0)),
