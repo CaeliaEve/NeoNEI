@@ -9,11 +9,12 @@ import RecipeSearch from '../components/RecipeSearch.vue';
 import RecipeChromeButton from '../components/RecipeChromeButton.vue';
 import RecipeBrowserStage from '../components/RecipeBrowserStage.vue';
 import RecipeStatePanel from '../components/RecipeStatePanel.vue';
+import AnimatedItemIcon from '../components/AnimatedItemIcon.vue';
 import { useSound } from '../services/sound.service';
 import { resolveRecipePresentationProfile } from '../services/uiTypeMapping';
 import { useRecipeViewer } from '../composables/useRecipeViewer';
 import { useRecipeRouteSync } from '../composables/useRecipeRouteSync';
-import { api, getImageUrlFromFileName, getImageUrlFromRenderAssetRef, type EcosystemOverview, type MultiblockBlueprint } from '../services/api';
+import { api, type EcosystemOverview, type MultiblockBlueprint } from '../services/api';
 import { useRecipeHistory } from '../services/recipeHistory.service';
 import type { RecipeDisplayHandle, RecipeOverlayUiState } from '../domain/recipeDisplayContract';
 
@@ -29,19 +30,6 @@ const recipeDisplayRouterRef = ref<RecipeDisplayHandle | null>(null);
 
 const itemId = computed(() => props.itemId ?? (route.params.itemId as string | undefined));
 
-const getHeaderImagePath = () => {
-  if (item.value?.renderAssetRef) {
-    const renderAssetUrl = getImageUrlFromRenderAssetRef(item.value.renderAssetRef);
-    if (renderAssetUrl) return renderAssetUrl;
-  }
-  if (item.value?.imageFileName) {
-    return getImageUrlFromFileName(item.value.imageFileName);
-  }
-  if (item.value?.itemId) {
-    return getImagePath(item.value.itemId);
-  }
-  return '/placeholder.png';
-};
 const showMultiblockDialog = ref(false);
 const multiblockLoading = ref(false);
 const multiblockError = ref<string | null>(null);
@@ -665,12 +653,13 @@ onBeforeUnmount(() => {
           <template #summary>
             <div class="recipe-header">
               <div class="item-info">
-                <img
+                <AnimatedItemIcon
                   v-if="item"
-                  :src="getHeaderImagePath()"
-                  :alt="item.localizedName + ' ' + copy.itemIcon"
+                  :item-id="item.itemId"
+                  :render-asset-ref="item.renderAssetRef || null"
+                  :image-file-name="item.imageFileName || null"
+                  :size="44"
                   class="item-icon"
-                  @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
                 />
                 <div class="item-heading-copy">
                   <h1 v-if="item">{{ item.localizedName }}</h1>
