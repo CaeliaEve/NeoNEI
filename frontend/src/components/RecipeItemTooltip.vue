@@ -14,10 +14,20 @@ const props = withDefaults(defineProps<{
   sizeMode?: TooltipSizeMode;
   motionLevel?: TooltipMotionLevel;
   extraLines?: string[];
+  localizedName?: string | null;
+  modId?: string | null;
+  internalName?: string | null;
+  renderAssetRef?: string | null;
+  imageFileName?: string | null;
 }>(), {
   sizeMode: 'auto',
   motionLevel: 'auto',
   extraLines: () => [],
+  localizedName: null,
+  modId: null,
+  internalName: null,
+  renderAssetRef: null,
+  imageFileName: null,
 });
 
 const emit = defineEmits<{
@@ -57,6 +67,62 @@ const tooltipClasses = computed(() => [
   `motion-${resolvedMotion.value}`,
 ]);
 
+const parsedItemId = computed(() => {
+  const parts = props.itemId.split('~');
+  if (parts.length >= 3) {
+    return { modId: parts[1], internalName: parts[2] };
+  }
+  return { modId: 'unknown', internalName: props.itemId };
+});
+
+const fallbackItemData = computed<Item>(() => ({
+  itemId: props.itemId,
+  modId: props.modId || parsedItemId.value.modId,
+  internalName: props.internalName || parsedItemId.value.internalName,
+  localizedName: props.localizedName || parsedItemId.value.internalName || props.itemId,
+  renderAssetRef: props.renderAssetRef ?? null,
+  imageFileName: props.imageFileName ?? null,
+  maxStackSize: 64,
+  maxDamage: 0,
+  tooltip: null,
+}));
+
+const resolvedItemData = computed<Item | null>(() => {
+  if (!itemData.value) {
+    return null;
+  }
+  const fallback = fallbackItemData.value;
+  return {
+    ...fallback,
+    ...itemData.value,
+    itemId: itemData.value.itemId || fallback.itemId,
+    modId: itemData.value.modId || fallback.modId,
+    internalName: itemData.value.internalName || fallback.internalName,
+    localizedName: itemData.value.localizedName || fallback.localizedName,
+    renderAssetRef: itemData.value.renderAssetRef ?? fallback.renderAssetRef ?? null,
+    imageFileName: itemData.value.imageFileName ?? fallback.imageFileName ?? null,
+    maxStackSize:
+      typeof itemData.value.maxStackSize === 'number' && Number.isFinite(itemData.value.maxStackSize)
+        ? itemData.value.maxStackSize
+        : fallback.maxStackSize,
+    maxDamage:
+      typeof itemData.value.maxDamage === 'number' && Number.isFinite(itemData.value.maxDamage)
+        ? itemData.value.maxDamage
+        : fallback.maxDamage,
+  };
+});
+
+const readItemFromBrowserRuntime = async (): Promise<Item | null> => {
+  const cached = api.peekBrowserPagePackByIds?.({ itemIds: [props.itemId], slotSize: 32 });
+  const cachedItem = cached?.data?.find((entry) => entry.item.itemId === props.itemId)?.item;
+  if (cachedItem) {
+    return cachedItem;
+  }
+
+  const pack = await api.getBrowserPagePackByIds({ itemIds: [props.itemId], slotSize: 32 });
+  return pack.data.find((entry) => entry.item.itemId === props.itemId)?.item ?? null;
+};
+
 const refreshViewportState = () => {
   windowWidth.value = window.innerWidth;
 };
@@ -72,9 +138,10 @@ const showTooltip = async () => {
   if (!itemData.value && !loading.value) {
     loading.value = true;
     try {
-      itemData.value = await api.getItem(props.itemId);
+      itemData.value = await readItemFromBrowserRuntime() ?? fallbackItemData.value;
     } catch (error) {
       console.error('Failed to load item data:', error);
+      itemData.value = fallbackItemData.value;
     } finally {
       loading.value = false;
     }
@@ -96,14 +163,6 @@ const handleClick = () => {
 };
 
 const extraLines = computed(() => props.extraLines.filter((line) => `${line ?? ''}`.trim().length > 0));
-
-const parsedItemId = computed(() => {
-  const parts = props.itemId.split('~');
-  if (parts.length >= 3) {
-    return { modId: parts[1], internalName: parts[2] };
-  }
-  return { modId: 'unknown', internalName: props.itemId };
-});
 
 onMounted(() => {
   window.addEventListener('resize', refreshViewportState, { passive: true });
@@ -145,18 +204,18 @@ onBeforeUnmount(() => {
           <span>加载中...</span>
         </div>
 
-        <template v-else-if="itemData">
+        <template v-else-if="resolvedItemData">
           <div class="tooltip-header">
             <AnimatedItemIcon
-              :item-id="itemData.itemId || itemId"
-              :render-asset-ref="itemData.renderAssetRef || null"
-              :image-file-name="itemData.imageFileName || null"
+              :item-id="resolvedItemData.itemId || itemId"
+              :render-asset-ref="resolvedItemData.renderAssetRef || null"
+              :image-file-name="resolvedItemData.imageFileName || null"
               :size="34"
               class="tooltip-icon"
             />
             <div class="tooltip-title">
-              <h3 class="item-name">{{ itemData.localizedName }}</h3>
-              <p class="item-mod">{{ itemData.modId }} / {{ itemData.internalName }}</p>
+              <h3 class="item-name">{{ resolvedItemData.localizedName }}</h3>
+              <p class="item-mod">{{ resolvedItemData.modId }} / {{ resolvedItemData.internalName }}</p>
             </div>
           </div>
 
@@ -166,21 +225,21 @@ onBeforeUnmount(() => {
 
           <div class="tooltip-details">
             <div v-for="line in extraLines" :key="line" class="detail-row detail-row--extra">
-              <span class="detail-label">掉率</span>
+              <span class="detail-label">附加</span>
               <span class="detail-value">{{ line }}</span>
             </div>
             <div class="detail-row">
               <span class="detail-label">堆叠</span>
-              <span class="detail-value">{{ itemData.maxStackSize }}</span>
+              <span class="detail-value">{{ resolvedItemData.maxStackSize }}</span>
             </div>
 
-            <div v-if="itemData.maxDamage > 0" class="detail-row">
+            <div v-if="resolvedItemData.maxDamage > 0" class="detail-row">
               <span class="detail-label">耐久</span>
-              <span class="detail-value">{{ itemData.maxDamage }}</span>
+              <span class="detail-value">{{ resolvedItemData.maxDamage }}</span>
             </div>
 
-            <div v-if="itemData.tooltip" class="tooltip-description">
-              <ThaumcraftTooltip :tooltip="itemData.tooltip" />
+            <div v-if="resolvedItemData.tooltip" class="tooltip-description">
+              <ThaumcraftTooltip :tooltip="resolvedItemData.tooltip" />
             </div>
           </div>
         </template>
@@ -192,7 +251,8 @@ onBeforeUnmount(() => {
             class="tooltip-icon"
           />
           <div class="fallback-info">
-            <p class="fallback-id">{{ parsedItemId.modId }} / {{ parsedItemId.internalName }}</p>
+            <p class="fallback-id">{{ fallbackItemData.localizedName }}</p>
+            <p class="fallback-subtitle">{{ fallbackItemData.modId }} / {{ fallbackItemData.internalName }}</p>
             <p v-if="count && count > 1" class="fallback-count">数量：{{ count }}</p>
           </div>
         </div>
@@ -586,3 +646,4 @@ onBeforeUnmount(() => {
   }
 }
 </style>
+

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { api, getImageUrl, type Recipe } from '../services/api';
+import { getImageUrl, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import {
   collectRecipeItemStacks,
@@ -8,7 +8,7 @@ import {
   isThaumcraftAspectItem,
   type RitualItemStack,
 } from '../composables/ritualFamilyMetadata';
-import { buildOutputSlots, parseAdditionalData, type ResolvedSlot } from '../composables/useRecipeSlots';
+import { buildOutputSlots, parseAdditionalData, resolveRuntimeItemSummary, type ResolvedSlot } from '../composables/useRecipeSlots';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 import AnimatedItemIcon from './AnimatedItemIcon.vue';
@@ -60,12 +60,8 @@ function getRawInputSource(recipe: Recipe): unknown {
 
 async function resolveName(item: RitualItemStack): Promise<RitualItemStack> {
   if (item.localizedName?.trim()) return item;
-  try {
-    const detail = await api.getItem(item.itemId);
-    return { ...item, localizedName: detail.localizedName };
-  } catch {
-    return item;
-  }
+  const detail = await resolveRuntimeItemSummary(item.itemId);
+  return detail?.localizedName ? { ...item, localizedName: detail.localizedName } : item;
 }
 
 async function initialize() {

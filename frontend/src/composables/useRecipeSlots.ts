@@ -10,6 +10,7 @@ export interface ResolvedSlot {
 
 interface RawSlotLike {
   itemId?: unknown;
+  localizedName?: unknown;
   count?: unknown;
   stackSize?: unknown;
   renderAssetRef?: unknown;
@@ -21,6 +22,7 @@ interface RawSlotLike {
 interface SlotCandidate {
   itemId: string;
   count: number;
+  localizedName?: string | null;
   renderAssetRef?: string | null;
   imageFileName?: string | null;
 }
@@ -33,6 +35,7 @@ function toCandidate(slotLike: RawSlotLike | null | undefined): SlotCandidate | 
     return {
       itemId: slotLike.itemId,
       count: normalizeCount(slotLike.count ?? slotLike.stackSize),
+      localizedName: typeof slotLike.localizedName === 'string' ? slotLike.localizedName : null,
       renderAssetRef: typeof slotLike.renderAssetRef === 'string' ? slotLike.renderAssetRef : null,
       imageFileName: typeof slotLike.imageFileName === 'string' ? slotLike.imageFileName : null,
     };
@@ -47,6 +50,7 @@ function toCandidate(slotLike: RawSlotLike | null | undefined): SlotCandidate | 
     return {
       itemId: nested.itemId as string,
       count: normalizeCount(slotLike.count ?? slotLike.stackSize),
+      localizedName: typeof nested.localizedName === 'string' ? nested.localizedName : null,
       renderAssetRef:
         typeof slotLike.renderAssetRef === 'string'
           ? slotLike.renderAssetRef
@@ -137,28 +141,50 @@ function collectInputCandidates(node: unknown, output: SlotCandidate[]): void {
 }
 
 async function resolveSlots(slots: SlotCandidate[]): Promise<ResolvedSlot[]> {
-  return Promise.all(
-    slots.map(async ({ itemId, count, renderAssetRef, imageFileName }) => {
-      try {
-        const item = await api.getItem(itemId);
-        return {
-          itemId,
-          count,
-          localizedName: item.localizedName,
-          renderAssetRef: item.renderAssetRef ?? renderAssetRef ?? null,
-          imageFileName: item.imageFileName ?? imageFileName ?? null,
-        };
-      } catch {
-        return {
-          itemId,
-          count,
-          localizedName: itemId,
-          renderAssetRef: renderAssetRef ?? null,
-          imageFileName: imageFileName ?? null,
-        };
+  const uniqueItemIds = Array.from(new Set(slots.map((slot) => slot.itemId).filter(Boolean)));
+  const runtimeItems = new Map<string, { localizedName?: string | null; renderAssetRef?: string | null; imageFileName?: string | null }>();
+
+  if (uniqueItemIds.length > 0) {
+    const cached = api.peekBrowserPagePackByIds({ itemIds: uniqueItemIds, slotSize: 32 });
+    for (const entry of cached?.data ?? []) {
+      runtimeItems.set(entry.item.itemId, entry.item);
+    }
+
+    const missingItemIds = uniqueItemIds.filter((itemId) => !runtimeItems.has(itemId));
+    if (missingItemIds.length > 0) {
+      const pack = await api.getBrowserPagePackByIds({ itemIds: missingItemIds, slotSize: 32 });
+      for (const entry of pack.data ?? []) {
+        runtimeItems.set(entry.item.itemId, entry.item);
       }
-    }),
-  );
+    }
+  }
+
+  return slots.map(({ itemId, count, localizedName, renderAssetRef, imageFileName }) => {
+    const item = runtimeItems.get(itemId);
+    return {
+      itemId,
+      count,
+      localizedName: item?.localizedName || localizedName || itemId,
+      renderAssetRef: item?.renderAssetRef ?? renderAssetRef ?? null,
+      imageFileName: item?.imageFileName ?? imageFileName ?? null,
+    };
+  });
+}
+
+export async function resolveRuntimeItemSummary(
+  itemId: string,
+): Promise<{ localizedName?: string | null; renderAssetRef?: string | null; imageFileName?: string | null } | null> {
+  const normalizedItemId = `${itemId ?? ''}`.trim();
+  if (!normalizedItemId) {
+    return null;
+  }
+  const cached = api.peekBrowserPagePackByIds({ itemIds: [normalizedItemId], slotSize: 32 });
+  const cachedItem = cached?.data?.find((entry) => entry.item.itemId === normalizedItemId)?.item;
+  if (cachedItem) {
+    return cachedItem;
+  }
+  const pack = await api.getBrowserPagePackByIds({ itemIds: [normalizedItemId], slotSize: 32 });
+  return pack.data.find((entry) => entry.item.itemId === normalizedItemId)?.item ?? null;
 }
 
 export async function buildInputSlots(recipe: Recipe): Promise<ResolvedSlot[]> {
@@ -204,7 +230,7 @@ export async function buildFirstInputSlotsPerRow(recipe: Recipe): Promise<Resolv
       continue;
     }
 
-    let chosen: { itemId: string; count: number } | null = null;
+    let chosen: SlotCandidate | null = null;
     for (const cell of row) {
       if (!cell) {
         continue;
@@ -248,6 +274,14 @@ export async function buildOutputSlots(recipe: Recipe, maxCount?: number): Promi
       return {
         itemId,
         count,
+        localizedName:
+          typeof asRecord.localizedName === 'string'
+            ? asRecord.localizedName
+            : (typeof asRecord.item === 'object' &&
+                asRecord.item !== null &&
+                typeof (asRecord.item as Record<string, unknown>).localizedName === 'string'
+              ? ((asRecord.item as Record<string, unknown>).localizedName as string)
+              : null),
         renderAssetRef: typeof asRecord.renderAssetRef === 'string' ? asRecord.renderAssetRef : null,
         imageFileName: typeof asRecord.imageFileName === 'string' ? asRecord.imageFileName : null,
       };
@@ -281,3 +315,4 @@ export function parseAdditionalData(recipe: Recipe): Record<string, unknown> | n
 
   return null;
 }
+

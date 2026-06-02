@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { api, getImageUrl, type Recipe } from '../services/api';
+import { getImageUrl, type Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
-import { buildOutputSlots, parseAdditionalData, type ResolvedSlot } from '../composables/useRecipeSlots';
+import { buildOutputSlots, parseAdditionalData, resolveRuntimeItemSummary, type ResolvedSlot } from '../composables/useRecipeSlots';
 import {
   buildThaumcraftAspectCosts,
   collectRecipeItemStacks,
@@ -204,12 +204,8 @@ async function resolveItemNames(items: RitualLayoutItem[]): Promise<RitualLayout
       if (item.localizedName && item.localizedName.trim()) {
         return item;
       }
-      try {
-        const detail = await api.getItem(item.itemId);
-        return { ...item, localizedName: detail.localizedName };
-      } catch {
-        return item;
-      }
+      const detail = await resolveRuntimeItemSummary(item.itemId);
+      return detail?.localizedName ? { ...item, localizedName: detail.localizedName } : item;
     }),
   );
 }

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch, onBeforeUnmount } from 'vue';
-import { api, type Recipe } from '../services/api';
+import type { Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
-import { buildOutputSlots, parseAdditionalData, type ResolvedSlot } from '../composables/useRecipeSlots';
+import { buildOutputSlots, parseAdditionalData, resolveRuntimeItemSummary, type ResolvedSlot } from '../composables/useRecipeSlots';
 import {
   buildThaumcraftAspectCosts,
   collectRecipeItemStacks,
@@ -147,12 +147,8 @@ function getRawInputSource(recipe: Recipe): unknown {
 
 async function resolveItemName(item: RitualItemStack | null): Promise<RitualItemStack | null> {
   if (!item || item.localizedName?.trim()) return item;
-  try {
-    const detail = await api.getItem(item.itemId);
-    return { ...item, localizedName: detail.localizedName };
-  } catch {
-    return item;
-  }
+  const detail = await resolveRuntimeItemSummary(item.itemId);
+  return detail?.localizedName ? { ...item, localizedName: detail.localizedName } : item;
 }
 
 async function initialize() {
