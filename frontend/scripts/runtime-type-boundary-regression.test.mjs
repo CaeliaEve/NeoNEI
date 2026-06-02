@@ -1,4 +1,4 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
@@ -17,7 +17,8 @@ const specialDataClientSource = fs.readFileSync('src/runtime/specialDataClient.t
 const renderContractClientSource = fs.readFileSync('src/runtime/renderContractClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const indexedRecipeClientSource = fs.readFileSync('src/runtime/indexedRecipeClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const itemClientSource = fs.readFileSync('src/runtime/itemClient.ts', 'utf8').replace(/\r\n/g, '\n');
-const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
+const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\\r\\n/g, '\\n');
+const runtimeSessionSource = fs.readFileSync('src/services/api/runtimeSession.ts', 'utf8').replace(/\\r\\n/g, '\\n');
 
 test('public runtime manifest types live outside the legacy api facade', () => {
   assert.equal(
@@ -165,9 +166,9 @@ test('browser runtime client owns browser lab compatibility reads', () => {
     assert.equal(apiSource.includes(token), false, `services/api.ts should not own browser lab call: ${token}`);
   }
   assert.equal(
-    apiSource.includes('browserRuntimeClient.getPagePackCompat(params)'),
+    runtimeSessionSource.includes('createBrowserCatalogClient({') && apiSource.includes('browserCatalogClient.getBrowserPagePack(params)'),
     true,
-    'services/api.ts should delegate browser page-pack compatibility calls to browserRuntimeClient',
+    'services/api.ts should delegate browser page-pack reads to browserCatalogClient configured in runtimeSession',
   );
 });
 
@@ -462,3 +463,4 @@ test('browser search ranking logic lives outside the legacy api facade', () => {
   }
   assert.doesNotMatch(browserSearchProjectionSource, /from '\.\.\/services\/api'/);
 });
+

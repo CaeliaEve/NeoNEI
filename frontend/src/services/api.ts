@@ -1,6 +1,6 @@
-import { BACKEND_BASE_URL } from './api/core/http';
-import { createPublishedJsonClient, getHomeBootstrapCompat } from '../runtime/publishClient';
-import { createRuntimeManifestClient, getRuntimeCacheSignature } from '../runtime/manifestClient';
+﻿import { BACKEND_BASE_URL } from './api/core/http';
+import { getHomeBootstrapCompat } from '../runtime/publishClient';
+import { getRuntimeCacheSignature } from '../runtime/manifestClient';
 import type {
   AnimatedAtlasAssetEntry,
   BrowserAtlasIndexResponse,
@@ -61,19 +61,6 @@ import type {
   indexedRecipeCategorySummary,
   indexedRecipeMetadata,
 } from '../runtime/types';
-import {
-  getStoredRuntimeSignature,
-  primeRuntimeCacheSignature,
-  readPersistentRuntimeCache,
-  writePersistentRuntimeCache,
-} from './persistentRuntimeCache';
-import {
-  reportMissingRuntimePayload,
-  reportRuntimeContractGap,
-  isStrictRuntimeContractsEnabled,
-  setRuntimeDiagnosticIdentity,
-} from '../runtime/diagnostics';
-import { createTextureRuntimeClient } from '../runtime/textureClient';
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../runtime/patternClient';
 import { specialDataRuntimeClient } from '../runtime/specialDataClient';
 import { renderContractRuntimeClient } from '../runtime/renderContractClient';
@@ -84,11 +71,22 @@ import {
   deriveBrowserPagePackFromWindow,
   resolvePublishedWindowPath,
 } from '../runtime/browserProjection';
-import { buildRuntimePayloadCacheKey, setCacheWithLimit } from '../runtime/cacheUtils';
-import { createBrowserCatalogClient } from '../runtime/browserCatalogClient';
-import { createRecipeUiPayloadClient } from '../runtime/recipeUiPayloadClient';
-import { shouldPreferLiveRecipeBootstrap } from '../runtime/recipeBootstrapPreference';
-import { createRecipeBootstrapClient } from '../runtime/recipeBootstrapClient';
+import {
+  browserCatalogClient,
+  clearPublishedRuntimeCaches,
+  fetchPublishedJson,
+  getRuntimeDiagnosticIdentity,
+  isPublishedJsonWarm,
+  persistRuntimePayload,
+  readPersistentRuntimePayload,
+  recipeBootstrapClient,
+  recipeUiPayloadClient,
+  reportRuntimeDevCompatGap,
+  resetRuntimeSessionCaches,
+  runtimeManifestClient,
+  textureRuntimeClient,
+  updateCachedPublishManifest,
+} from './api/runtimeSession';
 
 export type {
   AnimatedAtlasAssetEntry,
@@ -196,193 +194,13 @@ export {
 
 
 
-let browserAtlasIndexCache: BrowserAtlasIndexResponse | null = null;
-let browserAtlasIndexInFlight: Promise<BrowserAtlasIndexResponse | null> | null = null;
-const browserAtlasEntriesInFlight = new Map<string, Promise<BrowserAtlasIndexResponse | null>>();
-const publishedJsonValueCache = new Map<string, unknown>();
-const publishedJsonInFlight = new Map<string, Promise<unknown>>();
-let publishManifestCache: PublicRuntimeManifest | null = null;
-const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>({
-  onManifest: (manifest) => {
-    publishManifestCache = manifest;
-    const runtimeCacheKey = getRuntimeCacheSignature(manifest);
-    primeRuntimeCacheSignature(runtimeCacheKey);
-    setRuntimeDiagnosticIdentity({
-      sourceSignature: manifest.sourceSignature,
-      runtimeCacheKey,
-    });
-  },
-});
-
-const CACHE_LIMITS = {
-  publishedJson: 96,
-} as const;
-
-const PREFER_LIVE_RECIPE_BOOTSTRAP = shouldPreferLiveRecipeBootstrap();
-
-const STRICT_RUNTIME_V3 = isStrictRuntimeContractsEnabled();
-
-function reportRuntimeDevCompatGap(
-  scope: string,
-  route: string,
-  reason: string,
-  context?: {
-    itemId?: string | null;
-    recipeId?: string | null;
-    assetId?: string | null;
-    path?: string | null;
-    sourceSignature?: string | null;
-    runtimeCacheKey?: string | null;
-    details?: Record<string, unknown>;
-  },
-): void {
-  reportRuntimeContractGap(scope, route, reason, {
-    strict: STRICT_RUNTIME_V3,
-    context,
-  });
-}
-
-function getRuntimeDiagnosticIdentity(): {
-  sourceSignature?: string | null;
-  runtimeCacheKey?: string | null;
-} {
-  return {
-    sourceSignature: publishManifestCache?.sourceSignature ?? null,
-    runtimeCacheKey: getRuntimeCacheSignature(publishManifestCache) || getStoredRuntimeSignature(),
-  };
-}
-
-function isHttpNotFoundError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-
-  const response = (error as { response?: { status?: number } }).response;
-  return Number(response?.status ?? 0) === 404;
-}
-
-function isPublishedJsonWarm(assetPath: string | null | undefined): boolean {
-  return publishedJsonClient.isWarm(assetPath);
-}
-
-async function fetchPublishedJson<T>(assetPath: string): Promise<T> {
-  return publishedJsonClient.fetchJson<T>(assetPath);
-}
-
-async function resolveRuntimeSignature(): Promise<string | null> {
-  const cached = getRuntimeCacheSignature(publishManifestCache);
-  if (cached) {
-    primeRuntimeCacheSignature(cached);
-    return cached;
-  }
-  try {
-    const manifest = await api.getPublishManifest();
-    const signature = getRuntimeCacheSignature(manifest);
-    if (signature) {
-      primeRuntimeCacheSignature(signature);
-    }
-    return signature;
-  } catch {
-    return getStoredRuntimeSignature();
-  }
-}
-
-async function readPersistentRuntimePayload<T>(
-  kind: string,
-  identity: Record<string, unknown>,
-): Promise<T | null> {
-  const signature = getRuntimeCacheSignature(publishManifestCache) || getStoredRuntimeSignature();
-  if (!signature) {
-    return null;
-  }
-  return readPersistentRuntimeCache<T>(buildRuntimePayloadCacheKey(kind, signature, identity));
-}
-
-function persistRuntimePayload(
-  kind: string,
-  identity: Record<string, unknown>,
-  payload: unknown,
-): void {
-  void resolveRuntimeSignature()
-    .then(async (signature) => {
-      if (!signature) {
-        return;
-      }
-      await writePersistentRuntimeCache(
-        buildRuntimePayloadCacheKey(kind, signature, identity),
-        payload,
-      );
-    })
-    .catch(() => {
-      // best-effort only
-    });
-}
-
-const publishedJsonClient = createPublishedJsonClient({
-  hasMemory: (url) => publishedJsonValueCache.has(url),
-  getMemory: <T>(url: string) => publishedJsonValueCache.get(url) as T | undefined,
-  setMemory: (url, payload) => setCacheWithLimit(publishedJsonValueCache, url, payload, CACHE_LIMITS.publishedJson),
-  getInFlight: <T>(url: string) => publishedJsonInFlight.get(url) as Promise<T> | undefined,
-  setInFlight: (url, request) => publishedJsonInFlight.set(url, request),
-  deleteInFlight: (url) => publishedJsonInFlight.delete(url),
-  readPersistent: <T>(url: string) => readPersistentRuntimePayload<T>('published-json', { url }),
-  writePersistent: (url, payload) => persistRuntimePayload('published-json', { url }, payload),
-});
-
-const textureRuntimeClient = createTextureRuntimeClient({
-  getCachedAtlasIndex: () => browserAtlasIndexCache,
-  setCachedAtlasIndex: (index) => {
-    browserAtlasIndexCache = index;
-  },
-  getAtlasIndexInFlight: () => browserAtlasIndexInFlight,
-  setAtlasIndexInFlight: (request) => {
-    browserAtlasIndexInFlight = request;
-  },
-  getAtlasEntriesInFlight: (key) => browserAtlasEntriesInFlight.get(key),
-  setAtlasEntriesInFlight: (key, request) => browserAtlasEntriesInFlight.set(key, request),
-  deleteAtlasEntriesInFlight: (key) => browserAtlasEntriesInFlight.delete(key),
-  getDiagnosticIdentity: getRuntimeDiagnosticIdentity,
-});
-
-
-const browserCatalogClient = createBrowserCatalogClient({
-  getManifest: () => runtimeManifestClient.getPublishManifest(),
-  fetchPublishedJson,
-  isPublishedJsonWarm,
-  reportGap: (scope, route, reason, context) => reportRuntimeDevCompatGap(scope, route, reason, {
-    ...getRuntimeDiagnosticIdentity(),
-    details: context?.details,
-  }),
-  readPersistent: readPersistentRuntimePayload,
-  persist: persistRuntimePayload,
-  resolveRuntimeSignature,
-  primeRuntimeSignature: primeRuntimeCacheSignature,
-  writePersistentRuntimeCache,
-});
-const recipeUiPayloadClient = createRecipeUiPayloadClient({
-  readPersistent: readPersistentRuntimePayload,
-  persist: persistRuntimePayload,
-  resolveRuntimeSignature,
-  reportMissing: reportMissingRuntimePayload,
-  isHttpNotFoundError,
-});
-const recipeBootstrapClient = createRecipeBootstrapClient({
-  preferLive: PREFER_LIVE_RECIPE_BOOTSTRAP,
-  getManifest: () => runtimeManifestClient.getPublishManifest(),
-  fetchPublishedJson,
-  readPersistent: readPersistentRuntimePayload,
-  persist: persistRuntimePayload,
-  getBrowserSearchPackShard: (shardId) => browserCatalogClient.getBrowserSearchPackShard(shardId),
-  getBrowserSearchPack: () => browserCatalogClient.getBrowserSearchPack(),
-});
 export const api = {
   trimPreheatRuntimeCaches(): void {
     itemRuntimeClient.clearCaches();
     recipeBootstrapClient.clearCaches();
     browserCatalogClient.clearSearchCaches();
     recipeUiPayloadClient.clearCaches();
-    publishedJsonValueCache.clear();
-    publishedJsonInFlight.clear();
+    clearPublishedRuntimeCaches();
   },
 
   resetRuntimeCaches(): void {
@@ -391,10 +209,7 @@ export const api = {
     recipeBootstrapClient.clearCaches();
     browserCatalogClient.clearAllCaches();
     recipeUiPayloadClient.clearCaches();
-    publishedJsonValueCache.clear();
-    publishedJsonInFlight.clear();
-    publishManifestCache = null;
-    runtimeManifestClient.clear();
+    resetRuntimeSessionCaches();
     specialDataRuntimeClient.clear();
   },
 
@@ -457,8 +272,7 @@ export const api = {
 
     const response = { data: await getHomeBootstrapCompat(params) };
     if (response.data?.manifest) {
-      publishManifestCache = response.data.manifest;
-      primeRuntimeCacheSignature(getRuntimeCacheSignature(response.data.manifest));
+      updateCachedPublishManifest(response.data.manifest);
     }
     if (Array.isArray(response.data?.mods)) {
       persistRuntimePayload('mods-list', { scope: 'all' }, response.data.mods);
@@ -788,3 +602,6 @@ export const api = {
     return specialDataRuntimeClient.getForestryGeneticsOverview();
   }
 };
+
+
+

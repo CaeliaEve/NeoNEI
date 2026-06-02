@@ -1,9 +1,11 @@
-import test from 'node:test';
+﻿import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const diagnosticsSource = fs.readFileSync('src/runtime/diagnostics.ts', 'utf8').replace(/\r\n/g, '\n');
 const apiSource = fs.readFileSync('src/services/api.ts', 'utf8').replace(/\r\n/g, '\n');
+const runtimeSessionSource = fs.readFileSync('src/services/api/runtimeSession.ts', 'utf8').replace(/\r\n/g, '\n');
+const apiRuntimeSource = apiSource + '\n' + runtimeSessionSource;
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
 const devCompatClientSource = fs.readFileSync('src/runtime/devCompatClient.ts', 'utf8').replace(/\r\n/g, '\n');
@@ -70,12 +72,12 @@ test('runtime contract gaps and missing payloads use the structured diagnostics 
     'missing runtime payloads should use a stable diagnostic code',
   );
   assert.equal(
-    apiSource.includes('reportMissingRuntimePayload({'),
+    apiRuntimeSource.includes('reportMissingRuntimePayload'),
     true,
     'api.ts should report missing recipe UI payloads through runtime diagnostics',
   );
   assert.equal(
-    apiSource.includes('getRuntimeDiagnosticIdentity()'),
+    apiRuntimeSource.includes('getRuntimeDiagnosticIdentity()'),
     true,
     'dev compatibility gaps should include runtime identity where available',
   );
@@ -117,7 +119,7 @@ test('missing browser atlas assets use structured runtime diagnostics', () => {
     assert.equal(textureClientSource.includes(token), true, `missing texture diagnostic token: ${token}`);
   }
   assert.equal(
-    apiSource.includes('getDiagnosticIdentity: getRuntimeDiagnosticIdentity'),
+    apiRuntimeSource.includes('getDiagnosticIdentity: getRuntimeDiagnosticIdentity'),
     true,
     'texture runtime diagnostics should receive source signature and runtime cache key identity',
   );
@@ -126,18 +128,19 @@ test('missing browser atlas assets use structured runtime diagnostics', () => {
 
 test('manifest updates prime the runtime diagnostic identity', () => {
   assert.equal(
-    apiSource.includes('setRuntimeDiagnosticIdentity({'),
+    apiRuntimeSource.includes('setRuntimeDiagnosticIdentity({'),
     true,
     'api manifest client should prime the shared runtime diagnostic identity',
   );
   assert.equal(
-    apiSource.includes('sourceSignature: manifest.sourceSignature'),
+    apiRuntimeSource.includes('sourceSignature: manifest.sourceSignature'),
     true,
     'diagnostic identity should include source signature from the active manifest',
   );
   assert.equal(
-    apiSource.includes('runtimeCacheKey,'),
+    apiRuntimeSource.includes('runtimeCacheKey,'),
     true,
     'diagnostic identity should include the active runtime cache key',
   );
 });
+
