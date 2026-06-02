@@ -8,11 +8,11 @@ import { requestObservability } from './middleware/request-observability';
 import { errorHandler } from './middleware/error-handler';
 import { logger } from './utils/logger';
 import { sendErrorEnvelope } from './utils/error-response';
-import { createAdminAccessGuard } from './utils/admin-access';
 import { registerStaticAssetRoutes } from './routes/static-assets.routes';
 import { registerRuntimeAdminRoutes } from './routes/runtime-admin.routes';
 import { registerApiNamespaces } from './routes/api-namespaces.routes';
 import { scheduleStartupAutowarm } from './services/startup-autowarm.service';
+import { requireAdminToken, serverSettings } from './config/server-settings';
 import {
   accelerationRuntime,
   createAccelerationRuntimeMiddleware,
@@ -21,24 +21,6 @@ import {
 } from './services/acceleration-runtime.service';
 
 export const app = express();
-const parsedPort = Number(process.env.PORT);
-const PORT = Number.isFinite(parsedPort) && parsedPort > 0 ? parsedPort : 3002;
-const HOST = process.env.HOST?.trim() || '0.0.0.0';
-const PUBLIC_BASE_URL =
-  process.env.PUBLIC_BASE_URL?.trim().replace(/\/+$/, '') ||
-  `http://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT}`;
-const requireAdminToken = createAdminAccessGuard({
-  token: process.env.NEONEI_ADMIN_TOKEN?.trim() || process.env.ADMIN_TOKEN?.trim() || '',
-  rateLimitWindowMs: Number(process.env.NEONEI_ADMIN_RATE_LIMIT_WINDOW_MS ?? 60_000),
-  rateLimitMax: Number(process.env.NEONEI_ADMIN_RATE_LIMIT_MAX ?? 12),
-});
-
-function isEnvEnabled(value: string | undefined): boolean {
-  return value === '1' || value?.toLowerCase() === 'true';
-}
-
-const PUBLISH_MATERIALIZE_ON_START = isEnvEnabled(process.env.NEONEI_PUBLISH_MATERIALIZE_ON_START);
-const PUBLIC_RUNTIME_ONLY = isEnvEnabled(process.env.NEONEI_PUBLIC_RUNTIME_ONLY);
 let runtimeAccelerationDbManager: ReturnType<typeof getAccelerationDatabaseManager> | null = null;
 
 app.use(cors());
@@ -67,12 +49,12 @@ registerRuntimeAdminRoutes(app, {
   requireAdminToken,
   getRuntimeAccelerationDbManager: () => runtimeAccelerationDbManager,
   reconcileAccelerationRuntime: (manager) => reconcileAccelerationRuntime(manager, {
-    publishMaterializeOnStart: PUBLISH_MATERIALIZE_ON_START,
+    publishMaterializeOnStart: serverSettings.publishMaterializeOnStart,
   }),
   setAccelerationRuntimePhase,
 });
 
-registerApiNamespaces(app, { publicRuntimeOnly: PUBLIC_RUNTIME_ONLY });
+registerApiNamespaces(app, { publicRuntimeOnly: serverSettings.publicRuntimeOnly });
 
 app.use((req, res) => {
   sendErrorEnvelope(req, res, 404, 'NOT_FOUND', 'Route not found', {
@@ -103,20 +85,20 @@ export async function startServer() {
       lastError: null,
     });
 
-    app.listen(PORT, HOST, () => {
+    app.listen(serverSettings.port, serverSettings.host, () => {
       if (!fs.existsSync(IMAGES_PATH)) {
         logger.warn(`[WARN] IMAGES_PATH does not exist: ${IMAGES_PATH}`);
       }
-      logger.info(`Server listening on ${HOST}:${PORT}`);
-      logger.info(`Public URL: ${PUBLIC_BASE_URL}`);
-      logger.info(`API endpoint: ${PUBLIC_BASE_URL}/api`);
-      logger.info(`Items API: ${PUBLIC_BASE_URL}/api/items`);
+      logger.info(`Server listening on ${serverSettings.host}:${serverSettings.port}`);
+      logger.info(`Public URL: ${serverSettings.publicBaseUrl}`);
+      logger.info(`API endpoint: ${serverSettings.publicBaseUrl}/api`);
+      logger.info(`Items API: ${serverSettings.publicBaseUrl}/api/items`);
       logger.info(`Images path: ${IMAGES_PATH}`);
-      logger.info(`Public runtime only: ${PUBLIC_RUNTIME_ONLY}`);
+      logger.info(`Public runtime only: ${serverSettings.publicRuntimeOnly}`);
 
       setTimeout(() => {
         void reconcileAccelerationRuntime(accelerationDbManager, {
-          publishMaterializeOnStart: PUBLISH_MATERIALIZE_ON_START,
+          publishMaterializeOnStart: serverSettings.publishMaterializeOnStart,
         }).catch((error) => {
           const message = error instanceof Error ? error.message : String(error);
           setAccelerationRuntimePhase('error', 'Acceleration reconciliation failed.', {
@@ -136,6 +118,8 @@ export async function startServer() {
 }
 
 void startServer();
+
+
 
 
 

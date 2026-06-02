@@ -1,6 +1,4 @@
 ﻿import { BACKEND_BASE_URL } from './api/core/http';
-import { getHomeBootstrapCompat } from '../runtime/publishClient';
-import { getRuntimeCacheSignature } from '../runtime/manifestClient';
 import type {
   AnimatedAtlasAssetEntry,
   BrowserAtlasIndexResponse,
@@ -66,26 +64,16 @@ import { specialDataRuntimeClient } from '../runtime/specialDataClient';
 import { renderContractRuntimeClient } from '../runtime/renderContractClient';
 import { indexedRecipeRuntimeClient, type IndexedMachineRecipesResponse } from '../runtime/indexedRecipeClient';
 import { itemRuntimeClient, type ItemMachinesResponse } from '../runtime/itemClient';
-import { getDistDataHomeBootstrap } from './distDataRuntime';
-import {
-  deriveBrowserPagePackFromWindow,
-  resolvePublishedWindowPath,
-} from '../runtime/browserProjection';
 import {
   browserCatalogClient,
   clearPublishedRuntimeCaches,
-  fetchPublishedJson,
-  getRuntimeDiagnosticIdentity,
-  isPublishedJsonWarm,
-  persistRuntimePayload,
-  readPersistentRuntimePayload,
   recipeBootstrapClient,
   recipeUiPayloadClient,
-  reportRuntimeDevCompatGap,
   resetRuntimeSessionCaches,
   runtimeManifestClient,
   textureRuntimeClient,
-  updateCachedPublishManifest,
+  getRuntimeHomeBootstrap,
+  getRuntimeMods,
 } from './api/runtimeSession';
 
 export type {
@@ -223,61 +211,7 @@ export const api = {
     slotSize?: number;
     modId?: string;
   }): Promise<HomeBootstrapResponse> {
-    const distDataBootstrap = await getDistDataHomeBootstrap(params);
-    if (distDataBootstrap) {
-      return distDataBootstrap;
-    }
-    reportRuntimeDevCompatGap('home-bootstrap', '/publish/home-bootstrap', 'dist-data home bootstrap missing', {
-      ...getRuntimeDiagnosticIdentity(),
-      details: params,
-    });
-
-    const manifest = await api.getPublishManifest();
-    const requestedPage = Math.max(1, Math.floor(params.page ?? 1));
-    const requestedPageSize = Math.max(1, Math.floor(params.pageSize ?? 50));
-    const staticPath = !params.modId
-      ? resolvePublishedWindowPath(
-          manifest.publishBundle?.files.homeBootstrapWindows,
-          params.slotSize,
-          requestedPage,
-          requestedPageSize,
-          isPublishedJsonWarm,
-        )
-      : null;
-    if (staticPath) {
-      try {
-        const published = await fetchPublishedJson<{
-          mods: Mod[];
-          pagePack: BrowserPagePackResponse;
-        }>(staticPath);
-        const pagePack = deriveBrowserPagePackFromWindow(
-          published.pagePack,
-          requestedPage,
-          requestedPageSize,
-        );
-        if (pagePack) {
-          if (Array.isArray(published.mods)) {
-            persistRuntimePayload('mods-list', { scope: 'all' }, published.mods);
-          }
-          return {
-            manifest,
-            mods: Array.isArray(published.mods) ? published.mods : [],
-            pagePack,
-          };
-        }
-      } catch {
-        // Fall back to the API route when the static publish bundle is unavailable.
-      }
-    }
-
-    const response = { data: await getHomeBootstrapCompat(params) };
-    if (response.data?.manifest) {
-      updateCachedPublishManifest(response.data.manifest);
-    }
-    if (Array.isArray(response.data?.mods)) {
-      persistRuntimePayload('mods-list', { scope: 'all' }, response.data.mods);
-    }
-    return response.data;
+    return getRuntimeHomeBootstrap(params);
   },
 
   // Get items with pagination
@@ -376,29 +310,7 @@ export const api = {
 
   // Get all mods
   async getMods(): Promise<Mod[]> {
-    const persistent = await readPersistentRuntimePayload<Mod[]>(
-      'mods-list',
-      { scope: 'all' },
-    );
-    if (persistent) {
-      return persistent;
-    }
-
-    const manifest = await api.getPublishManifest();
-    const staticPath = manifest.publishBundle?.files.modsList;
-    if (staticPath) {
-      try {
-        const published = await fetchPublishedJson<Mod[]>(staticPath);
-        persistRuntimePayload('mods-list', { scope: 'all' }, published);
-        return published;
-      } catch {
-        // Fall back to the API route when the static publish bundle is unavailable.
-      }
-    }
-
-    const payload = await itemRuntimeClient.getModsCompat();
-    persistRuntimePayload('mods-list', { scope: 'all' }, payload);
-    return payload;
+    return getRuntimeMods();
   },
 
   async getItemsByIds(itemIds: string[]): Promise<Item[]> {
@@ -602,6 +514,7 @@ export const api = {
     return specialDataRuntimeClient.getForestryGeneticsOverview();
   }
 };
+
 
 
 

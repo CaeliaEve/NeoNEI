@@ -6,6 +6,7 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '..');
 const serverSource = readFileSync(resolve(root, 'src/server.ts'), 'utf8');
 const bootstrapSource = readFileSync(resolve(root, 'src/bootstrap-server.ts'), 'utf8');
+const serverSettingsSource = readFileSync(resolve(root, 'src/config/server-settings.ts'), 'utf8');
 
 test('server entrypoint delegates startup to bootstrap boundary', () => {
   assert.match(serverSource, /import\s+\{\s*startServer\s*\}\s+from\s+['"]\.\/bootstrap-server['"]/);
@@ -19,5 +20,9 @@ test('bootstrap boundary owns app construction and exported startup', () => {
   assert.match(bootstrapSource, /export\s+const\s+app\s*=\s*express\(\)/);
   assert.match(bootstrapSource, /export\s+async\s+function\s+startServer\(\)/);
   assert.match(bootstrapSource, /registerApiNamespaces\(/);
+  assert.match(bootstrapSource, /serverSettings\.publicRuntimeOnly/);
+  assert.match(serverSettingsSource, /export const serverSettings/);
+  assert.match(serverSettingsSource, /createAdminAccessGuard/);
   assert.match(bootstrapSource, /reconcileAccelerationRuntime\(/);
 });
+

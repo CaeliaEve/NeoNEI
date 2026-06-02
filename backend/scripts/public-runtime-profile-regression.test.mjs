@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const serverSource = readFileSync(join(repoRoot, 'backend/src/server.ts'), 'utf8');
 const bootstrapSource = readFileSync(join(repoRoot, 'backend/src/bootstrap-server.ts'), 'utf8');
+const serverSettingsSource = readFileSync(join(repoRoot, 'backend/src/config/server-settings.ts'), 'utf8');
 const apiNamespacesRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/api-namespaces.routes.ts'), 'utf8');
 const staticAssetRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/static-assets.routes.ts'), 'utf8');
 const errorResponseSource = readFileSync(join(repoRoot, 'backend/src/utils/error-response.ts'), 'utf8');
@@ -16,8 +17,8 @@ const backendEnvExample = readFileSync(join(repoRoot, 'backend/.env.example'), '
 const rootEnvExample = readFileSync(join(repoRoot, '.env.example'), 'utf8');
 
 test('public runtime profile is explicit and disables lab/dev dynamic mounts', () => {
-  assert.match(bootstrapSource, /const PUBLIC_RUNTIME_ONLY = isEnvEnabled\(process\.env\.NEONEI_PUBLIC_RUNTIME_ONLY\)/);
-  assert.match(bootstrapSource, /registerApiNamespaces\(app, \{ publicRuntimeOnly: PUBLIC_RUNTIME_ONLY \}\)/);
+  assert.match(serverSettingsSource, /publicRuntimeOnly: isEnvEnabled\(process\.env\.NEONEI_PUBLIC_RUNTIME_ONLY\)/);
+  assert.match(bootstrapSource, /registerApiNamespaces\(app, \{ publicRuntimeOnly: serverSettings\.publicRuntimeOnly \}\)/);
   assert.match(apiNamespacesRoutesSource, /if \(!PUBLIC_RUNTIME_ONLY\) \{\s*app\.use\('\/lab'/s);
   assert.match(apiNamespacesRoutesSource, /if \(!PUBLIC_RUNTIME_ONLY\) \{[\s\S]*app\.use\('\/api\/items'/s);
   assert.match(apiNamespacesRoutesSource, /app\.use\('\/runtime'[\s\S]*runtimeRoutes\)/);
@@ -44,5 +45,6 @@ test('portable env examples document public runtime only deployment', () => {
   assert.match(rootEnvExample, /NEONEI_PUBLIC_RUNTIME_ONLY=1/);
   assert.doesNotMatch(backendEnvExample, /E:\\|E:\//, 'backend production example must not require a Windows path');
 });
+
 
 

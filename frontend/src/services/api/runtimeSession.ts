@@ -1,7 +1,12 @@
-﻿import { createPublishedJsonClient } from '../../runtime/publishClient';
+﻿import { createPublishedJsonClient, getHomeBootstrapCompat } from '../../runtime/publishClient';
 import { createRuntimeManifestClient, getRuntimeCacheSignature } from '../../runtime/manifestClient';
-import type { PublicRuntimeManifest } from '../../runtime/types';
-import type { BrowserAtlasIndexResponse } from '../../runtime/types';
+import type {
+  BrowserAtlasIndexResponse,
+  BrowserPagePackResponse,
+  HomeBootstrapResponse,
+  Mod,
+  PublicRuntimeManifest,
+} from '../../runtime/types';
 import {
   getStoredRuntimeSignature,
   primeRuntimeCacheSignature,
@@ -20,6 +25,12 @@ import { createRecipeUiPayloadClient } from '../../runtime/recipeUiPayloadClient
 import { createRecipeBootstrapClient } from '../../runtime/recipeBootstrapClient';
 import { shouldPreferLiveRecipeBootstrap } from '../../runtime/recipeBootstrapPreference';
 import { buildRuntimePayloadCacheKey, setCacheWithLimit } from '../../runtime/cacheUtils';
+import { getDistDataHomeBootstrap } from '../distDataRuntime';
+import {
+  deriveBrowserPagePackFromWindow,
+  resolvePublishedWindowPath,
+} from '../../runtime/browserProjection';
+import { itemRuntimeClient } from '../../runtime/itemClient';
 
 const publishedJsonValueCache = new Map<string, unknown>();
 const publishedJsonInFlight = new Map<string, Promise<unknown>>();
@@ -219,4 +230,92 @@ export function updateCachedPublishManifest(manifest: PublicRuntimeManifest | nu
   }
   publishManifestCache = manifest;
   primeRuntimeCacheSignature(getRuntimeCacheSignature(manifest));
+}
+
+
+export async function getRuntimeHomeBootstrap(params: {
+  page?: number;
+  pageSize?: number;
+  slotSize?: number;
+  modId?: string;
+}): Promise<HomeBootstrapResponse> {
+  const distDataBootstrap = await getDistDataHomeBootstrap(params);
+  if (distDataBootstrap) {
+    return distDataBootstrap;
+  }
+  reportRuntimeDevCompatGap('home-bootstrap', '/publish/home-bootstrap', 'dist-data home bootstrap missing', {
+    ...getRuntimeDiagnosticIdentity(),
+    details: params,
+  });
+
+  const manifest = await runtimeManifestClient.getPublishManifest();
+  const requestedPage = Math.max(1, Math.floor(params.page ?? 1));
+  const requestedPageSize = Math.max(1, Math.floor(params.pageSize ?? 50));
+  const staticPath = !params.modId
+    ? resolvePublishedWindowPath(
+        manifest.publishBundle?.files.homeBootstrapWindows,
+        params.slotSize,
+        requestedPage,
+        requestedPageSize,
+        isPublishedJsonWarm,
+      )
+    : null;
+  if (staticPath) {
+    try {
+      const published = await fetchPublishedJson<{
+        mods: Mod[];
+        pagePack: BrowserPagePackResponse;
+      }>(staticPath);
+      const pagePack = deriveBrowserPagePackFromWindow(
+        published.pagePack,
+        requestedPage,
+        requestedPageSize,
+      );
+      if (pagePack) {
+        if (Array.isArray(published.mods)) {
+          persistRuntimePayload('mods-list', { scope: 'all' }, published.mods);
+        }
+        return {
+          manifest,
+          mods: Array.isArray(published.mods) ? published.mods : [],
+          pagePack,
+        };
+      }
+    } catch {
+      // Fall through to the development compatibility route when the static publish bundle is unavailable.
+    }
+  }
+
+  const data = await getHomeBootstrapCompat(params);
+  updateCachedPublishManifest(data.manifest);
+  if (Array.isArray(data.mods)) {
+    persistRuntimePayload('mods-list', { scope: 'all' }, data.mods);
+  }
+  return data;
+}
+
+export async function getRuntimeMods(): Promise<Mod[]> {
+  const persistent = await readPersistentRuntimePayload<Mod[]>(
+    'mods-list',
+    { scope: 'all' },
+  );
+  if (persistent) {
+    return persistent;
+  }
+
+  const manifest = await runtimeManifestClient.getPublishManifest();
+  const staticPath = manifest.publishBundle?.files.modsList;
+  if (staticPath) {
+    try {
+      const published = await fetchPublishedJson<Mod[]>(staticPath);
+      persistRuntimePayload('mods-list', { scope: 'all' }, published);
+      return published;
+    } catch {
+      // Fall through to the development compatibility route when the static publish bundle is unavailable.
+    }
+  }
+
+  const payload = await itemRuntimeClient.getModsCompat();
+  persistRuntimePayload('mods-list', { scope: 'all' }, payload);
+  return payload;
 }
