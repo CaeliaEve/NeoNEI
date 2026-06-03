@@ -180,6 +180,10 @@ function buildMigrationReadiness(validation, exportReport, specialDomains, atlas
     stableNumber(validation.missing.renderAssetRef, 0);
   const specialExpectedMissing = stableNumber(validation.counts.specialExpectedFactKeysMissing, 0);
   const manifestBlocked = stableNumber(validation.counts.manifestBlocked, 0);
+  const semanticVariants = stableNumber(validation.counts.itemVariants, 0);
+  const semanticFacets = stableNumber(validation.counts.semanticFacets, 0);
+  const semanticFacetFamilies = stableNumber(validation.counts.semanticFacetFamilies, 0);
+  const semanticFacetReady = semanticVariants === 0 || (semanticFacets > 0 && semanticFacetFamilies > 0);
   const gates = [
     gate(
       "raw-manifest-contract",
@@ -203,6 +207,14 @@ function buildMigrationReadiness(validation, exportReport, specialDomains, atlas
           .filter((entry) => entry?.status && entry.status !== "ready")
           .map((entry) => entry.name ?? "unknown"),
       },
+    ),
+    gate(
+      "semantic-facets",
+      semanticFacetReady,
+      semanticFacetReady
+        ? "Semantic variants expose facet data for fast search, sorting, and expansion."
+        : `${semanticVariants} semantic variant row(s) exist but no semantic facet coverage was compiled.`,
+      { variants: semanticVariants, facets: semanticFacets, facetFamilies: semanticFacetFamilies },
     ),
     gate(
       "atlas-authority",
@@ -2075,6 +2087,9 @@ function compileRawExport(inputDir, outputDir) {
   if (missingAnimationTimingAssetIds.length > 0) validation.warnings.push(`Animation timing metadata is missing for ${missingAnimationTimingAssetIds.length} animated asset(s).`);
   if (semanticResourceReport.status !== "ok") {
     validation.warnings.push(`Semantic browser groups have resource gaps: representatives missing atlas=${semanticResourceReport.counts.representativeMissingAtlas}, members missing atlas=${semanticResourceReport.counts.memberMissingAtlas}, animation timing missing=${semanticResourceReport.counts.animationTimingMissing}.`);
+  }
+  if (itemVariants.length > 0 && semanticFacets.length === 0) {
+    validation.warnings.push(`Semantic variants exist but no semantic facets were compiled; rerun NESQL++ with the latest semantic facet exporter.`);
   }
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
   if (rawExportCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from exporter report in ${rawExportCountMismatches.length} area(s).`);
