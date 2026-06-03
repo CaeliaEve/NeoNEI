@@ -1,6 +1,7 @@
-import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { createReadStream, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve, relative, extname, isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createGunzip } from 'node:zlib';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -31,7 +32,11 @@ function readArg(name) {
 
 function readJson(filePath) {
   if (!existsSync(filePath)) return null;
-  return JSON.parse(readFileSync(filePath, 'utf8'));
+  return JSON.parse(stripUtf8Bom(readFileSync(filePath, 'utf8')));
+}
+
+function stripUtf8Bom(text) {
+  return `${text ?? ''}`.replace(/^\uFEFF/, '');
 }
 
 function toPosix(pathText) {
@@ -102,11 +107,13 @@ function* walkRuntimeFiles(dir) {
 
 async function scanFile(filePath, inputDir) {
   if (!existsSync(filePath) || isDiagnosticPath(filePath, inputDir)) return [];
+  if (!statSync(filePath).isFile()) return [];
   const violations = [];
-  const stream = createReadStream(filePath, {
-    encoding: 'utf8',
+  const rawStream = createReadStream(filePath, {
     highWaterMark: Math.max(64 * 1024, Math.min(maxBytes, 1024 * 1024)),
   });
+  const stream = filePath.endsWith('.gz') ? rawStream.pipe(createGunzip()) : rawStream;
+  stream.setEncoding('utf8');
   let carry = '';
   let lineNumber = 1;
   const scanText = (text, line) => {
@@ -126,6 +133,7 @@ async function scanFile(filePath, inputDir) {
     }
   } finally {
     stream.destroy();
+    rawStream.destroy();
   }
   return violations;
 }
@@ -142,7 +150,7 @@ async function auditExport(inputDir) {
   return {
     schemaVersion: 'neonei/export-path-hygiene-report/v1',
     inputDir: '<raw-export>',
-    auditedFiles: files.filter((filePath) => existsSync(filePath) && !isDiagnosticPath(filePath, inputDir)).length,
+    auditedFiles: files.filter((filePath) => existsSync(filePath) && statSync(filePath).isFile() && !isDiagnosticPath(filePath, inputDir)).length,
     status: violations.length === 0 ? 'ok' : 'failed',
     violations: violations.map((violation) => ({
       ...violation,
@@ -155,10 +163,10 @@ function createSelfTestExport(root, bad = false) {
   mkdirSync(join(root, 'facts'), { recursive: true });
   mkdirSync(join(root, 'validation'), { recursive: true });
   mkdirSync(join(root, 'canonical'), { recursive: true });
-  writeFileSync(join(root, 'manifest.json'), JSON.stringify({
+  writeFileSync(join(root, 'manifest.json'), `${bad ? '\uFEFF' : ''}${JSON.stringify({
     schemaVersion: 'nesqlpp/raw-export/alpha1',
     files: { items: 'facts/items.jsonl', exportReport: 'validation/export_report.json' },
-  }, null, 2));
+  }, null, 2)}`);
   const item = bad
     ? { itemId: 'bad', imagePath: ['E:', 'GTNH', '.minecraft', 'versions', 'GT New Horizons 2.8.4', 'image', 'item', 'bad.png'].join('/') }
     : { itemId: 'good', imagePath: 'image/item/good.png' };
