@@ -82,9 +82,8 @@ export function getImageUrl(itemId: string): string {
     const internalName = parts[2];
     const damage = parts[3];
     const nbt = parts[4] || null;
-    const normalizedInternal = encodeURIComponent(`${internalName}~${damage}.png`);
     if (nbt) {
-      return buildItemImageUrl(`${modId}/${normalizedInternal}`);
+      return buildItemImageUrl(`${modId}/${encodeURIComponent(`${internalName}~${damage}~${nbt}.png`)}`);
     }
     const imageFileName = `${internalName}~${damage}.png`;
 

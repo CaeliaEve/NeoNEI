@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -18,6 +18,7 @@ function parseArgs(argv) {
     backendMode: process.env.NEONEI_BACKEND_MODE || 'start',
     dataRoot: process.env.NESQL_EXPORT_ROOT || process.env.NESQL_REPOSITORY_PATH || '',
     host: process.env.NEONEI_FRONTEND_HOST || '127.0.0.1',
+    stopExisting: process.env.NEONEI_NO_STOP_EXISTING !== '1',
   };
   for (let index = 0; index < argv.length; index += 1) {
     const key = argv[index];
@@ -27,6 +28,7 @@ function parseArgs(argv) {
     else if (key === '--backend-mode' && value) { args.backendMode = value; index += 1; }
     else if ((key === '--data-root' || key === '--export-root') && value) { args.dataRoot = value; index += 1; }
     else if (key === '--host' && value) { args.host = value; index += 1; }
+    else if (key === '--no-stop-existing') { args.stopExisting = false; }
     else if (key === '--help') {
       console.log(`Usage: node scripts/start-neonei.mjs [--data-root PATH] [--backend-port 3002] [--frontend-port 5173] [--backend-mode start|dev] [--host 127.0.0.1]`);
       process.exit(0);
@@ -60,12 +62,25 @@ function waitHttpOk(url, timeoutMs = 35_000) {
 
 function createLogStream(name) {
   fs.mkdirSync(logDir, { recursive: true });
-  return fs.createWriteStream(path.join(logDir, name), { flags: 'a' });
+  const logPath = path.join(logDir, name);
+  try {
+    const fd = fs.openSync(logPath, 'a');
+    return fs.createWriteStream('', { fd, autoClose: true });
+  } catch (error) {
+    if (error?.code !== 'EBUSY') throw error;
+    const parsed = path.parse(name);
+    const fallbackName = `${parsed.name}.${Date.now()}${parsed.ext || '.log'}`;
+    return fs.createWriteStream(path.join(logDir, fallbackName), { flags: 'a' });
+  }
 }
 
 function spawnNpm(commandArgs, cwd, env, logName) {
   const log = createLogStream(logName);
-  const child = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', commandArgs, {
+  const executable = process.platform === 'win32' ? (process.env.ComSpec || 'cmd.exe') : 'npm';
+  const args = process.platform === 'win32'
+    ? ['/d', '/c', ['npm.cmd', ...commandArgs].join(' ')]
+    : commandArgs;
+  const child = spawn(executable, args, {
     cwd,
     env,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -78,8 +93,32 @@ function spawnNpm(commandArgs, cwd, env, logName) {
   return child;
 }
 
+function stopExistingListeners(ports) {
+  if (process.platform !== 'win32') return;
+  const script = `
+$ports = @(${ports.map((port) => Number(port)).filter(Boolean).join(',')})
+$listeners = Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue |
+  Where-Object { $ports -contains $_.LocalPort } |
+  Select-Object -ExpandProperty OwningProcess -Unique
+foreach ($processId in $listeners) {
+  if ($processId -and $processId -ne $PID) {
+    Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+  }
+}
+`;
+  spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script], {
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+}
+
 const args = parseArgs(process.argv.slice(2));
 const env = { ...process.env, PORT: String(args.backendPort) };
+
+if (args.stopExisting) {
+  stopExistingListeners([args.backendPort, args.frontendPort]);
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+}
 
 if (args.dataRoot.trim()) {
   const resolvedDataRoot = path.resolve(args.dataRoot);
@@ -112,3 +151,4 @@ if (backendOk && frontendOk) {
 console.log(`[NeoNEI] Frontend: http://${args.host}:${args.frontendPort}`);
 console.log(`[NeoNEI] Backend:  http://127.0.0.1:${args.backendPort}`);
 console.log(`[NeoNEI] Logs: ${logDir}`);
+process.exit(backendOk && frontendOk ? 0 : 1);

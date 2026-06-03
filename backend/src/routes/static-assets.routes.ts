@@ -274,9 +274,19 @@ export function registerStaticAssetRoutes(app: Express): void {
   app.get('/images/item/:modId/:fileName', createArtifactFallbackRoute('item'));
   app.get('/images/fluid/:modId/:fileName', createArtifactFallbackRoute('fluid'));
   app.get('/images/entity/:modId/:fileName', createArtifactFallbackRoute('entity'));
+  app.get('/api/images/item/:modId/:fileName', createArtifactFallbackRoute('item'));
+  app.get('/api/images/fluid/:modId/:fileName', createArtifactFallbackRoute('fluid'));
+  app.get('/api/images/entity/:modId/:fileName', createArtifactFallbackRoute('entity'));
 
   app.use(
     '/images',
+    express.static(IMAGES_PATH, {
+      maxAge: '7d',
+      etag: true,
+    }),
+  );
+  app.use(
+    '/api/images',
     express.static(IMAGES_PATH, {
       maxAge: '7d',
       etag: true,

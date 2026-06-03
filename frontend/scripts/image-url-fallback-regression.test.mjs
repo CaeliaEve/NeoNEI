@@ -7,11 +7,11 @@ const source = fs.readFileSync(
   'utf8',
 );
 
-test('getImageUrl falls back to base damage image for item ids with hash suffix', () => {
+test('getImageUrl preserves NBT hash suffix for exact variant textures', () => {
   assert.equal(
-    source.includes('return buildItemImageUrl(`${modId}/${normalizedInternal}`);'),
+    source.includes('return buildItemImageUrl(`${modId}/${encodeURIComponent(`${internalName}~${damage}~${nbt}.png`)}`);'),
     true,
-    'hashed item ids should resolve to base damage image path instead of direct hash filename',
+    'hashed item ids should resolve to their exact exported variant texture instead of the base damage image',
   );
 });
 
