@@ -1516,9 +1516,21 @@ const EXPECTED_SPECIAL_FACT_KEYS = {
   gregtech: ["duration", "voltage", "amperage", "totalEU", "voltageTier", "requiresCleanroom", "requiresLowGravity"],
   thaumcraft: ["research", "centralItemId", "centerInputSlotIndex", { key: "aspects", aliases: ["aspects", "aspect", "aspectCosts", "inputAspects"] }, "instability"],
   botania: [{ key: "mana", aliases: ["mana", "manaCost"] }, "ticks", "catalyst", { key: "recipeKind", aliases: ["recipeKind", "brewKey", "correctedMachineType"] }],
-  bloodmagic: ["bloodCost", "lpCost", "requiredLP", "tier", { key: "altarTier", aliases: ["altarTier", "tier"] }, "consumptionRate", "drainRate"],
-  forestry: ["chance", { key: "allele", aliases: ["allele", "alleles"] }, { key: "species", aliases: ["species", "beeSpecies", "mutations"] }, "temperature", "humidity"],
-  eec: ["mobName", { key: "entityId", aliases: ["entityId", "mobName", "entityName"] }, { key: "health", aliases: ["health", "maxHealth"] }, { key: "drops", aliases: ["drops", "normalOutputsCount", "rareOutputsCount", "infernalOutputsCount"] }, { key: "dropChance", aliases: ["dropChance", "eliteChance", "ultraChance", "infernoChance"] }],
+  bloodmagic: ["bloodCost", "lpCost", { key: "requiredLP", aliases: ["requiredLP", "lpCost", "bloodCost"] }, "tier", { key: "altarTier", aliases: ["altarTier", "tier"] }, "consumptionRate", "drainRate"],
+  forestry: [
+    "chance",
+    { key: "species", aliases: ["species", "beeSpecies", "mutations", "primaryRefs.itemInputIds", "primaryRefs.itemOutputIds"] },
+    { key: "allele", aliases: ["allele", "alleles", "primaryRefs.itemInputIds", "primaryRefs.itemOutputIds"], severity: "advisory" },
+    { key: "temperature", aliases: ["temperature"], severity: "advisory" },
+    { key: "humidity", aliases: ["humidity"], severity: "advisory" },
+  ],
+  eec: [
+    "mobName",
+    { key: "entityId", aliases: ["entityId", "mobName", "entityName"] },
+    { key: "health", aliases: ["health", "maxHealth", "entityHealth"] },
+    { key: "drops", aliases: ["drops", "normalOutputsCount", "rareOutputsCount", "additionalOutputsCount", "infernalOutputsCount", "outputCount", "primaryRefs.itemOutputIds", "primaryRefs.fluidOutputIds"] },
+    { key: "dropChance", aliases: ["dropChance", "eliteChance", "ultraChance", "infernoChance"], severity: "advisory" },
+  ],
 };
 
 function incrementCounter(map, key) {
@@ -1549,11 +1561,27 @@ function summarizeCounter(counter, total) {
     }));
 }
 
+function readDottedValue(source, dottedPath) {
+  if (!isPlainObject(source) || !dottedPath) return undefined;
+  let current = source;
+  for (const segment of `${dottedPath}`.split(".")) {
+    if (!isPlainObject(current) && !Array.isArray(current)) return undefined;
+    current = current?.[segment];
+  }
+  return current;
+}
+
+function hasCoverageValue(value) {
+  if (value === undefined || value === null || value === "") return false;
+  if (Array.isArray(value)) return value.length > 0;
+  return true;
+}
+
 function countAnyFactKey(payload, keys) {
   let count = 0;
   for (const payloadRow of payload ?? []) {
-    const sources = [payloadRow?.domainFacts, payloadRow?.facts, payloadRow?.metadata, payloadRow?.extensions, payloadRow?.machine, payloadRow?.layout];
-    if (keys.some((key) => sources.some((source) => isPlainObject(source) && source[key] !== undefined && source[key] !== null && source[key] !== ""))) {
+    const sources = [payloadRow?.domainFacts, payloadRow?.facts, payloadRow?.metadata, payloadRow?.extensions, payloadRow?.machine, payloadRow?.layout, payloadRow?.primaryRefs, payloadRow?.slotStats, payloadRow];
+    if (keys.some((key) => sources.some((source) => hasCoverageValue(readDottedValue(source, key))))) {
       count += 1;
     }
   }
@@ -1575,7 +1603,7 @@ function buildSpecialFactsCoverage(domainId, payloads) {
   const expectedEntries = expected.map((entry) => (
     typeof entry === "string"
       ? { key: entry, aliases: [entry] }
-      : { key: `${entry?.key ?? ""}`.trim(), aliases: Array.isArray(entry?.aliases) ? entry.aliases : [`${entry?.key ?? ""}`.trim()] }
+      : { key: `${entry?.key ?? ""}`.trim(), aliases: Array.isArray(entry?.aliases) ? entry.aliases : [`${entry?.key ?? ""}`.trim()], severity: entry?.severity === "advisory" ? "advisory" : "required" }
   )).filter((entry) => entry.key);
   return {
     domain: domainId,
@@ -1583,14 +1611,15 @@ function buildSpecialFactsCoverage(domainId, payloads) {
     domainFactKeys: summarizeCounter(domainFactCounter, totalPayloads),
     metadataKeys: summarizeCounter(metadataCounter, totalPayloads),
     extensionKeys: summarizeCounter(extensionCounter, totalPayloads),
-    expectedCoverage: expectedEntries.map(({ key, aliases }) => {
+    expectedCoverage: expectedEntries.map(({ key, aliases, severity = "required" }) => {
       const count = countAnyFactKey(payloads, aliases);
       return {
         key,
         aliases,
+        severity,
         count,
         ratio: totalPayloads > 0 ? Number((count / totalPayloads).toFixed(4)) : 0,
-        status: count > 0 ? "present" : "missing",
+        status: count > 0 ? "present" : (severity === "advisory" ? "missing-advisory" : "missing"),
       };
     }),
   };
@@ -1806,6 +1835,8 @@ function compileRawExport(inputDir, outputDir) {
   const specialExpectedFactKeys = specialFactsCoverage.domains
     .flatMap((domain) => domain.expectedCoverage ?? []);
   const specialExpectedFactKeysPresent = specialExpectedFactKeys.filter((entry) => entry.status === "present").length;
+  const specialExpectedFactKeysMissingRequired = specialExpectedFactKeys.filter((entry) => entry.status === "missing").length;
+  const specialExpectedFactKeysMissingAdvisory = specialExpectedFactKeys.filter((entry) => entry.status === "missing-advisory").length;
   const validation = {
     schemaVersion: "neonei/compiler-validation/v3-alpha1",
     generatedAt: new Date().toISOString(),
@@ -1841,7 +1872,8 @@ function compileRawExport(inputDir, outputDir) {
       specialPayloadMismatches: specialDomains.filter((domain) => domain.recipeCount !== domain.payloads.length || domain.declaredPayloadCount !== domain.payloads.length).length,
       specialExpectedFactKeys: specialExpectedFactKeys.length,
       specialExpectedFactKeysPresent,
-      specialExpectedFactKeysMissing: specialExpectedFactKeys.length - specialExpectedFactKeysPresent,
+      specialExpectedFactKeysMissing: specialExpectedFactKeysMissingRequired,
+      specialExpectedFactKeysMissingAdvisory,
       rawExportCountMismatches: rawExportCountMismatches.length,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
