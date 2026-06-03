@@ -142,6 +142,8 @@ function buildRawExportCountMismatches(exportReport, actualCounts) {
     ["textures", "rawTextures", "textures"],
     ["animations", "rawAnimations", "animations"],
     ["entities", "rawEntities", "entities"],
+    ["neiGuidFilterRules", "neiGuidFilterRules", "neiGuidFilterRules"],
+    ["neiHiddenItemRules", "neiHiddenItemRules", "neiHiddenItemRules"],
   ];
   const mismatches = [];
   for (const [label, reportKey, actualKey] of pairs) {
@@ -244,7 +246,7 @@ function fileSizeIfPresent(filePath) {
 }
 
 function validateRawManifest(inputDir, manifest) {
-  const knownCapabilities = new Set(["facts", "assets", "models", "special", "validation", "semanticIdentity"]);
+  const knownCapabilities = new Set(["facts", "assets", "models", "special", "validation", "semanticIdentity", "nativeNeiRules"]);
   const warnings = [];
   const missing = [];
   const empty = [];
@@ -1182,6 +1184,65 @@ function normalizeBrowserGroups(groups, availableItemIds) {
     });
 }
 
+function groupPrecedence(group) {
+  const key = `${group?.groupKey ?? ""}`;
+  const source = `${group?.groupSource ?? ""}`;
+  if (key.startsWith("nei:") || source === "nativeNei" || source === "collapsibleItems") return 10;
+  if (source === "guidfilters" || key.startsWith("guidfilter:")) return 20;
+  if (source === "semanticIdentity" || key.startsWith("semantic:")) return 30;
+  if (key.startsWith("fallback:")) return 40;
+  return 35;
+}
+
+function mergeBrowserGroupsByPrecedence(rawBrowserGroups, semanticBrowserGroups) {
+  const assigned = new Set();
+  const merged = [];
+  const dropped = [];
+  const candidates = [
+    ...(rawBrowserGroups ?? []).map((group) => ({ ...group, groupSource: group.groupSource ?? "rawExport" })),
+    ...(semanticBrowserGroups ?? []),
+  ].sort((left, right) => groupPrecedence(left) - groupPrecedence(right) || stableNumber(left.groupSortOrder, 0) - stableNumber(right.groupSortOrder, 0) || `${left.groupKey ?? ""}`.localeCompare(`${right.groupKey ?? ""}`));
+
+  for (const group of candidates) {
+    const originalMembers = Array.from(new Set((group.memberItemIds ?? []).filter(Boolean)));
+    const memberItemIds = originalMembers.filter((itemId) => !assigned.has(itemId));
+    const isAuthoritativeRawGroup = group.groupSource === "rawExport" || groupPrecedence(group) <= 20;
+    if (memberItemIds.length <= 1) {
+      if (isAuthoritativeRawGroup && originalMembers.length > 0) {
+        merged.push({
+          ...group,
+          memberItemIds: originalMembers,
+          groupSize: originalMembers.length,
+          representativeItemId: originalMembers.includes(group.representativeItemId)
+            ? group.representativeItemId
+            : originalMembers[0],
+        });
+        continue;
+      }
+      if (originalMembers.length > 1) {
+        dropped.push({
+          groupKey: group.groupKey ?? null,
+          groupSource: group.groupSource ?? null,
+          originalSize: originalMembers.length,
+          retainedSize: memberItemIds.length,
+          reason: "members-already-assigned-by-higher-precedence-group",
+        });
+      }
+      continue;
+    }
+    for (const itemId of memberItemIds) assigned.add(itemId);
+    merged.push({
+      ...group,
+      memberItemIds,
+      groupSize: memberItemIds.length,
+      representativeItemId: memberItemIds.includes(group.representativeItemId)
+        ? group.representativeItemId
+        : memberItemIds[0],
+    });
+  }
+  return { groups: merged, dropped };
+}
+
 function buildSemanticBrowserGroups({ itemIdentityMap, semanticItems, availableItemIds, layoutByItemId }) {
   const semanticByPublicId = new Map();
   for (const item of semanticItems ?? []) {
@@ -1253,6 +1314,10 @@ function buildVariantsByPublicItem({ itemVariants, itemIdentityMap }) {
       payloadHash: variant?.payloadHash ?? null,
       family: variant?.family ?? null,
       classification: variant?.classification ?? null,
+      variantLabel: variant?.variantLabel ?? null,
+      facetSummary: variant?.facetSummary ?? null,
+      sortKey: variant?.sortKey ?? null,
+      facets: variant?.facets ?? null,
     });
   }
 
@@ -1264,6 +1329,8 @@ function buildVariantsByPublicItem({ itemVariants, itemIdentityMap }) {
         payloadHash: entry?.payloadHash ?? null,
         family: entry?.family ?? null,
         classification: entry?.classification ?? null,
+        facetSummary: entry?.facetSummary ?? null,
+        sortKey: entry?.sortKey ?? null,
       });
     }
   }
@@ -1273,7 +1340,7 @@ function buildVariantsByPublicItem({ itemVariants, itemIdentityMap }) {
       publicItemId,
       variants: variants
         .filter((variant) => variant.legacyItemId || variant.variantId || variant.payloadHash)
-        .sort((left, right) => `${left.legacyItemId ?? left.variantId ?? ""}`.localeCompare(`${right.legacyItemId ?? right.variantId ?? ""}`)),
+        .sort((left, right) => `${left.sortKey ?? left.legacyItemId ?? left.variantId ?? ""}`.localeCompare(`${right.sortKey ?? right.legacyItemId ?? right.variantId ?? ""}`)),
     }))
     .filter((entry) => entry.variants.length > 0)
     .sort((left, right) => left.publicItemId.localeCompare(right.publicItemId));
@@ -1671,6 +1738,8 @@ function compileRawExport(inputDir, outputDir) {
   const recipes = readRawRecipes(inputDir, manifest);
   const rawGroups = readRawJsonl(inputDir, manifest, "groups", "facts/nei/groups.jsonl.gz");
   const neiOrder = readRawJsonl(inputDir, manifest, "neiOrder", "facts/nei/order.jsonl.gz");
+  const neiGuidFilters = readRawJsonl(inputDir, manifest, "neiGuidFilters", "facts/nei/guidfilters.jsonl.gz");
+  const neiHiddenItems = readRawJsonl(inputDir, manifest, "neiHiddenItems", "facts/nei/hiddenitems.jsonl.gz");
   const textures = readRawJsonl(inputDir, manifest, "textures", "assets/textures/index.jsonl.gz");
   const animations = readRawJsonl(inputDir, manifest, "animations", "assets/animations/index.jsonl.gz");
   const nativeSprites = readRawJsonl(inputDir, manifest, "nativeSprites", "assets/animations/native-sprites.jsonl.gz");
@@ -1702,7 +1771,9 @@ function compileRawExport(inputDir, outputDir) {
     availableItemIds: itemIds,
     layoutByItemId,
   });
-  const groups = [...rawBrowserGroups, ...semanticBrowserGroups];
+  const mergedBrowserGroups = mergeBrowserGroupsByPrecedence(rawBrowserGroups, semanticBrowserGroups);
+  const groups = mergedBrowserGroups.groups;
+  const compilerAddedSemanticGroups = groups.filter((group) => group.groupSource === "semanticIdentity").length;
   for (const group of groups) {
     for (const itemId of group.memberItemIds ?? []) {
       layoutByItemId.set(itemId, {
@@ -1717,13 +1788,36 @@ function compileRawExport(inputDir, outputDir) {
     }
   }
   const variantsByPublicItem = buildVariantsByPublicItem({ itemVariants, itemIdentityMap });
+  const semanticFacets = itemVariants
+    .filter((variant) => variant?.variantId && variant?.facets)
+    .map((variant) => ({
+      publicItemId: variant.publicItemId ?? null,
+      variantId: variant.variantId,
+      legacyItemId: variant.legacyItemId ?? null,
+      family: variant.family ?? null,
+      variantLabel: variant.variantLabel ?? null,
+      facetSummary: variant.facetSummary ?? null,
+      sortKey: variant.sortKey ?? null,
+      facets: variant.facets,
+    }));
 
   const searchItems = items
     .filter((item) => item && item.itemId)
-    .map((item, index) => ({
-      ...buildSearchEntry(item, index, renderByAssetId, layoutByItemId),
-      ...(semanticIdentityByLegacyItemId.get(item.itemId) ?? {}),
-    }));
+    .map((item, index) => {
+      const base = buildSearchEntry(item, index, renderByAssetId, layoutByItemId);
+      const semantic = semanticIdentityByLegacyItemId.get(item.itemId) ?? {};
+      const semanticSearchTerms = [
+        semantic.publicItemId,
+        semantic.family,
+        semantic.classification,
+        semantic.facetSummary,
+      ].filter(Boolean).join(" ");
+      return {
+        ...base,
+        ...semantic,
+        normalizedSearchTerms: normalizeLoose([base.normalizedSearchTerms, semanticSearchTerms].filter(Boolean).join(" ")),
+      };
+    });
 
   const missingAnimationTimingAssetIds = animationFacts
     .filter((entry) => entry?.assetId && stableNumber(entry.frameCount, 0) > 1 && !entry.timeline && !entry.frameDurationMs)
@@ -1754,7 +1848,7 @@ function compileRawExport(inputDir, outputDir) {
     browserItems,
     neiOrder,
     exportReport,
-    compilerAddedGroupCount: semanticBrowserGroups.length,
+    compilerAddedGroupCount: compilerAddedSemanticGroups,
   });
 
   const generatedBrowserAtlasIndex = buildBrowserAtlasIndexFromResources(browserAtlasIndex, browserItems, textures, animationFacts);
@@ -1827,6 +1921,8 @@ function compileRawExport(inputDir, outputDir) {
     textures: textures.length,
     animations: animations.length,
     entities: entities.length,
+    neiGuidFilterRules: neiGuidFilters.length,
+    neiHiddenItemRules: neiHiddenItems.length,
   });
   const specialFactsCoverage = {
     schemaVersion: "neonei/special-facts-coverage/v1",
@@ -1849,7 +1945,12 @@ function compileRawExport(inputDir, outputDir) {
       itemPayloads: itemPayloads.length,
       itemIdentityMap: itemIdentityMap.length,
       semanticBrowserGroups: semanticBrowserGroups.length,
+      activeSemanticBrowserGroups: compilerAddedSemanticGroups,
+      droppedBrowserGroupsByPrecedence: mergedBrowserGroups.dropped.length,
       variantsByPublicItem: variantsByPublicItem.length,
+      semanticFacets: semanticFacets.length,
+      neiGuidFilterRules: neiGuidFilters.length,
+      neiHiddenItemRules: neiHiddenItems.length,
       fluids: fluids.length,
       recipes: recipes.length,
       groups: groups.length,
@@ -1912,6 +2013,7 @@ function compileRawExport(inputDir, outputDir) {
       rawExportCountMismatches,
       missingAnimationTimingAssetIds: missingAnimationTimingAssetIds.slice(0, 100),
       semanticResourceSamples: semanticResourceReport.samples,
+      droppedBrowserGroupsByPrecedence: mergedBrowserGroups.dropped.slice(0, 100),
     },
     coverage: {
       browserAtlasRatio: atlasAuthorityReport.coverageRatio,
@@ -1962,12 +2064,14 @@ function compileRawExport(inputDir, outputDir) {
     files: {
       searchAll: "search/all.json",
       semanticItems: "items/semantic-items.json",
+      semanticFacets: "items/semantic-facets.json",
       itemVariants: "items/variants.json",
       itemVariantsByPublicItem: "items/variants-by-public-item.json",
       itemIdentityMap: "items/identity-map.json",
       itemPayloadIndex: "items/payload-index.json",
       browserCatalog: "browser/item-catalog.json",
       browserGroups: "browser/group-index.json",
+      nativeNeiRules: "browser/native-nei-rules.json",
       recipeCategories: "recipes/recipe-category-index.json",
       recipeItemIndex: "recipes/item-index.json",
       recipeUiPayloadIndex: "recipes/ui-payload-index.json",
@@ -1985,6 +2089,7 @@ function compileRawExport(inputDir, outputDir) {
   });
   writeJsonCompact(join(outputDir, "search", "all.json"), { schemaVersion: "neonei/search-v3-json/v1", items: searchItems });
   writeJsonCompact(join(outputDir, "items", "semantic-items.json"), { schemaVersion: "neonei/semantic-items/v1", items: semanticItems });
+  writeJsonCompact(join(outputDir, "items", "semantic-facets.json"), { schemaVersion: "neonei/semantic-facets/v1", facets: semanticFacets });
   writeJsonCompact(join(outputDir, "items", "variants.json"), { schemaVersion: "neonei/item-variants/v1", variants: itemVariants });
   writeJsonCompact(join(outputDir, "items", "variants-by-public-item.json"), { schemaVersion: "neonei/item-variants-by-public-item/v1", items: variantsByPublicItem });
   writeJsonCompact(join(outputDir, "items", "identity-map.json"), { schemaVersion: "neonei/item-identity-map/v1", items: itemIdentityMap });
@@ -1995,6 +2100,7 @@ function compileRawExport(inputDir, outputDir) {
   })).filter((payload) => payload.payloadHash) });
   writeJsonCompact(join(outputDir, "browser", "item-catalog.json"), { schemaVersion: "neonei/browser-catalog/v1", items: browserItems });
   writeJsonCompact(join(outputDir, "browser", "group-index.json"), { schemaVersion: "neonei/group-index/v1", groups });
+  writeJsonCompact(join(outputDir, "browser", "native-nei-rules.json"), { schemaVersion: "neonei/native-nei-rules/v1", guidFilters: neiGuidFilters, hiddenItems: neiHiddenItems });
   writeJsonCompact(join(outputDir, "recipes", "recipe-category-index.json"), { schemaVersion: "neonei/recipe-category-index/v1", categories: Array.from(recipeCategories.values()) });
   writeJsonCompact(join(outputDir, "recipes", "item-index.json"), { schemaVersion: "neonei/recipe-item-index/v1", items: recipeItemIndex });
   writeJsonCompact(join(outputDir, "recipes", "ui-payload-index.json"), { schemaVersion: "neonei/recipe-ui-payload-index/v1", recipes: recipeUiPayloadIndex });
@@ -2064,6 +2170,8 @@ function createSelfTestRawExport(root) {
       recipeIndex: "facts/recipes/index.json",
       groups: "facts/nei/groups.jsonl.gz",
       neiOrder: "facts/nei/order.jsonl.gz",
+      neiGuidFilters: "facts/nei/guidfilters.jsonl.gz",
+      neiHiddenItems: "facts/nei/hiddenitems.jsonl.gz",
       textures: "assets/textures/index.jsonl.gz",
       animations: "assets/animations/index.jsonl.gz",
       nativeSprites: "assets/animations/native-sprites.jsonl.gz",
@@ -2083,7 +2191,7 @@ function createSelfTestRawExport(root) {
     JSON.stringify({ publicItemId: "item:i~minecraft~iron_ingot~0", family: "legacy.item", classification: "untagged-legacy", representativeLegacyItemId: "i~minecraft~iron_ingot~0" }),
     JSON.stringify({ publicItemId: "semantic:facade.ae2:appeng~item.facade~0", family: "facade.ae2", classification: "classified", representativeLegacyItemId: "i~appeng~item.facade~0~nbt1" }),
   ].join("\n") + "\n");
-  writeGzipText(join(root, "facts/items/variants.jsonl.gz"), `${JSON.stringify({ variantId: "semantic:facade.ae2:appeng~item.facade~0:variant:abc123", publicItemId: "semantic:facade.ae2:appeng~item.facade~0", family: "facade.ae2", legacyItemId: "i~appeng~item.facade~0~nbt1", payloadHash: "abc123" })}\n`);
+  writeGzipText(join(root, "facts/items/variants.jsonl.gz"), `${JSON.stringify({ variantId: "semantic:facade.ae2:appeng~item.facade~0:variant:abc123", publicItemId: "semantic:facade.ae2:appeng~item.facade~0", family: "facade.ae2", legacyItemId: "i~appeng~item.facade~0~nbt1", payloadHash: "abc123", variantLabel: "Stone Facade", facetSummary: "block=minecraft:stone", sortKey: "facade|minecraft:stone", facets: { block: "minecraft:stone" } })}\n`);
   writeGzipText(join(root, "facts/items/payloads.jsonl.gz"), `${JSON.stringify({ payloadHash: "abc123", legacyItemId: "i~appeng~item.facade~0~nbt1", encoding: "minecraft-nbt-toString", nbt: "{modid:\"minecraft\",itemname:\"stone\"}" })}\n`);
   writeGzipText(join(root, "facts/items/identity-map.jsonl.gz"), [
     JSON.stringify({ legacyItemId: "i~minecraft~iron_ingot~0", publicItemId: "item:i~minecraft~iron_ingot~0", family: "legacy.item", classification: "untagged-legacy" }),
@@ -2095,6 +2203,8 @@ function createSelfTestRawExport(root) {
   writeJson(join(root, "facts/recipes/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/recipe-index", strategy: "by-handler", recipeCount: 1, shards: [{ handlerId: "furnace", path: "facts/recipes/furnace.jsonl.gz", recipeCount: 1 }] });
   writeGzipText(join(root, "facts/nei/groups.jsonl.gz"), `${JSON.stringify({ groupKey: "nei:iron", groupLabel: "Iron", groupSize: 1, representativeItemId: "i~minecraft~iron_ingot~0", memberItemIds: ["i~minecraft~iron_ingot~0"] })}\n`);
   writeGzipText(join(root, "facts/nei/order.jsonl.gz"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n${JSON.stringify({ entryOrder: 2, entryKind: "item", itemId: "i~minecraft~gold_ingot~0" })}\n`);
+  writeGzipText(join(root, "facts/nei/guidfilters.jsonl.gz"), `${JSON.stringify({ itemExpression: "BuildCraft|Transport:pipeFacade", nbtPath: "tag.block" })}\n`);
+  writeGzipText(join(root, "facts/nei/hiddenitems.jsonl.gz"), `${JSON.stringify({ itemExpression: "IC2:itemCropSeed" })}\n`);
   writeGzipText(join(root, "assets/textures/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", atlasFile: "generated-static-atlas-0.webp", rect: { x: 0, y: 0, width: 16, height: 16 } })}\n`);
   writeGzipText(join(root, "assets/animations/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`);
   writeGzipText(join(root, "assets/animations/native-sprites.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`);
