@@ -1800,6 +1800,13 @@ function compileRawExport(inputDir, outputDir) {
       sortKey: variant.sortKey ?? null,
       facets: variant.facets,
     }));
+  const semanticFacetFamilies = Array.from(semanticFacets.reduce((acc, facet) => {
+    const family = `${facet.family ?? ""}`.trim() || "unknown";
+    const existing = acc.get(family) ?? { family, variantCount: 0 };
+    existing.variantCount += 1;
+    acc.set(family, existing);
+    return acc;
+  }, new Map()).values()).sort((left, right) => right.variantCount - left.variantCount || left.family.localeCompare(right.family));
 
   const searchItems = items
     .filter((item) => item && item.itemId)
@@ -1949,6 +1956,7 @@ function compileRawExport(inputDir, outputDir) {
       droppedBrowserGroupsByPrecedence: mergedBrowserGroups.dropped.length,
       variantsByPublicItem: variantsByPublicItem.length,
       semanticFacets: semanticFacets.length,
+      semanticFacetFamilies: semanticFacetFamilies.length,
       neiGuidFilterRules: neiGuidFilters.length,
       neiHiddenItemRules: neiHiddenItems.length,
       fluids: fluids.length,
@@ -2014,6 +2022,7 @@ function compileRawExport(inputDir, outputDir) {
       missingAnimationTimingAssetIds: missingAnimationTimingAssetIds.slice(0, 100),
       semanticResourceSamples: semanticResourceReport.samples,
       droppedBrowserGroupsByPrecedence: mergedBrowserGroups.dropped.slice(0, 100),
+      semanticFacetFamilies: semanticFacetFamilies.slice(0, 50),
     },
     coverage: {
       browserAtlasRatio: atlasAuthorityReport.coverageRatio,
