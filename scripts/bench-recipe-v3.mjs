@@ -69,6 +69,7 @@ function buildDistDataBenchmarkSource() {
   const uiPayloadIndex = JSON.parse(readFileSync(uiPayloadIndexPath, "utf8"));
   const entries = Array.isArray(uiPayloadIndex.recipes) ? uiPayloadIndex.recipes : [];
   const entryByRecipeId = new Map(entries.map((entry) => [entry?.recipeId, entry]));
+  const shardCache = new Map();
   const sampleSize = Number(process.env.RECIPE_V3_SAMPLE_SIZE ?? 128);
   return {
     mode: "dist-data",
@@ -76,6 +77,20 @@ function buildDistDataBenchmarkSource() {
     itemIds: entries.slice(0, sampleSize).map((entry) => entry?.recipeId).filter(Boolean),
     resolvePayloadPath(recipeId) {
       return toLocalDistDataPath(entryByRecipeId.get(recipeId)?.path);
+    },
+    loadPayload(recipeId) {
+      const entry = entryByRecipeId.get(recipeId);
+      const payloadPath = toLocalDistDataPath(entry?.path);
+      if (!payloadPath || !existsSync(payloadPath)) return null;
+      if (entry?.payloadKey) {
+        let shard = shardCache.get(payloadPath);
+        if (!shard) {
+          shard = JSON.parse(readFileSync(payloadPath, "utf8"));
+          shardCache.set(payloadPath, shard);
+        }
+        return shard?.payloads?.[entry.payloadKey] ?? null;
+      }
+      return JSON.parse(readFileSync(payloadPath, "utf8"));
     },
     validatePayload(payload) {
       return Boolean(payload?.recipeId);
@@ -96,6 +111,11 @@ function buildPublishBenchmarkSource(latest) {
     resolvePayloadPath(itemId) {
       const encoded = encodeURIComponent(itemId).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
       return toLocalPublishPath(`${basePath}/${encoded}.json`);
+    },
+    loadPayload(itemId) {
+      const payloadPath = this.resolvePayloadPath(itemId);
+      if (!payloadPath || !existsSync(payloadPath)) return null;
+      return JSON.parse(readFileSync(payloadPath, "utf8"));
     },
     validatePayload(payload) {
       return Boolean(payload?.item?.itemId || payload?.itemId);
@@ -123,7 +143,7 @@ for (const itemId of itemIds) {
     continue;
   }
   const startedAt = performance.now();
-  const payload = JSON.parse(readFileSync(payloadPath, "utf8"));
+  const payload = source.loadPayload(itemId);
   if (!source.validatePayload(payload)) {
     missing.push(itemId);
     continue;

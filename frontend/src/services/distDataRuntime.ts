@@ -98,6 +98,7 @@ type DistDataRecipeItemIndexPayload = {
 type DistDataRecipeUiPayloadIndexEntry = {
   recipeId: string;
   path: string;
+  payloadKey?: string;
   familyKey?: string;
   recipeType?: string;
   machineType?: string;
@@ -106,6 +107,11 @@ type DistDataRecipeUiPayloadIndexEntry = {
 type DistDataRecipeUiPayloadIndexPayload = {
   schemaVersion?: string;
   recipes?: DistDataRecipeUiPayloadIndexEntry[];
+};
+
+type DistDataRecipeUiPayloadShard = {
+  schemaVersion?: string;
+  payloads?: Record<string, RecipeUiPayload>;
 };
 
 type DistDataBrowserRuntime = {
@@ -136,6 +142,7 @@ let cachedRecipeItemIndex: Map<string, DistDataRecipeItemIndexEntry> | null = nu
 let recipeUiPayloadIndexRequest: Promise<Map<string, DistDataRecipeUiPayloadIndexEntry> | null> | null = null;
 let cachedRecipeUiPayloadIndex: Map<string, DistDataRecipeUiPayloadIndexEntry> | null = null;
 const cachedRecipeUiPayloads = new Map<string, RecipeUiPayload>();
+const cachedRecipeUiPayloadShards = new Map<string, Promise<DistDataRecipeUiPayloadShard | null>>();
 let browserAtlasIndexRequest: Promise<BrowserAtlasIndexResponse | null> | null = null;
 let cachedBrowserAtlasIndex: BrowserAtlasIndexResponse | null = null;
 
@@ -1171,9 +1178,22 @@ export async function getDistDataRecipeUiPayload(recipeId: string): Promise<Reci
   if (!payloadPath) {
     return null;
   }
-  const payload = await fetchJson<RecipeUiPayload>(
-    joinAssetPath(getConfiguredBasePath(), preserveEncodedFileNamePath(payloadPath)),
-  ).catch(() => null);
+  const payloadKey = `${entry?.payloadKey ?? ""}`.trim();
+  let payload: RecipeUiPayload | null = null;
+  if (payloadKey) {
+    const shardUrl = joinAssetPath(getConfiguredBasePath(), preserveEncodedFileNamePath(payloadPath));
+    let shardRequest = cachedRecipeUiPayloadShards.get(shardUrl);
+    if (!shardRequest) {
+      shardRequest = fetchJson<DistDataRecipeUiPayloadShard>(shardUrl).catch(() => null);
+      cachedRecipeUiPayloadShards.set(shardUrl, shardRequest);
+    }
+    const shard = await shardRequest;
+    payload = shard?.payloads?.[payloadKey] ?? null;
+  } else {
+    payload = await fetchJson<RecipeUiPayload>(
+      joinAssetPath(getConfiguredBasePath(), preserveEncodedFileNamePath(payloadPath)),
+    ).catch(() => null);
+  }
   if (!payload?.recipeId) {
     const manifest = await getDistDataManifest();
     if (manifest) {
@@ -1228,6 +1248,7 @@ export function resetDistDataRuntimeCache(): void {
   recipeUiPayloadIndexRequest = null;
   cachedRecipeUiPayloadIndex = null;
   cachedRecipeUiPayloads.clear();
+  cachedRecipeUiPayloadShards.clear();
   browserAtlasIndexRequest = null;
   cachedBrowserAtlasIndex = null;
 }

@@ -1,4 +1,5 @@
 import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gunzipSync, gzipSync } from "node:zlib";
@@ -567,6 +568,15 @@ function collectRecipeItemIds(value, output) {
 
 function encodeRecipeFileName(recipeId) {
   return encodeURIComponent(recipeId).replace(/[!'()*]/g, (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`);
+}
+
+function getRecipePayloadShard(recipeId) {
+  return createHash("sha1").update(`${recipeId ?? ""}`).digest("hex").slice(0, 2);
+}
+
+function getRecipeUiPayloadRelativePath(recipeId) {
+  const shard = getRecipePayloadShard(recipeId);
+  return `recipes/ui-payload-shards/${shard}.json`;
 }
 
 function normalizeRecipeCategoryName(value) {
@@ -1745,7 +1755,8 @@ function compileRawExport(inputDir, outputDir) {
     .filter(Boolean);
   const recipeUiPayloadIndex = recipeUiPayloads.map((payload) => ({
     recipeId: payload.recipeId,
-    path: `recipes/ui-payloads/${encodeRecipeFileName(payload.recipeId)}.json`,
+    path: getRecipeUiPayloadRelativePath(payload.recipeId),
+    payloadKey: payload.recipeId,
     familyKey: payload.familyKey,
     recipeType: payload.recipeType,
     machineType: payload.machineType,
@@ -1955,10 +1966,20 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "recipes", "recipe-category-index.json"), { schemaVersion: "neonei/recipe-category-index/v1", categories: Array.from(recipeCategories.values()) });
   writeJsonCompact(join(outputDir, "recipes", "item-index.json"), { schemaVersion: "neonei/recipe-item-index/v1", items: recipeItemIndex });
   writeJsonCompact(join(outputDir, "recipes", "ui-payload-index.json"), { schemaVersion: "neonei/recipe-ui-payload-index/v1", recipes: recipeUiPayloadIndex });
+  const recipePayloadShards = new Map();
   for (const payload of recipeUiPayloads) {
-    writeJsonCompact(join(outputDir, "recipes", "ui-payloads", `${encodeRecipeFileName(payload.recipeId)}.json`), {
-      schemaVersion: "neonei/recipe-ui-payload/v1",
-      ...payload,
+    const shardPath = getRecipeUiPayloadRelativePath(payload.recipeId);
+    const shardPayloads = recipePayloadShards.get(shardPath) ?? {};
+    shardPayloads[payload.recipeId] = {
+        schemaVersion: "neonei/recipe-ui-payload/v1",
+        ...payload,
+      };
+    recipePayloadShards.set(shardPath, shardPayloads);
+  }
+  for (const [shardPath, payloads] of recipePayloadShards) {
+    writeJsonCompact(join(outputDir, shardPath), {
+      schemaVersion: "neonei/recipe-ui-payload-shard/v1",
+      payloads,
     });
   }
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations: animationFacts, nativeSprites, renderedGifs });
