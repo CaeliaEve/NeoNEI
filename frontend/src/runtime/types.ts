@@ -715,6 +715,9 @@ export interface BrowserVariantGroup {
   visibleCount: number;
   expandable: boolean;
   label: string;
+  semanticFamily?: string | null;
+  semanticClassification?: string | null;
+  groupSource?: string | null;
 }
 
 export type BrowserGridEntry =

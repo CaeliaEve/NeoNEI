@@ -74,6 +74,9 @@ type DistDataRawGroup = {
   groupSize?: number | null;
   representativeItemId?: string | null;
   memberItemIds?: string[];
+  semanticFamily?: string | null;
+  semanticClassification?: string | null;
+  groupSource?: string | null;
 };
 
 type DistDataGroupPayload = {
@@ -300,6 +303,9 @@ function buildGroup(group: DistDataRawGroup, representative: Item): BrowserVaria
     visibleCount: 1,
     expandable: size > 1,
     label: `${group.groupLabel ?? representative.browserGroupLabel ?? representative.localizedName}`,
+    semanticFamily: group.semanticFamily ?? null,
+    semanticClassification: group.semanticClassification ?? null,
+    groupSource: group.groupSource ?? null,
   };
 }
 

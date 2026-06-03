@@ -984,7 +984,11 @@ const tooltipTitle = computed(() => {
   const rect = hoveredRect.value;
   if (!rect) return "";
   if (rect.entry.kind === "item") {
-    return rect.item.localizedName || rect.item.internalName || rect.item.itemId;
+    const baseName = rect.item.localizedName || rect.item.internalName || rect.item.itemId;
+    if (rect.item.browserGroupKey && Number(rect.item.browserGroupSize ?? 1) > 1) {
+      return `${baseName} ? variant`;
+    }
+    return baseName;
   }
   return rect.entry.group.label || rect.item.localizedName || rect.item.internalName || rect.item.itemId;
 });
@@ -993,9 +997,15 @@ const tooltipSubtitle = computed(() => {
   const rect = hoveredRect.value;
   if (!rect) return "";
   if (rect.entry.kind === "item") {
-    return "Left click: recipes · Right click: uses";
+    if (rect.item.browserGroupKey && Number(rect.item.browserGroupSize ?? 1) > 1) {
+      return `Variant in ${rect.item.browserGroupSize} item semantic group ? Left click: recipes ? Right click: uses`;
+    }
+    return "Left click: recipes ? Right click: uses";
   }
-  return `Group ${rect.entry.group.size} items · Left click: expand/collapse · Right click: uses`;
+  const family = `${rect.entry.group.semanticFamily ?? ""}`.trim();
+  const source = rect.entry.group.groupSource === "semanticIdentity" ? "Semantic group" : "Group";
+  const familySuffix = family ? ` ? ${family}` : "";
+  return `${source} ? ${rect.entry.group.size} variants${familySuffix} ? Left click: expand/collapse ? Right click: uses`;
 });
 const tooltipStyle = computed<Record<string, string> | null>(() => {
   if (!hoveredRect.value) return null;

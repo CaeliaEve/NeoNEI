@@ -24,6 +24,9 @@ function cloneGroup(group: BrowserVariantGroup, overrides?: Partial<BrowserVaria
     visibleCount: group.visibleCount,
     expandable: group.expandable,
     label: group.label,
+    semanticFamily: group.semanticFamily ?? null,
+    semanticClassification: group.semanticClassification ?? null,
+    groupSource: group.groupSource ?? null,
     ...overrides,
   };
 }
