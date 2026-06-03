@@ -2172,6 +2172,9 @@ function compileRawExport(inputDir, outputDir) {
   writeJson(join(outputDir, "validation", "migration-readiness.json"), validation.migrationReadiness);
   writeJson(join(outputDir, "validation", "export-path-hygiene.json"), exportPathHygiene);
   writeJson(join(outputDir, "validation", "nei-browser-contract.json"), browserContract);
+  if (manifestValidation.blocked.length > 0) {
+    throw new Error(`Raw Export manifest contract blocked: ${manifestValidation.blocked.join(", ")}`);
+  }
   return validation;
 }
 
