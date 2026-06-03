@@ -449,7 +449,8 @@ function buildResourceManifest(entries: BrowserGridEntry[]) {
 
 function buildModsFromRuntime(runtime: DistDataBrowserRuntime): Mod[] {
   const mods = new Map<string, Mod>();
-  for (const item of runtime.itemById.values()) {
+  for (const entry of buildDefaultCatalog(runtime)) {
+    const item = entry.kind === "item" ? entry.item : entry.group.representative;
     const modId = `${item.modId ?? "unknown"}`.trim() || "unknown";
     const existing = mods.get(modId);
     if (existing) {

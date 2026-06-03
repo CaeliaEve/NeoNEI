@@ -1172,7 +1172,104 @@ function normalizeBrowserGroups(groups, availableItemIds) {
     });
 }
 
-function buildBrowserContractReport({ groups, browserItems, neiOrder, exportReport }) {
+function buildSemanticBrowserGroups({ itemIdentityMap, semanticItems, availableItemIds, layoutByItemId }) {
+  const semanticByPublicId = new Map();
+  for (const item of semanticItems ?? []) {
+    const publicItemId = `${item?.publicItemId ?? ""}`.trim();
+    if (publicItemId) semanticByPublicId.set(publicItemId, item);
+  }
+
+  const membersByPublicId = new Map();
+  for (const entry of itemIdentityMap ?? []) {
+    const publicItemId = `${entry?.publicItemId ?? ""}`.trim();
+    const legacyItemId = `${entry?.legacyItemId ?? ""}`.trim();
+    if (!publicItemId || !legacyItemId || !availableItemIds.has(legacyItemId)) continue;
+    const existing = membersByPublicId.get(publicItemId) ?? [];
+    existing.push({
+      legacyItemId,
+      variantId: entry?.variantId ?? null,
+      payloadHash: entry?.payloadHash ?? null,
+      family: entry?.family ?? null,
+      classification: entry?.classification ?? null,
+      browserOrder: stableNumber(layoutByItemId.get(legacyItemId)?.browserOrder, stableNumber(layoutByItemId.get(legacyItemId)?.entryOrder, Number.MAX_SAFE_INTEGER)),
+    });
+    membersByPublicId.set(publicItemId, existing);
+  }
+
+  const groups = [];
+  for (const [publicItemId, rawMembers] of membersByPublicId.entries()) {
+    const members = rawMembers
+      .sort((left, right) => left.browserOrder - right.browserOrder || left.legacyItemId.localeCompare(right.legacyItemId));
+    const uniqueMemberItemIds = Array.from(new Set(members.map((member) => member.legacyItemId)));
+    if (uniqueMemberItemIds.length <= 1) continue;
+
+    const semanticItem = semanticByPublicId.get(publicItemId) ?? null;
+    const declaredRepresentative = `${semanticItem?.representativeLegacyItemId ?? ""}`.trim();
+    const representativeItemId = declaredRepresentative && uniqueMemberItemIds.includes(declaredRepresentative)
+      ? declaredRepresentative
+      : uniqueMemberItemIds[0];
+    const firstOrder = stableNumber(members[0]?.browserOrder, 0);
+    const safePublicKey = publicItemId.replace(/\s+/g, "");
+    groups.push({
+      groupKey: safePublicKey,
+      groupLabel: semanticItem?.localizedName ?? semanticItem?.internalName ?? safePublicKey,
+      groupSize: uniqueMemberItemIds.length,
+      representativeItemId,
+      memberItemIds: uniqueMemberItemIds,
+      groupSortOrder: firstOrder,
+      groupSource: "semanticIdentity",
+      publicItemId,
+      semanticFamily: semanticItem?.family ?? members[0]?.family ?? null,
+      semanticClassification: semanticItem?.classification ?? members[0]?.classification ?? null,
+    });
+  }
+  return groups.sort((left, right) => stableNumber(left.groupSortOrder, 0) - stableNumber(right.groupSortOrder, 0) || left.groupKey.localeCompare(right.groupKey));
+}
+
+function buildVariantsByPublicItem({ itemVariants, itemIdentityMap }) {
+  const variantsByPublicId = new Map();
+  const append = (publicItemId, variant) => {
+    const key = `${publicItemId ?? ""}`.trim();
+    if (!key) return;
+    const existing = variantsByPublicId.get(key) ?? [];
+    existing.push(variant);
+    variantsByPublicId.set(key, existing);
+  };
+
+  for (const variant of itemVariants ?? []) {
+    append(variant?.publicItemId, {
+      variantId: variant?.variantId ?? null,
+      legacyItemId: variant?.legacyItemId ?? null,
+      payloadHash: variant?.payloadHash ?? null,
+      family: variant?.family ?? null,
+      classification: variant?.classification ?? null,
+    });
+  }
+
+  if (variantsByPublicId.size === 0) {
+    for (const entry of itemIdentityMap ?? []) {
+      append(entry?.publicItemId, {
+        variantId: entry?.variantId ?? null,
+        legacyItemId: entry?.legacyItemId ?? null,
+        payloadHash: entry?.payloadHash ?? null,
+        family: entry?.family ?? null,
+        classification: entry?.classification ?? null,
+      });
+    }
+  }
+
+  return Array.from(variantsByPublicId.entries())
+    .map(([publicItemId, variants]) => ({
+      publicItemId,
+      variants: variants
+        .filter((variant) => variant.legacyItemId || variant.variantId || variant.payloadHash)
+        .sort((left, right) => `${left.legacyItemId ?? left.variantId ?? ""}`.localeCompare(`${right.legacyItemId ?? right.variantId ?? ""}`)),
+    }))
+    .filter((entry) => entry.variants.length > 0)
+    .sort((left, right) => left.publicItemId.localeCompare(right.publicItemId));
+}
+
+function buildBrowserContractReport({ groups, browserItems, neiOrder, exportReport, compilerAddedGroupCount = 0 }) {
   const groupMap = new Map(groups.map((group) => [group.groupKey, group]));
   let orderBreaks = 0;
   let missingGroupRefs = 0;
@@ -1240,6 +1337,7 @@ function buildBrowserContractReport({ groups, browserItems, neiOrder, exportRepo
     exporterContract?.groupCount,
     stableNumber(exporterCounts.rawGroups, groups.length),
   );
+  const expectedCompilerGroupCount = exporterGroupCount + stableNumber(compilerAddedGroupCount, 0);
   const exporterDefaultEntryCount = stableNumber(
     exporterContract?.defaultEntryCount,
     stableNumber(exporterCounts.neiDefaultEntries, neiOrder.length),
@@ -1249,8 +1347,8 @@ function buildBrowserContractReport({ groups, browserItems, neiOrder, exportRepo
   if (exporterBrowserItemCount !== browserItems.length) {
     countMismatches.push({ key: "browserItems", exporter: exporterBrowserItemCount, compiler: browserItems.length });
   }
-  if (exporterGroupCount !== groups.length) {
-    countMismatches.push({ key: "groups", exporter: exporterGroupCount, compiler: groups.length });
+  if (expectedCompilerGroupCount !== groups.length) {
+    countMismatches.push({ key: "groups", exporter: exporterGroupCount, compiler: groups.length, compilerAdded: compilerAddedGroupCount });
   }
   if (exporterDefaultEntryCount !== neiOrder.length) {
     countMismatches.push({ key: "defaultEntries", exporter: exporterDefaultEntryCount, compiler: neiOrder.length });
@@ -1280,6 +1378,7 @@ function buildBrowserContractReport({ groups, browserItems, neiOrder, exportRepo
       exportOnlyItemCount,
       browserItemCount: exporterBrowserItemCount,
       groupCount: exporterGroupCount,
+      expectedCompilerGroupCount,
       defaultEntryCount: exporterDefaultEntryCount,
     },
     compiler: {
@@ -1455,7 +1554,6 @@ function compileRawExport(inputDir, outputDir) {
   for (const entry of itemIdentityMap) {
     if (entry?.legacyItemId) semanticIdentityByLegacyItemId.set(entry.legacyItemId, entry);
   }
-  const groups = normalizeBrowserGroups(rawGroups, itemIds);
 
   const renderByAssetId = new Map();
   for (const texture of textures) {
@@ -1466,6 +1564,14 @@ function compileRawExport(inputDir, outputDir) {
   for (const entry of neiOrder) {
     if (entry.itemId) layoutByItemId.set(entry.itemId, entry);
   }
+  const rawBrowserGroups = normalizeBrowserGroups(rawGroups, itemIds);
+  const semanticBrowserGroups = buildSemanticBrowserGroups({
+    itemIdentityMap,
+    semanticItems,
+    availableItemIds: itemIds,
+    layoutByItemId,
+  });
+  const groups = [...rawBrowserGroups, ...semanticBrowserGroups];
   for (const group of groups) {
     for (const itemId of group.memberItemIds ?? []) {
       layoutByItemId.set(itemId, {
@@ -1475,9 +1581,11 @@ function compileRawExport(inputDir, outputDir) {
         groupSize: group.groupSize,
         representativeItemId: group.representativeItemId,
         groupSortOrder: group.groupSortOrder,
+        groupSource: group.groupSource ?? null,
       });
     }
   }
+  const variantsByPublicItem = buildVariantsByPublicItem({ itemVariants, itemIdentityMap });
 
   const searchItems = items
     .filter((item) => item && item.itemId)
@@ -1507,9 +1615,16 @@ function compileRawExport(inputDir, outputDir) {
       groupLabel: layout.groupLabel ?? null,
       groupSize: stableNumber(layout.groupSize, 1),
       representativeItemId: layout.representativeItemId ?? entry.itemId,
+      groupSource: layout.groupSource ?? null,
     };
   }).sort((left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId));
-  const browserContract = buildBrowserContractReport({ groups, browserItems, neiOrder, exportReport });
+  const browserContract = buildBrowserContractReport({
+    groups,
+    browserItems,
+    neiOrder,
+    exportReport,
+    compilerAddedGroupCount: semanticBrowserGroups.length,
+  });
 
   const generatedBrowserAtlasIndex = buildBrowserAtlasIndexFromResources(browserAtlasIndex, browserItems, textures, animationFacts);
   const materializedBrowserAtlasIndex = materializeBrowserAtlasAssets(inputDir, outputDir, generatedBrowserAtlasIndex);
@@ -1594,6 +1709,8 @@ function compileRawExport(inputDir, outputDir) {
       itemVariants: itemVariants.length,
       itemPayloads: itemPayloads.length,
       itemIdentityMap: itemIdentityMap.length,
+      semanticBrowserGroups: semanticBrowserGroups.length,
+      variantsByPublicItem: variantsByPublicItem.length,
       fluids: fluids.length,
       recipes: recipes.length,
       groups: groups.length,
@@ -1698,6 +1815,7 @@ function compileRawExport(inputDir, outputDir) {
       searchAll: "search/all.json",
       semanticItems: "items/semantic-items.json",
       itemVariants: "items/variants.json",
+      itemVariantsByPublicItem: "items/variants-by-public-item.json",
       itemIdentityMap: "items/identity-map.json",
       itemPayloadIndex: "items/payload-index.json",
       browserCatalog: "browser/item-catalog.json",
@@ -1720,6 +1838,7 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "search", "all.json"), { schemaVersion: "neonei/search-v3-json/v1", items: searchItems });
   writeJsonCompact(join(outputDir, "items", "semantic-items.json"), { schemaVersion: "neonei/semantic-items/v1", items: semanticItems });
   writeJsonCompact(join(outputDir, "items", "variants.json"), { schemaVersion: "neonei/item-variants/v1", variants: itemVariants });
+  writeJsonCompact(join(outputDir, "items", "variants-by-public-item.json"), { schemaVersion: "neonei/item-variants-by-public-item/v1", items: variantsByPublicItem });
   writeJsonCompact(join(outputDir, "items", "identity-map.json"), { schemaVersion: "neonei/item-identity-map/v1", items: itemIdentityMap });
   writeJsonCompact(join(outputDir, "items", "payload-index.json"), { schemaVersion: "neonei/item-payload-index/v1", payloads: itemPayloads.map((payload) => ({
     payloadHash: payload?.payloadHash ?? null,
