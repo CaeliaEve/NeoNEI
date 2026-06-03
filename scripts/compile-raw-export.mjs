@@ -179,7 +179,16 @@ function buildMigrationReadiness(validation, exportReport, specialDomains, atlas
     stableNumber(validation.missing.itemId, 0) +
     stableNumber(validation.missing.renderAssetRef, 0);
   const specialExpectedMissing = stableNumber(validation.counts.specialExpectedFactKeysMissing, 0);
+  const manifestBlocked = stableNumber(validation.counts.manifestBlocked, 0);
   const gates = [
+    gate(
+      "raw-manifest-contract",
+      manifestBlocked === 0,
+      manifestBlocked === 0
+        ? "Raw Export manifest declared streams are present for enabled capabilities."
+        : `${manifestBlocked} required manifest stream(s) are missing or empty for enabled capabilities.`,
+      { blockedFiles: validation.manifestValidation?.blocked ?? [] },
+    ),
     gate(
       "raw-report-parity",
       exporterReady && rawExportMismatches === 0,
@@ -264,13 +273,20 @@ function validateRawManifest(inputDir, manifest) {
   }
 
   const requiredFiles = ["items", "fluids", "recipeIndex", "groups", "neiOrder", "textures", "browserAtlasIndex"];
+  if ((manifest.capabilities ?? []).includes("semanticIdentity")) {
+    requiredFiles.push("semanticItems", "itemVariants", "itemPayloads", "itemIdentityMap");
+  }
+  if ((manifest.capabilities ?? []).includes("nativeNeiRules")) {
+    requiredFiles.push("neiGuidFilters", "neiHiddenItems");
+  }
   for (const logicalName of requiredFiles) {
     const filePath = resolveRawFile(inputDir, manifest, logicalName, null);
     if (!filePath || !existsSync(filePath)) {
       missing.push(logicalName);
       continue;
     }
-    if (fileSizeIfPresent(filePath) === 0 && logicalName !== "groups" && logicalName !== "neiOrder") {
+    const allowEmpty = new Set(["groups", "neiOrder", "neiGuidFilters", "neiHiddenItems"]);
+    if (fileSizeIfPresent(filePath) === 0 && !allowEmpty.has(logicalName)) {
       empty.push(logicalName);
     }
   }
@@ -287,7 +303,13 @@ function validateRawManifest(inputDir, manifest) {
   if (missingRecipeShards.length > 0) {
     warnings.push(`Recipe index references ${missingRecipeShards.length} missing shard file(s).`);
   }
-  return { warnings, missing, empty, unknownCapabilities, missingRecipeShards };
+  const blocked = [...missing, ...empty].filter((name) =>
+    ["semanticItems", "itemVariants", "itemPayloads", "itemIdentityMap"].includes(name),
+  );
+  if (blocked.length > 0) {
+    warnings.push(`Raw Export semanticIdentity capability is declared but required semantic stream(s) are unavailable: ${blocked.join(", ")}.`);
+  }
+  return { warnings, missing, empty, unknownCapabilities, missingRecipeShards, blocked };
 }
 
 const deniedExportPathPatterns = [
@@ -1983,6 +2005,7 @@ function compileRawExport(inputDir, outputDir) {
       specialExpectedFactKeysPresent,
       specialExpectedFactKeysMissing: specialExpectedFactKeysMissingRequired,
       specialExpectedFactKeysMissingAdvisory,
+      manifestBlocked: manifestValidation.blocked.length,
       rawExportCountMismatches: rawExportCountMismatches.length,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
@@ -2041,6 +2064,7 @@ function compileRawExport(inputDir, outputDir) {
   }
   if (manifestValidation.missing.length > 0) validation.warnings.push(`Raw Export manifest is missing declared core file(s): ${manifestValidation.missing.join(", ")}.`);
   if (manifestValidation.empty.length > 0) validation.warnings.push(`Raw Export manifest declares empty core file(s): ${manifestValidation.empty.join(", ")}.`);
+  if (manifestValidation.blocked.length > 0) validation.warnings.push(`Raw Export semantic streams are blocked: ${manifestValidation.blocked.join(", ")}.`);
   if (items.length === 0) validation.warnings.push("facts/items.jsonl.gz is empty; compiler output is structural only.");
   if (recipes.length === 0) validation.warnings.push("Recipe shards are empty; recipe indexes cannot be complete.");
   if (atlasAuthorityReport.indexedBrowserItems < atlasAuthorityReport.totalBrowserItems) validation.warnings.push(`Browser atlas is missing indexed entries for ${atlasAuthorityReport.totalBrowserItems - atlasAuthorityReport.indexedBrowserItems} browser item(s).`);
