@@ -1269,6 +1269,98 @@ function buildVariantsByPublicItem({ itemVariants, itemIdentityMap }) {
     .sort((left, right) => left.publicItemId.localeCompare(right.publicItemId));
 }
 
+function buildSemanticResourceReport({ semanticBrowserGroups, browserAtlasItems, animationTable }) {
+  const atlasByItemId = new Map();
+  for (const entry of browserAtlasItems ?? []) {
+    const itemId = `${entry?.itemId ?? ""}`.trim();
+    if (!itemId || atlasByItemId.has(itemId)) continue;
+    atlasByItemId.set(itemId, entry);
+  }
+  const animationByItemId = new Set((animationTable ?? [])
+    .map((entry) => `${entry?.itemId ?? ""}`.trim())
+    .filter(Boolean));
+
+  const missingRepresentativeAtlas = [];
+  const missingMemberAtlas = [];
+  const missingAnimationTiming = [];
+  const groupsWithMissingMembers = [];
+  let representativeMissingAtlasCount = 0;
+  let memberMissingAtlasCount = 0;
+  let animationTimingMissingCount = 0;
+
+  const hasDrawableAtlas = (itemId) => {
+    const atlas = atlasByItemId.get(itemId);
+    return Boolean(atlas?.staticAtlas?.atlasFile || atlas?.animatedAtlas?.atlasFile);
+  };
+  const needsAnimationTiming = (itemId) => Boolean(atlasByItemId.get(itemId)?.animatedAtlas);
+
+  for (const group of semanticBrowserGroups ?? []) {
+    const groupKey = `${group?.groupKey ?? ""}`.trim();
+    const representativeItemId = `${group?.representativeItemId ?? ""}`.trim();
+    if (representativeItemId && !hasDrawableAtlas(representativeItemId)) {
+      representativeMissingAtlasCount += 1;
+      if (missingRepresentativeAtlas.length < 50) {
+        missingRepresentativeAtlas.push({ groupKey, representativeItemId });
+      }
+    }
+    if (representativeItemId && needsAnimationTiming(representativeItemId) && !animationByItemId.has(representativeItemId)) {
+      animationTimingMissingCount += 1;
+      if (missingAnimationTiming.length < 50) {
+        missingAnimationTiming.push({ groupKey, itemId: representativeItemId, role: "representative" });
+      }
+    }
+
+    const missingMembers = [];
+    for (const memberItemId of group?.memberItemIds ?? []) {
+      const itemId = `${memberItemId ?? ""}`.trim();
+      if (!itemId) continue;
+      if (!hasDrawableAtlas(itemId)) {
+        memberMissingAtlasCount += 1;
+        if (missingMemberAtlas.length < 100) {
+          missingMemberAtlas.push({ groupKey, itemId });
+        }
+        if (missingMembers.length < 20) missingMembers.push(itemId);
+      }
+      if (needsAnimationTiming(itemId) && !animationByItemId.has(itemId)) {
+        animationTimingMissingCount += 1;
+        if (missingAnimationTiming.length < 50) {
+          missingAnimationTiming.push({ groupKey, itemId, role: "member" });
+        }
+      }
+    }
+    if (missingMembers.length > 0 && groupsWithMissingMembers.length < 50) {
+      groupsWithMissingMembers.push({ groupKey, missingMembers });
+    }
+  }
+
+  const status = representativeMissingAtlasCount === 0
+    && memberMissingAtlasCount === 0
+    && animationTimingMissingCount === 0
+    ? "ok"
+    : "warning";
+  return {
+    schemaVersion: "neonei/semantic-resource-report/v1",
+    status,
+    checked: {
+      semanticGroups: (semanticBrowserGroups ?? []).length,
+      atlasItems: atlasByItemId.size,
+      animationTableItems: animationByItemId.size,
+    },
+    counts: {
+      representativeMissingAtlas: representativeMissingAtlasCount,
+      memberMissingAtlas: memberMissingAtlasCount,
+      animationTimingMissing: animationTimingMissingCount,
+      groupsWithMissingMembers: groupsWithMissingMembers.length,
+    },
+    samples: {
+      missingRepresentativeAtlas,
+      missingMemberAtlas,
+      missingAnimationTiming,
+      groupsWithMissingMembers,
+    },
+  };
+}
+
 function buildBrowserContractReport({ groups, browserItems, neiOrder, exportReport, compilerAddedGroupCount = 0 }) {
   const groupMap = new Map(groups.map((group) => [group.groupKey, group]));
   let orderBreaks = 0;
@@ -1630,6 +1722,11 @@ function compileRawExport(inputDir, outputDir) {
   const materializedBrowserAtlasIndex = materializeBrowserAtlasAssets(inputDir, outputDir, generatedBrowserAtlasIndex);
   const browserAtlasItems = Array.isArray(generatedBrowserAtlasIndex?.items) ? generatedBrowserAtlasIndex.items : [];
   const animationTable = buildAnimationTable(searchItems, textures, animationFacts, generatedBrowserAtlasIndex);
+  const semanticResourceReport = buildSemanticResourceReport({
+    semanticBrowserGroups,
+    browserAtlasItems,
+    animationTable,
+  });
   const atlasAuthorityReport = buildAtlasAuthorityReport(inputDir, browserItems, browserAtlasItems, renderByAssetId);
   const missingBrowserAtlasItemIds = atlasAuthorityReport.samples.missingBrowserAtlasItemIds;
   const staticBrowserAtlasItems = browserAtlasItems.filter((entry) => entry?.staticAtlas?.atlasFile).length;
@@ -1742,6 +1839,9 @@ function compileRawExport(inputDir, outputDir) {
       browserContractRepresentativeMismatches: browserContract.checks.representativeMismatches,
       browserContractCountMismatches: browserContract.checks.countMismatches.length,
       browserContractFallbackGroups: browserContract.compiler.fallbackGroupCount,
+      semanticRepresentativeMissingAtlas: semanticResourceReport.counts.representativeMissingAtlas,
+      semanticMemberMissingAtlas: semanticResourceReport.counts.memberMissingAtlas,
+      semanticAnimationTimingMissing: semanticResourceReport.counts.animationTimingMissing,
     },
     manifestValidation,
     exportPathHygiene,
@@ -1768,12 +1868,14 @@ function compileRawExport(inputDir, outputDir) {
       recipeCategorySplits: recipeCategorySplits.slice(0, 50),
       rawExportCountMismatches,
       missingAnimationTimingAssetIds: missingAnimationTimingAssetIds.slice(0, 100),
+      semanticResourceSamples: semanticResourceReport.samples,
     },
     coverage: {
       browserAtlasRatio: atlasAuthorityReport.coverageRatio,
       semanticIdentityMapRatio: items.length === 0 ? 1 : itemIdentityMap.length / items.length,
     },
     semanticItemSummary,
+    semanticResourceReport,
     atlasAuthorityReport,
     browserContract,
     warnings: [],
@@ -1793,6 +1895,9 @@ function compileRawExport(inputDir, outputDir) {
   if (atlasAuthorityReport.mismatchedAssetRefs > 0) validation.warnings.push(`Browser atlas has ${atlasAuthorityReport.mismatchedAssetRefs} item(s) whose atlas assetId differs from item renderAssetRef.`);
   if (atlasAuthorityReport.duplicateItemIds > 0) validation.warnings.push(`Browser atlas contains ${atlasAuthorityReport.duplicateItemIds} duplicate itemId row(s).`);
   if (missingAnimationTimingAssetIds.length > 0) validation.warnings.push(`Animation timing metadata is missing for ${missingAnimationTimingAssetIds.length} animated asset(s).`);
+  if (semanticResourceReport.status !== "ok") {
+    validation.warnings.push(`Semantic browser groups have resource gaps: representatives missing atlas=${semanticResourceReport.counts.representativeMissingAtlas}, members missing atlas=${semanticResourceReport.counts.memberMissingAtlas}, animation timing missing=${semanticResourceReport.counts.animationTimingMissing}.`);
+  }
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
   if (rawExportCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from exporter report in ${rawExportCountMismatches.length} area(s).`);
   if (browserContract.status !== "ok") validation.warnings.push(`NEI browser contract is ${browserContract.status}: ${browserContract.summary}`);
