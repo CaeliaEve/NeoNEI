@@ -151,7 +151,7 @@ function runBackgroundNodeJob<T extends { ok: true }>(
     let result: T | null = null;
     let stderrBuffer = '';
     const child = spawn(process.execPath, [...process.execArgv, '-e', inlineCode], {
-      cwd: path.resolve(__dirname, '..'),
+      cwd: path.resolve(__dirname, '..', '..'),
       env: {
         ...process.env,
         ...extraEnv,
@@ -195,8 +195,8 @@ function runBackgroundNodeJob<T extends { ok: true }>(
 
 function compileAccelerationSnapshotInChild(candidateDbPath: string): Promise<BackgroundCompileSummary> {
   const inlineCode = `
-const { compileAccelerationDatabase } = require('./services/acceleration-db-pipeline.service');
-const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = require('./config/runtime-paths');
+const { compileAccelerationDatabase } = require('./src/services/acceleration-db-pipeline.service');
+const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = require('./src/config/runtime-paths');
 compileAccelerationDatabase({
   targetDbPath: process.env.ACCELERATION_DB_FILE,
   sourceRoots: {
@@ -227,9 +227,9 @@ compileAccelerationDatabase({
 
 function materializePublishPayloadsInChild(): Promise<BackgroundPublishSummary> {
   const inlineCode = `
-const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = require('./config/runtime-paths');
-const { getAccelerationDatabaseManager } = require('./models/database');
-const { ensurePublishPayloadsReady } = require('./services/acceleration-db-pipeline.service');
+const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = require('./src/config/runtime-paths');
+const { getAccelerationDatabaseManager } = require('./src/models/database');
+const { ensurePublishPayloadsReady } = require('./src/services/acceleration-db-pipeline.service');
 (async () => {
   const manager = getAccelerationDatabaseManager();
   await manager.init();
