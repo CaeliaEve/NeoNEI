@@ -68,6 +68,7 @@ const emit = defineEmits<{
 const hostRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const webglCanvasRef = ref<HTMLCanvasElement | null>(null);
+const animationCanvasRef = ref<HTMLCanvasElement | null>(null);
 const hostWidth = ref(0);
 let itemRects: GridRect[] = [];
 let animatedItemRects: GridRect[] = [];
@@ -92,6 +93,8 @@ let lastEntriesChangedAt = 0;
 let atlasLoadSeq = 0;
 let globalAtlasWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let globalAtlasTextureWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
+let globalAtlasTextureWarmQueue: HTMLImageElement[] = [];
+let globalAtlasTextureWarmCursor = 0;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
 let layoutRequestSeq = 0;
 let lastDrawHadAnimatedFrame = false;
@@ -241,10 +244,29 @@ function scheduleGlobalAtlasTextureWarm(delayMs = 0) {
   globalAtlasTextureWarmTimer = globalThis.setTimeout(() => {
     globalAtlasTextureWarmTimer = null;
     const images = getLoadedGlobalAtlasImages();
-    if (images.length > 0) {
-      webglAtlasRenderer?.warmImages(images);
+    if (images.length <= 0) {
+      return;
     }
+    globalAtlasTextureWarmQueue = images;
+    globalAtlasTextureWarmCursor = 0;
+    warmGlobalAtlasTexturesInChunks();
   }, delayMs);
+}
+
+function warmGlobalAtlasTexturesInChunks() {
+  if (!webglAtlasRenderer || globalAtlasTextureWarmCursor >= globalAtlasTextureWarmQueue.length) {
+    globalAtlasTextureWarmQueue = [];
+    globalAtlasTextureWarmCursor = 0;
+    return;
+  }
+
+  const chunk = globalAtlasTextureWarmQueue.slice(globalAtlasTextureWarmCursor, globalAtlasTextureWarmCursor + 3);
+  globalAtlasTextureWarmCursor += chunk.length;
+  webglAtlasRenderer.warmImages(chunk);
+  globalAtlasTextureWarmTimer = globalThis.setTimeout(() => {
+    globalAtlasTextureWarmTimer = null;
+    warmGlobalAtlasTexturesInChunks();
+  }, 24);
 }
 
 function ensureGlobalAtlasResident() {
@@ -532,36 +554,6 @@ function drawGlobalAnimation(
   return false;
 }
 
-function queueGlobalAnimation(
-  commands: BrowserWebglAtlasDrawCommand[],
-  entry: BrowserAtlasItemEntry,
-  rect: GridRect,
-  now: number,
-): boolean {
-  const prepared = getPreparedGlobalAnimation(rect.item.itemId, entry);
-  if (!prepared) return false;
-  const atlas = getLoadedGlobalAtlasImage(prepared.atlasFile);
-  if (!atlas) return false;
-
-  const frameIndex = resolveTimelineFrameIndex(prepared.timeline, now);
-  const frame = prepared.frames.find((candidate) => candidate.index === frameIndex) ?? prepared.frames[0];
-  if (!frame) return false;
-
-  const drawRect = getIconDrawRect(rect);
-  commands.push({
-    image: atlas,
-    sourceX: frame.x,
-    sourceY: frame.y,
-    sourceWidth: frame.width,
-    sourceHeight: frame.height,
-    destX: drawRect.x,
-    destY: drawRect.y,
-    destWidth: drawRect.size,
-    destHeight: drawRect.size,
-  });
-  return true;
-}
-
 function drawStaticImage(
   ctx: CanvasRenderingContext2D,
   image: HTMLImageElement,
@@ -582,7 +574,7 @@ function ensureOverlayCanvasSize(canvas: HTMLCanvasElement) {
 }
 
 function clearAnimationOverlay() {
-  const canvas = webglCanvasRef.value;
+  const canvas = animationCanvasRef.value;
   if (!canvas) return;
   ensureOverlayCanvasSize(canvas);
   const ctx = canvas.getContext("2d");
@@ -596,7 +588,7 @@ function drawAnimationOverlay() {
     clearAnimationOverlay();
     return;
   }
-  const canvas = webglCanvasRef.value;
+  const canvas = animationCanvasRef.value;
   if (!canvas) return;
   ensureOverlayCanvasSize(canvas);
   const ctx = canvas.getContext("2d");
@@ -605,21 +597,6 @@ function drawAnimationOverlay() {
   ctx.imageSmoothingEnabled = false;
   const now = getSharedAnimationNowMs();
   let drewFrame = false;
-  if (webglAtlasRenderer) {
-    const commands: BrowserWebglAtlasDrawCommand[] = [];
-    for (const rect of animatedItemRects) {
-      const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(rect.item.itemId) : null;
-      if (props.enableAnimation && globalEntry && queueGlobalAnimation(commands, globalEntry, rect, now)) {
-        drewFrame = true;
-      }
-    }
-    if (commands.length > 0) {
-      webglAtlasRenderer.draw(canvasWidth.value, canvasHeight.value, commands);
-      lastDrawHadAnimatedFrame = drewFrame;
-      return;
-    }
-  }
-
   for (const rect of animatedItemRects) {
     const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(rect.item.itemId) : null;
     if (props.enableAnimation && globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
@@ -649,16 +626,13 @@ function draw() {
 
   const nextRects: GridRect[] = [];
   const nextAnimatedRects: GridRect[] = [];
-  const now = getSharedAnimationNowMs();
   let drewAnimatedFrame = false;
   const allowAnimatedOverlay = canRunAnimatedOverlay();
   const webglCommands: BrowserWebglAtlasDrawCommand[] = [];
-  // Keep the homepage on the stable Canvas2D resident-atlas path for now.
-  // The experimental WebGL overlay can fail to present some atlas shards while
-  // still short-circuiting the Canvas fallback, which makes the browser look
-  // like textures are missing. Canvas2D still uses the global atlas and avoids
-  // per-item PNG loads, so it preserves the NEI-style fast path safely.
-  const canUseWebglAtlas = false;
+  // Static resident atlas icons live on their own WebGL layer. Animated frames
+  // are drawn on a separate overlay so animation clears never erase static
+  // page icons during fast NEI-style page jumps.
+  const canUseWebglAtlas = Boolean(webglAtlasRenderer && hasGlobalBrowserAtlas());
   const activeCommands = activeLayoutKey.value === layoutKey.value ? layoutCommands.value : null;
   const commandsByEntryIndex = new Map<number, HomeGridLayoutCommand>();
   activeCommands?.forEach((command) => {
@@ -698,12 +672,6 @@ function draw() {
       continue;
     }
 
-    if (allowAnimatedOverlay && canUseWebglAtlas && globalEntry && queueGlobalAnimation(webglCommands, globalEntry, rect, now)) {
-      drewAnimatedFrame = true;
-      drawGroupOverlay(ctx, rect);
-      continue;
-    }
-
     const webglGlobalStaticAtlas = canUseWebglAtlas
       ? getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile)
       : null;
@@ -713,6 +681,10 @@ function draw() {
       && webglGlobalStaticAtlas
       && queueGlobalStaticSprite(webglCommands, webglGlobalStaticAtlas, globalEntry, rect)
     ) {
+      if (allowAnimatedOverlay && getPreparedGlobalAnimation(itemId, globalEntry) && getLoadedGlobalAtlasImage(globalEntry.animatedAtlas?.atlasFile)) {
+        nextAnimatedRects.push(rect);
+        drewAnimatedFrame = true;
+      }
       drawGroupOverlay(ctx, rect);
       continue;
     }
@@ -727,7 +699,7 @@ function draw() {
       continue;
     }
 
-    if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
+    if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, getSharedAnimationNowMs())) {
       if (allowAnimatedOverlay) {
         nextAnimatedRects.push(rect);
         drewAnimatedFrame = true;
@@ -1104,6 +1076,8 @@ onUnmounted(() => {
     clearTimeout(globalAtlasTextureWarmTimer);
     globalAtlasTextureWarmTimer = null;
   }
+  globalAtlasTextureWarmQueue = [];
+  globalAtlasTextureWarmCursor = 0;
   webglAtlasRenderer?.dispose();
   webglAtlasRenderer = null;
 });
@@ -1120,6 +1094,7 @@ onUnmounted(() => {
   >
     <canvas ref="canvasRef" class="home-canvas-grid__canvas" />
     <canvas ref="webglCanvasRef" class="home-canvas-grid__canvas home-canvas-grid__webgl" />
+    <canvas ref="animationCanvasRef" class="home-canvas-grid__canvas home-canvas-grid__animation" />
     <div v-if="hoveredRect && tooltipStyle" class="home-canvas-grid__tooltip" :style="tooltipStyle">
       <div class="home-canvas-grid__tooltip-title">{{ tooltipTitle }}</div>
       <div class="home-canvas-grid__tooltip-subtitle">{{ tooltipSubtitle }}</div>
@@ -1137,6 +1112,8 @@ onUnmounted(() => {
 }
 
 .home-canvas-grid__canvas {
+  position: relative;
+  z-index: 1;
   display: block;
   image-rendering: pixelated;
 }
@@ -1144,6 +1121,14 @@ onUnmounted(() => {
 .home-canvas-grid__webgl {
   position: absolute;
   inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.home-canvas-grid__animation {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
   pointer-events: none;
 }
 
