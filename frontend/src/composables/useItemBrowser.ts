@@ -62,8 +62,11 @@ type BrowserPageRequestParams = {
   search?: string;
   modId?: string;
   expandedGroups: string[];
+  expandedGroupFacetFilters: BrowserFacetFilters;
   slotSize: number;
 };
+
+type BrowserFacetFilters = Record<string, string>;
 
 const SHARED_BROWSER_PAGE_CACHE_LIMIT = 256;
 const SEARCH_LOCAL_PROJECTION_MAX_TOTAL = 1600;
@@ -159,6 +162,97 @@ function normalizeExpandedGroups(groups?: string[]): string[] {
   ).sort();
 }
 
+function normalizeFacetFilters(filters?: BrowserFacetFilters): BrowserFacetFilters {
+  const normalized: BrowserFacetFilters = {};
+  for (const [groupKey, query] of Object.entries(filters ?? {})) {
+    const key = `${groupKey ?? ''}`.trim();
+    const value = `${query ?? ''}`.trim();
+    if (key && value) {
+      normalized[key] = value;
+    }
+  }
+  return Object.fromEntries(Object.entries(normalized).sort(([left], [right]) => left.localeCompare(right)));
+}
+
+function normalizeFacetNeedle(value: unknown): string {
+  return `${value ?? ''}`
+    .toLocaleLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{Diacritic}/gu, '')
+    .trim();
+}
+
+function collectFacetHaystack(item: Item): string {
+  const values: string[] = [
+    item.localizedName,
+    item.internalName,
+    item.modId,
+    item.unlocalizedName,
+    item.facetSummary,
+    item.semanticFamily,
+    item.semanticClassification,
+    item.browserGroupLabel,
+    item.searchTerms,
+  ]
+    .filter((value): value is string => typeof value === 'string' && value.trim().length > 0);
+
+  const facets = item.facets;
+  if (facets && typeof facets === 'object') {
+    for (const [key, value] of Object.entries(facets)) {
+      values.push(key);
+      if (Array.isArray(value)) {
+        values.push(...value.map((entry) => `${entry ?? ''}`));
+      } else if (value && typeof value === 'object') {
+        values.push(JSON.stringify(value));
+      } else {
+        values.push(`${value ?? ''}`);
+      }
+    }
+  }
+
+  return normalizeFacetNeedle(values.join(' '));
+}
+
+function itemMatchesFacetFilter(item: Item, query: string): boolean {
+  const needles = normalizeFacetNeedle(query)
+    .split(/\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (needles.length === 0) {
+    return true;
+  }
+  const haystack = collectFacetHaystack(item);
+  return needles.every((needle) => haystack.includes(needle));
+}
+
+function applyGroupFacetFilters(
+  groupItemsByKey: Map<string, Item[]>,
+  filters?: BrowserFacetFilters,
+): Map<string, Item[]> {
+  const normalizedFilters = normalizeFacetFilters(filters);
+  if (Object.keys(normalizedFilters).length === 0) {
+    return groupItemsByKey;
+  }
+
+  const filtered = new Map<string, Item[]>();
+  for (const [groupKey, groupItems] of groupItemsByKey.entries()) {
+    const query = normalizedFilters[groupKey];
+    if (!query) {
+      filtered.set(groupKey, groupItems);
+      continue;
+    }
+
+    const representative = groupItems[0];
+    const matches = groupItems.filter((item) => itemMatchesFacetFilter(item, query));
+    if (representative && !matches.some((item) => item.itemId === representative.itemId)) {
+      filtered.set(groupKey, [representative, ...matches]);
+    } else {
+      filtered.set(groupKey, matches);
+    }
+  }
+  return filtered;
+}
+
 function collectBrowserGroupKeys(entries: BrowserGridEntry[]): string[] {
   return Array.from(
     new Set(
@@ -183,6 +277,7 @@ function buildPersistentBrowserPageKey(
     search: params.search?.trim() || '',
     modId: params.modId || 'all',
     expandedGroups: normalizeExpandedGroups(params.expandedGroups),
+    expandedGroupFacetFilters: normalizeFacetFilters(params.expandedGroupFacetFilters),
     slotSize: params.slotSize,
   });
 }
@@ -213,6 +308,7 @@ export function useItemBrowser(
   const searchQuery = ref('');
   const selectedMod = ref<string>('all');
   const expandedGroupKeys = ref<string[]>([]);
+  const expandedGroupFacetFilters = ref<BrowserFacetFilters>({});
   const currentPage = ref(1);
   const pageSize = ref(50);
   const totalItems = ref(0);
@@ -232,6 +328,7 @@ export function useItemBrowser(
     search?: string;
     modId?: string;
     expandedGroups?: string[];
+    expandedGroupFacetFilters?: BrowserFacetFilters;
     slotSize: number;
   }) =>
     JSON.stringify({
@@ -240,6 +337,7 @@ export function useItemBrowser(
       search: params.search?.trim() || '',
       modId: params.modId || 'all',
       expandedGroups: normalizeExpandedGroups(params.expandedGroups),
+      expandedGroupFacetFilters: normalizeFacetFilters(params.expandedGroupFacetFilters),
       slotSize: params.slotSize,
     });
 
@@ -387,6 +485,7 @@ export function useItemBrowser(
     search: params.search?.trim() || '',
     modId: params.modId || 'all',
     expandedGroups: normalizeExpandedGroups(params.expandedGroups),
+    expandedGroupFacetFilters: normalizeFacetFilters(params.expandedGroupFacetFilters),
     slotSize: params.slotSize,
     catalogSize: catalogEntries?.length ?? 0,
     groups: Array.from(groupItemsByKey.entries())
@@ -399,11 +498,15 @@ export function useItemBrowser(
     params: BrowserPageRequestParams,
     groupItemsByKey: Map<string, Item[]>,
   ): CachedBrowserPage => {
+    const filteredGroupItemsByKey = applyGroupFacetFilters(
+      groupItemsByKey,
+      params.expandedGroupFacetFilters,
+    );
     const projected = projectBrowserEntriesFromDefaultCatalog(
       catalogEntries,
       {
         expandedGroups: params.expandedGroups,
-        groupItemsByKey,
+        groupItemsByKey: filteredGroupItemsByKey,
         page: params.page,
         pageSize: params.pageSize,
       },
@@ -754,6 +857,7 @@ export function useItemBrowser(
     search: searchQuery.value.trim() || undefined,
     modId: selectedMod.value === 'all' ? undefined : selectedMod.value,
     expandedGroups: normalizeExpandedGroups(expandedGroupKeys.value),
+    expandedGroupFacetFilters: normalizeFacetFilters(expandedGroupFacetFilters.value),
     slotSize: buildSlotSize(),
   });
 
@@ -1638,8 +1742,7 @@ export function useItemBrowser(
     void loadItems();
   };
 
-  const setExpandedGroups = (groupKeys: string[]) => {
-    expandedGroupKeys.value = Array.from(new Set(groupKeys.filter(Boolean)));
+  const reloadExpandedProjection = () => {
     const requestParams = buildRequestParams(currentPage.value);
     const localProjection = tryProjectExpandedGroupsFromLocalCaches(requestParams);
     if (localProjection) {
@@ -1656,9 +1759,44 @@ export function useItemBrowser(
         localProjection.page,
         requestId,
       );
-      return;
+      return true;
     }
     void loadItems();
+    return false;
+  };
+
+  const setExpandedGroups = (groupKeys: string[]) => {
+    const normalizedGroups = normalizeExpandedGroups(groupKeys);
+    const activeGroupSet = new Set(normalizedGroups);
+    expandedGroupKeys.value = normalizedGroups;
+    expandedGroupFacetFilters.value = Object.fromEntries(
+      Object.entries(normalizeFacetFilters(expandedGroupFacetFilters.value))
+        .filter(([groupKey]) => activeGroupSet.has(groupKey)),
+    );
+    reloadExpandedProjection();
+  };
+
+  const setExpandedGroupFacetFilter = (groupKey: string, query: string) => {
+    const normalizedGroupKey = `${groupKey ?? ''}`.trim();
+    if (!normalizedGroupKey) {
+      return;
+    }
+    const next = normalizeFacetFilters({
+      ...expandedGroupFacetFilters.value,
+      [normalizedGroupKey]: query,
+    });
+    expandedGroupFacetFilters.value = next;
+    currentPage.value = 1;
+    reloadExpandedProjection();
+  };
+
+  const clearExpandedGroupFacetFilters = () => {
+    if (Object.keys(expandedGroupFacetFilters.value).length === 0) {
+      return;
+    }
+    expandedGroupFacetFilters.value = {};
+    currentPage.value = 1;
+    reloadExpandedProjection();
   };
 
   const setPageSize = (newSize: number, options?: { resetPage?: boolean }) => {
@@ -1783,12 +1921,15 @@ export function useItemBrowser(
     searchQuery,
     selectedMod,
     expandedGroupKeys,
+    expandedGroupFacetFilters,
     currentPage,
     pageSize,
     totalItems,
     totalPages,
     currentPageAtlas,
     setExpandedGroups,
+    setExpandedGroupFacetFilter,
+    clearExpandedGroupFacetFilters,
     setPageSize,
     loadMods,
     loadItems,

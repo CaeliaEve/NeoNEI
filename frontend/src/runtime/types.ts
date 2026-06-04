@@ -99,6 +99,7 @@ export interface Item {
   semanticFamily?: string | null;
   semanticClassification?: string | null;
   facetSummary?: string | null;
+  facets?: Record<string, unknown> | null;
   nbt?: string | null;
   [key: string]: unknown;
 }

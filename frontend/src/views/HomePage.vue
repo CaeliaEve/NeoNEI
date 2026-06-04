@@ -81,6 +81,9 @@ const {
   totalPages,
   currentPageAtlas,
   setExpandedGroups,
+  expandedGroupFacetFilters,
+  setExpandedGroupFacetFilter,
+  clearExpandedGroupFacetFilters,
   setPageSize,
   loadMods,
   loadItems,
@@ -856,6 +859,30 @@ const toggleBrowserGroup = (groupKey: string) => {
   setExpandedGroups(Array.from(next));
 };
 
+const expandedGroupFilterPanels = computed(() => {
+  const seen = new Set<string>();
+  return browserGridEntries.value
+    .filter((entry): entry is Extract<BrowserGridEntry, { kind: "group-header" }> => entry.kind === "group-header")
+    .map((entry) => entry.group)
+    .filter((group) => {
+      const key = `${group.key ?? ""}`.trim();
+      if (!key || seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    })
+    .slice(0, 3);
+});
+
+const hasExpandedGroupFacetFilters = computed(() =>
+  Object.keys(expandedGroupFacetFilters.value ?? {}).length > 0,
+);
+
+const handleExpandedGroupFacetInput = (groupKey: string, event: Event) => {
+  setExpandedGroupFacetFilter(groupKey, (event.target as HTMLInputElement | null)?.value ?? "");
+};
+
 const handleBrowserGroupClick = (group: BrowserVariantGroup) => {
   if (!group.expandable) {
     return;
@@ -1284,6 +1311,36 @@ const saveSettings = () => {
                   @group-click="handleBrowserGroupClick"
                   @group-contextmenu="handleBrowserGroupContextMenu"
                 />
+
+                <div
+                  v-if="expandedGroupFilterPanels.length > 0"
+                  class="expanded-group-filter-panel absolute left-3 top-3 z-20 flex max-w-[min(520px,calc(100%-1.5rem))] flex-col gap-2"
+                >
+                  <div
+                    v-for="group in expandedGroupFilterPanels"
+                    :key="group.key"
+                    class="expanded-group-filter-row"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <p class="expanded-group-filter-label">{{ group.label || group.representative.localizedName }}</p>
+                      <p class="expanded-group-filter-meta">{{ group.semanticFamily || group.groupSource || 'semantic group' }} · {{ group.visibleCount || group.size }} 项</p>
+                    </div>
+                    <input
+                      class="expanded-group-filter-input"
+                      :value="expandedGroupFacetFilters[group.key] || ''"
+                      placeholder="筛选材质 / 方块 / 实体 / 流体"
+                      @input="handleExpandedGroupFacetInput(group.key, $event)"
+                    />
+                  </div>
+                  <button
+                    v-if="hasExpandedGroupFacetFilters"
+                    class="expanded-group-filter-clear"
+                    type="button"
+                    @click="clearExpandedGroupFacetFilters"
+                  >
+                    清除筛选
+                  </button>
+                </div>
 
                 <div
                   v-if="showTransitionOverlay"
@@ -2774,6 +2831,91 @@ const saveSettings = () => {
 .mini-pager-btn:hover {
   border-color: rgba(174, 194, 219, 0.18);
   background: linear-gradient(180deg, rgba(26, 33, 41, 0.86), rgba(18, 22, 29, 0.9));
+}
+
+.expanded-group-filter-panel {
+  pointer-events: auto;
+}
+
+.expanded-group-filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 360px;
+  max-width: 520px;
+  padding: 8px 9px;
+  border: 1px solid rgba(125, 211, 252, 0.18);
+  border-radius: 13px;
+  background:
+    radial-gradient(circle at 12% 20%, rgba(34, 211, 238, 0.16), transparent 36%),
+    linear-gradient(135deg, rgba(8, 13, 20, 0.86), rgba(14, 19, 30, 0.72));
+  box-shadow:
+    0 14px 38px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(14px) saturate(112%);
+  -webkit-backdrop-filter: blur(14px) saturate(112%);
+}
+
+.expanded-group-filter-label {
+  margin: 0;
+  overflow: hidden;
+  color: rgba(235, 245, 255, 0.94);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expanded-group-filter-meta {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: rgba(148, 163, 184, 0.82);
+  font-family: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expanded-group-filter-input {
+  width: 190px;
+  flex: 0 0 auto;
+  border: 1px solid rgba(148, 163, 184, 0.18);
+  border-radius: 10px;
+  background: rgba(2, 6, 14, 0.54);
+  color: rgba(226, 232, 240, 0.94);
+  font-size: 12px;
+  line-height: 1;
+  padding: 8px 10px;
+  outline: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, background 160ms ease;
+}
+
+.expanded-group-filter-input::placeholder {
+  color: rgba(148, 163, 184, 0.56);
+}
+
+.expanded-group-filter-input:focus {
+  border-color: rgba(34, 211, 238, 0.46);
+  background: rgba(2, 8, 18, 0.72);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.14), 0 0 22px rgba(34, 211, 238, 0.12);
+}
+
+.expanded-group-filter-clear {
+  align-self: flex-start;
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  border-radius: 999px;
+  background: rgba(2, 6, 14, 0.64);
+  color: rgba(203, 213, 225, 0.86);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 5px 11px;
+}
+
+.expanded-group-filter-clear:hover {
+  border-color: rgba(34, 211, 238, 0.28);
+  color: rgba(224, 242, 254, 0.96);
 }
 
 /* Animate Scale In */
