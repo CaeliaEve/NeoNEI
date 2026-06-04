@@ -10,6 +10,7 @@ import {
   setPublicCacheHeaders,
 } from '../utils/http-cache';
 import { DATA_DIR, PUBLISH_OUTPUT_DIR } from '../config/runtime-paths';
+import { getNativeRenderRuntimeDiagnostics } from '../services/native-render-runtime-diagnostics.service';
 
 const router = Router();
 
@@ -117,6 +118,7 @@ router.get('/diagnostics',
         hasRecipeBootstrap: Boolean(publishBundle?.files?.recipeBootstrapBasePath),
         hasRecipeSearch: Boolean(publishBundle?.files?.recipeSearchBasePath),
       },
+      nativeRender: getNativeRenderRuntimeDiagnostics(),
     });
   }),
 );

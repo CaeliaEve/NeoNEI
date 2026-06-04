@@ -3,6 +3,7 @@ import { getAccelerationDatabaseManager, getDatabaseManager } from './models/dat
 import { IMAGES_PATH } from './config/runtime-paths';
 import { logger } from './utils/logger';
 import { scheduleStartupAutowarm } from './services/startup-autowarm.service';
+import { getNativeRenderRuntimeDiagnostics } from './services/native-render-runtime-diagnostics.service';
 import { requireAdminToken, serverSettings } from './config/server-settings';
 import { createApp } from './app';
 import {
@@ -50,6 +51,18 @@ export async function startServer() {
       logger.info(`Items API: ${serverSettings.publicBaseUrl}/api/items`);
       logger.info(`Images path: ${IMAGES_PATH}`);
       logger.info(`Public runtime only: ${serverSettings.publicRuntimeOnly}`);
+      const nativeRenderDiagnostics = getNativeRenderRuntimeDiagnostics();
+      const nativeRenderSummary = {
+        status: nativeRenderDiagnostics.status,
+        counts: nativeRenderDiagnostics.counts,
+        validation: nativeRenderDiagnostics.validation,
+        missing: nativeRenderDiagnostics.missing,
+      };
+      if (nativeRenderDiagnostics.status === 'ok') {
+        logger.info('[NATIVE_RENDER] Angelica render index ready', nativeRenderSummary);
+      } else {
+        logger.warn('[NATIVE_RENDER] Angelica render index is not ready', nativeRenderSummary);
+      }
 
       setTimeout(() => {
         void reconcileAccelerationRuntime(accelerationDbManager, {
