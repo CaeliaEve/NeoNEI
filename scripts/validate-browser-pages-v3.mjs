@@ -215,12 +215,15 @@ function searchEntries(searchItems, indexes, query) {
   }
   const candidateIndexes = Array.from(new Set([...direct, ...gramCandidates]));
   const data = candidateIndexes
-    .map((index) => searchItems[index])
-    .filter(Boolean)
-    .filter((entry) => rankSearchEntry(entry, needle) < 100)
-    .sort((left, right) => rankSearchEntry(left, needle) - rankSearchEntry(right, needle)
-      || stableNumber(left.searchRank, 0) - stableNumber(right.searchRank, 0)
-      || stableNumber(right.popularityScore, 0) - stableNumber(left.popularityScore, 0))
+    .map((index) => {
+      const entry = searchItems[index];
+      return entry ? { entry, rank: rankSearchEntry(entry, needle) } : null;
+    })
+    .filter((entry) => entry && entry.rank < 100)
+    .sort((left, right) => left.rank - right.rank
+      || stableNumber(left.entry.searchRank, 0) - stableNumber(right.entry.searchRank, 0)
+      || stableNumber(right.entry.popularityScore, 0) - stableNumber(left.entry.popularityScore, 0))
+    .map((entry) => entry.entry)
     .slice(0, pageSize);
   return { data, elapsedMs: performance.now() - startedAt, candidateCount: candidateIndexes.length };
 }

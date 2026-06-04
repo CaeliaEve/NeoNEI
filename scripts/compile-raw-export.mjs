@@ -1815,6 +1815,28 @@ function portableNativeNeiRule(rule) {
   };
 }
 
+function semanticFamilyAliases(family, classification) {
+  const normalized = `${family ?? ""}`.trim().toLowerCase();
+  const aliases = [];
+  if (normalized.startsWith("facade.")) aliases.push("facade", "cover", "camouflage", "microblock", "painted block");
+  if (normalized === "facade.buildcraft") aliases.push("buildcraft facade", "pipe facade");
+  if (normalized === "facade.ae2") aliases.push("ae2 facade", "applied energistics facade");
+  if (normalized === "facade.enderio.paint") aliases.push("enderio painted block", "conduit facade");
+  if (normalized === "thaumcraft.wand") aliases.push("wand", "sceptre", "scepter", "staff", "focus", "rod", "cap", "thaumcraft wand");
+  if (normalized === "tool.tconstruct") aliases.push("tinkers tool", "tconstruct tool", "infitool", "modifier", "durability");
+  if (normalized === "toolpart.tconstruct") aliases.push("tinkers part", "tconstruct part", "tool part", "bolt part", "arrow part");
+  if (normalized === "toolpart.tgregworks") aliases.push("tgregworks part", "gregworks part", "tool part", "material part");
+  if (normalized === "tool.gregtech") aliases.push("gregtech tool", "gt tool", "meta tool", "electric tool");
+  if (normalized.startsWith("genetics.")) aliases.push("bee", "tree", "butterfly", "genetics", "genome", "allele", "species", "serum", "template");
+  if (normalized === "crop.ic2") aliases.push("ic2 crop", "crop seed", "growth", "gain", "resistance");
+  if (normalized.startsWith("entity_capture.")) aliases.push("mob soul", "mob crystal", "soul vial", "entity capture", "monster", "mob");
+  if (normalized === "fluid.container") aliases.push("fluid cell", "fluid container", "bucket", "capsule", "tank", "fluid");
+  if (normalized === "data_carrier.encoded-pattern") aliases.push("encoded pattern", "ae2 pattern", "processing pattern", "crafting pattern");
+  if (normalized === "cosmetic.color") aliases.push("color", "colour", "dye", "painted", "cosmetic");
+  if (`${classification ?? ""}`.trim()) aliases.push(classification);
+  return Array.from(new Set(aliases)).join(" ");
+}
+
 function compileRawExport(inputDir, outputDir) {
   const startedAt = Date.now();
   const manifestPath = join(inputDir, "manifest.json");
@@ -1925,6 +1947,7 @@ function compileRawExport(inputDir, outputDir) {
         semantic.family,
         semantic.classification,
         semantic.facetSummary,
+        semanticFamilyAliases(semantic.family, semantic.classification),
         layout.groupKey,
         layout.groupLabel,
       ].filter(Boolean).join(" ");
