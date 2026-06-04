@@ -5,6 +5,7 @@
   BrowserGroupItemsResponse,
   BrowserPagePackResponse,
   BrowserSearchCatalogResponse,
+  NativeRenderIndex,
   BrowserSearchPackResponse,
   BrowserGridEntry,
   PaginatedResponse,
@@ -15,6 +16,7 @@ import {
   getDistDataBrowserPagePack,
   getDistDataBrowserPagePackByIds,
   getDistDataDefaultCatalog,
+  getDistDataNativeRenderIndex,
   getDistDataGroupItems,
   getDistDataSearchCatalog,
 } from '../services/distDataRuntime';
@@ -76,6 +78,9 @@ export function createBrowserRuntimeClient() {
     },
     getAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
       return getDistDataBrowserAtlasIndex();
+    },
+    getNativeRenderIndex(): Promise<NativeRenderIndex | null> {
+      return getDistDataNativeRenderIndex();
     },
     getItemsPageCompat(params: Omit<BrowserPageParams, 'slotSize'>): Promise<PaginatedResponse<BrowserGridEntry>> {
       return getLabPayload<PaginatedResponse<BrowserGridEntry>>('/items/browser', {

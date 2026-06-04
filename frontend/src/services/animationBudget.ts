@@ -9,6 +9,8 @@ import {
   type NativeSpriteMetadata,
 } from './api/images';
 import { api, type Item, type PageRichMediaManifest } from './api';
+import { getNativeRenderFactsForItem } from './distDataRuntime';
+import type { NativeFramebufferCaptureEntry } from '../runtime/types';
 import { resolveOpfsCachedAssetUrl } from './opfsAssetCache';
 
 const MAX_ANIMATION_WORKERS = 3;
@@ -284,6 +286,70 @@ const getRenderableEntityKey = (entity: RenderableEntityLike): string => {
 
 const getPreparedFrameCacheKey = (baseUrl: string, renderAssetRef?: string | null): string => {
   return `${renderAssetRef?.trim() || baseUrl}`;
+};
+
+const getNativeItemRenderAssetRef = (itemId?: string | null): string | null => {
+  const normalizedItemId = `${itemId ?? ''}`.trim();
+  return normalizedItemId ? `nesqlpp:item/${normalizedItemId}` : null;
+};
+
+const getEffectiveRenderAssetRef = (entity: RenderableEntityLike): string | null => {
+  return `${entity.renderAssetRef ?? ''}`.trim() || getNativeItemRenderAssetRef(entity.itemId);
+};
+
+const hasAnimatedCapture = (capture?: NativeFramebufferCaptureEntry | null): boolean => {
+  if (!capture) return false;
+  const frameCount = Number(capture.frameCount ?? capture.frames?.length ?? capture.timeline?.length ?? 0);
+  return Number.isFinite(frameCount) && frameCount > 1;
+};
+
+const buildNativeRenderHint = async (
+  entity: RenderableEntityLike,
+): Promise<NonNullable<Item['renderHint']> | null> => {
+  const itemId = `${entity.itemId ?? ''}`.trim();
+  const renderAssetRef = getEffectiveRenderAssetRef(entity);
+  if (!itemId && !renderAssetRef) {
+    return null;
+  }
+  const facts = await getNativeRenderFactsForItem(itemId, renderAssetRef).catch(() => null);
+  if (!facts?.renderer && !facts?.shader && !facts?.capture) {
+    return null;
+  }
+  const renderer = facts.renderer;
+  const shader = facts.shader;
+  const capture = facts.capture;
+  const requiresCapture = Boolean(
+    renderer?.requiresFramebufferCapture
+      || shader?.captureRequired
+      || capture,
+  );
+  const hasAnimation = hasAnimatedCapture(capture)
+    || Boolean(shader?.captureRequired && requiresCapture)
+    || Boolean(renderer?.usesShader && requiresCapture);
+  return {
+    renderMode: capture?.renderMode ?? (requiresCapture ? 'captured_final_atlas' : renderer?.rendererKind ?? null),
+    animationMode: capture?.animationMode ?? (hasAnimation ? 'captured_native' : 'none'),
+    playbackHint: requiresCapture ? 'native_capture' : (renderer?.supportsNativeAtlas ? 'native_sprite' : null),
+    frameCount: Number.isFinite(Number(capture?.frameCount)) ? Number(capture?.frameCount) : null,
+    explicitStatic: !hasAnimation && renderer?.supportsNativeAtlas === true,
+    prefersNativeSprite: renderer?.supportsNativeAtlas === true && !requiresCapture,
+    prefersCapturedAtlas: requiresCapture,
+    hasAnimation,
+  };
+};
+
+const primeNativeRenderFactsForEntity = async (
+  entity: RenderableEntityLike,
+): Promise<NonNullable<Item['renderHint']> | null> => {
+  const renderAssetRef = getEffectiveRenderAssetRef(entity);
+  if (!renderAssetRef) return null;
+  const existing = getPrimedRenderHint(renderAssetRef);
+  if (typeof existing !== 'undefined') return existing;
+  const nativeHint = await buildNativeRenderHint(entity);
+  if (nativeHint) {
+    primeRenderAnimationHint(renderAssetRef, nativeHint);
+  }
+  return nativeHint;
 };
 
 function getPrimedRenderHint(renderAssetRef?: string | null): NonNullable<Item['renderHint']> | null | undefined {
@@ -785,9 +851,10 @@ export const probeDirectGifPlayback = async (baseUrl: string): Promise<boolean> 
 export const prepareItemAnimationFrames = async (
   entity: RenderableEntityLike,
 ): Promise<PreparedAnimationFrame[]> => {
+  await primeNativeRenderFactsForEntity(entity);
   return resolvePreparedAnimationFrames(
     getItemImageBaseUrl(entity),
-    entity.renderAssetRef ?? null,
+    getEffectiveRenderAssetRef(entity),
   );
 };
 
@@ -826,8 +893,11 @@ export const prewarmRenderableEntityMedia = async (
 ): Promise<void> => {
   if (entity.itemId || entity.imageFileName || entity.renderAssetRef || entity.preferredImageUrl) {
     const itemImageUrl = getItemImageBaseUrl(entity);
-    const explicitAnimation = entity.renderHint?.hasAnimation === true;
-    const explicitStatic = entity.renderHint?.hasAnimation === false;
+    const nativeRenderHint = await primeNativeRenderFactsForEntity(entity);
+    const effectiveRenderHint = entity.renderHint ?? nativeRenderHint;
+    const effectiveRenderAssetRef = getEffectiveRenderAssetRef(entity);
+    const explicitAnimation = effectiveRenderHint?.hasAnimation === true;
+    const explicitStatic = effectiveRenderHint?.hasAnimation === false;
 
     if (explicitStatic) {
       await prewarmImageAsset(itemImageUrl);
@@ -835,21 +905,21 @@ export const prewarmRenderableEntityMedia = async (
     }
 
     if (explicitAnimation) {
-      await resolvePreparedAnimationFrames(itemImageUrl, entity.renderAssetRef ?? null);
+      await resolvePreparedAnimationFrames(itemImageUrl, effectiveRenderAssetRef);
       return;
     }
 
-    if (entity.renderAssetRef) {
-      const animatedAtlasEntry = await fetchAnimatedAtlasEntry(entity.renderAssetRef);
+    if (effectiveRenderAssetRef) {
+      const animatedAtlasEntry = await fetchAnimatedAtlasEntry(effectiveRenderAssetRef);
       if (animatedAtlasEntry && animatedAtlasEntry.frames.length > 0) {
-        await resolvePreparedAnimationFrames(itemImageUrl, entity.renderAssetRef ?? null);
+        await resolvePreparedAnimationFrames(itemImageUrl, effectiveRenderAssetRef);
         return;
       }
     }
 
     const spriteMetadata = await fetchNativeSpriteMetadata(itemImageUrl);
     if (spriteMetadata?.animated && (spriteMetadata.timeline?.length ?? 0) > 0) {
-      await resolvePreparedAnimationFrames(itemImageUrl, entity.renderAssetRef ?? null);
+      await resolvePreparedAnimationFrames(itemImageUrl, effectiveRenderAssetRef);
       return;
     }
 

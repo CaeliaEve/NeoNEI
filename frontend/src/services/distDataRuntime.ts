@@ -17,6 +17,11 @@ import type {
   BrowserSearchPackResponse,
   BrowserVariantGroup,
   PublicRuntimeManifest,
+  NativeRenderIndex,
+  NativeFramebufferCaptureEntry,
+  NativeItemRendererEntry,
+  NativeShaderItemEntry,
+  NativeTextureSpriteEntry,
   indexedRecipe,
 } from "../runtime/types";
 import { reportRuntimeSchemaMismatch } from "../runtime/diagnostics";
@@ -38,6 +43,7 @@ type DistDataManifest = {
     textureManifest?: string;
     animationTable?: string;
     browserAtlasIndex?: string;
+    nativeRenderIndex?: string;
     validationReport?: string;
   };
 };
@@ -151,6 +157,8 @@ const cachedRecipeUiPayloads = new Map<string, RecipeUiPayload>();
 const cachedRecipeUiPayloadShards = new Map<string, Promise<DistDataRecipeUiPayloadShard | null>>();
 let browserAtlasIndexRequest: Promise<BrowserAtlasIndexResponse | null> | null = null;
 let cachedBrowserAtlasIndex: BrowserAtlasIndexResponse | null = null;
+let nativeRenderIndexRequest: Promise<NativeRenderIndex | null> | null = null;
+let cachedNativeRenderIndex: NativeRenderIndex | null = null;
 
 function trimSlashes(value: string): string {
   return value.replace(/^\/+|\/+$/g, "");
@@ -1322,6 +1330,103 @@ export async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexR
 
   return browserAtlasIndexRequest;
 }
+
+export async function getDistDataNativeRenderIndex(): Promise<NativeRenderIndex | null> {
+  if (cachedNativeRenderIndex) {
+    return cachedNativeRenderIndex;
+  }
+  if (nativeRenderIndexRequest) {
+    return nativeRenderIndexRequest;
+  }
+
+  nativeRenderIndexRequest = (async () => {
+    const manifest = await getDistDataManifest();
+    const indexPath = `${manifest?.files?.nativeRenderIndex ?? ""}`.trim();
+    if (!manifest || !indexPath) {
+      return null;
+    }
+    const payload = await fetchJson<NativeRenderIndex>(joinAssetPath(getConfiguredBasePath(), indexPath));
+    if (!payload || typeof payload !== "object") {
+      reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data native render index is not an object", {
+        schemaVersion: (payload as { schemaVersion?: unknown } | null)?.schemaVersion ?? null,
+      });
+      return null;
+    }
+    const hasRendererIndex = payload.itemRendererByItemId && typeof payload.itemRendererByItemId === "object";
+    if (!hasRendererIndex) {
+      reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data native render index is missing itemRendererByItemId", {
+        schemaVersion: payload.schemaVersion ?? null,
+      });
+    }
+    cachedNativeRenderIndex = payload;
+    return cachedNativeRenderIndex;
+  })()
+    .catch(() => null)
+    .finally(() => {
+      nativeRenderIndexRequest = null;
+    });
+
+  return nativeRenderIndexRequest;
+}
+
+function getItemAssetId(itemId?: string | null): string {
+  const normalizedItemId = `${itemId ?? ""}`.trim();
+  return normalizedItemId ? `nesqlpp:item/${normalizedItemId}` : "";
+}
+
+export async function getNativeRendererForItem(itemId?: string | null): Promise<NativeItemRendererEntry | null> {
+  const normalizedItemId = `${itemId ?? ""}`.trim();
+  if (!normalizedItemId) return null;
+  const index = await getDistDataNativeRenderIndex();
+  return index?.itemRendererByItemId?.[normalizedItemId] ?? null;
+}
+
+export async function getNativeShaderForItem(itemId?: string | null): Promise<NativeShaderItemEntry | null> {
+  const normalizedItemId = `${itemId ?? ""}`.trim();
+  if (!normalizedItemId) return null;
+  const index = await getDistDataNativeRenderIndex();
+  return index?.shaderByItemId?.[normalizedItemId] ?? null;
+}
+
+export async function getNativeCaptureByAssetId(assetId?: string | null): Promise<NativeFramebufferCaptureEntry | null> {
+  const normalizedAssetId = `${assetId ?? ""}`.trim();
+  if (!normalizedAssetId) return null;
+  const index = await getDistDataNativeRenderIndex();
+  return index?.capturesByAssetId?.[normalizedAssetId] ?? null;
+}
+
+export async function getNativeCaptureByVariantKey(variantKey?: string | null): Promise<NativeFramebufferCaptureEntry | null> {
+  const normalizedVariantKey = `${variantKey ?? ""}`.trim();
+  if (!normalizedVariantKey) return null;
+  const index = await getDistDataNativeRenderIndex();
+  return index?.capturesByVariantKey?.[normalizedVariantKey] ?? null;
+}
+
+export async function getNativeSpriteByIconName(iconName?: string | null): Promise<NativeTextureSpriteEntry | null> {
+  const normalizedIconName = `${iconName ?? ""}`.trim();
+  if (!normalizedIconName) return null;
+  const index = await getDistDataNativeRenderIndex();
+  return index?.spriteByIconName?.[normalizedIconName] ?? null;
+}
+
+export async function getNativeRenderFactsForItem(itemId?: string | null, renderAssetRef?: string | null): Promise<{
+  renderer: NativeItemRendererEntry | null;
+  shader: NativeShaderItemEntry | null;
+  capture: NativeFramebufferCaptureEntry | null;
+} | null> {
+  const normalizedItemId = `${itemId ?? ""}`.trim();
+  const normalizedAssetId = `${renderAssetRef ?? getItemAssetId(normalizedItemId)}`.trim();
+  if (!normalizedItemId && !normalizedAssetId) return null;
+  const index = await getDistDataNativeRenderIndex();
+  if (!index) return null;
+  return {
+    renderer: normalizedItemId ? index.itemRendererByItemId?.[normalizedItemId] ?? null : null,
+    shader: normalizedItemId ? index.shaderByItemId?.[normalizedItemId] ?? null : null,
+    capture: (normalizedAssetId ? index.capturesByAssetId?.[normalizedAssetId] : null)
+      ?? (normalizedItemId ? index.capturesByVariantKey?.[normalizedItemId] : null)
+      ?? null,
+  };
+}
 export function resetDistDataRuntimeCache(): void {
   manifestRequest = null;
   searchPackRequest = null;
@@ -1336,5 +1441,7 @@ export function resetDistDataRuntimeCache(): void {
   cachedRecipeUiPayloadShards.clear();
   browserAtlasIndexRequest = null;
   cachedBrowserAtlasIndex = null;
+  nativeRenderIndexRequest = null;
+  cachedNativeRenderIndex = null;
 }
 

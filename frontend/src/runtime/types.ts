@@ -715,6 +715,99 @@ export interface RenderContractAssetEntry {
   captureContract: Record<string, unknown> | null;
 }
 
+
+export interface NativeRenderBackendInfo {
+  schemaVersion?: string;
+  backend?: string | null;
+  angelicaPresent?: boolean;
+  optifinePresent?: boolean;
+  shaderPackInUse?: boolean;
+  shadersEnabled?: boolean;
+  [key: string]: unknown;
+}
+
+export interface NativeItemRendererEntry {
+  rendererClass?: string | null;
+  rendererKind?: string | null;
+  usesShader?: boolean;
+  requiresFramebufferCapture?: boolean;
+  supportsNativeAtlas?: boolean;
+  stackResolved?: boolean;
+  hasNbt?: boolean;
+  [key: string]: unknown;
+}
+
+export interface NativeShaderItemEntry {
+  rendererKind?: string | null;
+  rendererClass?: string | null;
+  shaderFamily?: string | null;
+  timeSource?: string | null;
+  captureRequired?: boolean;
+  preferredExport?: string | null;
+  browserReimplementationAllowed?: boolean;
+  [key: string]: unknown;
+}
+
+export interface NativeCaptureFrameEntry {
+  index?: number;
+  frameIndex?: number;
+  timelineIndex?: number;
+  durationMs?: number | null;
+  path?: string | null;
+  sourcePath?: string | null;
+  [key: string]: unknown;
+}
+
+export interface NativeFramebufferCaptureEntry {
+  assetId: string;
+  variantKey: string;
+  rendererFamily?: string | null;
+  renderMode?: string | null;
+  animationMode?: string | null;
+  captureMethod?: string | null;
+  primaryArtifact?: string | null;
+  framePattern?: string | null;
+  frameCount?: number | null;
+  frameDurationMs?: number | null;
+  timeline?: NativeCaptureFrameEntry[];
+  frames?: NativeCaptureFrameEntry[];
+  [key: string]: unknown;
+}
+
+export interface NativeTextureSpriteEntry {
+  atlas?: string | null;
+  spriteKey?: string | null;
+  iconName?: string | null;
+  spriteClass?: string | null;
+  originX?: number | null;
+  originY?: number | null;
+  width?: number | null;
+  height?: number | null;
+  animated?: boolean;
+  frameCount?: number | null;
+  defaultFrameTimeTicks?: number | null;
+  metadataFrameCount?: number | null;
+  [key: string]: unknown;
+}
+
+export interface NativeRenderIndex {
+  schemaVersion?: string;
+  backend?: NativeRenderBackendInfo | null;
+  counts?: Record<string, number>;
+  itemRendererByItemId?: Record<string, NativeItemRendererEntry>;
+  shaderByItemId?: Record<string, NativeShaderItemEntry>;
+  capturesByAssetId?: Record<string, NativeFramebufferCaptureEntry>;
+  capturesByVariantKey?: Record<string, NativeFramebufferCaptureEntry>;
+  spriteByIconName?: Record<string, NativeTextureSpriteEntry>;
+  validation?: {
+    status?: string;
+    shaderItemsNeedingCapture?: number;
+    framebufferCaptures?: number;
+    summary?: string;
+    [key: string]: unknown;
+  };
+}
+
 export interface BrowserVariantGroup {
   key: string;
   representative: Item;
