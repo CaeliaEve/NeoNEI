@@ -9,7 +9,7 @@ import {
   type NativeSpriteMetadata,
 } from './api/images';
 import { api, type Item, type PageRichMediaManifest } from './api';
-import { getNativeRenderFactsForItem } from './distDataRuntime';
+import { getNativeCaptureByAssetId, getNativeRenderFactsForItem } from './distDataRuntime';
 import type { NativeFramebufferCaptureEntry } from '../runtime/types';
 import { resolveOpfsCachedAssetUrl } from './opfsAssetCache';
 
@@ -451,6 +451,47 @@ const buildNativeSpriteFrames = async (
   return frames;
 };
 
+const getNativeCaptureFramePath = (frame: { path?: string | null; sourcePath?: string | null }): string | null => {
+  return `${frame.path ?? frame.sourcePath ?? ''}`.trim() || null;
+};
+
+const buildNativeCaptureFrames = async (
+  capture?: NativeFramebufferCaptureEntry | null,
+): Promise<PreparedAnimationFrame[]> => {
+  if (!capture) {
+    return [];
+  }
+  const sourceFrames = (Array.isArray(capture.frames) && capture.frames.length > 0
+    ? capture.frames
+    : [])
+    .map((frame, index) => ({ frame, index, path: getNativeCaptureFramePath(frame) }))
+    .filter((entry): entry is { frame: NonNullable<NativeFramebufferCaptureEntry['frames']>[number]; index: number; path: string } => Boolean(entry.path));
+
+  if (sourceFrames.length === 0) {
+    return [];
+  }
+
+  const timeline = Array.isArray(capture.timeline) ? capture.timeline : [];
+  const frames: PreparedAnimationFrame[] = [];
+  for (const entry of sourceFrames) {
+    const imageUrl = resolveRenderRelativePath(entry.path) ?? resolveCanonicalRelativePath(entry.path);
+    if (!imageUrl) {
+      continue;
+    }
+    const image = await loadImageCached(imageUrl);
+    const timelineEntry = timeline.find((candidate) => candidate.frameIndex === entry.index)
+      ?? timeline.find((candidate) => candidate.index === entry.index)
+      ?? timeline[entry.index];
+    frames.push({
+      source: image,
+      width: image.naturalWidth || image.width,
+      height: image.naturalHeight || image.height,
+      durationMs: normalizeFrameDuration(timelineEntry?.durationMs ?? capture.frameDurationMs),
+    });
+  }
+  return frames;
+};
+
 const getItemImageBaseUrl = (entity: RenderableEntityLike): string => {
   return getItemImageUrlFromEntity({
     itemId: entity.itemId ?? null,
@@ -488,6 +529,11 @@ const resolvePreparedAnimationFrames = async (
       : true;
 
     if (hasAnimation && renderAssetRef && shouldTryCapturedAtlasFirst) {
+      const nativeCapture = await getNativeCaptureByAssetId(renderAssetRef).catch(() => null);
+      frames = await buildNativeCaptureFrames(nativeCapture);
+    }
+
+    if (frames.length === 0 && hasAnimation && renderAssetRef && shouldTryCapturedAtlasFirst) {
       const animatedAtlasEntry = await fetchAnimatedAtlasEntry(renderAssetRef);
       if (animatedAtlasEntry && animatedAtlasEntry.frames.length > 0) {
         frames = await buildAnimatedAtlasFrames(animatedAtlasEntry);
@@ -499,6 +545,11 @@ const resolvePreparedAnimationFrames = async (
       if (spriteMeta) {
         frames = await buildNativeSpriteFrames(baseUrl, spriteMeta);
       }
+    }
+
+    if (frames.length === 0 && hasAnimation && renderAssetRef && !shouldTryCapturedAtlasFirst) {
+      const nativeCapture = await getNativeCaptureByAssetId(renderAssetRef).catch(() => null);
+      frames = await buildNativeCaptureFrames(nativeCapture);
     }
 
     if (frames.length === 0 && hasAnimation && renderAssetRef && !shouldTryCapturedAtlasFirst) {
