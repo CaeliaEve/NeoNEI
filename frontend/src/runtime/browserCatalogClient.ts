@@ -202,19 +202,20 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
       return { groupKey: '', total: 0, items: [] };
     }
 
-    const distDataGroupItems = await browserRuntimeClient.getGroupItems(normalizedGroupKey, modId);
-    if (distDataGroupItems?.items?.length) {
-      return distDataGroupItems;
-    }
-    options.reportGap('browser-group-items', `/items/browser/group/${normalizedGroupKey}`, 'dist-data group items missing', {
-      details: { groupKey: normalizedGroupKey, modId },
-    });
-
     const cacheKey = getBrowserGroupItemsCacheKey(normalizedGroupKey, modId);
     const cached = browserGroupItemsCache.get(cacheKey);
     if (cached) {
       return cached;
     }
+
+    const distDataGroupItems = await browserRuntimeClient.getGroupItems(normalizedGroupKey, modId);
+    if (distDataGroupItems?.items?.length) {
+      browserGroupItemsCache.set(cacheKey, distDataGroupItems);
+      return distDataGroupItems;
+    }
+    options.reportGap('browser-group-items', `/items/browser/group/${normalizedGroupKey}`, 'dist-data group items missing', {
+      details: { groupKey: normalizedGroupKey, modId },
+    });
 
     const inflight = browserGroupItemsInFlight.get(cacheKey);
     if (inflight) {

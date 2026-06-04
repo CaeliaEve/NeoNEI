@@ -13,6 +13,8 @@ const pageSpec = `${process.env.BROWSER_PAGE_SMOKE_PAGES ?? "1,40,53,100,last"}`
 const searchSpec = `${process.env.BROWSER_PAGE_SMOKE_SEARCHES ?? "iron,wand,singularity"}`;
 const maxPageSliceMs = Number(process.env.BROWSER_PAGE_SMOKE_MAX_SLICE_MS ?? 4);
 const maxSearchMs = Number(process.env.BROWSER_PAGE_SMOKE_MAX_SEARCH_MS ?? 50);
+const groupSmokeLimit = Math.max(0, Math.floor(Number(process.env.BROWSER_GROUP_SMOKE_LIMIT ?? 8)));
+const maxGroupExpandMs = Number(process.env.BROWSER_GROUP_SMOKE_MAX_EXPAND_MS ?? 8);
 
 function readJson(relativePath) {
   const filePath = join(distDataDir, relativePath);
@@ -77,6 +79,28 @@ function pageEntries(entries, page) {
   const start = (page - 1) * pageSize;
   const data = entries.slice(start, start + pageSize);
   return { data, elapsedMs: performance.now() - startedAt };
+}
+
+function expandGroupEntries(defaultEntries, group, page = 1) {
+  const startedAt = performance.now();
+  const groupKey = `${group?.groupKey ?? ""}`.trim();
+  const members = Array.isArray(group?.memberItemIds) ? group.memberItemIds.filter(Boolean) : [];
+  const expandedEntries = [];
+  for (const entry of defaultEntries) {
+    if (entry.kind !== "group-collapsed" || entry.groupKey !== groupKey) {
+      expandedEntries.push(entry);
+      continue;
+    }
+    for (const memberItemId of members) {
+      expandedEntries.push({ key: memberItemId, kind: "item", itemId: memberItemId });
+    }
+  }
+  const start = (Math.max(1, page) - 1) * pageSize;
+  return {
+    data: expandedEntries.slice(start, start + pageSize),
+    total: expandedEntries.length,
+    elapsedMs: performance.now() - startedAt,
+  };
 }
 
 function searchFields(entry) {
@@ -260,6 +284,29 @@ const searchResults = searchSpec.split(",")
     };
   });
 
+const groupSmokeGroups = groups
+  .filter((group) => `${group?.groupKey ?? ""}`.trim() && stableNumber(group?.groupSize, 1) > 1)
+  .sort((left, right) => stableNumber(right.groupSize, 0) - stableNumber(left.groupSize, 0))
+  .slice(0, groupSmokeLimit);
+
+const groupResults = groupSmokeGroups.map((group) => {
+  const result = expandGroupEntries(defaultCatalog, group, 1);
+  const missingAtlas = result.data
+    .map((entry) => entry.itemId)
+    .filter((itemId) => !hasDrawable(atlasByItemId.get(itemId)));
+  if (result.data.length === 0) failures.push(`group '${group.groupKey}' expansion returned no visible entries`);
+  if (missingAtlas.length > 0) failures.push(`group '${group.groupKey}' expansion has ${missingAtlas.length} first-page item(s) without atlas drawable`);
+  if (result.elapsedMs > maxGroupExpandMs) failures.push(`group '${group.groupKey}' expansion ${result.elapsedMs.toFixed(3)}ms exceeds ${maxGroupExpandMs}ms`);
+  return {
+    groupKey: group.groupKey,
+    groupSize: stableNumber(group.groupSize, 0),
+    firstPageCount: result.data.length,
+    projectedTotal: result.total,
+    elapsedMs: result.elapsedMs,
+    missingAtlas: missingAtlas.slice(0, 25),
+  };
+});
+
 if (defaultCatalog.length <= 0) failures.push("default browser catalog projection is empty");
 if (groups.length <= 0) warnings.push("browser group index is empty");
 if (searchItems.length <= 0) failures.push("search pack is empty");
@@ -279,9 +326,10 @@ const report = {
     atlasItems: atlasByItemId.size,
     searchItems: searchItems.length,
   },
-  limits: { maxPageSliceMs, maxSearchMs },
+  limits: { maxPageSliceMs, maxSearchMs, maxGroupExpandMs, groupSmokeLimit },
   pages: pageResults,
   searches: searchResults,
+  groups: groupResults,
   failures,
   warnings,
 };
