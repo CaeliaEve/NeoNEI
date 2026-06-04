@@ -315,9 +315,17 @@ function validateRecipePayloads() {
 function validateSemanticRuntimePacks() {
   const result = {};
   const reportPath = manifest?.files?.validationReport;
+  const readinessPath = manifest?.files?.migrationReadiness;
+  const browserContractPath = manifest?.files?.neiBrowserContract;
   const compilerReport = hasString(reportPath) && existsSync(join(distDataDir, reportPath))
     ? readJson(join(distDataDir, reportPath))
     : null;
+  const migrationReadiness = hasString(readinessPath) && existsSync(join(distDataDir, readinessPath))
+    ? readJson(join(distDataDir, readinessPath))
+    : compilerReport?.migrationReadiness ?? null;
+  const browserContract = hasString(browserContractPath) && existsSync(join(distDataDir, browserContractPath))
+    ? readJson(join(distDataDir, browserContractPath))
+    : compilerReport?.browserContract ?? null;
   const counts = compilerReport?.counts ?? {};
 
   const semanticItemsPath = manifest?.files?.semanticItems;
@@ -345,6 +353,28 @@ function validateSemanticRuntimePacks() {
   result.nativeGuidFilterRules = firstArray(nativeRules.guidFilters).length;
   result.nativeHiddenItemRules = firstArray(nativeRules.hiddenItems).length;
   result.browserGroups = browserGroups.length;
+  result.migrationReadinessStatus = migrationReadiness?.status ?? null;
+  result.neiBrowserContractStatus = browserContract?.status ?? null;
+
+  if (!compilerReport) {
+    fail(failures, "VALIDATION_REPORT_MISSING", "runtime validation report is required");
+  }
+  if (!migrationReadiness) {
+    fail(failures, "MIGRATION_READINESS_MISSING", "migration readiness report is required");
+  } else if (migrationReadiness.status !== "ready") {
+    fail(failures, "MIGRATION_READINESS_BLOCKED", "migration readiness must be ready before runtime release", {
+      status: migrationReadiness.status,
+      blockedGates: migrationReadiness.blockedGates ?? [],
+    });
+  }
+  if (!browserContract) {
+    fail(failures, "NEI_BROWSER_CONTRACT_MISSING", "NEI browser contract report is required");
+  } else if (browserContract.status !== "ok") {
+    fail(failures, "NEI_BROWSER_CONTRACT_NOT_OK", "NEI browser contract must be ok before runtime release", {
+      status: browserContract.status,
+      summary: browserContract.summary ?? null,
+    });
+  }
 
   for (const [key, actual] of [
     ["semanticItems", semanticItems.length],
