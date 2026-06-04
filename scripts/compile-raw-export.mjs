@@ -180,6 +180,9 @@ function buildMigrationReadiness(validation, exportReport, specialDomains, atlas
     stableNumber(validation.missing.renderAssetRef, 0);
   const specialExpectedMissing = stableNumber(validation.counts.specialExpectedFactKeysMissing, 0);
   const manifestBlocked = stableNumber(validation.counts.manifestBlocked, 0);
+  const duplicateFinalMemberAssignments = stableNumber(validation.counts.browserContractDuplicateFinalMemberAssignments, 0);
+  const groupSizeMismatches = stableNumber(validation.counts.browserContractGroupSizeMismatches, 0);
+  const missingGroupRefs = stableNumber(validation.counts.browserContractMissingGroupRefs, 0);
   const semanticVariants = stableNumber(validation.counts.itemVariants, 0);
   const semanticFacets = stableNumber(validation.counts.semanticFacets, 0);
   const semanticFacetFamilies = stableNumber(validation.counts.semanticFacetFamilies, 0);
@@ -215,6 +218,14 @@ function buildMigrationReadiness(validation, exportReport, specialDomains, atlas
         ? "Semantic variants expose facet data for fast search, sorting, and expansion."
         : `${semanticVariants} semantic variant row(s) exist but no semantic facet coverage was compiled.`,
       { variants: semanticVariants, facets: semanticFacets, facetFamilies: semanticFacetFamilies },
+    ),
+    gate(
+      "browser-group-precedence",
+      duplicateFinalMemberAssignments === 0 && groupSizeMismatches === 0 && missingGroupRefs === 0,
+      duplicateFinalMemberAssignments === 0 && groupSizeMismatches === 0 && missingGroupRefs === 0
+        ? "Every browser item has one deterministic final group assignment."
+        : `${duplicateFinalMemberAssignments} duplicate final member assignment(s), ${groupSizeMismatches} group size mismatch(es), ${missingGroupRefs} missing group reference(s).`,
+      { duplicateFinalMemberAssignments, groupSizeMismatches, missingGroupRefs },
     ),
     gate(
       "atlas-authority",
@@ -1228,12 +1239,23 @@ function groupPrecedence(group) {
   return 35;
 }
 
+function inferBrowserGroupSource(group) {
+  const key = `${group?.groupKey ?? ""}`;
+  const explicit = `${group?.groupSource ?? ""}`.trim();
+  if (explicit) return explicit;
+  if (key.startsWith("fallback:")) return "fallback";
+  if (key.startsWith("semantic:")) return "semanticIdentity";
+  if (key.startsWith("guidfilter:")) return "guidfilters";
+  if (key.startsWith("nei:")) return "nativeNei";
+  return "rawExport";
+}
+
 function mergeBrowserGroupsByPrecedence(rawBrowserGroups, semanticBrowserGroups) {
   const assigned = new Set();
   const merged = [];
   const dropped = [];
   const candidates = [
-    ...(rawBrowserGroups ?? []).map((group) => ({ ...group, groupSource: group.groupSource ?? "rawExport" })),
+    ...(rawBrowserGroups ?? []).map((group) => ({ ...group, groupSource: inferBrowserGroupSource(group) })),
     ...(semanticBrowserGroups ?? []),
   ].sort((left, right) => groupPrecedence(left) - groupPrecedence(right) || stableNumber(left.groupSortOrder, 0) - stableNumber(right.groupSortOrder, 0) || `${left.groupKey ?? ""}`.localeCompare(`${right.groupKey ?? ""}`));
 
@@ -1472,18 +1494,21 @@ function buildSemanticResourceReport({ semanticBrowserGroups, browserAtlasItems,
   };
 }
 
-function buildBrowserContractReport({ groups, browserItems, neiOrder, exportReport, compilerAddedGroupCount = 0 }) {
+function buildBrowserContractReport({ groups, browserItems, neiOrder, exportReport, compilerAddedGroupCount = 0, compilerDroppedGroupCount = 0 }) {
   const groupMap = new Map(groups.map((group) => [group.groupKey, group]));
   let orderBreaks = 0;
   let missingGroupRefs = 0;
   let groupSizeMismatches = 0;
   let duplicateMemberGroups = 0;
+  let duplicateFinalMemberAssignments = 0;
   let representativeMismatches = 0;
   let nativeGroups = 0;
   let fallbackGroups = 0;
   let syntheticGroups = 0;
   let groupedMemberCount = 0;
   const representativeMismatchSamples = [];
+  const duplicateFinalMemberAssignmentSamples = [];
+  const assignedMembers = new Map();
 
   for (let index = 1; index < browserItems.length; index += 1) {
     if (stableNumber(browserItems[index - 1].browserOrder, 0) > stableNumber(browserItems[index].browserOrder, 0)) {
@@ -1507,6 +1532,21 @@ function buildBrowserContractReport({ groups, browserItems, neiOrder, exportRepo
     const uniqueMembers = new Set(members);
     groupedMemberCount += members.length;
     if (uniqueMembers.size !== members.length) duplicateMemberGroups += 1;
+    for (const itemId of uniqueMembers) {
+      const previousGroupKey = assignedMembers.get(itemId);
+      if (previousGroupKey) {
+        duplicateFinalMemberAssignments += 1;
+        if (duplicateFinalMemberAssignmentSamples.length < 50) {
+          duplicateFinalMemberAssignmentSamples.push({
+            itemId,
+            firstGroupKey: previousGroupKey,
+            secondGroupKey: group.groupKey,
+          });
+        }
+      } else {
+        assignedMembers.set(itemId, group.groupKey);
+      }
+    }
     if (stableNumber(group.groupSize, 0) !== uniqueMembers.size) groupSizeMismatches += 1;
     if (group.representativeItemId && !uniqueMembers.has(group.representativeItemId)) {
       representativeMismatches += 1;
@@ -1540,7 +1580,9 @@ function buildBrowserContractReport({ groups, browserItems, neiOrder, exportRepo
     exporterContract?.groupCount,
     stableNumber(exporterCounts.rawGroups, groups.length),
   );
-  const expectedCompilerGroupCount = exporterGroupCount + stableNumber(compilerAddedGroupCount, 0);
+  const expectedCompilerGroupCount = exporterGroupCount
+    + stableNumber(compilerAddedGroupCount, 0)
+    - stableNumber(compilerDroppedGroupCount, 0);
   const exporterDefaultEntryCount = stableNumber(
     exporterContract?.defaultEntryCount,
     stableNumber(exporterCounts.neiDefaultEntries, neiOrder.length),
@@ -1550,9 +1592,6 @@ function buildBrowserContractReport({ groups, browserItems, neiOrder, exportRepo
   if (exporterBrowserItemCount !== browserItems.length) {
     countMismatches.push({ key: "browserItems", exporter: exporterBrowserItemCount, compiler: browserItems.length });
   }
-  if (expectedCompilerGroupCount !== groups.length) {
-    countMismatches.push({ key: "groups", exporter: exporterGroupCount, compiler: groups.length, compilerAdded: compilerAddedGroupCount });
-  }
   if (exporterDefaultEntryCount !== neiOrder.length) {
     countMismatches.push({ key: "defaultEntries", exporter: exporterDefaultEntryCount, compiler: neiOrder.length });
   }
@@ -1561,6 +1600,7 @@ function buildBrowserContractReport({ groups, browserItems, neiOrder, exportRepo
     && missingGroupRefs === 0
     && groupSizeMismatches === 0
     && duplicateMemberGroups === 0
+    && duplicateFinalMemberAssignments === 0
     && representativeMismatches === 0
     && countMismatches.length === 0
     ? "ok"
@@ -1582,7 +1622,10 @@ function buildBrowserContractReport({ groups, browserItems, neiOrder, exportRepo
       browserItemCount: exporterBrowserItemCount,
       groupCount: exporterGroupCount,
       expectedCompilerGroupCount,
+      compilerAddedGroupCount,
+      compilerDroppedGroupCount,
       defaultEntryCount: exporterDefaultEntryCount,
+      groupCountDelta: groups.length - expectedCompilerGroupCount,
     },
     compiler: {
       browserItemCount: browserItems.length,
@@ -1599,11 +1642,13 @@ function buildBrowserContractReport({ groups, browserItems, neiOrder, exportRepo
       missingGroupRefs,
       groupSizeMismatches,
       duplicateMemberGroups,
+      duplicateFinalMemberAssignments,
       representativeMismatches,
       countMismatches,
     },
     samples: {
       representativeMismatchSamples,
+      duplicateFinalMemberAssignmentSamples,
       exporterRepresentativeMismatchSamples: exporterContract?.representativeMismatchSamples ?? [],
     },
   };
@@ -1756,6 +1801,19 @@ function readSpecialDomains(inputDir, specialIndex) {
   }
   return domains;
 }
+
+function portableNativeNeiRule(rule) {
+  if (!rule || typeof rule !== "object") return rule;
+  const { source, ...rest } = rule;
+  const sourceText = `${source ?? ""}`.replace(/\\/g, "/");
+  const sourceFile = sourceText.split("/").filter(Boolean).pop() ?? null;
+  return {
+    ...rest,
+    sourceKind: sourceFile ? "gtnh-nei-config" : null,
+    sourceFile,
+  };
+}
+
 function compileRawExport(inputDir, outputDir) {
   const startedAt = Date.now();
   const manifestPath = join(inputDir, "manifest.json");
@@ -1772,8 +1830,8 @@ function compileRawExport(inputDir, outputDir) {
   const recipes = readRawRecipes(inputDir, manifest);
   const rawGroups = readRawJsonl(inputDir, manifest, "groups", "facts/nei/groups.jsonl.gz");
   const neiOrder = readRawJsonl(inputDir, manifest, "neiOrder", "facts/nei/order.jsonl.gz");
-  const neiGuidFilters = readRawJsonl(inputDir, manifest, "neiGuidFilters", "facts/nei/guidfilters.jsonl.gz");
-  const neiHiddenItems = readRawJsonl(inputDir, manifest, "neiHiddenItems", "facts/nei/hiddenitems.jsonl.gz");
+  const neiGuidFilters = readRawJsonl(inputDir, manifest, "neiGuidFilters", "facts/nei/guidfilters.jsonl.gz").map(portableNativeNeiRule);
+  const neiHiddenItems = readRawJsonl(inputDir, manifest, "neiHiddenItems", "facts/nei/hiddenitems.jsonl.gz").map(portableNativeNeiRule);
   const textures = readRawJsonl(inputDir, manifest, "textures", "assets/textures/index.jsonl.gz");
   const animations = readRawJsonl(inputDir, manifest, "animations", "assets/animations/index.jsonl.gz");
   const nativeSprites = readRawJsonl(inputDir, manifest, "nativeSprites", "assets/animations/native-sprites.jsonl.gz");
@@ -1818,6 +1876,19 @@ function compileRawExport(inputDir, outputDir) {
         representativeItemId: group.representativeItemId,
         groupSortOrder: group.groupSortOrder,
         groupSource: group.groupSource ?? null,
+      });
+    }
+  }
+  const finalGroupKeys = new Set(groups.map((group) => group.groupKey).filter(Boolean));
+  for (const [itemId, layout] of layoutByItemId.entries()) {
+    if (layout?.groupKey && !finalGroupKeys.has(layout.groupKey)) {
+      layoutByItemId.set(itemId, {
+        ...layout,
+        groupKey: null,
+        groupLabel: null,
+        groupSize: null,
+        representativeItemId: null,
+        groupSource: null,
       });
     }
   }
@@ -1890,6 +1961,7 @@ function compileRawExport(inputDir, outputDir) {
     neiOrder,
     exportReport,
     compilerAddedGroupCount: compilerAddedSemanticGroups,
+    compilerDroppedGroupCount: mergedBrowserGroups.dropped.length,
   });
 
   const generatedBrowserAtlasIndex = buildBrowserAtlasIndexFromResources(browserAtlasIndex, browserItems, textures, animationFacts);
@@ -2024,6 +2096,10 @@ function compileRawExport(inputDir, outputDir) {
       recipeUiPayloads: recipeUiPayloads.length,
       recipeCategorySplits: recipeCategorySplits.length,
       browserContractRepresentativeMismatches: browserContract.checks.representativeMismatches,
+      browserContractMissingGroupRefs: browserContract.checks.missingGroupRefs,
+      browserContractGroupSizeMismatches: browserContract.checks.groupSizeMismatches,
+      browserContractDuplicateMemberGroups: browserContract.checks.duplicateMemberGroups,
+      browserContractDuplicateFinalMemberAssignments: browserContract.checks.duplicateFinalMemberAssignments,
       browserContractCountMismatches: browserContract.checks.countMismatches.length,
       browserContractFallbackGroups: browserContract.compiler.fallbackGroupCount,
       semanticRepresentativeMissingAtlas: semanticResourceReport.counts.representativeMissingAtlas,

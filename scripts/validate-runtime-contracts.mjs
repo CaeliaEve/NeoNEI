@@ -170,8 +170,14 @@ if (existsSync(manifestPath)) {
 const requiredManifestFields = ["schemaVersion", "generatedAt", "source", "sourceRepository", "files"];
 const requiredFiles = [
   "searchAll",
+  "semanticItems",
+  "semanticFacets",
+  "itemVariants",
+  "itemVariantsByPublicItem",
+  "itemIdentityMap",
   "browserCatalog",
   "browserGroups",
+  "nativeNeiRules",
   "recipeCategories",
   "recipeItemIndex",
   "recipeUiPayloadIndex",
@@ -306,11 +312,106 @@ function validateRecipePayloads() {
   return result;
 }
 
+function validateSemanticRuntimePacks() {
+  const result = {};
+  const reportPath = manifest?.files?.validationReport;
+  const compilerReport = hasString(reportPath) && existsSync(join(distDataDir, reportPath))
+    ? readJson(join(distDataDir, reportPath))
+    : null;
+  const counts = compilerReport?.counts ?? {};
+
+  const semanticItemsPath = manifest?.files?.semanticItems;
+  const semanticFacetsPath = manifest?.files?.semanticFacets;
+  const itemVariantsPath = manifest?.files?.itemVariants;
+  const variantsByPublicPath = manifest?.files?.itemVariantsByPublicItem;
+  const identityMapPath = manifest?.files?.itemIdentityMap;
+  const nativeRulesPath = manifest?.files?.nativeNeiRules;
+  const browserGroupsPath = manifest?.files?.browserGroups;
+
+  const semanticItems = hasString(semanticItemsPath) ? firstArray(readJson(join(distDataDir, semanticItemsPath)).items) : [];
+  const semanticFacets = hasString(semanticFacetsPath) ? firstArray(readJson(join(distDataDir, semanticFacetsPath)).facets) : [];
+  const itemVariantsPayload = hasString(itemVariantsPath) ? readJson(join(distDataDir, itemVariantsPath)) : {};
+  const itemVariants = firstArray(itemVariantsPayload.variants ?? itemVariantsPayload.items);
+  const variantsByPublicItem = hasString(variantsByPublicPath) ? firstArray(readJson(join(distDataDir, variantsByPublicPath)).items) : [];
+  const identityMap = hasString(identityMapPath) ? firstArray(readJson(join(distDataDir, identityMapPath)).items) : [];
+  const nativeRules = hasString(nativeRulesPath) ? readJson(join(distDataDir, nativeRulesPath)) : {};
+  const browserGroups = hasString(browserGroupsPath) ? firstArray(readJson(join(distDataDir, browserGroupsPath)).groups) : [];
+
+  result.semanticItems = semanticItems.length;
+  result.semanticFacets = semanticFacets.length;
+  result.itemVariants = itemVariants.length;
+  result.variantsByPublicItem = variantsByPublicItem.length;
+  result.identityMapRows = identityMap.length;
+  result.nativeGuidFilterRules = firstArray(nativeRules.guidFilters).length;
+  result.nativeHiddenItemRules = firstArray(nativeRules.hiddenItems).length;
+  result.browserGroups = browserGroups.length;
+
+  for (const [key, actual] of [
+    ["semanticItems", semanticItems.length],
+    ["semanticFacets", semanticFacets.length],
+    ["itemVariants", itemVariants.length],
+    ["itemIdentityMap", identityMap.length],
+    ["variantsByPublicItem", variantsByPublicItem.length],
+    ["neiGuidFilterRules", result.nativeGuidFilterRules],
+    ["neiHiddenItemRules", result.nativeHiddenItemRules],
+  ]) {
+    const expected = counts[key];
+    if (typeof expected === "number" && expected !== actual) {
+      fail(failures, "SEMANTIC_RUNTIME_COUNT_MISMATCH", `semantic runtime count mismatch: ${key}`, {
+        key,
+        expected,
+        actual,
+      });
+    }
+  }
+
+  if (semanticItems.length === 0 || identityMap.length === 0) {
+    fail(failures, "SEMANTIC_RUNTIME_PACK_EMPTY", "semantic runtime packs must not be empty");
+  }
+  if (itemVariants.length > 0 && semanticFacets.length === 0) {
+    fail(failures, "SEMANTIC_FACETS_EMPTY", "variant rows exist but semantic facets are empty");
+  }
+
+  const assignedMembers = new Map();
+  const duplicateAssignments = [];
+  for (const group of browserGroups) {
+    const groupKey = `${group?.groupKey ?? ""}`;
+    const uniqueMembers = new Set(firstArray(group?.memberItemIds).filter(Boolean));
+    if (typeof group?.groupSize === "number" && group.groupSize !== uniqueMembers.size) {
+      fail(failures, "BROWSER_GROUP_SIZE_MISMATCH", "browser group size must match unique member count", {
+        groupKey,
+        groupSize: group.groupSize,
+        uniqueMembers: uniqueMembers.size,
+      });
+    }
+    for (const itemId of uniqueMembers) {
+      const previous = assignedMembers.get(itemId);
+      if (previous) {
+        if (duplicateAssignments.length < 50) {
+          duplicateAssignments.push({ itemId, firstGroupKey: previous, secondGroupKey: groupKey });
+        }
+      } else {
+        assignedMembers.set(itemId, groupKey);
+      }
+    }
+  }
+  result.groupedUniqueMembers = assignedMembers.size;
+  result.duplicateFinalMemberAssignments = duplicateAssignments.length;
+  if (duplicateAssignments.length > 0) {
+    fail(failures, "BROWSER_DUPLICATE_FINAL_GROUP_ASSIGNMENT", "browser items must not be assigned to multiple final groups", {
+      samples: duplicateAssignments,
+    });
+  }
+
+  return result;
+}
+
 const checked = {};
 if (manifest && failures.length === 0) {
   try {
     checked.browser = validateBrowserCatalog();
     checked.search = validateSearchPack();
+    checked.semantic = validateSemanticRuntimePacks();
     checked.textures = validateTexturePayloads();
     checked.recipes = validateRecipePayloads();
     checked.portability = validatePortableArtifacts();
