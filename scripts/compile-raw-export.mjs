@@ -157,7 +157,7 @@ function buildRawExportCountMismatches(exportReport, actualCounts) {
   return mismatches;
 }
 
-function buildMigrationReadiness(validation, exportReport, specialDomains, atlasAuthorityReport) {
+function buildMigrationReadiness(validation, exportReport, exportHealthReport, specialDomains, atlasAuthorityReport) {
   const gate = (name, ok, summary, details = {}) => ({
     name,
     status: ok ? "ready" : "blocked",
@@ -168,7 +168,10 @@ function buildMigrationReadiness(validation, exportReport, specialDomains, atlas
   const rawExportMismatches = stableNumber(validation.counts.rawExportCountMismatches, 0);
   const exporterReadinessStatus = `${exportReport?.validation?.readinessStatus ?? ""}`.trim();
   const exporterValidationStatus = `${exportReport?.validation?.status ?? ""}`.trim();
+  const exporterHealthStatus = `${exportHealthReport?.healthStatus ?? exportHealthReport?.status ?? ""}`.trim();
+  const exporterCompileReadinessStatus = `${exportHealthReport?.compileReadinessStatus ?? ""}`.trim();
   const exporterReady = Boolean(exportReport) && (!exporterReadinessStatus || exporterReadinessStatus === "ready");
+  const exporterHealthReady = !exportHealthReport || (exporterHealthStatus !== "blocked" && exporterCompileReadinessStatus !== "blocked");
   const atlasMissing =
     stableNumber(validation.missing.browserAtlasItems, 0) +
     stableNumber(validation.missing.browserAtlasDrawableItems, 0) +
@@ -197,6 +200,18 @@ function buildMigrationReadiness(validation, exportReport, specialDomains, atlas
       { blockedFiles: validation.manifestValidation?.blocked ?? [] },
     ),
     gate(
+      "export-health-report",
+      exporterHealthReady,
+      exporterHealthReady
+        ? "NESQL++ export health report is not blocked."
+        : "NESQL++ marked this export as blocked; refusing to compile as runtime data.",
+      {
+        exporterHealthStatus: exporterHealthStatus || null,
+        exporterCompileReadinessStatus: exporterCompileReadinessStatus || null,
+        blockedIssues: exportHealthReport?.blockedIssues ?? [],
+      },
+    ),
+    gate(
       "raw-report-parity",
       exporterReady && rawExportMismatches === 0,
       exporterReady && rawExportMismatches === 0
@@ -206,6 +221,8 @@ function buildMigrationReadiness(validation, exportReport, specialDomains, atlas
         mismatchCount: rawExportMismatches,
         exporterReadinessStatus: exporterReadinessStatus || null,
         exporterValidationStatus: exporterValidationStatus || null,
+        exporterHealthStatus: exporterHealthStatus || null,
+        exporterCompileReadinessStatus: exporterCompileReadinessStatus || null,
         exporterBlockedGates: (exportReport?.validation?.gates ?? [])
           .filter((entry) => entry?.status && entry.status !== "ready")
           .map((entry) => entry.name ?? "unknown"),
@@ -1844,6 +1861,7 @@ function compileRawExport(inputDir, outputDir) {
   const manifestValidation = validateRawManifest(inputDir, manifest);
   const exportPathHygiene = buildExportPathHygieneReport(inputDir, manifest);
   const exportReport = readRawJson(inputDir, manifest, "exportReport", "validation/export_report.json");
+  const exportHealthReport = readRawJson(inputDir, manifest, "exportHealthReport", "validation/export-health-report.json");
   const items = readRawJsonl(inputDir, manifest, "items", "facts/items.jsonl.gz");
   const semanticItems = readRawJsonl(inputDir, manifest, "semanticItems", "facts/items/semantic-items.jsonl.gz");
   const itemVariants = readRawJsonl(inputDir, manifest, "itemVariants", "facts/items/variants.jsonl.gz");
@@ -2129,6 +2147,7 @@ function compileRawExport(inputDir, outputDir) {
       specialExpectedFactKeysMissingAdvisory,
       manifestBlocked: manifestValidation.blocked.length,
       rawExportCountMismatches: rawExportCountMismatches.length,
+      exporterHealthBlocked: exportHealthReport?.healthStatus === "blocked" || exportHealthReport?.compileReadinessStatus === "blocked" ? 1 : 0,
       recipeCategories: recipeCategories.size,
       recipeItemIndexItems: recipeItemIndex.length,
       recipeUiPayloads: recipeUiPayloads.length,
@@ -2207,6 +2226,9 @@ function compileRawExport(inputDir, outputDir) {
   }
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
   if (rawExportCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from exporter report in ${rawExportCountMismatches.length} area(s).`);
+  if (exportHealthReport?.healthStatus === "blocked" || exportHealthReport?.compileReadinessStatus === "blocked") {
+    validation.warnings.push("NESQL++ export health report is blocked; compiler will refuse to publish this runtime pack.");
+  }
   if (browserContract.status !== "ok") validation.warnings.push(`NEI browser contract is ${browserContract.status}: ${browserContract.summary}`);
   for (const domain of specialDomains) {
     if (domain.recipeCount !== domain.payloads.length) {
@@ -2216,7 +2238,19 @@ function compileRawExport(inputDir, outputDir) {
       validation.warnings.push(`Special domain ${domain.domain} declares ${domain.declaredPayloadCount} payload row(s) but compiler read ${domain.payloads.length}.`);
     }
   }
-  validation.migrationReadiness = buildMigrationReadiness(validation, exportReport, specialDomains, atlasAuthorityReport);
+  validation.exportHealthReport = exportHealthReport
+    ? {
+        healthStatus: exportHealthReport.healthStatus ?? exportHealthReport.status ?? null,
+        compileReadinessStatus: exportHealthReport.compileReadinessStatus ?? null,
+        blockedIssues: exportHealthReport.blockedIssues ?? [],
+        actionableIssues: exportHealthReport.actionableIssues ?? [],
+      }
+    : null;
+  validation.migrationReadiness = buildMigrationReadiness(validation, exportReport, exportHealthReport, specialDomains, atlasAuthorityReport);
+  if (exportHealthReport?.healthStatus === "blocked" || exportHealthReport?.compileReadinessStatus === "blocked") {
+    const issues = Array.isArray(exportHealthReport.blockedIssues) ? exportHealthReport.blockedIssues.join("; ") : "see validation/export-health-report.json";
+    throw new Error(`NESQL++ export health report is blocked: ${issues}`);
+  }
 
   writeJson(outputDir + "/manifest.json", {
     schemaVersion: "neonei/dist-data/v3-alpha1",
@@ -2345,6 +2379,7 @@ function createSelfTestRawExport(root) {
       entities: "models/entities/index.jsonl.gz",
       specialIndex: "special/index.json",
       exportReport: "validation/export_report.json",
+      exportHealthReport: "validation/export-health-report.json",
     },
   });
   writeGzipText(join(root, "facts/items.jsonl.gz"), [
@@ -2379,6 +2414,13 @@ function createSelfTestRawExport(root) {
     schemaVersion: "nesqlpp/raw-export/alpha1/report",
     counts: { rawItems: 3, rawFluids: 1, rawRecipes: 1, rawGroups: 1, rawNeiOrderEntries: 3, rawTextures: 3, rawAnimations: 1, rawEntities: 1 },
     validation: { status: "ok", readinessStatus: "ready", gates: [{ name: "core-counts", status: "ready" }] },
+  });
+  writeJson(join(root, "validation/export-health-report.json"), {
+    schemaVersion: "nesqlpp/export-validation/v1",
+    healthStatus: "healthy",
+    compileReadinessStatus: "ready",
+    blockedIssues: [],
+    actionableIssues: [],
   });
   writeFileSync(join(root, "static-atlas-0.webp"), "self-test-static", "utf8");
   writeFileSync(join(root, "animated-atlas-0.webp"), "self-test-animated", "utf8");
