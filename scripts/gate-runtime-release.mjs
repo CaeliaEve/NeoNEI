@@ -35,6 +35,7 @@ const steps = [
   { name: 'runtime release gate regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-release-gate'] },
   { name: 'runtime contract portability regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-contract-portability'] },
   { name: 'raw export compiler portability self-test', cwd: frontendDir, command: npm, args: ['run', 'test:raw-export'] },
+  { name: 'native render smoke', cwd: frontendDir, command: npm, args: ['run', 'validate:native-render'] },
   { name: 'raw export path hygiene self-test', cwd: frontendDir, command: npm, args: ['run', 'test:export-paths'] },
   { name: 'deployment profile smoke', cwd: frontendDir, command: npm, args: ['run', 'test:deployment-profile'] },
   { name: 'API/runtime audit gate', cwd: frontendDir, command: npm, args: ['run', 'audit:api-runtime:gate'] },
@@ -73,4 +74,3 @@ console.log(JSON.stringify({
   durationMs: Date.now() - startedAt,
   results,
 }, null, 2));
-
