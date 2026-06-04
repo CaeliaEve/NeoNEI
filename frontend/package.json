@@ -30,7 +30,8 @@
     "test:runtime-type-boundary": "node --test scripts/runtime-type-boundary-regression.test.mjs",
     "test:runtime-release-gate": "node --test ../scripts/runtime-release-gate-regression.test.mjs",
     "test:runtime-contract-portability": "node --test ../scripts/runtime-contract-portability-regression.test.mjs",
-    "test:deployment-profile": "node ../scripts/deployment-profile-smoke.mjs"
+    "test:deployment-profile": "node ../scripts/deployment-profile-smoke.mjs",
+    "validate:browser-pages-v3": "node ../scripts/validate-browser-pages-v3.mjs --gate"
   },
   "dependencies": {
     "axios": "^1.13.2",
