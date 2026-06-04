@@ -48,6 +48,7 @@ const BloodAlchemyTableUI = defineAsyncComponent(() => import('./BloodAlchemyTab
 const BloodBindingRitualUI = defineAsyncComponent(() => import('./BloodBindingRitualUI.vue'));
 const BloodOrbCraftingUI = defineAsyncComponent(() => import('./BloodOrbCraftingUI.vue'));
 const MultiblockBlueprintUI = defineAsyncComponent(() => import('./MultiblockBlueprintUI.vue'));
+const NeiNativeLayoutRenderer = defineAsyncComponent(() => import('./NeiNativeLayoutRenderer.vue'));
 
 interface Props {
   recipe: Recipe;
@@ -234,6 +235,11 @@ const currentComponent = computed<Component>(() => {
   return componentRegistry[presentationProfile.value.component] || StandardCraftingUI;
 });
 
+const shouldUseNativeLayoutRenderer = computed(() => {
+  const layout = resolvedRecipeUiPayload.value?.nativeLayout;
+  return Boolean(layout) && presentationProfile.value.component === 'StandardCraftingUI';
+});
+
 const displayedComponentName = computed(() => {
   if (shouldUseDetailedCrafting.value) {
     return 'NEIRecipeDisplay';
@@ -252,17 +258,7 @@ const refreshRecipeUiPayload = async () => {
     return;
   }
 
-  const uiType = detectedPresentationProfile.value.uiConfig.uiType;
-  const shouldFetch = [
-    'botania_terra_plate',
-    'botania_rune_altar',
-    'botania_mana_pool',
-    'thaumcraft_infusion',
-    'blood_magic_altar',
-    'industrial_slaughterhouse',
-  ].includes(uiType);
-
-  if (!shouldFetch || !props.recipe.recipeId) {
+  if (!props.recipe.recipeId) {
     recipeUiPayload.value = null;
     return;
   }
@@ -489,6 +485,12 @@ if (isDev && typeof window !== 'undefined') {
         v-else-if="uiConfig.uiType === 'thaumcraft_aspect'"
         :recipe="recipe"
         :ui-config="uiConfig"
+        @item-click="(itemId: string) => emit('item-click', itemId)"
+      />
+      <NeiNativeLayoutRenderer
+        v-else-if="shouldUseNativeLayoutRenderer"
+        :recipe="recipe"
+        :ui-payload="resolvedRecipeUiPayload"
         @item-click="(itemId: string) => emit('item-click', itemId)"
       />
       <component

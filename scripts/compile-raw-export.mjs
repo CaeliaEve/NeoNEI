@@ -131,6 +131,106 @@ function readRawRecipes(inputDir, manifest) {
   return [];
 }
 
+function normalizeHandlerLookupKey(value) {
+  return `${value ?? ""}`.trim().toLowerCase().replace(/[^a-z0-9._:-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function buildRecipeHandlerContext(handlers, layouts) {
+  const byKey = new Map();
+  const byClass = new Map();
+  const byLoose = new Map();
+  for (const handler of handlers ?? []) {
+    const key = `${handler?.handlerKey ?? ""}`.trim();
+    const handlerClass = `${handler?.handlerClass ?? ""}`.trim();
+    if (key) byKey.set(key, handler);
+    if (handlerClass) byClass.set(handlerClass, handler);
+    for (const value of [key, handlerClass, handler?.displayName, handler?.localizedName, handler?.catalystItemName, handler?.preferredMachineItemName]) {
+      const normalized = normalizeHandlerLookupKey(value);
+      if (normalized && !byLoose.has(normalized)) byLoose.set(normalized, handler);
+    }
+  }
+  const layoutByKey = new Map();
+  const layoutByClass = new Map();
+  for (const layout of layouts ?? []) {
+    const key = `${layout?.handlerKey ?? ""}`.trim();
+    const handlerClass = `${layout?.handlerClass ?? ""}`.trim();
+    if (key) layoutByKey.set(key, layout);
+    if (handlerClass) layoutByClass.set(handlerClass, layout);
+  }
+  return { handlers: handlers ?? [], layouts: layouts ?? [], byKey, byClass, byLoose, layoutByKey, layoutByClass };
+}
+
+function resolveRecipeHandler(recipe, handlerContext) {
+  if (!handlerContext) return { handler: null, layout: null };
+  const candidates = [
+    recipe?.metadata?.handlerKey,
+    recipe?.metadata?.handlerClass,
+    recipe?.metadata?.handler,
+    recipe?.metadata?.handlerId,
+    recipe?.metadata?.handlerName,
+    recipe?.additionalData?.handlerKey,
+    recipe?.additionalData?.handlerClass,
+    recipe?.additionalData?.handler,
+    recipe?.additionalData?.handlerId,
+    recipe?.additionalData?.handlerName,
+    recipe?.machine?.machineId,
+    recipe?.machine?.displayName,
+    recipe?.family,
+    recipe?.sourcePlugin,
+    recipe?.recipeType,
+  ].map((value) => `${value ?? ""}`.trim()).filter(Boolean);
+  for (const candidate of candidates) {
+    const handler =
+      handlerContext.byKey.get(candidate) ??
+      handlerContext.byClass.get(candidate) ??
+      handlerContext.byLoose.get(normalizeHandlerLookupKey(candidate));
+    if (handler) {
+      const key = `${handler.handlerKey ?? ""}`.trim();
+      const handlerClass = `${handler.handlerClass ?? ""}`.trim();
+      return {
+        handler,
+        layout: handlerContext.layoutByKey.get(key) ?? handlerContext.layoutByClass.get(handlerClass) ?? null,
+      };
+    }
+  }
+  return { handler: null, layout: null };
+}
+
+function publicRecipeHandler(handler) {
+  if (!handler) return null;
+  return {
+    handlerKey: handler.handlerKey ?? null,
+    handlerClass: handler.handlerClass ?? null,
+    displayName: handler.localizedName ?? handler.displayName ?? handler.handlerKey ?? null,
+    localizedName: handler.localizedName ?? handler.displayName ?? null,
+    canonicalMachineFamily: handler.canonicalMachineFamily ?? null,
+    modId: handler.modId ?? null,
+    modName: handler.modName ?? null,
+    catalystItemName: handler.catalystItemName ?? null,
+    preferredMachineItemName: handler.preferredMachineItemName ?? handler.catalystItemName ?? null,
+    gtMultiblockPreferred: Boolean(handler.gtMultiblockPreferred),
+    maxRecipesPerPage: stableNumber(handler.maxRecipesPerPage, 1),
+    handlerWidth: stableNumber(handler.handlerWidth, 166),
+    handlerHeight: stableNumber(handler.handlerHeight, 65),
+    yShift: stableNumber(handler.yShift, 0),
+  };
+}
+
+function publicRecipeLayout(layout) {
+  if (!layout) return null;
+  return {
+    handlerKey: layout.handlerKey ?? null,
+    handlerClass: layout.handlerClass ?? null,
+    layoutKind: layout.layoutKind ?? "native-nei",
+    width: stableNumber(layout.width, 166),
+    height: stableNumber(layout.height, 65),
+    yShift: stableNumber(layout.yShift, 0),
+    maxRecipesPerPage: stableNumber(layout.maxRecipesPerPage, 1),
+    slots: Array.isArray(layout.slots) ? layout.slots : [],
+    textOverlays: Array.isArray(layout.textOverlays) ? layout.textOverlays : [],
+  };
+}
+
 function buildRawExportCountMismatches(exportReport, actualCounts) {
   const reported = exportReport?.counts ?? {};
   const pairs = [
@@ -144,6 +244,8 @@ function buildRawExportCountMismatches(exportReport, actualCounts) {
     ["entities", "rawEntities", "entities"],
     ["neiGuidFilterRules", "neiGuidFilterRules", "neiGuidFilterRules"],
     ["neiHiddenItemRules", "neiHiddenItemRules", "neiHiddenItemRules"],
+    ["neiHandlers", "neiHandlers", "neiHandlers"],
+    ["neiHandlerLayouts", "neiHandlerLayouts", "neiHandlerLayouts"],
   ];
   const mismatches = [];
   for (const [label, reportKey, actualKey] of pairs) {
@@ -295,7 +397,7 @@ function fileSizeIfPresent(filePath) {
 }
 
 function validateRawManifest(inputDir, manifest) {
-  const knownCapabilities = new Set(["facts", "assets", "models", "special", "validation", "semanticIdentity", "nativeNeiRules"]);
+  const knownCapabilities = new Set(["facts", "assets", "models", "special", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers"]);
   const warnings = [];
   const missing = [];
   const empty = [];
@@ -318,6 +420,9 @@ function validateRawManifest(inputDir, manifest) {
   }
   if ((manifest.capabilities ?? []).includes("nativeNeiRules")) {
     requiredFiles.push("neiGuidFilters", "neiHiddenItems");
+  }
+  if ((manifest.capabilities ?? []).includes("nativeNeiHandlers")) {
+    requiredFiles.push("neiHandlers", "neiHandlerLayouts");
   }
   for (const logicalName of requiredFiles) {
     const filePath = resolveRawFile(inputDir, manifest, logicalName, null);
@@ -720,12 +825,14 @@ function normalizeRecipeCategoryName(value) {
     .replace(/\s+/g, " ");
 }
 
-function recipeCategoryDisplayName(recipe) {
-  return `${recipe.machine?.displayName ?? recipe.displayName ?? recipe.machine?.machineType ?? recipe.recipeType ?? recipe.family ?? recipe.sourcePlugin ?? "unknown"}`.trim() || "unknown";
+function recipeCategoryDisplayName(recipe, handlerContext = null) {
+  const { handler } = resolveRecipeHandler(recipe, handlerContext);
+  return `${handler?.localizedName ?? handler?.displayName ?? recipe.machine?.displayName ?? recipe.displayName ?? recipe.machine?.machineType ?? recipe.recipeType ?? recipe.family ?? recipe.sourcePlugin ?? "unknown"}`.trim() || "unknown";
 }
 
-function recipeCategoryRawId(recipe) {
-  return `${recipe.machine?.machineId ?? recipe.family ?? recipe.sourcePlugin ?? recipe.recipeType ?? "unknown"}`.trim() || "unknown";
+function recipeCategoryRawId(recipe, handlerContext = null) {
+  const { handler } = resolveRecipeHandler(recipe, handlerContext);
+  return `${handler?.handlerKey ?? recipe.machine?.machineId ?? recipe.family ?? recipe.sourcePlugin ?? recipe.recipeType ?? "unknown"}`.trim() || "unknown";
 }
 
 function recipeCategoryIdFromDisplayName(displayName, rawId) {
@@ -770,9 +877,12 @@ function classifyRecipeFamilyKey(recipe, fallback) {
   if (includesAny(descriptor, ["binding ritual"])) return "blood_binding_ritual";
 
   return fallback;
-}function buildRecipeUiPayload(recipe) {
+}function buildRecipeUiPayload(recipe, handlerContext = null) {
   const recipeId = `${recipe.recipeId ?? recipe.id ?? recipe.key ?? ""}`.trim();
   if (!recipeId) return null;
+  const { handler, layout } = resolveRecipeHandler(recipe, handlerContext);
+  const publicHandler = publicRecipeHandler(handler);
+  const nativeLayout = publicRecipeLayout(layout);
   const inputItemIds = new Set();
   const outputItemIds = new Set();
   collectRecipeItemIds(recipe.inputs ?? recipe.inputItems ?? recipe.itemInputs ?? recipe.ingredients ?? recipe.catalysts ?? recipe.input, inputItemIds);
@@ -780,12 +890,22 @@ function classifyRecipeFamilyKey(recipe, fallback) {
   const rawFamilyKey = `${recipe.family ?? recipe.sourcePlugin ?? recipe.recipeType ?? recipe.machine?.machineId ?? "unknown"}`.trim() || "unknown";
   const familyKey = classifyRecipeFamilyKey(recipe, rawFamilyKey);
   const recipeType = `${recipe.recipeType ?? recipe.machine?.machineId ?? familyKey}`.trim() || familyKey;
-  const machineType = `${recipe.machine?.displayName ?? recipe.displayName ?? recipe.machine?.machineId ?? recipeType}`.trim() || recipeType;
+  const machineType = `${publicHandler?.localizedName ?? publicHandler?.displayName ?? recipe.machine?.displayName ?? recipe.displayName ?? recipe.machine?.machineId ?? recipeType}`.trim() || recipeType;
   const payload = {
     recipeId,
     familyKey,
     machineType,
     recipeType,
+    handlerKey: publicHandler?.handlerKey ?? null,
+    handler: publicHandler,
+    machineInfo: publicHandler ? {
+      machineType,
+      canonicalMachineFamily: publicHandler.canonicalMachineFamily,
+      catalystItemName: publicHandler.catalystItemName,
+      preferredMachineItemName: publicHandler.preferredMachineItemName,
+      gtMultiblockPreferred: publicHandler.gtMultiblockPreferred,
+    } : null,
+    nativeLayout,
     inputItemIds: Array.from(inputItemIds),
     outputItemIds: Array.from(outputItemIds),
     slotCount: {
@@ -1963,6 +2083,9 @@ function compileRawExport(inputDir, outputDir) {
   const neiOrder = readRawJsonl(inputDir, manifest, "neiOrder", "facts/nei/order.jsonl.gz");
   const neiGuidFilters = readRawJsonl(inputDir, manifest, "neiGuidFilters", "facts/nei/guidfilters.jsonl.gz").map(portableNativeNeiRule);
   const neiHiddenItems = readRawJsonl(inputDir, manifest, "neiHiddenItems", "facts/nei/hiddenitems.jsonl.gz").map(portableNativeNeiRule);
+  const neiHandlers = readRawJsonl(inputDir, manifest, "neiHandlers", "facts/nei/handlers.jsonl.gz");
+  const neiHandlerLayouts = readRawJsonl(inputDir, manifest, "neiHandlerLayouts", "facts/nei/handler-layouts.jsonl.gz");
+  const recipeHandlerContext = buildRecipeHandlerContext(neiHandlers, neiHandlerLayouts);
   const textures = readRawJsonl(inputDir, manifest, "textures", "assets/textures/index.jsonl.gz");
   const animations = readRawJsonl(inputDir, manifest, "animations", "assets/animations/index.jsonl.gz");
   const nativeSprites = readRawJsonl(inputDir, manifest, "nativeSprites", "assets/animations/native-sprites.jsonl.gz");
@@ -2131,7 +2254,7 @@ function compileRawExport(inputDir, outputDir) {
     searchItems,
   });
   const recipeUiPayloads = recipes
-    .map(buildRecipeUiPayload)
+    .map((recipe) => buildRecipeUiPayload(recipe, recipeHandlerContext))
     .filter(Boolean);
   const recipeUiPayloadIndex = recipeUiPayloads.map((payload) => ({
     recipeId: payload.recipeId,
@@ -2143,14 +2266,17 @@ function compileRawExport(inputDir, outputDir) {
   }));
   const recipeCategories = new Map();
   for (const recipe of recipes) {
-    const displayName = recipeCategoryDisplayName(recipe);
-    const rawCategoryId = recipeCategoryRawId(recipe);
+    const displayName = recipeCategoryDisplayName(recipe, recipeHandlerContext);
+    const rawCategoryId = recipeCategoryRawId(recipe, recipeHandlerContext);
     const key = recipeCategoryIdFromDisplayName(displayName, rawCategoryId);
+    const { handler, layout } = resolveRecipeHandler(recipe, recipeHandlerContext);
     const existing = recipeCategories.get(key) ?? {
       categoryId: key,
       recipeCount: 0,
       displayName,
       sourceCategoryIds: [],
+      handler: publicRecipeHandler(handler),
+      nativeLayout: publicRecipeLayout(layout),
     };
     existing.recipeCount += 1;
     if (!existing.sourceCategoryIds.includes(rawCategoryId)) {
@@ -2175,6 +2301,8 @@ function compileRawExport(inputDir, outputDir) {
     recipes: recipes.length,
     groups: rawGroups.length,
     neiOrderEntries: neiOrder.length,
+    neiHandlers: neiHandlers.length,
+    neiHandlerLayouts: neiHandlerLayouts.length,
     textures: textures.length,
     animations: animations.length,
     entities: entities.length,
@@ -2214,6 +2342,8 @@ function compileRawExport(inputDir, outputDir) {
       semanticFacetFamilies: semanticFacetFamilies.length,
       neiGuidFilterRules: neiGuidFilters.length,
       neiHiddenItemRules: neiHiddenItems.length,
+      neiHandlers: neiHandlers.length,
+      neiHandlerLayouts: neiHandlerLayouts.length,
       deterministicHiddenBrowserRules: hiddenBrowser.deterministicRules.length,
       hiddenBrowserItems: hiddenBrowser.hiddenItemIds.size,
       fluids: fluids.length,
@@ -2375,6 +2505,8 @@ function compileRawExport(inputDir, outputDir) {
       browserCatalog: "browser/item-catalog.json",
       browserGroups: "browser/group-index.json",
       nativeNeiRules: "browser/native-nei-rules.json",
+      recipeHandlers: "recipes/handler-index.json",
+      recipeHandlerLayouts: "recipes/handler-layout-index.json",
       recipeCategories: "recipes/recipe-category-index.json",
       recipeItemIndex: "recipes/item-index.json",
       recipeUiPayloadIndex: "recipes/ui-payload-index.json",
@@ -2404,6 +2536,8 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "browser", "item-catalog.json"), { schemaVersion: "neonei/browser-catalog/v1", items: browserItems });
   writeJsonCompact(join(outputDir, "browser", "group-index.json"), { schemaVersion: "neonei/group-index/v1", groups });
   writeJsonCompact(join(outputDir, "browser", "native-nei-rules.json"), { schemaVersion: "neonei/native-nei-rules/v1", guidFilters: neiGuidFilters, hiddenItems: neiHiddenItems });
+  writeJsonCompact(join(outputDir, "recipes", "handler-index.json"), { schemaVersion: "neonei/recipe-handler-index/v1", handlers: recipeHandlerContext.handlers.map(publicRecipeHandler).filter(Boolean) });
+  writeJsonCompact(join(outputDir, "recipes", "handler-layout-index.json"), { schemaVersion: "neonei/recipe-handler-layout-index/v1", layouts: recipeHandlerContext.layouts.map(publicRecipeLayout).filter(Boolean) });
   writeJsonCompact(join(outputDir, "recipes", "recipe-category-index.json"), { schemaVersion: "neonei/recipe-category-index/v1", categories: Array.from(recipeCategories.values()) });
   writeJsonCompact(join(outputDir, "recipes", "item-index.json"), { schemaVersion: "neonei/recipe-item-index/v1", items: recipeItemIndex });
   writeJsonCompact(join(outputDir, "recipes", "ui-payload-index.json"), { schemaVersion: "neonei/recipe-ui-payload-index/v1", recipes: recipeUiPayloadIndex });
@@ -2465,7 +2599,7 @@ function createSelfTestRawExport(root) {
   writeJson(join(root, "manifest.json"), {
     schemaVersion: "nesqlpp/raw-export/alpha1",
     repositoryName: "self-test",
-    capabilities: ["facts", "assets", "validation", "semanticIdentity"],
+    capabilities: ["facts", "assets", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers"],
     files: {
       items: "facts/items.jsonl.gz",
       semanticItems: "facts/items/semantic-items.jsonl.gz",
@@ -2478,6 +2612,8 @@ function createSelfTestRawExport(root) {
       neiOrder: "facts/nei/order.jsonl.gz",
       neiGuidFilters: "facts/nei/guidfilters.jsonl.gz",
       neiHiddenItems: "facts/nei/hiddenitems.jsonl.gz",
+      neiHandlers: "facts/nei/handlers.jsonl.gz",
+      neiHandlerLayouts: "facts/nei/handler-layouts.jsonl.gz",
       textures: "assets/textures/index.jsonl.gz",
       animations: "assets/animations/index.jsonl.gz",
       nativeSprites: "assets/animations/native-sprites.jsonl.gz",
@@ -2512,6 +2648,8 @@ function createSelfTestRawExport(root) {
   writeGzipText(join(root, "facts/nei/order.jsonl.gz"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n${JSON.stringify({ entryOrder: 2, entryKind: "item", itemId: "i~minecraft~gold_ingot~0" })}\n`);
   writeGzipText(join(root, "facts/nei/guidfilters.jsonl.gz"), `${JSON.stringify({ itemExpression: "BuildCraft|Transport:pipeFacade", nbtPath: "tag.block" })}\n`);
   writeGzipText(join(root, "facts/nei/hiddenitems.jsonl.gz"), `${JSON.stringify({ itemExpression: "IC2:itemCropSeed" })}\n`);
+  writeGzipText(join(root, "facts/nei/handlers.jsonl.gz"), `${JSON.stringify({ handlerKey: "codechicken.nei.recipe.furnacerecipehandler", handlerClass: "codechicken.nei.recipe.FurnaceRecipeHandler", displayName: "Furnace", localizedName: "Furnace", canonicalMachineFamily: "furnace", modId: "minecraft", modName: "Minecraft", catalystItemName: "minecraft:furnace", preferredMachineItemName: "minecraft:furnace", maxRecipesPerPage: 2, handlerWidth: 166, handlerHeight: 65 })}\n`);
+  writeGzipText(join(root, "facts/nei/handler-layouts.jsonl.gz"), `${JSON.stringify({ handlerKey: "codechicken.nei.recipe.furnacerecipehandler", handlerClass: "codechicken.nei.recipe.FurnaceRecipeHandler", layoutKind: "furnace", width: 166, height: 65, yShift: 0, maxRecipesPerPage: 2, slots: [{ role: "item-input", startIndex: 0, columns: 1, rows: 1, x: 45, y: 24 }, { role: "item-output", startIndex: 1, columns: 1, rows: 1, x: 115, y: 24 }], textOverlays: [] })}\n`);
   writeGzipText(join(root, "assets/textures/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", atlasFile: "generated-static-atlas-0.webp", rect: { x: 0, y: 0, width: 16, height: 16 } })}\n`);
   writeGzipText(join(root, "assets/animations/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`);
   writeGzipText(join(root, "assets/animations/native-sprites.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`);
@@ -2519,7 +2657,7 @@ function createSelfTestRawExport(root) {
   writeGzipText(join(root, "models/entities/index.jsonl.gz"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`);
   writeJson(join(root, "validation/export_report.json"), {
     schemaVersion: "nesqlpp/raw-export/alpha1/report",
-    counts: { rawItems: 3, rawFluids: 1, rawRecipes: 1, rawGroups: 1, rawNeiOrderEntries: 3, rawTextures: 3, rawAnimations: 1, rawEntities: 1 },
+    counts: { rawItems: 3, rawFluids: 1, rawRecipes: 1, rawGroups: 1, rawNeiOrderEntries: 3, neiHandlers: 1, neiHandlerLayouts: 1, rawTextures: 3, rawAnimations: 1, rawEntities: 1 },
     validation: { status: "ok", readinessStatus: "ready", gates: [{ name: "core-counts", status: "ready" }] },
   });
   writeJson(join(root, "validation/export-health-report.json"), {
