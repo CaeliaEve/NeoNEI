@@ -397,7 +397,7 @@ function fileSizeIfPresent(filePath) {
 }
 
 function validateRawManifest(inputDir, manifest) {
-  const knownCapabilities = new Set(["facts", "assets", "models", "special", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers"]);
+  const knownCapabilities = new Set(["facts", "assets", "models", "special", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers", "angelicaNativeRenderFacts"]);
   const warnings = [];
   const missing = [];
   const empty = [];
@@ -424,13 +424,16 @@ function validateRawManifest(inputDir, manifest) {
   if ((manifest.capabilities ?? []).includes("nativeNeiHandlers")) {
     requiredFiles.push("neiHandlers", "neiHandlerLayouts");
   }
+  if ((manifest.capabilities ?? []).includes("angelicaNativeRenderFacts")) {
+    requiredFiles.push("renderBackend", "renderTextureSprites", "renderItemRenderers", "renderShaderItems", "renderFramebufferCaptures");
+  }
   for (const logicalName of requiredFiles) {
     const filePath = resolveRawFile(inputDir, manifest, logicalName, null);
     if (!filePath || !existsSync(filePath)) {
       missing.push(logicalName);
       continue;
     }
-    const allowEmpty = new Set(["groups", "neiOrder", "neiGuidFilters", "neiHiddenItems"]);
+    const allowEmpty = new Set(["groups", "neiOrder", "neiGuidFilters", "neiHiddenItems", "renderShaderItems", "renderFramebufferCaptures"]);
     if (fileSizeIfPresent(filePath) === 0 && !allowEmpty.has(logicalName)) {
       empty.push(logicalName);
     }
@@ -1017,6 +1020,107 @@ function mergeAnimationFacts(animations, nativeSprites, renderedGifs) {
   addAll(nativeSprites, "native_sprite");
   addAll(renderedGifs, "rendered_gif");
   return Array.from(byAssetId.values()).sort((left, right) => `${left.assetId}`.localeCompare(`${right.assetId}`));
+}
+
+function buildNativeRenderIndex({ backend, textureSprites, itemRenderers, shaderItems, framebufferCaptures }) {
+  const itemRendererByItemId = {};
+  for (const row of itemRenderers ?? []) {
+    if (!row?.itemId) continue;
+    itemRendererByItemId[row.itemId] = {
+      rendererClass: row.rendererClass ?? null,
+      rendererKind: row.rendererKind ?? null,
+      usesShader: Boolean(row.usesShader),
+      requiresFramebufferCapture: Boolean(row.requiresFramebufferCapture),
+      supportsNativeAtlas: Boolean(row.supportsNativeAtlas),
+      stackResolved: Boolean(row.stackResolved),
+      hasNbt: Boolean(row.hasNbt),
+    };
+  }
+
+  const shaderByItemId = {};
+  for (const row of shaderItems ?? []) {
+    if (!row?.itemId) continue;
+    shaderByItemId[row.itemId] = {
+      rendererKind: row.rendererKind ?? null,
+      rendererClass: row.rendererClass ?? null,
+      shaderFamily: row.shaderFamily ?? null,
+      timeSource: row.timeSource ?? null,
+      captureRequired: Boolean(row.captureRequired),
+      preferredExport: row.preferredExport ?? null,
+      browserReimplementationAllowed: Boolean(row.browserReimplementationAllowed),
+    };
+  }
+
+  const capturesByAssetId = {};
+  const capturesByVariantKey = {};
+  for (const row of framebufferCaptures ?? []) {
+    const compact = {
+      assetId: row?.assetId ?? null,
+      variantKey: row?.variantKey ?? null,
+      rendererFamily: row?.rendererFamily ?? null,
+      renderMode: row?.renderMode ?? null,
+      animationMode: row?.animationMode ?? null,
+      captureMethod: row?.captureMethod ?? null,
+      primaryArtifact: row?.primaryArtifact ?? null,
+      framePattern: row?.framePattern ?? null,
+      frameCount: stableNumber(row?.frameCount, stableNumber(row?.capturedFrameCount, 0)),
+      frameDurationMs: stableNumber(row?.frameDurationMs, 50),
+      timeline: Array.isArray(row?.timeline) ? row.timeline : [],
+      frames: Array.isArray(row?.frames) ? row.frames : [],
+    };
+    if (compact.assetId) capturesByAssetId[compact.assetId] = compact;
+    if (compact.variantKey) capturesByVariantKey[compact.variantKey] = compact;
+  }
+
+  const spriteByIconName = {};
+  for (const row of textureSprites ?? []) {
+    const key = row?.iconName ?? row?.spriteKey;
+    if (!key) continue;
+    spriteByIconName[key] = {
+      atlas: row.atlas ?? null,
+      spriteKey: row.spriteKey ?? null,
+      iconName: row.iconName ?? null,
+      spriteClass: row.spriteClass ?? null,
+      originX: stableNumber(row.originX, -1),
+      originY: stableNumber(row.originY, -1),
+      width: stableNumber(row.width, -1),
+      height: stableNumber(row.height, -1),
+      animated: Boolean(row.animated),
+      frameCount: stableNumber(row.frameCount, 1),
+      defaultFrameTimeTicks: row.defaultFrameTimeTicks ?? null,
+      metadataFrameCount: row.metadataFrameCount ?? null,
+    };
+  }
+
+  const shaderItemsNeedingCapture = (shaderItems ?? []).filter((row) => row?.captureRequired).length;
+  const validation = {
+    status: shaderItemsNeedingCapture === 0 || (framebufferCaptures ?? []).length > 0 ? "ready" : "blocked",
+    shaderItemsNeedingCapture,
+    framebufferCaptures: framebufferCaptures?.length ?? 0,
+    summary: shaderItemsNeedingCapture === 0
+      ? "No shader/custom renderer capture is required by the export."
+      : `${shaderItemsNeedingCapture} shader/custom renderer item(s) require capture; ${(framebufferCaptures ?? []).length} capture asset(s) compiled.`,
+  };
+
+  return {
+    schemaVersion: "neonei/native-render-index/v1",
+    backend: backend ?? null,
+    counts: {
+      textureSprites: textureSprites?.length ?? 0,
+      itemRenderers: itemRenderers?.length ?? 0,
+      shaderItems: shaderItems?.length ?? 0,
+      framebufferCaptures: framebufferCaptures?.length ?? 0,
+      itemRendererByItemId: Object.keys(itemRendererByItemId).length,
+      shaderByItemId: Object.keys(shaderByItemId).length,
+      spriteByIconName: Object.keys(spriteByIconName).length,
+    },
+    itemRendererByItemId,
+    shaderByItemId,
+    capturesByAssetId,
+    capturesByVariantKey,
+    spriteByIconName,
+    validation,
+  };
 }
 function normalizeAnimationTimeline(sourceTimeline, frameCount, fallbackDurationMs) {
   const timeline = Array.isArray(sourceTimeline) ? sourceTimeline : [];
@@ -2090,11 +2194,23 @@ function compileRawExport(inputDir, outputDir) {
   const animations = readRawJsonl(inputDir, manifest, "animations", "assets/animations/index.jsonl.gz");
   const nativeSprites = readRawJsonl(inputDir, manifest, "nativeSprites", "assets/animations/native-sprites.jsonl.gz");
   const renderedGifs = readRawJsonl(inputDir, manifest, "renderedGifs", "assets/animations/rendered-gifs.jsonl.gz");
+  const renderBackend = readRawJson(inputDir, manifest, "renderBackend", "facts/render/backend.json");
+  const renderTextureSprites = readRawJsonl(inputDir, manifest, "renderTextureSprites", "facts/render/texture-sprites.jsonl.gz");
+  const renderItemRenderers = readRawJsonl(inputDir, manifest, "renderItemRenderers", "facts/render/item-renderers.jsonl.gz");
+  const renderShaderItems = readRawJsonl(inputDir, manifest, "renderShaderItems", "facts/render/shader-items.jsonl.gz");
+  const renderFramebufferCaptures = readRawJsonl(inputDir, manifest, "renderFramebufferCaptures", "facts/render/framebuffer-captures.jsonl.gz");
   const entities = readRawJsonl(inputDir, manifest, "entities", "models/entities/index.jsonl.gz");
   const browserAtlasIndex = readRawJson(inputDir, manifest, "browserAtlasIndex", "assets/textures/browser_atlas_index.json");
   const specialIndex = readRawJson(inputDir, manifest, "specialIndex", "special/index.json");
   const specialDomains = readSpecialDomains(inputDir, specialIndex);
   const animationFacts = mergeAnimationFacts(animations, nativeSprites, renderedGifs);
+  const nativeRenderIndex = buildNativeRenderIndex({
+    backend: renderBackend,
+    textureSprites: renderTextureSprites,
+    itemRenderers: renderItemRenderers,
+    shaderItems: renderShaderItems,
+    framebufferCaptures: renderFramebufferCaptures,
+  });
   const itemIds = new Set(items.map((item) => item?.itemId).filter(Boolean));
   const hiddenBrowser = buildHiddenBrowserItemIdSet(items, neiHiddenItems);
   const visibleBrowserItemIds = new Set([...itemIds].filter((itemId) => !hiddenBrowser.hiddenItemIds.has(itemId)));
@@ -2354,6 +2470,11 @@ function compileRawExport(inputDir, outputDir) {
       animations: animations.length,
       nativeSprites: nativeSprites.length,
       renderedGifs: renderedGifs.length,
+      renderTextureSprites: renderTextureSprites.length,
+      renderItemRenderers: renderItemRenderers.length,
+      renderShaderItems: renderShaderItems.length,
+      renderFramebufferCaptures: renderFramebufferCaptures.length,
+      nativeRenderIndexItems: nativeRenderIndex.counts.itemRendererByItemId,
       entities: entities.length,
       animationFacts: animationFacts.length,
       animationTableItems: animationTable.length,
@@ -2387,6 +2508,7 @@ function compileRawExport(inputDir, outputDir) {
       semanticRepresentativeMissingAtlas: semanticResourceReport.counts.representativeMissingAtlas,
       semanticMemberMissingAtlas: semanticResourceReport.counts.memberMissingAtlas,
       semanticAnimationTimingMissing: semanticResourceReport.counts.animationTimingMissing,
+      nativeRenderCaptureGateBlocked: nativeRenderIndex.validation.status === "blocked" ? 1 : 0,
     },
     manifestValidation,
     exportPathHygiene,
@@ -2443,6 +2565,7 @@ function compileRawExport(inputDir, outputDir) {
   if (atlasAuthorityReport.mismatchedAssetRefs > 0) validation.warnings.push(`Browser atlas has ${atlasAuthorityReport.mismatchedAssetRefs} item(s) whose atlas assetId differs from item renderAssetRef.`);
   if (atlasAuthorityReport.duplicateItemIds > 0) validation.warnings.push(`Browser atlas contains ${atlasAuthorityReport.duplicateItemIds} duplicate itemId row(s).`);
   if (missingAnimationTimingAssetIds.length > 0) validation.warnings.push(`Animation timing metadata is missing for ${missingAnimationTimingAssetIds.length} animated asset(s).`);
+  if (nativeRenderIndex.validation.status === "blocked") validation.warnings.push(`Native render capture gate is blocked: ${nativeRenderIndex.validation.summary}`);
   if (semanticResourceReport.status !== "ok") {
     validation.warnings.push(`Semantic browser groups have resource gaps: representatives missing atlas=${semanticResourceReport.counts.representativeMissingAtlas}, members missing atlas=${semanticResourceReport.counts.memberMissingAtlas}, animation timing missing=${semanticResourceReport.counts.animationTimingMissing}.`);
   }
@@ -2513,6 +2636,7 @@ function compileRawExport(inputDir, outputDir) {
       textureManifest: "textures/atlas-manifest.json",
       animationTable: "textures/animation-table.json",
       browserAtlasIndex: "textures/browser-atlas-index.json",
+      nativeRenderIndex: "render/index.json",
       entityModels: "models/entities/index.json",
       specialIndex: "special/index.json",
       specialFactsCoverage: "special/facts-coverage.json",
@@ -2560,6 +2684,7 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations: animationFacts, nativeSprites, renderedGifs });
   writeJsonCompact(join(outputDir, "textures", "animation-table.json"), { schemaVersion: "neonei/animation-table/v1", items: animationTable });
   writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), materializedBrowserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
+  writeJsonCompact(join(outputDir, "render", "index.json"), nativeRenderIndex);
   writeJsonCompact(join(outputDir, "models", "entities", "index.json"), { schemaVersion: "neonei/entity-model-index/v1", entities });
   const distSpecialIndex = {
     schemaVersion: "neonei/special-index/v1",
@@ -2590,6 +2715,7 @@ function createSelfTestRawExport(root) {
     "facts/items",
     "facts/recipes",
     "facts/nei",
+    "facts/render",
     "assets/textures",
     "assets/animations",
     "models/entities",
@@ -2599,7 +2725,7 @@ function createSelfTestRawExport(root) {
   writeJson(join(root, "manifest.json"), {
     schemaVersion: "nesqlpp/raw-export/alpha1",
     repositoryName: "self-test",
-    capabilities: ["facts", "assets", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers"],
+    capabilities: ["facts", "assets", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers", "angelicaNativeRenderFacts"],
     files: {
       items: "facts/items.jsonl.gz",
       semanticItems: "facts/items/semantic-items.jsonl.gz",
@@ -2618,6 +2744,11 @@ function createSelfTestRawExport(root) {
       animations: "assets/animations/index.jsonl.gz",
       nativeSprites: "assets/animations/native-sprites.jsonl.gz",
       renderedGifs: "assets/animations/rendered-gifs.jsonl.gz",
+      renderBackend: "facts/render/backend.json",
+      renderTextureSprites: "facts/render/texture-sprites.jsonl.gz",
+      renderItemRenderers: "facts/render/item-renderers.jsonl.gz",
+      renderShaderItems: "facts/render/shader-items.jsonl.gz",
+      renderFramebufferCaptures: "facts/render/framebuffer-captures.jsonl.gz",
       browserAtlasIndex: "assets/textures/browser_atlas_index.json",
       entities: "models/entities/index.jsonl.gz",
       specialIndex: "special/index.json",
@@ -2654,6 +2785,15 @@ function createSelfTestRawExport(root) {
   writeGzipText(join(root, "assets/animations/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`);
   writeGzipText(join(root, "assets/animations/native-sprites.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`);
   writeGzipText(join(root, "assets/animations/rendered-gifs.jsonl.gz"), "");
+  writeJson(join(root, "facts/render/backend.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/render/backend", backend: "angelica", angelicaPresent: true, optifinePresent: false, shaderPackInUse: false, shadersEnabled: false });
+  writeGzipText(join(root, "facts/render/texture-sprites.jsonl.gz"), `${JSON.stringify({ schemaVersion: "nesqlpp/raw-export/alpha1/render/texture-sprite", atlas: "textures/items", spriteKey: "botania:manaResource", iconName: "botania:manaResource", width: 16, height: 16, animated: true, frameCount: 8, defaultFrameTimeTicks: 2 })}\n`);
+  writeGzipText(join(root, "facts/render/item-renderers.jsonl.gz"), [
+    JSON.stringify({ itemId: "i~minecraft~iron_ingot~0", rendererKind: "vanilla.atlas", supportsNativeAtlas: true, stackResolved: true }),
+    JSON.stringify({ itemId: "i~botania~manaResource~4", rendererKind: "vanilla.atlas", supportsNativeAtlas: true, stackResolved: true }),
+    JSON.stringify({ itemId: "i~minecraft~gold_ingot~0", rendererKind: "avaritia.cosmic", rendererClass: "fox.spiteful.avaritia.render.CosmicItemRenderer", usesShader: true, requiresFramebufferCapture: true, stackResolved: true }),
+  ].join("\n") + "\n");
+  writeGzipText(join(root, "facts/render/shader-items.jsonl.gz"), `${JSON.stringify({ itemId: "i~minecraft~gold_ingot~0", rendererKind: "avaritia.cosmic", shaderFamily: "avaritia.cosmic", captureRequired: true, preferredExport: "angelica-framebuffer-capture", browserReimplementationAllowed: false })}\n`);
+  writeGzipText(join(root, "facts/render/framebuffer-captures.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", variantKey: "i~minecraft~gold_ingot~0", rendererFamily: "avaritia.cosmic", renderMode: "framebuffer_multiframe", primaryArtifact: "image/item/minecraft/gold_ingot.gif", frameCount: 4, frameDurationMs: 50, timeline: [{ frameIndex: 0, durationMs: 50 }] })}\n`);
   writeGzipText(join(root, "models/entities/index.jsonl.gz"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`);
   writeJson(join(root, "validation/export_report.json"), {
     schemaVersion: "nesqlpp/raw-export/alpha1/report",
@@ -2691,7 +2831,7 @@ if (!inputDir || !outputDir) {
 }
 const report = compileRawExport(inputDir, outputDir);
 console.log(JSON.stringify({ outputDir, counts: report.counts, missing: report.missing, warnings: report.warnings, elapsedMs: report.elapsedMs }, null, 2));
-if (selfTest && (report.counts.items !== 3 || report.counts.semanticItems !== 2 || report.counts.itemVariants !== 1 || report.counts.itemPayloads !== 1 || report.counts.itemIdentityMap !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 3 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.specialExpectedFactKeys !== 7 || report.counts.specialExpectedFactKeysMissing !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.coverage.semanticIdentityMapRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1 || report.migrationReadiness?.status !== "ready")) {
+if (selfTest && (report.counts.items !== 3 || report.counts.semanticItems !== 2 || report.counts.itemVariants !== 1 || report.counts.itemPayloads !== 1 || report.counts.itemIdentityMap !== 3 || report.counts.recipes !== 1 || report.counts.animations !== 1 || report.counts.renderTextureSprites !== 1 || report.counts.renderItemRenderers !== 3 || report.counts.renderShaderItems !== 1 || report.counts.renderFramebufferCaptures !== 1 || report.counts.nativeRenderIndexItems !== 3 || report.counts.nativeRenderCaptureGateBlocked !== 0 || report.counts.browserAtlasItems !== 3 || report.counts.recipeItemIndexItems !== 3 || report.counts.recipeUiPayloads !== 1 || report.counts.specialDomains !== 1 || report.counts.specialRecipes !== 1 || report.counts.specialPayloads !== 1 || report.counts.specialPayloadMismatches !== 0 || report.counts.specialExpectedFactKeys !== 7 || report.counts.specialExpectedFactKeysMissing !== 0 || report.counts.rawExportCountMismatches !== 0 || report.counts.entities !== 1 || report.coverage.browserAtlasRatio !== 1 || report.coverage.semanticIdentityMapRatio !== 1 || report.missing.browserAtlasFiles !== 0 || report.counts.browserAtlasGeneratedFromResourceIndex !== 1 || report.migrationReadiness?.status !== "ready")) {
   throw new Error("Self-test compiler counts did not match expected values");
 }
 if (selfTest) {
@@ -2705,4 +2845,3 @@ if (selfTest) {
     throw new Error("Self-test export path hygiene report did not pass");
   }
 }
-
