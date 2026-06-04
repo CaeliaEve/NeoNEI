@@ -1235,7 +1235,7 @@ function groupPrecedence(group) {
   if (key.startsWith("nei:") || source === "nativeNei" || source === "collapsibleItems") return 10;
   if (source === "guidfilters" || key.startsWith("guidfilter:")) return 20;
   if (source === "semanticIdentity" || key.startsWith("semantic:")) return 30;
-  if (key.startsWith("fallback:")) return 40;
+  if (source === "syntheticFallback" || source === "fallback" || key.startsWith("fallback:")) return 40;
   return 35;
 }
 
@@ -1247,6 +1247,7 @@ function inferBrowserGroupSource(group) {
   if (key.startsWith("semantic:")) return "semanticIdentity";
   if (key.startsWith("guidfilter:")) return "guidfilters";
   if (key.startsWith("nei:")) return "nativeNei";
+  if (key.startsWith("variant:")) return "syntheticFallback";
   return "rawExport";
 }
 
@@ -1262,7 +1263,7 @@ function mergeBrowserGroupsByPrecedence(rawBrowserGroups, semanticBrowserGroups)
   for (const group of candidates) {
     const originalMembers = Array.from(new Set((group.memberItemIds ?? []).filter(Boolean)));
     const memberItemIds = originalMembers.filter((itemId) => !assigned.has(itemId));
-    const isAuthoritativeRawGroup = group.groupSource === "rawExport" || groupPrecedence(group) <= 20;
+    const isAuthoritativeRawGroup = group.groupSource === "rawExport" || group.groupSource === "collapsibleItems" || groupPrecedence(group) <= 20;
     if (memberItemIds.length <= 1) {
       if (isAuthoritativeRawGroup && originalMembers.length > 0) {
         merged.push({
