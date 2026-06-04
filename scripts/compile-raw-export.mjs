@@ -1918,15 +1918,23 @@ function compileRawExport(inputDir, outputDir) {
     .map((item, index) => {
       const base = buildSearchEntry(item, index, renderByAssetId, layoutByItemId);
       const semantic = semanticIdentityByLegacyItemId.get(item.itemId) ?? {};
+      const layout = layoutByItemId.get(item.itemId) ?? {};
       const semanticSearchTerms = [
         semantic.publicItemId,
         semantic.family,
         semantic.classification,
         semantic.facetSummary,
+        layout.groupKey,
+        layout.groupLabel,
       ].filter(Boolean).join(" ");
       return {
         ...base,
         ...semantic,
+        groupKey: layout.groupKey ?? null,
+        groupLabel: layout.groupLabel ?? null,
+        groupSize: stableNumber(layout.groupSize, 1),
+        representativeItemId: layout.representativeItemId ?? item.itemId,
+        groupSource: layout.groupSource ?? null,
         normalizedSearchTerms: normalizeLoose([base.normalizedSearchTerms, semanticSearchTerms].filter(Boolean).join(" ")),
       };
     });

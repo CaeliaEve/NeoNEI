@@ -797,6 +797,16 @@ export interface BrowserSearchPackEntry {
   aliases: string;
   popularityScore: number;
   searchRank: number;
+  groupKey?: string | null;
+  groupLabel?: string | null;
+  groupSize?: number | null;
+  representativeItemId?: string | null;
+  groupSource?: string | null;
+  publicItemId?: string | null;
+  variantId?: string | null;
+  family?: string | null;
+  classification?: string | null;
+  facetSummary?: string | null;
 }
 
 export interface BrowserSearchPackResponse {

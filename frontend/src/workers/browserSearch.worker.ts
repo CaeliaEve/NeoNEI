@@ -47,6 +47,33 @@ type RankedSearchEntry = {
   rank: number;
 };
 
+function getSearchDisplayItemId(entry: BrowserSearchPackEntry): string {
+  const groupKey = `${entry.groupKey ?? ""}`.trim();
+  const representativeItemId = `${entry.representativeItemId ?? ""}`.trim();
+  const groupSize = Number(entry.groupSize ?? 1);
+  if (groupKey && representativeItemId && Number.isFinite(groupSize) && groupSize > 1) {
+    return representativeItemId;
+  }
+  return entry.itemId;
+}
+
+function resolveDisplayEntry(entry: BrowserSearchPackEntry): BrowserSearchPackEntry {
+  const displayItemId = getSearchDisplayItemId(entry);
+  if (displayItemId === entry.itemId) {
+    return entry;
+  }
+  const displayIndex = sourceIndexByItemId.get(displayItemId);
+  const displayEntry = typeof displayIndex === "number" ? searchPack[displayIndex] : null;
+  if (displayEntry) {
+    return displayEntry;
+  }
+  return {
+    ...entry,
+    itemId: displayItemId,
+    normalizedItemId: normalizeKeyword(displayItemId),
+  };
+}
+
 let searchPack: BrowserSearchPackEntry[] = [];
 let sourceIndexByItemId = new Map<string, number>();
 let exactIndex = new Map<string, number[]>();
@@ -256,18 +283,28 @@ function queryPack(message: QueryMessage): QueryResult {
   const topLimit = Math.min(searchPack.length, requestedPage * pageSize);
 
   const candidateIndexes = collectCandidateIndexes(normalized);
-  const topRankedHeap: RankedSearchEntry[] = [];
-  let total = 0;
+  const bestByDisplayItemId = new Map<string, RankedSearchEntry>();
   for (const sourceIndex of candidateIndexes) {
     const entry = searchPack[sourceIndex];
     if (!entry) continue;
     if (normalizedModId && normalizedModId !== "all" && entry.modId !== normalizedModId) continue;
     const rank = rankEntry(entry, normalized);
     if (rank === null) continue;
-    total += 1;
-    pushBoundedRankedEntry(topRankedHeap, { entry, sourceIndex, rank }, topLimit);
+    const displayEntry = resolveDisplayEntry(entry);
+    const displayItemId = getSearchDisplayItemId(entry);
+    const displaySourceIndex = sourceIndexByItemId.get(displayEntry.itemId) ?? sourceIndex;
+    const ranked = { entry: displayEntry, sourceIndex: displaySourceIndex, rank };
+    const previous = bestByDisplayItemId.get(displayItemId);
+    if (!previous || compareRankedEntry(ranked, previous) < 0) {
+      bestByDisplayItemId.set(displayItemId, ranked);
+    }
   }
 
+  const total = bestByDisplayItemId.size;
+  const topRankedHeap: RankedSearchEntry[] = [];
+  for (const ranked of bestByDisplayItemId.values()) {
+    pushBoundedRankedEntry(topRankedHeap, ranked, topLimit);
+  }
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const page = Math.min(requestedPage, totalPages);
   const offset = (page - 1) * pageSize;
