@@ -265,7 +265,7 @@ if (existsSync(manifestPath)) {
   }
 }
 
-const requiredManifestFields = ["schemaVersion", "generatedAt", "source", "sourceRepository", "files"];
+const requiredManifestFields = ["schemaVersion", "generatedAt", "source", "sourceRepository", "runtime", "files"];
 const requiredFiles = [
   "searchAll",
   "semanticItems",
@@ -294,8 +294,25 @@ if (manifest) {
       }
       continue;
     }
+    if (field === "runtime") {
+      if (!manifest.runtime || typeof manifest.runtime !== "object" || Array.isArray(manifest.runtime)) {
+        fail(failures, "DIST_MANIFEST_FIELD_MISSING", "manifest.runtime is required");
+      }
+      continue;
+    }
     if (!hasString(manifest[field])) {
       fail(failures, "DIST_MANIFEST_FIELD_MISSING", `manifest.${field} is required`);
+    }
+  }
+
+  for (const runtimeField of [
+    "exportGeneratedAt",
+    "exporterSchemaVersion",
+    "exportHealthStatus",
+    "migrationReadinessStatus",
+  ]) {
+    if (!hasString(manifest.runtime?.[runtimeField])) {
+      fail(failures, "DIST_MANIFEST_RUNTIME_FIELD_MISSING", `manifest.runtime.${runtimeField} is required`);
     }
   }
 

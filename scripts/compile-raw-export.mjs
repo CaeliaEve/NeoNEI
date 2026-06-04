@@ -1951,6 +1951,7 @@ function compileRawExport(inputDir, outputDir) {
   const exportPathHygiene = buildExportPathHygieneReport(inputDir, manifest);
   const exportReport = readRawJson(inputDir, manifest, "exportReport", "validation/export_report.json");
   const exportHealthReport = readRawJson(inputDir, manifest, "exportHealthReport", "validation/export-health-report.json");
+  const sizeReport = readRawJson(inputDir, manifest, "sizeReport", "validation/size_report.json");
   const items = readRawJsonl(inputDir, manifest, "items", "facts/items.jsonl.gz");
   const semanticItems = readRawJsonl(inputDir, manifest, "semanticItems", "facts/items/semantic-items.jsonl.gz");
   const itemVariants = readRawJsonl(inputDir, manifest, "itemVariants", "facts/items/variants.jsonl.gz");
@@ -2351,6 +2352,18 @@ function compileRawExport(inputDir, outputDir) {
     generatedAt: new Date().toISOString(),
     source: manifest?.schemaVersion ?? "unknown",
     sourceRepository: manifest?.repositoryName ?? null,
+    runtime: {
+      gtnhVersion: manifest?.gtnhVersion ?? manifest?.packVersion ?? manifest?.profile ?? null,
+      exportGeneratedAt: manifest?.generatedAt ?? exportReport?.generatedAt ?? null,
+      exporterSchemaVersion: manifest?.schemaVersion ?? null,
+      exporterProfile: manifest?.profile ?? exportReport?.profile ?? null,
+      exporterSelection: manifest?.selection ?? exportReport?.selection ?? null,
+      exportHealthStatus: exportHealthReport?.healthStatus ?? exportHealthReport?.status ?? "not-declared",
+      compileReadinessStatus: exportHealthReport?.compileReadinessStatus ?? validation.migrationReadiness.status,
+      rawExportTotalBytes: stableNumber(sizeReport?.totalBytes, 0),
+      rawExportSizeStatus: sizeReport?.status ?? null,
+      migrationReadinessStatus: validation.migrationReadiness.status,
+    },
     files: {
       searchAll: "search/all.json",
       semanticItems: "items/semantic-items.json",
