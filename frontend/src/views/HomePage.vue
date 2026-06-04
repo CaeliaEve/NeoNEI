@@ -859,11 +859,11 @@ const toggleBrowserGroup = (groupKey: string) => {
   setExpandedGroups(Array.from(next));
 };
 
-const expandedGroupFilterPanels = computed(() => {
+const expandedGroupFilterPanels = computed<BrowserVariantGroup[]>(() => {
   const seen = new Set<string>();
   return browserGridEntries.value
-    .filter((entry): entry is Extract<BrowserGridEntry, { kind: "group-header" }> => entry.kind === "group-header")
-    .map((entry) => entry.group)
+    .filter((entry) => entry.kind === "group-header")
+    .map((entry) => (entry as { kind: "group-header"; group: BrowserVariantGroup }).group)
     .filter((group) => {
       const key = `${group.key ?? ""}`.trim();
       if (!key || seen.has(key)) {
