@@ -93,6 +93,12 @@ export interface Item {
   browserGroupKey?: string | null;
   browserGroupLabel?: string | null;
   browserGroupSize?: number | null;
+  publicItemId?: string | null;
+  variantId?: string | null;
+  payloadHash?: string | null;
+  semanticFamily?: string | null;
+  semanticClassification?: string | null;
+  facetSummary?: string | null;
   nbt?: string | null;
   [key: string]: unknown;
 }

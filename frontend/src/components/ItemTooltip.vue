@@ -55,7 +55,14 @@ const tooltipClasses = computed(() => [
   `motion-${resolvedMotion.value}`,
 ]);
 
-const displayItem = computed<Item>(() => fullItem.value || props.item);
+const displayItem = computed<Item>(() => ({
+  ...(fullItem.value || {}),
+  ...props.item,
+  maxStackSize: fullItem.value?.maxStackSize ?? props.item.maxStackSize,
+  maxDamage: fullItem.value?.maxDamage ?? props.item.maxDamage,
+  nbt: fullItem.value?.nbt ?? props.item.nbt,
+  tooltip: fullItem.value?.tooltip ?? props.item.tooltip,
+}));
 
 const refreshViewportState = () => {
   windowWidth.value = window.innerWidth;
