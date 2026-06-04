@@ -33,6 +33,12 @@ function firstArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function stableRatio(numerator, denominator) {
+  const n = Number(numerator);
+  const d = Number(denominator);
+  return Number.isFinite(n) && Number.isFinite(d) && d > 0 ? n / d : 0;
+}
+
 const localPathPatterns = [
   { code: "WINDOWS_BACKSLASH_ABSOLUTE_PATH", pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\\[A-Za-z0-9._ -]/ },
   { code: "WINDOWS_SLASH_ABSOLUTE_PATH", pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\/[A-Za-z0-9._ -]/ },
@@ -355,6 +361,12 @@ function validateSemanticRuntimePacks() {
   result.browserGroups = browserGroups.length;
   result.migrationReadinessStatus = migrationReadiness?.status ?? null;
   result.neiBrowserContractStatus = browserContract?.status ?? null;
+  result.semanticTaggedItems = counts.semanticTaggedItems ?? counts.semanticTotalItems ?? null;
+  result.semanticClassifiedTaggedItems = counts.semanticClassifiedTaggedItems ?? null;
+  result.semanticCoverageRatio = typeof result.semanticTaggedItems === "number" && result.semanticTaggedItems > 0
+    ? Number((stableRatio(result.semanticClassifiedTaggedItems, result.semanticTaggedItems)).toFixed(4))
+    : null;
+  result.semanticAnimationTimingMissing = counts.semanticAnimationTimingMissing ?? 0;
 
   if (!compilerReport) {
     fail(failures, "VALIDATION_REPORT_MISSING", "runtime validation report is required");
@@ -400,6 +412,19 @@ function validateSemanticRuntimePacks() {
   }
   if (itemVariants.length > 0 && semanticFacets.length === 0) {
     fail(failures, "SEMANTIC_FACETS_EMPTY", "variant rows exist but semantic facets are empty");
+  }
+  if (typeof result.semanticCoverageRatio === "number" && result.semanticCoverageRatio < 0.8) {
+    fail(failures, "SEMANTIC_CLASSIFICATION_COVERAGE_REGRESSED", "classified tagged semantic coverage must stay above the current GTNH baseline", {
+      classifiedTaggedItems: result.semanticClassifiedTaggedItems,
+      taggedItems: result.semanticTaggedItems,
+      coverageRatio: result.semanticCoverageRatio,
+      minimumRatio: 0.8,
+    });
+  }
+  if (result.semanticAnimationTimingMissing > 0) {
+    fail(failures, "SEMANTIC_ANIMATION_TIMING_MISSING", "animated semantic representatives and variants must preserve animation timing", {
+      missing: result.semanticAnimationTimingMissing,
+    });
   }
 
   const assignedMembers = new Map();
