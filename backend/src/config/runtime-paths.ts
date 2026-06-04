@@ -122,10 +122,10 @@ export const NESQL_BLOCK_FACE_ICON_MAP_FILE = pickFirstExistingPath([
     ? path.join(NESQL_REPOSITORY_PATH, 'multiblocks', 'block-face-icon-map.json')
     : undefined,
 ]);
-export const NESQL_CANONICAL_DIR = pickFirstExistingPath([
-  pickEnv('NESQL_CANONICAL_DIR'),
-  NESQL_REPOSITORY_PATH ? path.join(NESQL_REPOSITORY_PATH, 'canonical') : undefined,
-]);
+// canonical is retired from the production runtime. Keep the symbol as an
+// empty compatibility constant so old imports fail closed instead of silently
+// reactivating /canonical from repository roots.
+export const NESQL_CANONICAL_DIR = '';
 export const SPLIT_ITEMS_DIR = pickFirstExistingPath([
   pickEnv('NESQL_SPLIT_ITEMS_DIR'),
   NESQL_REPOSITORY_PATH ? path.join(NESQL_REPOSITORY_PATH, 'items') : undefined,
@@ -158,11 +158,11 @@ export const NESQL_RENDER_INDEX_FILE = pickFirstExistingPath([
 ]);
 export const NESQL_BROWSER_ATLAS_INDEX_FILE = pickFirstExistingPath([
   pickEnv('NESQL_BROWSER_ATLAS_INDEX_FILE'),
-  NESQL_CANONICAL_DIR ? path.join(NESQL_CANONICAL_DIR, 'browser-atlas-index.json') : undefined,
+  path.join(PUBLIC_DIR, 'dist-data', 'textures', 'browser-atlas-index.json'),
 ]);
 export const NESQL_BROWSER_LAYOUT_INDEX_FILE = pickFirstExistingPath([
   pickEnv('NESQL_BROWSER_LAYOUT_INDEX_FILE'),
-  NESQL_CANONICAL_DIR ? path.join(NESQL_CANONICAL_DIR, 'browser-layout-index.json') : undefined,
+  path.join(PUBLIC_DIR, 'dist-data', 'browser', 'item-catalog.json'),
 ]);
 export const NESQL_ATLAS_REGISTRY_FILE = pickFirstExistingPath([
   pickEnv('NESQL_ATLAS_REGISTRY_FILE'),

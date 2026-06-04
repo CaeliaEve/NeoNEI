@@ -7,7 +7,6 @@ import {
   DATA_DIR,
   IMAGES_PATH,
   PUBLIC_DIR,
-  NESQL_CANONICAL_DIR,
   PUBLISH_OUTPUT_DIR,
 } from '../config/runtime-paths';
 import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
@@ -326,35 +325,5 @@ export function registerStaticAssetRoutes(app: Express): void {
     }),
   );
 
-  if (NESQL_CANONICAL_DIR && fs.existsSync(NESQL_CANONICAL_DIR)) {
-    app.use(
-      '/canonical',
-      createRawStaticRoute(NESQL_CANONICAL_DIR, {
-        maxAge: '7d',
-      }),
-    );
 
-    app.use(
-      '/canonical',
-      express.static(NESQL_CANONICAL_DIR, {
-        maxAge: '7d',
-        etag: true,
-      }),
-    );
-
-    app.use(
-      '/api/canonical',
-      createRawStaticRoute(NESQL_CANONICAL_DIR, {
-        maxAge: '7d',
-      }),
-    );
-
-    app.use(
-      '/api/canonical',
-      express.static(NESQL_CANONICAL_DIR, {
-        maxAge: '7d',
-        etag: true,
-      }),
-    );
-  }
 }

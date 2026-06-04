@@ -310,23 +310,13 @@ export function resolveCanonicalRelativePath(relativePath?: string | null): stri
   if (!relativePath) return null;
   if (/^https?:\/\//i.test(relativePath)) return relativePath;
   const normalized = relativePath.replace(/^\/+/, '');
-  if (normalized.startsWith('textures/atlas-assets/')) {
-    return resolveDistDataAssetPath(normalized);
-  }
-  const canonicalPath = normalized.startsWith('canonical/')
+  const rawPath = normalized.startsWith('canonical/')
     ? normalized.slice('canonical/'.length)
     : normalized;
-
-  if (/^https?:\/\//i.test(BACKEND_BASE_URL)) {
-    return `${getBackendOrigin()}/canonical/${canonicalPath}`;
-  }
-
-  const proxyBase = BACKEND_BASE_URL.replace(/\/+$/, '');
-  if (proxyBase.startsWith('/api')) {
-    return `${proxyBase}/canonical/${canonicalPath}`;
-  }
-
-  return `${getBackendOrigin()}/canonical/${canonicalPath}`;
+  const distPath = rawPath.startsWith('textures/')
+    ? rawPath
+    : `textures/atlas-assets/${rawPath}`;
+  return resolveDistDataAssetPath(distPath);
 }
 
 

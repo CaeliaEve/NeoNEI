@@ -126,7 +126,6 @@ if (args.dataRoot.trim()) {
   env.NESQL_REPOSITORY_PATH = resolvedDataRoot;
   env.NESQL_SPLIT_ITEMS_DIR = path.join(resolvedDataRoot, 'items');
   env.NESQL_SPLIT_RECIPES_DIR = path.join(resolvedDataRoot, 'recipes');
-  env.NESQL_CANONICAL_DIR = path.join(resolvedDataRoot, 'canonical');
   env.IMAGES_PATH = path.join(resolvedDataRoot, 'image');
   env.NESQL_IMAGES_DIR = path.join(resolvedDataRoot, 'image', 'item');
   console.log(`[NeoNEI] Using NESQL export root: ${resolvedDataRoot}`);

@@ -80,7 +80,6 @@ if ($DataRoot.Trim()) {
   $env:NESQL_REPOSITORY_PATH = $resolvedDataRoot
   $env:NESQL_SPLIT_ITEMS_DIR = Join-Path $resolvedDataRoot 'items'
   $env:NESQL_SPLIT_RECIPES_DIR = Join-Path $resolvedDataRoot 'recipes'
-  $env:NESQL_CANONICAL_DIR = Join-Path $resolvedDataRoot 'canonical'
   $env:IMAGES_PATH = Join-Path $resolvedDataRoot 'image'
   $env:NESQL_IMAGES_DIR = Join-Path $resolvedDataRoot 'image\item'
   Write-Step "Using NESQL data root: $resolvedDataRoot"
