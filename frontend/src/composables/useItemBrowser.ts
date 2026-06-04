@@ -77,6 +77,7 @@ const sharedPagePresentationReady = new Set<string>();
 const sharedPagePresentationWarmInFlight = new Map<string, Promise<void>>();
 const SHARED_EXPANDED_PROJECTION_CACHE_LIMIT = 256;
 const sharedExpandedProjectionCache = new Map<string, CachedBrowserPage>();
+const itemFacetHaystackCache = new WeakMap<Item, string>();
 
 let browserCatalogWarmTimer: ReturnType<typeof setTimeout> | null = null;
 let browserGroupWarmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -183,6 +184,10 @@ function normalizeFacetNeedle(value: unknown): string {
 }
 
 function collectFacetHaystack(item: Item): string {
+  const cached = itemFacetHaystackCache.get(item);
+  if (cached !== undefined) {
+    return cached;
+  }
   const values: string[] = [
     item.localizedName,
     item.internalName,
@@ -210,7 +215,9 @@ function collectFacetHaystack(item: Item): string {
     }
   }
 
-  return normalizeFacetNeedle(values.join(' '));
+  const haystack = normalizeFacetNeedle(values.join(' '));
+  itemFacetHaystackCache.set(item, haystack);
+  return haystack;
 }
 
 function itemMatchesFacetFilter(item: Item, query: string): boolean {

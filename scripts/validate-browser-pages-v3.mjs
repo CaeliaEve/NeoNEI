@@ -15,6 +15,7 @@ const maxPageSliceMs = Number(process.env.BROWSER_PAGE_SMOKE_MAX_SLICE_MS ?? 4);
 const maxSearchMs = Number(process.env.BROWSER_PAGE_SMOKE_MAX_SEARCH_MS ?? 50);
 const groupSmokeLimit = Math.max(0, Math.floor(Number(process.env.BROWSER_GROUP_SMOKE_LIMIT ?? 8)));
 const maxGroupExpandMs = Number(process.env.BROWSER_GROUP_SMOKE_MAX_EXPAND_MS ?? 8);
+const maxGroupFacetFilterMs = Number(process.env.BROWSER_GROUP_SMOKE_MAX_FACET_FILTER_MS ?? 8);
 
 function readJson(relativePath) {
   const filePath = join(distDataDir, relativePath);
@@ -97,6 +98,78 @@ function expandGroupEntries(defaultEntries, group, page = 1) {
   }
   const start = (Math.max(1, page) - 1) * pageSize;
   return {
+    data: expandedEntries.slice(start, start + pageSize),
+    total: expandedEntries.length,
+    elapsedMs: performance.now() - startedAt,
+  };
+}
+
+function groupMemberSearchText(itemId, searchByItemId, searchTextByItemId) {
+  const precomputed = searchTextByItemId.get(itemId);
+  if (precomputed !== undefined) return precomputed;
+  const entry = searchByItemId.get(itemId);
+  if (!entry) return normalize(itemId);
+  return [
+    entry.localizedName,
+    entry.normalizedLocalizedName,
+    entry.normalizedInternalName,
+    entry.normalizedItemId,
+    entry.normalizedSearchTerms,
+    entry.facetSummary,
+    entry.family,
+    entry.classification,
+    entry.groupLabel,
+  ].map(normalize).filter(Boolean).join(" ");
+}
+
+function pickFacetFilterNeedle(group, searchByItemId) {
+  const members = Array.isArray(group?.memberItemIds) ? group.memberItemIds.filter(Boolean) : [];
+  for (const itemId of members.slice(0, 256)) {
+    const entry = searchByItemId.get(itemId);
+    const sourceText = `${entry?.facetSummary ?? ""} ${entry?.normalizedSearchTerms ?? ""} ${entry?.localizedName ?? ""}`;
+    const token = sourceText
+      .split(/[^0-9A-Za-z\u4e00-\u9fff]+/u)
+      .map((part) => part.trim())
+      .filter((part) => part.length >= 3 && !/^semantic$/i.test(part) && !/^classified$/i.test(part))
+      .sort((left, right) => left.length - right.length)[0];
+    if (token) return token;
+  }
+  return "";
+}
+
+function filterExpandedGroupEntries(defaultEntries, group, searchByItemId, searchTextByItemId, query, page = 1) {
+  const startedAt = performance.now();
+  const groupKey = `${group?.groupKey ?? ""}`.trim();
+  const members = Array.isArray(group?.memberItemIds) ? group.memberItemIds.filter(Boolean) : [];
+  const needles = normalize(query).split(/\s+/).filter(Boolean);
+  const haystackCache = new Map();
+  const getMemberText = (itemId) => {
+    const cached = haystackCache.get(itemId);
+    if (cached !== undefined) return cached;
+    const text = groupMemberSearchText(itemId, searchByItemId, searchTextByItemId);
+    haystackCache.set(itemId, text);
+    return text;
+  };
+  const filteredMembers = needles.length === 0
+    ? members
+    : members.filter((itemId) => {
+      const text = getMemberText(itemId);
+      return needles.every((needle) => text.includes(needle));
+    });
+  const expandedEntries = [];
+  for (const entry of defaultEntries) {
+    if (entry.kind !== "group-collapsed" || entry.groupKey !== groupKey) {
+      expandedEntries.push(entry);
+      continue;
+    }
+    for (const memberItemId of filteredMembers) {
+      expandedEntries.push({ key: memberItemId, kind: "item", itemId: memberItemId });
+    }
+  }
+  const start = (Math.max(1, page) - 1) * pageSize;
+  return {
+    query,
+    filteredMembers: filteredMembers.length,
     data: expandedEntries.slice(start, start + pageSize),
     total: expandedEntries.length,
     elapsedMs: performance.now() - startedAt,
@@ -238,6 +311,22 @@ const searchPayload = readJson(files.searchAll ?? "search/all.json");
 const catalogItems = Array.isArray(catalogPayload.items) ? catalogPayload.items : [];
 const groups = Array.isArray(groupsPayload.groups) ? groupsPayload.groups : [];
 const searchItems = Array.isArray(searchPayload.items) ? searchPayload.items : [];
+const searchByItemId = new Map(searchItems
+  .filter((entry) => entry?.itemId)
+  .map((entry) => [entry.itemId, entry]));
+const searchTextByItemId = new Map(searchItems
+  .filter((entry) => entry?.itemId)
+  .map((entry) => [entry.itemId, [
+    entry.localizedName,
+    entry.normalizedLocalizedName,
+    entry.normalizedInternalName,
+    entry.normalizedItemId,
+    entry.normalizedSearchTerms,
+    entry.facetSummary,
+    entry.family,
+    entry.classification,
+    entry.groupLabel,
+  ].map(normalize).filter(Boolean).join(" ")]));
 const atlasByItemId = new Map((atlasPayload.items ?? [])
   .filter((entry) => entry?.itemId)
   .map((entry) => [entry.itemId, entry]));
@@ -300,6 +389,22 @@ const groupResults = groupSmokeGroups.map((group) => {
   if (result.data.length === 0) failures.push(`group '${group.groupKey}' expansion returned no visible entries`);
   if (missingAtlas.length > 0) failures.push(`group '${group.groupKey}' expansion has ${missingAtlas.length} first-page item(s) without atlas drawable`);
   if (result.elapsedMs > maxGroupExpandMs) failures.push(`group '${group.groupKey}' expansion ${result.elapsedMs.toFixed(3)}ms exceeds ${maxGroupExpandMs}ms`);
+  const facetNeedle = pickFacetFilterNeedle(group, searchByItemId);
+  const facetFilter = facetNeedle
+    ? filterExpandedGroupEntries(defaultCatalog, group, searchByItemId, searchTextByItemId, facetNeedle, 1)
+    : null;
+  const facetMissingAtlas = facetFilter
+    ? facetFilter.data
+      .map((entry) => entry.itemId)
+      .filter((itemId) => !hasDrawable(atlasByItemId.get(itemId)))
+    : [];
+  if (!facetNeedle) {
+    warnings.push(`group '${group.groupKey}' has no usable facet filter smoke token`);
+  } else {
+    if (facetFilter.filteredMembers <= 0) failures.push(`group '${group.groupKey}' facet filter '${facetNeedle}' returned no members`);
+    if (facetMissingAtlas.length > 0) failures.push(`group '${group.groupKey}' facet filter '${facetNeedle}' has ${facetMissingAtlas.length} first-page item(s) without atlas drawable`);
+    if (facetFilter.elapsedMs > maxGroupFacetFilterMs) failures.push(`group '${group.groupKey}' facet filter ${facetFilter.elapsedMs.toFixed(3)}ms exceeds ${maxGroupFacetFilterMs}ms`);
+  }
   return {
     groupKey: group.groupKey,
     groupSize: stableNumber(group.groupSize, 0),
@@ -307,6 +412,14 @@ const groupResults = groupSmokeGroups.map((group) => {
     projectedTotal: result.total,
     elapsedMs: result.elapsedMs,
     missingAtlas: missingAtlas.slice(0, 25),
+    facetFilter: facetFilter ? {
+      query: facetFilter.query,
+      filteredMembers: facetFilter.filteredMembers,
+      firstPageCount: facetFilter.data.length,
+      projectedTotal: facetFilter.total,
+      elapsedMs: facetFilter.elapsedMs,
+      missingAtlas: facetMissingAtlas.slice(0, 25),
+    } : null,
   };
 });
 
@@ -329,7 +442,7 @@ const report = {
     atlasItems: atlasByItemId.size,
     searchItems: searchItems.length,
   },
-  limits: { maxPageSliceMs, maxSearchMs, maxGroupExpandMs, groupSmokeLimit },
+  limits: { maxPageSliceMs, maxSearchMs, maxGroupExpandMs, maxGroupFacetFilterMs, groupSmokeLimit },
   pages: pageResults,
   searches: searchResults,
   groups: groupResults,
