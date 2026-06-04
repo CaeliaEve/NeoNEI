@@ -1976,6 +1976,7 @@ function compileRawExport(inputDir, outputDir) {
       payloadHash: entry.payloadHash ?? null,
       semanticFamily: entry.family ?? entry.semanticFamily ?? null,
       semanticClassification: entry.classification ?? entry.semanticClassification ?? null,
+      facetSummary: entry.facetSummary ?? null,
       localizedName: entry.localizedName,
       modId: entry.modId,
       renderAssetRef: entry.renderAssetRef,

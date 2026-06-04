@@ -177,6 +177,16 @@ onBeforeUnmount(() => {
             <span class="detail-value nbt-data">{{ displayItem.nbt.substring(0, 52) }}{{ displayItem.nbt.length > 52 ? '...' : '' }}</span>
           </div>
 
+          <div v-if="displayItem.semanticFamily" class="detail-row">
+            <span class="detail-label">Family</span>
+            <span class="detail-value">{{ displayItem.semanticFamily }}</span>
+          </div>
+
+          <div v-if="displayItem.facetSummary" class="detail-row">
+            <span class="detail-label">Variant</span>
+            <span class="detail-value nbt-data">{{ displayItem.facetSummary }}</span>
+          </div>
+
           <div v-if="displayItem.tooltip" class="tooltip-description">
             {{ displayItem.tooltip }}
           </div>

@@ -61,6 +61,12 @@ type DistDataBrowserItem = {
   groupLabel?: string | null;
   groupSize?: number | null;
   representativeItemId?: string | null;
+  publicItemId?: string | null;
+  variantId?: string | null;
+  payloadHash?: string | null;
+  semanticFamily?: string | null;
+  semanticClassification?: string | null;
+  facetSummary?: string | null;
 };
 
 type DistDataBrowserCatalogPayload = {
@@ -298,6 +304,12 @@ function toItem(entry: DistDataBrowserItem, searchEntry?: BrowserSearchPackEntry
     browserGroupKey: entry.groupKey ?? null,
     browserGroupLabel: entry.groupLabel ?? null,
     browserGroupSize: stableNumber(entry.groupSize, 1),
+    publicItemId: entry.publicItemId ?? searchEntry?.publicItemId ?? null,
+    variantId: entry.variantId ?? searchEntry?.variantId ?? null,
+    payloadHash: entry.payloadHash ?? null,
+    semanticFamily: entry.semanticFamily ?? searchEntry?.family ?? null,
+    semanticClassification: entry.semanticClassification ?? searchEntry?.classification ?? null,
+    facetSummary: entry.facetSummary ?? searchEntry?.facetSummary ?? null,
   };
 }
 
