@@ -774,6 +774,12 @@ export interface NativeFramebufferCaptureEntry {
   [key: string]: unknown;
 }
 
+export interface NativeTextureSpriteTimelineEntry {
+  frameIndex?: number;
+  durationMs?: number;
+  [key: string]: unknown;
+}
+
 export interface NativeTextureSpriteEntry {
   atlas?: string | null;
   spriteKey?: string | null;
@@ -787,6 +793,8 @@ export interface NativeTextureSpriteEntry {
   frameCount?: number | null;
   defaultFrameTimeTicks?: number | null;
   metadataFrameCount?: number | null;
+  interpolate?: boolean;
+  timeline?: NativeTextureSpriteTimelineEntry[];
   [key: string]: unknown;
 }
 

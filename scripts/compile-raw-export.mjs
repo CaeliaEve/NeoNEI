@@ -1089,6 +1089,12 @@ function buildNativeRenderIndex({ backend, textureSprites, itemRenderers, shader
       frameCount: stableNumber(row.frameCount, 1),
       defaultFrameTimeTicks: row.defaultFrameTimeTicks ?? null,
       metadataFrameCount: row.metadataFrameCount ?? null,
+      interpolate: Boolean(row.interpolate),
+      timeline: normalizeAnimationTimeline(
+        row.timeline,
+        stableNumber(row.frameCount, 1),
+        stableNumber(row.defaultFrameTimeTicks, 1) * 50,
+      ),
     };
   }
 
