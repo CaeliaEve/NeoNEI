@@ -112,11 +112,21 @@ export function projectBrowserEntriesFromDefaultCatalog(
     };
   }
 
-  const projected: BrowserGridEntry[] = [];
+  const pageStart = (normalizedPage - 1) * normalizedPageSize;
+  const pageEnd = pageStart + normalizedPageSize;
+  const data: BrowserGridEntry[] = [];
+  let projectedCount = 0;
+
+  const pushProjectedEntry = (entry: BrowserGridEntry) => {
+    if (projectedCount >= pageStart && projectedCount < pageEnd) {
+      data.push(entry);
+    }
+    projectedCount += 1;
+  };
 
   for (const entry of entries) {
     if (entry.kind === 'item') {
-      projected.push(entry);
+      pushProjectedEntry(entry);
       continue;
     }
 
@@ -127,21 +137,26 @@ export function projectBrowserEntriesFromDefaultCatalog(
     const expanded = groupKey && expandedGroups.has(groupKey) && canExpandLocally;
 
     if (!expanded) {
-      projected.push(createCollapsedGroupEntry(entry.group));
+      pushProjectedEntry(createCollapsedGroupEntry(entry.group));
       continue;
     }
 
-    projected.push(createGroupHeaderEntry(entry.group, Math.max(1, groupItems.length)));
-    for (const item of groupItems.slice(1)) {
-      projected.push(createItemEntry(item));
+    pushProjectedEntry(createGroupHeaderEntry(entry.group, Math.max(1, groupItems.length)));
+    for (let index = 1; index < groupItems.length; index += 1) {
+      pushProjectedEntry(createItemEntry(groupItems[index]));
     }
   }
 
-  const total = projected.length;
+  const total = projectedCount;
   const totalPages = Math.max(1, Math.ceil(total / normalizedPageSize));
   const clampedPage = Math.min(normalizedPage, totalPages);
-  const start = (clampedPage - 1) * normalizedPageSize;
-  const data = projected.slice(start, start + normalizedPageSize);
+
+  if (clampedPage !== normalizedPage) {
+    return projectBrowserEntriesFromDefaultCatalog(entries, {
+      ...params,
+      page: clampedPage,
+    });
+  }
 
   return {
     data,

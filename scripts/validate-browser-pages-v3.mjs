@@ -156,22 +156,30 @@ function filterExpandedGroupEntries(defaultEntries, group, searchByItemId, searc
       const text = getMemberText(itemId);
       return needles.every((needle) => text.includes(needle));
     });
-  const expandedEntries = [];
+  const start = (Math.max(1, page) - 1) * pageSize;
+  const end = start + pageSize;
+  const pageEntries = [];
+  let total = 0;
+  const pushProjected = (entry) => {
+    if (total >= start && total < end) {
+      pageEntries.push(entry);
+    }
+    total += 1;
+  };
   for (const entry of defaultEntries) {
     if (entry.kind !== "group-collapsed" || entry.groupKey !== groupKey) {
-      expandedEntries.push(entry);
+      pushProjected(entry);
       continue;
     }
     for (const memberItemId of filteredMembers) {
-      expandedEntries.push({ key: memberItemId, kind: "item", itemId: memberItemId });
+      pushProjected({ key: memberItemId, kind: "item", itemId: memberItemId });
     }
   }
-  const start = (Math.max(1, page) - 1) * pageSize;
   return {
     query,
     filteredMembers: filteredMembers.length,
-    data: expandedEntries.slice(start, start + pageSize),
-    total: expandedEntries.length,
+    data: pageEntries,
+    total,
     elapsedMs: performance.now() - startedAt,
   };
 }

@@ -39,6 +39,98 @@ function stableRatio(numerator, denominator) {
   return Number.isFinite(n) && Number.isFinite(d) && d > 0 ? n / d : 0;
 }
 
+function normalizeRuleText(value) {
+  return `${value ?? ""}`.trim().toLowerCase();
+}
+
+function decodeCatalogItemName(item) {
+  const itemId = `${item?.itemId ?? ""}`;
+  const parts = itemId.split("~");
+  const modId = `${item?.modId ?? parts[1] ?? ""}`.trim();
+  const internalName = `${parts[2] ?? item?.internalName ?? ""}`.trim();
+  const damage = Number(parts[3] ?? item?.damage ?? 0);
+  return {
+    modId,
+    internalName,
+    damage: Number.isFinite(damage) ? damage : 0,
+    qualifiedName: normalizeRuleText(modId && internalName ? `${modId}:${internalName}` : itemId),
+  };
+}
+
+function compileDeterministicHiddenRule(rule) {
+  const rawExpression = `${rule?.itemExpression ?? rule?.normalizedItemExpression ?? rule?.raw ?? ""}`
+    .split("#")[0]
+    .trim();
+  if (!rawExpression || /[|]|tag\.|!tag|nbt/i.test(rawExpression)) {
+    return null;
+  }
+  const [target, metaToken] = rawExpression.split(/\s+/).filter(Boolean);
+  if (!target) return null;
+  if (metaToken?.startsWith("!")) {
+    return null;
+  }
+  const exactDamage = metaToken !== undefined && /^-?\d+$/.test(metaToken)
+    ? Number(metaToken)
+    : null;
+
+  if (target.startsWith("r/") && target.lastIndexOf("/") > 1) {
+    const lastSlash = target.lastIndexOf("/");
+    const pattern = target.slice(2, lastSlash);
+    const flags = target.slice(lastSlash + 1).replace(/[^dgimsuvy]/g, "");
+    try {
+      const regex = new RegExp(pattern, flags.includes("i") ? flags : `${flags}i`);
+      return { raw: rawExpression, exactDamage, matches: (qualifiedName) => regex.test(qualifiedName) };
+    } catch {
+      return null;
+    }
+  }
+
+  const normalizedTarget = normalizeRuleText(target);
+  return { raw: rawExpression, exactDamage, matches: (qualifiedName) => qualifiedName === normalizedTarget };
+}
+
+function validateHiddenRulesAgainstBrowserCatalog(items) {
+  const nativeRulesPath = manifest?.files?.nativeNeiRules;
+  if (!hasString(nativeRulesPath) || !existsSync(join(distDataDir, nativeRulesPath))) {
+    return { deterministicHiddenRules: 0, hiddenBrowserMatches: 0 };
+  }
+  const nativeRules = readJson(join(distDataDir, nativeRulesPath));
+  const deterministicRules = firstArray(nativeRules.hiddenItems)
+    .map(compileDeterministicHiddenRule)
+    .filter(Boolean);
+  const hiddenMatches = [];
+  for (const item of items) {
+    const decoded = decodeCatalogItemName(item);
+    for (const rule of deterministicRules) {
+      if (rule.exactDamage !== null && decoded.damage !== rule.exactDamage) {
+        continue;
+      }
+      if (rule.matches(decoded.qualifiedName)) {
+        hiddenMatches.push({
+          itemId: item.itemId,
+          localizedName: item.localizedName,
+          qualifiedName: decoded.qualifiedName,
+          damage: decoded.damage,
+          rule: rule.raw,
+        });
+        break;
+      }
+    }
+    if (hiddenMatches.length >= 50) {
+      break;
+    }
+  }
+  if (hiddenMatches.length > 0) {
+    fail(failures, "HIDDEN_ITEMS_IN_DEFAULT_BROWSER", "deterministic NEI hidden item rules must not appear in the default browser catalog", {
+      samples: hiddenMatches,
+    });
+  }
+  return {
+    deterministicHiddenRules: deterministicRules.length,
+    hiddenBrowserMatches: hiddenMatches.length,
+  };
+}
+
 const localPathPatterns = [
   { code: "WINDOWS_BACKSLASH_ABSOLUTE_PATH", pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\\[A-Za-z0-9._ -]/ },
   { code: "WINDOWS_SLASH_ABSOLUTE_PATH", pattern: /(^|[\s"'`([{:=,])[A-Za-z]:\/[A-Za-z0-9._ -]/ },
@@ -245,7 +337,10 @@ function validateBrowserCatalog() {
       fail(failures, "BROWSER_ITEM_ORDER_INVALID", "browser item browserOrder must be numeric", { index });
     }
   }
-  return { itemCount: items.length };
+  return {
+    itemCount: items.length,
+    hiddenRules: validateHiddenRulesAgainstBrowserCatalog(items),
+  };
 }
 
 function validateSearchPack() {
