@@ -1,4 +1,4 @@
-import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
+﻿import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 import {
   api,
   type BrowserGridEntry,
@@ -1186,10 +1186,94 @@ export function useItemBrowser(
     return normalized;
   };
 
+  const buildSearchEntriesFromWorkerResult = async (
+    params: BrowserPageRequestParams,
+    result: WorkerQueryResult,
+  ): Promise<CachedBrowserPage> => {
+    const itemIds = result.itemIds
+      .map((itemId) => `${itemId ?? ''}`.trim())
+      .filter(Boolean);
+    const [catalog, byIdsPack] = await Promise.all([
+      (async () => (
+        api.peekBrowserDefaultCatalog(params.modId)
+        ?? await api.getBrowserDefaultCatalog({ modId: params.modId }).catch(() => null)
+      ))(),
+      itemIds.length > 0
+        ? api.getBrowserPagePackByIds({ itemIds, slotSize: params.slotSize }).catch(() => null)
+        : Promise.resolve(null),
+    ]);
+
+    const catalogEntryByItemId = new Map<string, BrowserDefaultCatalogEntry>();
+    for (const entry of catalog?.data ?? []) {
+      const item = entry.kind === 'item' ? entry.item : entry.group.representative;
+      if (item?.itemId) {
+        catalogEntryByItemId.set(item.itemId, entry as BrowserDefaultCatalogEntry);
+      }
+    }
+
+    const fallbackEntryByItemId = new Map<string, Extract<BrowserGridEntry, { kind: 'item' }>>();
+    for (const entry of byIdsPack?.data ?? []) {
+      if (entry.item?.itemId) {
+        fallbackEntryByItemId.set(entry.item.itemId, entry);
+      }
+    }
+
+    const data: BrowserGridEntry[] = [];
+    const seenKeys = new Set<string>();
+    for (const itemId of itemIds) {
+      const entry = catalogEntryByItemId.get(itemId) ?? fallbackEntryByItemId.get(itemId);
+      if (!entry || seenKeys.has(entry.key)) {
+        continue;
+      }
+      seenKeys.add(entry.key);
+      data.push(entry);
+    }
+
+    return {
+      data,
+      items: collectDisplayItems(data),
+      atlas: byIdsPack?.atlas ?? null,
+      mediaManifest: byIdsPack?.mediaManifest ?? null,
+      resourceManifest: byIdsPack?.resourceManifest,
+      total: result.total,
+      totalPages: result.totalPages,
+      page: result.page,
+    };
+  };
+
+  const loadSearchPageViaWorker = async (
+    params: BrowserPageRequestParams,
+  ): Promise<CachedBrowserPage | null> => {
+    const query = `${params.search ?? ''}`.trim();
+    if (!query || params.expandedGroups.length > 0) {
+      return null;
+    }
+
+    const result = await queryBrowserSearchWorker({
+      query,
+      modId: params.modId,
+      page: params.page,
+      pageSize: params.pageSize,
+    });
+    return buildSearchEntriesFromWorkerResult(params, result);
+  };
+
   const loadSearchPage = async (
     params: BrowserPageRequestParams,
   ): Promise<CachedBrowserPage> => fetchPageWithDedup(buildPageCacheKey(params), async () => {
     const startedAt = performance.now();
+    const workerPage = await loadSearchPageViaWorker(params).catch(() => null);
+    if (workerPage) {
+      markPerfEvent('browser-search-semantic-page', {
+        page: workerPage.page,
+        pageSize: params.pageSize,
+        total: workerPage.total,
+        elapsedMs: performance.now() - startedAt,
+        source: 'worker-search-pack',
+      });
+      return workerPage;
+    }
+
     const response = await api.getBrowserPagePack(params);
     const normalized = {
       data: response.data,
@@ -1206,7 +1290,7 @@ export function useItemBrowser(
       pageSize: params.pageSize,
       total: normalized.total,
       elapsedMs: performance.now() - startedAt,
-      source: 'runtime-collapsed-catalog',
+      source: 'runtime-collapsed-catalog-expanded',
     });
     return normalized;
   });
@@ -1716,3 +1800,4 @@ export function useItemBrowser(
     clearCachedPages: clearBrowserPageState,
   };
 }
+
