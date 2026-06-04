@@ -2799,7 +2799,7 @@ function createSelfTestRawExport(root) {
     JSON.stringify({ itemId: "i~minecraft~gold_ingot~0", rendererKind: "avaritia.cosmic", rendererClass: "fox.spiteful.avaritia.render.CosmicItemRenderer", usesShader: true, requiresFramebufferCapture: true, stackResolved: true }),
   ].join("\n") + "\n");
   writeGzipText(join(root, "facts/render/shader-items.jsonl.gz"), `${JSON.stringify({ itemId: "i~minecraft~gold_ingot~0", rendererKind: "avaritia.cosmic", shaderFamily: "avaritia.cosmic", captureRequired: true, preferredExport: "angelica-framebuffer-capture", browserReimplementationAllowed: false })}\n`);
-  writeGzipText(join(root, "facts/render/framebuffer-captures.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", variantKey: "i~minecraft~gold_ingot~0", rendererFamily: "avaritia.cosmic", renderMode: "framebuffer_multiframe", primaryArtifact: "image/item/minecraft/gold_ingot.gif", frameCount: 4, frameDurationMs: 50, timeline: [{ frameIndex: 0, durationMs: 50 }] })}\n`);
+  writeGzipText(join(root, "facts/render/framebuffer-captures.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", variantKey: "i~minecraft~gold_ingot~0", rendererFamily: "avaritia.cosmic", renderMode: "framebuffer_multiframe", primaryArtifact: "image/item/minecraft/gold_ingot.gif", frameCount: 4, frameDurationMs: 50, frames: [{ frameIndex: 0, sourcePath: "image/item/minecraft/gold_ingot_frame_0.png" }, { frameIndex: 1, sourcePath: "image/item/minecraft/gold_ingot_frame_1.png" }], timeline: [{ frameIndex: 0, durationMs: 50 }, { frameIndex: 1, durationMs: 50 }] })}\n`);
   writeGzipText(join(root, "models/entities/index.jsonl.gz"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`);
   writeJson(join(root, "validation/export_report.json"), {
     schemaVersion: "nesqlpp/raw-export/alpha1/report",
@@ -2849,5 +2849,10 @@ if (selfTest) {
   const pathHygiene = readJson(join(outputDir, "validation", "export-path-hygiene.json"));
   if (pathHygiene?.status !== "ok" || report.exportPathHygiene?.status !== "ok") {
     throw new Error("Self-test export path hygiene report did not pass");
+  }
+  const nativeRenderIndex = readJson(join(outputDir, "render", "index.json"));
+  const capture = nativeRenderIndex?.capturesByAssetId?.["nesqlpp:item/i~minecraft~gold_ingot~0"];
+  if (!capture || capture.frames?.length !== 2 || capture.timeline?.length !== 2) {
+    throw new Error("Self-test native render capture frames were not compiled");
   }
 }
