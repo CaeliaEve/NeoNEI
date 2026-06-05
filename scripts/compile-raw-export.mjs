@@ -135,11 +135,53 @@ function normalizeHandlerLookupKey(value) {
   return `${value ?? ""}`.trim().toLowerCase().replace(/[^a-z0-9._:-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
+function handlerDescriptor(handler) {
+  return [
+    handler?.handlerKey,
+    handler?.handlerClass,
+    handler?.displayName,
+    handler?.localizedName,
+    handler?.canonicalMachineFamily,
+    handler?.modId,
+    handler?.modName,
+    handler?.catalystItemName,
+    handler?.preferredMachineItemName,
+  ].filter(Boolean).join(" ").toLowerCase();
+}
+
+function classifyCanonicalMachineFamilyForHandler(handler) {
+  const descriptor = handlerDescriptor(handler);
+  const exportedFamily = `${handler?.canonicalMachineFamily ?? ""}`.trim();
+
+  if (includesAny(descriptor, ["pneumaticcraft", "pneumaticcraft:", "pneumaticcraft.common.thirdparty.nei"])) return "pneumaticcraft";
+  if (includesAny(descriptor, ["appliedenergistics2", "appeng", "extracells"])) return "appliedenergistics2";
+  if (includesAny(descriptor, ["buildcraft", "buildcraft|"])) return "buildcraft";
+  if (includesAny(descriptor, ["gregtech", "gt.recipe", "gregtechapi", "gt++", "bartworks"])) return "gregtech-machine";
+  if (includesAny(descriptor, ["thaumcraft", "thaumic", "arcane", "crucible", "infusion"])) return "thaumcraft";
+  if (includesAny(descriptor, ["botania", "mana pool", "rune altar", "terra plate", "elven trade", "pure daisy"])) return "botania";
+  if (includesAny(descriptor, ["bloodmagic", "blood magic", "blood altar", "alchemy array", "binding ritual"])) return "blood_magic";
+  if (includesAny(descriptor, ["furnace", "smelting"])) return "furnace";
+  if (includesAny(descriptor, ["crafting", "workbench", "shaped", "shapeless"])) return "crafting-table";
+  if (includesAny(descriptor, ["brewing"])) return "brewing";
+  if (includesAny(descriptor, ["fluid", "liquid", "tank"])) return "fluid-machine";
+
+  return exportedFamily || "native-nei";
+}
+
+function normalizeRecipeHandler(handler) {
+  if (!handler) return handler;
+  return {
+    ...handler,
+    canonicalMachineFamily: classifyCanonicalMachineFamilyForHandler(handler),
+  };
+}
+
 function buildRecipeHandlerContext(handlers, layouts) {
+  const normalizedHandlers = (handlers ?? []).map(normalizeRecipeHandler);
   const byKey = new Map();
   const byClass = new Map();
   const byLoose = new Map();
-  for (const handler of handlers ?? []) {
+  for (const handler of normalizedHandlers) {
     const key = `${handler?.handlerKey ?? ""}`.trim();
     const handlerClass = `${handler?.handlerClass ?? ""}`.trim();
     if (key) byKey.set(key, handler);
@@ -157,7 +199,7 @@ function buildRecipeHandlerContext(handlers, layouts) {
     if (key) layoutByKey.set(key, layout);
     if (handlerClass) layoutByClass.set(handlerClass, layout);
   }
-  return { handlers: handlers ?? [], layouts: layouts ?? [], byKey, byClass, byLoose, layoutByKey, layoutByClass };
+  return { handlers: normalizedHandlers, layouts: layouts ?? [], byKey, byClass, byLoose, layoutByKey, layoutByClass };
 }
 
 function resolveRecipeHandler(recipe, handlerContext) {
@@ -827,7 +869,7 @@ function normalizeRecipeCategoryName(value) {
   return `${value ?? ""}`
     .trim()
     .toLowerCase()
-    .replace(/閹间繏0-9a-fk-or]/gi, "")
+    .replace(/[\u00a7&][0-9a-fk-or]/gi, "")
     .replace(/\s+/g, " ");
 }
 
@@ -851,7 +893,7 @@ function includesAny(value, needles) {
   return needles.some((needle) => value.includes(needle));
 }
 
-function classifyRecipeFamilyKey(recipe, fallback) {
+function classifyRecipeFamilyKey(recipe, fallback, handler = null) {
   const descriptor = [
     recipe.family,
     recipe.sourcePlugin,
@@ -881,9 +923,12 @@ function classifyRecipeFamilyKey(recipe, fallback) {
   if (includesAny(descriptor, ["blood altar"])) return "blood_magic_altar";
   if (includesAny(descriptor, ["alchemy array", "alchemy table"])) return "blood_alchemy_table";
   if (includesAny(descriptor, ["binding ritual"])) return "blood_binding_ritual";
+  if (handler?.canonicalMachineFamily && handler.canonicalMachineFamily !== "native-nei") return handler.canonicalMachineFamily;
 
   return fallback;
-}function buildRecipeUiPayload(recipe, handlerContext = null) {
+}
+
+function buildRecipeUiPayload(recipe, handlerContext = null) {
   const recipeId = `${recipe.recipeId ?? recipe.id ?? recipe.key ?? ""}`.trim();
   if (!recipeId) return null;
   const { handler, layout } = resolveRecipeHandler(recipe, handlerContext);
@@ -894,7 +939,7 @@ function classifyRecipeFamilyKey(recipe, fallback) {
   collectRecipeItemIds(recipe.inputs ?? recipe.inputItems ?? recipe.itemInputs ?? recipe.ingredients ?? recipe.catalysts ?? recipe.input, inputItemIds);
   collectRecipeItemIds(recipe.outputs ?? recipe.outputItems ?? recipe.itemOutputs ?? recipe.results ?? recipe.result ?? recipe.output, outputItemIds);
   const rawFamilyKey = `${recipe.family ?? recipe.sourcePlugin ?? recipe.recipeType ?? recipe.machine?.machineId ?? "unknown"}`.trim() || "unknown";
-  const familyKey = classifyRecipeFamilyKey(recipe, rawFamilyKey);
+  const familyKey = classifyRecipeFamilyKey(recipe, rawFamilyKey, publicHandler);
   const recipeType = `${recipe.recipeType ?? recipe.machine?.machineId ?? familyKey}`.trim() || familyKey;
   const machineType = `${publicHandler?.localizedName ?? publicHandler?.displayName ?? recipe.machine?.displayName ?? recipe.displayName ?? recipe.machine?.machineId ?? recipeType}`.trim() || recipeType;
   const payload = {
@@ -2500,6 +2545,50 @@ function buildRecipeFragmentationReport(recipeCategories, recipes, handlerContex
   };
 }
 
+function expectedHandlerFamilyFromDescriptor(handler) {
+  const descriptor = handlerDescriptor(handler);
+  if (includesAny(descriptor, ["pneumaticcraft", "pneumaticcraft.common.thirdparty.nei"])) return "pneumaticcraft";
+  if (includesAny(descriptor, ["appliedenergistics2", "appeng", "extracells"])) return "appliedenergistics2";
+  if (includesAny(descriptor, ["buildcraft", "buildcraft|"])) return "buildcraft";
+  if (includesAny(descriptor, ["gregtech", "gt.recipe", "gregtechapi", "gt++", "bartworks"])) return "gregtech-machine";
+  if (includesAny(descriptor, ["thaumcraft", "thaumic"])) return "thaumcraft";
+  if (includesAny(descriptor, ["botania"])) return "botania";
+  if (includesAny(descriptor, ["bloodmagic", "blood magic"])) return "blood_magic";
+  return null;
+}
+
+function buildRecipeHandlerFamilyReport(handlerContext) {
+  const familyCounts = new Map();
+  const suspiciousFamilyMismatches = [];
+  for (const handler of handlerContext?.handlers ?? []) {
+    const family = handler?.canonicalMachineFamily ?? "native-nei";
+    familyCounts.set(family, (familyCounts.get(family) ?? 0) + 1);
+    const expectedFamily = expectedHandlerFamilyFromDescriptor(handler);
+    if (expectedFamily && expectedFamily !== family) {
+      suspiciousFamilyMismatches.push({
+        handlerKey: handler?.handlerKey ?? null,
+        handlerClass: handler?.handlerClass ?? null,
+        displayName: handler?.localizedName ?? handler?.displayName ?? null,
+        modId: handler?.modId ?? null,
+        canonicalMachineFamily: family,
+        expectedFamily,
+      });
+    }
+  }
+  return {
+    schemaVersion: "neonei/recipe-handler-family-report/v1",
+    generatedAt: new Date().toISOString(),
+    status: suspiciousFamilyMismatches.length === 0 ? "ok" : "warning",
+    counts: {
+      handlers: handlerContext?.handlers?.length ?? 0,
+      families: familyCounts.size,
+      suspiciousFamilyMismatches: suspiciousFamilyMismatches.length,
+    },
+    families: Object.fromEntries(Array.from(familyCounts.entries()).sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))),
+    samples: { suspiciousFamilyMismatches: suspiciousFamilyMismatches.slice(0, 100) },
+  };
+}
+
 function compileRawExport(inputDir, outputDir) {
   const startedAt = Date.now();
   const manifestPath = join(inputDir, "manifest.json");
@@ -2750,6 +2839,7 @@ function compileRawExport(inputDir, outputDir) {
     }, new Map()).values(),
   ).filter((entry) => new Set(entry.categoryIds).size > 1);
   const recipeFragmentationReport = buildRecipeFragmentationReport(recipeCategories, recipes, recipeHandlerContext);
+  const recipeHandlerFamilyReport = buildRecipeHandlerFamilyReport(recipeHandlerContext);
   const rawExportCountMismatches = buildRawExportCountMismatches(exportReport, {
     items: items.length,
     fluids: fluids.length,
@@ -2855,6 +2945,7 @@ function compileRawExport(inputDir, outputDir) {
       staticWhenExpectedAnimated: animationExpectationReport.counts.staticWhenExpectedAnimated,
       recipeFragmentationDisplaySplits: recipeFragmentationReport.counts.suspiciousDisplaySplits,
       recipeFragmentationHandlerSplits: recipeFragmentationReport.counts.suspiciousHandlerSplits,
+      recipeHandlerFamilyMismatches: recipeHandlerFamilyReport.counts.suspiciousFamilyMismatches,
       nativeRenderCaptureGateBlocked: nativeRenderIndex.validation.status === "blocked" ? 1 : 0,
     },
     manifestValidation,
@@ -2888,6 +2979,7 @@ function compileRawExport(inputDir, outputDir) {
       semanticFacetFamilies: semanticFacetFamilies.slice(0, 50),
       staticWhenExpectedAnimated: animationExpectationReport.samples.staticWhenExpectedAnimated,
       recipeFragmentation: recipeFragmentationReport.samples,
+      recipeHandlerFamilies: recipeHandlerFamilyReport.samples,
     },
     coverage: {
       browserAtlasRatio: atlasAuthorityReport.coverageRatio,
@@ -2899,6 +2991,7 @@ function compileRawExport(inputDir, outputDir) {
     browserContract,
     animationExpectationReport,
     recipeFragmentationReport,
+    recipeHandlerFamilyReport,
     warnings: [],
     elapsedMs: Date.now() - startedAt,
   };
@@ -2935,6 +3028,9 @@ function compileRawExport(inputDir, outputDir) {
   }
   if (recipeFragmentationReport.status !== "ok") {
     validation.warnings.push(`Recipe fragmentation report found ${recipeFragmentationReport.counts.suspiciousDisplaySplits} display split(s) and ${recipeFragmentationReport.counts.suspiciousHandlerSplits} handler split(s).`);
+  }
+  if (recipeHandlerFamilyReport.status !== "ok") {
+    validation.warnings.push(`Recipe handler family report found ${recipeHandlerFamilyReport.counts.suspiciousFamilyMismatches} suspicious family mismatch(es).`);
   }
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
   if (rawExportCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from exporter report in ${rawExportCountMismatches.length} area(s).`);
@@ -3011,6 +3107,7 @@ function compileRawExport(inputDir, outputDir) {
       exportPathHygiene: "validation/export-path-hygiene.json",
       neiBrowserContract: "validation/nei-browser-contract.json",
       recipeFragmentation: "validation/recipe-fragmentation.json",
+      recipeHandlerFamilies: "validation/recipe-handler-families.json",
     },
   });
   writeJsonCompact(join(outputDir, "search", "all.json"), { schemaVersion: "neonei/search-v3-json/v1", items: searchItems });
@@ -3071,6 +3168,7 @@ function compileRawExport(inputDir, outputDir) {
   writeJson(join(outputDir, "validation", "export-path-hygiene.json"), exportPathHygiene);
   writeJson(join(outputDir, "validation", "nei-browser-contract.json"), browserContract);
   writeJson(join(outputDir, "validation", "recipe-fragmentation.json"), recipeFragmentationReport);
+  writeJson(join(outputDir, "validation", "recipe-handler-families.json"), recipeHandlerFamilyReport);
   if (manifestValidation.blocked.length > 0) {
     throw new Error(`Raw Export manifest contract blocked: ${manifestValidation.blocked.join(", ")}`);
   }
@@ -3150,7 +3248,7 @@ function createSelfTestRawExport(root) {
   writeGzipText(join(root, "facts/nei/order.jsonl.gz"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n${JSON.stringify({ entryOrder: 2, entryKind: "item", itemId: "i~minecraft~gold_ingot~0" })}\n`);
   writeGzipText(join(root, "facts/nei/guidfilters.jsonl.gz"), `${JSON.stringify({ itemExpression: "BuildCraft|Transport:pipeFacade", nbtPath: "tag.block" })}\n`);
   writeGzipText(join(root, "facts/nei/hiddenitems.jsonl.gz"), `${JSON.stringify({ itemExpression: "IC2:itemCropSeed" })}\n`);
-  writeGzipText(join(root, "facts/nei/handlers.jsonl.gz"), `${JSON.stringify({ handlerKey: "codechicken.nei.recipe.furnacerecipehandler", handlerClass: "codechicken.nei.recipe.FurnaceRecipeHandler", displayName: "Furnace", localizedName: "Furnace", canonicalMachineFamily: "furnace", modId: "minecraft", modName: "Minecraft", catalystItemName: "minecraft:furnace", preferredMachineItemName: "minecraft:furnace", maxRecipesPerPage: 2, handlerWidth: 166, handlerHeight: 65 })}\n`);
+  writeGzipText(join(root, "facts/nei/handlers.jsonl.gz"), `${JSON.stringify({ handlerKey: "codechicken.nei.recipe.furnacerecipehandler", handlerClass: "codechicken.nei.recipe.FurnaceRecipeHandler", displayName: "Furnace", localizedName: "Furnace", canonicalMachineFamily: "furnace", modId: "minecraft", modName: "Minecraft", catalystItemName: "minecraft:furnace", preferredMachineItemName: "minecraft:furnace", maxRecipesPerPage: 2, handlerWidth: 166, handlerHeight: 65 })}\n${JSON.stringify({ handlerKey: "pneumaticcraft.common.thirdparty.nei.neirefinerymanager", handlerClass: "pneumaticCraft.common.thirdparty.nei.NEIRefineryManager", displayName: "NEIRefinery Manager", localizedName: "NEIRefinery Manager", canonicalMachineFamily: "botania", modId: "PneumaticCraft", modName: "PneumaticCraft", catalystItemName: "PneumaticCraft:refinery", preferredMachineItemName: "PneumaticCraft:refinery", maxRecipesPerPage: 4, handlerWidth: 166, handlerHeight: 80 })}\n`);
   writeGzipText(join(root, "facts/nei/handler-layouts.jsonl.gz"), `${JSON.stringify({ handlerKey: "codechicken.nei.recipe.furnacerecipehandler", handlerClass: "codechicken.nei.recipe.FurnaceRecipeHandler", layoutKind: "furnace", width: 166, height: 65, yShift: 0, maxRecipesPerPage: 2, slots: [{ role: "item-input", startIndex: 0, columns: 1, rows: 1, x: 45, y: 24 }, { role: "item-output", startIndex: 1, columns: 1, rows: 1, x: 115, y: 24 }], textOverlays: [] })}\n`);
   writeGzipText(join(root, "assets/textures/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", atlasFile: "generated-static-atlas-0.webp", rect: { x: 0, y: 0, width: 16, height: 16 } })}\n`);
   writeGzipText(join(root, "assets/animations/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`);
@@ -3168,7 +3266,7 @@ function createSelfTestRawExport(root) {
   writeGzipText(join(root, "models/entities/index.jsonl.gz"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`);
   writeJson(join(root, "validation/export_report.json"), {
     schemaVersion: "nesqlpp/raw-export/alpha1/report",
-    counts: { rawItems: 3, rawFluids: 1, rawRecipes: 1, rawGroups: 1, rawNeiOrderEntries: 3, neiHandlers: 1, neiHandlerLayouts: 1, rawTextures: 3, rawAnimations: 1, rawEntities: 1 },
+    counts: { rawItems: 3, rawFluids: 1, rawRecipes: 1, rawGroups: 1, rawNeiOrderEntries: 3, neiHandlers: 2, neiHandlerLayouts: 1, rawTextures: 3, rawAnimations: 1, rawEntities: 1 },
     validation: { status: "ok", readinessStatus: "ready", gates: [{ name: "core-counts", status: "ready" }] },
   });
   writeJson(join(root, "validation/export-health-report.json"), {
@@ -3210,6 +3308,15 @@ if (selfTest) {
   const portablePathViolation = /[A-Za-z]:[\\/]|\.minecraft[\\/]versions|GT New Horizons|E:[\\/]GTNH|E:[\\/]codex/i.test(validationText);
   if (portablePathViolation) {
     throw new Error("Self-test validation report leaked a machine-specific filesystem path");
+  }
+  const handlerIndex = readJson(join(outputDir, "recipes", "handler-index.json"));
+  const pneumaticHandler = handlerIndex?.handlers?.find((handler) => handler.handlerKey === "pneumaticcraft.common.thirdparty.nei.neirefinerymanager");
+  if (pneumaticHandler?.canonicalMachineFamily !== "pneumaticcraft") {
+    throw new Error("Self-test handler family normalization did not correct PneumaticCraft handlers");
+  }
+  const handlerFamilyReport = readJson(join(outputDir, "validation", "recipe-handler-families.json"));
+  if (handlerFamilyReport?.status !== "ok") {
+    throw new Error("Self-test recipe handler family report did not pass");
   }
   const pathHygiene = readJson(join(outputDir, "validation", "export-path-hygiene.json"));
   if (pathHygiene?.status !== "ok" || report.exportPathHygiene?.status !== "ok") {
