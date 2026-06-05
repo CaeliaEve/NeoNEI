@@ -1,4 +1,4 @@
-import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+﻿import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -775,6 +775,9 @@ function buildSearchEntry(item, index, renderByAssetId, layoutByItemId) {
     itemId: item.itemId,
     localizedName: item.localizedName ?? item.internalName ?? item.itemId,
     modId: item.modId ?? "unknown",
+    internalName: item.internalName ?? null,
+    damage: stableNumber(item.damage, decodeItemQualifiedName(item).damage),
+    nbtDescriptor: item.nbtDescriptor ?? null,
     normalizedLocalizedName: normalizeLoose(item.localizedName),
     normalizedInternalName: normalizeKeyword(item.internalName),
     normalizedItemId: normalizeKeyword(item.itemId),
@@ -824,7 +827,7 @@ function normalizeRecipeCategoryName(value) {
   return `${value ?? ""}`
     .trim()
     .toLowerCase()
-    .replace(/鎼俒0-9a-fk-or]/gi, "")
+    .replace(/閹间繏0-9a-fk-or]/gi, "")
     .replace(/\s+/g, " ");
 }
 
@@ -1299,6 +1302,72 @@ function isAnimatedResource(resource, animation) {
     || [source.animationMode, source.mode, source.playbackHint].some((value) => `${value ?? ""}`.toLowerCase().includes("anim"));
 }
 
+function normalizeBlockLookupKey(modId, internalName, damage) {
+  const normalizedMod = `${modId ?? ""}`.trim().toLowerCase().replace(/[^a-z0-9_]+/g, "");
+  const normalizedName = `${internalName ?? ""}`.trim().toLowerCase();
+  if (!normalizedMod || !normalizedName) return null;
+  return `${normalizedMod}:${normalizedName}:${stableNumber(damage, 0)}`;
+}
+
+function parseBuildCraftFacadeDescriptor(item) {
+  if (`${item?.semanticFamily ?? item?.family ?? ""}`.toLowerCase() !== "facade.buildcraft") return null;
+  const descriptor = `${item?.nbtDescriptor ?? ""}`;
+  const blockMatch = descriptor.match(/block:\s*"?([^",}]+:[^",}]+)"?/i);
+  if (!blockMatch) return null;
+  const metaMatch = descriptor.match(/metadata:\s*(-?\d+)[bsl]?/i);
+  const [modId, internalName] = blockMatch[1].split(":");
+  return {
+    modId,
+    internalName,
+    damage: metaMatch ? stableNumber(metaMatch[1], 0) : 0,
+  };
+}
+
+function buildBlockAtlasLookup(browserItems, atlasByItemId) {
+  const lookup = new Map();
+  for (const item of browserItems ?? []) {
+    const decoded = decodeItemQualifiedName(item);
+    const atlas = atlasByItemId.get(item.itemId);
+    if (!atlas?.staticAtlas?.atlasFile && !atlas?.animatedAtlas?.atlasFile) continue;
+    const keys = [
+      normalizeBlockLookupKey(decoded.modId, decoded.internalName, decoded.damage),
+      normalizeBlockLookupKey(item.modId, item.internalName ?? decoded.internalName, item.damage ?? decoded.damage),
+    ].filter(Boolean);
+    for (const key of keys) {
+      if (!lookup.has(key)) lookup.set(key, { item, atlas });
+    }
+  }
+  return lookup;
+}
+
+function cloneAtlasAliasForItem(sourceAtlas, item, sourceItemId) {
+  return normalizeBrowserAtlasEntry({
+    ...sourceAtlas,
+    itemId: item.itemId,
+    assetId: item.renderAssetRef || `nesqlpp:item/${item.itemId}`,
+    sourceItemId,
+    semanticAtlasAlias: "buildcraft-facade-block-state",
+    generatedByCompiler: true,
+  });
+}
+
+function repairBuildCraftFacadeAtlas(byItemId, browserItems) {
+  const blockLookup = buildBlockAtlasLookup(browserItems, byItemId);
+  let repaired = 0;
+  for (const item of browserItems ?? []) {
+    const itemId = `${item?.itemId ?? ""}`.trim();
+    if (!itemId || byItemId.has(itemId)) continue;
+    const facade = parseBuildCraftFacadeDescriptor(item);
+    if (!facade) continue;
+    const key = normalizeBlockLookupKey(facade.modId, facade.internalName, facade.damage);
+    const source = key ? blockLookup.get(key) : null;
+    if (!source?.atlas) continue;
+    byItemId.set(itemId, cloneAtlasAliasForItem(source.atlas, item, source.item.itemId));
+    repaired += 1;
+  }
+  return repaired;
+}
+
 function buildBrowserAtlasIndexFromResources(existingIndex, browserItems, textures, animationFacts) {
   const textureByAssetId = new Map(textures.filter((entry) => entry?.assetId).map((entry) => [entry.assetId, entry]));
   const animationByAssetId = new Map(animationFacts.filter((entry) => entry?.assetId).map((entry) => [entry.assetId, entry]));
@@ -1345,6 +1414,8 @@ function buildBrowserAtlasIndexFromResources(existingIndex, browserItems, textur
     }
   }
 
+  const repairedBuildCraftFacadeAtlas = repairBuildCraftFacadeAtlas(byItemId, browserItems);
+
   const items = Array.from(byItemId.values()).map(normalizeBrowserAtlasEntry).sort((left, right) => `${left.itemId}`.localeCompare(`${right.itemId}`));
   return {
     ...(existingIndex ?? {}),
@@ -1352,6 +1423,7 @@ function buildBrowserAtlasIndexFromResources(existingIndex, browserItems, textur
     generatedByCompiler: true,
     generatedFromResourceIndex,
     repairedFromResourceIndex,
+    repairedBuildCraftFacadeAtlas,
     itemCount: items.length,
     animatedItemCount: items.filter((entry) => entry?.animatedAtlas?.atlasFile).length,
     missingAtlasCount: items.filter((entry) => !entry?.staticAtlas?.atlasFile && !entry?.animatedAtlas?.atlasFile).length,
@@ -2334,6 +2406,9 @@ function compileRawExport(inputDir, outputDir) {
       facetSummary: entry.facetSummary ?? null,
       localizedName: entry.localizedName,
       modId: entry.modId,
+      internalName: entry.internalName ?? null,
+      damage: entry.damage ?? null,
+      nbtDescriptor: entry.nbtDescriptor ?? null,
       renderAssetRef: entry.renderAssetRef,
       browserOrder: stableNumber(layout.browserOrder, stableNumber(layout.entryOrder, index)),
       groupKey: layout.groupKey ?? null,
@@ -2489,6 +2564,7 @@ function compileRawExport(inputDir, outputDir) {
       animatedBrowserAtlasItems,
       browserAtlasGeneratedFromResourceIndex: stableNumber(generatedBrowserAtlasIndex?.generatedFromResourceIndex, 0),
       browserAtlasRepairedFromResourceIndex: stableNumber(generatedBrowserAtlasIndex?.repairedFromResourceIndex, 0),
+      browserAtlasRepairedBuildCraftFacades: stableNumber(generatedBrowserAtlasIndex?.repairedBuildCraftFacadeAtlas, 0),
       specialDomains: specialDomains.length,
       specialRecipes: specialDomains.reduce((sum, domain) => sum + domain.recipeCount, 0),
       specialPayloads: specialDomains.reduce((sum, domain) => sum + domain.payloads.length, 0),
@@ -2856,3 +2932,4 @@ if (selfTest) {
     throw new Error("Self-test native render capture frames were not compiled");
   }
 }
+
