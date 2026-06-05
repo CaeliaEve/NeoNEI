@@ -35,6 +35,16 @@ test('runtime release gate blocks malformed or non-portable release artifacts', 
     'release gate must block machine-specific paths in consumed export payloads',
   );
   assert.equal(
+    hasStep('recipe handler metadata gate', "args: ['run', 'validate:recipe-handlers']"),
+    true,
+    'release gate must block missing native NEI handler/catalyst/layout metadata',
+  );
+  assert.equal(
+    hasStep('recipe fragmentation gate', "args: ['run', 'validate:recipe-fragmentation']"),
+    true,
+    'release gate must block duplicate frontend recipe category fragmentation',
+  );
+  assert.equal(
     hasStep('path portability audit', "args: ['run', 'audit:paths']"),
     true,
     'release gate must block source-level hard paths',
