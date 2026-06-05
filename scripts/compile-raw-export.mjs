@@ -2248,6 +2248,173 @@ function semanticFamilyAliases(family, classification) {
   return Array.from(new Set(aliases)).join(" ");
 }
 
+function splitSearchTokens(value) {
+  return normalizeLoose(value)
+    .split(/\s+/g)
+    .map((token) => token.trim())
+    .filter((token) => token.length >= 2 && token.length <= 64);
+}
+
+function addAliasTerm(map, term, itemId, source) {
+  const normalized = normalizeLoose(term);
+  if (!normalized || !itemId) return;
+  const bucket = map.get(normalized) ?? { term: normalized, itemIds: [], sources: new Set() };
+  if (!bucket.itemIds.includes(itemId) && bucket.itemIds.length < 5000) bucket.itemIds.push(itemId);
+  if (source) bucket.sources.add(source);
+  map.set(normalized, bucket);
+}
+
+function buildSearchAliasIndex(searchItems, semanticFacets) {
+  const byTerm = new Map();
+  const facetByLegacyItemId = new Map();
+  for (const facet of semanticFacets ?? []) {
+    const itemId = `${facet?.legacyItemId ?? ""}`.trim();
+    if (!itemId) continue;
+    const terms = [facet.family, facet.variantLabel, facet.facetSummary];
+    if (isPlainObject(facet.facets)) {
+      for (const [key, value] of Object.entries(facet.facets)) terms.push(key, value);
+    }
+    facetByLegacyItemId.set(itemId, terms.filter(Boolean).join(" "));
+  }
+
+  let itemsWithAliasTerms = 0;
+  let itemsWithPinyinTerms = 0;
+  let itemsWithFacetTerms = 0;
+  for (const item of searchItems ?? []) {
+    const itemId = `${item?.itemId ?? ""}`.trim();
+    if (!itemId) continue;
+    const baseTerms = [item.localizedName, item.internalName, item.modId, item.publicItemId, item.family, item.classification, item.groupLabel, item.aliases];
+    const pinyinTerms = [item.pinyinFull, item.pinyinAcronym].filter(Boolean);
+    const facetTerms = [item.facetSummary, facetByLegacyItemId.get(itemId)].filter(Boolean);
+    for (const term of baseTerms) {
+      for (const token of splitSearchTokens(term)) addAliasTerm(byTerm, token, itemId, "label");
+    }
+    for (const term of pinyinTerms) {
+      for (const token of splitSearchTokens(term)) addAliasTerm(byTerm, token, itemId, "pinyin");
+    }
+    for (const term of facetTerms) {
+      for (const token of splitSearchTokens(term)) addAliasTerm(byTerm, token, itemId, "facet");
+    }
+    if (baseTerms.some(Boolean)) itemsWithAliasTerms += 1;
+    if (pinyinTerms.length > 0) itemsWithPinyinTerms += 1;
+    if (facetTerms.length > 0) itemsWithFacetTerms += 1;
+  }
+
+  const terms = Array.from(byTerm.values())
+    .map((entry) => ({ term: entry.term, itemIds: entry.itemIds, sources: Array.from(entry.sources).sort() }))
+    .sort((left, right) => left.term.localeCompare(right.term));
+  return {
+    schemaVersion: "neonei/search-alias-index/v1",
+    generatedAt: new Date().toISOString(),
+    counts: { terms: terms.length, items: searchItems?.length ?? 0, itemsWithAliasTerms, itemsWithPinyinTerms, itemsWithFacetTerms },
+    terms,
+  };
+}
+
+function expectedAnimationReason(item) {
+  const haystack = normalizeLoose([
+    item?.localizedName,
+    item?.internalName,
+    item?.modId,
+    item?.itemId,
+    item?.semanticFamily,
+    item?.family,
+    item?.groupLabel,
+    item?.facetSummary,
+  ].filter(Boolean).join(" "));
+  if (!haystack) return null;
+  if (/(singularity|奇点|cosmic|寰宇|crystal matrix|水晶矩阵|infinity (armor|tool|sword|pickaxe|axe|shovel|hoe|bow)|无尽(胸甲|头盔|护腿|靴子|工具|剑|镐|斧|铲|锄|弓))/i.test(haystack)) return "avaritia-cosmic-or-singularity";
+  if (/(nasa.*rocket|galacticraft.*rocket|火箭.*galacticraft|nasa.*火箭)/i.test(haystack)) return "galacticraft-dynamic-item";
+  if (/(aspect|aer|ignis|aqua|ordo|perditio|terra|要素|灵气)/i.test(haystack)) return "thaumcraft-aspect";
+  return null;
+}
+
+function buildAnimationExpectationReport(browserItems, browserAtlasItems, animationTable) {
+  const atlasByItemId = new Map((browserAtlasItems ?? []).filter((entry) => entry?.itemId).map((entry) => [entry.itemId, entry]));
+  const animationByItemId = new Map((animationTable ?? []).filter((entry) => entry?.itemId).map((entry) => [entry.itemId, entry]));
+  const staticWhenExpectedAnimated = [];
+  let expectedAnimatedItems = 0;
+  let staticWhenExpectedAnimatedCount = 0;
+  for (const item of browserItems ?? []) {
+    const reason = expectedAnimationReason(item);
+    if (!reason) continue;
+    expectedAnimatedItems += 1;
+    const atlas = atlasByItemId.get(item.itemId);
+    const animation = animationByItemId.get(item.itemId);
+    const hasAnimatedAtlas = Boolean(atlas?.animatedAtlas?.atlasFile);
+    const hasTiming = Boolean(animation?.timeline?.length || animation?.frameDurationMs || atlas?.animatedAtlas?.timeline?.length || atlas?.animatedAtlas?.frameDurationMs);
+    if (!hasAnimatedAtlas || !hasTiming) {
+      staticWhenExpectedAnimatedCount += 1;
+      if (staticWhenExpectedAnimated.length < 200) {
+        staticWhenExpectedAnimated.push({
+          itemId: item.itemId,
+          localizedName: item.localizedName ?? null,
+          reason,
+          hasAnimatedAtlas,
+          hasTiming,
+          atlasFile: atlas?.animatedAtlas?.atlasFile ?? atlas?.staticAtlas?.atlasFile ?? null,
+          frameCount: stableNumber(animation?.frameCount, stableNumber(atlas?.animatedAtlas?.frameCount, 0)),
+        });
+      }
+    }
+  }
+  return {
+    schemaVersion: "neonei/animation-expectation-report/v1",
+    generatedAt: new Date().toISOString(),
+    status: staticWhenExpectedAnimatedCount === 0 ? "ok" : "warning",
+    counts: { expectedAnimatedItems, staticWhenExpectedAnimated: staticWhenExpectedAnimatedCount },
+    samples: { staticWhenExpectedAnimated },
+  };
+}
+
+function normalizeFragmentationKey(value) {
+  return normalizeRecipeCategoryName(value).replace(/[^a-z0-9\u4e00-\u9fff]+/g, " ").trim();
+}
+
+function buildRecipeFragmentationReport(recipeCategories, recipes, handlerContext) {
+  const byDisplay = new Map();
+  const byHandler = new Map();
+  for (const category of recipeCategories.values()) {
+    const displayKey = normalizeFragmentationKey(category.displayName ?? category.categoryId);
+    if (displayKey) {
+      const bucket = byDisplay.get(displayKey) ?? { key: displayKey, displayName: category.displayName ?? category.categoryId, categoryIds: [], sourceCategoryIds: [], recipeCount: 0 };
+      bucket.categoryIds.push(category.categoryId);
+      bucket.sourceCategoryIds.push(...(category.sourceCategoryIds ?? []));
+      bucket.recipeCount += stableNumber(category.recipeCount, 0);
+      byDisplay.set(displayKey, bucket);
+    }
+  }
+  for (const recipe of recipes ?? []) {
+    const { handler } = resolveRecipeHandler(recipe, handlerContext);
+    const handlerKey = `${handler?.handlerKey ?? recipe?.metadata?.handlerKey ?? recipe?.metadata?.handlerId ?? recipe?.machine?.machineId ?? ""}`.trim();
+    if (!handlerKey) continue;
+    const displayName = recipeCategoryDisplayName(recipe, handlerContext);
+    const categoryId = recipeCategoryIdFromDisplayName(displayName, recipeCategoryRawId(recipe, handlerContext));
+    const bucket = byHandler.get(handlerKey) ?? { handlerKey, displayNames: new Set(), categoryIds: new Set(), recipeCount: 0 };
+    bucket.displayNames.add(displayName);
+    bucket.categoryIds.add(categoryId);
+    bucket.recipeCount += 1;
+    byHandler.set(handlerKey, bucket);
+  }
+  const suspiciousDisplaySplits = Array.from(byDisplay.values())
+    .map((entry) => ({ ...entry, categoryIds: Array.from(new Set(entry.categoryIds)), sourceCategoryIds: Array.from(new Set(entry.sourceCategoryIds)) }))
+    .filter((entry) => entry.categoryIds.length > 1 || entry.sourceCategoryIds.length > 1)
+    .sort((left, right) => right.categoryIds.length - left.categoryIds.length || right.recipeCount - left.recipeCount)
+    .slice(0, 200);
+  const suspiciousHandlerSplits = Array.from(byHandler.values())
+    .map((entry) => ({ handlerKey: entry.handlerKey, displayNames: Array.from(entry.displayNames), categoryIds: Array.from(entry.categoryIds), recipeCount: entry.recipeCount }))
+    .filter((entry) => entry.displayNames.length > 1 || entry.categoryIds.length > 1)
+    .sort((left, right) => right.categoryIds.length - left.categoryIds.length || right.recipeCount - left.recipeCount)
+    .slice(0, 200);
+  return {
+    schemaVersion: "neonei/recipe-fragmentation-report/v1",
+    generatedAt: new Date().toISOString(),
+    status: suspiciousDisplaySplits.length === 0 && suspiciousHandlerSplits.length === 0 ? "ok" : "warning",
+    counts: { categories: recipeCategories.size, suspiciousDisplaySplits: suspiciousDisplaySplits.length, suspiciousHandlerSplits: suspiciousHandlerSplits.length },
+    samples: { suspiciousDisplaySplits, suspiciousHandlerSplits },
+  };
+}
+
 function compileRawExport(inputDir, outputDir) {
   const startedAt = Date.now();
   const manifestPath = join(inputDir, "manifest.json");
@@ -2392,6 +2559,7 @@ function compileRawExport(inputDir, outputDir) {
         normalizedSearchTerms: normalizeLoose([base.normalizedSearchTerms, semanticSearchTerms].filter(Boolean).join(" ")),
       };
     });
+  const searchAliasIndex = buildSearchAliasIndex(searchItems, semanticFacets);
 
   const missingAnimationTimingAssetIds = animationFacts
     .filter((entry) => entry?.assetId && stableNumber(entry.frameCount, 0) > 1 && !entry.timeline && !entry.frameDurationMs)
@@ -2435,6 +2603,7 @@ function compileRawExport(inputDir, outputDir) {
   const materializedBrowserAtlasIndex = materializeBrowserAtlasAssets(inputDir, outputDir, generatedBrowserAtlasIndex);
   const browserAtlasItems = Array.isArray(generatedBrowserAtlasIndex?.items) ? generatedBrowserAtlasIndex.items : [];
   const animationTable = buildAnimationTable(searchItems, textures, animationFacts, generatedBrowserAtlasIndex);
+  const animationExpectationReport = buildAnimationExpectationReport(browserItems, browserAtlasItems, animationTable);
   const semanticResourceReport = buildSemanticResourceReport({
     semanticBrowserGroups,
     browserAtlasItems,
@@ -2495,6 +2664,7 @@ function compileRawExport(inputDir, outputDir) {
       return acc;
     }, new Map()).values(),
   ).filter((entry) => new Set(entry.categoryIds).size > 1);
+  const recipeFragmentationReport = buildRecipeFragmentationReport(recipeCategories, recipes, recipeHandlerContext);
   const rawExportCountMismatches = buildRawExportCountMismatches(exportReport, {
     items: items.length,
     fluids: fluids.length,
@@ -2593,6 +2763,13 @@ function compileRawExport(inputDir, outputDir) {
       semanticRepresentativeMissingAtlas: semanticResourceReport.counts.representativeMissingAtlas,
       semanticMemberMissingAtlas: semanticResourceReport.counts.memberMissingAtlas,
       semanticAnimationTimingMissing: semanticResourceReport.counts.animationTimingMissing,
+      searchAliasTerms: searchAliasIndex.counts.terms,
+      searchAliasItemsWithPinyinTerms: searchAliasIndex.counts.itemsWithPinyinTerms,
+      searchAliasItemsWithFacetTerms: searchAliasIndex.counts.itemsWithFacetTerms,
+      expectedAnimatedItems: animationExpectationReport.counts.expectedAnimatedItems,
+      staticWhenExpectedAnimated: animationExpectationReport.counts.staticWhenExpectedAnimated,
+      recipeFragmentationDisplaySplits: recipeFragmentationReport.counts.suspiciousDisplaySplits,
+      recipeFragmentationHandlerSplits: recipeFragmentationReport.counts.suspiciousHandlerSplits,
       nativeRenderCaptureGateBlocked: nativeRenderIndex.validation.status === "blocked" ? 1 : 0,
     },
     manifestValidation,
@@ -2623,6 +2800,8 @@ function compileRawExport(inputDir, outputDir) {
       semanticResourceSamples: semanticResourceReport.samples,
       droppedBrowserGroupsByPrecedence: mergedBrowserGroups.dropped.slice(0, 100),
       semanticFacetFamilies: semanticFacetFamilies.slice(0, 50),
+      staticWhenExpectedAnimated: animationExpectationReport.samples.staticWhenExpectedAnimated,
+      recipeFragmentation: recipeFragmentationReport.samples,
     },
     coverage: {
       browserAtlasRatio: atlasAuthorityReport.coverageRatio,
@@ -2632,6 +2811,8 @@ function compileRawExport(inputDir, outputDir) {
     semanticResourceReport,
     atlasAuthorityReport,
     browserContract,
+    animationExpectationReport,
+    recipeFragmentationReport,
     warnings: [],
     elapsedMs: Date.now() - startedAt,
   };
@@ -2656,6 +2837,15 @@ function compileRawExport(inputDir, outputDir) {
   }
   if (itemVariants.length > 0 && semanticFacets.length === 0) {
     validation.warnings.push(`Semantic variants exist but no semantic facets were compiled; rerun NESQL++ with the latest semantic facet exporter.`);
+  }
+  if (searchAliasIndex.counts.terms === 0 && searchItems.length > 0) {
+    validation.warnings.push("Search alias index is empty despite non-empty search items.");
+  }
+  if (animationExpectationReport.status !== "ok") {
+    validation.warnings.push(`Animation expectation report found ${animationExpectationReport.counts.staticWhenExpectedAnimated} expected animated item(s) without animated atlas/timing.`);
+  }
+  if (recipeFragmentationReport.status !== "ok") {
+    validation.warnings.push(`Recipe fragmentation report found ${recipeFragmentationReport.counts.suspiciousDisplaySplits} display split(s) and ${recipeFragmentationReport.counts.suspiciousHandlerSplits} handler split(s).`);
   }
   if (recipeCategorySplits.length > 0) validation.warnings.push(`Recipe categories have ${recipeCategorySplits.length} duplicate display-name split(s).`);
   if (rawExportCountMismatches.length > 0) validation.warnings.push(`Raw Export compiler counts differ from exporter report in ${rawExportCountMismatches.length} area(s).`);
@@ -2704,6 +2894,7 @@ function compileRawExport(inputDir, outputDir) {
     },
     files: {
       searchAll: "search/all.json",
+      searchAliasIndex: "search/alias-index.json",
       semanticItems: "items/semantic-items.json",
       semanticFacets: "items/semantic-facets.json",
       itemVariants: "items/variants.json",
@@ -2720,6 +2911,7 @@ function compileRawExport(inputDir, outputDir) {
       recipeUiPayloadIndex: "recipes/ui-payload-index.json",
       textureManifest: "textures/atlas-manifest.json",
       animationTable: "textures/animation-table.json",
+      animationExpectationReport: "textures/animation-expectations.json",
       browserAtlasIndex: "textures/browser-atlas-index.json",
       nativeRenderIndex: "render/index.json",
       entityModels: "models/entities/index.json",
@@ -2729,9 +2921,11 @@ function compileRawExport(inputDir, outputDir) {
       migrationReadiness: "validation/migration-readiness.json",
       exportPathHygiene: "validation/export-path-hygiene.json",
       neiBrowserContract: "validation/nei-browser-contract.json",
+      recipeFragmentation: "validation/recipe-fragmentation.json",
     },
   });
   writeJsonCompact(join(outputDir, "search", "all.json"), { schemaVersion: "neonei/search-v3-json/v1", items: searchItems });
+  writeJsonCompact(join(outputDir, "search", "alias-index.json"), searchAliasIndex);
   writeJsonCompact(join(outputDir, "items", "semantic-items.json"), { schemaVersion: "neonei/semantic-items/v1", items: semanticItems });
   writeJsonCompact(join(outputDir, "items", "semantic-facets.json"), { schemaVersion: "neonei/semantic-facets/v1", facets: semanticFacets });
   writeJsonCompact(join(outputDir, "items", "variants.json"), { schemaVersion: "neonei/item-variants/v1", variants: itemVariants });
@@ -2768,6 +2962,7 @@ function compileRawExport(inputDir, outputDir) {
   }
   writeJsonCompact(join(outputDir, "textures", "atlas-manifest.json"), { schemaVersion: "neonei/texture-manifest/v1", textures, animations: animationFacts, nativeSprites, renderedGifs });
   writeJsonCompact(join(outputDir, "textures", "animation-table.json"), { schemaVersion: "neonei/animation-table/v1", items: animationTable });
+  writeJsonCompact(join(outputDir, "textures", "animation-expectations.json"), animationExpectationReport);
   writeJsonCompact(join(outputDir, "textures", "browser-atlas-index.json"), materializedBrowserAtlasIndex ?? { schemaVersion: "neonei/browser-atlas-index/v1", items: [] });
   writeJsonCompact(join(outputDir, "render", "index.json"), nativeRenderIndex);
   writeJsonCompact(join(outputDir, "models", "entities", "index.json"), { schemaVersion: "neonei/entity-model-index/v1", entities });
@@ -2786,6 +2981,7 @@ function compileRawExport(inputDir, outputDir) {
   writeJson(join(outputDir, "validation", "migration-readiness.json"), validation.migrationReadiness);
   writeJson(join(outputDir, "validation", "export-path-hygiene.json"), exportPathHygiene);
   writeJson(join(outputDir, "validation", "nei-browser-contract.json"), browserContract);
+  writeJson(join(outputDir, "validation", "recipe-fragmentation.json"), recipeFragmentationReport);
   if (manifestValidation.blocked.length > 0) {
     throw new Error(`Raw Export manifest contract blocked: ${manifestValidation.blocked.join(", ")}`);
   }
@@ -2810,6 +3006,7 @@ function createSelfTestRawExport(root) {
   writeJson(join(root, "manifest.json"), {
     schemaVersion: "nesqlpp/raw-export/alpha1",
     repositoryName: "self-test",
+    generatedAt: new Date().toISOString(),
     capabilities: ["facts", "assets", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers", "angelicaNativeRenderFacts"],
     files: {
       items: "facts/items.jsonl.gz",

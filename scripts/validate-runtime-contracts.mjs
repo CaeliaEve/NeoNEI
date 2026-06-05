@@ -268,6 +268,7 @@ if (existsSync(manifestPath)) {
 const requiredManifestFields = ["schemaVersion", "generatedAt", "source", "sourceRepository", "runtime", "files"];
 const requiredFiles = [
   "searchAll",
+  "searchAliasIndex",
   "semanticItems",
   "semanticFacets",
   "itemVariants",
@@ -281,9 +282,11 @@ const requiredFiles = [
   "recipeUiPayloadIndex",
   "textureManifest",
   "animationTable",
+  "animationExpectationReport",
   "browserAtlasIndex",
   "validationReport",
   "migrationReadiness",
+  "recipeFragmentation",
 ];
 
 if (manifest) {
@@ -362,6 +365,8 @@ function validateBrowserCatalog() {
 
 function validateSearchPack() {
   const relativePath = manifest?.files?.searchAll;
+  const aliasRelativePath = manifest?.files?.searchAliasIndex;
+  const result = {};
   if (!hasString(relativePath)) return null;
   const payload = readJson(join(distDataDir, relativePath));
   if (!hasString(payload.schemaVersion)) {
@@ -376,13 +381,26 @@ function validateSearchPack() {
       fail(failures, "SEARCH_ITEM_ID_MISSING", "search item itemId is required", { index });
     }
   }
-  return { itemCount: items.length };
+  result.itemCount = items.length;
+  if (hasString(aliasRelativePath)) {
+    const aliasPayload = readJson(join(distDataDir, aliasRelativePath));
+    if (!hasString(aliasPayload.schemaVersion)) {
+      fail(failures, "SEARCH_ALIAS_SCHEMA_VERSION_MISSING", "search alias index schemaVersion is required");
+    }
+    const terms = firstArray(aliasPayload.terms);
+    result.aliasTerms = terms.length;
+    if (items.length > 0 && terms.length === 0) {
+      fail(failures, "SEARCH_ALIAS_INDEX_EMPTY", "search alias index must contain terms when search pack has items");
+    }
+  }
+  return result;
 }
 
 function validateTexturePayloads() {
   const textureManifestPath = manifest?.files?.textureManifest;
   const browserAtlasPath = manifest?.files?.browserAtlasIndex;
   const animationTablePath = manifest?.files?.animationTable;
+  const animationExpectationPath = manifest?.files?.animationExpectationReport;
   const result = {};
   if (hasString(textureManifestPath)) {
     const payload = readJson(join(distDataDir, textureManifestPath));
@@ -408,6 +426,14 @@ function validateTexturePayloads() {
       fail(failures, "ANIMATION_TABLE_SCHEMA_VERSION_MISSING", "animation table schemaVersion is required");
     }
     result.animationEntries = firstArray(payload.items ?? payload.entries).length;
+  }
+  if (hasString(animationExpectationPath)) {
+    const payload = readJson(join(distDataDir, animationExpectationPath));
+    if (!hasString(payload.schemaVersion)) {
+      fail(failures, "ANIMATION_EXPECTATION_SCHEMA_VERSION_MISSING", "animation expectation report schemaVersion is required");
+    }
+    result.expectedAnimatedItems = payload.counts?.expectedAnimatedItems ?? 0;
+    result.staticWhenExpectedAnimated = payload.counts?.staticWhenExpectedAnimated ?? 0;
   }
   return result;
 }
@@ -435,6 +461,7 @@ function validateSemanticRuntimePacks() {
   const reportPath = manifest?.files?.validationReport;
   const readinessPath = manifest?.files?.migrationReadiness;
   const browserContractPath = manifest?.files?.neiBrowserContract;
+  const recipeFragmentationPath = manifest?.files?.recipeFragmentation;
   const compilerReport = hasString(reportPath) && existsSync(join(distDataDir, reportPath))
     ? readJson(join(distDataDir, reportPath))
     : null;
@@ -444,6 +471,9 @@ function validateSemanticRuntimePacks() {
   const browserContract = hasString(browserContractPath) && existsSync(join(distDataDir, browserContractPath))
     ? readJson(join(distDataDir, browserContractPath))
     : compilerReport?.browserContract ?? null;
+  const recipeFragmentation = hasString(recipeFragmentationPath) && existsSync(join(distDataDir, recipeFragmentationPath))
+    ? readJson(join(distDataDir, recipeFragmentationPath))
+    : compilerReport?.recipeFragmentationReport ?? null;
   const counts = compilerReport?.counts ?? {};
 
   const semanticItemsPath = manifest?.files?.semanticItems;
@@ -473,6 +503,7 @@ function validateSemanticRuntimePacks() {
   result.browserGroups = browserGroups.length;
   result.migrationReadinessStatus = migrationReadiness?.status ?? null;
   result.neiBrowserContractStatus = browserContract?.status ?? null;
+  result.recipeFragmentationStatus = recipeFragmentation?.status ?? null;
   result.semanticTaggedItems = counts.semanticTaggedItems ?? counts.semanticTotalItems ?? null;
   result.semanticClassifiedTaggedItems = counts.semanticClassifiedTaggedItems ?? null;
   result.semanticCoverageRatio = typeof result.semanticTaggedItems === "number" && result.semanticTaggedItems > 0
@@ -498,6 +529,9 @@ function validateSemanticRuntimePacks() {
       status: browserContract.status,
       summary: browserContract.summary ?? null,
     });
+  }
+  if (!recipeFragmentation) {
+    fail(failures, "RECIPE_FRAGMENTATION_REPORT_MISSING", "recipe fragmentation report is required");
   }
 
   for (const [key, actual] of [
