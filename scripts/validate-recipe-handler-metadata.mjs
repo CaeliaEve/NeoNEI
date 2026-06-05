@@ -1,0 +1,103 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
+const distDataDir = resolve(process.env.DIST_DATA_V3_DIR || join(repoRoot, "backend", "public", "dist-data"));
+const gate = process.argv.includes("--gate");
+const outputDir = join(repoRoot, ".runtime-logs");
+const outputPath = join(outputDir, "recipe-handler-metadata-gate.json");
+
+function readJson(relativePath) {
+  const filePath = join(distDataDir, relativePath);
+  if (!existsSync(filePath)) throw new Error(`Missing dist-data file: ${filePath}`);
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+function text(value) {
+  return `${value ?? ""}`.trim();
+}
+
+function hasText(value) {
+  return text(value).length > 0;
+}
+
+function sample(entries) {
+  return entries.slice(0, 25).map((entry) => ({
+    handlerKey: entry?.handlerKey ?? null,
+    handlerClass: entry?.handlerClass ?? null,
+    displayName: entry?.displayName ?? null,
+    localizedName: entry?.localizedName ?? null,
+    canonicalMachineFamily: entry?.canonicalMachineFamily ?? null,
+    catalystItemName: entry?.catalystItemName ?? null,
+    preferredMachineItemName: entry?.preferredMachineItemName ?? null,
+  }));
+}
+
+const handlers = Array.isArray(readJson("recipes/handler-index.json").handlers)
+  ? readJson("recipes/handler-index.json").handlers
+  : [];
+const layouts = Array.isArray(readJson("recipes/handler-layout-index.json").layouts)
+  ? readJson("recipes/handler-layout-index.json").layouts
+  : [];
+const categories = Array.isArray(readJson("recipes/recipe-category-index.json").categories)
+  ? readJson("recipes/recipe-category-index.json").categories
+  : [];
+
+const layoutByHandlerKey = new Map(layouts.filter((entry) => hasText(entry?.handlerKey)).map((entry) => [entry.handlerKey, entry]));
+const missingHandlerKey = handlers.filter((entry) => !hasText(entry?.handlerKey));
+const missingDisplayName = handlers.filter((entry) => !hasText(entry?.displayName) && !hasText(entry?.localizedName));
+const missingFamily = handlers.filter((entry) => !hasText(entry?.canonicalMachineFamily));
+const missingLayout = handlers.filter((entry) => hasText(entry?.handlerKey) && !layoutByHandlerKey.has(entry.handlerKey));
+const layoutWithoutSlots = layouts.filter((entry) => !Array.isArray(entry?.slots) || entry.slots.length === 0);
+const missingMachineRefs = handlers.filter((entry) => !hasText(entry?.catalystItemName) && !hasText(entry?.preferredMachineItemName));
+const gtMultiblockWithoutPreferred = handlers.filter((entry) => entry?.gtMultiblockPreferred === true && !hasText(entry?.preferredMachineItemName));
+const categoriesWithHandler = categories.filter((entry) => entry?.handler);
+const categoriesWithNativeLayout = categories.filter((entry) => entry?.nativeLayout);
+
+const failures = [];
+if (handlers.length === 0) failures.push("handler index is empty");
+if (layouts.length === 0) failures.push("handler layout index is empty");
+if (missingHandlerKey.length > 0) failures.push(`${missingHandlerKey.length} handler(s) are missing handlerKey`);
+if (missingDisplayName.length > 0) failures.push(`${missingDisplayName.length} handler(s) are missing display/localized name`);
+if (missingFamily.length > 0) failures.push(`${missingFamily.length} handler(s) are missing canonical machine family`);
+if (missingLayout.length > 0) failures.push(`${missingLayout.length} handler(s) are missing layout rows`);
+if (layoutWithoutSlots.length > 0) failures.push(`${layoutWithoutSlots.length} handler layout(s) are missing slot facts`);
+if (gtMultiblockWithoutPreferred.length > 0) failures.push(`${gtMultiblockWithoutPreferred.length} GT multiblock handler(s) are missing preferred machine icons`);
+
+const missingMachineRefRatio = handlers.length > 0 ? missingMachineRefs.length / handlers.length : 1;
+if (missingMachineRefRatio > 0.02) {
+  failures.push(`handler catalyst/preferred machine refs missing ratio ${missingMachineRefRatio.toFixed(4)} exceeds 0.02`);
+}
+
+const result = {
+  schemaVersion: "neonei/recipe-handler-metadata-gate/v1",
+  generatedAt: new Date().toISOString(),
+  distDataDir,
+  counts: {
+    handlers: handlers.length,
+    layouts: layouts.length,
+    categories: categories.length,
+    categoriesWithHandler: categoriesWithHandler.length,
+    categoriesWithNativeLayout: categoriesWithNativeLayout.length,
+    missingHandlerKey: missingHandlerKey.length,
+    missingDisplayName: missingDisplayName.length,
+    missingFamily: missingFamily.length,
+    missingLayout: missingLayout.length,
+    layoutWithoutSlots: layoutWithoutSlots.length,
+    missingMachineRefs: missingMachineRefs.length,
+    gtMultiblockWithoutPreferred: gtMultiblockWithoutPreferred.length,
+    missingMachineRefRatio: Number(missingMachineRefRatio.toFixed(6)),
+  },
+  samples: {
+    missingMachineRefs: sample(missingMachineRefs),
+    gtMultiblockWithoutPreferred: sample(gtMultiblockWithoutPreferred),
+    missingLayout: sample(missingLayout),
+  },
+  failures,
+};
+
+mkdirSync(outputDir, { recursive: true });
+writeFileSync(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
+console.log(JSON.stringify(result, null, 2));
+if (gate && failures.length > 0) process.exitCode = 1;
