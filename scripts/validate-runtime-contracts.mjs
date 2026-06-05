@@ -33,6 +33,10 @@ function firstArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function uniqueStrings(value) {
+  return Array.from(new Set(firstArray(value).map((entry) => `${entry ?? ""}`.trim()).filter(Boolean)));
+}
+
 function stableRatio(numerator, denominator) {
   const n = Number(numerator);
   const d = Number(denominator);
@@ -532,6 +536,25 @@ function validateSemanticRuntimePacks() {
   }
   if (!recipeFragmentation) {
     fail(failures, "RECIPE_FRAGMENTATION_REPORT_MISSING", "recipe fragmentation report is required");
+  } else {
+    const trueDisplaySplits = firstArray(recipeFragmentation?.samples?.suspiciousDisplaySplits)
+      .map((entry) => ({ ...entry, categoryIds: uniqueStrings(entry?.categoryIds) }))
+      .filter((entry) => entry.categoryIds.length > 1);
+    const trueHandlerSplits = firstArray(recipeFragmentation?.samples?.suspiciousHandlerSplits)
+      .map((entry) => ({
+        ...entry,
+        categoryIds: uniqueStrings(entry?.categoryIds),
+        displayNames: uniqueStrings(entry?.displayNames),
+      }))
+      .filter((entry) => entry.categoryIds.length > 1 || entry.displayNames.length > 1);
+    result.recipeFragmentationTrueDisplaySplits = trueDisplaySplits.length;
+    result.recipeFragmentationTrueHandlerSplits = trueHandlerSplits.length;
+    if (trueDisplaySplits.length > 0 || trueHandlerSplits.length > 0) {
+      fail(failures, "RECIPE_CATEGORY_FRAGMENTATION", "recipe handlers must not fragment into multiple frontend categories", {
+        trueDisplaySplits: trueDisplaySplits.slice(0, 25),
+        trueHandlerSplits: trueHandlerSplits.slice(0, 25),
+      });
+    }
   }
 
   for (const [key, actual] of [
