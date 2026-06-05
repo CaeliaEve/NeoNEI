@@ -1118,6 +1118,29 @@ function buildNativeRenderIndex({ backend, textureSprites, itemRenderers, shader
   const captureGateReady = missingRequiredCaptures.length === 0
     && requiredCapturesWithoutFrames.length === 0
     && requiredCapturesWithoutTimeline.length === 0;
+  const captureSampleLimit = 20;
+  const captureSample = (row, capture = null) => ({
+    itemId: row?.itemId ?? null,
+    expectedAssetId: row?.itemId ? `nesqlpp:item/${row.itemId}` : null,
+    rendererKind: row?.rendererKind ?? null,
+    rendererClass: row?.rendererClass ?? null,
+    shaderFamily: row?.shaderFamily ?? null,
+    preferredExport: row?.preferredExport ?? null,
+    capture: capture
+      ? {
+          assetId: capture.assetId ?? null,
+          variantKey: capture.variantKey ?? null,
+          rendererFamily: capture.rendererFamily ?? null,
+          renderMode: capture.renderMode ?? null,
+          animationMode: capture.animationMode ?? null,
+          captureMethod: capture.captureMethod ?? null,
+          primaryArtifact: capture.primaryArtifact ?? null,
+          frameCount: stableNumber(capture.frameCount, 0),
+          frames: Array.isArray(capture.frames) ? capture.frames.length : 0,
+          timeline: Array.isArray(capture.timeline) ? capture.timeline.length : 0,
+        }
+      : null,
+  });
   const validation = {
     status: shaderItemsNeedingCapture === 0 || captureGateReady ? "ready" : "blocked",
     shaderItemsNeedingCapture,
@@ -1125,6 +1148,17 @@ function buildNativeRenderIndex({ backend, textureSprites, itemRenderers, shader
     missingRequiredCaptures: missingRequiredCaptures.length,
     requiredCapturesWithoutFrames: requiredCapturesWithoutFrames.length,
     requiredCapturesWithoutTimeline: requiredCapturesWithoutTimeline.length,
+    samples: {
+      missingRequiredCaptures: missingRequiredCaptures
+        .slice(0, captureSampleLimit)
+        .map((row) => captureSample(row)),
+      requiredCapturesWithoutFrames: requiredCapturesWithoutFrames
+        .slice(0, captureSampleLimit)
+        .map(({ row, capture }) => captureSample(row, capture)),
+      requiredCapturesWithoutTimeline: requiredCapturesWithoutTimeline
+        .slice(0, captureSampleLimit)
+        .map(({ row, capture }) => captureSample(row, capture)),
+    },
     summary: shaderItemsNeedingCapture === 0
       ? "No shader/custom renderer capture is required by the export."
       : `${shaderItemsNeedingCapture} shader/custom renderer item(s) require capture; ${(framebufferCaptures ?? []).length} capture asset(s) compiled; missing=${missingRequiredCaptures.length}; withoutFrames=${requiredCapturesWithoutFrames.length}; withoutTimeline=${requiredCapturesWithoutTimeline.length}.`,
