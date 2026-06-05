@@ -974,7 +974,12 @@ function buildRecipeItemIndex(recipes) {
 }
 
 function buildSemanticItemSummary({ semanticItems, itemVariants, itemPayloads, itemIdentityMap, searchItems }) {
+  const unclassifiedExplanationByFamily = {
+    "legacy.item": "Exact legacy item identity retained for rows that do not belong to a known high-volume semantic family.",
+    "unknown": "Exporter did not provide enough semantic hints; keep exact item identity until a native GTNH family rule is added.",
+  };
   const byFamily = new Map();
+  const byUnclassifiedFamily = new Map();
   const bump = (family, key) => {
     const normalized = `${family ?? "unknown"}`.trim() || "unknown";
     const existing = byFamily.get(normalized) ?? {
@@ -986,10 +991,34 @@ function buildSemanticItemSummary({ semanticItems, itemVariants, itemPayloads, i
     existing[key] += 1;
     byFamily.set(normalized, existing);
   };
+  const bumpUnclassified = (entry) => {
+    if (!entry || entry.classification === "classified") return;
+    const family = `${entry.family ?? "unknown"}`.trim() || "unknown";
+    const existing = byUnclassifiedFamily.get(family) ?? {
+      family,
+      explanation: unclassifiedExplanationByFamily[family] ?? null,
+      unclassifiedRows: 0,
+      sampleItemIds: [],
+      samplePublicItemIds: [],
+    };
+    existing.unclassifiedRows += 1;
+    if (entry.itemId && existing.sampleItemIds.length < 8) existing.sampleItemIds.push(entry.itemId);
+    if (entry.publicItemId && existing.samplePublicItemIds.length < 8 && !existing.samplePublicItemIds.includes(entry.publicItemId)) {
+      existing.samplePublicItemIds.push(entry.publicItemId);
+    }
+    byUnclassifiedFamily.set(family, existing);
+  };
   for (const item of semanticItems ?? []) bump(item?.family, "semanticItems");
   for (const variant of itemVariants ?? []) bump(variant?.family, "variants");
-  for (const entry of itemIdentityMap ?? []) bump(entry?.family, "identityRows");
+  for (const entry of itemIdentityMap ?? []) {
+    bump(entry?.family, "identityRows");
+    bumpUnclassified(entry);
+  }
   const classifiedIdentityRows = (itemIdentityMap ?? []).filter((entry) => entry?.classification === "classified").length;
+  const unclassifiedIdentityRows = (itemIdentityMap ?? []).filter((entry) => entry?.classification !== "classified").length;
+  const topUnclassifiedFamilies = Array.from(byUnclassifiedFamily.values())
+    .sort((left, right) => right.unclassifiedRows - left.unclassifiedRows || left.family.localeCompare(right.family))
+    .slice(0, 20);
   const browserRowsWithSemanticIdentity = (searchItems ?? []).filter((entry) => entry?.publicItemId).length;
   return {
     schemaVersion: "neonei/semantic-item-summary/v1",
@@ -999,10 +1028,13 @@ function buildSemanticItemSummary({ semanticItems, itemVariants, itemPayloads, i
     payloads: itemPayloads?.length ?? 0,
     identityRows: itemIdentityMap?.length ?? 0,
     classifiedIdentityRows,
+    unclassifiedIdentityRows,
     browserRowsWithSemanticIdentity,
+    unexplainedTopUnclassifiedFamilies: topUnclassifiedFamilies.filter((entry) => !entry.explanation).length,
     topFamilies: Array.from(byFamily.values())
       .sort((left, right) => right.identityRows - left.identityRows || right.variants - left.variants || left.family.localeCompare(right.family))
       .slice(0, 80),
+    topUnclassifiedFamilies,
   };
 }
 
@@ -2851,6 +2883,7 @@ function compileRawExport(inputDir, outputDir) {
       rawExportCountMismatches,
       missingAnimationTimingAssetIds: missingAnimationTimingAssetIds.slice(0, 100),
       semanticResourceSamples: semanticResourceReport.samples,
+      topUnclassifiedSemanticFamilies: semanticItemSummary.topUnclassifiedFamilies,
       droppedBrowserGroupsByPrecedence: mergedBrowserGroups.dropped.slice(0, 100),
       semanticFacetFamilies: semanticFacetFamilies.slice(0, 50),
       staticWhenExpectedAnimated: animationExpectationReport.samples.staticWhenExpectedAnimated,
@@ -2890,6 +2923,9 @@ function compileRawExport(inputDir, outputDir) {
   }
   if (itemVariants.length > 0 && semanticFacets.length === 0) {
     validation.warnings.push(`Semantic variants exist but no semantic facets were compiled; rerun NESQL++ with the latest semantic facet exporter.`);
+  }
+  if (semanticItemSummary.unexplainedTopUnclassifiedFamilies > 0) {
+    validation.warnings.push(`Semantic identity has ${semanticItemSummary.unclassifiedIdentityRows} unclassified row(s), including ${semanticItemSummary.unexplainedTopUnclassifiedFamilies} unexplained top family/families: ${semanticItemSummary.topUnclassifiedFamilies.filter((entry) => !entry.explanation).slice(0, 5).map((entry) => `${entry.family}=${entry.unclassifiedRows}`).join(", ")}.`);
   }
   if (searchAliasIndex.counts.terms === 0 && searchItems.length > 0) {
     validation.warnings.push("Search alias index is empty despite non-empty search items.");

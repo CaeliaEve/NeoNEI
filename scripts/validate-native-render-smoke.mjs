@@ -62,6 +62,13 @@ function captureForItem(renderIndex, itemId) {
   return renderIndex.capturesByAssetId?.[assetId] ?? renderIndex.capturesByVariantKey?.[itemId] ?? null;
 }
 
+function captureIsUsable(capture) {
+  return Boolean(capture)
+    && Array.isArray(capture.frames)
+    && capture.frames.length > 0
+    && (stableNumber(capture.frameCount, 0) <= 1 || (Array.isArray(capture.timeline) && capture.timeline.length > 0));
+}
+
 function hasUsableTimeline(entry) {
   if (Array.isArray(entry?.timeline) && entry.timeline.length > 0) return true;
   return stableNumber(entry?.frameCount, 1) <= 1 || stableNumber(entry?.defaultFrameTimeTicks, 0) > 0;
@@ -157,6 +164,74 @@ if (renderIndex) {
       shaderFamily: shader?.shaderFamily ?? null,
       capture: captureSummary(capture),
     })));
+  }
+
+  const knownItemChecks = [
+    {
+      name: "Avaritia singularity",
+      itemId: "i~Avaritia~Singularity~0",
+      expectedRendererPrefix: "avaritia.",
+      requiresUsableCapture: true,
+    },
+    {
+      name: "Avaritia infinity chestplate",
+      itemId: "i~Avaritia~Infinity_Chest~0",
+      expectedRendererPrefix: "avaritia.",
+      requiresUsableCapture: true,
+    },
+    {
+      name: "Avaritia infinity sword",
+      itemId: "i~Avaritia~Infinity_Sword~0",
+      expectedRendererPrefix: "avaritia.",
+      requiresUsableCapture: true,
+    },
+    {
+      name: "Avaritia resource halo",
+      itemId: "i~Avaritia~Resource~8",
+      expectedRendererPrefix: "avaritia.",
+      requiresUsableCapture: true,
+    },
+    {
+      name: "Avaritia matter cluster",
+      itemId: "i~Avaritia~Matter_Cluster~0",
+      expectedRendererPrefix: "avaritia.",
+      requiresUsableCapture: true,
+    },
+  ];
+  const knownItemFailures = [];
+  const knownItemSamples = [];
+  for (const check of knownItemChecks) {
+    const shader = renderIndex.shaderByItemId?.[check.itemId] ?? null;
+    const rendererKind = shader?.rendererKind ?? renderIndex.itemRendererByItemId?.[check.itemId]?.rendererKind ?? null;
+    const capture = captureForItem(renderIndex, check.itemId);
+    const issues = [];
+    if (!shader) {
+      issues.push("missing shader/custom renderer fact");
+    }
+    if (check.expectedRendererPrefix && !normalize(rendererKind).startsWith(normalize(check.expectedRendererPrefix))) {
+      issues.push(`renderer kind '${rendererKind ?? "missing"}' does not start with '${check.expectedRendererPrefix}'`);
+    }
+    if (check.requiresUsableCapture && !captureIsUsable(capture)) {
+      issues.push("missing usable framebuffer capture frames/timeline");
+    }
+    knownItemSamples.push({
+      name: check.name,
+      itemId: check.itemId,
+      rendererKind,
+      shaderFamily: shader?.shaderFamily ?? null,
+      capture: captureSummary(capture),
+      status: issues.length === 0 ? "ok" : "blocked",
+      issues,
+    });
+    if (issues.length > 0) {
+      knownItemFailures.push(`${check.name}: ${issues.join("; ")}`);
+    }
+  }
+  if (knownItemFailures.length > 0) {
+    failures.push(`${knownItemFailures.length} known native render item check(s) failed`);
+    samples.knownItemFailures = sampleEntries(knownItemSamples.filter((entry) => entry.status !== "ok"));
+  } else {
+    samples.knownItemChecks = knownItemSamples;
   }
 
   const knownKeywords = ["avaritia", "singularity", "infinity", "thaum", "gregtech", "fluid"];
