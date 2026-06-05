@@ -953,6 +953,22 @@ function toRecipeItemStack(itemId: string, runtime: DistDataBrowserRuntime, coun
   };
 }
 
+function toIndexedMachineIcon(itemId: string, runtime: DistDataBrowserRuntime) {
+  const normalizedItemId = `${itemId ?? ""}`.trim();
+  if (!normalizedItemId) return null;
+  const item = runtime.itemById.get(normalizedItemId);
+  if (!item) return null;
+  return {
+    itemId: item.itemId,
+    modId: item.modId,
+    internalName: item.internalName,
+    localizedName: item.localizedName,
+    renderAssetRef: item.renderAssetRef ?? null,
+    renderHint: item.renderHint ?? null,
+    imageFileName: item.imageFileName ?? "",
+  };
+}
+
 function stableSlotDimension(value: unknown, fallback: number): number {
   const parsed = Math.floor(Number(value));
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -985,6 +1001,18 @@ function buildIndexedRecipeFromUiPayload(
   const metadata = payload.metadata && typeof payload.metadata === "object"
     ? payload.metadata as Record<string, unknown>
     : {};
+  const handler = payload.handler && typeof payload.handler === "object"
+    ? payload.handler as Record<string, unknown>
+    : {};
+  const payloadMachineInfo = payload.machineInfo && typeof payload.machineInfo === "object"
+    ? payload.machineInfo as Record<string, unknown>
+    : {};
+  const handlerMachineItemId =
+    `${handler.preferredMachineItemName ?? ""}`.trim()
+    || `${handler.catalystItemName ?? ""}`.trim()
+    || `${payloadMachineInfo.preferredMachineItemName ?? ""}`.trim()
+    || `${payloadMachineInfo.catalystItemName ?? ""}`.trim();
+  const handlerMachineIcon = toIndexedMachineIcon(handlerMachineItemId, runtime);
 
   const inputWidth = stableSlotDimension(layout?.itemInputWidth, Math.min(3, Math.max(1, Number(payload.slotCount?.input ?? 1) || 1)));
   const inputHeight = stableSlotDimension(
@@ -1049,6 +1077,7 @@ function buildIndexedRecipeFromUiPayload(
       shapeless: Boolean(metadata.shapeless),
       parsedVoltageTier: null,
       parsedVoltage: null,
+      ...(handlerMachineIcon ? { machineIcon: handlerMachineIcon } : {}),
     },
     metadata: {
       voltageTier: null,

@@ -25,7 +25,9 @@ interface Emits {
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 
-const SLOT = 32;
+const NATIVE_SLOT = 18;
+const VIEW_SLOT = 34;
+const NATIVE_SCALE = VIEW_SLOT / NATIVE_SLOT;
 
 const nativeLayout = computed(() => {
   const layout = props.uiPayload?.nativeLayout;
@@ -42,8 +44,19 @@ const title = computed(() => (
 ));
 
 const subtitle = computed(() => (
-  String((props.uiPayload?.handler as Record<string, unknown> | undefined)?.canonicalMachineFamily ?? props.uiPayload?.familyKey ?? 'native-nei')
+  String((props.uiPayload?.handler as Record<string, unknown> | undefined)?.displayName
+    ?? (props.uiPayload?.handler as Record<string, unknown> | undefined)?.canonicalMachineFamily
+    ?? props.uiPayload?.familyKey
+    ?? 'native-nei')
 ));
+
+const layoutWidth = computed(() => Math.max(166, Number(nativeLayout.value?.width ?? 166)));
+const layoutHeight = computed(() => Math.max(65, Number(nativeLayout.value?.height ?? 65)));
+
+const canvasStyle = computed(() => ({
+  width: `${layoutWidth.value * NATIVE_SCALE}px`,
+  height: `${layoutHeight.value * NATIVE_SCALE}px`,
+}));
 
 const inputItems = computed<RecipeItem[]>(() => {
   const out: RecipeItem[] = [];
@@ -67,16 +80,21 @@ function itemsForRole(role?: string): RecipeItem[] {
 
 function itemAt(slot: NativeSlotFact, index: number): RecipeItem | null {
   const items = itemsForRole(slot.role);
-  const start = Number(slot.startIndex ?? 0);
+  const rawStart = Math.max(0, Number(slot.startIndex ?? 0));
+  const start = rawStart >= items.length ? 0 : rawStart;
   return items[start + index] ?? null;
 }
 
 function slotStyle(slot: NativeSlotFact) {
   const columns = Math.max(1, Number(slot.columns ?? 1));
   const rows = Math.max(1, Number(slot.rows ?? 1));
+  const x = Math.max(0, Number(slot.x ?? 0));
+  const y = Math.max(0, Number(slot.y ?? 0));
   return {
-    gridTemplateColumns: `repeat(${columns}, ${SLOT}px)`,
-    gridTemplateRows: `repeat(${rows}, ${SLOT}px)`,
+    left: `${x * NATIVE_SCALE}px`,
+    top: `${y * NATIVE_SCALE}px`,
+    gridTemplateColumns: `repeat(${columns}, ${VIEW_SLOT}px)`,
+    gridTemplateRows: `repeat(${rows}, ${VIEW_SLOT}px)`,
   };
 }
 
@@ -96,43 +114,46 @@ function slotCount(slot: NativeSlotFact): number {
     </header>
 
     <div class="native-nei-body">
-      <div
-        v-for="(slot, groupIndex) in slots"
-        :key="`${slot.role}-${groupIndex}`"
-        class="slot-bank"
-        :class="[`role-${slot.role || 'item'}`]"
-        :style="slotStyle(slot)"
-      >
+      <div class="native-nei-canvas" :style="canvasStyle">
+        <div class="native-flow-line" aria-hidden="true" />
         <div
-          v-for="index in slotCount(slot)"
-          :key="index"
-          class="native-slot"
-          :class="{ output: String(slot.role || '').includes('output') }"
+          v-for="(slot, groupIndex) in slots"
+          :key="`${slot.role}-${groupIndex}`"
+          class="slot-bank"
+          :class="[`role-${slot.role || 'item'}`]"
+          :style="slotStyle(slot)"
         >
-          <RecipeItemTooltip
-            v-if="itemAt(slot, index - 1)"
-            :item-id="itemAt(slot, index - 1)!.itemId"
-            :count="itemAt(slot, index - 1)!.count"
-            @click="emit('item-click', itemAt(slot, index - 1)!.itemId)"
+          <div
+            v-for="index in slotCount(slot)"
+            :key="index"
+            class="native-slot"
+            :class="{ output: String(slot.role || '').includes('output') }"
           >
-            <AnimatedItemIcon
+            <RecipeItemTooltip
+              v-if="itemAt(slot, index - 1)"
               :item-id="itemAt(slot, index - 1)!.itemId"
-              :render-asset-ref="itemAt(slot, index - 1)!.renderAssetRef"
-              :image-file-name="itemAt(slot, index - 1)!.imageFileName"
-              :size="26"
-            />
-          </RecipeItemTooltip>
+              :count="itemAt(slot, index - 1)!.count"
+              @click="emit('item-click', itemAt(slot, index - 1)!.itemId)"
+            >
+              <AnimatedItemIcon
+                :item-id="itemAt(slot, index - 1)!.itemId"
+                :render-asset-ref="itemAt(slot, index - 1)!.renderAssetRef"
+                :image-file-name="itemAt(slot, index - 1)!.imageFileName"
+                :size="28"
+              />
+            </RecipeItemTooltip>
+          </div>
         </div>
+        <div v-if="slots.length === 0" class="empty-layout">NEI layout facts unavailable</div>
       </div>
-      <div v-if="slots.length === 0" class="empty-layout">NEI layout facts unavailable</div>
     </div>
   </section>
 </template>
 
 <style scoped>
 .native-nei-card {
-  width: min(760px, 100%);
-  min-height: 360px;
+  width: min(720px, 100%);
+  min-height: 330px;
   padding: 22px;
   border-radius: 22px;
   border: 1px solid rgba(142, 166, 190, 0.2);
@@ -169,27 +190,48 @@ code {
 }
 
 .native-nei-body {
-  min-height: 260px;
+  min-height: 230px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 28px;
-  flex-wrap: wrap;
+}
+
+.native-nei-canvas {
+  position: relative;
+  isolation: isolate;
+  border-radius: 18px;
+  border: 1px solid rgba(132, 158, 186, 0.18);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(119, 191, 210, 0.12), transparent 42%),
+    linear-gradient(135deg, rgba(8, 13, 19, 0.42), rgba(22, 27, 36, 0.52));
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.035),
+    inset 0 0 34px rgba(0, 0, 0, 0.18);
+}
+
+.native-flow-line {
+  position: absolute;
+  left: 14%;
+  right: 14%;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: linear-gradient(90deg, transparent, rgba(126, 210, 230, 0.22), rgba(247, 181, 92, 0.2), transparent);
+  box-shadow: 0 0 18px rgba(126, 210, 230, 0.1);
+  z-index: -1;
 }
 
 .slot-bank {
+  position: absolute;
   display: grid;
-  gap: 7px;
-  padding: 12px;
-  border-radius: 17px;
-  border: 1px solid rgba(124, 148, 172, 0.18);
-  background: rgba(6, 10, 15, 0.38);
-  box-shadow: inset 0 1px 16px rgba(126, 210, 230, 0.05);
+  gap: 2px;
+  padding: 0;
+  border-radius: 12px;
 }
 
 .native-slot {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   display: grid;
   place-items: center;
   border-radius: 9px;
