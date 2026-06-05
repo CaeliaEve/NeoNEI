@@ -1,4 +1,4 @@
-﻿import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { closeSync, copyFileSync, existsSync, mkdirSync, openSync, readFileSync, readdirSync, readSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -1324,7 +1324,7 @@ function parseBuildCraftFacadeDescriptor(item) {
 }
 
 function buildBlockAtlasLookup(browserItems, atlasByItemId) {
-  const lookup = new Map();
+  const lookup = { byBlock: new Map(), byName: new Map() };
   for (const item of browserItems ?? []) {
     const decoded = decodeItemQualifiedName(item);
     const atlas = atlasByItemId.get(item.itemId);
@@ -1334,8 +1334,10 @@ function buildBlockAtlasLookup(browserItems, atlasByItemId) {
       normalizeBlockLookupKey(item.modId, item.internalName ?? decoded.internalName, item.damage ?? decoded.damage),
     ].filter(Boolean);
     for (const key of keys) {
-      if (!lookup.has(key)) lookup.set(key, { item, atlas });
+      if (!lookup.byBlock.has(key)) lookup.byBlock.set(key, { item, atlas });
     }
+    const nameKey = normalizeLoose(item.localizedName);
+    if (nameKey && !lookup.byName.has(nameKey)) lookup.byName.set(nameKey, { item, atlas });
   }
   return lookup;
 }
@@ -1360,7 +1362,8 @@ function repairBuildCraftFacadeAtlas(byItemId, browserItems) {
     const facade = parseBuildCraftFacadeDescriptor(item);
     if (!facade) continue;
     const key = normalizeBlockLookupKey(facade.modId, facade.internalName, facade.damage);
-    const source = key ? blockLookup.get(key) : null;
+    const facadeLabel = normalizeLoose(`${item.localizedName ?? ""}`.replace(/^[^:?]{0,16}[:?]\s*/, ""));
+    const source = (key ? blockLookup.byBlock.get(key) : null) ?? (facadeLabel ? blockLookup.byName.get(facadeLabel) : null);
     if (!source?.atlas) continue;
     byItemId.set(itemId, cloneAtlasAliasForItem(source.atlas, item, source.item.itemId));
     repaired += 1;
