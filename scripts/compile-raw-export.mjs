@@ -2526,10 +2526,16 @@ function buildRecipeFragmentationReport(recipeCategories, recipes, handlerContex
     bucket.recipeCount += 1;
     byHandler.set(handlerKey, bucket);
   }
-  const suspiciousDisplaySplits = Array.from(byDisplay.values())
+  const displayBuckets = Array.from(byDisplay.values())
     .map((entry) => ({ ...entry, categoryIds: Array.from(new Set(entry.categoryIds)), sourceCategoryIds: Array.from(new Set(entry.sourceCategoryIds)) }))
-    .filter((entry) => entry.categoryIds.length > 1 || entry.sourceCategoryIds.length > 1)
+    .sort((left, right) => right.categoryIds.length - left.categoryIds.length || right.recipeCount - left.recipeCount);
+  const suspiciousDisplaySplits = displayBuckets
+    .filter((entry) => entry.categoryIds.length > 1)
     .sort((left, right) => right.categoryIds.length - left.categoryIds.length || right.recipeCount - left.recipeCount)
+    .slice(0, 200);
+  const mergedSourceCategories = displayBuckets
+    .filter((entry) => entry.categoryIds.length === 1 && entry.sourceCategoryIds.length > 1)
+    .sort((left, right) => right.sourceCategoryIds.length - left.sourceCategoryIds.length || right.recipeCount - left.recipeCount)
     .slice(0, 200);
   const suspiciousHandlerSplits = Array.from(byHandler.values())
     .map((entry) => ({ handlerKey: entry.handlerKey, displayNames: Array.from(entry.displayNames), categoryIds: Array.from(entry.categoryIds), recipeCount: entry.recipeCount }))
@@ -2540,8 +2546,13 @@ function buildRecipeFragmentationReport(recipeCategories, recipes, handlerContex
     schemaVersion: "neonei/recipe-fragmentation-report/v1",
     generatedAt: new Date().toISOString(),
     status: suspiciousDisplaySplits.length === 0 && suspiciousHandlerSplits.length === 0 ? "ok" : "warning",
-    counts: { categories: recipeCategories.size, suspiciousDisplaySplits: suspiciousDisplaySplits.length, suspiciousHandlerSplits: suspiciousHandlerSplits.length },
-    samples: { suspiciousDisplaySplits, suspiciousHandlerSplits },
+    counts: {
+      categories: recipeCategories.size,
+      suspiciousDisplaySplits: suspiciousDisplaySplits.length,
+      suspiciousHandlerSplits: suspiciousHandlerSplits.length,
+      mergedSourceCategories: mergedSourceCategories.length,
+    },
+    samples: { suspiciousDisplaySplits, suspiciousHandlerSplits, mergedSourceCategories },
   };
 }
 

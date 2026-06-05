@@ -86,20 +86,28 @@ function expandGroupEntries(defaultEntries, group, page = 1) {
   const startedAt = performance.now();
   const groupKey = `${group?.groupKey ?? ""}`.trim();
   const members = Array.isArray(group?.memberItemIds) ? group.memberItemIds.filter(Boolean) : [];
-  const expandedEntries = [];
+  const start = (Math.max(1, page) - 1) * pageSize;
+  const end = start + pageSize;
+  const pageEntries = [];
+  let total = 0;
+  let foundGroup = false;
+  const pushProjected = (entry) => {
+    if (total >= start && total < end) pageEntries.push(entry);
+    total += 1;
+  };
   for (const entry of defaultEntries) {
     if (entry.kind !== "group-collapsed" || entry.groupKey !== groupKey) {
-      expandedEntries.push(entry);
+      pushProjected(entry);
       continue;
     }
+    foundGroup = true;
     for (const memberItemId of members) {
-      expandedEntries.push({ key: memberItemId, kind: "item", itemId: memberItemId });
+      pushProjected({ key: memberItemId, kind: "item", itemId: memberItemId });
     }
   }
-  const start = (Math.max(1, page) - 1) * pageSize;
   return {
-    data: expandedEntries.slice(start, start + pageSize),
-    total: expandedEntries.length,
+    data: pageEntries,
+    total: foundGroup ? total : defaultEntries.length,
     elapsedMs: performance.now() - startedAt,
   };
 }
@@ -142,24 +150,39 @@ function filterExpandedGroupEntries(defaultEntries, group, searchByItemId, searc
   const groupKey = `${group?.groupKey ?? ""}`.trim();
   const members = Array.isArray(group?.memberItemIds) ? group.memberItemIds.filter(Boolean) : [];
   const needles = normalize(query).split(/\s+/).filter(Boolean);
-  const haystackCache = new Map();
-  const getMemberText = (itemId) => {
-    const cached = haystackCache.get(itemId);
-    if (cached !== undefined) return cached;
-    const text = groupMemberSearchText(itemId, searchByItemId, searchTextByItemId);
-    haystackCache.set(itemId, text);
-    return text;
-  };
-  const filteredMembers = needles.length === 0
-    ? members
-    : members.filter((itemId) => {
-      const text = getMemberText(itemId);
-      return needles.every((needle) => text.includes(needle));
-    });
   const start = (Math.max(1, page) - 1) * pageSize;
   const end = start + pageSize;
+  const filteredPageMembers = [];
+  let filteredMembersCount = 0;
+  if (needles.length === 0) {
+    filteredMembersCount = members.length;
+    filteredPageMembers.push(...members.slice(0, Math.max(end, pageSize)));
+  } else if (needles.length === 1) {
+    const needle = needles[0];
+    for (const itemId of members) {
+      const text = groupMemberSearchText(itemId, searchByItemId, searchTextByItemId);
+      if (!text.includes(needle)) continue;
+      if (filteredMembersCount < end) filteredPageMembers.push(itemId);
+      filteredMembersCount += 1;
+    }
+  } else {
+    for (const itemId of members) {
+      const text = groupMemberSearchText(itemId, searchByItemId, searchTextByItemId);
+      let matched = true;
+      for (const needle of needles) {
+        if (!text.includes(needle)) {
+          matched = false;
+          break;
+        }
+      }
+      if (!matched) continue;
+      if (filteredMembersCount < end) filteredPageMembers.push(itemId);
+      filteredMembersCount += 1;
+    }
+  }
   const pageEntries = [];
   let total = 0;
+  let foundGroup = false;
   const pushProjected = (entry) => {
     if (total >= start && total < end) {
       pageEntries.push(entry);
@@ -171,15 +194,20 @@ function filterExpandedGroupEntries(defaultEntries, group, searchByItemId, searc
       pushProjected(entry);
       continue;
     }
-    for (const memberItemId of filteredMembers) {
+    foundGroup = true;
+    let pushedMemberCount = 0;
+    for (const memberItemId of filteredPageMembers) {
+      if (total >= end) break;
       pushProjected({ key: memberItemId, kind: "item", itemId: memberItemId });
+      pushedMemberCount += 1;
     }
+    total += Math.max(0, filteredMembersCount - pushedMemberCount);
   }
   return {
     query,
-    filteredMembers: filteredMembers.length,
+    filteredMembers: filteredMembersCount,
     data: pageEntries,
-    total,
+    total: foundGroup ? total : defaultEntries.length,
     elapsedMs: performance.now() - startedAt,
   };
 }
@@ -463,4 +491,3 @@ writeFileSync(reportPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
 console.log(JSON.stringify(report, null, 2));
 console.log(`Wrote ${reportPath}`);
 if (gate && failures.length > 0) process.exit(1);
-
