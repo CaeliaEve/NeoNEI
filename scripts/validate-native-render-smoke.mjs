@@ -36,6 +36,27 @@ function normalize(value) {
   return `${value ?? ""}`.trim().toLowerCase();
 }
 
+function sampleEntries(entries, limit = 20) {
+  return entries.slice(0, limit).map((entry) => JSON.parse(JSON.stringify(entry)));
+}
+
+function captureSummary(capture) {
+  if (!capture) return null;
+  return {
+    assetId: capture.assetId ?? null,
+    variantKey: capture.variantKey ?? null,
+    rendererFamily: capture.rendererFamily ?? null,
+    renderMode: capture.renderMode ?? null,
+    animationMode: capture.animationMode ?? null,
+    captureMethod: capture.captureMethod ?? null,
+    primaryArtifact: capture.primaryArtifact ?? null,
+    framePattern: capture.framePattern ?? null,
+    frameCount: stableNumber(capture.frameCount, 0),
+    frames: Array.isArray(capture.frames) ? capture.frames.length : 0,
+    timeline: Array.isArray(capture.timeline) ? capture.timeline.length : 0,
+  };
+}
+
 function captureForItem(renderIndex, itemId) {
   const assetId = `nesqlpp:item/${itemId}`;
   return renderIndex.capturesByAssetId?.[assetId] ?? renderIndex.capturesByVariantKey?.[itemId] ?? null;
@@ -48,6 +69,7 @@ function hasUsableTimeline(entry) {
 
 const failures = [];
 const warnings = [];
+const samples = {};
 const manifest = readJson("manifest.json");
 const nativeRenderPath = manifest.files?.nativeRenderIndex;
 if (!nativeRenderPath) {
@@ -89,13 +111,13 @@ if (renderIndex) {
   const shaderItems = Object.entries(renderIndex.shaderByItemId ?? {});
   const captureRequired = shaderItems.filter(([, entry]) => entry?.captureRequired);
   const missingCaptures = captureRequired
-    .map(([itemId]) => ({ itemId, capture: captureForItem(renderIndex, itemId) }))
+    .map(([itemId, shader]) => ({ itemId, shader, capture: captureForItem(renderIndex, itemId) }))
     .filter((entry) => !entry.capture);
   const capturesWithoutFrames = captureRequired
-    .map(([itemId]) => ({ itemId, capture: captureForItem(renderIndex, itemId) }))
+    .map(([itemId, shader]) => ({ itemId, shader, capture: captureForItem(renderIndex, itemId) }))
     .filter((entry) => entry.capture && (!Array.isArray(entry.capture.frames) || entry.capture.frames.length <= 0));
   const capturesWithoutTimeline = captureRequired
-    .map(([itemId]) => ({ itemId, capture: captureForItem(renderIndex, itemId) }))
+    .map(([itemId, shader]) => ({ itemId, shader, capture: captureForItem(renderIndex, itemId) }))
     .filter((entry) => entry.capture && stableNumber(entry.capture.frameCount, 0) > 1 && (!Array.isArray(entry.capture.timeline) || entry.capture.timeline.length <= 0));
 
   if (captureRequired.length <= 0) {
@@ -109,6 +131,32 @@ if (renderIndex) {
   }
   if (capturesWithoutTimeline.length > 0) {
     failures.push(`${capturesWithoutTimeline.length} multi-frame shader/special capture(s) have no timeline`);
+  }
+  if (missingCaptures.length > 0) {
+    samples.missingCaptures = sampleEntries(missingCaptures.map(({ itemId, shader }) => ({
+      itemId,
+      expectedAssetId: `nesqlpp:item/${itemId}`,
+      rendererKind: shader?.rendererKind ?? null,
+      rendererClass: shader?.rendererClass ?? null,
+      shaderFamily: shader?.shaderFamily ?? null,
+      preferredExport: shader?.preferredExport ?? null,
+    })));
+  }
+  if (capturesWithoutFrames.length > 0) {
+    samples.capturesWithoutFrames = sampleEntries(capturesWithoutFrames.map(({ itemId, shader, capture }) => ({
+      itemId,
+      rendererKind: shader?.rendererKind ?? null,
+      shaderFamily: shader?.shaderFamily ?? null,
+      capture: captureSummary(capture),
+    })));
+  }
+  if (capturesWithoutTimeline.length > 0) {
+    samples.capturesWithoutTimeline = sampleEntries(capturesWithoutTimeline.map(({ itemId, shader, capture }) => ({
+      itemId,
+      rendererKind: shader?.rendererKind ?? null,
+      shaderFamily: shader?.shaderFamily ?? null,
+      capture: captureSummary(capture),
+    })));
   }
 
   const knownKeywords = ["avaritia", "singularity", "infinity", "thaum", "gregtech", "fluid"];
@@ -143,6 +191,7 @@ const report = {
   totals: totals ?? null,
   failures,
   warnings,
+  samples,
 };
 
 mkdirSync(reportDir, { recursive: true });

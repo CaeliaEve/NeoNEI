@@ -1075,6 +1075,11 @@ function buildNativeRenderIndex({ backend, textureSprites, itemRenderers, shader
     if (compact.variantKey) capturesByVariantKey[compact.variantKey] = compact;
   }
 
+  const captureForItemId = (itemId) => {
+    if (!itemId) return null;
+    return capturesByAssetId[`nesqlpp:item/${itemId}`] ?? capturesByVariantKey[itemId] ?? null;
+  };
+
   const spriteByIconName = {};
   for (const row of textureSprites ?? []) {
     const key = row?.iconName ?? row?.spriteKey;
@@ -1101,14 +1106,28 @@ function buildNativeRenderIndex({ backend, textureSprites, itemRenderers, shader
     };
   }
 
-  const shaderItemsNeedingCapture = (shaderItems ?? []).filter((row) => row?.captureRequired).length;
+  const shaderItemsRequiringCapture = (shaderItems ?? []).filter((row) => row?.captureRequired);
+  const missingRequiredCaptures = shaderItemsRequiringCapture.filter((row) => !captureForItemId(row.itemId));
+  const requiredCapturesWithoutFrames = shaderItemsRequiringCapture
+    .map((row) => ({ row, capture: captureForItemId(row.itemId) }))
+    .filter(({ capture }) => capture && (!Array.isArray(capture.frames) || capture.frames.length <= 0));
+  const requiredCapturesWithoutTimeline = shaderItemsRequiringCapture
+    .map((row) => ({ row, capture: captureForItemId(row.itemId) }))
+    .filter(({ capture }) => capture && stableNumber(capture.frameCount, 0) > 1 && (!Array.isArray(capture.timeline) || capture.timeline.length <= 0));
+  const shaderItemsNeedingCapture = shaderItemsRequiringCapture.length;
+  const captureGateReady = missingRequiredCaptures.length === 0
+    && requiredCapturesWithoutFrames.length === 0
+    && requiredCapturesWithoutTimeline.length === 0;
   const validation = {
-    status: shaderItemsNeedingCapture === 0 || (framebufferCaptures ?? []).length > 0 ? "ready" : "blocked",
+    status: shaderItemsNeedingCapture === 0 || captureGateReady ? "ready" : "blocked",
     shaderItemsNeedingCapture,
     framebufferCaptures: framebufferCaptures?.length ?? 0,
+    missingRequiredCaptures: missingRequiredCaptures.length,
+    requiredCapturesWithoutFrames: requiredCapturesWithoutFrames.length,
+    requiredCapturesWithoutTimeline: requiredCapturesWithoutTimeline.length,
     summary: shaderItemsNeedingCapture === 0
       ? "No shader/custom renderer capture is required by the export."
-      : `${shaderItemsNeedingCapture} shader/custom renderer item(s) require capture; ${(framebufferCaptures ?? []).length} capture asset(s) compiled.`,
+      : `${shaderItemsNeedingCapture} shader/custom renderer item(s) require capture; ${(framebufferCaptures ?? []).length} capture asset(s) compiled; missing=${missingRequiredCaptures.length}; withoutFrames=${requiredCapturesWithoutFrames.length}; withoutTimeline=${requiredCapturesWithoutTimeline.length}.`,
   };
 
   return {
