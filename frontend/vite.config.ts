@@ -11,7 +11,7 @@ export default defineConfig(({ mode }) => {
     return value.replace(/\/+$/, '')
   }
   const backendBaseUrl = normalizeBaseUrl(
-    env.VITE_BACKEND_BASE_URL || (mode === 'development' ? devProxyTarget : '/api')
+    env.VITE_BACKEND_BASE_URL || (mode === 'development' ? devProxyTarget : '')
   )
   const apiBaseUrl = normalizeBaseUrl(env.VITE_API_BASE_URL || '/api')
 
@@ -42,6 +42,22 @@ export default defineConfig(({ mode }) => {
           rewrite: (path) => path.replace(/^\/api\/images/, '/images'),
         },
         '/api': {
+          target: devProxyTarget,
+          changeOrigin: true,
+        },
+        '^/runtime(?:/|$)': {
+          target: devProxyTarget,
+          changeOrigin: true,
+        },
+        '/publish': {
+          target: devProxyTarget,
+          changeOrigin: true,
+        },
+        '/dist-data': {
+          target: devProxyTarget,
+          changeOrigin: true,
+        },
+        '/contracts': {
           target: devProxyTarget,
           changeOrigin: true,
         },

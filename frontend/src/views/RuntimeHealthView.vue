@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
 import { api, type RuntimeHealthSummary } from '../services/api';
 
@@ -7,35 +7,34 @@ const loading = ref(false);
 const error = ref('');
 
 const numberFormat = new Intl.NumberFormat('zh-CN');
-const byteFormat = new Intl.NumberFormat('zh-CN', {
-  maximumFractionDigits: 2,
-});
+const byteFormat = new Intl.NumberFormat('zh-CN', { maximumFractionDigits: 2 });
 
 const statusLabel = computed(() => {
-  const status = health.value?.status ?? 'degraded';
+  const status = health.value?.status ?? (loading.value ? 'loading' : 'degraded');
   if (status === 'ok') return '健康';
   if (status === 'warning') return '警告';
   if (status === 'blocked') return '阻塞';
+  if (status === 'loading') return '读取中';
   return '降级';
 });
 
-const statusTone = computed(() => `tone-${health.value?.status ?? 'degraded'}`);
+const statusTone = computed(() => `tone-${health.value?.status ?? (loading.value ? 'loading' : 'degraded')}`);
 
-const keyCounts = computed(() => {
+const keyCounts = computed<Array<[string, number | null | undefined]>>(() => {
   const counts = health.value?.counts ?? {};
   return [
     ['物品', counts.items],
     ['配方', counts.recipes],
-    ['浏览项', counts.browserItems],
-    ['分组', counts.browserGroups],
+    ['浏览条目', counts.browserItems],
+    ['折叠分组', counts.browserGroups],
     ['纹理', counts.textures],
-    ['图集项', counts.browserAtlasItems],
-    ['动态图集项', counts.animatedBrowserAtlasItems],
-    ['配方处理器', counts.recipeHandlers],
-  ] as Array<[string, number | null | undefined]>;
+    ['Atlas 条目', counts.browserAtlasItems],
+    ['动画 Atlas', counts.animatedBrowserAtlasItems],
+    ['处理器', counts.recipeHandlers],
+  ];
 });
 
-const validationRows = computed(() => {
+const validationRows = computed<Array<[string, string | number | null | undefined]>>(() => {
   const validation = health.value?.validation;
   const coverage = health.value?.coverage ?? {};
   return [
@@ -46,7 +45,7 @@ const validationRows = computed(() => {
     ['Atlas 覆盖率', formatRatio(coverage.atlasCoverageRatio)],
     ['缺失 Atlas', coverage.semanticAtlasMissing],
     ['预期动画', coverage.expectedAnimatedItems],
-    ['仍为静态动画', coverage.staticWhenExpectedAnimated],
+    ['动画缺口', coverage.staticWhenExpectedAnimated],
   ];
 });
 
@@ -78,7 +77,7 @@ async function loadHealth(): Promise<void> {
     health.value = await api.getRuntimeHealth();
   } catch (err) {
     console.error('Failed to load runtime health:', err);
-    error.value = '读取运行时健康信息失败';
+    error.value = '读取运行时健康信息失败，请确认后端已启动并且 /runtime/health 可访问。';
   } finally {
     loading.value = false;
   }
@@ -101,7 +100,7 @@ onMounted(() => {
       </div>
       <div class="status-orb" :class="statusTone">
         <span>{{ statusLabel }}</span>
-        <small>{{ health?.status ?? 'loading' }}</small>
+        <small>{{ health?.status ?? (loading ? 'loading' : 'empty') }}</small>
       </div>
     </section>
 
@@ -114,14 +113,24 @@ onMounted(() => {
 
     <p v-if="error" class="error">{{ error }}</p>
 
+    <section v-if="loading && !health" class="panel empty-panel">
+      <h2>正在读取运行时数据…</h2>
+      <p>正在连接后端健康接口，请稍候。</p>
+    </section>
+
+    <section v-else-if="!health && !error" class="panel empty-panel">
+      <h2>暂无健康数据</h2>
+      <p>点击“刷新状态”重新读取。</p>
+    </section>
+
     <section v-if="health" class="health-grid">
       <article class="panel wide">
         <h2>数据身份</h2>
         <dl class="identity-list">
-          <div><dt>来源</dt><dd>{{ health.distData.source ?? '—' }}</dd></div>
-          <div><dt>导出名</dt><dd>{{ health.distData.sourceRepository ?? '—' }}</dd></div>
-          <div><dt>生成时间</dt><dd>{{ health.distData.generatedAt ?? '—' }}</dd></div>
-          <div><dt>导出配置</dt><dd>{{ health.distData.runtime?.exporterSelection ?? '—' }}</dd></div>
+          <div><dt>来源</dt><dd>{{ health.distData?.source ?? '—' }}</dd></div>
+          <div><dt>导出名称</dt><dd>{{ health.distData?.sourceRepository ?? '—' }}</dd></div>
+          <div><dt>生成时间</dt><dd>{{ health.distData?.generatedAt ?? health.generatedAt ?? '—' }}</dd></div>
+          <div><dt>导出配置</dt><dd>{{ health.distData?.runtime?.exporterSelection ?? '—' }}</dd></div>
         </dl>
       </article>
 
@@ -148,12 +157,12 @@ onMounted(() => {
       <article class="panel">
         <h2>文件包</h2>
         <div class="metric-grid compact">
-          <div class="metric"><span>声明文件</span><strong>{{ formatNumber(health.files.declared) }}</strong></div>
-          <div class="metric"><span>存在文件</span><strong>{{ formatNumber(health.files.present) }}</strong></div>
-          <div class="metric"><span>缺失文件</span><strong>{{ formatNumber(health.files.missing.length) }}</strong></div>
-          <div class="metric"><span>总大小</span><strong>{{ formatBytes(health.files.totalBytes) }}</strong></div>
+          <div class="metric"><span>声明文件</span><strong>{{ formatNumber(health.files?.declared) }}</strong></div>
+          <div class="metric"><span>存在文件</span><strong>{{ formatNumber(health.files?.present) }}</strong></div>
+          <div class="metric"><span>缺失文件</span><strong>{{ formatNumber(health.files?.missing?.length) }}</strong></div>
+          <div class="metric"><span>总大小</span><strong>{{ formatBytes(health.files?.totalBytes) }}</strong></div>
         </div>
-        <ul v-if="health.files.missing.length" class="issue-list">
+        <ul v-if="health.files?.missing?.length" class="issue-list">
           <li v-for="entry in health.files.missing.slice(0, 8)" :key="entry.key">
             {{ entry.key }} · {{ entry.path }}
           </li>
@@ -163,9 +172,9 @@ onMounted(() => {
       <article class="panel">
         <h2>阻塞项</h2>
         <ul class="issue-list">
-          <li v-for="gate in health.validation.blockedGates" :key="gate">{{ gate }}</li>
-          <li v-if="health.validation.compilerValidationBlocked">compiler validation blocked</li>
-          <li v-if="!health.validation.blockedGates.length && !health.validation.compilerValidationBlocked">暂无阻塞</li>
+          <li v-for="gate in health.validation?.blockedGates ?? []" :key="gate">{{ gate }}</li>
+          <li v-if="health.validation?.compilerValidationBlocked">compiler validation blocked</li>
+          <li v-if="!(health.validation?.blockedGates ?? []).length && !health.validation?.compilerValidationBlocked">暂无阻塞</li>
         </ul>
       </article>
     </section>
@@ -177,6 +186,10 @@ onMounted(() => {
   min-height: 100vh;
   padding: 34px clamp(18px, 4vw, 60px);
   color: rgba(245, 248, 255, 0.94);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(78, 189, 255, 0.13), transparent 34%),
+    radial-gradient(circle at 82% 8%, rgba(180, 117, 255, 0.11), transparent 32%),
+    linear-gradient(135deg, #05070d 0%, #0b1020 48%, #060811 100%);
 }
 
 .health-hero,
@@ -208,9 +221,7 @@ onMounted(() => {
 
 h1,
 h2,
-.subtitle {
-  margin: 0;
-}
+.subtitle { margin: 0; }
 
 h1 {
   font-size: clamp(30px, 4vw, 52px);
@@ -230,6 +241,7 @@ h2 {
 .status-orb {
   width: 126px;
   height: 126px;
+  flex: 0 0 auto;
   border-radius: 50%;
   display: grid;
   place-items: center;
@@ -239,11 +251,7 @@ h2 {
   box-shadow: 0 0 38px rgba(83, 185, 255, 0.2), inset 0 0 26px rgba(255, 255, 255, 0.08);
 }
 
-.status-orb span {
-  font-weight: 800;
-  font-size: 20px;
-}
-
+.status-orb span { font-weight: 800; font-size: 20px; }
 .status-orb small {
   display: block;
   margin-top: -28px;
@@ -251,70 +259,79 @@ h2 {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
-.tone-warning {
-  background: radial-gradient(circle at 50% 42%, rgba(255, 195, 92, 0.34), rgba(18, 18, 27, 0.9) 62%);
-}
-
-.tone-blocked {
-  background: radial-gradient(circle at 50% 42%, rgba(255, 94, 139, 0.34), rgba(18, 18, 27, 0.9) 62%);
-}
+.tone-warning { background: radial-gradient(circle at 50% 42%, rgba(255, 195, 92, 0.34), rgba(18, 18, 27, 0.9) 62%); }
+.tone-blocked { background: radial-gradient(circle at 50% 42%, rgba(255, 94, 139, 0.34), rgba(18, 18, 27, 0.9) 62%); }
+.tone-loading,
+.tone-degraded { background: radial-gradient(circle at 50% 42%, rgba(148, 163, 184, 0.28), rgba(18, 18, 27, 0.9) 62%); }
 
 .toolbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 14px;
   margin: 18px 0;
 }
 
 .back-link,
-button {
-  border: 1px solid rgba(143, 184, 233, 0.22);
-  border-radius: 999px;
-  color: rgba(235, 244, 255, 0.86);
-  background: rgba(25, 32, 48, 0.72);
-  padding: 10px 16px;
+.toolbar button {
+  border: 1px solid rgba(151, 191, 255, 0.22);
+  border-radius: 14px;
+  padding: 10px 14px;
+  color: rgba(235, 244, 255, 0.9);
+  background: rgba(13, 19, 31, 0.74);
   text-decoration: none;
-  cursor: pointer;
+}
+
+.toolbar button:not(:disabled):hover,
+.back-link:hover { border-color: rgba(116, 225, 255, 0.5); }
+.toolbar button:disabled { opacity: 0.58; cursor: wait; }
+
+.error {
+  border: 1px solid rgba(255, 118, 118, 0.35);
+  border-radius: 16px;
+  padding: 12px 14px;
+  color: #ffd6dc;
+  background: rgba(100, 20, 38, 0.24);
 }
 
 .health-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
   gap: 18px;
 }
 
-.panel {
-  padding: 22px;
-}
-
-.panel.wide {
-  grid-column: 1 / -1;
-}
+.panel { padding: 22px; }
+.panel.wide { grid-column: 1 / -1; }
+.empty-panel { margin-top: 18px; }
+.empty-panel p { color: rgba(206, 216, 237, 0.68); }
 
 .identity-list,
 .validation-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin: 16px 0 0;
 }
 
 .identity-list div,
-.validation-list div {
-  display: grid;
-  grid-template-columns: 120px 1fr;
-  gap: 16px;
-  align-items: baseline;
+.validation-list div,
+.metric {
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 16px;
+  padding: 12px;
+  background: rgba(7, 11, 18, 0.4);
 }
 
 dt,
 .metric span {
-  color: rgba(182, 197, 224, 0.62);
+  color: rgba(172, 187, 214, 0.66);
   font-size: 12px;
 }
 
 dd {
-  margin: 0;
-  overflow-wrap: anywhere;
+  margin: 6px 0 0;
+  color: rgba(245, 248, 255, 0.92);
+  word-break: break-all;
 }
 
 .metric-grid {
@@ -324,38 +341,26 @@ dd {
   margin-top: 16px;
 }
 
-.metric {
-  border-radius: 16px;
-  padding: 14px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
+.metric-grid.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .metric strong {
   display: block;
-  margin-top: 6px;
+  margin-top: 7px;
   font-size: 22px;
+  color: rgba(150, 224, 255, 0.94);
 }
 
 .issue-list {
   margin: 14px 0 0;
   padding-left: 18px;
-  color: rgba(226, 233, 248, 0.74);
+  color: rgba(219, 229, 248, 0.78);
 }
 
-.error {
-  color: #ffb7c8;
-}
-
-@media (max-width: 860px) {
+@media (max-width: 900px) {
   .health-hero,
-  .toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .health-grid {
-    grid-template-columns: 1fr;
-  }
+  .toolbar { flex-direction: column; align-items: stretch; }
+  .health-grid,
+  .identity-list,
+  .validation-list,
+  .metric-grid { grid-template-columns: 1fr; }
 }
 </style>
