@@ -1,12 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { getItemImageUrlFromEntity, getPreferredStaticImageUrlFromEntity, type Item } from "../services/api";
+import { getPreferredStaticImageUrlFromEntity, type Item } from "../services/api";
 import type { PageAtlasSpriteEntry } from "../services/pageAtlas";
 import {
   getSharedAnimationNowMs,
   prepareItemAnimationFrames,
   type PreparedAnimationFrame,
-  probeDirectGifPlayback,
   resolvePreparedAnimationFrameIndex,
 } from "../services/animationBudget";
 
@@ -34,7 +33,6 @@ const emit = defineEmits<{
 
 const hasAnimation = ref(false);
 const showAnimation = ref(false);
-const preferDirectAnimatedImage = ref(false);
 const isStaticImageLoaded = ref(false);
 const staticImageError = ref(false);
 const isAnimationLoaded = ref(false);
@@ -65,18 +63,10 @@ const getImageSrc = (item: Item): string => {
   return getPreferredStaticImageUrlFromEntity(item);
 };
 
-const getAnimationBaseUrl = (item: Item): string => {
-  const preferred = typeof item.preferredImageUrl === "string" ? item.preferredImageUrl : "";
-  if (preferred && preferred.includes("/images/")) {
-    return preferred;
-  }
-  return getItemImageUrlFromEntity(item);
-};
-
 const imageSrc = computed(() => getImageSrc(props.item));
 const shouldRenderFallbackImage = computed(() => {
   if (showAnimation.value) return false;
-  if (props.atlasSprite && !preferDirectAnimatedImage.value) return false;
+  if (props.atlasSprite) return false;
   const src = imageSrc.value || "";
   return !src.includes('/images/item/OpenBlocks/devnull~0');
 });
@@ -139,7 +129,6 @@ const resetAnimationState = () => {
   stopAnimation();
   hasAnimation.value = false;
   showAnimation.value = false;
-  preferDirectAnimatedImage.value = false;
   isAnimationLoaded.value = false;
   animationFrames.value = [];
 };
@@ -160,17 +149,6 @@ const loadAnimationFrames = async (token: number): Promise<void> => {
     showAnimation.value = true;
     hasAnimation.value = true;
     startAnimation();
-    return;
-  }
-
-  const animationBaseUrl = getAnimationBaseUrl(props.item);
-  const supportsDirectGifPlayback = /\.gif(?:$|\?)/i.test(animationBaseUrl)
-    ? await probeDirectGifPlayback(animationBaseUrl)
-    : false;
-  if (token !== animationProbeToken) return;
-  if (supportsDirectGifPlayback) {
-    preferDirectAnimatedImage.value = true;
-    hasAnimation.value = true;
     return;
   }
 
@@ -339,7 +317,7 @@ onUnmounted(() => {
     />
 
     <div
-      v-if="!showAnimation && atlasSprite && !preferDirectAnimatedImage"
+      v-if="!showAnimation && atlasSprite"
       :style="atlasSpriteStyle || undefined"
       class="atlas-sprite"
     />

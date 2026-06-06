@@ -66,8 +66,6 @@ const animatedAtlasInFlight = new Map<string, Promise<AnimatedAtlasAssetEntry | 
 const primedRenderHintCache = new Map<string, NonNullable<Item['renderHint']> | null>();
 const renderContractCache = new Map<string, Awaited<ReturnType<typeof api.getRenderContractAsset>> | null>();
 const renderContractInFlight = new Map<string, Promise<Awaited<ReturnType<typeof api.getRenderContractAsset>> | null>>();
-const directGifProbeCache = new Map<string, boolean>();
-const directGifProbeInFlight = new Map<string, Promise<boolean>>();
 const imageAssetCache = new Map<string, HTMLImageElement>();
 const imageAssetInFlight = new Map<string, Promise<HTMLImageElement>>();
 const warmImageAssetHistory = new Map<string, true>();
@@ -851,51 +849,6 @@ export const probeAnimationSupport = async (baseUrl: string, renderAssetRef?: st
   });
 
   animationProbeInFlight.set(baseUrl, request);
-  return request;
-};
-
-export const probeDirectGifPlayback = async (baseUrl: string): Promise<boolean> => {
-  if (directGifProbeCache.has(baseUrl)) {
-    return directGifProbeCache.get(baseUrl) ?? false;
-  }
-
-  const inFlight = directGifProbeInFlight.get(baseUrl);
-  if (inFlight) {
-    return inFlight;
-  }
-
-  const request = runAnimationWork(async () => {
-    const detectFromResponse = (response: Response | null): boolean => {
-      if (!response?.ok) return false;
-      const contentType = response.headers.get('content-type') || '';
-      return contentType.toLowerCase().includes('image/gif');
-    };
-
-    try {
-      let response: Response | null = null;
-      try {
-        response = await fetch(baseUrl, { method: 'HEAD' });
-      } catch {
-        response = null;
-      }
-
-      let isGif = detectFromResponse(response);
-      if (!isGif && (!response || !response.ok || !response.headers.get('content-type'))) {
-        response = await fetch(baseUrl, { method: 'GET' });
-        isGif = detectFromResponse(response);
-      }
-
-      directGifProbeCache.set(baseUrl, isGif);
-      return isGif;
-    } catch {
-      directGifProbeCache.set(baseUrl, false);
-      return false;
-    } finally {
-      directGifProbeInFlight.delete(baseUrl);
-    }
-  });
-
-  directGifProbeInFlight.set(baseUrl, request);
   return request;
 };
 
