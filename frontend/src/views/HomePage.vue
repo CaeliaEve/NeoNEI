@@ -60,6 +60,10 @@ const loadSavedItemSize = () => {
   return saved ? parseInt(saved, 10) : 50; // 默认50px
 };
 const itemSize = ref(loadSavedItemSize());
+const showHiddenDebugItems = ref(localStorage.getItem("neonei:show-hidden-debug-items") === "true");
+watch(showHiddenDebugItems, (enabled) => {
+  localStorage.setItem("neonei:show-hidden-debug-items", enabled ? "true" : "false");
+});
 
 const itemGridViewportRef = ref<HTMLElement | null>(null);
 
@@ -93,6 +97,7 @@ const {
   prefetchItemsPage,
 } = useItemBrowser(itemSize, {
   measureVisiblePageCapacity: () => measureGridCapacityRaw(),
+  includeHiddenItems: showHiddenDebugItems,
 });
 let itemGridResizeObserver: ResizeObserver | null = null;
 let neighborPrefetchTimer: number | null = null;

@@ -123,37 +123,40 @@ export const api = {
     search?: string;
     modId?: string;
     expandedGroups?: string[];
+    includeHidden?: boolean;
   }): Promise<PaginatedResponse<BrowserGridEntry>> {
     return browserCatalogClient.getBrowserItems(params);
   },
 
   async getBrowserDefaultCatalog(params?: {
     modId?: string;
+    includeHidden?: boolean;
   }): Promise<BrowserDefaultCatalogResponse> {
     return browserCatalogClient.getBrowserDefaultCatalog(params);
   },
 
-  peekBrowserDefaultCatalog(modId?: string): BrowserDefaultCatalogResponse | null {
-    return browserCatalogClient.peekBrowserDefaultCatalog(modId);
+  peekBrowserDefaultCatalog(modId?: string, includeHidden = false): BrowserDefaultCatalogResponse | null {
+    return browserCatalogClient.peekBrowserDefaultCatalog(modId, includeHidden);
   },
 
   async getBrowserSearchCatalog(params: {
     search: string;
     modId?: string;
+    includeHidden?: boolean;
   }): Promise<BrowserSearchCatalogResponse> {
     return browserCatalogClient.getBrowserSearchCatalog(params);
   },
 
-  peekBrowserSearchCatalog(search: string, modId?: string): BrowserSearchCatalogResponse | null {
-    return browserCatalogClient.peekBrowserSearchCatalog(search, modId);
+  peekBrowserSearchCatalog(search: string, modId?: string, includeHidden = false): BrowserSearchCatalogResponse | null {
+    return browserCatalogClient.peekBrowserSearchCatalog(search, modId, includeHidden);
   },
 
-  async getBrowserGroupItems(groupKey: string, modId?: string): Promise<BrowserGroupItemsResponse> {
-    return browserCatalogClient.getBrowserGroupItems(groupKey, modId);
+  async getBrowserGroupItems(groupKey: string, modId?: string, includeHidden = false): Promise<BrowserGroupItemsResponse> {
+    return browserCatalogClient.getBrowserGroupItems(groupKey, modId, includeHidden);
   },
 
-  peekBrowserGroupItems(groupKey: string, modId?: string): BrowserGroupItemsResponse | null {
-    return browserCatalogClient.peekBrowserGroupItems(groupKey, modId);
+  peekBrowserGroupItems(groupKey: string, modId?: string, includeHidden = false): BrowserGroupItemsResponse | null {
+    return browserCatalogClient.peekBrowserGroupItems(groupKey, modId, includeHidden);
   },
 
   async getBrowserPagePack(params: {
@@ -162,6 +165,7 @@ export const api = {
     search?: string;
     modId?: string;
     expandedGroups?: string[];
+    includeHidden?: boolean;
     slotSize?: number;
   }): Promise<BrowserPagePackResponse> {
     return browserCatalogClient.getBrowserPagePack(params);

@@ -64,6 +64,7 @@ type BrowserPageRequestParams = {
   expandedGroups: string[];
   expandedGroupFacetFilters: BrowserFacetFilters;
   slotSize: number;
+  includeHidden?: boolean;
 };
 
 type BrowserFacetFilters = Record<string, string>;
@@ -297,6 +298,7 @@ export function useItemBrowser(
   itemSize: Ref<number>,
   options?: {
     measureVisiblePageCapacity?: () => number | null;
+    includeHiddenItems?: Ref<boolean>;
   },
 ) {
   const pageCache = sharedPageCache;
@@ -337,6 +339,7 @@ export function useItemBrowser(
     expandedGroups?: string[];
     expandedGroupFacetFilters?: BrowserFacetFilters;
     slotSize: number;
+    includeHidden?: boolean;
   }) =>
     JSON.stringify({
       page: params.page,
@@ -346,6 +349,7 @@ export function useItemBrowser(
       expandedGroups: normalizeExpandedGroups(params.expandedGroups),
       expandedGroupFacetFilters: normalizeFacetFilters(params.expandedGroupFacetFilters),
       slotSize: params.slotSize,
+      includeHidden: Boolean(params.includeHidden),
     });
 
   const buildSlotSize = () => Math.max(32, Math.ceil(itemSize.value * 0.9));
@@ -660,8 +664,8 @@ export function useItemBrowser(
     }
 
     const catalog = normalizedSearch
-      ? api.peekBrowserSearchCatalog(normalizedSearch, params.modId)
-      : api.peekBrowserDefaultCatalog(params.modId);
+      ? api.peekBrowserSearchCatalog(normalizedSearch, params.modId, params.includeHidden)
+      : api.peekBrowserDefaultCatalog(params.modId, params.includeHidden);
     if (!catalog?.data?.length) {
       return null;
     }
@@ -702,8 +706,8 @@ export function useItemBrowser(
     }
 
     const catalog = normalizedSearch
-      ? api.peekBrowserSearchCatalog(normalizedSearch, params.modId)
-      : api.peekBrowserDefaultCatalog(params.modId);
+      ? api.peekBrowserSearchCatalog(normalizedSearch, params.modId, params.includeHidden)
+      : api.peekBrowserDefaultCatalog(params.modId, params.includeHidden);
     if (!catalog?.data?.length) {
       return null;
     }
@@ -733,9 +737,11 @@ export function useItemBrowser(
       ? await api.getBrowserSearchCatalog({
         search: normalizedSearch,
         modId: params.modId,
+        includeHidden: params.includeHidden,
       })
       : await api.getBrowserDefaultCatalog({
         modId: params.modId,
+        includeHidden: params.includeHidden,
       });
     const catalogEntries = catalog.data as BrowserDefaultCatalogEntry[];
     if (catalogEntries.length <= 0) {
@@ -769,12 +775,14 @@ export function useItemBrowser(
         ? api.getBrowserSearchCatalog({
           search: normalizedSearch,
           modId: params.modId,
+          includeHidden: params.includeHidden,
         })
         : api.getBrowserDefaultCatalog({
           modId: params.modId,
+          includeHidden: params.includeHidden,
         }),
       Promise.allSettled(
-        params.expandedGroups.map((groupKey) => api.getBrowserGroupItems(groupKey, params.modId)),
+        params.expandedGroups.map((groupKey) => api.getBrowserGroupItems(groupKey, params.modId, params.includeHidden)),
       ),
     ]) as [(BrowserDefaultCatalogResponse | BrowserSearchCatalogResponse), PromiseSettledResult<BrowserGroupItemsResponse>[]];
     const groupItemsByKey = new Map<string, Item[]>();
@@ -866,6 +874,7 @@ export function useItemBrowser(
     expandedGroups: normalizeExpandedGroups(expandedGroupKeys.value),
     expandedGroupFacetFilters: normalizeFacetFilters(expandedGroupFacetFilters.value),
     slotSize: buildSlotSize(),
+    includeHidden: Boolean(options?.includeHiddenItems?.value),
   });
 
   const resolvePublishSignature = async (): Promise<string | null> => {
@@ -1306,8 +1315,8 @@ export function useItemBrowser(
       .filter(Boolean);
     const [catalog, byIdsPack] = await Promise.all([
       (async () => (
-        api.peekBrowserDefaultCatalog(params.modId)
-        ?? await api.getBrowserDefaultCatalog({ modId: params.modId }).catch(() => null)
+        api.peekBrowserDefaultCatalog(params.modId, params.includeHidden)
+        ?? await api.getBrowserDefaultCatalog({ modId: params.modId, includeHidden: params.includeHidden }).catch(() => null)
       ))(),
       itemIds.length > 0
         ? api.getBrowserPagePackByIds({ itemIds, slotSize: params.slotSize }).catch(() => null)
@@ -1866,6 +1875,18 @@ export function useItemBrowser(
       }
     }, 300);
   };
+
+  if (options?.includeHiddenItems) {
+    watch(
+      options.includeHiddenItems,
+      () => {
+        currentPage.value = 1;
+        clearBrowserPageState();
+        void loadItems();
+      },
+      { flush: 'post' },
+    );
+  }
 
   watch(
     itemSize,

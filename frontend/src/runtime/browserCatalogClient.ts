@@ -95,8 +95,8 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     return browserRuntimeClient.getItemsPageCompat(params);
   }
 
-  async function getBrowserDefaultCatalog(params?: { modId?: string }): Promise<BrowserDefaultCatalogResponse> {
-    const cacheKey = getBrowserDefaultCatalogCacheKey(params?.modId);
+  async function getBrowserDefaultCatalog(params?: { modId?: string; includeHidden?: boolean }): Promise<BrowserDefaultCatalogResponse> {
+    const cacheKey = getBrowserDefaultCatalogCacheKey(params?.modId, params?.includeHidden);
     const cached = browserDefaultCatalogCache.get(cacheKey);
     if (cached) {
       return cached;
@@ -108,7 +108,7 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     }
 
     const request = (async () => {
-      const distDataCatalog = await browserRuntimeClient.getDefaultCatalog(params?.modId);
+      const distDataCatalog = await browserRuntimeClient.getDefaultCatalog(params?.modId, params?.includeHidden);
       if (distDataCatalog) {
         browserDefaultCatalogCache.set(cacheKey, distDataCatalog);
         return distDataCatalog;
@@ -138,26 +138,26 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     return request;
   }
 
-  function peekBrowserDefaultCatalog(modId?: string): BrowserDefaultCatalogResponse | null {
-    return browserDefaultCatalogCache.get(getBrowserDefaultCatalogCacheKey(modId)) ?? null;
+  function peekBrowserDefaultCatalog(modId?: string, includeHidden = false): BrowserDefaultCatalogResponse | null {
+    return browserDefaultCatalogCache.get(getBrowserDefaultCatalogCacheKey(modId, includeHidden)) ?? null;
   }
 
-  async function getBrowserSearchCatalog(params: { search: string; modId?: string }): Promise<BrowserSearchCatalogResponse> {
+  async function getBrowserSearchCatalog(params: { search: string; modId?: string; includeHidden?: boolean }): Promise<BrowserSearchCatalogResponse> {
     const normalizedSearch = `${params.search ?? ''}`.trim();
     if (!normalizedSearch) {
-      return getBrowserDefaultCatalog({ modId: params.modId });
+      return getBrowserDefaultCatalog({ modId: params.modId, includeHidden: params.includeHidden });
     }
 
-    const distDataCatalog = await browserRuntimeClient.getSearchCatalog(normalizedSearch, params.modId);
+    const distDataCatalog = await browserRuntimeClient.getSearchCatalog(normalizedSearch, params.modId, params.includeHidden);
     if (distDataCatalog) {
-      browserSearchCatalogCache.set(getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId), distDataCatalog);
+      browserSearchCatalogCache.set(getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId, params.includeHidden), distDataCatalog);
       return distDataCatalog;
     }
     options.reportGap('browser-search-catalog', 'local default-catalog projection', 'dist-data search catalog missing', {
       details: params,
     });
 
-    const cacheKey = getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId);
+    const cacheKey = getBrowserSearchCatalogCacheKey(normalizedSearch, params.modId, params.includeHidden);
     const cached = browserSearchCatalogCache.get(cacheKey);
     if (cached) {
       return cached;
@@ -169,7 +169,7 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     }
 
     const request = (async () => {
-      const defaultCatalog = browserDefaultCatalogCache.get(getBrowserDefaultCatalogCacheKey(params.modId));
+      const defaultCatalog = browserDefaultCatalogCache.get(getBrowserDefaultCatalogCacheKey(params.modId, params.includeHidden));
       const filtered = (defaultCatalog?.data ?? []).filter((entry) => browserEntryMatchesLocalSearch(entry, normalizedSearch));
       const result: BrowserSearchCatalogResponse = {
         data: filtered,
@@ -188,27 +188,27 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     return request;
   }
 
-  function peekBrowserSearchCatalog(search: string, modId?: string): BrowserSearchCatalogResponse | null {
+  function peekBrowserSearchCatalog(search: string, modId?: string, includeHidden = false): BrowserSearchCatalogResponse | null {
     const normalizedSearch = `${search ?? ''}`.trim();
     if (!normalizedSearch) {
-      return peekBrowserDefaultCatalog(modId);
+      return peekBrowserDefaultCatalog(modId, includeHidden);
     }
-    return browserSearchCatalogCache.get(getBrowserSearchCatalogCacheKey(normalizedSearch, modId)) ?? null;
+    return browserSearchCatalogCache.get(getBrowserSearchCatalogCacheKey(normalizedSearch, modId, includeHidden)) ?? null;
   }
 
-  async function getBrowserGroupItems(groupKey: string, modId?: string): Promise<BrowserGroupItemsResponse> {
+  async function getBrowserGroupItems(groupKey: string, modId?: string, includeHidden = false): Promise<BrowserGroupItemsResponse> {
     const normalizedGroupKey = `${groupKey ?? ''}`.trim();
     if (!normalizedGroupKey) {
       return { groupKey: '', total: 0, items: [] };
     }
 
-    const cacheKey = getBrowserGroupItemsCacheKey(normalizedGroupKey, modId);
+    const cacheKey = getBrowserGroupItemsCacheKey(normalizedGroupKey, modId, includeHidden);
     const cached = browserGroupItemsCache.get(cacheKey);
     if (cached) {
       return cached;
     }
 
-    const distDataGroupItems = await browserRuntimeClient.getGroupItems(normalizedGroupKey, modId);
+    const distDataGroupItems = await browserRuntimeClient.getGroupItems(normalizedGroupKey, modId, includeHidden);
     if (distDataGroupItems?.items?.length) {
       browserGroupItemsCache.set(cacheKey, distDataGroupItems);
       return distDataGroupItems;
@@ -223,7 +223,7 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     }
 
     const request = (async () => {
-      const identity = { groupKey: normalizedGroupKey, scope: getBrowserDefaultCatalogCacheKey(modId) };
+      const identity = { groupKey: normalizedGroupKey, scope: getBrowserDefaultCatalogCacheKey(modId, includeHidden) };
       const persistent = await options.readPersistent<BrowserGroupItemsResponse>('browser-group-items', identity);
       if (persistent?.items?.length) {
         browserGroupItemsCache.set(cacheKey, persistent);
@@ -242,12 +242,12 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     return request;
   }
 
-  function peekBrowserGroupItems(groupKey: string, modId?: string): BrowserGroupItemsResponse | null {
+  function peekBrowserGroupItems(groupKey: string, modId?: string, includeHidden = false): BrowserGroupItemsResponse | null {
     const normalizedGroupKey = `${groupKey ?? ''}`.trim();
     if (!normalizedGroupKey) {
       return null;
     }
-    return browserGroupItemsCache.get(getBrowserGroupItemsCacheKey(normalizedGroupKey, modId)) ?? null;
+    return browserGroupItemsCache.get(getBrowserGroupItemsCacheKey(normalizedGroupKey, modId, includeHidden)) ?? null;
   }
 
   async function getBrowserPagePack(params: BrowserPageParams): Promise<BrowserPagePackResponse> {

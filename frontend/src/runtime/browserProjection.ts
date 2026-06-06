@@ -167,16 +167,20 @@ export function buildPersistentBrowserPageKey(
   });
 }
 
-export function getBrowserDefaultCatalogCacheKey(modId?: string): string {
-  return `${modId ?? 'all'}`.trim().toLowerCase() || 'all';
+function browserCatalogModeKey(includeHidden?: boolean): string {
+  return includeHidden ? 'advanced' : 'default';
 }
 
-export function getBrowserGroupItemsCacheKey(groupKey: string, modId?: string): string {
-  return `${groupKey ?? ''}`.trim().toLowerCase() + `::${`${modId ?? 'all'}`.trim().toLowerCase() || 'all'}`;
+export function getBrowserDefaultCatalogCacheKey(modId?: string, includeHidden?: boolean): string {
+  return `${browserCatalogModeKey(includeHidden)}::${`${modId ?? 'all'}`.trim().toLowerCase() || 'all'}`;
 }
 
-export function getBrowserSearchCatalogCacheKey(search: string, modId?: string): string {
-  return `${`${search ?? ''}`.trim().toLowerCase()}::${`${modId ?? 'all'}`.trim().toLowerCase() || 'all'}`;
+export function getBrowserGroupItemsCacheKey(groupKey: string, modId?: string, includeHidden?: boolean): string {
+  return `${browserCatalogModeKey(includeHidden)}::${`${groupKey ?? ''}`.trim().toLowerCase()}::${`${modId ?? 'all'}`.trim().toLowerCase() || 'all'}`;
+}
+
+export function getBrowserSearchCatalogCacheKey(search: string, modId?: string, includeHidden?: boolean): string {
+  return `${browserCatalogModeKey(includeHidden)}::${`${search ?? ''}`.trim().toLowerCase()}::${`${modId ?? 'all'}`.trim().toLowerCase() || 'all'}`;
 }
 
 function normalizeSearchNeedle(value: string): string {

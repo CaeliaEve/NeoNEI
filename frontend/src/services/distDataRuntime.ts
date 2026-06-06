@@ -36,6 +36,7 @@ type DistDataManifest = {
   files?: {
     searchAll?: string;
     browserCatalog?: string;
+    hiddenBrowserCatalog?: string;
     browserGroups?: string;
     recipeCategories?: string;
     recipeItemIndex?: string;
@@ -79,6 +80,8 @@ type DistDataBrowserCatalogPayload = {
   schemaVersion?: string;
   items?: DistDataBrowserItem[];
 };
+
+type BrowserCatalogMode = "default" | "advanced";
 
 type DistDataRawGroup = {
   groupKey?: string | null;
@@ -128,6 +131,8 @@ type DistDataRecipeUiPayloadShard = {
 
 type DistDataBrowserRuntime = {
   catalog: DistDataBrowserItem[];
+  advancedCatalog: DistDataBrowserItem[];
+  hiddenItemIds: Set<string>;
   groups: DistDataRawGroup[];
   itemById: Map<string, Item>;
   catalogEntryByItemId: Map<string, DistDataBrowserItem>;
@@ -360,17 +365,21 @@ function filterByModId(item: Item, modId?: string): boolean {
   return !scope || scope === "all" || item.modId === scope;
 }
 
-function getCatalogScopeKey(modId?: string): string {
-  const scope = `${modId ?? "all"}`.trim();
-  return scope || "all";
+function getCatalogScopeKey(modId?: string, mode: BrowserCatalogMode = "default"): string {
+  const scope = `${modId ?? "all"}`.trim() || "all";
+  return `${mode}:${scope}`;
 }
 
-function getSearchCatalogScopeKey(search: string, modId?: string): string {
-  return `${getCatalogScopeKey(modId)}::${normalizeNeedle(search)}`;
+function getSearchCatalogScopeKey(search: string, modId?: string, mode: BrowserCatalogMode = "default"): string {
+  return `${getCatalogScopeKey(modId, mode)}::${normalizeNeedle(search)}`;
 }
 
-function buildDefaultCatalog(runtime: DistDataBrowserRuntime, modId?: string): BrowserGridEntry[] {
-  const scopeKey = getCatalogScopeKey(modId);
+function getRuntimeCatalog(runtime: DistDataBrowserRuntime, includeHidden?: boolean): DistDataBrowserItem[] {
+  return includeHidden ? runtime.advancedCatalog : runtime.catalog;
+}
+
+function buildDefaultCatalog(runtime: DistDataBrowserRuntime, modId?: string, includeHidden = false): BrowserGridEntry[] {
+  const scopeKey = getCatalogScopeKey(modId, includeHidden ? "advanced" : "default");
   const cached = runtime.defaultCatalogByScope.get(scopeKey);
   if (cached) {
     return cached;
@@ -378,7 +387,7 @@ function buildDefaultCatalog(runtime: DistDataBrowserRuntime, modId?: string): B
 
   const emittedGroups = new Set<string>();
   const entries: BrowserGridEntry[] = [];
-  for (const catalogEntry of runtime.catalog) {
+  for (const catalogEntry of getRuntimeCatalog(runtime, includeHidden)) {
     const item = runtime.itemById.get(catalogEntry.itemId);
     if (!item || !filterByModId(item, modId)) {
       continue;
@@ -544,17 +553,24 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
   browserRuntimeRequest = (async () => {
     const manifest = await getDistDataManifest();
     const catalogPath = `${manifest?.files?.browserCatalog ?? ""}`.trim();
+    const hiddenCatalogPath = `${manifest?.files?.hiddenBrowserCatalog ?? ""}`.trim();
     const groupPath = `${manifest?.files?.browserGroups ?? ""}`.trim();
     if (!manifest || !catalogPath || !groupPath) {
       return null;
     }
 
-    const [catalogPayload, groupPayload, searchPack] = await Promise.all([
+    const [catalogPayload, hiddenCatalogPayload, groupPayload, searchPack] = await Promise.all([
       fetchJson<DistDataBrowserCatalogPayload>(joinAssetPath(getConfiguredBasePath(), catalogPath)),
+      hiddenCatalogPath
+        ? fetchJson<DistDataBrowserCatalogPayload>(joinAssetPath(getConfiguredBasePath(), hiddenCatalogPath)).catch(() => ({ items: [] }))
+        : Promise.resolve({ items: [] } satisfies DistDataBrowserCatalogPayload),
       fetchJson<DistDataGroupPayload>(joinAssetPath(getConfiguredBasePath(), groupPath)),
       getDistDataSearchPack(),
     ]);
     const catalog = Array.isArray(catalogPayload.items) ? catalogPayload.items.filter((entry) => entry?.itemId) : [];
+    const hiddenCatalog = Array.isArray(hiddenCatalogPayload.items) ? hiddenCatalogPayload.items.filter((entry) => entry?.itemId) : [];
+    const advancedCatalog = [...catalog, ...hiddenCatalog].sort((left, right) => stableNumber(left.browserOrder, 0) - stableNumber(right.browserOrder, 0) || `${left.itemId}`.localeCompare(`${right.itemId}`));
+    const hiddenItemIds = new Set(hiddenCatalog.map((entry) => entry.itemId).filter(Boolean));
     const groups = Array.isArray(groupPayload.groups) ? groupPayload.groups.filter((entry) => entry?.groupKey) : [];
     if (!Array.isArray(catalogPayload.items)) {
       reportDistDataSchemaMismatch(manifest, catalogPath, "Dist-data browser catalog is missing items[]", {
@@ -576,7 +592,7 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
     }
     const catalogEntryByItemId = new Map<string, DistDataBrowserItem>();
     const itemById = new Map<string, Item>();
-    for (const entry of catalog) {
+    for (const entry of advancedCatalog) {
       catalogEntryByItemId.set(entry.itemId, entry);
       itemById.set(entry.itemId, toItem(entry, searchEntryByItemId.get(entry.itemId)));
     }
@@ -599,6 +615,8 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
 
     cachedBrowserRuntime = {
       catalog,
+      advancedCatalog,
+      hiddenItemIds,
       groups,
       itemById,
       catalogEntryByItemId,
@@ -667,24 +685,24 @@ export async function getDistDataSearchPack(): Promise<DistDataSearchPack | null
   return searchPackRequest;
 }
 
-export async function getDistDataDefaultCatalog(modId?: string): Promise<BrowserDefaultCatalogResponse | null> {
+export async function getDistDataDefaultCatalog(modId?: string, includeHidden = false): Promise<BrowserDefaultCatalogResponse | null> {
   const runtime = await getBrowserRuntime();
   if (!runtime) {
     return null;
   }
-  return paginate(buildDefaultCatalog(runtime, modId));
+  return paginate(buildDefaultCatalog(runtime, modId, includeHidden));
 }
 
-export async function getDistDataSearchCatalog(search: string, modId?: string): Promise<BrowserSearchCatalogResponse | null> {
+export async function getDistDataSearchCatalog(search: string, modId?: string, includeHidden = false): Promise<BrowserSearchCatalogResponse | null> {
   const runtime = await getBrowserRuntime();
   if (!runtime) {
     return null;
   }
   const normalizedSearch = `${search ?? ""}`.trim();
   if (!normalizedSearch) {
-    return getDistDataDefaultCatalog(modId) as Promise<BrowserSearchCatalogResponse | null>;
+    return getDistDataDefaultCatalog(modId, includeHidden) as Promise<BrowserSearchCatalogResponse | null>;
   }
-  const scopeKey = getSearchCatalogScopeKey(normalizedSearch, modId);
+  const scopeKey = getSearchCatalogScopeKey(normalizedSearch, modId, includeHidden ? "advanced" : "default");
   const cached = runtime.searchCatalogByScope.get(scopeKey);
   if (cached) {
     return paginate(cached) as BrowserSearchCatalogResponse;
@@ -702,6 +720,9 @@ export async function getDistDataSearchCatalog(search: string, modId?: string): 
   });
 
   for (const searchEntry of sortedSearchEntries) {
+    if (!includeHidden && runtime.hiddenItemIds.has(searchEntry.itemId)) {
+      continue;
+    }
     if (!matchesSearch(searchEntry, normalizedSearch)) {
       continue;
     }
@@ -782,6 +803,7 @@ export async function getDistDataBrowserPagePack(params: {
   search?: string;
   modId?: string;
   expandedGroups?: string[];
+  includeHidden?: boolean;
 }): Promise<BrowserPagePackResponse | null> {
   const runtime = await getBrowserRuntime();
   if (!runtime) {
@@ -789,8 +811,8 @@ export async function getDistDataBrowserPagePack(params: {
   }
   const normalizedSearch = `${params.search ?? ""}`.trim();
   const baseEntries = normalizedSearch
-    ? (await getDistDataSearchCatalog(normalizedSearch, params.modId))?.data ?? []
-    : buildDefaultCatalog(runtime, params.modId);
+    ? (await getDistDataSearchCatalog(normalizedSearch, params.modId, params.includeHidden))?.data ?? []
+    : buildDefaultCatalog(runtime, params.modId, params.includeHidden);
   const expandedEntries = expandCatalogGroups(baseEntries, runtime, params.expandedGroups);
   const page = paginateBrowserEntries(expandedEntries, params.page, params.pageSize);
   return {
@@ -827,14 +849,14 @@ export async function getDistDataBrowserPagePackByIds(itemIds: string[]): Promis
   };
 }
 
-export async function getDistDataGroupItems(groupKey: string, modId?: string): Promise<BrowserGroupItemsResponse | null> {
+export async function getDistDataGroupItems(groupKey: string, modId?: string, includeHidden = false): Promise<BrowserGroupItemsResponse | null> {
   const runtime = await getBrowserRuntime();
   const normalizedGroupKey = `${groupKey ?? ""}`.trim();
   if (!runtime || !normalizedGroupKey) {
     return null;
   }
   const items = (runtime.memberItemsByGroupKey.get(normalizedGroupKey) ?? [])
-    .filter((item) => filterByModId(item, modId));
+    .filter((item) => filterByModId(item, modId) && (includeHidden || !runtime.hiddenItemIds.has(item.itemId)));
   if (!items.length) {
     return null;
   }

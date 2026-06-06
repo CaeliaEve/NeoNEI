@@ -2861,8 +2861,9 @@ function compileRawExport(inputDir, outputDir) {
     .filter((entry) => entry?.assetId && stableNumber(entry.frameCount, 0) > 1 && !entry.timeline && !entry.frameDurationMs)
     .map((entry) => entry.assetId);
 
-  const browserItems = searchItems.filter((entry) => !hiddenBrowser.hiddenItemIds.has(entry.itemId)).map((entry, index) => {
+  const toBrowserCatalogItem = (entry, index, options = {}) => {
     const layout = layoutByItemId.get(entry.itemId) ?? {};
+    const hidden = hiddenBrowser.hiddenItemIds.has(entry.itemId);
     return {
       itemId: entry.itemId,
       publicItemId: entry.publicItemId ?? null,
@@ -2878,13 +2879,23 @@ function compileRawExport(inputDir, outputDir) {
       nbtDescriptor: entry.nbtDescriptor ?? null,
       renderAssetRef: entry.renderAssetRef,
       browserOrder: stableNumber(layout.browserOrder, stableNumber(layout.entryOrder, index)),
-      groupKey: layout.groupKey ?? null,
-      groupLabel: layout.groupLabel ?? null,
-      groupSize: stableNumber(layout.groupSize, 1),
-      representativeItemId: layout.representativeItemId ?? entry.itemId,
-      groupSource: layout.groupSource ?? null,
+      groupKey: options.keepGroups ? layout.groupKey ?? null : null,
+      groupLabel: options.keepGroups ? layout.groupLabel ?? null : null,
+      groupSize: options.keepGroups ? stableNumber(layout.groupSize, 1) : 1,
+      representativeItemId: options.keepGroups ? layout.representativeItemId ?? entry.itemId : entry.itemId,
+      groupSource: options.keepGroups ? layout.groupSource ?? null : null,
+      hiddenByNei: hidden,
     };
-  }).sort((left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId));
+  };
+  const compareBrowserCatalogItems = (left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId);
+  const browserItems = searchItems
+    .filter((entry) => !hiddenBrowser.hiddenItemIds.has(entry.itemId))
+    .map((entry, index) => toBrowserCatalogItem(entry, index, { keepGroups: true }))
+    .sort(compareBrowserCatalogItems);
+  const hiddenBrowserItems = searchItems
+    .filter((entry) => hiddenBrowser.hiddenItemIds.has(entry.itemId))
+    .map((entry, index) => toBrowserCatalogItem(entry, index, { keepGroups: false }))
+    .sort(compareBrowserCatalogItems);
   const browserContract = buildBrowserContractReport({
     groups,
     browserItems,
@@ -3225,6 +3236,7 @@ function compileRawExport(inputDir, outputDir) {
       itemIdentityMap: "items/identity-map.json",
       itemPayloadIndex: "items/payload-index.json",
       browserCatalog: "browser/item-catalog.json",
+      hiddenBrowserCatalog: "browser/hidden-item-catalog.json",
       browserGroups: "browser/group-index.json",
       nativeNeiRules: "browser/native-nei-rules.json",
       recipeHandlers: "recipes/handler-index.json",
@@ -3262,6 +3274,11 @@ function compileRawExport(inputDir, outputDir) {
     encoding: payload?.encoding ?? null,
   })).filter((payload) => payload.payloadHash) });
   writeJsonCompact(join(outputDir, "browser", "item-catalog.json"), { schemaVersion: "neonei/browser-catalog/v1", items: browserItems });
+  writeJsonCompact(join(outputDir, "browser", "hidden-item-catalog.json"), {
+    schemaVersion: "neonei/hidden-browser-catalog/v1",
+    summary: { hiddenItemCount: hiddenBrowserItems.length, deterministicRuleCount: hiddenBrowser.deterministicRules.length },
+    items: hiddenBrowserItems,
+  });
   writeJsonCompact(join(outputDir, "browser", "group-index.json"), { schemaVersion: "neonei/group-index/v1", groups });
   writeJsonCompact(join(outputDir, "browser", "native-nei-rules.json"), { schemaVersion: "neonei/native-nei-rules/v1", guidFilters: neiGuidFilters, hiddenItems: neiHiddenItems });
   writeJsonCompact(join(outputDir, "recipes", "handler-index.json"), { schemaVersion: "neonei/recipe-handler-index/v1", handlers: recipeHandlerContext.handlers.map(publicRecipeHandler).filter(Boolean) });

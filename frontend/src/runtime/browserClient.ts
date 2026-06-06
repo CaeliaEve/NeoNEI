@@ -27,16 +27,19 @@ export type BrowserPageParams = {
   search?: string;
   modId?: string;
   expandedGroups?: string[];
+  includeHidden?: boolean;
   slotSize?: number;
 };
 
 export type BrowserCatalogParams = {
   modId?: string;
+  includeHidden?: boolean;
 };
 
 export type BrowserSearchCatalogParams = {
   search: string;
   modId?: string;
+  includeHidden?: boolean;
 };
 
 export type BrowserByIdsParams = {
@@ -64,14 +67,14 @@ export function createBrowserRuntimeClient() {
     getPagePack(params: BrowserPageParams): Promise<BrowserPagePackResponse | null> {
       return getDistDataBrowserPagePack(params);
     },
-    getDefaultCatalog(modId?: string): Promise<BrowserDefaultCatalogResponse | null> {
-      return getDistDataDefaultCatalog(modId);
+    getDefaultCatalog(modId?: string, includeHidden = false): Promise<BrowserDefaultCatalogResponse | null> {
+      return getDistDataDefaultCatalog(modId, includeHidden);
     },
-    getSearchCatalog(search: string, modId?: string): Promise<BrowserSearchCatalogResponse | null> {
-      return getDistDataSearchCatalog(search, modId);
+    getSearchCatalog(search: string, modId?: string, includeHidden = false): Promise<BrowserSearchCatalogResponse | null> {
+      return getDistDataSearchCatalog(search, modId, includeHidden);
     },
-    getGroupItems(groupKey: string, modId?: string): Promise<BrowserGroupItemsResponse | null> {
-      return getDistDataGroupItems(groupKey, modId);
+    getGroupItems(groupKey: string, modId?: string, includeHidden = false): Promise<BrowserGroupItemsResponse | null> {
+      return getDistDataGroupItems(groupKey, modId, includeHidden);
     },
     getByIdsPack(itemIds: string[]): Promise<BrowserByIdsPackResponse | null> {
       return getDistDataBrowserPagePackByIds(itemIds);
