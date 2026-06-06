@@ -1,12 +1,8 @@
 <script setup lang="ts">
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
-import { getItemImageUrlFromEntity } from '../services/api';
 import {
   getSharedAnimationNowMs,
-  prepareItemAnimationFrames,
-  resolvePreparedAnimationFrameIndex,
   resolveTimelineFrameIndex,
-  type PreparedAnimationFrame,
 } from '../services/animationBudget';
 import {
   getGlobalBrowserAtlasEntry,
@@ -31,16 +27,11 @@ const props = withDefaults(defineProps<Props>(), {
   enableAnimation: true,
 });
 
-const getImageSrc = (itemId: string, renderAssetRef?: string | null, imageFileName?: string | null): string => (
-  getItemImageUrlFromEntity({ itemId, renderAssetRef, imageFileName })
-);
-
 const hasAnimation = ref(false);
 const isAnimating = ref(false);
 const isLoaded = ref(false);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
-const animationFrames = ref<PreparedAnimationFrame[]>([]);
-const renderMode = ref<'loading' | 'atlas' | 'legacy'>('loading');
+const renderMode = ref<'loading' | 'atlas'>('loading');
 
 type PreparedAtlasAnimation = {
   atlasFile: string;
@@ -60,24 +51,7 @@ const atlasStatic = ref<PreparedAtlasStatic | null>(null);
 const atlasAnimation = ref<PreparedAtlasAnimation | null>(null);
 
 let animationFrameId: number | null = null;
-let currentFrameIndex = 0;
 let loadSequence = 0;
-
-const renderFrame = (frameIndex: number) => {
-  const canvas = canvasRef.value;
-  if (!canvas || animationFrames.value.length === 0) return;
-
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return;
-
-  const currentFrame = animationFrames.value[frameIndex];
-  if (!currentFrame) return;
-
-  canvas.width = currentFrame.width;
-  canvas.height = currentFrame.height;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  ctx.drawImage(currentFrame.source, 0, 0, currentFrame.width, currentFrame.height);
-};
 
 const drawAtlasSource = (
   atlas: HTMLImageElement,
@@ -122,40 +96,21 @@ const renderAtlasAnimationFrame = (timestamp: number = getSharedAnimationNowMs()
 };
 
 const animate = (timestamp: number) => {
-  if (atlasAnimation.value) {
-    renderAtlasAnimationFrame(timestamp);
-    if (isAnimating.value) {
-      animationFrameId = requestAnimationFrame(animate);
-    }
-    return;
-  }
-
-  if (!animationFrames.value.length) {
+  if (!atlasAnimation.value) {
     animationFrameId = null;
     return;
   }
 
-  const nextFrameIndex = resolvePreparedAnimationFrameIndex(animationFrames.value, timestamp);
-  if (nextFrameIndex !== currentFrameIndex) {
-    currentFrameIndex = nextFrameIndex;
-    renderFrame(currentFrameIndex);
-  }
-
+  renderAtlasAnimationFrame(timestamp);
   if (isAnimating.value) {
     animationFrameId = requestAnimationFrame(animate);
   }
 };
 
 const startAnimation = () => {
-  if ((!atlasAnimation.value && animationFrames.value.length <= 1) || isAnimating.value) return;
+  if (!atlasAnimation.value || isAnimating.value) return;
   isAnimating.value = true;
-  if (atlasAnimation.value) {
-    renderAtlasAnimationFrame(getSharedAnimationNowMs());
-    animationFrameId = requestAnimationFrame(animate);
-    return;
-  }
-  currentFrameIndex = resolvePreparedAnimationFrameIndex(animationFrames.value, getSharedAnimationNowMs());
-  renderFrame(currentFrameIndex);
+  renderAtlasAnimationFrame(getSharedAnimationNowMs());
   animationFrameId = requestAnimationFrame(animate);
 };
 
@@ -163,7 +118,6 @@ const resetState = () => {
   stopAnimation();
   hasAnimation.value = false;
   isLoaded.value = false;
-  animationFrames.value = [];
   atlasStatic.value = null;
   atlasAnimation.value = null;
   renderMode.value = 'loading';
@@ -175,7 +129,6 @@ const stopAnimation = () => {
     cancelAnimationFrame(animationFrameId);
     animationFrameId = null;
   }
-  currentFrameIndex = 0;
 };
 
 const prepareAtlasStatic = (entry: BrowserAtlasItemEntry): PreparedAtlasStatic | null => {
@@ -240,28 +193,13 @@ const checkAnimation = async () => {
     return;
   }
 
-  renderMode.value = 'legacy';
-  if (!props.enableAnimation) {
-    isLoaded.value = true;
-    return;
-  }
-
-  try {
-    const frames = await prepareItemAnimationFrames({
-      itemId: props.itemId,
-      renderAssetRef: props.renderAssetRef ?? null,
-      imageFileName: props.imageFileName ?? null,
-    });
-    animationFrames.value = frames;
-    hasAnimation.value = frames.length > 1;
-    isLoaded.value = true;
-    if (frames.length > 1) {
-      startAnimation();
-    }
-  } catch (error) {
-    console.error('Error loading animated item icon:', error);
-    isLoaded.value = true;
-  }
+  // Native-NEI runtime contract: item icons are resolved from the compiled
+  // browser atlas/render index. Do not fall back to per-item GIF/sprite probing
+  // here; that path reintroduces page-local texture fetches and hides exporter
+  // defects behind slow frontend work. Missing atlas entries must be fixed in
+  // raw-export/compile validation.
+  renderMode.value = 'atlas';
+  isLoaded.value = true;
 };
 
 onMounted(() => {
@@ -295,18 +233,12 @@ onUnmounted(() => {
     />
 
     <img
-      v-else-if="renderMode === 'legacy'"
-      :src="getImageSrc(itemId, renderAssetRef, imageFileName)"
+      v-else
+      src="/placeholder.png"
       :alt="itemId"
-      :style="{
-        width: `${size}px`,
-        height: `${size}px`,
-        imageRendering: 'pixelated',
-      }"
-      @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
+      class="animated-item-icon__placeholder-image"
+      :style="{ width: `${size}px`, height: `${size}px` }"
     />
-
-    <span v-else class="animated-item-icon__placeholder" />
   </div>
 </template>
 
@@ -321,5 +253,11 @@ onUnmounted(() => {
   height: 100%;
   border-radius: 4px;
   background: rgba(15, 23, 42, 0.72);
+}
+
+.animated-item-icon__placeholder-image {
+  display: block;
+  image-rendering: pixelated;
+  opacity: 0.72;
 }
 </style>
