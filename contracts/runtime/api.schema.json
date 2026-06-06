@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://neonei.local/contracts/runtime/api.schema.json",
+  "title": "NeoNEI Public Runtime API Contract",
+  "type": "object",
+  "required": ["contractVersion", "namespaces", "routes", "compatibility"],
+  "additionalProperties": true,
+  "properties": {
+    "contractVersion": { "type": "string", "const": "runtime-contracts/current" },
+    "namespaces": {
+      "type": "object",
+      "required": ["runtime", "ops", "lab"],
+      "additionalProperties": false,
+      "properties": {
+        "runtime": { "type": "string", "const": "public read-only runtime API" },
+        "ops": { "type": "string", "const": "authenticated operations API" },
+        "lab": { "type": "string", "const": "development compatibility API" }
+      }
+    },
+    "routes": {
+      "type": "object",
+      "required": ["health", "manifest", "contracts", "diagnostics"],
+      "additionalProperties": { "type": "string" }
+    },
+    "staticResources": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "compatibility": {
+      "type": "object",
+      "required": ["legacyApi"],
+      "additionalProperties": true,
+      "properties": {
+        "legacyApi": {
+          "type": "string",
+          "const": "compatibility only; not a production hot path"
+        }
+      }
+    }
+  }
+}

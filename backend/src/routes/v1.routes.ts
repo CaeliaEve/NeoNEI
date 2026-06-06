@@ -19,6 +19,7 @@ const runtimeContracts = {
     recipe: '/contracts/runtime/recipe.schema.json',
     texture: '/contracts/runtime/texture.schema.json',
     error: '/contracts/runtime/error.schema.json',
+    api: '/contracts/runtime/api.schema.json',
   },
   runtime: {
     manifest: '/api/v1/runtime/manifest',

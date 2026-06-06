@@ -17,3 +17,4 @@ Current core contracts:
 - `recipe.schema.json`
 - `texture.schema.json`
 - `error.schema.json`
+- `api.schema.json`

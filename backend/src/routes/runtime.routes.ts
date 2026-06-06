@@ -23,13 +23,28 @@ const runtimeContracts = {
     recipe: '/contracts/runtime/recipe.schema.json',
     texture: '/contracts/runtime/texture.schema.json',
     error: '/contracts/runtime/error.schema.json',
+    api: '/contracts/runtime/api.schema.json',
+  },
+  namespaces: {
+    runtime: 'public read-only runtime API',
+    ops: 'authenticated operations API',
+    lab: 'development compatibility API',
   },
   runtime: {
     manifest: '/runtime/manifest',
     distDataManifest: '/dist-data/manifest.json',
     publishManifest: '/runtime/manifest',
+    health: '/runtime/health',
+    contracts: '/runtime/contracts',
+    diagnostics: '/runtime/diagnostics',
+  },
+  staticResources: {
+    distData: '/dist-data/**',
+    publish: '/publish/**',
+    contracts: '/contracts/runtime/**',
   },
   compatibility: {
+    legacyApi: 'compatibility only; not a production hot path',
     devItems: '/lab/items',
     devRecipesIndexed: '/lab/recipes',
     devRecipeBootstrap: '/lab/recipe-bootstrap',
