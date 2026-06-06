@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Recipe } from '../services/api';
-import { getImageUrl } from '../services/api';
+import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
 interface Props {
   recipes: Recipe[];
@@ -195,11 +195,11 @@ watch(
           :aria-selected="entry.index === selectedIndex"
           @click="emit('select', entry.index)"
         >
-          <img
+          <AnimatedItemIcon
             v-if="showPreviewImages && entry.previewItemId"
             class="virtual-grid-icon"
-            :src="getImageUrl(entry.previewItemId)"
-            :alt="`${entry.previewItemId} 图标`"
+            :item-id="entry.previewItemId"
+            :size="28"
           />
           <div class="virtual-grid-labels">
             <div class="virtual-grid-title">{{ entry.previewItemId || entry.recipe.recipeId }}</div>

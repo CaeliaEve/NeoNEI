@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { getImageUrl, type Recipe } from '../services/api';
+import type { Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
@@ -28,10 +28,6 @@ async function initRune() {
 function onItemClick(itemId: string) {
   playClick();
   emit('item-click', itemId);
-}
-
-function imageError(event: Event) {
-  (event.target as HTMLImageElement).src = '/placeholder.png';
 }
 
 function orbitStyle(index: number, total: number) {
@@ -65,7 +61,7 @@ watch(() => props.recipe, () => void initRune(), { deep: true });
 
       <div class="rune-core">
         <div class="core-aura" />
-        <img :src="getImageUrl('i~Botania~runeAltar~0')" @error="imageError" />
+        <AnimatedItemIcon item-id="i~Botania~runeAltar~0" :size="56" />
       </div>
 
       <div class="input-orbit">

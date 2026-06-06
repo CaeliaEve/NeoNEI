@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from 'vue';
-import { getImageUrl, type Recipe } from '../services/api';
+import type { Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
@@ -22,7 +22,6 @@ async function initPureDaisy() {
 }
 
 function onItemClick(itemId: string) { playClick(); emit('item-click', itemId); }
-function imageError(event: Event) { (event.target as HTMLImageElement).src = '/placeholder.png'; }
 
 onMounted(() => void initPureDaisy());
 watch(() => props.recipe, () => void initPureDaisy(), { deep: true });
@@ -40,7 +39,7 @@ watch(() => props.recipe, () => void initPureDaisy(), { deep: true });
       <div class="growth-mote mote-a" />
       <div class="growth-mote mote-b" />
       <div class="daisy-center">
-        <img :src="getImageUrl('i~Botania~specialFlower~0~BVmnjzvOML-Ap_zxeMIMOw==')" @error="imageError" />
+        <AnimatedItemIcon item-id="i~Botania~specialFlower~0~BVmnjzvOML-Ap_zxeMIMOw==" :size="56" />
       </div>
     </section>
 

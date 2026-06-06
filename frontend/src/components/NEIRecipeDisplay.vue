@@ -194,24 +194,24 @@ const getMachineIconPath = computed(() => {
   }
 
   const icon = props.recipe.recipeTypeData.machineIcon;
+  if (icon.imageFileName) {
+    return getImageUrlFromFileName(icon.imageFileName);
+  }
   if (icon.renderAssetRef) {
     const renderAssetUrl = getImageUrlFromRenderAssetRef(icon.renderAssetRef);
     if (renderAssetUrl) return renderAssetUrl;
-  }
-  if (icon.itemId) {
-    return getImageUrl(icon.itemId);
-  }
-
-  if (icon.imageFileName) {
-    return getImageUrlFromFileName(icon.imageFileName);
   }
 
   return null;
 });
 
+const machineIconItemId = computed(() => props.recipe.recipeTypeData?.machineIcon?.itemId ?? null);
+const machineIconRenderAssetRef = computed(() => props.recipe.recipeTypeData?.machineIcon?.renderAssetRef ?? null);
+const machineIconImageFileName = computed(() => props.recipe.recipeTypeData?.machineIcon?.imageFileName ?? null);
+
 // Check if has machine icon
 const hasMachineIcon = computed(() => {
-  return !!getMachineIconPath.value;
+  return !!(machineIconItemId.value || machineIconRenderAssetRef.value || getMachineIconPath.value);
 });
 
 const normalizedRecipe = computed(() => normalizeRecipeForDisplay(props.recipe));
@@ -614,8 +614,16 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
 
       <div class="nei-title-bar">
         <div class="nei-title-shell">
+          <AnimatedItemIcon
+            v-if="hasMachineIcon && machineIconItemId"
+            :item-id="machineIconItemId"
+            :render-asset-ref="machineIconRenderAssetRef"
+            :image-file-name="machineIconImageFileName"
+            :size="30"
+            class="nei-machine-icon"
+          />
           <img
-            v-if="hasMachineIcon && getMachineIconPath"
+            v-else-if="hasMachineIcon && getMachineIconPath"
             :src="getMachineIconPath"
             :alt="getMachineName(recipe.recipeType)"
             class="nei-machine-icon"
