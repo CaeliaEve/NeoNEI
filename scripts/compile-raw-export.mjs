@@ -1083,6 +1083,108 @@ function buildSemanticItemSummary({ semanticItems, itemVariants, itemPayloads, i
   };
 }
 
+function buildSemanticRulePackReport({ rulePack, semanticItems, itemVariants, rawManifest }) {
+  const families = Array.isArray(rulePack?.families) ? rulePack.families : [];
+  const aliases = Array.isArray(rulePack?.aliases) ? rulePack.aliases : [];
+  const ruleByFamily = new Map();
+  const duplicateRuleFamilies = [];
+  for (const familyRule of families) {
+    const id = `${familyRule?.id ?? ""}`.trim();
+    if (!id) continue;
+    if (ruleByFamily.has(id)) duplicateRuleFamilies.push(id);
+    ruleByFamily.set(id, familyRule);
+  }
+
+  const exportedFamilies = new Set();
+  for (const item of semanticItems ?? []) {
+    const family = `${item?.family ?? ""}`.trim();
+    if (family && family !== "legacy.item") exportedFamilies.add(family);
+  }
+  for (const variant of itemVariants ?? []) {
+    const family = `${variant?.family ?? ""}`.trim();
+    if (family && family !== "legacy.item") exportedFamilies.add(family);
+  }
+
+  const ruleIdsWithoutExport = Array.from(ruleByFamily.keys())
+    .filter((family) => !exportedFamilies.has(family))
+    .sort();
+  const exportedFamiliesWithoutRule = Array.from(exportedFamilies)
+    .filter((family) => !ruleByFamily.has(family))
+    .sort();
+
+  const missingRequiredFacetSamples = [];
+  let missingRequiredFacetRows = 0;
+  const variantsByFamily = new Map();
+  for (const variant of itemVariants ?? []) {
+    const family = `${variant?.family ?? ""}`.trim();
+    if (!family) continue;
+    const existing = variantsByFamily.get(family) ?? [];
+    existing.push(variant);
+    variantsByFamily.set(family, existing);
+  }
+  for (const [family, rule] of ruleByFamily.entries()) {
+    const requiredFacets = Array.isArray(rule?.requiredFacets)
+      ? rule.requiredFacets.map((facet) => `${facet ?? ""}`.trim()).filter(Boolean)
+      : [];
+    if (requiredFacets.length === 0) continue;
+    for (const variant of variantsByFamily.get(family) ?? []) {
+      const facets = variant?.facets && typeof variant.facets === "object" ? variant.facets : {};
+      const missing = requiredFacets.filter((facet) => `${facets?.[facet] ?? ""}`.trim().length === 0);
+      if (missing.length === 0) continue;
+      missingRequiredFacetRows += 1;
+      if (missingRequiredFacetSamples.length < 80) {
+        missingRequiredFacetSamples.push({
+          family,
+          variantId: variant?.variantId ?? null,
+          legacyItemId: variant?.legacyItemId ?? null,
+          missing,
+        });
+      }
+    }
+  }
+
+  const missingPack = !rulePack || Object.keys(rulePack).length === 0;
+  const status = missingPack
+    ? "advisory"
+    : duplicateRuleFamilies.length === 0
+      && exportedFamiliesWithoutRule.length === 0
+      && missingRequiredFacetRows === 0
+        ? "ok"
+        : "warning";
+  return {
+    schemaVersion: "neonei/semantic-rule-pack-report/v1",
+    generatedAt: new Date().toISOString(),
+    status,
+    rulePack: {
+      present: !missingPack,
+      schemaVersion: rulePack?.schemaVersion ?? null,
+      packVersionSource: rulePack?.packVersionSource ?? null,
+      description: rulePack?.description ?? null,
+    },
+    rawExport: {
+      generatedAt: rawManifest?.generatedAt ?? null,
+      sourceRepository: rawManifest?.sourceRepository ?? null,
+      sourceVersion: rawManifest?.sourceVersion ?? null,
+      packVersion: rawManifest?.packVersion ?? rawManifest?.gtnhVersion ?? null,
+    },
+    counts: {
+      familyRules: ruleByFamily.size,
+      aliasRules: aliases.length,
+      exportedFamilies: exportedFamilies.size,
+      duplicateRuleFamilies: duplicateRuleFamilies.length,
+      ruleIdsWithoutExport: ruleIdsWithoutExport.length,
+      exportedFamiliesWithoutRule: exportedFamiliesWithoutRule.length,
+      missingRequiredFacetRows,
+    },
+    samples: {
+      duplicateRuleFamilies: Array.from(new Set(duplicateRuleFamilies)).slice(0, 80),
+      ruleIdsWithoutExport: ruleIdsWithoutExport.slice(0, 80),
+      exportedFamiliesWithoutRule: exportedFamiliesWithoutRule.slice(0, 80),
+      missingRequiredFacets: missingRequiredFacetSamples,
+    },
+  };
+}
+
 
 function mergeAnimationFacts(animations, nativeSprites, renderedGifs) {
   const byAssetId = new Map();
@@ -2622,6 +2724,7 @@ function compileRawExport(inputDir, outputDir) {
   const itemVariants = readRawJsonl(inputDir, manifest, "itemVariants", "facts/items/variants.jsonl.gz");
   const itemPayloads = readRawJsonl(inputDir, manifest, "itemPayloads", "facts/items/payloads.jsonl.gz");
   const itemIdentityMap = readRawJsonl(inputDir, manifest, "itemIdentityMap", "facts/items/identity-map.jsonl.gz");
+  const semanticRulePack = readRawJson(inputDir, manifest, "semanticRulePack", "facts/semantic/rule-pack.json") ?? {};
   const fluids = readRawJsonl(inputDir, manifest, "fluids", "facts/fluids.jsonl.gz");
   const recipes = readRawRecipes(inputDir, manifest);
   const rawGroups = readRawJsonl(inputDir, manifest, "groups", "facts/nei/groups.jsonl.gz");
@@ -2815,6 +2918,12 @@ function compileRawExport(inputDir, outputDir) {
     itemIdentityMap,
     searchItems,
   });
+  const semanticRulePackReport = buildSemanticRulePackReport({
+    rulePack: semanticRulePack,
+    semanticItems,
+    itemVariants,
+    rawManifest: manifest,
+  });
   const recipeUiPayloads = recipes
     .map((recipe) => buildRecipeUiPayload(recipe, recipeHandlerContext))
     .filter(Boolean);
@@ -2904,6 +3013,9 @@ function compileRawExport(inputDir, outputDir) {
       variantsByPublicItem: variantsByPublicItem.length,
       semanticFacets: semanticFacets.length,
       semanticFacetFamilies: semanticFacetFamilies.length,
+      semanticRulePackFamilies: semanticRulePackReport.counts.familyRules,
+      semanticRulePackExportedFamiliesWithoutRule: semanticRulePackReport.counts.exportedFamiliesWithoutRule,
+      semanticRulePackMissingRequiredFacetRows: semanticRulePackReport.counts.missingRequiredFacetRows,
       neiGuidFilterRules: neiGuidFilters.length,
       neiHiddenItemRules: neiHiddenItems.length,
       neiHandlers: neiHandlers.length,
@@ -3005,6 +3117,7 @@ function compileRawExport(inputDir, outputDir) {
       semanticIdentityMapRatio: items.length === 0 ? 1 : itemIdentityMap.length / items.length,
     },
     semanticItemSummary,
+    semanticRulePackReport,
     semanticResourceReport,
     atlasAuthorityReport,
     browserContract,
@@ -3038,6 +3151,11 @@ function compileRawExport(inputDir, outputDir) {
   }
   if (semanticItemSummary.unexplainedTopUnclassifiedFamilies > 0) {
     validation.warnings.push(`Semantic identity has ${semanticItemSummary.unclassifiedIdentityRows} unclassified row(s), including ${semanticItemSummary.unexplainedTopUnclassifiedFamilies} unexplained top family/families: ${semanticItemSummary.topUnclassifiedFamilies.filter((entry) => !entry.explanation).slice(0, 5).map((entry) => `${entry.family}=${entry.unclassifiedRows}`).join(", ")}.`);
+  }
+  if (semanticRulePackReport.status === "advisory") {
+    validation.warnings.push("Semantic rule pack is not present in this raw-export; rerun NESQL++ with semanticRulePack export support to enable source-derived rule validation.");
+  } else if (semanticRulePackReport.status !== "ok") {
+    validation.warnings.push(`Semantic rule pack validation is ${semanticRulePackReport.status}: exportedFamiliesWithoutRule=${semanticRulePackReport.counts.exportedFamiliesWithoutRule}, missingRequiredFacetRows=${semanticRulePackReport.counts.missingRequiredFacetRows}.`);
   }
   if (searchAliasIndex.counts.terms === 0 && searchItems.length > 0) {
     validation.warnings.push("Search alias index is empty despite non-empty search items.");
@@ -3101,6 +3219,7 @@ function compileRawExport(inputDir, outputDir) {
       searchAliasIndex: "search/alias-index.json",
       semanticItems: "items/semantic-items.json",
       semanticFacets: "items/semantic-facets.json",
+      semanticRulePackValidation: "validation/semantic-rule-pack.json",
       itemVariants: "items/variants.json",
       itemVariantsByPublicItem: "items/variants-by-public-item.json",
       itemIdentityMap: "items/identity-map.json",
@@ -3133,6 +3252,7 @@ function compileRawExport(inputDir, outputDir) {
   writeJsonCompact(join(outputDir, "search", "alias-index.json"), searchAliasIndex);
   writeJsonCompact(join(outputDir, "items", "semantic-items.json"), { schemaVersion: "neonei/semantic-items/v1", items: semanticItems });
   writeJsonCompact(join(outputDir, "items", "semantic-facets.json"), { schemaVersion: "neonei/semantic-facets/v1", facets: semanticFacets });
+  writeJson(join(outputDir, "validation", "semantic-rule-pack.json"), semanticRulePackReport);
   writeJsonCompact(join(outputDir, "items", "variants.json"), { schemaVersion: "neonei/item-variants/v1", variants: itemVariants });
   writeJsonCompact(join(outputDir, "items", "variants-by-public-item.json"), { schemaVersion: "neonei/item-variants-by-public-item/v1", items: variantsByPublicItem });
   writeJsonCompact(join(outputDir, "items", "identity-map.json"), { schemaVersion: "neonei/item-identity-map/v1", items: itemIdentityMap });
