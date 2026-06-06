@@ -78,6 +78,13 @@ jobs:
         working-directory: frontend
         run: npm ci
 
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust compiler gate
+        working-directory: frontend
+        run: npm run test:rust-compiler
+
       - name: Check canonical retired
         run: node scripts/check-canonical-retired.mjs
 
@@ -142,3 +149,5 @@ jobs:
           name: neonei-web-release
           path: release/neonei-web
           if-no-files-found: error
+
+

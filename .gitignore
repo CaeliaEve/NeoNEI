@@ -82,3 +82,7 @@ API_RUNTIME_MATURITY_FOLLOWUP_PLAN.md
 NEONEI_NESQL_REBUILD_PLAN.md
 PATH_PORTABILITY_PLAN.md
 *_PLAN.md
+
+# Rust build outputs
+tools/neonei-compiler-rs/target/
+

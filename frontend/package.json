@@ -37,7 +37,9 @@
     "validate:known-runtime-items": "node ../scripts/validate-known-runtime-items.mjs --gate",
     "validate:recipe-fragmentation": "node ../scripts/validate-recipe-fragmentation.mjs --gate",
     "validate:recipe-handlers": "node ../scripts/validate-recipe-handler-metadata.mjs --gate",
-    "test:browser-search-cache": "node --test scripts/browser-search-cache-regression.test.mjs"
+    "test:browser-search-cache": "node --test scripts/browser-search-cache-regression.test.mjs",
+    "test:rust-compiler-scaffold": "node ../scripts/rust-compiler-gate.mjs",
+    "test:rust-compiler": "node ../scripts/rust-compiler-gate.mjs --run-cargo"
   },
   "dependencies": {
     "axios": "^1.13.2",
