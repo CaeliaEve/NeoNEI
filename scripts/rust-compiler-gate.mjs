@@ -16,6 +16,11 @@ const rustBrowserPack = join(nodeSelfTestOutput, 'rust', 'browser-pack.json');
 const rustSearchPack = join(nodeSelfTestOutput, 'rust', 'search-pack.json');
 const rustRecipePack = join(nodeSelfTestOutput, 'rust', 'recipe-pack.json');
 const rustTexturePack = join(nodeSelfTestOutput, 'rust', 'texture-pack.json');
+const rustRuntimeManifest = join(nodeSelfTestOutput, 'rust', 'runtime-manifest.json');
+const rustIntegrity = join(nodeSelfTestOutput, 'rust', 'integrity.json');
+const rustSizeReport = join(nodeSelfTestOutput, 'rust', 'size-report.json');
+const rustMissingReport = join(nodeSelfTestOutput, 'rust', 'missing-data-report.json');
+const rustMigrationReadiness = join(nodeSelfTestOutput, 'rust', 'migration-readiness.json');
 
 const strict = process.argv.includes('--strict');
 const runCargo = process.argv.includes('--run-cargo') || strict;
@@ -169,6 +174,11 @@ const browserPack = readJson(rustBrowserPack);
 const searchPack = readJson(rustSearchPack);
 const recipePack = readJson(rustRecipePack);
 const texturePack = readJson(rustTexturePack);
+const runtimeManifest = readJson(rustRuntimeManifest);
+const integrity = readJson(rustIntegrity);
+const sizeReport = readJson(rustSizeReport);
+const missingReport = readJson(rustMissingReport);
+const migrationReadiness = readJson(rustMigrationReadiness);
 compareCounts({
   nodeCounts: nodeValidation?.counts ?? {},
   rustRawCounts: compileReport?.raw_export?.file_counts ?? {},
@@ -203,6 +213,23 @@ const terrasteelAnimation = (texturePack?.animationTable ?? []).find((entry) => 
 if (!terrasteelAnimation || terrasteelAnimation.frameDurationMs !== 100) {
   fail('rust texture pack does not preserve Terrasteel animation timing');
 }
+for (const requiredPath of [
+  'rust/browser-pack.json',
+  'rust/search-pack.json',
+  'rust/recipe-pack.json',
+  'rust/texture-pack.json',
+]) {
+  const manifestHasPath = (runtimeManifest?.files ?? []).some((entry) => entry.path === requiredPath);
+  if (!manifestHasPath) fail(`rust runtime manifest is missing ${requiredPath}`);
+  if (!integrity?.files?.[requiredPath]) fail(`rust integrity report is missing ${requiredPath}`);
+  if (!Number.isFinite(sizeReport?.files?.[requiredPath])) fail(`rust size report is missing ${requiredPath}`);
+}
+if ((missingReport?.missingFiles ?? []).length !== 0) fail(`rust missing data report has missing files: ${JSON.stringify(missingReport.missingFiles)}`);
+if (migrationReadiness?.ready !== true) fail(`rust migration readiness is not ready: ${JSON.stringify(migrationReadiness)}`);
+const runtimeManifestText = JSON.stringify(runtimeManifest);
+if (runtimeManifestText.includes('file://') || runtimeManifestText.includes('C:\\') || runtimeManifestText.includes('E:\\') || runtimeManifestText.includes('\\\\')) {
+  fail('rust runtime manifest leaked an absolute Windows/file path');
+}
 
 writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   schemaVersion: 'neonei/rust-compiler-gate/current',
@@ -213,6 +240,7 @@ writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   searchPack: rustSearchPack.replaceAll('\\', '/'),
   recipePack: rustRecipePack.replaceAll('\\', '/'),
   texturePack: rustTexturePack.replaceAll('\\', '/'),
+  runtimeManifest: rustRuntimeManifest.replaceAll('\\', '/'),
   nodeSelfTestOutput: nodeSelfTestOutput.replaceAll('\\', '/'),
 }, null, 2));
 

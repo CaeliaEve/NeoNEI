@@ -117,6 +117,7 @@ fn main() -> Result<()> {
             compile_browser_pack(&input, &output, strict)?;
             compile_recipe_pack(&input, &output, strict)?;
             compile_texture_pack(&input, &output, strict)?;
+            compile_runtime_reports(&output, strict)?;
             run_baseline(&input, Some(&output), &report, strict)
         }
     }
@@ -745,6 +746,122 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
                 "missingAtlasFileRefs": missing_atlas_file_refs,
                 "invalidFrameBounds": invalid_frame_bounds,
             },
+        }),
+    )?;
+    Ok(())
+}
+
+fn compile_runtime_reports(output: &Path, strict: bool) -> Result<()> {
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+
+    let artifact_names = [
+        "browser-pack.json",
+        "search-pack.json",
+        "recipe-pack.json",
+        "texture-pack.json",
+    ];
+    let mut files = Vec::new();
+    let mut integrity = BTreeMap::new();
+    let mut sizes = BTreeMap::new();
+    let mut missing = Vec::new();
+    let mut path_violations = Vec::new();
+
+    for artifact_name in artifact_names {
+        let path = rust_dir.join(artifact_name);
+        let relative = format!("rust/{artifact_name}");
+        if !path.exists() {
+            missing.push(relative.clone());
+            continue;
+        }
+        let hash = sha256_file(&path)?;
+        let size = path.metadata()?.len();
+        integrity.insert(relative.clone(), hash);
+        sizes.insert(relative.clone(), size);
+        files.push(json!({
+            "path": relative,
+            "bytes": size,
+        }));
+    }
+
+    for entry in walkdir::WalkDir::new(&rust_dir)
+        .into_iter()
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_file())
+    {
+        let path = entry.path();
+        let text = fs::read_to_string(path).unwrap_or_default();
+        for needle in ["E:\\", "C:\\", "\\\\", "file://"] {
+            if text.contains(needle) {
+                path_violations.push(format!("{} contains {}", normalize_path(path), needle));
+            }
+        }
+    }
+
+    if strict && (!missing.is_empty() || !path_violations.is_empty()) {
+        return Err(anyhow!(
+            "runtime report blocked: missing={}, path violations={}",
+            missing.len(),
+            path_violations.len()
+        ));
+    }
+
+    let total_bytes = sizes.values().sum::<u64>();
+    let generated_at = "deterministic-rust-compiler";
+    write_json_value(
+        &rust_dir.join("runtime-manifest.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-runtime-manifest/current",
+            "generatedAt": generated_at,
+            "files": files,
+            "entrypoints": {
+                "browser": "rust/browser-pack.json",
+                "search": "rust/search-pack.json",
+                "recipes": "rust/recipe-pack.json",
+                "textures": "rust/texture-pack.json",
+            },
+            "pathPolicy": {
+                "portableRelativePathsOnly": true,
+                "absolutePathsAllowed": false,
+                "windowsPathsAllowed": false,
+            },
+        }),
+    )?;
+    write_json_value(
+        &rust_dir.join("integrity.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-integrity/current",
+            "algorithm": "sha256",
+            "files": integrity,
+        }),
+    )?;
+    write_json_value(
+        &rust_dir.join("size-report.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-size-report/current",
+            "totalBytes": total_bytes,
+            "files": sizes,
+        }),
+    )?;
+    write_json_value(
+        &rust_dir.join("missing-data-report.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-missing-data-report/current",
+            "missingFiles": missing,
+        }),
+    )?;
+    write_json_value(
+        &rust_dir.join("migration-readiness.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-migration-readiness/current",
+            "ready": missing.is_empty() && path_violations.is_empty(),
+            "checks": {
+                "requiredArtifactsPresent": missing.is_empty(),
+                "pathPortable": path_violations.is_empty(),
+                "integrityHashesGenerated": true,
+                "sizeReportGenerated": true,
+            },
+            "pathViolations": path_violations,
         }),
     )?;
     Ok(())
