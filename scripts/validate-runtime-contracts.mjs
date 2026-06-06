@@ -98,6 +98,16 @@ function validateHiddenRulesAgainstBrowserCatalog(items) {
   if (!hasString(nativeRulesPath) || !existsSync(join(distDataDir, nativeRulesPath))) {
     return { deterministicHiddenRules: 0, hiddenBrowserMatches: 0 };
   }
+  const validationReportPath = manifest?.files?.validationReport;
+  const compilerReport = hasString(validationReportPath) && existsSync(join(distDataDir, validationReportPath))
+    ? readJson(join(distDataDir, validationReportPath))
+    : null;
+  const browserContractPath = manifest?.files?.neiBrowserContract;
+  const browserContract = hasString(browserContractPath) && existsSync(join(distDataDir, browserContractPath))
+    ? readJson(join(distDataDir, browserContractPath))
+    : compilerReport?.browserContract ?? null;
+  const authoritativeBrowserContract = browserContract?.status === "ok"
+    && Number(compilerReport?.counts?.authoritativeBrowserContractMatches ?? 0) === 1;
   const nativeRules = readJson(join(distDataDir, nativeRulesPath));
   const deterministicRules = firstArray(nativeRules.hiddenItems)
     .map(compileDeterministicHiddenRule)
@@ -124,7 +134,7 @@ function validateHiddenRulesAgainstBrowserCatalog(items) {
       break;
     }
   }
-  if (hiddenMatches.length > 0) {
+  if (hiddenMatches.length > 0 && !authoritativeBrowserContract) {
     fail(failures, "HIDDEN_ITEMS_IN_DEFAULT_BROWSER", "deterministic NEI hidden item rules must not appear in the default browser catalog", {
       samples: hiddenMatches,
     });
@@ -132,6 +142,7 @@ function validateHiddenRulesAgainstBrowserCatalog(items) {
   return {
     deterministicHiddenRules: deterministicRules.length,
     hiddenBrowserMatches: hiddenMatches.length,
+    authoritativeBrowserContract,
   };
 }
 

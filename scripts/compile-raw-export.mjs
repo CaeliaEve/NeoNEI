@@ -802,6 +802,43 @@ function buildHiddenBrowserItemIdSet(items, hiddenRules) {
   };
 }
 
+function buildAuthoritativeNeiBrowserItemIds(items, neiOrder, rawBrowserGroups, exportReport) {
+  const itemIds = new Set((items ?? []).map((item) => item?.itemId).filter(Boolean));
+  const browserItemIds = new Set();
+  for (const entry of neiOrder ?? []) {
+    const itemId = `${entry?.itemId ?? ""}`.trim();
+    if (itemIds.has(itemId)) browserItemIds.add(itemId);
+  }
+  for (const group of rawBrowserGroups ?? []) {
+    for (const memberItemId of group?.memberItemIds ?? []) {
+      const itemId = `${memberItemId ?? ""}`.trim();
+      if (itemIds.has(itemId)) browserItemIds.add(itemId);
+    }
+  }
+
+  const exporterContract = exportReport?.neiBrowserContract ?? null;
+  const expectedBrowserItemCount = stableNumber(
+    exporterContract?.browserItemCount,
+    stableNumber(exportReport?.counts?.neiBrowserItems, 0),
+  );
+  const expectedHiddenItemCount = stableNumber(
+    exporterContract?.hiddenItemCount,
+    stableNumber(exportReport?.counts?.neiHiddenItems, 0),
+  );
+  const hiddenItemIds = new Set([...itemIds].filter((itemId) => !browserItemIds.has(itemId)));
+  const contractMatches = expectedBrowserItemCount > 0
+    && browserItemIds.size === expectedBrowserItemCount
+    && (expectedHiddenItemCount === 0 || hiddenItemIds.size === expectedHiddenItemCount);
+
+  return {
+    browserItemIds,
+    hiddenItemIds,
+    contractMatches,
+    expectedBrowserItemCount,
+    expectedHiddenItemCount,
+  };
+}
+
 function buildSearchEntry(item, index, renderByAssetId, layoutByItemId) {
   const layout = layoutByItemId.get(item.itemId) ?? {};
   const renderAsset = renderByAssetId.get(item.renderAssetRef) ?? renderByAssetId.get("nesqlpp:item/" + item.itemId) ?? null;
@@ -2219,10 +2256,7 @@ function buildBrowserContractReport({
     exporterContract?.defaultEntryCount,
     stableNumber(exporterCounts.neiDefaultEntries, neiOrder.length),
   );
-  const expectedCompilerBrowserItemCount = Math.max(
-    0,
-    exporterBrowserItemCount - stableNumber(hiddenBrowserItemCount, 0),
-  );
+  const expectedCompilerBrowserItemCount = exporterBrowserItemCount;
 
   const countMismatches = [];
   if (expectedCompilerBrowserItemCount !== browserItems.length) {
@@ -2757,7 +2791,13 @@ function compileRawExport(inputDir, outputDir) {
   });
   const itemIds = new Set(items.map((item) => item?.itemId).filter(Boolean));
   const hiddenBrowser = buildHiddenBrowserItemIdSet(items, neiHiddenItems);
-  const visibleBrowserItemIds = new Set([...itemIds].filter((itemId) => !hiddenBrowser.hiddenItemIds.has(itemId)));
+  const authoritativeBrowser = buildAuthoritativeNeiBrowserItemIds(items, neiOrder, rawGroups, exportReport);
+  const visibleBrowserItemIds = authoritativeBrowser.contractMatches
+    ? authoritativeBrowser.browserItemIds
+    : new Set([...itemIds].filter((itemId) => !hiddenBrowser.hiddenItemIds.has(itemId)));
+  const hiddenBrowserItemIds = authoritativeBrowser.contractMatches
+    ? authoritativeBrowser.hiddenItemIds
+    : hiddenBrowser.hiddenItemIds;
   const semanticIdentityByLegacyItemId = new Map();
   for (const entry of itemIdentityMap) {
     if (entry?.legacyItemId) semanticIdentityByLegacyItemId.set(entry.legacyItemId, entry);
@@ -2863,7 +2903,7 @@ function compileRawExport(inputDir, outputDir) {
 
   const toBrowserCatalogItem = (entry, index, options = {}) => {
     const layout = layoutByItemId.get(entry.itemId) ?? {};
-    const hidden = hiddenBrowser.hiddenItemIds.has(entry.itemId);
+    const hidden = hiddenBrowserItemIds.has(entry.itemId);
     return {
       itemId: entry.itemId,
       publicItemId: entry.publicItemId ?? null,
@@ -2889,11 +2929,11 @@ function compileRawExport(inputDir, outputDir) {
   };
   const compareBrowserCatalogItems = (left, right) => left.browserOrder - right.browserOrder || left.itemId.localeCompare(right.itemId);
   const browserItems = searchItems
-    .filter((entry) => !hiddenBrowser.hiddenItemIds.has(entry.itemId))
+    .filter((entry) => visibleBrowserItemIds.has(entry.itemId))
     .map((entry, index) => toBrowserCatalogItem(entry, index, { keepGroups: true }))
     .sort(compareBrowserCatalogItems);
   const hiddenBrowserItems = searchItems
-    .filter((entry) => hiddenBrowser.hiddenItemIds.has(entry.itemId))
+    .filter((entry) => hiddenBrowserItemIds.has(entry.itemId))
     .map((entry, index) => toBrowserCatalogItem(entry, index, { keepGroups: false }))
     .sort(compareBrowserCatalogItems);
   const browserContract = buildBrowserContractReport({
@@ -2903,7 +2943,7 @@ function compileRawExport(inputDir, outputDir) {
     exportReport,
     compilerAddedGroupCount: compilerAddedSemanticGroups,
     compilerDroppedGroupCount: mergedBrowserGroups.dropped.length,
-    hiddenBrowserItemCount: hiddenBrowser.hiddenItemIds.size,
+    hiddenBrowserItemCount: hiddenBrowserItemIds.size,
   });
 
   const generatedBrowserAtlasIndex = buildBrowserAtlasIndexFromResources(browserAtlasIndex, browserItems, textures, animationFacts);
@@ -3032,7 +3072,10 @@ function compileRawExport(inputDir, outputDir) {
       neiHandlers: neiHandlers.length,
       neiHandlerLayouts: neiHandlerLayouts.length,
       deterministicHiddenBrowserRules: hiddenBrowser.deterministicRules.length,
-      hiddenBrowserItems: hiddenBrowser.hiddenItemIds.size,
+      hiddenBrowserItems: hiddenBrowserItemIds.size,
+      authoritativeBrowserItems: authoritativeBrowser.browserItemIds.size,
+      authoritativeHiddenBrowserItems: authoritativeBrowser.hiddenItemIds.size,
+      authoritativeBrowserContractMatches: authoritativeBrowser.contractMatches ? 1 : 0,
       fluids: fluids.length,
       recipes: recipes.length,
       groups: groups.length,
