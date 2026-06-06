@@ -5,8 +5,17 @@ import { fileURLToPath } from "node:url";
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const distDataDir = resolve(process.env.DIST_DATA_V3_DIR || join(repoRoot, "backend", "public", "dist-data"));
 const gate = process.argv.includes("--gate");
+const requireGtMachineIconRules =
+  process.argv.includes("--require-gt-machine-icon-rules") || process.env.REQUIRE_GT_MACHINE_ICON_RULES === "1";
 const outputDir = join(repoRoot, ".runtime-logs");
 const outputPath = join(outputDir, "recipe-handler-metadata-gate.json");
+
+const expectedGtMachineIcons = new Map(Object.entries({
+  "gt.recipe.alloysmelter": "gregtech:gt.blockmachines:31023",
+  "gt.recipe.arcfurnace": "gregtech:gt.blockmachines:862",
+  "gt.recipe.fluidsolidifier": "gregtech:gt.blockmachines:10890",
+  "gt.recipe.macerator": "gregtech:gt.blockmachines:797",
+}));
 
 function readJson(relativePath) {
   const filePath = join(distDataDir, relativePath);
@@ -52,6 +61,28 @@ const missingLayout = handlers.filter((entry) => hasText(entry?.handlerKey) && !
 const layoutWithoutSlots = layouts.filter((entry) => !Array.isArray(entry?.slots) || entry.slots.length === 0);
 const missingMachineRefs = handlers.filter((entry) => !hasText(entry?.catalystItemName) && !hasText(entry?.preferredMachineItemName));
 const gtMultiblockWithoutPreferred = handlers.filter((entry) => entry?.gtMultiblockPreferred === true && !hasText(entry?.preferredMachineItemName));
+const gtMachineIconMismatches = handlers
+  .map((entry) => {
+    const handlerKey = text(entry?.handlerKey);
+    const handlerClass = text(entry?.handlerClass);
+    const expected =
+      expectedGtMachineIcons.get(handlerKey)
+      ?? expectedGtMachineIcons.get(handlerClass)
+      ?? null;
+    if (!expected) return null;
+    const actual = text(entry?.preferredMachineItemName);
+    return actual === expected
+      ? null
+      : {
+          handlerKey: handlerKey || null,
+          handlerClass: handlerClass || null,
+          localizedName: entry?.localizedName ?? entry?.displayName ?? null,
+          expectedPreferredMachineItemName: expected,
+          actualPreferredMachineItemName: actual || null,
+          catalystItemName: entry?.catalystItemName ?? null,
+        };
+  })
+  .filter(Boolean);
 const categoriesWithHandler = categories.filter((entry) => entry?.handler);
 const categoriesWithNativeLayout = categories.filter((entry) => entry?.nativeLayout);
 
@@ -64,6 +95,9 @@ if (missingFamily.length > 0) failures.push(`${missingFamily.length} handler(s) 
 if (missingLayout.length > 0) failures.push(`${missingLayout.length} handler(s) are missing layout rows`);
 if (layoutWithoutSlots.length > 0) failures.push(`${layoutWithoutSlots.length} handler layout(s) are missing slot facts`);
 if (gtMultiblockWithoutPreferred.length > 0) failures.push(`${gtMultiblockWithoutPreferred.length} GT multiblock handler(s) are missing preferred machine icons`);
+if (requireGtMachineIconRules && gtMachineIconMismatches.length > 0) {
+  failures.push(`${gtMachineIconMismatches.length} GT machine handler(s) do not match preferred large-machine icon rules`);
+}
 
 const missingMachineRefRatio = handlers.length > 0 ? missingMachineRefs.length / handlers.length : 1;
 if (missingMachineRefRatio > 0.02) {
@@ -87,11 +121,14 @@ const result = {
     layoutWithoutSlots: layoutWithoutSlots.length,
     missingMachineRefs: missingMachineRefs.length,
     gtMultiblockWithoutPreferred: gtMultiblockWithoutPreferred.length,
+    gtMachineIconMismatches: gtMachineIconMismatches.length,
+    gtMachineIconRulesRequired: requireGtMachineIconRules,
     missingMachineRefRatio: Number(missingMachineRefRatio.toFixed(6)),
   },
   samples: {
     missingMachineRefs: sample(missingMachineRefs),
     gtMultiblockWithoutPreferred: sample(gtMultiblockWithoutPreferred),
+    gtMachineIconMismatches: gtMachineIconMismatches.slice(0, 25),
     missingLayout: sample(missingLayout),
   },
   failures,
