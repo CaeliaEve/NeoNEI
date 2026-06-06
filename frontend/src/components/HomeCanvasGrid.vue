@@ -539,6 +539,24 @@ function drawGlobalAnimation(
     ctx.drawImage(bitmap, drawX, drawY, iconSize.value, iconSize.value);
     return true;
   }
+
+  // Do not wait for createImageBitmap before painting the current animation
+  // frame. Waiting asynchronously makes the animation overlay clear first and
+  // leaves animated-only entries blank for a frame, which looks like flicker
+  // during fast NEI-style page flips. Draw directly from the resident animated
+  // atlas immediately, then let ImageBitmap caching catch up in the background.
+  ctx.drawImage(
+    atlas,
+    frame.x,
+    frame.y,
+    frame.width,
+    frame.height,
+    drawX,
+    drawY,
+    iconSize.value,
+    iconSize.value,
+  );
+
   if (typeof createImageBitmap === "function" && !prepared.pendingFrameBitmaps.has(frameCacheKey)) {
     prepared.pendingFrameBitmaps.add(frameCacheKey);
     void createImageBitmap(atlas, frame.x, frame.y, frame.width, frame.height)
@@ -551,7 +569,7 @@ function drawGlobalAnimation(
         prepared.pendingFrameBitmaps.delete(frameCacheKey);
       });
   }
-  return false;
+  return true;
 }
 
 function drawStaticImage(
