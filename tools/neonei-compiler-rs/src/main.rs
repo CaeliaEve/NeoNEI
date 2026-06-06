@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Context, Result};
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use flate2::read::GzDecoder;
+use pinyin::ToPinyin;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -39,11 +40,22 @@ enum Command {
         output: PathBuf,
         #[arg(long)]
         report: PathBuf,
+        #[arg(long, value_enum, default_value_t = CompileScope::All)]
+        scope: CompileScope,
         #[arg(long)]
         threads: Option<usize>,
         #[arg(long, default_value_t = false)]
         strict: bool,
     },
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+enum CompileScope {
+    All,
+    Search,
+    Browser,
+    Recipes,
+    Textures,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,16 +120,25 @@ fn main() -> Result<()> {
             input,
             output,
             report,
+            scope,
             threads,
             strict,
         } => {
             configure_threads(threads);
             fs::create_dir_all(&output)
                 .with_context(|| format!("create output directory {}", output.display()))?;
-            compile_browser_pack(&input, &output, strict)?;
-            compile_recipe_pack(&input, &output, strict)?;
-            compile_texture_pack(&input, &output, strict)?;
-            compile_runtime_reports(&output, strict)?;
+            match scope {
+                CompileScope::All => {
+                    compile_browser_pack(&input, &output, strict)?;
+                    compile_recipe_pack(&input, &output, strict)?;
+                    compile_texture_pack(&input, &output, strict)?;
+                }
+                CompileScope::Search => compile_search_pack(&input, &output, strict)?,
+                CompileScope::Browser => compile_browser_pack(&input, &output, strict)?,
+                CompileScope::Recipes => compile_recipe_pack(&input, &output, strict)?,
+                CompileScope::Textures => compile_texture_pack(&input, &output, strict)?,
+            }
+            compile_runtime_reports(&output, scope, strict)?;
             run_baseline(&input, Some(&output), &report, strict)
         }
     }
@@ -216,6 +237,14 @@ fn summarize_raw_export(
         let path = input.join(&normalized);
         if !path.exists() {
             missing_declared_files.push(format!("{}:{}", logical_name, normalized));
+            continue;
+        }
+        if path.is_dir() {
+            warnings.push(format!(
+                "manifest path is a directory and was not hashed as a file: {}:{}",
+                logical_name, normalized
+            ));
+            existing_declared_files += 1;
             continue;
         }
         existing_declared_files += 1;
@@ -350,6 +379,8 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
             let internal_name = value_string(item, "internalName");
             let render_asset_ref = value_string(item, "renderAssetRef");
             let raw_search_terms = value_string(item, "searchTerms");
+            let (pinyin_full, pinyin_acronym) =
+                build_pinyin_fields(localized_name.as_deref().unwrap_or_default());
             let mut aliases = vec![item_id.clone()];
             for value in [
                 localized_name.clone(),
@@ -397,7 +428,10 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
                 "normalizedInternalName": internal_name.as_deref().map(normalize_text).unwrap_or_default(),
                 "normalizedItemId": normalize_text(&item_id),
                 "normalizedSearchTerms": normalized_terms,
+                "pinyinFull": pinyin_full,
+                "pinyinAcronym": pinyin_acronym,
                 "aliases": raw_search_terms.unwrap_or_default(),
+                "popularityScore": group.and_then(|value| value.get("groupSize")).and_then(Value::as_u64).unwrap_or(1),
                 "searchRank": search_rank,
                 "renderAssetRef": render_asset_ref,
                 "groupKey": group.and_then(|value| value.get("groupKey")).cloned().unwrap_or(Value::Null),
@@ -469,6 +503,122 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
             "counts": {
                 "items": search_items.len(),
                 "aliasItems": alias_map.len(),
+            },
+            "items": search_items,
+        }),
+    )?;
+    Ok(())
+}
+
+fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+    let manifest = read_manifest(input)?;
+    let items = read_jsonl_values(input, &manifest, "items")?;
+    let group_rows = read_jsonl_values(input, &manifest, "groups")?;
+
+    if strict && items.is_empty() {
+        return Err(anyhow!(
+            "search compiler blocked: raw items stream is empty"
+        ));
+    }
+
+    let mut group_by_member = BTreeMap::new();
+    for row in &group_rows {
+        let group_key = value_string(row, "groupKey");
+        let group_label = value_string(row, "groupLabel");
+        let representative = value_string(row, "representativeItemId");
+        let members = row
+            .get("memberItemIds")
+            .and_then(Value::as_array)
+            .map(|values| {
+                values
+                    .iter()
+                    .filter_map(Value::as_str)
+                    .map(str::to_string)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for member in &members {
+            group_by_member.insert(
+                member.clone(),
+                json!({
+                    "groupKey": group_key,
+                    "groupLabel": group_label,
+                    "groupSize": value_u64(row, "groupSize").unwrap_or(members.len() as u64),
+                    "representativeItemId": representative,
+                }),
+            );
+        }
+    }
+
+    let mut alias_items = 0usize;
+    let search_items = items
+        .iter()
+        .enumerate()
+        .map(|(search_rank, item)| {
+            let item_id = value_string(item, "itemId").unwrap_or_default();
+            let localized_name = value_string(item, "localizedName");
+            let mod_id = value_string(item, "modId");
+            let internal_name = value_string(item, "internalName");
+            let render_asset_ref = value_string(item, "renderAssetRef");
+            let raw_search_terms = value_string(item, "searchTerms");
+            let (pinyin_full, pinyin_acronym) =
+                build_pinyin_fields(localized_name.as_deref().unwrap_or_default());
+            let group = group_by_member.get(&item_id);
+            let public_item_id = format!("item:{}", item_id.to_ascii_lowercase());
+            let normalized_terms = normalize_search_terms(
+                [
+                    localized_name.as_deref(),
+                    internal_name.as_deref(),
+                    mod_id.as_deref(),
+                    raw_search_terms.as_deref(),
+                    Some(public_item_id.as_str()),
+                    group
+                        .and_then(|value| value.get("groupKey"))
+                        .and_then(Value::as_str),
+                    group
+                        .and_then(|value| value.get("groupLabel"))
+                        .and_then(Value::as_str),
+                ]
+                .into_iter()
+                .flatten(),
+            );
+            alias_items += 1;
+            json!({
+                "itemId": item_id,
+                "publicItemId": public_item_id,
+                "localizedName": localized_name,
+                "modId": mod_id,
+                "internalName": internal_name,
+                "normalizedLocalizedName": localized_name.as_deref().map(normalize_text).unwrap_or_default(),
+                "normalizedInternalName": internal_name.as_deref().map(normalize_text).unwrap_or_default(),
+                "normalizedItemId": normalize_text(&item_id),
+                "normalizedSearchTerms": normalized_terms,
+                "pinyinFull": pinyin_full,
+                "pinyinAcronym": pinyin_acronym,
+                "aliases": raw_search_terms.unwrap_or_default(),
+                "popularityScore": group.and_then(|value| value.get("groupSize")).and_then(Value::as_u64).unwrap_or(1),
+                "searchRank": search_rank,
+                "renderAssetRef": render_asset_ref,
+                "groupKey": group.and_then(|value| value.get("groupKey")).cloned().unwrap_or(Value::Null),
+                "groupLabel": group.and_then(|value| value.get("groupLabel")).cloned().unwrap_or(Value::Null),
+                "groupSize": group.and_then(|value| value.get("groupSize")).cloned().unwrap_or(json!(1)),
+                "representativeItemId": group
+                    .and_then(|value| value.get("representativeItemId"))
+                    .cloned()
+                    .unwrap_or_else(|| json!(item_id)),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+    write_json_value(
+        &rust_dir.join("search-pack.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-search-pack/current",
+            "counts": {
+                "items": search_items.len(),
+                "aliasItems": alias_items,
             },
             "items": search_items,
         }),
@@ -751,16 +901,22 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
     Ok(())
 }
 
-fn compile_runtime_reports(output: &Path, strict: bool) -> Result<()> {
+fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> Result<()> {
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
 
-    let artifact_names = [
-        "browser-pack.json",
-        "search-pack.json",
-        "recipe-pack.json",
-        "texture-pack.json",
-    ];
+    let artifact_names: &[&str] = match scope {
+        CompileScope::All => &[
+            "browser-pack.json",
+            "search-pack.json",
+            "recipe-pack.json",
+            "texture-pack.json",
+        ],
+        CompileScope::Search => &["search-pack.json"],
+        CompileScope::Browser => &["browser-pack.json", "search-pack.json"],
+        CompileScope::Recipes => &["recipe-pack.json"],
+        CompileScope::Textures => &["texture-pack.json"],
+    };
     let mut files = Vec::new();
     let mut integrity = BTreeMap::new();
     let mut sizes = BTreeMap::new();
@@ -814,12 +970,8 @@ fn compile_runtime_reports(output: &Path, strict: bool) -> Result<()> {
             "schemaVersion": "neonei/rust-runtime-manifest/current",
             "generatedAt": generated_at,
             "files": files,
-            "entrypoints": {
-                "browser": "rust/browser-pack.json",
-                "search": "rust/search-pack.json",
-                "recipes": "rust/recipe-pack.json",
-                "textures": "rust/texture-pack.json",
-            },
+            "compileScope": scope.as_str(),
+            "entrypoints": rust_entrypoints(scope),
             "pathPolicy": {
                 "portableRelativePathsOnly": true,
                 "absolutePathsAllowed": false,
@@ -865,6 +1017,42 @@ fn compile_runtime_reports(output: &Path, strict: bool) -> Result<()> {
         }),
     )?;
     Ok(())
+}
+
+impl CompileScope {
+    fn as_str(self) -> &'static str {
+        match self {
+            CompileScope::All => "all",
+            CompileScope::Search => "search",
+            CompileScope::Browser => "browser",
+            CompileScope::Recipes => "recipes",
+            CompileScope::Textures => "textures",
+        }
+    }
+}
+
+fn rust_entrypoints(scope: CompileScope) -> Value {
+    match scope {
+        CompileScope::All => json!({
+            "browser": "rust/browser-pack.json",
+            "search": "rust/search-pack.json",
+            "recipes": "rust/recipe-pack.json",
+            "textures": "rust/texture-pack.json",
+        }),
+        CompileScope::Search => json!({
+            "search": "rust/search-pack.json",
+        }),
+        CompileScope::Browser => json!({
+            "browser": "rust/browser-pack.json",
+            "search": "rust/search-pack.json",
+        }),
+        CompileScope::Recipes => json!({
+            "recipes": "rust/recipe-pack.json",
+        }),
+        CompileScope::Textures => json!({
+            "textures": "rust/texture-pack.json",
+        }),
+    }
 }
 
 fn validate_atlas_ref(item_id: &str, atlas: Option<&Value>, missing_refs: &mut Vec<String>) {
@@ -1043,6 +1231,24 @@ fn normalize_search_terms<'a>(values: impl Iterator<Item = &'a str>) -> String {
     terms.sort();
     terms.dedup();
     terms.join(" ")
+}
+
+fn build_pinyin_fields(localized_name: &str) -> (String, String) {
+    let syllables = localized_name
+        .chars()
+        .filter_map(|character| {
+            character
+                .to_pinyin()
+                .map(|pinyin| pinyin.plain().to_string())
+        })
+        .filter(|value| !value.trim().is_empty())
+        .collect::<Vec<_>>();
+    let full = syllables.join("");
+    let acronym = syllables
+        .iter()
+        .filter_map(|part| part.chars().next())
+        .collect::<String>();
+    (full, acronym)
 }
 
 fn sha256_file(path: &Path) -> Result<String> {

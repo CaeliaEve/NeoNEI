@@ -18,6 +18,8 @@ const cargoToml = join(repoRoot, 'tools', 'neonei-compiler-rs', 'Cargo.toml');
 const rustReport = join(repoRoot, '.tmp-runtime', 'rust-retirement-gate', 'rust-compile-report.json');
 const strict = process.argv.includes('--strict') || process.argv.includes('--gate');
 const quick = process.argv.includes('--quick');
+const compileScopeArg = process.argv.find((arg) => arg.startsWith('--scope='));
+const compileScope = compileScopeArg?.split('=')[1] || process.env.RUST_GATE_SCOPE || (quick ? 'search' : 'all');
 const selfTestMode = !process.env.RUST_GATE_RAW_EXPORT;
 
 const steps = [];
@@ -78,6 +80,7 @@ function writeSummary(status, message = null) {
     message,
     quick,
     strict,
+    compileScope,
     rawExportInput: rawExportInput.replaceAll('\\', '/'),
     distDataDir: distDataDir.replaceAll('\\', '/'),
     steps,
@@ -90,12 +93,18 @@ if (!process.env.RUST_GATE_RAW_EXPORT) {
   runStep('node raw-export self-test', process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'test:raw-export'], { cwd: frontendDir });
 } else if (!existsSync(rawExportInput)) {
   fail(`RUST_GATE_RAW_EXPORT does not exist: ${rawExportInput}`);
+} else if (!existsSync(join(distDataDir, 'validation', 'report.json'))) {
+  runStep('node raw-export compile', 'node', [
+    '../scripts/compile-raw-export.mjs',
+    '--input', rawExportInput,
+    '--output', distDataDir,
+  ], { cwd: frontendDir });
 }
 
 runStep('rust compiler test', 'cargo', ['test', '--manifest-path', cargoToml]);
 runStep('rust compiler strict compile', 'cargo', [
   'run', '--manifest-path', cargoToml, '--',
-  'compile', '--input', rawExportInput, '--output', distDataDir, '--report', rustReport, '--strict',
+  'compile', '--input', rawExportInput, '--output', distDataDir, '--report', rustReport, '--scope', compileScope, '--strict',
 ]);
 
 const nodeReport = readJson(join(distDataDir, 'validation', 'report.json'));
@@ -106,10 +115,14 @@ assertEqual(rustCompile?.runtime?.counts?.items, nodeReport?.counts?.items, 'run
 assertEqual(rustCompile?.runtime?.counts?.recipes, nodeReport?.counts?.recipes, 'runtime recipe count');
 assertEqual(rustCompile?.runtime?.counts?.browserAtlasItems, nodeReport?.counts?.browserAtlasItems, 'runtime atlas count');
 if (rustReadiness?.ready !== true) fail(`Rust migration readiness is not green: ${JSON.stringify(rustReadiness)}`);
-if ((rustManifest?.files ?? []).length < 4) fail('Rust runtime manifest does not list compiled artifacts');
+const expectedArtifactCount = compileScope === 'all' ? 4 : compileScope === 'browser' ? 2 : 1;
+if ((rustManifest?.files ?? []).length < expectedArtifactCount) fail('Rust runtime manifest does not list compiled artifacts');
 
 const distEnv = {
   DIST_DATA_V3_DIR: distDataDir,
+  ...(compileScope === 'search' ? {
+    SEARCH_V3_PACK_PATH: join(distDataDir, 'rust', 'search-pack.json'),
+  } : {}),
   ...(selfTestMode ? {
     BROWSER_PAGE_SMOKE_PAGES: '1,last',
     BROWSER_PAGE_SMOKE_SEARCHES: 'iron',
@@ -120,12 +133,16 @@ const distEnv = {
     RECIPE_V3_MAX_P95_MS: '150',
   } : {}),
 };
-runStep('frontend typecheck', process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'typecheck'], { cwd: frontendDir });
-runStep('frontend runtime contracts', 'node', ['../scripts/validate-runtime-contracts.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
-runStep('frontend browser page validation', 'node', ['../scripts/validate-browser-pages-v3.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
-runStep('frontend recipe validation', 'node', ['../scripts/validate-recipe-open-smoke.mjs', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
+if (compileScope !== 'search') {
+  runStep('frontend typecheck', process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'typecheck'], { cwd: frontendDir });
+  runStep('frontend runtime contracts', 'node', ['../scripts/validate-runtime-contracts.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
+  runStep('frontend browser page validation', 'node', ['../scripts/validate-browser-pages-v3.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
+  runStep('frontend recipe validation', 'node', ['../scripts/validate-recipe-open-smoke.mjs', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
+}
 runStep('frontend search benchmark', 'node', ['../scripts/bench-search-v3.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
-runStep('frontend atlas benchmark', 'node', ['../scripts/bench-browser-atlas-v3.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
+if (compileScope !== 'search') {
+  runStep('frontend atlas benchmark', 'node', ['../scripts/bench-browser-atlas-v3.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
+}
 
 if (!quick) {
   runStep('backend build', process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'], { cwd: backendDir });

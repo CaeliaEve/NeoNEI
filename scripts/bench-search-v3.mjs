@@ -6,6 +6,7 @@ import zlib from "node:zlib";
 const repoRoot = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const publishRoot = join(repoRoot, "backend", "data", "publish");
 const distDataDir = process.env.DIST_DATA_V3_DIR ? process.env.DIST_DATA_V3_DIR : null;
+const explicitSearchPackPath = process.env.SEARCH_V3_PACK_PATH ? process.env.SEARCH_V3_PACK_PATH : null;
 const reportDir = join(repoRoot, ".runtime-logs");
 const reportPath = join(reportDir, "search-v3-benchmark.json");
 const gateMode = process.argv.includes("--gate");
@@ -35,8 +36,13 @@ const minItems = Number(process.env.SEARCH_V3_MIN_ITEMS ?? 10000);
 
 const MAX_PREFIX_LENGTH = 32;
 const MAX_FIELD_LENGTH_FOR_GRAMS = 96;
+const MAX_TOKEN_PREFIX_LENGTH = 20;
+const MAX_FIELD_TOKENS = 28;
 
 function latestPublishDir() {
+  if (explicitSearchPackPath && existsSync(explicitSearchPackPath)) {
+    return distDataDir ?? repoRoot;
+  }
   if (distDataDir && existsSync(distDataDir)) {
     return distDataDir;
   }
@@ -71,6 +77,9 @@ function loadJsonMaybeGzip(path) {
 }
 
 function findSearchPack(bundleDir) {
+  if (explicitSearchPackPath && existsSync(explicitSearchPackPath)) {
+    return explicitSearchPackPath;
+  }
   const candidates = [
     join(bundleDir, "search", "all.json"),
     join(bundleDir, "search", "all.json.gz"),
@@ -85,16 +94,51 @@ function normalizeKeyword(value) {
   return `${value ?? ""}`.trim().toLowerCase().replace(/\s+/g, "");
 }
 
+function tokenizeSearchField(value) {
+  return `${value ?? ""}`
+    .trim()
+    .toLowerCase()
+    .split(/[\s,;|/\\()[\]{}<>:"'`，。；、（）【】《》]+/u)
+    .map(normalizeKeyword)
+    .filter(isUsefulSearchToken)
+    .slice(0, MAX_FIELD_TOKENS);
+}
+
 function fields(entry) {
-  return [
-    entry.normalizedLocalizedName,
-    entry.pinyinFull,
-    entry.pinyinAcronym,
-    entry.aliases,
-    entry.normalizedInternalName,
-    entry.normalizedItemId,
-    entry.normalizedSearchTerms,
-  ].map(normalizeKeyword).filter(Boolean);
+  const direct = [
+    { value: entry.normalizedLocalizedName, prefixLimit: MAX_PREFIX_LENGTH, grams: true },
+    { value: entry.pinyinFull, prefixLimit: MAX_PREFIX_LENGTH, grams: true },
+    { value: entry.pinyinAcronym, prefixLimit: MAX_PREFIX_LENGTH, grams: false },
+    { value: entry.normalizedInternalName, prefixLimit: MAX_PREFIX_LENGTH, grams: true },
+    { value: entry.normalizedItemId, prefixLimit: 16, grams: false },
+  ].map((field) => ({ ...field, value: normalizeKeyword(field.value) })).filter((field) => field.value);
+  const tokenized = [
+    ...tokenizeSearchField(entry.aliases),
+    ...tokenizeSearchField(entry.normalizedSearchTerms),
+  ].map((value) => ({ value, prefixLimit: MAX_TOKEN_PREFIX_LENGTH, grams: value.length <= 32 }));
+  const byValue = new Map();
+  for (const field of [...direct, ...tokenized]) {
+    const existing = byValue.get(field.value);
+    if (!existing || field.prefixLimit > existing.prefixLimit || field.grams) {
+      byValue.set(field.value, {
+        value: field.value,
+        prefixLimit: Math.max(existing?.prefixLimit ?? 0, field.prefixLimit),
+        grams: Boolean(existing?.grams || field.grams),
+      });
+    }
+  }
+  return Array.from(byValue.values());
+}
+
+function isUsefulSearchToken(value) {
+  if (!value) return false;
+  if (value.length > 64) return false;
+  if (value.includes("==")) return false;
+  if (value.startsWith("fallback:")) return false;
+  if (value.startsWith("item:i~")) return false;
+  if ((value.match(/~/g) ?? []).length > 2) return false;
+  if (/^[a-z0-9_-]{22,}$/i.test(value) && /[0-9_-]/.test(value)) return false;
+  return true;
 }
 
 function append(index, key, sourceIndex) {
@@ -114,19 +158,21 @@ function buildIndexes(pack) {
   const gram = new Map();
   for (let sourceIndex = 0; sourceIndex < pack.length; sourceIndex += 1) {
     const seen = new Set();
-    for (const field of fields(pack[sourceIndex])) {
+    for (const fieldConfig of fields(pack[sourceIndex])) {
+      const field = fieldConfig.value;
       const exactKey = `exact:${field}`;
       if (!seen.has(exactKey)) {
         seen.add(exactKey);
         append(exact, field, sourceIndex);
       }
-      const maxPrefix = Math.min(MAX_PREFIX_LENGTH, field.length);
+      const maxPrefix = Math.min(fieldConfig.prefixLimit, field.length);
       for (let length = 1; length <= maxPrefix; length += 1) {
         const key = `prefix:${field.slice(0, length)}`;
         if (seen.has(key)) continue;
         seen.add(key);
         append(prefix, field.slice(0, length), sourceIndex);
       }
+      if (!fieldConfig.grams) continue;
       const gramSource = field.slice(0, MAX_FIELD_LENGTH_FOR_GRAMS);
       const gramLengths = field.length <= 2 ? [field.length] : [1, 2, 3];
       for (const gramLength of gramLengths) {

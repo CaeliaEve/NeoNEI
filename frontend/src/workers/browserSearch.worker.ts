@@ -92,6 +92,8 @@ const queryResultSetCache = new Map<string, CachedSearchResultSet>();
 
 const MAX_PREFIX_LENGTH = 32;
 const MAX_FIELD_LENGTH_FOR_GRAMS = 96;
+const MAX_TOKEN_PREFIX_LENGTH = 20;
+const MAX_FIELD_TOKENS = 28;
 const MAX_QUERY_RESULT_CACHE = 160;
 const MAX_QUERY_RESULT_SET_CACHE = 48;
 
@@ -108,32 +110,53 @@ function appendIndexValue(index: Map<string, number[]>, key: string, sourceIndex
   index.set(key, [sourceIndex]);
 }
 
-function getEntrySearchFields(entry: BrowserSearchPackEntry): string[] {
-  return [
-    entry.normalizedLocalizedName,
-    entry.pinyinFull,
-    entry.pinyinAcronym,
-    entry.aliases,
-    entry.normalizedInternalName,
-    entry.normalizedItemId,
-    entry.normalizedSearchTerms,
+type SearchFieldConfig = {
+  value: string;
+  prefixLimit: number;
+  grams: boolean;
+};
+
+function getEntrySearchFields(entry: BrowserSearchPackEntry): SearchFieldConfig[] {
+  const directFields = [
+    { value: entry.normalizedLocalizedName, prefixLimit: MAX_PREFIX_LENGTH, grams: true },
+    { value: entry.pinyinFull, prefixLimit: MAX_PREFIX_LENGTH, grams: true },
+    { value: entry.pinyinAcronym, prefixLimit: MAX_PREFIX_LENGTH, grams: false },
+    { value: entry.normalizedInternalName, prefixLimit: MAX_PREFIX_LENGTH, grams: true },
+    { value: entry.normalizedItemId, prefixLimit: 16, grams: false },
   ]
-    .map((value) => normalizeKeyword(`${value ?? ""}`))
-    .filter(Boolean);
+    .map((field) => ({ ...field, value: normalizeKeyword(`${field.value ?? ""}`) }))
+    .filter((field) => Boolean(field.value));
+  const tokenizedFields = [
+    ...tokenizeSearchField(entry.aliases),
+    ...tokenizeSearchField(entry.normalizedSearchTerms),
+  ].map((value) => ({ value, prefixLimit: MAX_TOKEN_PREFIX_LENGTH, grams: value.length <= 32 }));
+  const byValue = new Map<string, SearchFieldConfig>();
+  for (const field of [...directFields, ...tokenizedFields]) {
+    const existing = byValue.get(field.value);
+    if (!existing || field.prefixLimit > existing.prefixLimit || field.grams) {
+      byValue.set(field.value, {
+        value: field.value,
+        prefixLimit: Math.max(existing?.prefixLimit ?? 0, field.prefixLimit),
+        grams: Boolean(existing?.grams || field.grams),
+      });
+    }
+  }
+  return Array.from(byValue.values());
 }
 
 function addEntryToIndex(entry: BrowserSearchPackEntry, sourceIndex: number): void {
   sourceIndexByItemId.set(entry.itemId, sourceIndex);
   const seenKeys = new Set<string>();
 
-  for (const field of getEntrySearchFields(entry)) {
+  for (const fieldConfig of getEntrySearchFields(entry)) {
+    const field = fieldConfig.value;
     if (!field || seenKeys.has(`exact:${field}`)) {
       continue;
     }
     seenKeys.add(`exact:${field}`);
     appendIndexValue(exactIndex, field, sourceIndex);
 
-    const maxPrefixLength = Math.min(MAX_PREFIX_LENGTH, field.length);
+    const maxPrefixLength = Math.min(fieldConfig.prefixLimit, field.length);
     for (let length = 1; length <= maxPrefixLength; length += 1) {
       const prefix = field.slice(0, length);
       const key = `prefix:${prefix}`;
@@ -142,6 +165,7 @@ function addEntryToIndex(entry: BrowserSearchPackEntry, sourceIndex: number): vo
       appendIndexValue(prefixIndex, prefix, sourceIndex);
     }
 
+    if (!fieldConfig.grams) continue;
     const gramSource = field.slice(0, MAX_FIELD_LENGTH_FOR_GRAMS);
     const gramLengths = field.length <= 2 ? [field.length] : [1, 2, 3];
     for (const gramLength of gramLengths) {
@@ -191,6 +215,27 @@ function mergeEntries(base: BrowserSearchPackEntry[], incoming: BrowserSearchPac
 
 function normalizeKeyword(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function tokenizeSearchField(value: unknown): string[] {
+  return `${value ?? ""}`
+    .trim()
+    .toLowerCase()
+    .split(/[\s,;|/\\()[\]{}<>:"'`，。；、（）【】《》]+/u)
+    .map((token) => normalizeKeyword(token))
+    .filter(isUsefulSearchToken)
+    .slice(0, MAX_FIELD_TOKENS);
+}
+
+function isUsefulSearchToken(value: string): boolean {
+  if (!value) return false;
+  if (value.length > 64) return false;
+  if (value.includes("==")) return false;
+  if (value.startsWith("fallback:")) return false;
+  if (value.startsWith("item:i~")) return false;
+  if ((value.match(/~/g) ?? []).length > 2) return false;
+  if (/^[a-z0-9_-]{22,}$/i.test(value) && /[0-9_-]/.test(value)) return false;
+  return true;
 }
 
 function rankEntry(entry: BrowserSearchPackEntry, normalized: string): number | null {

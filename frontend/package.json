@@ -40,7 +40,8 @@
     "test:browser-search-cache": "node --test scripts/browser-search-cache-regression.test.mjs",
     "test:rust-compiler-scaffold": "node ../scripts/rust-compiler-gate.mjs",
     "test:rust-compiler": "node ../scripts/rust-compiler-gate.mjs --run-cargo",
-    "test:rust-retirement": "node ../scripts/rust-retirement-gate.mjs --gate --quick"
+    "test:rust-retirement": "node ../scripts/rust-retirement-gate.mjs --gate --quick",
+    "test:rust-retirement:full": "node ../scripts/rust-retirement-gate.mjs --gate"
   },
   "dependencies": {
     "axios": "^1.13.2",
