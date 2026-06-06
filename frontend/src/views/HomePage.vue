@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 
 
 import {
@@ -53,6 +53,11 @@ const currentView = ref<"items" | "patterns">("items");
 
 // Gear menu state
 const showGearMenu = ref(false);
+
+const openRuntimeHealth = () => {
+  showGearMenu.value = false;
+  void router.push({ name: "runtime-health" });
+};
 
 // Item size settings with localStorage
 const loadSavedItemSize = () => {
@@ -1648,6 +1653,9 @@ const saveSettings = () => {
                   <span>历史记录</span>
                   <strong>{{ viewHistory.length.toLocaleString() }}</strong>
                 </div>
+                <button type="button" @click="openRuntimeHealth" class="settings-secondary-btn settings-secondary-btn--cyan">
+                  运行时健康面板
+                </button>
                 <button type="button" @click="clearViewHistory" class="settings-danger-btn">
                   清除历史记录
                 </button>

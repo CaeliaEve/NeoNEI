@@ -47,6 +47,12 @@ type RankedSearchEntry = {
   rank: number;
 };
 
+type CachedSearchResultSet = {
+  total: number;
+  candidateCount: number;
+  entries: BrowserSearchPackEntry[];
+};
+
 function getSearchDisplayItemId(entry: BrowserSearchPackEntry): string {
   const groupKey = `${entry.groupKey ?? ""}`.trim();
   const representativeItemId = `${entry.representativeItemId ?? ""}`.trim();
@@ -82,10 +88,12 @@ let gramIndex = new Map<string, number[]>();
 let indexedItemCount = 0;
 let searchIndexVersion = 0;
 const queryResultCache = new Map<string, Omit<QueryResult, "id" | "elapsedMs">>();
+const queryResultSetCache = new Map<string, CachedSearchResultSet>();
 
 const MAX_PREFIX_LENGTH = 32;
 const MAX_FIELD_LENGTH_FOR_GRAMS = 96;
 const MAX_QUERY_RESULT_CACHE = 160;
+const MAX_QUERY_RESULT_SET_CACHE = 48;
 
 function appendIndexValue(index: Map<string, number[]>, key: string, sourceIndex: number): void {
   if (!key) return;
@@ -158,6 +166,7 @@ function rebuildIndexes(): void {
   indexedItemCount = searchPack.length;
   searchIndexVersion += 1;
   queryResultCache.clear();
+  queryResultSetCache.clear();
 }
 
 function ensureIndexReady(): void {
@@ -222,62 +231,6 @@ function compareRankedEntry(left: RankedSearchEntry, right: RankedSearchEntry): 
     || left.sourceIndex - right.sourceIndex;
 }
 
-function isWorseRankedEntry(left: RankedSearchEntry, right: RankedSearchEntry): boolean {
-  return compareRankedEntry(left, right) > 0;
-}
-
-function siftWorstHeapUp(heap: RankedSearchEntry[], index: number): void {
-  let child = index;
-  while (child > 0) {
-    const parent = Math.floor((child - 1) / 2);
-    if (!isWorseRankedEntry(heap[child], heap[parent])) {
-      return;
-    }
-    const tmp = heap[parent];
-    heap[parent] = heap[child];
-    heap[child] = tmp;
-    child = parent;
-  }
-}
-
-function siftWorstHeapDown(heap: RankedSearchEntry[], index: number): void {
-  let parent = index;
-  while (true) {
-    const left = parent * 2 + 1;
-    const right = left + 1;
-    let worst = parent;
-    if (left < heap.length && isWorseRankedEntry(heap[left], heap[worst])) {
-      worst = left;
-    }
-    if (right < heap.length && isWorseRankedEntry(heap[right], heap[worst])) {
-      worst = right;
-    }
-    if (worst === parent) {
-      return;
-    }
-    const tmp = heap[parent];
-    heap[parent] = heap[worst];
-    heap[worst] = tmp;
-    parent = worst;
-  }
-}
-
-function pushBoundedRankedEntry(heap: RankedSearchEntry[], entry: RankedSearchEntry, limit: number): void {
-  if (limit <= 0) {
-    return;
-  }
-  if (heap.length < limit) {
-    heap.push(entry);
-    siftWorstHeapUp(heap, heap.length - 1);
-    return;
-  }
-  if (compareRankedEntry(entry, heap[0]) >= 0) {
-    return;
-  }
-  heap[0] = entry;
-  siftWorstHeapDown(heap, 0);
-}
-
 function queryPack(message: QueryMessage): QueryResult {
   const startedAt = performance.now();
   ensureIndexReady();
@@ -296,7 +249,46 @@ function queryPack(message: QueryMessage): QueryResult {
       elapsedMs: performance.now() - startedAt,
     };
   }
-  const topLimit = Math.min(searchPack.length, requestedPage * pageSize);
+
+  const resultSet = getCachedSearchResultSet(normalized, normalizedModId);
+  const total = resultSet.total;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  const page = Math.min(requestedPage, totalPages);
+  const offset = (page - 1) * pageSize;
+  const pageEntries = resultSet.entries.slice(offset, offset + pageSize);
+  const itemIds = pageEntries.map((entry) => entry.itemId);
+
+  const resultWithoutTiming: Omit<QueryResult, "id" | "elapsedMs"> = {
+    total,
+    totalPages,
+    page,
+    itemIds,
+    entries: pageEntries,
+    candidateCount: resultSet.candidateCount,
+    indexReady: indexedItemCount === searchPack.length,
+  };
+  queryResultCache.set(cacheKey, resultWithoutTiming);
+  while (queryResultCache.size > MAX_QUERY_RESULT_CACHE) {
+    const oldestKey = queryResultCache.keys().next().value;
+    if (!oldestKey) break;
+    queryResultCache.delete(oldestKey);
+  }
+
+  return {
+    ...resultWithoutTiming,
+    id: message.id,
+    elapsedMs: performance.now() - startedAt,
+  };
+}
+
+function getCachedSearchResultSet(normalized: string, normalizedModId: string): CachedSearchResultSet {
+  const cacheKey = `${searchIndexVersion}\u0001${normalized}\u0001${normalizedModId || "all"}`;
+  const cached = queryResultSetCache.get(cacheKey);
+  if (cached) {
+    queryResultSetCache.delete(cacheKey);
+    queryResultSetCache.set(cacheKey, cached);
+    return cached;
+  }
 
   const candidateIndexes = collectCandidateIndexes(normalized);
   const bestByDisplayItemId = new Map<string, RankedSearchEntry>();
@@ -316,41 +308,20 @@ function queryPack(message: QueryMessage): QueryResult {
     }
   }
 
-  const total = bestByDisplayItemId.size;
-  const topRankedHeap: RankedSearchEntry[] = [];
-  for (const ranked of bestByDisplayItemId.values()) {
-    pushBoundedRankedEntry(topRankedHeap, ranked, topLimit);
-  }
-  const totalPages = Math.max(1, Math.ceil(total / pageSize));
-  const page = Math.min(requestedPage, totalPages);
-  const offset = (page - 1) * pageSize;
-  const pageEntries = topRankedHeap
-    .sort(compareRankedEntry)
-    .slice(offset, offset + pageSize)
-    .map((entry) => entry.entry);
-  const itemIds = pageEntries.map((entry) => entry.itemId);
-
-  const resultWithoutTiming: Omit<QueryResult, "id" | "elapsedMs"> = {
-    total,
-    totalPages,
-    page,
-    itemIds,
-    entries: pageEntries,
+  const rankedEntries = Array.from(bestByDisplayItemId.values()).sort(compareRankedEntry);
+  const resultSet: CachedSearchResultSet = {
+    total: rankedEntries.length,
     candidateCount: candidateIndexes.length,
-    indexReady: indexedItemCount === searchPack.length,
+    entries: rankedEntries.map((entry) => entry.entry),
   };
-  queryResultCache.set(cacheKey, resultWithoutTiming);
-  while (queryResultCache.size > MAX_QUERY_RESULT_CACHE) {
-    const oldestKey = queryResultCache.keys().next().value;
-    if (!oldestKey) break;
-    queryResultCache.delete(oldestKey);
-  }
 
-  return {
-    ...resultWithoutTiming,
-    id: message.id,
-    elapsedMs: performance.now() - startedAt,
-  };
+  queryResultSetCache.set(cacheKey, resultSet);
+  while (queryResultSetCache.size > MAX_QUERY_RESULT_SET_CACHE) {
+    const oldestKey = queryResultSetCache.keys().next().value;
+    if (!oldestKey) break;
+    queryResultSetCache.delete(oldestKey);
+  }
+  return resultSet;
 }
 
 function toUniqueSortedIndexes(values: Iterable<number>): number[] {
