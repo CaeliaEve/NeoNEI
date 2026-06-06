@@ -52,20 +52,19 @@ test('homepage no longer exposes a manual animation speed setting', () => {
   );
 });
 
-test('atlas-backed item cards still schedule animation enhancement once visible', () => {
-  const source = read('frontend/src/components/ItemCard.vue');
+test('legacy item card fallback is retired from the homepage path', () => {
+  const homeSource = read('frontend/src/views/HomePage.vue');
 
   assert.equal(
-    source.includes('if (atlasSprite) {') && source.includes('scheduleAnimationEnhancement();'),
-    true,
-    'atlas-backed item cards should promote from static atlas sprites to animated rendering after first paint',
+    homeSource.includes('<ItemCard'),
+    false,
+    'homepage should not route browser or history items through the retired item-card fallback',
   );
 
   assert.equal(
-    source.includes('prepareItemAnimationFrames'),
+    homeSource.includes('<HomeCanvasGrid'),
     true,
-    'item cards should reuse the shared prepared animation pipeline so history cards match the main browser animation behavior',
+    'homepage should keep using the shared atlas canvas grid',
   );
 });
-
 

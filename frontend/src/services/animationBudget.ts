@@ -852,16 +852,6 @@ export const probeAnimationSupport = async (baseUrl: string, renderAssetRef?: st
   return request;
 };
 
-export const prepareItemAnimationFrames = async (
-  entity: RenderableEntityLike,
-): Promise<PreparedAnimationFrame[]> => {
-  await primeNativeRenderFactsForEntity(entity);
-  return resolvePreparedAnimationFrames(
-    getItemImageBaseUrl(entity),
-    getEffectiveRenderAssetRef(entity),
-  );
-};
-
 export const prewarmImageAsset = async (src?: string | null): Promise<void> => {
   const normalizedSrc = `${src ?? ''}`.trim();
   if (!normalizedSrc) {

@@ -52,26 +52,25 @@ test('core recipe surfaces use AnimatedItemIcon instead of raw static img tags f
   }
 });
 
-test('AnimatedItemIcon replays exported frame timing instead of a fixed fps', () => {
+test('AnimatedItemIcon replays exported atlas timing instead of probing GIF files', () => {
   const source = read('frontend/src/components/AnimatedItemIcon.vue');
 
   assert.equal(
-    source.includes('const DEFAULT_FRAME_DURATION_MS = 50;'),
+    source.includes('prepareAtlasAnimation(entry)'),
     true,
-    'AnimatedItemIcon should default to Minecraft-style 50ms ticks when metadata omits timing',
+    'AnimatedItemIcon should prepare animation directly from the compiled atlas entry',
   );
 
   assert.equal(
-    source.includes("typeof frame.durationMs === 'number' ? frame.durationMs : defaultFrameDurationMs"),
+    source.includes('normalizeTimeline(entry.animatedAtlas?.timeline, entry.animatedAtlas?.frameDurationMs)'),
     true,
-    'AnimatedItemIcon should respect per-frame native sprite timing from exported metadata',
+    'AnimatedItemIcon should respect exported per-frame atlas timing',
   );
 
   assert.equal(
-    source.includes('animatedAtlasEntry.timeline?.find'),
-    true,
-    'AnimatedItemIcon should honor per-frame timing from animated atlas manifests instead of a single fixed delay',
+    source.includes('prepareItemAnimationFrames('),
+    false,
+    'AnimatedItemIcon must not fall back to per-item GIF/sprite probing',
   );
 });
-
 

@@ -32,11 +32,6 @@ const homeCanvasGridSource = fs.readFileSync(
   'utf8',
 );
 
-const itemCardSource = fs.readFileSync(
-  'src/components/ItemCard.vue',
-  'utf8',
-);
-
 const recipeViewerSource = fs.readFileSync(
   'src/composables/useRecipeViewer.ts',
   'utf8',
@@ -52,7 +47,7 @@ test('recipe normalization primes render animation hints from indexed payloads',
 
 test('animation probing consults primed render hints before falling back to per-asset contract fetches', () => {
   assert.equal(
-    animationBudgetSource.includes('const primedRenderHint = renderAssetRef ? primedRenderHintCache.get(renderAssetRef) : undefined;'),
+    animationBudgetSource.includes('const primedRenderHint = getPrimedRenderHint(renderAssetRef);'),
     true,
     'animation probe should check primed render hints first',
   );
@@ -88,16 +83,16 @@ test('recipe UI components consume inline item payloads instead of refetching it
   );
 });
 
-test('animated item icons reuse prepared frame caches instead of rebuilding frames on every mount', () => {
+test('animated item icons use the compiled atlas/render index instead of per-item probing', () => {
   assert.equal(
-    animatedItemIconSource.includes('prepareItemAnimationFrames({'),
-    true,
-    'animated item icon should consume prepared animation frame caches',
+    animatedItemIconSource.includes('prepareItemAnimationFrames('),
+    false,
+    'recipe item icons must not fall back to per-item GIF/sprite probing',
   );
   assert.equal(
-    animationBudgetSource.includes('const preparedAnimationFrameCache = new Map<string, PreparedAnimationFrame[]>()'),
+    animatedItemIconSource.includes('warmGlobalBrowserAtlasForItemsDetailed([itemId])'),
     true,
-    'animation budget should keep a shared prepared animation frame cache',
+    'recipe item icons should resolve through the global browser atlas index',
   );
 });
 
@@ -118,19 +113,14 @@ test('homepage and card animations advance from a shared animation clock instead
     'animation budget should expose shared prepared-frame timeline resolution',
   );
   assert.equal(
-    homeCanvasGridSource.includes('resolveTimelineFrameIndex(animation.timeline, now)'),
+    homeCanvasGridSource.includes('resolveTimelineFrameIndex(prepared.timeline, now)'),
     true,
     'homepage browser grid should render native/captured animations from the shared clock',
   );
   assert.equal(
-    itemCardSource.includes('resolvePreparedAnimationFrameIndex(animationFrames.value, timestamp)'),
+    animatedItemIconSource.includes('resolveTimelineFrameIndex(animation.timeline, timestamp)'),
     true,
-    'homepage fallback item cards should reuse the shared prepared-frame animation clock',
-  );
-  assert.equal(
-    animatedItemIconSource.includes('resolvePreparedAnimationFrameIndex(animationFrames.value, timestamp)'),
-    true,
-    'recipe item icons should reuse the shared prepared-frame animation clock',
+    'recipe item icons should reuse exported atlas timelines from the shared clock',
   );
 });
 
@@ -146,4 +136,3 @@ test('recipe viewer prewarms current and nearby page media to reduce blank textu
     'recipe viewer should queue media prewarm from the visible recipe window',
   );
 });
-
