@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import AnimatedItemIcon from "./AnimatedItemIcon.vue";
 
 export interface Catalyst {
   machineName: string;
@@ -42,8 +43,18 @@ const selectCatalyst = (recipeType: string) => {
 
 const getMachineIconPath = (icon: string | null): string => {
   if (!icon) return "/placeholder.png";
+  if (getMachineIconItemId(icon)) return "";
   if (icon.startsWith("http") || icon.startsWith("/")) return icon;
   return `${__BACKEND_BASE_URL__}/images/item/${icon}`;
+};
+
+const getMachineIconItemId = (icon: string | null): string | null => {
+  if (!icon) return null;
+  if (icon.startsWith("item:")) return icon.slice("item:".length);
+  if (icon.startsWith("i~")) return icon;
+  const match = icon.match(/(?:^|\/)images\/item\/([^/]+)\/(.+?)\.(?:png|gif|webp)(?:$|\?)/i);
+  if (!match) return null;
+  return `i~${decodeURIComponent(match[1])}~${decodeURIComponent(match[2])}`;
 };
 </script>
 
@@ -79,8 +90,14 @@ const getMachineIconPath = (icon: string | null): string => {
               :title="`${catalyst.machineName} (${catalyst.recipeCount} 个配方)`"
             >
               <div class="catalyst-icon">
+                <AnimatedItemIcon
+                  v-if="getMachineIconItemId(catalyst.machineIcon)"
+                  :item-id="getMachineIconItemId(catalyst.machineIcon)!"
+                  :size="34"
+                  class="machine-icon"
+                />
                 <img
-                  v-if="catalyst.machineIcon"
+                  v-else-if="catalyst.machineIcon"
                   :src="getMachineIconPath(catalyst.machineIcon)"
                   :alt="catalyst.machineName"
                   class="machine-icon"

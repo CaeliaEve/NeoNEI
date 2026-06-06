@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { useSound } from "../services/sound.service";
+import AnimatedItemIcon from "./AnimatedItemIcon.vue";
 
 export interface MachineTypeTab {
   recipeType: string;
@@ -48,8 +49,18 @@ const selectTab = (index: number) => {
 
 const getMachineIconPath = (icon: string | null): string => {
   if (!icon) return "/placeholder.png";
+  if (getMachineIconItemId(icon)) return "";
   if (icon.startsWith("http") || icon.startsWith("/")) return icon;
   return `${__BACKEND_BASE_URL__}/images/item/${icon}`;
+};
+
+const getMachineIconItemId = (icon: string | null): string | null => {
+  if (!icon) return null;
+  if (icon.startsWith("item:")) return icon.slice("item:".length);
+  if (icon.startsWith("i~")) return icon;
+  const match = icon.match(/(?:^|\/)images\/item\/([^/]+)\/(.+?)\.(?:png|gif|webp)(?:$|\?)/i);
+  if (!match) return null;
+  return `i~${decodeURIComponent(match[1])}~${decodeURIComponent(match[2])}`;
 };
 </script>
 
@@ -66,8 +77,14 @@ const getMachineIconPath = (icon: string | null): string => {
         @click="selectTab(index)"
       >
         <div class="tab-icon">
+          <AnimatedItemIcon
+            v-if="getMachineIconItemId(tab.machineIcon)"
+            :item-id="getMachineIconItemId(tab.machineIcon)!"
+            :size="32"
+            class="machine-icon"
+          />
           <img
-            v-if="tab.machineIcon"
+            v-else-if="tab.machineIcon"
             :src="getMachineIconPath(tab.machineIcon)"
             :alt="tab.machineName"
             class="machine-icon"
