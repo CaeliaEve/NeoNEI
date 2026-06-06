@@ -34,6 +34,7 @@
     "test:runtime-contract-portability": "node --test ../scripts/runtime-contract-portability-regression.test.mjs",
     "test:deployment-profile": "node ../scripts/deployment-profile-smoke.mjs",
     "validate:browser-pages-v3": "node ../scripts/validate-browser-pages-v3.mjs --gate",
+    "validate:known-runtime-items": "node ../scripts/validate-known-runtime-items.mjs --gate",
     "validate:recipe-fragmentation": "node ../scripts/validate-recipe-fragmentation.mjs --gate",
     "validate:recipe-handlers": "node ../scripts/validate-recipe-handler-metadata.mjs --gate"
   },
