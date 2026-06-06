@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { BACKEND_BASE_URL } from '../services/api/core/http';
-import type { PublicRuntimeManifest } from './types';
+import type { PublicRuntimeManifest, RuntimeHealthSummary } from './types';
 
 const runtimeHttp = axios.create({
   baseURL: `${BACKEND_BASE_URL.replace(/\/+$/g, '')}/runtime`,
@@ -63,4 +63,14 @@ export function createRuntimeManifestClient<TManifest extends RuntimeManifestIde
   return { clear, getPublishManifest };
 }
 
+export async function getRuntimeHealthSummary(): Promise<RuntimeHealthSummary> {
+  const response = await runtimeHttp.get('/health', {
+    params: { _runtime: Date.now() },
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
+  });
+  return response.data as RuntimeHealthSummary;
+}
 

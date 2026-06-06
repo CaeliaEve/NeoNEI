@@ -31,6 +31,7 @@
   PatternGroupWithPatterns,
   PatternWithDetails,
   PublicRuntimeManifest,
+  RuntimeHealthSummary,
   PublishedRecipeBootstrapSearchPack,
   PublishBundleWindowPathEntry,
   RecipeBootstrapCategoryGroupPayload,
@@ -72,6 +73,7 @@ import {
   runtimeManifestClient,
   textureRuntimeClient,
   getRuntimeHomeBootstrap,
+  getRuntimeHealth,
   getRuntimeMods,
 } from './runtimeSession';
 
@@ -96,6 +98,10 @@ export const api = {
 
   async getPublishManifest(): Promise<PublicRuntimeManifest> {
     return runtimeManifestClient.getPublishManifest();
+  },
+
+  async getRuntimeHealth(): Promise<RuntimeHealthSummary> {
+    return getRuntimeHealth();
   },
 
   async getHomeBootstrap(params: {

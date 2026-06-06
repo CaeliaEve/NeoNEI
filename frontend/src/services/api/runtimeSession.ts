@@ -1,5 +1,5 @@
 ﻿import { createPublishedJsonClient, getHomeBootstrapCompat } from '../../runtime/publishClient';
-import { createRuntimeManifestClient, getRuntimeCacheSignature } from '../../runtime/manifestClient';
+import { createRuntimeManifestClient, getRuntimeCacheSignature, getRuntimeHealthSummary } from '../../runtime/manifestClient';
 import type {
   BrowserAtlasIndexResponse,
   BrowserPagePackResponse,
@@ -57,6 +57,10 @@ export const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeMa
     });
   },
 });
+
+export async function getRuntimeHealth(): Promise<import('../../runtime/types').RuntimeHealthSummary> {
+  return getRuntimeHealthSummary();
+}
 
 export function reportRuntimeDevCompatGap(
   scope: string,

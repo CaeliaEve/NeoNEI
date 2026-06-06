@@ -11,6 +11,7 @@ import {
 } from '../utils/http-cache';
 import { DATA_DIR, PUBLISH_OUTPUT_DIR } from '../config/runtime-paths';
 import { getNativeRenderRuntimeDiagnostics } from '../services/native-render-runtime-diagnostics.service';
+import { getRuntimeHealthSummary } from '../services/runtime-health-summary.service';
 
 const router = Router();
 
@@ -53,10 +54,10 @@ const runtimeContracts = {
 
 router.get('/health', (_req, res) => {
   setNoStoreHeaders(res);
+  const summary = getRuntimeHealthSummary();
   res.json({
-    status: 'ok',
+    ...summary,
     contractVersion: 'runtime-contracts/current',
-    timestamp: new Date().toISOString(),
   });
 });
 
@@ -116,7 +117,7 @@ router.get('/diagnostics',
     setNoStoreHeaders(res);
     res.json({
       schemaVersion: 'neonei/runtime-diagnostics/current',
-      status: missing.length === 0 ? 'ok' : 'degraded',
+      status: missing.length === 0 ? getRuntimeHealthSummary().status : 'degraded',
       sourceSignature: manifest.sourceSignature,
       runtimeCacheKey: manifest.runtimeCacheKey,
       publishRevision: manifest.publishRevision,
@@ -134,6 +135,7 @@ router.get('/diagnostics',
         hasRecipeSearch: Boolean(publishBundle?.files?.recipeSearchBasePath),
       },
       nativeRender: getNativeRenderRuntimeDiagnostics(),
+      health: getRuntimeHealthSummary(),
     });
   }),
 );

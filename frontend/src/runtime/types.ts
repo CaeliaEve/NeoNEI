@@ -9,6 +9,39 @@ export interface PublicRuntimeManifest {
   publishBundle?: PublishStaticBundleManifest | null;
 }
 
+export interface RuntimeHealthSummary {
+  schemaVersion: 'neonei/runtime-health-summary/current';
+  status: 'ok' | 'warning' | 'blocked' | 'degraded';
+  generatedAt: string;
+  contractVersion?: string;
+  distData: {
+    exists: boolean;
+    manifestExists: boolean;
+    source: string | null;
+    sourceRepository: string | null;
+    generatedAt: string | null;
+    runtime: Record<string, unknown> | null;
+  };
+  counts: Record<string, number | null>;
+  coverage: Record<string, number | null>;
+  validation: {
+    migrationReadinessStatus: string | null;
+    neiBrowserContractStatus: string | null;
+    recipeFragmentationStatus: string | null;
+    exportPathHygieneStatus: string | null;
+    compilerValidationBlocked: boolean;
+    blockedGates: string[];
+    warnings: string[];
+  };
+  files: {
+    declared: number;
+    present: number;
+    missing: Array<{ key: string; path: string }>;
+    totalBytes: number;
+  };
+  nativeRender?: unknown;
+}
+
 export interface PublishBundleWindowPathEntry {
   scope: string;
   slotSize: number;

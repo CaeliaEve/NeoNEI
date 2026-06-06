@@ -46,6 +46,10 @@ jobs:
         working-directory: backend
         run: npm run test:public-runtime-profile
 
+      - name: Backend runtime health contract
+        working-directory: backend
+        run: npm run test:runtime-health-contract
+
       - name: Upload backend dist
         uses: actions/upload-artifact@v4
         if: always()
@@ -85,6 +89,10 @@ jobs:
         working-directory: frontend
         run: npm run typecheck
 
+      - name: Browser search cache regression
+        working-directory: frontend
+        run: npm run test:browser-search-cache
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
@@ -100,3 +108,37 @@ jobs:
           name: neonei-frontend-dist
           path: frontend/dist
           if-no-files-found: warn
+
+  release-bundle:
+    name: Release bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs:
+      - backend
+      - frontend
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download backend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: neonei-backend-dist
+          path: backend/dist
+
+      - name: Download frontend dist
+        uses: actions/download-artifact@v4
+        with:
+          name: neonei-frontend-dist
+          path: frontend/dist
+
+      - name: Create release bundle
+        run: node scripts/create-release-bundle.mjs release/neonei-web
+
+      - name: Upload release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: neonei-web-release
+          path: release/neonei-web
+          if-no-files-found: error

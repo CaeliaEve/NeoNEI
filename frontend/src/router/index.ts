@@ -28,6 +28,11 @@ const routes: RouteRecordRaw[] = [
     path: '/forestry-bee-tree',
     name: 'forestry-bee-tree',
     component: () => import('../views/ForestryBeeTreeView.vue'),
+  },
+  {
+    path: '/runtime-health',
+    name: 'runtime-health',
+    component: () => import('../views/RuntimeHealthView.vue'),
   }
 ];
 

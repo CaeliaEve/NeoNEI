@@ -80,9 +80,12 @@ let exactIndex = new Map<string, number[]>();
 let prefixIndex = new Map<string, number[]>();
 let gramIndex = new Map<string, number[]>();
 let indexedItemCount = 0;
+let searchIndexVersion = 0;
+const queryResultCache = new Map<string, Omit<QueryResult, "id" | "elapsedMs">>();
 
 const MAX_PREFIX_LENGTH = 32;
 const MAX_FIELD_LENGTH_FOR_GRAMS = 96;
+const MAX_QUERY_RESULT_CACHE = 160;
 
 function appendIndexValue(index: Map<string, number[]>, key: string, sourceIndex: number): void {
   if (!key) return;
@@ -153,6 +156,8 @@ function rebuildIndexes(): void {
   gramIndex = new Map<string, number[]>();
   searchPack.forEach((entry, sourceIndex) => addEntryToIndex(entry, sourceIndex));
   indexedItemCount = searchPack.length;
+  searchIndexVersion += 1;
+  queryResultCache.clear();
 }
 
 function ensureIndexReady(): void {
@@ -280,6 +285,17 @@ function queryPack(message: QueryMessage): QueryResult {
   const normalizedModId = `${message.payload.modId ?? ""}`.trim();
   const pageSize = Math.min(Math.max(1, Math.floor(message.payload.pageSize || 50)), 500);
   const requestedPage = Math.max(1, Math.floor(message.payload.page || 1));
+  const cacheKey = `${searchIndexVersion}\u0001${normalized}\u0001${normalizedModId || "all"}\u0001${requestedPage}\u0001${pageSize}`;
+  const cached = queryResultCache.get(cacheKey);
+  if (cached) {
+    queryResultCache.delete(cacheKey);
+    queryResultCache.set(cacheKey, cached);
+    return {
+      ...cached,
+      id: message.id,
+      elapsedMs: performance.now() - startedAt,
+    };
+  }
   const topLimit = Math.min(searchPack.length, requestedPage * pageSize);
 
   const candidateIndexes = collectCandidateIndexes(normalized);
@@ -314,16 +330,26 @@ function queryPack(message: QueryMessage): QueryResult {
     .map((entry) => entry.entry);
   const itemIds = pageEntries.map((entry) => entry.itemId);
 
-  return {
-    id: message.id,
+  const resultWithoutTiming: Omit<QueryResult, "id" | "elapsedMs"> = {
     total,
     totalPages,
     page,
     itemIds,
     entries: pageEntries,
-    elapsedMs: performance.now() - startedAt,
     candidateCount: candidateIndexes.length,
     indexReady: indexedItemCount === searchPack.length,
+  };
+  queryResultCache.set(cacheKey, resultWithoutTiming);
+  while (queryResultCache.size > MAX_QUERY_RESULT_CACHE) {
+    const oldestKey = queryResultCache.keys().next().value;
+    if (!oldestKey) break;
+    queryResultCache.delete(oldestKey);
+  }
+
+  return {
+    ...resultWithoutTiming,
+    id: message.id,
+    elapsedMs: performance.now() - startedAt,
   };
 }
 
