@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onBeforeUnmount, ref, watch, nextTick } from 'vue';
-import { getImageUrl, type Recipe } from '../services/api';
+import type { Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import { useSound } from '../services/sound.service';
 import { buildInputSlots, buildOutputSlots, type ResolvedSlot } from '../composables/useRecipeSlots';
@@ -651,10 +651,6 @@ function onItemClick(itemId: string) {
   emit('item-click', itemId);
 }
 
-function imageError(event: Event) {
-  (event.target as HTMLImageElement).src = '/placeholder.png';
-}
-
 watch(
   () => props.recipe,
   async () => {
@@ -828,11 +824,10 @@ onBeforeUnmount(() => {
           <div class="pool-altar-plate">
             <!-- Pool Basin Image Frame -->
             <div class="pool-basin-frame">
-              <img
-                :src="getImageUrl('i~Botania~pool~0')"
-                @error="imageError"
+              <AnimatedItemIcon
+                item-id="i~Botania~pool~0"
+                :size="72"
                 class="pool-sprite"
-                alt="Mana Pool"
               />
               
               <!-- Volumetric liquid surface waves directly on top of the sprite center -->

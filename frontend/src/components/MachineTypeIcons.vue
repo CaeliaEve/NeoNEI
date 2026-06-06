@@ -44,7 +44,7 @@ const getMachineIconItemId = (icon: string | null): string | null => {
   if (icon.startsWith('i~')) {
     return icon;
   }
-  const match = icon.match(/(?:^|\/)images\/item\/([^/]+)\/(.+?)\.png(?:$|\?)/i);
+  const match = icon.match(/(?:^|\/)images\/item\/([^/]+)\/(.+?)\.(?:png|gif|webp)(?:$|\?)/i);
   if (match) {
     return `i~${decodeURIComponent(match[1])}~${decodeURIComponent(match[2])}`;
   }
