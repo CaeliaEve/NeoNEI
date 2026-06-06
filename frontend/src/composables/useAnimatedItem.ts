@@ -1,6 +1,7 @@
 import { onMounted, onUnmounted, ref } from 'vue';
 import {
   fetchNativeSpriteMetadata,
+  getSharedAnimationNowMs,
   getNativeSpriteAtlasUrl,
   loadImageAsset,
   probeAnimationSupport,
@@ -8,6 +9,7 @@ import {
 
 interface AnimatedItemOptions {
   baseUrl: string;
+  /** @deprecated native sprite timeline duration is authoritative. */
   fps?: number;
   autoplay?: boolean;
 }
@@ -32,18 +34,41 @@ export async function detectAnimation(baseUrl: string): Promise<{
 }
 
 export function useAnimatedItem(options: AnimatedItemOptions) {
-  const { baseUrl, fps = 20, autoplay = true } = options;
+  const { baseUrl, autoplay = true } = options;
 
   const canvasRef = ref<HTMLCanvasElement | null>(null);
   const isAnimating = ref(false);
   const currentFrame = ref(0);
   const frameUrls = ref<string[]>([]);
   const frames = ref<HTMLImageElement[]>([]);
+  const frameDurationsMs = ref<number[]>([]);
   const isLoaded = ref(false);
 
   let animationFrameId: number | null = null;
-  let lastFrameTime = 0;
-  const frameInterval = 1000 / fps;
+  let animationStartMs = 0;
+  const normalizeDuration = (durationMs?: number | null): number => {
+    if (typeof durationMs !== 'number' || !Number.isFinite(durationMs) || durationMs <= 0) {
+      return 50;
+    }
+    return Math.max(16, Math.round(durationMs));
+  };
+
+  const resolveFrameIndex = (timestamp: number): number => {
+    if (frames.value.length <= 1) return 0;
+    const durations = frameDurationsMs.value.length === frames.value.length
+      ? frameDurationsMs.value
+      : frames.value.map(() => 50);
+    const totalDuration = durations.reduce((sum, duration) => sum + normalizeDuration(duration), 0);
+    if (totalDuration <= 0) return 0;
+
+    let elapsed = Math.max(0, timestamp - animationStartMs) % totalDuration;
+    for (let idx = 0; idx < durations.length; idx += 1) {
+      const duration = normalizeDuration(durations[idx]);
+      if (elapsed < duration) return idx;
+      elapsed -= duration;
+    }
+    return durations.length - 1;
+  };
 
   const getSpriteSheetPhysicalFrameCount = (
     timeline: Array<{ frameIndex?: number; index?: number }> | undefined,
@@ -80,16 +105,8 @@ export function useAnimatedItem(options: AnimatedItemOptions) {
   };
 
   const animate = (timestamp: number) => {
-    if (!lastFrameTime) {
-      lastFrameTime = timestamp;
-    }
-    const elapsed = timestamp - lastFrameTime;
-
-    if (elapsed >= frameInterval) {
-      currentFrame.value = (currentFrame.value + 1) % Math.max(frames.value.length, 1);
-      renderFrame();
-      lastFrameTime = timestamp;
-    }
+    currentFrame.value = resolveFrameIndex(timestamp);
+    renderFrame();
 
     if (isAnimating.value) {
       animationFrameId = requestAnimationFrame(animate);
@@ -98,6 +115,7 @@ export function useAnimatedItem(options: AnimatedItemOptions) {
 
   const startAnimation = () => {
     if (frames.value.length <= 1 || isAnimating.value) return;
+    animationStartMs = getSharedAnimationNowMs();
     isAnimating.value = true;
     animationFrameId = requestAnimationFrame(animate);
   };
@@ -123,6 +141,7 @@ export function useAnimatedItem(options: AnimatedItemOptions) {
         Math.floor(atlasImg.naturalHeight / physicalFrameCount);
 
       const loadedFrames: HTMLImageElement[] = [];
+      const loadedFrameDurations: number[] = [];
       for (let idx = 0; idx < spriteMeta.timeline.length; idx++) {
         const frame = spriteMeta.timeline[idx];
         const frameIndex =
@@ -145,9 +164,11 @@ export function useAnimatedItem(options: AnimatedItemOptions) {
           img.onerror = () => reject();
         });
         loadedFrames.push(img);
+        loadedFrameDurations.push(normalizeDuration(frame.durationMs));
       }
 
       frames.value = loadedFrames;
+      frameDurationsMs.value = loadedFrameDurations;
       frameUrls.value = [atlasUrl];
       isLoaded.value = true;
       if (autoplay && loadedFrames.length > 1) startAnimation();
@@ -161,6 +182,7 @@ export function useAnimatedItem(options: AnimatedItemOptions) {
       img.onerror = resolve;
     });
     frames.value = [img];
+    frameDurationsMs.value = [50];
     frameUrls.value = [baseUrl];
     isLoaded.value = true;
   };
@@ -173,6 +195,7 @@ export function useAnimatedItem(options: AnimatedItemOptions) {
         const img = new Image();
         img.src = baseUrl;
         frames.value = [img];
+        frameDurationsMs.value = [50];
         frameUrls.value = [baseUrl];
         isLoaded.value = true;
       }
