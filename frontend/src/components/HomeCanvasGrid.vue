@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { getPreferredStaticImageUrlFromEntity, type BrowserGridEntry, type Item } from "../services/api";
 import type { PageAtlasResult, PageAtlasSpriteEntry } from "../services/pageAtlas";
@@ -88,8 +88,6 @@ const slotChromeCache = new Map<string, HTMLCanvasElement>();
 let resizeObserver: ResizeObserver | null = null;
 let renderFrameHandle: number | null = null;
 let animationLoopHandle: number | null = null;
-let animationResumeTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
-let lastEntriesChangedAt = 0;
 let atlasLoadSeq = 0;
 let globalAtlasWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 let globalAtlasTextureWarmTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
@@ -98,6 +96,8 @@ let globalAtlasTextureWarmCursor = 0;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
 let layoutRequestSeq = 0;
 let lastDrawHadAnimatedFrame = false;
+let animationBackBuffer: HTMLCanvasElement | null = null;
+let lastAnimationOverlaySignature = "";
 const gap = 4;
 const cardSize = computed(() => Math.max(28, Math.floor(props.itemSize)));
 const iconSize = computed(() => Math.max(24, Math.floor(cardSize.value * 0.9)));
@@ -170,17 +170,7 @@ function scheduleRender() {
 }
 
 function canRunAnimatedOverlay(): boolean {
-  return props.enableAnimation && performance.now() - lastEntriesChangedAt > 650;
-}
-
-function scheduleAnimationResume() {
-  if (animationResumeTimer !== null) {
-    clearTimeout(animationResumeTimer);
-  }
-  animationResumeTimer = globalThis.setTimeout(() => {
-    animationResumeTimer = null;
-    scheduleRender();
-  }, 720);
+  return props.enableAnimation;
 }
 
 async function refreshHomeGridLayout() {
@@ -598,6 +588,26 @@ function clearAnimationOverlay() {
   const ctx = canvas.getContext("2d");
   if (!ctx) return;
   ctx.clearRect(0, 0, canvas.width, canvas.height);
+  lastAnimationOverlaySignature = "";
+}
+
+function getAnimationOverlaySignature(): string {
+  return animatedItemRects
+    .map((rect) => `${rect.entry.key}@${rect.x},${rect.y},${rect.size}`)
+    .join("|");
+}
+
+function getAnimationBackBuffer(width: number, height: number): HTMLCanvasElement {
+  if (!animationBackBuffer) {
+    animationBackBuffer = document.createElement("canvas");
+  }
+  if (animationBackBuffer.width !== width) {
+    animationBackBuffer.width = width;
+  }
+  if (animationBackBuffer.height !== height) {
+    animationBackBuffer.height = height;
+  }
+  return animationBackBuffer;
 }
 
 function drawAnimationOverlay() {
@@ -609,10 +619,16 @@ function drawAnimationOverlay() {
   const canvas = animationCanvasRef.value;
   if (!canvas) return;
   ensureOverlayCanvasSize(canvas);
-  const ctx = canvas.getContext("2d");
+  const visibleCtx = canvas.getContext("2d");
+  if (!visibleCtx) return;
+
+  const signature = getAnimationOverlaySignature();
+  const backBuffer = getAnimationBackBuffer(canvas.width, canvas.height);
+  const ctx = backBuffer.getContext("2d");
   if (!ctx) return;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, backBuffer.width, backBuffer.height);
   ctx.imageSmoothingEnabled = false;
+
   const now = getSharedAnimationNowMs();
   let drewFrame = false;
   for (const rect of animatedItemRects) {
@@ -620,11 +636,26 @@ function drawAnimationOverlay() {
     if (props.enableAnimation && globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
       drawGroupOverlay(ctx, rect);
       drewFrame = true;
-      continue;
     }
-
   }
-  lastDrawHadAnimatedFrame = drewFrame;
+
+  if (drewFrame) {
+    lastDrawHadAnimatedFrame = true;
+    visibleCtx.clearRect(0, 0, canvas.width, canvas.height);
+    visibleCtx.imageSmoothingEnabled = false;
+    visibleCtx.drawImage(backBuffer, 0, 0);
+    lastAnimationOverlaySignature = signature;
+    return;
+  }
+
+  // Keep the previous overlay for the same page if an atlas frame is briefly
+  // unavailable. Clearing first creates a visible transparent frame/flash.
+  // When the page/layout actually changes, clear stale icons immediately.
+  const preservedSamePageOverlay = Boolean(signature && lastAnimationOverlaySignature === signature);
+  lastDrawHadAnimatedFrame = preservedSamePageOverlay;
+  if (!preservedSamePageOverlay) {
+    clearAnimationOverlay();
+  }
 }
 
 function draw() {
@@ -1033,9 +1064,6 @@ watch(
 watch(
   () => [props.entries.map((entry) => entry.key).join("|"), props.itemSize, props.atlas?.atlasUrl ?? "", shouldHoldFallbackImages.value].join("::"),
   () => {
-    lastEntriesChangedAt = performance.now();
-    stopAnimationLoop();
-    scheduleAnimationResume();
     syncAtlasFallbackGate();
     warmGlobalAtlasImages();
     warmStaticImages();
@@ -1086,10 +1114,6 @@ onUnmounted(() => {
     clearTimeout(globalAtlasWarmTimer);
     globalAtlasWarmTimer = null;
   }
-  if (animationResumeTimer !== null) {
-    clearTimeout(animationResumeTimer);
-    animationResumeTimer = null;
-  }
   if (globalAtlasTextureWarmTimer !== null) {
     clearTimeout(globalAtlasTextureWarmTimer);
     globalAtlasTextureWarmTimer = null;
@@ -1098,6 +1122,8 @@ onUnmounted(() => {
   globalAtlasTextureWarmCursor = 0;
   webglAtlasRenderer?.dispose();
   webglAtlasRenderer = null;
+  animationBackBuffer = null;
+  lastAnimationOverlaySignature = "";
 });
 </script>
 
@@ -1180,3 +1206,4 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 </style>
+
