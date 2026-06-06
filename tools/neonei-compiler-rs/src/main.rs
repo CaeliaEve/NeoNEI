@@ -116,6 +116,7 @@ fn main() -> Result<()> {
                 .with_context(|| format!("create output directory {}", output.display()))?;
             compile_browser_pack(&input, &output, strict)?;
             compile_recipe_pack(&input, &output, strict)?;
+            compile_texture_pack(&input, &output, strict)?;
             run_baseline(&input, Some(&output), &report, strict)
         }
     }
@@ -613,6 +614,229 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
         }),
     )?;
     Ok(())
+}
+
+fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+    let manifest = read_manifest(input)?;
+    let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?
+        .ok_or_else(|| anyhow!("texture compiler blocked: browserAtlasIndex is missing"))?;
+    let animations = read_jsonl_values(input, &manifest, "animations")?;
+    let native_sprites = read_jsonl_values(input, &manifest, "nativeSprites")?;
+    let texture_rows = read_jsonl_values(input, &manifest, "textures")?;
+
+    let animation_by_asset = animations
+        .iter()
+        .filter_map(|row| Some((value_string(row, "assetId")?, row.clone())))
+        .collect::<BTreeMap<_, _>>();
+    let native_sprite_by_asset = native_sprites
+        .iter()
+        .filter_map(|row| Some((value_string(row, "assetId")?, row.clone())))
+        .collect::<BTreeMap<_, _>>();
+    let texture_by_asset = texture_rows
+        .iter()
+        .filter_map(|row| Some((value_string(row, "assetId")?, row.clone())))
+        .collect::<BTreeMap<_, _>>();
+
+    let atlas_items = atlas
+        .get("items")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    let mut static_items = 0u64;
+    let mut animated_items = 0u64;
+    let mut missing_atlas_file_refs = Vec::new();
+    let mut invalid_frame_bounds = Vec::new();
+    let mut animation_table = Vec::new();
+    let mut atlas_map = BTreeMap::new();
+
+    for item in &atlas_items {
+        let item_id = value_string(item, "itemId").unwrap_or_default();
+        let asset_id = value_string(item, "assetId").unwrap_or_default();
+        if item
+            .get("hasStaticAtlas")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            static_items += 1;
+            validate_atlas_ref(
+                &item_id,
+                item.get("staticAtlas"),
+                &mut missing_atlas_file_refs,
+            );
+        }
+        if item
+            .get("hasAnimatedAtlas")
+            .and_then(Value::as_bool)
+            .unwrap_or(false)
+        {
+            animated_items += 1;
+            let animated_atlas = item.get("animatedAtlas");
+            validate_atlas_ref(&item_id, animated_atlas, &mut missing_atlas_file_refs);
+            validate_frame_bounds(&item_id, animated_atlas, &mut invalid_frame_bounds);
+
+            let animation = animation_by_asset.get(&asset_id);
+            let native_sprite = native_sprite_by_asset.get(&asset_id);
+            let frame_duration_ms = animated_atlas
+                .and_then(|value| value.get("frameDurationMs"))
+                .and_then(Value::as_u64)
+                .or_else(|| animation.and_then(|value| value_u64(value, "frameDurationMs")))
+                .or_else(|| native_sprite.and_then(|value| value_u64(value, "frameDurationMs")));
+            animation_table.push(json!({
+                "itemId": item_id,
+                "assetId": asset_id,
+                "mode": native_sprite.and_then(|value| value.get("animationMode")).cloned().unwrap_or(Value::Null),
+                "frameDurationSource": if native_sprite.is_some() { "native_sprite_metadata" } else { "raw_animation_index" },
+                "frameCount": animated_atlas
+                    .and_then(|value| value.get("frameCount"))
+                    .and_then(Value::as_u64)
+                    .or_else(|| animation.and_then(|value| value_u64(value, "frameCount"))),
+                "frameDurationMs": frame_duration_ms,
+                "atlasFile": animated_atlas
+                    .and_then(|value| value.get("atlasFile"))
+                    .cloned()
+                    .unwrap_or(Value::Null),
+                "timeline": normalize_timeline(animated_atlas, frame_duration_ms),
+                "spriteMetadataFile": native_sprite
+                    .and_then(|value| value.get("spriteMetadataFile"))
+                    .cloned()
+                    .unwrap_or(Value::Null),
+            }));
+        }
+        atlas_map.insert(
+            item_id,
+            json!({
+                "assetId": asset_id,
+                "atlas": item,
+                "texture": texture_by_asset.get(&asset_id).cloned().unwrap_or(Value::Null),
+            }),
+        );
+    }
+
+    if strict && (!missing_atlas_file_refs.is_empty() || !invalid_frame_bounds.is_empty()) {
+        return Err(anyhow!(
+            "texture compiler blocked: missing atlas refs={}, invalid frame bounds={}",
+            missing_atlas_file_refs.len(),
+            invalid_frame_bounds.len()
+        ));
+    }
+
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+    write_json_value(
+        &rust_dir.join("texture-pack.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-texture-pack/current",
+            "counts": {
+                "atlasItems": atlas_items.len(),
+                "staticAtlasItems": static_items,
+                "animatedAtlasItems": animated_items,
+                "animationRows": animations.len(),
+                "nativeSpriteRows": native_sprites.len(),
+                "textureRows": texture_rows.len(),
+                "missingAtlasFileRefs": missing_atlas_file_refs.len(),
+                "invalidFrameBounds": invalid_frame_bounds.len(),
+                "atlasMapItems": atlas_map.len(),
+            },
+            "atlas": atlas,
+            "atlasMap": atlas_map,
+            "animationTable": animation_table,
+            "validation": {
+                "missingAtlasFileRefs": missing_atlas_file_refs,
+                "invalidFrameBounds": invalid_frame_bounds,
+            },
+        }),
+    )?;
+    Ok(())
+}
+
+fn validate_atlas_ref(item_id: &str, atlas: Option<&Value>, missing_refs: &mut Vec<String>) {
+    let Some(atlas) = atlas else {
+        missing_refs.push(format!("{item_id}:missing-atlas-object"));
+        return;
+    };
+    if atlas
+        .get("atlasFile")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .unwrap_or_default()
+        .is_empty()
+    {
+        missing_refs.push(format!("{item_id}:missing-atlas-file"));
+    }
+}
+
+fn validate_frame_bounds(item_id: &str, atlas: Option<&Value>, invalid_bounds: &mut Vec<String>) {
+    let Some(atlas) = atlas else {
+        return;
+    };
+    let atlas_width = atlas.get("atlasWidth").and_then(Value::as_u64).unwrap_or(0);
+    let atlas_height = atlas
+        .get("atlasHeight")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let Some(frames) = atlas.get("frames").and_then(Value::as_array) else {
+        return;
+    };
+    for (index, frame) in frames.iter().enumerate() {
+        let Some(values) = frame.as_array() else {
+            invalid_bounds.push(format!("{item_id}:frame-{index}:not-array"));
+            continue;
+        };
+        if values.len() < 5 {
+            invalid_bounds.push(format!("{item_id}:frame-{index}:short"));
+            continue;
+        }
+        let x = values.get(1).and_then(Value::as_u64).unwrap_or(0);
+        let y = values.get(2).and_then(Value::as_u64).unwrap_or(0);
+        let width = values.get(3).and_then(Value::as_u64).unwrap_or(0);
+        let height = values.get(4).and_then(Value::as_u64).unwrap_or(0);
+        if width == 0
+            || height == 0
+            || (atlas_width > 0 && x + width > atlas_width)
+            || (atlas_height > 0 && y + height > atlas_height)
+        {
+            invalid_bounds.push(format!("{item_id}:frame-{index}:out-of-bounds"));
+        }
+    }
+}
+
+fn normalize_timeline(animated_atlas: Option<&Value>, fallback_duration_ms: Option<u64>) -> Value {
+    let Some(animated_atlas) = animated_atlas else {
+        return Value::Array(Vec::new());
+    };
+    if let Some(timeline) = animated_atlas.get("timeline").and_then(Value::as_array) {
+        return Value::Array(
+            timeline
+                .iter()
+                .enumerate()
+                .map(|(index, value)| {
+                    if let Some(pair) = value.as_array() {
+                        json!({
+                            "frameIndex": pair.first().and_then(Value::as_u64).unwrap_or(index as u64),
+                            "durationMs": pair.get(1).and_then(Value::as_u64).or(fallback_duration_ms),
+                        })
+                    } else {
+                        value.clone()
+                    }
+                })
+                .collect(),
+        );
+    }
+    let frame_count = animated_atlas
+        .get("frameCount")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    Value::Array(
+        (0..frame_count)
+            .map(|frame_index| {
+                json!({
+                    "frameIndex": frame_index,
+                    "durationMs": fallback_duration_ms,
+                })
+            })
+            .collect(),
+    )
 }
 
 fn read_manifest_json(

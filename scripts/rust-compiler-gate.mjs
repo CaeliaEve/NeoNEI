@@ -15,6 +15,7 @@ const rustCompileReport = join(tmpRoot, 'rust-compile-report.json');
 const rustBrowserPack = join(nodeSelfTestOutput, 'rust', 'browser-pack.json');
 const rustSearchPack = join(nodeSelfTestOutput, 'rust', 'search-pack.json');
 const rustRecipePack = join(nodeSelfTestOutput, 'rust', 'recipe-pack.json');
+const rustTexturePack = join(nodeSelfTestOutput, 'rust', 'texture-pack.json');
 
 const strict = process.argv.includes('--strict');
 const runCargo = process.argv.includes('--run-cargo') || strict;
@@ -167,6 +168,7 @@ const rawBrowserAtlas = readJson(join(rawExportSelfTest, 'assets', 'textures', '
 const browserPack = readJson(rustBrowserPack);
 const searchPack = readJson(rustSearchPack);
 const recipePack = readJson(rustRecipePack);
+const texturePack = readJson(rustTexturePack);
 compareCounts({
   nodeCounts: nodeValidation?.counts ?? {},
   rustRawCounts: compileReport?.raw_export?.file_counts ?? {},
@@ -190,6 +192,17 @@ const ironRecipeEntry = (recipePack?.itemIndex ?? []).find((entry) => entry.item
 if (!ironRecipeEntry || (ironRecipeEntry.producedBy ?? []).length < 1) {
   fail('rust recipe pack does not index iron ingot outputs');
 }
+assertEqual(texturePack?.counts?.atlasItems, rawBrowserAtlas?.items?.length, 'rust texture pack atlasItems');
+assertEqual(texturePack?.counts?.animatedAtlasItems, 1, 'rust texture pack animatedAtlasItems');
+assertEqual(texturePack?.counts?.animationRows, nodeValidation?.counts?.animations, 'rust texture pack animationRows');
+assertEqual(texturePack?.counts?.nativeSpriteRows, nodeValidation?.counts?.nativeSprites, 'rust texture pack nativeSpriteRows');
+assertEqual(texturePack?.counts?.textureRows, nodeValidation?.counts?.textures, 'rust texture pack textureRows');
+assertEqual(texturePack?.counts?.missingAtlasFileRefs, 0, 'rust texture pack missingAtlasFileRefs');
+assertEqual(texturePack?.counts?.invalidFrameBounds, 0, 'rust texture pack invalidFrameBounds');
+const terrasteelAnimation = (texturePack?.animationTable ?? []).find((entry) => entry.itemId === 'i~botania~manaResource~4');
+if (!terrasteelAnimation || terrasteelAnimation.frameDurationMs !== 100) {
+  fail('rust texture pack does not preserve Terrasteel animation timing');
+}
 
 writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   schemaVersion: 'neonei/rust-compiler-gate/current',
@@ -199,6 +212,7 @@ writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   browserPack: rustBrowserPack.replaceAll('\\', '/'),
   searchPack: rustSearchPack.replaceAll('\\', '/'),
   recipePack: rustRecipePack.replaceAll('\\', '/'),
+  texturePack: rustTexturePack.replaceAll('\\', '/'),
   nodeSelfTestOutput: nodeSelfTestOutput.replaceAll('\\', '/'),
 }, null, 2));
 
