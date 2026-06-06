@@ -115,6 +115,7 @@ fn main() -> Result<()> {
             fs::create_dir_all(&output)
                 .with_context(|| format!("create output directory {}", output.display()))?;
             compile_browser_pack(&input, &output, strict)?;
+            compile_recipe_pack(&input, &output, strict)?;
             run_baseline(&input, Some(&output), &report, strict)
         }
     }
@@ -473,6 +474,147 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
     Ok(())
 }
 
+fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+    let manifest = read_manifest(input)?;
+    let recipe_index = read_manifest_json(input, &manifest, "recipeIndex")?
+        .ok_or_else(|| anyhow!("recipe compiler blocked: recipeIndex is missing"))?;
+    let handlers = read_jsonl_values(input, &manifest, "neiHandlers")?;
+    let mut recipes = Vec::new();
+
+    for shard in recipe_index
+        .get("shards")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+    {
+        let Some(path) = shard.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        let shard_path = input.join(path.replace('\\', "/").trim_start_matches('/'));
+        recipes.extend(read_jsonl_file_values(&shard_path)?);
+    }
+
+    if strict {
+        let expected = recipe_index
+            .get("recipeCount")
+            .and_then(Value::as_u64)
+            .unwrap_or(recipes.len() as u64);
+        if expected != recipes.len() as u64 {
+            return Err(anyhow!(
+                "recipe compiler blocked: recipe count mismatch {} != {}",
+                recipes.len(),
+                expected
+            ));
+        }
+    }
+
+    let handler_pack = handlers
+        .iter()
+        .map(|handler| {
+            json!({
+                "handlerKey": value_string(handler, "handlerKey"),
+                "handlerClass": value_string(handler, "handlerClass"),
+                "displayName": value_string(handler, "displayName"),
+                "localizedName": value_string(handler, "localizedName"),
+                "canonicalMachineFamily": value_string(handler, "canonicalMachineFamily"),
+                "modId": value_string(handler, "modId"),
+                "preferredMachineItemName": value_string(handler, "preferredMachineItemName"),
+                "maxRecipesPerPage": value_u64(handler, "maxRecipesPerPage"),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let mut produced_by: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    let mut used_in: BTreeMap<String, Vec<Value>> = BTreeMap::new();
+    let mut recipe_pack = Vec::new();
+
+    for recipe in &recipes {
+        let recipe_id = value_string(recipe, "recipeId").unwrap_or_default();
+        let machine = recipe.get("machine").cloned().unwrap_or(Value::Null);
+        let category_id = machine
+            .get("machineId")
+            .and_then(Value::as_str)
+            .unwrap_or_else(|| {
+                recipe
+                    .get("family")
+                    .and_then(Value::as_str)
+                    .unwrap_or("unknown")
+            })
+            .to_string();
+        let display_name = machine
+            .get("displayName")
+            .and_then(Value::as_str)
+            .unwrap_or(category_id.as_str())
+            .to_string();
+        let ref_value = json!({
+            "recipeId": recipe_id,
+            "categoryId": category_id,
+            "displayName": display_name,
+        });
+
+        for input in recipe
+            .get("inputs")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
+            if let Some(item_id) = value_string(&input, "itemId") {
+                used_in.entry(item_id).or_default().push(ref_value.clone());
+            }
+        }
+        for output in recipe
+            .get("outputs")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default()
+        {
+            if let Some(item_id) = value_string(&output, "itemId") {
+                produced_by
+                    .entry(item_id)
+                    .or_default()
+                    .push(ref_value.clone());
+            }
+        }
+        recipe_pack.push(recipe.clone());
+    }
+
+    let mut item_ids = produced_by
+        .keys()
+        .chain(used_in.keys())
+        .cloned()
+        .collect::<Vec<_>>();
+    item_ids.sort();
+    item_ids.dedup();
+    let item_index = item_ids
+        .into_iter()
+        .map(|item_id| {
+            json!({
+                "itemId": item_id,
+                "producedBy": produced_by.remove(&item_id).unwrap_or_default(),
+                "usedIn": used_in.remove(&item_id).unwrap_or_default(),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+    write_json_value(
+        &rust_dir.join("recipe-pack.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-recipe-pack/current",
+            "counts": {
+                "recipes": recipe_pack.len(),
+                "handlers": handler_pack.len(),
+                "recipeItemIndexItems": item_index.len(),
+            },
+            "recipes": recipe_pack,
+            "handlers": handler_pack,
+            "itemIndex": item_index,
+        }),
+    )?;
+    Ok(())
+}
+
 fn read_manifest_json(
     input: &Path,
     manifest: &RawManifest,
@@ -494,6 +636,10 @@ fn read_jsonl_values(
     let Some(path) = resolve_manifest_path(input, manifest, logical_name) else {
         return Ok(Vec::new());
     };
+    read_jsonl_file_values(&path)
+}
+
+fn read_jsonl_file_values(path: &Path) -> Result<Vec<Value>> {
     let reader: Box<dyn Read> = if path.extension().and_then(|value| value.to_str()) == Some("gz") {
         Box::new(GzDecoder::new(File::open(&path)?))
     } else {

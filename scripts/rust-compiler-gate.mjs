@@ -14,6 +14,7 @@ const rustReport = join(tmpRoot, 'rust-baseline.json');
 const rustCompileReport = join(tmpRoot, 'rust-compile-report.json');
 const rustBrowserPack = join(nodeSelfTestOutput, 'rust', 'browser-pack.json');
 const rustSearchPack = join(nodeSelfTestOutput, 'rust', 'search-pack.json');
+const rustRecipePack = join(nodeSelfTestOutput, 'rust', 'recipe-pack.json');
 
 const strict = process.argv.includes('--strict');
 const runCargo = process.argv.includes('--run-cargo') || strict;
@@ -165,6 +166,7 @@ const nodeValidation = readJson(join(nodeSelfTestOutput, 'validation', 'report.j
 const rawBrowserAtlas = readJson(join(rawExportSelfTest, 'assets', 'textures', 'browser_atlas_index.json'));
 const browserPack = readJson(rustBrowserPack);
 const searchPack = readJson(rustSearchPack);
+const recipePack = readJson(rustRecipePack);
 compareCounts({
   nodeCounts: nodeValidation?.counts ?? {},
   rustRawCounts: compileReport?.raw_export?.file_counts ?? {},
@@ -181,6 +183,13 @@ for (const expectedTerm of ['iron', 'terrasteel', 'minecraft']) {
   const hasTerm = (searchPack?.items ?? []).some((item) => `${item.normalizedSearchTerms ?? ''}`.includes(expectedTerm));
   if (!hasTerm) fail(`rust search pack is missing expected term: ${expectedTerm}`);
 }
+assertEqual(recipePack?.counts?.recipes, nodeValidation?.counts?.recipes, 'rust recipe pack recipes');
+assertEqual(recipePack?.counts?.handlers, nodeValidation?.counts?.neiHandlers, 'rust recipe pack handlers');
+assertEqual(recipePack?.counts?.recipeItemIndexItems, nodeValidation?.counts?.recipeItemIndexItems, 'rust recipe pack item index');
+const ironRecipeEntry = (recipePack?.itemIndex ?? []).find((entry) => entry.itemId === 'i~minecraft~iron_ingot~0');
+if (!ironRecipeEntry || (ironRecipeEntry.producedBy ?? []).length < 1) {
+  fail('rust recipe pack does not index iron ingot outputs');
+}
 
 writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   schemaVersion: 'neonei/rust-compiler-gate/current',
@@ -189,6 +198,7 @@ writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   compileReport: rustCompileReport.replaceAll('\\', '/'),
   browserPack: rustBrowserPack.replaceAll('\\', '/'),
   searchPack: rustSearchPack.replaceAll('\\', '/'),
+  recipePack: rustRecipePack.replaceAll('\\', '/'),
   nodeSelfTestOutput: nodeSelfTestOutput.replaceAll('\\', '/'),
 }, null, 2));
 
