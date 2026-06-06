@@ -13,6 +13,7 @@ const nodeSelfTestOutput = join(repoRoot, '.tmp-runtime', 'dist-data-v3-self-tes
 const rustReport = join(tmpRoot, 'rust-baseline.json');
 const rustCompileReport = join(tmpRoot, 'rust-compile-report.json');
 const rustBrowserPack = join(nodeSelfTestOutput, 'rust', 'browser-pack.json');
+const rustSearchPack = join(nodeSelfTestOutput, 'rust', 'search-pack.json');
 
 const strict = process.argv.includes('--strict');
 const runCargo = process.argv.includes('--run-cargo') || strict;
@@ -163,6 +164,7 @@ const compileReport = readJson(rustCompileReport);
 const nodeValidation = readJson(join(nodeSelfTestOutput, 'validation', 'report.json'));
 const rawBrowserAtlas = readJson(join(rawExportSelfTest, 'assets', 'textures', 'browser_atlas_index.json'));
 const browserPack = readJson(rustBrowserPack);
+const searchPack = readJson(rustSearchPack);
 compareCounts({
   nodeCounts: nodeValidation?.counts ?? {},
   rustRawCounts: compileReport?.raw_export?.file_counts ?? {},
@@ -173,6 +175,12 @@ assertEqual(browserPack?.counts?.aliasItems, nodeValidation?.counts?.items, 'rus
 assertEqual(browserPack?.counts?.groups, nodeValidation?.counts?.groups, 'rust browser pack groups');
 assertEqual(browserPack?.counts?.orderedItems, nodeValidation?.counts?.neiOrderEntries, 'rust browser pack orderedItems');
 assertEqual(browserPack?.counts?.atlasItems, rawBrowserAtlas?.items?.length, 'rust browser pack raw atlasItems');
+assertEqual(searchPack?.counts?.items, nodeValidation?.counts?.items, 'rust search pack items');
+assertEqual(searchPack?.counts?.aliasItems, nodeValidation?.counts?.items, 'rust search pack aliasItems');
+for (const expectedTerm of ['iron', 'terrasteel', 'minecraft']) {
+  const hasTerm = (searchPack?.items ?? []).some((item) => `${item.normalizedSearchTerms ?? ''}`.includes(expectedTerm));
+  if (!hasTerm) fail(`rust search pack is missing expected term: ${expectedTerm}`);
+}
 
 writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   schemaVersion: 'neonei/rust-compiler-gate/current',
@@ -180,6 +188,7 @@ writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   report: rustReport.replaceAll('\\', '/'),
   compileReport: rustCompileReport.replaceAll('\\', '/'),
   browserPack: rustBrowserPack.replaceAll('\\', '/'),
+  searchPack: rustSearchPack.replaceAll('\\', '/'),
   nodeSelfTestOutput: nodeSelfTestOutput.replaceAll('\\', '/'),
 }, null, 2));
 

@@ -335,20 +335,25 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
         .unwrap_or_default();
 
     let mut alias_map = BTreeMap::new();
+    let mut search_items = Vec::new();
     let mut browser_items = items
         .iter()
+        .enumerate()
         .map(|item| {
+            let (search_rank, item) = item;
             let item_id = value_string(item, "itemId").unwrap_or_default();
             let localized_name = value_string(item, "localizedName");
             let mod_id = value_string(item, "modId");
             let internal_name = value_string(item, "internalName");
             let render_asset_ref = value_string(item, "renderAssetRef");
+            let raw_search_terms = value_string(item, "searchTerms");
             let mut aliases = vec![item_id.clone()];
             for value in [
                 localized_name.clone(),
                 mod_id.clone(),
                 internal_name.clone(),
                 render_asset_ref.clone(),
+                raw_search_terms.clone(),
             ]
             .into_iter()
             .flatten()
@@ -361,9 +366,48 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
             aliases.dedup();
             alias_map.insert(item_id.clone(), aliases);
             let group = group_by_member.get(&item_id);
+            let public_item_id = format!("item:{}", item_id.to_ascii_lowercase());
+            let normalized_terms = normalize_search_terms(
+                [
+                    localized_name.as_deref(),
+                    internal_name.as_deref(),
+                    mod_id.as_deref(),
+                    raw_search_terms.as_deref(),
+                    Some(public_item_id.as_str()),
+                    group
+                        .and_then(|value| value.get("groupKey"))
+                        .and_then(Value::as_str),
+                    group
+                        .and_then(|value| value.get("groupLabel"))
+                        .and_then(Value::as_str),
+                ]
+                .into_iter()
+                .flatten(),
+            );
+            search_items.push(json!({
+                "itemId": item_id,
+                "publicItemId": public_item_id,
+                "localizedName": localized_name,
+                "modId": mod_id,
+                "internalName": internal_name,
+                "normalizedLocalizedName": localized_name.as_deref().map(normalize_text).unwrap_or_default(),
+                "normalizedInternalName": internal_name.as_deref().map(normalize_text).unwrap_or_default(),
+                "normalizedItemId": normalize_text(&item_id),
+                "normalizedSearchTerms": normalized_terms,
+                "aliases": raw_search_terms.unwrap_or_default(),
+                "searchRank": search_rank,
+                "renderAssetRef": render_asset_ref,
+                "groupKey": group.and_then(|value| value.get("groupKey")).cloned().unwrap_or(Value::Null),
+                "groupLabel": group.and_then(|value| value.get("groupLabel")).cloned().unwrap_or(Value::Null),
+                "groupSize": group.and_then(|value| value.get("groupSize")).cloned().unwrap_or(json!(1)),
+                "representativeItemId": group
+                    .and_then(|value| value.get("representativeItemId"))
+                    .cloned()
+                    .unwrap_or_else(|| json!(item_id)),
+            }));
             json!({
                 "itemId": item_id,
-                "publicItemId": format!("item:{}", item_id.to_ascii_lowercase()),
+                "publicItemId": public_item_id,
                 "localizedName": localized_name,
                 "modId": mod_id,
                 "internalName": internal_name,
@@ -415,6 +459,17 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
     write_json_value(&rust_dir.join("browser-pack.json"), &pack)?;
+    write_json_value(
+        &rust_dir.join("search-pack.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-search-pack/current",
+            "counts": {
+                "items": search_items.len(),
+                "aliasItems": alias_map.len(),
+            },
+            "items": search_items,
+        }),
+    )?;
     Ok(())
 }
 
@@ -478,6 +533,29 @@ fn value_string(value: &Value, key: &str) -> Option<String> {
 
 fn value_u64(value: &Value, key: &str) -> Option<u64> {
     value.get(key)?.as_u64()
+}
+
+fn normalize_text(value: &str) -> String {
+    value
+        .to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn normalize_search_terms<'a>(values: impl Iterator<Item = &'a str>) -> String {
+    let mut terms = values
+        .flat_map(|value| {
+            normalize_text(value)
+                .split(' ')
+                .map(str::to_string)
+                .collect::<Vec<_>>()
+        })
+        .filter(|value| !value.trim().is_empty())
+        .collect::<Vec<_>>();
+    terms.sort();
+    terms.dedup();
+    terms.join(" ")
 }
 
 fn sha256_file(path: &Path) -> Result<String> {
