@@ -2,7 +2,7 @@ use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand};
 use flate2::read::GzDecoder;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
+use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs::{self, File};
@@ -114,6 +114,7 @@ fn main() -> Result<()> {
             configure_threads(threads);
             fs::create_dir_all(&output)
                 .with_context(|| format!("create output directory {}", output.display()))?;
+            compile_browser_pack(&input, &output, strict)?;
             run_baseline(&input, Some(&output), &report, strict)
         }
     }
@@ -259,6 +260,226 @@ fn count_jsonl_rows(path: &Path) -> Result<u64> {
     Ok(count)
 }
 
+fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+    let manifest = read_manifest(input)?;
+    let items = read_jsonl_values(input, &manifest, "items")?;
+    let order_rows = read_jsonl_values(input, &manifest, "neiOrder")?;
+    let group_rows = read_jsonl_values(input, &manifest, "groups")?;
+    let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?.unwrap_or(Value::Null);
+
+    if strict && items.is_empty() {
+        return Err(anyhow!(
+            "browser compiler blocked: raw items stream is empty"
+        ));
+    }
+
+    let order_by_item = order_rows
+        .iter()
+        .filter_map(|row| {
+            Some((
+                value_string(row, "itemId")?,
+                value_u64(row, "entryOrder").unwrap_or(u64::MAX),
+            ))
+        })
+        .collect::<BTreeMap<_, _>>();
+
+    let mut group_by_member = BTreeMap::new();
+    let groups = group_rows
+        .iter()
+        .map(|row| {
+            let group_key = value_string(row, "groupKey");
+            let group_label = value_string(row, "groupLabel");
+            let representative = value_string(row, "representativeItemId");
+            let members = row
+                .get("memberItemIds")
+                .and_then(Value::as_array)
+                .map(|values| {
+                    values
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default();
+            for member in &members {
+                group_by_member.insert(
+                    member.clone(),
+                    json!({
+                        "groupKey": group_key,
+                        "groupLabel": group_label,
+                        "groupSize": value_u64(row, "groupSize").unwrap_or(members.len() as u64),
+                        "representativeItemId": representative,
+                        "groupSource": "nativeNei",
+                    }),
+                );
+            }
+            json!({
+                "groupKey": group_key,
+                "groupLabel": group_label,
+                "groupSize": value_u64(row, "groupSize").unwrap_or(members.len() as u64),
+                "representativeItemId": representative,
+                "memberItemIds": members,
+                "groupSource": "nativeNei",
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let atlas_by_item = atlas
+        .get("items")
+        .and_then(Value::as_array)
+        .map(|rows| {
+            rows.iter()
+                .filter_map(|row| Some((value_string(row, "itemId")?, row.clone())))
+                .collect::<BTreeMap<_, _>>()
+        })
+        .unwrap_or_default();
+
+    let mut alias_map = BTreeMap::new();
+    let mut browser_items = items
+        .iter()
+        .map(|item| {
+            let item_id = value_string(item, "itemId").unwrap_or_default();
+            let localized_name = value_string(item, "localizedName");
+            let mod_id = value_string(item, "modId");
+            let internal_name = value_string(item, "internalName");
+            let render_asset_ref = value_string(item, "renderAssetRef");
+            let mut aliases = vec![item_id.clone()];
+            for value in [
+                localized_name.clone(),
+                mod_id.clone(),
+                internal_name.clone(),
+                render_asset_ref.clone(),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                if !value.trim().is_empty() {
+                    aliases.push(value);
+                }
+            }
+            aliases.sort();
+            aliases.dedup();
+            alias_map.insert(item_id.clone(), aliases);
+            let group = group_by_member.get(&item_id);
+            json!({
+                "itemId": item_id,
+                "publicItemId": format!("item:{}", item_id.to_ascii_lowercase()),
+                "localizedName": localized_name,
+                "modId": mod_id,
+                "internalName": internal_name,
+                "renderAssetRef": render_asset_ref,
+                "browserOrder": order_by_item.get(&item_id).copied().unwrap_or(u64::MAX),
+                "groupKey": group.and_then(|value| value.get("groupKey")).cloned().unwrap_or(Value::Null),
+                "groupLabel": group.and_then(|value| value.get("groupLabel")).cloned().unwrap_or(Value::Null),
+                "groupSize": group.and_then(|value| value.get("groupSize")).cloned().unwrap_or(json!(1)),
+                "representativeItemId": group
+                    .and_then(|value| value.get("representativeItemId"))
+                    .cloned()
+                    .unwrap_or_else(|| json!(item_id)),
+                "groupSource": group.and_then(|value| value.get("groupSource")).cloned().unwrap_or(Value::Null),
+                "atlas": atlas_by_item.get(&item_id).cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect::<Vec<_>>();
+
+    browser_items.sort_by(|left, right| {
+        let left_order = left
+            .get("browserOrder")
+            .and_then(Value::as_u64)
+            .unwrap_or(u64::MAX);
+        let right_order = right
+            .get("browserOrder")
+            .and_then(Value::as_u64)
+            .unwrap_or(u64::MAX);
+        left_order
+            .cmp(&right_order)
+            .then_with(|| value_string(left, "itemId").cmp(&value_string(right, "itemId")))
+    });
+
+    let atlas_items = atlas_by_item.len() as u64;
+    let pack = json!({
+        "schemaVersion": "neonei/rust-browser-pack/current",
+        "counts": {
+            "items": browser_items.len(),
+            "groups": groups.len(),
+            "aliasItems": alias_map.len(),
+            "orderedItems": order_by_item.len(),
+            "atlasItems": atlas_items,
+            "missingAtlas": browser_items.iter().filter(|item| item.get("atlas") == Some(&Value::Null)).count(),
+        },
+        "items": browser_items,
+        "groups": groups,
+        "aliasMap": alias_map,
+    });
+
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+    write_json_value(&rust_dir.join("browser-pack.json"), &pack)?;
+    Ok(())
+}
+
+fn read_manifest_json(
+    input: &Path,
+    manifest: &RawManifest,
+    logical_name: &str,
+) -> Result<Option<Value>> {
+    let Some(path) = resolve_manifest_path(input, manifest, logical_name) else {
+        return Ok(None);
+    };
+    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let value = serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+    Ok(Some(value))
+}
+
+fn read_jsonl_values(
+    input: &Path,
+    manifest: &RawManifest,
+    logical_name: &str,
+) -> Result<Vec<Value>> {
+    let Some(path) = resolve_manifest_path(input, manifest, logical_name) else {
+        return Ok(Vec::new());
+    };
+    let reader: Box<dyn Read> = if path.extension().and_then(|value| value.to_str()) == Some("gz") {
+        Box::new(GzDecoder::new(File::open(&path)?))
+    } else {
+        Box::new(File::open(&path)?)
+    };
+    let buf = BufReader::new(reader);
+    let mut rows = Vec::new();
+    for (index, line) in buf.lines().enumerate() {
+        let line = line?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        rows.push(
+            serde_json::from_str(&line)
+                .with_context(|| format!("parse {} line {}", path.display(), index + 1))?,
+        );
+    }
+    Ok(rows)
+}
+
+fn resolve_manifest_path(
+    input: &Path,
+    manifest: &RawManifest,
+    logical_name: &str,
+) -> Option<PathBuf> {
+    let relative_path = manifest.files.get(logical_name)?;
+    let normalized = relative_path
+        .replace('\\', "/")
+        .trim_start_matches('/')
+        .to_string();
+    Some(input.join(normalized))
+}
+
+fn value_string(value: &Value, key: &str) -> Option<String> {
+    value.get(key)?.as_str().map(str::to_string)
+}
+
+fn value_u64(value: &Value, key: &str) -> Option<u64> {
+    value.get(key)?.as_u64()
+}
+
 fn sha256_file(path: &Path) -> Result<String> {
     let mut file = File::open(path)?;
     let mut hasher = Sha256::new();
@@ -326,6 +547,11 @@ fn summarize_runtime_output(output: Option<&Path>) -> Result<RuntimeSummary> {
 fn write_report(path: &Path, report: &CompilerReport) -> Result<()> {
     let text = serde_json::to_string_pretty(report)?;
     fs::write(path, text).with_context(|| format!("write report {}", path.display()))
+}
+
+fn write_json_value(path: &Path, value: &Value) -> Result<()> {
+    let text = serde_json::to_string_pretty(value)?;
+    fs::write(path, format!("{text}\n")).with_context(|| format!("write {}", path.display()))
 }
 
 fn normalize_path(path: &Path) -> String {

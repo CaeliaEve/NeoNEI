@@ -12,6 +12,7 @@ const rawExportSelfTest = join(repoRoot, '.tmp-runtime', 'raw-export-self-test')
 const nodeSelfTestOutput = join(repoRoot, '.tmp-runtime', 'dist-data-v3-self-test');
 const rustReport = join(tmpRoot, 'rust-baseline.json');
 const rustCompileReport = join(tmpRoot, 'rust-compile-report.json');
+const rustBrowserPack = join(nodeSelfTestOutput, 'rust', 'browser-pack.json');
 
 const strict = process.argv.includes('--strict');
 const runCargo = process.argv.includes('--run-cargo') || strict;
@@ -160,17 +161,25 @@ if ((report?.blocked ?? []).length > 0) {
 }
 const compileReport = readJson(rustCompileReport);
 const nodeValidation = readJson(join(nodeSelfTestOutput, 'validation', 'report.json'));
+const rawBrowserAtlas = readJson(join(rawExportSelfTest, 'assets', 'textures', 'browser_atlas_index.json'));
+const browserPack = readJson(rustBrowserPack);
 compareCounts({
   nodeCounts: nodeValidation?.counts ?? {},
   rustRawCounts: compileReport?.raw_export?.file_counts ?? {},
   rustRuntimeCounts: compileReport?.runtime?.counts ?? {},
 });
+assertEqual(browserPack?.counts?.items, nodeValidation?.counts?.items, 'rust browser pack items');
+assertEqual(browserPack?.counts?.aliasItems, nodeValidation?.counts?.items, 'rust browser pack aliasItems');
+assertEqual(browserPack?.counts?.groups, nodeValidation?.counts?.groups, 'rust browser pack groups');
+assertEqual(browserPack?.counts?.orderedItems, nodeValidation?.counts?.neiOrderEntries, 'rust browser pack orderedItems');
+assertEqual(browserPack?.counts?.atlasItems, rawBrowserAtlas?.items?.length, 'rust browser pack raw atlasItems');
 
 writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   schemaVersion: 'neonei/rust-compiler-gate/current',
   status: 'ok',
   report: rustReport.replaceAll('\\', '/'),
   compileReport: rustCompileReport.replaceAll('\\', '/'),
+  browserPack: rustBrowserPack.replaceAll('\\', '/'),
   nodeSelfTestOutput: nodeSelfTestOutput.replaceAll('\\', '/'),
 }, null, 2));
 
