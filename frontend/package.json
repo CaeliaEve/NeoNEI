@@ -39,7 +39,8 @@
     "validate:recipe-handlers": "node ../scripts/validate-recipe-handler-metadata.mjs --gate",
     "test:browser-search-cache": "node --test scripts/browser-search-cache-regression.test.mjs",
     "test:rust-compiler-scaffold": "node ../scripts/rust-compiler-gate.mjs",
-    "test:rust-compiler": "node ../scripts/rust-compiler-gate.mjs --run-cargo"
+    "test:rust-compiler": "node ../scripts/rust-compiler-gate.mjs --run-cargo",
+    "test:rust-retirement": "node ../scripts/rust-retirement-gate.mjs --gate --quick"
   },
   "dependencies": {
     "axios": "^1.13.2",

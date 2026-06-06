@@ -5,7 +5,7 @@ import { performance } from "node:perf_hooks";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const publishRoot = join(repoRoot, "backend", "data", "publish");
-const distDataRoot = join(repoRoot, "backend", "public", "dist-data");
+const distDataRoot = process.env.DIST_DATA_V3_DIR || join(repoRoot, "backend", "public", "dist-data");
 const reportDir = join(repoRoot, ".runtime-logs");
 const reportPath = join(reportDir, "recipe-v3-benchmark.json");
 const gate = process.argv.includes("--gate");
@@ -130,7 +130,7 @@ function percentile(values, pct) {
   return sorted[index];
 }
 
-const latest = findLatestManifest();
+const latest = process.env.DIST_DATA_V3_DIR ? null : findLatestManifest();
 const source = latest ? buildPublishBenchmarkSource(latest) : buildDistDataBenchmarkSource();
 const itemIds = source.itemIds;
 const timings = [];

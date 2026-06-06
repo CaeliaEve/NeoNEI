@@ -5,6 +5,7 @@ import zlib from "node:zlib";
 
 const repoRoot = new URL("..", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 const publishRoot = join(repoRoot, "backend", "data", "publish");
+const distDataDir = process.env.DIST_DATA_V3_DIR ? process.env.DIST_DATA_V3_DIR : null;
 const reportDir = join(repoRoot, ".runtime-logs");
 const reportPath = join(reportDir, "search-v3-benchmark.json");
 const gateMode = process.argv.includes("--gate");
@@ -15,7 +16,7 @@ const limits = {
   maxIndexBuildMs: Number(process.env.SEARCH_V3_MAX_INDEX_BUILD_MS ?? 15000),
 };
 
-const queries = [
+const defaultQueries = [
   { query: "iron", expectHits: true },
   { query: "tieding", expectHits: true },
   { query: "tailagang", expectHits: true },
@@ -27,11 +28,18 @@ const queries = [
   { query: "singularity", expectHits: true },
   { query: "rocket", expectHits: true },
 ];
+const queries = process.env.SEARCH_V3_QUERIES
+  ? process.env.SEARCH_V3_QUERIES.split(",").map((query) => ({ query: query.trim(), expectHits: true })).filter((entry) => entry.query)
+  : defaultQueries;
+const minItems = Number(process.env.SEARCH_V3_MIN_ITEMS ?? 10000);
 
 const MAX_PREFIX_LENGTH = 32;
 const MAX_FIELD_LENGTH_FOR_GRAMS = 96;
 
 function latestPublishDir() {
+  if (distDataDir && existsSync(distDataDir)) {
+    return distDataDir;
+  }
   if (!existsSync(publishRoot)) {
     throw new Error(`Publish root not found: ${publishRoot}`);
   }
@@ -270,7 +278,7 @@ if (gateMode) {
   if (indexes.elapsedMs > limits.maxIndexBuildMs) {
     failures.push(`Index build time ${indexes.elapsedMs.toFixed(2)}ms exceeds ${limits.maxIndexBuildMs}ms`);
   }
-  if (pack.length < 10000) {
+  if (pack.length < minItems) {
     failures.push(`Search pack has only ${pack.length} items`);
   }
 }
@@ -279,6 +287,7 @@ const report = {
   generatedAt: new Date().toISOString(),
   gateMode,
   limits,
+  minItems,
   bundleDir,
   searchPackPath,
   itemCount: pack.length,
@@ -302,4 +311,3 @@ console.log(`Wrote ${reportPath}`);
 if (gateMode && failures.length > 0) {
   process.exitCode = 1;
 }
-
