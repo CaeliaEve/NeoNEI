@@ -20,6 +20,7 @@
     "validate:native-render": "node ../scripts/validate-native-render-smoke.mjs --self-test --gate",
     "bench:browser-v3": "node ../scripts/bench-browser-v3.mjs --gate",
     "validate:runtime-contracts": "node ../scripts/validate-runtime-contracts.mjs --gate",
+    "validate:semantic-runtime": "node ../scripts/validate-semantic-runtime.mjs --gate",
     "audit:api-runtime": "node ../scripts/audit-api-runtime.mjs",
     "audit:paths": "node ../scripts/audit-path-portability.mjs",
     "gate:runtime": "node ../scripts/gate-runtime-release.mjs",

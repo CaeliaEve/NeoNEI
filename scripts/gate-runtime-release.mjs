@@ -42,6 +42,7 @@ const steps = [
   { name: 'recipe handler metadata gate', cwd: frontendDir, command: npm, args: ['run', 'validate:recipe-handlers'] },
   { name: 'recipe fragmentation gate', cwd: frontendDir, command: npm, args: ['run', 'validate:recipe-fragmentation'] },
   { name: 'runtime contract validation', cwd: frontendDir, command: npm, args: ['run', 'validate:runtime-contracts'] },
+  { name: 'semantic runtime validation', cwd: frontendDir, command: npm, args: ['run', 'validate:semantic-runtime'] },
   { name: 'runtime v3 regression', cwd: frontendDir, command: npm, args: ['run', 'validate:runtime-v3'] },
   { name: 'browser page v3 smoke', cwd: frontendDir, command: npm, args: ['run', 'validate:browser-pages-v3'] },
   { name: 'browser E2E Gate C', cwd: frontendDir, command: npm, args: ['run', 'gate:c'] },

@@ -2442,10 +2442,13 @@ function buildSearchAliasIndex(searchItems, semanticFacets) {
 }
 
 function expectedAnimationReason(item) {
+  const modId = `${item?.modId ?? ""}`.trim().toLowerCase();
+  const internalName = `${item?.internalName ?? ""}`.trim().toLowerCase();
+  const localizedName = `${item?.localizedName ?? ""}`.trim();
   const haystack = normalizeLoose([
-    item?.localizedName,
-    item?.internalName,
-    item?.modId,
+    localizedName,
+    internalName,
+    modId,
     item?.itemId,
     item?.semanticFamily,
     item?.family,
@@ -2455,7 +2458,12 @@ function expectedAnimationReason(item) {
   if (!haystack) return null;
   if (/(singularity|奇点|cosmic|寰宇|crystal matrix|水晶矩阵|infinity (armor|tool|sword|pickaxe|axe|shovel|hoe|bow)|无尽(胸甲|头盔|护腿|靴子|工具|剑|镐|斧|铲|锄|弓))/i.test(haystack)) return "avaritia-cosmic-or-singularity";
   if (/(nasa.*rocket|galacticraft.*rocket|火箭.*galacticraft|nasa.*火箭)/i.test(haystack)) return "galacticraft-dynamic-item";
-  if (/(aspect|aer|ignis|aqua|ordo|perditio|terra|要素|灵气)/i.test(haystack)) return "thaumcraft-aspect";
+  if (
+    (modId === "thaumcraftneiplugin" && internalName === "aspect") ||
+    /^要素\s*[:：]/u.test(localizedName) ||
+    /\bthaumcraftneiplugin\b.*\baspect\b/i.test(haystack) ||
+    /\bthaumic(?:tinkerer|bases|horizons)?\b.*\bmobaspect\b/i.test(haystack)
+  ) return "thaumcraft-aspect";
   return null;
 }
 
