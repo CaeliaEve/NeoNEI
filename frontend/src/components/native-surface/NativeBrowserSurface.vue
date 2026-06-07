@@ -13,9 +13,7 @@ import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeS
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 import {
   getAllGlobalBrowserAtlasTextureDescriptors,
-  getGlobalBrowserAtlasSpriteDescriptorForItem,
 } from "../../services/globalBrowserAtlas";
-import type { NativeRenderSpriteCommand } from "../../native-surface/NativeSurfaceRenderProtocol";
 
 const HomeCanvasGrid = defineAsyncComponent(() => import("../HomeCanvasGrid.vue"));
 
@@ -293,7 +291,7 @@ async function handleNativeContextMenu(event: MouseEvent) {
 async function syncNativeFrame() {
   const seq = ++nativeFrameSeq;
   const nowMs = performance.now();
-  const frame = await controller.requestFrame(performance.now());
+  const frame = await controller.requestFrame(nowMs);
   if (seq !== nativeFrameSeq) return;
   nativeLayoutCommands.value = frame?.drawCommands ?? null;
   nativeLayoutCommandBuffer.value = frame?.drawCommandBuffer ?? null;
@@ -305,35 +303,10 @@ async function syncNativeFrame() {
       commandBuffer: frame.drawCommandBuffer.slice(0),
       commandStride: frame.drawCommandStride,
       commandCount: frame.drawCommandCount,
-      spriteCommands: buildNativeSpriteCommands(frame.drawCommands ?? [], nowMs),
-      nowMs: performance.now(),
+      spriteCommands: frame.spriteCommands ?? [],
+      nowMs,
     });
   }
-}
-
-function buildNativeSpriteCommands(
-  commands: NativeSurfaceLayoutCommand[],
-  nowMs: number,
-): NativeRenderSpriteCommand[] {
-  const result: NativeRenderSpriteCommand[] = [];
-  for (let index = 0; index < commands.length; index += 1) {
-    const command = commands[index];
-    if (!command?.itemId) continue;
-    const sprite = getGlobalBrowserAtlasSpriteDescriptorForItem(command.itemId, nowMs);
-    if (!sprite) continue;
-    result.push({
-      textureKey: sprite.textureKey,
-      sourceX: sprite.sourceX,
-      sourceY: sprite.sourceY,
-      sourceWidth: sprite.sourceWidth,
-      sourceHeight: sprite.sourceHeight,
-      destX: command.iconX,
-      destY: command.iconY,
-      destWidth: command.iconSize,
-      destHeight: command.iconSize,
-    });
-  }
-  return result;
 }
 
 async function syncNativeTextures() {

@@ -5,6 +5,7 @@ import type {
   NativeSurfaceEngineHit,
   NativeSurfaceEngineLayoutCommand,
   NativeSurfaceEngineMutation,
+  NativeSurfaceEngineSpriteCommand,
   NativeSurfaceEngineWorkerMetrics,
 } from "../native-surface/NativeSurfaceEngineProtocol";
 import { NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE } from "../native-surface/NativeSurfaceEngineProtocol";
@@ -42,6 +43,8 @@ type SurfaceState = {
   browserPack: NativeCompactBrowserPack | null;
   groupByKey: Map<string, NativeRuntimeGroup>;
   stringByItemId: Map<string, NativeRuntimeStringItem>;
+  textureByItemId: Map<string, NativeRuntimeTextureItem>;
+  animationByItemId: Map<string, NativeRuntimeAnimationItem>;
   runtimeProjectionCacheKey: string | null;
   runtimeProjectionIndices: Uint32Array | null;
   runtimeVisibleCacheKey: string | null;
@@ -67,6 +70,43 @@ type NativeRuntimeStringItem = {
   internalName?: string | null;
   groupKey?: string | null;
   groupLabel?: string | null;
+};
+
+type NativeRuntimeAtlasFrame = {
+  index: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+type NativeRuntimeTimelineFrame = {
+  frameIndex: number;
+  durationMs: number;
+};
+
+type NativeRuntimeTextureItem = {
+  itemId: string;
+  staticAtlas?: {
+    atlasFile: string;
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null;
+  animatedAtlas?: {
+    atlasFile: string;
+    frames: NativeRuntimeAtlasFrame[];
+    timeline: NativeRuntimeTimelineFrame[];
+    frameDurationMs: number | null;
+  } | null;
+};
+
+type NativeRuntimeAnimationItem = {
+  itemId: string;
+  atlasFile?: string | null;
+  timeline: NativeRuntimeTimelineFrame[];
+  frameDurationMs: number | null;
 };
 
 const surfaces = new Map<NativeSurfaceId, SurfaceState>();
@@ -235,6 +275,107 @@ function parseNativeStringPack(payloadBuffer: ArrayBuffer): Map<string, NativeRu
     });
   }
   return strings;
+}
+
+function toFiniteNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function normalizeAtlasFile(value: unknown): string | null {
+  const normalized = `${value ?? ""}`.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+  return normalized || null;
+}
+
+function parseAtlasFrames(value: unknown): NativeRuntimeAtlasFrame[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((frame, index) => {
+      const compact = Array.isArray(frame) ? frame as unknown[] : null;
+      const record = frame && typeof frame === "object" && !Array.isArray(frame) ? frame as Record<string, unknown> : {};
+      return {
+        index: Math.max(0, Math.floor(toFiniteNumber(compact?.[0] ?? record.index, index))),
+        x: Math.max(0, Math.floor(toFiniteNumber(compact?.[1] ?? record.x, 0))),
+        y: Math.max(0, Math.floor(toFiniteNumber(compact?.[2] ?? record.y, 0))),
+        width: Math.max(0, Math.floor(toFiniteNumber(compact?.[3] ?? record.width, 0))),
+        height: Math.max(0, Math.floor(toFiniteNumber(compact?.[4] ?? record.height, 0))),
+      };
+    })
+    .filter((frame) => frame.width > 0 && frame.height > 0);
+}
+
+function parseTimeline(value: unknown, fallbackDurationMs?: unknown): NativeRuntimeTimelineFrame[] {
+  if (!Array.isArray(value)) return [];
+  const fallbackDuration = Math.max(16, Math.floor(toFiniteNumber(fallbackDurationMs, 50)));
+  return value
+    .map((frame, index) => {
+      const compact = Array.isArray(frame) ? frame as unknown[] : null;
+      const record = frame && typeof frame === "object" && !Array.isArray(frame) ? frame as Record<string, unknown> : {};
+      return {
+        frameIndex: Math.max(0, Math.floor(toFiniteNumber(compact?.[0] ?? record.frameIndex ?? record.index, index))),
+        durationMs: Math.max(16, Math.floor(toFiniteNumber(compact?.[1] ?? record.durationMs, fallbackDuration))),
+      };
+    });
+}
+
+function parseNativeTexturePack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeTextureItem> {
+  const pack = parseJsonPayload<{ atlasMap?: Record<string, unknown>; atlas?: { items?: unknown[] } }>(payloadBuffer);
+  const rows: unknown[] = [];
+  if (pack?.atlasMap && typeof pack.atlasMap === "object") rows.push(...Object.values(pack.atlasMap));
+  if (Array.isArray(pack?.atlas?.items)) rows.push(...pack.atlas.items);
+  const textures = new Map<string, NativeRuntimeTextureItem>();
+  for (const row of rows) {
+    const record = row && typeof row === "object" ? row as Record<string, unknown> : null;
+    if (!record) continue;
+    const atlasRecord = record.atlas && typeof record.atlas === "object" ? record.atlas as Record<string, unknown> : record;
+    const itemId = `${record.itemId ?? atlasRecord.itemId ?? ""}`.trim();
+    if (!itemId || textures.has(itemId)) continue;
+    const staticAtlas = atlasRecord.staticAtlas && typeof atlasRecord.staticAtlas === "object"
+      ? atlasRecord.staticAtlas as Record<string, unknown>
+      : null;
+    const animatedAtlas = atlasRecord.animatedAtlas && typeof atlasRecord.animatedAtlas === "object"
+      ? atlasRecord.animatedAtlas as Record<string, unknown>
+      : null;
+    textures.set(itemId, {
+      itemId,
+      staticAtlas: staticAtlas ? {
+        atlasFile: normalizeAtlasFile(staticAtlas.atlasFile) ?? "",
+        x: Math.max(0, Math.floor(toFiniteNumber(staticAtlas.x, 0))),
+        y: Math.max(0, Math.floor(toFiniteNumber(staticAtlas.y, 0))),
+        width: Math.max(0, Math.floor(toFiniteNumber(staticAtlas.width, 0))),
+        height: Math.max(0, Math.floor(toFiniteNumber(staticAtlas.height, 0))),
+      } : null,
+      animatedAtlas: animatedAtlas ? {
+        atlasFile: normalizeAtlasFile(animatedAtlas.atlasFile) ?? "",
+        frames: parseAtlasFrames(animatedAtlas.frames),
+        timeline: parseTimeline(animatedAtlas.timeline, animatedAtlas.frameDurationMs),
+        frameDurationMs: toFiniteNumber(animatedAtlas.frameDurationMs, 0) || null,
+      } : null,
+    });
+  }
+  return textures;
+}
+
+function parseNativeAnimationPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeAnimationItem> {
+  const pack = parseJsonPayload<{ animations?: unknown[] }>(payloadBuffer);
+  const animations = new Map<string, NativeRuntimeAnimationItem>();
+  for (const row of pack?.animations ?? []) {
+    const record = row && typeof row === "object" ? row as Record<string, unknown> : null;
+    if (!record) continue;
+    const itemId = `${record.itemId ?? ""}`.trim();
+    if (!itemId) continue;
+    animations.set(itemId, {
+      itemId,
+      atlasFile: normalizeAtlasFile(record.atlasFile),
+      timeline: parseTimeline(record.timeline, record.frameDurationMs),
+      frameDurationMs: toFiniteNumber(record.frameDurationMs, 0) || null,
+    });
+  }
+  return animations;
 }
 
 function writeWasmUtf8(value: string): { ptr: number; len: number } {
@@ -499,6 +640,8 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     browserPack: null,
     groupByKey: new Map(),
     stringByItemId: new Map(),
+    textureByItemId: new Map(),
+    animationByItemId: new Map(),
     runtimeProjectionCacheKey: null,
     runtimeProjectionIndices: null,
     runtimeVisibleCacheKey: null,
@@ -564,6 +707,83 @@ function buildLayoutCommandBuffer(
   });
   return values.buffer;
 }
+
+function pickTimelineFrame(
+  frames: NativeRuntimeAtlasFrame[],
+  timeline: NativeRuntimeTimelineFrame[],
+  nowMs: number,
+): NativeRuntimeAtlasFrame | null {
+  if (frames.length <= 0) return null;
+  if (timeline.length <= 0) return frames[0] ?? null;
+  const totalDuration = timeline.reduce((sum, frame) => sum + Math.max(16, frame.durationMs), 0);
+  if (totalDuration <= 0) return frames[0] ?? null;
+  let cursor = Math.floor(nowMs) % totalDuration;
+  let selectedFrameIndex = timeline[0]?.frameIndex ?? 0;
+  for (const frame of timeline) {
+    const duration = Math.max(16, frame.durationMs);
+    if (cursor < duration) {
+      selectedFrameIndex = frame.frameIndex;
+      break;
+    }
+    cursor -= duration;
+  }
+  return frames.find((frame) => frame.index === selectedFrameIndex)
+    ?? frames[selectedFrameIndex]
+    ?? frames[0]
+    ?? null;
+}
+
+function buildSpriteCommands(
+  surface: SurfaceState,
+  commands: NativeSurfaceEngineLayoutCommand[],
+  nowMs: number,
+): NativeSurfaceEngineSpriteCommand[] {
+  const sprites: NativeSurfaceEngineSpriteCommand[] = [];
+  for (const command of commands) {
+    if (!command.itemId) continue;
+    const texture = surface.textureByItemId.get(command.itemId);
+    if (!texture) continue;
+    const animation = surface.animationByItemId.get(command.itemId);
+    const animatedAtlas = texture.animatedAtlas;
+    if (animatedAtlas?.atlasFile && animatedAtlas.frames.length > 0) {
+      const frame = pickTimelineFrame(
+        animatedAtlas.frames,
+        animation?.timeline?.length ? animation.timeline : animatedAtlas.timeline,
+        nowMs,
+      );
+      if (frame) {
+        sprites.push({
+          textureKey: animation?.atlasFile || animatedAtlas.atlasFile,
+          sourceX: frame.x,
+          sourceY: frame.y,
+          sourceWidth: frame.width,
+          sourceHeight: frame.height,
+          destX: command.iconX,
+          destY: command.iconY,
+          destWidth: command.iconSize,
+          destHeight: command.iconSize,
+        });
+        continue;
+      }
+    }
+    const staticAtlas = texture.staticAtlas;
+    if (staticAtlas?.atlasFile && staticAtlas.width > 0 && staticAtlas.height > 0) {
+      sprites.push({
+        textureKey: staticAtlas.atlasFile,
+        sourceX: staticAtlas.x,
+        sourceY: staticAtlas.y,
+        sourceWidth: staticAtlas.width,
+        sourceHeight: staticAtlas.height,
+        destX: command.iconX,
+        destY: command.iconY,
+        destWidth: command.iconSize,
+        destHeight: command.iconSize,
+      });
+    }
+  }
+  return sprites;
+}
+
 function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequest, { type: "hitTest" }>): NativeSurfaceEngineHit {
   const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
@@ -696,10 +916,14 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         const browserPack = message.packs.find((pack) => pack.name === "browser");
         const groupPack = message.packs.find((pack) => pack.name === "groups");
         const stringPack = message.packs.find((pack) => pack.name === "stringsZhCn");
+        const texturePack = message.packs.find((pack) => pack.name === "textures");
+        const animationPack = message.packs.find((pack) => pack.name === "animations");
         disposeWasmBrowserPayload(surface);
         surface.browserPack = browserPack ? parseNativeCompactBrowserPack(browserPack.buffer) : null;
         surface.groupByKey = groupPack ? parseNativeGroupPack(groupPack.buffer) : new Map();
         surface.stringByItemId = stringPack ? parseNativeStringPack(stringPack.buffer) : new Map();
+        surface.textureByItemId = texturePack ? parseNativeTexturePack(texturePack.buffer) : new Map();
+        surface.animationByItemId = animationPack ? parseNativeAnimationPack(animationPack.buffer) : new Map();
         if (browserPack) installWasmBrowserPayload(surface, browserPack.buffer);
         surface.runtimeProjectionCacheKey = null;
         surface.runtimeProjectionIndices = null;
@@ -711,6 +935,8 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         surface.browserPack = null;
         surface.groupByKey = new Map();
         surface.stringByItemId = new Map();
+        surface.textureByItemId = new Map();
+        surface.animationByItemId = new Map();
         surface.runtimeProjectionCacheKey = null;
         surface.runtimeProjectionIndices = null;
         surface.runtimeVisibleCacheKey = null;
@@ -758,6 +984,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         id: message.id,
         surfaceId: message.surfaceId,
         drawCommands: surface.layoutCommands,
+        spriteCommands: buildSpriteCommands(surface, surface.layoutCommands, message.nowMs),
         commandBuffer: buildLayoutCommandBuffer(surface.layoutCommands, surface.lastHit?.key ?? null, surface.selectedItemId),
         commandStride: NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE,
         commandCount: surface.layoutCommands.length,

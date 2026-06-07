@@ -5,6 +5,7 @@
   NativeSurfaceViewportRole,
   NativeSurfaceViewport,
 } from "./contracts";
+import type { NativeRenderSpriteCommand } from "./NativeSurfaceRenderProtocol";
 import type { NativeRuntimePackName, NativeRuntimePackSchema } from "./NativeRuntimeManifest";
 
 export type NativeSurfaceEngineEntry = {
@@ -16,6 +17,7 @@ export type NativeSurfaceEngineEntry = {
 };
 
 export type NativeSurfaceEngineLayoutCommand = NativeSurfaceLayoutCommand;
+export type NativeSurfaceEngineSpriteCommand = NativeRenderSpriteCommand;
 
 export const NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE = 9;
 
@@ -172,6 +174,7 @@ export type NativeSurfaceEngineResponse =
     id: number;
     surfaceId: NativeSurfaceId;
     drawCommands: NativeSurfaceEngineLayoutCommand[];
+    spriteCommands: NativeSurfaceEngineSpriteCommand[];
     commandBuffer: ArrayBuffer;
     commandStride: number;
     commandCount: number;

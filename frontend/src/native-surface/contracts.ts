@@ -1,5 +1,6 @@
-﻿import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../services/api";
+import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../services/api";
 import type { PageAtlasResult } from "../services/pageAtlas";
+import type { NativeRenderSpriteCommand } from "./NativeSurfaceRenderProtocol";
 
 export type NativeRendererBackendKind = "auto" | "webgpu" | "webgl2" | "compat-canvas";
 
@@ -101,6 +102,7 @@ export interface NativeSurfaceLayoutCommand {
 
 export interface NativeSurfaceFrameResult {
   drawCommands: NativeSurfaceLayoutCommand[];
+  spriteCommands?: NativeRenderSpriteCommand[];
   drawCommandBuffer?: ArrayBuffer | null;
   drawCommandStride?: number;
   drawCommandCount?: number;

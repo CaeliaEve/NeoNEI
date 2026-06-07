@@ -187,6 +187,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
     if (!response || response.type !== "frame") return null;
     return {
       drawCommands: response.drawCommands,
+      spriteCommands: response.spriteCommands,
       drawCommandBuffer: response.commandBuffer,
       drawCommandStride: response.commandStride,
       drawCommandCount: response.commandCount,
