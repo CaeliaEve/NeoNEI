@@ -37,6 +37,8 @@ type SurfaceState = {
   runtimePacks: Map<string, ArrayBuffer>;
   runtimeError: string | null;
   browserPack: NativeCompactBrowserPack | null;
+  runtimeProjectionCacheKey: string | null;
+  runtimeProjectionIndices: Uint32Array | null;
 };
 
 const surfaces = new Map<NativeSurfaceId, SurfaceState>();
@@ -97,9 +99,50 @@ function computeColumns(viewportWidth: number, cardSize: number, gap: number): n
   return Math.max(1, Math.floor((viewportWidth + gap) / (cardSize + gap)));
 }
 
+function normalizeSearchText(value: string): string {
+  return `${value ?? ""}`.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function buildRuntimeProjectionCacheKey(surface: SurfaceState): string {
+  return [
+    surface.browserPack?.itemCount ?? 0,
+    normalizeSearchText(surface.query),
+    `${surface.modId ?? ""}`.trim().toLowerCase(),
+  ].join("|");
+}
+
+function getRuntimeProjectionIndices(surface: SurfaceState, browserPack: NativeCompactBrowserPack): Uint32Array {
+  const cacheKey = buildRuntimeProjectionCacheKey(surface);
+  if (surface.runtimeProjectionCacheKey === cacheKey && surface.runtimeProjectionIndices) {
+    return surface.runtimeProjectionIndices;
+  }
+
+  const query = normalizeSearchText(surface.query);
+  const modFilter = `${surface.modId ?? ""}`.trim().toLowerCase();
+  const indices: number[] = [];
+  for (let index = 0; index < browserPack.itemCount; index += 1) {
+    const row = getNativeCompactBrowserRow(browserPack, index);
+    if (!row) continue;
+    const itemId = browserPack.strings[row.itemIdRef] ?? "";
+    const localizedName = browserPack.strings[row.localizedNameRef] ?? "";
+    const modId = browserPack.strings[row.modIdRef] ?? "";
+    const groupKey = browserPack.strings[row.groupKeyRef] ?? "";
+    if (modFilter && modId.toLowerCase() !== modFilter) continue;
+    if (query) {
+      const haystack = normalizeSearchText(`${localizedName}|${itemId}|${modId}|${groupKey}`);
+      if (!haystack.includes(query)) continue;
+    }
+    indices.push(index);
+  }
+  surface.runtimeProjectionCacheKey = cacheKey;
+  surface.runtimeProjectionIndices = Uint32Array.from(indices);
+  return surface.runtimeProjectionIndices;
+}
+
 function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] {
   const browserPack = surface.browserPack;
   if (!browserPack) return [];
+  const projectionIndices = getRuntimeProjectionIndices(surface, browserPack);
   const page = Math.max(1, surface.page);
   const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
@@ -107,10 +150,11 @@ function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] 
   const columns = computeColumns(viewportWidth, cardSize, gap);
   const rows = Math.max(1, Math.floor(Math.max(1, surface.viewport?.height ?? cardSize) / (cardSize + gap)));
   const pageSize = Math.max(1, columns * rows);
-  const start = Math.min(browserPack.itemCount, (page - 1) * pageSize);
-  const end = Math.min(browserPack.itemCount, start + pageSize);
+  const start = Math.min(projectionIndices.length, (page - 1) * pageSize);
+  const end = Math.min(projectionIndices.length, start + pageSize);
   const result: NativeSurfaceEngineEntry[] = [];
-  for (let index = start; index < end; index += 1) {
+  for (let projectionIndex = start; projectionIndex < end; projectionIndex += 1) {
+    const index = projectionIndices[projectionIndex] ?? 0;
     const row = getNativeCompactBrowserRow(browserPack, index);
     if (!row) continue;
     const itemId = browserPack.strings[row.itemIdRef] ?? "";
@@ -129,8 +173,6 @@ function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] 
 function canUseRuntimeBrowserProjection(surface: SurfaceState): boolean {
   return Boolean(surface.browserPack)
     && !surface.enableHistoryViewport
-    && surface.query.trim().length === 0
-    && !surface.modId
     && surface.expandedGroups.length === 0;
 }
 
@@ -169,6 +211,8 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     runtimePacks: new Map(),
     runtimeError: null,
     browserPack: null,
+    runtimeProjectionCacheKey: null,
+    runtimeProjectionIndices: null,
   };
   surfaces.set(surfaceId, next);
   return next;
@@ -270,6 +314,7 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     runtimeError: lastSurface?.runtimeError ?? null,
     projectionSource,
     nativeBrowserEntries: lastSurface?.browserPack?.itemCount ?? 0,
+    nativeBrowserProjectedEntries: lastSurface?.runtimeProjectionIndices?.length ?? 0,
     nativeBrowserStrings: lastSurface?.browserPack?.stringCount ?? 0,
     updatedAt: performance.now(),
   };
@@ -295,9 +340,13 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       try {
         const browserPack = message.packs.find((pack) => pack.name === "browser");
         surface.browserPack = browserPack ? parseNativeCompactBrowserPack(browserPack.buffer) : null;
+        surface.runtimeProjectionCacheKey = null;
+        surface.runtimeProjectionIndices = null;
         surface.runtimeError = null;
       } catch (error) {
         surface.browserPack = null;
+        surface.runtimeProjectionCacheKey = null;
+        surface.runtimeProjectionIndices = null;
         surface.runtimeError = error instanceof Error ? error.message : String(error);
       }
       rebuildLayout(surface);
@@ -312,10 +361,13 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       break;
     case "search":
       surface.query = `${message.query ?? ""}`;
+      surface.runtimeProjectionCacheKey = null;
       rebuildLayout(surface);
       break;
     case "modFilter":
       surface.modId = message.modId ? `${message.modId}` : null;
+      surface.runtimeProjectionCacheKey = null;
+      rebuildLayout(surface);
       break;
     case "expandedGroups":
       surface.expandedGroups = Array.from(new Set(message.groupKeys));
