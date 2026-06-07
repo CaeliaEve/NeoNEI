@@ -2,6 +2,8 @@ const COMPACT_BROWSER_MAGIC: &[u8; 8] = b"NEIBRW1\0";
 const COMPACT_BROWSER_VERSION: u32 = 1;
 const COMPACT_BROWSER_ROW_STRIDE: u32 = 6;
 const COMPACT_BROWSER_HEADER_BYTES: usize = 24;
+pub const COMPACT_BROWSER_GROUP_COLLAPSED_FLAG: u32 = 0x8000_0000;
+const COMPACT_BROWSER_INDEX_MASK: u32 = 0x7fff_ffff;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompactBrowserHeader {
@@ -149,6 +151,76 @@ pub fn compact_browser_project_indices(
     Some(count)
 }
 
+fn expanded_group_keys(expanded_groups: &str) -> std::collections::HashSet<String> {
+    expanded_groups
+        .split(['\n', '\r', ','])
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .collect()
+}
+
+fn encode_visible_entry(row_index: u32, collapsed_group: bool) -> u32 {
+    let index = row_index & COMPACT_BROWSER_INDEX_MASK;
+    if collapsed_group {
+        index | COMPACT_BROWSER_GROUP_COLLAPSED_FLAG
+    } else {
+        index
+    }
+}
+
+/// Projects browser rows after search/mod filtering and native group collapse.
+///
+/// Encoded output uses bit 31 as the collapsed-group flag and the lower 31 bits
+/// as the compact browser row index. Expanded groups emit plain item row indices.
+pub fn compact_browser_project_visible_indices(
+    bytes: &[u8],
+    query: &str,
+    mod_filter: &str,
+    expanded_groups: &str,
+    mut out: Option<&mut [u32]>,
+) -> Option<u32> {
+    let header = parse_compact_browser_header(bytes)?;
+    let normalized_query = normalize_search_text(query);
+    let normalized_mod = mod_filter.trim().to_lowercase();
+    let expanded = expanded_group_keys(expanded_groups);
+    let mut collapsed_seen = std::collections::HashSet::<String>::new();
+    let mut count = 0u32;
+
+    for index in 0..header.item_count {
+        let row = compact_browser_row(bytes, header, index)?;
+        let item_id = compact_browser_string(bytes, header, row.item_id_ref).unwrap_or("");
+        let localized_name = compact_browser_string(bytes, header, row.localized_name_ref).unwrap_or("");
+        let mod_id = compact_browser_string(bytes, header, row.mod_id_ref).unwrap_or("");
+        let group_key = compact_browser_string(bytes, header, row.group_key_ref).unwrap_or("");
+
+        if !normalized_mod.is_empty() && mod_id.to_lowercase() != normalized_mod {
+            continue;
+        }
+        if !normalized_query.is_empty() {
+            let haystack = normalize_search_text(&format!("{localized_name}|{item_id}|{mod_id}|{group_key}"));
+            if !haystack.contains(&normalized_query) {
+                continue;
+            }
+        }
+
+        let collapsed_group = !group_key.is_empty() && !expanded.contains(group_key);
+        if collapsed_group && !collapsed_seen.insert(group_key.to_owned()) {
+            continue;
+        }
+
+        if let Some(out_indices) = out.as_deref_mut() {
+            let out_index = count as usize;
+            if out_index < out_indices.len() {
+                out_indices[out_index] = encode_visible_entry(index, collapsed_group);
+            }
+        }
+        count = count.saturating_add(1);
+    }
+
+    Some(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -222,5 +294,29 @@ mod tests {
         assert_eq!(count, 1);
         assert_eq!(out[0], 2);
         assert_eq!(out[1], u32::MAX);
+    }
+
+    #[test]
+    fn projects_collapsed_and_expanded_groups_natively() {
+        let pack = fixture_pack();
+        let mut collapsed = [u32::MAX; 4];
+        let collapsed_count = compact_browser_project_visible_indices(&pack, "", "", "", Some(&mut collapsed)).unwrap();
+        assert_eq!(collapsed_count, 3);
+        assert_eq!(collapsed[0], 0);
+        assert_eq!(collapsed[1], COMPACT_BROWSER_GROUP_COLLAPSED_FLAG | 1);
+        assert_eq!(collapsed[2], COMPACT_BROWSER_GROUP_COLLAPSED_FLAG | 2);
+
+        let mut expanded = [u32::MAX; 4];
+        let expanded_count = compact_browser_project_visible_indices(
+            &pack,
+            "",
+            "",
+            "gt-superconductor",
+            Some(&mut expanded),
+        )
+        .unwrap();
+        assert_eq!(expanded_count, 3);
+        assert_eq!(expanded[1], 1);
+        assert_eq!(expanded[2], COMPACT_BROWSER_GROUP_COLLAPSED_FLAG | 2);
     }
 }

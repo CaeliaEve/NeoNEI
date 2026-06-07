@@ -42,6 +42,8 @@ type SurfaceState = {
   groupByKey: Map<string, NativeRuntimeGroup>;
   runtimeProjectionCacheKey: string | null;
   runtimeProjectionIndices: Uint32Array | null;
+  runtimeVisibleCacheKey: string | null;
+  runtimeVisibleEntries: Uint32Array | null;
   runtimeBrowserWasmPtr: number;
   runtimeBrowserWasmLen: number;
   runtimeBrowserWasmItemCount: number;
@@ -92,6 +94,18 @@ type NativeWasmEngineExports = {
     queryLen: number,
     modPtr: number,
     modLen: number,
+    outPtr: number,
+    outLen: number,
+  ) => number;
+  neonei_engine_compact_browser_project_visible_indices?: (
+    packPtr: number,
+    packLen: number,
+    queryPtr: number,
+    queryLen: number,
+    modPtr: number,
+    modLen: number,
+    expandedPtr: number,
+    expandedLen: number,
     outPtr: number,
     outLen: number,
   ) => number;
@@ -266,6 +280,66 @@ function computeWasmRuntimeProjectionIndices(surface: SurfaceState, itemCount: n
   }
 }
 
+function computeWasmRuntimeVisibleEntries(surface: SurfaceState, itemCount: number): Uint32Array | null {
+  const projectVisible = wasmEngine?.neonei_engine_compact_browser_project_visible_indices;
+  const allocU32 = wasmEngine?.neonei_engine_alloc_u32;
+  const deallocU32 = wasmEngine?.neonei_engine_dealloc_u32;
+  const memory = wasmEngine?.memory;
+  if (!projectVisible || !allocU32 || !deallocU32 || !memory || surface.runtimeBrowserWasmPtr <= 0 || surface.runtimeBrowserWasmLen <= 0) {
+    return null;
+  }
+  const outCapacity = Math.max(0, Math.floor(itemCount));
+  if (outCapacity <= 0) return new Uint32Array();
+  const query = writeWasmUtf8(surface.query);
+  const mod = writeWasmUtf8(surface.modId ?? "");
+  const expanded = writeWasmUtf8(surface.expandedGroups.join("\n"));
+  const outPtr = allocU32(outCapacity);
+  if (!outPtr) {
+    freeWasmBytes(query);
+    freeWasmBytes(mod);
+    freeWasmBytes(expanded);
+    return null;
+  }
+  try {
+    const count = projectVisible(
+      surface.runtimeBrowserWasmPtr,
+      surface.runtimeBrowserWasmLen,
+      query.ptr,
+      query.len,
+      mod.ptr,
+      mod.len,
+      expanded.ptr,
+      expanded.len,
+      outPtr,
+      outCapacity,
+    );
+    const clampedCount = Math.min(outCapacity, Math.max(0, Math.floor(count)));
+    surface.runtimeBrowserWasmProjectedEntries = count;
+    return Uint32Array.from(new Uint32Array(memory.buffer, outPtr, clampedCount));
+  } finally {
+    deallocU32(outPtr, outCapacity);
+    freeWasmBytes(query);
+    freeWasmBytes(mod);
+    freeWasmBytes(expanded);
+  }
+}
+
+function getRuntimeVisibleEntries(surface: SurfaceState, browserPack: NativeCompactBrowserPack): Uint32Array | null {
+  const cacheKey = [
+    browserPack.itemCount,
+    `${surface.query ?? ""}`.trim().toLowerCase().replace(/\s+/g, ""),
+    `${surface.modId ?? ""}`.trim().toLowerCase(),
+    surface.expandedGroups.join("\u001f"),
+    "wasm-visible-v1",
+  ].join("|");
+  if (surface.runtimeVisibleCacheKey === cacheKey && surface.runtimeVisibleEntries) return surface.runtimeVisibleEntries;
+  const visibleEntries = computeWasmRuntimeVisibleEntries(surface, browserPack.itemCount);
+  if (!visibleEntries) return null;
+  surface.runtimeVisibleCacheKey = cacheKey;
+  surface.runtimeVisibleEntries = visibleEntries;
+  return visibleEntries;
+}
+
 function getRuntimeProjectionIndices(surface: SurfaceState, browserPack: NativeCompactBrowserPack): Uint32Array {
   const cacheKey = [
     browserPack.itemCount,
@@ -305,17 +379,20 @@ function getRuntimeProjectionIndices(surface: SurfaceState, browserPack: NativeC
 function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] {
   const browserPack = surface.browserPack;
   if (!browserPack) return [];
-  const projectionIndices = getRuntimeProjectionIndices(surface, browserPack);
-  const expandedGroups = new Set(surface.expandedGroups);
+  const visibleEntries = getRuntimeVisibleEntries(surface, browserPack);
+  const projectionIndices = visibleEntries ?? getRuntimeProjectionIndices(surface, browserPack);
+  const expandedGroups = visibleEntries ? null : new Set(surface.expandedGroups);
   const emittedCollapsedGroups = new Set<string>();
   const projected: NativeSurfaceEngineEntry[] = [];
   for (let projectionIndex = 0; projectionIndex < projectionIndices.length; projectionIndex += 1) {
-    const index = projectionIndices[projectionIndex] ?? 0;
+    const encodedIndex = projectionIndices[projectionIndex] ?? 0;
+    const wasmCollapsedGroup = visibleEntries ? encodedIndex >= 0x80000000 : false;
+    const index = visibleEntries ? encodedIndex % 0x80000000 : encodedIndex;
     const row = getNativeCompactBrowserRow(browserPack, index);
     if (!row) continue;
     const itemId = browserPack.strings[row.itemIdRef] ?? "";
     const groupKey = browserPack.strings[row.groupKeyRef] ?? "";
-    if (groupKey && !expandedGroups.has(groupKey)) {
+    if (groupKey && (wasmCollapsedGroup || (!visibleEntries && !expandedGroups?.has(groupKey)))) {
       if (emittedCollapsedGroups.has(groupKey)) continue;
       emittedCollapsedGroups.add(groupKey);
       const group = surface.groupByKey.get(groupKey);
@@ -391,6 +468,8 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     groupByKey: new Map(),
     runtimeProjectionCacheKey: null,
     runtimeProjectionIndices: null,
+    runtimeVisibleCacheKey: null,
+    runtimeVisibleEntries: null,
     runtimeBrowserWasmPtr: 0,
     runtimeBrowserWasmLen: 0,
     runtimeBrowserWasmItemCount: 0,
@@ -569,6 +648,8 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         if (browserPack) installWasmBrowserPayload(surface, browserPack.buffer);
         surface.runtimeProjectionCacheKey = null;
         surface.runtimeProjectionIndices = null;
+        surface.runtimeVisibleCacheKey = null;
+        surface.runtimeVisibleEntries = null;
         surface.runtimeError = null;
       } catch (error) {
         disposeWasmBrowserPayload(surface);
@@ -576,6 +657,8 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         surface.groupByKey = new Map();
         surface.runtimeProjectionCacheKey = null;
         surface.runtimeProjectionIndices = null;
+        surface.runtimeVisibleCacheKey = null;
+        surface.runtimeVisibleEntries = null;
         surface.runtimeError = error instanceof Error ? error.message : String(error);
       }
       rebuildLayout(surface);

@@ -20,6 +20,16 @@ test('native surface worker keeps expanded groups on the runtime projection path
     true,
     'collapsed groups should be deduplicated before page layout',
   );
+  assert.equal(
+    workerSource.includes('neonei_engine_compact_browser_project_visible_indices'),
+    true,
+    'group-aware projection should be delegated to the WASM engine when available',
+  );
+  assert.equal(
+    workerSource.includes('runtimeVisibleCacheKey'),
+    true,
+    'query/mod/group projection should be cached on the native runtime path',
+  );
 });
 
 test('native surface worker projects before paginating collapsed groups', () => {

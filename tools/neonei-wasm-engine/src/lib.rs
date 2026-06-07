@@ -9,7 +9,10 @@ pub mod compact_browser;
 pub mod hit_test;
 pub mod layout;
 
-pub use compact_browser::{compact_browser_project_count, compact_browser_project_indices, parse_compact_browser_header};
+pub use compact_browser::{
+    compact_browser_project_count, compact_browser_project_indices, compact_browser_project_visible_indices,
+    parse_compact_browser_header,
+};
 pub use hit_test::{hit_test_index, NativeHit};
 pub use layout::{compute_columns, compute_layout, NativeLayoutCommand};
 
@@ -145,6 +148,36 @@ pub unsafe extern "C" fn neonei_engine_compact_browser_project_indices(
         Some(std::slice::from_raw_parts_mut(out_ptr, out_len as usize))
     };
     compact_browser_project_indices(pack, query, mod_filter, out).unwrap_or(0)
+}
+
+/// Writes group-aware visible entries into `out_ptr` and returns the full
+/// projected count. Encoded output uses bit 31 as collapsed group flag and the
+/// lower 31 bits as compact browser row index.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_browser_project_visible_indices(
+    pack_ptr: *const u8,
+    pack_len: u32,
+    query_ptr: *const u8,
+    query_len: u32,
+    mod_ptr: *const u8,
+    mod_len: u32,
+    expanded_ptr: *const u8,
+    expanded_len: u32,
+    out_ptr: *mut u32,
+    out_len: u32,
+) -> u32 {
+    let Some(pack) = wasm_slice(pack_ptr, pack_len) else {
+        return 0;
+    };
+    let query = wasm_str(query_ptr, query_len).unwrap_or("");
+    let mod_filter = wasm_str(mod_ptr, mod_len).unwrap_or("");
+    let expanded_groups = wasm_str(expanded_ptr, expanded_len).unwrap_or("");
+    let out = if out_ptr.is_null() || out_len == 0 {
+        None
+    } else {
+        Some(std::slice::from_raw_parts_mut(out_ptr, out_len as usize))
+    };
+    compact_browser_project_visible_indices(pack, query, mod_filter, expanded_groups, out).unwrap_or(0)
 }
 
 #[cfg(test)]
