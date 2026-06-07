@@ -107,6 +107,15 @@ pub fn normalize_search_text(value: &str) -> String {
 }
 
 pub fn compact_browser_project_count(bytes: &[u8], query: &str, mod_filter: &str) -> Option<u32> {
+    Some(compact_browser_project_indices(bytes, query, mod_filter, None)?)
+}
+
+pub fn compact_browser_project_indices(
+    bytes: &[u8],
+    query: &str,
+    mod_filter: &str,
+    mut out: Option<&mut [u32]>,
+) -> Option<u32> {
     let header = parse_compact_browser_header(bytes)?;
     let normalized_query = normalize_search_text(query);
     let normalized_mod = mod_filter.trim().to_lowercase();
@@ -126,6 +135,12 @@ pub fn compact_browser_project_count(bytes: &[u8], query: &str, mod_filter: &str
             let haystack = normalize_search_text(&format!("{localized_name}|{item_id}|{mod_id}|{group_key}"));
             if !haystack.contains(&normalized_query) {
                 continue;
+            }
+        }
+        if let Some(out_indices) = out.as_deref_mut() {
+            let out_index = count as usize;
+            if out_index < out_indices.len() {
+                out_indices[out_index] = index;
             }
         }
         count = count.saturating_add(1);
@@ -197,5 +212,15 @@ mod tests {
         assert_eq!(compact_browser_project_count(&pack, "", "gregtech").unwrap(), 1);
         assert_eq!(compact_browser_project_count(&pack, "奇点", "appliedenergistics2").unwrap(), 1);
         assert_eq!(compact_browser_project_count(&pack, "奇点", "gregtech").unwrap(), 0);
+    }
+
+    #[test]
+    fn writes_projected_indices() {
+        let pack = fixture_pack();
+        let mut out = [u32::MAX; 4];
+        let count = compact_browser_project_indices(&pack, "奇点", "", Some(&mut out)).unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(out[0], 2);
+        assert_eq!(out[1], u32::MAX);
     }
 }
