@@ -93,3 +93,22 @@ test('native renderer uploads all global atlas textures instead of the current p
     'native surface must not upload textures based only on the currently visible page',
   );
 });
+
+
+test('worker search projection does not hydrate per-item page packs on the homepage hot path', () => {
+  const searchProjectionBlock = itemBrowserSource.slice(
+    itemBrowserSource.indexOf('const buildSearchEntriesFromWorkerResult'),
+    itemBrowserSource.indexOf('const loadSearchPageViaWorker'),
+  );
+  assert.notEqual(searchProjectionBlock.length, 0, 'search projection block should be found');
+  assert.doesNotMatch(
+    searchProjectionBlock,
+    /getBrowserPagePackByIds|getBrowserPagePack\(/,
+    'worker search projection should use resident catalog entries plus global atlas, not per-item/page-pack HTTP hydration',
+  );
+  assert.match(
+    searchProjectionBlock,
+    /atlas: null,[\s\S]*mediaManifest: null,/,
+    'search projection should leave media hydration to the resident global atlas/native renderer',
+  );
+});

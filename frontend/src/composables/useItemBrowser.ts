@@ -1095,15 +1095,8 @@ export function useItemBrowser(
     const itemIds = result.itemIds
       .map((itemId) => `${itemId ?? ''}`.trim())
       .filter(Boolean);
-    const [catalog, byIdsPack] = await Promise.all([
-      (async () => (
-        api.peekBrowserDefaultCatalog(params.modId, params.includeHidden)
-        ?? await api.getBrowserDefaultCatalog({ modId: params.modId, includeHidden: params.includeHidden }).catch(() => null)
-      ))(),
-      itemIds.length > 0
-        ? api.getBrowserPagePackByIds({ itemIds, slotSize: params.slotSize }).catch(() => null)
-        : Promise.resolve(null),
-    ]);
+    const catalog = api.peekBrowserDefaultCatalog(params.modId, params.includeHidden)
+      ?? await api.getBrowserDefaultCatalog({ modId: params.modId, includeHidden: params.includeHidden }).catch(() => null);
 
     const catalogEntryByItemId = new Map<string, BrowserDefaultCatalogEntry>();
     for (const entry of catalog?.data ?? []) {
@@ -1113,17 +1106,10 @@ export function useItemBrowser(
       }
     }
 
-    const fallbackEntryByItemId = new Map<string, Extract<BrowserGridEntry, { kind: 'item' }>>();
-    for (const entry of byIdsPack?.data ?? []) {
-      if (entry.item?.itemId) {
-        fallbackEntryByItemId.set(entry.item.itemId, entry);
-      }
-    }
-
     const data: BrowserGridEntry[] = [];
     const seenKeys = new Set<string>();
     for (const itemId of itemIds) {
-      const entry = catalogEntryByItemId.get(itemId) ?? fallbackEntryByItemId.get(itemId);
+      const entry = catalogEntryByItemId.get(itemId);
       if (!entry || seenKeys.has(entry.key)) {
         continue;
       }
@@ -1134,9 +1120,9 @@ export function useItemBrowser(
     return {
       data,
       items: collectDisplayItems(data),
-      atlas: byIdsPack?.atlas ?? null,
-      mediaManifest: byIdsPack?.mediaManifest ?? null,
-      resourceManifest: byIdsPack?.resourceManifest,
+      atlas: null,
+      mediaManifest: null,
+      resourceManifest: undefined,
       total: result.total,
       totalPages: result.totalPages,
       page: result.page,
