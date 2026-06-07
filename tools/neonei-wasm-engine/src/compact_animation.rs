@@ -62,9 +62,140 @@ pub fn parse_compact_animation_header(bytes: &[u8]) -> Option<CompactAnimationHe
     })
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CompactAnimationRow {
+    pub frame_start: u32,
+    pub frame_count: u32,
+    pub frame_duration_ms: u32,
+}
+
+pub fn compact_animation_row(
+    bytes: &[u8],
+    header: CompactAnimationHeader,
+    index: u32,
+) -> Option<CompactAnimationRow> {
+    if index >= header.item_count {
+        return None;
+    }
+    let offsets_start = COMPACT_ANIMATION_HEADER_BYTES;
+    let rows_start = offsets_start.checked_add((header.string_count as usize).checked_mul(4)?)?;
+    let row_offset = rows_start.checked_add(
+        (index as usize)
+            .checked_mul(header.row_stride as usize)?
+            .checked_mul(4)?,
+    )?;
+    Some(CompactAnimationRow {
+        frame_start: read_u32_le(bytes, row_offset + 8)?,
+        frame_count: read_u32_le(bytes, row_offset + 12)?,
+        frame_duration_ms: read_u32_le(bytes, row_offset + 16)?,
+    })
+}
+
+pub fn compact_animation_select_frame_index(
+    bytes: &[u8],
+    row_index: u32,
+    now_ms: u32,
+) -> Option<u32> {
+    let header = parse_compact_animation_header(bytes)?;
+    let row = compact_animation_row(bytes, header, row_index)?;
+    if row.frame_count == 0 || row.frame_start >= header.frame_count {
+        return None;
+    }
+    let visible_frame_count = row
+        .frame_count
+        .min(header.frame_count.saturating_sub(row.frame_start));
+    if visible_frame_count == 0 {
+        return None;
+    }
+    let offsets_start = COMPACT_ANIMATION_HEADER_BYTES;
+    let rows_start = offsets_start.checked_add((header.string_count as usize).checked_mul(4)?)?;
+    let rows_bytes = (header.item_count as usize)
+        .checked_mul(header.row_stride as usize)?
+        .checked_mul(4)?;
+    let frames_start = rows_start.checked_add(rows_bytes)?;
+    let mut total_duration = 0u32;
+    for local_index in 0..visible_frame_count {
+        let absolute_index = row.frame_start.checked_add(local_index)?;
+        let frame_offset = frames_start.checked_add(
+            (absolute_index as usize)
+                .checked_mul(header.frame_stride as usize)?
+                .checked_mul(4)?,
+        )?;
+        let duration = read_u32_le(bytes, frame_offset + 4).unwrap_or(row.frame_duration_ms);
+        total_duration = total_duration.saturating_add(duration.max(16));
+    }
+    if total_duration == 0 {
+        return Some(0);
+    }
+    let mut cursor = now_ms % total_duration;
+    for local_index in 0..visible_frame_count {
+        let absolute_index = row.frame_start.checked_add(local_index)?;
+        let frame_offset = frames_start.checked_add(
+            (absolute_index as usize)
+                .checked_mul(header.frame_stride as usize)?
+                .checked_mul(4)?,
+        )?;
+        let exported_frame_index = read_u32_le(bytes, frame_offset)?;
+        let duration = read_u32_le(bytes, frame_offset + 4)
+            .unwrap_or(row.frame_duration_ms)
+            .max(16);
+        if cursor < duration {
+            return Some(exported_frame_index);
+        }
+        cursor = cursor.saturating_sub(duration);
+    }
+    Some(0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn animation_timeline_fixture() -> Vec<u8> {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(COMPACT_ANIMATION_MAGIC);
+        bytes.extend_from_slice(&COMPACT_ANIMATION_VERSION.to_le_bytes());
+        bytes.extend_from_slice(&1u32.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.extend_from_slice(&2u32.to_le_bytes());
+        bytes.extend_from_slice(&COMPACT_ANIMATION_ROW_STRIDE.to_le_bytes());
+        bytes.extend_from_slice(&COMPACT_ANIMATION_FRAME_STRIDE.to_le_bytes());
+        let row = [0u32, 0, 0, 2, 50];
+        for value in row {
+            bytes.extend_from_slice(&value.to_le_bytes());
+        }
+        for frame in [[0u32, 30], [1, 70]] {
+            for value in frame {
+                bytes.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        bytes
+    }
+
+    #[test]
+    fn selects_animation_frame_by_exported_timeline() {
+        let fixture = animation_timeline_fixture();
+        assert_eq!(
+            compact_animation_select_frame_index(&fixture, 0, 0),
+            Some(0)
+        );
+        assert_eq!(
+            compact_animation_select_frame_index(&fixture, 0, 29),
+            Some(0)
+        );
+        assert_eq!(
+            compact_animation_select_frame_index(&fixture, 0, 30),
+            Some(1)
+        );
+        assert_eq!(
+            compact_animation_select_frame_index(&fixture, 0, 99),
+            Some(1)
+        );
+        assert_eq!(
+            compact_animation_select_frame_index(&fixture, 0, 100),
+            Some(0)
+        );
+    }
 
     #[test]
     fn parses_empty_animation_header() {

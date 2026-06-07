@@ -14,7 +14,7 @@ pub mod compact_texture;
 pub mod hit_test;
 pub mod layout;
 
-pub use compact_animation::parse_compact_animation_header;
+pub use compact_animation::{compact_animation_select_frame_index, parse_compact_animation_header};
 pub use compact_browser::{
     compact_browser_project_count, compact_browser_project_indices,
     compact_browser_project_visible_indices, parse_compact_browser_header,
@@ -22,7 +22,7 @@ pub use compact_browser::{
 pub use compact_group::parse_compact_group_header;
 pub use compact_search::{compact_search_project_visible_indices, parse_compact_search_header};
 pub use compact_string::parse_compact_string_header;
-pub use compact_texture::parse_compact_texture_header;
+pub use compact_texture::{compact_texture_select_frame_index, parse_compact_texture_header};
 pub use hit_test::{hit_test_index, NativeHit};
 pub use layout::{compute_columns, compute_layout, NativeLayoutCommand};
 
@@ -240,6 +240,36 @@ pub unsafe extern "C" fn neonei_engine_compact_animation_item_count(
     parse_compact_animation_header(bytes)
         .map(|header| header.item_count)
         .unwrap_or(0)
+}
+
+/// Returns the selected local texture frame index for a compact texture row.
+/// `u32::MAX` means the pack/row has no valid animated frame.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_texture_select_frame_index(
+    ptr: *const u8,
+    len: u32,
+    row_index: u32,
+    now_ms: u32,
+) -> u32 {
+    let Some(bytes) = wasm_slice(ptr, len) else {
+        return u32::MAX;
+    };
+    compact_texture_select_frame_index(bytes, row_index, now_ms).unwrap_or(u32::MAX)
+}
+
+/// Returns the selected exported animation frame index for a compact animation row.
+/// `u32::MAX` means the pack/row has no valid animated frame.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_animation_select_frame_index(
+    ptr: *const u8,
+    len: u32,
+    row_index: u32,
+    now_ms: u32,
+) -> u32 {
+    let Some(bytes) = wasm_slice(ptr, len) else {
+        return u32::MAX;
+    };
+    compact_animation_select_frame_index(bytes, row_index, now_ms).unwrap_or(u32::MAX)
 }
 
 /// Writes search-pack projected visible entries into `out_ptr`.

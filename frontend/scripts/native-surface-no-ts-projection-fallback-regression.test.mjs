@@ -24,4 +24,7 @@ test('native surface worker rejects JSON native runtime pack fallbacks', () => {
   assert.match(source, /neonei_engine_compact_string_item_count/, 'string pack must be installed into WASM memory for native validation/consumption');
   assert.match(source, /neonei_engine_compact_texture_item_count/, 'texture pack must be installed into WASM memory for native validation/consumption');
   assert.match(source, /neonei_engine_compact_animation_item_count/, 'animation pack must be installed into WASM memory for native validation/consumption');
+  assert.match(source, /neonei_engine_compact_texture_select_frame_index/, 'texture animation frame selection must use WASM compact timeline');
+  assert.match(source, /neonei_engine_compact_animation_select_frame_index/, 'animation timeline frame selection must use WASM compact timeline');
+  assert.doesNotMatch(source, /totalDuration = timeline\.reduce/, 'worker must not calculate animation timelines in TypeScript');
 });

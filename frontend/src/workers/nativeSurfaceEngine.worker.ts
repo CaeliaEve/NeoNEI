@@ -117,6 +117,7 @@ type NativeRuntimeTimelineFrame = {
 
 type NativeRuntimeTextureItem = {
   itemId: string;
+  rowIndex: number;
   staticAtlas?: {
     atlasFile: string;
     x: number;
@@ -134,6 +135,7 @@ type NativeRuntimeTextureItem = {
 
 type NativeRuntimeAnimationItem = {
   itemId: string;
+  rowIndex: number;
   atlasFile?: string | null;
   timeline: NativeRuntimeTimelineFrame[];
   frameDurationMs: number | null;
@@ -194,6 +196,8 @@ type NativeWasmEngineExports = {
   neonei_engine_compact_string_item_count?: (ptr: number, len: number) => number;
   neonei_engine_compact_texture_item_count?: (ptr: number, len: number) => number;
   neonei_engine_compact_animation_item_count?: (ptr: number, len: number) => number;
+  neonei_engine_compact_texture_select_frame_index?: (ptr: number, len: number, rowIndex: number, nowMs: number) => number;
+  neonei_engine_compact_animation_select_frame_index?: (ptr: number, len: number, rowIndex: number, nowMs: number) => number;
   neonei_engine_compact_search_project_visible_indices?: (
     browserPtr: number,
     browserLen: number,
@@ -631,6 +635,7 @@ function parseCompactTexturePack(payloadBuffer: ArrayBuffer): Map<string, Native
     }
     result.set(itemId, {
       itemId,
+      rowIndex: index,
       staticAtlas: staticAtlasFile && staticWidth > 0 && staticHeight > 0 ? {
         atlasFile: staticAtlasFile,
         x: view.getUint32(rowOffset + 8, true),
@@ -717,6 +722,7 @@ function parseCompactAnimationPack(payloadBuffer: ArrayBuffer): Map<string, Nati
     }
     result.set(itemId, {
       itemId,
+      rowIndex: index,
       atlasFile,
       timeline,
       frameDurationMs: frameDurationMs || null,
@@ -1012,28 +1018,50 @@ function buildLayoutCommandBuffer(
 }
 
 function pickTimelineFrame(
+  surface: SurfaceState,
+  texture: NativeRuntimeTextureItem,
+  animation: NativeRuntimeAnimationItem | undefined,
   frames: NativeRuntimeAtlasFrame[],
   timeline: NativeRuntimeTimelineFrame[],
   nowMs: number,
 ): NativeRuntimeAtlasFrame | null {
   if (frames.length <= 0) return null;
-  if (timeline.length <= 0) return frames[0] ?? null;
-  const totalDuration = timeline.reduce((sum, frame) => sum + Math.max(16, frame.durationMs), 0);
-  if (totalDuration <= 0) return frames[0] ?? null;
-  let cursor = Math.floor(nowMs) % totalDuration;
-  let selectedFrameIndex = timeline[0]?.frameIndex ?? 0;
-  for (const frame of timeline) {
-    const duration = Math.max(16, frame.durationMs);
-    if (cursor < duration) {
-      selectedFrameIndex = frame.frameIndex;
-      break;
-    }
-    cursor -= duration;
+  const wasmNow = toU32(nowMs);
+  const invalidFrame = 0xffffffff;
+  const nativeAnimationFrame = animation
+    && surface.runtimeAnimationWasmPtr > 0
+    && surface.runtimeAnimationWasmLen > 0
+    && typeof wasmEngine?.neonei_engine_compact_animation_select_frame_index === "function"
+    ? wasmEngine.neonei_engine_compact_animation_select_frame_index(
+      surface.runtimeAnimationWasmPtr,
+      surface.runtimeAnimationWasmLen,
+      toU32(animation.rowIndex),
+      wasmNow,
+    )
+    : invalidFrame;
+  if (Number.isFinite(nativeAnimationFrame) && nativeAnimationFrame !== invalidFrame) {
+    return frames.find((frame) => frame.index === nativeAnimationFrame)
+      ?? frames[nativeAnimationFrame]
+      ?? frames[0]
+      ?? null;
   }
-  return frames.find((frame) => frame.index === selectedFrameIndex)
-    ?? frames[selectedFrameIndex]
-    ?? frames[0]
-    ?? null;
+
+  const nativeTextureFrame = surface.runtimeTextureWasmPtr > 0
+    && surface.runtimeTextureWasmLen > 0
+    && typeof wasmEngine?.neonei_engine_compact_texture_select_frame_index === "function"
+    ? wasmEngine.neonei_engine_compact_texture_select_frame_index(
+      surface.runtimeTextureWasmPtr,
+      surface.runtimeTextureWasmLen,
+      toU32(texture.rowIndex),
+      wasmNow,
+    )
+    : invalidFrame;
+  if (Number.isFinite(nativeTextureFrame) && nativeTextureFrame !== invalidFrame) {
+    return frames[nativeTextureFrame] ?? frames[0] ?? null;
+  }
+
+  void timeline;
+  return null;
 }
 
 function buildSpriteCommands(
@@ -1050,6 +1078,9 @@ function buildSpriteCommands(
     const animatedAtlas = texture.animatedAtlas;
     if (animatedAtlas?.atlasFile && animatedAtlas.frames.length > 0) {
       const frame = pickTimelineFrame(
+        surface,
+        texture,
+        animation,
         animatedAtlas.frames,
         animation?.timeline?.length ? animation.timeline : animatedAtlas.timeline,
         nowMs,
