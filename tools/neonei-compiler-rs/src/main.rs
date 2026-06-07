@@ -516,8 +516,19 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
         "items": search_items,
     });
     let string_pack = build_compact_string_payload_from_items(&browser_items)?;
+    let compact_search_payload = build_compact_search_payload_from_items(
+        search_pack
+            .get("items")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]),
+    )?;
     write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
-    write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
+    write_binary_pack_payload(
+        &rust_dir.join("search.bin"),
+        "neonei/search-pack/current",
+        &compact_search_payload,
+    )?;
     let group_payload = build_compact_group_payload_from_groups(&groups)?;
     write_binary_pack_payload(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_payload)?;
     write_binary_pack_payload(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
@@ -636,8 +647,19 @@ fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
         },
         "items": search_items,
     });
+    let compact_search_payload = build_compact_search_payload_from_items(
+        search_pack
+            .get("items")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or(&[]),
+    )?;
     write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
-    write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
+    write_binary_pack_payload(
+        &rust_dir.join("search.bin"),
+        "neonei/search-pack/current",
+        &compact_search_payload,
+    )?;
     write_binary_pack_payload(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
     Ok(())
 }
@@ -839,6 +861,71 @@ fn build_compact_string_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
     Ok(payload)
 }
 
+fn build_compact_search_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
+    let mut strings = vec![String::new()];
+    let mut string_refs = HashMap::new();
+    string_refs.insert(String::new(), 0u32);
+    let mut rows = Vec::<[u32; 12]>::with_capacity(items.len());
+
+    let mut sorted_items = items.to_vec();
+    sorted_items.sort_by(|left, right| {
+        value_u64(left, "searchRank")
+            .cmp(&value_u64(right, "searchRank"))
+            .then_with(|| value_string(left, "itemId").cmp(&value_string(right, "itemId")))
+    });
+
+    for (fallback_rank, item) in sorted_items.iter().enumerate() {
+        let popularity = value_u64(item, "popularityScore")
+            .unwrap_or(1)
+            .min(u32::MAX as u64) as u32;
+        let search_rank = value_u64(item, "searchRank")
+            .unwrap_or(fallback_rank as u64)
+            .min(u32::MAX as u64) as u32;
+        rows.push([
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "itemId")),
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "publicItemId")),
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "localizedName")),
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "modId")),
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "normalizedLocalizedName")),
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "normalizedInternalName")),
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "normalizedItemId")),
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "normalizedSearchTerms")),
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "pinyinFull")),
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "pinyinAcronym")),
+            popularity,
+            search_rank,
+        ]);
+    }
+
+    let mut string_offsets = Vec::<u32>::with_capacity(strings.len());
+    let mut string_bytes = Vec::<u8>::new();
+    for value in &strings {
+        string_offsets.push(string_bytes.len() as u32);
+        string_bytes.extend_from_slice(value.as_bytes());
+        string_bytes.push(0);
+    }
+
+    let row_stride_u32 = 12u32;
+    let mut payload = Vec::with_capacity(
+        8 + 4 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + string_bytes.len(),
+    );
+    payload.extend_from_slice(b"NEISRC1\0");
+    push_u32(&mut payload, 1);
+    push_u32(&mut payload, rows.len() as u32);
+    push_u32(&mut payload, strings.len() as u32);
+    push_u32(&mut payload, row_stride_u32);
+    for offset in string_offsets {
+        push_u32(&mut payload, offset);
+    }
+    for row in rows {
+        for value in row {
+            push_u32(&mut payload, value);
+        }
+    }
+    payload.extend_from_slice(&string_bytes);
+    Ok(payload)
+}
+
 fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
     let browser_files = runtime_file_descriptors(
@@ -894,7 +981,14 @@ fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Resul
         &compact_browser_payload,
     )?;
     write_binary_pack(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_pack)?;
-    write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
+    let search_rows =
+        read_json_collection(input, &manifest, &["searchAll", "browserCatalog", "items"], Some("items"))?;
+    let compact_search_payload = build_compact_search_payload_from_items(&search_rows)?;
+    write_binary_pack_payload(
+        &rust_dir.join("search.bin"),
+        "neonei/search-pack/current",
+        &compact_search_payload,
+    )?;
     let browser_items = read_json_collection(input, &manifest, &["browserCatalog", "items"], Some("items"))?;
     let string_pack = build_compact_string_payload_from_items(&browser_items)?;
     write_binary_pack_payload(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
@@ -2765,6 +2859,29 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[8..12].try_into().unwrap()), 1);
         assert_eq!(u32::from_le_bytes(payload[12..16].try_into().unwrap()), 1);
         assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 6);
+    }
+
+    #[test]
+    fn compact_search_pack_uses_native_binary_payload() {
+        let items = vec![json!({
+            "itemId": "minecraft:iron_ingot",
+            "publicItemId": "item:minecraft:iron_ingot",
+            "localizedName": "铁锭",
+            "modId": "minecraft",
+            "normalizedLocalizedName": "铁锭",
+            "normalizedInternalName": "item ingotiron",
+            "normalizedItemId": "minecraft iron_ingot",
+            "normalizedSearchTerms": "iron ingot minecraft 铁锭",
+            "pinyinFull": "tieding",
+            "pinyinAcronym": "td",
+            "popularityScore": 3,
+            "searchRank": 7
+        })];
+        let payload = build_compact_search_payload_from_items(&items).unwrap();
+        assert_eq!(&payload[0..8], b"NEISRC1\0");
+        assert_eq!(u32::from_le_bytes(payload[8..12].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(payload[12..16].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 12);
     }
 }
 

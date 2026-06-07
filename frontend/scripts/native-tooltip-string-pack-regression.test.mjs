@@ -24,6 +24,11 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
   );
   assert.match(
     workerSource,
+    /COMPACT_SEARCH_MAGIC = "NEISRC1\\0"/,
+    'worker must support the compact binary search payload',
+  );
+  assert.match(
+    workerSource,
     /function parseCompactStringPack\(payloadBuffer: ArrayBuffer\): Map<string, NativeRuntimeStringItem> \| null/,
     'worker must parse string metadata without requiring JSON payloads',
   );
@@ -41,6 +46,16 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
     workerSource,
     /function parseCompactTexturePack\(payloadBuffer: ArrayBuffer\): Map<string, NativeRuntimeTextureItem> \| null/,
     'worker must parse texture atlas metadata without requiring JSON payloads',
+  );
+  assert.match(
+    workerSource,
+    /function parseCompactSearchPack\(payloadBuffer: ArrayBuffer\): Map<string, NativeRuntimeSearchItem> \| null/,
+    'worker must parse search metadata without requiring JSON payloads',
+  );
+  assert.match(
+    workerSource,
+    /message\.packs\.find\(\(pack\) => pack\.name === "search"\)/,
+    'worker must load the native search pack from runtime packs',
   );
   assert.match(
     workerSource,

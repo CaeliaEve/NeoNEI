@@ -41,6 +41,7 @@ type SurfaceState = {
   runtimeError: string | null;
   browserPack: NativeCompactBrowserPack | null;
   groupByKey: Map<string, NativeRuntimeGroup>;
+  searchByItemId: Map<string, NativeRuntimeSearchItem>;
   stringByItemId: Map<string, NativeRuntimeStringItem>;
   textureByItemId: Map<string, NativeRuntimeTextureItem>;
   animationByItemId: Map<string, NativeRuntimeAnimationItem>;
@@ -69,6 +70,21 @@ type NativeRuntimeStringItem = {
   internalName?: string | null;
   groupKey?: string | null;
   groupLabel?: string | null;
+};
+
+type NativeRuntimeSearchItem = {
+  itemId: string;
+  publicItemId?: string | null;
+  localizedName?: string | null;
+  modId?: string | null;
+  normalizedLocalizedName: string;
+  normalizedInternalName: string;
+  normalizedItemId: string;
+  normalizedSearchTerms: string;
+  pinyinFull: string;
+  pinyinAcronym: string;
+  popularityScore: number;
+  searchRank: number;
 };
 
 type NativeRuntimeAtlasFrame = {
@@ -237,6 +253,9 @@ function parseJsonPayload<T>(payloadBuffer: ArrayBuffer): T | null {
 const COMPACT_STRING_MAGIC = "NEISTR1\0";
 const COMPACT_STRING_HEADER_BYTES = 8 + 4 * 4;
 const COMPACT_STRING_ROW_STRIDE = 6;
+const COMPACT_SEARCH_MAGIC = "NEISRC1\0";
+const COMPACT_SEARCH_HEADER_BYTES = 8 + 4 * 4;
+const COMPACT_SEARCH_ROW_STRIDE = 12;
 
 function decodeAscii(bytes: Uint8Array): string {
   return new TextDecoder("utf-8").decode(bytes);
@@ -294,6 +313,88 @@ function parseCompactStringPack(payloadBuffer: ArrayBuffer): Map<string, NativeR
     });
   }
   return result;
+}
+
+function parseCompactSearchPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeSearchItem> | null {
+  if (payloadBuffer.byteLength < COMPACT_SEARCH_HEADER_BYTES) return null;
+  const bytes = new Uint8Array(payloadBuffer);
+  const magic = decodeAscii(bytes.subarray(0, 8));
+  if (magic !== COMPACT_SEARCH_MAGIC) return null;
+
+  const view = new DataView(payloadBuffer);
+  const version = view.getUint32(8, true);
+  const itemCount = view.getUint32(12, true);
+  const stringCount = view.getUint32(16, true);
+  const rowStride = view.getUint32(20, true);
+  if (version !== 1 || rowStride !== COMPACT_SEARCH_ROW_STRIDE) {
+    throw new Error(`compact search pack has invalid header: version=${version}, rowStride=${rowStride}`);
+  }
+
+  const offsetsStart = COMPACT_SEARCH_HEADER_BYTES;
+  const rowsStart = offsetsStart + stringCount * 4;
+  const rowsBytes = itemCount * rowStride * 4;
+  const stringTableStart = rowsStart + rowsBytes;
+  if (stringTableStart > payloadBuffer.byteLength) {
+    throw new Error(`compact search pack exceeds payload bounds: rows=${itemCount}, strings=${stringCount}, bytes=${payloadBuffer.byteLength}`);
+  }
+
+  const stringTableBytes = bytes.subarray(stringTableStart);
+  const strings: string[] = new Array(stringCount);
+  for (let index = 0; index < stringCount; index += 1) {
+    const offset = view.getUint32(offsetsStart + index * 4, true);
+    strings[index] = readNullTerminatedString(stringTableBytes, offset);
+  }
+
+  const result = new Map<string, NativeRuntimeSearchItem>();
+  for (let index = 0; index < itemCount; index += 1) {
+    const rowOffset = rowsStart + index * rowStride * 4;
+    const itemId = strings[view.getUint32(rowOffset, true)] ?? "";
+    if (!itemId) continue;
+    result.set(itemId, {
+      itemId,
+      publicItemId: strings[view.getUint32(rowOffset + 4, true)] ?? "",
+      localizedName: strings[view.getUint32(rowOffset + 8, true)] ?? "",
+      modId: strings[view.getUint32(rowOffset + 12, true)] ?? "",
+      normalizedLocalizedName: strings[view.getUint32(rowOffset + 16, true)] ?? "",
+      normalizedInternalName: strings[view.getUint32(rowOffset + 20, true)] ?? "",
+      normalizedItemId: strings[view.getUint32(rowOffset + 24, true)] ?? "",
+      normalizedSearchTerms: strings[view.getUint32(rowOffset + 28, true)] ?? "",
+      pinyinFull: strings[view.getUint32(rowOffset + 32, true)] ?? "",
+      pinyinAcronym: strings[view.getUint32(rowOffset + 36, true)] ?? "",
+      popularityScore: view.getUint32(rowOffset + 40, true),
+      searchRank: view.getUint32(rowOffset + 44, true),
+    });
+  }
+  return result;
+}
+
+function parseNativeSearchPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeSearchItem> {
+  const compact = parseCompactSearchPack(payloadBuffer);
+  if (compact) return compact;
+
+  const pack = parseJsonPayload<{ items?: unknown[] }>(payloadBuffer);
+  const search = new Map<string, NativeRuntimeSearchItem>();
+  for (const row of pack?.items ?? []) {
+    if (!row || typeof row !== "object") continue;
+    const record = row as Record<string, unknown>;
+    const itemId = `${record.itemId ?? ""}`.trim();
+    if (!itemId) continue;
+    search.set(itemId, {
+      itemId,
+      publicItemId: typeof record.publicItemId === "string" ? record.publicItemId : "",
+      localizedName: typeof record.localizedName === "string" ? record.localizedName : "",
+      modId: typeof record.modId === "string" ? record.modId : "",
+      normalizedLocalizedName: typeof record.normalizedLocalizedName === "string" ? record.normalizedLocalizedName : "",
+      normalizedInternalName: typeof record.normalizedInternalName === "string" ? record.normalizedInternalName : "",
+      normalizedItemId: typeof record.normalizedItemId === "string" ? record.normalizedItemId : "",
+      normalizedSearchTerms: typeof record.normalizedSearchTerms === "string" ? record.normalizedSearchTerms : "",
+      pinyinFull: typeof record.pinyinFull === "string" ? record.pinyinFull : "",
+      pinyinAcronym: typeof record.pinyinAcronym === "string" ? record.pinyinAcronym : "",
+      popularityScore: toFiniteNumber(record.popularityScore, 1) || 1,
+      searchRank: toFiniteNumber(record.searchRank, 0) || 0,
+    });
+  }
+  return search;
 }
 
 const COMPACT_GROUP_MAGIC = "NEIGRP1\0";
@@ -843,6 +944,7 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     runtimeError: null,
     browserPack: null,
     groupByKey: new Map(),
+    searchByItemId: new Map(),
     stringByItemId: new Map(),
     textureByItemId: new Map(),
     animationByItemId: new Map(),
@@ -1119,12 +1221,14 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       try {
         const browserPack = message.packs.find((pack) => pack.name === "browser");
         const groupPack = message.packs.find((pack) => pack.name === "groups");
+        const searchPack = message.packs.find((pack) => pack.name === "search");
         const stringPack = message.packs.find((pack) => pack.name === "stringsZhCn");
         const texturePack = message.packs.find((pack) => pack.name === "textures");
         const animationPack = message.packs.find((pack) => pack.name === "animations");
         disposeWasmBrowserPayload(surface);
         surface.browserPack = browserPack ? parseNativeCompactBrowserPack(browserPack.buffer) : null;
         surface.groupByKey = groupPack ? parseNativeGroupPack(groupPack.buffer) : new Map();
+        surface.searchByItemId = searchPack ? parseNativeSearchPack(searchPack.buffer) : new Map();
         surface.stringByItemId = stringPack ? parseNativeStringPack(stringPack.buffer) : new Map();
         surface.textureByItemId = texturePack ? parseNativeTexturePack(texturePack.buffer) : new Map();
         surface.animationByItemId = animationPack ? parseNativeAnimationPack(animationPack.buffer) : new Map();
@@ -1138,6 +1242,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         disposeWasmBrowserPayload(surface);
         surface.browserPack = null;
         surface.groupByKey = new Map();
+        surface.searchByItemId = new Map();
         surface.stringByItemId = new Map();
         surface.textureByItemId = new Map();
         surface.animationByItemId = new Map();
