@@ -132,26 +132,28 @@ const runtimeCapabilities = {
 const dependencyMap = {
   homeFirstPaint: [
     "/runtime/manifest",
-    "/publish/<sourceSignature>/...",
-    "/dist-data/browser/item-catalog.json",
-    "/dist-data/browser/group-index.json",
-    "/dist-data/textures/browser-atlas-index.json",
-    "/canonical/atlases/*",
+    "/runtime/files/runtime-manifest.json",
+    "/runtime/files/rust/browser.bin",
+    "/runtime/files/rust/groups.bin",
+    "/runtime/files/rust/search.bin",
+    "/runtime/files/rust/textures.bin",
+    "/runtime/files/rust/animations.bin",
+    "/runtime/files/textures/atlas/*.webp",
   ],
   browserPaging: [
-    "frontend runtime browser catalog",
-    "global browser atlas index",
-    "canonical atlas image files",
+    "WASM browser/search/group projection packs",
+    "GPU resident atlas descriptor pack",
+    "immutable runtime atlas image files",
   ],
   search: [
-    "/dist-data/search/all.json",
-    "browserSearch.worker",
-    "local in-memory/persistent runtime cache",
+    "WASM search.bin projection",
+    "worker-local query/mod/group projection cache",
+    "no HTTP hot-path lookup",
   ],
   recipeOpen: [
-    "/publish recipe bootstrap bundles when available",
-    "/lab/recipe-bootstrap as dev compatibility path",
-    "/dist-data/recipes/* indexes",
+    "/runtime/recipes/current/item/{itemId}",
+    "/runtime/recipes/current/usage/{itemId}",
+    "binary recipe packs when available",
   ],
 };
 
@@ -266,7 +268,7 @@ const report = {
     "Use /runtime, /ops, and /lab as the product-semantic runtime namespace.",
     "Keep /api/v1 as compatibility only until consumers migrate.",
     "Keep legacy dynamic APIs gated behind public runtime profile as dev compatibility only.",
-    "Validate dist-data through runtime contract gates before activation.",
+    "Validate raw-export compiled runtime packs through native runtime gates before activation.",
     "Continue moving production browser/search/recipe paths to immutable runtime artifacts.",
   ],
 };
@@ -280,5 +282,4 @@ console.log(JSON.stringify({ outputPath, ...report }, null, 2));
 if (gateEnabled && gateFailures.length > 0) {
   process.exitCode = 1;
 }
-
 
