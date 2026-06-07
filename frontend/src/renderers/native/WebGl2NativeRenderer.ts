@@ -131,6 +131,7 @@ export function parseNativeLayoutCommandBuffer(
 }
 
 export class WebGl2NativeRenderer {
+  readonly backend = "webgl2" as const;
   private readonly gl: WebGL2RenderingContext;
   private readonly chromeProgram: WebGLProgram;
   private readonly spriteProgram: WebGLProgram;

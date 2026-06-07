@@ -10,6 +10,8 @@ import {
   parseNativeLayoutCommandBuffer,
   WebGl2NativeRenderer,
 } from "../renderers/native/WebGl2NativeRenderer";
+import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend";
+import { WebGpuNativeRenderer } from "../renderers/native/WebGpuNativeRenderer";
 
 let canvas: OffscreenCanvas | null = null;
 let backend: NativeRenderBackendKind | null = null;
@@ -23,7 +25,7 @@ let textureLoaded = 0;
 let lastFrameMs = 0;
 let width = 0;
 let height = 0;
-let webglRenderer: WebGl2NativeRenderer | null = null;
+let nativeRenderer: NativeRendererBackend | null = null;
 const uploadedTextureKeys = new Set<string>();
 
 function buildMetrics(): NativeRendererFrameMetrics {
@@ -34,7 +36,7 @@ function buildMetrics(): NativeRendererFrameMetrics {
     commandCount,
     drawCalls,
     vertexCount,
-    textureCount: webglRenderer?.textureCount() ?? textureLoaded,
+    textureCount: nativeRenderer?.textureCount() ?? textureLoaded,
     textureLoaded,
     textureErrors,
     lastFrameMs,
@@ -66,7 +68,9 @@ function detectWebglLimits(activeCanvas: OffscreenCanvas): NativeRendererLimits 
 function chooseBackend(requested: "auto" | "webgpu" | "webgl2", activeCanvas: OffscreenCanvas): NativeRenderBackendKind {
   if (requested === "webgl2") return "webgl2";
   if (requested === "webgpu" && "gpu" in navigator) return "webgpu";
-  if (requested === "auto" && "gpu" in navigator) return "webgpu";
+  // Keep auto on the completed compatible pipeline until WebGPU sprite
+  // rendering is feature-complete. Explicit webgpu remains available for the
+  // staged backend handshake.
   void activeCanvas;
   return "webgl2";
 }
@@ -94,12 +98,12 @@ function normalizeSpriteCommands(commands: NativeRenderSpriteCommand[]) {
 }
 
 async function uploadTexture(key: string, url: string): Promise<void> {
-  if (!webglRenderer || uploadedTextureKeys.has(key)) return;
+  if (!nativeRenderer || uploadedTextureKeys.has(key)) return;
   const bitmap = await loadTextureBitmap(url);
   try {
-    if (webglRenderer.registerTexture(key, bitmap)) {
+    if (nativeRenderer.registerTexture(key, bitmap)) {
       uploadedTextureKeys.add(key);
-      textureLoaded = webglRenderer.textureCount();
+      textureLoaded = nativeRenderer.textureCount();
     } else {
       textureErrors += 1;
     }
@@ -115,10 +119,16 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       width = canvas.width;
       height = canvas.height;
       backend = chooseBackend(message.renderer, canvas);
-      webglRenderer?.dispose();
+      nativeRenderer?.dispose();
       uploadedTextureKeys.clear();
       textureLoaded = 0;
-      webglRenderer = backend === "webgl2" ? WebGl2NativeRenderer.create(canvas) : null;
+      nativeRenderer = backend === "webgpu"
+        ? await WebGpuNativeRenderer.create(canvas)
+        : WebGl2NativeRenderer.create(canvas);
+      if (!nativeRenderer && backend === "webgpu") {
+        backend = "webgl2";
+        nativeRenderer = WebGl2NativeRenderer.create(canvas);
+      }
       const limits = detectWebglLimits(canvas);
       return { type: "ready", id: message.id, backend, limits, metrics: buildMetrics() };
     }
@@ -151,7 +161,7 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       const startedAt = performance.now();
       commandCount = Math.max(0, Math.floor(message.commandCount || 0));
       const parsedCommands = parseNativeLayoutCommandBuffer(message.commandBuffer, message.commandStride, commandCount);
-      const renderStats = webglRenderer?.render(
+      const renderStats = nativeRenderer?.render(
         width,
         height,
         parsedCommands,
@@ -170,8 +180,8 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
     case "metrics":
       return { type: "metrics", id: message.id, metrics: buildMetrics() };
     case "dispose":
-      webglRenderer?.dispose();
-      webglRenderer = null;
+      nativeRenderer?.dispose();
+      nativeRenderer = null;
       uploadedTextureKeys.clear();
       canvas = null;
       backend = null;
