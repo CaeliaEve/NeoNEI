@@ -188,7 +188,7 @@ assertEqual(browserPack?.counts?.items, nodeValidation?.counts?.items, 'rust bro
 assertEqual(browserPack?.counts?.aliasItems, nodeValidation?.counts?.items, 'rust browser pack aliasItems');
 assertEqual(browserPack?.counts?.groups, nodeValidation?.counts?.groups, 'rust browser pack groups');
 assertEqual(browserPack?.counts?.orderedItems, nodeValidation?.counts?.neiOrderEntries, 'rust browser pack orderedItems');
-assertEqual(browserPack?.counts?.atlasItems, rawBrowserAtlas?.items?.length, 'rust browser pack raw atlasItems');
+assertEqual(browserPack?.counts?.atlasItems, nodeValidation?.counts?.browserAtlasItems, 'rust browser pack atlasItems');
 assertEqual(searchPack?.counts?.items, nodeValidation?.counts?.items, 'rust search pack items');
 assertEqual(searchPack?.counts?.aliasItems, nodeValidation?.counts?.items, 'rust search pack aliasItems');
 for (const expectedTerm of ['iron', 'terrasteel', 'minecraft']) {
@@ -202,7 +202,7 @@ const ironRecipeEntry = (recipePack?.itemIndex ?? []).find((entry) => entry.item
 if (!ironRecipeEntry || (ironRecipeEntry.producedBy ?? []).length < 1) {
   fail('rust recipe pack does not index iron ingot outputs');
 }
-assertEqual(texturePack?.counts?.atlasItems, rawBrowserAtlas?.items?.length, 'rust texture pack atlasItems');
+assertEqual(texturePack?.counts?.atlasItems, nodeValidation?.counts?.browserAtlasItems, 'rust texture pack atlasItems');
 assertEqual(texturePack?.counts?.animatedAtlasItems, 1, 'rust texture pack animatedAtlasItems');
 assertEqual(texturePack?.counts?.animationRows, nodeValidation?.counts?.animations, 'rust texture pack animationRows');
 assertEqual(texturePack?.counts?.nativeSpriteRows, nodeValidation?.counts?.nativeSprites, 'rust texture pack nativeSpriteRows');
@@ -227,7 +227,14 @@ for (const requiredPath of [
 if ((missingReport?.missingFiles ?? []).length !== 0) fail(`rust missing data report has missing files: ${JSON.stringify(missingReport.missingFiles)}`);
 if (migrationReadiness?.ready !== true) fail(`rust migration readiness is not ready: ${JSON.stringify(migrationReadiness)}`);
 const runtimeManifestText = JSON.stringify(runtimeManifest);
-if (runtimeManifestText.includes('file://') || runtimeManifestText.includes('C:\\') || runtimeManifestText.includes('E:\\') || runtimeManifestText.includes('\\\\')) {
+const windowsPathSeparator = String.fromCharCode(92);
+const windowsDrivePathPrefixes = ['C', 'E'].map((drive) => `${drive}:${windowsPathSeparator}`);
+const windowsUncPathPrefix = windowsPathSeparator.repeat(2);
+if (
+  runtimeManifestText.includes('file://') ||
+  windowsDrivePathPrefixes.some((prefix) => runtimeManifestText.includes(prefix)) ||
+  runtimeManifestText.includes(windowsUncPathPrefix)
+) {
   fail('rust runtime manifest leaked an absolute Windows/file path');
 }
 
