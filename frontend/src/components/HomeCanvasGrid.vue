@@ -53,6 +53,7 @@ const props = withDefaults(defineProps<{
   nativeLayoutCommandBuffer?: ArrayBuffer | null;
   nativeLayoutCommandStride?: number;
   nativeLayoutCommandCount?: number;
+  suspendRendering?: boolean;
 }>(), {
   itemSize: 50,
   atlas: null,
@@ -62,6 +63,7 @@ const props = withDefaults(defineProps<{
   nativeLayoutCommandBuffer: null,
   nativeLayoutCommandStride: 0,
   nativeLayoutCommandCount: 0,
+  suspendRendering: false,
 });
 
 const emit = defineEmits<{
@@ -650,6 +652,9 @@ function draw() {
       size: command?.size ?? cardSize.value,
     };
     nextRects.push(rect);
+    if (props.suspendRendering) {
+      continue;
+    }
     drawSlotChrome(ctx, rect, hoveredRect.value?.entry.key === entry.key);
 
     const itemId = rect.item.itemId;
@@ -748,6 +753,11 @@ function draw() {
   itemRects = nextRects;
   animatedItemRects = nextAnimatedRects;
   lastDrawHadAnimatedFrame = drewAnimatedFrame;
+  if (props.suspendRendering) {
+    webglAtlasRenderer?.draw(canvasWidth.value, canvasHeight.value, []);
+    stopAnimationLoop();
+    return;
+  }
   if (canUseWebglAtlas) {
     webglAtlasRenderer?.draw(canvasWidth.value, canvasHeight.value, webglCommands);
   }

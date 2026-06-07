@@ -52,6 +52,7 @@ const nativeLayoutCommands = ref<NativeSurfaceLayoutCommand[] | null>(null);
 const nativeLayoutCommandBuffer = ref<ArrayBuffer | null>(null);
 const nativeLayoutCommandStride = ref(0);
 const nativeLayoutCommandCount = ref(0);
+const nativeRenderVisible = ref(false);
 let nativeRenderInitialized = false;
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
@@ -78,6 +79,7 @@ async function initializeNativeRenderWorker(width: number, height: number) {
     renderer: "webgl2",
   });
   nativeRenderInitialized = response?.type === "ready";
+  nativeRenderVisible.value = nativeRenderInitialized;
 }
 
 function syncViewport(width?: number, height?: number) {
@@ -230,6 +232,7 @@ onBeforeUnmount(() => {
   if (nativeRenderInitialized) {
     void postNativeRenderEvent({ type: "dispose" });
     nativeRenderInitialized = false;
+    nativeRenderVisible.value = false;
   }
   controller.destroy();
   emit("viewportResize", null);
@@ -281,7 +284,8 @@ watch(itemIdsSignature, () => {
   >
     <canvas
       ref="nativeRenderCanvasRef"
-      class="native-browser-surface__render-probe"
+      class="native-browser-surface__render"
+      :class="{ 'native-browser-surface__render--visible': nativeRenderVisible }"
       aria-hidden="true"
     />
     <HomeCanvasGrid
@@ -294,6 +298,7 @@ watch(itemIdsSignature, () => {
       :native-layout-command-buffer="nativeLayoutCommandBuffer"
       :native-layout-command-stride="nativeLayoutCommandStride"
       :native-layout-command-count="nativeLayoutCommandCount"
+      :suspend-rendering="nativeRenderVisible"
       @item-click="emit('itemClick', $event)"
       @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"
       @group-click="emit('groupClick', $event)"
@@ -307,7 +312,7 @@ watch(itemIdsSignature, () => {
   position: relative;
 }
 
-.native-browser-surface__render-probe {
+.native-browser-surface__render {
   position: absolute;
   inset: 0;
   z-index: 0;
@@ -315,6 +320,17 @@ watch(itemIdsSignature, () => {
   height: 100%;
   opacity: 0;
   pointer-events: none;
+  image-rendering: pixelated;
+  transition: opacity 120ms ease;
+}
+
+.native-browser-surface__render--visible {
+  opacity: 1;
+}
+
+.native-browser-surface :deep(.home-canvas-grid) {
+  position: relative;
+  z-index: 1;
 }
 </style>
 
