@@ -3270,7 +3270,10 @@ function compileRawExport(inputDir, outputDir) {
     },
     files: {
       rustRuntimeManifest: "rust/runtime-manifest.json",
+      rustBrowserPack: "rust/browser-pack.json",
       rustSearchPack: "rust/search-pack.json",
+      rustRecipePack: "rust/recipe-pack.json",
+      rustTexturePack: "rust/texture-pack.json",
       searchAll: "search/all.json",
       searchAliasIndex: "search/alias-index.json",
       semanticItems: "items/semantic-items.json",

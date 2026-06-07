@@ -35,6 +35,9 @@ type DistDataManifest = {
   sourceSignature?: string | null;
   files?: {
     rustSearchPack?: string;
+    rustBrowserPack?: string;
+    rustRecipePack?: string;
+    rustTexturePack?: string;
     rustRuntimeManifest?: string;
     searchAll?: string;
     browserCatalog?: string;
