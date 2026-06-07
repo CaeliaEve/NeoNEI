@@ -16,6 +16,7 @@ import {
 } from "./NativeSurfaceMetrics";
 import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
 import type { NativeSurfaceEngineEntry } from "./NativeSurfaceEngineProtocol";
+import { loadNativeRuntimeBuffers } from "./runtimeLoader";
 
 function normalizeRenderer(renderer?: NativeRendererBackendKind): NativeRendererBackendKind {
   if (renderer === "webgpu" || renderer === "webgl2" || renderer === "auto") return renderer;
@@ -54,6 +55,9 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
   private search = "";
   private modFilter: string | null = null;
   private expandedGroups: string[] = [];
+  private nativeRuntimeReady = false;
+  private nativeRuntimePacks = 0;
+  private nativeRuntimeError: string | null = null;
 
   constructor(surfaceId: NativeSurfaceId) {
     this.surfaceId = surfaceId;
@@ -72,6 +76,9 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       enableAnimations: this.animationEnabled,
       enableHistoryViewport: this.historyViewportEnabled,
     });
+    if (options.manifestUrl) {
+      void this.loadRuntimePacks(options.manifestUrl);
+    }
     this.touch("initialize");
   }
 
@@ -226,7 +233,44 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       viewportHeight: this.viewport?.height ?? 0,
       animationEnabled: this.animationEnabled,
       historyViewportEnabled: this.historyViewportEnabled,
+      nativeRuntimeReady: this.nativeRuntimeReady,
+      nativeRuntimePacks: this.nativeRuntimePacks,
+      nativeRuntimeError: this.nativeRuntimeError,
     }, eventName);
+  }
+
+  private async loadRuntimePacks(manifestUrl: string): Promise<void> {
+    this.nativeRuntimeReady = false;
+    this.nativeRuntimePacks = 0;
+    this.nativeRuntimeError = null;
+    this.touch("runtimePacks:loading");
+    try {
+      const runtime = await loadNativeRuntimeBuffers(manifestUrl);
+      const packs = Object.values(runtime.packs).map((pack) => ({
+        name: pack.name,
+        path: pack.path,
+        url: pack.url,
+        schema: pack.header.schema,
+        byteLength: pack.header.byteLength,
+        payloadLength: pack.header.payloadLength,
+        buffer: pack.buffer,
+      }));
+      const response = await postNativeSurfaceEngineEvent({
+        type: "runtimePacks",
+        surfaceId: this.surfaceId,
+        manifestUrl: runtime.manifestUrl,
+        packs,
+      });
+      this.nativeRuntimeReady = Boolean(response);
+      this.nativeRuntimePacks = packs.length;
+      this.nativeRuntimeError = null;
+      this.touch("runtimePacks:ready");
+    } catch (error) {
+      this.nativeRuntimeReady = false;
+      this.nativeRuntimePacks = 0;
+      this.nativeRuntimeError = error instanceof Error ? error.message : String(error);
+      this.touch("runtimePacks:error");
+    }
   }
 }
 

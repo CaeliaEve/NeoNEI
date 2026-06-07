@@ -5,6 +5,7 @@
   NativeSurfaceViewportRole,
   NativeSurfaceViewport,
 } from "./contracts";
+import type { NativeRuntimePackName, NativeRuntimePackSchema } from "./NativeRuntimeManifest";
 
 export type NativeSurfaceEngineEntry = {
   key: string;
@@ -17,6 +18,16 @@ export type NativeSurfaceEngineEntry = {
 export type NativeSurfaceEngineLayoutCommand = NativeSurfaceLayoutCommand;
 
 export const NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE = 8;
+
+export type NativeSurfaceEngineRuntimePack = {
+  name: NativeRuntimePackName;
+  path: string;
+  url: string;
+  schema: NativeRuntimePackSchema;
+  byteLength: number;
+  payloadLength: number;
+  buffer: ArrayBuffer;
+};
 
 
 export type NativeSurfaceEngineHit = {
@@ -36,6 +47,13 @@ export type NativeSurfaceEngineRequest =
     preferredRenderer: NativeRendererBackendKind;
     enableAnimations: boolean;
     enableHistoryViewport: boolean;
+  }
+  | {
+    type: "runtimePacks";
+    id: number;
+    surfaceId: NativeSurfaceId;
+    manifestUrl: string;
+    packs: NativeSurfaceEngineRuntimePack[];
   }
   | {
     type: "viewport";
@@ -142,6 +160,9 @@ export type NativeSurfaceEngineWorkerMetrics = {
   lastHit: NativeSurfaceEngineHit;
   wasmReady: boolean;
   wasmError: string | null;
+  runtimeReady: boolean;
+  runtimePacks: number;
+  runtimeError: string | null;
   updatedAt: number;
 };
 

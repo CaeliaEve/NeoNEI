@@ -28,6 +28,9 @@ type SurfaceState = {
   entries: NativeSurfaceEngineEntry[];
   layoutCommands: NativeSurfaceEngineLayoutCommand[];
   lastHit: NativeSurfaceEngineHit;
+  runtimeManifestUrl: string | null;
+  runtimePacks: Map<string, ArrayBuffer>;
+  runtimeError: string | null;
 };
 
 const surfaces = new Map<NativeSurfaceId, SurfaceState>();
@@ -107,6 +110,9 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     entries: [],
     layoutCommands: [],
     lastHit: null,
+    runtimeManifestUrl: null,
+    runtimePacks: new Map(),
+    runtimeError: null,
   };
   surfaces.set(surfaceId, next);
   return next;
@@ -201,6 +207,9 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     lastHit: lastSurface?.lastHit ?? null,
     wasmReady: Boolean(wasmEngine),
     wasmError,
+    runtimeReady: Boolean(lastSurface?.runtimePacks.size),
+    runtimePacks: lastSurface?.runtimePacks.size ?? 0,
+    runtimeError: lastSurface?.runtimeError ?? null,
     updatedAt: performance.now(),
   };
 }
@@ -218,6 +227,11 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       surface.renderer = message.preferredRenderer;
       surface.enableAnimations = message.enableAnimations;
       surface.enableHistoryViewport = message.enableHistoryViewport;
+      break;
+    case "runtimePacks":
+      surface.runtimeManifestUrl = message.manifestUrl;
+      surface.runtimePacks = new Map(message.packs.map((pack) => [pack.name, pack.buffer]));
+      surface.runtimeError = null;
       break;
     case "viewport":
       surface.viewport = message.viewport;

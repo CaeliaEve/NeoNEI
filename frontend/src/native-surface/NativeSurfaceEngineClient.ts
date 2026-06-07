@@ -56,6 +56,13 @@ function getWorker(): Worker | null {
   }
 }
 
+function getTransferables(message: NativeSurfaceEngineRequest): Transferable[] {
+  if (message.type !== "runtimePacks") return [];
+  return message.packs
+    .map((pack) => pack.buffer)
+    .filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
+}
+
 export function getNativeSurfaceEngineMetrics(): NativeSurfaceEngineWorkerMetrics | null {
   return lastMetrics;
 }
@@ -69,7 +76,7 @@ export function postNativeSurfaceEngineEvent(
   const message = { ...request, id } as NativeSurfaceEngineRequest;
   return new Promise<NativeSurfaceEngineResponse>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    activeWorker.postMessage(message);
+    activeWorker.postMessage(message, getTransferables(message));
   }).catch(() => null);
 }
 

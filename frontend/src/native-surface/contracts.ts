@@ -109,6 +109,9 @@ export interface NativeSurfaceMetrics {
   viewportHeight: number;
   animationEnabled: boolean;
   historyViewportEnabled: boolean;
+  nativeRuntimeReady: boolean;
+  nativeRuntimePacks: number;
+  nativeRuntimeError: string | null;
   lastEvent: string | null;
   eventCount: number;
   updatedAt: number;
