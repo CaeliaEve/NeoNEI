@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, ref } from "vue";
 import { useSettingsConstellationCanvas } from "../../composables/home/useSettingsConstellationCanvas";
 
@@ -60,7 +60,7 @@ const saveItemSize = () => {
   const button = saveButtonRef.value;
   if (!button) return;
   const originalText = button.textContent;
-  button.textContent = "???";
+  button.textContent = "已保存";
   window.setTimeout(() => {
     button.textContent = originalText;
   }, 1500);
@@ -73,6 +73,7 @@ const saveItemSize = () => {
     <div class="fixed bottom-3 left-6 z-50">
       <button
         @click="toggleOpen"
+        data-native-benchmark="settings-open"
         class="gear-btn settings-launcher w-12 h-12 rounded-xl flex items-center justify-center transition-all duration-300"
         :class="
           isOpen
@@ -102,8 +103,10 @@ const saveItemSize = () => {
     <!-- Centered Modal Settings Container -->
     <Transition name="settings-modal-fade">
       <div
-        v-if="isOpen"
+        v-show="isOpen"
         class="settings-modal-overlay fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6"
+        data-native-benchmark="settings-overlay"
+        :aria-hidden="!isOpen"
       >
         <!-- Scrim / Backdrop -->
         <div
@@ -142,6 +145,7 @@ const saveItemSize = () => {
           <button
             class="settings-close-btn absolute top-5 right-5 flex items-center justify-center w-8 h-8 rounded-lg text-slate-400 hover:text-white transition-all duration-200 z-[202]"
             type="button"
+            data-native-benchmark="settings-close"
             aria-label="关闭设置中心"
             @click="close"
           >
@@ -325,9 +329,11 @@ const saveItemSize = () => {
 <style scoped>
 /* Centered Settings Modal Overlay */
 .settings-modal-overlay {
-  background: rgba(3, 5, 12, 0.72);
-  backdrop-filter: blur(16px) saturate(1.2);
-  -webkit-backdrop-filter: blur(16px) saturate(1.2);
+  background:
+    radial-gradient(circle at 50% 42%, rgba(8, 18, 30, 0.52), rgba(3, 5, 12, 0.78) 62%),
+    rgba(3, 5, 12, 0.72);
+  isolation: isolate;
+  contain: layout paint style;
 }
 
 .settings-panel-scrim {
@@ -339,12 +345,12 @@ const saveItemSize = () => {
 /* Modal Fade Transitions */
 .settings-modal-fade-enter-active,
 .settings-modal-fade-leave-active {
-  transition: opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .settings-modal-fade-enter-active .settings-panel,
 .settings-modal-fade-leave-active .settings-panel {
-  transition: transform 0.35s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: transform 0.14s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.12s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .settings-modal-fade-enter-from,
@@ -354,7 +360,7 @@ const saveItemSize = () => {
 
 .settings-modal-fade-enter-from .settings-panel,
 .settings-modal-fade-leave-to .settings-panel {
-  transform: scale(0.95) translateY(12px);
+  transform: scale(0.985) translateY(4px);
   opacity: 0;
 }
 
@@ -370,10 +376,12 @@ const saveItemSize = () => {
   box-shadow: 
     inset 0 1px 0 rgba(255, 255, 255, 0.04),
     0 24px 64px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(8px) saturate(1.05);
+  -webkit-backdrop-filter: blur(8px) saturate(1.05);
   display: flex;
   flex-direction: column;
+  contain: layout paint style;
+  isolation: isolate;
 }
 
 /* Custom Scrollbar */
@@ -440,8 +448,7 @@ const saveItemSize = () => {
   pointer-events: none;
   border-radius: 50%;
   opacity: 0.24;
-  will-change: transform, opacity;
-  animation: settingsAmbientDrift 14s ease-in-out infinite alternate;
+  animation: settingsAmbientDrift 20s ease-in-out infinite alternate;
 }
 
 .ambient-orb-a {
@@ -481,7 +488,6 @@ const saveItemSize = () => {
   transform-origin: center bottom;
   background: linear-gradient(0deg, rgba(245, 158, 11, 0.03), transparent 85%);
   opacity: 0;
-  will-change: opacity;
 }
 
 .ray-1 {

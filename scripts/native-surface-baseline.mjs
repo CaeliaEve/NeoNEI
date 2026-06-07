@@ -1,4 +1,4 @@
-#!/usr/bin/env node
+﻿#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -24,6 +24,7 @@ const outDir = args.has("out-dir") ? resolve(args.get("out-dir")) : resolve(repo
 const outputPath = args.has("output") ? resolve(args.get("output")) : join(outDir, "native-surface-baseline.json");
 const pageFlips = Number(args.get("page-flips") || 30);
 const gate = args.has("gate");
+const maxSettingsOpenMs = Number(args.get("max-settings-open-ms") || 250);
 const renderer = `${args.get("renderer") || ""}`.trim().toLowerCase();
 const requestedRenderer = renderer === "webgpu" || renderer === "webgl2" || renderer === "auto" ? renderer : null;
 
@@ -69,6 +70,15 @@ async function main() {
   await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
   await page.waitForFunction(() => document.querySelectorAll("canvas").length > 0, null, { timeout: 15_000 });
   await page.waitForTimeout(500);
+  await page.waitForFunction(
+    () => {
+      const render = globalThis.__NEONEI_NATIVE_RENDER_METRICS__?.();
+      const engine = globalThis.__NEONEI_NATIVE_SURFACE_ENGINE_METRICS__?.();
+      return Boolean((render?.frames ?? 0) > 0 && (engine?.layoutCommands ?? 0) > 0);
+    },
+    null,
+    { timeout: 5_000 },
+  ).catch(() => {});
 
   const initial = await page.evaluate(() => ({
     title: document.title,
@@ -84,17 +94,20 @@ async function main() {
   const flipDurations = [];
   for (let i = 0; i < pageFlips; i += 1) {
     const start = performance.now();
-    await clickButtonByLabel(page, ["下一页", "▶", "›", ">"]);
+    await clickButtonByLabel(page, ["下一页", "›", ">", "Next"]);
     await page.waitForTimeout(16);
     flipDurations.push(performance.now() - start);
   }
 
   const settingsStart = performance.now();
-  await clickButtonByLabel(page, ["打开设置", "设置"]);
-  await page.waitForTimeout(350);
+  await page.locator('button[data-native-benchmark="settings-open"]').click();
+  await page.waitForFunction(() => {
+    const overlay = document.querySelector('[data-native-benchmark="settings-overlay"]');
+    return Boolean(overlay && getComputedStyle(overlay).display !== "none");
+  }, null, { timeout: 3_000 });
   const settingsOpenMs = performance.now() - settingsStart;
   const settingsCanvasCount = await page.evaluate(() => document.querySelectorAll("canvas").length);
-  await clickButtonByLabel(page, ["关闭", "Close", "×"]);
+  await page.locator('button[data-native-benchmark="settings-close"]').click();
   await page.waitForTimeout(150);
 
   const searchMs = await page.evaluate(async () => {
@@ -150,6 +163,9 @@ async function main() {
   }
   if ((final.canvasCount ?? 0) <= 0) {
     gateFailures.push("no canvas elements were found");
+  }
+  if (Number.isFinite(maxSettingsOpenMs) && settingsOpenMs > maxSettingsOpenMs) {
+    gateFailures.push(`settings panel open time ${Math.round(settingsOpenMs)}ms exceeds ${maxSettingsOpenMs}ms`);
   }
   if (!final.nativeEngineMetrics) {
     gateFailures.push("native engine metrics are missing");
