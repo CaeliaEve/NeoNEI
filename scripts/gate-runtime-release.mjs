@@ -36,6 +36,7 @@ const steps = [
   { name: 'path portability audit', cwd: frontendDir, command: npm, args: ['run', 'audit:paths'] },
   { name: 'path portability URL regression', cwd: frontendDir, command: npm, args: ['run', 'test:path-portability-urls'] },
   { name: 'runtime diagnostics regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-diagnostics'] },
+  { name: 'runtime service worker regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-service-worker'] },
   { name: 'runtime type boundary regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-type-boundary'] },
   { name: 'runtime release gate regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-release-gate'] },
   { name: 'runtime contract portability regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-contract-portability'] },
