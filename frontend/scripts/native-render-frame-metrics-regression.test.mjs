@@ -18,7 +18,7 @@ function readRepo(relativePath) {
 
 test("native render protocol exposes segmented frame timing metrics", () => {
   const source = readFrontend("src/native-surface/NativeSurfaceRenderProtocol.ts");
-  for (const field of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs"]) {
+  for (const field of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "textureUploadConcurrency", "textureUploadBatches", "lastTextureUploadMs"]) {
     assert.match(source, new RegExp(`${field}: number`));
   }
 });
@@ -31,6 +31,16 @@ test("native render worker records parse normalize draw and rolling frame timing
   assert.match(source, /lastSpriteNormalizeMs = performance\.now\(\) - normalizeStartedAt/);
   assert.match(source, /lastDrawMs = performance\.now\(\) - drawStartedAt/);
   assert.match(source, /frameP95Ms: percentile\(frameSamples, 95\)/);
+});
+
+test("native render worker batches atlas texture uploads instead of decoding all textures at once", () => {
+  const source = readFrontend("src/workers/nativeRender.worker.ts");
+  assert.match(source, /const TEXTURE_UPLOAD_CONCURRENCY = 4/);
+  assert.match(source, /async function uploadTexturesInBatches/);
+  assert.match(source, /pending\.slice\(offset, offset \+ TEXTURE_UPLOAD_CONCURRENCY\)/);
+  assert.doesNotMatch(source, /Promise\.all\(uniqueTextures\.map/);
+  assert.match(source, /textureUploadBatches/);
+  assert.match(source, /lastTextureUploadMs/);
 });
 
 test("native surface benchmark gates segmented render metrics", () => {
