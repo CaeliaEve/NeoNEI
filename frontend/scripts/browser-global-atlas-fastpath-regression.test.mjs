@@ -39,8 +39,13 @@ test('global browser atlas resolves safe itemId aliases before falling back to r
 test('homepage browser fast path does not rehydrate page packs once global atlas is available', () => {
   assert.match(
     itemBrowserSource,
-    /if \(hasGlobalBrowserAtlas\(\)\) \{\s*return null;\s*\}/,
-    'locally projected pages should skip /items/browser/by-ids-pack hydration when global atlas is active',
+    /source: 'resident-global-atlas'/,
+    'locally projected pages should warm only the resident global atlas instead of page-pack media',
+  );
+  assert.doesNotMatch(
+    itemBrowserSource,
+    /getBrowserPagePackByIds|peekBrowserPagePackByIds/,
+    'homepage item browser must not rehydrate projected pages through per-item page packs',
   );
   assert.match(
     canvasGridSource,
@@ -110,5 +115,18 @@ test('worker search projection does not hydrate per-item page packs on the homep
     searchProjectionBlock,
     /atlas: null,[\s\S]*mediaManifest: null,/,
     'search projection should leave media hydration to the resident global atlas/native renderer',
+  );
+});
+
+test('homepage item browser does not fetch page packs on production paging or search fallback', () => {
+  assert.doesNotMatch(
+    itemBrowserSource,
+    /getBrowserPagePack\(|getBrowserPagePackByIds|peekBrowserPagePackByIds/,
+    'homepage paging/search should project from resident catalogs and native atlas instead of HTTP page packs',
+  );
+  assert.match(
+    itemBrowserSource,
+    /const loadProjectedPagePack = async/,
+    'homepage should keep a catalog-projection loader for non-worker paging paths',
   );
 });

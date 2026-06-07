@@ -7,21 +7,25 @@ const source = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-test('browser search hydrates directly from backend page-pack fast path instead of client-wide search-pack bootstrap', () => {
+test('browser search projects from the native worker/catalog path instead of backend page packs', () => {
   assert.equal(
-    source.includes("import { preloadBrowserSearchWorker, queryBrowserSearchWorker } from '../services/browserSearchWorker';"),
-    false,
-    'item browser should no longer depend on the browser search worker for homepage search hydration',
+    source.includes("queryBrowserSearchWorker({"),
+    true,
+    'item browser should use the resident browser search worker for homepage search projection',
   );
   assert.equal(
     source.includes('const response = await api.getBrowserPagePack({'),
-    true,
-    'search page hydration should reuse the backend browser page-pack fast path directly',
+    false,
+    'search page hydration should not fetch backend page packs on the hot path',
   );
   assert.equal(
-    source.includes('queryBrowserSearchWorker({'),
+    source.includes("source: 'runtime-catalog-projection'"),
+    true,
+    'non-worker search continuation should project from runtime catalogs, not page packs',
+  );
+  assert.equal(
+    source.includes('getBrowserPagePackByIds'),
     false,
-    'item browser should not ship a full client-side search-pack query path on the critical search route',
+    'search projection should not rehydrate per-item page packs',
   );
 });
-

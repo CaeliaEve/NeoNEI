@@ -43,11 +43,11 @@ test('item browser can locally project expanded groups from the default browser 
       && useItemBrowserSource.includes('peekBrowserSearchCatalog')
       && useItemBrowserSource.includes('getBrowserSearchCatalog')
       && useItemBrowserSource.includes('peekBrowserGroupItems')
-      && useItemBrowserSource.includes('peekBrowserPagePackByIds')
-      && useItemBrowserSource.includes('getBrowserPagePackByIds')
+      && !useItemBrowserSource.includes('peekBrowserPagePackByIds')
+      && !useItemBrowserSource.includes('getBrowserPagePackByIds')
       && useItemBrowserSource.includes('SEARCH_LOCAL_PROJECTION_MAX_TOTAL'),
     true,
-    'useItemBrowser should fast-path expand/collapse from hot local caches for both default and search browser scopes, then hydrate atlas/media in the background',
+    'useItemBrowser should fast-path expand/collapse from hot local caches for both default and search browser scopes without page-pack media hydration',
   );
 });
 
@@ -60,12 +60,11 @@ test('item browser can locally project ordinary page flips from hot NEI catalogs
   );
 
   assert.equal(
-    useItemBrowserSource.includes('api.peekBrowserDefaultCatalog(params.modId)')
+    useItemBrowserSource.includes('api.peekBrowserDefaultCatalog(params.modId, params.includeHidden)')
       && useItemBrowserSource.includes('api.getBrowserDefaultCatalog({')
-      && useItemBrowserSource.includes('api.peekBrowserSearchCatalog(normalizedSearch, params.modId)')
+      && useItemBrowserSource.includes('api.peekBrowserSearchCatalog(normalizedSearch, params.modId, params.includeHidden)')
       && useItemBrowserSource.includes('api.getBrowserSearchCatalog({'),
     true,
-    'default and search browser scopes should both use hot catalog projection before live page-pack fallback',
+    'default and search browser scopes should both use hot catalog projection without live page-pack fallback',
   );
 });
-

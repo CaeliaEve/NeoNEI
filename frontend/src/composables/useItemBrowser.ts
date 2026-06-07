@@ -354,89 +354,58 @@ export function useItemBrowser(
     }
   };
 
-  const attachCachedBrowserByIdsPresentation = (
-    params: BrowserPageRequestParams,
-    basePage: CachedBrowserPage,
-  ): CachedBrowserPage => {
-    if (basePage.items.length <= 0) {
-      return basePage;
-    }
-
-    const cachedPack = api.peekBrowserPagePackByIds({
-      itemIds: basePage.items.map((item) => item.itemId),
-      slotSize: params.slotSize,
-    });
-    if (!cachedPack) {
-      return basePage;
-    }
-
-    return {
-      ...basePage,
-      atlas: cachedPack.atlas ?? basePage.atlas ?? null,
-      mediaManifest: cachedPack.mediaManifest ?? basePage.mediaManifest ?? null,
-      resourceManifest: cachedPack.resourceManifest ?? basePage.resourceManifest,
-    };
-  };
-
   const hydrateProjectedBrowserPageMedia = (
     cacheKey: string,
     params: BrowserPageRequestParams,
     basePage: CachedBrowserPage,
     requestId: number,
   ) => {
-    if (hasGlobalBrowserAtlas()) {
-      return;
-    }
     if (basePage.items.length === 0) {
-      return;
-    }
-
-    const currentCached = pageCache.get(cacheKey);
-    if (currentCached?.atlas && currentCached.mediaManifest) {
       return;
     }
 
     const warmToken = activeResourceWarmToken;
     const itemIds = collectBrowserPageResourceItemIds(basePage);
+    if (itemIds.length === 0) {
+      return;
+    }
+
     void warmGlobalBrowserAtlasForItemsDetailed(itemIds)
-      .then((globalCoverage) => {
+      .then(() => {
         if (warmToken !== activeResourceWarmToken || requestId !== loadItemsRequestId) {
-          return null;
+          return;
         }
-        if (hasGlobalBrowserAtlas()) {
-          return null;
-        }
-        if (globalCoverage.total > 0 && globalCoverage.missingCount === 0) {
-          return null;
-        }
-        return api.getBrowserPagePackByIds({
-          itemIds,
-          slotSize: params.slotSize,
+        markPerfEvent('browser-projected-page-atlas-warm', {
+          page: params.page,
+          pageSize: params.pageSize,
+          items: itemIds.length,
+          cacheKey,
+          source: 'resident-global-atlas',
         });
       })
-      .then((pack) => {
-        if (warmToken !== activeResourceWarmToken || requestId !== loadItemsRequestId) {
-          return;
-        }
-        if (!pack) {
-          return;
-        }
-        const hydratedPage: CachedBrowserPage = {
-          ...basePage,
-          atlas: pack.atlas ?? basePage.atlas ?? null,
-          mediaManifest: pack.mediaManifest ?? basePage.mediaManifest ?? null,
-          resourceManifest: pack.resourceManifest ?? basePage.resourceManifest,
-        };
-        setSharedBrowserPageCache(cacheKey, hydratedPage);
-        const activeCacheKey = buildPageCacheKey(buildRequestParams(currentPage.value));
-        if (requestId === loadItemsRequestId && activeCacheKey === cacheKey) {
-          applyBrowserResponse(hydratedPage, requestId, cacheKey);
-        }
-      })
       .catch(() => {
-        // best-effort only
+        // The production browser surface is backed by the resident global atlas.
+        // Do not rehydrate projected pages through per-item page packs here; any
+        // missing icon must be fixed in raw-export/compiler/atlas generation.
       });
   };
+
+  const loadProjectedPagePack = async (
+    params: BrowserPageRequestParams,
+  ): Promise<CachedBrowserPage> => {
+    const unexpandedProjection = await tryLoadUnexpandedPageProjection(params);
+    if (unexpandedProjection) {
+      return unexpandedProjection.page;
+    }
+
+    const expandedProjection = await tryLoadExpandedProjection(params);
+    if (expandedProjection) {
+      return expandedProjection.page;
+    }
+
+    throw new Error('Native browser catalog projection unavailable for current runtime');
+  };
+
   const tryProjectExpandedGroupsFromLocalCaches = (
     params: BrowserPageRequestParams,
   ): { cacheKey: string; page: CachedBrowserPage } | null => {
@@ -472,7 +441,7 @@ export function useItemBrowser(
       ...params,
       page: page.page,
     });
-    return { cacheKey, page: attachCachedBrowserByIdsPresentation(params, page) };
+    return { cacheKey, page };
   };
 
   const tryProjectUnexpandedPageFromLocalCatalog = (
@@ -587,7 +556,7 @@ export function useItemBrowser(
         ...params,
         page: page.page,
       }),
-      page: attachCachedBrowserByIdsPresentation(params, page),
+      page,
     };
   };
 
@@ -1067,26 +1036,15 @@ export function useItemBrowser(
     markInitialHomeBootstrapDone('network-home-bootstrap');
   };
 
-  const loadDefaultPageNetwork = async (
+  const loadDefaultPage = async (
     params: BrowserPageRequestParams,
     options?: { signaturePromise?: Promise<string | null> },
-  ): Promise<CachedBrowserPage> => {
-    const response = await api.getBrowserPagePack(params);
-
-    const normalized = {
-      data: response.data,
-      items: collectDisplayItems(response.data),
-      atlas: response.atlas ?? null,
-      mediaManifest: response.mediaManifest ?? null,
-      resourceManifest: response.resourceManifest,
-      total: response.total,
-      totalPages: response.totalPages,
-      page: response.page,
-    } satisfies CachedBrowserPage;
+  ): Promise<CachedBrowserPage> => fetchPageWithDedup(buildPageCacheKey(params), async () => {
+    const normalized = await loadProjectedPagePack(params);
 
     persistDefaultPage(params, normalized, options?.signaturePromise);
     return normalized;
-  };
+  });
 
   const buildSearchEntriesFromWorkerResult = async (
     params: BrowserPageRequestParams,
@@ -1162,34 +1120,16 @@ export function useItemBrowser(
       return workerPage;
     }
 
-    const response = await api.getBrowserPagePack(params);
-    const normalized = {
-      data: response.data,
-      items: collectDisplayItems(response.data),
-      atlas: response.atlas ?? null,
-      mediaManifest: response.mediaManifest ?? null,
-      resourceManifest: response.resourceManifest,
-      total: response.total,
-      totalPages: response.totalPages,
-      page: response.page,
-    } satisfies CachedBrowserPage;
+    const normalized = await loadProjectedPagePack(params);
     markPerfEvent('browser-search-semantic-page', {
       page: normalized.page,
       pageSize: params.pageSize,
       total: normalized.total,
       elapsedMs: performance.now() - startedAt,
-      source: 'runtime-collapsed-catalog-expanded',
+      source: 'runtime-catalog-projection',
     });
     return normalized;
   });
-
-  const loadDefaultPage = async (
-    params: BrowserPageRequestParams,
-    options?: { signaturePromise?: Promise<string | null> },
-  ): Promise<CachedBrowserPage> => fetchPageWithDedup(
-    buildPageCacheKey(params),
-    () => loadDefaultPageNetwork(params, options),
-  );
 
   const revalidatePersistentDefaultPage = (
     requestParams: BrowserPageRequestParams,
