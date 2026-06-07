@@ -11,16 +11,17 @@ import {
   nextTick,
 } from "vue";
 import { useRouter } from "vue-router";
-import { type BrowserVariantGroup } from "../services/api";
 import HomeSettingsPanel from "../components/home/HomeSettingsPanel.vue";
 import HomeHistoryStrip from "../components/home/HomeHistoryStrip.vue";
 import HomeBrowserColumn from "../components/home/HomeBrowserColumn.vue";
 import HomeRecipeDock from "../components/home/HomeRecipeDock.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
+import { useHomeBrowserGroups } from "../composables/home/useHomeBrowserGroups";
 import { useHomeBrowserNavigation } from "../composables/home/useHomeBrowserNavigation";
 import { useHomeHistory } from "../composables/home/useHomeHistory";
 import { useHomeGridViewport, useHomeRailStyles } from "../composables/home/useHomeLayout";
 import { useHomeRecipeModal } from "../composables/home/useHomeRecipeModal";
+import { useHomeSearchContextMenu } from "../composables/home/useHomeSearchContextMenu";
 import { useHomeSettingsState } from "../composables/home/useHomeSettingsState";
 import { useSound } from "../services/sound.service";
 
@@ -104,10 +105,6 @@ const TRANSITION_OVERLAY_DELAY_MS = 140;
 const currentGroupId = ref<string | undefined>(undefined);
 const latestCreatedPatternId = ref<string | undefined>(undefined);
 const showTransitionOverlay = ref(false);
-
-const expandedBrowserGroups = ref<Set<string>>(new Set());
-const showSearchContextMenu = ref(false);
-const searchContextMenuPosition = ref({ x: 0, y: 0 });
 
 const {
   viewHistory,
@@ -222,34 +219,19 @@ const openRecipeOracleEntry = () => {
   void router.push({ name: 'recipe-oracle' });
 };
 
-const handleSearchContextMenu = (event: MouseEvent) => {
-  event.preventDefault();
-  event.stopPropagation();
-  searchContextMenuPosition.value = { x: event.clientX, y: event.clientY };
-  showSearchContextMenu.value = true;
-};
-
-const closeSearchContextMenu = () => {
-  showSearchContextMenu.value = false;
-};
-
-const clearSearchQuery = () => {
-  searchQuery.value = '';
-  currentPage.value = 1;
-  closeSearchContextMenu();
-  void loadItems();
-};
-
-const handleGlobalPointerDown = () => {
-  if (!showSearchContextMenu.value) return;
-  closeSearchContextMenu();
-};
-
-const handleGlobalKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape') {
-    closeSearchContextMenu();
-  }
-};
+const {
+  showSearchContextMenu,
+  searchContextMenuPosition,
+  handleSearchContextMenu,
+  closeSearchContextMenu,
+  clearSearchQuery,
+  handleGlobalPointerDown,
+  handleGlobalKeydown,
+} = useHomeSearchContextMenu({
+  searchQuery,
+  currentPage,
+  loadItems,
+});
 
 const handleRecipePreviewContextMenu = (event: MouseEvent) => {
   event.preventDefault();
@@ -304,55 +286,19 @@ const {
   recipeDockStyle,
 } = useHomeRailStyles(recipePreviewNeedsWideStage);
 
-const toggleBrowserGroup = (groupKey: string) => {
-  const next = new Set(expandedBrowserGroups.value);
-  if (next.has(groupKey)) {
-    next.delete(groupKey);
-  } else {
-    next.add(groupKey);
-  }
-  expandedBrowserGroups.value = next;
-  setExpandedGroups(Array.from(next));
-};
-
-const expandedGroupFilterPanels = computed<BrowserVariantGroup[]>(() => {
-  const seen = new Set<string>();
-  return browserGridEntries.value
-    .filter((entry) => entry.kind === "group-header")
-    .map((entry) => (entry as { kind: "group-header"; group: BrowserVariantGroup }).group)
-    .filter((group) => {
-      const key = `${group.key ?? ""}`.trim();
-      if (!key || seen.has(key)) {
-        return false;
-      }
-      seen.add(key);
-      return true;
-    })
-    .slice(0, 3);
+const {
+  expandedGroupFilterPanels,
+  hasExpandedGroupFacetFilters,
+  handleExpandedGroupFacetInput,
+  handleBrowserGroupClick,
+  handleBrowserGroupContextMenu,
+} = useHomeBrowserGroups({
+  browserGridEntries,
+  expandedGroupFacetFilters,
+  setExpandedGroups,
+  setExpandedGroupFacetFilter,
+  openUsageRecipes,
 });
-
-const hasExpandedGroupFacetFilters = computed(() =>
-  Object.keys(expandedGroupFacetFilters.value ?? {}).length > 0,
-);
-
-const handleExpandedGroupFacetInput = (groupKey: string, event: Event) => {
-  setExpandedGroupFacetFilter(groupKey, (event.target as HTMLInputElement | null)?.value ?? "");
-};
-
-const handleBrowserGroupClick = (group: BrowserVariantGroup) => {
-  if (!group.expandable) {
-    return;
-  }
-  toggleBrowserGroup(group.key);
-};
-
-const handleBrowserGroupContextMenu = (group: BrowserVariantGroup, event?: MouseEvent) => {
-  if (event) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-  openUsageRecipes(group.representative);
-};
 
 // Handle pattern group selection
 const onSelectGroup = (groupId: string) => {
