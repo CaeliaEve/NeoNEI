@@ -3,6 +3,7 @@ export type RuntimeServiceWorkerStatus = {
   registered: boolean;
   controllerReady: boolean;
   cacheName?: string;
+  runtimeId?: string | null;
   entryCount?: number;
   approxBytes?: number;
   manifestHash?: string | null;

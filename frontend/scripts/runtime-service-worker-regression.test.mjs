@@ -10,6 +10,9 @@ test("runtime service worker is registered by the frontend shell", async () => {
 test("runtime service worker caches binary packs, atlas images, and native engine assets", async () => {
   const worker = await readFile(new URL("../public/neonei-sw.js", import.meta.url), "utf8");
   assert.ok(worker.includes("dist-data\\/runtime"), "runtime binary pack path should be cached");
+  assert.ok(worker.includes("dist-data\\/(?:runtime\\/|rust\\/)"), "rust binary pack path should be cached");
+  assert.ok(worker.includes("api\\/native-runtime\\/current\\/files"), "current runtime file API should be cached");
+  assert.ok(worker.includes("api\\/native-runtime\\/current\\/manifest"), "current runtime manifest API should be network-first");
   assert.ok(worker.includes("textures\\/atlas"), "atlas texture path should be cached");
   assert.ok(worker.includes("native\\/engine"), "native engine path should be cached");
   assert.match(worker, /cacheFirst/);
@@ -17,7 +20,11 @@ test("runtime service worker caches binary packs, atlas images, and native engin
   assert.match(worker, /NEONEI_RUNTIME_CACHE_STATUS/);
   assert.match(worker, /NEONEI_RUNTIME_CACHE_CLEAR/);
   assert.match(worker, /hashRuntimeManifestText/);
+  assert.match(worker, /extractRuntimeIdFromManifestText/);
   assert.match(worker, /updateRuntimeCacheVersionFromManifest/);
+  assert.match(worker, /CACHE_PREFIX/);
+  assert.match(worker, /runtimeCacheName/);
+  assert.match(worker, /runtimeId/);
   assert.match(worker, /manifestHash/);
-  assert.match(worker, /caches\.delete\(CACHE_NAME\)/);
+  assert.match(worker, /caches\.delete\(runtimeCacheName\(previous\.runtimeId\)\)/);
 });

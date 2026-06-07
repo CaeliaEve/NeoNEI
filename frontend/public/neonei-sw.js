@@ -1,8 +1,11 @@
-const CACHE_NAME = "neonei-runtime-current";
+const CACHE_PREFIX = "neonei-runtime-assets-";
+const LEGACY_CACHE_NAME = "neonei-runtime-current";
 const META_CACHE_NAME = "neonei-runtime-meta";
 const META_REQUEST_URL = "/__neonei_runtime_cache_meta__";
-const RUNTIME_ASSET_PATTERN = /\/(?:dist-data\/runtime\/|textures\/atlas\/|native\/engine\/).+\.(?:bin|json|webp|wasm)$/i;
-const RUNTIME_MANIFEST_PATTERN = /\/(?:dist-data\/manifest\.json|dist-data\/runtime\/runtime-manifest\.json)$/i;
+const DEFAULT_RUNTIME_ID = "current";
+const RUNTIME_ASSET_PATTERN = /\/(?:dist-data\/(?:runtime\/|rust\/)|textures\/atlas\/|native\/engine\/).+\.(?:bin|json|webp|wasm)$/i;
+const CURRENT_RUNTIME_FILE_API_PATTERN = /\/api\/native-runtime\/current\/files\/.+/i;
+const RUNTIME_MANIFEST_PATTERN = /\/(?:dist-data\/manifest\.json|dist-data\/runtime\/runtime-manifest\.json|dist-data\/rust\/runtime-manifest\.json|api\/native-runtime\/current\/manifest)$/i;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
@@ -13,12 +16,21 @@ self.addEventListener("activate", (event) => {
     const keys = await caches.keys();
     await Promise.all(
       keys
-        .filter((key) => key.startsWith("neonei-runtime-") && key !== CACHE_NAME && key !== META_CACHE_NAME)
+        .filter((key) => key === LEGACY_CACHE_NAME)
         .map((key) => caches.delete(key)),
     );
     await self.clients.claim();
   })());
 });
+
+function sanitizeRuntimeId(value) {
+  const text = `${value || DEFAULT_RUNTIME_ID}`.trim().toLowerCase();
+  return text.replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || DEFAULT_RUNTIME_ID;
+}
+
+function runtimeCacheName(runtimeId) {
+  return `${CACHE_PREFIX}${sanitizeRuntimeId(runtimeId)}`;
+}
 
 function hashRuntimeManifestText(text) {
   let hash = 2166136261;
@@ -27,6 +39,21 @@ function hashRuntimeManifestText(text) {
     hash = Math.imul(hash, 16777619);
   }
   return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function extractRuntimeIdFromManifestText(text) {
+  try {
+    const parsed = JSON.parse(text);
+    return sanitizeRuntimeId(
+      parsed.runtimeId
+        || parsed.manifest?.runtimeId
+        || parsed.runtime?.runtimeId
+        || parsed.nativeRuntime?.runtimeId
+        || `hash-${hashRuntimeManifestText(text)}`,
+    );
+  } catch {
+    return `hash-${hashRuntimeManifestText(text)}`;
+  }
 }
 
 async function readRuntimeCacheMeta() {
@@ -52,31 +79,37 @@ async function writeRuntimeCacheMeta(meta) {
 
 async function updateRuntimeCacheVersionFromManifest(text) {
   const manifestHash = hashRuntimeManifestText(text);
+  const runtimeId = extractRuntimeIdFromManifestText(text);
   const previous = await readRuntimeCacheMeta();
-  if (previous?.manifestHash && previous.manifestHash !== manifestHash) {
-    await caches.delete(CACHE_NAME);
+  if (previous?.runtimeId && previous.runtimeId !== runtimeId) {
+    await caches.delete(runtimeCacheName(previous.runtimeId));
   }
   await writeRuntimeCacheMeta({
+    runtimeId,
+    cacheName: runtimeCacheName(runtimeId),
     manifestHash,
     updatedAt: new Date().toISOString(),
   });
-  return manifestHash;
+  return { manifestHash, runtimeId };
 }
 
 async function runtimeManifestNetworkFirst(request) {
-  const cache = await caches.open(CACHE_NAME);
+  const previous = await readRuntimeCacheMeta();
+  const cache = await caches.open(runtimeCacheName(previous?.runtimeId));
   try {
     const response = await fetch(request);
     if (response.ok) {
       const text = await response.clone().text();
-      const manifestHash = await updateRuntimeCacheVersionFromManifest(text);
+      const { manifestHash, runtimeId } = await updateRuntimeCacheVersionFromManifest(text);
+      const runtimeCache = await caches.open(runtimeCacheName(runtimeId));
       const cachedResponse = new Response(text, {
         status: response.status,
         statusText: response.statusText,
         headers: response.headers,
       });
       cachedResponse.headers.set("x-neonei-runtime-manifest-hash", manifestHash);
-      await cache.put(request, cachedResponse.clone());
+      cachedResponse.headers.set("x-neonei-runtime-id", runtimeId);
+      await runtimeCache.put(request, cachedResponse.clone());
       return cachedResponse;
     }
     return response;
@@ -88,7 +121,8 @@ async function runtimeManifestNetworkFirst(request) {
 }
 
 async function cacheFirst(request) {
-  const cache = await caches.open(CACHE_NAME);
+  const meta = await readRuntimeCacheMeta();
+  const cache = await caches.open(runtimeCacheName(meta?.runtimeId));
   const cached = await cache.match(request);
   if (cached) return cached;
   const response = await fetch(request);
@@ -107,15 +141,16 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(runtimeManifestNetworkFirst(request));
     return;
   }
-  if (RUNTIME_ASSET_PATTERN.test(url.pathname)) {
+  if (RUNTIME_ASSET_PATTERN.test(url.pathname) || CURRENT_RUNTIME_FILE_API_PATTERN.test(url.pathname)) {
     event.respondWith(cacheFirst(request));
   }
 });
 
 async function getRuntimeCacheStats() {
-  const cache = await caches.open(CACHE_NAME);
-  const requests = await cache.keys();
   const meta = await readRuntimeCacheMeta();
+  const cacheName = runtimeCacheName(meta?.runtimeId);
+  const cache = await caches.open(cacheName);
+  const requests = await cache.keys();
   let approxBytes = 0;
   for (const request of requests) {
     const response = await cache.match(request);
@@ -123,7 +158,8 @@ async function getRuntimeCacheStats() {
     approxBytes += Number.isFinite(length) ? length : 0;
   }
   return {
-    cacheName: CACHE_NAME,
+    cacheName,
+    runtimeId: meta?.runtimeId ?? null,
     entryCount: requests.length,
     approxBytes,
     manifestHash: meta?.manifestHash ?? null,
@@ -140,8 +176,12 @@ self.addEventListener("message", (event) => {
     return;
   }
   if (type === "NEONEI_RUNTIME_CACHE_CLEAR") {
-    event.waitUntil(Promise.all([caches.delete(CACHE_NAME), caches.delete(META_CACHE_NAME)]).then(() => {
-      event.source?.postMessage({ type: "NEONEI_RUNTIME_CACHE_CLEAR_RESULT", payload: { cacheName: CACHE_NAME } });
+    event.waitUntil(caches.keys().then((keys) => Promise.all(
+      keys
+        .filter((key) => key.startsWith(CACHE_PREFIX) || key === LEGACY_CACHE_NAME || key === META_CACHE_NAME)
+        .map((key) => caches.delete(key)),
+    )).then(() => {
+      event.source?.postMessage({ type: "NEONEI_RUNTIME_CACHE_CLEAR_RESULT", payload: { cachePrefix: CACHE_PREFIX } });
     }));
   }
 });
