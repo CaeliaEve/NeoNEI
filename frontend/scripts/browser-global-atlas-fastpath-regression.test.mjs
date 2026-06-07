@@ -74,3 +74,22 @@ test('global atlas runtime never performs page-scoped atlas entry hydration', ()
     'per-page coverage probes should resolve against the full resident browser atlas index',
   );
 });
+
+test('native renderer uploads all global atlas textures instead of the current page only', () => {
+  const nativeSurfaceSource = read('frontend/src/components/native-surface/NativeBrowserSurface.vue');
+  assert.match(
+    globalAtlasSource,
+    /export async function getAllGlobalBrowserAtlasTextureDescriptors\(\)/,
+    'global atlas should expose the complete atlas texture descriptor set',
+  );
+  assert.match(
+    nativeSurfaceSource,
+    /const textures = await getAllGlobalBrowserAtlasTextureDescriptors\(\);/,
+    'native surface should load the resident global atlas texture set',
+  );
+  assert.doesNotMatch(
+    nativeSurfaceSource,
+    /getGlobalBrowserAtlasTextureDescriptorsForItems/,
+    'native surface must not upload textures based only on the currently visible page',
+  );
+});

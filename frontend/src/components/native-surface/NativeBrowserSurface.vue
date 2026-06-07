@@ -12,9 +12,8 @@ import type {
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 import {
-  ensureGlobalBrowserAtlasIndex,
+  getAllGlobalBrowserAtlasTextureDescriptors,
   getGlobalBrowserAtlasSpriteDescriptorForItem,
-  getGlobalBrowserAtlasTextureDescriptorsForItems,
 } from "../../services/globalBrowserAtlas";
 import type { NativeRenderSpriteCommand } from "../../native-surface/NativeSurfaceRenderProtocol";
 
@@ -80,6 +79,7 @@ const nativeHoveredHit = ref<{
 const nativeHoveredPointer = ref({ x: 0, y: 0 });
 let nativeRenderInitialized = false;
 let nativeRenderInitializing = false;
+let residentAtlasTextureSignature = "";
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
 
@@ -339,12 +339,12 @@ function buildNativeSpriteCommands(
 async function syncNativeTextures() {
   if (!nativeRenderInitialized) return;
   const seq = ++nativeTextureSeq;
-  const itemIds = Array.from(new Set(props.entries.map((entry) => getEntryItem(entry).itemId).filter(Boolean)));
-  if (itemIds.length <= 0) return;
-  await ensureGlobalBrowserAtlasIndex();
+  const textures = await getAllGlobalBrowserAtlasTextureDescriptors();
   if (seq !== nativeTextureSeq) return;
-  const textures = getGlobalBrowserAtlasTextureDescriptorsForItems(itemIds);
   if (textures.length <= 0) return;
+  const signature = textures.map((texture) => `${texture.key}:${texture.url}`).join("|");
+  if (signature === residentAtlasTextureSignature) return;
+  residentAtlasTextureSignature = signature;
   void postNativeRenderEvent({
     type: "loadTextures",
     textures,

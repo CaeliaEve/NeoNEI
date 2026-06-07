@@ -26,7 +26,7 @@ test("history strip renders through the native browser surface", () => {
 test("native browser surface keeps history rendering on the atlas path", () => {
   const source = readSource("src/components/native-surface/NativeBrowserSurface.vue");
 
-  assert.match(source, /getGlobalBrowserAtlasTextureDescriptorsForItems/);
+  assert.match(source, /getAllGlobalBrowserAtlasTextureDescriptors/);
   assert.match(source, /getGlobalBrowserAtlasSpriteDescriptorForItem/);
   assert.match(source, /controller\.setHistoryItems\(props\.historyItemIds\)/);
   assert.match(source, /:suspend-rendering="nativeRenderVisible"/);
