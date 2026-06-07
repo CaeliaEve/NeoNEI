@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process';
+﻿import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -35,6 +35,7 @@ const steps = [
   { name: 'runtime release gate regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-release-gate'] },
   { name: 'runtime contract portability regression', cwd: frontendDir, command: npm, args: ['run', 'test:runtime-contract-portability'] },
   { name: 'raw export compiler portability self-test', cwd: frontendDir, command: npm, args: ['run', 'test:raw-export'] },
+  { name: 'rust runtime retirement gate', cwd: frontendDir, command: npm, args: ['run', 'test:rust-retirement'] },
   { name: 'native render smoke', cwd: frontendDir, command: npm, args: ['run', 'validate:native-render'] },
   { name: 'raw export path hygiene self-test', cwd: frontendDir, command: npm, args: ['run', 'test:export-paths'] },
   { name: 'deployment profile smoke', cwd: frontendDir, command: npm, args: ['run', 'test:deployment-profile'] },
@@ -77,3 +78,4 @@ console.log(JSON.stringify({
   durationMs: Date.now() - startedAt,
   results,
 }, null, 2));
+
