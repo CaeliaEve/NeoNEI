@@ -147,6 +147,27 @@ type DistDataRustRecipePackPayload = {
   handlers?: unknown[];
 };
 
+type DistDataRustRuntimeManifest = {
+  schema?: string;
+  schemaVersion?: string;
+  runtimeId?: string;
+  entrypoints?: {
+    recipes?: string;
+    [key: string]: string | undefined;
+  };
+  files?: Array<{ path?: string; bytes?: number }> | Record<string, string | undefined>;
+};
+
+type NativeBinaryPackEnvelope = {
+  schema: string;
+  payload: ArrayBuffer;
+};
+
+const NATIVE_BINARY_PACK_MAGIC = "NNEIBIN\0";
+const NATIVE_BINARY_PACK_HEADER_BYTES = 24;
+const COMPACT_RECIPE_MAGIC = "NEIRCP1\0";
+const textDecoder = new TextDecoder("utf-8");
+
 type DistDataRecipeUiPayloadIndexEntry = {
   recipeId: string;
   path: string;
@@ -195,6 +216,8 @@ let recipeItemIndexRequest: Promise<Map<string, DistDataRecipeItemIndexEntry> | 
 let cachedRecipeItemIndex: Map<string, DistDataRecipeItemIndexEntry> | null = null;
 let rustRecipePackRequest: Promise<DistDataRustRecipePackPayload | null> | null = null;
 let cachedRustRecipePack: DistDataRustRecipePackPayload | null = null;
+let rustRuntimeManifestRequest: Promise<DistDataRustRuntimeManifest | null> | null = null;
+let cachedRustRuntimeManifest: DistDataRustRuntimeManifest | null = null;
 let recipeUiPayloadIndexRequest: Promise<Map<string, DistDataRecipeUiPayloadIndexEntry> | null> | null = null;
 let cachedRecipeUiPayloadIndex: Map<string, DistDataRecipeUiPayloadIndexEntry> | null = null;
 const cachedRecipeUiPayloads = new Map<string, RecipeUiPayload>();
@@ -287,6 +310,179 @@ async function fetchJson<T>(url: string): Promise<T> {
     throw new Error(`dist-data request failed (${response.status}) for ${url}`);
   }
   return response.json() as Promise<T>;
+}
+
+async function fetchArrayBuffer(url: string): Promise<ArrayBuffer> {
+  const response = await fetch(url, {
+    cache: "force-cache",
+    credentials: "same-origin",
+  });
+  if (!response.ok) {
+    throw new Error(`dist-data request failed (${response.status}) for ${url}`);
+  }
+  return response.arrayBuffer();
+}
+
+function decodeBytes(buffer: ArrayBuffer, offset: number, length: number): string {
+  return textDecoder.decode(new Uint8Array(buffer, offset, length));
+}
+
+function parseNativeBinaryPackEnvelope(buffer: ArrayBuffer, expectedSchema: string): NativeBinaryPackEnvelope {
+  if (buffer.byteLength < NATIVE_BINARY_PACK_HEADER_BYTES) {
+    throw new Error(`Native binary pack is too small: ${buffer.byteLength}`);
+  }
+  const view = new DataView(buffer);
+  const magic = decodeBytes(buffer, 0, 8);
+  const version = view.getUint32(8, true);
+  const schemaLength = view.getUint32(12, true);
+  const payloadLength = Number(view.getBigUint64(16, true));
+  const schemaStart = NATIVE_BINARY_PACK_HEADER_BYTES;
+  const schemaEnd = schemaStart + schemaLength;
+  const payloadEnd = schemaEnd + payloadLength;
+  if (magic !== NATIVE_BINARY_PACK_MAGIC) {
+    throw new Error(`Native binary pack magic mismatch: ${magic}`);
+  }
+  if (version !== 1) {
+    throw new Error(`Native binary pack version mismatch: ${version}`);
+  }
+  if (schemaEnd > buffer.byteLength || payloadEnd !== buffer.byteLength) {
+    throw new Error(`Native binary pack length mismatch: schema=${schemaLength}, payload=${payloadLength}, bytes=${buffer.byteLength}`);
+  }
+  const schema = decodeBytes(buffer, schemaStart, schemaLength);
+  if (schema !== expectedSchema) {
+    throw new Error(`Native binary pack schema mismatch: expected ${expectedSchema}, got ${schema}`);
+  }
+  return { schema, payload: buffer.slice(schemaEnd, payloadEnd) };
+}
+
+function compactRecipeString(strings: string[], index: number): string {
+  return strings[index] ?? "";
+}
+
+function parseCompactRecipePayload(payload: ArrayBuffer): DistDataRustRecipePackPayload {
+  if (payload.byteLength < 52) {
+    throw new Error(`Compact recipe payload is too small: ${payload.byteLength}`);
+  }
+  const view = new DataView(payload);
+  const magic = decodeBytes(payload, 0, 8);
+  if (magic !== COMPACT_RECIPE_MAGIC) {
+    throw new Error(`Compact recipe magic mismatch: ${magic}`);
+  }
+  const version = view.getUint32(8, true);
+  if (version !== 1) {
+    throw new Error(`Compact recipe version mismatch: ${version}`);
+  }
+  const stringCount = view.getUint32(12, true);
+  const itemCount = view.getUint32(16, true);
+  const refCount = view.getUint32(20, true);
+  const uiCount = view.getUint32(24, true);
+  const categoryCount = view.getUint32(28, true);
+  const categorySourceCount = view.getUint32(32, true);
+  const itemStride = view.getUint32(36, true);
+  const refStride = view.getUint32(40, true);
+  const uiStride = view.getUint32(44, true);
+  const categoryStride = view.getUint32(48, true);
+  if (itemStride < 5 || refStride < 3 || uiStride < 7 || categoryStride < 5) {
+    throw new Error(`Compact recipe stride mismatch: item=${itemStride}, ref=${refStride}, ui=${uiStride}, category=${categoryStride}`);
+  }
+
+  let cursor = 52;
+  const bytesNeeded = (count: number, stride = 1) => count * stride * 4;
+  const stringOffsetsStart = cursor;
+  cursor += bytesNeeded(stringCount);
+  const itemRowsStart = cursor;
+  cursor += bytesNeeded(itemCount, itemStride);
+  const refRowsStart = cursor;
+  cursor += bytesNeeded(refCount, refStride);
+  const uiRowsStart = cursor;
+  cursor += bytesNeeded(uiCount, uiStride);
+  const categoryRowsStart = cursor;
+  cursor += bytesNeeded(categoryCount, categoryStride);
+  const categorySourcesStart = cursor;
+  cursor += bytesNeeded(categorySourceCount);
+  const stringsStart = cursor;
+  if (stringsStart > payload.byteLength) {
+    throw new Error(`Compact recipe table exceeds payload length: ${stringsStart}/${payload.byteLength}`);
+  }
+
+  const strings: string[] = [];
+  const bytes = new Uint8Array(payload);
+  for (let index = 0; index < stringCount; index += 1) {
+    const offset = view.getUint32(stringOffsetsStart + index * 4, true);
+    const start = stringsStart + offset;
+    if (start >= payload.byteLength) {
+      strings.push("");
+      continue;
+    }
+    let end = start;
+    while (end < payload.byteLength && bytes[end] !== 0) {
+      end += 1;
+    }
+    strings.push(decodeBytes(payload, start, end - start));
+  }
+
+  const readRowValue = (start: number, row: number, stride: number, column: number): number => (
+    view.getUint32(start + (row * stride + column) * 4, true)
+  );
+  const readRef = (row: number): { recipeId: string; categoryId: string; displayName: string } => {
+    if (row < 0 || row >= refCount) {
+      return { recipeId: "", categoryId: "", displayName: "" };
+    }
+    return {
+      recipeId: compactRecipeString(strings, readRowValue(refRowsStart, row, refStride, 0)),
+      categoryId: compactRecipeString(strings, readRowValue(refRowsStart, row, refStride, 1)),
+      displayName: compactRecipeString(strings, readRowValue(refRowsStart, row, refStride, 2)),
+    };
+  };
+
+  const itemIndex: DistDataRecipeItemIndexEntry[] = [];
+  for (let row = 0; row < itemCount; row += 1) {
+    const itemId = compactRecipeString(strings, readRowValue(itemRowsStart, row, itemStride, 0));
+    const producedStart = readRowValue(itemRowsStart, row, itemStride, 1);
+    const producedCount = readRowValue(itemRowsStart, row, itemStride, 2);
+    const usedStart = readRowValue(itemRowsStart, row, itemStride, 3);
+    const usedCount = readRowValue(itemRowsStart, row, itemStride, 4);
+    if (!itemId) continue;
+    const producedBy = Array.from({ length: producedCount }, (_, offset) => readRef(producedStart + offset)).filter((entry) => entry.recipeId);
+    const usedIn = Array.from({ length: usedCount }, (_, offset) => readRef(usedStart + offset)).filter((entry) => entry.recipeId);
+    itemIndex.push({ itemId, producedBy, usedIn });
+  }
+
+  const uiPayloadIndex: DistDataRecipeUiPayloadIndexEntry[] = [];
+  for (let row = 0; row < uiCount; row += 1) {
+    const recipeId = compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 0));
+    const path = compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 1));
+    if (!recipeId || !path) continue;
+    uiPayloadIndex.push({
+      recipeId,
+      path,
+      payloadKey: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 2)) || undefined,
+      familyKey: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 3)) || undefined,
+      recipeType: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 4)) || undefined,
+      machineType: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 5)) || undefined,
+    });
+  }
+
+  const categoryIndex: DistDataRustRecipeCategoryEntry[] = [];
+  for (let row = 0; row < categoryCount; row += 1) {
+    const categoryId = compactRecipeString(strings, readRowValue(categoryRowsStart, row, categoryStride, 0));
+    if (!categoryId) continue;
+    const sourceStart = readRowValue(categoryRowsStart, row, categoryStride, 3);
+    const sourceCount = readRowValue(categoryRowsStart, row, categoryStride, 4);
+    const sourceCategoryIds = Array.from({ length: sourceCount }, (_, offset) => {
+      const sourceRow = sourceStart + offset;
+      if (sourceRow < 0 || sourceRow >= categorySourceCount) return "";
+      return compactRecipeString(strings, view.getUint32(categorySourcesStart + sourceRow * 4, true));
+    }).filter(Boolean);
+    categoryIndex.push({
+      categoryId,
+      displayName: compactRecipeString(strings, readRowValue(categoryRowsStart, row, categoryStride, 1)) || categoryId,
+      recipeCount: readRowValue(categoryRowsStart, row, categoryStride, 2),
+      sourceCategoryIds,
+    });
+  }
+
+  return { schemaVersion: "neonei/recipe-pack/current", itemIndex, uiPayloadIndex, categoryIndex };
 }
 
 function buildRuntimeCacheKey(manifest: DistDataManifest): string {
@@ -957,6 +1153,49 @@ export async function getDistDataGroupItems(groupKey: string, modId?: string, in
   };
 }
 
+async function getRustRuntimeManifest(): Promise<DistDataRustRuntimeManifest | null> {
+  if (cachedRustRuntimeManifest) {
+    return cachedRustRuntimeManifest;
+  }
+  if (rustRuntimeManifestRequest) {
+    return rustRuntimeManifestRequest;
+  }
+
+  rustRuntimeManifestRequest = (async () => {
+    const manifest = await getDistDataManifest();
+    const runtimeManifestPath = `${manifest?.files?.rustRuntimeManifest ?? ""}`.trim();
+    if (!manifest || !runtimeManifestPath) {
+      return null;
+    }
+    const payload = await fetchJson<DistDataRustRuntimeManifest>(joinAssetPath(getConfiguredBasePath(), runtimeManifestPath)).catch(() => null);
+    if (!payload || typeof payload !== "object") {
+      reportDistDataSchemaMismatch(manifest, runtimeManifestPath, "Rust runtime manifest is missing or invalid");
+      return null;
+    }
+    cachedRustRuntimeManifest = payload;
+    return cachedRustRuntimeManifest;
+  })()
+    .catch(() => null)
+    .finally(() => {
+      rustRuntimeManifestRequest = null;
+    });
+
+  return rustRuntimeManifestRequest;
+}
+
+async function getRustRecipeBinaryPath(manifest: DistDataManifest): Promise<string | null> {
+  const runtimeManifest = await getRustRuntimeManifest();
+  const runtimeRecipePath = `${runtimeManifest?.entrypoints?.recipes ?? ""}`.trim();
+  if (runtimeRecipePath) {
+    return runtimeRecipePath;
+  }
+  const jsonRecipePath = `${manifest.files?.rustRecipePack ?? ""}`.trim();
+  if (jsonRecipePath.endsWith("recipe-pack.json")) {
+    return jsonRecipePath.replace(/recipe-pack\.json$/, "recipes.bin");
+  }
+  return null;
+}
+
 async function getRustRecipePack(): Promise<DistDataRustRecipePackPayload | null> {
   if (cachedRustRecipePack) {
     return cachedRustRecipePack;
@@ -967,15 +1206,22 @@ async function getRustRecipePack(): Promise<DistDataRustRecipePackPayload | null
 
   rustRecipePackRequest = (async () => {
     const manifest = await getDistDataManifest();
-    const recipePackPath = `${manifest?.files?.rustRecipePack ?? ""}`.trim();
-    if (!manifest || !recipePackPath) {
+    if (!manifest) {
       return null;
     }
-    const payload = await fetchJson<DistDataRustRecipePackPayload>(
-      joinAssetPath(getConfiguredBasePath(), recipePackPath),
-    ).catch(() => null);
+    const recipeBinaryPath = await getRustRecipeBinaryPath(manifest);
+    if (!recipeBinaryPath) {
+      return null;
+    }
+    const buffer = await fetchArrayBuffer(joinAssetPath(getConfiguredBasePath(), recipeBinaryPath)).catch(() => null);
+    const payload = buffer
+      ? (() => {
+          const envelope = parseNativeBinaryPackEnvelope(buffer, "neonei/recipe-pack/current");
+          return parseCompactRecipePayload(envelope.payload);
+        })()
+      : null;
     if (!payload || !Array.isArray(payload.itemIndex) || payload.itemIndex.length <= 0) {
-      reportDistDataSchemaMismatch(manifest, recipePackPath, "Rust recipe pack is missing usable itemIndex[]", {
+      reportDistDataSchemaMismatch(manifest, recipeBinaryPath, "Binary recipes.bin is missing usable itemIndex[]", {
         schemaVersion: payload?.schemaVersion ?? null,
       });
       return null;
@@ -983,13 +1229,23 @@ async function getRustRecipePack(): Promise<DistDataRustRecipePackPayload | null
     cachedRustRecipePack = payload;
     return cachedRustRecipePack;
   })()
-    .catch(() => null)
+    .catch((error) => {
+      void getDistDataManifest().then((manifest) => {
+        if (manifest) {
+          reportDistDataSchemaMismatch(manifest, `${manifest.files?.rustRuntimeManifest ?? manifest.files?.rustRecipePack ?? "rust/recipes.bin"}`, "Binary recipes.bin failed to parse", {
+            error: error instanceof Error ? error.message : `${error}`,
+          });
+        }
+      });
+      return null;
+    })
     .finally(() => {
       rustRecipePackRequest = null;
     });
 
   return rustRecipePackRequest;
 }
+
 
 async function getRecipeItemIndex(): Promise<Map<string, DistDataRecipeItemIndexEntry> | null> {
   if (cachedRecipeItemIndex) {
@@ -1667,6 +1923,8 @@ export function resetDistDataRuntimeCache(): void {
   cachedRecipeItemIndex = null;
   rustRecipePackRequest = null;
   cachedRustRecipePack = null;
+  rustRuntimeManifestRequest = null;
+  cachedRustRuntimeManifest = null;
   recipeUiPayloadIndexRequest = null;
   cachedRecipeUiPayloadIndex = null;
   cachedRecipeUiPayloads.clear();

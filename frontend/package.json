@@ -55,7 +55,8 @@
         "test:native-history-surface": "node --test scripts/native-history-surface-regression.test.mjs",
         "test:native-tooltip-strings": "node --test scripts/native-tooltip-string-pack-regression.test.mjs",
         "test:native-animation-timeline": "node --test scripts/native-animation-timeline-worker-regression.test.mjs",
-        "test:native-surface-no-ts-fallback": "node --test scripts/native-surface-no-ts-projection-fallback-regression.test.mjs"
+        "test:native-surface-no-ts-fallback": "node --test scripts/native-surface-no-ts-projection-fallback-regression.test.mjs",
+        "test:recipe-binary-pack": "node --test scripts/recipe-binary-pack-regression.test.mjs"
     },
     "dependencies": {
         "axios": "^1.13.2",
