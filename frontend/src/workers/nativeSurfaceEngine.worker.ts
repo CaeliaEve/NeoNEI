@@ -274,15 +274,6 @@ function installWasmSearchPayload(surface: SurfaceState, payloadBuffer: ArrayBuf
   surface.runtimeSearchWasmLen = payloadBuffer.byteLength;
 }
 
-function parseJsonPayload<T>(payloadBuffer: ArrayBuffer): T | null {
-  try {
-    const text = new TextDecoder("utf-8").decode(new Uint8Array(payloadBuffer));
-    return JSON.parse(text) as T;
-  } catch {
-    return null;
-  }
-}
-
 const COMPACT_STRING_MAGIC = "NEISTR1\0";
 const COMPACT_STRING_HEADER_BYTES = 8 + 4 * 4;
 const COMPACT_STRING_ROW_STRIDE = 6;
@@ -404,32 +395,10 @@ function parseCompactSearchPack(payloadBuffer: ArrayBuffer): Map<string, NativeR
 
 function parseNativeSearchPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeSearchItem> {
   const compact = parseCompactSearchPack(payloadBuffer);
-  if (compact) return compact;
-
-  const pack = parseJsonPayload<{ items?: unknown[] }>(payloadBuffer);
-  const search = new Map<string, NativeRuntimeSearchItem>();
-  for (const row of pack?.items ?? []) {
-    if (!row || typeof row !== "object") continue;
-    const record = row as Record<string, unknown>;
-    const itemId = `${record.itemId ?? ""}`.trim();
-    if (!itemId) continue;
-    search.set(itemId, {
-      itemId,
-      publicItemId: typeof record.publicItemId === "string" ? record.publicItemId : "",
-      localizedName: typeof record.localizedName === "string" ? record.localizedName : "",
-      modId: typeof record.modId === "string" ? record.modId : "",
-      normalizedLocalizedName: typeof record.normalizedLocalizedName === "string" ? record.normalizedLocalizedName : "",
-      normalizedInternalName: typeof record.normalizedInternalName === "string" ? record.normalizedInternalName : "",
-      normalizedItemId: typeof record.normalizedItemId === "string" ? record.normalizedItemId : "",
-      normalizedSearchTerms: typeof record.normalizedSearchTerms === "string" ? record.normalizedSearchTerms : "",
-      pinyinFull: typeof record.pinyinFull === "string" ? record.pinyinFull : "",
-      pinyinAcronym: typeof record.pinyinAcronym === "string" ? record.pinyinAcronym : "",
-      popularityScore: toFiniteNumber(record.popularityScore, 1) || 1,
-      searchRank: toFiniteNumber(record.searchRank, 0) || 0,
-      browserIndex: toFiniteNumber(record.browserIndex, toFiniteNumber(record.searchRank, 0)) || 0,
-    });
+  if (!compact) {
+    throw new Error("native search pack must use compact NEISRC2 binary encoding");
   }
-  return search;
+  return compact;
 }
 
 const COMPACT_GROUP_MAGIC = "NEIGRP1\0";
@@ -495,95 +464,18 @@ function parseCompactGroupPack(payloadBuffer: ArrayBuffer): Map<string, NativeRu
 }
 function parseNativeGroupPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeGroup> {
   const compact = parseCompactGroupPack(payloadBuffer);
-  if (compact) return compact;
-
-  const pack = parseJsonPayload<{ groups?: unknown[] }>(payloadBuffer);
-  const groups = new Map<string, NativeRuntimeGroup>();
-  for (const row of pack?.groups ?? []) {
-    if (!row || typeof row !== "object") continue;
-    const value = row as Record<string, unknown>;
-    const groupKey = `${value.groupKey ?? ""}`.trim();
-    if (!groupKey) continue;
-    const members = Array.isArray(value.memberItemIds)
-      ? value.memberItemIds.map((entry) => `${entry ?? ""}`.trim()).filter(Boolean)
-      : [];
-    groups.set(groupKey, {
-      groupKey,
-      groupLabel: typeof value.groupLabel === "string" ? value.groupLabel : null,
-      groupSize: typeof value.groupSize === "number" ? value.groupSize : members.length,
-      representativeItemId: typeof value.representativeItemId === "string" ? value.representativeItemId : members[0] ?? null,
-      memberItemIds: members,
-    });
+  if (!compact) {
+    throw new Error("native group pack must use compact NEIGRP1 binary encoding");
   }
-  return groups;
+  return compact;
 }
 
 function parseNativeStringPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeStringItem> {
   const compact = parseCompactStringPack(payloadBuffer);
-  if (compact) return compact;
-
-  const pack = parseJsonPayload<{ items?: unknown[] }>(payloadBuffer);
-  const strings = new Map<string, NativeRuntimeStringItem>();
-  for (const row of pack?.items ?? []) {
-    if (!row || typeof row !== "object") continue;
-    const value = row as Record<string, unknown>;
-    const itemId = `${value.itemId ?? ""}`.trim();
-    if (!itemId) continue;
-    strings.set(itemId, {
-      itemId,
-      localizedName: typeof value.localizedName === "string" ? value.localizedName : null,
-      modId: typeof value.modId === "string" ? value.modId : null,
-      internalName: typeof value.internalName === "string" ? value.internalName : null,
-      groupKey: typeof value.groupKey === "string" ? value.groupKey : null,
-      groupLabel: typeof value.groupLabel === "string" ? value.groupLabel : null,
-    });
+  if (!compact) {
+    throw new Error("native string pack must use compact NEISTR1 binary encoding");
   }
-  return strings;
-}
-
-function toFiniteNumber(value: unknown, fallback = 0): number {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return fallback;
-}
-
-function normalizeAtlasFile(value: unknown): string | null {
-  const normalized = `${value ?? ""}`.trim().replace(/\\/g, "/").replace(/^\/+/, "");
-  return normalized || null;
-}
-
-function parseAtlasFrames(value: unknown): NativeRuntimeAtlasFrame[] {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((frame, index) => {
-      const compact = Array.isArray(frame) ? frame as unknown[] : null;
-      const record = frame && typeof frame === "object" && !Array.isArray(frame) ? frame as Record<string, unknown> : {};
-      return {
-        index: Math.max(0, Math.floor(toFiniteNumber(compact?.[0] ?? record.index, index))),
-        x: Math.max(0, Math.floor(toFiniteNumber(compact?.[1] ?? record.x, 0))),
-        y: Math.max(0, Math.floor(toFiniteNumber(compact?.[2] ?? record.y, 0))),
-        width: Math.max(0, Math.floor(toFiniteNumber(compact?.[3] ?? record.width, 0))),
-        height: Math.max(0, Math.floor(toFiniteNumber(compact?.[4] ?? record.height, 0))),
-      };
-    })
-    .filter((frame) => frame.width > 0 && frame.height > 0);
-}
-
-function parseTimeline(value: unknown, fallbackDurationMs?: unknown): NativeRuntimeTimelineFrame[] {
-  if (!Array.isArray(value)) return [];
-  const fallbackDuration = Math.max(16, Math.floor(toFiniteNumber(fallbackDurationMs, 50)));
-  return value
-    .map((frame, index) => {
-      const compact = Array.isArray(frame) ? frame as unknown[] : null;
-      const record = frame && typeof frame === "object" && !Array.isArray(frame) ? frame as Record<string, unknown> : {};
-      return {
-        frameIndex: Math.max(0, Math.floor(toFiniteNumber(compact?.[0] ?? record.frameIndex ?? record.index, index))),
-        durationMs: Math.max(16, Math.floor(toFiniteNumber(compact?.[1] ?? record.durationMs, fallbackDuration))),
-      };
-    });
+  return compact;
 }
 
 const COMPACT_TEXTURE_MAGIC = "NEITEX1\0";
@@ -679,44 +571,12 @@ function parseCompactTexturePack(payloadBuffer: ArrayBuffer): Map<string, Native
 }
 function parseNativeTexturePack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeTextureItem> {
   const compact = parseCompactTexturePack(payloadBuffer);
-  if (compact) return compact;
-
-  const pack = parseJsonPayload<{ atlasMap?: Record<string, unknown>; atlas?: { items?: unknown[] } }>(payloadBuffer);
-  const rows: unknown[] = [];
-  if (pack?.atlasMap && typeof pack.atlasMap === "object") rows.push(...Object.values(pack.atlasMap));
-  if (Array.isArray(pack?.atlas?.items)) rows.push(...pack.atlas.items);
-  const textures = new Map<string, NativeRuntimeTextureItem>();
-  for (const row of rows) {
-    const record = row && typeof row === "object" ? row as Record<string, unknown> : null;
-    if (!record) continue;
-    const atlasRecord = record.atlas && typeof record.atlas === "object" ? record.atlas as Record<string, unknown> : record;
-    const itemId = `${record.itemId ?? atlasRecord.itemId ?? ""}`.trim();
-    if (!itemId || textures.has(itemId)) continue;
-    const staticAtlas = atlasRecord.staticAtlas && typeof atlasRecord.staticAtlas === "object"
-      ? atlasRecord.staticAtlas as Record<string, unknown>
-      : null;
-    const animatedAtlas = atlasRecord.animatedAtlas && typeof atlasRecord.animatedAtlas === "object"
-      ? atlasRecord.animatedAtlas as Record<string, unknown>
-      : null;
-    textures.set(itemId, {
-      itemId,
-      staticAtlas: staticAtlas ? {
-        atlasFile: normalizeAtlasFile(staticAtlas.atlasFile) ?? "",
-        x: Math.max(0, Math.floor(toFiniteNumber(staticAtlas.x, 0))),
-        y: Math.max(0, Math.floor(toFiniteNumber(staticAtlas.y, 0))),
-        width: Math.max(0, Math.floor(toFiniteNumber(staticAtlas.width, 0))),
-        height: Math.max(0, Math.floor(toFiniteNumber(staticAtlas.height, 0))),
-      } : null,
-      animatedAtlas: animatedAtlas ? {
-        atlasFile: normalizeAtlasFile(animatedAtlas.atlasFile) ?? "",
-        frames: parseAtlasFrames(animatedAtlas.frames),
-        timeline: parseTimeline(animatedAtlas.timeline, animatedAtlas.frameDurationMs),
-        frameDurationMs: toFiniteNumber(animatedAtlas.frameDurationMs, 0) || null,
-      } : null,
-    });
+  if (!compact) {
+    throw new Error("native texture pack must use compact NEITEX1 binary encoding");
   }
-  return textures;
+  return compact;
 }
+
 
 const COMPACT_ANIMATION_MAGIC = "NEIANM1\0";
 const COMPACT_ANIMATION_HEADER_BYTES = 8 + 6 * 4;
@@ -787,24 +647,12 @@ function parseCompactAnimationPack(payloadBuffer: ArrayBuffer): Map<string, Nati
 }
 function parseNativeAnimationPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeAnimationItem> {
   const compact = parseCompactAnimationPack(payloadBuffer);
-  if (compact) return compact;
-
-  const pack = parseJsonPayload<{ animations?: unknown[] }>(payloadBuffer);
-  const animations = new Map<string, NativeRuntimeAnimationItem>();
-  for (const row of pack?.animations ?? []) {
-    const record = row && typeof row === "object" ? row as Record<string, unknown> : null;
-    if (!record) continue;
-    const itemId = `${record.itemId ?? ""}`.trim();
-    if (!itemId) continue;
-    animations.set(itemId, {
-      itemId,
-      atlasFile: normalizeAtlasFile(record.atlasFile),
-      timeline: parseTimeline(record.timeline, record.frameDurationMs),
-      frameDurationMs: toFiniteNumber(record.frameDurationMs, 0) || null,
-    });
+  if (!compact) {
+    throw new Error("native animation pack must use compact NEIANM1 binary encoding");
   }
-  return animations;
+  return compact;
 }
+
 
 function writeWasmUtf8(value: string): { ptr: number; len: number } {
   const alloc = wasmEngine?.neonei_engine_alloc;
