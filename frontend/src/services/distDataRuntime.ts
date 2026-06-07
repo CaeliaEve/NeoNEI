@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   HomeBootstrapResponse,
   Item,
   Mod,
@@ -92,6 +92,14 @@ type DistDataRustBrowserPackPayload = {
   groups?: DistDataRawGroup[];
 };
 
+
+type DistDataRustTexturePackPayload = {
+  schemaVersion?: string;
+  atlas?: BrowserAtlasIndexResponse | null;
+  atlasMap?: Record<string, unknown>;
+  animationTable?: unknown[];
+  counts?: Record<string, unknown>;
+};
 type BrowserCatalogMode = "default" | "advanced";
 
 type DistDataRawGroup = {
@@ -1480,8 +1488,27 @@ export async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexR
 
   browserAtlasIndexRequest = (async () => {
     const manifest = await getDistDataManifest();
-    const atlasPath = `${manifest?.files?.browserAtlasIndex ?? ""}`.trim();
-    if (!manifest || !atlasPath) {
+    const rustTexturePath = `${manifest?.files?.rustTexturePack ?? ""}`.trim();
+    if (!manifest) {
+      return null;
+    }
+    if (rustTexturePath) {
+      const rustTexturePack = await fetchJson<DistDataRustTexturePackPayload>(
+        joinAssetPath(getConfiguredBasePath(), rustTexturePath),
+      ).catch(() => null);
+      const rustAtlas = rustTexturePack?.atlas ?? null;
+      if (!rustTexturePack || !Array.isArray(rustAtlas?.items)) {
+        reportDistDataSchemaMismatch(manifest, rustTexturePath, "Rust texture pack atlas is missing items[]", {
+          schemaVersion: rustTexturePack?.schemaVersion ?? null,
+        });
+        return null;
+      }
+      cachedBrowserAtlasIndex = rustAtlas;
+      return cachedBrowserAtlasIndex;
+    }
+
+    const atlasPath = `${manifest.files?.browserAtlasIndex ?? ""}`.trim();
+    if (!atlasPath) {
       return null;
     }
     const payload = await fetchJson<BrowserAtlasIndexResponse>(joinAssetPath(getConfiguredBasePath(), atlasPath));
@@ -1617,4 +1644,6 @@ export function resetDistDataRuntimeCache(): void {
   nativeRenderIndexRequest = null;
   cachedNativeRenderIndex = null;
 }
+
+
 
