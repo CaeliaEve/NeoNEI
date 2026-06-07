@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -23,6 +23,7 @@ const url = args.get("url") || "http://127.0.0.1:5173/";
 const outDir = args.has("out-dir") ? resolve(args.get("out-dir")) : resolve(repoRoot, ".tmp-runtime");
 const outputPath = args.has("output") ? resolve(args.get("output")) : join(outDir, "native-surface-baseline.json");
 const pageFlips = Number(args.get("page-flips") || 30);
+const gate = args.has("gate");
 
 function percentile(values, p) {
   if (values.length === 0) return 0;
@@ -133,6 +134,42 @@ async function main() {
     },
     errors,
   };
+  const gateFailures = [];
+  if (errors.length > 0) {
+    gateFailures.push(`${errors.length} console/page error(s) captured`);
+  }
+  if ((final.canvasCount ?? 0) <= 0) {
+    gateFailures.push("no canvas elements were found");
+  }
+  if (!final.nativeEngineMetrics) {
+    gateFailures.push("native engine metrics are missing");
+  } else {
+    if (final.nativeEngineMetrics.wasmReady !== true) {
+      gateFailures.push("native engine wasmReady is not true");
+    }
+    if ((final.nativeEngineMetrics.layoutCommands ?? 0) <= 0) {
+      gateFailures.push("native engine did not produce layout commands");
+    }
+  }
+  if (!final.nativeRenderMetrics) {
+    gateFailures.push("native render metrics are missing");
+  } else {
+    if ((final.nativeRenderMetrics.frames ?? 0) <= 0) {
+      gateFailures.push("native render worker did not submit frames");
+    }
+    if ((final.nativeRenderMetrics.commandCount ?? 0) <= 0) {
+      gateFailures.push("native render worker did not receive command buffers");
+    }
+    if ((final.nativeRenderMetrics.drawCalls ?? 0) <= 0) {
+      gateFailures.push("native render worker did not issue draw calls");
+    }
+  }
+
+  report.gate = {
+    enabled: gate,
+    status: gateFailures.length > 0 ? "failed" : "passed",
+    failures: gateFailures,
+  };
 
   writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
   console.log(`[native-surface-baseline] wrote ${outputPath}`);
@@ -143,8 +180,15 @@ async function main() {
     settingsOpenMs: Math.round(settingsOpenMs),
     nativeRuntimeReady: Boolean(report.final.nativeEngineMetrics?.runtimeReady),
     nativeRenderFrames: report.final.nativeRenderMetrics?.frames ?? 0,
+    nativeRenderDrawCalls: report.final.nativeRenderMetrics?.drawCalls ?? 0,
+    nativeRenderTextureLoaded: report.final.nativeRenderMetrics?.textureLoaded ?? 0,
     errors: errors.length,
+    gate: report.gate,
   }, null, 2));
+
+  if (gate && gateFailures.length > 0) {
+    process.exit(1);
+  }
 }
 
 main().catch((error) => {
