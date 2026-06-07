@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 
 
 import {
@@ -510,4 +510,3 @@ setGridViewportSync(syncMeasuredPageSize);
     />
   </div>
 </template>
-
