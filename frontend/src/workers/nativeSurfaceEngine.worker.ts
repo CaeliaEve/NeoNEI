@@ -234,6 +234,68 @@ function parseJsonPayload<T>(payloadBuffer: ArrayBuffer): T | null {
   }
 }
 
+const COMPACT_STRING_MAGIC = "NEISTR1\0";
+const COMPACT_STRING_HEADER_BYTES = 8 + 4 * 4;
+const COMPACT_STRING_ROW_STRIDE = 6;
+
+function decodeAscii(bytes: Uint8Array): string {
+  return new TextDecoder("utf-8").decode(bytes);
+}
+
+function readNullTerminatedString(bytes: Uint8Array, offset: number): string {
+  if (offset < 0 || offset >= bytes.byteLength) return "";
+  let end = offset;
+  while (end < bytes.byteLength && bytes[end] !== 0) end += 1;
+  return new TextDecoder("utf-8").decode(bytes.subarray(offset, end));
+}
+
+function parseCompactStringPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeStringItem> | null {
+  if (payloadBuffer.byteLength < COMPACT_STRING_HEADER_BYTES) return null;
+  const bytes = new Uint8Array(payloadBuffer);
+  const magic = decodeAscii(bytes.subarray(0, 8));
+  if (magic !== COMPACT_STRING_MAGIC) return null;
+
+  const view = new DataView(payloadBuffer);
+  const version = view.getUint32(8, true);
+  const itemCount = view.getUint32(12, true);
+  const stringCount = view.getUint32(16, true);
+  const rowStride = view.getUint32(20, true);
+  if (version !== 1 || rowStride !== COMPACT_STRING_ROW_STRIDE) {
+    throw new Error(`compact string pack has invalid header: version=${version}, rowStride=${rowStride}`);
+  }
+
+  const offsetsStart = COMPACT_STRING_HEADER_BYTES;
+  const rowsStart = offsetsStart + stringCount * 4;
+  const rowsBytes = itemCount * rowStride * 4;
+  const stringTableStart = rowsStart + rowsBytes;
+  if (stringTableStart > payloadBuffer.byteLength) {
+    throw new Error(`compact string pack exceeds payload bounds: rows=${itemCount}, strings=${stringCount}, bytes=${payloadBuffer.byteLength}`);
+  }
+
+  const stringTableBytes = bytes.subarray(stringTableStart);
+  const strings: string[] = new Array(stringCount);
+  for (let index = 0; index < stringCount; index += 1) {
+    const offset = view.getUint32(offsetsStart + index * 4, true);
+    strings[index] = readNullTerminatedString(stringTableBytes, offset);
+  }
+
+  const result = new Map<string, NativeRuntimeStringItem>();
+  for (let index = 0; index < itemCount; index += 1) {
+    const rowOffset = rowsStart + index * rowStride * 4;
+    const itemId = strings[view.getUint32(rowOffset, true)] ?? "";
+    if (!itemId) continue;
+    result.set(itemId, {
+      itemId,
+      localizedName: strings[view.getUint32(rowOffset + 4, true)] ?? "",
+      modId: strings[view.getUint32(rowOffset + 8, true)] ?? "",
+      internalName: strings[view.getUint32(rowOffset + 12, true)] ?? "",
+      groupKey: strings[view.getUint32(rowOffset + 16, true)] ?? "",
+      groupLabel: strings[view.getUint32(rowOffset + 20, true)] ?? "",
+    });
+  }
+  return result;
+}
+
 function parseNativeGroupPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeGroup> {
   const pack = parseJsonPayload<{ groups?: unknown[] }>(payloadBuffer);
   const groups = new Map<string, NativeRuntimeGroup>();
@@ -257,6 +319,9 @@ function parseNativeGroupPack(payloadBuffer: ArrayBuffer): Map<string, NativeRun
 }
 
 function parseNativeStringPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeStringItem> {
+  const compact = parseCompactStringPack(payloadBuffer);
+  if (compact) return compact;
+
   const pack = parseJsonPayload<{ items?: unknown[] }>(payloadBuffer);
   const strings = new Map<string, NativeRuntimeStringItem>();
   for (const row of pack?.items ?? []) {

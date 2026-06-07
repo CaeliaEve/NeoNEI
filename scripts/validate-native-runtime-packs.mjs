@@ -108,6 +108,9 @@ function validateBinaryPack({ filePath, expectedSchema, logicalName }, failures,
     if (logicalName === 'browser' && validateCompactBrowserPayload(payloadBytes, failures, logicalName)) {
       return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-browser-table' } };
     }
+    if (logicalName === 'stringsZhCn' && validateCompactStringPayload(payloadBytes, failures, logicalName)) {
+      return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-string-table' } };
+    }
     warn(warnings, 'NATIVE_PACK_PAYLOAD_NOT_JSON', `native runtime pack payload is not JSON-decodable yet: ${logicalName}`, { logicalName, message: error.message });
   }
   return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: null };
@@ -136,6 +139,40 @@ function validateCompactBrowserPayload(payloadBytes, failures, logicalName) {
   }
   if (stringTableStart > payloadBytes.length) {
     fail(failures, 'NATIVE_BROWSER_PACK_COMPACT_BOUNDS', 'compact browser pack table exceeds payload bounds', {
+      logicalName,
+      itemCount,
+      stringCount,
+      rowStride,
+      payloadBytes: payloadBytes.length,
+      stringTableStart,
+    });
+  }
+  return true;
+}
+
+function validateCompactStringPayload(payloadBytes, failures, logicalName) {
+  const compactHeaderBytes = 8 + 4 * 4;
+  if (payloadBytes.length < compactHeaderBytes) return false;
+  const magic = payloadBytes.subarray(0, 8).toString('utf8');
+  if (magic !== 'NEISTR1\0') return false;
+  const version = payloadBytes.readUInt32LE(8);
+  const itemCount = payloadBytes.readUInt32LE(12);
+  const stringCount = payloadBytes.readUInt32LE(16);
+  const rowStride = payloadBytes.readUInt32LE(20);
+  const offsetsBytes = stringCount * 4;
+  const rowsBytes = itemCount * rowStride * 4;
+  const stringTableStart = compactHeaderBytes + offsetsBytes + rowsBytes;
+  if (version !== 1) {
+    fail(failures, 'NATIVE_STRING_PACK_BAD_COMPACT_VERSION', 'compact string pack has an invalid version', { logicalName, version });
+  }
+  if (rowStride !== 6) {
+    fail(failures, 'NATIVE_STRING_PACK_BAD_ROW_STRIDE', 'compact string pack has an invalid row stride', { logicalName, rowStride });
+  }
+  if (stringCount <= 0 || itemCount <= 0) {
+    fail(failures, 'NATIVE_STRING_PACK_EMPTY_COMPACT_TABLE', 'compact string pack has no items or strings', { logicalName, itemCount, stringCount });
+  }
+  if (stringTableStart > payloadBytes.length) {
+    fail(failures, 'NATIVE_STRING_PACK_COMPACT_BOUNDS', 'compact string pack table exceeds payload bounds', {
       logicalName,
       itemCount,
       stringCount,

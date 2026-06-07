@@ -14,6 +14,16 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
   );
   assert.match(
     workerSource,
+    /COMPACT_STRING_MAGIC = "NEISTR1\\0"/,
+    'worker must support the compact binary strings.zh_cn payload',
+  );
+  assert.match(
+    workerSource,
+    /function parseCompactStringPack\(payloadBuffer: ArrayBuffer\): Map<string, NativeRuntimeStringItem> \| null/,
+    'worker must parse string metadata without requiring JSON payloads',
+  );
+  assert.match(
+    workerSource,
     /message\.packs\.find\(\(pack\) => pack\.name === "stringsZhCn"\)/,
     'worker must load the stringsZhCn pack from runtime packs',
   );
