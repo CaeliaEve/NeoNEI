@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { defineAsyncComponent, type StyleValue } from "vue";
+import type { StyleValue } from "vue";
 import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../../services/api";
 import type { PageAtlasResult } from "../../services/pageAtlas";
-
-const HomeCanvasGrid = defineAsyncComponent(() => import("../HomeCanvasGrid.vue"));
+import NativeBrowserSurface from "../native-surface/NativeBrowserSurface.vue";
 
 defineProps<{
   itemColumnStyle: StyleValue;
@@ -126,7 +125,9 @@ const bindGridViewportRef = (element: HTMLElement | null) => {
               </div>
 
               <div v-else class="relative h-full w-full">
-                <HomeCanvasGrid
+                <NativeBrowserSurface
+                  surface-id="browser"
+                  viewport-role="browser"
                   :entries="browserGridEntries"
                   :item-size="itemSize"
                   :atlas="currentPageAtlas"
@@ -136,6 +137,7 @@ const bindGridViewportRef = (element: HTMLElement | null) => {
                   @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"
                   @group-click="emit('groupClick', $event)"
                   @group-contextmenu="(group, event) => emit('groupContextmenu', group, event)"
+                  @viewport-resize="emit('gridViewportResize', $event)"
                 />
 
                 <div

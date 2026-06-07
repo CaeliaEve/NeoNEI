@@ -19,6 +19,7 @@
     "validate:runtime-v3": "node ../scripts/validate-runtime-v3-regression.mjs --gate",
     "validate:native-render": "node ../scripts/validate-native-render-smoke.mjs --self-test --gate",
     "bench:browser-v3": "node ../scripts/bench-browser-v3.mjs --gate",
+    "bench:native-surface": "node ../scripts/native-surface-baseline.mjs",
     "validate:runtime-contracts": "node ../scripts/validate-runtime-contracts.mjs --gate",
     "validate:semantic-runtime": "node ../scripts/validate-semantic-runtime.mjs --gate",
     "audit:api-runtime": "node ../scripts/audit-api-runtime.mjs",

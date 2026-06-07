@@ -1,9 +1,7 @@
 <script setup lang="ts">
-import { defineAsyncComponent } from "vue";
 import type { BrowserGridEntry, Item } from "../../services/api";
 import type { PageAtlasResult } from "../../services/pageAtlas";
-
-const HomeCanvasGrid = defineAsyncComponent(() => import("../HomeCanvasGrid.vue"));
+import NativeBrowserSurface from "../native-surface/NativeBrowserSurface.vue";
 
 defineProps<{
   viewHistoryCount: number;
@@ -39,14 +37,18 @@ const bindPanelRef = (element: HTMLElement | null) => {
       v-if="viewHistoryCount > 0"
       class="h-full w-full overflow-hidden"
     >
-      <HomeCanvasGrid
+      <NativeBrowserSurface
+        surface-id="history"
+        viewport-role="history"
         :entries="historyBrowserEntries"
         :item-size="historyItemPixelSize"
         :atlas="historyAtlas"
         :enable-animation="false"
         :prefer-atlas="true"
+        :history-item-ids="historyBrowserEntries.map((entry) => entry.kind === 'item' ? entry.item.itemId : entry.group.representative.itemId)"
         @item-click="emit('itemClick', $event)"
         @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"
+        @viewport-resize="emit('panelResize', $event)"
       />
     </div>
     <div
