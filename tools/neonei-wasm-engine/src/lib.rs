@@ -7,7 +7,9 @@
 
 pub mod compact_animation;
 pub mod compact_browser;
+pub mod compact_group;
 pub mod compact_search;
+pub mod compact_string;
 pub mod compact_texture;
 pub mod hit_test;
 pub mod layout;
@@ -17,7 +19,9 @@ pub use compact_browser::{
     compact_browser_project_count, compact_browser_project_indices,
     compact_browser_project_visible_indices, parse_compact_browser_header,
 };
+pub use compact_group::parse_compact_group_header;
 pub use compact_search::{compact_search_project_visible_indices, parse_compact_search_header};
+pub use compact_string::parse_compact_string_header;
 pub use compact_texture::parse_compact_texture_header;
 pub use hit_test::{hit_test_index, NativeHit};
 pub use layout::{compute_columns, compute_layout, NativeLayoutCommand};
@@ -188,6 +192,28 @@ pub unsafe extern "C" fn neonei_engine_compact_browser_project_visible_indices(
         Some(std::slice::from_raw_parts_mut(out_ptr, out_len as usize))
     };
     compact_browser_project_visible_indices(pack, query, mod_filter, expanded_groups, out)
+        .unwrap_or(0)
+}
+
+/// Returns the compact group count, or 0 when the payload is invalid.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_group_count(ptr: *const u8, len: u32) -> u32 {
+    let Some(bytes) = wasm_slice(ptr, len) else {
+        return 0;
+    };
+    parse_compact_group_header(bytes)
+        .map(|header| header.group_count)
+        .unwrap_or(0)
+}
+
+/// Returns the compact string-pack item count, or 0 when the payload is invalid.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_string_item_count(ptr: *const u8, len: u32) -> u32 {
+    let Some(bytes) = wasm_slice(ptr, len) else {
+        return 0;
+    };
+    parse_compact_string_header(bytes)
+        .map(|header| header.item_count)
         .unwrap_or(0)
 }
 
