@@ -1,4 +1,5 @@
 import type { NativeSurfaceId, NativeSurfaceMetrics } from "./contracts";
+import { getNativeSurfaceEngineMetrics } from "./NativeSurfaceEngineClient";
 
 const metricsBySurface = new Map<NativeSurfaceId, NativeSurfaceMetrics>();
 
@@ -57,7 +58,8 @@ export function exposeNativeSurfaceMetricsForDebug(): void {
   if (typeof window === "undefined") return;
   const target = window as typeof window & {
     __NEONEI_NATIVE_SURFACE_METRICS__?: () => NativeSurfaceMetrics[];
+    __NEONEI_NATIVE_SURFACE_ENGINE_METRICS__?: typeof getNativeSurfaceEngineMetrics;
   };
   target.__NEONEI_NATIVE_SURFACE_METRICS__ = getAllNativeSurfaceMetrics;
+  target.__NEONEI_NATIVE_SURFACE_ENGINE_METRICS__ = getNativeSurfaceEngineMetrics;
 }
-

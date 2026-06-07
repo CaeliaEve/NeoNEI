@@ -14,6 +14,7 @@ import {
   getNativeSurfaceMetrics,
   updateNativeSurfaceMetrics,
 } from "./NativeSurfaceMetrics";
+import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
 
 function normalizeRenderer(renderer?: NativeRendererBackendKind): NativeRendererBackendKind {
   if (renderer === "webgpu" || renderer === "webgl2" || renderer === "auto") return renderer;
@@ -46,37 +47,73 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
     this.renderer = normalizeRenderer(options.preferredRenderer);
     this.animationEnabled = Boolean(options.enableAnimations);
     this.historyViewportEnabled = Boolean(options.enableHistoryViewport);
+    void postNativeSurfaceEngineEvent({
+      type: "initialize",
+      surfaceId: this.surfaceId,
+      preferredRenderer: this.renderer,
+      enableAnimations: this.animationEnabled,
+      enableHistoryViewport: this.historyViewportEnabled,
+    });
     this.touch("initialize");
   }
 
   destroy(): void {
     this.initialized = false;
     this.hover = null;
+    void postNativeSurfaceEngineEvent({
+      type: "destroy",
+      surfaceId: this.surfaceId,
+    });
     this.touch("destroy");
   }
 
   setViewport(viewport: NativeSurfaceViewport): void {
     this.viewport = viewport;
+    void postNativeSurfaceEngineEvent({
+      type: "viewport",
+      surfaceId: this.surfaceId,
+      viewport,
+    });
     this.touch("setViewport");
   }
 
   setPage(page: number): void {
     this.page = Math.max(1, Math.floor(Number(page) || 1));
+    void postNativeSurfaceEngineEvent({
+      type: "page",
+      surfaceId: this.surfaceId,
+      page: this.page,
+    });
     this.touch("setPage");
   }
 
   setSearch(query: string): void {
     this.search = `${query ?? ""}`;
+    void postNativeSurfaceEngineEvent({
+      type: "search",
+      surfaceId: this.surfaceId,
+      query: this.search,
+    });
     this.touch("setSearch");
   }
 
   setModFilter(modId: string | null): void {
     this.modFilter = modId ? `${modId}` : null;
+    void postNativeSurfaceEngineEvent({
+      type: "modFilter",
+      surfaceId: this.surfaceId,
+      modId: this.modFilter,
+    });
     this.touch("setModFilter");
   }
 
   setExpandedGroups(groupKeys: string[]): void {
     this.expandedGroups = Array.from(new Set(groupKeys.map((key) => `${key ?? ""}`.trim()).filter(Boolean)));
+    void postNativeSurfaceEngineEvent({
+      type: "expandedGroups",
+      surfaceId: this.surfaceId,
+      groupKeys: this.expandedGroups,
+    });
     this.touch("setExpandedGroups");
   }
 
@@ -92,6 +129,11 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
 
   setHistoryItems(itemIds: string[]): void {
     this.historyItems = Array.from(new Set(itemIds.map((itemId) => `${itemId ?? ""}`.trim()).filter(Boolean)));
+    void postNativeSurfaceEngineEvent({
+      type: "historyItems",
+      surfaceId: this.surfaceId,
+      itemIds: this.historyItems,
+    });
     this.touch("setHistoryItems");
   }
 
