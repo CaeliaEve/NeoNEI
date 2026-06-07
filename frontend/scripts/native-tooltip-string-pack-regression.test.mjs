@@ -29,6 +29,11 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
   );
   assert.match(
     workerSource,
+    /COMPACT_ANIMATION_MAGIC = "NEIANM1\\0"/,
+    'worker must support the compact binary animations payload',
+  );
+  assert.match(
+    workerSource,
     /function parseCompactTexturePack\(payloadBuffer: ArrayBuffer\): Map<string, NativeRuntimeTextureItem> \| null/,
     'worker must parse texture atlas metadata without requiring JSON payloads',
   );
@@ -53,5 +58,6 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
     'Vue surface must prefer native tooltip title over compat entry text',
   );
 });
+
 
 
