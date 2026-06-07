@@ -22,9 +22,10 @@ const contents = Object.fromEntries(
 assert.match(contents.systemd, /NEONEI_PUBLIC_RUNTIME_ONLY=1/, 'systemd profile should run public runtime only');
 assert.match(contents.systemd, /NESQL_EXPORT_ROOT=\/srv\/neonei\/exports\/current/, 'systemd profile should use portable Linux export path');
 assert.match(contents.nginx, /location \/dist-data\//, 'nginx profile should serve dist-data statically');
-assert.match(contents.nginx, /location \/canonical\//, 'nginx profile should serve canonical assets statically');
+assert.doesNotMatch(contents.nginx, /location \/canonical\//, 'nginx profile should not expose retired canonical assets');
 assert.match(contents.nginx, /max-age=31536000, immutable/, 'nginx profile should mark runtime artifacts immutable');
 assert.match(contents.readme, /public requests should read already-published runtime artifacts/i, 'deployment readme should state no GTNH game directory on request hot path');
+assert.match(contents.readme, /canonical.*retired from the public runtime path/i, 'deployment readme should document canonical retirement');
 assert.match(contents.compose, /\.\/deploy\/data:\/app\/data/, 'docker compose should use project-relative data volume');
 
 for (const [name, text] of Object.entries(contents)) {

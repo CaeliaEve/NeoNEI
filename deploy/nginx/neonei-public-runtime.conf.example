@@ -32,11 +32,6 @@ server {
     try_files $uri =404;
   }
 
-  location /canonical/ {
-    alias /srv/neonei/backend/public/canonical/;
-    add_header Cache-Control "public, max-age=31536000, immutable" always;
-    try_files $uri =404;
-  }
 
   location /contracts/ {
     alias /srv/neonei/contracts/;

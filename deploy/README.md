@@ -5,7 +5,7 @@ These files are examples, not local machine configuration. They use Linux-style 
 ## Runtime-only public website profile
 
 - Build frontend once and serve `frontend/dist` as static files.
-- Serve `/dist-data`, `/canonical`, `/publish`, and `/contracts` as immutable/static artifacts.
+- Serve `/dist-data`, `/publish`, and `/contracts` as immutable/static artifacts; `/canonical` is retired from the public runtime path.
 - Start backend with `NEONEI_PUBLIC_RUNTIME_ONLY=1` so dev-only `/lab` and legacy dynamic data routes stay out of the public hot path.
 - Point `NESQL_EXPORT_ROOT` only at import/build time; public requests should read already-published runtime artifacts.
 
