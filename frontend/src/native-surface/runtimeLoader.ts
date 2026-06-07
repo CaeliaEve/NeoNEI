@@ -19,9 +19,29 @@ function isPortableRelativePath(path: string): boolean {
     && !path.split("/").includes("..");
 }
 
+type CurrentNativeRuntimeManifestEnvelope = {
+  ok?: boolean;
+  data?: NativeRuntimeManifest;
+};
+
+function encodeRuntimeFilePath(relativePath: string): string {
+  return relativePath.split("/").map((part) => encodeURIComponent(part)).join("/");
+}
+
+function isCurrentNativeRuntimeManifestUrl(manifestUrl: string): boolean {
+  try {
+    return new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").pathname.endsWith("/api/native-runtime/current/manifest");
+  } catch {
+    return manifestUrl.includes("/api/native-runtime/current/manifest");
+  }
+}
+
 function resolveManifestRelativeUrl(manifestUrl: string, relativePath: string): string {
   if (!isPortableRelativePath(relativePath)) {
     throw new Error(`Native runtime path is not portable: ${relativePath}`);
+  }
+  if (isCurrentNativeRuntimeManifestUrl(manifestUrl)) {
+    return new URL(`/api/native-runtime/current/files/${encodeRuntimeFilePath(relativePath)}`, manifestUrl).toString();
   }
   return new URL(relativePath, manifestUrl).toString();
 }
@@ -107,7 +127,11 @@ export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<Na
   if (!response.ok) {
     throw new Error(`Failed to load native runtime manifest: ${response.status} ${response.statusText}`);
   }
-  return await response.json() as NativeRuntimeManifest;
+  const payload = await response.json() as NativeRuntimeManifest | CurrentNativeRuntimeManifestEnvelope;
+  if (payload && typeof payload === "object" && "ok" in payload && "data" in payload) {
+    return (payload as CurrentNativeRuntimeManifestEnvelope).data ?? {};
+  }
+  return payload as NativeRuntimeManifest;
 }
 
 export async function loadNativeRuntimeBuffers(manifestUrl: string): Promise<NativeRuntimeBuffers> {

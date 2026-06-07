@@ -1,4 +1,4 @@
-﻿import { spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -50,6 +50,7 @@ const steps = [
   { name: 'recipe fragmentation gate', cwd: frontendDir, command: npm, args: ['run', 'validate:recipe-fragmentation'] },
   { name: 'runtime contract validation', cwd: frontendDir, command: npm, args: ['run', 'validate:runtime-contracts'] },
   { name: 'semantic runtime validation', cwd: frontendDir, command: npm, args: ['run', 'validate:semantic-runtime'] },
+  { name: 'native runtime current API regression', cwd: frontendDir, command: npm, args: ['run', 'test:native-runtime-current-api'] },
   { name: 'native runtime pack schema gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-runtime-packs'] },
   { name: 'native runtime projection gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-runtime-projection'] },
   { name: 'native surface worker group gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-surface-worker-groups'] },
@@ -116,4 +117,5 @@ console.log(JSON.stringify({
   durationMs: Date.now() - startedAt,
   results,
 }, null, 2));
+
 

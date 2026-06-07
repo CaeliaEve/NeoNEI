@@ -57,7 +57,8 @@
         "test:native-animation-timeline": "node --test scripts/native-animation-timeline-worker-regression.test.mjs",
         "test:native-surface-no-ts-fallback": "node --test scripts/native-surface-no-ts-projection-fallback-regression.test.mjs",
         "test:recipe-binary-pack": "node --test scripts/recipe-binary-pack-regression.test.mjs",
-        "test:canonical-retired": "node ../scripts/check-canonical-retired.mjs"
+        "test:canonical-retired": "node ../scripts/check-canonical-retired.mjs",
+        "test:native-runtime-current-api": "node --test scripts/native-runtime-current-api-regression.test.mjs"
     },
     "dependencies": {
         "axios": "^1.13.2",

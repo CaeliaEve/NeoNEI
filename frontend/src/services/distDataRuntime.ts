@@ -300,7 +300,7 @@ export function resolveDistDataNativeRuntimeManifestPath(): string | null {
     return null;
   }
 
-  return joinAssetPath(getConfiguredBasePath(), "rust/runtime-manifest.json");
+  return "/api/native-runtime/current/manifest";
 }
 
 async function fetchJson<T>(url: string): Promise<T> {
