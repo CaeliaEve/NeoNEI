@@ -123,6 +123,9 @@ function validateBinaryPack({ filePath, expectedSchema, logicalName }, failures,
     if (logicalName === 'textures' && validateCompactTexturePayload(payloadBytes, failures, logicalName)) {
       return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-texture-table' } };
     }
+    if (logicalName === 'atlasMeta' && validateCompactAtlasMetaPayload(payloadBytes, failures, logicalName)) {
+      return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-atlas-meta-table' } };
+    }
     if (logicalName === 'animations' && validateCompactAnimationPayload(payloadBytes, failures, logicalName)) {
       return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-animation-table' } };
     }
@@ -365,6 +368,39 @@ function validateCompactTexturePayload(payloadBytes, failures, logicalName) {
   }
   return true;
 }
+function validateCompactAtlasMetaPayload(payloadBytes, failures, logicalName) {
+  const compactHeaderBytes = 8 + 4 * 4;
+  if (payloadBytes.length < compactHeaderBytes) return false;
+  const magic = payloadBytes.subarray(0, 8).toString('utf8');
+  if (magic !== 'NEIATM1\0') return false;
+  const version = payloadBytes.readUInt32LE(8);
+  const atlasCount = payloadBytes.readUInt32LE(12);
+  const stringCount = payloadBytes.readUInt32LE(16);
+  const rowStride = payloadBytes.readUInt32LE(20);
+  const offsetsBytes = stringCount * 4;
+  const rowsBytes = atlasCount * rowStride * 4;
+  const stringTableStart = compactHeaderBytes + offsetsBytes + rowsBytes;
+  if (version !== 1) {
+    fail(failures, 'NATIVE_ATLAS_META_PACK_BAD_COMPACT_VERSION', 'compact atlas meta pack has an invalid version', { logicalName, version });
+  }
+  if (rowStride !== 6) {
+    fail(failures, 'NATIVE_ATLAS_META_PACK_BAD_ROW_STRIDE', 'compact atlas meta pack has an invalid row stride', { logicalName, rowStride });
+  }
+  if (stringCount <= 0) {
+    fail(failures, 'NATIVE_ATLAS_META_PACK_EMPTY_STRING_TABLE', 'compact atlas meta pack has no strings', { logicalName, atlasCount, stringCount });
+  }
+  if (stringTableStart > payloadBytes.length) {
+    fail(failures, 'NATIVE_ATLAS_META_PACK_COMPACT_BOUNDS', 'compact atlas meta pack table exceeds payload bounds', {
+      logicalName,
+      atlasCount,
+      stringCount,
+      rowStride,
+      payloadBytes: payloadBytes.length,
+      stringTableStart,
+    });
+  }
+  return true;
+}
 function validateCompactAnimationPayload(payloadBytes, failures, logicalName) {
   const compactHeaderBytes = 8 + 6 * 4;
   if (payloadBytes.length < compactHeaderBytes) return false;
@@ -412,6 +448,7 @@ const expectedEntrypoints = {
   search: 'neonei/search-pack/current',
   recipes: 'neonei/recipe-pack/current',
   textures: 'neonei/texture-pack/current',
+  atlasMeta: 'neonei/atlas-meta-pack/current',
   animations: 'neonei/animation-pack/current',
   stringsZhCn: 'neonei/string-pack/current',
 };
@@ -419,6 +456,7 @@ const expectedEntrypoints = {
 const expectedCapabilities = [
   'atlas.static',
   'atlas.animated',
+  'atlas.meta',
   'groups.collapse',
   'groups.semantic-nbt',
   'recipes.lookup',
@@ -545,7 +583,11 @@ function runSelfTest() {
   try {
     const entrypoints = {};
     for (const [name, schema] of Object.entries(expectedEntrypoints)) {
-      const relativePath = name === 'stringsZhCn' ? 'rust/strings.zh_cn.bin' : `rust/${name}.bin`;
+      const relativePath = name === 'stringsZhCn'
+        ? 'rust/strings.zh_cn.bin'
+        : name === 'atlasMeta'
+          ? 'rust/atlas.meta.bin'
+          : `rust/${name}.bin`;
       entrypoints[name] = relativePath;
       writePack(tempRoot, relativePath, schema, { schema, name, path: relativePath });
     }

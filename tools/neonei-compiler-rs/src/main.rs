@@ -2442,7 +2442,125 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
         "neonei/animation-pack/current",
         &animation_payload,
     )?;
+    let atlas_meta_payload = build_compact_atlas_meta_payload_from_atlas_items(&atlas_items)?;
+    write_binary_pack_payload(
+        &rust_dir.join("atlas.meta.bin"),
+        "neonei/atlas-meta-pack/current",
+        &atlas_meta_payload,
+    )?;
     Ok(())
+}
+
+#[derive(Clone, Debug, Default)]
+struct AtlasMetaRow {
+    atlas_file: String,
+    width: u64,
+    height: u64,
+    kind_flags: u32,
+    item_count: u32,
+    frame_count: u32,
+}
+
+fn build_compact_atlas_meta_payload_from_atlas_items(atlas_items: &[Value]) -> Result<Vec<u8>> {
+    let mut atlas_rows = BTreeMap::<String, AtlasMetaRow>::new();
+    for item in atlas_items {
+        if let Some(static_atlas) = item.get("staticAtlas").filter(|value| value.is_object()) {
+            note_atlas_meta(&mut atlas_rows, static_atlas, 1, 0);
+        }
+        if let Some(animated_atlas) = item.get("animatedAtlas").filter(|value| value.is_object()) {
+            let frame_count = animated_atlas
+                .get("frames")
+                .and_then(Value::as_array)
+                .map(|values| values.len() as u32)
+                .or_else(|| value_u64(animated_atlas, "frameCount").map(|value| value as u32))
+                .unwrap_or(0);
+            note_atlas_meta(&mut atlas_rows, animated_atlas, 2, frame_count);
+        }
+    }
+
+    let mut strings = vec![String::new()];
+    let mut string_refs = HashMap::new();
+    string_refs.insert(String::new(), 0u32);
+    let mut rows = Vec::<[u32; 6]>::new();
+    for row in atlas_rows.values() {
+        let atlas_file =
+            intern_compact_string(&mut strings, &mut string_refs, Some(row.atlas_file.clone()));
+        rows.push([
+            atlas_file,
+            row.width.min(u32::MAX as u64) as u32,
+            row.height.min(u32::MAX as u64) as u32,
+            row.kind_flags,
+            row.item_count,
+            row.frame_count,
+        ]);
+    }
+
+    let mut string_offsets = Vec::<u32>::with_capacity(strings.len());
+    let mut string_bytes = Vec::<u8>::new();
+    for value in &strings {
+        string_offsets.push(string_bytes.len() as u32);
+        string_bytes.extend_from_slice(value.as_bytes());
+        string_bytes.push(0);
+    }
+
+    let row_stride_u32 = 6u32;
+    let mut payload = Vec::with_capacity(
+        8 + 4 * 4
+            + string_offsets.len() * 4
+            + rows.len() * row_stride_u32 as usize * 4
+            + string_bytes.len(),
+    );
+    payload.extend_from_slice(b"NEIATM1\0");
+    push_u32(&mut payload, 1);
+    push_u32(&mut payload, rows.len() as u32);
+    push_u32(&mut payload, strings.len() as u32);
+    push_u32(&mut payload, row_stride_u32);
+    for offset in string_offsets {
+        push_u32(&mut payload, offset);
+    }
+    for row in rows {
+        for value in row {
+            push_u32(&mut payload, value);
+        }
+    }
+    payload.extend_from_slice(&string_bytes);
+    Ok(payload)
+}
+
+fn note_atlas_meta(
+    atlas_rows: &mut BTreeMap<String, AtlasMetaRow>,
+    atlas: &Value,
+    kind_flag: u32,
+    frame_count: u32,
+) {
+    let Some(atlas_file) = optional_value_string(Some(atlas), "atlasFile") else {
+        return;
+    };
+    let width = value_u64(atlas, "atlasWidth")
+        .or_else(|| {
+            let x = value_u64(atlas, "x")?;
+            let width = value_u64(atlas, "width")?;
+            Some(x.saturating_add(width))
+        })
+        .unwrap_or(0);
+    let height = value_u64(atlas, "atlasHeight")
+        .or_else(|| {
+            let y = value_u64(atlas, "y")?;
+            let height = value_u64(atlas, "height")?;
+            Some(y.saturating_add(height))
+        })
+        .unwrap_or(0);
+    let row = atlas_rows
+        .entry(atlas_file.clone())
+        .or_insert_with(|| AtlasMetaRow {
+            atlas_file,
+            ..AtlasMetaRow::default()
+        });
+    row.width = row.width.max(width);
+    row.height = row.height.max(height);
+    row.kind_flags |= kind_flag;
+    row.item_count = row.item_count.saturating_add(1);
+    row.frame_count = row.frame_count.saturating_add(frame_count);
 }
 
 fn build_compact_animation_payload_from_table(animation_table: &[Value]) -> Result<Vec<u8>> {
@@ -2705,6 +2823,12 @@ fn compile_dist_texture_pack(
         "neonei/animation-pack/current",
         &animation_pack,
     )?;
+    let atlas_meta_payload = build_compact_atlas_meta_payload_from_atlas_items(&[])?;
+    write_binary_pack_payload(
+        &rust_dir.join("atlas.meta.bin"),
+        "neonei/atlas-meta-pack/current",
+        &atlas_meta_payload,
+    )?;
     Ok(())
 }
 
@@ -2724,6 +2848,7 @@ fn compile_runtime_reports(
             "search.bin",
             "recipes.bin",
             "textures.bin",
+            "atlas.meta.bin",
             "animations.bin",
             "strings.zh_cn.bin",
         ],
@@ -2735,7 +2860,7 @@ fn compile_runtime_reports(
             "strings.zh_cn.bin",
         ],
         CompileScope::Recipes => vec!["recipes.bin"],
-        CompileScope::Textures => vec!["textures.bin", "animations.bin"],
+        CompileScope::Textures => vec!["textures.bin", "atlas.meta.bin", "animations.bin"],
     };
     if debug_json {
         match scope {
@@ -3033,6 +3158,7 @@ fn rust_manifest_file_entries(
             ("rustSearchBin", "rust/search.bin"),
             ("rustRecipeBin", "rust/recipes.bin"),
             ("rustTextureBin", "rust/textures.bin"),
+            ("rustAtlasMetaBin", "rust/atlas.meta.bin"),
             ("rustAnimationBin", "rust/animations.bin"),
             ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
         ]),
@@ -3049,6 +3175,7 @@ fn rust_manifest_file_entries(
         CompileScope::Recipes => entries.extend([("rustRecipeBin", "rust/recipes.bin")]),
         CompileScope::Textures => entries.extend([
             ("rustTextureBin", "rust/textures.bin"),
+            ("rustAtlasMetaBin", "rust/atlas.meta.bin"),
             ("rustAnimationBin", "rust/animations.bin"),
         ]),
     }
@@ -3104,6 +3231,7 @@ fn rust_entrypoints(scope: CompileScope) -> Value {
             "search": "rust/search.bin",
             "recipes": "rust/recipes.bin",
             "textures": "rust/textures.bin",
+            "atlasMeta": "rust/atlas.meta.bin",
             "animations": "rust/animations.bin",
             "stringsZhCn": "rust/strings.zh_cn.bin",
         }),
@@ -3122,6 +3250,7 @@ fn rust_entrypoints(scope: CompileScope) -> Value {
         }),
         CompileScope::Textures => json!({
             "textures": "rust/textures.bin",
+            "atlasMeta": "rust/atlas.meta.bin",
             "animations": "rust/animations.bin",
         }),
     }
@@ -3255,6 +3384,7 @@ fn rust_capabilities(scope: CompileScope) -> Value {
         CompileScope::All => json!([
             "atlas.static",
             "atlas.animated",
+            "atlas.meta",
             "groups.collapse",
             "groups.semantic-nbt",
             "recipes.lookup",
@@ -3271,7 +3401,7 @@ fn rust_capabilities(scope: CompileScope) -> Value {
             "native-render.webgl2"
         ]),
         CompileScope::Recipes => json!(["recipes.lookup"]),
-        CompileScope::Textures => json!(["atlas.static", "atlas.animated"]),
+        CompileScope::Textures => json!(["atlas.static", "atlas.animated", "atlas.meta"]),
     }
 }
 
@@ -3603,6 +3733,33 @@ mod tests {
     }
 
     #[test]
+    fn compact_atlas_meta_pack_summarizes_atlas_files() {
+        let items = vec![
+            json!({
+                "itemId": "minecraft:iron_ingot",
+                "staticAtlas": { "atlasFile": "textures/atlas/static-main.webp", "atlasWidth": 2048, "atlasHeight": 2048, "x": 1, "y": 2, "width": 16, "height": 16 },
+            }),
+            json!({
+                "itemId": "i~AWWayofTime~lifeEssence~0",
+                "animatedAtlas": {
+                    "atlasFile": "textures/atlas/animated-main.webp",
+                    "atlasWidth": { "value": "2048" },
+                    "atlasHeight": { "value": "4096" },
+                    "frames": [
+                        { "x": { "value": "0" }, "y": { "value": "0" }, "width": { "value": "16" }, "height": { "value": "16" } },
+                        { "x": { "value": "16" }, "y": { "value": "0" }, "width": { "value": "16" }, "height": { "value": "16" } }
+                    ]
+                }
+            }),
+        ];
+        let payload = build_compact_atlas_meta_payload_from_atlas_items(&items).unwrap();
+        assert_eq!(&payload[0..8], b"NEIATM1\0");
+        assert_eq!(u32::from_le_bytes(payload[8..12].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(payload[12..16].try_into().unwrap()), 2);
+        assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 6);
+    }
+
+    #[test]
     fn wrapped_numeric_texture_frames_compile_without_invalid_bounds() {
         let animated_atlas = json!({
             "atlasFile": "assets/textures/atlas-assets/animated-atlases/item-native-animated.png",
@@ -3756,6 +3913,7 @@ mod tests {
         assert!(production_entries.contains(&"rust/search.bin"));
         assert!(production_entries.contains(&"rust/recipes.bin"));
         assert!(production_entries.contains(&"rust/textures.bin"));
+        assert!(production_entries.contains(&"rust/atlas.meta.bin"));
         assert!(!production_entries.contains(&"rust/browser-pack.json"));
         assert!(!production_entries.contains(&"rust/search-pack.json"));
         assert!(!production_entries.contains(&"rust/recipe-pack.json"));
