@@ -5,7 +5,7 @@ use pinyin::ToPinyin;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -631,6 +631,7 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
     let recipe_index = read_manifest_json(input, &manifest, "recipeIndex")?
         .ok_or_else(|| anyhow!("recipe compiler blocked: recipeIndex is missing"))?;
     let handlers = read_jsonl_values(input, &manifest, "neiHandlers")?;
+    let layouts = read_jsonl_values(input, &manifest, "recipeLayouts").unwrap_or_default();
     let mut recipes = Vec::new();
 
     for shard in recipe_index
@@ -660,48 +661,126 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
         }
     }
 
+    let handler_context = RecipeHandlerContext::new(&handlers, &layouts);
     let handler_pack = handlers
         .iter()
-        .map(|handler| {
-            json!({
-                "handlerKey": value_string(handler, "handlerKey"),
-                "handlerClass": value_string(handler, "handlerClass"),
-                "displayName": value_string(handler, "displayName"),
-                "localizedName": value_string(handler, "localizedName"),
-                "canonicalMachineFamily": value_string(handler, "canonicalMachineFamily"),
-                "modId": value_string(handler, "modId"),
-                "preferredMachineItemName": value_string(handler, "preferredMachineItemName"),
-                "maxRecipesPerPage": value_u64(handler, "maxRecipesPerPage"),
-            })
-        })
+        .map(public_recipe_handler)
         .collect::<Vec<_>>();
 
     let mut produced_by: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     let mut used_in: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     let mut recipe_pack = Vec::new();
+    let mut ui_payload_index = Vec::new();
+    let mut category_map: BTreeMap<String, RecipeCategoryAccumulator> = BTreeMap::new();
 
     for recipe in &recipes {
-        let recipe_id = value_string(recipe, "recipeId").unwrap_or_default();
-        let machine = recipe.get("machine").cloned().unwrap_or(Value::Null);
-        let category_id = machine
-            .get("machineId")
-            .and_then(Value::as_str)
-            .unwrap_or_else(|| {
-                recipe
-                    .get("family")
-                    .and_then(Value::as_str)
-                    .unwrap_or("unknown")
-            })
-            .to_string();
-        let display_name = machine
-            .get("displayName")
-            .and_then(Value::as_str)
-            .unwrap_or(category_id.as_str())
-            .to_string();
+        let recipe_id = recipe_id(recipe);
+        let (handler, layout) = handler_context.resolve(recipe);
+        let public_handler = handler.map(public_recipe_handler);
+        let public_layout = layout.map(public_recipe_layout);
+        let raw_family_key = first_non_empty(&[
+            value_string(recipe, "family"),
+            value_string(recipe, "sourcePlugin"),
+            value_string(recipe, "recipeType"),
+            nested_value_string(recipe, &["machine", "machineId"]),
+        ])
+        .unwrap_or_else(|| "unknown".to_string());
+        let family_key = classify_recipe_family_key(recipe, &raw_family_key, handler);
+        let recipe_type = first_non_empty(&[
+            value_string(recipe, "recipeType"),
+            nested_value_string(recipe, &["machine", "machineId"]),
+            Some(family_key.clone()),
+        ])
+        .unwrap_or_else(|| family_key.clone());
+        let machine_type = first_non_empty(&[
+            public_handler
+                .as_ref()
+                .and_then(|handler| value_string(handler, "localizedName")),
+            public_handler
+                .as_ref()
+                .and_then(|handler| value_string(handler, "displayName")),
+            nested_value_string(recipe, &["machine", "displayName"]),
+            value_string(recipe, "displayName"),
+            nested_value_string(recipe, &["machine", "machineId"]),
+            Some(recipe_type.clone()),
+        ])
+        .unwrap_or_else(|| recipe_type.clone());
+        let handler_key = public_handler
+            .as_ref()
+            .and_then(|handler| value_string(handler, "handlerKey"));
+        let input_item_ids = collect_recipe_item_ids(
+            recipe,
+            &[
+                "inputs",
+                "inputItems",
+                "itemInputs",
+                "ingredients",
+                "catalysts",
+                "input",
+            ],
+        );
+        let output_item_ids = collect_recipe_item_ids(
+            recipe,
+            &[
+                "outputs",
+                "outputItems",
+                "itemOutputs",
+                "results",
+                "result",
+                "output",
+            ],
+        );
+        let payload_meta = json!({
+            "recipeId": recipe_id,
+            "path": recipe_ui_payload_relative_path(&recipe_id),
+            "payloadKey": recipe_id,
+            "familyKey": family_key,
+            "recipeType": recipe_type,
+            "machineType": machine_type,
+            "handlerKey": handler_key,
+            "handler": public_handler,
+            "machineInfo": public_handler.as_ref().map(|handler| json!({
+                "machineType": machine_type,
+                "canonicalMachineFamily": handler.get("canonicalMachineFamily").cloned().unwrap_or(Value::Null),
+                "catalystItemName": handler.get("catalystItemName").cloned().unwrap_or(Value::Null),
+                "preferredMachineItemName": handler.get("preferredMachineItemName").cloned().unwrap_or(Value::Null),
+                "gtMultiblockPreferred": handler.get("gtMultiblockPreferred").and_then(Value::as_bool).unwrap_or(false),
+            })),
+            "nativeLayout": public_layout,
+            "inputItemIds": input_item_ids,
+            "outputItemIds": output_item_ids,
+            "slotCount": { "input": input_item_ids.len(), "output": output_item_ids.len() },
+            "presentation": {
+                "surface": nested_value_string(recipe, &["machine", "machineId"]).unwrap_or_else(|| recipe_type.clone()),
+                "density": if input_item_ids.len() + output_item_ids.len() > 12 { "dense" } else { "normal" },
+            },
+        });
+        ui_payload_index.push(payload_meta);
+
+        let category_display_name = recipe_category_display_name(recipe, handler);
+        let raw_category_id = recipe_category_raw_id(recipe, handler);
+        let category_id =
+            recipe_category_id_from_display_name(&category_display_name, &raw_category_id);
+        let category =
+            category_map
+                .entry(category_id.clone())
+                .or_insert_with(|| RecipeCategoryAccumulator {
+                    category_id,
+                    recipe_count: 0,
+                    display_name: category_display_name.clone(),
+                    source_category_ids: Vec::new(),
+                    handler: public_handler.clone(),
+                    native_layout: public_layout.clone(),
+                });
+        category.recipe_count += 1;
+        if !category.source_category_ids.contains(&raw_category_id) {
+            category.source_category_ids.push(raw_category_id.clone());
+        }
+
         let ref_value = json!({
             "recipeId": recipe_id,
-            "categoryId": category_id,
-            "displayName": display_name,
+            "categoryId": recipe_category_id_from_display_name(&category_display_name, &raw_category_id),
+            "displayName": category_display_name,
         });
 
         for input in recipe
@@ -748,6 +827,20 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
         })
         .collect::<Vec<_>>();
 
+    let category_index = category_map
+        .into_values()
+        .map(|category| {
+            json!({
+                "categoryId": category.category_id,
+                "recipeCount": category.recipe_count,
+                "displayName": category.display_name,
+                "sourceCategoryIds": category.source_category_ids,
+                "handler": category.handler,
+                "nativeLayout": category.native_layout,
+            })
+        })
+        .collect::<Vec<_>>();
+
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
     write_json_value(
@@ -758,15 +851,406 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
                 "recipes": recipe_pack.len(),
                 "handlers": handler_pack.len(),
                 "recipeItemIndexItems": item_index.len(),
+                "uiPayloadIndexItems": ui_payload_index.len(),
+                "categories": category_index.len(),
             },
             "recipes": recipe_pack,
             "handlers": handler_pack,
             "itemIndex": item_index,
+            "uiPayloadIndex": ui_payload_index,
+            "categoryIndex": category_index,
         }),
     )?;
     Ok(())
 }
 
+#[derive(Clone)]
+struct RecipeCategoryAccumulator {
+    category_id: String,
+    recipe_count: usize,
+    display_name: String,
+    source_category_ids: Vec<String>,
+    handler: Option<Value>,
+    native_layout: Option<Value>,
+}
+
+struct RecipeHandlerContext<'a> {
+    by_key: HashMap<String, &'a Value>,
+    by_class: HashMap<String, &'a Value>,
+    by_loose: HashMap<String, &'a Value>,
+    layout_by_key: HashMap<String, &'a Value>,
+    layout_by_class: HashMap<String, &'a Value>,
+}
+
+impl<'a> RecipeHandlerContext<'a> {
+    fn new(handlers: &'a [Value], layouts: &'a [Value]) -> Self {
+        let mut by_key = HashMap::new();
+        let mut by_class = HashMap::new();
+        let mut by_loose = HashMap::new();
+        for handler in handlers {
+            let key = value_string(handler, "handlerKey")
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            let handler_class = value_string(handler, "handlerClass")
+                .unwrap_or_default()
+                .trim()
+                .to_string();
+            if !key.is_empty() {
+                by_key.insert(key.clone(), handler);
+            }
+            if !handler_class.is_empty() {
+                by_class.insert(handler_class.clone(), handler);
+            }
+            for value in [
+                Some(key),
+                Some(handler_class),
+                value_string(handler, "displayName"),
+                value_string(handler, "localizedName"),
+                value_string(handler, "catalystItemName"),
+                value_string(handler, "preferredMachineItemName"),
+            ]
+            .into_iter()
+            .flatten()
+            {
+                let normalized = normalize_handler_lookup_key(&value);
+                if !normalized.is_empty() {
+                    by_loose.entry(normalized).or_insert(handler);
+                }
+            }
+        }
+        let mut layout_by_key = HashMap::new();
+        let mut layout_by_class = HashMap::new();
+        for layout in layouts {
+            if let Some(key) = value_string(layout, "handlerKey") {
+                if !key.trim().is_empty() {
+                    layout_by_key.insert(key.trim().to_string(), layout);
+                }
+            }
+            if let Some(handler_class) = value_string(layout, "handlerClass") {
+                if !handler_class.trim().is_empty() {
+                    layout_by_class.insert(handler_class.trim().to_string(), layout);
+                }
+            }
+        }
+        Self {
+            by_key,
+            by_class,
+            by_loose,
+            layout_by_key,
+            layout_by_class,
+        }
+    }
+
+    fn resolve(&self, recipe: &Value) -> (Option<&'a Value>, Option<&'a Value>) {
+        let candidates = [
+            nested_value_string(recipe, &["metadata", "handlerKey"]),
+            nested_value_string(recipe, &["metadata", "handlerClass"]),
+            nested_value_string(recipe, &["metadata", "handler"]),
+            nested_value_string(recipe, &["metadata", "handlerId"]),
+            nested_value_string(recipe, &["metadata", "handlerName"]),
+            nested_value_string(recipe, &["additionalData", "handlerKey"]),
+            nested_value_string(recipe, &["additionalData", "handlerClass"]),
+            nested_value_string(recipe, &["additionalData", "handler"]),
+            nested_value_string(recipe, &["additionalData", "handlerId"]),
+            nested_value_string(recipe, &["additionalData", "handlerName"]),
+            nested_value_string(recipe, &["machine", "machineId"]),
+            nested_value_string(recipe, &["machine", "displayName"]),
+            value_string(recipe, "family"),
+            value_string(recipe, "sourcePlugin"),
+            value_string(recipe, "recipeType"),
+        ];
+        for candidate in candidates.into_iter().flatten() {
+            let candidate = candidate.trim();
+            if candidate.is_empty() {
+                continue;
+            }
+            let handler = self
+                .by_key
+                .get(candidate)
+                .or_else(|| self.by_class.get(candidate))
+                .or_else(|| self.by_loose.get(&normalize_handler_lookup_key(candidate)))
+                .copied();
+            if let Some(handler) = handler {
+                let key = value_string(handler, "handlerKey").unwrap_or_default();
+                let handler_class = value_string(handler, "handlerClass").unwrap_or_default();
+                let layout = self
+                    .layout_by_key
+                    .get(key.trim())
+                    .or_else(|| self.layout_by_class.get(handler_class.trim()))
+                    .copied();
+                return (Some(handler), layout);
+            }
+        }
+        (None, None)
+    }
+}
+
+fn public_recipe_handler(handler: &Value) -> Value {
+    json!({
+        "handlerKey": value_string(handler, "handlerKey"),
+        "handlerClass": value_string(handler, "handlerClass"),
+        "displayName": first_non_empty(&[value_string(handler, "localizedName"), value_string(handler, "displayName"), value_string(handler, "handlerKey")]),
+        "localizedName": first_non_empty(&[value_string(handler, "localizedName"), value_string(handler, "displayName")]),
+        "canonicalMachineFamily": value_string(handler, "canonicalMachineFamily"),
+        "modId": value_string(handler, "modId"),
+        "modName": value_string(handler, "modName"),
+        "catalystItemName": value_string(handler, "catalystItemName"),
+        "preferredMachineItemName": first_non_empty(&[value_string(handler, "preferredMachineItemName"), value_string(handler, "catalystItemName")]),
+        "gtMultiblockPreferred": handler.get("gtMultiblockPreferred").and_then(Value::as_bool).unwrap_or(false),
+        "maxRecipesPerPage": value_u64(handler, "maxRecipesPerPage").unwrap_or(1),
+        "handlerWidth": value_u64(handler, "handlerWidth").unwrap_or(166),
+        "handlerHeight": value_u64(handler, "handlerHeight").unwrap_or(65),
+        "yShift": value_i64(handler, "yShift").unwrap_or(0),
+    })
+}
+
+fn public_recipe_layout(layout: &Value) -> Value {
+    json!({
+        "handlerKey": value_string(layout, "handlerKey"),
+        "handlerClass": value_string(layout, "handlerClass"),
+        "layoutKind": value_string(layout, "layoutKind").unwrap_or_else(|| "native-nei".to_string()),
+        "width": value_u64(layout, "width").unwrap_or(166),
+        "height": value_u64(layout, "height").unwrap_or(65),
+        "yShift": value_i64(layout, "yShift").unwrap_or(0),
+        "maxRecipesPerPage": value_u64(layout, "maxRecipesPerPage").unwrap_or(1),
+        "slots": layout.get("slots").and_then(Value::as_array).cloned().unwrap_or_default(),
+        "textOverlays": layout.get("textOverlays").and_then(Value::as_array).cloned().unwrap_or_default(),
+    })
+}
+
+fn recipe_id(recipe: &Value) -> String {
+    first_non_empty(&[
+        value_string(recipe, "recipeId"),
+        value_string(recipe, "id"),
+        value_string(recipe, "key"),
+    ])
+    .unwrap_or_default()
+}
+
+fn recipe_category_display_name(recipe: &Value, handler: Option<&Value>) -> String {
+    first_non_empty(&[
+        handler.and_then(|handler| value_string(handler, "localizedName")),
+        handler.and_then(|handler| value_string(handler, "displayName")),
+        nested_value_string(recipe, &["machine", "displayName"]),
+        value_string(recipe, "displayName"),
+        nested_value_string(recipe, &["machine", "machineType"]),
+        value_string(recipe, "recipeType"),
+        value_string(recipe, "family"),
+        value_string(recipe, "sourcePlugin"),
+        Some("unknown".to_string()),
+    ])
+    .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn recipe_category_raw_id(recipe: &Value, handler: Option<&Value>) -> String {
+    first_non_empty(&[
+        handler.and_then(|handler| value_string(handler, "handlerKey")),
+        nested_value_string(recipe, &["machine", "machineId"]),
+        value_string(recipe, "family"),
+        value_string(recipe, "sourcePlugin"),
+        value_string(recipe, "recipeType"),
+        Some("unknown".to_string()),
+    ])
+    .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn recipe_category_id_from_display_name(display_name: &str, raw_id: &str) -> String {
+    let normalized = normalize_recipe_category_name(display_name);
+    if normalized.is_empty() || normalized == "unknown" {
+        return raw_id.to_string();
+    }
+    format!("display~{}", encode_recipe_file_name(&normalized))
+}
+
+fn normalize_recipe_category_name(value: &str) -> String {
+    let mut stripped = String::new();
+    let mut skip_format = false;
+    for character in value.trim().chars() {
+        if skip_format {
+            skip_format = false;
+            continue;
+        }
+        if character == '§' || character == '&' {
+            skip_format = true;
+            continue;
+        }
+        stripped.push(character);
+    }
+    normalize_text(&stripped)
+}
+
+fn encode_recipe_file_name(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| match character {
+            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => character,
+            _ => '_',
+        })
+        .collect()
+}
+
+fn recipe_ui_payload_relative_path(recipe_id: &str) -> String {
+    let shard = stable_shard(recipe_id, 128);
+    format!("recipes/ui-payload-shards/{shard}.json")
+}
+
+fn stable_shard(value: &str, bucket_count: u64) -> String {
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in value.as_bytes() {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    format!("{:03}", hash % bucket_count)
+}
+
+fn classify_recipe_family_key(recipe: &Value, fallback: &str, handler: Option<&Value>) -> String {
+    let descriptor = [
+        value_string(recipe, "family"),
+        value_string(recipe, "sourcePlugin"),
+        value_string(recipe, "recipeType"),
+        value_string(recipe, "displayName"),
+        nested_value_string(recipe, &["machine", "machineId"]),
+        nested_value_string(recipe, &["machine", "displayName"]),
+        nested_value_string(recipe, &["metadata", "handlerId"]),
+        nested_value_string(recipe, &["metadata", "handlerName"]),
+        nested_value_string(recipe, &["additionalData", "handlerId"]),
+        nested_value_string(recipe, &["additionalData", "handlerName"]),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join(" ")
+    .to_lowercase();
+    if (descriptor.contains("industrial") && descriptor.contains("slaughter"))
+        || includes_any(
+            &descriptor,
+            &[
+                "extreme entity crusher",
+                "infernal drops",
+                "mobsinfo",
+                "kubatech",
+            ],
+        )
+    {
+        return "industrial_slaughterhouse".to_string();
+    }
+    if includes_any(&descriptor, &["terra plate", "terraplate"]) {
+        return "botania_terra_plate".to_string();
+    }
+    if includes_any(&descriptor, &["rune altar", "runic altar"]) {
+        return "botania_rune_altar".to_string();
+    }
+    if includes_any(&descriptor, &["mana pool"]) {
+        return "botania_mana_pool".to_string();
+    }
+    if includes_any(&descriptor, &["pure daisy"]) {
+        return "botania_pure_daisy".to_string();
+    }
+    if includes_any(&descriptor, &["elven trade", "alfheim"]) {
+        return "botania_elven_trade".to_string();
+    }
+    if (descriptor.contains("thaumcraft") && descriptor.contains("infusion"))
+        || includes_any(&descriptor, &["arcane infusion"])
+    {
+        return "thaumcraft_infusion".to_string();
+    }
+    if (descriptor.contains("thaumcraft") && descriptor.contains("crucible"))
+        || includes_any(&descriptor, &["crucible"])
+    {
+        return "thaumcraft_crucible".to_string();
+    }
+    if includes_any(&descriptor, &["arcane work", "arcane crafting"]) {
+        return "thaumcraft_arcane".to_string();
+    }
+    if includes_any(&descriptor, &["aspect combination", "aspects from items"]) {
+        return "thaumcraft_aspect".to_string();
+    }
+    if includes_any(&descriptor, &["research station"]) {
+        return "gt_research_station".to_string();
+    }
+    if includes_any(&descriptor, &["assembly line"]) {
+        return "gt_assembly_line".to_string();
+    }
+    if includes_any(&descriptor, &["chemical reactor", "large chemical reactor"]) {
+        return "gt_chemical_reactor".to_string();
+    }
+    if includes_any(&descriptor, &["blood altar"]) {
+        return "blood_magic_altar".to_string();
+    }
+    if includes_any(&descriptor, &["alchemy array", "alchemy table"]) {
+        return "blood_alchemy_table".to_string();
+    }
+    if includes_any(&descriptor, &["binding ritual"]) {
+        return "blood_binding_ritual".to_string();
+    }
+    if let Some(family) = handler
+        .and_then(|handler| value_string(handler, "canonicalMachineFamily"))
+        .filter(|family| family != "native-nei")
+    {
+        return family;
+    }
+    fallback.to_string()
+}
+
+fn collect_recipe_item_ids(recipe: &Value, keys: &[&str]) -> Vec<String> {
+    let mut ids = Vec::new();
+    for key in keys {
+        collect_recipe_item_ids_from_value(recipe.get(*key), &mut ids);
+    }
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+fn collect_recipe_item_ids_from_value(value: Option<&Value>, ids: &mut Vec<String>) {
+    match value {
+        Some(Value::Array(values)) => {
+            for value in values {
+                collect_recipe_item_ids_from_value(Some(value), ids);
+            }
+        }
+        Some(Value::Object(map)) => {
+            if let Some(item_id) = map.get("itemId").and_then(Value::as_str) {
+                ids.push(item_id.to_string());
+            }
+            for key in ["items", "item", "input", "output", "ingredients", "results"] {
+                collect_recipe_item_ids_from_value(map.get(key), ids);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn normalize_handler_lookup_key(value: &str) -> String {
+    normalize_text(value)
+        .replace("recipehandler", "")
+        .replace("nei", "")
+        .replace(|character: char| !character.is_ascii_alphanumeric(), "")
+}
+fn includes_any(value: &str, needles: &[&str]) -> bool {
+    needles.iter().any(|needle| value.contains(needle))
+}
+
+fn first_non_empty(values: &[Option<String>]) -> Option<String> {
+    values
+        .iter()
+        .flatten()
+        .map(|value| value.trim().to_string())
+        .find(|value| !value.is_empty())
+}
+
+fn nested_value_string(value: &Value, path: &[&str]) -> Option<String> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    current.as_str().map(str::to_string)
+}
+
+fn value_i64(value: &Value, key: &str) -> Option<i64> {
+    value.get(key)?.as_i64()
+}
 fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
     let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?

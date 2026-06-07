@@ -117,6 +117,18 @@ assertEqual(rustCompile?.runtime?.counts?.browserAtlasItems, nodeReport?.counts?
 if (rustReadiness?.ready !== true) fail(`Rust migration readiness is not green: ${JSON.stringify(rustReadiness)}`);
 const expectedArtifactCount = compileScope === 'all' ? 4 : compileScope === 'browser' ? 2 : 1;
 if ((rustManifest?.files ?? []).length < expectedArtifactCount) fail('Rust runtime manifest does not list compiled artifacts');
+if (compileScope === 'all' || compileScope === 'recipes') {
+  const rustRecipePackPath = join(distDataDir, 'rust', 'recipe-pack.json');
+  if (!existsSync(rustRecipePackPath)) fail('Rust recipe pack is missing');
+  const rustRecipePack = readJson(rustRecipePackPath);
+  const rustRecipeCount = rustRecipePack?.counts?.recipes ?? 0;
+  if (rustRecipeCount !== nodeReport?.counts?.recipes) fail(`Rust recipe pack count mismatch: ${rustRecipeCount} !== ${nodeReport?.counts?.recipes}`);
+  if (!Array.isArray(rustRecipePack?.itemIndex) || rustRecipePack.itemIndex.length < 1) fail('Rust recipe pack itemIndex is empty');
+  if (!Array.isArray(rustRecipePack?.uiPayloadIndex) || rustRecipePack.uiPayloadIndex.length !== rustRecipeCount) fail('Rust recipe pack uiPayloadIndex is incomplete');
+  if (!Array.isArray(rustRecipePack?.categoryIndex) || rustRecipePack.categoryIndex.length < 1) fail('Rust recipe pack categoryIndex is empty');
+  const sampleUiPayload = rustRecipePack.uiPayloadIndex.find((entry) => entry?.recipeId && entry?.path && entry?.payloadKey);
+  if (!sampleUiPayload) fail('Rust recipe pack uiPayloadIndex lacks routeable entries');
+}
 
 const distEnv = {
   DIST_DATA_V3_DIR: distDataDir,
