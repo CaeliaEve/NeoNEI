@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import type { BrowserGridEntry, Item } from "../../services/api";
 import type { PageAtlasResult } from "../../services/pageAtlas";
 import NativeBrowserSurface from "../native-surface/NativeBrowserSurface.vue";
 
-defineProps<{
+const props = defineProps<{
   viewHistoryCount: number;
   historyItemPixelSize: number;
   historyRows: number;
@@ -21,6 +22,12 @@ const emit = defineEmits<{
 const bindPanelRef = (element: HTMLElement | null) => {
   emit("panelResize", element);
 };
+
+const historyItemIds = computed(() =>
+  props.historyBrowserEntries.map((entry) =>
+    entry.kind === "item" ? entry.item.itemId : entry.group.representative.itemId,
+  ),
+);
 </script>
 
 <template>
@@ -45,7 +52,7 @@ const bindPanelRef = (element: HTMLElement | null) => {
         :atlas="historyAtlas"
         :enable-animation="false"
         :prefer-atlas="true"
-        :history-item-ids="historyBrowserEntries.map((entry) => entry.kind === 'item' ? entry.item.itemId : entry.group.representative.itemId)"
+        :history-item-ids="historyItemIds"
         @item-click="emit('itemClick', $event)"
         @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"
         @viewport-resize="emit('panelResize', $event)"
