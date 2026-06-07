@@ -3269,6 +3269,8 @@ function compileRawExport(inputDir, outputDir) {
       migrationReadinessStatus: validation.migrationReadiness.status,
     },
     files: {
+      rustRuntimeManifest: "rust/runtime-manifest.json",
+      rustSearchPack: "rust/search-pack.json",
       searchAll: "search/all.json",
       searchAliasIndex: "search/alias-index.json",
       semanticItems: "items/semantic-items.json",

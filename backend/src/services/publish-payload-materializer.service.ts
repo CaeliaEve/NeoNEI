@@ -10,6 +10,7 @@ import { ItemsService, type BrowserPageEntry, type Item } from './items.service'
 import { PageAtlasService } from './page-atlas.service';
 import { attachRenderHintsToEntries, buildBrowserRichMediaManifest } from './browser-render-hints.service';
 import { RecipeBootstrapService } from './recipe-bootstrap.service';
+import { getRustSearchPackService } from './rust-search-pack.service';
 import {
   type IndexedRecipe,
   type ItemRecipeSummaryResponse,
@@ -1343,15 +1344,16 @@ export class PublishPayloadMaterializerService {
           databaseProvider: () => this.databaseManager.getDatabase(),
           splitExportFallback: false,
         });
-        const searchPack = await searchService.getBrowserSearchPack();
+        const rustSearchPack = getRustSearchPackService().readDistDataSearchPack();
+        const searchPack = rustSearchPack?.items ?? await searchService.getBrowserSearchPack();
         const hotItems = searchPack.slice(0, this.options.searchHotShardSize);
         const tailItems = searchPack.slice(hotItems.length);
         registerPayloadRow(
           buildBrowserSearchPackPayloadKey(),
           'browser-search-pack',
           JSON.stringify({
-            version: 1,
-            signature: sourceSignature,
+            version: rustSearchPack?.version ?? 1,
+            signature: rustSearchPack?.signature ?? sourceSignature,
             total: searchPack.length,
             items: searchPack,
           }),

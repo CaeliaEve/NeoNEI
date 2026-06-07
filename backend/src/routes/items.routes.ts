@@ -13,6 +13,7 @@ import {
   attachRenderHintsToItems,
   buildBrowserRichMediaManifest,
 } from '../services/browser-render-hints.service';
+import { getRustSearchPackService } from '../services/rust-search-pack.service';
 import { createWeakEtag, sendNotModifiedIfEtagMatches, setPublicCacheHeaders } from '../utils/http-cache';
 import { asyncHandler, badRequest, notFound } from '../utils/http';
 
@@ -290,6 +291,14 @@ router.get(
       staleIfErrorSeconds: 86400,
     });
     if (sendNotModifiedIfEtagMatches(req, res, etag)) {
+      return;
+    }
+    const rustPack = getRustSearchPackService().readDistDataSearchPack();
+    if (rustPack) {
+      res.json({
+        ...rustPack,
+        signature: rustPack.signature ?? manifest.sourceSignature,
+      });
       return;
     }
     const materialized = getPublishPayloadService().getBrowserSearchPack(manifest.sourceSignature);

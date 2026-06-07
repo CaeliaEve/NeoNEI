@@ -34,6 +34,8 @@ type DistDataManifest = {
   runtimeCacheKey?: string | null;
   sourceSignature?: string | null;
   files?: {
+    rustSearchPack?: string;
+    rustRuntimeManifest?: string;
     searchAll?: string;
     browserCatalog?: string;
     hiddenBrowserCatalog?: string;
@@ -659,23 +661,33 @@ export async function getDistDataSearchPack(): Promise<DistDataSearchPack | null
 
   searchPackRequest = (async () => {
     const manifest = await getDistDataManifest();
-    const searchPath = `${manifest?.files?.searchAll ?? ""}`.trim();
-    if (!manifest || !searchPath) {
+    const searchPaths = Array.from(new Set([
+      `${manifest?.files?.rustSearchPack ?? ""}`.trim(),
+      `${manifest?.files?.searchAll ?? ""}`.trim(),
+    ].filter(Boolean)));
+    if (!manifest || searchPaths.length <= 0) {
       return null;
     }
 
-    const payload = await fetchJson<DistDataSearchPayload>(joinAssetPath(getConfiguredBasePath(), searchPath));
-    const pack = coerceSearchPack(manifest, payload);
-    if (!pack.items.length) {
-      return null;
+    for (const searchPath of searchPaths) {
+      const payload = await fetchJson<DistDataSearchPayload>(joinAssetPath(getConfiguredBasePath(), searchPath)).catch(() => null);
+      if (!payload) {
+        continue;
+      }
+      const pack = coerceSearchPack(manifest, payload);
+      if (!pack.items.length) {
+        continue;
+      }
+
+      cachedSearchPack = {
+        manifest,
+        runtimeCacheKey: buildRuntimeCacheKey(manifest),
+        pack,
+      };
+      return cachedSearchPack;
     }
 
-    cachedSearchPack = {
-      manifest,
-      runtimeCacheKey: buildRuntimeCacheKey(manifest),
-      pack,
-    };
-    return cachedSearchPack;
+    return null;
   })()
     .catch(() => null)
     .finally(() => {
