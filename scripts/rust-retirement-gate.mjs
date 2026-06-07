@@ -21,6 +21,7 @@ const quick = process.argv.includes('--quick');
 const compileScopeArg = process.argv.find((arg) => arg.startsWith('--scope='));
 const compileScope = compileScopeArg?.split('=')[1] || process.env.RUST_GATE_SCOPE || (quick ? 'search' : 'all');
 const selfTestMode = !process.env.RUST_GATE_RAW_EXPORT;
+const cargoCommand = resolveCargoCommand();
 
 const steps = [];
 
@@ -28,6 +29,21 @@ function fail(message) {
   writeSummary('failed', message);
   console.error(`[rust-retirement-gate] ${message}`);
   process.exit(1);
+}
+
+function commandExists(command, args = ['--version']) {
+  const result = spawnSync(command, args, { stdio: 'ignore', shell: false });
+  return (result.status ?? 1) === 0;
+}
+
+function resolveCargoCommand() {
+  const candidates = [
+    process.env.CARGO,
+    process.env.CARGO_HOME ? join(process.env.CARGO_HOME, 'bin', process.platform === 'win32' ? 'cargo.exe' : 'cargo') : null,
+    process.platform === 'win32' ? 'D:/Rust/cargo/bin/cargo.exe' : null,
+    'cargo',
+  ].filter(Boolean);
+  return candidates.find((candidate) => existsSync(candidate) || commandExists(candidate)) ?? 'cargo';
 }
 
 function runStep(name, command, args, options = {}) {
@@ -101,8 +117,8 @@ if (!process.env.RUST_GATE_RAW_EXPORT) {
   ], { cwd: frontendDir });
 }
 
-runStep('rust compiler test', 'cargo', ['test', '--manifest-path', cargoToml]);
-runStep('rust compiler strict compile', 'cargo', [
+runStep('rust compiler test', cargoCommand, ['test', '--manifest-path', cargoToml]);
+runStep('rust compiler strict compile', cargoCommand, [
   'run', '--manifest-path', cargoToml, '--',
   'compile', '--input', rawExportInput, '--output', distDataDir, '--report', rustReport, '--scope', compileScope, '--strict',
 ]);
