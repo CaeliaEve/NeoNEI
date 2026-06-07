@@ -243,13 +243,21 @@ async function requestWebGpuHandles(canvas: OffscreenCanvas): Promise<WebGpuHand
 
 export class WebGpuNativeRenderer implements NativeRendererBackend {
   readonly backend = "webgpu" as const;
+  static lastInitializationError: string | null = null;
   private disposed = false;
   private textureCache = new Map<string, WebGpuTextureState>();
   private readonly handles: WebGpuHandles;
 
   static async create(activeCanvas: OffscreenCanvas): Promise<WebGpuNativeRenderer | null> {
+    WebGpuNativeRenderer.lastInitializationError = null;
     if (!hasWebGpu()) return null;
-    const handles = await requestWebGpuHandles(activeCanvas).catch(() => null);
+    const handles = await requestWebGpuHandles(activeCanvas).catch((error) => {
+      WebGpuNativeRenderer.lastInitializationError = error instanceof Error ? error.message : String(error);
+      return null;
+    });
+    if (!handles && !WebGpuNativeRenderer.lastInitializationError) {
+      WebGpuNativeRenderer.lastInitializationError = "webgpu adapter/device/context unavailable";
+    }
     if (!handles) return null;
     return new WebGpuNativeRenderer(handles);
   }

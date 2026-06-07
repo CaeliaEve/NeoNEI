@@ -69,7 +69,11 @@ export type NativeRendererLimits = {
 };
 
 export type NativeRendererFrameMetrics = {
+  requestedBackend: Exclude<NativeRendererBackendKind, "compat-canvas"> | null;
   backend: NativeRenderBackendKind | null;
+  webgpuAvailable: boolean;
+  webgpuUsable: boolean;
+  backendFallbackReason: string | null;
   initialized: boolean;
   frames: number;
   commandCount: number;

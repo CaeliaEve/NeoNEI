@@ -14,7 +14,9 @@ import type { NativeRendererBackend } from "../renderers/native/NativeRendererBa
 import { WebGpuNativeRenderer } from "../renderers/native/WebGpuNativeRenderer";
 
 let canvas: OffscreenCanvas | null = null;
+let requestedBackend: "auto" | NativeRenderBackendKind | null = null;
 let backend: NativeRenderBackendKind | null = null;
+let backendFallbackReason: string | null = null;
 let animationEnabled = true;
 let frames = 0;
 let commandCount = 0;
@@ -29,8 +31,14 @@ let nativeRenderer: NativeRendererBackend | null = null;
 const uploadedTextureKeys = new Set<string>();
 
 function buildMetrics(): NativeRendererFrameMetrics {
+  const webgpuAvailable = Boolean((navigator as Navigator & { gpu?: unknown }).gpu);
+  const adapterUnavailable = Boolean(backendFallbackReason?.includes("adapter/device/context unavailable"));
   return {
+    requestedBackend,
     backend,
+    webgpuAvailable,
+    webgpuUsable: backend === "webgpu" || (webgpuAvailable && !adapterUnavailable),
+    backendFallbackReason,
     initialized: Boolean(canvas && backend),
     frames,
     commandCount,
@@ -116,6 +124,8 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
   switch (message.type) {
     case "initialize": {
       canvas = message.canvas;
+      requestedBackend = message.renderer;
+      backendFallbackReason = null;
       width = canvas.width;
       height = canvas.height;
       backend = chooseBackend(message.renderer, canvas);
@@ -126,8 +136,13 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
         ? await WebGpuNativeRenderer.create(canvas)
         : WebGl2NativeRenderer.create(canvas);
       if (!nativeRenderer && backend === "webgpu") {
+        backendFallbackReason = WebGpuNativeRenderer.lastInitializationError
+          ? `webgpu renderer initialization failed: ${WebGpuNativeRenderer.lastInitializationError}`
+          : "webgpu renderer initialization failed";
         backend = "webgl2";
         nativeRenderer = WebGl2NativeRenderer.create(canvas);
+      } else if (message.renderer === "webgpu" && backend !== "webgpu") {
+        backendFallbackReason = "webgpu unavailable in render worker";
       }
       const limits = detectWebglLimits(canvas);
       return { type: "ready", id: message.id, backend, limits, metrics: buildMetrics() };
@@ -184,7 +199,9 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       nativeRenderer = null;
       uploadedTextureKeys.clear();
       canvas = null;
+      requestedBackend = null;
       backend = null;
+      backendFallbackReason = null;
       commandCount = 0;
       drawCalls = 0;
       vertexCount = 0;

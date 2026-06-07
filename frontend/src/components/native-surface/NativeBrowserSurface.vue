@@ -3,7 +3,12 @@ import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch 
 import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../../services/api";
 import type { PageAtlasResult } from "../../services/pageAtlas";
 import { createNativeSurfaceController } from "../../native-surface/NativeSurfaceController";
-import type { NativeSurfaceId, NativeSurfaceLayoutCommand, NativeSurfaceViewportRole } from "../../native-surface/contracts";
+import type {
+  NativeRendererBackendKind,
+  NativeSurfaceId,
+  NativeSurfaceLayoutCommand,
+  NativeSurfaceViewportRole,
+} from "../../native-surface/contracts";
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 import {
@@ -64,6 +69,23 @@ let nativeRenderInitialized = false;
 let nativeRenderInitializing = false;
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
+
+function normalizeNativeRenderBackend(value: unknown): Exclude<NativeRendererBackendKind, "compat-canvas"> {
+  const normalized = `${value ?? ""}`.trim().toLowerCase();
+  if (normalized === "webgpu" || normalized === "auto") return normalized;
+  return "webgl2";
+}
+
+function resolveNativeRenderBackend(): Exclude<NativeRendererBackendKind, "compat-canvas"> {
+  const envBackend = normalizeNativeRenderBackend(import.meta.env.VITE_NATIVE_RENDER_BACKEND);
+  if (envBackend !== "webgl2") return envBackend;
+  if (typeof window === "undefined") return envBackend;
+  try {
+    return normalizeNativeRenderBackend(window.localStorage.getItem("neonei:native-render-backend"));
+  } catch {
+    return envBackend;
+  }
+}
 
 const nativeTooltipTitle = computed(() => {
   const hit = nativeHoveredHit.value;
@@ -127,7 +149,7 @@ async function initializeNativeRenderWorker(width: number, height: number) {
     const response = await postNativeRenderEvent({
       type: "initialize",
       canvas: offscreen,
-      renderer: "webgl2",
+      renderer: resolveNativeRenderBackend(),
     });
     nativeRenderInitialized = response?.type === "ready";
     nativeRenderVisible.value = nativeRenderInitialized;

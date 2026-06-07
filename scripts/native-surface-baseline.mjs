@@ -24,6 +24,8 @@ const outDir = args.has("out-dir") ? resolve(args.get("out-dir")) : resolve(repo
 const outputPath = args.has("output") ? resolve(args.get("output")) : join(outDir, "native-surface-baseline.json");
 const pageFlips = Number(args.get("page-flips") || 30);
 const gate = args.has("gate");
+const renderer = `${args.get("renderer") || ""}`.trim().toLowerCase();
+const requestedRenderer = renderer === "webgpu" || renderer === "webgl2" || renderer === "auto" ? renderer : null;
 
 function percentile(values, p) {
   if (values.length === 0) return 0;
@@ -52,6 +54,11 @@ async function main() {
   mkdirSync(outDir, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  if (requestedRenderer) {
+    await page.addInitScript((value) => {
+      window.localStorage.setItem("neonei:native-render-backend", value);
+    }, requestedRenderer);
+  }
   const errors = [];
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
@@ -65,6 +72,7 @@ async function main() {
 
   const initial = await page.evaluate(() => ({
     title: document.title,
+    webgpuAvailable: Boolean(navigator.gpu),
     canvasCount: document.querySelectorAll("canvas").length,
     imgCount: document.querySelectorAll("img").length,
     bodyScrollDelta: Math.max(0, document.documentElement.scrollHeight - window.innerHeight),
@@ -104,6 +112,7 @@ async function main() {
 
   const final = await page.evaluate(() => ({
     pageText: document.body.innerText.match(/\d+\s*\/\s*\d+/)?.[0] ?? null,
+    webgpuAvailable: Boolean(navigator.gpu),
     canvasCount: document.querySelectorAll("canvas").length,
     imgCount: document.querySelectorAll("img").length,
     nativeSurfaceMetrics: globalThis.__NEONEI_NATIVE_SURFACE_METRICS__?.() ?? [],
@@ -116,6 +125,7 @@ async function main() {
   const report = {
     schemaVersion: "neonei/native-surface-baseline/current",
     url,
+    requestedRenderer,
     generatedAt: new Date().toISOString(),
     elapsedMs: Date.now() - startedAt,
     initial,
@@ -154,6 +164,14 @@ async function main() {
   if (!final.nativeRenderMetrics) {
     gateFailures.push("native render metrics are missing");
   } else {
+    if (requestedRenderer === "webgpu" && final.nativeRenderMetrics.webgpuUsable === true && final.nativeRenderMetrics.backend !== "webgpu") {
+      gateFailures.push(
+        `explicit webgpu renderer did not initialize webgpu backend (actual: ${final.nativeRenderMetrics.backend ?? "none"}; reason: ${final.nativeRenderMetrics.backendFallbackReason ?? "unknown"})`,
+      );
+    }
+    if (requestedRenderer === "webgl2" && final.nativeRenderMetrics.backend !== "webgl2") {
+      gateFailures.push(`explicit webgl2 renderer did not initialize webgl2 backend (actual: ${final.nativeRenderMetrics.backend ?? "none"})`);
+    }
     if ((final.nativeRenderMetrics.frames ?? 0) <= 0) {
       gateFailures.push("native render worker did not submit frames");
     }
@@ -175,6 +193,11 @@ async function main() {
   console.log(`[native-surface-baseline] wrote ${outputPath}`);
   console.log(JSON.stringify({
     pageFlips,
+    requestedRenderer,
+    nativeRenderBackend: report.final.nativeRenderMetrics?.backend ?? null,
+    webgpuAvailable: Boolean(report.final.nativeRenderMetrics?.webgpuAvailable),
+    webgpuUsable: Boolean(report.final.nativeRenderMetrics?.webgpuUsable),
+    backendFallbackReason: report.final.nativeRenderMetrics?.backendFallbackReason ?? null,
     flipAvgMs: Math.round(report.interactions.flipMs.avg),
     flipP95Ms: Math.round(report.interactions.flipMs.p95),
     settingsOpenMs: Math.round(settingsOpenMs),
