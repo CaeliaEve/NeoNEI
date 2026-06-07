@@ -46,6 +46,9 @@ enum Command {
         threads: Option<usize>,
         #[arg(long, default_value_t = false)]
         strict: bool,
+        /// Emit large JSON debug packs next to binary runtime packs.
+        #[arg(long, default_value_t = false)]
+        debug_json: bool,
     },
 }
 
@@ -123,22 +126,28 @@ fn main() -> Result<()> {
             scope,
             threads,
             strict,
+            debug_json,
         } => {
             configure_threads(threads);
             fs::create_dir_all(&output)
                 .with_context(|| format!("create output directory {}", output.display()))?;
+            if !debug_json {
+                purge_debug_json_artifacts(&output)?;
+            }
             match scope {
                 CompileScope::All => {
-                    compile_browser_pack(&input, &output, strict)?;
-                    compile_recipe_pack(&input, &output, strict)?;
-                    compile_texture_pack(&input, &output, strict)?;
+                    compile_browser_pack(&input, &output, strict, debug_json)?;
+                    compile_recipe_pack(&input, &output, strict, debug_json)?;
+                    compile_texture_pack(&input, &output, strict, debug_json)?;
                 }
-                CompileScope::Search => compile_search_pack(&input, &output, strict)?,
-                CompileScope::Browser => compile_browser_pack(&input, &output, strict)?,
-                CompileScope::Recipes => compile_recipe_pack(&input, &output, strict)?,
-                CompileScope::Textures => compile_texture_pack(&input, &output, strict)?,
+                CompileScope::Search => compile_search_pack(&input, &output, strict, debug_json)?,
+                CompileScope::Browser => compile_browser_pack(&input, &output, strict, debug_json)?,
+                CompileScope::Recipes => compile_recipe_pack(&input, &output, strict, debug_json)?,
+                CompileScope::Textures => {
+                    compile_texture_pack(&input, &output, strict, debug_json)?
+                }
             }
-            compile_runtime_reports(&output, scope, strict)?;
+            compile_runtime_reports(&output, scope, strict, debug_json)?;
             run_baseline(&input, Some(&output), &report, strict)
         }
     }
@@ -292,10 +301,10 @@ fn count_jsonl_rows(path: &Path) -> Result<u64> {
     Ok(count)
 }
 
-fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+fn compile_browser_pack(input: &Path, output: &Path, strict: bool, debug_json: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
     if manifest.files.contains_key("browserCatalog") {
-        return compile_dist_browser_pack(input, output, strict);
+        return compile_dist_browser_pack(input, output, strict, debug_json);
     }
     let items = read_json_collection(
         input,
@@ -524,7 +533,9 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
-    write_json_value(&rust_dir.join("browser-pack.json"), &pack)?;
+    if debug_json {
+        write_json_value(&rust_dir.join("browser-pack.json"), &pack)?;
+    }
     let compact_browser_payload = build_compact_browser_payload_from_items(&browser_items)?;
     write_binary_pack_payload(
         &rust_dir.join("browser.bin"),
@@ -547,7 +558,9 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
             .map(Vec::as_slice)
             .unwrap_or(&[]),
     )?;
-    write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
+    if debug_json {
+        write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
+    }
     write_binary_pack_payload(
         &rust_dir.join("search.bin"),
         "neonei/search-pack/current",
@@ -567,7 +580,7 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
     Ok(())
 }
 
-fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+fn compile_search_pack(input: &Path, output: &Path, strict: bool, debug_json: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
     let items = read_json_collection(
         input,
@@ -701,7 +714,9 @@ fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
             .map(Vec::as_slice)
             .unwrap_or(&[]),
     )?;
-    write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
+    if debug_json {
+        write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
+    }
     write_binary_pack_payload(
         &rust_dir.join("search.bin"),
         "neonei/search-pack/current",
@@ -1072,7 +1087,12 @@ fn build_compact_search_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
     Ok(payload)
 }
 
-fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+fn compile_dist_browser_pack(
+    input: &Path,
+    output: &Path,
+    strict: bool,
+    debug_json: bool,
+) -> Result<()> {
     let manifest = read_manifest(input)?;
     let browser_files = runtime_file_descriptors(
         input,
@@ -1123,8 +1143,12 @@ fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Resul
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
-    write_json_value(&rust_dir.join("browser-pack.json"), &browser_pack)?;
-    write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
+    if debug_json {
+        write_json_value(&rust_dir.join("browser-pack.json"), &browser_pack)?;
+    }
+    if debug_json {
+        write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
+    }
     write_binary_pack_payload(
         &rust_dir.join("browser.bin"),
         "neonei/browser-pack/current",
@@ -1176,10 +1200,10 @@ fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Resul
     Ok(())
 }
 
-fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
     if !manifest.files.contains_key("recipeIndex") {
-        return compile_dist_recipe_pack(input, output, strict);
+        return compile_dist_recipe_pack(input, output, strict, debug_json);
     }
     let recipe_index = read_manifest_json(input, &manifest, "recipeIndex")?
         .ok_or_else(|| anyhow!("recipe compiler blocked: recipeIndex is missing"))?;
@@ -1215,10 +1239,15 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
     }
 
     let handler_context = RecipeHandlerContext::new(&handlers, &layouts);
-    let handler_pack = handlers
-        .iter()
-        .map(public_recipe_handler)
-        .collect::<Vec<_>>();
+    let handler_count = handlers.len();
+    let handler_pack = if debug_json {
+        handlers
+            .iter()
+            .map(public_recipe_handler)
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
     let mut produced_by: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     let mut used_in: BTreeMap<String, Vec<Value>> = BTreeMap::new();
@@ -1226,8 +1255,10 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
     let mut ui_payload_index = Vec::new();
     let mut ui_payload_shards: BTreeMap<String, BTreeMap<String, Value>> = BTreeMap::new();
     let mut category_map: BTreeMap<String, RecipeCategoryAccumulator> = BTreeMap::new();
+    let mut recipe_count = 0usize;
 
     for recipe in &recipes {
+        recipe_count += 1;
         let recipe_id = recipe_id(recipe);
         let (handler, layout) = handler_context.resolve(recipe);
         let public_handler = handler.map(public_recipe_handler);
@@ -1327,10 +1358,12 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
             payload_object.remove("path");
             payload_object.remove("payloadKey");
         }
-        ui_payload_shards
-            .entry(rust_recipe_ui_payload_relative_path(&recipe_id))
-            .or_default()
-            .insert(recipe_id.clone(), payload_entry);
+        if debug_json {
+            ui_payload_shards
+                .entry(rust_recipe_ui_payload_relative_path(&recipe_id))
+                .or_default()
+                .insert(recipe_id.clone(), payload_entry);
+        }
         ui_payload_index.push(payload_meta);
 
         let category_display_name = recipe_category_display_name(recipe, handler);
@@ -1382,7 +1415,9 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
                     .push(ref_value.clone());
             }
         }
-        recipe_pack.push(recipe.clone());
+        if debug_json {
+            recipe_pack.push(recipe.clone());
+        }
     }
 
     let mut item_ids = produced_by
@@ -1419,24 +1454,26 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
-    for (shard_path, payloads) in &ui_payload_shards {
-        let absolute_shard_path = output.join(shard_path);
-        if let Some(parent) = absolute_shard_path.parent() {
-            fs::create_dir_all(parent)?;
+    if debug_json {
+        for (shard_path, payloads) in &ui_payload_shards {
+            let absolute_shard_path = output.join(shard_path);
+            if let Some(parent) = absolute_shard_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            write_json_value(
+                &absolute_shard_path,
+                &json!({
+                    "schemaVersion": "neonei/recipe-ui-payload-shard/v1",
+                    "payloads": payloads,
+                }),
+            )?;
         }
-        write_json_value(
-            &absolute_shard_path,
-            &json!({
-                "schemaVersion": "neonei/recipe-ui-payload-shard/v1",
-                "payloads": payloads,
-            }),
-        )?;
     }
     let recipe_output_pack = json!({
         "schemaVersion": "neonei/rust-recipe-pack/current",
         "counts": {
-            "recipes": recipe_pack.len(),
-            "handlers": handler_pack.len(),
+            "recipes": recipe_count,
+            "handlers": handler_count,
             "recipeItemIndexItems": item_index.len(),
             "uiPayloadIndexItems": ui_payload_index.len(),
             "categories": category_index.len(),
@@ -1447,7 +1484,9 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
         "uiPayloadIndex": ui_payload_index,
         "categoryIndex": category_index,
     });
-    write_json_value(&rust_dir.join("recipe-pack.json"), &recipe_output_pack)?;
+    if debug_json {
+        write_json_value(&rust_dir.join("recipe-pack.json"), &recipe_output_pack)?;
+    }
     let compact_recipe_payload = build_compact_recipe_payload_from_pack(&recipe_output_pack)?;
     write_binary_pack_payload(
         &rust_dir.join("recipes.bin"),
@@ -1457,7 +1496,12 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
     Ok(())
 }
 
-fn compile_dist_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+fn compile_dist_recipe_pack(
+    input: &Path,
+    output: &Path,
+    strict: bool,
+    debug_json: bool,
+) -> Result<()> {
     let manifest = read_manifest(input)?;
     let recipe_files = runtime_file_descriptors(
         input,
@@ -1494,7 +1538,9 @@ fn compile_dist_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
-    write_json_value(&rust_dir.join("recipe-pack.json"), &recipe_output_pack)?;
+    if debug_json {
+        write_json_value(&rust_dir.join("recipe-pack.json"), &recipe_output_pack)?;
+    }
     let compact_recipe_payload = build_compact_recipe_payload_from_pack(&recipe_output_pack)?;
     write_binary_pack_payload(
         &rust_dir.join("recipes.bin"),
@@ -1932,7 +1978,7 @@ fn normalize_recipe_category_name(value: &str) -> String {
             skip_format = false;
             continue;
         }
-        if character == '搂' || character == '&' {
+        if character == '\u{00A7}' || character == '&' {
             skip_format = true;
             continue;
         }
@@ -2236,10 +2282,10 @@ fn repaired_browser_atlas(atlas: &Value, texture_rows: &[Value]) -> Value {
     repaired
 }
 
-fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
     if manifest.files.contains_key("textureManifest") {
-        return compile_dist_texture_pack(input, output, strict);
+        return compile_dist_texture_pack(input, output, strict, debug_json);
     }
     let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?
         .ok_or_else(|| anyhow!("texture compiler blocked: browserAtlasIndex is missing"))?;
@@ -2317,8 +2363,7 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
             let animation = animation_by_asset.get(&asset_id);
             let native_sprite = native_sprite_by_asset.get(&asset_id);
             let frame_duration_ms = animated_atlas
-                .and_then(|value| value.get("frameDurationMs"))
-                .and_then(Value::as_u64)
+                .and_then(|value| value_u64(value, "frameDurationMs"))
                 .or_else(|| animation.and_then(|value| value_u64(value, "frameDurationMs")))
                 .or_else(|| native_sprite.and_then(|value| value_u64(value, "frameDurationMs")));
             animation_table.push(json!({
@@ -2327,8 +2372,7 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
                 "mode": native_sprite.and_then(|value| value.get("animationMode")).cloned().unwrap_or(Value::Null),
                 "frameDurationSource": if native_sprite.is_some() { "native_sprite_metadata" } else { "raw_animation_index" },
                 "frameCount": animated_atlas
-                    .and_then(|value| value.get("frameCount"))
-                    .and_then(Value::as_u64)
+                    .and_then(|value| value_u64(value, "frameCount"))
                     .or_else(|| animation.and_then(|value| value_u64(value, "frameCount"))),
                 "frameDurationMs": frame_duration_ms,
                 "atlasFile": animated_atlas
@@ -2383,7 +2427,9 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
             "invalidFrameBounds": invalid_frame_bounds,
         },
     });
-    write_json_value(&rust_dir.join("texture-pack.json"), &texture_output_pack)?;
+    if debug_json {
+        write_json_value(&rust_dir.join("texture-pack.json"), &texture_output_pack)?;
+    }
     let texture_payload = build_compact_texture_payload_from_atlas_items(&atlas_items)?;
     write_binary_pack_payload(
         &rust_dir.join("textures.bin"),
@@ -2530,8 +2576,7 @@ fn build_compact_texture_payload_from_atlas_items(atlas_items: &[Value]) -> Resu
             for (index, frame) in frame_values.iter().enumerate() {
                 let duration_ms = timeline_values
                     .get(index)
-                    .and_then(|value| value.get("durationMs"))
-                    .and_then(Value::as_u64)
+                    .and_then(|value| value_u64(value, "durationMs"))
                     .unwrap_or(frame_duration_ms as u64)
                     .max(16) as u32;
                 frames.push([
@@ -2599,7 +2644,12 @@ fn build_compact_texture_payload_from_atlas_items(atlas_items: &[Value]) -> Resu
     Ok(payload)
 }
 
-fn compile_dist_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+fn compile_dist_texture_pack(
+    input: &Path,
+    output: &Path,
+    strict: bool,
+    debug_json: bool,
+) -> Result<()> {
     let manifest = read_manifest(input)?;
     let texture_files = runtime_file_descriptors(
         input,
@@ -2642,7 +2692,9 @@ fn compile_dist_texture_pack(input: &Path, output: &Path, strict: bool) -> Resul
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
-    write_json_value(&rust_dir.join("texture-pack.json"), &texture_pack)?;
+    if debug_json {
+        write_json_value(&rust_dir.join("texture-pack.json"), &texture_pack)?;
+    }
     write_binary_pack(
         &rust_dir.join("textures.bin"),
         "neonei/texture-pack/current",
@@ -2656,12 +2708,17 @@ fn compile_dist_texture_pack(input: &Path, output: &Path, strict: bool) -> Resul
     Ok(())
 }
 
-fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> Result<()> {
+fn compile_runtime_reports(
+    output: &Path,
+    scope: CompileScope,
+    strict: bool,
+    debug_json: bool,
+) -> Result<()> {
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
 
-    let artifact_names: &[&str] = match scope {
-        CompileScope::All => &[
+    let mut artifact_names = match scope {
+        CompileScope::All => vec![
             "browser.bin",
             "groups.bin",
             "search.bin",
@@ -2669,23 +2726,33 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
             "textures.bin",
             "animations.bin",
             "strings.zh_cn.bin",
-            "browser-pack.json",
-            "search-pack.json",
-            "recipe-pack.json",
-            "texture-pack.json",
         ],
-        CompileScope::Search => &["search.bin", "strings.zh_cn.bin", "search-pack.json"],
-        CompileScope::Browser => &[
+        CompileScope::Search => vec!["search.bin", "strings.zh_cn.bin"],
+        CompileScope::Browser => vec![
             "browser.bin",
             "groups.bin",
             "search.bin",
             "strings.zh_cn.bin",
-            "browser-pack.json",
-            "search-pack.json",
         ],
-        CompileScope::Recipes => &["recipes.bin", "recipe-pack.json"],
-        CompileScope::Textures => &["textures.bin", "animations.bin", "texture-pack.json"],
+        CompileScope::Recipes => vec!["recipes.bin"],
+        CompileScope::Textures => vec!["textures.bin", "animations.bin"],
     };
+    if debug_json {
+        match scope {
+            CompileScope::All => artifact_names.extend([
+                "browser-pack.json",
+                "search-pack.json",
+                "recipe-pack.json",
+                "texture-pack.json",
+            ]),
+            CompileScope::Search => artifact_names.push("search-pack.json"),
+            CompileScope::Browser => {
+                artifact_names.extend(["browser-pack.json", "search-pack.json"])
+            }
+            CompileScope::Recipes => artifact_names.push("recipe-pack.json"),
+            CompileScope::Textures => artifact_names.push("texture-pack.json"),
+        }
+    }
     let mut files = Vec::new();
     let mut integrity = BTreeMap::new();
     let mut sizes = BTreeMap::new();
@@ -2713,6 +2780,7 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
         .into_iter()
         .filter_map(Result::ok)
         .filter(|entry| entry.file_type().is_file())
+        .filter(|entry| is_text_runtime_artifact(entry.path()))
     {
         let path = entry.path();
         let text = fs::read_to_string(path).unwrap_or_default();
@@ -2832,6 +2900,7 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
     update_dist_manifest_with_rust_runtime(
         output,
         scope,
+        debug_json,
         &integrity,
         &sizes,
         &runtime_id,
@@ -2840,9 +2909,42 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
     Ok(())
 }
 
+fn purge_debug_json_artifacts(output: &Path) -> Result<()> {
+    let rust_dir = output.join("rust");
+    for artifact_name in [
+        "browser-pack.json",
+        "search-pack.json",
+        "recipe-pack.json",
+        "texture-pack.json",
+    ] {
+        let path = rust_dir.join(artifact_name);
+        if path.exists() {
+            fs::remove_file(&path)
+                .with_context(|| format!("remove stale debug artifact {}", path.display()))?;
+        }
+    }
+    let payload_shards = rust_dir.join("recipe-ui-payload-shards");
+    if payload_shards.exists() {
+        fs::remove_dir_all(&payload_shards).with_context(|| {
+            format!(
+                "remove stale debug shard directory {}",
+                payload_shards.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
+fn is_text_runtime_artifact(path: &Path) -> bool {
+    path.extension()
+        .and_then(|value| value.to_str())
+        .is_some_and(|extension| matches!(extension, "json" | "txt" | "log"))
+}
+
 fn update_dist_manifest_with_rust_runtime(
     output: &Path,
     scope: CompileScope,
+    debug_json: bool,
     integrity: &BTreeMap<String, String>,
     sizes: &BTreeMap<String, u64>,
     runtime_id: &str,
@@ -2875,7 +2977,18 @@ fn update_dist_manifest_with_rust_runtime(
         .as_object_mut()
         .ok_or_else(|| anyhow!("dist manifest files must be a JSON object"))?;
 
-    for (key, relative_path) in rust_manifest_file_entries(scope) {
+    if !debug_json {
+        for key in [
+            "rustBrowserPack",
+            "rustSearchPack",
+            "rustRecipePack",
+            "rustTexturePack",
+        ] {
+            files.remove(key);
+        }
+    }
+
+    for (key, relative_path) in rust_manifest_file_entries(scope, debug_json) {
         if integrity.contains_key(relative_path) || relative_path.ends_with("runtime-manifest.json")
         {
             files.insert(key.to_string(), Value::String(relative_path.to_string()));
@@ -2901,7 +3014,10 @@ fn update_dist_manifest_with_rust_runtime(
     write_json_value(&manifest_path, &manifest)
 }
 
-fn rust_manifest_file_entries(scope: CompileScope) -> Vec<(&'static str, &'static str)> {
+fn rust_manifest_file_entries(
+    scope: CompileScope,
+    debug_json: bool,
+) -> Vec<(&'static str, &'static str)> {
     let mut entries = vec![
         ("rustRuntimeManifest", "rust/runtime-manifest.json"),
         ("rustIntegrity", "rust/integrity.json"),
@@ -2919,33 +3035,39 @@ fn rust_manifest_file_entries(scope: CompileScope) -> Vec<(&'static str, &'stati
             ("rustTextureBin", "rust/textures.bin"),
             ("rustAnimationBin", "rust/animations.bin"),
             ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
-            ("rustBrowserPack", "rust/browser-pack.json"),
-            ("rustSearchPack", "rust/search-pack.json"),
-            ("rustRecipePack", "rust/recipe-pack.json"),
-            ("rustTexturePack", "rust/texture-pack.json"),
         ]),
         CompileScope::Search => entries.extend([
             ("rustSearchBin", "rust/search.bin"),
             ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
-            ("rustSearchPack", "rust/search-pack.json"),
         ]),
         CompileScope::Browser => entries.extend([
             ("rustBrowserBin", "rust/browser.bin"),
             ("rustGroupsBin", "rust/groups.bin"),
             ("rustSearchBin", "rust/search.bin"),
             ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
-            ("rustBrowserPack", "rust/browser-pack.json"),
-            ("rustSearchPack", "rust/search-pack.json"),
         ]),
-        CompileScope::Recipes => entries.extend([
-            ("rustRecipeBin", "rust/recipes.bin"),
-            ("rustRecipePack", "rust/recipe-pack.json"),
-        ]),
+        CompileScope::Recipes => entries.extend([("rustRecipeBin", "rust/recipes.bin")]),
         CompileScope::Textures => entries.extend([
             ("rustTextureBin", "rust/textures.bin"),
             ("rustAnimationBin", "rust/animations.bin"),
-            ("rustTexturePack", "rust/texture-pack.json"),
         ]),
+    }
+    if debug_json {
+        match scope {
+            CompileScope::All => entries.extend([
+                ("rustBrowserPack", "rust/browser-pack.json"),
+                ("rustSearchPack", "rust/search-pack.json"),
+                ("rustRecipePack", "rust/recipe-pack.json"),
+                ("rustTexturePack", "rust/texture-pack.json"),
+            ]),
+            CompileScope::Search => entries.push(("rustSearchPack", "rust/search-pack.json")),
+            CompileScope::Browser => entries.extend([
+                ("rustBrowserPack", "rust/browser-pack.json"),
+                ("rustSearchPack", "rust/search-pack.json"),
+            ]),
+            CompileScope::Recipes => entries.push(("rustRecipePack", "rust/recipe-pack.json")),
+            CompileScope::Textures => entries.push(("rustTexturePack", "rust/texture-pack.json")),
+        }
     }
     entries
 }
@@ -3025,27 +3147,37 @@ fn validate_frame_bounds(item_id: &str, atlas: Option<&Value>, invalid_bounds: &
     let Some(atlas) = atlas else {
         return;
     };
-    let atlas_width = atlas.get("atlasWidth").and_then(Value::as_u64).unwrap_or(0);
-    let atlas_height = atlas
-        .get("atlasHeight")
-        .and_then(Value::as_u64)
-        .unwrap_or(0);
+    let atlas_width = value_u64(atlas, "atlasWidth").unwrap_or(0);
+    let atlas_height = value_u64(atlas, "atlasHeight").unwrap_or(0);
     let Some(frames) = atlas.get("frames").and_then(Value::as_array) else {
         return;
     };
     for (index, frame) in frames.iter().enumerate() {
-        let Some(values) = frame.as_array() else {
-            invalid_bounds.push(format!("{item_id}:frame-{index}:not-array"));
+        let bounds = if let Some(values) = frame.as_array() {
+            if values.len() < 5 {
+                invalid_bounds.push(format!("{item_id}:frame-{index}:short"));
+                continue;
+            }
+            Some((
+                values.get(1).and_then(numeric_value_u64).unwrap_or(0),
+                values.get(2).and_then(numeric_value_u64).unwrap_or(0),
+                values.get(3).and_then(numeric_value_u64).unwrap_or(0),
+                values.get(4).and_then(numeric_value_u64).unwrap_or(0),
+            ))
+        } else if frame.is_object() {
+            Some((
+                value_u64(frame, "x").unwrap_or(0),
+                value_u64(frame, "y").unwrap_or(0),
+                value_u64(frame, "width").unwrap_or(0),
+                value_u64(frame, "height").unwrap_or(0),
+            ))
+        } else {
+            invalid_bounds.push(format!("{item_id}:frame-{index}:unsupported-shape"));
+            None
+        };
+        let Some((x, y, width, height)) = bounds else {
             continue;
         };
-        if values.len() < 5 {
-            invalid_bounds.push(format!("{item_id}:frame-{index}:short"));
-            continue;
-        }
-        let x = values.get(1).and_then(Value::as_u64).unwrap_or(0);
-        let y = values.get(2).and_then(Value::as_u64).unwrap_or(0);
-        let width = values.get(3).and_then(Value::as_u64).unwrap_or(0);
-        let height = values.get(4).and_then(Value::as_u64).unwrap_or(0);
         if width == 0
             || height == 0
             || (atlas_width > 0 && x + width > atlas_width)
@@ -3068,8 +3200,8 @@ fn normalize_timeline(animated_atlas: Option<&Value>, fallback_duration_ms: Opti
                 .map(|(index, value)| {
                     if let Some(pair) = value.as_array() {
                         json!({
-                            "frameIndex": pair.first().and_then(Value::as_u64).unwrap_or(index as u64),
-                            "durationMs": pair.get(1).and_then(Value::as_u64).or(fallback_duration_ms),
+                            "frameIndex": pair.first().and_then(numeric_value_u64).unwrap_or(index as u64),
+                            "durationMs": pair.get(1).and_then(numeric_value_u64).or(fallback_duration_ms),
                         })
                     } else {
                         value.clone()
@@ -3080,7 +3212,7 @@ fn normalize_timeline(animated_atlas: Option<&Value>, fallback_duration_ms: Opti
     }
     let frame_count = animated_atlas
         .get("frameCount")
-        .and_then(Value::as_u64)
+        .and_then(numeric_value_u64)
         .unwrap_or(0);
     Value::Array(
         (0..frame_count)
@@ -3246,7 +3378,7 @@ fn value_string(value: &Value, key: &str) -> Option<String> {
 }
 
 fn value_u64(value: &Value, key: &str) -> Option<u64> {
-    value.get(key)?.as_u64()
+    numeric_value_u64(value.get(key)?)
 }
 
 fn optional_value_string(value: Option<&Value>, key: &str) -> Option<String> {
@@ -3254,7 +3386,16 @@ fn optional_value_string(value: Option<&Value>, key: &str) -> Option<String> {
 }
 
 fn optional_value_u64(value: Option<&Value>, key: &str) -> Option<u64> {
-    value?.get(key)?.as_u64()
+    value_u64(value?, key)
+}
+
+fn numeric_value_u64(value: &Value) -> Option<u64> {
+    match value {
+        Value::Number(number) => number.as_u64(),
+        Value::String(text) => text.trim().parse::<u64>().ok(),
+        Value::Object(object) => object.get("value").and_then(numeric_value_u64),
+        _ => None,
+    }
 }
 
 fn normalize_text(value: &str) -> String {
@@ -3462,10 +3603,77 @@ mod tests {
     }
 
     #[test]
+    fn wrapped_numeric_texture_frames_compile_without_invalid_bounds() {
+        let animated_atlas = json!({
+            "atlasFile": "assets/textures/atlas-assets/animated-atlases/item-native-animated.png",
+            "atlasWidth": { "value": "2048" },
+            "atlasHeight": { "value": "4096" },
+            "frameDurationMs": { "value": "50" },
+            "frameCount": { "value": "2" },
+            "frames": [
+                {
+                    "index": { "value": "0" },
+                    "x": { "value": "0" },
+                    "y": { "value": "0" },
+                    "width": { "value": "16" },
+                    "height": { "value": "16" }
+                },
+                {
+                    "index": { "value": 1 },
+                    "x": { "value": 16 },
+                    "y": { "value": 0 },
+                    "width": { "value": 16 },
+                    "height": { "value": 16 }
+                }
+            ],
+            "timeline": [
+                {
+                    "timelineIndex": { "value": "0" },
+                    "frameIndex": { "value": "0" },
+                    "durationMs": { "value": "50" }
+                },
+                {
+                    "timelineIndex": { "value": "1" },
+                    "frameIndex": { "value": "1" },
+                    "durationMs": { "value": "75" }
+                }
+            ]
+        });
+
+        let mut invalid_bounds = Vec::new();
+        validate_frame_bounds(
+            "i~AWWayofTime~lifeEssence~0",
+            Some(&animated_atlas),
+            &mut invalid_bounds,
+        );
+        assert!(invalid_bounds.is_empty(), "{invalid_bounds:?}");
+
+        let normalized = normalize_timeline(
+            Some(&animated_atlas),
+            value_u64(&animated_atlas, "frameDurationMs"),
+        );
+        assert_eq!(
+            normalized
+                .as_array()
+                .and_then(|values| values.get(1))
+                .and_then(|value| value_u64(value, "durationMs")),
+            Some(75)
+        );
+
+        let items = vec![json!({
+            "itemId": "i~AWWayofTime~lifeEssence~0",
+            "animatedAtlas": animated_atlas
+        })];
+        let payload = build_compact_texture_payload_from_atlas_items(&items).unwrap();
+        assert_eq!(&payload[0..8], b"NEITEX1\0");
+        assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 2);
+    }
+
+    #[test]
     fn compact_string_pack_uses_native_binary_payload() {
         let items = vec![json!({
             "itemId": "minecraft:iron_ingot",
-            "localizedName": "铁锭",
+            "localizedName": "閾侀敪",
             "modId": "minecraft",
             "internalName": "item.ingotIron",
             "groupKey": "",
@@ -3483,12 +3691,12 @@ mod tests {
         let items = vec![json!({
             "itemId": "minecraft:iron_ingot",
             "publicItemId": "item:minecraft:iron_ingot",
-            "localizedName": "铁锭",
+            "localizedName": "閾侀敪",
             "modId": "minecraft",
-            "normalizedLocalizedName": "铁锭",
+            "normalizedLocalizedName": "閾侀敪",
             "normalizedInternalName": "item ingotiron",
             "normalizedItemId": "minecraft iron_ingot",
-            "normalizedSearchTerms": "iron ingot minecraft 铁锭",
+            "normalizedSearchTerms": "iron ingot minecraft 閾侀敪",
             "pinyinFull": "tieding",
             "pinyinAcronym": "td",
             "popularityScore": 3,
@@ -3536,5 +3744,30 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[40..44].try_into().unwrap()), 3);
         assert_eq!(u32::from_le_bytes(payload[44..48].try_into().unwrap()), 7);
         assert_eq!(u32::from_le_bytes(payload[48..52].try_into().unwrap()), 5);
+    }
+
+    #[test]
+    fn production_manifest_entries_exclude_debug_json_packs() {
+        let production_entries = rust_manifest_file_entries(CompileScope::All, false)
+            .into_iter()
+            .map(|(_, path)| path)
+            .collect::<Vec<_>>();
+        assert!(production_entries.contains(&"rust/browser.bin"));
+        assert!(production_entries.contains(&"rust/search.bin"));
+        assert!(production_entries.contains(&"rust/recipes.bin"));
+        assert!(production_entries.contains(&"rust/textures.bin"));
+        assert!(!production_entries.contains(&"rust/browser-pack.json"));
+        assert!(!production_entries.contains(&"rust/search-pack.json"));
+        assert!(!production_entries.contains(&"rust/recipe-pack.json"));
+        assert!(!production_entries.contains(&"rust/texture-pack.json"));
+
+        let debug_entries = rust_manifest_file_entries(CompileScope::All, true)
+            .into_iter()
+            .map(|(_, path)| path)
+            .collect::<Vec<_>>();
+        assert!(debug_entries.contains(&"rust/browser-pack.json"));
+        assert!(debug_entries.contains(&"rust/search-pack.json"));
+        assert!(debug_entries.contains(&"rust/recipe-pack.json"));
+        assert!(debug_entries.contains(&"rust/texture-pack.json"));
     }
 }

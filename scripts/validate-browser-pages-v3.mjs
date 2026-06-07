@@ -32,6 +32,184 @@ function readJson(relativePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
+function readRuntimeBin(relativePath) {
+  if (!relativePath) return null;
+  const filePath = join(distDataDir, relativePath);
+  if (!existsSync(filePath)) return null;
+  const bytes = readFileSync(filePath);
+  if (bytes.subarray(0, 8).toString("utf8") !== "NNEIBIN\0") {
+    throw new Error(`Invalid native runtime binary magic: ${filePath}`);
+  }
+  const schemaLength = bytes.readUInt32LE(12);
+  const payloadLength = Number(bytes.readBigUInt64LE(16));
+  const payloadOffset = 24 + schemaLength;
+  return bytes.subarray(payloadOffset, payloadOffset + payloadLength);
+}
+
+function readCompactString(bytes, baseOffset, relativeOffset) {
+  if (relativeOffset <= 0 && bytes[baseOffset] === 0) return "";
+  let end = baseOffset + relativeOffset;
+  while (end < bytes.length && bytes[end] !== 0) end += 1;
+  return bytes.subarray(baseOffset + relativeOffset, end).toString("utf8");
+}
+
+function parseCompactStrings(bytes, offset, stringCount) {
+  const offsets = [];
+  for (let index = 0; index < stringCount; index += 1) {
+    offsets.push(bytes.readUInt32LE(offset + index * 4));
+  }
+  return {
+    offsets,
+    stringsBase: offset + stringCount * 4,
+  };
+}
+
+function parseBrowserBin(relativePath) {
+  const bytes = readRuntimeBin(relativePath);
+  if (!bytes) return null;
+  if (bytes.subarray(0, 8).toString("utf8") !== "NEIBRW1\0") {
+    throw new Error(`Invalid browser.bin payload: ${relativePath}`);
+  }
+  const rowCount = bytes.readUInt32LE(12);
+  const stringCount = bytes.readUInt32LE(16);
+  const rowStride = bytes.readUInt32LE(20);
+  const { offsets, stringsBase } = parseCompactStrings(bytes, 24, stringCount);
+  const rowsBase = stringsBase + offsets.reduce((max, value) => Math.max(max, value), 0);
+  let stringBytesEnd = stringsBase;
+  while (stringBytesEnd < bytes.length) stringBytesEnd += 1;
+  const rowOffset = 24 + stringCount * 4;
+  const rows = [];
+  const stringsDataBase = rowOffset + rowCount * rowStride * 4;
+  const stringAt = (ref) => readCompactString(bytes, stringsDataBase, offsets[ref] ?? 0);
+  for (let row = 0; row < rowCount; row += 1) {
+    const base = rowOffset + row * rowStride * 4;
+    const itemId = stringAt(bytes.readUInt32LE(base));
+    rows.push({
+      itemId,
+      localizedName: stringAt(bytes.readUInt32LE(base + 4)),
+      modId: stringAt(bytes.readUInt32LE(base + 8)),
+      groupKey: stringAt(bytes.readUInt32LE(base + 12)),
+      browserOrder: bytes.readUInt32LE(base + 16),
+      flags: bytes.readUInt32LE(base + 20),
+    });
+  }
+  void rowsBase;
+  return { items: rows };
+}
+
+function parseGroupsBin(relativePath) {
+  const bytes = readRuntimeBin(relativePath);
+  if (!bytes) return null;
+  if (bytes.subarray(0, 8).toString("utf8") !== "NEIGRP1\0") {
+    throw new Error(`Invalid groups.bin payload: ${relativePath}`);
+  }
+  const rowCount = bytes.readUInt32LE(12);
+  const stringCount = bytes.readUInt32LE(16);
+  const memberCount = bytes.readUInt32LE(20);
+  const rowStride = bytes.readUInt32LE(24);
+  const { offsets } = parseCompactStrings(bytes, 28, stringCount);
+  const rowOffset = 28 + stringCount * 4;
+  const memberOffset = rowOffset + rowCount * rowStride * 4;
+  const stringsDataBase = memberOffset + memberCount * 4;
+  const stringAt = (ref) => readCompactString(bytes, stringsDataBase, offsets[ref] ?? 0);
+  const memberRefs = [];
+  for (let index = 0; index < memberCount; index += 1) {
+    memberRefs.push(bytes.readUInt32LE(memberOffset + index * 4));
+  }
+  const groups = [];
+  for (let row = 0; row < rowCount; row += 1) {
+    const base = rowOffset + row * rowStride * 4;
+    const memberStart = bytes.readUInt32LE(base + 12);
+    const memberLength = bytes.readUInt32LE(base + 16);
+    groups.push({
+      groupKey: stringAt(bytes.readUInt32LE(base)),
+      groupLabel: stringAt(bytes.readUInt32LE(base + 4)),
+      representativeItemId: stringAt(bytes.readUInt32LE(base + 8)),
+      memberItemIds: memberRefs.slice(memberStart, memberStart + memberLength).map(stringAt),
+      groupSize: bytes.readUInt32LE(base + 20),
+      groupSource: "native/groups.bin",
+    });
+  }
+  return { groups };
+}
+
+function parseSearchBin(relativePath) {
+  const bytes = readRuntimeBin(relativePath);
+  if (!bytes) return null;
+  if (bytes.subarray(0, 8).toString("utf8") !== "NEISRC2\0") {
+    throw new Error(`Invalid search.bin payload: ${relativePath}`);
+  }
+  const rowCount = bytes.readUInt32LE(12);
+  const stringCount = bytes.readUInt32LE(16);
+  const rowStride = bytes.readUInt32LE(20);
+  const { offsets } = parseCompactStrings(bytes, 24, stringCount);
+  const rowOffset = 24 + stringCount * 4;
+  const stringsDataBase = rowOffset + rowCount * rowStride * 4;
+  const stringAt = (ref) => readCompactString(bytes, stringsDataBase, offsets[ref] ?? 0);
+  const rows = [];
+  for (let row = 0; row < rowCount; row += 1) {
+    const base = rowOffset + row * rowStride * 4;
+    rows.push({
+      itemId: stringAt(bytes.readUInt32LE(base)),
+      publicItemId: stringAt(bytes.readUInt32LE(base + 4)),
+      localizedName: stringAt(bytes.readUInt32LE(base + 8)),
+      modId: stringAt(bytes.readUInt32LE(base + 12)),
+      normalizedLocalizedName: stringAt(bytes.readUInt32LE(base + 16)),
+      normalizedInternalName: stringAt(bytes.readUInt32LE(base + 20)),
+      normalizedItemId: stringAt(bytes.readUInt32LE(base + 24)),
+      normalizedSearchTerms: stringAt(bytes.readUInt32LE(base + 28)),
+      pinyinFull: stringAt(bytes.readUInt32LE(base + 32)),
+      pinyinAcronym: stringAt(bytes.readUInt32LE(base + 36)),
+      popularityScore: bytes.readUInt32LE(base + 40),
+      searchRank: bytes.readUInt32LE(base + 44),
+      browserIndex: bytes.readUInt32LE(base + 48),
+    });
+  }
+  return { items: rows };
+}
+
+function parseTexturesBin(relativePath) {
+  const bytes = readRuntimeBin(relativePath);
+  if (!bytes) return null;
+  if (bytes.subarray(0, 8).toString("utf8") !== "NEITEX1\0") {
+    throw new Error(`Invalid textures.bin payload: ${relativePath}`);
+  }
+  const rowCount = bytes.readUInt32LE(12);
+  const stringCount = bytes.readUInt32LE(16);
+  const frameCount = bytes.readUInt32LE(20);
+  const rowStride = bytes.readUInt32LE(24);
+  const frameStride = bytes.readUInt32LE(28);
+  const { offsets } = parseCompactStrings(bytes, 32, stringCount);
+  const rowOffset = 32 + stringCount * 4;
+  const frameOffset = rowOffset + rowCount * rowStride * 4;
+  const stringsDataBase = frameOffset + frameCount * frameStride * 4;
+  const stringAt = (ref) => readCompactString(bytes, stringsDataBase, offsets[ref] ?? 0);
+  const items = [];
+  for (let row = 0; row < rowCount; row += 1) {
+    const base = rowOffset + row * rowStride * 4;
+    const itemId = stringAt(bytes.readUInt32LE(base));
+    const staticAtlasFile = stringAt(bytes.readUInt32LE(base + 4));
+    const animatedAtlasFile = stringAt(bytes.readUInt32LE(base + 24));
+    items.push({
+      itemId,
+      staticAtlas: staticAtlasFile ? {
+        atlasFile: staticAtlasFile,
+        x: bytes.readUInt32LE(base + 8),
+        y: bytes.readUInt32LE(base + 12),
+        width: bytes.readUInt32LE(base + 16),
+        height: bytes.readUInt32LE(base + 20),
+      } : null,
+      animatedAtlas: animatedAtlasFile ? {
+        atlasFile: animatedAtlasFile,
+        frameStart: bytes.readUInt32LE(base + 28),
+        frameCount: bytes.readUInt32LE(base + 32),
+        frameDurationMs: bytes.readUInt32LE(base + 36),
+      } : null,
+    });
+  }
+  return { items };
+}
+
 function normalize(value) {
   return `${value ?? ""}`.trim().toLowerCase().replace(/\s+/g, "");
 }
@@ -348,18 +526,19 @@ function searchEntries(searchItems, indexes, query) {
 
 const manifest = readJson("manifest.json");
 const files = manifest.files ?? {};
-const rustBrowserPack = files.rustBrowserPack ? readJson(files.rustBrowserPack) : null;
-const rustTexturePack = files.rustTexturePack ? readJson(files.rustTexturePack) : null;
-const rustSearchPack = files.rustSearchPack ? readJson(files.rustSearchPack) : null;
+const rustBrowserPack = parseBrowserBin(files.rustBrowserBin);
+const rustGroupPack = parseGroupsBin(files.rustGroupsBin);
+const rustTexturePack = parseTexturesBin(files.rustTextureBin);
+const rustSearchPack = parseSearchBin(files.rustSearchBin);
 const catalogPayload = rustBrowserPack?.items ? rustBrowserPack : readJson(files.browserCatalog ?? "browser/item-catalog.json");
-const groupsPayload = rustBrowserPack?.groups ? rustBrowserPack : readJson(files.browserGroups ?? "browser/group-index.json");
-const atlasPayload = rustTexturePack?.atlas?.items ? rustTexturePack.atlas : readJson(files.browserAtlasIndex ?? "textures/browser-atlas-index.json");
+const groupsPayload = rustGroupPack?.groups ? rustGroupPack : readJson(files.browserGroups ?? "browser/group-index.json");
+const atlasPayload = rustTexturePack?.items ? rustTexturePack : readJson(files.browserAtlasIndex ?? "textures/browser-atlas-index.json");
 const searchPayload = rustSearchPack?.items ? rustSearchPack : readJson(files.searchAll ?? "search/all.json");
 const runtimeSources = {
-  browser: rustBrowserPack?.items ? "rust/browser-pack" : "legacy/browser-catalog",
-  groups: rustBrowserPack?.groups ? "rust/browser-pack" : "legacy/browser-groups",
-  atlas: rustTexturePack?.atlas?.items ? "rust/texture-pack" : "legacy/browser-atlas-index",
-  search: rustSearchPack?.items ? "rust/search-pack" : "legacy/search-all",
+  browser: rustBrowserPack?.items ? "rust/browser.bin" : "legacy/browser-catalog",
+  groups: rustGroupPack?.groups ? "rust/groups.bin" : "legacy/browser-groups",
+  atlas: rustTexturePack?.items ? "rust/textures.bin" : "legacy/browser-atlas-index",
+  search: rustSearchPack?.items ? "rust/search.bin" : "legacy/search-all",
 };
 const nativeRuntimeSourceFailures = Object.entries(runtimeSources)
   .filter(([, source]) => source.startsWith("legacy/"))
