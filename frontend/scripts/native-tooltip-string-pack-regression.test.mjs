@@ -24,7 +24,7 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
   );
   assert.match(
     workerSource,
-    /COMPACT_SEARCH_MAGIC = "NEISRC1\\0"/,
+    /COMPACT_SEARCH_MAGIC = "NEISRC2\\0"/,
     'worker must support the compact binary search payload',
   );
   assert.match(

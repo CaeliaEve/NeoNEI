@@ -6,6 +6,7 @@
 //! the browser loads the compiled WASM module.
 
 pub mod compact_browser;
+pub mod compact_search;
 pub mod hit_test;
 pub mod layout;
 
@@ -13,6 +14,7 @@ pub use compact_browser::{
     compact_browser_project_count, compact_browser_project_indices, compact_browser_project_visible_indices,
     parse_compact_browser_header,
 };
+pub use compact_search::{compact_search_project_visible_indices, parse_compact_search_header};
 pub use hit_test::{hit_test_index, NativeHit};
 pub use layout::{compute_columns, compute_layout, NativeLayoutCommand};
 
@@ -178,6 +180,45 @@ pub unsafe extern "C" fn neonei_engine_compact_browser_project_visible_indices(
         Some(std::slice::from_raw_parts_mut(out_ptr, out_len as usize))
     };
     compact_browser_project_visible_indices(pack, query, mod_filter, expanded_groups, out).unwrap_or(0)
+}
+
+/// Writes search-pack projected visible entries into `out_ptr`.
+///
+/// Empty queries should keep using browser-pack projection so the default
+/// browser order remains identical to the exported NEI order. Non-empty queries
+/// can call this function to use normalized/pinyin search metadata without JS
+/// object scanning.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_search_project_visible_indices(
+    browser_ptr: *const u8,
+    browser_len: u32,
+    search_ptr: *const u8,
+    search_len: u32,
+    query_ptr: *const u8,
+    query_len: u32,
+    mod_ptr: *const u8,
+    mod_len: u32,
+    expanded_ptr: *const u8,
+    expanded_len: u32,
+    out_ptr: *mut u32,
+    out_len: u32,
+) -> u32 {
+    let Some(browser_pack) = wasm_slice(browser_ptr, browser_len) else {
+        return 0;
+    };
+    let Some(search_pack) = wasm_slice(search_ptr, search_len) else {
+        return 0;
+    };
+    let query = wasm_str(query_ptr, query_len).unwrap_or("");
+    let mod_filter = wasm_str(mod_ptr, mod_len).unwrap_or("");
+    let expanded_groups = wasm_str(expanded_ptr, expanded_len).unwrap_or("");
+    let out = if out_ptr.is_null() || out_len == 0 {
+        None
+    } else {
+        Some(std::slice::from_raw_parts_mut(out_ptr, out_len as usize))
+    };
+    compact_search_project_visible_indices(browser_pack, search_pack, query, mod_filter, expanded_groups, out)
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

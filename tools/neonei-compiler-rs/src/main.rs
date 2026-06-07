@@ -481,6 +481,20 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
             .cmp(&right_order)
             .then_with(|| value_string(left, "itemId").cmp(&value_string(right, "itemId")))
     });
+    let browser_index_by_item = browser_items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| Some((value_string(item, "itemId")?, index as u64)))
+        .collect::<BTreeMap<_, _>>();
+    for item in &mut search_items {
+        if let Some(item_object) = item.as_object_mut() {
+            if let Some(item_id) = item_object.get("itemId").and_then(Value::as_str) {
+                if let Some(browser_index) = browser_index_by_item.get(item_id) {
+                    item_object.insert("browserIndex".to_string(), json!(browser_index));
+                }
+            }
+        }
+    }
 
     let atlas_items = atlas_by_item.len() as u64;
     let pack = json!({
@@ -865,7 +879,7 @@ fn build_compact_search_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
     let mut strings = vec![String::new()];
     let mut string_refs = HashMap::new();
     string_refs.insert(String::new(), 0u32);
-    let mut rows = Vec::<[u32; 12]>::with_capacity(items.len());
+    let mut rows = Vec::<[u32; 13]>::with_capacity(items.len());
 
     let mut sorted_items = items.to_vec();
     sorted_items.sort_by(|left, right| {
@@ -873,13 +887,15 @@ fn build_compact_search_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
             .cmp(&value_u64(right, "searchRank"))
             .then_with(|| value_string(left, "itemId").cmp(&value_string(right, "itemId")))
     });
-
     for (fallback_rank, item) in sorted_items.iter().enumerate() {
         let popularity = value_u64(item, "popularityScore")
             .unwrap_or(1)
             .min(u32::MAX as u64) as u32;
         let search_rank = value_u64(item, "searchRank")
             .unwrap_or(fallback_rank as u64)
+            .min(u32::MAX as u64) as u32;
+        let browser_index = value_u64(item, "browserIndex")
+            .unwrap_or(search_rank as u64)
             .min(u32::MAX as u64) as u32;
         rows.push([
             intern_compact_string(&mut strings, &mut string_refs, value_string(item, "itemId")),
@@ -894,6 +910,7 @@ fn build_compact_search_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
             intern_compact_string(&mut strings, &mut string_refs, value_string(item, "pinyinAcronym")),
             popularity,
             search_rank,
+            browser_index,
         ]);
     }
 
@@ -905,11 +922,11 @@ fn build_compact_search_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
         string_bytes.push(0);
     }
 
-    let row_stride_u32 = 12u32;
+    let row_stride_u32 = 13u32;
     let mut payload = Vec::with_capacity(
         8 + 4 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + string_bytes.len(),
     );
-    payload.extend_from_slice(b"NEISRC1\0");
+    payload.extend_from_slice(b"NEISRC2\0");
     push_u32(&mut payload, 1);
     push_u32(&mut payload, rows.len() as u32);
     push_u32(&mut payload, strings.len() as u32);
@@ -981,15 +998,29 @@ fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Resul
         &compact_browser_payload,
     )?;
     write_binary_pack(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_pack)?;
-    let search_rows =
+    let browser_items = read_json_collection(input, &manifest, &["browserCatalog", "items"], Some("items"))?;
+    let browser_index_by_item = browser_items
+        .iter()
+        .enumerate()
+        .filter_map(|(index, item)| Some((value_string(item, "itemId")?, index as u64)))
+        .collect::<BTreeMap<_, _>>();
+    let mut search_rows =
         read_json_collection(input, &manifest, &["searchAll", "browserCatalog", "items"], Some("items"))?;
+    for item in &mut search_rows {
+        if let Some(item_object) = item.as_object_mut() {
+            if let Some(item_id) = item_object.get("itemId").and_then(Value::as_str) {
+                if let Some(browser_index) = browser_index_by_item.get(item_id) {
+                    item_object.insert("browserIndex".to_string(), json!(browser_index));
+                }
+            }
+        }
+    }
     let compact_search_payload = build_compact_search_payload_from_items(&search_rows)?;
     write_binary_pack_payload(
         &rust_dir.join("search.bin"),
         "neonei/search-pack/current",
         &compact_search_payload,
     )?;
-    let browser_items = read_json_collection(input, &manifest, &["browserCatalog", "items"], Some("items"))?;
     let string_pack = build_compact_string_payload_from_items(&browser_items)?;
     write_binary_pack_payload(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
     Ok(())
@@ -3047,10 +3078,10 @@ mod tests {
             "searchRank": 7
         })];
         let payload = build_compact_search_payload_from_items(&items).unwrap();
-        assert_eq!(&payload[0..8], b"NEISRC1\0");
+        assert_eq!(&payload[0..8], b"NEISRC2\0");
         assert_eq!(u32::from_le_bytes(payload[8..12].try_into().unwrap()), 1);
         assert_eq!(u32::from_le_bytes(payload[12..16].try_into().unwrap()), 1);
-        assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 12);
+        assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 13);
     }
 
     #[test]

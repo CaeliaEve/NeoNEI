@@ -151,7 +151,7 @@ pub fn compact_browser_project_indices(
     Some(count)
 }
 
-fn expanded_group_keys(expanded_groups: &str) -> std::collections::HashSet<String> {
+pub fn expanded_group_keys(expanded_groups: &str) -> std::collections::HashSet<String> {
     expanded_groups
         .split(['\n', '\r', ','])
         .map(str::trim)
@@ -160,7 +160,7 @@ fn expanded_group_keys(expanded_groups: &str) -> std::collections::HashSet<Strin
         .collect()
 }
 
-fn encode_visible_entry(row_index: u32, collapsed_group: bool) -> u32 {
+pub fn encode_visible_entry(row_index: u32, collapsed_group: bool) -> u32 {
     let index = row_index & COMPACT_BROWSER_INDEX_MASK;
     if collapsed_group {
         index | COMPACT_BROWSER_GROUP_COLLAPSED_FLAG

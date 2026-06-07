@@ -171,7 +171,7 @@ function validateCompactSearchPayload(payloadBytes, failures, logicalName) {
   const compactHeaderBytes = 8 + 4 * 4;
   if (payloadBytes.length < compactHeaderBytes) return false;
   const magic = payloadBytes.subarray(0, 8).toString('utf8');
-  if (magic !== 'NEISRC1\0') return false;
+  if (magic !== 'NEISRC2\0') return false;
   const version = payloadBytes.readUInt32LE(8);
   const itemCount = payloadBytes.readUInt32LE(12);
   const stringCount = payloadBytes.readUInt32LE(16);
@@ -182,7 +182,7 @@ function validateCompactSearchPayload(payloadBytes, failures, logicalName) {
   if (version !== 1) {
     fail(failures, 'NATIVE_SEARCH_PACK_BAD_COMPACT_VERSION', 'compact search pack has an invalid version', { logicalName, version });
   }
-  if (rowStride !== 12) {
+  if (rowStride !== 13) {
     fail(failures, 'NATIVE_SEARCH_PACK_BAD_ROW_STRIDE', 'compact search pack has an invalid row stride', { logicalName, rowStride });
   }
   if (stringCount <= 0 || itemCount <= 0) {
