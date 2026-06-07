@@ -12,36 +12,36 @@ const animationBudgetSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-test('homepage browser pages prewarm atlas plus animated-only rich media without reviving per-item static image warmups', () => {
+test('homepage browser pages warm only the resident global atlas without reviving page media fallbacks', () => {
   assert.equal(
-    browserSource.includes('loadImageAsset(response.atlas.atlasUrl)'),
+    browserSource.includes("source: 'resident-global-atlas'"),
     true,
-    'browser page application should prewarm the shared atlas image as soon as the page pack arrives',
+    'browser page presentation should report resident global atlas coverage',
   );
   assert.equal(
     browserSource.includes('queueRenderableMediaPrewarmFromUnknown(response.data'),
-    true,
-    'browser page application should queue rich-media prewarm work from the visible entries',
+    false,
+    'browser page application should not queue per-entry rich-media prewarm work on the homepage hot path',
   );
   assert.equal(
     browserSource.includes('primeAnimatedAtlasManifest(response.mediaManifest)'),
-    true,
-    'browser page application should prime animated atlas metadata from the page payload before item renderers probe it',
+    false,
+    'browser page application should not depend on page payload animated atlas metadata',
   );
   assert.equal(
     browserSource.includes('const animatedAtlasUrls = collectAnimatedAtlasUrls(response).slice'),
-    true,
-    'browser page application should prewarm shared animated atlas images from the page manifest',
+    false,
+    'browser page application should not prewarm page-scoped animated atlas images',
   );
   assert.equal(
-    browserSource.includes('void ensureBrowserPagePresentationWarm(cacheKey, normalized, { animatedEntryLimit: 40, atlasLimit: 6 })'),
+    browserSource.includes('warmGlobalBrowserAtlasForItemsDetailed(itemIds)'),
     true,
-    'neighbor page prefetches should also prewarm atlas and animated rich media before the user flips pages',
+    'browser presentation warming should use the resident global atlas coverage path',
   );
   assert.equal(
     browserSource.includes('animatedOnly: true'),
-    true,
-    'browser page rich-media warmup should stay limited to animated/render-contract items instead of rewarming every static tile',
+    false,
+    'homepage should not keep animated-only per-item media prewarm fallback',
   );
 });
 
@@ -62,4 +62,3 @@ test('animation budget remembers session-warm assets even after the short HTMLIm
     'page presentation gating should treat session-warmed assets as warm even after the short image cache rotates older entries out',
   );
 });
-
