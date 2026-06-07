@@ -36,6 +36,7 @@ import HomeBrowserColumn from "../components/home/HomeBrowserColumn.vue";
 import HomeRecipeDock from "../components/home/HomeRecipeDock.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
 import { useHomeBrowserNavigation } from "../composables/home/useHomeBrowserNavigation";
+import { useHomeGridViewport, useHomeRailStyles } from "../composables/home/useHomeLayout";
 import { useSound } from "../services/sound.service";
 import { useRecipeViewer } from "../composables/useRecipeViewer";
 import { resolveRecipePresentationProfile } from "../services/uiTypeMapping";
@@ -70,11 +71,13 @@ watch(showHiddenDebugItems, (enabled) => {
   localStorage.setItem("neonei:show-hidden-debug-items", enabled ? "true" : "false");
 });
 
-const itemGridViewportRef = ref<HTMLElement | null>(null);
-const setItemGridViewportRef = (element: HTMLElement | null) => {
-  itemGridViewportRef.value = element;
-  syncMeasuredPageSize();
-};
+const {
+  itemGridViewportRef,
+  setItemGridViewportRef,
+  setGridViewportSync,
+  measureGridCapacityRaw,
+  measureVisibleGridCapacity,
+} = useHomeGridViewport(itemSize);
 
 const {
 
@@ -527,22 +530,6 @@ watch(showRecipeModal, (visible) => {
   }
 });
 
-const centerRailStyle = computed(() => ({
-  width: "var(--home-center-width)",
-  left: "var(--home-center-left)",
-}));
-
-const leftRailStyle = computed(() => ({
-  left: "max(24px, calc((100vw - var(--home-right-width) - var(--home-left-rail-width)) / 2))",
-  right: "auto",
-  width: "min(var(--home-left-rail-width), calc(100vw - var(--home-right-width) - 48px))",
-  maxWidth: "calc(100vw - var(--home-right-width) - 48px)",
-}));
-
-const itemColumnStyle = computed(() => ({
-  width: "var(--home-right-width)",
-}));
-
 const currentRecipePresentation = computed(() => {
   const recipe = currentPageRecipes.value[0];
   if (!recipe) return null;
@@ -590,24 +577,12 @@ const recipeModalScaleToFit = computed(() => {
 
 const recipePreviewNeedsWideStage = computed(() => recipeStageIsStateView.value || !recipeModalScaleToFit.value);
 
-const recipeDockStyle = computed(() => {
-  if (recipePreviewNeedsWideStage.value) {
-    return {
-      left: "16px",
-      right: "calc(var(--home-right-width) + 16px)",
-      top: "var(--home-recipe-top)",
-      bottom: "var(--home-recipe-bottom)",
-      width: "auto",
-      zIndex: "30",
-    };
-  }
-
-  return {
-    ...centerRailStyle.value,
-    top: "var(--home-recipe-top)",
-    bottom: "var(--home-recipe-bottom)",
-  };
-});
+const {
+  centerRailStyle,
+  leftRailStyle,
+  itemColumnStyle,
+  recipeDockStyle,
+} = useHomeRailStyles(recipePreviewNeedsWideStage);
 
 const recipeStageKey = computed(() => {
   if (recipeModalLoading.value) return "loading";
@@ -876,39 +851,6 @@ const onSelectGroup = (groupId: string) => {
     });
 };
 
-const measureGridCapacityRaw = () => {
-  const shell = itemGridViewportRef.value;
-  if (!shell) return null;
-
-  const style = window.getComputedStyle(shell);
-  const paddingX =
-    (Number.parseFloat(style.paddingLeft || "0") || 0)
-    + (Number.parseFloat(style.paddingRight || "0") || 0);
-  const paddingY =
-    (Number.parseFloat(style.paddingTop || "0") || 0)
-    + (Number.parseFloat(style.paddingBottom || "0") || 0);
-  const gap = 4;
-  const usableWidth = Math.max(0, shell.clientWidth - paddingX);
-  const usableHeight = Math.max(0, shell.clientHeight - paddingY);
-  const columnCount = Math.max(1, Math.floor((usableWidth + gap) / (itemSize.value + gap)));
-  const rows = Math.max(1, Math.floor((usableHeight + gap) / (itemSize.value + gap)));
-
-  if (columnCount <= 0 || rows <= 0) return null;
-  return columnCount * rows;
-};
-
-const measureVisibleGridCapacity = () => {
-  const capacity = measureGridCapacityRaw();
-  if (!capacity) return null;
-  const baseline = Math.max(20, pageSize.value);
-  const lowerBound = Math.max(20, Math.floor(baseline * 0.75));
-  const upperBound = Math.max(lowerBound, Math.ceil(baseline * 1.5));
-  if (capacity < lowerBound || capacity > upperBound) {
-    return null;
-  }
-  return capacity;
-};
-
 const syncMeasuredPageSize = () => {
   if (
     currentView.value !== "items"
@@ -916,10 +858,11 @@ const syncMeasuredPageSize = () => {
     || items.value.length === 0
     || currentPageAtlas.value === undefined
   ) return;
-  const measured = measureVisibleGridCapacity();
+  const measured = measureVisibleGridCapacity(pageSize);
   if (!measured || measured === pageSize.value || Math.abs(measured - pageSize.value) < 8) return;
   setPageSize(measured);
 };
+setGridViewportSync(syncMeasuredPageSize);
 
 const saveSettings = () => {
   localStorage.setItem("itemSize", itemSize.value.toString());
