@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env node
+#!/usr/bin/env node
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -28,6 +28,12 @@ const requireWebgpu = args.has("require-webgpu");
 const maxSettingsOpenMs = Number(args.get("max-settings-open-ms") || 250);
 const renderer = `${args.get("renderer") || ""}`.trim().toLowerCase();
 const requestedRenderer = renderer === "webgpu" || renderer === "webgl2" || renderer === "auto" ? renderer : null;
+const webgpuLaunchArgs = [
+  "--enable-unsafe-webgpu",
+  "--enable-features=Vulkan",
+  "--ignore-gpu-blocklist",
+  "--enable-gpu-rasterization",
+];
 
 function percentile(values, p) {
   if (values.length === 0) return 0;
@@ -54,7 +60,20 @@ async function clickButtonByLabel(page, labels) {
 
 async function main() {
   mkdirSync(outDir, { recursive: true });
-  const browser = await chromium.launch({ headless: true });
+  const wantsWebgpuProbe = requireWebgpu || requestedRenderer === "webgpu" || requestedRenderer === "auto";
+  let browser;
+  try {
+    browser = await chromium.launch({
+      channel: wantsWebgpuProbe ? "chrome" : undefined,
+      headless: true,
+      args: webgpuLaunchArgs,
+    });
+  } catch {
+    browser = await chromium.launch({
+      headless: true,
+      args: webgpuLaunchArgs,
+    });
+  }
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   if (requestedRenderer) {
     await page.addInitScript((value) => {
@@ -95,7 +114,7 @@ async function main() {
   const flipDurations = [];
   for (let i = 0; i < pageFlips; i += 1) {
     const start = performance.now();
-    await clickButtonByLabel(page, ["下一页", "›", ">", "Next"]);
+    await clickButtonByLabel(page, ["下一页", "?", ">", "Next"]);
     await page.waitForTimeout(16);
     flipDurations.push(performance.now() - start);
   }
@@ -257,6 +276,5 @@ main().catch((error) => {
   console.error(`[native-surface-baseline] failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
-
 
 

@@ -11,6 +11,10 @@ function readSource(relativePath) {
   return readFileSync(resolve(frontendRoot, relativePath), "utf8");
 }
 
+function readRepoSource(relativePath) {
+  return readFileSync(resolve(frontendRoot, "..", relativePath), "utf8");
+}
+
 test("native render auto prefers WebGPU when available", () => {
   const source = readSource("src/workers/nativeRender.worker.ts");
 
@@ -26,4 +30,13 @@ test("webgpu readiness does not probe a second WebGL context on the same canvas"
   assert.match(source, /backend === "webgpu" \? \{ maxTextureSize: 0, maxTextureUnits: 0 \} : detectWebglLimits\(canvas\)/);
   assert.match(source, /if \(!nativeRenderer && backend === "webgpu"\)/);
   assert.match(source, /backend = "webgl2"/);
+});
+
+test("native surface WebGPU gate launches a real Chrome WebGPU-capable browser first", () => {
+  const source = readRepoSource("scripts/native-surface-baseline.mjs");
+
+  assert.match(source, /const webgpuLaunchArgs = \[/);
+  assert.match(source, /"--enable-unsafe-webgpu"/);
+  assert.match(source, /"--ignore-gpu-blocklist"/);
+  assert.match(source, /channel: wantsWebgpuProbe \? "chrome" : undefined/);
 });
