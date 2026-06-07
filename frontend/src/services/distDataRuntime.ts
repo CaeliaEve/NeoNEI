@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   HomeBootstrapResponse,
   Item,
   Mod,
@@ -611,6 +611,12 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
       && Array.isArray(rustBrowserPack.groups)
       && rustBrowserPack.items.some((entry) => entry?.itemId),
     );
+    if (rustBrowserPath && !canUseRustBrowserPack) {
+      reportDistDataSchemaMismatch(manifest, rustBrowserPath, "Rust browser pack is missing usable items[]/groups[]", {
+        schemaVersion: rustBrowserPack?.schemaVersion ?? null,
+      });
+      return null;
+    }
     const [catalogPayload, hiddenCatalogPayload, groupPayload] = canUseRustBrowserPack
       ? [
           { schemaVersion: rustBrowserPack?.schemaVersion, items: rustBrowserPack?.items ?? [] } satisfies DistDataBrowserCatalogPayload,
@@ -726,11 +732,14 @@ export async function getDistDataSearchPack(): Promise<DistDataSearchPack | null
 
     for (const searchPath of searchPaths) {
       const payload = await fetchJson<DistDataSearchPayload>(joinAssetPath(getConfiguredBasePath(), searchPath)).catch(() => null);
-      if (!payload) {
-        continue;
-      }
-      const pack = coerceSearchPack(manifest, payload);
-      if (!pack.items.length) {
+      const pack = payload ? coerceSearchPack(manifest, payload) : null;
+      if (!payload || !pack?.items.length) {
+        if (searchPath === `${manifest.files?.rustSearchPack ?? ""}`.trim()) {
+          reportDistDataSchemaMismatch(manifest, searchPath, "Rust search pack is missing usable items[]", {
+            schemaVersion: payload?.schemaVersion ?? null,
+          });
+          return null;
+        }
         continue;
       }
 
@@ -952,6 +961,9 @@ async function getRustRecipePack(): Promise<DistDataRustRecipePackPayload | null
       joinAssetPath(getConfiguredBasePath(), recipePackPath),
     ).catch(() => null);
     if (!payload || !Array.isArray(payload.itemIndex) || payload.itemIndex.length <= 0) {
+      reportDistDataSchemaMismatch(manifest, recipePackPath, "Rust recipe pack is missing usable itemIndex[]", {
+        schemaVersion: payload?.schemaVersion ?? null,
+      });
       return null;
     }
     cachedRustRecipePack = payload;
@@ -982,6 +994,9 @@ async function getRecipeItemIndex(): Promise<Map<string, DistDataRecipeItemIndex
     if (rustEntries.length > 0) {
       cachedRecipeItemIndex = new Map(rustEntries.map((entry) => [entry.itemId, entry]));
       return cachedRecipeItemIndex;
+    }
+    if (`${manifest?.files?.rustRecipePack ?? ""}`.trim()) {
+      return null;
     }
 
     const indexPath = `${manifest?.files?.recipeItemIndex ?? ""}`.trim();
@@ -1409,6 +1424,9 @@ async function getRecipeUiPayloadIndex(): Promise<Map<string, DistDataRecipeUiPa
     if (rustEntries.length > 0) {
       cachedRecipeUiPayloadIndex = new Map(rustEntries.map((entry) => [entry.recipeId, entry]));
       return cachedRecipeUiPayloadIndex;
+    }
+    if (`${manifest?.files?.rustRecipePack ?? ""}`.trim()) {
+      return null;
     }
 
     const indexPath = `${manifest?.files?.recipeUiPayloadIndex ?? ""}`.trim();
