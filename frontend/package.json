@@ -45,7 +45,8 @@
                     "test:rust-retirement:full":  "node ../scripts/rust-retirement-gate.mjs --gate",
                     "test:wasm-engine":  "node ../scripts/wasm-engine-gate.mjs",
                     "test:native-runtime-packs":  "node ../scripts/validate-native-runtime-packs.mjs --gate",
-                    "test:native-runtime-projection":  "node ../scripts/native-runtime-projection-gate.mjs --gate"
+                    "test:native-runtime-projection":  "node ../scripts/native-runtime-projection-gate.mjs --gate",
+                    "test:runtime-service-worker":  "node --test scripts/runtime-service-worker-regression.test.mjs"
                 },
     "dependencies":  {
                          "axios":  "^1.13.2",

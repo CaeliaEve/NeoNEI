@@ -9,6 +9,7 @@ import './styles/animations.css'  // Rich animation system
 import './styles/enhanced-components.css'  // Enhanced component animations
 import App from './App.vue'
 import router from './router'
+import { registerRuntimeServiceWorker } from './services/runtimeServiceWorker'
 
 const RELOAD_GUARD_KEY = 'neonei:chunk-reload-guard'
 
@@ -70,5 +71,11 @@ void router.isReady().finally(() => {
     window.sessionStorage.removeItem(RELOAD_GUARD_KEY)
   } catch {
     // ignore storage failures
+  }
+})
+
+void registerRuntimeServiceWorker().then((status) => {
+  if (status.error) {
+    console.warn('[NeoNEI] runtime service worker registration failed:', status.error)
   }
 })

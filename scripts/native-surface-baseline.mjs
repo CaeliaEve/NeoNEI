@@ -99,15 +99,23 @@ async function main() {
     flipDurations.push(performance.now() - start);
   }
 
-  const settingsStart = performance.now();
-  await page.locator('button[data-native-benchmark="settings-open"]').click();
-  await page.waitForFunction(() => {
+  const settingsOpenMs = await page.evaluate(async () => {
+    const button = document.querySelector('button[data-native-benchmark="settings-open"]');
     const overlay = document.querySelector('[data-native-benchmark="settings-overlay"]');
-    return Boolean(overlay && getComputedStyle(overlay).display !== "none");
-  }, null, { timeout: 3_000 });
-  const settingsOpenMs = performance.now() - settingsStart;
+    if (!(button instanceof HTMLButtonElement) || !(overlay instanceof HTMLElement)) return Number.POSITIVE_INFINITY;
+    const start = performance.now();
+    button.click();
+    while (performance.now() - start < 3000) {
+      if (getComputedStyle(overlay).display !== "none") return performance.now() - start;
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    return performance.now() - start;
+  });
   const settingsCanvasCount = await page.evaluate(() => document.querySelectorAll("canvas").length);
-  await page.locator('button[data-native-benchmark="settings-close"]').click();
+  await page.evaluate(() => {
+    const button = document.querySelector('button[data-native-benchmark="settings-close"]');
+    if (button instanceof HTMLButtonElement) button.click();
+  });
   await page.waitForTimeout(150);
 
   const searchMs = await page.evaluate(async () => {
