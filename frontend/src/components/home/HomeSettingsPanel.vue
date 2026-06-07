@@ -1,6 +1,11 @@
 ﻿<script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useSettingsConstellationCanvas } from "../../composables/home/useSettingsConstellationCanvas";
+import {
+  clearRuntimeServiceWorkerCache,
+  getRuntimeServiceWorkerStatus,
+  type RuntimeServiceWorkerStatus,
+} from "../../services/runtimeServiceWorker";
 
 type HomeView = "items" | "patterns";
 
@@ -43,6 +48,33 @@ const historyCountText = computed(() => props.historyCount.toLocaleString());
 
 const saveButtonRef = ref<HTMLButtonElement | null>(null);
 const { settingsBgCanvas, settingsUiRoot } = useSettingsConstellationCanvas(isOpen);
+const runtimeCacheStatus = ref<RuntimeServiceWorkerStatus>({
+  supported: typeof navigator !== "undefined" && "serviceWorker" in navigator,
+  registered: false,
+  controllerReady: false,
+});
+const runtimeCacheLoading = ref(false);
+const runtimeCacheError = ref<string | null>(null);
+
+const runtimeCacheStateLabel = computed(() => {
+  if (!runtimeCacheStatus.value.supported) return "UNSUPPORTED";
+  if (runtimeCacheStatus.value.error || runtimeCacheError.value) return "ERROR";
+  if (!runtimeCacheStatus.value.registered) return "DEV OFF";
+  if (!runtimeCacheStatus.value.controllerReady) return "INSTALLING";
+  return "ACTIVE";
+});
+const runtimeCacheStateClass = computed(() => {
+  if (runtimeCacheStateLabel.value === "ACTIVE") return "bg-emerald-500/5 border-emerald-500/20 text-emerald-400";
+  if (runtimeCacheStateLabel.value === "ERROR") return "bg-rose-500/5 border-rose-500/20 text-rose-400";
+  return "bg-amber-500/5 border-amber-500/20 text-amber-400";
+});
+const runtimeCacheSizeText = computed(() => {
+  const bytes = runtimeCacheStatus.value.approxBytes ?? 0;
+  if (bytes <= 0) return "0 MB";
+  const mb = bytes / 1024 / 1024;
+  return `${mb.toFixed(mb >= 100 ? 0 : 1)} MB`;
+});
+const runtimeCacheEntryText = computed(() => (runtimeCacheStatus.value.entryCount ?? 0).toLocaleString());
 
 const toggleOpen = () => emit("update:modelValue", !props.modelValue);
 const close = () => emit("update:modelValue", false);
@@ -55,6 +87,30 @@ const emitRefreshAtlasResidentState = () => emit("refresh-atlas-resident-state")
 const emitRuntimeHealth = () => emit("open-runtime-health");
 const emitClearHistory = () => emit("clear-history");
 
+const refreshRuntimeCacheStatus = async () => {
+  runtimeCacheLoading.value = true;
+  runtimeCacheError.value = null;
+  try {
+    runtimeCacheStatus.value = await getRuntimeServiceWorkerStatus();
+  } catch (error) {
+    runtimeCacheError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    runtimeCacheLoading.value = false;
+  }
+};
+
+const clearRuntimeCache = async () => {
+  runtimeCacheLoading.value = true;
+  runtimeCacheError.value = null;
+  try {
+    runtimeCacheStatus.value = await clearRuntimeServiceWorkerCache();
+  } catch (error) {
+    runtimeCacheError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    runtimeCacheLoading.value = false;
+  }
+};
+
 const saveItemSize = () => {
   emit("save-settings");
   const button = saveButtonRef.value;
@@ -65,6 +121,14 @@ const saveItemSize = () => {
     button.textContent = originalText;
   }, 1500);
 };
+
+watch(
+  isOpen,
+  (open) => {
+    if (open) void refreshRuntimeCacheStatus();
+  },
+  { immediate: false },
+);
 
 </script>
 
@@ -294,11 +358,43 @@ const saveItemSize = () => {
                 </div>
               </div>
 
-              <!-- Row 04: Maintenance & Diagnostics -->
+              <!-- Row 04: Runtime Cache -->
               <div class="settings-row py-5 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
                 <div class="md:col-span-6">
                   <div class="flex items-center gap-2.5">
                     <span class="font-mono text-[9px] text-cyan-400/70 border border-cyan-400/20 px-1.5 py-0.5 rounded bg-cyan-950/10">04</span>
+                    <h3 class="text-sm font-medium text-slate-200">运行时缓存</h3>
+                  </div>
+                  <p class="text-xs text-slate-455 mt-1 leading-relaxed max-w-md">Service Worker 缓存二进制包、图集与 WASM 引擎，用于公共站二次打开与 CDN 加速。</p>
+                </div>
+                <div class="md:col-span-6 flex justify-end w-full">
+                  <div class="bg-white/[0.01] border border-white/5 p-4 rounded-xl w-full max-w-[380px] flex flex-col gap-3">
+                    <div class="flex justify-between items-center">
+                      <div class="flex flex-col">
+                        <span class="text-[9px] font-mono text-slate-500 uppercase leading-none">SERVICE WORKER / CDN CACHE</span>
+                        <span class="text-xs font-mono text-slate-300 mt-1 leading-none">{{ runtimeCacheEntryText }} files / {{ runtimeCacheSizeText }}</span>
+                      </div>
+                      <span class="text-[9px] font-mono px-2 py-0.5 rounded border leading-none" :class="runtimeCacheStateClass">
+                        {{ runtimeCacheStateLabel }}
+                      </span>
+                    </div>
+                    <div v-if="runtimeCacheError || runtimeCacheStatus.error" class="text-[10px] text-rose-300/80 font-mono leading-snug truncate">
+                      {{ runtimeCacheError || runtimeCacheStatus.error }}
+                    </div>
+                    <div class="flex justify-end gap-2 text-[10px] font-mono leading-none">
+                      <button type="button" @click="refreshRuntimeCacheStatus" :disabled="runtimeCacheLoading" class="text-cyan-400 hover:text-cyan-300 disabled:opacity-40">刷新状态</button>
+                      <span class="text-slate-700">|</span>
+                      <button type="button" @click="clearRuntimeCache" :disabled="runtimeCacheLoading" class="text-rose-400 hover:text-rose-300 disabled:opacity-40">清理缓存</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Row 05: Maintenance & Diagnostics -->
+              <div class="settings-row py-5 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
+                <div class="md:col-span-6">
+                  <div class="flex items-center gap-2.5">
+                    <span class="font-mono text-[9px] text-cyan-400/70 border border-cyan-400/20 px-1.5 py-0.5 rounded bg-cyan-950/10">05</span>
                     <h3 class="text-sm font-medium text-slate-200">系统诊断维护</h3>
                   </div>
                   <p class="text-xs text-slate-455 mt-1 leading-relaxed max-w-md">核心数据契约监控与重置本地历史浏览轨迹缓存。</p>
@@ -557,6 +653,12 @@ const saveItemSize = () => {
 .settings-title {
   font-family: 'Outfit', 'Inter', sans-serif;
   letter-spacing: -0.01em;
+}
+
+.settings-panel__content {
+  max-height: min(82vh, 760px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 /* Settings Segment Buttons (Premium segmented pill styling) */
