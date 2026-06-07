@@ -1866,6 +1866,7 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
     let total_bytes = sizes.values().sum::<u64>();
     let runtime_id = runtime_id_from_integrity(&integrity);
     let generated_at = "deterministic-rust-compiler";
+    let capabilities = rust_capabilities(scope);
     write_json_value(
         &rust_dir.join("runtime-manifest.json"),
         &json!({
@@ -1874,7 +1875,7 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
             "schemaRevision": 1,
             "runtimeId": runtime_id,
             "generatedAt": generated_at,
-            "capabilities": rust_capabilities(scope),
+            "capabilities": capabilities,
             "files": files,
             "compileScope": scope.as_str(),
             "entrypoints": rust_entrypoints(scope),
@@ -1918,6 +1919,44 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
                 "pathPortable": path_violations.is_empty(),
                 "integrityHashesGenerated": true,
                 "sizeReportGenerated": true,
+            },
+            "pathViolations": path_violations,
+        }),
+    )?;
+    write_json_value(
+        &rust_dir.join("deployment-report.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-deployment-report/current",
+            "runtimeId": runtime_id,
+            "generatedAt": generated_at,
+            "compileScope": scope.as_str(),
+            "runtimeSize": {
+                "totalBytes": total_bytes,
+                "files": sizes,
+            },
+            "cache": {
+                "immutableRuntimeFiles": integrity.len(),
+                "estimatedRuntimeCacheBytes": total_bytes,
+                "cacheKeyInputs": {
+                    "runtimeId": runtime_id,
+                    "integrityAlgorithm": "sha256",
+                },
+            },
+            "missingData": {
+                "missingFiles": missing,
+                "missingFileCount": missing.len(),
+            },
+            "schema": {
+                "runtime": "neonei/runtime/current",
+                "schemaRevision": 1,
+                "capabilities": capabilities,
+            },
+            "deploymentChecks": {
+                "requiredArtifactsPresent": missing.is_empty(),
+                "pathPortable": path_violations.is_empty(),
+                "integrityHashesGenerated": true,
+                "sizeReportGenerated": true,
+                "capabilitiesGenerated": true,
             },
             "pathViolations": path_violations,
         }),

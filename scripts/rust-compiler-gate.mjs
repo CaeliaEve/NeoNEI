@@ -21,6 +21,7 @@ const rustIntegrity = join(nodeSelfTestOutput, 'rust', 'integrity.json');
 const rustSizeReport = join(nodeSelfTestOutput, 'rust', 'size-report.json');
 const rustMissingReport = join(nodeSelfTestOutput, 'rust', 'missing-data-report.json');
 const rustMigrationReadiness = join(nodeSelfTestOutput, 'rust', 'migration-readiness.json');
+const rustDeploymentReport = join(nodeSelfTestOutput, 'rust', 'deployment-report.json');
 
 const strict = process.argv.includes('--strict');
 const runCargo = process.argv.includes('--run-cargo') || strict;
@@ -191,6 +192,7 @@ const integrity = readJson(rustIntegrity);
 const sizeReport = readJson(rustSizeReport);
 const missingReport = readJson(rustMissingReport);
 const migrationReadiness = readJson(rustMigrationReadiness);
+const deploymentReport = readJson(rustDeploymentReport);
 if (runtimeManifest?.schema !== 'neonei/runtime/current') fail(`rust runtime manifest has wrong schema: ${runtimeManifest?.schema}`);
 if (!Number.isInteger(runtimeManifest?.schemaRevision) || runtimeManifest.schemaRevision < 1) fail('rust runtime manifest is missing schemaRevision');
 if (!/^rust-[a-f0-9]{16}$/.test(`${runtimeManifest?.runtimeId ?? ''}`)) fail(`rust runtime manifest has invalid runtimeId: ${runtimeManifest?.runtimeId}`);
@@ -244,6 +246,13 @@ for (const requiredPath of [
 }
 if ((missingReport?.missingFiles ?? []).length !== 0) fail(`rust missing data report has missing files: ${JSON.stringify(missingReport.missingFiles)}`);
 if (migrationReadiness?.ready !== true) fail(`rust migration readiness is not ready: ${JSON.stringify(migrationReadiness)}`);
+if (deploymentReport?.schemaVersion !== 'neonei/rust-deployment-report/current') fail('rust deployment report has wrong schemaVersion');
+assertEqual(deploymentReport?.runtimeId, runtimeManifest?.runtimeId, 'rust deployment report runtimeId');
+assertEqual(deploymentReport?.runtimeSize?.totalBytes, sizeReport?.totalBytes, 'rust deployment report totalBytes');
+assertEqual(deploymentReport?.missingData?.missingFileCount, 0, 'rust deployment report missingFileCount');
+for (const capability of ['atlas.static', 'atlas.animated', 'groups.collapse', 'recipes.lookup']) {
+  if (!(deploymentReport?.schema?.capabilities ?? []).includes(capability)) fail(`rust deployment report is missing capability: ${capability}`);
+}
 const runtimeManifestText = JSON.stringify(runtimeManifest);
 const windowsPathSeparator = String.fromCharCode(92);
 const windowsDrivePathPrefixes = ['C', 'E'].map((drive) => `${drive}:${windowsPathSeparator}`);
@@ -266,6 +275,7 @@ writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   recipePack: rustRecipePack.replaceAll('\\', '/'),
   texturePack: rustTexturePack.replaceAll('\\', '/'),
   runtimeManifest: rustRuntimeManifest.replaceAll('\\', '/'),
+  deploymentReport: rustDeploymentReport.replaceAll('\\', '/'),
   nodeSelfTestOutput: nodeSelfTestOutput.replaceAll('\\', '/'),
 }, null, 2));
 
