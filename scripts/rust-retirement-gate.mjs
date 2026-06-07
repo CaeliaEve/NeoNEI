@@ -131,7 +131,12 @@ if (compileScope === 'all' || compileScope === 'recipes') {
   const sampleShardPath = join(distDataDir, sampleUiPayload.path);
   if (!existsSync(sampleShardPath)) fail('Rust recipe UI payload shard is missing: ' + sampleUiPayload.path);
   const sampleShard = readJson(sampleShardPath);
-  if (!sampleShard?.payloads?.[sampleUiPayload.payloadKey]?.recipeId) fail('Rust recipe UI payload shard lacks sample payload');
+  const samplePayload = sampleShard?.payloads?.[sampleUiPayload.payloadKey];
+  if (!samplePayload?.recipeId) fail('Rust recipe UI payload shard lacks sample payload');
+  if (samplePayload.schemaVersion !== 'neonei/recipe-ui-payload/v1') fail('Rust recipe UI payload has wrong schemaVersion');
+  if (!samplePayload.familyKey || !samplePayload.machineType || !samplePayload.recipeType) fail('Rust recipe UI payload lacks display metadata');
+  if (!Array.isArray(samplePayload.inputItemIds) || !Array.isArray(samplePayload.outputItemIds)) fail('Rust recipe UI payload lacks item id arrays');
+  if (!samplePayload.slotCount || typeof samplePayload.slotCount !== 'object') fail('Rust recipe UI payload lacks slotCount');
 }
 
 const distEnv = {

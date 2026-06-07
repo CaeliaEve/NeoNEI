@@ -762,6 +762,15 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
                 "schemaVersion".to_string(),
                 Value::String("neonei/recipe-ui-payload/v1".to_string()),
             );
+            if let Some(domain_facts) = compact_fact_object(recipe.get("domainFacts")) {
+                payload_object.insert("domainFacts".to_string(), domain_facts);
+            }
+            if let Some(metadata_facts) = compact_fact_object(recipe.get("metadata")) {
+                payload_object.insert("metadata".to_string(), metadata_facts);
+            }
+            if let Some(layout_facts) = compact_fact_object(recipe.get("layout")) {
+                payload_object.insert("layout".to_string(), layout_facts);
+            }
             payload_object.remove("path");
             payload_object.remove("payloadKey");
         }
@@ -1275,6 +1284,55 @@ fn nested_value_string(value: &Value, path: &[&str]) -> Option<String> {
     current.as_str().map(str::to_string)
 }
 
+fn compact_fact_object(value: Option<&Value>) -> Option<Value> {
+    match compact_fact_value(value?, 0) {
+        Some(Value::Object(map)) if !map.is_empty() => Some(Value::Object(map)),
+        _ => None,
+    }
+}
+
+fn compact_fact_value(value: &Value, depth: usize) -> Option<Value> {
+    if depth > 5 {
+        return None;
+    }
+    match value {
+        Value::Null => None,
+        Value::Bool(_) | Value::Number(_) => Some(value.clone()),
+        Value::String(text) => {
+            let trimmed = text.trim();
+            if trimmed.is_empty() || trimmed.len() > 512 {
+                None
+            } else {
+                Some(Value::String(trimmed.to_string()))
+            }
+        }
+        Value::Array(entries) => {
+            let compacted = entries
+                .iter()
+                .take(64)
+                .filter_map(|entry| compact_fact_value(entry, depth + 1))
+                .collect::<Vec<_>>();
+            if compacted.is_empty() {
+                None
+            } else {
+                Some(Value::Array(compacted))
+            }
+        }
+        Value::Object(entries) => {
+            let mut compacted = serde_json::Map::new();
+            for (key, entry) in entries {
+                if let Some(value) = compact_fact_value(entry, depth + 1) {
+                    compacted.insert(key.clone(), value);
+                }
+            }
+            if compacted.is_empty() {
+                None
+            } else {
+                Some(Value::Object(compacted))
+            }
+        }
+    }
+}
 fn value_i64(value: &Value, key: &str) -> Option<i64> {
     value.get(key)?.as_i64()
 }
