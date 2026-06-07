@@ -4,6 +4,7 @@
   NativeRenderResponse,
   NativeRendererFrameMetrics,
   NativeRendererLimits,
+  NativeRenderSpriteCommand,
 } from "../native-surface/NativeSurfaceRenderProtocol";
 import {
   parseNativeLayoutCommandBuffer,
@@ -17,10 +18,13 @@ let frames = 0;
 let commandCount = 0;
 let drawCalls = 0;
 let vertexCount = 0;
+let textureErrors = 0;
+let textureLoaded = 0;
 let lastFrameMs = 0;
 let width = 0;
 let height = 0;
 let webglRenderer: WebGl2NativeRenderer | null = null;
+const uploadedTextureKeys = new Set<string>();
 
 function buildMetrics(): NativeRendererFrameMetrics {
   return {
@@ -30,12 +34,22 @@ function buildMetrics(): NativeRendererFrameMetrics {
     commandCount,
     drawCalls,
     vertexCount,
+    textureCount: webglRenderer?.textureCount() ?? textureLoaded,
+    textureLoaded,
+    textureErrors,
     lastFrameMs,
     animationEnabled,
     width,
     height,
     updatedAt: performance.now(),
   };
+}
+
+async function loadTextureBitmap(url: string): Promise<ImageBitmap> {
+  const response = await fetch(url, { cache: "force-cache" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  const blob = await response.blob();
+  return await createImageBitmap(blob, { premultiplyAlpha: "premultiply" });
 }
 
 function detectWebglLimits(activeCanvas: OffscreenCanvas): NativeRendererLimits {
@@ -57,6 +71,43 @@ function chooseBackend(requested: "auto" | "webgpu" | "webgl2", activeCanvas: Of
   return "webgl2";
 }
 
+function normalizeSpriteCommands(commands: NativeRenderSpriteCommand[]) {
+  return commands
+    .map((command) => ({
+      textureKey: `${command.textureKey ?? ""}`,
+      sourceX: Math.max(0, Math.floor(Number(command.sourceX) || 0)),
+      sourceY: Math.max(0, Math.floor(Number(command.sourceY) || 0)),
+      sourceWidth: Math.max(0, Math.floor(Number(command.sourceWidth) || 0)),
+      sourceHeight: Math.max(0, Math.floor(Number(command.sourceHeight) || 0)),
+      destX: Math.floor(Number(command.destX) || 0),
+      destY: Math.floor(Number(command.destY) || 0),
+      destWidth: Math.max(0, Math.floor(Number(command.destWidth) || 0)),
+      destHeight: Math.max(0, Math.floor(Number(command.destHeight) || 0)),
+    }))
+    .filter((command) =>
+      command.textureKey
+      && command.sourceWidth > 0
+      && command.sourceHeight > 0
+      && command.destWidth > 0
+      && command.destHeight > 0
+    );
+}
+
+async function uploadTexture(key: string, url: string): Promise<void> {
+  if (!webglRenderer || uploadedTextureKeys.has(key)) return;
+  const bitmap = await loadTextureBitmap(url);
+  try {
+    if (webglRenderer.registerTexture(key, bitmap)) {
+      uploadedTextureKeys.add(key);
+      textureLoaded = webglRenderer.textureCount();
+    } else {
+      textureErrors += 1;
+    }
+  } finally {
+    bitmap.close();
+  }
+}
+
 async function handleRequest(message: NativeRenderRequest): Promise<NativeRenderResponse> {
   switch (message.type) {
     case "initialize": {
@@ -65,9 +116,28 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       height = canvas.height;
       backend = chooseBackend(message.renderer, canvas);
       webglRenderer?.dispose();
+      uploadedTextureKeys.clear();
+      textureLoaded = 0;
       webglRenderer = backend === "webgl2" ? WebGl2NativeRenderer.create(canvas) : null;
       const limits = detectWebglLimits(canvas);
       return { type: "ready", id: message.id, backend, limits, metrics: buildMetrics() };
+    }
+    case "loadTextures": {
+      const uniqueTextures = Array.from(new Map(message.textures.map((texture) => [texture.key, texture])).values());
+      await Promise.all(uniqueTextures.map(async (texture) => {
+        try {
+          await uploadTexture(texture.key, texture.url);
+        } catch {
+          textureErrors += 1;
+        }
+      }));
+      return {
+        type: "textureLoaded",
+        id: message.id,
+        loaded: textureLoaded,
+        total: uniqueTextures.length,
+        metrics: buildMetrics(),
+      };
     }
     case "resize":
       width = Math.max(0, Math.floor(message.viewport.width));
@@ -81,7 +151,12 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       const startedAt = performance.now();
       commandCount = Math.max(0, Math.floor(message.commandCount || 0));
       const parsedCommands = parseNativeLayoutCommandBuffer(message.commandBuffer, message.commandStride, commandCount);
-      const renderStats = webglRenderer?.render(width, height, parsedCommands) ?? { drawCalls: 0, vertexCount: 0 };
+      const renderStats = webglRenderer?.render(
+        width,
+        height,
+        parsedCommands,
+        normalizeSpriteCommands(message.spriteCommands ?? []),
+      ) ?? { drawCalls: 0, vertexCount: 0, spriteDrawCalls: 0, spriteVertexCount: 0 };
       drawCalls = renderStats.drawCalls;
       vertexCount = renderStats.vertexCount;
       void message.nowMs;
@@ -97,11 +172,14 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
     case "dispose":
       webglRenderer?.dispose();
       webglRenderer = null;
+      uploadedTextureKeys.clear();
       canvas = null;
       backend = null;
       commandCount = 0;
       drawCalls = 0;
       vertexCount = 0;
+      textureErrors = 0;
+      textureLoaded = 0;
       return { type: "disposed", id: message.id, metrics: buildMetrics() };
   }
 }

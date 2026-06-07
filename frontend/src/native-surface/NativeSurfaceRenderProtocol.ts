@@ -11,8 +11,30 @@ export type NativeRenderInitializeRequest = {
   manifest?: NativeRuntimeManifest | null;
 };
 
+export type NativeRenderTextureDescriptor = {
+  key: string;
+  url: string;
+};
+
+export type NativeRenderSpriteCommand = {
+  textureKey: string;
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+  destX: number;
+  destY: number;
+  destWidth: number;
+  destHeight: number;
+};
+
 export type NativeRenderRequest =
   | NativeRenderInitializeRequest
+  | {
+    type: "loadTextures";
+    id: number;
+    textures: NativeRenderTextureDescriptor[];
+  }
   | {
     type: "resize";
     id: number;
@@ -24,6 +46,7 @@ export type NativeRenderRequest =
     commandBuffer: ArrayBuffer;
     commandStride: number;
     commandCount: number;
+    spriteCommands?: NativeRenderSpriteCommand[];
     nowMs: number;
   }
   | {
@@ -52,6 +75,9 @@ export type NativeRendererFrameMetrics = {
   commandCount: number;
   drawCalls: number;
   vertexCount: number;
+  textureCount: number;
+  textureLoaded: number;
+  textureErrors: number;
   lastFrameMs: number;
   animationEnabled: boolean;
   width: number;
@@ -75,6 +101,13 @@ export type NativeRenderResponse =
   | {
     type: "metrics";
     id: number;
+    metrics: NativeRendererFrameMetrics;
+  }
+  | {
+    type: "textureLoaded";
+    id: number;
+    loaded: number;
+    total: number;
     metrics: NativeRendererFrameMetrics;
   }
   | {

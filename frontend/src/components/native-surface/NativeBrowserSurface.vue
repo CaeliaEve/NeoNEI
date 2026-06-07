@@ -6,6 +6,12 @@ import { createNativeSurfaceController } from "../../native-surface/NativeSurfac
 import type { NativeSurfaceId, NativeSurfaceLayoutCommand, NativeSurfaceViewportRole } from "../../native-surface/contracts";
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
+import {
+  ensureGlobalBrowserAtlasIndex,
+  getGlobalBrowserAtlasSpriteDescriptorForItem,
+  getGlobalBrowserAtlasTextureDescriptorsForItems,
+} from "../../services/globalBrowserAtlas";
+import type { NativeRenderSpriteCommand } from "../../native-surface/NativeSurfaceRenderProtocol";
 
 const HomeCanvasGrid = defineAsyncComponent(() => import("../HomeCanvasGrid.vue"));
 
@@ -41,6 +47,7 @@ const nativeRenderCanvasRef = ref<HTMLCanvasElement | null>(null);
 const controller = createNativeSurfaceController(props.surfaceId);
 let resizeObserver: ResizeObserver | null = null;
 let nativeFrameSeq = 0;
+let nativeTextureSeq = 0;
 const nativeLayoutCommands = ref<NativeSurfaceLayoutCommand[] | null>(null);
 const nativeLayoutCommandBuffer = ref<ArrayBuffer | null>(null);
 const nativeLayoutCommandStride = ref(0);
@@ -48,6 +55,10 @@ const nativeLayoutCommandCount = ref(0);
 let nativeRenderInitialized = false;
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
+
+function getEntryItem(entry: BrowserGridEntry): Item {
+  return entry.kind === "item" ? entry.item : entry.group.representative;
+}
 
 function emitViewportResize() {
   emit("viewportResize", hostRef.value);
@@ -95,7 +106,7 @@ function syncViewport(width?: number, height?: number) {
   };
   controller.setViewport(viewport);
   if (!nativeRenderInitialized) {
-    void initializeNativeRenderWorker(nextWidth, nextHeight);
+    void initializeNativeRenderWorker(nextWidth, nextHeight).then(() => syncNativeTextures());
   } else {
     void postNativeRenderEvent({ type: "resize", viewport });
   }
@@ -126,6 +137,7 @@ function handlePointerLeave() {
 
 async function syncNativeFrame() {
   const seq = ++nativeFrameSeq;
+  const nowMs = performance.now();
   const frame = await controller.requestFrame(performance.now());
   if (seq !== nativeFrameSeq) return;
   nativeLayoutCommands.value = frame?.drawCommands ?? null;
@@ -138,9 +150,53 @@ async function syncNativeFrame() {
       commandBuffer: frame.drawCommandBuffer.slice(0),
       commandStride: frame.drawCommandStride,
       commandCount: frame.drawCommandCount,
+      spriteCommands: buildNativeSpriteCommands(frame.drawCommands ?? [], nowMs),
       nowMs: performance.now(),
     });
   }
+}
+
+function buildNativeSpriteCommands(
+  commands: NativeSurfaceLayoutCommand[],
+  nowMs: number,
+): NativeRenderSpriteCommand[] {
+  const result: NativeRenderSpriteCommand[] = [];
+  const maxCount = Math.min(commands.length, props.entries.length);
+  for (let index = 0; index < maxCount; index += 1) {
+    const command = commands[index];
+    const entry = props.entries[index];
+    if (!command || !entry) continue;
+    const item = getEntryItem(entry);
+    const sprite = getGlobalBrowserAtlasSpriteDescriptorForItem(item.itemId, nowMs);
+    if (!sprite) continue;
+    result.push({
+      textureKey: sprite.textureKey,
+      sourceX: sprite.sourceX,
+      sourceY: sprite.sourceY,
+      sourceWidth: sprite.sourceWidth,
+      sourceHeight: sprite.sourceHeight,
+      destX: command.iconX,
+      destY: command.iconY,
+      destWidth: command.iconSize,
+      destHeight: command.iconSize,
+    });
+  }
+  return result;
+}
+
+async function syncNativeTextures() {
+  if (!nativeRenderInitialized) return;
+  const seq = ++nativeTextureSeq;
+  const itemIds = Array.from(new Set(props.entries.map((entry) => getEntryItem(entry).itemId).filter(Boolean)));
+  if (itemIds.length <= 0) return;
+  await ensureGlobalBrowserAtlasIndex();
+  if (seq !== nativeTextureSeq) return;
+  const textures = getGlobalBrowserAtlasTextureDescriptorsForItems(itemIds);
+  if (textures.length <= 0) return;
+  void postNativeRenderEvent({
+    type: "loadTextures",
+    textures,
+  });
 }
 
 onMounted(async () => {
@@ -184,6 +240,7 @@ watch(
   () => {
     controller.setCompatEntries({ entries: props.entries, atlas: props.atlas ?? null });
     void syncNativeFrame();
+    void syncNativeTextures();
   },
   { deep: false },
 );

@@ -1,4 +1,4 @@
-import {
+﻿import {
   api,
   type BrowserAtlasAnimatedFrame,
   type BrowserAtlasItemEntry,
@@ -468,6 +468,92 @@ export function getLoadedGlobalAtlasImages(): HTMLImageElement[] {
   return images;
 }
 
+export function getGlobalBrowserAtlasTextureDescriptorsForItems(itemIds: string[]): Array<{ key: string; url: string }> {
+  const atlasFiles = new Set<string>();
+  for (const itemId of itemIds) {
+    const entry = getAtlasEntryForItemId(itemId);
+    const animatedFile = normalizeAtlasFile(entry?.animatedAtlas?.atlasFile);
+    const staticFile = normalizeAtlasFile(entry?.staticAtlas?.atlasFile);
+    if (animatedFile) atlasFiles.add(animatedFile);
+    if (staticFile) atlasFiles.add(staticFile);
+  }
+  return Array.from(atlasFiles)
+    .map((atlasFile) => {
+      const rawUrl = resolveCanonicalRelativePath(atlasFile);
+      return rawUrl ? { key: atlasFile, url: withAtlasVersion(rawUrl) } : null;
+    })
+    .filter((entry): entry is { key: string; url: string } => Boolean(entry));
+}
+
+export type GlobalBrowserAtlasSpriteDescriptor = {
+  itemId: string;
+  textureKey: string;
+  sourceX: number;
+  sourceY: number;
+  sourceWidth: number;
+  sourceHeight: number;
+};
+
+function pickAnimationFrame(entry: BrowserAtlasItemEntry, nowMs: number) {
+  const animatedFile = normalizeAtlasFile(entry.animatedAtlas?.atlasFile);
+  const frames = normalizeFrames(entry.animatedAtlas?.frames);
+  if (!animatedFile || frames.length <= 0) return null;
+  const timeline = normalizeTimeline(entry.animatedAtlas?.timeline, entry.animatedAtlas?.frameDurationMs);
+  if (timeline.length <= 0) {
+    const firstFrame = frames[0];
+    return firstFrame ? { textureKey: animatedFile, frame: firstFrame } : null;
+  }
+  const totalDuration = timeline.reduce((sum, frame) => sum + Math.max(16, frame.durationMs), 0);
+  if (totalDuration <= 0) return null;
+  let cursor = Math.floor(nowMs) % totalDuration;
+  let selectedFrameIndex = timeline[0]?.frameIndex ?? 0;
+  for (const frame of timeline) {
+    const duration = Math.max(16, frame.durationMs);
+    if (cursor < duration) {
+      selectedFrameIndex = frame.frameIndex;
+      break;
+    }
+    cursor -= duration;
+  }
+  const selectedFrame = frames.find((frame) => frame.index === selectedFrameIndex) ?? frames[selectedFrameIndex] ?? frames[0];
+  return selectedFrame ? { textureKey: animatedFile, frame: selectedFrame } : null;
+}
+
+export function getGlobalBrowserAtlasSpriteDescriptorForItem(
+  itemId: string,
+  nowMs: number,
+): GlobalBrowserAtlasSpriteDescriptor | null {
+  const entry = getAtlasEntryForItemId(itemId);
+  if (!entry) return null;
+  const animated = pickAnimationFrame(entry, nowMs);
+  if (animated) {
+    return {
+      itemId,
+      textureKey: animated.textureKey,
+      sourceX: animated.frame.x,
+      sourceY: animated.frame.y,
+      sourceWidth: animated.frame.width,
+      sourceHeight: animated.frame.height,
+    };
+  }
+  const staticFile = normalizeAtlasFile(entry.staticAtlas?.atlasFile);
+  const staticAtlas = entry.staticAtlas;
+  if (!staticFile || !staticAtlas) return null;
+  const sourceX = toAtlasNumber(staticAtlas.x, 0);
+  const sourceY = toAtlasNumber(staticAtlas.y, 0);
+  const sourceWidth = toAtlasNumber(staticAtlas.width, 0);
+  const sourceHeight = toAtlasNumber(staticAtlas.height, 0);
+  if (sourceWidth <= 0 || sourceHeight <= 0) return null;
+  return {
+    itemId,
+    textureKey: staticFile,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+  };
+}
+
 export function hasGlobalBrowserAtlas(): boolean {
   return indexAvailable;
 }
@@ -525,5 +611,3 @@ function toAtlasNumber(value: unknown, fallback: number): number {
   }
   return fallback;
 }
-
-
