@@ -1132,12 +1132,7 @@ function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequ
   );
   const hit = Number.isInteger(nativeIndex) && nativeIndex >= 0
     ? surface.layoutCommands[nativeIndex]
-    : surface.layoutCommands.find((command) =>
-      message.x >= command.x
-      && message.x <= command.x + command.size
-      && message.y >= command.y
-      && message.y <= command.y + command.size
-    );
+    : null;
   if (!hit) {
     surface.lastHit = null;
     return null;

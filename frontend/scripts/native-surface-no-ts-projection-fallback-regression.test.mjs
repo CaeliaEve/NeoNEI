@@ -28,3 +28,10 @@ test('native surface worker rejects JSON native runtime pack fallbacks', () => {
   assert.match(source, /neonei_engine_compact_animation_select_frame_index/, 'animation timeline frame selection must use WASM compact timeline');
   assert.doesNotMatch(source, /totalDuration = timeline\.reduce/, 'worker must not calculate animation timelines in TypeScript');
 });
+
+test('native surface worker keeps hover hit-test in WASM', () => {
+  const source = readFileSync(workerPath, 'utf8');
+  assert.match(source, /neonei_engine_hit_test_index/, 'hover hit-test must call the WASM grid hit-test ABI');
+  assert.doesNotMatch(source, /layoutCommands\.find\(\(command\) =>/, 'worker must not scan layout commands in TypeScript for hover hit-test');
+});
+
