@@ -294,10 +294,13 @@ fn count_jsonl_rows(path: &Path) -> Result<u64> {
 
 fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
-    let items = read_jsonl_values(input, &manifest, "items")?;
-    let order_rows = read_jsonl_values(input, &manifest, "neiOrder")?;
-    let group_rows = read_jsonl_values(input, &manifest, "groups")?;
-    let texture_rows = read_jsonl_values(input, &manifest, "textures")?;
+    if manifest.files.contains_key("browserCatalog") {
+        return compile_dist_browser_pack(input, output, strict);
+    }
+    let items = read_json_collection(input, &manifest, &["items", "browserCatalog"], Some("items"))?;
+    let order_rows = read_json_collection(input, &manifest, &["neiOrder"], None)?;
+    let group_rows = read_json_collection(input, &manifest, &["groups", "browserGroups"], Some("groups"))?;
+    let texture_rows = read_json_collection(input, &manifest, &["textures"], Some("textures"))?;
     let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?.unwrap_or(Value::Null);
     let atlas = repaired_browser_atlas(&atlas, &texture_rows);
 
@@ -498,24 +501,32 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
     write_json_value(&rust_dir.join("browser-pack.json"), &pack)?;
-    write_json_value(
-        &rust_dir.join("search-pack.json"),
-        &json!({
-            "schemaVersion": "neonei/rust-search-pack/current",
-            "counts": {
-                "items": search_items.len(),
-                "aliasItems": alias_map.len(),
-            },
-            "items": search_items,
-        }),
-    )?;
+    write_binary_pack(&rust_dir.join("browser.bin"), "neonei/browser-pack/current", &pack)?;
+    let search_pack = json!({
+        "schemaVersion": "neonei/rust-search-pack/current",
+        "counts": {
+            "items": search_items.len(),
+            "aliasItems": alias_map.len(),
+        },
+        "items": search_items,
+    });
+    let group_pack = json!({
+        "schemaVersion": "neonei/rust-group-pack/current",
+        "counts": {
+            "groups": groups.len(),
+        },
+        "groups": groups,
+    });
+    write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
+    write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
+    write_binary_pack(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_pack)?;
     Ok(())
 }
 
 fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
-    let items = read_jsonl_values(input, &manifest, "items")?;
-    let group_rows = read_jsonl_values(input, &manifest, "groups")?;
+    let items = read_json_collection(input, &manifest, &["items", "browserCatalog", "searchAll"], Some("items"))?;
+    let group_rows = read_json_collection(input, &manifest, &["groups", "browserGroups"], Some("groups"))?;
 
     if strict && items.is_empty() {
         return Err(anyhow!(
@@ -614,22 +625,78 @@ fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
-    write_json_value(
-        &rust_dir.join("search-pack.json"),
-        &json!({
-            "schemaVersion": "neonei/rust-search-pack/current",
-            "counts": {
-                "items": search_items.len(),
-                "aliasItems": alias_items,
-            },
-            "items": search_items,
-        }),
+    let search_pack = json!({
+        "schemaVersion": "neonei/rust-search-pack/current",
+        "counts": {
+            "items": search_items.len(),
+            "aliasItems": alias_items,
+        },
+        "items": search_items,
+    });
+    write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
+    write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
+    Ok(())
+}
+
+fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+    let manifest = read_manifest(input)?;
+    let browser_files = runtime_file_descriptors(
+        input,
+        &manifest,
+        &[
+            ("browserCatalog", "browserCatalog"),
+            ("hiddenBrowserCatalog", "hiddenBrowserCatalog"),
+            ("groups", "browserGroups"),
+            ("nativeNeiRules", "nativeNeiRules"),
+            ("searchAll", "searchAll"),
+            ("searchAliasIndex", "searchAliasIndex"),
+        ],
     )?;
+    if strict && !browser_files.iter().any(|value| {
+        value
+            .get("logicalName")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value == "browserCatalog")
+    }) {
+        return Err(anyhow!("browser compiler blocked: browserCatalog is missing"));
+    }
+
+    let browser_pack = json!({
+        "schemaVersion": "neonei/rust-browser-pack/current",
+        "sourceKind": "dist-data",
+        "counts": { "files": browser_files.len() },
+        "files": browser_files,
+    });
+    let group_pack = json!({
+        "schemaVersion": "neonei/rust-group-pack/current",
+        "sourceKind": "dist-data",
+        "files": runtime_file_descriptors(input, &manifest, &[("groups", "browserGroups")])?,
+    });
+    let search_pack = json!({
+        "schemaVersion": "neonei/rust-search-pack/current",
+        "sourceKind": "dist-data",
+        "files": runtime_file_descriptors(
+            input,
+            &manifest,
+            &[("searchAll", "searchAll"), ("searchAliasIndex", "searchAliasIndex")],
+        )?,
+    });
+
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+    write_json_value(&rust_dir.join("browser-pack.json"), &browser_pack)?;
+    write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
+    write_binary_pack(&rust_dir.join("browser.bin"), "neonei/browser-pack/current", &browser_pack)?;
+    write_binary_pack(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_pack)?;
+    write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
     Ok(())
 }
 
 fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
+    if !manifest.files.contains_key("recipeIndex") {
+        return compile_dist_recipe_pack(input, output, strict);
+    }
     let recipe_index = read_manifest_json(input, &manifest, "recipeIndex")?
         .ok_or_else(|| anyhow!("recipe compiler blocked: recipeIndex is missing"))?;
     let handlers = read_jsonl_values(input, &manifest, "neiHandlers")?;
@@ -881,23 +948,66 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
             }),
         )?;
     }
-    write_json_value(
-        &rust_dir.join("recipe-pack.json"),
-        &json!({
-            "schemaVersion": "neonei/rust-recipe-pack/current",
-            "counts": {
-                "recipes": recipe_pack.len(),
-                "handlers": handler_pack.len(),
-                "recipeItemIndexItems": item_index.len(),
-                "uiPayloadIndexItems": ui_payload_index.len(),
-                "categories": category_index.len(),
-            },
-            "recipes": recipe_pack,
-            "handlers": handler_pack,
-            "itemIndex": item_index,
-            "uiPayloadIndex": ui_payload_index,
-            "categoryIndex": category_index,
-        }),
+    let recipe_output_pack = json!({
+        "schemaVersion": "neonei/rust-recipe-pack/current",
+        "counts": {
+            "recipes": recipe_pack.len(),
+            "handlers": handler_pack.len(),
+            "recipeItemIndexItems": item_index.len(),
+            "uiPayloadIndexItems": ui_payload_index.len(),
+            "categories": category_index.len(),
+        },
+        "recipes": recipe_pack,
+        "handlers": handler_pack,
+        "itemIndex": item_index,
+        "uiPayloadIndex": ui_payload_index,
+        "categoryIndex": category_index,
+    });
+    write_json_value(&rust_dir.join("recipe-pack.json"), &recipe_output_pack)?;
+    write_binary_pack(&rust_dir.join("recipes.bin"), "neonei/recipe-pack/current", &recipe_output_pack)?;
+    Ok(())
+}
+
+fn compile_dist_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+    let manifest = read_manifest(input)?;
+    let recipe_files = runtime_file_descriptors(
+        input,
+        &manifest,
+        &[
+            ("itemIndex", "recipeItemIndex"),
+            ("handlers", "recipeHandlers"),
+            ("handlerLayouts", "recipeHandlerLayouts"),
+            ("categoryIndex", "recipeCategories"),
+            ("uiPayloadIndex", "recipeUiPayloadIndex"),
+        ],
+    )?;
+    if strict && !recipe_files.iter().any(|value| {
+        value
+            .get("logicalName")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value == "itemIndex")
+    }) {
+        return Err(anyhow!(
+            "recipe compiler blocked: recipeItemIndex is missing"
+        ));
+    }
+
+    let recipe_output_pack = json!({
+        "schemaVersion": "neonei/rust-recipe-pack/current",
+        "sourceKind": "dist-data",
+        "counts": {
+            "files": recipe_files.len(),
+        },
+        "files": recipe_files,
+    });
+
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+    write_json_value(&rust_dir.join("recipe-pack.json"), &recipe_output_pack)?;
+    write_binary_pack(
+        &rust_dir.join("recipes.bin"),
+        "neonei/recipe-pack/current",
+        &recipe_output_pack,
     )?;
     Ok(())
 }
@@ -1405,11 +1515,14 @@ fn repaired_browser_atlas(atlas: &Value, texture_rows: &[Value]) -> Value {
 
 fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
+    if manifest.files.contains_key("textureManifest") {
+        return compile_dist_texture_pack(input, output, strict);
+    }
     let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?
         .ok_or_else(|| anyhow!("texture compiler blocked: browserAtlasIndex is missing"))?;
-    let animations = read_jsonl_values(input, &manifest, "animations")?;
-    let native_sprites = read_jsonl_values(input, &manifest, "nativeSprites")?;
-    let texture_rows = read_jsonl_values(input, &manifest, "textures")?;
+    let animations = read_json_collection(input, &manifest, &["animations", "animationTable"], Some("animations"))?;
+    let native_sprites = read_json_collection(input, &manifest, &["nativeSprites", "nativeRenderIndex"], Some("sprites"))?;
+    let texture_rows = read_json_collection(input, &manifest, &["textures", "textureManifest"], Some("textures"))?;
 
     let animation_by_asset = animations
         .iter()
@@ -1511,30 +1624,82 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
-    write_json_value(
-        &rust_dir.join("texture-pack.json"),
-        &json!({
-            "schemaVersion": "neonei/rust-texture-pack/current",
-            "counts": {
-                "atlasItems": atlas_items.len(),
-                "staticAtlasItems": static_items,
-                "animatedAtlasItems": animated_items,
-                "animationRows": animations.len(),
-                "nativeSpriteRows": native_sprites.len(),
-                "textureRows": texture_rows.len(),
-                "missingAtlasFileRefs": missing_atlas_file_refs.len(),
-                "invalidFrameBounds": invalid_frame_bounds.len(),
-                "atlasMapItems": atlas_map.len(),
-            },
-            "atlas": atlas,
-            "atlasMap": atlas_map,
-            "animationTable": animation_table,
-            "validation": {
-                "missingAtlasFileRefs": missing_atlas_file_refs,
-                "invalidFrameBounds": invalid_frame_bounds,
-            },
-        }),
+    let texture_output_pack = json!({
+        "schemaVersion": "neonei/rust-texture-pack/current",
+        "counts": {
+            "atlasItems": atlas_items.len(),
+            "staticAtlasItems": static_items,
+            "animatedAtlasItems": animated_items,
+            "animationRows": animations.len(),
+            "nativeSpriteRows": native_sprites.len(),
+            "textureRows": texture_rows.len(),
+            "missingAtlasFileRefs": missing_atlas_file_refs.len(),
+            "invalidFrameBounds": invalid_frame_bounds.len(),
+            "atlasMapItems": atlas_map.len(),
+        },
+        "atlas": atlas,
+        "atlasMap": atlas_map,
+        "animationTable": animation_table,
+        "validation": {
+            "missingAtlasFileRefs": missing_atlas_file_refs,
+            "invalidFrameBounds": invalid_frame_bounds,
+        },
+    });
+    let animation_output_pack = json!({
+        "schemaVersion": "neonei/rust-animation-pack/current",
+        "counts": {
+            "animations": animation_table.len(),
+        },
+        "animations": animation_table,
+    });
+    write_json_value(&rust_dir.join("texture-pack.json"), &texture_output_pack)?;
+    write_binary_pack(&rust_dir.join("textures.bin"), "neonei/texture-pack/current", &texture_output_pack)?;
+    write_binary_pack(&rust_dir.join("animations.bin"), "neonei/animation-pack/current", &animation_output_pack)?;
+    Ok(())
+}
+
+fn compile_dist_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
+    let manifest = read_manifest(input)?;
+    let texture_files = runtime_file_descriptors(
+        input,
+        &manifest,
+        &[
+            ("textureManifest", "textureManifest"),
+            ("browserAtlasIndex", "browserAtlasIndex"),
+            ("nativeRenderIndex", "nativeRenderIndex"),
+            ("animationTable", "animationTable"),
+            ("animationExpectationReport", "animationExpectationReport"),
+        ],
     )?;
+    if strict && !texture_files.iter().any(|value| {
+        value
+            .get("logicalName")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value == "textureManifest")
+    }) {
+        return Err(anyhow!("texture compiler blocked: textureManifest is missing"));
+    }
+    let texture_pack = json!({
+        "schemaVersion": "neonei/rust-texture-pack/current",
+        "sourceKind": "dist-data",
+        "counts": { "files": texture_files.len() },
+        "files": texture_files,
+    });
+    let animation_pack = json!({
+        "schemaVersion": "neonei/rust-animation-pack/current",
+        "sourceKind": "dist-data",
+        "files": runtime_file_descriptors(
+            input,
+            &manifest,
+            &[("animationTable", "animationTable"), ("animationExpectationReport", "animationExpectationReport")],
+        )?,
+    });
+
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+    write_json_value(&rust_dir.join("texture-pack.json"), &texture_pack)?;
+    write_binary_pack(&rust_dir.join("textures.bin"), "neonei/texture-pack/current", &texture_pack)?;
+    write_binary_pack(&rust_dir.join("animations.bin"), "neonei/animation-pack/current", &animation_pack)?;
     Ok(())
 }
 
@@ -1544,15 +1709,21 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
 
     let artifact_names: &[&str] = match scope {
         CompileScope::All => &[
+            "browser.bin",
+            "groups.bin",
+            "search.bin",
+            "recipes.bin",
+            "textures.bin",
+            "animations.bin",
             "browser-pack.json",
             "search-pack.json",
             "recipe-pack.json",
             "texture-pack.json",
         ],
-        CompileScope::Search => &["search-pack.json"],
-        CompileScope::Browser => &["browser-pack.json", "search-pack.json"],
-        CompileScope::Recipes => &["recipe-pack.json"],
-        CompileScope::Textures => &["texture-pack.json"],
+        CompileScope::Search => &["search.bin", "search-pack.json"],
+        CompileScope::Browser => &["browser.bin", "groups.bin", "search.bin", "browser-pack.json", "search-pack.json"],
+        CompileScope::Recipes => &["recipes.bin", "recipe-pack.json"],
+        CompileScope::Textures => &["textures.bin", "animations.bin", "texture-pack.json"],
     };
     let mut files = Vec::new();
     let mut integrity = BTreeMap::new();
@@ -1671,23 +1842,27 @@ impl CompileScope {
 fn rust_entrypoints(scope: CompileScope) -> Value {
     match scope {
         CompileScope::All => json!({
-            "browser": "rust/browser-pack.json",
-            "search": "rust/search-pack.json",
-            "recipes": "rust/recipe-pack.json",
-            "textures": "rust/texture-pack.json",
+            "browser": "rust/browser.bin",
+            "groups": "rust/groups.bin",
+            "search": "rust/search.bin",
+            "recipes": "rust/recipes.bin",
+            "textures": "rust/textures.bin",
+            "animations": "rust/animations.bin",
         }),
         CompileScope::Search => json!({
-            "search": "rust/search-pack.json",
+            "search": "rust/search.bin",
         }),
         CompileScope::Browser => json!({
-            "browser": "rust/browser-pack.json",
-            "search": "rust/search-pack.json",
+            "browser": "rust/browser.bin",
+            "groups": "rust/groups.bin",
+            "search": "rust/search.bin",
         }),
         CompileScope::Recipes => json!({
-            "recipes": "rust/recipe-pack.json",
+            "recipes": "rust/recipes.bin",
         }),
         CompileScope::Textures => json!({
-            "textures": "rust/texture-pack.json",
+            "textures": "rust/textures.bin",
+            "animations": "rust/animations.bin",
         }),
     }
 }
@@ -1803,6 +1978,70 @@ fn read_jsonl_values(
         return Ok(Vec::new());
     };
     read_jsonl_file_values(&path)
+}
+
+fn read_json_collection(
+    input: &Path,
+    manifest: &RawManifest,
+    logical_names: &[&str],
+    array_field: Option<&str>,
+) -> Result<Vec<Value>> {
+    for logical_name in logical_names {
+        let Some(path) = resolve_manifest_path(input, manifest, logical_name) else {
+            continue;
+        };
+        if path.extension().and_then(|value| value.to_str()) == Some("jsonl")
+            || path.extension().and_then(|value| value.to_str()) == Some("gz")
+        {
+            return read_jsonl_file_values(&path);
+        }
+        let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+        let value: Value =
+            serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+        if let Some(rows) = value.as_array() {
+            return Ok(rows.clone());
+        }
+        if let Some(field) = array_field {
+            if let Some(rows) = value.get(field).and_then(Value::as_array) {
+                return Ok(rows.clone());
+            }
+        }
+        if let Some(rows) = value.get("items").and_then(Value::as_array) {
+            return Ok(rows.clone());
+        }
+        if let Some(rows) = value.get("groups").and_then(Value::as_array) {
+            return Ok(rows.clone());
+        }
+        if let Some(rows) = value.get("animations").and_then(Value::as_array) {
+            return Ok(rows.clone());
+        }
+        return Ok(vec![value]);
+    }
+    Ok(Vec::new())
+}
+
+fn runtime_file_descriptors(
+    input: &Path,
+    manifest: &RawManifest,
+    logical_pairs: &[(&str, &str)],
+) -> Result<Vec<Value>> {
+    let mut files = Vec::new();
+    for (public_name, manifest_key) in logical_pairs {
+        let Some(path) = resolve_manifest_path(input, manifest, manifest_key) else {
+            continue;
+        };
+        if !path.exists() {
+            continue;
+        }
+        files.push(json!({
+            "logicalName": public_name,
+            "manifestKey": manifest_key,
+            "path": normalize_path(path.strip_prefix(input).unwrap_or(path.as_path())),
+            "bytes": path.metadata()?.len(),
+            "sha256": sha256_file(&path)?,
+        }));
+    }
+    Ok(files)
 }
 
 fn read_jsonl_file_values(path: &Path) -> Result<Vec<Value>> {
@@ -1957,6 +2196,18 @@ fn write_report(path: &Path, report: &CompilerReport) -> Result<()> {
     fs::write(path, text).with_context(|| format!("write report {}", path.display()))
 }
 
+fn write_binary_pack(path: &Path, schema: &str, value: &Value) -> Result<()> {
+    let payload = serde_json::to_vec(value)?;
+    let schema_bytes = schema.as_bytes();
+    let mut bytes = Vec::with_capacity(24 + schema_bytes.len() + payload.len());
+    bytes.extend_from_slice(b"NNEIBIN\0");
+    bytes.extend_from_slice(&1u32.to_le_bytes());
+    bytes.extend_from_slice(&(schema_bytes.len() as u32).to_le_bytes());
+    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
+    bytes.extend_from_slice(schema_bytes);
+    bytes.extend_from_slice(&payload);
+    fs::write(path, bytes).with_context(|| format!("write {}", path.display()))
+}
 fn write_json_value(path: &Path, value: &Value) -> Result<()> {
     let text = serde_json::to_string_pretty(value)?;
     fs::write(path, format!("{text}\n")).with_context(|| format!("write {}", path.display()))
@@ -1982,6 +2233,8 @@ mod tests {
         assert!(summary.sizes.is_empty());
     }
 }
+
+
 
 
 
