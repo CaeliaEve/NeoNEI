@@ -68,6 +68,8 @@ async function main() {
     imgCount: document.querySelectorAll("img").length,
     bodyScrollDelta: Math.max(0, document.documentElement.scrollHeight - window.innerHeight),
     nativeSurfaceMetrics: globalThis.__NEONEI_NATIVE_SURFACE_METRICS__?.() ?? [],
+    nativeEngineMetrics: globalThis.__NEONEI_NATIVE_SURFACE_ENGINE_METRICS__?.() ?? null,
+    nativeRenderMetrics: globalThis.__NEONEI_NATIVE_RENDER_METRICS__?.() ?? null,
   }));
 
   const flipDurations = [];
@@ -104,6 +106,8 @@ async function main() {
     canvasCount: document.querySelectorAll("canvas").length,
     imgCount: document.querySelectorAll("img").length,
     nativeSurfaceMetrics: globalThis.__NEONEI_NATIVE_SURFACE_METRICS__?.() ?? [],
+    nativeEngineMetrics: globalThis.__NEONEI_NATIVE_SURFACE_ENGINE_METRICS__?.() ?? null,
+    nativeRenderMetrics: globalThis.__NEONEI_NATIVE_RENDER_METRICS__?.() ?? null,
   }));
 
   await browser.close();
@@ -137,6 +141,8 @@ async function main() {
     flipAvgMs: Math.round(report.interactions.flipMs.avg),
     flipP95Ms: Math.round(report.interactions.flipMs.p95),
     settingsOpenMs: Math.round(settingsOpenMs),
+    nativeRuntimeReady: Boolean(report.final.nativeEngineMetrics?.runtimeReady),
+    nativeRenderFrames: report.final.nativeRenderMetrics?.frames ?? 0,
     errors: errors.length,
   }, null, 2));
 }
