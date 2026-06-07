@@ -41,8 +41,6 @@ type PreparedGlobalAnimation = {
   atlasFile: string;
   frames: Array<{ index: number; x: number; y: number; width: number; height: number }>;
   timeline: Array<{ frameIndex: number; durationMs: number }>;
-  frameBitmaps: Map<string, ImageBitmap>;
-  pendingFrameBitmaps: Set<string>;
 };
 
 const props = withDefaults(defineProps<{
@@ -68,7 +66,6 @@ const emit = defineEmits<{
 const hostRef = ref<HTMLDivElement | null>(null);
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const webglCanvasRef = ref<HTMLCanvasElement | null>(null);
-const animationCanvasRef = ref<HTMLCanvasElement | null>(null);
 const hostWidth = ref(0);
 let itemRects: GridRect[] = [];
 let animatedItemRects: GridRect[] = [];
@@ -96,8 +93,6 @@ let globalAtlasTextureWarmCursor = 0;
 let webglAtlasRenderer: BrowserWebglAtlasRenderer | null = null;
 let layoutRequestSeq = 0;
 let lastDrawHadAnimatedFrame = false;
-let animationBackBuffer: HTMLCanvasElement | null = null;
-let lastAnimationOverlaySignature = "";
 const gap = 4;
 const cardSize = computed(() => Math.max(28, Math.floor(props.itemSize)));
 const iconSize = computed(() => Math.max(24, Math.floor(cardSize.value * 0.9)));
@@ -173,7 +168,7 @@ function scheduleRender() {
   });
 }
 
-function canRunAnimatedOverlay(): boolean {
+function canRunAnimatedAtlas(): boolean {
   return props.enableAnimation;
 }
 
@@ -208,7 +203,7 @@ function startAnimationLoop() {
   const tick = () => {
     animationLoopHandle = requestAnimationFrame(() => {
       animationLoopHandle = null;
-      drawAnimationOverlay();
+      scheduleRender();
       if (lastDrawHadAnimatedFrame && animatedItemRects.length > 0) {
         tick();
       }
@@ -223,8 +218,6 @@ function stopAnimationLoop() {
     cancelAnimationFrame(animationLoopHandle);
     animationLoopHandle = null;
   }
-
-  clearAnimationOverlay();
 }
 
 function scheduleGlobalAtlasTextureWarm(delayMs = 0) {
@@ -506,9 +499,37 @@ function getPreparedGlobalAnimation(itemId: string, entry: BrowserAtlasItemEntry
     return null;
   }
 
-  const prepared = { atlasFile, frames, timeline, frameBitmaps: new Map<string, ImageBitmap>(), pendingFrameBitmaps: new Set<string>() };
+  const prepared = { atlasFile, frames, timeline };
   preparedGlobalAnimations.set(itemId, prepared);
   return prepared;
+}
+
+function queueGlobalAnimationSprite(
+  commands: BrowserWebglAtlasDrawCommand[],
+  entry: BrowserAtlasItemEntry,
+  rect: GridRect,
+  now: number,
+): boolean {
+  const prepared = getPreparedGlobalAnimation(rect.item.itemId, entry);
+  if (!prepared) return false;
+  const atlas = getLoadedGlobalAtlasImage(prepared.atlasFile);
+  if (!atlas || !webglAtlasRenderer?.canDrawImage(atlas)) return false;
+  const frameIndex = resolveTimelineFrameIndex(prepared.timeline, now);
+  const frame = prepared.frames.find((candidate) => candidate.index === frameIndex) ?? prepared.frames[0];
+  if (!frame) return false;
+  const drawRect = getIconDrawRect(rect);
+  commands.push({
+    image: atlas,
+    sourceX: frame.x,
+    sourceY: frame.y,
+    sourceWidth: frame.width,
+    sourceHeight: frame.height,
+    destX: drawRect.x,
+    destY: drawRect.y,
+    destWidth: drawRect.size,
+    destHeight: drawRect.size,
+  });
+  return true;
 }
 
 function drawGlobalAnimation(
@@ -524,21 +545,8 @@ function drawGlobalAnimation(
   const frameIndex = resolveTimelineFrameIndex(prepared.timeline, now);
   const frame = prepared.frames.find((candidate) => candidate.index === frameIndex) ?? prepared.frames[0];
   if (!frame) return false;
-
   const drawX = rect.x + Math.round((rect.size - iconSize.value) / 2);
   const drawY = rect.y + Math.round((rect.size - iconSize.value) / 2);
-  const frameCacheKey = `${frame.index}`;
-  const bitmap = prepared.frameBitmaps.get(frameCacheKey);
-  if (bitmap) {
-    ctx.drawImage(bitmap, drawX, drawY, iconSize.value, iconSize.value);
-    return true;
-  }
-
-  // Do not wait for createImageBitmap before painting the current animation
-  // frame. Waiting asynchronously makes the animation overlay clear first and
-  // leaves animated-only entries blank for a frame, which looks like flicker
-  // during fast NEI-style page flips. Draw directly from the resident animated
-  // atlas immediately, then let ImageBitmap caching catch up in the background.
   ctx.drawImage(
     atlas,
     frame.x,
@@ -550,19 +558,6 @@ function drawGlobalAnimation(
     iconSize.value,
     iconSize.value,
   );
-
-  if (typeof createImageBitmap === "function" && !prepared.pendingFrameBitmaps.has(frameCacheKey)) {
-    prepared.pendingFrameBitmaps.add(frameCacheKey);
-    void createImageBitmap(atlas, frame.x, frame.y, frame.width, frame.height)
-      .then((nextBitmap) => {
-        prepared.frameBitmaps.set(frameCacheKey, nextBitmap);
-        scheduleRender();
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        prepared.pendingFrameBitmaps.delete(frameCacheKey);
-      });
-  }
   return true;
 }
 
@@ -574,92 +569,6 @@ function drawStaticImage(
   const drawX = rect.x + Math.round((rect.size - iconSize.value) / 2);
   const drawY = rect.y + Math.round((rect.size - iconSize.value) / 2);
   ctx.drawImage(image, drawX, drawY, iconSize.value, iconSize.value);
-}
-
-function ensureOverlayCanvasSize(canvas: HTMLCanvasElement) {
-  if (canvas.width !== canvasWidth.value) {
-    canvas.width = canvasWidth.value;
-  }
-  if (canvas.height !== canvasHeight.value) {
-    canvas.height = canvasHeight.value;
-  }
-}
-
-function clearAnimationOverlay() {
-  const canvas = animationCanvasRef.value;
-  if (!canvas) return;
-  ensureOverlayCanvasSize(canvas);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) return;
-  ctx.clearRect(0, 0, canvas.width, canvas.height);
-  lastAnimationOverlaySignature = "";
-}
-
-function getAnimationOverlaySignature(): string {
-  return animatedItemRects
-    .map((rect) => `${rect.entry.key}@${rect.x},${rect.y},${rect.size}`)
-    .join("|");
-}
-
-function getAnimationBackBuffer(width: number, height: number): HTMLCanvasElement {
-  if (!animationBackBuffer) {
-    animationBackBuffer = document.createElement("canvas");
-  }
-  if (animationBackBuffer.width !== width) {
-    animationBackBuffer.width = width;
-  }
-  if (animationBackBuffer.height !== height) {
-    animationBackBuffer.height = height;
-  }
-  return animationBackBuffer;
-}
-
-function drawAnimationOverlay() {
-  if (!canRunAnimatedOverlay()) {
-    lastDrawHadAnimatedFrame = false;
-    clearAnimationOverlay();
-    return;
-  }
-  const canvas = animationCanvasRef.value;
-  if (!canvas) return;
-  ensureOverlayCanvasSize(canvas);
-  const visibleCtx = canvas.getContext("2d");
-  if (!visibleCtx) return;
-
-  const signature = getAnimationOverlaySignature();
-  const backBuffer = getAnimationBackBuffer(canvas.width, canvas.height);
-  const ctx = backBuffer.getContext("2d");
-  if (!ctx) return;
-  ctx.clearRect(0, 0, backBuffer.width, backBuffer.height);
-  ctx.imageSmoothingEnabled = false;
-
-  const now = getSharedAnimationNowMs();
-  let drewFrame = false;
-  for (const rect of animatedItemRects) {
-    const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(rect.item.itemId) : null;
-    if (props.enableAnimation && globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, now)) {
-      drawGroupOverlay(ctx, rect);
-      drewFrame = true;
-    }
-  }
-
-  if (drewFrame) {
-    lastDrawHadAnimatedFrame = true;
-    visibleCtx.clearRect(0, 0, canvas.width, canvas.height);
-    visibleCtx.imageSmoothingEnabled = false;
-    visibleCtx.drawImage(backBuffer, 0, 0);
-    lastAnimationOverlaySignature = signature;
-    return;
-  }
-
-  // Keep the previous overlay for the same page if an atlas frame is briefly
-  // unavailable. Clearing first creates a visible transparent frame/flash.
-  // When the page/layout actually changes, clear stale icons immediately.
-  const preservedSamePageOverlay = Boolean(signature && lastAnimationOverlaySignature === signature);
-  lastDrawHadAnimatedFrame = preservedSamePageOverlay;
-  if (!preservedSamePageOverlay) {
-    clearAnimationOverlay();
-  }
 }
 
 function draw() {
@@ -680,11 +589,12 @@ function draw() {
   const nextRects: GridRect[] = [];
   const nextAnimatedRects: GridRect[] = [];
   let drewAnimatedFrame = false;
-  const allowAnimatedOverlay = canRunAnimatedOverlay();
+  const allowAnimatedAtlas = canRunAnimatedAtlas();
   const webglCommands: BrowserWebglAtlasDrawCommand[] = [];
-  // Static resident atlas icons live on their own WebGL layer. Animated frames
-  // are drawn on a separate overlay so animation clears never erase static
-  // page icons during fast NEI-style page jumps.
+  const animationNow = getSharedAnimationNowMs();
+  // Static and animated resident atlas icons share one WebGL layer. This keeps
+  // animation off Canvas2D and avoids transparent overlay flashes during fast
+  // NEI-style page jumps.
   const canUseWebglAtlas = Boolean(webglAtlasRenderer && hasGlobalBrowserAtlas());
   const activeCommands = activeLayoutKey.value === layoutKey.value ? layoutCommands.value : null;
   const commandsByEntryIndex = new Map<number, HomeGridLayoutCommand>();
@@ -717,7 +627,12 @@ function draw() {
     const sprite = props.atlas?.entries?.[itemId];
     if (sprite && atlasReady.value && atlasImage.value) {
       drawAtlasSprite(ctx, atlasImage.value, sprite, rect);
-      if (allowAnimatedOverlay && globalEntry && getPreparedGlobalAnimation(itemId, globalEntry) && getLoadedGlobalAtlasImage(globalEntry.animatedAtlas?.atlasFile)) {
+      if (
+        allowAnimatedAtlas
+        && globalEntry
+        && canUseWebglAtlas
+        && queueGlobalAnimationSprite(webglCommands, globalEntry, rect, animationNow)
+      ) {
         nextAnimatedRects.push(rect);
         drewAnimatedFrame = true;
       }
@@ -734,7 +649,10 @@ function draw() {
       && webglGlobalStaticAtlas
       && queueGlobalStaticSprite(webglCommands, webglGlobalStaticAtlas, globalEntry, rect)
     ) {
-      if (allowAnimatedOverlay && getPreparedGlobalAnimation(itemId, globalEntry) && getLoadedGlobalAtlasImage(globalEntry.animatedAtlas?.atlasFile)) {
+      if (
+        allowAnimatedAtlas
+        && queueGlobalAnimationSprite(webglCommands, globalEntry, rect, animationNow)
+      ) {
         nextAnimatedRects.push(rect);
         drewAnimatedFrame = true;
       }
@@ -744,7 +662,11 @@ function draw() {
 
     const globalStaticAtlas = getLoadedGlobalAtlasImage(globalEntry?.staticAtlas?.atlasFile);
     if (globalEntry && globalStaticAtlas && drawGlobalStaticSprite(ctx, globalStaticAtlas, globalEntry, rect)) {
-      if (allowAnimatedOverlay && getPreparedGlobalAnimation(itemId, globalEntry) && getLoadedGlobalAtlasImage(globalEntry.animatedAtlas?.atlasFile)) {
+      if (
+        allowAnimatedAtlas
+        && canUseWebglAtlas
+        && queueGlobalAnimationSprite(webglCommands, globalEntry, rect, animationNow)
+      ) {
         nextAnimatedRects.push(rect);
         drewAnimatedFrame = true;
       }
@@ -752,8 +674,14 @@ function draw() {
       continue;
     }
 
-    if (globalEntry && drawGlobalAnimation(ctx, globalEntry, rect, getSharedAnimationNowMs())) {
-      if (allowAnimatedOverlay) {
+    if (
+      globalEntry
+      && (
+        (allowAnimatedAtlas && canUseWebglAtlas && queueGlobalAnimationSprite(webglCommands, globalEntry, rect, animationNow))
+        || drawGlobalAnimation(ctx, globalEntry, rect, animationNow)
+      )
+    ) {
+      if (allowAnimatedAtlas) {
         nextAnimatedRects.push(rect);
         drewAnimatedFrame = true;
       }
@@ -794,11 +722,9 @@ function draw() {
     webglAtlasRenderer?.draw(canvasWidth.value, canvasHeight.value, webglCommands);
   }
   if (drewAnimatedFrame) {
-    drawAnimationOverlay();
     startAnimationLoop();
   } else {
     animatedItemRects = [];
-    clearAnimationOverlay();
     stopAnimationLoop();
   }
 }
@@ -1098,8 +1024,8 @@ onMounted(() => {
   if (hostRef.value) {
     resizeObserver.observe(hostRef.value);
   }
-  // Static browsing remains Canvas2D/page-atlas; WebGL is used only for the
-  // animated overlay so large native animated atlases do not block Canvas2D.
+  // Static chrome remains Canvas2D; resident atlas icons and animated frames
+  // share the WebGL layer so large native atlases do not block Canvas2D.
   ensureGlobalAtlasResident();
   scheduleRender();
 });
@@ -1124,8 +1050,6 @@ onUnmounted(() => {
   globalAtlasTextureWarmCursor = 0;
   webglAtlasRenderer?.dispose();
   webglAtlasRenderer = null;
-  animationBackBuffer = null;
-  lastAnimationOverlaySignature = "";
 });
 </script>
 
@@ -1140,7 +1064,6 @@ onUnmounted(() => {
   >
     <canvas ref="canvasRef" class="home-canvas-grid__canvas" />
     <canvas ref="webglCanvasRef" class="home-canvas-grid__canvas home-canvas-grid__webgl" />
-    <canvas ref="animationCanvasRef" class="home-canvas-grid__canvas home-canvas-grid__animation" />
     <div v-if="hoveredRect && tooltipStyle" class="home-canvas-grid__tooltip" :style="tooltipStyle">
       <div class="home-canvas-grid__tooltip-title">{{ tooltipTitle }}</div>
       <div class="home-canvas-grid__tooltip-subtitle">{{ tooltipSubtitle }}</div>
@@ -1168,13 +1091,6 @@ onUnmounted(() => {
   position: absolute;
   inset: 0;
   z-index: 2;
-  pointer-events: none;
-}
-
-.home-canvas-grid__animation {
-  position: absolute;
-  inset: 0;
-  z-index: 3;
   pointer-events: none;
 }
 
