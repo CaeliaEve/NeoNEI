@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+﻿import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -158,6 +158,7 @@ if (compileScope !== 'search') {
   runStep('frontend typecheck', process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'typecheck'], { cwd: frontendDir });
   runStep('frontend runtime contracts', 'node', ['../scripts/validate-runtime-contracts.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
   runStep('frontend browser page validation', 'node', ['../scripts/validate-browser-pages-v3.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
+  runStep('frontend rust browser runtime validation', 'node', ['../scripts/validate-rust-browser-runtime.mjs', '--gate', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
   runStep('frontend rust recipe runtime validation', 'node', ['../scripts/validate-rust-recipe-runtime.mjs', '--gate', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
   runStep('frontend recipe validation', 'node', ['../scripts/validate-recipe-open-smoke.mjs', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
 }
@@ -174,3 +175,4 @@ if (!quick) {
 
 writeSummary('ok');
 console.log(`[rust-retirement-gate] OK ${reportPath}`);
+
