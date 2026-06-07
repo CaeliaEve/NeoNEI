@@ -126,6 +126,27 @@ function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] 
   return result;
 }
 
+function canUseRuntimeBrowserProjection(surface: SurfaceState): boolean {
+  return Boolean(surface.browserPack)
+    && !surface.enableHistoryViewport
+    && surface.query.trim().length === 0
+    && !surface.modId
+    && surface.expandedGroups.length === 0;
+}
+
+function getActiveEntries(surface: SurfaceState): {
+  source: NativeSurfaceEngineWorkerMetrics["projectionSource"];
+  entries: NativeSurfaceEngineEntry[];
+} {
+  if (canUseRuntimeBrowserProjection(surface)) {
+    return { source: "runtime-browser-pack", entries: buildRuntimeEntries(surface) };
+  }
+  if (surface.entries.length > 0) {
+    return { source: "compat-entries", entries: surface.entries };
+  }
+  return { source: "empty", entries: [] };
+}
+
 function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
   const existing = surfaces.get(surfaceId);
   if (existing) return existing;
@@ -154,7 +175,7 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
 }
 
 function rebuildLayout(surface: SurfaceState): void {
-  const activeEntries = surface.entries.length > 0 ? surface.entries : buildRuntimeEntries(surface);
+  const activeEntries = getActiveEntries(surface).entries;
   const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
   const iconSize = Math.max(1, Math.floor(cardSize * 0.9));
@@ -234,6 +255,7 @@ function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequ
 
 function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
   const lastSurface = lastSurfaceId ? surfaces.get(lastSurfaceId) : null;
+  const projectionSource = lastSurface ? getActiveEntries(lastSurface).source : "empty";
   return {
     initializedSurfaces: Array.from(surfaces.values()).filter((surface) => surface.initialized).length,
     events,
@@ -246,6 +268,7 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     runtimeReady: Boolean(lastSurface?.runtimePacks.size),
     runtimePacks: lastSurface?.runtimePacks.size ?? 0,
     runtimeError: lastSurface?.runtimeError ?? null,
+    projectionSource,
     nativeBrowserEntries: lastSurface?.browserPack?.itemCount ?? 0,
     nativeBrowserStrings: lastSurface?.browserPack?.stringCount ?? 0,
     updatedAt: performance.now(),

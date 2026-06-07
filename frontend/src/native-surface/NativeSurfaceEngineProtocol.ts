@@ -164,6 +164,7 @@ export type NativeSurfaceEngineWorkerMetrics = {
   runtimeReady: boolean;
   runtimePacks: number;
   runtimeError: string | null;
+  projectionSource: "runtime-browser-pack" | "compat-entries" | "empty";
   nativeBrowserEntries: number;
   nativeBrowserStrings: number;
   updatedAt: number;

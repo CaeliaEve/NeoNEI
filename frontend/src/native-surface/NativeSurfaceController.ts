@@ -207,7 +207,14 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       viewport: pointer.viewport,
     });
     if (!response || response.type !== "hitTest" || !response.hit) return null;
-    const entry = this.entries.entries[response.hit.entryIndex];
+    const entry = this.entries.entries[response.hit.entryIndex]
+      ?? this.entries.entries.find((candidate) => {
+        const item = getEntryItem(candidate);
+        if (response.hit?.groupKey) {
+          return candidate.kind !== "item" && candidate.group.key === response.hit.groupKey;
+        }
+        return item.itemId === response.hit?.itemId;
+      });
     if (!entry) return null;
     const item = getEntryItem(entry);
     return {
@@ -216,6 +223,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       kind: entry.kind,
       item,
       group: entry.kind === "item" ? undefined : entry.group,
+      groupKey: response.hit.groupKey ?? null,
     };
   }
 

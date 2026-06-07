@@ -51,6 +51,7 @@ export interface NativeHitResult {
   kind: BrowserGridEntry["kind"];
   item: Item;
   group?: BrowserVariantGroup;
+  groupKey?: string | null;
 }
 
 export interface NativeTooltipPayload {

@@ -127,6 +127,16 @@ function getEntryItem(entry: BrowserGridEntry): Item {
   return entry.kind === "item" ? entry.item : entry.group.representative;
 }
 
+function findEntryByNativeHit(hit: Awaited<ReturnType<typeof controller.hitTest>>): BrowserGridEntry | null {
+  if (!hit) return null;
+  return props.entries.find((entry) => {
+    if (hit.groupKey) {
+      return entry.kind !== "item" && entry.group.key === hit.groupKey;
+    }
+    return getEntryItem(entry).itemId === hit.item.itemId;
+  }) ?? null;
+}
+
 function emitViewportResize() {
   emit("viewportResize", hostRef.value);
 }
@@ -230,27 +240,27 @@ async function handleNativeClick(event: MouseEvent) {
   if (!nativeRenderVisible.value) return;
   const hit = await controller.hitTest(toLocalPointer(event));
   if (!hit) return;
-  if (hit.kind === "item") {
-    emit("itemClick", hit.item);
+  const entry = findEntryByNativeHit(hit);
+  if (!entry) return;
+  if (entry.kind === "item") {
+    emit("itemClick", entry.item);
     return;
   }
-  if (hit.group) {
-    emit("groupClick", hit.group);
-  }
+  emit("groupClick", entry.group);
 }
 
 async function handleNativeContextMenu(event: MouseEvent) {
   if (!nativeRenderVisible.value) return;
   const hit = await controller.hitTest(toLocalPointer(event));
   if (!hit) return;
+  const entry = findEntryByNativeHit(hit);
+  if (!entry) return;
   event.preventDefault();
-  if (hit.kind === "item") {
-    emit("itemContextmenu", hit.item, event);
+  if (entry.kind === "item") {
+    emit("itemContextmenu", entry.item, event);
     return;
   }
-  if (hit.group) {
-    emit("groupContextmenu", hit.group, event);
-  }
+  emit("groupContextmenu", entry.group, event);
 }
 
 async function syncNativeFrame() {
@@ -279,13 +289,10 @@ function buildNativeSpriteCommands(
   nowMs: number,
 ): NativeRenderSpriteCommand[] {
   const result: NativeRenderSpriteCommand[] = [];
-  const maxCount = Math.min(commands.length, props.entries.length);
-  for (let index = 0; index < maxCount; index += 1) {
+  for (let index = 0; index < commands.length; index += 1) {
     const command = commands[index];
-    const entry = props.entries[index];
-    if (!command || !entry) continue;
-    const item = getEntryItem(entry);
-    const sprite = getGlobalBrowserAtlasSpriteDescriptorForItem(item.itemId, nowMs);
+    if (!command?.itemId) continue;
+    const sprite = getGlobalBrowserAtlasSpriteDescriptorForItem(command.itemId, nowMs);
     if (!sprite) continue;
     result.push({
       textureKey: sprite.textureKey,
