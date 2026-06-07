@@ -2333,12 +2333,44 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
     let mut animated_items = 0u64;
     let mut missing_atlas_file_refs = Vec::new();
     let mut invalid_frame_bounds = Vec::new();
+    let mut actionable_texture_issues = Vec::new();
     let mut animation_table = Vec::new();
     let mut atlas_map = BTreeMap::new();
 
     for item in &atlas_items {
         let item_id = value_string(item, "itemId").unwrap_or_default();
         let asset_id = value_string(item, "assetId").unwrap_or_default();
+        let has_static_atlas = item
+            .get("hasStaticAtlas")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let has_animated_atlas = item
+            .get("hasAnimatedAtlas")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        let animation = animation_by_asset.get(&asset_id);
+        let native_sprite = native_sprite_by_asset.get(&asset_id);
+        if !has_static_atlas && !has_animated_atlas {
+            actionable_texture_issues.push(json!({
+                "code": "TEXTURE_ATLAS_ENTRY_EMPTY",
+                "itemId": item_id,
+                "assetId": asset_id,
+                "reason": "No staticAtlas or animatedAtlas was generated for this browser atlas item.",
+                "recommendedFix": "Fix NESQL++ texture capture or atlas-source classification for this item; do not use frontend per-item image fallback.",
+            }));
+        }
+        if !has_animated_atlas && expected_animated_item(animation, native_sprite) {
+            actionable_texture_issues.push(json!({
+                "code": "EXPECTED_ANIMATED_BUT_STATIC",
+                "itemId": item_id,
+                "assetId": asset_id,
+                "reason": expected_animation_reason(animation, native_sprite),
+                "hasStaticAtlas": has_static_atlas,
+                "hasAnimationFacts": animation.is_some(),
+                "hasNativeSpriteFacts": native_sprite.is_some(),
+                "recommendedFix": "Repair NESQL++ animation facts or native sprite capture so compiler emits animatedAtlas/timeline rows.",
+            }));
+        }
         if item
             .get("hasStaticAtlas")
             .and_then(Value::as_bool)
@@ -2361,8 +2393,6 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
             validate_atlas_ref(&item_id, animated_atlas, &mut missing_atlas_file_refs);
             validate_frame_bounds(&item_id, animated_atlas, &mut invalid_frame_bounds);
 
-            let animation = animation_by_asset.get(&asset_id);
-            let native_sprite = native_sprite_by_asset.get(&asset_id);
             let frame_duration_ms = animated_atlas
                 .and_then(|value| value_u64(value, "frameDurationMs"))
                 .or_else(|| animation.and_then(|value| value_u64(value, "frameDurationMs")))
@@ -2424,10 +2454,29 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
         "atlasMap": atlas_map,
         "animationTable": animation_table,
         "validation": {
-            "missingAtlasFileRefs": missing_atlas_file_refs,
-            "invalidFrameBounds": invalid_frame_bounds,
+            "missingAtlasFileRefs": missing_atlas_file_refs.clone(),
+            "invalidFrameBounds": invalid_frame_bounds.clone(),
         },
     });
+    write_json_value(
+        &rust_dir.join("missing-texture-report.json"),
+        &json!({
+            "schemaVersion": "neonei/rust-missing-texture-report/current",
+            "generatedAt": "deterministic-rust-compiler",
+            "status": if actionable_texture_issues.is_empty() && missing_atlas_file_refs.is_empty() && invalid_frame_bounds.is_empty() { "ok" } else { "advisory" },
+            "counts": {
+                "atlasItems": atlas_items.len(),
+                "staticAtlasItems": static_items,
+                "animatedAtlasItems": animated_items,
+                "actionableIssues": actionable_texture_issues.len(),
+                "missingAtlasFileRefs": missing_atlas_file_refs.len(),
+                "invalidFrameBounds": invalid_frame_bounds.len(),
+            },
+            "issues": actionable_texture_issues,
+            "missingAtlasFileRefs": missing_atlas_file_refs,
+            "invalidFrameBounds": invalid_frame_bounds,
+        }),
+    )?;
     if debug_json {
         write_json_value(&rust_dir.join("texture-pack.json"), &texture_output_pack)?;
     }
@@ -2562,6 +2611,47 @@ fn note_atlas_meta(
     row.kind_flags |= kind_flag;
     row.item_count = row.item_count.saturating_add(1);
     row.frame_count = row.frame_count.saturating_add(frame_count);
+}
+
+fn expected_animated_item(animation: Option<&Value>, native_sprite: Option<&Value>) -> bool {
+    animation.is_some_and(|value| {
+        value_u64(value, "frameCount").unwrap_or(0) > 1
+            || value_u64(value, "frameDurationMs").unwrap_or(0) > 0
+            || value.get("timeline").and_then(Value::as_array).is_some_and(|values| !values.is_empty())
+    }) || native_sprite.is_some_and(|value| {
+        value_u64(value, "frameCount").unwrap_or(0) > 1
+            || value_u64(value, "frameDurationMs").unwrap_or(0) > 0
+            || value.get("frames").and_then(Value::as_array).is_some_and(|values| values.len() > 1)
+            || optional_value_string(Some(value), "animationMode").is_some()
+            || optional_value_string(Some(value), "spriteMetadataFile").is_some()
+    })
+}
+
+fn expected_animation_reason(animation: Option<&Value>, native_sprite: Option<&Value>) -> &'static str {
+    if native_sprite
+        .and_then(|value| optional_value_string(Some(value), "spriteMetadataFile"))
+        .is_some()
+    {
+        return "native sprite metadata exists";
+    }
+    if native_sprite
+        .and_then(|value| optional_value_string(Some(value), "animationMode"))
+        .is_some()
+    {
+        return "native sprite animation mode exists";
+    }
+    if animation
+        .and_then(|value| value.get("timeline").and_then(Value::as_array))
+        .is_some_and(|values| !values.is_empty())
+    {
+        return "raw animation timeline exists";
+    }
+    if animation.and_then(|value| value_u64(value, "frameCount")).unwrap_or(0) > 1
+        || native_sprite.and_then(|value| value_u64(value, "frameCount")).unwrap_or(0) > 1
+    {
+        return "frameCount indicates multiple frames";
+    }
+    "animation timing facts exist"
 }
 
 fn build_compact_animation_payload_from_table(animation_table: &[Value]) -> Result<Vec<u8>> {
@@ -2982,6 +3072,7 @@ fn compile_runtime_reports(
             "atlas.meta.bin",
             "animations.bin",
             "strings.zh_cn.bin",
+            "missing-texture-report.json",
             "semantic-validation-report.json",
         ],
         CompileScope::Search => vec![
@@ -3001,6 +3092,7 @@ fn compile_runtime_reports(
             "textures.bin",
             "atlas.meta.bin",
             "animations.bin",
+            "missing-texture-report.json",
             "semantic-validation-report.json",
         ],
     };
@@ -3293,6 +3385,10 @@ fn rust_manifest_file_entries(
         (
             "rustSemanticValidationReport",
             "rust/semantic-validation-report.json",
+        ),
+        (
+            "rustMissingTextureReport",
+            "rust/missing-texture-report.json",
         ),
         ("rustMigrationReadiness", "rust/migration-readiness.json"),
         ("rustDeploymentReport", "rust/deployment-report.json"),
@@ -3903,6 +3999,26 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[8..12].try_into().unwrap()), 1);
         assert_eq!(u32::from_le_bytes(payload[12..16].try_into().unwrap()), 2);
         assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 6);
+    }
+
+    #[test]
+    fn missing_texture_report_classifies_expected_animated_static_items() {
+        let animation = json!({
+            "assetId": "avaritia-singularity",
+            "frameCount": 4,
+            "frameDurationMs": 50,
+            "timeline": [{ "frameIndex": 0, "durationMs": 50 }]
+        });
+        let native_sprite = json!({
+            "assetId": "avaritia-singularity",
+            "spriteMetadataFile": "assets/minecraft/textures/items/singularity.png.mcmeta"
+        });
+        assert!(expected_animated_item(Some(&animation), Some(&native_sprite)));
+        assert_eq!(
+            expected_animation_reason(Some(&animation), Some(&native_sprite)),
+            "native sprite metadata exists"
+        );
+        assert!(!expected_animated_item(None, None));
     }
 
     #[test]
