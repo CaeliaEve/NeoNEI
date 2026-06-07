@@ -11,6 +11,7 @@ import recipeBootstrapRoutes from './recipe-bootstrap.routes';
 import publishRoutes from './publish.routes';
 import runtimeRoutes from './runtime.routes';
 import v1Routes from './v1.routes';
+import currentApiRoutes from './current-api.routes';
 
 type RegisterApiNamespacesOptions = {
   publicRuntimeOnly: boolean;
@@ -43,6 +44,8 @@ export function registerApiNamespaces(app: Application, options: RegisterApiName
     app.use('/lab/gt-diagrams', gtDiagramsRoutes);
     app.use('/lab/forestry-genetics', forestryGeneticsRoutes);
   }
+
+  app.use('/api', tagApiTier('public-runtime'), currentApiRoutes);
 
   app.use('/api', tagApiTier('legacy-compat'));
   if (!PUBLIC_RUNTIME_ONLY) {

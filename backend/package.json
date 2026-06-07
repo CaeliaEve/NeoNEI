@@ -20,6 +20,7 @@
     "audit:paths": "node ../scripts/audit-path-portability.mjs",
     "test:public-runtime-profile": "node --test scripts/public-runtime-profile-regression.test.mjs",
     "test:runtime-health-contract": "node --test scripts/runtime-health-contract.test.mjs",
+    "test:current-api-contract": "node --test scripts/current-api-contract.test.mjs",
     "test:publish-compression-sidecar": "node --test scripts/publish-compression-sidecar-regression.test.mjs"
   },
   "keywords": [
