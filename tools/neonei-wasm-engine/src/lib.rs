@@ -5,9 +5,11 @@
 //! `wasm32-unknown-unknown`. The TypeScript worker mirrors these contracts until
 //! the browser loads the compiled WASM module.
 
+pub mod compact_browser;
 pub mod hit_test;
 pub mod layout;
 
+pub use compact_browser::{compact_browser_project_count, parse_compact_browser_header};
 pub use hit_test::{hit_test_index, NativeHit};
 pub use layout::{compute_columns, compute_layout, NativeLayoutCommand};
 
@@ -30,6 +32,71 @@ pub extern "C" fn neonei_engine_hit_test_index(
     hit_test_index(x, y, viewport_width, item_size, gap, entry_count)
         .map(|index| index as i32)
         .unwrap_or(-1)
+}
+
+/// Allocates linear-memory bytes for JS callers that need to pass binary packs
+/// into the native engine without wasm-bindgen.
+#[no_mangle]
+pub extern "C" fn neonei_engine_alloc(len: u32) -> *mut u8 {
+    let mut buffer = Vec::<u8>::with_capacity(len as usize);
+    let ptr = buffer.as_mut_ptr();
+    std::mem::forget(buffer);
+    ptr
+}
+
+/// Releases memory allocated by `neonei_engine_alloc`.
+///
+/// # Safety
+/// The pointer and length must match a previous successful allocation.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_dealloc(ptr: *mut u8, len: u32) {
+    if ptr.is_null() || len == 0 {
+        return;
+    }
+    drop(Vec::from_raw_parts(ptr, 0, len as usize));
+}
+
+unsafe fn wasm_slice<'a>(ptr: *const u8, len: u32) -> Option<&'a [u8]> {
+    if ptr.is_null() {
+        return None;
+    }
+    Some(std::slice::from_raw_parts(ptr, len as usize))
+}
+
+unsafe fn wasm_str<'a>(ptr: *const u8, len: u32) -> Option<&'a str> {
+    let bytes = wasm_slice(ptr, len)?;
+    std::str::from_utf8(bytes).ok()
+}
+
+/// Returns the compact browser item count, or 0 when the payload is invalid.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_browser_item_count(ptr: *const u8, len: u32) -> u32 {
+    let Some(bytes) = wasm_slice(ptr, len) else {
+        return 0;
+    };
+    parse_compact_browser_header(bytes)
+        .map(|header| header.item_count)
+        .unwrap_or(0)
+}
+
+/// Returns the projected item count for a compact browser payload and query/mod
+/// filter. This is the first WASM ABI step toward moving search projection out
+/// of TypeScript and into the native runtime.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_browser_project_count(
+    pack_ptr: *const u8,
+    pack_len: u32,
+    query_ptr: *const u8,
+    query_len: u32,
+    mod_ptr: *const u8,
+    mod_len: u32,
+) -> u32 {
+    let Some(pack) = wasm_slice(pack_ptr, pack_len) else {
+        return 0;
+    };
+    let query = wasm_str(query_ptr, query_len).unwrap_or("");
+    let mod_filter = wasm_str(mod_ptr, mod_len).unwrap_or("");
+    compact_browser_project_count(pack, query, mod_filter).unwrap_or(0)
 }
 
 #[cfg(test)]
