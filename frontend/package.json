@@ -44,7 +44,8 @@
                     "test:rust-retirement":  "node ../scripts/rust-retirement-gate.mjs --gate --quick",
                     "test:rust-retirement:full":  "node ../scripts/rust-retirement-gate.mjs --gate",
                     "test:wasm-engine":  "node ../scripts/wasm-engine-gate.mjs",
-                    "test:native-runtime-packs":  "node ../scripts/validate-native-runtime-packs.mjs --gate"
+                    "test:native-runtime-packs":  "node ../scripts/validate-native-runtime-packs.mjs --gate",
+                    "test:native-runtime-projection":  "node ../scripts/native-runtime-projection-gate.mjs --gate"
                 },
     "dependencies":  {
                          "axios":  "^1.13.2",

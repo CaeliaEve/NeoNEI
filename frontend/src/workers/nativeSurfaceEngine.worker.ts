@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   NativeSurfaceEngineRequest,
   NativeSurfaceEngineResponse,
   NativeSurfaceEngineEntry,
@@ -17,6 +17,7 @@ import {
   parseNativeCompactBrowserPack,
   type NativeCompactBrowserPack,
 } from "../native-surface/NativeRuntimeBrowserPack";
+import { getCachedNativeRuntimeProjectionIndices } from "../native-surface/NativeRuntimeProjection";
 
 type SurfaceState = {
   initialized: boolean;
@@ -99,44 +100,17 @@ function computeColumns(viewportWidth: number, cardSize: number, gap: number): n
   return Math.max(1, Math.floor((viewportWidth + gap) / (cardSize + gap)));
 }
 
-function normalizeSearchText(value: string): string {
-  return `${value ?? ""}`.trim().toLowerCase().replace(/\s+/g, "");
-}
-
-function buildRuntimeProjectionCacheKey(surface: SurfaceState): string {
-  return [
-    surface.browserPack?.itemCount ?? 0,
-    normalizeSearchText(surface.query),
-    `${surface.modId ?? ""}`.trim().toLowerCase(),
-  ].join("|");
-}
-
 function getRuntimeProjectionIndices(surface: SurfaceState, browserPack: NativeCompactBrowserPack): Uint32Array {
-  const cacheKey = buildRuntimeProjectionCacheKey(surface);
-  if (surface.runtimeProjectionCacheKey === cacheKey && surface.runtimeProjectionIndices) {
-    return surface.runtimeProjectionIndices;
-  }
-
-  const query = normalizeSearchText(surface.query);
-  const modFilter = `${surface.modId ?? ""}`.trim().toLowerCase();
-  const indices: number[] = [];
-  for (let index = 0; index < browserPack.itemCount; index += 1) {
-    const row = getNativeCompactBrowserRow(browserPack, index);
-    if (!row) continue;
-    const itemId = browserPack.strings[row.itemIdRef] ?? "";
-    const localizedName = browserPack.strings[row.localizedNameRef] ?? "";
-    const modId = browserPack.strings[row.modIdRef] ?? "";
-    const groupKey = browserPack.strings[row.groupKeyRef] ?? "";
-    if (modFilter && modId.toLowerCase() !== modFilter) continue;
-    if (query) {
-      const haystack = normalizeSearchText(`${localizedName}|${itemId}|${modId}|${groupKey}`);
-      if (!haystack.includes(query)) continue;
-    }
-    indices.push(index);
-  }
-  surface.runtimeProjectionCacheKey = cacheKey;
-  surface.runtimeProjectionIndices = Uint32Array.from(indices);
-  return surface.runtimeProjectionIndices;
+  return getCachedNativeRuntimeProjectionIndices(
+    browserPack,
+    { query: surface.query, modId: surface.modId },
+    {
+      get key() { return surface.runtimeProjectionCacheKey; },
+      set key(value: string | null) { surface.runtimeProjectionCacheKey = value; },
+      get indices() { return surface.runtimeProjectionIndices; },
+      set indices(value: Uint32Array | null) { surface.runtimeProjectionIndices = value; },
+    },
+  );
 }
 
 function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] {
@@ -423,6 +397,7 @@ self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   if (!message?.type || !message.surfaceId) return;
   void handleRequest(message).then((response) => self.postMessage(response));
 };
+
 
 
 
