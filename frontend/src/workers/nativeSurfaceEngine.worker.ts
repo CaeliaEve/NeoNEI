@@ -19,7 +19,6 @@ import {
   parseNativeCompactBrowserPack,
   type NativeCompactBrowserPack,
 } from "../native-surface/NativeRuntimeBrowserPack";
-import { getCachedNativeRuntimeProjectionIndices } from "../native-surface/NativeRuntimeProjection";
 
 type SurfaceState = {
   initialized: boolean;
@@ -393,65 +392,6 @@ function freeWasmBytes(bytes: { ptr: number; len: number }): void {
   if (bytes.ptr > 0 && bytes.len > 0) wasmEngine?.neonei_engine_dealloc?.(bytes.ptr, bytes.len);
 }
 
-function computeWasmRuntimeProjectionCount(surface: SurfaceState): number | null {
-  const projectCount = wasmEngine?.neonei_engine_compact_browser_project_count;
-  if (!projectCount || surface.runtimeBrowserWasmPtr <= 0 || surface.runtimeBrowserWasmLen <= 0) return null;
-  const query = writeWasmUtf8(surface.query);
-  const mod = writeWasmUtf8(surface.modId ?? "");
-  try {
-    return projectCount(
-      surface.runtimeBrowserWasmPtr,
-      surface.runtimeBrowserWasmLen,
-      query.ptr,
-      query.len,
-      mod.ptr,
-      mod.len,
-    );
-  } finally {
-    freeWasmBytes(query);
-    freeWasmBytes(mod);
-  }
-}
-
-function computeWasmRuntimeProjectionIndices(surface: SurfaceState, itemCount: number): Uint32Array | null {
-  const projectIndices = wasmEngine?.neonei_engine_compact_browser_project_indices;
-  const allocU32 = wasmEngine?.neonei_engine_alloc_u32;
-  const deallocU32 = wasmEngine?.neonei_engine_dealloc_u32;
-  const memory = wasmEngine?.memory;
-  if (!projectIndices || !allocU32 || !deallocU32 || !memory || surface.runtimeBrowserWasmPtr <= 0 || surface.runtimeBrowserWasmLen <= 0) {
-    return null;
-  }
-  const outCapacity = Math.max(0, Math.floor(itemCount));
-  if (outCapacity <= 0) return new Uint32Array();
-  const query = writeWasmUtf8(surface.query);
-  const mod = writeWasmUtf8(surface.modId ?? "");
-  const outPtr = allocU32(outCapacity);
-  if (!outPtr) {
-    freeWasmBytes(query);
-    freeWasmBytes(mod);
-    return null;
-  }
-  try {
-    const count = projectIndices(
-      surface.runtimeBrowserWasmPtr,
-      surface.runtimeBrowserWasmLen,
-      query.ptr,
-      query.len,
-      mod.ptr,
-      mod.len,
-      outPtr,
-      outCapacity,
-    );
-    const clampedCount = Math.min(outCapacity, Math.max(0, Math.floor(count)));
-    surface.runtimeBrowserWasmProjectedEntries = count;
-    return Uint32Array.from(new Uint32Array(memory.buffer, outPtr, clampedCount));
-  } finally {
-    deallocU32(outPtr, outCapacity);
-    freeWasmBytes(query);
-    freeWasmBytes(mod);
-  }
-}
-
 function computeWasmRuntimeVisibleEntries(surface: SurfaceState, itemCount: number): Uint32Array | null {
   const projectVisible = wasmEngine?.neonei_engine_compact_browser_project_visible_indices;
   const allocU32 = wasmEngine?.neonei_engine_alloc_u32;
@@ -496,75 +436,46 @@ function computeWasmRuntimeVisibleEntries(surface: SurfaceState, itemCount: numb
   }
 }
 
-function getRuntimeVisibleEntries(surface: SurfaceState, browserPack: NativeCompactBrowserPack): Uint32Array | null {
+function getRuntimeVisibleEntries(surface: SurfaceState, browserPack: NativeCompactBrowserPack): Uint32Array {
   const cacheKey = [
     browserPack.itemCount,
     `${surface.query ?? ""}`.trim().toLowerCase().replace(/\s+/g, ""),
     `${surface.modId ?? ""}`.trim().toLowerCase(),
     surface.expandedGroups.join("\u001f"),
-    "wasm-visible-v1",
+    "wasm-visible-v2-no-ts-fallback",
   ].join("|");
   if (surface.runtimeVisibleCacheKey === cacheKey && surface.runtimeVisibleEntries) return surface.runtimeVisibleEntries;
   const visibleEntries = computeWasmRuntimeVisibleEntries(surface, browserPack.itemCount);
-  if (!visibleEntries) return null;
+  if (!visibleEntries) {
+    surface.runtimeError = wasmError
+      ? `WASM/browser visible projection unavailable: ${wasmError}`
+      : "WASM/browser visible projection unavailable";
+    surface.runtimeVisibleCacheKey = cacheKey;
+    surface.runtimeVisibleEntries = new Uint32Array();
+    surface.runtimeBrowserWasmProjectedEntries = 0;
+    return surface.runtimeVisibleEntries;
+  }
   surface.runtimeVisibleCacheKey = cacheKey;
   surface.runtimeVisibleEntries = visibleEntries;
+  surface.runtimeError = null;
   return visibleEntries;
-}
-
-function getRuntimeProjectionIndices(surface: SurfaceState, browserPack: NativeCompactBrowserPack): Uint32Array {
-  const cacheKey = [
-    browserPack.itemCount,
-    `${surface.query ?? ""}`.trim().toLowerCase().replace(/\s+/g, ""),
-    `${surface.modId ?? ""}`.trim().toLowerCase(),
-    "wasm-primary",
-  ].join("|");
-  if (surface.runtimeProjectionCacheKey === cacheKey && surface.runtimeProjectionIndices) return surface.runtimeProjectionIndices;
-
-  const wasmIndices = computeWasmRuntimeProjectionIndices(surface, browserPack.itemCount);
-  if (wasmIndices) {
-    surface.runtimeProjectionCacheKey = cacheKey;
-    surface.runtimeProjectionIndices = wasmIndices;
-    return wasmIndices;
-  }
-
-  const indices = getCachedNativeRuntimeProjectionIndices(
-    browserPack,
-    { query: surface.query, modId: surface.modId },
-    {
-      get key() { return surface.runtimeProjectionCacheKey; },
-      set key(value: string | null) { surface.runtimeProjectionCacheKey = value; },
-      get indices() { return surface.runtimeProjectionIndices; },
-      set indices(value: Uint32Array | null) { surface.runtimeProjectionIndices = value; },
-    },
-  );
-  const wasmProjectedEntries = computeWasmRuntimeProjectionCount(surface);
-  if (wasmProjectedEntries !== null) {
-    surface.runtimeBrowserWasmProjectedEntries = wasmProjectedEntries;
-    if (wasmProjectedEntries !== indices.length) {
-      surface.runtimeError = `WASM/browser projection mismatch: wasm=${wasmProjectedEntries}, ts=${indices.length}`;
-    }
-  }
-  return indices;
 }
 
 function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] {
   const browserPack = surface.browserPack;
   if (!browserPack) return [];
-  const visibleEntries = getRuntimeVisibleEntries(surface, browserPack);
-  const projectionIndices = visibleEntries ?? getRuntimeProjectionIndices(surface, browserPack);
-  const expandedGroups = visibleEntries ? null : new Set(surface.expandedGroups);
+  const projectionIndices = getRuntimeVisibleEntries(surface, browserPack);
   const emittedCollapsedGroups = new Set<string>();
   const projected: NativeSurfaceEngineEntry[] = [];
   for (let projectionIndex = 0; projectionIndex < projectionIndices.length; projectionIndex += 1) {
     const encodedIndex = projectionIndices[projectionIndex] ?? 0;
-    const wasmCollapsedGroup = visibleEntries ? encodedIndex >= 0x80000000 : false;
-    const index = visibleEntries ? encodedIndex % 0x80000000 : encodedIndex;
+    const wasmCollapsedGroup = encodedIndex >= 0x80000000;
+    const index = encodedIndex % 0x80000000;
     const row = getNativeCompactBrowserRow(browserPack, index);
     if (!row) continue;
     const itemId = browserPack.strings[row.itemIdRef] ?? "";
     const groupKey = browserPack.strings[row.groupKeyRef] ?? "";
-    if (groupKey && (wasmCollapsedGroup || (!visibleEntries && !expandedGroups?.has(groupKey)))) {
+    if (groupKey && wasmCollapsedGroup) {
       if (emittedCollapsedGroups.has(groupKey)) continue;
       emittedCollapsedGroups.add(groupKey);
       const group = surface.groupByKey.get(groupKey);
