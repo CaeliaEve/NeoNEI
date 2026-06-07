@@ -424,6 +424,7 @@ watch(itemIdsSignature, () => {
       aria-hidden="true"
     />
     <HomeCanvasGrid
+      v-if="!nativeRenderVisible"
       :entries="entries"
       :item-size="itemSize"
       :atlas="atlas"
