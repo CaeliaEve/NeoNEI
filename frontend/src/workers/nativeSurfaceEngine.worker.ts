@@ -153,6 +153,14 @@ type NativeWasmEngineExports = {
   neonei_engine_alloc_u32?: (len: number) => number;
   neonei_engine_dealloc_u32?: (ptr: number, len: number) => void;
   neonei_engine_compute_columns: (viewportWidth: number, itemSize: number, gap: number) => number;
+  neonei_engine_write_layout_commands?: (
+    entryCount: number,
+    viewportWidth: number,
+    itemSize: number,
+    gap: number,
+    outPtr: number,
+    outLen: number,
+  ) => number;
   neonei_engine_hit_test_index: (
     x: number,
     y: number,
@@ -964,18 +972,56 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
   return next;
 }
 
+const WASM_LAYOUT_COMMAND_U32_STRIDE = 7;
+
+function computeWasmLayoutCommands(entryCount: number, viewportWidth: number, cardSize: number, gap: number): Uint32Array | null {
+  const writeLayout = wasmEngine?.neonei_engine_write_layout_commands;
+  const allocU32 = wasmEngine?.neonei_engine_alloc_u32;
+  const deallocU32 = wasmEngine?.neonei_engine_dealloc_u32;
+  const memory = wasmEngine?.memory;
+  const count = Math.max(0, Math.floor(entryCount));
+  if (!writeLayout || !allocU32 || !deallocU32 || !memory) return null;
+  if (count <= 0) return new Uint32Array();
+  const outLen = count * WASM_LAYOUT_COMMAND_U32_STRIDE;
+  const outPtr = allocU32(outLen);
+  if (!outPtr) return null;
+  try {
+    const writtenCount = writeLayout(
+      toU32(count),
+      toU32(viewportWidth),
+      toU32(cardSize),
+      toU32(gap),
+      outPtr,
+      outLen,
+    );
+    const clampedCount = Math.min(count, Math.max(0, Math.floor(writtenCount)));
+    return Uint32Array.from(new Uint32Array(memory.buffer, outPtr, clampedCount * WASM_LAYOUT_COMMAND_U32_STRIDE));
+  } finally {
+    deallocU32(outPtr, outLen);
+  }
+}
+
 function rebuildLayout(surface: SurfaceState): void {
   const activeEntries = getActiveEntries(surface).entries;
   const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
-  const iconSize = Math.max(1, Math.floor(cardSize * 0.9));
   const gap = 4;
-  const columns = computeColumns(viewportWidth, cardSize, gap);
+  const nativeLayout = computeWasmLayoutCommands(activeEntries.length, viewportWidth, cardSize, gap);
+  if (!nativeLayout) {
+    surface.runtimeError = wasmError
+      ? `WASM layout command writer unavailable: ${wasmError}`
+      : "WASM layout command writer unavailable";
+    surface.layoutCommands = [];
+    return;
+  }
   surface.layoutCommands = activeEntries.map((entry, index) => {
-    const col = index % columns;
-    const row = Math.floor(index / columns);
-    const x = col * (cardSize + gap);
-    const y = row * (cardSize + gap);
+    const offset = index * WASM_LAYOUT_COMMAND_U32_STRIDE;
+    const x = nativeLayout[offset + 1] ?? 0;
+    const y = nativeLayout[offset + 2] ?? 0;
+    const size = nativeLayout[offset + 3] ?? cardSize;
+    const iconX = nativeLayout[offset + 4] ?? x;
+    const iconY = nativeLayout[offset + 5] ?? y;
+    const iconSize = nativeLayout[offset + 6] ?? size;
     return {
       key: entry.key,
       kind: entry.kind,
@@ -984,12 +1030,13 @@ function rebuildLayout(surface: SurfaceState): void {
       groupKey: entry.groupKey ?? null,
       x,
       y,
-      size: cardSize,
-      iconX: x + Math.round((cardSize - iconSize) / 2),
-      iconY: y + Math.round((cardSize - iconSize) / 2),
+      size,
+      iconX,
+      iconY,
       iconSize,
     };
   });
+  surface.runtimeError = null;
 }
 
 function buildLayoutCommandBuffer(

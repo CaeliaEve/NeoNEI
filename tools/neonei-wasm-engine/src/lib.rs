@@ -36,6 +36,43 @@ pub extern "C" fn neonei_engine_compute_columns(
     compute_columns(viewport_width, item_size, gap)
 }
 
+/// Writes base layout commands into a caller-provided `u32` buffer.
+///
+/// Each command uses seven `u32` values:
+/// `entryIndex, x, y, size, iconX, iconY, iconSize`.
+/// The return value is the full command count. If `out_len` is smaller than
+/// `entry_count * 7`, only the prefix that fits is written.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_write_layout_commands(
+    entry_count: u32,
+    viewport_width: u32,
+    item_size: u32,
+    gap: u32,
+    out_ptr: *mut u32,
+    out_len: u32,
+) -> u32 {
+    if out_ptr.is_null() || out_len == 0 {
+        return entry_count;
+    }
+    let out = std::slice::from_raw_parts_mut(out_ptr, out_len as usize);
+    let commands = compute_layout(entry_count, viewport_width, item_size, gap);
+    let mut cursor = 0usize;
+    for command in &commands {
+        if cursor + 7 > out.len() {
+            break;
+        }
+        out[cursor] = command.entry_index;
+        out[cursor + 1] = command.x;
+        out[cursor + 2] = command.y;
+        out[cursor + 3] = command.size;
+        out[cursor + 4] = command.icon_x;
+        out[cursor + 5] = command.icon_y;
+        out[cursor + 6] = command.icon_size;
+        cursor += 7;
+    }
+    entry_count
+}
+
 /// C/WASM ABI helper. Returns -1 when the pointer misses every visible slot.
 #[no_mangle]
 pub extern "C" fn neonei_engine_hit_test_index(
@@ -331,6 +368,17 @@ mod tests {
     #[test]
     fn computes_expected_columns() {
         assert_eq!(compute_columns(489, 44, 4), 10);
+    }
+
+    #[test]
+    fn writes_layout_commands_to_u32_buffer() {
+        let mut out = vec![0u32; 14];
+        let count = unsafe {
+            neonei_engine_write_layout_commands(2, 489, 44, 4, out.as_mut_ptr(), out.len() as u32)
+        };
+        assert_eq!(count, 2);
+        assert_eq!(&out[0..7], &[0, 0, 0, 44, 3, 3, 39]);
+        assert_eq!(&out[7..14], &[1, 48, 0, 44, 51, 3, 39]);
     }
 
     #[test]

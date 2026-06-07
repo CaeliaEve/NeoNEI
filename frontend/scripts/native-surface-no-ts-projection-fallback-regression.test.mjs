@@ -35,3 +35,10 @@ test('native surface worker keeps hover hit-test in WASM', () => {
   assert.doesNotMatch(source, /layoutCommands\.find\(\(command\) =>/, 'worker must not scan layout commands in TypeScript for hover hit-test');
 });
 
+test('native surface worker writes layout positions through WASM', () => {
+  const source = readFileSync(workerPath, 'utf8');
+  assert.match(source, /neonei_engine_write_layout_commands/, 'layout command positions must call the WASM layout writer ABI');
+  assert.doesNotMatch(source, /const col = index % columns/, 'worker must not hand-roll grid columns in TypeScript');
+  assert.doesNotMatch(source, /const row = Math\.floor\(index \/ columns\)/, 'worker must not hand-roll grid rows in TypeScript');
+});
+
