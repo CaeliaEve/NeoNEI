@@ -75,12 +75,8 @@ function detectWebglLimits(activeCanvas: OffscreenCanvas): NativeRendererLimits 
 
 function chooseBackend(requested: "auto" | "webgpu" | "webgl2", activeCanvas: OffscreenCanvas): NativeRenderBackendKind {
   if (requested === "webgl2") return "webgl2";
-  if (requested === "webgpu" && "gpu" in navigator) return "webgpu";
-  // Keep auto on the completed compatible pipeline until WebGPU sprite
-  // rendering is feature-complete. Explicit webgpu remains available for the
-  // staged backend handshake.
   void activeCanvas;
-  return "webgl2";
+  return "gpu" in navigator ? "webgpu" : "webgl2";
 }
 
 function normalizeSpriteCommands(commands: NativeRenderSpriteCommand[]) {
@@ -144,7 +140,7 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       } else if (message.renderer === "webgpu" && backend !== "webgpu") {
         backendFallbackReason = "webgpu unavailable in render worker";
       }
-      const limits = detectWebglLimits(canvas);
+      const limits = backend === "webgpu" ? { maxTextureSize: 0, maxTextureUnits: 0 } : detectWebglLimits(canvas);
       return { type: "ready", id: message.id, backend, limits, metrics: buildMetrics() };
     }
     case "loadTextures": {
