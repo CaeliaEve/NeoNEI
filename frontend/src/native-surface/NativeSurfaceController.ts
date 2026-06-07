@@ -172,8 +172,12 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       entries: entries.entries,
       atlas: entries.atlas ?? null,
     };
-    this.queueMutation({ type: "compatEntries", entries: toEngineEntries(this.entries.entries) });
-    this.touch("setCompatEntries");
+    if (this.shouldSendCompatEntriesToWorker()) {
+      this.queueMutation({ type: "compatEntries", entries: toEngineEntries(this.entries.entries) });
+      this.touch("setCompatEntries");
+      return;
+    }
+    this.touch("setCompatEntries:native-runtime-suppressed");
   }
 
   async requestFrame(nowMs: number) {
@@ -297,6 +301,10 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       this.mutationFlushTimerKind = null;
       void this.flushMutationsNow();
     });
+  }
+
+  private shouldSendCompatEntriesToWorker(): boolean {
+    return !this.nativeRuntimeReady || this.nativeRuntimePacks <= 0;
   }
 
   private async flushMutationsNow(): Promise<void> {
