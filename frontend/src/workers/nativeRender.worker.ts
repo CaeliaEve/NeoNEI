@@ -25,14 +25,37 @@ let vertexCount = 0;
 let textureErrors = 0;
 let textureLoaded = 0;
 let lastFrameMs = 0;
+let lastParseMs = 0;
+let lastSpriteNormalizeMs = 0;
+let lastDrawMs = 0;
+const FRAME_SAMPLE_LIMIT = 120;
+const frameSamples: number[] = [];
 let width = 0;
 let height = 0;
 let nativeRenderer: NativeRendererBackend | null = null;
 const uploadedTextureKeys = new Set<string>();
 
+function percentile(values: number[], p: number): number {
+  if (values.length <= 0) return 0;
+  const sorted = [...values].sort((left, right) => left - right);
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
+  return sorted[index] ?? 0;
+}
+
+function rememberFrameSample(value: number): void {
+  if (!Number.isFinite(value) || value < 0) return;
+  frameSamples.push(value);
+  if (frameSamples.length > FRAME_SAMPLE_LIMIT) {
+    frameSamples.splice(0, frameSamples.length - FRAME_SAMPLE_LIMIT);
+  }
+}
+
 function buildMetrics(): NativeRendererFrameMetrics {
   const webgpuAvailable = Boolean((navigator as Navigator & { gpu?: unknown }).gpu);
   const adapterUnavailable = Boolean(backendFallbackReason?.includes("adapter/device/context unavailable"));
+  const frameAvgMs = frameSamples.length > 0
+    ? frameSamples.reduce((sum, value) => sum + value, 0) / frameSamples.length
+    : 0;
   return {
     requestedBackend,
     backend,
@@ -48,6 +71,12 @@ function buildMetrics(): NativeRendererFrameMetrics {
     textureLoaded,
     textureErrors,
     lastFrameMs,
+    lastParseMs,
+    lastSpriteNormalizeMs,
+    lastDrawMs,
+    frameAvgMs,
+    frameP95Ms: percentile(frameSamples, 95),
+    frameMaxMs: frameSamples.length > 0 ? Math.max(...frameSamples) : 0,
     animationEnabled,
     width,
     height,
@@ -171,18 +200,26 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
     case "render": {
       const startedAt = performance.now();
       commandCount = Math.max(0, Math.floor(message.commandCount || 0));
+      const parseStartedAt = performance.now();
       const parsedCommands = parseNativeLayoutCommandBuffer(message.commandBuffer, message.commandStride, commandCount);
+      lastParseMs = performance.now() - parseStartedAt;
+      const normalizeStartedAt = performance.now();
+      const normalizedSpriteCommands = normalizeSpriteCommands(message.spriteCommands ?? []);
+      lastSpriteNormalizeMs = performance.now() - normalizeStartedAt;
+      const drawStartedAt = performance.now();
       const renderStats = nativeRenderer?.render(
         width,
         height,
         parsedCommands,
-        normalizeSpriteCommands(message.spriteCommands ?? []),
+        normalizedSpriteCommands,
       ) ?? { drawCalls: 0, vertexCount: 0, spriteDrawCalls: 0, spriteVertexCount: 0 };
+      lastDrawMs = performance.now() - drawStartedAt;
       drawCalls = renderStats.drawCalls;
       vertexCount = renderStats.vertexCount;
       void message.nowMs;
       frames += 1;
       lastFrameMs = performance.now() - startedAt;
+      rememberFrameSample(lastFrameMs);
       return { type: "frame", id: message.id, metrics: buildMetrics() };
     }
     case "setAnimationEnabled":
@@ -203,6 +240,11 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       vertexCount = 0;
       textureErrors = 0;
       textureLoaded = 0;
+      lastFrameMs = 0;
+      lastParseMs = 0;
+      lastSpriteNormalizeMs = 0;
+      lastDrawMs = 0;
+      frameSamples.length = 0;
       return { type: "disposed", id: message.id, metrics: buildMetrics() };
   }
 }

@@ -211,6 +211,11 @@ async function main() {
     if ((final.nativeRenderMetrics.drawCalls ?? 0) <= 0) {
       gateFailures.push("native render worker did not issue draw calls");
     }
+    for (const metricName of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs"]) {
+      if (!Number.isFinite(Number(final.nativeRenderMetrics[metricName]))) {
+        gateFailures.push(`native render metric ${metricName} is missing or non-finite`);
+      }
+    }
   }
 
   report.gate = {
@@ -236,6 +241,9 @@ async function main() {
     nativeRenderFrames: report.final.nativeRenderMetrics?.frames ?? 0,
     nativeRenderDrawCalls: report.final.nativeRenderMetrics?.drawCalls ?? 0,
     nativeRenderTextureLoaded: report.final.nativeRenderMetrics?.textureLoaded ?? 0,
+    nativeRenderLastFrameMs: Math.round(report.final.nativeRenderMetrics?.lastFrameMs ?? 0),
+    nativeRenderFrameP95Ms: Math.round(report.final.nativeRenderMetrics?.frameP95Ms ?? 0),
+    nativeRenderLastDrawMs: Math.round(report.final.nativeRenderMetrics?.lastDrawMs ?? 0),
     errors: errors.length,
     gate: report.gate,
   }, null, 2));

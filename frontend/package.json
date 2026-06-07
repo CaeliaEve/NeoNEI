@@ -50,7 +50,8 @@
         "test:native-surface-batching": "node --test scripts/native-surface-batching-regression.test.mjs",
         "test:runtime-service-worker": "node --test scripts/runtime-service-worker-regression.test.mjs",
         "test:native-render-overlay": "node --test scripts/native-render-overlay-regression.test.mjs",
-        "test:native-render-backend-selection": "node --test scripts/native-render-backend-selection-regression.test.mjs"
+        "test:native-render-backend-selection": "node --test scripts/native-render-backend-selection-regression.test.mjs",
+        "test:native-render-frame-metrics": "node --test scripts/native-render-frame-metrics-regression.test.mjs"
     },
     "dependencies": {
         "axios": "^1.13.2",

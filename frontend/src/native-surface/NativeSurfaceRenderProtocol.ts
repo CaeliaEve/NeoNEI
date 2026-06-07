@@ -83,6 +83,12 @@ export type NativeRendererFrameMetrics = {
   textureLoaded: number;
   textureErrors: number;
   lastFrameMs: number;
+  lastParseMs: number;
+  lastSpriteNormalizeMs: number;
+  lastDrawMs: number;
+  frameAvgMs: number;
+  frameP95Ms: number;
+  frameMaxMs: number;
   animationEnabled: boolean;
   width: number;
   height: number;
