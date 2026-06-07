@@ -24,6 +24,7 @@ const outDir = args.has("out-dir") ? resolve(args.get("out-dir")) : resolve(repo
 const outputPath = args.has("output") ? resolve(args.get("output")) : join(outDir, "native-surface-baseline.json");
 const pageFlips = Number(args.get("page-flips") || 30);
 const gate = args.has("gate");
+const requireWebgpu = args.has("require-webgpu");
 const maxSettingsOpenMs = Number(args.get("max-settings-open-ms") || 250);
 const renderer = `${args.get("renderer") || ""}`.trim().toLowerCase();
 const requestedRenderer = renderer === "webgpu" || renderer === "webgl2" || renderer === "auto" ? renderer : null;
@@ -188,6 +189,11 @@ async function main() {
   if (!final.nativeRenderMetrics) {
     gateFailures.push("native render metrics are missing");
   } else {
+    if (requireWebgpu && final.nativeRenderMetrics.backend !== "webgpu") {
+      gateFailures.push(
+        `required webgpu backend did not initialize (actual: ${final.nativeRenderMetrics.backend ?? "none"}; reason: ${final.nativeRenderMetrics.backendFallbackReason ?? "unknown"})`,
+      );
+    }
     if (requestedRenderer === "webgpu" && final.nativeRenderMetrics.webgpuUsable === true && final.nativeRenderMetrics.backend !== "webgpu") {
       gateFailures.push(
         `explicit webgpu renderer did not initialize webgpu backend (actual: ${final.nativeRenderMetrics.backend ?? "none"}; reason: ${final.nativeRenderMetrics.backendFallbackReason ?? "unknown"})`,
@@ -218,6 +224,7 @@ async function main() {
   console.log(JSON.stringify({
     pageFlips,
     requestedRenderer,
+    requireWebgpu,
     nativeRenderBackend: report.final.nativeRenderMetrics?.backend ?? null,
     webgpuAvailable: Boolean(report.final.nativeRenderMetrics?.webgpuAvailable),
     webgpuUsable: Boolean(report.final.nativeRenderMetrics?.webgpuUsable),
