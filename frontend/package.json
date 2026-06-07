@@ -46,6 +46,7 @@
                     "test:wasm-engine":  "node ../scripts/wasm-engine-gate.mjs",
                     "test:native-runtime-packs":  "node ../scripts/validate-native-runtime-packs.mjs --gate",
                     "test:native-runtime-projection":  "node ../scripts/native-runtime-projection-gate.mjs --gate",
+                    "test:native-surface-worker-groups":  "node --test scripts/native-surface-worker-group-projection-regression.test.mjs",
                     "test:runtime-service-worker":  "node --test scripts/runtime-service-worker-regression.test.mjs"
                 },
     "dependencies":  {

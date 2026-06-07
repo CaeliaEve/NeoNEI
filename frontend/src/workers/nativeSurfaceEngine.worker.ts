@@ -38,12 +38,21 @@ type SurfaceState = {
   runtimePacks: Map<string, ArrayBuffer>;
   runtimeError: string | null;
   browserPack: NativeCompactBrowserPack | null;
+  groupByKey: Map<string, NativeRuntimeGroup>;
   runtimeProjectionCacheKey: string | null;
   runtimeProjectionIndices: Uint32Array | null;
   runtimeBrowserWasmPtr: number;
   runtimeBrowserWasmLen: number;
   runtimeBrowserWasmItemCount: number;
   runtimeBrowserWasmProjectedEntries: number;
+};
+
+type NativeRuntimeGroup = {
+  groupKey: string;
+  groupLabel?: string | null;
+  groupSize?: number | null;
+  representativeItemId?: string | null;
+  memberItemIds: string[];
 };
 
 const surfaces = new Map<NativeSurfaceId, SurfaceState>();
@@ -149,6 +158,37 @@ function installWasmBrowserPayload(surface: SurfaceState, payloadBuffer: ArrayBu
   surface.runtimeBrowserWasmPtr = ptr;
   surface.runtimeBrowserWasmLen = payloadBuffer.byteLength;
   surface.runtimeBrowserWasmItemCount = wasmEngine?.neonei_engine_compact_browser_item_count?.(ptr, payloadBuffer.byteLength) ?? 0;
+}
+
+function parseJsonPayload<T>(payloadBuffer: ArrayBuffer): T | null {
+  try {
+    const text = new TextDecoder("utf-8").decode(new Uint8Array(payloadBuffer));
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+function parseNativeGroupPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeGroup> {
+  const pack = parseJsonPayload<{ groups?: unknown[] }>(payloadBuffer);
+  const groups = new Map<string, NativeRuntimeGroup>();
+  for (const row of pack?.groups ?? []) {
+    if (!row || typeof row !== "object") continue;
+    const value = row as Record<string, unknown>;
+    const groupKey = `${value.groupKey ?? ""}`.trim();
+    if (!groupKey) continue;
+    const members = Array.isArray(value.memberItemIds)
+      ? value.memberItemIds.map((entry) => `${entry ?? ""}`.trim()).filter(Boolean)
+      : [];
+    groups.set(groupKey, {
+      groupKey,
+      groupLabel: typeof value.groupLabel === "string" ? value.groupLabel : null,
+      groupSize: typeof value.groupSize === "number" ? value.groupSize : members.length,
+      representativeItemId: typeof value.representativeItemId === "string" ? value.representativeItemId : members[0] ?? null,
+      memberItemIds: members,
+    });
+  }
+  return groups;
 }
 
 function writeWasmUtf8(value: string): { ptr: number; len: number } {
@@ -265,6 +305,37 @@ function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] 
   const browserPack = surface.browserPack;
   if (!browserPack) return [];
   const projectionIndices = getRuntimeProjectionIndices(surface, browserPack);
+  const expandedGroups = new Set(surface.expandedGroups);
+  const emittedCollapsedGroups = new Set<string>();
+  const projected: NativeSurfaceEngineEntry[] = [];
+  for (let projectionIndex = 0; projectionIndex < projectionIndices.length; projectionIndex += 1) {
+    const index = projectionIndices[projectionIndex] ?? 0;
+    const row = getNativeCompactBrowserRow(browserPack, index);
+    if (!row) continue;
+    const itemId = browserPack.strings[row.itemIdRef] ?? "";
+    const groupKey = browserPack.strings[row.groupKeyRef] ?? "";
+    if (groupKey && !expandedGroups.has(groupKey)) {
+      if (emittedCollapsedGroups.has(groupKey)) continue;
+      emittedCollapsedGroups.add(groupKey);
+      const group = surface.groupByKey.get(groupKey);
+      const representativeItemId = group?.representativeItemId || itemId;
+      projected.push({
+        key: `native-group:${groupKey}`,
+        kind: "group-collapsed",
+        entryIndex: projected.length,
+        itemId: representativeItemId,
+        groupKey,
+      });
+      continue;
+    }
+    projected.push({
+      key: groupKey ? `native-item:${groupKey}:${itemId}:${index}` : `native-item:${itemId}:${index}`,
+      kind: "item",
+      entryIndex: projected.length,
+      itemId,
+      groupKey: groupKey || null,
+    });
+  }
   const page = Math.max(1, surface.page);
   const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
@@ -272,30 +343,13 @@ function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] 
   const columns = computeColumns(viewportWidth, cardSize, gap);
   const rows = Math.max(1, Math.floor(Math.max(1, surface.viewport?.height ?? cardSize) / (cardSize + gap)));
   const pageSize = Math.max(1, columns * rows);
-  const start = Math.min(projectionIndices.length, (page - 1) * pageSize);
-  const end = Math.min(projectionIndices.length, start + pageSize);
-  const result: NativeSurfaceEngineEntry[] = [];
-  for (let projectionIndex = start; projectionIndex < end; projectionIndex += 1) {
-    const index = projectionIndices[projectionIndex] ?? 0;
-    const row = getNativeCompactBrowserRow(browserPack, index);
-    if (!row) continue;
-    const itemId = browserPack.strings[row.itemIdRef] ?? "";
-    const groupKey = browserPack.strings[row.groupKeyRef] ?? "";
-    result.push({
-      key: groupKey ? `native-group:${groupKey}:${index}` : `native-item:${itemId}:${index}`,
-      kind: groupKey ? "group-collapsed" : "item",
-      entryIndex: result.length,
-      itemId,
-      groupKey: groupKey || null,
-    });
-  }
-  return result;
+  const start = Math.min(projected.length, (page - 1) * pageSize);
+  return projected.slice(start, start + pageSize).map((entry, entryIndex) => ({ ...entry, entryIndex }));
 }
 
 function canUseRuntimeBrowserProjection(surface: SurfaceState): boolean {
   return Boolean(surface.browserPack)
-    && !surface.enableHistoryViewport
-    && surface.expandedGroups.length === 0;
+    && !surface.enableHistoryViewport;
 }
 
 function getActiveEntries(surface: SurfaceState): {
@@ -333,6 +387,7 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     runtimePacks: new Map(),
     runtimeError: null,
     browserPack: null,
+    groupByKey: new Map(),
     runtimeProjectionCacheKey: null,
     runtimeProjectionIndices: null,
     runtimeBrowserWasmPtr: 0,
@@ -467,8 +522,10 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       surface.runtimePacks = new Map(message.packs.map((pack) => [pack.name, pack.buffer]));
       try {
         const browserPack = message.packs.find((pack) => pack.name === "browser");
+        const groupPack = message.packs.find((pack) => pack.name === "groups");
         disposeWasmBrowserPayload(surface);
         surface.browserPack = browserPack ? parseNativeCompactBrowserPack(browserPack.buffer) : null;
+        surface.groupByKey = groupPack ? parseNativeGroupPack(groupPack.buffer) : new Map();
         if (browserPack) installWasmBrowserPayload(surface, browserPack.buffer);
         surface.runtimeProjectionCacheKey = null;
         surface.runtimeProjectionIndices = null;
@@ -476,6 +533,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       } catch (error) {
         disposeWasmBrowserPayload(surface);
         surface.browserPack = null;
+        surface.groupByKey = new Map();
         surface.runtimeProjectionCacheKey = null;
         surface.runtimeProjectionIndices = null;
         surface.runtimeError = error instanceof Error ? error.message : String(error);
