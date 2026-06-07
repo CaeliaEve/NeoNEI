@@ -9,17 +9,26 @@ const manifest = path.join(repoRoot, 'tools', 'neonei-wasm-engine', 'Cargo.toml'
 const wasmBuildOutput = path.join(repoRoot, 'tools', 'neonei-wasm-engine', 'target', 'wasm32-unknown-unknown', 'release', 'neonei_wasm_engine.wasm');
 const wasmPublicDir = path.join(repoRoot, 'frontend', 'public', 'native', 'engine');
 const wasmPublicOutput = path.join(wasmPublicDir, 'neonei_wasm_engine.wasm');
+function windowsRustCargoCandidates() {
+  if (process.platform !== 'win32') return [];
+  return ['C', 'D', 'E', 'F']
+    .flatMap((drive) => [
+      path.join(`${drive}:`, 'Rust', 'cargo', 'bin', 'cargo.exe'),
+      path.join(`${drive}:`, 'Rust', 'rustup', 'toolchains', 'stable-x86_64-pc-windows-msvc', 'bin', 'cargo.exe'),
+    ]);
+}
+
 const candidates = [
   process.env.CARGO,
-  'D:/Rust/cargo/bin/cargo.exe',
-  'D:/Rust/rustup/toolchains/stable-x86_64-pc-windows-msvc/bin/cargo.exe',
-  'cargo',
+  process.env.CARGO_HOME ? path.join(process.env.CARGO_HOME, 'bin', process.platform === 'win32' ? 'cargo.exe' : 'cargo') : null,
   path.join(process.env.USERPROFILE ?? '', '.cargo', 'bin', 'cargo.exe'),
+  ...windowsRustCargoCandidates(),
+  'cargo',
 ].filter(Boolean);
 
 function runCargo(args) {
   const cargo = candidates.find((candidate) => candidate !== 'cargo' && existsSync(candidate))
-    ?? (spawnSync('where.exe', ['cargo'], { stdio: 'ignore' }).status === 0 ? 'cargo' : null);
+    ?? (spawnSync(process.platform === 'win32' ? 'where.exe' : 'which', ['cargo'], { stdio: 'ignore' }).status === 0 ? 'cargo' : null);
   if (!cargo) {
     console.error('[wasm-engine-gate] cargo not found. Set CARGO or install Rust.');
     process.exit(2);

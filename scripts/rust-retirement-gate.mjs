@@ -36,11 +36,26 @@ function commandExists(command, args = ['--version']) {
   return (result.status ?? 1) === 0;
 }
 
+function windowsRustCargoCandidates() {
+  if (process.platform !== 'win32') return [];
+  return ['C', 'D', 'E', 'F']
+    .flatMap((drive) => [
+      join(`${drive}:`, 'Rust', 'cargo', 'bin', 'cargo.exe'),
+      join(`${drive}:`, 'Rust', 'rustup', 'toolchains', 'stable-x86_64-pc-windows-msvc', 'bin', 'cargo.exe'),
+    ]);
+}
+
+function userCargoCandidate() {
+  if (process.platform !== 'win32' || !process.env.USERPROFILE) return null;
+  return join(process.env.USERPROFILE, '.cargo', 'bin', 'cargo.exe');
+}
+
 function resolveCargoCommand() {
   const candidates = [
     process.env.CARGO,
     process.env.CARGO_HOME ? join(process.env.CARGO_HOME, 'bin', process.platform === 'win32' ? 'cargo.exe' : 'cargo') : null,
-    process.platform === 'win32' ? 'D:/Rust/cargo/bin/cargo.exe' : null,
+    userCargoCandidate(),
+    ...windowsRustCargoCandidates(),
     'cargo',
   ].filter(Boolean);
   return candidates.find((candidate) => existsSync(candidate) || commandExists(candidate)) ?? 'cargo';
