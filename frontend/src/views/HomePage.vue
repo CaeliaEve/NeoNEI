@@ -30,10 +30,10 @@ import {
   warmAllGlobalBrowserAtlases,
   warmGlobalBrowserAtlasForItemsDetailed,
 } from "../services/globalBrowserAtlas";
-import RecipeDisplayRouter from "../components/RecipeDisplayRouter.vue";
 import HomeSettingsPanel from "../components/home/HomeSettingsPanel.vue";
 import HomeHistoryStrip from "../components/home/HomeHistoryStrip.vue";
 import HomeBrowserColumn from "../components/home/HomeBrowserColumn.vue";
+import HomeRecipeDock from "../components/home/HomeRecipeDock.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
 import { useHomeBrowserNavigation } from "../composables/home/useHomeBrowserNavigation";
 import { useSound } from "../services/sound.service";
@@ -46,9 +46,6 @@ const router = useRouter();
 
 const PatternGroup = defineAsyncComponent(
   () => import("../components/PatternGroup.vue"),
-);
-const MachineTypeIcons = defineAsyncComponent(
-  () => import("../components/MachineTypeIcons.vue"),
 );
 
 // View mode
@@ -984,130 +981,30 @@ const saveSettings = () => {
         v-if="currentView === 'items'"
         class="flex-1 flex overflow-hidden relative"
       >
-        <!-- Recipe Display Module (Center, 30% width) - Absolutely positioned to match mod filter and search bar -->
-        <div
-          v-if="
-            showRecipeModal
-          "
-          :class="['recipe-preview-panel recipe-preview-shell absolute flex flex-col overflow-visible rounded-xl shadow-lg', { 'wide-stage': recipePreviewNeedsWideStage }]"
-          :style="recipeDockStyle"
-        >
-          <!-- Recipe Content (no scroll, compact) -->
-          <div class="flex-1 flex flex-col p-2 gap-2 min-h-0 overflow-visible">
-            <!-- Machine Type Icons (compact) -->
-            <MachineTypeIcons
-              :categories="machineCategories"
-              v-model="selectedMachineIndex"
-              @select="selectMachine"
-            />
-
-            <!-- Machine Name -->
-            <div
-              class="recipe-machine-banner rounded"
-            >
-              <button
-                v-if="totalRecipePages > 1"
-                @click="prevRecipePage"
-                :disabled="totalRecipePages <= 1"
-                class="recipe-machine-banner__nav recipe-machine-banner__nav--left disabled:opacity-50 disabled:cursor-not-allowed"
-                title="上一页"
-                aria-label="上一页"
-              >
-                ◀
-              </button>
-              <span
-                class="recipe-machine-banner__title text-xs font-bold text-cyan-300"
-                style="text-shadow: 0 0 18px rgba(69, 191, 255, 0.22)"
-              >
-                {{ currentCategory?.name || "未知分类" }}
-              </span>
-              <button
-                v-if="totalRecipePages > 1"
-                @click="nextRecipePage"
-                :disabled="totalRecipePages <= 1"
-                class="recipe-machine-banner__nav recipe-machine-banner__nav--right disabled:opacity-50 disabled:cursor-not-allowed"
-                title="下一页"
-                aria-label="下一页"
-              >
-                ▶
-              </button>
-              <span
-                v-if="totalRecipePages > 1"
-                class="recipe-machine-banner__page text-[10px]"
-              >
-                {{ recipeModalPage + 1 }}/{{ totalRecipePages }}
-              </span>
-            </div>
-
-            <!-- Recipe Display (scaled to fit, flex-1 to fill remaining space) -->
-              <div
-                :class="[
-                  'recipe-display-shell rounded flex-1 flex items-center justify-center recipe-display-container p-2 min-h-0',
-                  {
-                    'recipe-display-container--state': recipeStageIsStateView,
-                    'recipe-display-container--homepage': !recipeStageIsStateView,
-                  }
-                ]"
-                @wheel="handleRecipeWheel"
-                @contextmenu="handleRecipePreviewContextMenu"
-              >
-                  <div
-                    :class="[
-                      'recipe-stage-slot',
-                      {
-                        'recipe-stage-slot--state': recipeStageIsStateView,
-                        'recipe-stage-slot--homepage': !recipeStageIsStateView,
-                      },
-                    ]"
-                  >
-                    <div v-if="recipeModalLoading" class="state-panel stage-state-panel">
-                      <p class="state-title">正在加载配方...</p>
-                      <p class="state-subtitle">请稍候，系统正在准备该物品的配方索引。</p>
-                    </div>
-                  <div v-else-if="recipeModalError" class="state-panel stage-state-panel state-panel-error">
-                    <p class="state-title">{{ recipeModalError }}</p>
-                    <p class="state-subtitle">你可以立即重试，或切换到其他物品后再查询。</p>
-                    <div class="state-actions">
-                      <button class="mini-pager-btn" @click="openCurrentRecipeMode">重试</button>
-                      <button class="mini-pager-btn" @click="showRecipeModal = false">关闭面板</button>
-                    </div>
-                  </div>
-                    <div
-                      v-else-if="isRecipeModalFurnaceCanvas && currentPageRecipes.length > 0"
-                      class="modal-stacked-furnace-recipes homepage-recipe-scale-shell"
-                    >
-                      <RecipeDisplayRouter
-                        v-for="recipe in currentPageRecipes"
-                        :key="recipe.recipeId"
-                      :recipe="recipe"
-                      @item-click="handleRecipeItemClick"
-                      :scale-to-fit="recipeModalScaleToFit"
-                      :prefer-detailed-crafting="false"
-                    />
-                    </div>
-                    <div
-                      v-else-if="currentPageRecipes.length > 0"
-                      class="homepage-recipe-scale-shell"
-                    >
-                      <RecipeDisplayRouter
-                        :recipe="currentPageRecipes[0]"
-                        @item-click="handleRecipeItemClick"
-                        :scale-to-fit="recipeModalScaleToFit"
-                        :prefer-detailed-crafting="false"
-                      />
-                    </div>
-                    <div v-else class="state-panel stage-state-panel">
-                      <p class="state-title">暂无可显示配方</p>
-                      <p class="state-subtitle">请尝试右键查看“用途配方”，或切换其他物品。</p>
-                    <div class="state-actions">
-                      <button class="mini-pager-btn" @click="openCurrentRecipeMode">重新加载</button>
-                      <button class="mini-pager-btn" @click="showRecipeModal = false">关闭面板</button>
-                    </div>
-                  </div>
-                </div>
-            </div>
-          </div>
-        </div>
+        <HomeRecipeDock
+          :visible="showRecipeModal"
+          :needs-wide-stage="recipePreviewNeedsWideStage"
+          :dock-style="recipeDockStyle"
+          :machine-categories="machineCategories"
+          v-model:selected-machine-index="selectedMachineIndex"
+          :current-category="currentCategory"
+          :total-recipe-pages="totalRecipePages"
+          :recipe-modal-page="recipeModalPage"
+          :recipe-stage-is-state-view="recipeStageIsStateView"
+          :recipe-modal-loading="recipeModalLoading"
+          :recipe-modal-error="recipeModalError"
+          :is-recipe-modal-furnace-canvas="isRecipeModalFurnaceCanvas"
+          :current-page-recipes="currentPageRecipes"
+          :recipe-modal-scale-to-fit="recipeModalScaleToFit"
+          @select-machine="selectMachine"
+          @prev-recipe-page="prevRecipePage"
+          @next-recipe-page="nextRecipePage"
+          @recipe-wheel="handleRecipeWheel"
+          @contextmenu="handleRecipePreviewContextMenu"
+          @retry="openCurrentRecipeMode"
+          @close="showRecipeModal = false"
+          @item-click="handleRecipeItemClick"
+        />
 
         <HomeBrowserColumn
           :item-column-style="itemColumnStyle"
