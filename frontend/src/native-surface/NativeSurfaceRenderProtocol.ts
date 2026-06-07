@@ -1,0 +1,89 @@
+﻿import type { NativeRuntimeManifest } from "./NativeRuntimeManifest";
+import type { NativeRendererBackendKind, NativeSurfaceViewport } from "./contracts";
+
+export type NativeRenderBackendKind = "webgpu" | "webgl2";
+
+export type NativeRenderInitializeRequest = {
+  type: "initialize";
+  id: number;
+  canvas: OffscreenCanvas;
+  renderer: Exclude<NativeRendererBackendKind, "compat-canvas">;
+  manifest?: NativeRuntimeManifest | null;
+};
+
+export type NativeRenderRequest =
+  | NativeRenderInitializeRequest
+  | {
+    type: "resize";
+    id: number;
+    viewport: NativeSurfaceViewport;
+  }
+  | {
+    type: "render";
+    id: number;
+    commandBuffer: ArrayBuffer;
+    commandStride: number;
+    commandCount: number;
+    nowMs: number;
+  }
+  | {
+    type: "setAnimationEnabled";
+    id: number;
+    enabled: boolean;
+  }
+  | {
+    type: "dispose";
+    id: number;
+  }
+  | {
+    type: "metrics";
+    id: number;
+  };
+
+export type NativeRendererLimits = {
+  maxTextureSize: number;
+  maxTextureUnits: number;
+};
+
+export type NativeRendererFrameMetrics = {
+  backend: NativeRenderBackendKind | null;
+  initialized: boolean;
+  frames: number;
+  commandCount: number;
+  lastFrameMs: number;
+  animationEnabled: boolean;
+  width: number;
+  height: number;
+  updatedAt: number;
+};
+
+export type NativeRenderResponse =
+  | {
+    type: "ready";
+    id: number;
+    backend: NativeRenderBackendKind;
+    limits: NativeRendererLimits;
+    metrics: NativeRendererFrameMetrics;
+  }
+  | {
+    type: "frame";
+    id: number;
+    metrics: NativeRendererFrameMetrics;
+  }
+  | {
+    type: "metrics";
+    id: number;
+    metrics: NativeRendererFrameMetrics;
+  }
+  | {
+    type: "disposed";
+    id: number;
+    metrics: NativeRendererFrameMetrics;
+  }
+  | {
+    type: "error";
+    id: number;
+    code: string;
+    message: string;
+    metrics: NativeRendererFrameMetrics;
+  };
