@@ -264,6 +264,10 @@ export function resolveDistDataAssetPath(assetPath?: string | null): string | nu
   return joinAssetPath(getConfiguredBasePath(), normalizedAssetPath);
 }
 
+export function resolveDistDataNativeRuntimeManifestPath(): string {
+  return joinAssetPath(getConfiguredBasePath(), "rust/runtime-manifest.json");
+}
+
 async function fetchJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
     cache: "force-cache",

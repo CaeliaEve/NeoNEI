@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import type { BrowserGridEntry, Item } from "../../services/api";
 import type { PageAtlasResult } from "../../services/pageAtlas";
+import { resolveDistDataNativeRuntimeManifestPath } from "../../services/distDataRuntime";
 import NativeBrowserSurface from "../native-surface/NativeBrowserSurface.vue";
 
 const props = defineProps<{
@@ -28,6 +29,8 @@ const historyItemIds = computed(() =>
     entry.kind === "item" ? entry.item.itemId : entry.group.representative.itemId,
   ),
 );
+
+const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
 </script>
 
 <template>
@@ -50,6 +53,7 @@ const historyItemIds = computed(() =>
         :entries="historyBrowserEntries"
         :item-size="historyItemPixelSize"
         :atlas="historyAtlas"
+        :manifest-url="nativeRuntimeManifestUrl"
         :enable-animation="false"
         :prefer-atlas="true"
         :history-item-ids="historyItemIds"

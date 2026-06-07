@@ -14,12 +14,14 @@ const props = withDefaults(defineProps<{
   entries: BrowserGridEntry[];
   itemSize: number;
   atlas?: PageAtlasResult | null;
+  manifestUrl?: string | null;
   enableAnimation?: boolean;
   preferAtlas?: boolean;
   historyItemIds?: string[];
 }>(), {
   viewportRole: "browser",
   atlas: null,
+  manifestUrl: null,
   enableAnimation: true,
   preferAtlas: true,
   historyItemIds: () => [],
@@ -111,6 +113,7 @@ onMounted(async () => {
   exposeNativeSurfaceMetricsForDebug();
   await controller.initialize({
     surfaceId: props.surfaceId,
+    manifestUrl: props.manifestUrl ?? undefined,
     preferredRenderer: "compat-canvas",
     enableAnimations: props.enableAnimation,
     enableHistoryViewport: props.viewportRole === "history",
@@ -160,6 +163,7 @@ watch(
   (enabled) => {
     void controller.initialize({
       surfaceId: props.surfaceId,
+      manifestUrl: props.manifestUrl ?? undefined,
       preferredRenderer: "compat-canvas",
       enableAnimations: enabled,
       enableHistoryViewport: props.viewportRole === "history",

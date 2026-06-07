@@ -2,6 +2,7 @@
 import type { StyleValue } from "vue";
 import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../../services/api";
 import type { PageAtlasResult } from "../../services/pageAtlas";
+import { resolveDistDataNativeRuntimeManifestPath } from "../../services/distDataRuntime";
 import NativeBrowserSurface from "../native-surface/NativeBrowserSurface.vue";
 
 defineProps<{
@@ -38,6 +39,8 @@ const emit = defineEmits<{
 const bindGridViewportRef = (element: HTMLElement | null) => {
   emit("gridViewportResize", element);
 };
+
+const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
 </script>
 
 <template>
@@ -131,6 +134,7 @@ const bindGridViewportRef = (element: HTMLElement | null) => {
                   :entries="browserGridEntries"
                   :item-size="itemSize"
                   :atlas="currentPageAtlas"
+                  :manifest-url="nativeRuntimeManifestUrl"
                   :enable-animation="true"
                   :prefer-atlas="true"
                   @item-click="emit('itemClick', $event)"
