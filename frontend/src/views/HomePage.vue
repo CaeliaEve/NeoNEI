@@ -688,7 +688,7 @@ setGridViewportSync(syncMeasuredPageSize);
   </div>
 </template>
 
-<style scoped>
+<style>
 /* Items Grid - 使用 flex 布局确保不产生滚动条 */
 .items-grid-container {
   overflow: hidden !important;
