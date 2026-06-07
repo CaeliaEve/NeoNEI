@@ -46,9 +46,9 @@ test('public runtime manifest types live outside the legacy api facade', () => {
 });
 
 test('runtime clients consume runtime manifest types directly', () => {
-  assert.equal(
-    manifestClientSource.includes("import type { PublicRuntimeManifest } from './types';"),
-    true,
+  assert.match(
+    manifestClientSource,
+    /import type \{[^}]*PublicRuntimeManifest[^}]*\} from '\.\/types';/s,
     'manifest client should import runtime manifest type from runtime/types',
   );
   assert.match(
@@ -465,7 +465,6 @@ test('browser search ranking logic lives outside the legacy api facade', () => {
   }
   assert.doesNotMatch(browserSearchProjectionSource, /from '\.\.\/services\/api'/);
 });
-
 
 
 

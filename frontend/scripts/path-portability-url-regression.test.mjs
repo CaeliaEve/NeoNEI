@@ -47,10 +47,15 @@ test('runtime image normalizer contains the required path-neutral transforms', (
   assert.equal(source.includes('.minecraft/nesql/nesql-repository'), false, 'must not depend on old machine-specific repository shape');
 });
 
-test('canonical URLs stay browser-relative when backend base is proxied', () => {
+test('retired canonical atlas references resolve through dist-data runtime assets', () => {
   assert.equal(
-    source.includes("return `${proxyBase}/canonical/${canonicalPath}`;"),
+    source.includes("return resolveDistDataAssetPath(distPath);"),
     true,
-    'relative API deployments should serve canonical assets through the configured proxy base',
+    'retired canonical relative paths should be normalized into the portable runtime asset resolver',
+  );
+  assert.equal(
+    source.includes("`/canonical/"),
+    false,
+    'image service must not rebuild public canonical URLs',
   );
 });

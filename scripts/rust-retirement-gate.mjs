@@ -206,6 +206,13 @@ if (!quick) {
   runStep('frontend recipe benchmark', 'node', ['../scripts/bench-recipe-v3.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
 }
 
+if (selfTestMode && quick && compileScope !== 'all') {
+  runStep('restore full raw-export self-test runtime', cargoCommand, [
+    'run', '--manifest-path', cargoToml, '--',
+    'compile', '--input', rawExportInput, '--output', distDataDir, '--report', rustReport, '--scope', 'all', '--strict',
+  ]);
+}
+
 writeSummary('ok');
 console.log(`[rust-retirement-gate] OK ${reportPath}`);
 

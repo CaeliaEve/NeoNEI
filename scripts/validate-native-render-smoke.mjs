@@ -198,9 +198,20 @@ if (renderIndex) {
       requiresUsableCapture: true,
     },
   ];
+  const knownItemIsPresent = (check) => Boolean(
+    renderIndex.shaderByItemId?.[check.itemId]
+      || renderIndex.itemRendererByItemId?.[check.itemId]
+      || captureForItem(renderIndex, check.itemId),
+  );
+  const applicableKnownItemChecks = selfTest
+    ? knownItemChecks.filter((check) => knownItemIsPresent(check))
+    : knownItemChecks;
+  const skippedKnownItemChecks = selfTest
+    ? knownItemChecks.filter((check) => !knownItemIsPresent(check))
+    : [];
   const knownItemFailures = [];
   const knownItemSamples = [];
-  for (const check of knownItemChecks) {
+  for (const check of applicableKnownItemChecks) {
     const shader = renderIndex.shaderByItemId?.[check.itemId] ?? null;
     const rendererKind = shader?.rendererKind ?? renderIndex.itemRendererByItemId?.[check.itemId]?.rendererKind ?? null;
     const capture = captureForItem(renderIndex, check.itemId);
@@ -227,10 +238,18 @@ if (renderIndex) {
       knownItemFailures.push(`${check.name}: ${issues.join("; ")}`);
     }
   }
+  if (skippedKnownItemChecks.length > 0) {
+    warnings.push(`${skippedKnownItemChecks.length} GTNH known native render item check(s) skipped because the self-test fixture does not contain those items`);
+    samples.skippedKnownItemChecks = sampleEntries(skippedKnownItemChecks.map((check) => ({
+      name: check.name,
+      itemId: check.itemId,
+      reason: "absent from self-test fixture",
+    })));
+  }
   if (knownItemFailures.length > 0) {
     failures.push(`${knownItemFailures.length} known native render item check(s) failed`);
     samples.knownItemFailures = sampleEntries(knownItemSamples.filter((entry) => entry.status !== "ok"));
-  } else {
+  } else if (knownItemSamples.length > 0) {
     samples.knownItemChecks = knownItemSamples;
   }
 

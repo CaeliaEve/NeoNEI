@@ -6,7 +6,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
 const frontendDir = path.join(repoRoot, 'frontend');
 const backendDir = path.join(repoRoot, 'backend');
+const selfTestDistDataDir = path.join(repoRoot, '.tmp-runtime', 'dist-data-v3-self-test');
 const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm';
+const node = process.execPath;
 function runStep(step) {
   if (process.platform === 'win32') {
     return spawnSync('cmd.exe', ['/d', '/s', '/c', step.command, ...step.args], {
@@ -40,6 +42,7 @@ const steps = [
   { name: 'native render smoke', cwd: frontendDir, command: npm, args: ['run', 'validate:native-render'] },
   { name: 'raw export path hygiene self-test', cwd: frontendDir, command: npm, args: ['run', 'test:export-paths'] },
   { name: 'deployment profile smoke', cwd: frontendDir, command: npm, args: ['run', 'test:deployment-profile'] },
+  { name: 'canonical retirement gate', cwd: frontendDir, command: npm, args: ['run', 'test:canonical-retired'] },
   { name: 'API/runtime audit gate', cwd: frontendDir, command: npm, args: ['run', 'audit:api-runtime:gate'] },
   { name: 'recipe handler metadata gate', cwd: frontendDir, command: npm, args: ['run', 'validate:recipe-handlers'] },
   { name: 'recipe fragmentation gate', cwd: frontendDir, command: npm, args: ['run', 'validate:recipe-fragmentation'] },
@@ -59,13 +62,30 @@ const steps = [
   { name: 'browser atlas v3 bench', cwd: frontendDir, command: npm, args: ['run', 'bench:browser-atlas-v3'] },
 ];
 
-const selected = process.argv.includes('--quick')
+const quick = process.argv.includes('--quick');
+const selected = quick
   ? steps.filter((step) => !step.name.includes('bench') && !step.name.includes('E2E') && step.name !== 'runtime v3 regression')
   : steps;
+const selectedWithModeOverrides = selected.map((step) => {
+  if (!quick) return step;
+  if (step.name === 'runtime contract validation') {
+    return {
+      ...step,
+      command: node,
+      args: [
+        path.join(repoRoot, 'scripts', 'validate-runtime-contracts.mjs'),
+        '--gate',
+        '--dist-data',
+        selfTestDistDataDir,
+      ],
+    };
+  }
+  return step;
+});
 
 const startedAt = Date.now();
 const results = [];
-for (const step of selected) {
+for (const step of selectedWithModeOverrides) {
   const stepStartedAt = Date.now();
   console.log(`\n[gate:runtime] ${step.name}`);
   const result = runStep(step);
