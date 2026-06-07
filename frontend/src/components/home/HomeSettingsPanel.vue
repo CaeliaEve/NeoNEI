@@ -75,6 +75,7 @@ const runtimeCacheSizeText = computed(() => {
   return `${mb.toFixed(mb >= 100 ? 0 : 1)} MB`;
 });
 const runtimeCacheEntryText = computed(() => (runtimeCacheStatus.value.entryCount ?? 0).toLocaleString());
+const runtimeCacheHashText = computed(() => runtimeCacheStatus.value.manifestHash?.slice(0, 8) ?? "pending");
 
 const toggleOpen = () => emit("update:modelValue", !props.modelValue);
 const close = () => emit("update:modelValue", false);
@@ -372,7 +373,7 @@ watch(
                     <div class="flex justify-between items-center">
                       <div class="flex flex-col">
                         <span class="text-[9px] font-mono text-slate-500 uppercase leading-none">SERVICE WORKER / CDN CACHE</span>
-                        <span class="text-xs font-mono text-slate-300 mt-1 leading-none">{{ runtimeCacheEntryText }} files / {{ runtimeCacheSizeText }}</span>
+                        <span class="text-xs font-mono text-slate-300 mt-1 leading-none">{{ runtimeCacheEntryText }} files / {{ runtimeCacheSizeText }} / {{ runtimeCacheHashText }}</span>
                       </div>
                       <span class="text-[9px] font-mono px-2 py-0.5 rounded border leading-none" :class="runtimeCacheStateClass">
                         {{ runtimeCacheStateLabel }}

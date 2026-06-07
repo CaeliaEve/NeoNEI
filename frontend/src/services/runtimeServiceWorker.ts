@@ -5,6 +5,8 @@ export type RuntimeServiceWorkerStatus = {
   cacheName?: string;
   entryCount?: number;
   approxBytes?: number;
+  manifestHash?: string | null;
+  manifestUpdatedAt?: string | null;
   error?: string;
 };
 

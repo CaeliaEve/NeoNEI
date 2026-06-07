@@ -13,7 +13,11 @@ test("runtime service worker caches binary packs, atlas images, and native engin
   assert.ok(worker.includes("textures\\/atlas"), "atlas texture path should be cached");
   assert.ok(worker.includes("native\\/engine"), "native engine path should be cached");
   assert.match(worker, /cacheFirst/);
-  assert.match(worker, /networkFirst/);
+  assert.match(worker, /runtimeManifestNetworkFirst/);
   assert.match(worker, /NEONEI_RUNTIME_CACHE_STATUS/);
   assert.match(worker, /NEONEI_RUNTIME_CACHE_CLEAR/);
+  assert.match(worker, /hashRuntimeManifestText/);
+  assert.match(worker, /updateRuntimeCacheVersionFromManifest/);
+  assert.match(worker, /manifestHash/);
+  assert.match(worker, /caches\.delete\(CACHE_NAME\)/);
 });
