@@ -11,10 +11,7 @@ import {
   nextTick,
 } from "vue";
 import { useRouter } from "vue-router";
-import {
-  type BrowserVariantGroup,
-  type Item,
-} from "../services/api";
+import { type BrowserVariantGroup } from "../services/api";
 import HomeSettingsPanel from "../components/home/HomeSettingsPanel.vue";
 import HomeHistoryStrip from "../components/home/HomeHistoryStrip.vue";
 import HomeBrowserColumn from "../components/home/HomeBrowserColumn.vue";
@@ -23,10 +20,9 @@ import { useItemBrowser } from "../composables/useItemBrowser";
 import { useHomeBrowserNavigation } from "../composables/home/useHomeBrowserNavigation";
 import { useHomeHistory } from "../composables/home/useHomeHistory";
 import { useHomeGridViewport, useHomeRailStyles } from "../composables/home/useHomeLayout";
-import { useHomeRecipePresentation } from "../composables/home/useHomeRecipePresentation";
+import { useHomeRecipeModal } from "../composables/home/useHomeRecipeModal";
 import { useHomeSettingsState } from "../composables/home/useHomeSettingsState";
 import { useSound } from "../services/sound.service";
-import { useRecipeViewer } from "../composables/useRecipeViewer";
 
 const router = useRouter();
 
@@ -270,59 +266,35 @@ const { changeItemsPageWrapped, handleItemsWheel } = useHomeBrowserNavigation({
 });
 
 // Recipe modal state
-const showRecipeModal = ref(false);
-const recipeModalItem = ref<Item | null>(null);
-const recipeModalMode = ref<'usedIn' | 'producedBy'>('producedBy');
 const { playClick } = useSound();
-const modalRecipeItemId = computed(() => recipeModalItem.value?.itemId);
-
 const {
-  loading: recipeModalLoading,
-  recipes,
-  currentTab,
-  loadError: recipeLoadError,
+  showRecipeModal,
+  recipeModalLoading,
   selectedMachineIndex,
-  currentPage: recipeModalPage,
+  recipeModalPage,
   machineCategories,
   currentCategory,
   currentPageRecipes,
-  totalPages: totalRecipePages,
-  selectMachine,
-  nextPage,
-  prevPage,
-  setCurrentTab,
-  retryLoadRecipes,
-} = useRecipeViewer(modalRecipeItemId, playClick);
-
-const recipeModalError = computed(() => recipeLoadError.value);
-const pendingRecipeMachineName = ref<string | null>(null);
-
-watch(recipeModalMode, (mode) => {
-  setCurrentTab(mode);
-});
-
-watch(showRecipeModal, (visible) => {
-  if (!visible) {
-    recipeModalItem.value = null;
-    recipeModalMode.value = 'producedBy';
-  }
-});
-
-const {
-  currentRecipePresentation,
-  isRecipeModalWorkbenchCanvas,
-  isRecipeModalWideCanvas,
+  totalRecipePages,
+  recipeModalError,
   isRecipeModalFurnaceCanvas,
   recipeModalScaleToFit,
   recipeStageIsStateView,
   recipePreviewNeedsWideStage,
-  recipeStageKey,
-} = useHomeRecipePresentation({
-  currentPageRecipes,
-  currentCategory,
-  recipeModalLoading,
-  recipeModalError,
-  recipeModalMode,
+  selectMachine,
+  openCurrentRecipeMode,
+  openCraftingRecipes,
+  openUsageRecipes,
+  handleCardContextMenu,
+  nextRecipePage,
+  prevRecipePage,
+  handleRecipeWheel,
+  handleRecipeItemClick,
+} = useHomeRecipeModal({
+  items,
+  router,
+  playClick,
+  addToHistory,
 });
 
 const {
@@ -331,44 +303,6 @@ const {
   itemColumnStyle,
   recipeDockStyle,
 } = useHomeRailStyles(recipePreviewNeedsWideStage);
-
-const openCurrentRecipeMode = () => {
-  retryLoadRecipes();
-};
-
-const openRecipeModal = (item: Item) => {
-  recipeModalItem.value = item;
-  recipeModalMode.value = 'producedBy';
-  setCurrentTab('producedBy');
-  showRecipeModal.value = true;
-  addToHistory(item);
-};
-
-const openCraftingRecipes = (item: Item) => {
-  openRecipeModal(item);
-};
-
-const openUsageRecipes = (item: Item) => {
-  recipeModalItem.value = item;
-  recipeModalMode.value = 'usedIn';
-  setCurrentTab('usedIn');
-  showRecipeModal.value = true;
-  addToHistory(item);
-};
-
-const handleItemContextMenu = (item: Item, event: MouseEvent) => {
-  event.preventDefault();
-  event.stopPropagation();
-  openUsageRecipes(item);
-};
-
-const handleCardContextMenu = (item: Item, event?: MouseEvent) => {
-  if (event) {
-    event.preventDefault();
-    event.stopPropagation();
-  }
-  openUsageRecipes(item);
-};
 
 const toggleBrowserGroup = (groupKey: string) => {
   const next = new Set(expandedBrowserGroups.value);
@@ -419,64 +353,6 @@ const handleBrowserGroupContextMenu = (group: BrowserVariantGroup, event?: Mouse
   }
   openUsageRecipes(group.representative);
 };
-
-const nextRecipePage = () => {
-  nextPage();
-};
-
-const prevRecipePage = () => {
-  prevPage();
-};
-
-const handleRecipeWheel = (event: WheelEvent) => {
-  if (Math.abs(event.deltaY) < 8 || totalRecipePages.value <= 1) return;
-  event.preventDefault();
-  if (event.deltaY > 0) {
-    nextPage();
-  } else {
-    prevPage();
-  }
-};
-
-// Handle item click in recipe
-const handleRecipeItemClick = (itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => {
-  const item = items.value.find((i) => i.itemId === itemId);
-  if (item) {
-    if (options?.tab) {
-      setCurrentTab(options.tab);
-      recipeModalMode.value = options.tab;
-      pendingRecipeMachineName.value = options.tab === 'producedBy' ? '物品中的要素' : null;
-    }
-    openRecipeModal(item);
-    return;
-  }
-  void router.push({
-    name: "recipe",
-    params: { itemId },
-    query: options?.tab
-      ? {
-          tab: options.tab,
-          mode: options.tab === 'usedIn' ? 'u' : 'r',
-          machineName: options.tab === 'producedBy' ? '物品中的要素' : undefined,
-          page: '0',
-        }
-      : undefined,
-  });
-};
-
-watch(
-  () => [pendingRecipeMachineName.value, machineCategories.value.map((category) => category.name).join('|')] as const,
-  ([pendingMachineName]) => {
-    if (!pendingMachineName) return;
-    const index = machineCategories.value.findIndex(
-      (category) => category.name.trim().toLowerCase() === pendingMachineName.trim().toLowerCase(),
-    );
-    if (index >= 0) {
-      selectMachine(index);
-      pendingRecipeMachineName.value = null;
-    }
-  },
-);
 
 // Handle pattern group selection
 const onSelectGroup = (groupId: string) => {
