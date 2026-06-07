@@ -13,12 +13,16 @@ interface SettingsStar {
 
 const SETTINGS_STAR_COUNT = 28;
 const SETTINGS_CONNECTION_DIST = 80;
+const SETTINGS_ANIMATION_START_DELAY_MS = 120;
+const SETTINGS_FRAME_INTERVAL_MS = 1000 / 30;
 
 export function useSettingsConstellationCanvas(isOpen: ComputedRef<boolean>) {
   const settingsBgCanvas = ref<HTMLCanvasElement | null>(null);
   const settingsUiRoot = ref<HTMLElement | null>(null);
   let settingsAnimFrameId = 0;
   let settingsResizeObs: ResizeObserver | null = null;
+  let settingsStartTimer = 0;
+  let settingsLastFrameMs = 0;
   let settingsStars: SettingsStar[] = [];
   let settingsCW = 0;
   let settingsCH = 0;
@@ -42,6 +46,12 @@ export function useSettingsConstellationCanvas(isOpen: ComputedRef<boolean>) {
   const drawSettingsConstellations = () => {
     const canvas = settingsBgCanvas.value;
     if (!canvas) return;
+    const frameNow = performance.now();
+    if (settingsLastFrameMs > 0 && frameNow - settingsLastFrameMs < SETTINGS_FRAME_INTERVAL_MS) {
+      settingsAnimFrameId = requestAnimationFrame(drawSettingsConstellations);
+      return;
+    }
+    settingsLastFrameMs = frameNow;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     ctx.clearRect(0, 0, settingsCW, settingsCH);
@@ -107,19 +117,27 @@ export function useSettingsConstellationCanvas(isOpen: ComputedRef<boolean>) {
   };
 
   const startSettingsAnimation = () => {
+    window.clearTimeout(settingsStartTimer);
     nextTick(() => {
-      handleSettingsCanvasResize();
-      if (!settingsResizeObs && settingsUiRoot.value) {
-        settingsResizeObs = new ResizeObserver(handleSettingsCanvasResize);
-        settingsResizeObs.observe(settingsUiRoot.value);
-      }
-      cancelAnimationFrame(settingsAnimFrameId);
-      settingsAnimFrameId = requestAnimationFrame(drawSettingsConstellations);
+      settingsStartTimer = window.setTimeout(() => {
+        handleSettingsCanvasResize();
+        if (!settingsResizeObs && settingsUiRoot.value) {
+          settingsResizeObs = new ResizeObserver(handleSettingsCanvasResize);
+          settingsResizeObs.observe(settingsUiRoot.value);
+        }
+        settingsLastFrameMs = 0;
+        cancelAnimationFrame(settingsAnimFrameId);
+        settingsAnimFrameId = requestAnimationFrame(drawSettingsConstellations);
+      }, SETTINGS_ANIMATION_START_DELAY_MS);
     });
   };
 
   const stopSettingsAnimation = () => {
+    window.clearTimeout(settingsStartTimer);
+    settingsStartTimer = 0;
     cancelAnimationFrame(settingsAnimFrameId);
+    settingsAnimFrameId = 0;
+    settingsLastFrameMs = 0;
     if (settingsResizeObs) {
       settingsResizeObs.disconnect();
       settingsResizeObs = null;
