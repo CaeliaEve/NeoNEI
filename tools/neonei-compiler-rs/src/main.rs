@@ -1,4 +1,4 @@
-﻿use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use flate2::read::GzDecoder;
 use pinyin::ToPinyin;
@@ -297,9 +297,19 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
     if manifest.files.contains_key("browserCatalog") {
         return compile_dist_browser_pack(input, output, strict);
     }
-    let items = read_json_collection(input, &manifest, &["items", "browserCatalog"], Some("items"))?;
+    let items = read_json_collection(
+        input,
+        &manifest,
+        &["items", "browserCatalog"],
+        Some("items"),
+    )?;
     let order_rows = read_json_collection(input, &manifest, &["neiOrder"], None)?;
-    let group_rows = read_json_collection(input, &manifest, &["groups", "browserGroups"], Some("groups"))?;
+    let group_rows = read_json_collection(
+        input,
+        &manifest,
+        &["groups", "browserGroups"],
+        Some("groups"),
+    )?;
     let texture_rows = read_json_collection(input, &manifest, &["textures"], Some("textures"))?;
     let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?.unwrap_or(Value::Null);
     let atlas = repaired_browser_atlas(&atlas, &texture_rows);
@@ -544,15 +554,33 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
         &compact_search_payload,
     )?;
     let group_payload = build_compact_group_payload_from_groups(&groups)?;
-    write_binary_pack_payload(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_payload)?;
-    write_binary_pack_payload(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
+    write_binary_pack_payload(
+        &rust_dir.join("groups.bin"),
+        "neonei/group-pack/current",
+        &group_payload,
+    )?;
+    write_binary_pack_payload(
+        &rust_dir.join("strings.zh_cn.bin"),
+        "neonei/string-pack/current",
+        &string_pack,
+    )?;
     Ok(())
 }
 
 fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
-    let items = read_json_collection(input, &manifest, &["items", "browserCatalog", "searchAll"], Some("items"))?;
-    let group_rows = read_json_collection(input, &manifest, &["groups", "browserGroups"], Some("groups"))?;
+    let items = read_json_collection(
+        input,
+        &manifest,
+        &["items", "browserCatalog", "searchAll"],
+        Some("items"),
+    )?;
+    let group_rows = read_json_collection(
+        input,
+        &manifest,
+        &["groups", "browserGroups"],
+        Some("groups"),
+    )?;
 
     if strict && items.is_empty() {
         return Err(anyhow!(
@@ -651,7 +679,12 @@ fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
-    let browser_items = read_json_collection(input, &manifest, &["browserCatalog", "items"], Some("items"))?;
+    let browser_items = read_json_collection(
+        input,
+        &manifest,
+        &["browserCatalog", "items"],
+        Some("items"),
+    )?;
     let string_pack = build_compact_string_payload_from_items(&browser_items)?;
     let search_pack = json!({
         "schemaVersion": "neonei/rust-search-pack/current",
@@ -674,7 +707,11 @@ fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
         "neonei/search-pack/current",
         &compact_search_payload,
     )?;
-    write_binary_pack_payload(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
+    write_binary_pack_payload(
+        &rust_dir.join("strings.zh_cn.bin"),
+        "neonei/string-pack/current",
+        &string_pack,
+    )?;
     Ok(())
 }
 
@@ -709,15 +746,28 @@ fn build_compact_browser_payload_from_items(items: &[Value]) -> Result<Vec<u8>> 
     let mut rows = Vec::<[u32; 6]>::with_capacity(items.len());
 
     for (index, item) in items.iter().enumerate() {
-        let item_id_ref = intern_compact_string(&mut strings, &mut string_refs, value_string(item, "itemId"));
-        let localized_name_ref =
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "localizedName"));
-        let mod_id_ref = intern_compact_string(&mut strings, &mut string_refs, value_string(item, "modId"));
-        let group_key_ref = intern_compact_string(&mut strings, &mut string_refs, value_string(item, "groupKey"));
+        let item_id_ref =
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "itemId"));
+        let localized_name_ref = intern_compact_string(
+            &mut strings,
+            &mut string_refs,
+            value_string(item, "localizedName"),
+        );
+        let mod_id_ref =
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "modId"));
+        let group_key_ref = intern_compact_string(
+            &mut strings,
+            &mut string_refs,
+            value_string(item, "groupKey"),
+        );
         let browser_order = value_u64(item, "browserOrder")
             .unwrap_or(index as u64)
             .min(u32::MAX as u64) as u32;
-        let flags = if item.get("groupKey").and_then(Value::as_str).is_some_and(|value| !value.is_empty()) {
+        let flags = if item
+            .get("groupKey")
+            .and_then(Value::as_str)
+            .is_some_and(|value| !value.is_empty())
+        {
             1
         } else {
             0
@@ -742,7 +792,10 @@ fn build_compact_browser_payload_from_items(items: &[Value]) -> Result<Vec<u8>> 
 
     let row_stride_u32 = 6u32;
     let mut payload = Vec::with_capacity(
-        8 + 4 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + string_bytes.len(),
+        8 + 4 * 4
+            + string_offsets.len() * 4
+            + rows.len() * row_stride_u32 as usize * 4
+            + string_bytes.len(),
     );
     payload.extend_from_slice(b"NEIBRW1\0");
     push_u32(&mut payload, 1);
@@ -761,7 +814,6 @@ fn build_compact_browser_payload_from_items(items: &[Value]) -> Result<Vec<u8>> 
     Ok(payload)
 }
 
-
 fn build_compact_group_payload_from_groups(groups: &[Value]) -> Result<Vec<u8>> {
     let mut strings = vec![String::new()];
     let mut string_refs = HashMap::new();
@@ -770,16 +822,34 @@ fn build_compact_group_payload_from_groups(groups: &[Value]) -> Result<Vec<u8>> 
     let mut members = Vec::<u32>::new();
 
     let mut sorted_groups = groups.to_vec();
-    sorted_groups.sort_by(|left, right| value_string(left, "groupKey").cmp(&value_string(right, "groupKey")));
+    sorted_groups.sort_by(|left, right| {
+        value_string(left, "groupKey").cmp(&value_string(right, "groupKey"))
+    });
 
     for group in &sorted_groups {
-        let group_key = intern_compact_string(&mut strings, &mut string_refs, value_string(group, "groupKey"));
-        let group_label = intern_compact_string(&mut strings, &mut string_refs, value_string(group, "groupLabel"));
-        let representative = intern_compact_string(&mut strings, &mut string_refs, value_string(group, "representativeItemId"));
+        let group_key = intern_compact_string(
+            &mut strings,
+            &mut string_refs,
+            value_string(group, "groupKey"),
+        );
+        let group_label = intern_compact_string(
+            &mut strings,
+            &mut string_refs,
+            value_string(group, "groupLabel"),
+        );
+        let representative = intern_compact_string(
+            &mut strings,
+            &mut string_refs,
+            value_string(group, "representativeItemId"),
+        );
         let member_start = members.len() as u32;
         if let Some(values) = group.get("memberItemIds").and_then(Value::as_array) {
             for member in values {
-                members.push(intern_compact_string(&mut strings, &mut string_refs, member.as_str().map(str::to_string)));
+                members.push(intern_compact_string(
+                    &mut strings,
+                    &mut string_refs,
+                    member.as_str().map(str::to_string),
+                ));
             }
         }
         let member_count = (members.len() as u32).saturating_sub(member_start);
@@ -803,7 +873,11 @@ fn build_compact_group_payload_from_groups(groups: &[Value]) -> Result<Vec<u8>> 
 
     let row_stride_u32 = 6u32;
     let mut payload = Vec::with_capacity(
-        8 + 5 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + members.len() * 4 + string_bytes.len(),
+        8 + 5 * 4
+            + string_offsets.len() * 4
+            + rows.len() * row_stride_u32 as usize * 4
+            + members.len() * 4
+            + string_bytes.len(),
     );
     payload.extend_from_slice(b"NEIGRP1\0");
     push_u32(&mut payload, 1);
@@ -833,16 +907,33 @@ fn build_compact_string_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
     let mut rows = Vec::<[u32; 6]>::with_capacity(items.len());
 
     let mut sorted_items = items.to_vec();
-    sorted_items.sort_by(|left, right| value_string(left, "itemId").cmp(&value_string(right, "itemId")));
+    sorted_items
+        .sort_by(|left, right| value_string(left, "itemId").cmp(&value_string(right, "itemId")));
 
     for item in &sorted_items {
         rows.push([
             intern_compact_string(&mut strings, &mut string_refs, value_string(item, "itemId")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "localizedName")),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "localizedName"),
+            ),
             intern_compact_string(&mut strings, &mut string_refs, value_string(item, "modId")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "internalName")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "groupKey")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "groupLabel")),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "internalName"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "groupKey"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "groupLabel"),
+            ),
         ]);
     }
 
@@ -856,7 +947,10 @@ fn build_compact_string_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
 
     let row_stride_u32 = 6u32;
     let mut payload = Vec::with_capacity(
-        8 + 4 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + string_bytes.len(),
+        8 + 4 * 4
+            + string_offsets.len() * 4
+            + rows.len() * row_stride_u32 as usize * 4
+            + string_bytes.len(),
     );
     payload.extend_from_slice(b"NEISTR1\0");
     push_u32(&mut payload, 1);
@@ -899,15 +993,47 @@ fn build_compact_search_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
             .min(u32::MAX as u64) as u32;
         rows.push([
             intern_compact_string(&mut strings, &mut string_refs, value_string(item, "itemId")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "publicItemId")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "localizedName")),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "publicItemId"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "localizedName"),
+            ),
             intern_compact_string(&mut strings, &mut string_refs, value_string(item, "modId")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "normalizedLocalizedName")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "normalizedInternalName")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "normalizedItemId")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "normalizedSearchTerms")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "pinyinFull")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "pinyinAcronym")),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "normalizedLocalizedName"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "normalizedInternalName"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "normalizedItemId"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "normalizedSearchTerms"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "pinyinFull"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(item, "pinyinAcronym"),
+            ),
             popularity,
             search_rank,
             browser_index,
@@ -924,7 +1050,10 @@ fn build_compact_search_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
 
     let row_stride_u32 = 13u32;
     let mut payload = Vec::with_capacity(
-        8 + 4 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + string_bytes.len(),
+        8 + 4 * 4
+            + string_offsets.len() * 4
+            + rows.len() * row_stride_u32 as usize * 4
+            + string_bytes.len(),
     );
     payload.extend_from_slice(b"NEISRC2\0");
     push_u32(&mut payload, 1);
@@ -957,13 +1086,17 @@ fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Resul
             ("searchAliasIndex", "searchAliasIndex"),
         ],
     )?;
-    if strict && !browser_files.iter().any(|value| {
-        value
-            .get("logicalName")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value == "browserCatalog")
-    }) {
-        return Err(anyhow!("browser compiler blocked: browserCatalog is missing"));
+    if strict
+        && !browser_files.iter().any(|value| {
+            value
+                .get("logicalName")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == "browserCatalog")
+        })
+    {
+        return Err(anyhow!(
+            "browser compiler blocked: browserCatalog is missing"
+        ));
     }
 
     let browser_pack = json!({
@@ -997,15 +1130,28 @@ fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Resul
         "neonei/browser-pack/current",
         &compact_browser_payload,
     )?;
-    write_binary_pack(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_pack)?;
-    let browser_items = read_json_collection(input, &manifest, &["browserCatalog", "items"], Some("items"))?;
+    write_binary_pack(
+        &rust_dir.join("groups.bin"),
+        "neonei/group-pack/current",
+        &group_pack,
+    )?;
+    let browser_items = read_json_collection(
+        input,
+        &manifest,
+        &["browserCatalog", "items"],
+        Some("items"),
+    )?;
     let browser_index_by_item = browser_items
         .iter()
         .enumerate()
         .filter_map(|(index, item)| Some((value_string(item, "itemId")?, index as u64)))
         .collect::<BTreeMap<_, _>>();
-    let mut search_rows =
-        read_json_collection(input, &manifest, &["searchAll", "browserCatalog", "items"], Some("items"))?;
+    let mut search_rows = read_json_collection(
+        input,
+        &manifest,
+        &["searchAll", "browserCatalog", "items"],
+        Some("items"),
+    )?;
     for item in &mut search_rows {
         if let Some(item_object) = item.as_object_mut() {
             if let Some(item_id) = item_object.get("itemId").and_then(Value::as_str) {
@@ -1022,7 +1168,11 @@ fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Resul
         &compact_search_payload,
     )?;
     let string_pack = build_compact_string_payload_from_items(&browser_items)?;
-    write_binary_pack_payload(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
+    write_binary_pack_payload(
+        &rust_dir.join("strings.zh_cn.bin"),
+        "neonei/string-pack/current",
+        &string_pack,
+    )?;
     Ok(())
 }
 
@@ -1320,12 +1470,14 @@ fn compile_dist_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result
             ("uiPayloadIndex", "recipeUiPayloadIndex"),
         ],
     )?;
-    if strict && !recipe_files.iter().any(|value| {
-        value
-            .get("logicalName")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value == "itemIndex")
-    }) {
+    if strict
+        && !recipe_files.iter().any(|value| {
+            value
+                .get("logicalName")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == "itemIndex")
+        })
+    {
         return Err(anyhow!(
             "recipe compiler blocked: recipeItemIndex is missing"
         ));
@@ -1376,9 +1528,21 @@ fn build_compact_recipe_payload_from_pack(pack: &Value) -> Result<Vec<u8>> {
             .flatten()
         {
             ref_rows.push([
-                intern_compact_string(&mut strings, &mut string_refs, value_string(recipe_ref, "recipeId")),
-                intern_compact_string(&mut strings, &mut string_refs, value_string(recipe_ref, "categoryId")),
-                intern_compact_string(&mut strings, &mut string_refs, value_string(recipe_ref, "displayName")),
+                intern_compact_string(
+                    &mut strings,
+                    &mut string_refs,
+                    value_string(recipe_ref, "recipeId"),
+                ),
+                intern_compact_string(
+                    &mut strings,
+                    &mut string_refs,
+                    value_string(recipe_ref, "categoryId"),
+                ),
+                intern_compact_string(
+                    &mut strings,
+                    &mut string_refs,
+                    value_string(recipe_ref, "displayName"),
+                ),
             ]);
         }
         let produced_count = (ref_rows.len() as u32).saturating_sub(produced_start);
@@ -1390,9 +1554,21 @@ fn build_compact_recipe_payload_from_pack(pack: &Value) -> Result<Vec<u8>> {
             .flatten()
         {
             ref_rows.push([
-                intern_compact_string(&mut strings, &mut string_refs, value_string(recipe_ref, "recipeId")),
-                intern_compact_string(&mut strings, &mut string_refs, value_string(recipe_ref, "categoryId")),
-                intern_compact_string(&mut strings, &mut string_refs, value_string(recipe_ref, "displayName")),
+                intern_compact_string(
+                    &mut strings,
+                    &mut string_refs,
+                    value_string(recipe_ref, "recipeId"),
+                ),
+                intern_compact_string(
+                    &mut strings,
+                    &mut string_refs,
+                    value_string(recipe_ref, "categoryId"),
+                ),
+                intern_compact_string(
+                    &mut strings,
+                    &mut string_refs,
+                    value_string(recipe_ref, "displayName"),
+                ),
             ]);
         }
         let used_count = (ref_rows.len() as u32).saturating_sub(used_start);
@@ -1412,13 +1588,37 @@ fn build_compact_recipe_payload_from_pack(pack: &Value) -> Result<Vec<u8>> {
         .flatten()
     {
         ui_rows.push([
-            intern_compact_string(&mut strings, &mut string_refs, value_string(entry, "recipeId")),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(entry, "recipeId"),
+            ),
             intern_compact_string(&mut strings, &mut string_refs, value_string(entry, "path")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(entry, "payloadKey")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(entry, "familyKey")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(entry, "recipeType")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(entry, "machineType")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(entry, "handlerKey")),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(entry, "payloadKey"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(entry, "familyKey"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(entry, "recipeType"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(entry, "machineType"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(entry, "handlerKey"),
+            ),
         ]);
     }
 
@@ -1443,9 +1643,19 @@ fn build_compact_recipe_payload_from_pack(pack: &Value) -> Result<Vec<u8>> {
         }
         let source_count = (category_sources.len() as u32).saturating_sub(source_start);
         category_rows.push([
-            intern_compact_string(&mut strings, &mut string_refs, value_string(category, "categoryId")),
-            intern_compact_string(&mut strings, &mut string_refs, value_string(category, "displayName")),
-            value_u64(category, "recipeCount").unwrap_or(0).min(u32::MAX as u64) as u32,
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(category, "categoryId"),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                value_string(category, "displayName"),
+            ),
+            value_u64(category, "recipeCount")
+                .unwrap_or(0)
+                .min(u32::MAX as u64) as u32,
             source_start,
             source_count,
         ]);
@@ -1968,16 +2178,26 @@ fn repaired_browser_atlas(atlas: &Value, texture_rows: &[Value]) -> Value {
         .collect::<BTreeMap<_, bool>>();
 
     for texture in texture_rows {
-        let Some(asset_id) = value_string(texture, "assetId") else { continue; };
-        let Some(item_id) = item_id_from_asset_id(&asset_id) else { continue; };
-        if existing.contains_key(&item_id) { continue; }
-        let Some(atlas_file) = value_string(texture, "atlasFile") else { continue; };
-        let rect = texture.get("rect").cloned().unwrap_or_else(|| json!({
-            "x": 0,
-            "y": 0,
-            "width": 16,
-            "height": 16,
-        }));
+        let Some(asset_id) = value_string(texture, "assetId") else {
+            continue;
+        };
+        let Some(item_id) = item_id_from_asset_id(&asset_id) else {
+            continue;
+        };
+        if existing.contains_key(&item_id) {
+            continue;
+        }
+        let Some(atlas_file) = value_string(texture, "atlasFile") else {
+            continue;
+        };
+        let rect = texture.get("rect").cloned().unwrap_or_else(|| {
+            json!({
+                "x": 0,
+                "y": 0,
+                "width": 16,
+                "height": 16,
+            })
+        });
         let x = rect.get("x").and_then(Value::as_u64).unwrap_or(0);
         let y = rect.get("y").and_then(Value::as_u64).unwrap_or(0);
         let width = rect.get("width").and_then(Value::as_u64).unwrap_or(16);
@@ -2023,9 +2243,24 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
     }
     let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?
         .ok_or_else(|| anyhow!("texture compiler blocked: browserAtlasIndex is missing"))?;
-    let animations = read_json_collection(input, &manifest, &["animations", "animationTable"], Some("animations"))?;
-    let native_sprites = read_json_collection(input, &manifest, &["nativeSprites", "nativeRenderIndex"], Some("sprites"))?;
-    let texture_rows = read_json_collection(input, &manifest, &["textures", "textureManifest"], Some("textures"))?;
+    let animations = read_json_collection(
+        input,
+        &manifest,
+        &["animations", "animationTable"],
+        Some("animations"),
+    )?;
+    let native_sprites = read_json_collection(
+        input,
+        &manifest,
+        &["nativeSprites", "nativeRenderIndex"],
+        Some("sprites"),
+    )?;
+    let texture_rows = read_json_collection(
+        input,
+        &manifest,
+        &["textures", "textureManifest"],
+        Some("textures"),
+    )?;
 
     let animation_by_asset = animations
         .iter()
@@ -2150,13 +2385,19 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
     });
     write_json_value(&rust_dir.join("texture-pack.json"), &texture_output_pack)?;
     let texture_payload = build_compact_texture_payload_from_atlas_items(&atlas_items)?;
-    write_binary_pack_payload(&rust_dir.join("textures.bin"), "neonei/texture-pack/current", &texture_payload)?;
+    write_binary_pack_payload(
+        &rust_dir.join("textures.bin"),
+        "neonei/texture-pack/current",
+        &texture_payload,
+    )?;
     let animation_payload = build_compact_animation_payload_from_table(&animation_table)?;
-    write_binary_pack_payload(&rust_dir.join("animations.bin"), "neonei/animation-pack/current", &animation_payload)?;
+    write_binary_pack_payload(
+        &rust_dir.join("animations.bin"),
+        "neonei/animation-pack/current",
+        &animation_payload,
+    )?;
     Ok(())
 }
-
-
 
 fn build_compact_animation_payload_from_table(animation_table: &[Value]) -> Result<Vec<u8>> {
     let mut strings = vec![String::new()];
@@ -2166,11 +2407,20 @@ fn build_compact_animation_payload_from_table(animation_table: &[Value]) -> Resu
     let mut frames = Vec::<[u32; 2]>::new();
 
     let mut sorted_animations = animation_table.to_vec();
-    sorted_animations.sort_by(|left, right| value_string(left, "itemId").cmp(&value_string(right, "itemId")));
+    sorted_animations
+        .sort_by(|left, right| value_string(left, "itemId").cmp(&value_string(right, "itemId")));
 
     for animation in &sorted_animations {
-        let item_id = intern_compact_string(&mut strings, &mut string_refs, value_string(animation, "itemId"));
-        let atlas_file = intern_compact_string(&mut strings, &mut string_refs, value_string(animation, "atlasFile"));
+        let item_id = intern_compact_string(
+            &mut strings,
+            &mut string_refs,
+            value_string(animation, "itemId"),
+        );
+        let atlas_file = intern_compact_string(
+            &mut strings,
+            &mut string_refs,
+            value_string(animation, "atlasFile"),
+        );
         let frame_start = frames.len() as u32;
         let frame_duration_ms = value_u64(animation, "frameDurationMs").unwrap_or(0) as u32;
         let timeline = animation
@@ -2181,7 +2431,9 @@ fn build_compact_animation_payload_from_table(animation_table: &[Value]) -> Resu
         for (index, frame) in timeline.iter().enumerate() {
             frames.push([
                 value_u64(frame, "frameIndex").unwrap_or(index as u64) as u32,
-                value_u64(frame, "durationMs").unwrap_or(frame_duration_ms as u64).max(16) as u32,
+                value_u64(frame, "durationMs")
+                    .unwrap_or(frame_duration_ms as u64)
+                    .max(16) as u32,
             ]);
         }
         rows.push([
@@ -2204,7 +2456,11 @@ fn build_compact_animation_payload_from_table(animation_table: &[Value]) -> Resu
     let row_stride_u32 = 5u32;
     let frame_stride_u32 = 2u32;
     let mut payload = Vec::with_capacity(
-        8 + 6 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + frames.len() * frame_stride_u32 as usize * 4 + string_bytes.len(),
+        8 + 6 * 4
+            + string_offsets.len() * 4
+            + rows.len() * row_stride_u32 as usize * 4
+            + frames.len() * frame_stride_u32 as usize * 4
+            + string_bytes.len(),
     );
     payload.extend_from_slice(b"NEIANM1\0");
     push_u32(&mut payload, 1);
@@ -2238,16 +2494,27 @@ fn build_compact_texture_payload_from_atlas_items(atlas_items: &[Value]) -> Resu
     let mut frames = Vec::<[u32; 5]>::new();
 
     let mut sorted_items = atlas_items.to_vec();
-    sorted_items.sort_by(|left, right| value_string(left, "itemId").cmp(&value_string(right, "itemId")));
+    sorted_items
+        .sort_by(|left, right| value_string(left, "itemId").cmp(&value_string(right, "itemId")));
 
     for item in &sorted_items {
-        let item_id = intern_compact_string(&mut strings, &mut string_refs, value_string(item, "itemId"));
+        let item_id =
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "itemId"));
         let static_atlas = item.get("staticAtlas").filter(|value| value.is_object());
         let animated_atlas = item.get("animatedAtlas").filter(|value| value.is_object());
-        let static_file = intern_compact_string(&mut strings, &mut string_refs, optional_value_string(static_atlas, "atlasFile"));
-        let animated_file = intern_compact_string(&mut strings, &mut string_refs, optional_value_string(animated_atlas, "atlasFile"));
+        let static_file = intern_compact_string(
+            &mut strings,
+            &mut string_refs,
+            optional_value_string(static_atlas, "atlasFile"),
+        );
+        let animated_file = intern_compact_string(
+            &mut strings,
+            &mut string_refs,
+            optional_value_string(animated_atlas, "atlasFile"),
+        );
         let frame_start = frames.len() as u32;
-        let frame_duration_ms = optional_value_u64(animated_atlas, "frameDurationMs").unwrap_or(0) as u32;
+        let frame_duration_ms =
+            optional_value_u64(animated_atlas, "frameDurationMs").unwrap_or(0) as u32;
 
         if let Some(animated_atlas) = animated_atlas {
             let frame_values = animated_atlas
@@ -2255,7 +2522,10 @@ fn build_compact_texture_payload_from_atlas_items(atlas_items: &[Value]) -> Resu
                 .and_then(Value::as_array)
                 .cloned()
                 .unwrap_or_default();
-            let timeline = normalize_timeline(Some(animated_atlas), optional_value_u64(Some(animated_atlas), "frameDurationMs"));
+            let timeline = normalize_timeline(
+                Some(animated_atlas),
+                optional_value_u64(Some(animated_atlas), "frameDurationMs"),
+            );
             let timeline_values = timeline.as_array().cloned().unwrap_or_default();
             for (index, frame) in frame_values.iter().enumerate() {
                 let duration_ms = timeline_values
@@ -2299,7 +2569,11 @@ fn build_compact_texture_payload_from_atlas_items(atlas_items: &[Value]) -> Resu
     let row_stride_u32 = 10u32;
     let frame_stride_u32 = 5u32;
     let mut payload = Vec::with_capacity(
-        8 + 6 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + frames.len() * frame_stride_u32 as usize * 4 + string_bytes.len(),
+        8 + 6 * 4
+            + string_offsets.len() * 4
+            + rows.len() * row_stride_u32 as usize * 4
+            + frames.len() * frame_stride_u32 as usize * 4
+            + string_bytes.len(),
     );
     payload.extend_from_slice(b"NEITEX1\0");
     push_u32(&mut payload, 1);
@@ -2338,13 +2612,17 @@ fn compile_dist_texture_pack(input: &Path, output: &Path, strict: bool) -> Resul
             ("animationExpectationReport", "animationExpectationReport"),
         ],
     )?;
-    if strict && !texture_files.iter().any(|value| {
-        value
-            .get("logicalName")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value == "textureManifest")
-    }) {
-        return Err(anyhow!("texture compiler blocked: textureManifest is missing"));
+    if strict
+        && !texture_files.iter().any(|value| {
+            value
+                .get("logicalName")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == "textureManifest")
+        })
+    {
+        return Err(anyhow!(
+            "texture compiler blocked: textureManifest is missing"
+        ));
     }
     let texture_pack = json!({
         "schemaVersion": "neonei/rust-texture-pack/current",
@@ -2365,8 +2643,16 @@ fn compile_dist_texture_pack(input: &Path, output: &Path, strict: bool) -> Resul
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
     write_json_value(&rust_dir.join("texture-pack.json"), &texture_pack)?;
-    write_binary_pack(&rust_dir.join("textures.bin"), "neonei/texture-pack/current", &texture_pack)?;
-    write_binary_pack(&rust_dir.join("animations.bin"), "neonei/animation-pack/current", &animation_pack)?;
+    write_binary_pack(
+        &rust_dir.join("textures.bin"),
+        "neonei/texture-pack/current",
+        &texture_pack,
+    )?;
+    write_binary_pack(
+        &rust_dir.join("animations.bin"),
+        "neonei/animation-pack/current",
+        &animation_pack,
+    )?;
     Ok(())
 }
 
@@ -2389,7 +2675,14 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
             "texture-pack.json",
         ],
         CompileScope::Search => &["search.bin", "strings.zh_cn.bin", "search-pack.json"],
-        CompileScope::Browser => &["browser.bin", "groups.bin", "search.bin", "strings.zh_cn.bin", "browser-pack.json", "search-pack.json"],
+        CompileScope::Browser => &[
+            "browser.bin",
+            "groups.bin",
+            "search.bin",
+            "strings.zh_cn.bin",
+            "browser-pack.json",
+            "search-pack.json",
+        ],
         CompileScope::Recipes => &["recipes.bin", "recipe-pack.json"],
         CompileScope::Textures => &["textures.bin", "animations.bin", "texture-pack.json"],
     };
@@ -2536,7 +2829,125 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
             "pathViolations": path_violations,
         }),
     )?;
+    update_dist_manifest_with_rust_runtime(
+        output,
+        scope,
+        &integrity,
+        &sizes,
+        &runtime_id,
+        total_bytes,
+    )?;
     Ok(())
+}
+
+fn update_dist_manifest_with_rust_runtime(
+    output: &Path,
+    scope: CompileScope,
+    integrity: &BTreeMap<String, String>,
+    sizes: &BTreeMap<String, u64>,
+    runtime_id: &str,
+    total_bytes: u64,
+) -> Result<()> {
+    let manifest_path = output.join("manifest.json");
+    let mut manifest = if manifest_path.exists() {
+        let text = fs::read_to_string(&manifest_path)
+            .with_context(|| format!("read dist manifest {}", manifest_path.display()))?;
+        serde_json::from_str::<Value>(&text)
+            .with_context(|| format!("parse dist manifest {}", manifest_path.display()))?
+    } else {
+        json!({
+            "schemaVersion": "neonei/dist-data/current",
+            "source": "rust-compiler",
+            "files": {},
+        })
+    };
+
+    if !manifest.is_object() {
+        return Err(anyhow!(
+            "dist manifest must be a JSON object: {}",
+            manifest_path.display()
+        ));
+    }
+    if manifest.get("files").and_then(Value::as_object).is_none() {
+        manifest["files"] = json!({});
+    }
+    let files = manifest["files"]
+        .as_object_mut()
+        .ok_or_else(|| anyhow!("dist manifest files must be a JSON object"))?;
+
+    for (key, relative_path) in rust_manifest_file_entries(scope) {
+        if integrity.contains_key(relative_path) || relative_path.ends_with("runtime-manifest.json")
+        {
+            files.insert(key.to_string(), Value::String(relative_path.to_string()));
+        }
+    }
+
+    manifest["nativeRuntime"] = json!({
+        "schemaVersion": "neonei/native-runtime-dist/current",
+        "runtimeId": runtime_id,
+        "compileScope": scope.as_str(),
+        "status": "ready",
+        "authority": "rust",
+        "runtimeManifest": "rust/runtime-manifest.json",
+        "totalBytes": total_bytes,
+        "files": sizes,
+        "hashes": integrity,
+        "pathPolicy": {
+            "portableRelativePathsOnly": true,
+            "absolutePathsAllowed": false,
+        },
+    });
+
+    write_json_value(&manifest_path, &manifest)
+}
+
+fn rust_manifest_file_entries(scope: CompileScope) -> Vec<(&'static str, &'static str)> {
+    let mut entries = vec![
+        ("rustRuntimeManifest", "rust/runtime-manifest.json"),
+        ("rustIntegrity", "rust/integrity.json"),
+        ("rustSizeReport", "rust/size-report.json"),
+        ("rustMissingDataReport", "rust/missing-data-report.json"),
+        ("rustMigrationReadiness", "rust/migration-readiness.json"),
+        ("rustDeploymentReport", "rust/deployment-report.json"),
+    ];
+    match scope {
+        CompileScope::All => entries.extend([
+            ("rustBrowserBin", "rust/browser.bin"),
+            ("rustGroupsBin", "rust/groups.bin"),
+            ("rustSearchBin", "rust/search.bin"),
+            ("rustRecipeBin", "rust/recipes.bin"),
+            ("rustTextureBin", "rust/textures.bin"),
+            ("rustAnimationBin", "rust/animations.bin"),
+            ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
+            ("rustBrowserPack", "rust/browser-pack.json"),
+            ("rustSearchPack", "rust/search-pack.json"),
+            ("rustRecipePack", "rust/recipe-pack.json"),
+            ("rustTexturePack", "rust/texture-pack.json"),
+        ]),
+        CompileScope::Search => entries.extend([
+            ("rustSearchBin", "rust/search.bin"),
+            ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
+            ("rustSearchPack", "rust/search-pack.json"),
+        ]),
+        CompileScope::Browser => entries.extend([
+            ("rustBrowserBin", "rust/browser.bin"),
+            ("rustGroupsBin", "rust/groups.bin"),
+            ("rustSearchBin", "rust/search.bin"),
+            ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
+            ("rustBrowserPack", "rust/browser-pack.json"),
+            ("rustSearchPack", "rust/search-pack.json"),
+        ]),
+        CompileScope::Recipes => entries.extend([
+            ("rustRecipeBin", "rust/recipes.bin"),
+            ("rustRecipePack", "rust/recipe-pack.json"),
+        ]),
+        CompileScope::Textures => entries.extend([
+            ("rustTextureBin", "rust/textures.bin"),
+            ("rustAnimationBin", "rust/animations.bin"),
+            ("rustTexturePack", "rust/texture-pack.json"),
+        ]),
+    }
+    entries
 }
 
 fn runtime_id_from_integrity(integrity: &BTreeMap<String, String>) -> String {
@@ -2720,7 +3131,13 @@ fn rust_capabilities(scope: CompileScope) -> Value {
             "native-render.webgl2",
         ]),
         CompileScope::Search => json!(["search.zh-cn", "strings.zh-cn"]),
-        CompileScope::Browser => json!(["groups.collapse", "groups.semantic-nbt", "search.zh-cn", "strings.zh-cn", "native-render.webgl2"]),
+        CompileScope::Browser => json!([
+            "groups.collapse",
+            "groups.semantic-nbt",
+            "search.zh-cn",
+            "strings.zh-cn",
+            "native-render.webgl2"
+        ]),
         CompileScope::Recipes => json!(["recipes.lookup"]),
         CompileScope::Textures => json!(["atlas.static", "atlas.animated"]),
     }
@@ -3121,11 +3538,3 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[48..52].try_into().unwrap()), 5);
     }
 }
-
-
-
-
-
-
-
-
