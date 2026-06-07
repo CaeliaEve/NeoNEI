@@ -114,6 +114,9 @@ function validateBinaryPack({ filePath, expectedSchema, logicalName }, failures,
     if (logicalName === 'search' && validateCompactSearchPayload(payloadBytes, failures, logicalName)) {
       return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-search-table' } };
     }
+    if (logicalName === 'recipes' && validateCompactRecipePayload(payloadBytes, failures, logicalName)) {
+      return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-recipe-index-table' } };
+    }
     if (logicalName === 'stringsZhCn' && validateCompactStringPayload(payloadBytes, failures, logicalName)) {
       return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-string-table' } };
     }
@@ -191,6 +194,62 @@ function validateCompactSearchPayload(payloadBytes, failures, logicalName) {
       itemCount,
       stringCount,
       rowStride,
+      payloadBytes: payloadBytes.length,
+      stringTableStart,
+    });
+  }
+  return true;
+}
+function validateCompactRecipePayload(payloadBytes, failures, logicalName) {
+  const compactHeaderBytes = 8 + 11 * 4;
+  if (payloadBytes.length < compactHeaderBytes) return false;
+  const magic = payloadBytes.subarray(0, 8).toString('utf8');
+  if (magic !== 'NEIRCP1\0') return false;
+  const version = payloadBytes.readUInt32LE(8);
+  const stringCount = payloadBytes.readUInt32LE(12);
+  const itemCount = payloadBytes.readUInt32LE(16);
+  const refCount = payloadBytes.readUInt32LE(20);
+  const uiCount = payloadBytes.readUInt32LE(24);
+  const categoryCount = payloadBytes.readUInt32LE(28);
+  const sourceCount = payloadBytes.readUInt32LE(32);
+  const itemStride = payloadBytes.readUInt32LE(36);
+  const refStride = payloadBytes.readUInt32LE(40);
+  const uiStride = payloadBytes.readUInt32LE(44);
+  const categoryStride = payloadBytes.readUInt32LE(48);
+  const offsetsBytes = stringCount * 4;
+  const itemBytes = itemCount * itemStride * 4;
+  const refBytes = refCount * refStride * 4;
+  const uiBytes = uiCount * uiStride * 4;
+  const categoryBytes = categoryCount * categoryStride * 4;
+  const sourceBytes = sourceCount * 4;
+  const stringTableStart = compactHeaderBytes + offsetsBytes + itemBytes + refBytes + uiBytes + categoryBytes + sourceBytes;
+  if (version !== 1) {
+    fail(failures, 'NATIVE_RECIPE_PACK_BAD_COMPACT_VERSION', 'compact recipe pack has an invalid version', { logicalName, version });
+  }
+  if (itemStride !== 5 || refStride !== 3 || uiStride !== 7 || categoryStride !== 5) {
+    fail(failures, 'NATIVE_RECIPE_PACK_BAD_ROW_STRIDE', 'compact recipe pack has invalid row strides', {
+      logicalName,
+      itemStride,
+      refStride,
+      uiStride,
+      categoryStride,
+    });
+  }
+  if (stringCount <= 0) {
+    fail(failures, 'NATIVE_RECIPE_PACK_EMPTY_STRING_TABLE', 'compact recipe pack has no strings', { logicalName, stringCount });
+  }
+  if (itemCount <= 0 && uiCount <= 0 && categoryCount <= 0) {
+    fail(failures, 'NATIVE_RECIPE_PACK_EMPTY_INDEX', 'compact recipe pack has no usable indexes', { logicalName, itemCount, uiCount, categoryCount });
+  }
+  if (stringTableStart > payloadBytes.length) {
+    fail(failures, 'NATIVE_RECIPE_PACK_COMPACT_BOUNDS', 'compact recipe pack table exceeds payload bounds', {
+      logicalName,
+      stringCount,
+      itemCount,
+      refCount,
+      uiCount,
+      categoryCount,
+      sourceCount,
       payloadBytes: payloadBytes.length,
       stringTableStart,
     });
