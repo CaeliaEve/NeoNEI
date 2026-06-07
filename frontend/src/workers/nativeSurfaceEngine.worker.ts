@@ -12,6 +12,11 @@ import type {
   NativeSurfaceId,
   NativeSurfaceViewport,
 } from "../native-surface/contracts";
+import {
+  getNativeCompactBrowserRow,
+  parseNativeCompactBrowserPack,
+  type NativeCompactBrowserPack,
+} from "../native-surface/NativeRuntimeBrowserPack";
 
 type SurfaceState = {
   initialized: boolean;
@@ -31,6 +36,7 @@ type SurfaceState = {
   runtimeManifestUrl: string | null;
   runtimePacks: Map<string, ArrayBuffer>;
   runtimeError: string | null;
+  browserPack: NativeCompactBrowserPack | null;
 };
 
 const surfaces = new Map<NativeSurfaceId, SurfaceState>();
@@ -91,6 +97,34 @@ function computeColumns(viewportWidth: number, cardSize: number, gap: number): n
   return Math.max(1, Math.floor((viewportWidth + gap) / (cardSize + gap)));
 }
 
+function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] {
+  const browserPack = surface.browserPack;
+  if (!browserPack) return [];
+  const page = Math.max(1, surface.page);
+  const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
+  const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
+  const gap = 4;
+  const columns = computeColumns(viewportWidth, cardSize, gap);
+  const rows = Math.max(1, Math.floor(Math.max(1, surface.viewport?.height ?? cardSize) / (cardSize + gap)));
+  const pageSize = Math.max(1, columns * rows);
+  const start = Math.min(browserPack.itemCount, (page - 1) * pageSize);
+  const end = Math.min(browserPack.itemCount, start + pageSize);
+  const result: NativeSurfaceEngineEntry[] = [];
+  for (let index = start; index < end; index += 1) {
+    const row = getNativeCompactBrowserRow(browserPack, index);
+    if (!row) continue;
+    const itemId = browserPack.strings[row.itemIdRef] ?? "";
+    const groupKey = browserPack.strings[row.groupKeyRef] ?? "";
+    result.push({
+      key: groupKey ? `native-group:${groupKey}:${index}` : `native-item:${itemId}:${index}`,
+      kind: groupKey ? "group-collapsed" : "item",
+      entryIndex: result.length,
+      itemId,
+      groupKey: groupKey || null,
+    });
+  }
+  return result;
+}
 
 function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
   const existing = surfaces.get(surfaceId);
@@ -113,18 +147,20 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     runtimeManifestUrl: null,
     runtimePacks: new Map(),
     runtimeError: null,
+    browserPack: null,
   };
   surfaces.set(surfaceId, next);
   return next;
 }
 
 function rebuildLayout(surface: SurfaceState): void {
+  const activeEntries = surface.entries.length > 0 ? surface.entries : buildRuntimeEntries(surface);
   const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
   const iconSize = Math.max(1, Math.floor(cardSize * 0.9));
   const gap = 4;
   const columns = computeColumns(viewportWidth, cardSize, gap);
-  surface.layoutCommands = surface.entries.map((entry, index) => {
+  surface.layoutCommands = activeEntries.map((entry, index) => {
     const col = index % columns;
     const row = Math.floor(index / columns);
     const x = col * (cardSize + gap);
@@ -210,6 +246,8 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     runtimeReady: Boolean(lastSurface?.runtimePacks.size),
     runtimePacks: lastSurface?.runtimePacks.size ?? 0,
     runtimeError: lastSurface?.runtimeError ?? null,
+    nativeBrowserEntries: lastSurface?.browserPack?.itemCount ?? 0,
+    nativeBrowserStrings: lastSurface?.browserPack?.stringCount ?? 0,
     updatedAt: performance.now(),
   };
 }
@@ -231,7 +269,15 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
     case "runtimePacks":
       surface.runtimeManifestUrl = message.manifestUrl;
       surface.runtimePacks = new Map(message.packs.map((pack) => [pack.name, pack.buffer]));
-      surface.runtimeError = null;
+      try {
+        const browserPack = message.packs.find((pack) => pack.name === "browser");
+        surface.browserPack = browserPack ? parseNativeCompactBrowserPack(browserPack.buffer) : null;
+        surface.runtimeError = null;
+      } catch (error) {
+        surface.browserPack = null;
+        surface.runtimeError = error instanceof Error ? error.message : String(error);
+      }
+      rebuildLayout(surface);
       break;
     case "viewport":
       surface.viewport = message.viewport;
@@ -239,15 +285,18 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       break;
     case "page":
       surface.page = Math.max(1, Math.floor(Number(message.page) || 1));
+      rebuildLayout(surface);
       break;
     case "search":
       surface.query = `${message.query ?? ""}`;
+      rebuildLayout(surface);
       break;
     case "modFilter":
       surface.modId = message.modId ? `${message.modId}` : null;
       break;
     case "expandedGroups":
       surface.expandedGroups = Array.from(new Set(message.groupKeys));
+      rebuildLayout(surface);
       break;
     case "historyItems":
       surface.historyItems = Array.from(new Set(message.itemIds));

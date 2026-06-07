@@ -26,6 +26,7 @@ export type NativeSurfaceEngineRuntimePack = {
   schema: NativeRuntimePackSchema;
   byteLength: number;
   payloadLength: number;
+  payloadEncoding?: "json" | "compact-browser-table" | "binary";
   buffer: ArrayBuffer;
 };
 
@@ -163,6 +164,8 @@ export type NativeSurfaceEngineWorkerMetrics = {
   runtimeReady: boolean;
   runtimePacks: number;
   runtimeError: string | null;
+  nativeBrowserEntries: number;
+  nativeBrowserStrings: number;
   updatedAt: number;
 };
 

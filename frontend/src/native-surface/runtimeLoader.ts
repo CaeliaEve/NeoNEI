@@ -6,6 +6,7 @@
   type NativeRuntimePackName,
   type NativeRuntimePackSchema,
 } from "./NativeRuntimeManifest";
+import { parseNativeCompactBrowserPack } from "./NativeRuntimeBrowserPack";
 
 const NATIVE_PACK_MAGIC = "NNEIBIN\0";
 const NATIVE_PACK_HEADER_BYTES = 24;
@@ -87,6 +88,20 @@ export function getNativeRuntimePackPayloadBuffer(buffer: ArrayBuffer, header: N
   return buffer.slice(payloadStart, payloadStart + header.payloadLength);
 }
 
+function detectPayloadEncoding(name: NativeRuntimePackName, payloadBuffer: ArrayBuffer): NativeRuntimePack["payloadEncoding"] {
+  if (name === "browser") {
+    parseNativeCompactBrowserPack(payloadBuffer);
+    return "compact-browser-table";
+  }
+  try {
+    const firstByte = new Uint8Array(payloadBuffer, 0, Math.min(payloadBuffer.byteLength, 1))[0];
+    if (firstByte === 123 || firstByte === 91) return "json";
+  } catch {
+    // Pack-level validation already verified the envelope; unknown payloads stay binary.
+  }
+  return "binary";
+}
+
 export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<NativeRuntimeManifest> {
   const response = await fetch(manifestUrl, { cache: "no-cache" });
   if (!response.ok) {
@@ -110,13 +125,15 @@ export async function loadNativeRuntimeBuffers(manifestUrl: string): Promise<Nat
     }
     const buffer = await response.arrayBuffer();
     const header = parseNativeRuntimePackHeader(buffer, NATIVE_RUNTIME_PACK_SCHEMAS[name]);
+    const payloadBuffer = getNativeRuntimePackPayloadBuffer(buffer, header);
     packs[name] = {
       name,
       path,
       url,
       header,
       buffer,
-      payloadBuffer: getNativeRuntimePackPayloadBuffer(buffer, header),
+      payloadBuffer,
+      payloadEncoding: detectPayloadEncoding(name, payloadBuffer),
     };
   }));
 

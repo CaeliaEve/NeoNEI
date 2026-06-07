@@ -638,6 +638,85 @@ fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
     Ok(())
 }
 
+fn intern_compact_string(
+    strings: &mut Vec<String>,
+    refs: &mut HashMap<String, u32>,
+    value: Option<String>,
+) -> u32 {
+    let normalized = value.unwrap_or_default();
+    if let Some(existing) = refs.get(&normalized) {
+        return *existing;
+    }
+    let next = strings.len() as u32;
+    strings.push(normalized.clone());
+    refs.insert(normalized, next);
+    next
+}
+
+fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn build_compact_browser_payload(input: &Path, manifest: &RawManifest) -> Result<Vec<u8>> {
+    let items = read_json_collection(input, manifest, &["browserCatalog"], Some("items"))?;
+    let mut strings = vec![String::new()];
+    let mut string_refs = HashMap::new();
+    string_refs.insert(String::new(), 0u32);
+    let mut rows = Vec::<[u32; 6]>::with_capacity(items.len());
+
+    for (index, item) in items.iter().enumerate() {
+        let item_id_ref = intern_compact_string(&mut strings, &mut string_refs, value_string(item, "itemId"));
+        let localized_name_ref =
+            intern_compact_string(&mut strings, &mut string_refs, value_string(item, "localizedName"));
+        let mod_id_ref = intern_compact_string(&mut strings, &mut string_refs, value_string(item, "modId"));
+        let group_key_ref = intern_compact_string(&mut strings, &mut string_refs, value_string(item, "groupKey"));
+        let browser_order = value_u64(item, "browserOrder")
+            .unwrap_or(index as u64)
+            .min(u32::MAX as u64) as u32;
+        let flags = if item.get("groupKey").and_then(Value::as_str).is_some_and(|value| !value.is_empty()) {
+            1
+        } else {
+            0
+        };
+        rows.push([
+            item_id_ref,
+            localized_name_ref,
+            mod_id_ref,
+            group_key_ref,
+            browser_order,
+            flags,
+        ]);
+    }
+
+    let mut string_offsets = Vec::<u32>::with_capacity(strings.len());
+    let mut string_bytes = Vec::<u8>::new();
+    for value in &strings {
+        string_offsets.push(string_bytes.len() as u32);
+        string_bytes.extend_from_slice(value.as_bytes());
+        string_bytes.push(0);
+    }
+
+    let row_stride_u32 = 6u32;
+    let mut payload = Vec::with_capacity(
+        8 + 4 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + string_bytes.len(),
+    );
+    payload.extend_from_slice(b"NEIBRW1\0");
+    push_u32(&mut payload, 1);
+    push_u32(&mut payload, rows.len() as u32);
+    push_u32(&mut payload, strings.len() as u32);
+    push_u32(&mut payload, row_stride_u32);
+    for offset in string_offsets {
+        push_u32(&mut payload, offset);
+    }
+    for row in rows {
+        for value in row {
+            push_u32(&mut payload, value);
+        }
+    }
+    payload.extend_from_slice(&string_bytes);
+    Ok(payload)
+}
+
 fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
     let browser_files = runtime_file_descriptors(
@@ -667,6 +746,7 @@ fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Resul
         "counts": { "files": browser_files.len() },
         "files": browser_files,
     });
+    let compact_browser_payload = build_compact_browser_payload(input, &manifest)?;
     let group_pack = json!({
         "schemaVersion": "neonei/rust-group-pack/current",
         "sourceKind": "dist-data",
@@ -686,7 +766,11 @@ fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Resul
     fs::create_dir_all(&rust_dir)?;
     write_json_value(&rust_dir.join("browser-pack.json"), &browser_pack)?;
     write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
-    write_binary_pack(&rust_dir.join("browser.bin"), "neonei/browser-pack/current", &browser_pack)?;
+    write_binary_pack_payload(
+        &rust_dir.join("browser.bin"),
+        "neonei/browser-pack/current",
+        &compact_browser_payload,
+    )?;
     write_binary_pack(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_pack)?;
     write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
     Ok(())
@@ -2198,6 +2282,10 @@ fn write_report(path: &Path, report: &CompilerReport) -> Result<()> {
 
 fn write_binary_pack(path: &Path, schema: &str, value: &Value) -> Result<()> {
     let payload = serde_json::to_vec(value)?;
+    write_binary_pack_payload(path, schema, &payload)
+}
+
+fn write_binary_pack_payload(path: &Path, schema: &str, payload: &[u8]) -> Result<()> {
     let schema_bytes = schema.as_bytes();
     let mut bytes = Vec::with_capacity(24 + schema_bytes.len() + payload.len());
     bytes.extend_from_slice(b"NNEIBIN\0");
@@ -2205,7 +2293,7 @@ fn write_binary_pack(path: &Path, schema: &str, value: &Value) -> Result<()> {
     bytes.extend_from_slice(&(schema_bytes.len() as u32).to_le_bytes());
     bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
     bytes.extend_from_slice(schema_bytes);
-    bytes.extend_from_slice(&payload);
+    bytes.extend_from_slice(payload);
     fs::write(path, bytes).with_context(|| format!("write {}", path.display()))
 }
 fn write_json_value(path: &Path, value: &Value) -> Result<()> {

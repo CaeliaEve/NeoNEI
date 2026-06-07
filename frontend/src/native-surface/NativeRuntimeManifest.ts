@@ -60,6 +60,7 @@ export interface NativeRuntimePack {
   header: NativeRuntimePackHeader;
   buffer: ArrayBuffer;
   payloadBuffer: ArrayBuffer;
+  payloadEncoding?: "json" | "compact-browser-table" | "binary";
 }
 
 export interface NativeRuntimeBuffers {

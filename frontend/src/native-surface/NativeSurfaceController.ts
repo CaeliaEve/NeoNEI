@@ -253,7 +253,8 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
         schema: pack.header.schema,
         byteLength: pack.header.byteLength,
         payloadLength: pack.header.payloadLength,
-        buffer: pack.buffer,
+        payloadEncoding: pack.payloadEncoding,
+        buffer: pack.payloadBuffer,
       }));
       const response = await postNativeSurfaceEngineEvent({
         type: "runtimePacks",
