@@ -86,6 +86,12 @@ type DistDataBrowserCatalogPayload = {
   items?: DistDataBrowserItem[];
 };
 
+type DistDataRustBrowserPackPayload = {
+  schemaVersion?: string;
+  items?: DistDataBrowserItem[];
+  groups?: DistDataRawGroup[];
+};
+
 type BrowserCatalogMode = "default" | "advanced";
 
 type DistDataRawGroup = {
@@ -557,21 +563,39 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
 
   browserRuntimeRequest = (async () => {
     const manifest = await getDistDataManifest();
+    const rustBrowserPath = `${manifest?.files?.rustBrowserPack ?? ""}`.trim();
     const catalogPath = `${manifest?.files?.browserCatalog ?? ""}`.trim();
     const hiddenCatalogPath = `${manifest?.files?.hiddenBrowserCatalog ?? ""}`.trim();
     const groupPath = `${manifest?.files?.browserGroups ?? ""}`.trim();
-    if (!manifest || !catalogPath || !groupPath) {
+    if (!manifest || (!rustBrowserPath && (!catalogPath || !groupPath))) {
       return null;
     }
 
-    const [catalogPayload, hiddenCatalogPayload, groupPayload, searchPack] = await Promise.all([
-      fetchJson<DistDataBrowserCatalogPayload>(joinAssetPath(getConfiguredBasePath(), catalogPath)),
-      hiddenCatalogPath
-        ? fetchJson<DistDataBrowserCatalogPayload>(joinAssetPath(getConfiguredBasePath(), hiddenCatalogPath)).catch(() => ({ items: [] }))
-        : Promise.resolve({ items: [] } satisfies DistDataBrowserCatalogPayload),
-      fetchJson<DistDataGroupPayload>(joinAssetPath(getConfiguredBasePath(), groupPath)),
+    const [rustBrowserPack, searchPack] = await Promise.all([
+      rustBrowserPath
+        ? fetchJson<DistDataRustBrowserPackPayload>(joinAssetPath(getConfiguredBasePath(), rustBrowserPath)).catch(() => null)
+        : Promise.resolve(null),
       getDistDataSearchPack(),
     ]);
+    const canUseRustBrowserPack = Boolean(
+      rustBrowserPack
+      && Array.isArray(rustBrowserPack.items)
+      && Array.isArray(rustBrowserPack.groups)
+      && rustBrowserPack.items.some((entry) => entry?.itemId),
+    );
+    const [catalogPayload, hiddenCatalogPayload, groupPayload] = canUseRustBrowserPack
+      ? [
+          { schemaVersion: rustBrowserPack?.schemaVersion, items: rustBrowserPack?.items ?? [] } satisfies DistDataBrowserCatalogPayload,
+          { items: [] } satisfies DistDataBrowserCatalogPayload,
+          { schemaVersion: rustBrowserPack?.schemaVersion, groups: rustBrowserPack?.groups ?? [] } satisfies DistDataGroupPayload,
+        ]
+      : await Promise.all([
+          fetchJson<DistDataBrowserCatalogPayload>(joinAssetPath(getConfiguredBasePath(), catalogPath)),
+          hiddenCatalogPath
+            ? fetchJson<DistDataBrowserCatalogPayload>(joinAssetPath(getConfiguredBasePath(), hiddenCatalogPath)).catch(() => ({ items: [] }))
+            : Promise.resolve({ items: [] } satisfies DistDataBrowserCatalogPayload),
+          fetchJson<DistDataGroupPayload>(joinAssetPath(getConfiguredBasePath(), groupPath)),
+        ]);
     const catalog = Array.isArray(catalogPayload.items) ? catalogPayload.items.filter((entry) => entry?.itemId) : [];
     const hiddenCatalog = Array.isArray(hiddenCatalogPayload.items) ? hiddenCatalogPayload.items.filter((entry) => entry?.itemId) : [];
     const advancedCatalog = [...catalog, ...hiddenCatalog].sort((left, right) => stableNumber(left.browserOrder, 0) - stableNumber(right.browserOrder, 0) || `${left.itemId}`.localeCompare(`${right.itemId}`));
