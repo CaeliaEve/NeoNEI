@@ -15,6 +15,7 @@ function runStep(step) {
       cwd: step.cwd,
       stdio: 'inherit',
       shell: false,
+      env: { ...process.env, ...(step.env ?? {}) },
     });
   }
 
@@ -22,6 +23,7 @@ function runStep(step) {
     cwd: step.cwd,
     stdio: 'inherit',
     shell: false,
+    env: { ...process.env, ...(step.env ?? {}) },
   });
 }
 const steps = [
@@ -78,6 +80,16 @@ const selectedWithModeOverrides = selected.map((step) => {
         '--dist-data',
         selfTestDistDataDir,
       ],
+    };
+  }
+  if (step.name === 'browser page v3 smoke') {
+    return {
+      ...step,
+      env: {
+        DIST_DATA_V3_DIR: selfTestDistDataDir,
+        BROWSER_PAGE_SMOKE_PAGES: '1,last',
+        BROWSER_PAGE_SMOKE_SEARCHES: 'iron',
+      },
     };
   }
   return step;

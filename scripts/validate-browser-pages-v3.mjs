@@ -361,6 +361,9 @@ const runtimeSources = {
   atlas: rustTexturePack?.atlas?.items ? "rust/texture-pack" : "legacy/browser-atlas-index",
   search: rustSearchPack?.items ? "rust/search-pack" : "legacy/search-all",
 };
+const nativeRuntimeSourceFailures = Object.entries(runtimeSources)
+  .filter(([, source]) => source.startsWith("legacy/"))
+  .map(([name, source]) => `${name} uses ${source}`);
 
 const catalogItems = Array.isArray(catalogPayload.items) ? catalogPayload.items : [];
 const groups = Array.isArray(groupsPayload.groups) ? groupsPayload.groups : [];
@@ -393,6 +396,9 @@ const totalPages = Math.max(1, Math.ceil(defaultCatalog.length / pageSize));
 const pages = resolvePages(totalPages);
 const failures = [];
 const warnings = [];
+if (gate && nativeRuntimeSourceFailures.length > 0) {
+  failures.push(`browser page smoke must use native rust runtime packs in gate mode: ${nativeRuntimeSourceFailures.join(", ")}`);
+}
 
 const pageResults = pages.map((page) => {
   const result = pageEntries(defaultCatalog, page);
