@@ -50,6 +50,8 @@ export type NativeRendererFrameMetrics = {
   initialized: boolean;
   frames: number;
   commandCount: number;
+  drawCalls: number;
+  vertexCount: number;
   lastFrameMs: number;
   animationEnabled: boolean;
   width: number;
