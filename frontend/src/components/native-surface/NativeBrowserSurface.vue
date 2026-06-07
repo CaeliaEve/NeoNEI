@@ -48,14 +48,57 @@ const controller = createNativeSurfaceController(props.surfaceId);
 let resizeObserver: ResizeObserver | null = null;
 let nativeFrameSeq = 0;
 let nativeTextureSeq = 0;
+let nativeHitSeq = 0;
 const nativeLayoutCommands = ref<NativeSurfaceLayoutCommand[] | null>(null);
 const nativeLayoutCommandBuffer = ref<ArrayBuffer | null>(null);
 const nativeLayoutCommandStride = ref(0);
 const nativeLayoutCommandCount = ref(0);
 const nativeRenderVisible = ref(false);
+const nativeHoveredHit = ref<{
+  kind: BrowserGridEntry["kind"];
+  item: Item;
+  group?: BrowserVariantGroup;
+} | null>(null);
+const nativeHoveredPointer = ref({ x: 0, y: 0 });
 let nativeRenderInitialized = false;
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
+
+const nativeTooltipTitle = computed(() => {
+  const hit = nativeHoveredHit.value;
+  if (!hit) return "";
+  if (hit.kind === "item") {
+    const baseName = hit.item.localizedName || hit.item.internalName || hit.item.itemId;
+    if (hit.item.browserGroupKey && Number(hit.item.browserGroupSize ?? 1) > 1) {
+      return `${baseName} · variant`;
+    }
+    return baseName;
+  }
+  return hit.group?.label || hit.group?.key || hit.item.localizedName || hit.item.itemId;
+});
+
+const nativeTooltipSubtitle = computed(() => {
+  const hit = nativeHoveredHit.value;
+  if (!hit) return "";
+  if (hit.kind === "item") {
+    if (hit.item.browserGroupKey && Number(hit.item.browserGroupSize ?? 1) > 1) {
+      return `Variant in ${hit.item.browserGroupSize} item semantic group · Left click: recipes · Right click: uses`;
+    }
+    return hit.item.modId ? `${hit.item.modId} · Left click: recipes · Right click: uses` : "Left click: recipes · Right click: uses";
+  }
+  return hit.group ? `${hit.group.size} grouped variants · Click to expand` : "Grouped variants";
+});
+
+const nativeTooltipStyle = computed<Record<string, string> | null>(() => {
+  const host = hostRef.value;
+  if (!nativeHoveredHit.value || !host) return null;
+  const maxWidth = 260;
+  const x = Math.min(Math.max(8, nativeHoveredPointer.value.x + 14), Math.max(8, host.clientWidth - maxWidth - 8));
+  const y = Math.min(Math.max(8, nativeHoveredPointer.value.y + 14), Math.max(8, host.clientHeight - 72));
+  return {
+    transform: `translate(${Math.round(x)}px, ${Math.round(y)}px)`,
+  };
+});
 
 function getEntryItem(entry: BrowserGridEntry): Item {
   return entry.kind === "item" ? entry.item : entry.group.representative;
@@ -130,11 +173,51 @@ function toLocalPointer(event: MouseEvent) {
 function handlePointerMove(event: MouseEvent) {
   const pointer = toLocalPointer(event);
   controller.setHover(pointer);
-  void controller.hitTest(pointer);
+  nativeHoveredPointer.value = { x: pointer.x, y: pointer.y };
+  const seq = ++nativeHitSeq;
+  void controller.hitTest(pointer).then((hit) => {
+    if (seq !== nativeHitSeq) return;
+    nativeHoveredHit.value = hit
+      ? {
+        kind: hit.kind,
+        item: hit.item,
+        group: hit.group,
+      }
+      : null;
+  });
 }
 
 function handlePointerLeave() {
+  nativeHitSeq += 1;
   controller.setHover(null);
+  nativeHoveredHit.value = null;
+}
+
+async function handleNativeClick(event: MouseEvent) {
+  if (!nativeRenderVisible.value) return;
+  const hit = await controller.hitTest(toLocalPointer(event));
+  if (!hit) return;
+  if (hit.kind === "item") {
+    emit("itemClick", hit.item);
+    return;
+  }
+  if (hit.group) {
+    emit("groupClick", hit.group);
+  }
+}
+
+async function handleNativeContextMenu(event: MouseEvent) {
+  if (!nativeRenderVisible.value) return;
+  const hit = await controller.hitTest(toLocalPointer(event));
+  if (!hit) return;
+  event.preventDefault();
+  if (hit.kind === "item") {
+    emit("itemContextmenu", hit.item, event);
+    return;
+  }
+  if (hit.group) {
+    emit("groupContextmenu", hit.group, event);
+  }
 }
 
 async function syncNativeFrame() {
@@ -281,6 +364,8 @@ watch(itemIdsSignature, () => {
     class="native-browser-surface h-full w-full overflow-hidden"
     @mousemove="handlePointerMove"
     @mouseleave="handlePointerLeave"
+    @click="handleNativeClick"
+    @contextmenu="handleNativeContextMenu"
   >
     <canvas
       ref="nativeRenderCanvasRef"
@@ -299,11 +384,20 @@ watch(itemIdsSignature, () => {
       :native-layout-command-stride="nativeLayoutCommandStride"
       :native-layout-command-count="nativeLayoutCommandCount"
       :suspend-rendering="nativeRenderVisible"
+      :suspend-interactions="nativeRenderVisible"
       @item-click="emit('itemClick', $event)"
       @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"
       @group-click="emit('groupClick', $event)"
       @group-contextmenu="(group, event) => emit('groupContextmenu', group, event)"
     />
+    <div
+      v-if="nativeRenderVisible && nativeHoveredHit && nativeTooltipStyle"
+      class="native-browser-surface__tooltip"
+      :style="nativeTooltipStyle"
+    >
+      <div class="native-browser-surface__tooltip-title">{{ nativeTooltipTitle }}</div>
+      <div class="native-browser-surface__tooltip-subtitle">{{ nativeTooltipSubtitle }}</div>
+    </div>
   </div>
 </template>
 
@@ -331,6 +425,35 @@ watch(itemIdsSignature, () => {
 .native-browser-surface :deep(.home-canvas-grid) {
   position: relative;
   z-index: 1;
+}
+
+.native-browser-surface__tooltip {
+  position: absolute;
+  left: 0;
+  top: 0;
+  z-index: 12;
+  max-width: 260px;
+  border: 1px solid rgba(125, 211, 252, 0.28);
+  border-radius: 10px;
+  background: rgba(5, 9, 16, 0.94);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.42), 0 0 20px rgba(34, 211, 238, 0.12);
+  padding: 8px 10px;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+}
+
+.native-browser-surface__tooltip-title {
+  color: rgba(248, 250, 252, 0.98);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.native-browser-surface__tooltip-subtitle {
+  margin-top: 4px;
+  color: rgba(148, 163, 184, 0.92);
+  font-size: 11px;
+  line-height: 1.4;
 }
 </style>
 

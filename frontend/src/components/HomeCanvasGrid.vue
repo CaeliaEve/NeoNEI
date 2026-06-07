@@ -54,6 +54,7 @@ const props = withDefaults(defineProps<{
   nativeLayoutCommandStride?: number;
   nativeLayoutCommandCount?: number;
   suspendRendering?: boolean;
+  suspendInteractions?: boolean;
 }>(), {
   itemSize: 50,
   atlas: null,
@@ -64,6 +65,7 @@ const props = withDefaults(defineProps<{
   nativeLayoutCommandStride: 0,
   nativeLayoutCommandCount: 0,
   suspendRendering: false,
+  suspendInteractions: false,
 });
 
 const emit = defineEmits<{
@@ -922,6 +924,7 @@ function warmGlobalAtlasImages() {
 }
 
 function handleClick(event: MouseEvent) {
+  if (props.suspendInteractions) return;
   const rect = findRectAt(event.clientX, event.clientY);
   if (!rect) return;
   if (rect.entry.kind === "item") {
@@ -932,6 +935,7 @@ function handleClick(event: MouseEvent) {
 }
 
 function handleContextMenu(event: MouseEvent) {
+  if (props.suspendInteractions) return;
   const rect = findRectAt(event.clientX, event.clientY);
   if (!rect) return;
   event.preventDefault();
@@ -947,6 +951,7 @@ function getRectIdentity(rect: GridRect | null): string {
 }
 
 function handleMouseMove(event: MouseEvent) {
+  if (props.suspendInteractions) return;
   const nextHoveredRect = findRectAt(event.clientX, event.clientY);
   const hoverChanged = getRectIdentity(nextHoveredRect) !== getRectIdentity(hoveredRect.value);
   if (!hoverChanged) {
@@ -964,6 +969,7 @@ function handleMouseMove(event: MouseEvent) {
 }
 
 function handleMouseLeave() {
+  if (props.suspendInteractions) return;
   hoveredRect.value = null;
   if (hostRef.value) {
     hostRef.value.style.cursor = "default";
@@ -1112,7 +1118,7 @@ onUnmounted(() => {
   >
     <canvas ref="canvasRef" class="home-canvas-grid__canvas" />
     <canvas ref="webglCanvasRef" class="home-canvas-grid__canvas home-canvas-grid__webgl" />
-    <div v-if="hoveredRect && tooltipStyle" class="home-canvas-grid__tooltip" :style="tooltipStyle">
+    <div v-if="!suspendInteractions && hoveredRect && tooltipStyle" class="home-canvas-grid__tooltip" :style="tooltipStyle">
       <div class="home-canvas-grid__tooltip-title">{{ tooltipTitle }}</div>
       <div class="home-canvas-grid__tooltip-subtitle">{{ tooltipSubtitle }}</div>
     </div>
