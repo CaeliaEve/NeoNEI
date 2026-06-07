@@ -1,25 +1,26 @@
-﻿import { computed, ref, type ComputedRef, type Ref } from "vue";
+import { computed, onBeforeUnmount, ref, type ComputedRef, type Ref } from "vue";
 
 type GridViewportSync = () => void;
 
 export function useHomeGridViewport(itemSize: Ref<number>) {
   const itemGridViewportRef = ref<HTMLElement | null>(null);
   let syncViewport: GridViewportSync = () => {};
+  let viewportResizeObserver: ResizeObserver | null = null;
+  let cachedContentWidth = 0;
+  let cachedContentHeight = 0;
+
+  const updateCachedViewportSize = (width: number, height: number) => {
+    cachedContentWidth = Math.max(0, width);
+    cachedContentHeight = Math.max(0, height);
+  };
 
   const measureGridCapacityRaw = () => {
     const shell = itemGridViewportRef.value;
     if (!shell) return null;
 
-    const style = window.getComputedStyle(shell);
-    const paddingX =
-      (Number.parseFloat(style.paddingLeft || "0") || 0)
-      + (Number.parseFloat(style.paddingRight || "0") || 0);
-    const paddingY =
-      (Number.parseFloat(style.paddingTop || "0") || 0)
-      + (Number.parseFloat(style.paddingBottom || "0") || 0);
     const gap = 4;
-    const usableWidth = Math.max(0, shell.clientWidth - paddingX);
-    const usableHeight = Math.max(0, shell.clientHeight - paddingY);
+    const usableWidth = cachedContentWidth || Math.max(0, shell.clientWidth - 32);
+    const usableHeight = cachedContentHeight || Math.max(0, shell.clientHeight - 32);
     const columnCount = Math.max(1, Math.floor((usableWidth + gap) / (itemSize.value + gap)));
     const rows = Math.max(1, Math.floor((usableHeight + gap) / (itemSize.value + gap)));
 
@@ -44,9 +45,30 @@ export function useHomeGridViewport(itemSize: Ref<number>) {
   };
 
   const setItemGridViewportRef = (element: HTMLElement | null) => {
+    if (element === itemGridViewportRef.value) return;
+    viewportResizeObserver?.disconnect();
+    viewportResizeObserver = null;
     itemGridViewportRef.value = element;
+    cachedContentWidth = 0;
+    cachedContentHeight = 0;
+    if (!element) return;
+    if (typeof ResizeObserver !== "undefined") {
+      viewportResizeObserver = new ResizeObserver((entries) => {
+        const entry = entries[0];
+        if (!entry) return;
+        updateCachedViewportSize(entry.contentRect.width, entry.contentRect.height);
+        syncViewport();
+      });
+      viewportResizeObserver.observe(element);
+      return;
+    }
     syncViewport();
   };
+
+  onBeforeUnmount(() => {
+    viewportResizeObserver?.disconnect();
+    viewportResizeObserver = null;
+  });
 
   return {
     itemGridViewportRef,

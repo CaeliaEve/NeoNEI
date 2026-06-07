@@ -1,31 +1,22 @@
 <script setup lang="ts">
 import {
   computed,
-  nextTick,
-  onBeforeUnmount,
-  onMounted,
   ref,
   watch,
-  type Component,
 } from 'vue';
 import NEIRecipeDisplay from './NEIRecipeDisplay.vue';
-import { api, type Recipe, type RecipeUiPayload } from '../services/api';
+import { type Recipe } from '../services/api';
 import type { RecipeDisplayHandle, RecipeOverlayUiState } from '../domain/recipeDisplayContract';
 import {
-  componentRegistry,
-  resolveRegisteredRecipeComponent,
   ThaumcraftArcaneUI,
   ThaumcraftAspectUI,
   ThaumcraftCrucibleUI,
   ThaumcraftInfusionUI,
   NeiNativeLayoutRenderer,
 } from './recipe-display/recipeComponentRegistry';
-import {
-  resolveRecipePresentationProfile,
-  resolveRecipePresentationProfileFromUiPayload,
-  type RecipePresentationProfile,
-  type UITypeConfig,
-} from '../services/uiTypeMapping';
+import { useRecipeDebugPanel } from '../composables/recipe-display/useRecipeDebugPanel';
+import { useRecipePresentation } from '../composables/recipe-display/useRecipePresentation';
+import { useRecipeScale } from '../composables/recipe-display/useRecipeScale';
 
 interface Props {
   recipe: Recipe;
@@ -44,180 +35,40 @@ const props = withDefaults(defineProps<Props>(), {
 });
 const emit = defineEmits<Emits>();
 
-const containerRef = ref<HTMLElement | null>(null);
-const contentRef = ref<HTMLElement | null>(null);
 const detailedCraftingRef = ref<RecipeDisplayHandle | null>(null);
-const scaleValue = ref(1);
-const showDebugInfo = ref(false);
-const isDev = import.meta.env.DEV;
-const debugPanelRef = ref<HTMLElement | null>(null);
-const debugToggleRef = ref<HTMLElement | null>(null);
-const debugCloseRef = ref<HTMLElement | null>(null);
-const lastFocusedElementBeforeDebug = ref<HTMLElement | null>(null);
-const recipeUiPayload = ref<RecipeUiPayload | null>(null);
-let resizeObserver: ResizeObserver | null = null;
-let rafId: number | null = null;
-let uiPayloadRequestSeq = 0;
-
-const detectedPresentationProfile = computed<RecipePresentationProfile>(() => resolveRecipePresentationProfile({
-  machineType: props.recipe.machineInfo?.machineType,
-  recipeType: props.recipe.recipeType,
-  recipeTypeData: props.recipe.recipeTypeData,
-  inputs: props.recipe.inputs,
-  additionalData: props.recipe.additionalData as Record<string, unknown> | undefined,
-  metadata: props.recipe.metadata as Record<string, unknown> | undefined,
-  preferDetailedCrafting: props.preferDetailedCrafting,
-}));
-
-const inlineRecipeUiPayload = computed<RecipeUiPayload | null>(() => {
-  const additionalData =
-    props.recipe.additionalData && typeof props.recipe.additionalData === 'object'
-      ? props.recipe.additionalData as Record<string, unknown>
-      : null;
-  const candidate =
-    additionalData?.uiPayload && typeof additionalData.uiPayload === 'object'
-      ? additionalData.uiPayload as Record<string, unknown>
-      : null;
-  if (!candidate || typeof candidate.recipeId !== 'string' || typeof candidate.familyKey !== 'string') {
-    return null;
-  }
-  return candidate as unknown as RecipeUiPayload;
-});
-
-const resolvedRecipeUiPayload = computed<RecipeUiPayload | null>(() => inlineRecipeUiPayload.value ?? recipeUiPayload.value);
-
-const presentationProfile = computed<RecipePresentationProfile>(() => {
-  const payloadProfile = resolveRecipePresentationProfileFromUiPayload(resolvedRecipeUiPayload.value);
-  return payloadProfile ?? detectedPresentationProfile.value;
-});
-
-const uiConfig = computed<UITypeConfig>(() => presentationProfile.value.uiConfig);
-const shouldUseDetailedCrafting = computed(() => presentationProfile.value.renderMode === 'detailed_crafting');
 const shouldUseRouterScale = computed(() => props.scaleToFit);
-const neiHandlerMetadata = computed(() => {
-  const metadata = props.recipe.metadata && typeof props.recipe.metadata === 'object'
-    ? (props.recipe.metadata as Record<string, unknown>)
-    : {};
-  const additionalData = props.recipe.additionalData && typeof props.recipe.additionalData === 'object'
-    ? (props.recipe.additionalData as Record<string, unknown>)
-    : {};
-  if (metadata.specialRecipeType !== 'NEI_Handler' && additionalData.specialRecipeType !== 'NEI_Handler') {
-    return null;
-  }
-  return {
-    handler: String(additionalData.handler ?? ''),
-    handlerClass: String(additionalData.handlerClass ?? ''),
-    modName: String(additionalData.modName ?? ''),
-    modId: String(additionalData.modId ?? ''),
-    handlerIcon: String(additionalData.handlerIcon ?? ''),
-    size: [
-      additionalData.handlerWidth ? `w=${additionalData.handlerWidth}` : '',
-      additionalData.handlerHeight ? `h=${additionalData.handlerHeight}` : '',
-      additionalData.maxRecipesPerPage ? `page=${additionalData.maxRecipesPerPage}` : '',
-      additionalData.yShift !== null && additionalData.yShift !== undefined ? `y=${additionalData.yShift}` : '',
-    ].filter(Boolean).join(' '),
-  };
-});
+const {
+  currentComponent,
+  displayedComponentName,
+  neiHandlerMetadata,
+  presentationProfile,
+  resolvedRecipeUiPayload,
+  shouldUseDetailedCrafting,
+  shouldUseNativeLayoutRenderer,
+  uiConfig,
+} = useRecipePresentation(props);
 
-const calculateScale = () => {
-  if (!shouldUseRouterScale.value || !containerRef.value || !contentRef.value) {
-    return;
-  }
+const {
+  containerRef,
+  contentRef,
+  scaleValue,
+} = useRecipeScale(shouldUseRouterScale, () => [
+  shouldUseRouterScale.value,
+  props.recipe.recipeId,
+  uiConfig.value.uiType,
+  presentationProfile.value.renderMode,
+]);
 
-  const container = containerRef.value;
-  const content = contentRef.value;
-
-  const contentWidth = content.scrollWidth;
-  const contentHeight = content.scrollHeight;
-  if (contentWidth <= 0 || contentHeight <= 0) return;
-
-  const scaleX = container.clientWidth / contentWidth;
-  const scaleY = container.clientHeight / contentHeight;
-  scaleValue.value = Math.min(scaleX, scaleY, 1);
-};
-
-const scheduleScale = () => {
-  if (!shouldUseRouterScale.value) return;
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId);
-  }
-  rafId = requestAnimationFrame(() => {
-    void nextTick(() => {
-      calculateScale();
-    });
-  });
-};
-
-onMounted(() => {
-  void refreshRecipeUiPayload();
-  scheduleScale();
-  window.addEventListener('resize', scheduleScale);
-
-  if (typeof ResizeObserver !== 'undefined' && containerRef.value) {
-    resizeObserver = new ResizeObserver(() => {
-      scheduleScale();
-    });
-    resizeObserver.observe(containerRef.value);
-    if (contentRef.value) {
-      resizeObserver.observe(contentRef.value);
-    }
-  }
-});
-
-onBeforeUnmount(() => {
-  window.removeEventListener('resize', scheduleScale);
-  if (resizeObserver) {
-    resizeObserver.disconnect();
-    resizeObserver = null;
-  }
-  if (rafId !== null) {
-    cancelAnimationFrame(rafId);
-    rafId = null;
-  }
-});
-
-const currentComponent = computed<Component>(() => {
-  return resolveRegisteredRecipeComponent(presentationProfile.value.component);
-});
-
-const shouldUseNativeLayoutRenderer = computed(() => {
-  const layout = resolvedRecipeUiPayload.value?.nativeLayout;
-  return Boolean(layout) && presentationProfile.value.component === 'StandardCraftingUI';
-});
-
-const displayedComponentName = computed(() => {
-  if (shouldUseDetailedCrafting.value) {
-    return 'NEIRecipeDisplay';
-  }
-
-  if (!componentRegistry[presentationProfile.value.component]) {
-    return 'StandardCraftingUI (fallback)';
-  }
-
-  return presentationProfile.value.component;
-});
-
-const refreshRecipeUiPayload = async () => {
-  if (inlineRecipeUiPayload.value) {
-    recipeUiPayload.value = inlineRecipeUiPayload.value;
-    return;
-  }
-
-  if (!props.recipe.recipeId) {
-    recipeUiPayload.value = null;
-    return;
-  }
-
-  const requestSeq = ++uiPayloadRequestSeq;
-  try {
-    const payload = await api.getOptionalRecipeUiPayload(props.recipe.recipeId);
-    if (requestSeq !== uiPayloadRequestSeq) return;
-    recipeUiPayload.value = payload;
-  } catch {
-    if (requestSeq !== uiPayloadRequestSeq) return;
-    recipeUiPayload.value = null;
-  }
-};
+const {
+  closeDebugPanel,
+  debugCloseRef,
+  debugPanelRef,
+  debugToggleRef,
+  handleDebugPanelKeydown,
+  isDev,
+  openDebugPanel,
+  showDebugInfo,
+} = useRecipeDebugPanel();
 
 const handleOverlayStateChange = (state: RecipeOverlayUiState) => {
   emit('overlay-state-change', state);
@@ -238,70 +89,30 @@ defineExpose<RecipeDisplayHandle>({
   handleRecipeOverlay,
 });
 
-const openDebugPanel = async () => {
-  if (showDebugInfo.value) return;
-  lastFocusedElementBeforeDebug.value = document.activeElement instanceof HTMLElement
-    ? document.activeElement
-    : null;
-  showDebugInfo.value = true;
-  await nextTick();
-  (debugCloseRef.value ?? debugPanelRef.value)?.focus();
-};
-
-const closeDebugPanel = async () => {
-  if (!showDebugInfo.value) return;
-  showDebugInfo.value = false;
-  await nextTick();
-  const target = lastFocusedElementBeforeDebug.value;
-  if (target && document.contains(target)) {
-    target.focus();
-  } else {
-    debugToggleRef.value?.focus();
-  }
-  lastFocusedElementBeforeDebug.value = null;
-};
-
-const handleDebugPanelKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    void closeDebugPanel();
-  }
-};
-
-watch(
-  () => [
-    shouldUseRouterScale.value,
-    props.recipe.recipeId,
-    uiConfig.value.uiType,
-    presentationProfile.value.renderMode,
-  ],
-  () => {
-    scheduleScale();
-  },
-  { immediate: true },
-);
-
-watch(
-  () => [props.recipe.recipeId, inlineRecipeUiPayload.value?.familyKey ?? ''],
-  () => {
-    void refreshRecipeUiPayload();
-  },
-  { immediate: true },
-);
-
 if (isDev && typeof window !== 'undefined') {
-  (window as Window & { __lastRecipeRouterDebug?: unknown }).__lastRecipeRouterDebug = {
-    recipeId: props.recipe.recipeId,
-    recipeType: props.recipe.recipeType,
-    machineType: props.recipe.machineInfo?.machineType,
-    detectedUIType: uiConfig.value.uiType,
-    sourceUiType: presentationProfile.value.sourceUiType,
-    presentationFamily: uiConfig.value.presentation?.family,
-    presentationSurface: uiConfig.value.presentation?.surface,
-    presentationDensity: uiConfig.value.presentation?.density,
-    reason: presentationProfile.value.reason,
-    component: displayedComponentName.value,
-  };
+  watch(
+    () => [
+      props.recipe.recipeId,
+      uiConfig.value.uiType,
+      presentationProfile.value.sourceUiType,
+      displayedComponentName.value,
+    ],
+    () => {
+      (window as Window & { __lastRecipeRouterDebug?: unknown }).__lastRecipeRouterDebug = {
+        recipeId: props.recipe.recipeId,
+        recipeType: props.recipe.recipeType,
+        machineType: props.recipe.machineInfo?.machineType,
+        detectedUIType: uiConfig.value.uiType,
+        sourceUiType: presentationProfile.value.sourceUiType,
+        presentationFamily: uiConfig.value.presentation?.family,
+        presentationSurface: uiConfig.value.presentation?.surface,
+        presentationDensity: uiConfig.value.presentation?.density,
+        reason: presentationProfile.value.reason,
+        component: displayedComponentName.value,
+      };
+    },
+    { immediate: true },
+  );
 }
 </script>
 
