@@ -33,6 +33,7 @@ import {
 import RecipeDisplayRouter from "../components/RecipeDisplayRouter.vue";
 import HomeSettingsPanel from "../components/home/HomeSettingsPanel.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
+import { useHomeBrowserNavigation } from "../composables/home/useHomeBrowserNavigation";
 import { useSound } from "../services/sound.service";
 import { useRecipeViewer } from "../composables/useRecipeViewer";
 import { resolveRecipePresentationProfile } from "../services/uiTypeMapping";
@@ -106,11 +107,7 @@ const {
   includeHiddenItems: showHiddenDebugItems,
 });
 let itemGridResizeObserver: ResizeObserver | null = null;
-let neighborPrefetchTimer: number | null = null;
-let neighborPrefetchIdleHandle: number | null = null;
 let transitionOverlayTimer: number | null = null;
-const BROWSER_PREFETCH_FORWARD_RADIUS = 1;
-const BROWSER_PREFETCH_BACKWARD_RADIUS = 1;
 const TRANSITION_OVERLAY_DELAY_MS = 140;
 const currentGroupId = ref<string | undefined>(undefined);
 const currentGroupName = ref<string>('');
@@ -292,14 +289,6 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalKeydown);
   itemGridResizeObserver?.disconnect();
   itemGridResizeObserver = null;
-  if (neighborPrefetchTimer !== null) {
-    clearTimeout(neighborPrefetchTimer);
-    neighborPrefetchTimer = null;
-  }
-  if (neighborPrefetchIdleHandle !== null && typeof window !== "undefined" && "cancelIdleCallback" in window) {
-    (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(neighborPrefetchIdleHandle);
-    neighborPrefetchIdleHandle = null;
-  }
   if (transitionOverlayTimer !== null) {
     clearTimeout(transitionOverlayTimer);
     transitionOverlayTimer = null;
@@ -474,118 +463,14 @@ const handleRecipePreviewContextMenu = (event: MouseEvent) => {
   event.stopPropagation();
 };
 
-const changeItemsPageWrapped = (targetPage: number) => {
-  const total = totalPages.value;
-  if (total <= 0) return;
-  const resolvedTargetPage = targetPage < 1
-    ? total
-    : targetPage > total
-      ? 1
-      : targetPage;
-  const direction: 1 | -1 | 0 = targetPage < 1
-    ? -1
-    : targetPage > total
-      ? 1
-      : resolvedTargetPage > currentPage.value
-        ? 1
-        : resolvedTargetPage < currentPage.value
-          ? -1
-          : 0;
-
-  changePage(resolvedTargetPage);
-  scheduleNeighborPrefetch(resolvedTargetPage, total, direction);
-};
-
-const collectWrappedPageCandidates = (
-  page: number,
-  total: number,
-  forwardRadius: number,
-  backwardRadius: number,
-) => {
-  const normalizedTotal = Math.max(0, Math.floor(total));
-  const normalizedPage = Math.max(1, Math.floor(page));
-  const normalizedForwardRadius = Math.max(1, Math.floor(forwardRadius));
-  const normalizedBackwardRadius = Math.max(1, Math.floor(backwardRadius));
-  if (normalizedTotal <= 1) {
-    return [] as number[];
-  }
-
-  const wrap = (value: number) => ((value - 1 + normalizedTotal) % normalizedTotal) + 1;
-  const candidates = new Set<number>();
-
-  for (let offset = 1; offset <= normalizedForwardRadius; offset += 1) {
-    candidates.add(wrap(normalizedPage + offset));
-  }
-
-  for (let offset = 1; offset <= normalizedBackwardRadius; offset += 1) {
-    candidates.add(wrap(normalizedPage - offset));
-  }
-
-  candidates.delete(normalizedPage);
-  return Array.from(candidates).filter((candidate) => candidate >= 1 && candidate <= normalizedTotal);
-};
-
-const scheduleNeighborPrefetch = (
-  page: number,
-  total: number,
-  direction: 1 | -1 | 0,
-) => {
-  if (neighborPrefetchTimer !== null) {
-    clearTimeout(neighborPrefetchTimer);
-    neighborPrefetchTimer = null;
-  }
-  if (neighborPrefetchIdleHandle !== null && typeof window !== "undefined" && "cancelIdleCallback" in window) {
-    (window as Window & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(neighborPrefetchIdleHandle);
-    neighborPrefetchIdleHandle = null;
-  }
-
-  if (currentView.value !== "items" || total <= 1 || searchQuery.value.trim()) {
-    return;
-  }
-
-  const candidatePages = collectWrappedPageCandidates(
-    page,
-    total,
-    direction >= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,
-    direction <= 0 ? BROWSER_PREFETCH_FORWARD_RADIUS : BROWSER_PREFETCH_BACKWARD_RADIUS,
-  );
-  if (candidatePages.length === 0) {
-    return;
-  }
-
-  neighborPrefetchTimer = window.setTimeout(() => {
-    neighborPrefetchTimer = null;
-    const runPrefetch = () => {
-      for (const candidatePage of candidatePages) {
-        void prefetchItemsPage(candidatePage);
-      }
-    };
-
-    if (typeof window !== "undefined" && "requestIdleCallback" in window) {
-      neighborPrefetchIdleHandle = (window as Window & {
-        requestIdleCallback: (cb: () => void, opts?: { timeout: number }) => number;
-      }).requestIdleCallback(() => {
-        neighborPrefetchIdleHandle = null;
-        runPrefetch();
-      }, { timeout: 600 });
-      return;
-    }
-
-    runPrefetch();
-  }, 800);
-};
-
-const handleItemsWheel = (event: WheelEvent) => {
-  if (currentView.value !== 'items' || totalPages.value <= 1) return;
-  if (Math.abs(event.deltaY) < 8) return;
-
-  event.preventDefault();
-  if (event.deltaY > 0) {
-    changeItemsPageWrapped(currentPage.value + 1);
-  } else {
-    changeItemsPageWrapped(currentPage.value - 1);
-  }
-};
+const { changeItemsPageWrapped, handleItemsWheel } = useHomeBrowserNavigation({
+  currentView,
+  currentPage,
+  totalPages,
+  searchQuery,
+  changePage,
+  prefetchItemsPage,
+});
 
 // Recipe modal state
 const showRecipeModal = ref(false);
