@@ -296,7 +296,71 @@ function parseCompactStringPack(payloadBuffer: ArrayBuffer): Map<string, NativeR
   return result;
 }
 
+const COMPACT_GROUP_MAGIC = "NEIGRP1\0";
+const COMPACT_GROUP_HEADER_BYTES = 8 + 5 * 4;
+const COMPACT_GROUP_ROW_STRIDE = 6;
+
+function parseCompactGroupPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeGroup> | null {
+  if (payloadBuffer.byteLength < COMPACT_GROUP_HEADER_BYTES) return null;
+  const bytes = new Uint8Array(payloadBuffer);
+  const magic = decodeAscii(bytes.subarray(0, 8));
+  if (magic !== COMPACT_GROUP_MAGIC) return null;
+
+  const view = new DataView(payloadBuffer);
+  const version = view.getUint32(8, true);
+  const groupCount = view.getUint32(12, true);
+  const stringCount = view.getUint32(16, true);
+  const memberCount = view.getUint32(20, true);
+  const rowStride = view.getUint32(24, true);
+  if (version !== 1 || rowStride !== COMPACT_GROUP_ROW_STRIDE) {
+    throw new Error(`compact group pack has invalid header: version=${version}, rowStride=${rowStride}`);
+  }
+
+  const offsetsStart = COMPACT_GROUP_HEADER_BYTES;
+  const rowsStart = offsetsStart + stringCount * 4;
+  const rowsBytes = groupCount * rowStride * 4;
+  const membersStart = rowsStart + rowsBytes;
+  const membersBytes = memberCount * 4;
+  const stringTableStart = membersStart + membersBytes;
+  if (stringTableStart > payloadBuffer.byteLength) {
+    throw new Error(`compact group pack exceeds payload bounds: groups=${groupCount}, strings=${stringCount}, members=${memberCount}, bytes=${payloadBuffer.byteLength}`);
+  }
+
+  const stringTableBytes = bytes.subarray(stringTableStart);
+  const strings: string[] = new Array(stringCount);
+  for (let index = 0; index < stringCount; index += 1) {
+    const offset = view.getUint32(offsetsStart + index * 4, true);
+    strings[index] = readNullTerminatedString(stringTableBytes, offset);
+  }
+
+  const result = new Map<string, NativeRuntimeGroup>();
+  for (let index = 0; index < groupCount; index += 1) {
+    const rowOffset = rowsStart + index * rowStride * 4;
+    const groupKey = strings[view.getUint32(rowOffset, true)] ?? "";
+    if (!groupKey) continue;
+    const memberStart = view.getUint32(rowOffset + 12, true);
+    const rowMemberCount = view.getUint32(rowOffset + 16, true);
+    const members: string[] = [];
+    for (let memberIndex = 0; memberIndex < rowMemberCount; memberIndex += 1) {
+      const absoluteMemberIndex = memberStart + memberIndex;
+      if (absoluteMemberIndex >= memberCount) break;
+      const member = strings[view.getUint32(membersStart + absoluteMemberIndex * 4, true)] ?? "";
+      if (member) members.push(member);
+    }
+    result.set(groupKey, {
+      groupKey,
+      groupLabel: strings[view.getUint32(rowOffset + 4, true)] ?? null,
+      groupSize: view.getUint32(rowOffset + 20, true) || members.length,
+      representativeItemId: strings[view.getUint32(rowOffset + 8, true)] || members[0] || null,
+      memberItemIds: members,
+    });
+  }
+  return result;
+}
 function parseNativeGroupPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeGroup> {
+  const compact = parseCompactGroupPack(payloadBuffer);
+  if (compact) return compact;
+
   const pack = parseJsonPayload<{ groups?: unknown[] }>(payloadBuffer);
   const groups = new Map<string, NativeRuntimeGroup>();
   for (const row of pack?.groups ?? []) {
@@ -1158,6 +1222,7 @@ self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   if (!message?.type || !message.surfaceId) return;
   void handleRequest(message).then((response) => self.postMessage(response));
 };
+
 
 
 

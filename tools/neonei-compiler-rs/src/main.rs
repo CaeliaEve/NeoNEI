@@ -515,17 +515,11 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
         },
         "items": search_items,
     });
-    let group_pack = json!({
-        "schemaVersion": "neonei/rust-group-pack/current",
-        "counts": {
-            "groups": groups.len(),
-        },
-        "groups": groups,
-    });
     let string_pack = build_compact_string_payload_from_items(&browser_items)?;
     write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
     write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
-    write_binary_pack(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_pack)?;
+    let group_payload = build_compact_group_payload_from_groups(&groups)?;
+    write_binary_pack_payload(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_payload)?;
     write_binary_pack_payload(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
     Ok(())
 }
@@ -726,6 +720,71 @@ fn build_compact_browser_payload_from_items(items: &[Value]) -> Result<Vec<u8>> 
         for value in row {
             push_u32(&mut payload, value);
         }
+    }
+    payload.extend_from_slice(&string_bytes);
+    Ok(payload)
+}
+
+
+fn build_compact_group_payload_from_groups(groups: &[Value]) -> Result<Vec<u8>> {
+    let mut strings = vec![String::new()];
+    let mut string_refs = HashMap::new();
+    string_refs.insert(String::new(), 0u32);
+    let mut rows = Vec::<[u32; 6]>::new();
+    let mut members = Vec::<u32>::new();
+
+    let mut sorted_groups = groups.to_vec();
+    sorted_groups.sort_by(|left, right| value_string(left, "groupKey").cmp(&value_string(right, "groupKey")));
+
+    for group in &sorted_groups {
+        let group_key = intern_compact_string(&mut strings, &mut string_refs, value_string(group, "groupKey"));
+        let group_label = intern_compact_string(&mut strings, &mut string_refs, value_string(group, "groupLabel"));
+        let representative = intern_compact_string(&mut strings, &mut string_refs, value_string(group, "representativeItemId"));
+        let member_start = members.len() as u32;
+        if let Some(values) = group.get("memberItemIds").and_then(Value::as_array) {
+            for member in values {
+                members.push(intern_compact_string(&mut strings, &mut string_refs, member.as_str().map(str::to_string)));
+            }
+        }
+        let member_count = (members.len() as u32).saturating_sub(member_start);
+        rows.push([
+            group_key,
+            group_label,
+            representative,
+            member_start,
+            member_count,
+            value_u64(group, "groupSize").unwrap_or(member_count as u64) as u32,
+        ]);
+    }
+
+    let mut string_offsets = Vec::<u32>::with_capacity(strings.len());
+    let mut string_bytes = Vec::<u8>::new();
+    for value in &strings {
+        string_offsets.push(string_bytes.len() as u32);
+        string_bytes.extend_from_slice(value.as_bytes());
+        string_bytes.push(0);
+    }
+
+    let row_stride_u32 = 6u32;
+    let mut payload = Vec::with_capacity(
+        8 + 5 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + members.len() * 4 + string_bytes.len(),
+    );
+    payload.extend_from_slice(b"NEIGRP1\0");
+    push_u32(&mut payload, 1);
+    push_u32(&mut payload, rows.len() as u32);
+    push_u32(&mut payload, strings.len() as u32);
+    push_u32(&mut payload, members.len() as u32);
+    push_u32(&mut payload, row_stride_u32);
+    for offset in string_offsets {
+        push_u32(&mut payload, offset);
+    }
+    for row in rows {
+        for value in row {
+            push_u32(&mut payload, value);
+        }
+    }
+    for member in members {
+        push_u32(&mut payload, member);
     }
     payload.extend_from_slice(&string_bytes);
     Ok(payload)
@@ -2639,6 +2698,23 @@ mod tests {
     }
 
     #[test]
+    fn compact_group_pack_uses_native_binary_payload() {
+        let groups = vec![json!({
+            "groupKey": "thaumcraft:wands",
+            "groupLabel": "??",
+            "groupSize": 2,
+            "representativeItemId": "i~thaumcraft~wand~0",
+            "memberItemIds": ["i~thaumcraft~wand~0", "i~thaumcraft~wand~1"]
+        })];
+        let payload = build_compact_group_payload_from_groups(&groups).unwrap();
+        assert_eq!(&payload[0..8], b"NEIGRP1\0");
+        assert_eq!(u32::from_le_bytes(payload[8..12].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(payload[12..16].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 2);
+        assert_eq!(u32::from_le_bytes(payload[24..28].try_into().unwrap()), 6);
+    }
+
+    #[test]
     fn compact_animation_pack_uses_native_binary_payload() {
         let animations = vec![json!({
             "itemId": "i~botania~manaResource~4",
@@ -2691,6 +2767,7 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 6);
     }
 }
+
 
 
 

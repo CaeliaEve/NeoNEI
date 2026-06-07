@@ -108,6 +108,9 @@ function validateBinaryPack({ filePath, expectedSchema, logicalName }, failures,
     if (logicalName === 'browser' && validateCompactBrowserPayload(payloadBytes, failures, logicalName)) {
       return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-browser-table' } };
     }
+    if (logicalName === 'groups' && validateCompactGroupPayload(payloadBytes, failures, logicalName)) {
+      return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-group-table' } };
+    }
     if (logicalName === 'stringsZhCn' && validateCompactStringPayload(payloadBytes, failures, logicalName)) {
       return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: { encoding: 'compact-string-table' } };
     }
@@ -122,6 +125,42 @@ function validateBinaryPack({ filePath, expectedSchema, logicalName }, failures,
   return { bytes: buffer.length, schema, payloadBytes: payloadBytes.length, payload: null };
 }
 
+function validateCompactGroupPayload(payloadBytes, failures, logicalName) {
+  const compactHeaderBytes = 8 + 5 * 4;
+  if (payloadBytes.length < compactHeaderBytes) return false;
+  const magic = payloadBytes.subarray(0, 8).toString('utf8');
+  if (magic !== 'NEIGRP1\0') return false;
+  const version = payloadBytes.readUInt32LE(8);
+  const groupCount = payloadBytes.readUInt32LE(12);
+  const stringCount = payloadBytes.readUInt32LE(16);
+  const memberCount = payloadBytes.readUInt32LE(20);
+  const rowStride = payloadBytes.readUInt32LE(24);
+  const offsetsBytes = stringCount * 4;
+  const rowsBytes = groupCount * rowStride * 4;
+  const membersBytes = memberCount * 4;
+  const stringTableStart = compactHeaderBytes + offsetsBytes + rowsBytes + membersBytes;
+  if (version !== 1) {
+    fail(failures, 'NATIVE_GROUP_PACK_BAD_COMPACT_VERSION', 'compact group pack has an invalid version', { logicalName, version });
+  }
+  if (rowStride !== 6) {
+    fail(failures, 'NATIVE_GROUP_PACK_BAD_ROW_STRIDE', 'compact group pack has an invalid row stride', { logicalName, rowStride });
+  }
+  if (stringCount <= 0) {
+    fail(failures, 'NATIVE_GROUP_PACK_EMPTY_STRING_TABLE', 'compact group pack has no strings', { logicalName, groupCount, stringCount });
+  }
+  if (stringTableStart > payloadBytes.length) {
+    fail(failures, 'NATIVE_GROUP_PACK_COMPACT_BOUNDS', 'compact group pack table exceeds payload bounds', {
+      logicalName,
+      groupCount,
+      stringCount,
+      memberCount,
+      rowStride,
+      payloadBytes: payloadBytes.length,
+      stringTableStart,
+    });
+  }
+  return true;
+}
 function validateCompactBrowserPayload(payloadBytes, failures, logicalName) {
   const compactHeaderBytes = 8 + 4 * 4;
   if (payloadBytes.length < compactHeaderBytes) return false;
@@ -456,6 +495,9 @@ if (selfTest) {
   console.log(JSON.stringify(report, null, 2));
   if (gate && report.failures.length > 0) process.exit(1);
 }
+
+
+
 
 
 

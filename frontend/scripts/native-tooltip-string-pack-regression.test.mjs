@@ -19,6 +19,11 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
   );
   assert.match(
     workerSource,
+    /COMPACT_GROUP_MAGIC = "NEIGRP1\\0"/,
+    'worker must support the compact binary groups payload',
+  );
+  assert.match(
+    workerSource,
     /function parseCompactStringPack\(payloadBuffer: ArrayBuffer\): Map<string, NativeRuntimeStringItem> \| null/,
     'worker must parse string metadata without requiring JSON payloads',
   );
@@ -58,6 +63,7 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
     'Vue surface must prefer native tooltip title over compat entry text',
   );
 });
+
 
 
 
