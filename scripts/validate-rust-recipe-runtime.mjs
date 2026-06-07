@@ -1,4 +1,4 @@
-﻿import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -47,6 +47,21 @@ function main() {
   const entries = Array.isArray(rustRecipePack?.uiPayloadIndex)
     ? rustRecipePack.uiPayloadIndex.filter((entry) => entry?.recipeId && entry?.path && entry?.payloadKey)
     : [];
+  const categories = Array.isArray(rustRecipePack?.categoryIndex)
+    ? rustRecipePack.categoryIndex.filter((category) => `${category?.categoryId ?? ''}`.trim())
+    : [];
+  const categoryIds = categories.map((category) => `${category.categoryId}`.trim());
+  const uniqueCategoryIds = new Set(categoryIds);
+  if (categories.length <= 0) {
+    fail(failures, 'RUST_CATEGORY_INDEX_EMPTY', 'rust recipe category index is empty');
+  }
+  if (uniqueCategoryIds.size !== categoryIds.length) {
+    fail(failures, 'RUST_CATEGORY_INDEX_DUPLICATES', 'rust recipe category index contains duplicate category ids', {
+      categoryCount: categoryIds.length,
+      uniqueCategoryCount: uniqueCategoryIds.size,
+    });
+  }
+  const categoryRecipeCount = categories.reduce((sum, category) => sum + Math.max(0, Number(category.recipeCount ?? 0) || 0), 0);
   const recipeCount = Number(rustRecipePack?.counts?.recipes ?? 0);
   if (recipeCount <= 0) {
     fail(failures, 'RUST_RECIPE_COUNT_EMPTY', 'rust recipe pack recipe count is empty');
@@ -55,6 +70,18 @@ function main() {
     fail(failures, 'RUST_UI_PAYLOAD_INDEX_COUNT_MISMATCH', 'rust ui payload index does not cover every recipe', {
       entries: entries.length,
       recipeCount,
+    });
+  }
+  if (categoryRecipeCount !== recipeCount) {
+    fail(failures, 'RUST_CATEGORY_RECIPE_COUNT_MISMATCH', 'rust category recipe counts do not sum to recipe count', {
+      categoryRecipeCount,
+      recipeCount,
+    });
+  }
+  const categoryDisplayMissing = categories.filter((category) => !`${category.displayName ?? ''}`.trim());
+  if (categoryDisplayMissing.length > 0) {
+    fail(failures, 'RUST_CATEGORY_DISPLAY_NAME_MISSING', 'rust category index contains categories without display names', {
+      sample: categoryDisplayMissing.slice(0, 5).map((category) => category.categoryId),
     });
   }
 
@@ -123,6 +150,8 @@ function main() {
     sourceRepository: manifest.sourceRepository ?? null,
     rustRecipePack: rustRecipePackRelativePath || null,
     recipeCount,
+    categoryCount: categories.length,
+    categoryRecipeCount,
     uiPayloadIndexCount: entries.length,
     checkedCount: checked.length,
     shardCount: shardCache.size,

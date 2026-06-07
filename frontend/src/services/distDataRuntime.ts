@@ -121,11 +121,20 @@ type DistDataRecipeItemIndexPayload = {
   items?: DistDataRecipeItemIndexEntry[];
 };
 
+type DistDataRustRecipeCategoryEntry = {
+  categoryId?: string;
+  recipeCount?: number;
+  displayName?: string;
+  sourceCategoryIds?: string[];
+  handler?: Record<string, unknown> | null;
+  nativeLayout?: Record<string, unknown> | null;
+};
+
 type DistDataRustRecipePackPayload = {
   schemaVersion?: string;
   itemIndex?: DistDataRecipeItemIndexEntry[];
   uiPayloadIndex?: DistDataRecipeUiPayloadIndexEntry[];
-  categoryIndex?: unknown[];
+  categoryIndex?: DistDataRustRecipeCategoryEntry[];
   recipes?: unknown[];
   handlers?: unknown[];
 };
@@ -1011,20 +1020,33 @@ function normalizeRecipeCategoryKey(value: unknown): string {
   return key;
 }
 
-function buildCategorySummaries(entries?: Array<{ categoryId?: string; displayName?: string }>) {
+function buildCategoryLookup(recipePack: DistDataRustRecipePackPayload | null | undefined): Map<string, DistDataRustRecipeCategoryEntry> {
+  const categories = Array.isArray(recipePack?.categoryIndex) ? recipePack.categoryIndex : [];
+  return new Map(
+    categories
+      .filter((category) => `${category?.categoryId ?? ""}`.trim())
+      .map((category) => [`${category.categoryId}`.trim(), category]),
+  );
+}
+
+function buildCategorySummaries(
+  entries?: Array<{ categoryId?: string; displayName?: string }>,
+  categoryLookup?: Map<string, DistDataRustRecipeCategoryEntry>,
+) {
   const byCategory = new Map<string, { name: string; recipeCount: number }>();
   for (const entry of entries ?? []) {
     const categoryKey = `${entry?.categoryId ?? ""}`.trim();
     if (!categoryKey) {
       continue;
     }
+    const category = categoryLookup?.get(categoryKey);
     const existing = byCategory.get(categoryKey);
     if (existing) {
       existing.recipeCount += 1;
       continue;
     }
     byCategory.set(categoryKey, {
-      name: `${entry?.displayName ?? categoryKey}`.trim() || categoryKey,
+      name: `${category?.displayName ?? entry?.displayName ?? categoryKey}`.trim() || categoryKey,
       recipeCount: 1,
     });
   }
@@ -1041,7 +1063,6 @@ function buildCategorySummaries(entries?: Array<{ categoryId?: string; displayNa
     }))
     .sort((left, right) => right.recipeCount - left.recipeCount || left.name.localeCompare(right.name));
 }
-
 function toRecipeItemStack(itemId: string, runtime: DistDataBrowserRuntime, count = 1) {
   const item = runtime.itemById.get(itemId);
   return {
@@ -1266,7 +1287,7 @@ export async function getDistDataRecipeBootstrap(itemId: string): Promise<Recipe
   if (!normalizedItemId) {
     return null;
   }
-  const [runtime, recipeIndex] = await Promise.all([getBrowserRuntime(), getRecipeItemIndex()]);
+  const [runtime, recipeIndex, rustRecipePack] = await Promise.all([getBrowserRuntime(), getRecipeItemIndex(), getRustRecipePack()]);
   const indexEntry = recipeIndex?.get(normalizedItemId);
   const item = runtime?.itemById.get(normalizedItemId);
   if (!indexEntry || !item) {
@@ -1275,8 +1296,9 @@ export async function getDistDataRecipeBootstrap(itemId: string): Promise<Recipe
 
   const producedByRecipes = collectRecipeIds(indexEntry.producedBy);
   const usedInRecipes = collectRecipeIds(indexEntry.usedIn);
-  const producedByCategoryGroups = buildCategorySummaries(indexEntry.producedBy);
-  const usedInCategoryGroups = buildCategorySummaries(indexEntry.usedIn);
+  const categoryLookup = buildCategoryLookup(rustRecipePack);
+  const producedByCategoryGroups = buildCategorySummaries(indexEntry.producedBy, categoryLookup);
+  const usedInCategoryGroups = buildCategorySummaries(indexEntry.usedIn, categoryLookup);
   return {
     item,
     recipeIndex: {
