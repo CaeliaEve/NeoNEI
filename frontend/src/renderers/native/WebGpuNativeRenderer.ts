@@ -118,16 +118,22 @@ function buildChromeVertices(commands: NativeRenderCommand[]): Float32Array {
   const values = new Float32Array(commands.length * 6 * 6);
   let cursor = 0;
   for (const command of commands) {
-    const inset = Math.max(2, Math.floor(command.size * 0.08));
+    const isGroup = (command.flags & 1) !== 0;
+    const isHovered = (command.flags & 4) !== 0;
+    const inset = isHovered ? 0 : Math.max(2, Math.floor(command.size * 0.08));
     const x1 = command.x + inset;
     const y1 = command.y + inset;
     const x2 = command.x + command.size - inset;
     const y2 = command.y + command.size - inset;
-    const color = command.kind === 0
-      ? [0.06, 0.09, 0.13, 0.42]
-      : command.kind === 1
-        ? [0.08, 0.22, 0.28, 0.52]
-        : [0.14, 0.18, 0.32, 0.48];
+    const color = isHovered
+      ? [0.96, 0.68, 0.24, 0.58]
+      : isGroup
+        ? [0.08, 0.42, 0.52, 0.56]
+        : command.kind === 0
+          ? [0.06, 0.09, 0.13, 0.42]
+          : command.kind === 1
+            ? [0.08, 0.22, 0.28, 0.52]
+            : [0.14, 0.18, 0.32, 0.48];
     const vertices = [x1, y1, x2, y1, x1, y2, x1, y2, x2, y1, x2, y2];
     for (let index = 0; index < vertices.length; index += 2) {
       values[cursor++] = vertices[index];

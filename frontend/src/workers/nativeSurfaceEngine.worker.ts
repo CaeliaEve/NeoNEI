@@ -507,7 +507,7 @@ function rebuildLayout(surface: SurfaceState): void {
   });
 }
 
-function buildLayoutCommandBuffer(commands: NativeSurfaceEngineLayoutCommand[]): ArrayBuffer {
+function buildLayoutCommandBuffer(commands: NativeSurfaceEngineLayoutCommand[], hoverKey: string | null): ArrayBuffer {
   const stride = NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE;
   const values = new Uint32Array(commands.length * stride);
   commands.forEach((command, index) => {
@@ -520,6 +520,9 @@ function buildLayoutCommandBuffer(commands: NativeSurfaceEngineLayoutCommand[]):
     values[offset + 5] = toU32(command.iconY);
     values[offset + 6] = toU32(command.iconSize);
     values[offset + 7] = command.kind === "item" ? 0 : command.kind === "group-collapsed" ? 1 : 2;
+    values[offset + 8] = (command.kind === "group-collapsed" ? 1 : 0)
+      | (command.kind === "group-header" ? 2 : 0)
+      | (hoverKey === command.key ? 4 : 0);
   });
   return values.buffer;
 }
@@ -702,7 +705,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         id: message.id,
         surfaceId: message.surfaceId,
         drawCommands: surface.layoutCommands,
-        commandBuffer: buildLayoutCommandBuffer(surface.layoutCommands),
+        commandBuffer: buildLayoutCommandBuffer(surface.layoutCommands, surface.lastHit?.key ?? null),
         commandStride: NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE,
         commandCount: surface.layoutCommands.length,
         metrics: buildMetrics(),

@@ -17,7 +17,7 @@ export type NativeSurfaceEngineEntry = {
 
 export type NativeSurfaceEngineLayoutCommand = NativeSurfaceLayoutCommand;
 
-export const NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE = 8;
+export const NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE = 9;
 
 export type NativeSurfaceEngineRuntimePack = {
   name: NativeRuntimePackName;
