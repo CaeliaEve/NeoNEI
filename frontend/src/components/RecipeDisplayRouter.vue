@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import {
   computed,
-  defineAsyncComponent,
   nextTick,
   onBeforeUnmount,
   onMounted,
@@ -10,45 +9,23 @@ import {
   type Component,
 } from 'vue';
 import NEIRecipeDisplay from './NEIRecipeDisplay.vue';
-import StandardCraftingUI from './StandardCraftingUI.vue';
 import { api, type Recipe, type RecipeUiPayload } from '../services/api';
 import type { RecipeDisplayHandle, RecipeOverlayUiState } from '../domain/recipeDisplayContract';
+import {
+  componentRegistry,
+  resolveRegisteredRecipeComponent,
+  ThaumcraftArcaneUI,
+  ThaumcraftAspectUI,
+  ThaumcraftCrucibleUI,
+  ThaumcraftInfusionUI,
+  NeiNativeLayoutRenderer,
+} from './recipe-display/recipeComponentRegistry';
 import {
   resolveRecipePresentationProfile,
   resolveRecipePresentationProfileFromUiPayload,
   type RecipePresentationProfile,
   type UITypeConfig,
 } from '../services/uiTypeMapping';
-
-const AvaritiaExtremeCraftingUI = defineAsyncComponent(() => import('./AvaritiaExtremeCraftingUI.vue'));
-const FurnaceUI = defineAsyncComponent(() => import('./FurnaceUI.vue'));
-const GTUniversalMachineUI = defineAsyncComponent(() => import('./GTUniversalMachineUI.vue'));
-const GTResearchStationUI = defineAsyncComponent(() => import('./GTResearchStationUI.vue'));
-const GTAssemblerUI = defineAsyncComponent(() => import('./GTAssemblerUI.vue'));
-const GTAssemblyLineUI = defineAsyncComponent(() => import('./GTAssemblyLineUI.vue'));
-const GTAlloySmelterUI = defineAsyncComponent(() => import('./GTAlloySmelterUI.vue'));
-const GTChemicalReactorUI = defineAsyncComponent(() => import('./GTChemicalReactorUI.vue'));
-const IndustrialSlaughterhouseUI = defineAsyncComponent(() => import('./IndustrialSlaughterhouseUI.vue'));
-const GTMolecularUI = defineAsyncComponent(() => import('./GTMolecularUI.vue'));
-const GTElectrolyzerUI = defineAsyncComponent(() => import('./GTElectrolyzerUI.vue'));
-const GTBlastFurnaceUI = defineAsyncComponent(() => import('./GTBlastFurnaceUI.vue'));
-const GTElectricFurnaceUI = defineAsyncComponent(() => import('./GTElectricFurnaceUI.vue'));
-const BotaniaPoolUI = defineAsyncComponent(() => import('./BotaniaPoolUI.vue'));
-const BotaniaPureDaisyUI = defineAsyncComponent(() => import('./BotaniaPureDaisyUI.vue'));
-const BotaniaTerraPlateUI = defineAsyncComponent(() => import('./BotaniaTerraPlateUI.vue'));
-const BotaniaRuneAltarUI = defineAsyncComponent(() => import('./BotaniaRuneAltarUI.vue'));
-const BotaniaElvenTradeUI = defineAsyncComponent(() => import('./BotaniaElvenTradeUI.vue'));
-const ThaumcraftArcaneUI = defineAsyncComponent(() => import('./ThaumcraftArcaneUI.vue'));
-const ThaumcraftInfusionUI = defineAsyncComponent(() => import('./ThaumcraftInfusionUI.vue'));
-const ThaumcraftCrucibleUI = defineAsyncComponent(() => import('./ThaumcraftCrucibleUI.vue'));
-const ThaumcraftAspectUI = defineAsyncComponent(() => import('./ThaumcraftAspectUI.vue'));
-const ThaumcraftResearchUI = defineAsyncComponent(() => import('./ThaumcraftResearchUI.vue'));
-const BloodMagicAltarUI = defineAsyncComponent(() => import('./BloodMagicAltarUI.vue'));
-const BloodAlchemyTableUI = defineAsyncComponent(() => import('./BloodAlchemyTableUI.vue'));
-const BloodBindingRitualUI = defineAsyncComponent(() => import('./BloodBindingRitualUI.vue'));
-const BloodOrbCraftingUI = defineAsyncComponent(() => import('./BloodOrbCraftingUI.vue'));
-const MultiblockBlueprintUI = defineAsyncComponent(() => import('./MultiblockBlueprintUI.vue'));
-const NeiNativeLayoutRenderer = defineAsyncComponent(() => import('./NeiNativeLayoutRenderer.vue'));
 
 interface Props {
   recipe: Recipe;
@@ -81,38 +58,6 @@ const recipeUiPayload = ref<RecipeUiPayload | null>(null);
 let resizeObserver: ResizeObserver | null = null;
 let rafId: number | null = null;
 let uiPayloadRequestSeq = 0;
-
-const componentRegistry: Record<string, Component> = {
-  StandardCraftingUI,
-  AvaritiaExtremeCraftingUI,
-  FurnaceUI,
-  GTUniversalMachineUI,
-  GTResearchStationUI,
-  GTAssemblerUI,
-  GTAssemblyLineUI,
-  GTAlloySmelterUI,
-  GTChemicalReactorUI,
-  IndustrialSlaughterhouseUI,
-  GTMolecularUI,
-  GTElectrolyzerUI,
-  GTBlastFurnaceUI,
-  GTElectricFurnaceUI,
-  BotaniaPoolUI,
-  BotaniaPureDaisyUI,
-  BotaniaTerraPlateUI,
-  BotaniaRuneAltarUI,
-  BotaniaElvenTradeUI,
-  ThaumcraftArcaneUI,
-  ThaumcraftInfusionUI,
-  ThaumcraftCrucibleUI,
-  ThaumcraftAspectUI,
-  ThaumcraftResearchUI,
-  BloodMagicAltarUI,
-  BloodAlchemyTableUI,
-  BloodBindingRitualUI,
-  BloodOrbCraftingUI,
-  MultiblockBlueprintUI,
-};
 
 const detectedPresentationProfile = computed<RecipePresentationProfile>(() => resolveRecipePresentationProfile({
   machineType: props.recipe.machineInfo?.machineType,
@@ -232,7 +177,7 @@ onBeforeUnmount(() => {
 });
 
 const currentComponent = computed<Component>(() => {
-  return componentRegistry[presentationProfile.value.component] || StandardCraftingUI;
+  return resolveRegisteredRecipeComponent(presentationProfile.value.component);
 });
 
 const shouldUseNativeLayoutRenderer = computed(() => {
