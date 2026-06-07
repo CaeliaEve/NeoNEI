@@ -61,6 +61,7 @@ const nativeHoveredHit = ref<{
 } | null>(null);
 const nativeHoveredPointer = ref({ x: 0, y: 0 });
 let nativeRenderInitialized = false;
+let nativeRenderInitializing = false;
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
 
@@ -110,19 +111,29 @@ function emitViewportResize() {
 
 async function initializeNativeRenderWorker(width: number, height: number) {
   const canvas = nativeRenderCanvasRef.value;
-  if (nativeRenderInitialized || !canvas || typeof canvas.transferControlToOffscreen !== "function") {
+  if (
+    nativeRenderInitialized
+    || nativeRenderInitializing
+    || !canvas
+    || typeof canvas.transferControlToOffscreen !== "function"
+  ) {
     return;
   }
-  canvas.width = Math.max(1, width);
-  canvas.height = Math.max(1, height);
-  const offscreen = canvas.transferControlToOffscreen();
-  const response = await postNativeRenderEvent({
-    type: "initialize",
-    canvas: offscreen,
-    renderer: "webgl2",
-  });
-  nativeRenderInitialized = response?.type === "ready";
-  nativeRenderVisible.value = nativeRenderInitialized;
+  nativeRenderInitializing = true;
+  try {
+    canvas.width = Math.max(1, width);
+    canvas.height = Math.max(1, height);
+    const offscreen = canvas.transferControlToOffscreen();
+    const response = await postNativeRenderEvent({
+      type: "initialize",
+      canvas: offscreen,
+      renderer: "webgl2",
+    });
+    nativeRenderInitialized = response?.type === "ready";
+    nativeRenderVisible.value = nativeRenderInitialized;
+  } finally {
+    nativeRenderInitializing = false;
+  }
 }
 
 function syncViewport(width?: number, height?: number) {
@@ -152,7 +163,7 @@ function syncViewport(width?: number, height?: number) {
   controller.setViewport(viewport);
   if (!nativeRenderInitialized) {
     void initializeNativeRenderWorker(nextWidth, nextHeight).then(() => syncNativeTextures());
-  } else {
+  } else if (nativeRenderInitialized) {
     void postNativeRenderEvent({ type: "resize", viewport });
   }
   void syncNativeFrame();
@@ -315,6 +326,7 @@ onBeforeUnmount(() => {
   if (nativeRenderInitialized) {
     void postNativeRenderEvent({ type: "dispose" });
     nativeRenderInitialized = false;
+    nativeRenderInitializing = false;
     nativeRenderVisible.value = false;
   }
   controller.destroy();

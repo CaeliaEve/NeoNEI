@@ -264,7 +264,17 @@ export function resolveDistDataAssetPath(assetPath?: string | null): string | nu
   return joinAssetPath(getConfiguredBasePath(), normalizedAssetPath);
 }
 
-export function resolveDistDataNativeRuntimeManifestPath(): string {
+export function resolveDistDataNativeRuntimeManifestPath(): string | null {
+  const explicitManifestUrl = `${import.meta.env.VITE_NATIVE_RUNTIME_MANIFEST_URL ?? ""}`.trim();
+  if (explicitManifestUrl) {
+    return explicitManifestUrl;
+  }
+
+  const runtimePacksEnabled = `${import.meta.env.VITE_ENABLE_NATIVE_RUNTIME_PACKS ?? ""}`.trim().toLowerCase();
+  if (runtimePacksEnabled !== "1" && runtimePacksEnabled !== "true") {
+    return null;
+  }
+
   return joinAssetPath(getConfiguredBasePath(), "rust/runtime-manifest.json");
 }
 
