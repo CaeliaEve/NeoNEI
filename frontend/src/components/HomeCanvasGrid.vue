@@ -124,7 +124,11 @@ const shouldHoldFallbackImages = computed(
   () => hasAtlasSource.value && !atlasReady.value && !atlasLoadError.value && !allowFallbackBeforeAtlas.value,
 );
 
-function updateHostWidth() {
+function updateHostWidth(width?: number) {
+  if (typeof width === "number" && Number.isFinite(width)) {
+    hostWidth.value = Math.max(0, width);
+    return;
+  }
   hostWidth.value = hostRef.value?.clientWidth ?? 0;
 }
 
@@ -1087,8 +1091,8 @@ onMounted(() => {
   if (webglCanvasRef.value) {
     webglAtlasRenderer = BrowserWebglAtlasRenderer.create(webglCanvasRef.value);
   }
-  resizeObserver = new ResizeObserver(() => {
-    updateHostWidth();
+  resizeObserver = new ResizeObserver((entries) => {
+    updateHostWidth(entries[0]?.contentRect.width);
     scheduleRender();
   });
   if (hostRef.value) {
@@ -1096,7 +1100,6 @@ onMounted(() => {
   }
   // Static browsing remains Canvas2D/page-atlas; WebGL is used only for the
   // animated overlay so large native animated atlases do not block Canvas2D.
-  window.addEventListener("resize", updateHostWidth, { passive: true });
   ensureGlobalAtlasResident();
   scheduleRender();
 });
@@ -1104,7 +1107,6 @@ onMounted(() => {
 onUnmounted(() => {
   resizeObserver?.disconnect();
   resizeObserver = null;
-  window.removeEventListener("resize", updateHostWidth);
   if (renderFrameHandle !== null) {
     cancelAnimationFrame(renderFrameHandle);
     renderFrameHandle = null;
