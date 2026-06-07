@@ -154,6 +154,7 @@ const expectedEntrypoints = {
   recipes: 'neonei/recipe-pack/current',
   textures: 'neonei/texture-pack/current',
   animations: 'neonei/animation-pack/current',
+  stringsZhCn: 'neonei/string-pack/current',
 };
 
 const expectedCapabilities = [
@@ -163,6 +164,7 @@ const expectedCapabilities = [
   'groups.semantic-nbt',
   'recipes.lookup',
   'search.zh-cn',
+  'strings.zh-cn',
   'native-render.webgl2',
 ];
 
@@ -284,7 +286,7 @@ function runSelfTest() {
   try {
     const entrypoints = {};
     for (const [name, schema] of Object.entries(expectedEntrypoints)) {
-      const relativePath = `rust/${name}.bin`;
+      const relativePath = name === 'stringsZhCn' ? 'rust/strings.zh_cn.bin' : `rust/${name}.bin`;
       entrypoints[name] = relativePath;
       writePack(tempRoot, relativePath, schema, { schema, name, path: relativePath });
     }
@@ -317,8 +319,8 @@ if (selfTest) {
   const requestedRuntimeDir = readArg('--runtime-dir') ?? process.env.NEONEI_NATIVE_RUNTIME_DIR;
   const runtimeDir = requestedRuntimeDir
     ?? [
-      join(repoRoot, '.tmp-runtime', 'native-gpu-runtime-compile-check'),
       join(repoRoot, '.tmp-runtime', 'dist-data-v3-self-test'),
+      join(repoRoot, '.tmp-runtime', 'native-gpu-runtime-compile-check'),
       join(repoRoot, 'frontend', 'public', 'dist-data', 'runtime'),
     ].find((candidate) => existsSync(join(candidate, 'runtime-manifest.json')) || existsSync(join(candidate, 'rust', 'runtime-manifest.json')))
     ?? join(repoRoot, '.tmp-runtime', 'native-gpu-runtime-compile-check');

@@ -1,4 +1,4 @@
-﻿export type NativeRuntimePackName = "browser" | "groups" | "search" | "recipes" | "textures" | "animations";
+﻿export type NativeRuntimePackName = "browser" | "groups" | "search" | "recipes" | "textures" | "animations" | "stringsZhCn";
 
 export type NativeRuntimePackSchema =
   | "neonei/browser-pack/current"
@@ -6,7 +6,8 @@ export type NativeRuntimePackSchema =
   | "neonei/search-pack/current"
   | "neonei/recipe-pack/current"
   | "neonei/texture-pack/current"
-  | "neonei/animation-pack/current";
+  | "neonei/animation-pack/current"
+  | "neonei/string-pack/current";
 
 export const NATIVE_RUNTIME_PACK_SCHEMAS: Record<NativeRuntimePackName, NativeRuntimePackSchema> = {
   browser: "neonei/browser-pack/current",
@@ -15,6 +16,7 @@ export const NATIVE_RUNTIME_PACK_SCHEMAS: Record<NativeRuntimePackName, NativeRu
   recipes: "neonei/recipe-pack/current",
   textures: "neonei/texture-pack/current",
   animations: "neonei/animation-pack/current",
+  stringsZhCn: "neonei/string-pack/current",
 };
 
 export interface NativeRuntimeManifestFiles {
@@ -24,6 +26,7 @@ export interface NativeRuntimeManifestFiles {
   recipes?: string;
   textures?: string;
   animations?: string;
+  stringsZhCn?: string;
   integrity?: string;
   sizeReport?: string;
   missingDataReport?: string;
@@ -51,6 +54,7 @@ export type NativeRuntimeCapability =
   | "groups.semantic-nbt"
   | "recipes.lookup"
   | "search.zh-cn"
+  | "strings.zh-cn"
   | "native-render.webgl2"
   | "native-render.webgpu";
 
@@ -78,3 +82,6 @@ export interface NativeRuntimeBuffers {
   manifestUrl: string;
   packs: Record<NativeRuntimePackName, NativeRuntimePack>;
 }
+
+
+

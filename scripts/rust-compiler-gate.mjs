@@ -211,7 +211,7 @@ const deploymentReport = readJson(rustDeploymentReport);
 if (runtimeManifest?.schema !== 'neonei/runtime/current') fail(`rust runtime manifest has wrong schema: ${runtimeManifest?.schema}`);
 if (!Number.isInteger(runtimeManifest?.schemaRevision) || runtimeManifest.schemaRevision < 1) fail('rust runtime manifest is missing schemaRevision');
 if (!/^rust-[a-f0-9]{16}$/.test(`${runtimeManifest?.runtimeId ?? ''}`)) fail(`rust runtime manifest has invalid runtimeId: ${runtimeManifest?.runtimeId}`);
-for (const capability of ['atlas.static', 'atlas.animated', 'groups.collapse', 'groups.semantic-nbt', 'recipes.lookup', 'search.zh-cn', 'native-render.webgl2']) {
+for (const capability of ['atlas.static', 'atlas.animated', 'groups.collapse', 'groups.semantic-nbt', 'recipes.lookup', 'search.zh-cn', 'strings.zh-cn', 'native-render.webgl2']) {
   if (!(runtimeManifest?.capabilities ?? []).includes(capability)) fail(`rust runtime manifest is missing capability: ${capability}`);
 }
 compareCounts({
@@ -253,6 +253,7 @@ for (const requiredPath of [
   'rust/search-pack.json',
   'rust/recipe-pack.json',
   'rust/texture-pack.json',
+  'rust/strings.zh_cn.bin',
 ]) {
   const manifestHasPath = (runtimeManifest?.files ?? []).some((entry) => entry.path === requiredPath);
   if (!manifestHasPath) fail(`rust runtime manifest is missing ${requiredPath}`);
@@ -265,7 +266,7 @@ if (deploymentReport?.schemaVersion !== 'neonei/rust-deployment-report/current')
 assertEqual(deploymentReport?.runtimeId, runtimeManifest?.runtimeId, 'rust deployment report runtimeId');
 assertEqual(deploymentReport?.runtimeSize?.totalBytes, sizeReport?.totalBytes, 'rust deployment report totalBytes');
 assertEqual(deploymentReport?.missingData?.missingFileCount, 0, 'rust deployment report missingFileCount');
-for (const capability of ['atlas.static', 'atlas.animated', 'groups.collapse', 'recipes.lookup']) {
+for (const capability of ['atlas.static', 'atlas.animated', 'groups.collapse', 'recipes.lookup', 'strings.zh-cn']) {
   if (!(deploymentReport?.schema?.capabilities ?? []).includes(capability)) fail(`rust deployment report is missing capability: ${capability}`);
 }
 const runtimeManifestText = JSON.stringify(runtimeManifest);

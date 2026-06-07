@@ -522,9 +522,11 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
         },
         "groups": groups,
     });
+    let string_pack = build_string_pack_from_items(&browser_items);
     write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
     write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
     write_binary_pack(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_pack)?;
+    write_binary_pack(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
     Ok(())
 }
 
@@ -630,6 +632,8 @@ fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
+    let browser_items = read_json_collection(input, &manifest, &["browserCatalog", "items"], Some("items"))?;
+    let string_pack = build_string_pack_from_items(&browser_items);
     let search_pack = json!({
         "schemaVersion": "neonei/rust-search-pack/current",
         "counts": {
@@ -640,6 +644,7 @@ fn compile_search_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
     });
     write_json_value(&rust_dir.join("search-pack.json"), &search_pack)?;
     write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
+    write_binary_pack(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
     Ok(())
 }
 
@@ -726,6 +731,31 @@ fn build_compact_browser_payload_from_items(items: &[Value]) -> Result<Vec<u8>> 
     Ok(payload)
 }
 
+fn build_string_pack_from_items(items: &[Value]) -> Value {
+    let mut rows = items
+        .iter()
+        .map(|item| {
+            json!({
+                "itemId": value_string(item, "itemId").unwrap_or_default(),
+                "localizedName": value_string(item, "localizedName").unwrap_or_default(),
+                "modId": value_string(item, "modId").unwrap_or_default(),
+                "internalName": value_string(item, "internalName").unwrap_or_default(),
+                "groupKey": value_string(item, "groupKey").unwrap_or_default(),
+                "groupLabel": value_string(item, "groupLabel").unwrap_or_default(),
+            })
+        })
+        .collect::<Vec<_>>();
+    rows.sort_by(|left, right| value_string(left, "itemId").cmp(&value_string(right, "itemId")));
+    json!({
+        "schemaVersion": "neonei/rust-string-pack/current",
+        "locale": "zh_cn",
+        "counts": {
+            "items": rows.len(),
+        },
+        "items": rows,
+    })
+}
+
 fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
     let browser_files = runtime_file_descriptors(
@@ -782,6 +812,9 @@ fn compile_dist_browser_pack(input: &Path, output: &Path, strict: bool) -> Resul
     )?;
     write_binary_pack(&rust_dir.join("groups.bin"), "neonei/group-pack/current", &group_pack)?;
     write_binary_pack(&rust_dir.join("search.bin"), "neonei/search-pack/current", &search_pack)?;
+    let browser_items = read_json_collection(input, &manifest, &["browserCatalog", "items"], Some("items"))?;
+    let string_pack = build_string_pack_from_items(&browser_items);
+    write_binary_pack(&rust_dir.join("strings.zh_cn.bin"), "neonei/string-pack/current", &string_pack)?;
     Ok(())
 }
 
@@ -1808,13 +1841,14 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
             "recipes.bin",
             "textures.bin",
             "animations.bin",
+            "strings.zh_cn.bin",
             "browser-pack.json",
             "search-pack.json",
             "recipe-pack.json",
             "texture-pack.json",
         ],
-        CompileScope::Search => &["search.bin", "search-pack.json"],
-        CompileScope::Browser => &["browser.bin", "groups.bin", "search.bin", "browser-pack.json", "search-pack.json"],
+        CompileScope::Search => &["search.bin", "strings.zh_cn.bin", "search-pack.json"],
+        CompileScope::Browser => &["browser.bin", "groups.bin", "search.bin", "strings.zh_cn.bin", "browser-pack.json", "search-pack.json"],
         CompileScope::Recipes => &["recipes.bin", "recipe-pack.json"],
         CompileScope::Textures => &["textures.bin", "animations.bin", "texture-pack.json"],
     };
@@ -1997,14 +2031,17 @@ fn rust_entrypoints(scope: CompileScope) -> Value {
             "recipes": "rust/recipes.bin",
             "textures": "rust/textures.bin",
             "animations": "rust/animations.bin",
+            "stringsZhCn": "rust/strings.zh_cn.bin",
         }),
         CompileScope::Search => json!({
             "search": "rust/search.bin",
+            "stringsZhCn": "rust/strings.zh_cn.bin",
         }),
         CompileScope::Browser => json!({
             "browser": "rust/browser.bin",
             "groups": "rust/groups.bin",
             "search": "rust/search.bin",
+            "stringsZhCn": "rust/strings.zh_cn.bin",
         }),
         CompileScope::Recipes => json!({
             "recipes": "rust/recipes.bin",
@@ -2138,10 +2175,11 @@ fn rust_capabilities(scope: CompileScope) -> Value {
             "groups.semantic-nbt",
             "recipes.lookup",
             "search.zh-cn",
+            "strings.zh-cn",
             "native-render.webgl2",
         ]),
-        CompileScope::Search => json!(["search.zh-cn"]),
-        CompileScope::Browser => json!(["groups.collapse", "groups.semantic-nbt", "search.zh-cn", "native-render.webgl2"]),
+        CompileScope::Search => json!(["search.zh-cn", "strings.zh-cn"]),
+        CompileScope::Browser => json!(["groups.collapse", "groups.semantic-nbt", "search.zh-cn", "strings.zh-cn", "native-render.webgl2"]),
         CompileScope::Recipes => json!(["recipes.lookup"]),
         CompileScope::Textures => json!(["atlas.static", "atlas.animated"]),
     }
