@@ -1,0 +1,69 @@
+﻿export type NativeRuntimePackName = "browser" | "groups" | "search" | "recipes" | "textures" | "animations";
+
+export type NativeRuntimePackSchema =
+  | "neonei/browser-pack/current"
+  | "neonei/group-pack/current"
+  | "neonei/search-pack/current"
+  | "neonei/recipe-pack/current"
+  | "neonei/texture-pack/current"
+  | "neonei/animation-pack/current";
+
+export const NATIVE_RUNTIME_PACK_SCHEMAS: Record<NativeRuntimePackName, NativeRuntimePackSchema> = {
+  browser: "neonei/browser-pack/current",
+  groups: "neonei/group-pack/current",
+  search: "neonei/search-pack/current",
+  recipes: "neonei/recipe-pack/current",
+  textures: "neonei/texture-pack/current",
+  animations: "neonei/animation-pack/current",
+};
+
+export interface NativeRuntimeManifestFiles {
+  browser?: string;
+  groups?: string;
+  search?: string;
+  recipes?: string;
+  textures?: string;
+  animations?: string;
+  integrity?: string;
+  sizeReport?: string;
+  missingDataReport?: string;
+  [key: string]: string | undefined;
+}
+
+export interface NativeRuntimeManifest {
+  schema?: "neonei/native-runtime/current";
+  schemaVersion?: string;
+  schemaRevision?: number;
+  runtimeId?: string;
+  generatedAt?: string;
+  sourceSignature?: string;
+  locale?: string;
+  entrypoints?: NativeRuntimeManifestFiles;
+  files?: NativeRuntimeManifestFiles | Array<{ path?: string; bytes?: number }>;
+  counts?: Record<string, number>;
+  capabilities?: Record<string, boolean | string | number | null>;
+}
+
+export interface NativeRuntimePackHeader {
+  magic: "NNEIBIN\0";
+  version: 1;
+  schema: NativeRuntimePackSchema;
+  schemaLength: number;
+  payloadLength: number;
+  byteLength: number;
+}
+
+export interface NativeRuntimePack {
+  name: NativeRuntimePackName;
+  path: string;
+  url: string;
+  header: NativeRuntimePackHeader;
+  buffer: ArrayBuffer;
+  payloadBuffer: ArrayBuffer;
+}
+
+export interface NativeRuntimeBuffers {
+  manifest: NativeRuntimeManifest;
+  manifestUrl: string;
+  packs: Record<NativeRuntimePackName, NativeRuntimePack>;
+}

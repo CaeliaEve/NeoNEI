@@ -72,6 +72,7 @@ function syncViewport(width?: number, height?: number) {
       }
       : undefined,
   });
+  void syncNativeFrame();
 }
 
 function toLocalPointer(event: MouseEvent) {
@@ -118,6 +119,7 @@ onMounted(async () => {
   controller.setCompatEntries({ entries: props.entries, atlas: props.atlas ?? null });
   controller.setHistoryItems(props.historyItemIds);
   syncViewport();
+  void syncNativeFrame();
   emitViewportResize();
   resizeObserver = new ResizeObserver((entries) => {
     const rect = entries[0]?.contentRect;
@@ -167,6 +169,7 @@ watch(
 
 watch(itemIdsSignature, () => {
   controller.setHistoryItems(props.historyItemIds);
+  void syncNativeFrame();
 });
 </script>
 
