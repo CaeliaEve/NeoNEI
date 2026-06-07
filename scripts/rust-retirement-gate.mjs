@@ -128,6 +128,10 @@ if (compileScope === 'all' || compileScope === 'recipes') {
   if (!Array.isArray(rustRecipePack?.categoryIndex) || rustRecipePack.categoryIndex.length < 1) fail('Rust recipe pack categoryIndex is empty');
   const sampleUiPayload = rustRecipePack.uiPayloadIndex.find((entry) => entry?.recipeId && entry?.path && entry?.payloadKey);
   if (!sampleUiPayload) fail('Rust recipe pack uiPayloadIndex lacks routeable entries');
+  const sampleShardPath = join(distDataDir, sampleUiPayload.path);
+  if (!existsSync(sampleShardPath)) fail('Rust recipe UI payload shard is missing: ' + sampleUiPayload.path);
+  const sampleShard = readJson(sampleShardPath);
+  if (!sampleShard?.payloads?.[sampleUiPayload.payloadKey]?.recipeId) fail('Rust recipe UI payload shard lacks sample payload');
 }
 
 const distEnv = {

@@ -671,6 +671,7 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
     let mut used_in: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     let mut recipe_pack = Vec::new();
     let mut ui_payload_index = Vec::new();
+    let mut ui_payload_shards: BTreeMap<String, BTreeMap<String, Value>> = BTreeMap::new();
     let mut category_map: BTreeMap<String, RecipeCategoryAccumulator> = BTreeMap::new();
 
     for recipe in &recipes {
@@ -732,7 +733,7 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
         );
         let payload_meta = json!({
             "recipeId": recipe_id,
-            "path": recipe_ui_payload_relative_path(&recipe_id),
+            "path": rust_recipe_ui_payload_relative_path(&recipe_id),
             "payloadKey": recipe_id,
             "familyKey": family_key,
             "recipeType": recipe_type,
@@ -755,6 +756,19 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
                 "density": if input_item_ids.len() + output_item_ids.len() > 12 { "dense" } else { "normal" },
             },
         });
+        let mut payload_entry = payload_meta.clone();
+        if let Some(payload_object) = payload_entry.as_object_mut() {
+            payload_object.insert(
+                "schemaVersion".to_string(),
+                Value::String("neonei/recipe-ui-payload/v1".to_string()),
+            );
+            payload_object.remove("path");
+            payload_object.remove("payloadKey");
+        }
+        ui_payload_shards
+            .entry(rust_recipe_ui_payload_relative_path(&recipe_id))
+            .or_default()
+            .insert(recipe_id.clone(), payload_entry);
         ui_payload_index.push(payload_meta);
 
         let category_display_name = recipe_category_display_name(recipe, handler);
@@ -843,6 +857,19 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool) -> Result<()> 
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
+    for (shard_path, payloads) in &ui_payload_shards {
+        let absolute_shard_path = output.join(shard_path);
+        if let Some(parent) = absolute_shard_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        write_json_value(
+            &absolute_shard_path,
+            &json!({
+                "schemaVersion": "neonei/recipe-ui-payload-shard/v1",
+                "payloads": payloads,
+            }),
+        )?;
+    }
     write_json_value(
         &rust_dir.join("recipe-pack.json"),
         &json!({
@@ -1090,9 +1117,9 @@ fn encode_recipe_file_name(value: &str) -> String {
         .collect()
 }
 
-fn recipe_ui_payload_relative_path(recipe_id: &str) -> String {
+fn rust_recipe_ui_payload_relative_path(recipe_id: &str) -> String {
     let shard = stable_shard(recipe_id, 128);
-    format!("recipes/ui-payload-shards/{shard}.json")
+    format!("rust/recipe-ui-payload-shards/{shard}.json")
 }
 
 fn stable_shard(value: &str, bucket_count: u64) -> String {

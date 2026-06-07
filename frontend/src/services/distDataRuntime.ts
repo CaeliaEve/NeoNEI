@@ -124,6 +124,8 @@ type DistDataRecipeItemIndexPayload = {
 type DistDataRustRecipePackPayload = {
   schemaVersion?: string;
   itemIndex?: DistDataRecipeItemIndexEntry[];
+  uiPayloadIndex?: DistDataRecipeUiPayloadIndexEntry[];
+  categoryIndex?: unknown[];
   recipes?: unknown[];
   handlers?: unknown[];
 };
@@ -1370,6 +1372,15 @@ async function getRecipeUiPayloadIndex(): Promise<Map<string, DistDataRecipeUiPa
 
   recipeUiPayloadIndexRequest = (async () => {
     const manifest = await getDistDataManifest();
+    const rustRecipePack = await getRustRecipePack();
+    const rustEntries = Array.isArray(rustRecipePack?.uiPayloadIndex)
+      ? rustRecipePack.uiPayloadIndex.filter((entry) => entry?.recipeId && entry?.path)
+      : [];
+    if (rustEntries.length > 0) {
+      cachedRecipeUiPayloadIndex = new Map(rustEntries.map((entry) => [entry.recipeId, entry]));
+      return cachedRecipeUiPayloadIndex;
+    }
+
     const indexPath = `${manifest?.files?.recipeUiPayloadIndex ?? ""}`.trim();
     if (!manifest || !indexPath) {
       return null;
@@ -1394,7 +1405,6 @@ async function getRecipeUiPayloadIndex(): Promise<Map<string, DistDataRecipeUiPa
 
   return recipeUiPayloadIndexRequest;
 }
-
 export async function getDistDataRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload | null> {
   const normalizedRecipeId = `${recipeId ?? ""}`.trim();
   if (!normalizedRecipeId) {
