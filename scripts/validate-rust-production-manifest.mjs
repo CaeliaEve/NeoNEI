@@ -38,6 +38,13 @@ const requiredRustFiles = {
   rustSearchPack: files.rustSearchPack,
   rustRecipePack: files.rustRecipePack,
   rustTexturePack: files.rustTexturePack,
+  rustBrowserBin: files.rustBrowserBin,
+  rustGroupsBin: files.rustGroupsBin,
+  rustSearchBin: files.rustSearchBin,
+  rustRecipeBin: files.rustRecipeBin,
+  rustTextureBin: files.rustTextureBin,
+  rustAnimationBin: files.rustAnimationBin,
+  rustStringsZhCnBin: files.rustStringsZhCnBin,
 };
 for (const [key, relativePath] of Object.entries(requiredRustFiles)) {
   if (!`${relativePath ?? ''}`.trim()) {
@@ -50,9 +57,33 @@ for (const [key, relativePath] of Object.entries(requiredRustFiles)) {
 const runtimeManifestPath = files.rustRuntimeManifest ? join(distDataDir, files.rustRuntimeManifest) : null;
 const runtimeManifest = runtimeManifestPath && existsSync(runtimeManifestPath) ? readJson(runtimeManifestPath) : null;
 const runtimeFiles = Array.isArray(runtimeManifest?.files) ? runtimeManifest.files : [];
+const runtimeEntrypoints = runtimeManifest?.entrypoints && typeof runtimeManifest.entrypoints === 'object' ? runtimeManifest.entrypoints : {};
 for (const expected of ['browser-pack.json', 'search-pack.json', 'recipe-pack.json', 'texture-pack.json']) {
   if (!runtimeFiles.some((entry) => `${typeof entry === 'string' ? entry : entry?.path ?? ''}`.endsWith(expected))) {
     fail(failures, 'RUST_RUNTIME_MANIFEST_ARTIFACT_MISSING', `rust runtime manifest does not list ${expected}`, { expected });
+  }
+}
+for (const [entrypoint, expectedPath] of Object.entries({
+  browser: 'rust/browser.bin',
+  groups: 'rust/groups.bin',
+  search: 'rust/search.bin',
+  recipes: 'rust/recipes.bin',
+  textures: 'rust/textures.bin',
+  animations: 'rust/animations.bin',
+  stringsZhCn: 'rust/strings.zh_cn.bin',
+})) {
+  const actualPath = `${runtimeEntrypoints[entrypoint] ?? ''}`.replaceAll('\\', '/');
+  if (actualPath !== expectedPath) {
+    fail(failures, 'RUST_RUNTIME_BINARY_ENTRYPOINT_MISSING', `rust runtime manifest does not expose binary entrypoint ${entrypoint}`, {
+      entrypoint,
+      expectedPath,
+      actualPath: actualPath || null,
+    });
+  } else if (!existsSync(join(distDataDir, expectedPath))) {
+    fail(failures, 'RUST_RUNTIME_BINARY_ENTRYPOINT_FILE_MISSING', `rust binary entrypoint file is missing: ${entrypoint}`, {
+      entrypoint,
+      expectedPath,
+    });
   }
 }
 
