@@ -1,12 +1,11 @@
 ﻿<script setup lang="ts">
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../../services/api";
 import type { PageAtlasResult } from "../../services/pageAtlas";
 import { createNativeSurfaceController } from "../../native-surface/NativeSurfaceController";
 import type {
   NativeRendererBackendKind,
   NativeSurfaceId,
-  NativeSurfaceLayoutCommand,
   NativeSurfaceViewportRole,
 } from "../../native-surface/contracts";
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
@@ -14,8 +13,6 @@ import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerCl
 import {
   getAllGlobalBrowserAtlasTextureDescriptors,
 } from "../../services/globalBrowserAtlas";
-
-const HomeCanvasGrid = defineAsyncComponent(() => import("../HomeCanvasGrid.vue"));
 
 const props = withDefaults(defineProps<{
   surfaceId: NativeSurfaceId;
@@ -53,10 +50,6 @@ let resizeObserver: ResizeObserver | null = null;
 let nativeFrameSeq = 0;
 let nativeTextureSeq = 0;
 let nativeHitSeq = 0;
-const nativeLayoutCommands = ref<NativeSurfaceLayoutCommand[] | null>(null);
-const nativeLayoutCommandBuffer = ref<ArrayBuffer | null>(null);
-const nativeLayoutCommandStride = ref(0);
-const nativeLayoutCommandCount = ref(0);
 const nativeRenderVisible = ref(false);
 const nativeHoveredHit = ref<{
   kind: BrowserGridEntry["kind"];
@@ -306,10 +299,6 @@ async function syncNativeFrame() {
   const nowMs = performance.now();
   const frame = await controller.requestFrame(nowMs);
   if (seq !== nativeFrameSeq) return;
-  nativeLayoutCommands.value = frame?.drawCommands ?? null;
-  nativeLayoutCommandBuffer.value = frame?.drawCommandBuffer ?? null;
-  nativeLayoutCommandStride.value = frame?.drawCommandStride ?? 0;
-  nativeLayoutCommandCount.value = frame?.drawCommandCount ?? 0;
   if (nativeRenderInitialized && frame?.drawCommandBuffer && frame.drawCommandCount && frame.drawCommandStride) {
     const response = await postNativeRenderEvent({
       type: "render",
@@ -452,24 +441,17 @@ watch(itemIdsSignature, () => {
       :class="{ 'native-browser-surface__render--visible': nativeRenderVisible }"
       aria-hidden="true"
     />
-    <HomeCanvasGrid
+    <div
       v-if="!nativeRenderVisible"
-      :entries="entries"
-      :item-size="itemSize"
-      :atlas="atlas"
-      :enable-animation="enableAnimation"
-      :prefer-atlas="preferAtlas"
-      :native-layout-commands="nativeLayoutCommands"
-      :native-layout-command-buffer="nativeLayoutCommandBuffer"
-      :native-layout-command-stride="nativeLayoutCommandStride"
-      :native-layout-command-count="nativeLayoutCommandCount"
-      :suspend-rendering="nativeRenderVisible"
-      :suspend-interactions="nativeRenderVisible"
-      @item-click="emit('itemClick', $event)"
-      @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"
-      @group-click="emit('groupClick', $event)"
-      @group-contextmenu="(group, event) => emit('groupContextmenu', group, event)"
-    />
+      class="native-browser-surface__status"
+      aria-live="polite"
+    >
+      <div class="native-browser-surface__status-orb" />
+      <div class="native-browser-surface__status-text">
+        <span>Native GPU runtime is preparing the resident atlas</span>
+        <small>Browser grid DOM fallback is retired on this path.</small>
+      </div>
+    </div>
     <div
       v-if="nativeRenderVisible && nativeHoveredHit && nativeTooltipStyle"
       class="native-browser-surface__tooltip"
@@ -502,9 +484,41 @@ watch(itemIdsSignature, () => {
   opacity: 1;
 }
 
-.native-browser-surface :deep(.home-canvas-grid) {
-  position: relative;
-  z-index: 1;
+.native-browser-surface__status {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid rgba(125, 211, 252, 0.12);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(34, 211, 238, 0.10), transparent 34%),
+    linear-gradient(135deg, rgba(5, 10, 18, 0.74), rgba(10, 18, 30, 0.86));
+  color: rgba(226, 232, 240, 0.86);
+  pointer-events: none;
+}
+
+.native-browser-surface__status-orb {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(34, 211, 238, 0.92);
+  box-shadow: 0 0 18px rgba(34, 211, 238, 0.52), 0 0 42px rgba(129, 140, 248, 0.22);
+}
+
+.native-browser-surface__status-text {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  letter-spacing: 0.01em;
+}
+
+.native-browser-surface__status-text small {
+  color: rgba(148, 163, 184, 0.82);
+  font-size: 10px;
 }
 
 .native-browser-surface__tooltip {

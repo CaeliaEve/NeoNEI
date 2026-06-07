@@ -23,13 +23,14 @@ test("history strip renders through the native browser surface", () => {
   assert.doesNotMatch(source, /<img\b/);
 });
 
-test("native browser surface keeps history rendering on the atlas path", () => {
+test("native browser surface keeps history rendering on the atlas path without DOM grid fallback", () => {
   const source = readSource("src/components/native-surface/NativeBrowserSurface.vue");
 
   assert.match(source, /getAllGlobalBrowserAtlasTextureDescriptors/);
   assert.match(source, /spriteCommands: frame\.spriteCommands \?\? \[\]/);
   assert.match(source, /controller\.setHistoryItems\(props\.historyItemIds\)/);
-  assert.match(source, /:suspend-rendering="nativeRenderVisible"/);
+  assert.doesNotMatch(source, /<HomeCanvasGrid/);
+  assert.doesNotMatch(source, /suspend-rendering/);
   assert.doesNotMatch(source, /new Image\(/);
 });
 
