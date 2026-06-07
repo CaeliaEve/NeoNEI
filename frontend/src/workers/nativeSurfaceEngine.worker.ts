@@ -41,6 +41,7 @@ type SurfaceState = {
   runtimeError: string | null;
   browserPack: NativeCompactBrowserPack | null;
   groupByKey: Map<string, NativeRuntimeGroup>;
+  stringByItemId: Map<string, NativeRuntimeStringItem>;
   runtimeProjectionCacheKey: string | null;
   runtimeProjectionIndices: Uint32Array | null;
   runtimeVisibleCacheKey: string | null;
@@ -57,6 +58,15 @@ type NativeRuntimeGroup = {
   groupSize?: number | null;
   representativeItemId?: string | null;
   memberItemIds: string[];
+};
+
+type NativeRuntimeStringItem = {
+  itemId: string;
+  localizedName?: string | null;
+  modId?: string | null;
+  internalName?: string | null;
+  groupKey?: string | null;
+  groupLabel?: string | null;
 };
 
 const surfaces = new Map<NativeSurfaceId, SurfaceState>();
@@ -205,6 +215,26 @@ function parseNativeGroupPack(payloadBuffer: ArrayBuffer): Map<string, NativeRun
     });
   }
   return groups;
+}
+
+function parseNativeStringPack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeStringItem> {
+  const pack = parseJsonPayload<{ items?: unknown[] }>(payloadBuffer);
+  const strings = new Map<string, NativeRuntimeStringItem>();
+  for (const row of pack?.items ?? []) {
+    if (!row || typeof row !== "object") continue;
+    const value = row as Record<string, unknown>;
+    const itemId = `${value.itemId ?? ""}`.trim();
+    if (!itemId) continue;
+    strings.set(itemId, {
+      itemId,
+      localizedName: typeof value.localizedName === "string" ? value.localizedName : null,
+      modId: typeof value.modId === "string" ? value.modId : null,
+      internalName: typeof value.internalName === "string" ? value.internalName : null,
+      groupKey: typeof value.groupKey === "string" ? value.groupKey : null,
+      groupLabel: typeof value.groupLabel === "string" ? value.groupLabel : null,
+    });
+  }
+  return strings;
 }
 
 function writeWasmUtf8(value: string): { ptr: number; len: number } {
@@ -468,6 +498,7 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     runtimeError: null,
     browserPack: null,
     groupByKey: new Map(),
+    stringByItemId: new Map(),
     runtimeProjectionCacheKey: null,
     runtimeProjectionIndices: null,
     runtimeVisibleCacheKey: null,
@@ -564,6 +595,15 @@ function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequ
     itemId: hit.itemId,
     groupKey: hit.groupKey ?? null,
     viewport: message.viewport,
+    tooltip: {
+      itemId: hit.itemId,
+      ...(surface.stringByItemId.get(hit.itemId) ?? {}),
+      groupKey: hit.groupKey ?? surface.stringByItemId.get(hit.itemId)?.groupKey ?? null,
+      groupLabel: surface.groupByKey.get(hit.groupKey ?? "")?.groupLabel
+        ?? surface.stringByItemId.get(hit.itemId)?.groupLabel
+        ?? null,
+      groupSize: surface.groupByKey.get(hit.groupKey ?? "")?.groupSize ?? null,
+    },
   };
   return surface.lastHit;
 }
@@ -630,7 +670,7 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     nativeBrowserProjectedEntries: lastSurface?.runtimeProjectionIndices?.length ?? 0,
     nativeBrowserWasmEntries: lastSurface?.runtimeBrowserWasmItemCount ?? 0,
     nativeBrowserWasmProjectedEntries: lastSurface?.runtimeBrowserWasmProjectedEntries ?? 0,
-    nativeBrowserStrings: lastSurface?.browserPack?.stringCount ?? 0,
+    nativeBrowserStrings: lastSurface?.stringByItemId.size ?? lastSurface?.browserPack?.stringCount ?? 0,
     updatedAt: performance.now(),
   };
 }
@@ -655,9 +695,11 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       try {
         const browserPack = message.packs.find((pack) => pack.name === "browser");
         const groupPack = message.packs.find((pack) => pack.name === "groups");
+        const stringPack = message.packs.find((pack) => pack.name === "stringsZhCn");
         disposeWasmBrowserPayload(surface);
         surface.browserPack = browserPack ? parseNativeCompactBrowserPack(browserPack.buffer) : null;
         surface.groupByKey = groupPack ? parseNativeGroupPack(groupPack.buffer) : new Map();
+        surface.stringByItemId = stringPack ? parseNativeStringPack(stringPack.buffer) : new Map();
         if (browserPack) installWasmBrowserPayload(surface, browserPack.buffer);
         surface.runtimeProjectionCacheKey = null;
         surface.runtimeProjectionIndices = null;
@@ -668,6 +710,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         disposeWasmBrowserPayload(surface);
         surface.browserPack = null;
         surface.groupByKey = new Map();
+        surface.stringByItemId = new Map();
         surface.runtimeProjectionCacheKey = null;
         surface.runtimeProjectionIndices = null;
         surface.runtimeVisibleCacheKey = null;

@@ -30,6 +30,15 @@ export type NativeSurfaceEngineRuntimePack = {
   buffer: ArrayBuffer;
 };
 
+export type NativeSurfaceEngineTooltipData = {
+  itemId: string;
+  localizedName?: string | null;
+  modId?: string | null;
+  internalName?: string | null;
+  groupKey?: string | null;
+  groupLabel?: string | null;
+  groupSize?: number | null;
+};
 
 export type NativeSurfaceEngineHit = {
   key: string;
@@ -38,6 +47,7 @@ export type NativeSurfaceEngineHit = {
   itemId: string;
   groupKey?: string | null;
   viewport: NativeSurfaceViewportRole;
+  tooltip?: NativeSurfaceEngineTooltipData | null;
 } | null;
 
 export type NativeSurfaceEngineRequest =

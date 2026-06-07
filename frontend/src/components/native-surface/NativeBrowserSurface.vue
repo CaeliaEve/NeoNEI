@@ -65,6 +65,17 @@ const nativeHoveredHit = ref<{
   kind: BrowserGridEntry["kind"];
   item: Item;
   group?: BrowserVariantGroup;
+  nativeTooltip?: {
+    title: string;
+    subtitle?: string;
+    itemId?: string;
+    groupKey?: string;
+    localizedName?: string | null;
+    modId?: string | null;
+    internalName?: string | null;
+    groupLabel?: string | null;
+    groupSize?: number | null;
+  } | null;
 } | null>(null);
 const nativeHoveredPointer = ref({ x: 0, y: 0 });
 let nativeRenderInitialized = false;
@@ -92,6 +103,7 @@ function resolveNativeRenderBackend(): Exclude<NativeRendererBackendKind, "compa
 const nativeTooltipTitle = computed(() => {
   const hit = nativeHoveredHit.value;
   if (!hit) return "";
+  if (hit.nativeTooltip?.title) return hit.nativeTooltip.title;
   if (hit.kind === "item") {
     const baseName = hit.item.localizedName || hit.item.internalName || hit.item.itemId;
     if (hit.item.browserGroupKey && Number(hit.item.browserGroupSize ?? 1) > 1) {
@@ -105,6 +117,18 @@ const nativeTooltipTitle = computed(() => {
 const nativeTooltipSubtitle = computed(() => {
   const hit = nativeHoveredHit.value;
   if (!hit) return "";
+  if (hit.nativeTooltip) {
+    const groupSize = Number(hit.nativeTooltip.groupSize ?? hit.item.browserGroupSize ?? 1);
+    if (hit.kind !== "item") {
+      return `${groupSize || hit.group?.size || 0} grouped variants · Click to expand`;
+    }
+    if (hit.nativeTooltip.groupKey && groupSize > 1) {
+      return `Variant in ${groupSize} item semantic group · Left click: recipes · Right click: uses`;
+    }
+    return hit.nativeTooltip.modId
+      ? `${hit.nativeTooltip.modId} · Left click: recipes · Right click: uses`
+      : "Left click: recipes · Right click: uses";
+  }
   if (hit.kind === "item") {
     if (hit.item.browserGroupKey && Number(hit.item.browserGroupSize ?? 1) > 1) {
       return `Variant in ${hit.item.browserGroupSize} item semantic group · Left click: recipes · Right click: uses`;
@@ -227,6 +251,7 @@ function handlePointerMove(event: MouseEvent) {
         kind: hit.kind,
         item: hit.item,
         group: hit.group,
+        nativeTooltip: hit.nativeTooltip ?? null,
       }
       : null;
   });

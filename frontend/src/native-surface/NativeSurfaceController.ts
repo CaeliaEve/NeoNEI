@@ -7,6 +7,7 @@
   NativeSurfaceInitializeOptions,
   NativeSurfaceMetrics,
   NativeSurfacePointer,
+  NativeTooltipPayload,
   NativeSurfaceViewport,
 } from "./contracts";
 import {
@@ -17,6 +18,7 @@ import {
 import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
 import type { NativeSurfaceEngineEntry, NativeSurfaceEngineMutation } from "./NativeSurfaceEngineProtocol";
 import { loadNativeRuntimeBuffers } from "./runtimeLoader";
+import type { Item } from "../services/api";
 
 function normalizeRenderer(renderer?: NativeRendererBackendKind): NativeRendererBackendKind {
   if (renderer === "webgpu" || renderer === "webgl2" || renderer === "auto") return renderer;
@@ -38,6 +40,18 @@ function toEngineEntries(entries: NativeSurfaceCompatEntries["entries"]): Native
       groupKey: entry.kind === "item" ? (entry.item.browserGroupKey ?? null) : entry.group.key,
     };
   });
+}
+
+function buildSyntheticItem(itemId: string, tooltip: NativeTooltipPayload | null): Item {
+  return {
+    itemId,
+    localizedName: tooltip?.localizedName || tooltip?.title || itemId,
+    modId: tooltip?.modId || "",
+    internalName: tooltip?.internalName || itemId,
+    browserGroupKey: tooltip?.groupKey ?? null,
+    browserGroupLabel: tooltip?.groupLabel ?? null,
+    browserGroupSize: tooltip?.groupSize ?? null,
+  };
 }
 
 export class CompatNativeSurfaceController implements NativeNeiSurfaceController {
@@ -199,8 +213,40 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
         }
         return item.itemId === response.hit?.itemId;
       });
-    if (!entry) return null;
-    const item = getEntryItem(entry);
+    const nativeTooltip = response.hit.tooltip
+      ? {
+        title: response.hit.tooltip.groupLabel || response.hit.tooltip.localizedName || response.hit.tooltip.itemId,
+        subtitle: response.hit.tooltip.modId ?? undefined,
+        itemId: response.hit.tooltip.itemId,
+        groupKey: response.hit.tooltip.groupKey ?? response.hit.groupKey ?? undefined,
+        localizedName: response.hit.tooltip.localizedName ?? null,
+        modId: response.hit.tooltip.modId ?? null,
+        internalName: response.hit.tooltip.internalName ?? null,
+        groupLabel: response.hit.tooltip.groupLabel ?? null,
+        groupSize: response.hit.tooltip.groupSize ?? null,
+      }
+      : null;
+    if (!entry) {
+      const syntheticItem = buildSyntheticItem(response.hit.itemId, nativeTooltip);
+      return {
+        viewport: response.hit.viewport,
+        key: response.hit.key,
+        kind: "item",
+        item: syntheticItem,
+        groupKey: response.hit.groupKey ?? null,
+        nativeTooltip,
+      };
+    }
+    const baseItem = getEntryItem(entry);
+    const item = nativeTooltip ? {
+      ...baseItem,
+      localizedName: nativeTooltip.localizedName || nativeTooltip.title || baseItem.localizedName,
+      modId: nativeTooltip.modId || baseItem.modId,
+      internalName: nativeTooltip.internalName || baseItem.internalName,
+      browserGroupKey: nativeTooltip.groupKey ?? baseItem.browserGroupKey ?? null,
+      browserGroupLabel: nativeTooltip.groupLabel ?? baseItem.browserGroupLabel ?? null,
+      browserGroupSize: nativeTooltip.groupSize ?? baseItem.browserGroupSize ?? null,
+    } : baseItem;
     return {
       viewport: response.hit.viewport,
       key: response.hit.key,
@@ -208,6 +254,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       item,
       group: entry.kind === "item" ? undefined : entry.group,
       groupKey: response.hit.groupKey ?? null,
+      nativeTooltip,
     };
   }
 

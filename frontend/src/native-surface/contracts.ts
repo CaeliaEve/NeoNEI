@@ -52,6 +52,7 @@ export interface NativeHitResult {
   item: Item;
   group?: BrowserVariantGroup;
   groupKey?: string | null;
+  nativeTooltip?: NativeTooltipPayload | null;
 }
 
 export interface NativeTooltipPayload {
@@ -59,6 +60,11 @@ export interface NativeTooltipPayload {
   subtitle?: string;
   itemId?: string;
   groupKey?: string;
+  localizedName?: string | null;
+  modId?: string | null;
+  internalName?: string | null;
+  groupLabel?: string | null;
+  groupSize?: number | null;
 }
 
 export interface NativeDrawCommand {
