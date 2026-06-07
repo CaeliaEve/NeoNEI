@@ -1,4 +1,4 @@
-import test from "node:test";
+﻿import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -15,7 +15,8 @@ test("native browser surface unmounts the fallback grid after the native rendere
   const source = readSource("src/components/native-surface/NativeBrowserSurface.vue");
 
   assert.match(source, /<HomeCanvasGrid\s+v-if="!nativeRenderVisible"/);
-  assert.match(source, /nativeRenderVisible\.value = nativeRenderInitialized/);
-  assert.match(source, /nativeRenderVisible\.value = false/);
+  assert.match(source, /nativeRenderVisible\.value\s*=\s*nativeRenderInitialized\s*&&\s*nativeTexturesReady\s*&&\s*nativeFirstFrameReady/);
+  assert.match(source, /nativeTexturesReady\s*=\s*response\?\.type\s*===\s*"textureLoaded"\s*&&\s*response\.loaded\s*>\s*0/);
+  assert.match(source, /nativeFirstFrameReady\s*=\s*response\?\.type\s*===\s*"frame"/);
+  assert.match(source, /resetNativeRenderReadiness\(\)/);
 });
-

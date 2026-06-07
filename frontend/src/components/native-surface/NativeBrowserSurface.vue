@@ -77,6 +77,8 @@ const nativeHoveredHit = ref<{
 const nativeHoveredPointer = ref({ x: 0, y: 0 });
 let nativeRenderInitialized = false;
 let nativeRenderInitializing = false;
+let nativeTexturesReady = false;
+let nativeFirstFrameReady = false;
 let residentAtlasTextureSignature = "";
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
@@ -85,6 +87,16 @@ function normalizeNativeRenderBackend(value: unknown): Exclude<NativeRendererBac
   const normalized = `${value ?? ""}`.trim().toLowerCase();
   if (normalized === "webgpu" || normalized === "auto") return normalized;
   return "webgl2";
+}
+
+function updateNativeRenderVisibility() {
+  nativeRenderVisible.value = nativeRenderInitialized && nativeTexturesReady && nativeFirstFrameReady;
+}
+
+function resetNativeRenderReadiness() {
+  nativeTexturesReady = false;
+  nativeFirstFrameReady = false;
+  nativeRenderVisible.value = false;
 }
 
 function resolveNativeRenderBackend(): Exclude<NativeRendererBackendKind, "compat-canvas"> {
@@ -176,6 +188,7 @@ async function initializeNativeRenderWorker(width: number, height: number) {
     return;
   }
   nativeRenderInitializing = true;
+  resetNativeRenderReadiness();
   try {
     canvas.width = Math.max(1, width);
     canvas.height = Math.max(1, height);
@@ -186,7 +199,7 @@ async function initializeNativeRenderWorker(width: number, height: number) {
       renderer: resolveNativeRenderBackend(),
     });
     nativeRenderInitialized = response?.type === "ready";
-    nativeRenderVisible.value = nativeRenderInitialized;
+    updateNativeRenderVisibility();
   } finally {
     nativeRenderInitializing = false;
   }
@@ -298,7 +311,7 @@ async function syncNativeFrame() {
   nativeLayoutCommandStride.value = frame?.drawCommandStride ?? 0;
   nativeLayoutCommandCount.value = frame?.drawCommandCount ?? 0;
   if (nativeRenderInitialized && frame?.drawCommandBuffer && frame.drawCommandCount && frame.drawCommandStride) {
-    void postNativeRenderEvent({
+    const response = await postNativeRenderEvent({
       type: "render",
       commandBuffer: frame.drawCommandBuffer.slice(0),
       commandStride: frame.drawCommandStride,
@@ -306,6 +319,9 @@ async function syncNativeFrame() {
       spriteCommands: frame.spriteCommands ?? [],
       nowMs,
     });
+    if (seq !== nativeFrameSeq) return;
+    nativeFirstFrameReady = response?.type === "frame";
+    updateNativeRenderVisibility();
   }
 }
 
@@ -314,14 +330,27 @@ async function syncNativeTextures() {
   const seq = ++nativeTextureSeq;
   const textures = await getAllGlobalBrowserAtlasTextureDescriptors();
   if (seq !== nativeTextureSeq) return;
-  if (textures.length <= 0) return;
+  if (textures.length <= 0) {
+    nativeTexturesReady = true;
+    updateNativeRenderVisibility();
+    return;
+  }
   const signature = textures.map((texture) => `${texture.key}:${texture.url}`).join("|");
-  if (signature === residentAtlasTextureSignature) return;
+  if (signature === residentAtlasTextureSignature) {
+    nativeTexturesReady = true;
+    updateNativeRenderVisibility();
+    return;
+  }
+  nativeTexturesReady = false;
+  updateNativeRenderVisibility();
   residentAtlasTextureSignature = signature;
-  void postNativeRenderEvent({
+  const response = await postNativeRenderEvent({
     type: "loadTextures",
     textures,
   });
+  if (seq !== nativeTextureSeq) return;
+  nativeTexturesReady = response?.type === "textureLoaded" && response.loaded > 0;
+  updateNativeRenderVisibility();
 }
 
 onMounted(async () => {
@@ -357,7 +386,7 @@ onBeforeUnmount(() => {
     void postNativeRenderEvent({ type: "dispose" });
     nativeRenderInitialized = false;
     nativeRenderInitializing = false;
-    nativeRenderVisible.value = false;
+    resetNativeRenderReadiness();
   }
   controller.destroy();
   emit("viewportResize", null);
