@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   NativeSurfaceEngineRequest,
   NativeSurfaceEngineResponse,
   NativeSurfaceEngineEntry,
@@ -6,6 +6,7 @@ import type {
   NativeSurfaceEngineLayoutCommand,
   NativeSurfaceEngineWorkerMetrics,
 } from "../native-surface/NativeSurfaceEngineProtocol";
+import { NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE } from "../native-surface/NativeSurfaceEngineProtocol";
 import type {
   NativeRendererBackendKind,
   NativeSurfaceId,
@@ -138,6 +139,22 @@ function rebuildLayout(surface: SurfaceState): void {
   });
 }
 
+function buildLayoutCommandBuffer(commands: NativeSurfaceEngineLayoutCommand[]): ArrayBuffer {
+  const stride = NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE;
+  const values = new Uint32Array(commands.length * stride);
+  commands.forEach((command, index) => {
+    const offset = index * stride;
+    values[offset] = toU32(command.entryIndex);
+    values[offset + 1] = toU32(command.x);
+    values[offset + 2] = toU32(command.y);
+    values[offset + 3] = toU32(command.size);
+    values[offset + 4] = toU32(command.iconX);
+    values[offset + 5] = toU32(command.iconY);
+    values[offset + 6] = toU32(command.iconSize);
+    values[offset + 7] = command.kind === "item" ? 0 : command.kind === "group-collapsed" ? 1 : 2;
+  });
+  return values.buffer;
+}
 function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequest, { type: "hitTest" }>): NativeSurfaceEngineHit {
   const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
@@ -236,6 +253,9 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         id: message.id,
         surfaceId: message.surfaceId,
         drawCommands: surface.layoutCommands,
+        commandBuffer: buildLayoutCommandBuffer(surface.layoutCommands),
+        commandStride: NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE,
+        commandCount: surface.layoutCommands.length,
         metrics: buildMetrics(),
       };
     case "hitTest":
@@ -265,5 +285,8 @@ self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   if (!message?.type || !message.surfaceId) return;
   void handleRequest(message).then((response) => self.postMessage(response));
 };
+
+
+
 
 

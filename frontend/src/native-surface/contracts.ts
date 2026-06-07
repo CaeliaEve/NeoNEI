@@ -94,6 +94,9 @@ export interface NativeSurfaceLayoutCommand {
 
 export interface NativeSurfaceFrameResult {
   drawCommands: NativeSurfaceLayoutCommand[];
+  drawCommandBuffer?: ArrayBuffer | null;
+  drawCommandStride?: number;
+  drawCommandCount?: number;
 }
 
 export interface NativeSurfaceMetrics {
@@ -172,5 +175,7 @@ export interface NativeRuntimeManifest {
     perItemImageFallback: false;
   };
 }
+
+
 
 

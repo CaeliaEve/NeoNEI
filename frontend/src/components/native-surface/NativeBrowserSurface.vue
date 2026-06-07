@@ -38,6 +38,9 @@ const controller = createNativeSurfaceController(props.surfaceId);
 let resizeObserver: ResizeObserver | null = null;
 let nativeFrameSeq = 0;
 const nativeLayoutCommands = ref<NativeSurfaceLayoutCommand[] | null>(null);
+const nativeLayoutCommandBuffer = ref<ArrayBuffer | null>(null);
+const nativeLayoutCommandStride = ref(0);
+const nativeLayoutCommandCount = ref(0);
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
 
@@ -98,6 +101,9 @@ async function syncNativeFrame() {
   const frame = await controller.requestFrame(performance.now());
   if (seq !== nativeFrameSeq) return;
   nativeLayoutCommands.value = frame?.drawCommands ?? null;
+  nativeLayoutCommandBuffer.value = frame?.drawCommandBuffer ?? null;
+  nativeLayoutCommandStride.value = frame?.drawCommandStride ?? 0;
+  nativeLayoutCommandCount.value = frame?.drawCommandCount ?? 0;
 }
 
 onMounted(async () => {
@@ -134,7 +140,7 @@ watch(
   () => [props.entries, props.atlas] as const,
   () => {
     controller.setCompatEntries({ entries: props.entries, atlas: props.atlas ?? null });
-    controller.requestFrame(performance.now());
+    void syncNativeFrame();
   },
   { deep: false },
 );
@@ -143,7 +149,7 @@ watch(
   () => props.itemSize,
   (size) => {
     controller.setItemSize(size);
-    controller.requestFrame(performance.now());
+    void syncNativeFrame();
   },
 );
 
@@ -178,6 +184,9 @@ watch(itemIdsSignature, () => {
       :enable-animation="enableAnimation"
       :prefer-atlas="preferAtlas"
       :native-layout-commands="nativeLayoutCommands"
+      :native-layout-command-buffer="nativeLayoutCommandBuffer"
+      :native-layout-command-stride="nativeLayoutCommandStride"
+      :native-layout-command-count="nativeLayoutCommandCount"
       @item-click="emit('itemClick', $event)"
       @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"
       @group-click="emit('groupClick', $event)"
@@ -185,4 +194,9 @@ watch(itemIdsSignature, () => {
     />
   </div>
 </template>
+
+
+
+
+
 

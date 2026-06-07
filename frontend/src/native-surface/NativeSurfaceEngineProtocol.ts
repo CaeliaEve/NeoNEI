@@ -16,6 +16,8 @@ export type NativeSurfaceEngineEntry = {
 
 export type NativeSurfaceEngineLayoutCommand = NativeSurfaceLayoutCommand;
 
+export const NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE = 8;
+
 
 export type NativeSurfaceEngineHit = {
   key: string;
@@ -118,6 +120,9 @@ export type NativeSurfaceEngineResponse =
     id: number;
     surfaceId: NativeSurfaceId;
     drawCommands: NativeSurfaceEngineLayoutCommand[];
+    commandBuffer: ArrayBuffer;
+    commandStride: number;
+    commandCount: number;
     metrics: NativeSurfaceEngineWorkerMetrics;
   }
   | {
@@ -139,6 +144,8 @@ export type NativeSurfaceEngineWorkerMetrics = {
   wasmError: string | null;
   updatedAt: number;
 };
+
+
 
 
 

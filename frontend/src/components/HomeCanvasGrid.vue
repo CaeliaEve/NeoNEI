@@ -50,12 +50,18 @@ const props = withDefaults(defineProps<{
   enableAnimation?: boolean;
   preferAtlas?: boolean;
   nativeLayoutCommands?: HomeGridLayoutCommand[] | null;
+  nativeLayoutCommandBuffer?: ArrayBuffer | null;
+  nativeLayoutCommandStride?: number;
+  nativeLayoutCommandCount?: number;
 }>(), {
   itemSize: 50,
   atlas: null,
   enableAnimation: true,
   preferAtlas: false,
   nativeLayoutCommands: null,
+  nativeLayoutCommandBuffer: null,
+  nativeLayoutCommandStride: 0,
+  nativeLayoutCommandCount: 0,
 });
 
 const emit = defineEmits<{
@@ -573,6 +579,22 @@ function drawStaticImage(
   ctx.drawImage(image, drawX, drawY, iconSize.value, iconSize.value);
 }
 
+function getNativeBufferedLayoutCommand(index: number, values: Uint32Array | null, stride: number, count: number) {
+  if (!values || stride < 8 || index < 0 || index >= count) return null;
+  const offset = index * stride;
+  const entryIndex = values[offset];
+  if (entryIndex !== index) return null;
+  return {
+    entryIndex,
+    x: values[offset + 1],
+    y: values[offset + 2],
+    size: values[offset + 3],
+    iconX: values[offset + 4],
+    iconY: values[offset + 5],
+    iconSize: values[offset + 6],
+    kindFlag: values[offset + 7],
+  };
+}
 function draw() {
   const canvas = canvasRef.value;
   if (!canvas) return;
@@ -598,9 +620,12 @@ function draw() {
   // animation off Canvas2D and avoids transparent overlay flashes during fast
   // NEI-style page jumps.
   const canUseWebglAtlas = Boolean(webglAtlasRenderer && hasGlobalBrowserAtlas());
-  const activeCommands = props.nativeLayoutCommands?.length
+  const nativeBufferValues = props.nativeLayoutCommandBuffer ? new Uint32Array(props.nativeLayoutCommandBuffer) : null;
+  const nativeBufferStride = Math.max(0, Math.floor(props.nativeLayoutCommandStride || 0));
+  const nativeBufferCount = Math.max(0, Math.floor(props.nativeLayoutCommandCount || 0));
+  const activeCommands = !nativeBufferValues && props.nativeLayoutCommands?.length
     ? props.nativeLayoutCommands
-    : (activeLayoutKey.value === layoutKey.value ? layoutCommands.value : null);
+    : (!nativeBufferValues && activeLayoutKey.value === layoutKey.value ? layoutCommands.value : null);
   const commandsByEntryIndex = new Map<number, HomeGridLayoutCommand>();
   activeCommands?.forEach((command) => {
     if (Number.isInteger(command.entryIndex) && command.entryIndex >= 0) {
@@ -609,7 +634,8 @@ function draw() {
   });
 
   for (let index = 0; index < props.entries.length; index += 1) {
-    const command = commandsByEntryIndex.get(index) ?? null;
+    const bufferedCommand = getNativeBufferedLayoutCommand(index, nativeBufferValues, nativeBufferStride, nativeBufferCount);
+    const command = bufferedCommand ?? commandsByEntryIndex.get(index) ?? null;
     const entry = props.entries[index];
     if (!entry) {
       continue;
@@ -1136,5 +1162,9 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 </style>
+
+
+
+
 
 
