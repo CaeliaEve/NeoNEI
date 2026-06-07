@@ -128,6 +128,7 @@ export interface NativeNeiSurfaceController {
   setModFilter(modId: string | null): void;
   setExpandedGroups(groupKeys: string[]): void;
   setItemSize(size: number): void;
+  setSelectedItemId(itemId: string | null): void;
   setHover(pointer: NativeSurfacePointer | null): void;
   setHistoryItems(itemIds: string[]): void;
 

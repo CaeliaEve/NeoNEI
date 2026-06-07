@@ -55,6 +55,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
   private search = "";
   private modFilter: string | null = null;
   private expandedGroups: string[] = [];
+  private selectedItemId: string | null = null;
   private nativeRuntimeReady = false;
   private nativeRuntimePacks = 0;
   private nativeRuntimeError: string | null = null;
@@ -132,6 +133,13 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
     this.itemSize = Math.max(1, Math.floor(Number(size) || 1));
     this.queueMutation({ type: "itemSize", itemSize: this.itemSize });
     this.touch("setItemSize");
+  }
+
+  setSelectedItemId(itemId: string | null): void {
+    const normalized = itemId ? `${itemId}`.trim() : "";
+    this.selectedItemId = normalized || null;
+    this.queueMutation({ type: "selectedItem", itemId: this.selectedItemId });
+    this.touch("setSelectedItemId");
   }
 
   setHover(pointer: NativeSurfacePointer | null): void {

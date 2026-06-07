@@ -20,6 +20,7 @@ defineProps<{
   expandedGroupFacetFilters: Record<string, string>;
   hasExpandedGroupFacetFilters: boolean;
   showTransitionOverlay: boolean;
+  selectedItemId?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -137,6 +138,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                   :manifest-url="nativeRuntimeManifestUrl"
                   :enable-animation="true"
                   :prefer-atlas="true"
+                  :selected-item-id="selectedItemId"
                   @item-click="emit('itemClick', $event)"
                   @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"
                   @group-click="emit('groupClick', $event)"

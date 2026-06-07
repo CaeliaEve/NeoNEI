@@ -30,6 +30,7 @@ const props = withDefaults(defineProps<{
   enableAnimation?: boolean;
   preferAtlas?: boolean;
   historyItemIds?: string[];
+  selectedItemId?: string | null;
 }>(), {
   viewportRole: "browser",
   atlas: null,
@@ -37,6 +38,7 @@ const props = withDefaults(defineProps<{
   enableAnimation: true,
   preferAtlas: true,
   historyItemIds: () => [],
+  selectedItemId: null,
 });
 
 const emit = defineEmits<{
@@ -334,6 +336,7 @@ onMounted(async () => {
     enableHistoryViewport: props.viewportRole === "history",
   });
   controller.setItemSize(props.itemSize);
+  controller.setSelectedItemId(props.selectedItemId);
   controller.setCompatEntries({ entries: props.entries, atlas: props.atlas ?? null });
   controller.setHistoryItems(props.historyItemIds);
   syncViewport();
@@ -376,6 +379,14 @@ watch(
   () => props.itemSize,
   (size) => {
     controller.setItemSize(size);
+    void syncNativeFrame();
+  },
+);
+
+watch(
+  () => props.selectedItemId,
+  (itemId) => {
+    controller.setSelectedItemId(itemId ?? null);
     void syncNativeFrame();
   },
 );

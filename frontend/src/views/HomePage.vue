@@ -273,6 +273,7 @@ const {
   prevRecipePage,
   handleRecipeWheel,
   handleRecipeItemClick,
+  recipeModalItem,
 } = useHomeRecipeModal({
   items,
   router,
@@ -416,6 +417,7 @@ setGridViewportSync(syncMeasuredPageSize);
           :expanded-group-facet-filters="expandedGroupFacetFilters"
           :has-expanded-group-facet-filters="hasExpandedGroupFacetFilters"
           :show-transition-overlay="showTransitionOverlay"
+          :selected-item-id="recipeModalItem?.itemId ?? null"
           @items-wheel="handleItemsWheel"
           @page-change="changeItemsPageWrapped"
           @reload="loadItems"

@@ -19,7 +19,8 @@ test("native surface command buffer carries GPU overlay flags", () => {
   assert.match(worker, /values\[offset \+ 8\]\s*=\s*\(command\.kind === "group-collapsed" \? 1 : 0\)/);
   assert.match(worker, /command\.kind === "group-header" \? 2 : 0/);
   assert.match(worker, /hoverKey === command\.key \? 4 : 0/);
-  assert.match(worker, /buildLayoutCommandBuffer\(surface\.layoutCommands, surface\.lastHit\?\.key \?\? null\)/);
+  assert.match(worker, /selectedItemId && command\.itemId === selectedItemId \? 8 : 0/);
+  assert.match(worker, /buildLayoutCommandBuffer\(surface\.layoutCommands, surface\.lastHit\?\.key \?\? null, surface\.selectedItemId\)/);
 });
 
 test("WebGL2 renderer parses and consumes GPU overlay flags", () => {
@@ -29,7 +30,9 @@ test("WebGL2 renderer parses and consumes GPU overlay flags", () => {
   assert.match(source, /flags:\s*values\[offset \+ 8\] \?\? 0/);
   assert.match(source, /const isGroup = \(command\.flags & 1\) !== 0/);
   assert.match(source, /const isHovered = \(command\.flags & 4\) !== 0/);
+  assert.match(source, /const isSelected = \(command\.flags & 8\) !== 0/);
   assert.match(source, /isHovered\s*\? \[0\.96, 0\.68, 0\.24, 0\.58\]/);
+  assert.match(source, /isSelected\s*\?\s*\[0\.14, 0\.78, 0\.92, 0\.62\]/);
 });
 
 test("WebGPU renderer keeps overlay styling in GPU vertex data", () => {
@@ -37,6 +40,7 @@ test("WebGPU renderer keeps overlay styling in GPU vertex data", () => {
 
   assert.match(source, /const isGroup = \(command\.flags & 1\) !== 0/);
   assert.match(source, /const isHovered = \(command\.flags & 4\) !== 0/);
-  assert.match(source, /const inset = isHovered \? 0 : Math\.max/);
+  assert.match(source, /const isSelected = \(command\.flags & 8\) !== 0/);
+  assert.match(source, /const inset = isHovered \|\| isSelected \? 0 : Math\.max/);
   assert.match(source, /isGroup\s*\? \[0\.08, 0\.42, 0\.52, 0\.56\]/);
 });

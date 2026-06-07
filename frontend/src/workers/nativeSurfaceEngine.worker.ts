@@ -35,6 +35,7 @@ type SurfaceState = {
   entries: NativeSurfaceEngineEntry[];
   layoutCommands: NativeSurfaceEngineLayoutCommand[];
   lastHit: NativeSurfaceEngineHit;
+  selectedItemId: string | null;
   runtimeManifestUrl: string | null;
   runtimePacks: Map<string, ArrayBuffer>;
   runtimeError: string | null;
@@ -461,6 +462,7 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     entries: [],
     layoutCommands: [],
     lastHit: null,
+    selectedItemId: null,
     runtimeManifestUrl: null,
     runtimePacks: new Map(),
     runtimeError: null,
@@ -507,7 +509,11 @@ function rebuildLayout(surface: SurfaceState): void {
   });
 }
 
-function buildLayoutCommandBuffer(commands: NativeSurfaceEngineLayoutCommand[], hoverKey: string | null): ArrayBuffer {
+function buildLayoutCommandBuffer(
+  commands: NativeSurfaceEngineLayoutCommand[],
+  hoverKey: string | null,
+  selectedItemId: string | null,
+): ArrayBuffer {
   const stride = NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE;
   const values = new Uint32Array(commands.length * stride);
   commands.forEach((command, index) => {
@@ -522,7 +528,8 @@ function buildLayoutCommandBuffer(commands: NativeSurfaceEngineLayoutCommand[], 
     values[offset + 7] = command.kind === "item" ? 0 : command.kind === "group-collapsed" ? 1 : 2;
     values[offset + 8] = (command.kind === "group-collapsed" ? 1 : 0)
       | (command.kind === "group-header" ? 2 : 0)
-      | (hoverKey === command.key ? 4 : 0);
+      | (hoverKey === command.key ? 4 : 0)
+      | (selectedItemId && command.itemId === selectedItemId ? 8 : 0);
   });
   return values.buffer;
 }
@@ -596,6 +603,9 @@ function applyMutation(surface: SurfaceState, mutation: NativeSurfaceEngineMutat
       return true;
     case "itemSize":
       surface.itemSize = Math.max(1, Math.floor(Number(mutation.itemSize) || 1));
+      return true;
+    case "selectedItem":
+      surface.selectedItemId = mutation.itemId ? `${mutation.itemId}` : null;
       return true;
   }
 }
@@ -705,7 +715,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         id: message.id,
         surfaceId: message.surfaceId,
         drawCommands: surface.layoutCommands,
-        commandBuffer: buildLayoutCommandBuffer(surface.layoutCommands, surface.lastHit?.key ?? null),
+        commandBuffer: buildLayoutCommandBuffer(surface.layoutCommands, surface.lastHit?.key ?? null, surface.selectedItemId),
         commandStride: NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE,
         commandCount: surface.layoutCommands.length,
         metrics: buildMetrics(),

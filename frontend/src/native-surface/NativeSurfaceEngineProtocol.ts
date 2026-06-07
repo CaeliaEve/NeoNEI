@@ -105,6 +105,12 @@ export type NativeSurfaceEngineRequest =
     itemSize: number;
   }
   | {
+    type: "selectedItem";
+    id: number;
+    surfaceId: NativeSurfaceId;
+    itemId: string | null;
+  }
+  | {
     type: "mutationBatch";
     id: number;
     surfaceId: NativeSurfaceId;
@@ -140,7 +146,8 @@ export type NativeSurfaceEngineMutation =
   | { type: "expandedGroups"; groupKeys: string[] }
   | { type: "historyItems"; itemIds: string[] }
   | { type: "compatEntries"; entries: NativeSurfaceEngineEntry[] }
-  | { type: "itemSize"; itemSize: number };
+  | { type: "itemSize"; itemSize: number }
+  | { type: "selectedItem"; itemId: string | null };
 
 export type NativeSurfaceEngineResponse =
   | {

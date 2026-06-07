@@ -273,7 +273,8 @@ export class WebGl2NativeRenderer {
     for (const command of commands) {
       const isGroup = (command.flags & 1) !== 0;
       const isHovered = (command.flags & 4) !== 0;
-      const inset = isHovered ? 0 : Math.max(2, Math.floor(command.size * 0.08));
+      const isSelected = (command.flags & 8) !== 0;
+      const inset = isHovered || isSelected ? 0 : Math.max(2, Math.floor(command.size * 0.08));
       const x1 = command.x + inset;
       const y1 = command.y + inset;
       const x2 = command.x + command.size - inset;
@@ -282,6 +283,8 @@ export class WebGl2NativeRenderer {
       positionCursor += 12;
       const color = isHovered
         ? [0.96, 0.68, 0.24, 0.58]
+        : isSelected
+          ? [0.14, 0.78, 0.92, 0.62]
         : isGroup
           ? [0.08, 0.42, 0.52, 0.56]
           : command.kind === 0
