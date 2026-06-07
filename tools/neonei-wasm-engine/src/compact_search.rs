@@ -78,13 +78,19 @@ pub fn parse_compact_search_header(bytes: &[u8]) -> Option<CompactSearchHeader> 
     })
 }
 
-pub fn compact_search_row(bytes: &[u8], header: CompactSearchHeader, index: u32) -> Option<CompactSearchRow> {
+pub fn compact_search_row(
+    bytes: &[u8],
+    header: CompactSearchHeader,
+    index: u32,
+) -> Option<CompactSearchRow> {
     if index >= header.item_count {
         return None;
     }
-    let offset = header
-        .rows_start
-        .checked_add((index as usize).checked_mul(header.row_stride as usize)?.checked_mul(4)?)?;
+    let offset = header.rows_start.checked_add(
+        (index as usize)
+            .checked_mul(header.row_stride as usize)?
+            .checked_mul(4)?,
+    )?;
     Some(CompactSearchRow {
         item_id_ref: read_u32_le(bytes, offset)?,
         public_item_id_ref: read_u32_le(bytes, offset + 4)?,
@@ -102,22 +108,36 @@ pub fn compact_search_row(bytes: &[u8], header: CompactSearchHeader, index: u32)
     })
 }
 
-pub fn compact_search_string(bytes: &[u8], header: CompactSearchHeader, string_ref: u32) -> Option<&str> {
+pub fn compact_search_string(
+    bytes: &[u8],
+    header: CompactSearchHeader,
+    string_ref: u32,
+) -> Option<&str> {
     if string_ref >= header.string_count {
         return None;
     }
-    let offset_offset = header.offsets_start.checked_add((string_ref as usize).checked_mul(4)?)?;
+    let offset_offset = header
+        .offsets_start
+        .checked_add((string_ref as usize).checked_mul(4)?)?;
     let relative_offset = read_u32_le(bytes, offset_offset)? as usize;
     let string_start = header.string_table_start.checked_add(relative_offset)?;
     if string_start >= bytes.len() {
         return Some("");
     }
     let tail = bytes.get(string_start..)?;
-    let len = tail.iter().position(|byte| *byte == 0).unwrap_or(tail.len());
+    let len = tail
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(tail.len());
     std::str::from_utf8(tail.get(0..len)?).ok()
 }
 
-fn row_matches_query(search_pack: &[u8], header: CompactSearchHeader, row: CompactSearchRow, normalized_query: &str) -> bool {
+fn row_matches_query(
+    search_pack: &[u8],
+    header: CompactSearchHeader,
+    row: CompactSearchRow,
+    normalized_query: &str,
+) -> bool {
     if normalized_query.is_empty() {
         return true;
     }
@@ -160,7 +180,8 @@ pub fn compact_search_project_visible_indices(
         if search_row.browser_index >= browser_header.item_count {
             continue;
         }
-        let search_mod = compact_search_string(search_pack, search_header, search_row.mod_id_ref).unwrap_or("");
+        let search_mod =
+            compact_search_string(search_pack, search_header, search_row.mod_id_ref).unwrap_or("");
         if !normalized_mod.is_empty() && search_mod.to_lowercase() != normalized_mod {
             continue;
         }
@@ -168,8 +189,11 @@ pub fn compact_search_project_visible_indices(
             continue;
         }
 
-        let browser_row = compact_browser_row(browser_pack, browser_header, search_row.browser_index)?;
-        let group_key = compact_browser_string(browser_pack, browser_header, browser_row.group_key_ref).unwrap_or("");
+        let browser_row =
+            compact_browser_row(browser_pack, browser_header, search_row.browser_index)?;
+        let group_key =
+            compact_browser_string(browser_pack, browser_header, browser_row.group_key_ref)
+                .unwrap_or("");
         let collapsed_group = !group_key.is_empty() && !expanded.contains(group_key);
         if collapsed_group && !collapsed_seen.insert(group_key.to_owned()) {
             continue;
@@ -178,7 +202,8 @@ pub fn compact_search_project_visible_indices(
         if let Some(out_indices) = out.as_deref_mut() {
             let out_index = count as usize;
             if out_index < out_indices.len() {
-                out_indices[out_index] = encode_visible_entry(search_row.browser_index, collapsed_group);
+                out_indices[out_index] =
+                    encode_visible_entry(search_row.browser_index, collapsed_group);
             }
         }
         count = count.saturating_add(1);
@@ -244,8 +269,23 @@ mod tests {
         let pack = search_fixture();
         let header = parse_compact_search_header(&pack).expect("header");
         let row = compact_search_row(&pack, header, 0).expect("row");
-        assert!(row_matches_query(&pack, header, row, &normalize_search_text("iron")));
-        assert!(row_matches_query(&pack, header, row, &normalize_search_text("td")));
-        assert!(!row_matches_query(&pack, header, row, &normalize_search_text("gold")));
+        assert!(row_matches_query(
+            &pack,
+            header,
+            row,
+            &normalize_search_text("iron")
+        ));
+        assert!(row_matches_query(
+            &pack,
+            header,
+            row,
+            &normalize_search_text("td")
+        ));
+        assert!(!row_matches_query(
+            &pack,
+            header,
+            row,
+            &normalize_search_text("gold")
+        ));
     }
 }

@@ -20,4 +20,6 @@ test('native surface worker rejects JSON native runtime pack fallbacks', () => {
   assert.match(source, /native string pack must use compact NEISTR1 binary encoding/, 'string pack must fail loudly when compact encoding is missing');
   assert.match(source, /native texture pack must use compact NEITEX1 binary encoding/, 'texture pack must fail loudly when compact encoding is missing');
   assert.match(source, /native animation pack must use compact NEIANM1 binary encoding/, 'animation pack must fail loudly when compact encoding is missing');
+  assert.match(source, /neonei_engine_compact_texture_item_count/, 'texture pack must be installed into WASM memory for native validation/consumption');
+  assert.match(source, /neonei_engine_compact_animation_item_count/, 'animation pack must be installed into WASM memory for native validation/consumption');
 });

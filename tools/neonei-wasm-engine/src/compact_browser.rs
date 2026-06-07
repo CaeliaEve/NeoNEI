@@ -68,13 +68,19 @@ pub fn parse_compact_browser_header(bytes: &[u8]) -> Option<CompactBrowserHeader
     })
 }
 
-pub fn compact_browser_row(bytes: &[u8], header: CompactBrowserHeader, index: u32) -> Option<CompactBrowserRow> {
+pub fn compact_browser_row(
+    bytes: &[u8],
+    header: CompactBrowserHeader,
+    index: u32,
+) -> Option<CompactBrowserRow> {
     if index >= header.item_count {
         return None;
     }
-    let offset = header
-        .rows_start
-        .checked_add((index as usize).checked_mul(header.row_stride as usize)?.checked_mul(4)?)?;
+    let offset = header.rows_start.checked_add(
+        (index as usize)
+            .checked_mul(header.row_stride as usize)?
+            .checked_mul(4)?,
+    )?;
     Some(CompactBrowserRow {
         item_id_ref: read_u32_le(bytes, offset)?,
         localized_name_ref: read_u32_le(bytes, offset + 4)?,
@@ -85,18 +91,27 @@ pub fn compact_browser_row(bytes: &[u8], header: CompactBrowserHeader, index: u3
     })
 }
 
-pub fn compact_browser_string(bytes: &[u8], header: CompactBrowserHeader, string_ref: u32) -> Option<&str> {
+pub fn compact_browser_string(
+    bytes: &[u8],
+    header: CompactBrowserHeader,
+    string_ref: u32,
+) -> Option<&str> {
     if string_ref >= header.string_count {
         return None;
     }
-    let offset_offset = header.offsets_start.checked_add((string_ref as usize).checked_mul(4)?)?;
+    let offset_offset = header
+        .offsets_start
+        .checked_add((string_ref as usize).checked_mul(4)?)?;
     let relative_offset = read_u32_le(bytes, offset_offset)? as usize;
     let string_start = header.string_table_start.checked_add(relative_offset)?;
     if string_start >= bytes.len() {
         return Some("");
     }
     let tail = bytes.get(string_start..)?;
-    let len = tail.iter().position(|byte| *byte == 0).unwrap_or(tail.len());
+    let len = tail
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(tail.len());
     std::str::from_utf8(tail.get(0..len)?).ok()
 }
 
@@ -109,7 +124,9 @@ pub fn normalize_search_text(value: &str) -> String {
 }
 
 pub fn compact_browser_project_count(bytes: &[u8], query: &str, mod_filter: &str) -> Option<u32> {
-    Some(compact_browser_project_indices(bytes, query, mod_filter, None)?)
+    Some(compact_browser_project_indices(
+        bytes, query, mod_filter, None,
+    )?)
 }
 
 pub fn compact_browser_project_indices(
@@ -126,7 +143,8 @@ pub fn compact_browser_project_indices(
     for index in 0..header.item_count {
         let row = compact_browser_row(bytes, header, index)?;
         let item_id = compact_browser_string(bytes, header, row.item_id_ref).unwrap_or("");
-        let localized_name = compact_browser_string(bytes, header, row.localized_name_ref).unwrap_or("");
+        let localized_name =
+            compact_browser_string(bytes, header, row.localized_name_ref).unwrap_or("");
         let mod_id = compact_browser_string(bytes, header, row.mod_id_ref).unwrap_or("");
         let group_key = compact_browser_string(bytes, header, row.group_key_ref).unwrap_or("");
 
@@ -134,7 +152,8 @@ pub fn compact_browser_project_indices(
             continue;
         }
         if !normalized_query.is_empty() {
-            let haystack = normalize_search_text(&format!("{localized_name}|{item_id}|{mod_id}|{group_key}"));
+            let haystack =
+                normalize_search_text(&format!("{localized_name}|{item_id}|{mod_id}|{group_key}"));
             if !haystack.contains(&normalized_query) {
                 continue;
             }
@@ -190,7 +209,8 @@ pub fn compact_browser_project_visible_indices(
     for index in 0..header.item_count {
         let row = compact_browser_row(bytes, header, index)?;
         let item_id = compact_browser_string(bytes, header, row.item_id_ref).unwrap_or("");
-        let localized_name = compact_browser_string(bytes, header, row.localized_name_ref).unwrap_or("");
+        let localized_name =
+            compact_browser_string(bytes, header, row.localized_name_ref).unwrap_or("");
         let mod_id = compact_browser_string(bytes, header, row.mod_id_ref).unwrap_or("");
         let group_key = compact_browser_string(bytes, header, row.group_key_ref).unwrap_or("");
 
@@ -198,7 +218,8 @@ pub fn compact_browser_project_visible_indices(
             continue;
         }
         if !normalized_query.is_empty() {
-            let haystack = normalize_search_text(&format!("{localized_name}|{item_id}|{mod_id}|{group_key}"));
+            let haystack =
+                normalize_search_text(&format!("{localized_name}|{item_id}|{mod_id}|{group_key}"));
             if !haystack.contains(&normalized_query) {
                 continue;
             }
@@ -240,7 +261,11 @@ mod tests {
             "appliedenergistics2",
             "ae2-singularity",
         ];
-        let rows = [[0u32, 1, 2, 3, 0, 0], [4, 5, 6, 7, 1, 1], [8, 9, 10, 11, 2, 1]];
+        let rows = [
+            [0u32, 1, 2, 3, 0, 0],
+            [4, 5, 6, 7, 1, 1],
+            [8, 9, 10, 11, 2, 1],
+        ];
         let mut string_table = Vec::new();
         let mut offsets = Vec::new();
         for value in strings {
@@ -281,9 +306,18 @@ mod tests {
         let pack = fixture_pack();
         assert_eq!(compact_browser_project_count(&pack, "", "").unwrap(), 3);
         assert_eq!(compact_browser_project_count(&pack, "超导", "").unwrap(), 1);
-        assert_eq!(compact_browser_project_count(&pack, "", "gregtech").unwrap(), 1);
-        assert_eq!(compact_browser_project_count(&pack, "奇点", "appliedenergistics2").unwrap(), 1);
-        assert_eq!(compact_browser_project_count(&pack, "奇点", "gregtech").unwrap(), 0);
+        assert_eq!(
+            compact_browser_project_count(&pack, "", "gregtech").unwrap(),
+            1
+        );
+        assert_eq!(
+            compact_browser_project_count(&pack, "奇点", "appliedenergistics2").unwrap(),
+            1
+        );
+        assert_eq!(
+            compact_browser_project_count(&pack, "奇点", "gregtech").unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -300,7 +334,9 @@ mod tests {
     fn projects_collapsed_and_expanded_groups_natively() {
         let pack = fixture_pack();
         let mut collapsed = [u32::MAX; 4];
-        let collapsed_count = compact_browser_project_visible_indices(&pack, "", "", "", Some(&mut collapsed)).unwrap();
+        let collapsed_count =
+            compact_browser_project_visible_indices(&pack, "", "", "", Some(&mut collapsed))
+                .unwrap();
         assert_eq!(collapsed_count, 3);
         assert_eq!(collapsed[0], 0);
         assert_eq!(collapsed[1], COMPACT_BROWSER_GROUP_COLLAPSED_FLAG | 1);

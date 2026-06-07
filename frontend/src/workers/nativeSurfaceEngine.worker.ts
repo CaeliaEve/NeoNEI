@@ -55,6 +55,12 @@ type SurfaceState = {
   runtimeBrowserWasmProjectedEntries: number;
   runtimeSearchWasmPtr: number;
   runtimeSearchWasmLen: number;
+  runtimeTextureWasmPtr: number;
+  runtimeTextureWasmLen: number;
+  runtimeTextureWasmItemCount: number;
+  runtimeAnimationWasmPtr: number;
+  runtimeAnimationWasmLen: number;
+  runtimeAnimationWasmItemCount: number;
 };
 
 type NativeRuntimeGroup = {
@@ -178,6 +184,8 @@ type NativeWasmEngineExports = {
     outPtr: number,
     outLen: number,
   ) => number;
+  neonei_engine_compact_texture_item_count?: (ptr: number, len: number) => number;
+  neonei_engine_compact_animation_item_count?: (ptr: number, len: number) => number;
   neonei_engine_compact_search_project_visible_indices?: (
     browserPtr: number,
     browserLen: number,
@@ -235,7 +243,7 @@ function computeColumns(viewportWidth: number, cardSize: number, gap: number): n
   return Math.max(1, Math.floor((viewportWidth + gap) / (cardSize + gap)));
 }
 
-function disposeWasmBrowserPayload(surface: SurfaceState): void {
+function disposeWasmPayloads(surface: SurfaceState): void {
   if (surface.runtimeBrowserWasmPtr > 0 && surface.runtimeBrowserWasmLen > 0) {
     wasmEngine?.neonei_engine_dealloc?.(surface.runtimeBrowserWasmPtr, surface.runtimeBrowserWasmLen);
   }
@@ -248,10 +256,22 @@ function disposeWasmBrowserPayload(surface: SurfaceState): void {
   }
   surface.runtimeSearchWasmPtr = 0;
   surface.runtimeSearchWasmLen = 0;
+  if (surface.runtimeTextureWasmPtr > 0 && surface.runtimeTextureWasmLen > 0) {
+    wasmEngine?.neonei_engine_dealloc?.(surface.runtimeTextureWasmPtr, surface.runtimeTextureWasmLen);
+  }
+  surface.runtimeTextureWasmPtr = 0;
+  surface.runtimeTextureWasmLen = 0;
+  surface.runtimeTextureWasmItemCount = 0;
+  if (surface.runtimeAnimationWasmPtr > 0 && surface.runtimeAnimationWasmLen > 0) {
+    wasmEngine?.neonei_engine_dealloc?.(surface.runtimeAnimationWasmPtr, surface.runtimeAnimationWasmLen);
+  }
+  surface.runtimeAnimationWasmPtr = 0;
+  surface.runtimeAnimationWasmLen = 0;
+  surface.runtimeAnimationWasmItemCount = 0;
 }
 
 function installWasmBrowserPayload(surface: SurfaceState, payloadBuffer: ArrayBuffer): void {
-  disposeWasmBrowserPayload(surface);
+  disposeWasmPayloads(surface);
   const alloc = wasmEngine?.neonei_engine_alloc;
   const memory = wasmEngine?.memory;
   if (!alloc || !memory || payloadBuffer.byteLength <= 0) return;
@@ -264,14 +284,36 @@ function installWasmBrowserPayload(surface: SurfaceState, payloadBuffer: ArrayBu
 }
 
 function installWasmSearchPayload(surface: SurfaceState, payloadBuffer: ArrayBuffer): void {
-  const alloc = wasmEngine?.neonei_engine_alloc;
-  const memory = wasmEngine?.memory;
-  if (!alloc || !memory || payloadBuffer.byteLength <= 0) return;
-  const ptr = alloc(payloadBuffer.byteLength);
+  const ptr = installWasmPackPayload(payloadBuffer);
   if (!ptr) return;
-  new Uint8Array(memory.buffer, ptr, payloadBuffer.byteLength).set(new Uint8Array(payloadBuffer));
   surface.runtimeSearchWasmPtr = ptr;
   surface.runtimeSearchWasmLen = payloadBuffer.byteLength;
+}
+
+function installWasmPackPayload(payloadBuffer: ArrayBuffer): number {
+  const alloc = wasmEngine?.neonei_engine_alloc;
+  const memory = wasmEngine?.memory;
+  if (!alloc || !memory || payloadBuffer.byteLength <= 0) return 0;
+  const ptr = alloc(payloadBuffer.byteLength);
+  if (!ptr) return 0;
+  new Uint8Array(memory.buffer, ptr, payloadBuffer.byteLength).set(new Uint8Array(payloadBuffer));
+  return ptr;
+}
+
+function installWasmTexturePayload(surface: SurfaceState, payloadBuffer: ArrayBuffer): void {
+  const ptr = installWasmPackPayload(payloadBuffer);
+  if (!ptr) return;
+  surface.runtimeTextureWasmPtr = ptr;
+  surface.runtimeTextureWasmLen = payloadBuffer.byteLength;
+  surface.runtimeTextureWasmItemCount = wasmEngine?.neonei_engine_compact_texture_item_count?.(ptr, payloadBuffer.byteLength) ?? 0;
+}
+
+function installWasmAnimationPayload(surface: SurfaceState, payloadBuffer: ArrayBuffer): void {
+  const ptr = installWasmPackPayload(payloadBuffer);
+  if (!ptr) return;
+  surface.runtimeAnimationWasmPtr = ptr;
+  surface.runtimeAnimationWasmLen = payloadBuffer.byteLength;
+  surface.runtimeAnimationWasmItemCount = wasmEngine?.neonei_engine_compact_animation_item_count?.(ptr, payloadBuffer.byteLength) ?? 0;
 }
 
 const COMPACT_STRING_MAGIC = "NEISTR1\0";
@@ -862,6 +904,12 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     runtimeBrowserWasmProjectedEntries: 0,
     runtimeSearchWasmPtr: 0,
     runtimeSearchWasmLen: 0,
+    runtimeTextureWasmPtr: 0,
+    runtimeTextureWasmLen: 0,
+    runtimeTextureWasmItemCount: 0,
+    runtimeAnimationWasmPtr: 0,
+    runtimeAnimationWasmLen: 0,
+    runtimeAnimationWasmItemCount: 0,
   };
   surfaces.set(surfaceId, next);
   return next;
@@ -1102,6 +1150,8 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     nativeBrowserProjectedEntries: lastSurface?.runtimeProjectionIndices?.length ?? 0,
     nativeBrowserWasmEntries: lastSurface?.runtimeBrowserWasmItemCount ?? 0,
     nativeBrowserWasmProjectedEntries: lastSurface?.runtimeBrowserWasmProjectedEntries ?? 0,
+    nativeTextureWasmEntries: lastSurface?.runtimeTextureWasmItemCount ?? 0,
+    nativeAnimationWasmEntries: lastSurface?.runtimeAnimationWasmItemCount ?? 0,
     nativeBrowserStrings: lastSurface?.stringByItemId.size ?? lastSurface?.browserPack?.stringCount ?? 0,
     updatedAt: performance.now(),
   };
@@ -1131,7 +1181,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         const stringPack = message.packs.find((pack) => pack.name === "stringsZhCn");
         const texturePack = message.packs.find((pack) => pack.name === "textures");
         const animationPack = message.packs.find((pack) => pack.name === "animations");
-        disposeWasmBrowserPayload(surface);
+        disposeWasmPayloads(surface);
         surface.browserPack = browserPack ? parseNativeCompactBrowserPack(browserPack.buffer) : null;
         surface.groupByKey = groupPack ? parseNativeGroupPack(groupPack.buffer) : new Map();
         surface.searchByItemId = searchPack ? parseNativeSearchPack(searchPack.buffer) : new Map();
@@ -1140,13 +1190,15 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         surface.animationByItemId = animationPack ? parseNativeAnimationPack(animationPack.buffer) : new Map();
         if (browserPack) installWasmBrowserPayload(surface, browserPack.buffer);
         if (searchPack) installWasmSearchPayload(surface, searchPack.buffer);
+        if (texturePack) installWasmTexturePayload(surface, texturePack.buffer);
+        if (animationPack) installWasmAnimationPayload(surface, animationPack.buffer);
         surface.runtimeProjectionCacheKey = null;
         surface.runtimeProjectionIndices = null;
         surface.runtimeVisibleCacheKey = null;
         surface.runtimeVisibleEntries = null;
         surface.runtimeError = null;
       } catch (error) {
-        disposeWasmBrowserPayload(surface);
+        disposeWasmPayloads(surface);
         surface.browserPack = null;
         surface.groupByKey = new Map();
         surface.searchByItemId = new Map();
@@ -1215,7 +1267,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         metrics: buildMetrics(),
       };
     case "destroy":
-      disposeWasmBrowserPayload(surface);
+      disposeWasmPayloads(surface);
       surface.initialized = false;
       break;
   }

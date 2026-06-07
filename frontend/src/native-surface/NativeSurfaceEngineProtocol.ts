@@ -205,6 +205,8 @@ export type NativeSurfaceEngineWorkerMetrics = {
   nativeBrowserProjectedEntries: number;
   nativeBrowserWasmEntries: number;
   nativeBrowserWasmProjectedEntries: number;
+  nativeTextureWasmEntries: number;
+  nativeAnimationWasmEntries: number;
   nativeBrowserStrings: number;
   updatedAt: number;
 };

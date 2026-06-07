@@ -1,4 +1,4 @@
-﻿#[repr(C)]
+#[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct NativeLayoutCommand {
     pub entry_index: u32,
@@ -17,7 +17,12 @@ pub fn compute_columns(viewport_width: u32, item_size: u32, gap: u32) -> u32 {
     (safe_width.saturating_add(gap) / stride).max(1)
 }
 
-pub fn compute_layout(entry_count: u32, viewport_width: u32, item_size: u32, gap: u32) -> Vec<NativeLayoutCommand> {
+pub fn compute_layout(
+    entry_count: u32,
+    viewport_width: u32,
+    item_size: u32,
+    gap: u32,
+) -> Vec<NativeLayoutCommand> {
     let columns = compute_columns(viewport_width, item_size, gap);
     let safe_item_size = item_size.max(1);
     let icon_size = ((safe_item_size as f32) * 0.9).floor().max(1.0) as u32;

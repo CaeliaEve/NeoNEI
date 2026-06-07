@@ -1,26 +1,34 @@
-﻿//! NeoNEI native surface engine core.
+//! NeoNEI native surface engine core.
 //!
 //! This crate is intentionally small at the scaffold stage: it owns deterministic
 //! layout and hit-test math that can be compiled both for native tests and for
 //! `wasm32-unknown-unknown`. The TypeScript worker mirrors these contracts until
 //! the browser loads the compiled WASM module.
 
+pub mod compact_animation;
 pub mod compact_browser;
 pub mod compact_search;
+pub mod compact_texture;
 pub mod hit_test;
 pub mod layout;
 
+pub use compact_animation::parse_compact_animation_header;
 pub use compact_browser::{
-    compact_browser_project_count, compact_browser_project_indices, compact_browser_project_visible_indices,
-    parse_compact_browser_header,
+    compact_browser_project_count, compact_browser_project_indices,
+    compact_browser_project_visible_indices, parse_compact_browser_header,
 };
 pub use compact_search::{compact_search_project_visible_indices, parse_compact_search_header};
+pub use compact_texture::parse_compact_texture_header;
 pub use hit_test::{hit_test_index, NativeHit};
 pub use layout::{compute_columns, compute_layout, NativeLayoutCommand};
 
 /// C/WASM ABI helper for browser-side smoke tests and future worker bindings.
 #[no_mangle]
-pub extern "C" fn neonei_engine_compute_columns(viewport_width: u32, item_size: u32, gap: u32) -> u32 {
+pub extern "C" fn neonei_engine_compute_columns(
+    viewport_width: u32,
+    item_size: u32,
+    gap: u32,
+) -> u32 {
     compute_columns(viewport_width, item_size, gap)
 }
 
@@ -179,7 +187,33 @@ pub unsafe extern "C" fn neonei_engine_compact_browser_project_visible_indices(
     } else {
         Some(std::slice::from_raw_parts_mut(out_ptr, out_len as usize))
     };
-    compact_browser_project_visible_indices(pack, query, mod_filter, expanded_groups, out).unwrap_or(0)
+    compact_browser_project_visible_indices(pack, query, mod_filter, expanded_groups, out)
+        .unwrap_or(0)
+}
+
+/// Returns the compact texture item count, or 0 when the payload is invalid.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_texture_item_count(ptr: *const u8, len: u32) -> u32 {
+    let Some(bytes) = wasm_slice(ptr, len) else {
+        return 0;
+    };
+    parse_compact_texture_header(bytes)
+        .map(|header| header.item_count)
+        .unwrap_or(0)
+}
+
+/// Returns the compact animation item count, or 0 when the payload is invalid.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_animation_item_count(
+    ptr: *const u8,
+    len: u32,
+) -> u32 {
+    let Some(bytes) = wasm_slice(ptr, len) else {
+        return 0;
+    };
+    parse_compact_animation_header(bytes)
+        .map(|header| header.item_count)
+        .unwrap_or(0)
 }
 
 /// Writes search-pack projected visible entries into `out_ptr`.
@@ -217,8 +251,15 @@ pub unsafe extern "C" fn neonei_engine_compact_search_project_visible_indices(
     } else {
         Some(std::slice::from_raw_parts_mut(out_ptr, out_len as usize))
     };
-    compact_search_project_visible_indices(browser_pack, search_pack, query, mod_filter, expanded_groups, out)
-        .unwrap_or(0)
+    compact_search_project_visible_indices(
+        browser_pack,
+        search_pack,
+        query,
+        mod_filter,
+        expanded_groups,
+        out,
+    )
+    .unwrap_or(0)
 }
 
 #[cfg(test)]
