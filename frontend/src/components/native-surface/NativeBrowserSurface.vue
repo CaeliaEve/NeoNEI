@@ -5,6 +5,7 @@ import type { PageAtlasResult } from "../../services/pageAtlas";
 import { createNativeSurfaceController } from "../../native-surface/NativeSurfaceController";
 import type { NativeSurfaceId, NativeSurfaceLayoutCommand, NativeSurfaceViewportRole } from "../../native-surface/contracts";
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
+import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 
 const HomeCanvasGrid = defineAsyncComponent(() => import("../HomeCanvasGrid.vue"));
 
@@ -36,6 +37,7 @@ const emit = defineEmits<{
 }>();
 
 const hostRef = ref<HTMLElement | null>(null);
+const nativeRenderCanvasRef = ref<HTMLCanvasElement | null>(null);
 const controller = createNativeSurfaceController(props.surfaceId);
 let resizeObserver: ResizeObserver | null = null;
 let nativeFrameSeq = 0;
@@ -43,6 +45,7 @@ const nativeLayoutCommands = ref<NativeSurfaceLayoutCommand[] | null>(null);
 const nativeLayoutCommandBuffer = ref<ArrayBuffer | null>(null);
 const nativeLayoutCommandStride = ref(0);
 const nativeLayoutCommandCount = ref(0);
+let nativeRenderInitialized = false;
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
 
@@ -50,12 +53,28 @@ function emitViewportResize() {
   emit("viewportResize", hostRef.value);
 }
 
+async function initializeNativeRenderWorker(width: number, height: number) {
+  const canvas = nativeRenderCanvasRef.value;
+  if (nativeRenderInitialized || !canvas || typeof canvas.transferControlToOffscreen !== "function") {
+    return;
+  }
+  canvas.width = Math.max(1, width);
+  canvas.height = Math.max(1, height);
+  const offscreen = canvas.transferControlToOffscreen();
+  const response = await postNativeRenderEvent({
+    type: "initialize",
+    canvas: offscreen,
+    renderer: "webgl2",
+  });
+  nativeRenderInitialized = response?.type === "ready";
+}
+
 function syncViewport(width?: number, height?: number) {
   const host = hostRef.value;
   if (!host) return;
   const nextWidth = Math.max(0, Math.floor(width ?? host.clientWidth));
   const nextHeight = Math.max(0, Math.floor(height ?? host.clientHeight));
-  controller.setViewport({
+  const viewport = {
     width: nextWidth,
     height: nextHeight,
     devicePixelRatio: window.devicePixelRatio || 1,
@@ -73,7 +92,13 @@ function syncViewport(width?: number, height?: number) {
         height: nextHeight,
       }
       : undefined,
-  });
+  };
+  controller.setViewport(viewport);
+  if (!nativeRenderInitialized) {
+    void initializeNativeRenderWorker(nextWidth, nextHeight);
+  } else {
+    void postNativeRenderEvent({ type: "resize", viewport });
+  }
   void syncNativeFrame();
 }
 
@@ -107,6 +132,15 @@ async function syncNativeFrame() {
   nativeLayoutCommandBuffer.value = frame?.drawCommandBuffer ?? null;
   nativeLayoutCommandStride.value = frame?.drawCommandStride ?? 0;
   nativeLayoutCommandCount.value = frame?.drawCommandCount ?? 0;
+  if (nativeRenderInitialized && frame?.drawCommandBuffer && frame.drawCommandCount && frame.drawCommandStride) {
+    void postNativeRenderEvent({
+      type: "render",
+      commandBuffer: frame.drawCommandBuffer.slice(0),
+      commandStride: frame.drawCommandStride,
+      commandCount: frame.drawCommandCount,
+      nowMs: performance.now(),
+    });
+  }
 }
 
 onMounted(async () => {
@@ -137,6 +171,10 @@ onMounted(async () => {
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   resizeObserver = null;
+  if (nativeRenderInitialized) {
+    void postNativeRenderEvent({ type: "dispose" });
+    nativeRenderInitialized = false;
+  }
   controller.destroy();
   emit("viewportResize", null);
 });
@@ -184,6 +222,11 @@ watch(itemIdsSignature, () => {
     @mousemove="handlePointerMove"
     @mouseleave="handlePointerLeave"
   >
+    <canvas
+      ref="nativeRenderCanvasRef"
+      class="native-browser-surface__render-probe"
+      aria-hidden="true"
+    />
     <HomeCanvasGrid
       :entries="entries"
       :item-size="itemSize"
@@ -201,6 +244,22 @@ watch(itemIdsSignature, () => {
     />
   </div>
 </template>
+
+<style scoped>
+.native-browser-surface {
+  position: relative;
+}
+
+.native-browser-surface__render-probe {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  pointer-events: none;
+}
+</style>
 
 
 
