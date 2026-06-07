@@ -49,11 +49,13 @@ const props = withDefaults(defineProps<{
   atlas?: PageAtlasResult | null;
   enableAnimation?: boolean;
   preferAtlas?: boolean;
+  nativeLayoutCommands?: HomeGridLayoutCommand[] | null;
 }>(), {
   itemSize: 50,
   atlas: null,
   enableAnimation: true,
   preferAtlas: false,
+  nativeLayoutCommands: null,
 });
 
 const emit = defineEmits<{
@@ -596,7 +598,9 @@ function draw() {
   // animation off Canvas2D and avoids transparent overlay flashes during fast
   // NEI-style page jumps.
   const canUseWebglAtlas = Boolean(webglAtlasRenderer && hasGlobalBrowserAtlas());
-  const activeCommands = activeLayoutKey.value === layoutKey.value ? layoutCommands.value : null;
+  const activeCommands = props.nativeLayoutCommands?.length
+    ? props.nativeLayoutCommands
+    : (activeLayoutKey.value === layoutKey.value ? layoutCommands.value : null);
   const commandsByEntryIndex = new Map<number, HomeGridLayoutCommand>();
   activeCommands?.forEach((command) => {
     if (Number.isInteger(command.entryIndex) && command.entryIndex >= 0) {
@@ -992,6 +996,14 @@ watch(
 );
 
 watch(
+  () => props.nativeLayoutCommands,
+  () => {
+    scheduleRender();
+  },
+  { deep: false },
+);
+
+watch(
   () => [props.entries.map((entry) => entry.key).join("|"), props.itemSize, props.atlas?.atlasUrl ?? "", shouldHoldFallbackImages.value].join("::"),
   () => {
     syncAtlasFallbackGate();
@@ -1124,4 +1136,5 @@ onUnmounted(() => {
   line-height: 1.4;
 }
 </style>
+
 

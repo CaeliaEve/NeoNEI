@@ -1,9 +1,9 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../../services/api";
 import type { PageAtlasResult } from "../../services/pageAtlas";
 import { createNativeSurfaceController } from "../../native-surface/NativeSurfaceController";
-import type { NativeSurfaceId, NativeSurfaceViewportRole } from "../../native-surface/contracts";
+import type { NativeSurfaceId, NativeSurfaceLayoutCommand, NativeSurfaceViewportRole } from "../../native-surface/contracts";
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
 
 const HomeCanvasGrid = defineAsyncComponent(() => import("../HomeCanvasGrid.vue"));
@@ -36,6 +36,8 @@ const emit = defineEmits<{
 const hostRef = ref<HTMLElement | null>(null);
 const controller = createNativeSurfaceController(props.surfaceId);
 let resizeObserver: ResizeObserver | null = null;
+let nativeFrameSeq = 0;
+const nativeLayoutCommands = ref<NativeSurfaceLayoutCommand[] | null>(null);
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
 
@@ -89,6 +91,13 @@ function handlePointerMove(event: MouseEvent) {
 
 function handlePointerLeave() {
   controller.setHover(null);
+}
+
+async function syncNativeFrame() {
+  const seq = ++nativeFrameSeq;
+  const frame = await controller.requestFrame(performance.now());
+  if (seq !== nativeFrameSeq) return;
+  nativeLayoutCommands.value = frame?.drawCommands ?? null;
 }
 
 onMounted(async () => {
@@ -168,6 +177,7 @@ watch(itemIdsSignature, () => {
       :atlas="atlas"
       :enable-animation="enableAnimation"
       :prefer-atlas="preferAtlas"
+      :native-layout-commands="nativeLayoutCommands"
       @item-click="emit('itemClick', $event)"
       @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"
       @group-click="emit('groupClick', $event)"
@@ -175,3 +185,4 @@ watch(itemIdsSignature, () => {
     />
   </div>
 </template>
+

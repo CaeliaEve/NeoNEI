@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   NativeHitResult,
   NativeNeiSurfaceController,
   NativeRendererBackendKind,
@@ -173,13 +173,17 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
     this.touch("setCompatEntries");
   }
 
-  requestFrame(nowMs: number): void {
-    void postNativeSurfaceEngineEvent({
+  async requestFrame(nowMs: number) {
+    const response = await postNativeSurfaceEngineEvent({
       type: "frame",
       surfaceId: this.surfaceId,
       nowMs,
     });
     this.touch("requestFrame");
+    if (!response || response.type !== "frame") return null;
+    return {
+      drawCommands: response.drawCommands,
+    };
   }
 
   async hitTest(pointer: NativeSurfacePointer): Promise<NativeHitResult | null> {
@@ -226,3 +230,4 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
 export function createNativeSurfaceController(surfaceId: NativeSurfaceId): NativeNeiSurfaceController {
   return new CompatNativeSurfaceController(surfaceId);
 }
+

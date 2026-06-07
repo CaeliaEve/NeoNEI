@@ -1,4 +1,4 @@
-import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../services/api";
+﻿import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../services/api";
 import type { PageAtlasResult } from "../services/pageAtlas";
 
 export type NativeRendererBackendKind = "auto" | "webgpu" | "webgl2" | "compat-canvas";
@@ -78,6 +78,24 @@ export interface NativeDrawCommand {
   flags: number;
 }
 
+export interface NativeSurfaceLayoutCommand {
+  key: string;
+  kind: BrowserGridEntry["kind"];
+  entryIndex: number;
+  itemId: string;
+  groupKey?: string | null;
+  x: number;
+  y: number;
+  size: number;
+  iconX: number;
+  iconY: number;
+  iconSize: number;
+}
+
+export interface NativeSurfaceFrameResult {
+  drawCommands: NativeSurfaceLayoutCommand[];
+}
+
 export interface NativeSurfaceMetrics {
   surfaceId: NativeSurfaceId;
   initialized: boolean;
@@ -113,7 +131,7 @@ export interface NativeNeiSurfaceController {
    */
   setCompatEntries(entries: NativeSurfaceCompatEntries): void;
 
-  requestFrame(nowMs: number): void;
+  requestFrame(nowMs: number): Promise<NativeSurfaceFrameResult | null>;
   hitTest(pointer: NativeSurfacePointer): Promise<NativeHitResult | null>;
   getMetrics(): Promise<NativeSurfaceMetrics>;
 }
@@ -154,4 +172,5 @@ export interface NativeRuntimeManifest {
     perItemImageFallback: false;
   };
 }
+
 

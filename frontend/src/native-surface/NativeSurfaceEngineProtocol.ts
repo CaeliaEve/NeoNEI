@@ -1,4 +1,5 @@
-import type {
+﻿import type {
+  NativeSurfaceLayoutCommand,
   NativeRendererBackendKind,
   NativeSurfaceId,
   NativeSurfaceViewportRole,
@@ -13,19 +14,8 @@ export type NativeSurfaceEngineEntry = {
   groupKey?: string | null;
 };
 
-export type NativeSurfaceEngineLayoutCommand = {
-  key: string;
-  kind: NativeSurfaceEngineEntry["kind"];
-  entryIndex: number;
-  itemId: string;
-  groupKey?: string | null;
-  x: number;
-  y: number;
-  size: number;
-  iconX: number;
-  iconY: number;
-  iconSize: number;
-};
+export type NativeSurfaceEngineLayoutCommand = NativeSurfaceLayoutCommand;
+
 
 export type NativeSurfaceEngineHit = {
   key: string;
@@ -147,3 +137,5 @@ export type NativeSurfaceEngineWorkerMetrics = {
   lastHit: NativeSurfaceEngineHit;
   updatedAt: number;
 };
+
+
