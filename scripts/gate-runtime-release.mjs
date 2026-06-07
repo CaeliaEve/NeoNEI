@@ -47,6 +47,7 @@ const steps = [
   { name: 'native runtime pack schema gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-runtime-packs'] },
   { name: 'native runtime projection gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-runtime-projection'] },
   { name: 'native surface worker group gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-surface-worker-groups'] },
+  { name: 'native surface batching gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-surface-batching'] },
   { name: 'WASM engine gate', cwd: frontendDir, command: npm, args: ['run', 'test:wasm-engine'] },
   { name: 'runtime v3 regression', cwd: frontendDir, command: npm, args: ['run', 'validate:runtime-v3'] },
   { name: 'browser page v3 smoke', cwd: frontendDir, command: npm, args: ['run', 'validate:browser-pages-v3'] },

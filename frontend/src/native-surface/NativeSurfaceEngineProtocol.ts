@@ -105,6 +105,12 @@ export type NativeSurfaceEngineRequest =
     itemSize: number;
   }
   | {
+    type: "mutationBatch";
+    id: number;
+    surfaceId: NativeSurfaceId;
+    mutations: NativeSurfaceEngineMutation[];
+  }
+  | {
     type: "frame";
     id: number;
     surfaceId: NativeSurfaceId;
@@ -125,6 +131,16 @@ export type NativeSurfaceEngineRequest =
     id: number;
     surfaceId: NativeSurfaceId;
   };
+
+export type NativeSurfaceEngineMutation =
+  | { type: "viewport"; viewport: NativeSurfaceViewport }
+  | { type: "page"; page: number }
+  | { type: "search"; query: string }
+  | { type: "modFilter"; modId: string | null }
+  | { type: "expandedGroups"; groupKeys: string[] }
+  | { type: "historyItems"; itemIds: string[] }
+  | { type: "compatEntries"; entries: NativeSurfaceEngineEntry[] }
+  | { type: "itemSize"; itemSize: number };
 
 export type NativeSurfaceEngineResponse =
   | {

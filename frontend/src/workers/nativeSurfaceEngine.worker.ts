@@ -4,6 +4,7 @@ import type {
   NativeSurfaceEngineEntry,
   NativeSurfaceEngineHit,
   NativeSurfaceEngineLayoutCommand,
+  NativeSurfaceEngineMutation,
   NativeSurfaceEngineWorkerMetrics,
 } from "../native-surface/NativeSurfaceEngineProtocol";
 import { NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE } from "../native-surface/NativeSurfaceEngineProtocol";
@@ -478,6 +479,45 @@ function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequ
   return surface.lastHit;
 }
 
+function applyMutation(surface: SurfaceState, mutation: NativeSurfaceEngineMutation): boolean {
+  switch (mutation.type) {
+    case "viewport":
+      surface.viewport = mutation.viewport;
+      return true;
+    case "page":
+      surface.page = Math.max(1, Math.floor(Number(mutation.page) || 1));
+      return true;
+    case "search": {
+      const nextQuery = `${mutation.query ?? ""}`;
+      if (surface.query !== nextQuery) {
+        surface.query = nextQuery;
+        surface.runtimeProjectionCacheKey = null;
+      }
+      return true;
+    }
+    case "modFilter": {
+      const nextModId = mutation.modId ? `${mutation.modId}` : null;
+      if (surface.modId !== nextModId) {
+        surface.modId = nextModId;
+        surface.runtimeProjectionCacheKey = null;
+      }
+      return true;
+    }
+    case "expandedGroups":
+      surface.expandedGroups = Array.from(new Set(mutation.groupKeys));
+      return true;
+    case "historyItems":
+      surface.historyItems = Array.from(new Set(mutation.itemIds));
+      return false;
+    case "compatEntries":
+      surface.entries = mutation.entries;
+      return true;
+    case "itemSize":
+      surface.itemSize = Math.max(1, Math.floor(Number(mutation.itemSize) || 1));
+      return true;
+  }
+}
+
 function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
   const lastSurface = lastSurfaceId ? surfaces.get(lastSurfaceId) : null;
   const projectionSource = lastSurface ? getActiveEntries(lastSurface).source : "empty";
@@ -541,38 +581,37 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       rebuildLayout(surface);
       break;
     case "viewport":
-      surface.viewport = message.viewport;
-      rebuildLayout(surface);
+      if (applyMutation(surface, { type: "viewport", viewport: message.viewport })) rebuildLayout(surface);
       break;
     case "page":
-      surface.page = Math.max(1, Math.floor(Number(message.page) || 1));
-      rebuildLayout(surface);
+      if (applyMutation(surface, { type: "page", page: message.page })) rebuildLayout(surface);
       break;
     case "search":
-      surface.query = `${message.query ?? ""}`;
-      surface.runtimeProjectionCacheKey = null;
-      rebuildLayout(surface);
+      if (applyMutation(surface, { type: "search", query: message.query })) rebuildLayout(surface);
       break;
     case "modFilter":
-      surface.modId = message.modId ? `${message.modId}` : null;
-      surface.runtimeProjectionCacheKey = null;
-      rebuildLayout(surface);
+      if (applyMutation(surface, { type: "modFilter", modId: message.modId })) rebuildLayout(surface);
       break;
     case "expandedGroups":
-      surface.expandedGroups = Array.from(new Set(message.groupKeys));
-      rebuildLayout(surface);
+      if (applyMutation(surface, { type: "expandedGroups", groupKeys: message.groupKeys })) rebuildLayout(surface);
       break;
     case "historyItems":
-      surface.historyItems = Array.from(new Set(message.itemIds));
+      applyMutation(surface, { type: "historyItems", itemIds: message.itemIds });
       break;
     case "compatEntries":
-      surface.entries = message.entries;
-      rebuildLayout(surface);
+      if (applyMutation(surface, { type: "compatEntries", entries: message.entries })) rebuildLayout(surface);
       break;
     case "itemSize":
-      surface.itemSize = Math.max(1, Math.floor(Number(message.itemSize) || 1));
-      rebuildLayout(surface);
+      if (applyMutation(surface, { type: "itemSize", itemSize: message.itemSize })) rebuildLayout(surface);
       break;
+    case "mutationBatch": {
+      let needsLayout = false;
+      for (const mutation of message.mutations) {
+        needsLayout = applyMutation(surface, mutation) || needsLayout;
+      }
+      if (needsLayout) rebuildLayout(surface);
+      break;
+    }
     case "frame":
       rebuildLayout(surface);
       return {

@@ -15,7 +15,7 @@ import {
   updateNativeSurfaceMetrics,
 } from "./NativeSurfaceMetrics";
 import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
-import type { NativeSurfaceEngineEntry } from "./NativeSurfaceEngineProtocol";
+import type { NativeSurfaceEngineEntry, NativeSurfaceEngineMutation } from "./NativeSurfaceEngineProtocol";
 import { loadNativeRuntimeBuffers } from "./runtimeLoader";
 
 function normalizeRenderer(renderer?: NativeRendererBackendKind): NativeRendererBackendKind {
@@ -58,6 +58,11 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
   private nativeRuntimeReady = false;
   private nativeRuntimePacks = 0;
   private nativeRuntimeError: string | null = null;
+  private pendingMutations = new Map<NativeSurfaceEngineMutation["type"], NativeSurfaceEngineMutation>();
+  private mutationFlushTimer: ReturnType<typeof setTimeout> | number | null = null;
+  private mutationFlushTimerKind: "raf" | "timeout" | null = null;
+  private mutationFlushPromise: Promise<void> | null = null;
+  private mutationFlushResolve: (() => void) | null = null;
 
   constructor(surfaceId: NativeSurfaceId) {
     this.surfaceId = surfaceId;
@@ -83,6 +88,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
   }
 
   destroy(): void {
+    void this.flushMutationsNow();
     this.initialized = false;
     this.hover = null;
     void postNativeSurfaceEngineEvent({
@@ -94,61 +100,37 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
 
   setViewport(viewport: NativeSurfaceViewport): void {
     this.viewport = viewport;
-    void postNativeSurfaceEngineEvent({
-      type: "viewport",
-      surfaceId: this.surfaceId,
-      viewport,
-    });
+    this.queueMutation({ type: "viewport", viewport });
     this.touch("setViewport");
   }
 
   setPage(page: number): void {
     this.page = Math.max(1, Math.floor(Number(page) || 1));
-    void postNativeSurfaceEngineEvent({
-      type: "page",
-      surfaceId: this.surfaceId,
-      page: this.page,
-    });
+    this.queueMutation({ type: "page", page: this.page });
     this.touch("setPage");
   }
 
   setSearch(query: string): void {
     this.search = `${query ?? ""}`;
-    void postNativeSurfaceEngineEvent({
-      type: "search",
-      surfaceId: this.surfaceId,
-      query: this.search,
-    });
+    this.queueMutation({ type: "search", query: this.search });
     this.touch("setSearch");
   }
 
   setModFilter(modId: string | null): void {
     this.modFilter = modId ? `${modId}` : null;
-    void postNativeSurfaceEngineEvent({
-      type: "modFilter",
-      surfaceId: this.surfaceId,
-      modId: this.modFilter,
-    });
+    this.queueMutation({ type: "modFilter", modId: this.modFilter });
     this.touch("setModFilter");
   }
 
   setExpandedGroups(groupKeys: string[]): void {
     this.expandedGroups = Array.from(new Set(groupKeys.map((key) => `${key ?? ""}`.trim()).filter(Boolean)));
-    void postNativeSurfaceEngineEvent({
-      type: "expandedGroups",
-      surfaceId: this.surfaceId,
-      groupKeys: this.expandedGroups,
-    });
+    this.queueMutation({ type: "expandedGroups", groupKeys: this.expandedGroups });
     this.touch("setExpandedGroups");
   }
 
   setItemSize(size: number): void {
     this.itemSize = Math.max(1, Math.floor(Number(size) || 1));
-    void postNativeSurfaceEngineEvent({
-      type: "itemSize",
-      surfaceId: this.surfaceId,
-      itemSize: this.itemSize,
-    });
+    this.queueMutation({ type: "itemSize", itemSize: this.itemSize });
     this.touch("setItemSize");
   }
 
@@ -159,11 +141,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
 
   setHistoryItems(itemIds: string[]): void {
     this.historyItems = Array.from(new Set(itemIds.map((itemId) => `${itemId ?? ""}`.trim()).filter(Boolean)));
-    void postNativeSurfaceEngineEvent({
-      type: "historyItems",
-      surfaceId: this.surfaceId,
-      itemIds: this.historyItems,
-    });
+    this.queueMutation({ type: "historyItems", itemIds: this.historyItems });
     this.touch("setHistoryItems");
   }
 
@@ -172,15 +150,12 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       entries: entries.entries,
       atlas: entries.atlas ?? null,
     };
-    void postNativeSurfaceEngineEvent({
-      type: "compatEntries",
-      surfaceId: this.surfaceId,
-      entries: toEngineEntries(this.entries.entries),
-    });
+    this.queueMutation({ type: "compatEntries", entries: toEngineEntries(this.entries.entries) });
     this.touch("setCompatEntries");
   }
 
   async requestFrame(nowMs: number) {
+    await this.flushMutationsNow();
     const response = await postNativeSurfaceEngineEvent({
       type: "frame",
       surfaceId: this.surfaceId,
@@ -197,6 +172,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
   }
 
   async hitTest(pointer: NativeSurfacePointer): Promise<NativeHitResult | null> {
+    await this.flushMutationsNow();
     const response = await postNativeSurfaceEngineEvent({
       type: "hitTest",
       surfaceId: this.surfaceId,
@@ -245,6 +221,55 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       nativeRuntimePacks: this.nativeRuntimePacks,
       nativeRuntimeError: this.nativeRuntimeError,
     }, eventName);
+  }
+
+  private queueMutation(mutation: NativeSurfaceEngineMutation): void {
+    this.pendingMutations.set(mutation.type, mutation);
+    if (!this.mutationFlushPromise) {
+      this.mutationFlushPromise = new Promise<void>((resolve) => {
+        this.mutationFlushResolve = resolve;
+      });
+    }
+    if (this.mutationFlushTimer !== null) return;
+    const useRaf = typeof requestAnimationFrame === "function";
+    const schedule = useRaf
+      ? requestAnimationFrame
+      : (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0);
+    this.mutationFlushTimerKind = useRaf ? "raf" : "timeout";
+    this.mutationFlushTimer = schedule(() => {
+      this.mutationFlushTimer = null;
+      this.mutationFlushTimerKind = null;
+      void this.flushMutationsNow();
+    });
+  }
+
+  private async flushMutationsNow(): Promise<void> {
+    if (this.mutationFlushTimer !== null && this.mutationFlushTimerKind === "raf" && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(Number(this.mutationFlushTimer));
+    } else if (this.mutationFlushTimer !== null && this.mutationFlushTimerKind === "timeout") {
+      clearTimeout(this.mutationFlushTimer);
+    }
+    this.mutationFlushTimer = null;
+    this.mutationFlushTimerKind = null;
+    if (this.pendingMutations.size <= 0) {
+      this.resolveMutationFlush();
+      return;
+    }
+    const mutations = Array.from(this.pendingMutations.values());
+    this.pendingMutations.clear();
+    await postNativeSurfaceEngineEvent({
+      type: "mutationBatch",
+      surfaceId: this.surfaceId,
+      mutations,
+    });
+    this.touch(`mutationBatch:${mutations.length}`);
+    this.resolveMutationFlush();
+  }
+
+  private resolveMutationFlush(): void {
+    this.mutationFlushResolve?.();
+    this.mutationFlushResolve = null;
+    this.mutationFlushPromise = null;
   }
 
   private async loadRuntimePacks(manifestUrl: string): Promise<void> {
