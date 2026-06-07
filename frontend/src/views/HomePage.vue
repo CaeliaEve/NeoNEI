@@ -13,22 +13,12 @@ import {
 import { useRouter } from "vue-router";
 import {
   api,
-  type BrowserGridEntry,
   type BrowserVariantGroup,
   type Item,
 } from "../services/api";
 import {
-  type PageAtlasResult,
-} from "../services/pageAtlas";
-import {
-  primeAnimatedAtlasManifest,
-  primeRenderAnimationHintsFromUnknown,
-  queueRenderableMediaPrewarmFromUnknown,
-} from "../services/animationBudget";
-import {
   inspectGlobalBrowserAtlasResidentState,
   warmAllGlobalBrowserAtlases,
-  warmGlobalBrowserAtlasForItemsDetailed,
 } from "../services/globalBrowserAtlas";
 import HomeSettingsPanel from "../components/home/HomeSettingsPanel.vue";
 import HomeHistoryStrip from "../components/home/HomeHistoryStrip.vue";
@@ -36,12 +26,11 @@ import HomeBrowserColumn from "../components/home/HomeBrowserColumn.vue";
 import HomeRecipeDock from "../components/home/HomeRecipeDock.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
 import { useHomeBrowserNavigation } from "../composables/home/useHomeBrowserNavigation";
+import { useHomeHistory } from "../composables/home/useHomeHistory";
 import { useHomeGridViewport, useHomeRailStyles } from "../composables/home/useHomeLayout";
 import { useSound } from "../services/sound.service";
 import { useRecipeViewer } from "../composables/useRecipeViewer";
 import { resolveRecipePresentationProfile } from "../services/uiTypeMapping";
-
-type ItemBasicInfo = Pick<Item, "itemId" | "localizedName" | "modId" | "internalName" | "damage" | "imageFileName" | "renderAssetRef" | "preferredImageUrl">;
 
 const router = useRouter();
 
@@ -119,61 +108,22 @@ const currentGroupName = ref<string>('');
 const latestCreatedPatternId = ref<string | undefined>(undefined);
 const showTransitionOverlay = ref(false);
 
-// View history cache persisted in localStorage.
-const loadViewHistory = () => {
-  try {
-    const saved = localStorage.getItem("viewHistory");
-    return saved ? JSON.parse(saved) : [];
-  } catch {
-    return [];
-  }
-};
-const viewHistory = ref<ItemBasicInfo[]>(loadViewHistory());
-const maxHistoryItems = 400; // Keep a bounded history list without limiting UI to 20.
-const historyAtlas = ref<PageAtlasResult | null | undefined>(undefined);
-const historyItems = ref<Item[]>([]);
 const expandedBrowserGroups = ref<Set<string>>(new Set());
 const showSearchContextMenu = ref(false);
 const searchContextMenuPosition = ref({ x: 0, y: 0 });
-let historyAtlasRequestSeq = 0;
 
-// Save view history to localStorage
-const saveViewHistory = () => {
-  try {
-    localStorage.setItem("viewHistory", JSON.stringify(viewHistory.value));
-  } catch (e) {
-    console.error("Failed to save view history:", e);
-  }
-};
-
-
-const addToHistory = (item: Item) => {
-  const basic: ItemBasicInfo = {
-    itemId: item.itemId,
-    localizedName: item.localizedName,
-    modId: item.modId,
-    internalName: item.internalName,
-    damage: Number(item.damage ?? 0),
-    imageFileName: item.imageFileName,
-    renderAssetRef: item.renderAssetRef,
-    preferredImageUrl: item.preferredImageUrl,
-  };
-
-  const idx = viewHistory.value.findIndex((h) => h.itemId === basic.itemId);
-  if (idx >= 0) {
-    viewHistory.value.splice(idx, 1);
-  }
-  viewHistory.value.unshift(basic);
-  if (viewHistory.value.length > maxHistoryItems) {
-    viewHistory.value = viewHistory.value.slice(0, maxHistoryItems);
-  }
-  saveViewHistory();
-};
-
-const clearViewHistory = () => {
-  viewHistory.value = [];
-  saveViewHistory();
-};
+const {
+  viewHistory,
+  historyAtlas,
+  historyRows,
+  historyGridGap,
+  historyItemPixelSize,
+  historyBrowserEntries,
+  setHistoryPanelRef,
+  updateHistoryPanelWidth,
+  addToHistory,
+  clearViewHistory,
+} = useHomeHistory(itemSize);
 
 const atlasResidentRunning = ref(false);
 const atlasResidentProgressCurrent = ref(0);
@@ -230,56 +180,8 @@ const warmResidentAtlas = async () => {
   }
 };
 
-const historyPanelRef = ref<HTMLElement | null>(null);
-const historyPanelWidth = ref(0);
-const historyRows = 2 as const; // 强制固定两行
-const historyGridGap = 4; // 对应 gap-1
-const historyHorizontalPadding = 32; // 对应 px-4 (左右各16)
-
-const historyItemPixelSize = computed(() => Math.min(itemSize.value, 56));
-const historyGridCellSize = computed(() => Math.min(itemSize.value + 4, 60));
-
-const updateHistoryPanelWidth = () => {
-  historyPanelWidth.value = historyPanelRef.value?.clientWidth ?? 0;
-};
-const setHistoryPanelRef = (element: HTMLElement | null) => {
-  historyPanelRef.value = element;
-  updateHistoryPanelWidth();
-};
-
-const historyColumns = computed(() => {
-  const fallbackWidth =
-    typeof window !== "undefined" ? Math.floor(window.innerWidth * 0.38) : 0;
-  const effectiveWidth =
-    historyPanelWidth.value > 0 ? historyPanelWidth.value : fallbackWidth;
-  const contentWidth = Math.max(0, effectiveWidth - historyHorizontalPadding);
-  return Math.max(
-    1,
-    Math.floor(
-      (contentWidth + historyGridGap) /
-        (historyGridCellSize.value + historyGridGap),
-    ),
-  );
-});
-
-const historyVisibleCount = computed(() => historyColumns.value * historyRows);
-const visibleHistorySeeds = computed(() => viewHistory.value.slice(0, historyVisibleCount.value));
-const visibleHistoryItems = computed<Item[]>(() =>
-  historyItems.value.length > 0
-    ? historyItems.value
-    : (visibleHistorySeeds.value as Item[]),
-);
-const historyBrowserEntries = computed<BrowserGridEntry[]>(() =>
-  visibleHistoryItems.value.map((item) => ({
-    key: item.itemId,
-    kind: "item",
-    item,
-  })),
-);
-
 onMounted(() => {
   updateHistoryPanelWidth();
-  window.addEventListener("resize", updateHistoryPanelWidth);
   window.addEventListener("pointerdown", handleGlobalPointerDown, true);
   window.addEventListener("scroll", closeSearchContextMenu, true);
   window.addEventListener("keydown", handleGlobalKeydown);
@@ -292,7 +194,6 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener("resize", updateHistoryPanelWidth);
   window.removeEventListener("pointerdown", handleGlobalPointerDown, true);
   window.removeEventListener("scroll", closeSearchContextMenu, true);
   window.removeEventListener("keydown", handleGlobalKeydown);
@@ -356,65 +257,6 @@ watch(
       syncMeasuredPageSize();
     }
   },
-);
-
-function prewarmHistoryPagePackMedia(pack: { data: BrowserGridEntry[]; mediaManifest?: Parameters<typeof primeAnimatedAtlasManifest>[0] }) {
-  primeRenderAnimationHintsFromUnknown(pack.data);
-  primeAnimatedAtlasManifest(pack.mediaManifest);
-  queueRenderableMediaPrewarmFromUnknown(pack.data, {
-    limit: 24,
-    animatedOnly: true,
-  });
-}
-
-watch(
-  () => [
-    visibleHistorySeeds.value.map((item) => item.itemId).join("|"),
-    historyItemPixelSize.value,
-  ].join("::"),
-  async () => {
-    const seedItems = visibleHistorySeeds.value;
-    if (seedItems.length === 0) {
-      historyItems.value = [];
-      historyAtlas.value = null;
-      return;
-    }
-
-    const requestSeq = ++historyAtlasRequestSeq;
-    const itemIds = seedItems.map((item) => item.itemId);
-    const slotSize = Math.max(32, Math.ceil(historyItemPixelSize.value * 0.9));
-    historyItems.value = seedItems as Item[];
-    historyAtlas.value = undefined;
-
-    const globalCoverage = await warmGlobalBrowserAtlasForItemsDetailed(itemIds).catch(() => null);
-    if (requestSeq !== historyAtlasRequestSeq) return;
-    if (globalCoverage && globalCoverage.total > 0 && globalCoverage.missingCount === 0) {
-      historyAtlas.value = null;
-      return;
-    }
-
-    const cachedPack = api.peekBrowserPagePackByIds({ itemIds, slotSize });
-    if (cachedPack) {
-      historyItems.value = cachedPack.data.map((entry) => entry.item);
-      historyAtlas.value = cachedPack.atlas ?? null;
-      prewarmHistoryPagePackMedia(cachedPack);
-    }
-
-    void api.getBrowserPagePackByIds({
-      itemIds,
-      slotSize,
-    }).then((pack) => {
-      if (requestSeq !== historyAtlasRequestSeq) return;
-      historyItems.value = pack.data.map((entry) => entry.item);
-      historyAtlas.value = pack.atlas ?? null;
-      prewarmHistoryPagePackMedia(pack);
-    }).catch(() => {
-      if (requestSeq !== historyAtlasRequestSeq) return;
-      historyItems.value = seedItems as Item[];
-      historyAtlas.value = null;
-    });
-  },
-  { immediate: true },
 );
 
 const itemGridEmptySubtitle = computed(() => {
