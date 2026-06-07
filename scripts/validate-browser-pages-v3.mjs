@@ -1,4 +1,4 @@
-﻿import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { performance } from "node:perf_hooks";
@@ -12,10 +12,19 @@ const pageSize = Math.max(1, Math.floor(Number(process.env.BROWSER_PAGE_SMOKE_PA
 const pageSpec = `${process.env.BROWSER_PAGE_SMOKE_PAGES ?? "1,40,53,100,last"}`;
 const searchSpec = `${process.env.BROWSER_PAGE_SMOKE_SEARCHES ?? "iron,wand,singularity"}`;
 const maxPageSliceMs = Number(process.env.BROWSER_PAGE_SMOKE_MAX_SLICE_MS ?? 4);
+const maxPageP95Ms = Number(process.env.BROWSER_PAGE_SMOKE_MAX_P95_MS ?? maxPageSliceMs);
 const maxSearchMs = Number(process.env.BROWSER_PAGE_SMOKE_MAX_SEARCH_MS ?? 50);
+const maxSearchP95Ms = Number(process.env.BROWSER_PAGE_SMOKE_MAX_SEARCH_P95_MS ?? maxSearchMs);
 const groupSmokeLimit = Math.max(0, Math.floor(Number(process.env.BROWSER_GROUP_SMOKE_LIMIT ?? 8)));
 const maxGroupExpandMs = Number(process.env.BROWSER_GROUP_SMOKE_MAX_EXPAND_MS ?? 8);
 const maxGroupFacetFilterMs = Number(process.env.BROWSER_GROUP_SMOKE_MAX_FACET_FILTER_MS ?? 8);
+
+function percentile(values, pct) {
+  const numeric = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
+  if (numeric.length <= 0) return 0;
+  const index = Math.min(numeric.length - 1, Math.max(0, Math.ceil((pct / 100) * numeric.length) - 1));
+  return numeric[index];
+}
 
 function readJson(relativePath) {
   const filePath = join(distDataDir, relativePath);
@@ -339,10 +348,19 @@ function searchEntries(searchItems, indexes, query) {
 
 const manifest = readJson("manifest.json");
 const files = manifest.files ?? {};
-const catalogPayload = readJson(files.browserCatalog ?? "browser/item-catalog.json");
-const groupsPayload = readJson(files.browserGroups ?? "browser/group-index.json");
-const atlasPayload = readJson(files.browserAtlasIndex ?? "textures/browser-atlas-index.json");
-const searchPayload = readJson(files.searchAll ?? "search/all.json");
+const rustBrowserPack = files.rustBrowserPack ? readJson(files.rustBrowserPack) : null;
+const rustTexturePack = files.rustTexturePack ? readJson(files.rustTexturePack) : null;
+const rustSearchPack = files.rustSearchPack ? readJson(files.rustSearchPack) : null;
+const catalogPayload = rustBrowserPack?.items ? rustBrowserPack : readJson(files.browserCatalog ?? "browser/item-catalog.json");
+const groupsPayload = rustBrowserPack?.groups ? rustBrowserPack : readJson(files.browserGroups ?? "browser/group-index.json");
+const atlasPayload = rustTexturePack?.atlas?.items ? rustTexturePack.atlas : readJson(files.browserAtlasIndex ?? "textures/browser-atlas-index.json");
+const searchPayload = rustSearchPack?.items ? rustSearchPack : readJson(files.searchAll ?? "search/all.json");
+const runtimeSources = {
+  browser: rustBrowserPack?.items ? "rust/browser-pack" : "legacy/browser-catalog",
+  groups: rustBrowserPack?.groups ? "rust/browser-pack" : "legacy/browser-groups",
+  atlas: rustTexturePack?.atlas?.items ? "rust/texture-pack" : "legacy/browser-atlas-index",
+  search: rustSearchPack?.items ? "rust/search-pack" : "legacy/search-all",
+};
 
 const catalogItems = Array.isArray(catalogPayload.items) ? catalogPayload.items : [];
 const groups = Array.isArray(groupsPayload.groups) ? groupsPayload.groups : [];
@@ -463,6 +481,19 @@ if (defaultCatalog.length <= 0) failures.push("default browser catalog projectio
 if (groups.length <= 0) warnings.push("browser group index is empty");
 if (searchItems.length <= 0) failures.push("search pack is empty");
 
+const pageTimings = pageResults.map((entry) => entry.elapsedMs);
+const searchTimings = searchResults.map((entry) => entry.elapsedMs);
+const timingSummary = {
+  pageP50Ms: percentile(pageTimings, 50),
+  pageP95Ms: percentile(pageTimings, 95),
+  pageMaxMs: pageTimings.length ? Math.max(...pageTimings) : 0,
+  searchP50Ms: percentile(searchTimings, 50),
+  searchP95Ms: percentile(searchTimings, 95),
+  searchMaxMs: searchTimings.length ? Math.max(...searchTimings) : 0,
+};
+if (timingSummary.pageP95Ms > maxPageP95Ms) failures.push(`browser page p95 ${timingSummary.pageP95Ms.toFixed(3)}ms exceeds ${maxPageP95Ms}ms`);
+if (timingSummary.searchP95Ms > maxSearchP95Ms) failures.push(`browser search p95 ${timingSummary.searchP95Ms.toFixed(3)}ms exceeds ${maxSearchP95Ms}ms`);
+
 const report = {
   schemaVersion: "neonei/browser-page-v3-smoke/v1",
   generatedAt: new Date().toISOString(),
@@ -470,6 +501,8 @@ const report = {
   source: manifest.source ?? null,
   sourceRepository: manifest.sourceRepository ?? null,
   pageSize,
+  runtimeSources,
+  timingSummary,
   totals: {
     rawCatalogItems: catalogItems.length,
     projectedDefaultEntries: defaultCatalog.length,
@@ -478,7 +511,7 @@ const report = {
     atlasItems: atlasByItemId.size,
     searchItems: searchItems.length,
   },
-  limits: { maxPageSliceMs, maxSearchMs, maxGroupExpandMs, maxGroupFacetFilterMs, groupSmokeLimit },
+  limits: { maxPageSliceMs, maxPageP95Ms, maxSearchMs, maxSearchP95Ms, maxGroupExpandMs, maxGroupFacetFilterMs, groupSmokeLimit },
   pages: pageResults,
   searches: searchResults,
   groups: groupResults,

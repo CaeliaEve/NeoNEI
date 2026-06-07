@@ -1,4 +1,4 @@
-﻿import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, statSync, writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import zlib from "node:zlib";
@@ -13,6 +13,7 @@ const gateMode = process.argv.includes("--gate");
 
 const limits = {
   avgQueryMs: Number(process.env.SEARCH_V3_MAX_AVG_MS ?? 8),
+  p95QueryMs: Number(process.env.SEARCH_V3_MAX_P95_MS ?? 20),
   maxQueryMs: Number(process.env.SEARCH_V3_MAX_QUERY_MS ?? 50),
   maxIndexBuildMs: Number(process.env.SEARCH_V3_MAX_INDEX_BUILD_MS ?? 15000),
 };
@@ -221,6 +222,13 @@ function rank(entry, normalized) {
   return null;
 }
 
+function percentile(values, pct) {
+  const numeric = values.filter((value) => Number.isFinite(value)).sort((left, right) => left - right);
+  if (numeric.length <= 0) return 0;
+  const index = Math.min(numeric.length - 1, Math.max(0, Math.ceil((pct / 100) * numeric.length) - 1));
+  return numeric[index];
+}
+
 function uniqueSorted(values) {
   return Array.from(new Set(values)).sort((left, right) => left - right);
 }
@@ -309,14 +317,20 @@ for (const queryConfig of queries) {
   }
 }
 
+const queryTimings = results.map((entry) => entry.elapsedMs);
 const summary = {
-  maxQueryElapsedMs: Math.max(...results.map((entry) => entry.elapsedMs)),
-  avgQueryElapsedMs: results.reduce((sum, entry) => sum + entry.elapsedMs, 0) / Math.max(1, results.length),
+  p50QueryElapsedMs: percentile(queryTimings, 50),
+  p95QueryElapsedMs: percentile(queryTimings, 95),
+  maxQueryElapsedMs: Math.max(...queryTimings),
+  avgQueryElapsedMs: queryTimings.reduce((sum, entry) => sum + entry, 0) / Math.max(1, queryTimings.length),
 };
 
 if (gateMode) {
   if (summary.avgQueryElapsedMs > limits.avgQueryMs) {
     failures.push(`Average query time ${summary.avgQueryElapsedMs.toFixed(2)}ms exceeds ${limits.avgQueryMs}ms`);
+  }
+  if (summary.p95QueryElapsedMs > limits.p95QueryMs) {
+    failures.push(`P95 query time ${summary.p95QueryElapsedMs.toFixed(2)}ms exceeds ${limits.p95QueryMs}ms`);
   }
   if (summary.maxQueryElapsedMs > limits.maxQueryMs) {
     failures.push(`Max query time ${summary.maxQueryElapsedMs.toFixed(2)}ms exceeds ${limits.maxQueryMs}ms`);

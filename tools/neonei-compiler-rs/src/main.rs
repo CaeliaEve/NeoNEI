@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+﻿use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use flate2::read::GzDecoder;
 use pinyin::ToPinyin;
@@ -297,7 +297,9 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
     let items = read_jsonl_values(input, &manifest, "items")?;
     let order_rows = read_jsonl_values(input, &manifest, "neiOrder")?;
     let group_rows = read_jsonl_values(input, &manifest, "groups")?;
+    let texture_rows = read_jsonl_values(input, &manifest, "textures")?;
     let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?.unwrap_or(Value::Null);
+    let atlas = repaired_browser_atlas(&atlas, &texture_rows);
 
     if strict && items.is_empty() {
         return Err(anyhow!(
@@ -1107,7 +1109,7 @@ fn normalize_recipe_category_name(value: &str) -> String {
             skip_format = false;
             continue;
         }
-        if character == '§' || character == '&' {
+        if character == '搂' || character == '&' {
             skip_format = true;
             continue;
         }
@@ -1336,6 +1338,71 @@ fn compact_fact_value(value: &Value, depth: usize) -> Option<Value> {
 fn value_i64(value: &Value, key: &str) -> Option<i64> {
     value.get(key)?.as_i64()
 }
+
+fn item_id_from_asset_id(asset_id: &str) -> Option<String> {
+    asset_id.strip_prefix("nesqlpp:item/").map(str::to_string)
+}
+
+fn repaired_browser_atlas(atlas: &Value, texture_rows: &[Value]) -> Value {
+    let mut items = atlas
+        .get("items")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+    let mut existing = items
+        .iter()
+        .filter_map(|entry| value_string(entry, "itemId").map(|item_id| (item_id, true)))
+        .collect::<BTreeMap<_, bool>>();
+
+    for texture in texture_rows {
+        let Some(asset_id) = value_string(texture, "assetId") else { continue; };
+        let Some(item_id) = item_id_from_asset_id(&asset_id) else { continue; };
+        if existing.contains_key(&item_id) { continue; }
+        let Some(atlas_file) = value_string(texture, "atlasFile") else { continue; };
+        let rect = texture.get("rect").cloned().unwrap_or_else(|| json!({
+            "x": 0,
+            "y": 0,
+            "width": 16,
+            "height": 16,
+        }));
+        let x = rect.get("x").and_then(Value::as_u64).unwrap_or(0);
+        let y = rect.get("y").and_then(Value::as_u64).unwrap_or(0);
+        let width = rect.get("width").and_then(Value::as_u64).unwrap_or(16);
+        let height = rect.get("height").and_then(Value::as_u64).unwrap_or(16);
+        items.push(json!({
+            "itemId": item_id,
+            "assetId": asset_id,
+            "hasStaticAtlas": true,
+            "resolutionMode": "rust_texture_row_repair",
+            "staticAtlas": {
+                "atlasFile": atlas_file,
+                "atlasWidth": x + width,
+                "atlasHeight": y + height,
+                "x": x,
+                "y": y,
+                "width": width,
+                "height": height,
+            },
+        }));
+        existing.insert(item_id, true);
+    }
+
+    let mut repaired = atlas.clone();
+    if !repaired.is_object() {
+        repaired = json!({ "schemaVersion": "browser-atlas-index-repaired" });
+    }
+    if let Some(object) = repaired.as_object_mut() {
+        object.insert("items".to_string(), Value::Array(items));
+        let item_count = object
+            .get("items")
+            .and_then(Value::as_array)
+            .map(|values| values.len() as u64)
+            .unwrap_or(0);
+        object.insert("itemCount".to_string(), json!(item_count));
+    }
+    repaired
+}
+
 fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
     let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?
@@ -1357,6 +1424,7 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
         .filter_map(|row| Some((value_string(row, "assetId")?, row.clone())))
         .collect::<BTreeMap<_, _>>();
 
+    let atlas = repaired_browser_atlas(&atlas, &texture_rows);
     let atlas_items = atlas
         .get("items")
         .and_then(Value::as_array)
@@ -1914,3 +1982,6 @@ mod tests {
         assert!(summary.sizes.is_empty());
     }
 }
+
+
+
