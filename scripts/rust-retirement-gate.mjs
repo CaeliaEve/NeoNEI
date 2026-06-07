@@ -157,6 +157,7 @@ const distEnv = {
 if (compileScope !== 'search') {
   runStep('frontend typecheck', process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'typecheck'], { cwd: frontendDir });
   runStep('frontend runtime contracts', 'node', ['../scripts/validate-runtime-contracts.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
+  runStep('frontend rust production manifest validation', 'node', ['../scripts/validate-rust-production-manifest.mjs', '--gate', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
   runStep('frontend browser page validation', 'node', ['../scripts/validate-browser-pages-v3.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
   runStep('frontend rust browser runtime validation', 'node', ['../scripts/validate-rust-browser-runtime.mjs', '--gate', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
   runStep('frontend rust texture runtime validation', 'node', ['../scripts/validate-rust-texture-runtime.mjs', '--gate', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
@@ -176,5 +177,6 @@ if (!quick) {
 
 writeSummary('ok');
 console.log(`[rust-retirement-gate] OK ${reportPath}`);
+
 
 

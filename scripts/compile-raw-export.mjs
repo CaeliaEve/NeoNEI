@@ -9,6 +9,11 @@ const args = process.argv.slice(2);
 const selfTest = args.includes("--self-test");
 const inputArg = readArg("--input");
 const outputArg = readArg("--output");
+const allowLegacyCompile = args.includes("--legacy-compile-ok") || process.env.NEONEI_ALLOW_LEGACY_JS_COMPILE === "1";
+if (!selfTest && !allowLegacyCompile) {
+  console.warn("[compile-raw-export] JS compiler is retired from the production path; use tools/neonei-compiler-rs for Rust runtime packs. This run is compatibility-only.");
+}
+
 
 function readArg(name) {
   const index = args.indexOf(name);

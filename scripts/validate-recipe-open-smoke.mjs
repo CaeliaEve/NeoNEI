@@ -81,16 +81,21 @@ function main() {
     throw new Error(`dist-data manifest not found: ${manifestPath}`);
   }
   const manifest = readJson(manifestPath);
-  const itemIndexPath = join(distDataDir, manifest.files?.recipeItemIndex ?? "recipes/item-index.json");
-  const uiPayloadIndexPath = join(distDataDir, manifest.files?.recipeUiPayloadIndex ?? "recipes/ui-payload-index.json");
-  const searchPath = join(distDataDir, manifest.files?.searchAll ?? "search/all.json");
-  const itemIndex = readJson(itemIndexPath);
-  const uiPayloadIndex = readJson(uiPayloadIndexPath);
-  const searchPack = readJson(searchPath);
-  const itemIndexItems = firstArray(itemIndex.items);
-  const recipes = firstArray(uiPayloadIndex.recipes);
+  const rustRecipePackPath = join(distDataDir, manifest.files?.rustRecipePack ?? "rust/recipe-pack.json");
+  const rustSearchPackPath = join(distDataDir, manifest.files?.rustSearchPack ?? "rust/search-pack.json");
+  const hasRustRecipePack = existsSync(rustRecipePackPath);
+  const recipePack = hasRustRecipePack ? readJson(rustRecipePackPath) : null;
+  const searchPack = existsSync(rustSearchPackPath)
+    ? readJson(rustSearchPackPath)
+    : readJson(join(distDataDir, manifest.files?.searchAll ?? "search/all.json"));
+  const itemIndexItems = hasRustRecipePack
+    ? firstArray(recipePack.itemIndex)
+    : firstArray(readJson(join(distDataDir, manifest.files?.recipeItemIndex ?? "recipes/item-index.json")).items);
+  const recipes = hasRustRecipePack
+    ? firstArray(recipePack.uiPayloadIndex)
+    : firstArray(readJson(join(distDataDir, manifest.files?.recipeUiPayloadIndex ?? "recipes/ui-payload-index.json")).recipes);
   const searchItems = firstArray(searchPack.items);
-  const payloadPathByRecipeId = new Map(recipes.map((entry) => [entry.recipeId, entry.path]));
+  const payloadEntryByRecipeId = new Map(recipes.map((entry) => [entry.recipeId, entry]));
   const shardCache = new Map();
   const failures = [];
   const checked = [];
@@ -105,7 +110,8 @@ function main() {
       });
       continue;
     }
-    const shardPath = payloadPathByRecipeId.get(recipeRef.recipeId);
+    const payloadEntry = payloadEntryByRecipeId.get(recipeRef.recipeId);
+    const shardPath = payloadEntry?.path;
     if (!hasText(shardPath)) {
       fail(failures, "RECIPE_PAYLOAD_INDEX_MISSING", "recipe item-index references a recipe absent from ui-payload-index", {
         itemId: sample.row.itemId,
@@ -124,7 +130,7 @@ function main() {
     }
     const shard = shardCache.get(shardPath) ?? readJson(absoluteShardPath);
     shardCache.set(shardPath, shard);
-    const payload = shard.payloads?.[recipeRef.recipeId];
+    const payload = shard.payloads?.[payloadEntry?.payloadKey] ?? shard.payloads?.[recipeRef.recipeId];
     if (!payload) {
       fail(failures, "RECIPE_PAYLOAD_MISSING", "recipe ui payload shard does not contain recipeId", {
         recipeId: recipeRef.recipeId,
@@ -158,6 +164,7 @@ function main() {
     distDataDir,
     source: manifest.source ?? null,
     sourceRepository: manifest.sourceRepository ?? null,
+    runtimeSource: hasRustRecipePack ? "rust/recipe-pack" : "legacy/recipe-index",
     sampleLimit,
     checkedCount: checked.length,
     shardCount: shardCache.size,
