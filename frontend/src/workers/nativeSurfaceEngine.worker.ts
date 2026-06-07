@@ -1,4 +1,4 @@
-import type {
+﻿import type {
   NativeSurfaceEngineRequest,
   NativeSurfaceEngineResponse,
   NativeSurfaceEngineEntry,
@@ -386,7 +386,101 @@ function parseTimeline(value: unknown, fallbackDurationMs?: unknown): NativeRunt
     });
 }
 
+const COMPACT_TEXTURE_MAGIC = "NEITEX1\0";
+const COMPACT_TEXTURE_HEADER_BYTES = 8 + 6 * 4;
+const COMPACT_TEXTURE_ROW_STRIDE = 10;
+const COMPACT_TEXTURE_FRAME_STRIDE = 5;
+
+function parseCompactTexturePack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeTextureItem> | null {
+  if (payloadBuffer.byteLength < COMPACT_TEXTURE_HEADER_BYTES) return null;
+  const bytes = new Uint8Array(payloadBuffer);
+  const magic = decodeAscii(bytes.subarray(0, 8));
+  if (magic !== COMPACT_TEXTURE_MAGIC) return null;
+
+  const view = new DataView(payloadBuffer);
+  const version = view.getUint32(8, true);
+  const itemCount = view.getUint32(12, true);
+  const stringCount = view.getUint32(16, true);
+  const frameCount = view.getUint32(20, true);
+  const rowStride = view.getUint32(24, true);
+  const frameStride = view.getUint32(28, true);
+  if (version !== 1 || rowStride !== COMPACT_TEXTURE_ROW_STRIDE || frameStride !== COMPACT_TEXTURE_FRAME_STRIDE) {
+    throw new Error(`compact texture pack has invalid header: version=${version}, rowStride=${rowStride}, frameStride=${frameStride}`);
+  }
+
+  const offsetsStart = COMPACT_TEXTURE_HEADER_BYTES;
+  const rowsStart = offsetsStart + stringCount * 4;
+  const rowsBytes = itemCount * rowStride * 4;
+  const framesStart = rowsStart + rowsBytes;
+  const framesBytes = frameCount * frameStride * 4;
+  const stringTableStart = framesStart + framesBytes;
+  if (stringTableStart > payloadBuffer.byteLength) {
+    throw new Error(`compact texture pack exceeds payload bounds: rows=${itemCount}, strings=${stringCount}, frames=${frameCount}, bytes=${payloadBuffer.byteLength}`);
+  }
+
+  const stringTableBytes = bytes.subarray(stringTableStart);
+  const strings: string[] = new Array(stringCount);
+  for (let index = 0; index < stringCount; index += 1) {
+    const offset = view.getUint32(offsetsStart + index * 4, true);
+    strings[index] = readNullTerminatedString(stringTableBytes, offset);
+  }
+
+  const result = new Map<string, NativeRuntimeTextureItem>();
+  for (let index = 0; index < itemCount; index += 1) {
+    const rowOffset = rowsStart + index * rowStride * 4;
+    const itemId = strings[view.getUint32(rowOffset, true)] ?? "";
+    if (!itemId) continue;
+    const staticAtlasFile = strings[view.getUint32(rowOffset + 4, true)] ?? "";
+    const staticWidth = view.getUint32(rowOffset + 16, true);
+    const staticHeight = view.getUint32(rowOffset + 20, true);
+    const animatedAtlasFile = strings[view.getUint32(rowOffset + 24, true)] ?? "";
+    const frameStart = view.getUint32(rowOffset + 28, true);
+    const rowFrameCount = view.getUint32(rowOffset + 32, true);
+    const frameDurationMs = view.getUint32(rowOffset + 36, true);
+    const frames: NativeRuntimeAtlasFrame[] = [];
+    const timeline: NativeRuntimeTimelineFrame[] = [];
+    for (let frameIndex = 0; frameIndex < rowFrameCount; frameIndex += 1) {
+      const absoluteFrameIndex = frameStart + frameIndex;
+      if (absoluteFrameIndex >= frameCount) break;
+      const frameOffset = framesStart + absoluteFrameIndex * frameStride * 4;
+      const width = view.getUint32(frameOffset + 8, true);
+      const height = view.getUint32(frameOffset + 12, true);
+      if (width <= 0 || height <= 0) continue;
+      frames.push({
+        index: frameIndex,
+        x: view.getUint32(frameOffset, true),
+        y: view.getUint32(frameOffset + 4, true),
+        width,
+        height,
+      });
+      timeline.push({
+        frameIndex,
+        durationMs: Math.max(16, view.getUint32(frameOffset + 16, true) || frameDurationMs || 50),
+      });
+    }
+    result.set(itemId, {
+      itemId,
+      staticAtlas: staticAtlasFile && staticWidth > 0 && staticHeight > 0 ? {
+        atlasFile: staticAtlasFile,
+        x: view.getUint32(rowOffset + 8, true),
+        y: view.getUint32(rowOffset + 12, true),
+        width: staticWidth,
+        height: staticHeight,
+      } : null,
+      animatedAtlas: animatedAtlasFile && frames.length > 0 ? {
+        atlasFile: animatedAtlasFile,
+        frames,
+        timeline,
+        frameDurationMs: frameDurationMs || null,
+      } : null,
+    });
+  }
+  return result;
+}
 function parseNativeTexturePack(payloadBuffer: ArrayBuffer): Map<string, NativeRuntimeTextureItem> {
+  const compact = parseCompactTexturePack(payloadBuffer);
+  if (compact) return compact;
+
   const pack = parseJsonPayload<{ atlasMap?: Record<string, unknown>; atlas?: { items?: unknown[] } }>(payloadBuffer);
   const rows: unknown[] = [];
   if (pack?.atlasMap && typeof pack.atlasMap === "object") rows.push(...Object.values(pack.atlasMap));
@@ -994,6 +1088,7 @@ self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   if (!message?.type || !message.surfaceId) return;
   void handleRequest(message).then((response) => self.postMessage(response));
 };
+
 
 
 

@@ -1803,9 +1803,106 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
         "animations": animation_table,
     });
     write_json_value(&rust_dir.join("texture-pack.json"), &texture_output_pack)?;
-    write_binary_pack(&rust_dir.join("textures.bin"), "neonei/texture-pack/current", &texture_output_pack)?;
+    let texture_payload = build_compact_texture_payload_from_atlas_items(&atlas_items)?;
+    write_binary_pack_payload(&rust_dir.join("textures.bin"), "neonei/texture-pack/current", &texture_payload)?;
     write_binary_pack(&rust_dir.join("animations.bin"), "neonei/animation-pack/current", &animation_output_pack)?;
     Ok(())
+}
+
+
+fn build_compact_texture_payload_from_atlas_items(atlas_items: &[Value]) -> Result<Vec<u8>> {
+    let mut strings = vec![String::new()];
+    let mut string_refs = HashMap::new();
+    string_refs.insert(String::new(), 0u32);
+    let mut rows = Vec::<[u32; 10]>::new();
+    let mut frames = Vec::<[u32; 5]>::new();
+
+    let mut sorted_items = atlas_items.to_vec();
+    sorted_items.sort_by(|left, right| value_string(left, "itemId").cmp(&value_string(right, "itemId")));
+
+    for item in &sorted_items {
+        let item_id = intern_compact_string(&mut strings, &mut string_refs, value_string(item, "itemId"));
+        let static_atlas = item.get("staticAtlas").filter(|value| value.is_object());
+        let animated_atlas = item.get("animatedAtlas").filter(|value| value.is_object());
+        let static_file = intern_compact_string(&mut strings, &mut string_refs, optional_value_string(static_atlas, "atlasFile"));
+        let animated_file = intern_compact_string(&mut strings, &mut string_refs, optional_value_string(animated_atlas, "atlasFile"));
+        let frame_start = frames.len() as u32;
+        let frame_duration_ms = optional_value_u64(animated_atlas, "frameDurationMs").unwrap_or(0) as u32;
+
+        if let Some(animated_atlas) = animated_atlas {
+            let frame_values = animated_atlas
+                .get("frames")
+                .and_then(Value::as_array)
+                .cloned()
+                .unwrap_or_default();
+            let timeline = normalize_timeline(Some(animated_atlas), optional_value_u64(Some(animated_atlas), "frameDurationMs"));
+            let timeline_values = timeline.as_array().cloned().unwrap_or_default();
+            for (index, frame) in frame_values.iter().enumerate() {
+                let duration_ms = timeline_values
+                    .get(index)
+                    .and_then(|value| value.get("durationMs"))
+                    .and_then(Value::as_u64)
+                    .unwrap_or(frame_duration_ms as u64)
+                    .max(16) as u32;
+                frames.push([
+                    value_u64(frame, "x").unwrap_or(0) as u32,
+                    value_u64(frame, "y").unwrap_or(0) as u32,
+                    value_u64(frame, "width").unwrap_or(0) as u32,
+                    value_u64(frame, "height").unwrap_or(0) as u32,
+                    duration_ms,
+                ]);
+            }
+        }
+
+        rows.push([
+            item_id,
+            static_file,
+            optional_value_u64(static_atlas, "x").unwrap_or(0) as u32,
+            optional_value_u64(static_atlas, "y").unwrap_or(0) as u32,
+            optional_value_u64(static_atlas, "width").unwrap_or(0) as u32,
+            optional_value_u64(static_atlas, "height").unwrap_or(0) as u32,
+            animated_file,
+            frame_start,
+            (frames.len() as u32).saturating_sub(frame_start),
+            frame_duration_ms,
+        ]);
+    }
+
+    let mut string_offsets = Vec::<u32>::with_capacity(strings.len());
+    let mut string_bytes = Vec::<u8>::new();
+    for value in &strings {
+        string_offsets.push(string_bytes.len() as u32);
+        string_bytes.extend_from_slice(value.as_bytes());
+        string_bytes.push(0);
+    }
+
+    let row_stride_u32 = 10u32;
+    let frame_stride_u32 = 5u32;
+    let mut payload = Vec::with_capacity(
+        8 + 6 * 4 + string_offsets.len() * 4 + rows.len() * row_stride_u32 as usize * 4 + frames.len() * frame_stride_u32 as usize * 4 + string_bytes.len(),
+    );
+    payload.extend_from_slice(b"NEITEX1\0");
+    push_u32(&mut payload, 1);
+    push_u32(&mut payload, rows.len() as u32);
+    push_u32(&mut payload, strings.len() as u32);
+    push_u32(&mut payload, frames.len() as u32);
+    push_u32(&mut payload, row_stride_u32);
+    push_u32(&mut payload, frame_stride_u32);
+    for offset in string_offsets {
+        push_u32(&mut payload, offset);
+    }
+    for row in rows {
+        for value in row {
+            push_u32(&mut payload, value);
+        }
+    }
+    for frame in frames {
+        for value in frame {
+            push_u32(&mut payload, value);
+        }
+    }
+    payload.extend_from_slice(&string_bytes);
+    Ok(payload)
 }
 
 fn compile_dist_texture_pack(input: &Path, output: &Path, strict: bool) -> Result<()> {
@@ -2315,6 +2412,14 @@ fn value_u64(value: &Value, key: &str) -> Option<u64> {
     value.get(key)?.as_u64()
 }
 
+fn optional_value_string(value: Option<&Value>, key: &str) -> Option<String> {
+    value?.get(key)?.as_str().map(str::to_string)
+}
+
+fn optional_value_u64(value: Option<&Value>, key: &str) -> Option<u64> {
+    value?.get(key)?.as_u64()
+}
+
 fn normalize_text(value: &str) -> String {
     value
         .to_lowercase()
@@ -2467,6 +2572,26 @@ mod tests {
     }
 
     #[test]
+    fn compact_texture_pack_uses_native_binary_payload() {
+        let items = vec![json!({
+            "itemId": "minecraft:iron_ingot",
+            "staticAtlas": { "atlasFile": "textures/atlas/static-main.webp", "x": 1, "y": 2, "width": 16, "height": 16 },
+            "animatedAtlas": {
+                "atlasFile": "textures/atlas/animated-main.webp",
+                "frameDurationMs": 50,
+                "frames": [{ "x": 3, "y": 4, "width": 16, "height": 16 }],
+                "timeline": [{ "frameIndex": 0, "durationMs": 50 }]
+            }
+        })];
+        let payload = build_compact_texture_payload_from_atlas_items(&items).unwrap();
+        assert_eq!(&payload[0..8], b"NEITEX1\0");
+        assert_eq!(u32::from_le_bytes(payload[8..12].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(payload[12..16].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 1);
+        assert_eq!(u32::from_le_bytes(payload[24..28].try_into().unwrap()), 10);
+    }
+
+    #[test]
     fn compact_string_pack_uses_native_binary_payload() {
         let items = vec![json!({
             "itemId": "minecraft:iron_ingot",
@@ -2483,6 +2608,7 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 6);
     }
 }
+
 
 
 

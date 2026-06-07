@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+﻿import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -24,6 +24,16 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
   );
   assert.match(
     workerSource,
+    /COMPACT_TEXTURE_MAGIC = "NEITEX1\\0"/,
+    'worker must support the compact binary textures payload',
+  );
+  assert.match(
+    workerSource,
+    /function parseCompactTexturePack\(payloadBuffer: ArrayBuffer\): Map<string, NativeRuntimeTextureItem> \| null/,
+    'worker must parse texture atlas metadata without requiring JSON payloads',
+  );
+  assert.match(
+    workerSource,
     /message\.packs\.find\(\(pack\) => pack\.name === "stringsZhCn"\)/,
     'worker must load the stringsZhCn pack from runtime packs',
   );
@@ -43,3 +53,5 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
     'Vue surface must prefer native tooltip title over compat entry text',
   );
 });
+
+
