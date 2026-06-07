@@ -40,6 +40,7 @@ type SurfaceState = {
   runtimePacks: Map<string, ArrayBuffer>;
   runtimeError: string | null;
   browserPack: NativeCompactBrowserPack | null;
+  runtimeBrowserIndexByItemId: Map<string, number>;
   groupByKey: Map<string, NativeRuntimeGroup>;
   searchByItemId: Map<string, NativeRuntimeSearchItem>;
   stringByItemId: Map<string, NativeRuntimeStringItem>;
@@ -899,9 +900,43 @@ function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] 
   return projected.slice(start, start + pageSize).map((entry, entryIndex) => ({ ...entry, entryIndex }));
 }
 
+function buildRuntimeBrowserIndexByItemId(browserPack: NativeCompactBrowserPack | null): Map<string, number> {
+  const indexByItemId = new Map<string, number>();
+  if (!browserPack) return indexByItemId;
+  for (let index = 0; index < browserPack.itemCount; index += 1) {
+    const row = getNativeCompactBrowserRow(browserPack, index);
+    if (!row) continue;
+    const itemId = browserPack.strings[row.itemIdRef] ?? "";
+    if (itemId && !indexByItemId.has(itemId)) {
+      indexByItemId.set(itemId, index);
+    }
+  }
+  return indexByItemId;
+}
+
+function buildRuntimeHistoryEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] {
+  const browserPack = surface.browserPack;
+  if (!browserPack || surface.historyItems.length <= 0) return [];
+  const projected: NativeSurfaceEngineEntry[] = [];
+  for (const itemId of surface.historyItems) {
+    const index = surface.runtimeBrowserIndexByItemId.get(itemId);
+    if (index === undefined) continue;
+    const row = getNativeCompactBrowserRow(browserPack, index);
+    if (!row) continue;
+    const groupKey = browserPack.strings[row.groupKeyRef] ?? "";
+    projected.push({
+      key: `native-history:${itemId}:${projected.length}`,
+      kind: "item",
+      entryIndex: projected.length,
+      itemId,
+      groupKey: groupKey || null,
+    });
+  }
+  return projected;
+}
+
 function canUseRuntimeBrowserProjection(surface: SurfaceState): boolean {
-  return Boolean(surface.browserPack)
-    && !surface.enableHistoryViewport;
+  return Boolean(surface.browserPack);
 }
 
 function getActiveEntries(surface: SurfaceState): {
@@ -909,6 +944,9 @@ function getActiveEntries(surface: SurfaceState): {
   entries: NativeSurfaceEngineEntry[];
 } {
   if (canUseRuntimeBrowserProjection(surface)) {
+    if (surface.enableHistoryViewport) {
+      return { source: "runtime-history-pack", entries: buildRuntimeHistoryEntries(surface) };
+    }
     return { source: "runtime-browser-pack", entries: buildRuntimeEntries(surface) };
   }
   if (surface.entries.length > 0) {
@@ -940,6 +978,7 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     runtimePacks: new Map(),
     runtimeError: null,
     browserPack: null,
+    runtimeBrowserIndexByItemId: new Map(),
     groupByKey: new Map(),
     searchByItemId: new Map(),
     stringByItemId: new Map(),
@@ -1233,7 +1272,7 @@ function applyMutation(surface: SurfaceState, mutation: NativeSurfaceEngineMutat
       return true;
     case "historyItems":
       surface.historyItems = Array.from(new Set(mutation.itemIds));
-      return false;
+      return true;
     case "compatEntries":
       surface.entries = mutation.entries;
       return true;
@@ -1301,6 +1340,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         const animationPack = message.packs.find((pack) => pack.name === "animations");
         disposeWasmPayloads(surface);
         surface.browserPack = browserPack ? parseNativeCompactBrowserPack(browserPack.buffer) : null;
+        surface.runtimeBrowserIndexByItemId = buildRuntimeBrowserIndexByItemId(surface.browserPack);
         surface.groupByKey = groupPack ? parseNativeGroupPack(groupPack.buffer) : new Map();
         surface.searchByItemId = searchPack ? parseNativeSearchPack(searchPack.buffer) : new Map();
         surface.stringByItemId = stringPack ? parseNativeStringPack(stringPack.buffer) : new Map();
@@ -1320,6 +1360,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       } catch (error) {
         disposeWasmPayloads(surface);
         surface.browserPack = null;
+        surface.runtimeBrowserIndexByItemId = new Map();
         surface.groupByKey = new Map();
         surface.searchByItemId = new Map();
         surface.stringByItemId = new Map();

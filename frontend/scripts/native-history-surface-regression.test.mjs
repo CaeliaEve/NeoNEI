@@ -32,3 +32,14 @@ test("native browser surface keeps history rendering on the atlas path", () => {
   assert.match(source, /:suspend-rendering="nativeRenderVisible"/);
   assert.doesNotMatch(source, /new Image\(/);
 });
+
+test("history surface projects entries from native runtime packs", () => {
+  const workerSource = readSource("src/workers/nativeSurfaceEngine.worker.ts");
+  const protocolSource = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");
+
+  assert.match(protocolSource, /"runtime-history-pack"/);
+  assert.match(workerSource, /buildRuntimeHistoryEntries/);
+  assert.match(workerSource, /runtimeBrowserIndexByItemId/);
+  assert.match(workerSource, /source: "runtime-history-pack"/);
+  assert.doesNotMatch(workerSource, /&& !surface\.enableHistoryViewport/);
+});
