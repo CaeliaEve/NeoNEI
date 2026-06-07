@@ -15,10 +15,28 @@ import {
   updateNativeSurfaceMetrics,
 } from "./NativeSurfaceMetrics";
 import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
+import type { NativeSurfaceEngineEntry } from "./NativeSurfaceEngineProtocol";
 
 function normalizeRenderer(renderer?: NativeRendererBackendKind): NativeRendererBackendKind {
   if (renderer === "webgpu" || renderer === "webgl2" || renderer === "auto") return renderer;
   return "compat-canvas";
+}
+
+function getEntryItem(entry: NativeSurfaceCompatEntries["entries"][number]) {
+  return entry.kind === "item" ? entry.item : entry.group.representative;
+}
+
+function toEngineEntries(entries: NativeSurfaceCompatEntries["entries"]): NativeSurfaceEngineEntry[] {
+  return entries.map((entry, entryIndex) => {
+    const item = getEntryItem(entry);
+    return {
+      key: entry.key,
+      kind: entry.kind,
+      entryIndex,
+      itemId: `${item?.itemId ?? ""}`,
+      groupKey: entry.kind === "item" ? (entry.item.browserGroupKey ?? null) : entry.group.key,
+    };
+  });
 }
 
 export class CompatNativeSurfaceController implements NativeNeiSurfaceController {
@@ -119,6 +137,11 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
 
   setItemSize(size: number): void {
     this.itemSize = Math.max(1, Math.floor(Number(size) || 1));
+    void postNativeSurfaceEngineEvent({
+      type: "itemSize",
+      surfaceId: this.surfaceId,
+      itemSize: this.itemSize,
+    });
     this.touch("setItemSize");
   }
 
@@ -142,18 +165,44 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       entries: entries.entries,
       atlas: entries.atlas ?? null,
     };
+    void postNativeSurfaceEngineEvent({
+      type: "compatEntries",
+      surfaceId: this.surfaceId,
+      entries: toEngineEntries(this.entries.entries),
+    });
     this.touch("setCompatEntries");
   }
 
-  requestFrame(_nowMs: number): void {
+  requestFrame(nowMs: number): void {
+    void postNativeSurfaceEngineEvent({
+      type: "frame",
+      surfaceId: this.surfaceId,
+      nowMs,
+    });
     this.touch("requestFrame");
   }
 
-  async hitTest(_pointer: NativeSurfacePointer): Promise<NativeHitResult | null> {
-    // Phase 1 leaves hit testing inside HomeCanvasGrid. The controller exposes
-    // the stable async API so the future WASM engine can take over without
-    // changing Vue call sites.
-    return null;
+  async hitTest(pointer: NativeSurfacePointer): Promise<NativeHitResult | null> {
+    const response = await postNativeSurfaceEngineEvent({
+      type: "hitTest",
+      surfaceId: this.surfaceId,
+      x: pointer.x,
+      y: pointer.y,
+      clientX: pointer.clientX,
+      clientY: pointer.clientY,
+      viewport: pointer.viewport,
+    });
+    if (!response || response.type !== "hitTest" || !response.hit) return null;
+    const entry = this.entries.entries[response.hit.entryIndex];
+    if (!entry) return null;
+    const item = getEntryItem(entry);
+    return {
+      viewport: response.hit.viewport,
+      key: response.hit.key,
+      kind: entry.kind,
+      item,
+      group: entry.kind === "item" ? undefined : entry.group,
+    };
   }
 
   async getMetrics(): Promise<NativeSurfaceMetrics> {

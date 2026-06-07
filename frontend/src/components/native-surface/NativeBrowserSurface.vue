@@ -69,6 +69,28 @@ function syncViewport(width?: number, height?: number) {
   });
 }
 
+function toLocalPointer(event: MouseEvent) {
+  const host = hostRef.value;
+  const bounds = host?.getBoundingClientRect();
+  return {
+    x: Math.max(0, event.clientX - (bounds?.left ?? 0)),
+    y: Math.max(0, event.clientY - (bounds?.top ?? 0)),
+    clientX: event.clientX,
+    clientY: event.clientY,
+    viewport: props.viewportRole,
+  };
+}
+
+function handlePointerMove(event: MouseEvent) {
+  const pointer = toLocalPointer(event);
+  controller.setHover(pointer);
+  void controller.hitTest(pointer);
+}
+
+function handlePointerLeave() {
+  controller.setHover(null);
+}
+
 onMounted(async () => {
   exposeNativeSurfaceMetricsForDebug();
   await controller.initialize({
@@ -134,7 +156,12 @@ watch(itemIdsSignature, () => {
 </script>
 
 <template>
-  <div ref="hostRef" class="native-browser-surface h-full w-full overflow-hidden">
+  <div
+    ref="hostRef"
+    class="native-browser-surface h-full w-full overflow-hidden"
+    @mousemove="handlePointerMove"
+    @mouseleave="handlePointerLeave"
+  >
     <HomeCanvasGrid
       :entries="entries"
       :item-size="itemSize"
@@ -148,4 +175,3 @@ watch(itemIdsSignature, () => {
     />
   </div>
 </template>
-
