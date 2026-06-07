@@ -501,7 +501,12 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool) -> Result<()>
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
     write_json_value(&rust_dir.join("browser-pack.json"), &pack)?;
-    write_binary_pack(&rust_dir.join("browser.bin"), "neonei/browser-pack/current", &pack)?;
+    let compact_browser_payload = build_compact_browser_payload_from_items(&browser_items)?;
+    write_binary_pack_payload(
+        &rust_dir.join("browser.bin"),
+        "neonei/browser-pack/current",
+        &compact_browser_payload,
+    )?;
     let search_pack = json!({
         "schemaVersion": "neonei/rust-search-pack/current",
         "counts": {
@@ -658,7 +663,11 @@ fn push_u32(bytes: &mut Vec<u8>, value: u32) {
 }
 
 fn build_compact_browser_payload(input: &Path, manifest: &RawManifest) -> Result<Vec<u8>> {
-    let items = read_json_collection(input, manifest, &["browserCatalog"], Some("items"))?;
+    let items = read_json_collection(input, manifest, &["browserCatalog", "items"], Some("items"))?;
+    build_compact_browser_payload_from_items(&items)
+}
+
+fn build_compact_browser_payload_from_items(items: &[Value]) -> Result<Vec<u8>> {
     let mut strings = vec![String::new()];
     let mut string_refs = HashMap::new();
     string_refs.insert(String::new(), 0u32);
@@ -1855,12 +1864,17 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
     }
 
     let total_bytes = sizes.values().sum::<u64>();
+    let runtime_id = runtime_id_from_integrity(&integrity);
     let generated_at = "deterministic-rust-compiler";
     write_json_value(
         &rust_dir.join("runtime-manifest.json"),
         &json!({
+            "schema": "neonei/runtime/current",
             "schemaVersion": "neonei/rust-runtime-manifest/current",
+            "schemaRevision": 1,
+            "runtimeId": runtime_id,
             "generatedAt": generated_at,
+            "capabilities": rust_capabilities(scope),
             "files": files,
             "compileScope": scope.as_str(),
             "entrypoints": rust_entrypoints(scope),
@@ -1909,6 +1923,18 @@ fn compile_runtime_reports(output: &Path, scope: CompileScope, strict: bool) -> 
         }),
     )?;
     Ok(())
+}
+
+fn runtime_id_from_integrity(integrity: &BTreeMap<String, String>) -> String {
+    let mut hasher = Sha256::new();
+    for (path, hash) in integrity {
+        hasher.update(path.as_bytes());
+        hasher.update(b"\0");
+        hasher.update(hash.as_bytes());
+        hasher.update(b"\n");
+    }
+    let digest = format!("{:x}", hasher.finalize());
+    format!("rust-{}", &digest[..16])
 }
 
 impl CompileScope {
@@ -2062,6 +2088,24 @@ fn read_jsonl_values(
         return Ok(Vec::new());
     };
     read_jsonl_file_values(&path)
+}
+
+fn rust_capabilities(scope: CompileScope) -> Value {
+    match scope {
+        CompileScope::All => json!([
+            "atlas.static",
+            "atlas.animated",
+            "groups.collapse",
+            "groups.semantic-nbt",
+            "recipes.lookup",
+            "search.zh-cn",
+            "native-render.webgl2",
+        ]),
+        CompileScope::Search => json!(["search.zh-cn"]),
+        CompileScope::Browser => json!(["groups.collapse", "groups.semantic-nbt", "search.zh-cn", "native-render.webgl2"]),
+        CompileScope::Recipes => json!(["recipes.lookup"]),
+        CompileScope::Textures => json!(["atlas.static", "atlas.animated"]),
+    }
 }
 
 fn read_json_collection(

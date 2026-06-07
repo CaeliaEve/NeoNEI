@@ -156,6 +156,48 @@ const expectedEntrypoints = {
   animations: 'neonei/animation-pack/current',
 };
 
+const expectedCapabilities = [
+  'atlas.static',
+  'atlas.animated',
+  'groups.collapse',
+  'groups.semantic-nbt',
+  'recipes.lookup',
+  'search.zh-cn',
+  'native-render.webgl2',
+];
+
+function normalizeCapabilities(value) {
+  if (Array.isArray(value)) {
+    return new Set(value.filter((entry) => typeof entry === 'string' && entry.trim()).map((entry) => entry.trim()));
+  }
+  if (value && typeof value === 'object') {
+    return new Set(
+      Object.entries(value)
+        .filter(([, enabled]) => enabled === true || enabled === 'true' || enabled === 1)
+        .map(([name]) => name),
+    );
+  }
+  return new Set();
+}
+
+function validateRuntimeManifestContract(manifest, failures) {
+  const schema = manifest.schema ?? manifest.schemaVersion;
+  if (schema !== 'neonei/runtime/current' && schema !== 'neonei/native-runtime/current' && schema !== 'neonei/rust-runtime-manifest/current') {
+    fail(failures, 'NATIVE_RUNTIME_SCHEMA_UNSUPPORTED', 'runtime manifest has an unsupported schema', { schema: schema ?? null });
+  }
+  if (!Number.isInteger(manifest.schemaRevision) || manifest.schemaRevision < 1) {
+    fail(failures, 'NATIVE_RUNTIME_SCHEMA_REVISION_MISSING', 'runtime manifest must declare schemaRevision >= 1', {
+      schemaRevision: manifest.schemaRevision ?? null,
+    });
+  }
+  const capabilities = normalizeCapabilities(manifest.capabilities);
+  for (const capability of expectedCapabilities) {
+    if (!capabilities.has(capability)) {
+      fail(failures, 'NATIVE_RUNTIME_CAPABILITY_MISSING', `runtime manifest is missing capability: ${capability}`, { capability });
+    }
+  }
+}
+
 function validateRuntimePacks(runtimeDir) {
   const failures = [];
   const warnings = [];
@@ -176,6 +218,7 @@ function validateRuntimePacks(runtimeDir) {
   if (containsWindowsAbsolutePath(manifest)) {
     fail(failures, 'NATIVE_RUNTIME_MANIFEST_WINDOWS_PATH_LEAK', 'runtime manifest contains a Windows absolute path', { manifestPath });
   }
+  validateRuntimeManifestContract(manifest, failures);
 
   const entrypoints = manifest.entrypoints ?? manifest.files ?? {};
   const packs = {};
@@ -246,7 +289,14 @@ function runSelfTest() {
       writePack(tempRoot, relativePath, schema, { schema, name, path: relativePath });
     }
     mkdirSync(join(tempRoot, 'rust'), { recursive: true });
-    writeFileSync(join(tempRoot, 'rust', 'runtime-manifest.json'), JSON.stringify({ schemaVersion: 'neonei/rust-runtime-manifest/current', entrypoints }, null, 2));
+    writeFileSync(join(tempRoot, 'rust', 'runtime-manifest.json'), JSON.stringify({
+      schema: 'neonei/runtime/current',
+      schemaVersion: 'neonei/rust-runtime-manifest/current',
+      schemaRevision: 1,
+      runtimeId: 'self-test',
+      capabilities: expectedCapabilities,
+      entrypoints,
+    }, null, 2));
     writeFileSync(join(tempRoot, 'rust', 'integrity.json'), '{}');
     writeFileSync(join(tempRoot, 'rust', 'size-report.json'), '{}');
     writeFileSync(join(tempRoot, 'rust', 'missing-data-report.json'), '{}');
@@ -264,7 +314,14 @@ function runSelfTest() {
 if (selfTest) {
   runSelfTest();
 } else {
-  const runtimeDir = readArg('--runtime-dir') ?? process.env.NEONEI_NATIVE_RUNTIME_DIR ?? join(repoRoot, '.tmp-runtime', 'native-gpu-runtime-compile-check');
+  const requestedRuntimeDir = readArg('--runtime-dir') ?? process.env.NEONEI_NATIVE_RUNTIME_DIR;
+  const runtimeDir = requestedRuntimeDir
+    ?? [
+      join(repoRoot, '.tmp-runtime', 'native-gpu-runtime-compile-check'),
+      join(repoRoot, '.tmp-runtime', 'dist-data-v3-self-test'),
+      join(repoRoot, 'frontend', 'public', 'dist-data', 'runtime'),
+    ].find((candidate) => existsSync(join(candidate, 'runtime-manifest.json')) || existsSync(join(candidate, 'rust', 'runtime-manifest.json')))
+    ?? join(repoRoot, '.tmp-runtime', 'native-gpu-runtime-compile-check');
   const report = validateRuntimePacks(runtimeDir);
   const outputDir = join(repoRoot, '.runtime-logs');
   mkdirSync(outputDir, { recursive: true });

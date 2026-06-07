@@ -24,6 +24,7 @@ const rustMigrationReadiness = join(nodeSelfTestOutput, 'rust', 'migration-readi
 
 const strict = process.argv.includes('--strict');
 const runCargo = process.argv.includes('--run-cargo') || strict;
+const cargoCommand = resolveCargoCommand();
 
 function fail(message) {
   console.error(`[rust-compiler-gate] ${message}`);
@@ -41,6 +42,16 @@ function requireFile(path) {
 function commandExists(command, args = ['--version']) {
   const result = spawnSync(command, args, { stdio: 'ignore', shell: false });
   return (result.status ?? 1) === 0;
+}
+
+function resolveCargoCommand() {
+  const candidates = [
+    process.env.CARGO,
+    process.env.CARGO_HOME ? join(process.env.CARGO_HOME, 'bin', process.platform === 'win32' ? 'cargo.exe' : 'cargo') : null,
+    process.platform === 'win32' ? 'D:\\Rust\\cargo\\bin\\cargo.exe' : null,
+    'cargo',
+  ].filter(Boolean);
+  return candidates.find((candidate) => existsSync(candidate) || commandExists(candidate)) ?? 'cargo';
 }
 
 function run(command, args, options = {}) {
@@ -131,30 +142,31 @@ if (!runCargo) {
   console.log(JSON.stringify({
     schemaVersion: 'neonei/rust-compiler-gate/current',
     status: 'scaffold-ok',
-    cargoAvailable: commandExists('cargo'),
+    cargoAvailable: commandExists(cargoCommand),
+    cargoCommand,
     note: 'Use --run-cargo or --strict to execute the Rust compiler when Cargo is installed.',
   }, null, 2));
   process.exit(0);
 }
 
-if (!commandExists('cargo')) {
+if (!commandExists(cargoCommand)) {
   fail('cargo is not available; install Rust toolchain or run without --run-cargo for scaffold-only validation');
 }
 
 rmSync(tmpRoot, { recursive: true, force: true });
 mkdirSync(tmpRoot, { recursive: true });
 
-run('cargo', ['test', '--manifest-path', cargoToml]);
+run(cargoCommand, ['test', '--manifest-path', cargoToml]);
 
 // Reuse the existing Node compiler self-test to generate a complete Raw Export fixture.
 run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'test:raw-export'], { cwd: join(repoRoot, 'frontend') });
 
 if (!existsSync(rawExportSelfTest)) fail(`Node self-test raw export was not generated: ${rawExportSelfTest}`);
-run('cargo', [
+run(cargoCommand, [
   'run', '--manifest-path', cargoToml, '--',
   'baseline', '--input', rawExportSelfTest, '--report', rustReport, '--strict',
 ]);
-run('cargo', [
+run(cargoCommand, [
   'run', '--manifest-path', cargoToml, '--',
   'compile', '--input', rawExportSelfTest, '--output', nodeSelfTestOutput, '--report', rustCompileReport, '--strict',
 ]);
@@ -179,6 +191,12 @@ const integrity = readJson(rustIntegrity);
 const sizeReport = readJson(rustSizeReport);
 const missingReport = readJson(rustMissingReport);
 const migrationReadiness = readJson(rustMigrationReadiness);
+if (runtimeManifest?.schema !== 'neonei/runtime/current') fail(`rust runtime manifest has wrong schema: ${runtimeManifest?.schema}`);
+if (!Number.isInteger(runtimeManifest?.schemaRevision) || runtimeManifest.schemaRevision < 1) fail('rust runtime manifest is missing schemaRevision');
+if (!/^rust-[a-f0-9]{16}$/.test(`${runtimeManifest?.runtimeId ?? ''}`)) fail(`rust runtime manifest has invalid runtimeId: ${runtimeManifest?.runtimeId}`);
+for (const capability of ['atlas.static', 'atlas.animated', 'groups.collapse', 'groups.semantic-nbt', 'recipes.lookup', 'search.zh-cn', 'native-render.webgl2']) {
+  if (!(runtimeManifest?.capabilities ?? []).includes(capability)) fail(`rust runtime manifest is missing capability: ${capability}`);
+}
 compareCounts({
   nodeCounts: nodeValidation?.counts ?? {},
   rustRawCounts: compileReport?.raw_export?.file_counts ?? {},

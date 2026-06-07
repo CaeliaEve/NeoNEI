@@ -31,7 +31,7 @@ export interface NativeRuntimeManifestFiles {
 }
 
 export interface NativeRuntimeManifest {
-  schema?: "neonei/native-runtime/current";
+  schema?: "neonei/runtime/current" | "neonei/native-runtime/current";
   schemaVersion?: string;
   schemaRevision?: number;
   runtimeId?: string;
@@ -41,8 +41,18 @@ export interface NativeRuntimeManifest {
   entrypoints?: NativeRuntimeManifestFiles;
   files?: NativeRuntimeManifestFiles | Array<{ path?: string; bytes?: number }>;
   counts?: Record<string, number>;
-  capabilities?: Record<string, boolean | string | number | null>;
+  capabilities?: NativeRuntimeCapability[] | Record<string, boolean | string | number | null>;
 }
+
+export type NativeRuntimeCapability =
+  | "atlas.static"
+  | "atlas.animated"
+  | "groups.collapse"
+  | "groups.semantic-nbt"
+  | "recipes.lookup"
+  | "search.zh-cn"
+  | "native-render.webgl2"
+  | "native-render.webgpu";
 
 export interface NativeRuntimePackHeader {
   magic: "NNEIBIN\0";
