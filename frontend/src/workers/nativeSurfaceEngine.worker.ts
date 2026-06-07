@@ -34,6 +34,60 @@ let events = 0;
 let lastEvent: NativeSurfaceEngineRequest["type"] | null = null;
 let lastSurfaceId: NativeSurfaceId | null = null;
 
+type NativeWasmEngineExports = {
+  neonei_engine_compute_columns: (viewportWidth: number, itemSize: number, gap: number) => number;
+  neonei_engine_hit_test_index: (
+    x: number,
+    y: number,
+    viewportWidth: number,
+    itemSize: number,
+    gap: number,
+    entryCount: number,
+  ) => number;
+};
+
+const WASM_ENGINE_URL = "/native/engine/neonei_wasm_engine.wasm";
+let wasmEngine: NativeWasmEngineExports | null = null;
+let wasmEnginePromise: Promise<NativeWasmEngineExports | null> | null = null;
+let wasmError: string | null = null;
+
+function toU32(value: number): number {
+  return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+async function ensureWasmEngine(): Promise<NativeWasmEngineExports | null> {
+  if (wasmEngine || wasmError) return wasmEngine;
+  if (wasmEnginePromise) return wasmEnginePromise;
+  wasmEnginePromise = (async () => {
+    try {
+      const response = await fetch(WASM_ENGINE_URL);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const bytes = await response.arrayBuffer();
+      const instance = await WebAssembly.instantiate(bytes, {});
+      const exports = instance.instance.exports as unknown as NativeWasmEngineExports;
+      if (typeof exports.neonei_engine_compute_columns !== "function"
+        || typeof exports.neonei_engine_hit_test_index !== "function") {
+        throw new Error("missing native engine exports");
+      }
+      wasmEngine = exports;
+      wasmError = null;
+      return wasmEngine;
+    } catch (error) {
+      wasmError = error instanceof Error ? error.message : String(error);
+      wasmEngine = null;
+      return null;
+    }
+  })();
+  return wasmEnginePromise;
+}
+
+function computeColumns(viewportWidth: number, cardSize: number, gap: number): number {
+  const wasmColumns = wasmEngine?.neonei_engine_compute_columns(toU32(viewportWidth), toU32(cardSize), toU32(gap));
+  if (Number.isFinite(wasmColumns) && wasmColumns && wasmColumns > 0) return Math.max(1, Math.floor(wasmColumns));
+  return Math.max(1, Math.floor((viewportWidth + gap) / (cardSize + gap)));
+}
+
+
 function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
   const existing = surfaces.get(surfaceId);
   if (existing) return existing;
@@ -62,7 +116,7 @@ function rebuildLayout(surface: SurfaceState): void {
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
   const iconSize = Math.max(1, Math.floor(cardSize * 0.9));
   const gap = 4;
-  const columns = Math.max(1, Math.floor((viewportWidth + gap) / (cardSize + gap)));
+  const columns = computeColumns(viewportWidth, cardSize, gap);
   surface.layoutCommands = surface.entries.map((entry, index) => {
     const col = index % columns;
     const row = Math.floor(index / columns);
@@ -85,12 +139,25 @@ function rebuildLayout(surface: SurfaceState): void {
 }
 
 function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequest, { type: "hitTest" }>): NativeSurfaceEngineHit {
-  const hit = surface.layoutCommands.find((command) =>
-    message.x >= command.x
-    && message.x <= command.x + command.size
-    && message.y >= command.y
-    && message.y <= command.y + command.size
+  const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
+  const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
+  const gap = 4;
+  const nativeIndex = wasmEngine?.neonei_engine_hit_test_index(
+    toU32(message.x),
+    toU32(message.y),
+    toU32(viewportWidth),
+    toU32(cardSize),
+    toU32(gap),
+    toU32(surface.layoutCommands.length),
   );
+  const hit = Number.isInteger(nativeIndex) && nativeIndex >= 0
+    ? surface.layoutCommands[nativeIndex]
+    : surface.layoutCommands.find((command) =>
+      message.x >= command.x
+      && message.x <= command.x + command.size
+      && message.y >= command.y
+      && message.y <= command.y + command.size
+    );
   if (!hit) {
     surface.lastHit = null;
     return null;
@@ -115,11 +182,13 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     lastSurfaceId,
     layoutCommands: lastSurface?.layoutCommands.length ?? 0,
     lastHit: lastSurface?.lastHit ?? null,
+    wasmReady: Boolean(wasmEngine),
+    wasmError,
     updatedAt: performance.now(),
   };
 }
 
-function handleRequest(message: NativeSurfaceEngineRequest): NativeSurfaceEngineResponse {
+async function handleRequest(message: NativeSurfaceEngineRequest): Promise<NativeSurfaceEngineResponse> {
   const surface = getSurface(message.surfaceId);
   events += 1;
   lastEvent = message.type;
@@ -127,6 +196,7 @@ function handleRequest(message: NativeSurfaceEngineRequest): NativeSurfaceEngine
 
   switch (message.type) {
     case "initialize":
+      await ensureWasmEngine();
       surface.initialized = true;
       surface.renderer = message.preferredRenderer;
       surface.enableAnimations = message.enableAnimations;
@@ -193,5 +263,7 @@ function handleRequest(message: NativeSurfaceEngineRequest): NativeSurfaceEngine
 self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   const message = event.data;
   if (!message?.type || !message.surfaceId) return;
-  self.postMessage(handleRequest(message));
+  void handleRequest(message).then((response) => self.postMessage(response));
 };
+
+

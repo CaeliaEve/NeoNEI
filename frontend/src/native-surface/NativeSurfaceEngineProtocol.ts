@@ -135,7 +135,10 @@ export type NativeSurfaceEngineWorkerMetrics = {
   lastSurfaceId: NativeSurfaceId | null;
   layoutCommands: number;
   lastHit: NativeSurfaceEngineHit;
+  wasmReady: boolean;
+  wasmError: string | null;
   updatedAt: number;
 };
+
 
 

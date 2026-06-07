@@ -1,11 +1,14 @@
 #!/usr/bin/env node
-import { existsSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const manifest = path.join(repoRoot, 'tools', 'neonei-wasm-engine', 'Cargo.toml');
+const wasmBuildOutput = path.join(repoRoot, 'tools', 'neonei-wasm-engine', 'target', 'wasm32-unknown-unknown', 'release', 'neonei_wasm_engine.wasm');
+const wasmPublicDir = path.join(repoRoot, 'frontend', 'public', 'native', 'engine');
+const wasmPublicOutput = path.join(wasmPublicDir, 'neonei_wasm_engine.wasm');
 const candidates = [
   process.env.CARGO,
   'D:/Rust/cargo/bin/cargo.exe',
@@ -36,5 +39,11 @@ if (!existsSync(manifest)) {
 
 runCargo(['test', '--manifest-path', manifest]);
 runCargo(['build', '--manifest-path', manifest, '--release', '--target', 'wasm32-unknown-unknown']);
+if (!existsSync(wasmBuildOutput)) {
+  console.error(`[wasm-engine-gate] missing wasm output: ${wasmBuildOutput}`);
+  process.exit(1);
+}
+mkdirSync(wasmPublicDir, { recursive: true });
+copyFileSync(wasmBuildOutput, wasmPublicOutput);
+console.log(`[wasm-engine-gate] copied ${path.relative(repoRoot, wasmPublicOutput)}`);
 console.log('[wasm-engine-gate] ok');
-
