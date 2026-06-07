@@ -32,6 +32,7 @@ import {
 } from "../services/globalBrowserAtlas";
 import RecipeDisplayRouter from "../components/RecipeDisplayRouter.vue";
 import HomeSettingsPanel from "../components/home/HomeSettingsPanel.vue";
+import HomeHistoryStrip from "../components/home/HomeHistoryStrip.vue";
 import { useItemBrowser } from "../composables/useItemBrowser";
 import { useHomeBrowserNavigation } from "../composables/home/useHomeBrowserNavigation";
 import { useSound } from "../services/sound.service";
@@ -236,6 +237,10 @@ const historyGridCellSize = computed(() => Math.min(itemSize.value + 4, 60));
 
 const updateHistoryPanelWidth = () => {
   historyPanelWidth.value = historyPanelRef.value?.clientWidth ?? 0;
+};
+const setHistoryPanelRef = (element: HTMLElement | null) => {
+  historyPanelRef.value = element;
+  updateHistoryPanelWidth();
 };
 
 const historyColumns = computed(() => {
@@ -1248,31 +1253,17 @@ const saveSettings = () => {
               </div>
             </div>
 
-            <!-- View History（位于物品浏览区底部，固定高度） -->
-            <div
-              ref="historyPanelRef"
-              class="flex-shrink-0 overflow-hidden border-t-2 border-dashed border-slate-300/50 px-4 pt-3 pb-1"
-              :style="{
-                minHeight: `${historyItemPixelSize * historyRows + (historyRows - 1) * historyGridGap + 24}px`,
-                height: `${historyItemPixelSize * historyRows + (historyRows - 1) * historyGridGap + 24}px`,
-                maxHeight: `${historyItemPixelSize * historyRows + (historyRows - 1) * historyGridGap + 24}px`,
-              }"
-            >
-              <div
-                v-if="viewHistory.length > 0"
-                class="h-full w-full overflow-hidden"
-              >
-                <HomeCanvasGrid
-                  :entries="historyBrowserEntries"
-                  :item-size="historyItemPixelSize"
-                  :atlas="historyAtlas"
-                  :enable-animation="false"
-                  :prefer-atlas="true"
-                  @item-click="openCraftingRecipes"
-                  @item-contextmenu="handleCardContextMenu"
-                />
-              </div>
-            </div>
+            <HomeHistoryStrip
+              :view-history-count="viewHistory.length"
+              :history-item-pixel-size="historyItemPixelSize"
+              :history-rows="historyRows"
+              :history-grid-gap="historyGridGap"
+              :history-browser-entries="historyBrowserEntries"
+              :history-atlas="historyAtlas"
+              @panel-resize="setHistoryPanelRef"
+              @item-click="openCraftingRecipes"
+              @item-contextmenu="handleCardContextMenu"
+            />
           </div>
         </div>
       </div>
