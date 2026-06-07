@@ -12,7 +12,6 @@ import {
 } from "vue";
 import { useRouter } from "vue-router";
 import {
-  api,
   type BrowserVariantGroup,
   type Item,
 } from "../services/api";
@@ -107,7 +106,6 @@ let itemGridResizeObserver: ResizeObserver | null = null;
 let transitionOverlayTimer: number | null = null;
 const TRANSITION_OVERLAY_DELAY_MS = 140;
 const currentGroupId = ref<string | undefined>(undefined);
-const currentGroupName = ref<string>('');
 const latestCreatedPatternId = ref<string | undefined>(undefined);
 const showTransitionOverlay = ref(false);
 
@@ -301,22 +299,12 @@ const pendingRecipeMachineName = ref<string | null>(null);
 
 watch(recipeModalMode, (mode) => {
   setCurrentTab(mode);
-  patternCreateStatus.value = {
-    type: 'idle',
-    message: '',
-  };
-  resetPatternDraftFromCurrentRecipe();
 });
 
 watch(showRecipeModal, (visible) => {
   if (!visible) {
     recipeModalItem.value = null;
     recipeModalMode.value = 'producedBy';
-    patternCreateStatus.value = {
-      type: 'idle',
-      message: '',
-    };
-    resetPatternDraftFromCurrentRecipe();
   }
 });
 
@@ -344,93 +332,8 @@ const {
   recipeDockStyle,
 } = useHomeRailStyles(recipePreviewNeedsWideStage);
 
-const currentRecipeForPattern = computed(() => currentPageRecipes.value[0] || null);
-const currentRecipeOutputOptions = computed(() => currentRecipeForPattern.value?.outputs || []);
-const patternDraftName = ref('');
-const patternDraftOutputItemId = ref<string | null>(null);
-const patternDraftCrafting = ref(1);
-const patternDraftSubstitute = ref(0);
-const patternDraftBeSubstitute = ref(0);
-const patternDraftPriority = ref(0);
-const canCreatePatternFromCurrentRecipe = computed(() =>
-  Boolean(currentGroupId.value && currentRecipeForPattern.value && recipeModalItem.value),
-);
-const patternCreateStatus = ref<{
-  type: 'idle' | 'success' | 'error';
-  message: string;
-}>({
-  type: 'idle',
-  message: '',
-});
-
-watch(currentRecipeForPattern, () => {
-  if (showRecipeModal.value) {
-    resetPatternDraftFromCurrentRecipe();
-    patternCreateStatus.value = {
-      type: 'idle',
-      message: '',
-    };
-  }
-});
-
 const openCurrentRecipeMode = () => {
   retryLoadRecipes();
-};
-
-const resetPatternDraftFromCurrentRecipe = () => {
-  if (!recipeModalItem.value) {
-    patternDraftName.value = '';
-    patternDraftOutputItemId.value = null;
-    patternDraftCrafting.value = 1;
-    patternDraftSubstitute.value = 0;
-    patternDraftBeSubstitute.value = 0;
-    patternDraftPriority.value = 0;
-    return;
-  }
-
-  patternDraftName.value = `${recipeModalItem.value.localizedName} (${currentCategory.value?.name || 'Recipe'})`;
-  patternDraftOutputItemId.value = currentRecipeOutputOptions.value[0]?.itemId || null;
-  patternDraftCrafting.value = recipeModalMode.value === 'producedBy' ? 1 : 0;
-  patternDraftSubstitute.value = 0;
-  patternDraftBeSubstitute.value = 0;
-  patternDraftPriority.value = 0;
-};
-
-const createPatternFromCurrentRecipe = async () => {
-  if (!currentGroupId.value || !currentRecipeForPattern.value || !recipeModalItem.value) {
-    patternCreateStatus.value = {
-      type: 'error',
-      message: '请先选择一个模板分组，并确保当前配方已加载完成。',
-    };
-    return;
-  }
-
-  const recipe = currentRecipeForPattern.value;
-
-  try {
-    const createdPattern = await api.createPattern({
-      groupId: currentGroupId.value,
-      recipeId: recipe.recipeId,
-      patternName: patternDraftName.value.trim() || `${recipeModalItem.value.localizedName} (${currentCategory.value?.name || 'Recipe'})`,
-      outputItemId: patternDraftOutputItemId.value || undefined,
-      crafting: patternDraftCrafting.value,
-      substitute: patternDraftSubstitute.value,
-      beSubstitute: patternDraftBeSubstitute.value,
-      priority: patternDraftPriority.value,
-    });
-    patternCreateStatus.value = {
-      type: 'success',
-      message: `已保存到模板分组：${currentGroupName.value || currentGroupId.value}`,
-    };
-    latestCreatedPatternId.value = createdPattern.patternId;
-    currentView.value = 'patterns';
-  } catch (error) {
-    console.error('Failed to create pattern from current recipe:', error);
-    patternCreateStatus.value = {
-      type: 'error',
-      message: '保存 Pattern 失败，请稍后重试。',
-    };
-  }
 };
 
 const openRecipeModal = (item: Item) => {
@@ -438,11 +341,6 @@ const openRecipeModal = (item: Item) => {
   recipeModalMode.value = 'producedBy';
   setCurrentTab('producedBy');
   showRecipeModal.value = true;
-  patternCreateStatus.value = {
-    type: 'idle',
-    message: '',
-  };
-  resetPatternDraftFromCurrentRecipe();
   addToHistory(item);
 };
 
@@ -455,7 +353,6 @@ const openUsageRecipes = (item: Item) => {
   recipeModalMode.value = 'usedIn';
   setCurrentTab('usedIn');
   showRecipeModal.value = true;
-  resetPatternDraftFromCurrentRecipe();
   addToHistory(item);
 };
 
@@ -584,19 +481,6 @@ watch(
 // Handle pattern group selection
 const onSelectGroup = (groupId: string) => {
   currentGroupId.value = groupId;
-  patternCreateStatus.value = {
-    type: 'idle',
-    message: '',
-  };
-  resetPatternDraftFromCurrentRecipe();
-  void api.getPatternGroup(groupId)
-    .then((group) => {
-      currentGroupName.value = group.groupName;
-    })
-    .catch((error) => {
-      console.error('Failed to resolve selected pattern group name:', error);
-      currentGroupName.value = '';
-    });
 };
 
 const syncMeasuredPageSize = () => {
