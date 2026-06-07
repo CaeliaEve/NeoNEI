@@ -121,6 +121,13 @@ type DistDataRecipeItemIndexPayload = {
   items?: DistDataRecipeItemIndexEntry[];
 };
 
+type DistDataRustRecipePackPayload = {
+  schemaVersion?: string;
+  itemIndex?: DistDataRecipeItemIndexEntry[];
+  recipes?: unknown[];
+  handlers?: unknown[];
+};
+
 type DistDataRecipeUiPayloadIndexEntry = {
   recipeId: string;
   path: string;
@@ -167,6 +174,8 @@ let cachedSearchPack: DistDataSearchPack | null = null;
 let cachedBrowserRuntime: DistDataBrowserRuntime | null = null;
 let recipeItemIndexRequest: Promise<Map<string, DistDataRecipeItemIndexEntry> | null> | null = null;
 let cachedRecipeItemIndex: Map<string, DistDataRecipeItemIndexEntry> | null = null;
+let rustRecipePackRequest: Promise<DistDataRustRecipePackPayload | null> | null = null;
+let cachedRustRecipePack: DistDataRustRecipePackPayload | null = null;
 let recipeUiPayloadIndexRequest: Promise<Map<string, DistDataRecipeUiPayloadIndexEntry> | null> | null = null;
 let cachedRecipeUiPayloadIndex: Map<string, DistDataRecipeUiPayloadIndexEntry> | null = null;
 const cachedRecipeUiPayloads = new Map<string, RecipeUiPayload>();
@@ -906,6 +915,37 @@ export async function getDistDataGroupItems(groupKey: string, modId?: string, in
   };
 }
 
+async function getRustRecipePack(): Promise<DistDataRustRecipePackPayload | null> {
+  if (cachedRustRecipePack) {
+    return cachedRustRecipePack;
+  }
+  if (rustRecipePackRequest) {
+    return rustRecipePackRequest;
+  }
+
+  rustRecipePackRequest = (async () => {
+    const manifest = await getDistDataManifest();
+    const recipePackPath = `${manifest?.files?.rustRecipePack ?? ""}`.trim();
+    if (!manifest || !recipePackPath) {
+      return null;
+    }
+    const payload = await fetchJson<DistDataRustRecipePackPayload>(
+      joinAssetPath(getConfiguredBasePath(), recipePackPath),
+    ).catch(() => null);
+    if (!payload || !Array.isArray(payload.itemIndex) || payload.itemIndex.length <= 0) {
+      return null;
+    }
+    cachedRustRecipePack = payload;
+    return cachedRustRecipePack;
+  })()
+    .catch(() => null)
+    .finally(() => {
+      rustRecipePackRequest = null;
+    });
+
+  return rustRecipePackRequest;
+}
+
 async function getRecipeItemIndex(): Promise<Map<string, DistDataRecipeItemIndexEntry> | null> {
   if (cachedRecipeItemIndex) {
     return cachedRecipeItemIndex;
@@ -916,6 +956,15 @@ async function getRecipeItemIndex(): Promise<Map<string, DistDataRecipeItemIndex
 
   recipeItemIndexRequest = (async () => {
     const manifest = await getDistDataManifest();
+    const rustRecipePack = await getRustRecipePack();
+    const rustEntries = Array.isArray(rustRecipePack?.itemIndex)
+      ? rustRecipePack.itemIndex.filter((entry) => entry?.itemId)
+      : [];
+    if (rustEntries.length > 0) {
+      cachedRecipeItemIndex = new Map(rustEntries.map((entry) => [entry.itemId, entry]));
+      return cachedRecipeItemIndex;
+    }
+
     const indexPath = `${manifest?.files?.recipeItemIndex ?? ""}`.trim();
     if (!manifest || !indexPath) {
       return null;
@@ -1525,6 +1574,8 @@ export function resetDistDataRuntimeCache(): void {
   cachedBrowserRuntime = null;
   recipeItemIndexRequest = null;
   cachedRecipeItemIndex = null;
+  rustRecipePackRequest = null;
+  cachedRustRecipePack = null;
   recipeUiPayloadIndexRequest = null;
   cachedRecipeUiPayloadIndex = null;
   cachedRecipeUiPayloads.clear();
