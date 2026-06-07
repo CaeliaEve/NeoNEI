@@ -31,8 +31,13 @@ test('current API is mounted before legacy compatibility API', () => {
 });
 
 test('runtime file endpoint is path traversal safe and relative-rooted', () => {
+  assert.match(routeSource, /DIST_DATA_MANIFEST_FILE/);
+  assert.match(routeSource, /files\?\.rustRuntimeManifest/);
+  assert.match(routeSource, /nativeRuntime\?\.runtimeManifest/);
   assert.match(routeSource, /normalized\.includes\('\.\.'\)/);
   assert.match(routeSource, /path\.isAbsolute\(normalized\)/);
   assert.match(routeSource, /startsWith\(`\$\{runtimeRoot\}\$\{path\.sep\}`\)/);
+  assert.match(routeSource, /getDeclaredRuntimeFilePaths/);
+  assert.match(routeSource, /declaredRuntimeFiles\.has\(normalized\)/);
   assert.match(routeSource, /res\.sendFile\(filePath\)/);
 });

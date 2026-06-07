@@ -13,8 +13,8 @@ type JsonRecord = Record<string, unknown>;
 const router = Router();
 const API_SCHEMA = 'neonei/api/current';
 const API_SCHEMA_REVISION = 1;
-const RUNTIME_DIR = path.join(PUBLIC_DIR, 'dist-data', 'runtime');
-const RUNTIME_MANIFEST_FILE = path.join(RUNTIME_DIR, 'runtime-manifest.json');
+const DIST_DATA_DIR = path.join(PUBLIC_DIR, 'dist-data');
+const DIST_DATA_MANIFEST_FILE = path.join(DIST_DATA_DIR, 'manifest.json');
 
 function readJson(filePath: string): JsonRecord | null {
   try {
@@ -25,7 +25,8 @@ function readJson(filePath: string): JsonRecord | null {
 }
 
 function getRuntimeManifest(): JsonRecord | null {
-  return readJson(RUNTIME_MANIFEST_FILE);
+  const manifestPath = getRuntimeManifestFile();
+  return manifestPath ? readJson(manifestPath) : null;
 }
 
 function asRecord(value: unknown): JsonRecord | null {
@@ -35,6 +36,51 @@ function asRecord(value: unknown): JsonRecord | null {
 function asString(value: unknown): string | null {
   const text = `${value ?? ''}`.trim();
   return text || null;
+}
+
+function isPortableRuntimePath(value: unknown): value is string {
+  const normalized = `${value ?? ''}`.trim().replace(/\\/g, '/');
+  return Boolean(normalized)
+    && !normalized.includes('..')
+    && !path.isAbsolute(normalized)
+    && !/^[A-Za-z]:[\\/]/.test(normalized);
+}
+
+function getDistDataManifest(): JsonRecord | null {
+  return readJson(DIST_DATA_MANIFEST_FILE);
+}
+
+function getRuntimeManifestRelativePath(): string | null {
+  const distManifest = getDistDataManifest();
+  const files = asRecord(distManifest?.files);
+  const nativeRuntime = asRecord(distManifest?.nativeRuntime);
+  const declared = asString(files?.rustRuntimeManifest)
+    ?? asString(nativeRuntime?.runtimeManifest)
+    ?? asString(files?.runtimeManifest);
+  return isPortableRuntimePath(declared) ? declared.replace(/\\/g, '/') : null;
+}
+
+function getRuntimeManifestFile(): string | null {
+  const relativePath = getRuntimeManifestRelativePath();
+  if (!relativePath) return null;
+  return resolveDistDataFile(relativePath);
+}
+
+function getDeclaredRuntimeFilePaths(): Set<string> {
+  const declared = new Set<string>();
+  const runtimeManifestPath = getRuntimeManifestRelativePath();
+  if (runtimeManifestPath) declared.add(runtimeManifestPath);
+
+  const runtimeManifest = getRuntimeManifest();
+  const entrypoints = asRecord(runtimeManifest?.entrypoints);
+  const files = asRecord(runtimeManifest?.files);
+  for (const source of [entrypoints, files]) {
+    if (!source) continue;
+    for (const value of Object.values(source)) {
+      if (isPortableRuntimePath(value)) declared.add(value.replace(/\\/g, '/'));
+    }
+  }
+  return declared;
 }
 
 function getCurrentMeta() {
@@ -63,17 +109,26 @@ function normalizeRequiredParam(value: string | undefined, name: string): string
   return normalized;
 }
 
-function resolveRuntimeFile(fileName: string): string {
-  const normalized = `${fileName ?? ''}`.trim().replace(/\\/g, '/');
+function resolveDistDataFile(relativeFileName: string): string {
+  const normalized = `${relativeFileName ?? ''}`.trim().replace(/\\/g, '/');
   if (!normalized || normalized.includes('..') || path.isAbsolute(normalized)) {
     throw badRequest('fileName must be a runtime-relative file path');
   }
-  const resolved = path.resolve(RUNTIME_DIR, normalized);
-  const runtimeRoot = path.resolve(RUNTIME_DIR);
+  const resolved = path.resolve(DIST_DATA_DIR, normalized);
+  const runtimeRoot = path.resolve(DIST_DATA_DIR);
   if (resolved !== runtimeRoot && !resolved.startsWith(`${runtimeRoot}${path.sep}`)) {
-    throw badRequest('fileName escapes runtime root');
+    throw badRequest('fileName escapes dist-data root');
   }
   return resolved;
+}
+
+function resolveRuntimeFile(fileName: string): string {
+  const normalized = `${fileName ?? ''}`.trim().replace(/\\/g, '/');
+  const declaredRuntimeFiles = getDeclaredRuntimeFilePaths();
+  if (!declaredRuntimeFiles.has(normalized)) {
+    throw notFound('Runtime file is not declared by the current runtime manifest');
+  }
+  return resolveDistDataFile(normalized);
 }
 
 router.get('/native-runtime/current/manifest', (_req, res) => {
