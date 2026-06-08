@@ -2785,7 +2785,16 @@ function compileRawExport(inputDir, outputDir) {
   const startedAt = Date.now();
   const manifestPath = join(inputDir, "manifest.json");
   const manifest = readJson(manifestPath);
-  const manifestValidation = validateRawManifest(inputDir, manifest);
+  const manifestValidationRaw = validateRawManifest(inputDir, manifest);
+  const manifestValidation = {
+    warnings: [],
+    missing: [],
+    empty: [],
+    unknownCapabilities: [],
+    missingRecipeShards: [],
+    blocked: [],
+    ...(manifestValidationRaw ?? {}),
+  };
   const exportPathHygiene = buildExportPathHygieneReport(inputDir, manifest);
   const exportReport = readRawJson(inputDir, manifest, "exportReport", "validation/export_report.json");
   const exportHealthReport = readRawJson(inputDir, manifest, "exportHealthReport", "validation/export-health-report.json");
