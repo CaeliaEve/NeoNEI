@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+﻿import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import vm from "node:vm";
@@ -12,8 +12,10 @@ test("runtime service worker caches binary packs, atlas images, and native engin
   const worker = await readFile(new URL("../public/neonei-sw.js", import.meta.url), "utf8");
   assert.ok(worker.includes("dist-data\\/runtime"), "runtime binary pack path should be cached");
   assert.ok(worker.includes("dist-data\\/(?:runtime\\/|rust\\/)"), "rust binary pack path should be cached");
-  assert.ok(worker.includes("api\\/native-runtime\\/current\\/files"), "current runtime file API should be cached");
-  assert.ok(worker.includes("api\\/native-runtime\\/current\\/manifest"), "current runtime manifest API should be network-first");
+    assert.ok(worker.includes("api\\/runtime\\/(?:current|[^/]+)\\/asset"), "semantic runtime asset API should be cached");
+  assert.ok(worker.includes("api\\/runtime\\/(?:current|[^/]+)\\/manifest"), "semantic runtime manifest API should be network-first");
+  assert.ok(worker.includes("api\\/native-runtime\\/current\\/files"), "legacy runtime file API remains cached only for compatibility");
+  assert.ok(worker.includes("api\\/native-runtime\\/current\\/manifest"), "legacy runtime manifest API remains network-first only for compatibility");
   assert.ok(worker.includes("textures\\/atlas"), "atlas texture path should be cached");
   assert.ok(worker.includes("native\\/engine"), "native engine path should be cached");
   assert.match(worker, /cacheFirst/);
@@ -133,13 +135,13 @@ async function createServiceWorkerHarness() {
 
 test("runtime service worker switches runtime caches and serves cached files offline", async () => {
   const harness = await createServiceWorkerHarness();
-  const manifestPath = "/dist-data/manifest.json";
-  const browserPackPath = "/dist-data/runtime/browser.bin";
+  const manifestPath = "/api/runtime/current/manifest";
+  const browserPackPath = "/api/runtime/current/asset/rust/browser.bin";
 
   harness.setFetch(async (request) => {
     const url = new URL(request.url);
     if (url.pathname === manifestPath) {
-      return new Response(JSON.stringify({ runtimeId: "alpha", files: [] }), {
+      return new Response(JSON.stringify({ ok: true, data: { runtimeId: "alpha", files: [] }, meta: { runtimeId: "alpha" } }), {
         status: 200,
         headers: { "content-type": "application/json", "content-length": "32" },
       });
@@ -162,7 +164,7 @@ test("runtime service worker switches runtime caches and serves cached files off
   harness.setFetch(async (request) => {
     const url = new URL(request.url);
     if (url.pathname === manifestPath) {
-      return new Response(JSON.stringify({ runtimeId: "beta", files: [] }), {
+      return new Response(JSON.stringify({ ok: true, data: { runtimeId: "beta", files: [] }, meta: { runtimeId: "beta" } }), {
         status: 200,
         headers: { "content-type": "application/json", "content-length": "31" },
       });
@@ -188,20 +190,20 @@ test("runtime service worker switches runtime caches and serves cached files off
 
   const offlineManifest = await harness.dispatchFetch(manifestPath);
   assert.equal(offlineManifest.headers.get("x-neonei-runtime-id"), "beta");
-  assert.deepEqual(await offlineManifest.json(), { runtimeId: "beta", files: [] });
+  assert.deepEqual(await offlineManifest.json(), { ok: true, data: { runtimeId: "beta", files: [] }, meta: { runtimeId: "beta" } });
   const offlinePack = await harness.dispatchFetch(browserPackPath);
   assert.equal(await offlinePack.text(), "beta-pack");
 });
 
 test("runtime service worker cache stats count cached bodies without content-length", async () => {
   const harness = await createServiceWorkerHarness();
-  const manifestPath = "/dist-data/manifest.json";
-  const browserPackPath = "/dist-data/runtime/browser.bin";
+  const manifestPath = "/api/runtime/current/manifest";
+  const browserPackPath = "/api/runtime/current/asset/rust/browser.bin";
 
   harness.setFetch(async (request) => {
     const url = new URL(request.url);
     if (url.pathname === manifestPath) {
-      return new Response(JSON.stringify({ runtimeId: "gamma", files: [] }), {
+      return new Response(JSON.stringify({ ok: true, data: { runtimeId: "gamma", files: [] }, meta: { runtimeId: "gamma" } }), {
         status: 200,
         headers: { "content-type": "application/json" },
       });
@@ -223,3 +225,4 @@ test("runtime service worker cache stats count cached bodies without content-len
   assert.equal(message.payload.runtimeId, "gamma");
   assert.ok(message.payload.approxBytes >= "pack-without-content-length".length);
 });
+
