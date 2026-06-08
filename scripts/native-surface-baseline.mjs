@@ -40,6 +40,9 @@ const webgpuLaunchArgs = [
   "--ignore-gpu-blocklist",
   "--enable-gpu-rasterization",
 ];
+const pagePackHotPathPattern = /\/(?:api\/)?browser(?:-|\/)?page-pack|\/(?:api\/)?browser\/pages|pagePackByIds|getBrowserPagePack/i;
+const scatteredImageHotPathPattern = /\/images\/(?:item|fluid|aspect)\/.*\.(?:png|gif|webp)(?:[?#].*)?$/i;
+const nativeAtlasAssetPattern = /\/(?:assets\/textures\/atlas-assets\/atlases|runtime\/[^/]+\/atlas)\//i;
 
 function percentile(values, p) {
   if (values.length === 0) return 0;
@@ -87,7 +90,10 @@ async function main() {
   const hotPathRequests = [];
   page.on("request", (request) => {
     const requestUrl = request.url();
-    if (/\/(?:api\/)?browser(?:-|\/)?page-pack|\/(?:api\/)?browser\/pages|pagePackByIds|getBrowserPagePack/i.test(requestUrl)) {
+    if (
+      pagePackHotPathPattern.test(requestUrl)
+      || (scatteredImageHotPathPattern.test(requestUrl) && !nativeAtlasAssetPattern.test(requestUrl))
+    ) {
       hotPathRequests.push(requestUrl);
     }
   });
@@ -255,7 +261,7 @@ async function main() {
     gateFailures.push(`${errors.length} console/page error(s) captured`);
   }
   if (hotPathRequests.length > maxHotPathRequests) {
-    gateFailures.push(`${hotPathRequests.length} browser page-pack hot-path request(s) captured; max is ${maxHotPathRequests}`);
+    gateFailures.push(`${hotPathRequests.length} browser page-pack or scattered image hot-path request(s) captured; max is ${maxHotPathRequests}`);
   }
   if (Number.isFinite(maxFlipP95Ms) && report.interactions.flipMs.p95 > maxFlipP95Ms) {
     gateFailures.push(`page flip p95 ${Math.round(report.interactions.flipMs.p95)}ms exceeds ${maxFlipP95Ms}ms`);

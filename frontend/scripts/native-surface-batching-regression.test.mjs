@@ -139,6 +139,17 @@ test("native surface baseline waits for the final native frame before evaluating
   assert.match(source, /timeout: 1_200/);
 });
 
+test("native surface baseline forbids page-pack and scattered image hot paths", () => {
+  const source = readSource("../scripts/native-surface-baseline.mjs");
+
+  assert.match(source, /pagePackHotPathPattern/);
+  assert.match(source, /scatteredImageHotPathPattern/);
+  assert.match(source, /nativeAtlasAssetPattern/);
+  assert.match(source, /images\\\/\(\?:item\|fluid\|aspect\)/);
+  assert.match(source, /browser page-pack or scattered image hot-path request/);
+  assert.match(source, /!nativeAtlasAssetPattern\.test\(requestUrl\)/);
+});
+
 test("native surface baseline measures actual native search projection latency", () => {
   const baseline = readSource("../scripts/native-surface-baseline.mjs");
   const protocol = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");
