@@ -6,6 +6,7 @@ import { createNativeSurfaceController } from "../../native-surface/NativeSurfac
 import type {
   NativeRendererBackendKind,
   NativeSurfaceId,
+  NativeSurfacePointer,
   NativeSurfaceViewportRole,
 } from "../../native-surface/contracts";
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
@@ -55,6 +56,8 @@ let nativeFrameSeq = 0;
 let nativeTextureSeq = 0;
 let nativeHitSeq = 0;
 let nativeFrameScheduled = false;
+let nativeHitScheduled = false;
+let nativePendingHitPointer: NativeSurfacePointer | null = null;
 const nativeRenderVisible = ref(false);
 const nativeHoveredHit = ref<{
   kind: BrowserGridEntry["kind"];
@@ -255,26 +258,46 @@ function toLocalPointer(event: MouseEvent) {
   };
 }
 
+function scheduleNativeHitTest(pointer: NativeSurfacePointer) {
+  nativePendingHitPointer = pointer;
+  nativeHitSeq += 1;
+  if (nativeHitScheduled) return;
+  nativeHitScheduled = true;
+  const run = () => {
+    nativeHitScheduled = false;
+    const latestPointer = nativePendingHitPointer;
+    nativePendingHitPointer = null;
+    if (!latestPointer) return;
+    const requestSeq = nativeHitSeq;
+    void controller.hitTest(latestPointer).then((hit) => {
+      if (requestSeq !== nativeHitSeq) return;
+      nativeHoveredHit.value = hit
+        ? {
+          kind: hit.kind,
+          item: hit.item,
+          group: hit.group,
+          nativeTooltip: hit.nativeTooltip ?? null,
+        }
+        : null;
+    });
+  };
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(run);
+  } else {
+    setTimeout(run, 0);
+  }
+}
+
 function handlePointerMove(event: MouseEvent) {
   const pointer = toLocalPointer(event);
   controller.setHover(pointer);
   nativeHoveredPointer.value = { x: pointer.x, y: pointer.y };
-  const seq = ++nativeHitSeq;
-  void controller.hitTest(pointer).then((hit) => {
-    if (seq !== nativeHitSeq) return;
-    nativeHoveredHit.value = hit
-      ? {
-        kind: hit.kind,
-        item: hit.item,
-        group: hit.group,
-        nativeTooltip: hit.nativeTooltip ?? null,
-      }
-      : null;
-  });
+  scheduleNativeHitTest(pointer);
 }
 
 function handlePointerLeave() {
   nativeHitSeq += 1;
+  nativePendingHitPointer = null;
   controller.setHover(null);
   nativeHoveredHit.value = null;
 }

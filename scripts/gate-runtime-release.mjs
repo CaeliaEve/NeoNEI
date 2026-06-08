@@ -59,6 +59,7 @@ const steps = [
   { name: 'native runtime projection gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-runtime-projection'] },
   { name: 'native surface worker group gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-surface-worker-groups'] },
   { name: 'native surface batching gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-surface-batching'] },
+  { name: 'native tooltip string-pack gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-tooltip-strings'] },
   { name: 'native surface no-blanking gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-surface-no-blanking'] },
   { name: 'native surface cutover gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-surface-cutover'] },
   { name: 'native render frame metrics gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-render-frame-metrics'] },

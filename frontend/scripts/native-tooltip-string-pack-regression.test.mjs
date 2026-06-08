@@ -79,6 +79,39 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
   );
 });
 
+test('native surface tooltip hit-test is frame-coalesced and does not rematerialize grid entries', () => {
+  assert.match(
+    surfaceSource,
+    /let nativeHitScheduled = false;/,
+    'native surface should track a single scheduled hover hit-test',
+  );
+  assert.match(
+    surfaceSource,
+    /let nativePendingHitPointer: NativeSurfacePointer \| null = null;/,
+    'native surface should keep only the latest pending pointer before hit-test',
+  );
+  assert.match(
+    surfaceSource,
+    /function scheduleNativeHitTest\(pointer: NativeSurfacePointer\)[\s\S]*requestAnimationFrame\(run\)/,
+    'mousemove hit-tests should be coalesced to animation frames',
+  );
+  assert.match(
+    surfaceSource,
+    /function handlePointerMove\(event: MouseEvent\)[\s\S]*nativeHoveredPointer\.value[\s\S]*scheduleNativeHitTest\(pointer\);/,
+    'pointer move should update tooltip position and schedule worker hit-test only',
+  );
+  assert.doesNotMatch(
+    surfaceSource,
+    /function handlePointerMove\(event: MouseEvent\)[\s\S]*props\.entries\.find/,
+    'pointer move must not scan/materialize browser entries on the hot hover path',
+  );
+  assert.match(
+    controllerSource,
+    /type:\s*"hitTest"[\s\S]*x: pointer\.x[\s\S]*y: pointer\.y/,
+    'tooltip hover should use the native worker hit-test request',
+  );
+});
+
 
 
 
