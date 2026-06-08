@@ -535,7 +535,7 @@ function validateRuntimePacks(runtimeDir) {
     packs[logicalName] = validateBinaryPack({ filePath, expectedSchema, logicalName }, failures, warnings);
   }
 
-  for (const diagnostic of ['integrity.json', 'size-report.json', 'missing-data-report.json']) {
+  for (const diagnostic of ['integrity.json', 'size-report.json', 'missing-data-report.json', 'missing-texture-report.json', 'suspicious-texture-report.json']) {
     const candidates = [join(dirname(manifestPath), diagnostic), join(runtimeRoot, 'rust', diagnostic), join(runtimeRoot, diagnostic)];
     const diagnosticPath = candidates.find((candidate) => existsSync(candidate));
     if (!diagnosticPath) {
@@ -603,6 +603,8 @@ function runSelfTest() {
     writeFileSync(join(tempRoot, 'rust', 'integrity.json'), '{}');
     writeFileSync(join(tempRoot, 'rust', 'size-report.json'), '{}');
     writeFileSync(join(tempRoot, 'rust', 'missing-data-report.json'), '{}');
+    writeFileSync(join(tempRoot, 'rust', 'missing-texture-report.json'), '{\"schemaVersion\":\"neonei/rust-missing-texture-report/current\"}');
+    writeFileSync(join(tempRoot, 'rust', 'suspicious-texture-report.json'), '{\"schemaVersion\":\"neonei/rust-suspicious-texture-report/current\"}');
     const report = validateRuntimePacks(tempRoot);
     if (report.failures.length > 0) {
       console.error(JSON.stringify(report, null, 2));
