@@ -150,6 +150,31 @@ test("native surface baseline forbids page-pack and scattered image hot paths", 
   assert.match(source, /!nativeAtlasAssetPattern\.test\(requestUrl\)/);
 });
 
+test("browser page application does not trigger legacy catalog or group HTTP warmups", () => {
+  const source = readSource("src/composables/useItemBrowser.ts");
+  const applyStart = source.indexOf("const applyBrowserResponse = (");
+  assert.notEqual(applyStart, -1);
+  const applyEnd = source.indexOf("const markInitialHomeBootstrapDone", applyStart);
+  assert.notEqual(applyEnd, -1);
+  const applyBody = source.slice(applyStart, applyEnd);
+
+  assert.doesNotMatch(applyBody, /getBrowserDefaultCatalog/);
+  assert.doesNotMatch(applyBody, /getBrowserSearchCatalog/);
+  assert.doesNotMatch(applyBody, /getBrowserGroupItems/);
+  assert.doesNotMatch(applyBody, /prewarmBrowserDefaultCatalog/);
+  assert.doesNotMatch(applyBody, /prewarmVisibleBrowserGroups/);
+  assert.match(applyBody, /warmNativeBrowserRuntime\(\)/);
+
+  const warmStart = source.indexOf("const runNativeBrowserRuntimeWarm = async");
+  const warmEnd = source.indexOf("const ensureNativeBrowserRuntimeReady", warmStart);
+  assert.notEqual(warmStart, -1);
+  assert.notEqual(warmEnd, -1);
+  const warmBody = source.slice(warmStart, warmEnd);
+  assert.doesNotMatch(warmBody, /getBrowserDefaultCatalog/);
+  assert.doesNotMatch(warmBody, /getBrowserSearchCatalog/);
+  assert.match(warmBody, /ensureGlobalBrowserAtlasIndex/);
+});
+
 test("native surface baseline measures actual native search projection latency", () => {
   const baseline = readSource("../scripts/native-surface-baseline.mjs");
   const protocol = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");

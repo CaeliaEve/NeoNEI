@@ -50,7 +50,6 @@ import {
   applyGroupFacetFilters,
   buildPersistentBrowserPageKey,
   clampNumber,
-  collectBrowserGroupKeys,
   collectBrowserPageResourceItemIds,
   collectDisplayItems,
   normalizeExpandedGroups,
@@ -59,8 +58,6 @@ import {
 
 const SEARCH_LOCAL_PROJECTION_MAX_TOTAL = 1600;
 
-let browserCatalogWarmTimer: ReturnType<typeof setTimeout> | null = null;
-let browserGroupWarmTimer: ReturnType<typeof setTimeout> | null = null;
 let nativeBrowserWarmTimer: ReturnType<typeof setTimeout> | null = null;
 const nativeBrowserWarmScopes = new Set<string>();
 const nativeBrowserWarmPromises = new Map<string, Promise<void>>();
@@ -138,62 +135,11 @@ export function useItemBrowser(
   let allowMeasuredPageCapacity = false;
   const getActiveBrowserScope = () => selectedMod.value === 'all' ? undefined : selectedMod.value;
 
-  const prewarmVisibleBrowserGroups = (entries: BrowserGridEntry[]) => {
-    if (hasActiveSearch() && !isSearchLocalProjectionEligible()) {
-      return;
-    }
-    const groupKeys = collectBrowserGroupKeys(entries).slice(0, 12);
-    if (groupKeys.length === 0) {
-      return;
-    }
-
-    if (browserGroupWarmTimer !== null) {
-      clearTimeout(browserGroupWarmTimer);
-      browserGroupWarmTimer = null;
-    }
-
-    browserGroupWarmTimer = setTimeout(() => {
-      browserGroupWarmTimer = null;
-      for (const groupKey of groupKeys) {
-        void api.getBrowserGroupItems(groupKey, getActiveBrowserScope()).catch(() => {
-          // best-effort warmup only
-        });
-      }
-    }, 40);
-  };
-
-  const prewarmBrowserDefaultCatalog = () => {
-    if (browserCatalogWarmTimer !== null) {
-      clearTimeout(browserCatalogWarmTimer);
-      browserCatalogWarmTimer = null;
-    }
-
-    browserCatalogWarmTimer = setTimeout(() => {
-      browserCatalogWarmTimer = null;
-      const task = hasActiveSearch()
-        ? (
-          isSearchLocalProjectionEligible()
-            ? api.getBrowserSearchCatalog({
-              search: searchQuery.value.trim(),
-              modId: getActiveBrowserScope(),
-            })
-            : null
-        )
-        : api.getBrowserDefaultCatalog({
-          modId: getActiveBrowserScope(),
-        });
-      void task?.catch(() => {
-        // best-effort warmup only
-      });
-    }, 60);
-  };
-
   const buildNativeBrowserWarmKey = () => `${getActiveBrowserScope() ?? 'all'}::${pageSize.value}::${itemSize.value}`;
 
   const runNativeBrowserRuntimeWarm = async (warmKey: string, scope: string) => {
     const startedAt = performance.now();
     await Promise.allSettled([
-      api.getBrowserDefaultCatalog({ modId: getActiveBrowserScope() }),
       hasGlobalBrowserAtlas()
         ? ensureGlobalBrowserAtlasIndex()
         : Promise.resolve(false),
@@ -201,8 +147,8 @@ export function useItemBrowser(
       markPerfEvent('browser-native-runtime-warm', {
         scope,
         durationMs: Math.round(performance.now() - startedAt),
-        catalog: results[0]?.status ?? 'unknown',
-        atlasIndex: results[1]?.status ?? 'unknown',
+        catalog: 'native-worker',
+        atlasIndex: results[0]?.status ?? 'unknown',
         atlasResident: 'background',
       });
     }).catch(() => undefined);
@@ -786,8 +732,6 @@ export function useItemBrowser(
     totalItems.value = response.total;
     totalPages.value = response.totalPages;
     currentPage.value = response.page;
-    prewarmVisibleBrowserGroups(response.data);
-    prewarmBrowserDefaultCatalog();
     warmNativeBrowserRuntime();
 
     if (!firstBrowserTileVisibleMarked && response.items.length > 0) {
@@ -1454,14 +1398,6 @@ export function useItemBrowser(
     if (deferredPageHydrationTimer !== null) {
       clearTimeout(deferredPageHydrationTimer);
       deferredPageHydrationTimer = null;
-    }
-    if (browserCatalogWarmTimer) {
-      clearTimeout(browserCatalogWarmTimer);
-      browserCatalogWarmTimer = null;
-    }
-    if (browserGroupWarmTimer) {
-      clearTimeout(browserGroupWarmTimer);
-      browserGroupWarmTimer = null;
     }
     if (nativeBrowserWarmTimer) {
       clearTimeout(nativeBrowserWarmTimer);
