@@ -254,6 +254,8 @@ export class WebGpuNativeRenderer implements NativeRendererBackend {
   readonly backend = "webgpu" as const;
   static lastInitializationError: string | null = null;
   private disposed = false;
+  private contextLost = false;
+  private contextLostReason: string | null = null;
   private textureCache = new Map<string, WebGpuTextureState>();
   private readonly handles: WebGpuHandles;
 
@@ -273,10 +275,15 @@ export class WebGpuNativeRenderer implements NativeRendererBackend {
 
   private constructor(handles: WebGpuHandles) {
     this.handles = handles;
+    void handles.device.lost?.then?.((info: AnyRecord) => {
+      this.contextLost = true;
+      this.contextLostReason = `${info?.reason ?? "unknown"}${info?.message ? `: ${info.message}` : ""}`;
+      this.dispose();
+    });
   }
 
   registerTexture(key: string, bitmap: ImageBitmap): boolean {
-    if (this.disposed || !key) return false;
+    if (this.disposed || this.contextLost || !key) return false;
     const { device, sampler } = this.handles;
     const width = Math.max(1, bitmap.width);
     const height = Math.max(1, bitmap.height);
@@ -307,13 +314,20 @@ export class WebGpuNativeRenderer implements NativeRendererBackend {
     return this.textureCache.size;
   }
 
+  diagnostics() {
+    return {
+      contextLost: this.contextLost,
+      contextLostReason: this.contextLostReason,
+    };
+  }
+
   render(
     activeWidth: number,
     activeHeight: number,
     commands: NativeRenderCommand[],
     spriteCommands: NativeTextureSpriteCommand[] = [],
   ): NativeRendererStats {
-    if (this.disposed || activeWidth <= 0 || activeHeight <= 0) {
+    if (this.disposed || this.contextLost || activeWidth <= 0 || activeHeight <= 0) {
       return { drawCalls: 0, vertexCount: 0, spriteDrawCalls: 0, spriteVertexCount: 0 };
     }
     const { device, context } = this.handles;

@@ -21,6 +21,8 @@ test("native render protocol exposes segmented frame timing metrics", () => {
   for (const field of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "latestFrameToken", "droppedStaleFrames", "textureUploadConcurrency", "textureUploadBatches", "lastTextureUploadMs"]) {
     assert.match(source, new RegExp(`${field}: number`));
   }
+  assert.match(source, /contextLost: boolean/);
+  assert.match(source, /contextLostReason: string \| null/);
 });
 
 test("native render worker records parse normalize draw and rolling frame timings", () => {
@@ -74,4 +76,19 @@ test("native render worker drops stale rapid-paging frames by frame token", () =
   assert.match(worker, /let droppedStaleFrames = 0/);
   assert.match(worker, /if \(frameToken < latestFrameToken\)/);
   assert.match(worker, /droppedStaleFrames \+= 1/);
+});
+
+test("native WebGPU renderer surfaces context loss diagnostics to render metrics", () => {
+  const backend = readFrontend("src/renderers/native/NativeRendererBackend.ts");
+  const renderer = readFrontend("src/renderers/native/WebGpuNativeRenderer.ts");
+  const worker = readFrontend("src/workers/nativeRender.worker.ts");
+
+  assert.match(backend, /export type NativeRendererDiagnostics/);
+  assert.match(backend, /diagnostics\?\(\): NativeRendererDiagnostics/);
+  assert.match(renderer, /private contextLost = false/);
+  assert.match(renderer, /handles\.device\.lost\?\.then\?/);
+  assert.match(renderer, /contextLostReason/);
+  assert.match(worker, /const rendererDiagnostics = nativeRenderer\?\.diagnostics\?\.\(\)/);
+  assert.match(worker, /contextLost: rendererDiagnostics\.contextLost/);
+  assert.match(worker, /contextLostReason: rendererDiagnostics\.contextLostReason/);
 });

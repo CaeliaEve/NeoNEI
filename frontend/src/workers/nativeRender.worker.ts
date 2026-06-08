@@ -69,6 +69,7 @@ function rememberFrameSample(value: number): void {
 function buildMetrics(): NativeRendererFrameMetrics {
   const webgpuAvailable = Boolean((navigator as Navigator & { gpu?: unknown }).gpu);
   const adapterUnavailable = Boolean(backendFallbackReason?.includes("adapter/device/context unavailable"));
+  const rendererDiagnostics = nativeRenderer?.diagnostics?.() ?? { contextLost: false, contextLostReason: null };
   const frameAvgMs = frameSamples.length > 0
     ? frameSamples.reduce((sum, value) => sum + value, 0) / frameSamples.length
     : 0;
@@ -98,6 +99,8 @@ function buildMetrics(): NativeRendererFrameMetrics {
     frameMaxMs: frameSamples.length > 0 ? Math.max(...frameSamples) : 0,
     latestFrameToken,
     droppedStaleFrames,
+    contextLost: rendererDiagnostics.contextLost,
+    contextLostReason: rendererDiagnostics.contextLostReason,
     animationEnabled,
     width,
     height,

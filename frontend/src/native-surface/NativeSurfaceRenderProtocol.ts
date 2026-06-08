@@ -95,6 +95,8 @@ export type NativeRendererFrameMetrics = {
   frameMaxMs: number;
   latestFrameToken: number;
   droppedStaleFrames: number;
+  contextLost: boolean;
+  contextLostReason: string | null;
   animationEnabled: boolean;
   width: number;
   height: number;

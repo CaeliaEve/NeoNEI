@@ -2,10 +2,16 @@
 
 export type NativeRendererTextureSource = ImageBitmap;
 
+export type NativeRendererDiagnostics = {
+  contextLost: boolean;
+  contextLostReason: string | null;
+};
+
 export interface NativeRendererBackend {
   readonly backend: "webgpu" | "webgl2";
   registerTexture(key: string, bitmap: NativeRendererTextureSource): boolean;
   textureCount(): number;
+  diagnostics?(): NativeRendererDiagnostics;
   render(
     activeWidth: number,
     activeHeight: number,
