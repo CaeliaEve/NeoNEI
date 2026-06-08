@@ -318,17 +318,20 @@ fn read_zero_recipe_diagnostics(
     manifest: &RawManifest,
     warnings: &mut Vec<String>,
 ) -> Result<Option<ZeroRecipeDiagnostics>> {
-    let path = resolve_manifest_path(input, manifest, "neiHandlerAnomalies")
-        .or_else(|| {
-            let candidate = input.join("validation").join("nei_handler_anomalies.json");
-            candidate.exists().then_some(candidate)
-        });
+    let path = resolve_manifest_path(input, manifest, "neiHandlerAnomalies").or_else(|| {
+        let candidate = input.join("validation").join("nei_handler_anomalies.json");
+        candidate.exists().then_some(candidate)
+    });
     let Some(path) = path else {
-        warnings.push("zero-recipe diagnostics are missing: validation/nei_handler_anomalies.json".to_string());
+        warnings.push(
+            "zero-recipe diagnostics are missing: validation/nei_handler_anomalies.json"
+                .to_string(),
+        );
         return Ok(None);
     };
     let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let value: Value = serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+    let value: Value =
+        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
     Ok(zero_recipe_diagnostics_from_value(&value))
 }
 
@@ -337,9 +340,8 @@ fn zero_recipe_diagnostics_from_value(value: &Value) -> Option<ZeroRecipeDiagnos
     let expected_empty_handlers = object_u64(summary, "expectedEmptyHandlers");
     let native_covered_zero_exports = object_u64(summary, "nativeCoveredZeroExports");
     let non_recipe_info_zero_exports = object_u64(summary, "nonRecipeInfoZeroExports");
-    let legal_zero_recipe_handlers = object_u64(summary, "legalZeroRecipeHandlers").max(
-        expected_empty_handlers + native_covered_zero_exports + non_recipe_info_zero_exports,
-    );
+    let legal_zero_recipe_handlers = object_u64(summary, "legalZeroRecipeHandlers")
+        .max(expected_empty_handlers + native_covered_zero_exports + non_recipe_info_zero_exports);
     Some(ZeroRecipeDiagnostics {
         status: summary
             .get("status")
@@ -2398,6 +2400,11 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
         .collect::<BTreeMap<_, _>>();
 
     let atlas = repaired_browser_atlas(&atlas, &texture_rows);
+    let atlas = promote_animation_facts_to_animated_atlas(
+        &atlas,
+        &animation_by_asset,
+        &native_sprite_by_asset,
+    );
     let atlas_items = atlas
         .get("items")
         .and_then(Value::as_array)
@@ -2758,17 +2765,157 @@ fn expected_animated_item(animation: Option<&Value>, native_sprite: Option<&Valu
     animation.is_some_and(|value| {
         value_u64(value, "frameCount").unwrap_or(0) > 1
             || value_u64(value, "frameDurationMs").unwrap_or(0) > 0
-            || value.get("timeline").and_then(Value::as_array).is_some_and(|values| !values.is_empty())
+            || value
+                .get("timeline")
+                .and_then(Value::as_array)
+                .is_some_and(|values| !values.is_empty())
     }) || native_sprite.is_some_and(|value| {
         value_u64(value, "frameCount").unwrap_or(0) > 1
             || value_u64(value, "frameDurationMs").unwrap_or(0) > 0
-            || value.get("frames").and_then(Value::as_array).is_some_and(|values| values.len() > 1)
+            || value
+                .get("frames")
+                .and_then(Value::as_array)
+                .is_some_and(|values| values.len() > 1)
             || optional_value_string(Some(value), "animationMode").is_some()
             || optional_value_string(Some(value), "spriteMetadataFile").is_some()
     })
 }
 
-fn expected_animation_reason(animation: Option<&Value>, native_sprite: Option<&Value>) -> &'static str {
+fn promote_animation_facts_to_animated_atlas(
+    atlas: &Value,
+    animation_by_asset: &BTreeMap<String, Value>,
+    native_sprite_by_asset: &BTreeMap<String, Value>,
+) -> Value {
+    let mut promoted = atlas.clone();
+    let Some(items) = promoted.get_mut("items").and_then(Value::as_array_mut) else {
+        return promoted;
+    };
+
+    for item in items {
+        let asset_id = value_string(item, "assetId").unwrap_or_default();
+        let has_animated_atlas = item
+            .get("hasAnimatedAtlas")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if has_animated_atlas {
+            continue;
+        }
+        let animation = animation_by_asset.get(&asset_id);
+        let native_sprite = native_sprite_by_asset.get(&asset_id);
+        if !expected_animated_item(animation, native_sprite) {
+            continue;
+        }
+        let Some(static_atlas) = item.get("staticAtlas").filter(|value| value.is_object()) else {
+            continue;
+        };
+        let fact = animation.or(native_sprite);
+        let frame_count = fact
+            .and_then(|value| value_u64(value, "frameCount"))
+            .unwrap_or(0);
+        if frame_count <= 1 {
+            continue;
+        }
+        let frame_duration_ms = fact
+            .and_then(|value| value_u64(value, "frameDurationMs"))
+            .unwrap_or(100);
+        let x = value_u64(static_atlas, "x").unwrap_or(0);
+        let y = value_u64(static_atlas, "y").unwrap_or(0);
+        let width = value_u64(static_atlas, "width").unwrap_or(16);
+        let height = value_u64(static_atlas, "height").unwrap_or(16);
+        let frames = (0..frame_count)
+            .map(|index| {
+                json!({
+                    "index": index,
+                    "x": x,
+                    "y": y,
+                    "width": width,
+                    "height": height,
+                })
+            })
+            .collect::<Vec<_>>();
+        let timeline = normalize_animation_fact_timeline(fact, frame_count, frame_duration_ms);
+        let mut animated_atlas = static_atlas.clone();
+        if let Some(object) = animated_atlas.as_object_mut() {
+            object.insert("frameCount".to_string(), json!(frame_count));
+            object.insert("frameDurationMs".to_string(), json!(frame_duration_ms));
+            object.insert("frames".to_string(), Value::Array(frames));
+            object.insert("timeline".to_string(), Value::Array(timeline));
+            object.insert(
+                "animationSource".to_string(),
+                json!("native_sprite_fact_promotion"),
+            );
+        }
+        if let Some(object) = item.as_object_mut() {
+            object.insert("hasAnimatedAtlas".to_string(), json!(true));
+            object.insert("animatedAtlas".to_string(), animated_atlas);
+            object.insert(
+                "animationPromotion".to_string(),
+                json!("native_sprite_fact_promotion"),
+            );
+        }
+    }
+    promoted
+}
+
+fn normalize_animation_fact_timeline(
+    fact: Option<&Value>,
+    frame_count: u64,
+    fallback_duration_ms: u64,
+) -> Vec<Value> {
+    if let Some(timeline) = fact
+        .and_then(|value| value.get("timeline"))
+        .and_then(Value::as_array)
+        .filter(|values| !values.is_empty())
+    {
+        return timeline
+            .iter()
+            .enumerate()
+            .map(|(index, value)| {
+                if let Some(pair) = value.as_array() {
+                    json!({
+                        "frameIndex": pair
+                            .first()
+                            .and_then(numeric_value_u64_lossy)
+                            .unwrap_or(index as u64),
+                        "durationMs": pair
+                            .get(1)
+                            .and_then(numeric_value_u64_lossy)
+                            .unwrap_or(fallback_duration_ms),
+                    })
+                } else if let Some(object) = value.as_object() {
+                    json!({
+                        "frameIndex": object
+                            .get("frameIndex")
+                            .and_then(numeric_value_u64_lossy)
+                            .unwrap_or(index as u64),
+                        "durationMs": object
+                            .get("durationMs")
+                            .and_then(numeric_value_u64_lossy)
+                            .unwrap_or(fallback_duration_ms),
+                    })
+                } else {
+                    json!({
+                        "frameIndex": index as u64,
+                        "durationMs": fallback_duration_ms,
+                    })
+                }
+            })
+            .collect();
+    }
+    (0..frame_count)
+        .map(|frame_index| {
+            json!({
+                "frameIndex": frame_index,
+                "durationMs": fallback_duration_ms,
+            })
+        })
+        .collect()
+}
+
+fn expected_animation_reason(
+    animation: Option<&Value>,
+    native_sprite: Option<&Value>,
+) -> &'static str {
     if native_sprite
         .and_then(|value| optional_value_string(Some(value), "spriteMetadataFile"))
         .is_some()
@@ -2787,8 +2934,14 @@ fn expected_animation_reason(animation: Option<&Value>, native_sprite: Option<&V
     {
         return "raw animation timeline exists";
     }
-    if animation.and_then(|value| value_u64(value, "frameCount")).unwrap_or(0) > 1
-        || native_sprite.and_then(|value| value_u64(value, "frameCount")).unwrap_or(0) > 1
+    if animation
+        .and_then(|value| value_u64(value, "frameCount"))
+        .unwrap_or(0)
+        > 1
+        || native_sprite
+            .and_then(|value| value_u64(value, "frameCount"))
+            .unwrap_or(0)
+            > 1
     {
         return "frameCount indicates multiple frames";
     }
@@ -3947,6 +4100,17 @@ fn numeric_value_u64(value: &Value) -> Option<u64> {
     }
 }
 
+fn numeric_value_u64_lossy(value: &Value) -> Option<u64> {
+    match value {
+        Value::Number(number) => number
+            .as_u64()
+            .or_else(|| number.as_f64().map(|value| value as u64)),
+        Value::String(text) => text.trim().parse::<u64>().ok(),
+        Value::Object(object) => object.get("value").and_then(numeric_value_u64_lossy),
+        _ => None,
+    }
+}
+
 fn normalize_text(value: &str) -> String {
     value
         .to_lowercase()
@@ -4230,7 +4394,12 @@ mod tests {
         assert!(invalid_bounds.is_empty());
 
         validate_atlas_bounds("bad-item", "static", Some(&invalid), &mut invalid_bounds);
-        validate_atlas_bounds("zero-item", "static", Some(&zero_sized), &mut invalid_bounds);
+        validate_atlas_bounds(
+            "zero-item",
+            "static",
+            Some(&zero_sized),
+            &mut invalid_bounds,
+        );
         assert_eq!(
             invalid_bounds,
             vec![
@@ -4260,7 +4429,12 @@ mod tests {
             "frames": [[0, 0, 0, 16, 16]],
         });
         let mut invalid_bounds = Vec::new();
-        validate_atlas_bounds("frame-only-item", "animated", Some(&frame_only), &mut invalid_bounds);
+        validate_atlas_bounds(
+            "frame-only-item",
+            "animated",
+            Some(&frame_only),
+            &mut invalid_bounds,
+        );
         assert!(invalid_bounds.is_empty());
 
         validate_atlas_bounds(
@@ -4287,12 +4461,65 @@ mod tests {
             "assetId": "avaritia-singularity",
             "spriteMetadataFile": "assets/minecraft/textures/items/singularity.png.mcmeta"
         });
-        assert!(expected_animated_item(Some(&animation), Some(&native_sprite)));
+        assert!(expected_animated_item(
+            Some(&animation),
+            Some(&native_sprite)
+        ));
         assert_eq!(
             expected_animation_reason(Some(&animation), Some(&native_sprite)),
             "native sprite metadata exists"
         );
         assert!(!expected_animated_item(None, None));
+    }
+
+    #[test]
+    fn native_sprite_snapshot_animation_facts_promote_static_atlas() {
+        let atlas = json!({
+            "items": [{
+                "itemId": "i~Railcraft~cart.redstone.flux~0",
+                "assetId": "nesqlpp:item/i~Railcraft~cart.redstone.flux~0",
+                "hasStaticAtlas": true,
+                "hasAnimatedAtlas": false,
+                "staticAtlas": {
+                    "atlasFile": "assets/textures/atlas-assets/atlases/item-native-static-011.png",
+                    "atlasWidth": 2048,
+                    "atlasHeight": 2048,
+                    "x": 512,
+                    "y": 128,
+                    "width": 64,
+                    "height": 64
+                }
+            }]
+        });
+        let animation = json!({
+            "assetId": "nesqlpp:item/i~Railcraft~cart.redstone.flux~0",
+            "mode": "native_sprite_snapshot",
+            "animationMode": "none",
+            "frameCount": 20,
+            "frameDurationMs": 100,
+            "timeline": [
+                { "timelineIndex": 0.0, "frameIndex": 0.0, "durationMs": 100.0 },
+                { "timelineIndex": 1.0, "frameIndex": 1.0, "durationMs": 100.0 }
+            ]
+        });
+        let mut animations = BTreeMap::new();
+        animations.insert(
+            "nesqlpp:item/i~Railcraft~cart.redstone.flux~0".to_string(),
+            animation,
+        );
+        let promoted =
+            promote_animation_facts_to_animated_atlas(&atlas, &animations, &BTreeMap::new());
+        let item = &promoted["items"][0];
+        assert_eq!(item["hasAnimatedAtlas"], json!(true));
+        assert_eq!(item["animatedAtlas"]["frameCount"], json!(20));
+        assert_eq!(
+            item["animatedAtlas"]["frames"].as_array().unwrap().len(),
+            20
+        );
+        assert_eq!(
+            item["animatedAtlas"]["timeline"][1],
+            json!({ "frameIndex": 1, "durationMs": 100 })
+        );
     }
 
     #[test]
