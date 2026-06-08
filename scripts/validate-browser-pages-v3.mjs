@@ -269,32 +269,51 @@ function pageEntries(entries, page) {
   return { data, elapsedMs: performance.now() - startedAt };
 }
 
-function expandGroupEntries(defaultEntries, group, page = 1) {
+function buildGroupIndex(entries) {
+  const index = new Map();
+  entries.forEach((entry, position) => {
+    if (entry?.kind === "group-collapsed" && entry.groupKey && !index.has(entry.groupKey)) {
+      index.set(entry.groupKey, position);
+    }
+  });
+  return index;
+}
+
+function projectExpandedGroupWindow(defaultEntries, groupIndex, memberItemIds, page) {
+  if (groupIndex < 0) {
+    return { data: defaultEntries.slice((Math.max(1, page) - 1) * pageSize, Math.max(1, page) * pageSize), total: defaultEntries.length };
+  }
+  const members = Array.isArray(memberItemIds) ? memberItemIds : [];
+  const start = (Math.max(1, page) - 1) * pageSize;
+  const end = start + pageSize;
+  const total = defaultEntries.length - 1 + members.length;
+  const data = [];
+  for (let projectedIndex = start; projectedIndex < Math.min(end, total); projectedIndex += 1) {
+    if (projectedIndex < groupIndex) {
+      data.push(defaultEntries[projectedIndex]);
+      continue;
+    }
+    const memberIndex = projectedIndex - groupIndex;
+    if (memberIndex < members.length) {
+      const itemId = members[memberIndex];
+      data.push({ key: itemId, kind: "item", itemId });
+      continue;
+    }
+    const defaultIndex = projectedIndex - members.length + 1;
+    if (defaultEntries[defaultIndex]) data.push(defaultEntries[defaultIndex]);
+  }
+  return { data, total };
+}
+
+function expandGroupEntries(defaultEntries, group, groupIndexByKey, page = 1) {
   const startedAt = performance.now();
   const groupKey = `${group?.groupKey ?? ""}`.trim();
   const members = Array.isArray(group?.memberItemIds) ? group.memberItemIds.filter(Boolean) : [];
-  const start = (Math.max(1, page) - 1) * pageSize;
-  const end = start + pageSize;
-  const pageEntries = [];
-  let total = 0;
-  let foundGroup = false;
-  const pushProjected = (entry) => {
-    if (total >= start && total < end) pageEntries.push(entry);
-    total += 1;
-  };
-  for (const entry of defaultEntries) {
-    if (entry.kind !== "group-collapsed" || entry.groupKey !== groupKey) {
-      pushProjected(entry);
-      continue;
-    }
-    foundGroup = true;
-    for (const memberItemId of members) {
-      pushProjected({ key: memberItemId, kind: "item", itemId: memberItemId });
-    }
-  }
+  const groupIndex = groupIndexByKey.get(groupKey) ?? -1;
+  const projected = projectExpandedGroupWindow(defaultEntries, groupIndex, members, page);
   return {
-    data: pageEntries,
-    total: foundGroup ? total : defaultEntries.length,
+    data: projected.data,
+    total: groupIndex >= 0 ? projected.total : defaultEntries.length,
     elapsedMs: performance.now() - startedAt,
   };
 }
@@ -332,26 +351,97 @@ function pickFacetFilterNeedle(group, searchByItemId) {
   return "";
 }
 
-function filterExpandedGroupEntries(defaultEntries, group, searchByItemId, searchTextByItemId, query, page = 1) {
+function candidateIndexesForNeedle(indexes, needle) {
+  const direct = [
+    ...(indexes.exact.get(needle) ?? []),
+    ...(indexes.prefix.get(needle) ?? []),
+  ];
+  let gramCandidates = [];
+  for (const gramValue of queryGrams(needle)) {
+    const indexed = indexes.gram.get(gramValue) ?? [];
+    if (indexed.length === 0) {
+      gramCandidates = [];
+      break;
+    }
+    gramCandidates = gramCandidates.length === 0 ? indexed : intersectSorted(gramCandidates, indexed);
+    if (gramCandidates.length === 0) break;
+  }
+  return Array.from(new Set([...direct, ...gramCandidates])).sort((left, right) => left - right);
+}
+
+function intersectSortedLimited(left, right, limit = Number.POSITIVE_INFINITY) {
+  const result = [];
+  let count = 0;
+  let i = 0;
+  let j = 0;
+  while (i < left.length && j < right.length) {
+    if (left[i] === right[j]) {
+      count += 1;
+      if (result.length < limit) result.push(left[i]);
+      i += 1;
+      j += 1;
+    } else if (left[i] < right[j]) {
+      i += 1;
+    } else {
+      j += 1;
+    }
+  }
+  return { result, count };
+}
+
+function appendSortedUnique(map, key, value) {
+  if (!key || !Number.isInteger(value)) return;
+  const existing = map.get(key);
+  if (existing) {
+    if (existing[existing.length - 1] !== value) existing.push(value);
+    return;
+  }
+  map.set(key, [value]);
+}
+
+function buildGroupFacetTokenIndex(groupSmokeGroups, searchIndexByItemId, searchByItemId, searchTextByItemId) {
+  return new Map(groupSmokeGroups.map((group) => {
+    const tokenIndex = new Map();
+    for (const itemId of Array.isArray(group.memberItemIds) ? group.memberItemIds : []) {
+      const searchIndex = searchIndexByItemId.get(itemId);
+      if (!Number.isInteger(searchIndex)) continue;
+      const entry = searchByItemId.get(itemId);
+      const text = [
+        entry?.facetSummary,
+        entry?.normalizedSearchTerms,
+        entry?.localizedName,
+        searchTextByItemId.get(itemId),
+      ].map(normalize).filter(Boolean).join(" ");
+      for (const token of text.split(/[^0-9A-Za-z\u4e00-\u9fff]+/u).filter(Boolean)) {
+        appendSortedUnique(tokenIndex, token, searchIndex);
+        for (const gram of queryGrams(token)) {
+          appendSortedUnique(tokenIndex, gram, searchIndex);
+        }
+      }
+    }
+    return [group.groupKey, tokenIndex];
+  }));
+}
+
+function filterExpandedGroupEntries(defaultEntries, group, groupIndexByKey, groupSearchIndexByKey, groupFacetTokenIndexByKey, searchItems, searchIndexes, searchByItemId, searchTextByItemId, query, page = 1) {
   const startedAt = performance.now();
   const groupKey = `${group?.groupKey ?? ""}`.trim();
   const members = Array.isArray(group?.memberItemIds) ? group.memberItemIds.filter(Boolean) : [];
   const needles = normalize(query).split(/\s+/).filter(Boolean);
-  const start = (Math.max(1, page) - 1) * pageSize;
-  const end = start + pageSize;
+  const end = Math.max(1, page) * pageSize;
   const filteredPageMembers = [];
   let filteredMembersCount = 0;
   if (needles.length === 0) {
     filteredMembersCount = members.length;
-    filteredPageMembers.push(...members.slice(0, Math.max(end, pageSize)));
-  } else if (needles.length === 1) {
+    filteredPageMembers.push(...members);
+  } else if (needles.length === 1 && groupSearchIndexByKey.has(groupKey)) {
     const needle = needles[0];
-    for (const itemId of members) {
-      const text = groupMemberSearchText(itemId, searchByItemId, searchTextByItemId);
-      if (!text.includes(needle)) continue;
-      if (filteredMembersCount < end) filteredPageMembers.push(itemId);
-      filteredMembersCount += 1;
-    }
+    const memberIndexes = groupSearchIndexByKey.get(groupKey);
+    const candidates = groupFacetTokenIndexByKey.get(groupKey)?.get(needle)
+      ?? candidateIndexesForNeedle(searchIndexes, needle);
+    const filtered = intersectSortedLimited(memberIndexes, candidates, end);
+    filteredMembersCount = filtered.count;
+    filteredPageMembers.push(...filtered.result.map((index) => searchItems[index]?.itemId).filter(Boolean));
   } else {
     for (const itemId of members) {
       const text = groupMemberSearchText(itemId, searchByItemId, searchTextByItemId);
@@ -363,38 +453,17 @@ function filterExpandedGroupEntries(defaultEntries, group, searchByItemId, searc
         }
       }
       if (!matched) continue;
-      if (filteredMembersCount < end) filteredPageMembers.push(itemId);
+      filteredPageMembers.push(itemId);
       filteredMembersCount += 1;
     }
   }
-  const pageEntries = [];
-  let total = 0;
-  let foundGroup = false;
-  const pushProjected = (entry) => {
-    if (total >= start && total < end) {
-      pageEntries.push(entry);
-    }
-    total += 1;
-  };
-  for (const entry of defaultEntries) {
-    if (entry.kind !== "group-collapsed" || entry.groupKey !== groupKey) {
-      pushProjected(entry);
-      continue;
-    }
-    foundGroup = true;
-    let pushedMemberCount = 0;
-    for (const memberItemId of filteredPageMembers) {
-      if (total >= end) break;
-      pushProjected({ key: memberItemId, kind: "item", itemId: memberItemId });
-      pushedMemberCount += 1;
-    }
-    total += Math.max(0, filteredMembersCount - pushedMemberCount);
-  }
+  const groupIndex = groupIndexByKey.get(groupKey) ?? -1;
+  const projected = projectExpandedGroupWindow(defaultEntries, groupIndex, filteredPageMembers, page);
   return {
     query,
     filteredMembers: filteredMembersCount,
-    data: pageEntries,
-    total: foundGroup ? total : defaultEntries.length,
+    data: projected.data,
+    total: groupIndex >= 0 ? projected.total : defaultEntries.length,
     elapsedMs: performance.now() - startedAt,
   };
 }
@@ -408,6 +477,10 @@ function searchFields(entry) {
     entry.normalizedInternalName,
     entry.normalizedItemId ?? entry.itemId,
     entry.normalizedSearchTerms,
+    entry.facetSummary,
+    entry.family,
+    entry.classification,
+    entry.groupLabel,
   ].map(normalize).filter(Boolean);
 }
 
@@ -495,21 +568,7 @@ function rankSearchEntry(entry, needle) {
 function searchEntries(searchItems, indexes, query) {
   const startedAt = performance.now();
   const needle = normalize(query);
-  const direct = [
-    ...(indexes.exact.get(needle) ?? []),
-    ...(indexes.prefix.get(needle) ?? []),
-  ];
-  let gramCandidates = [];
-  for (const gramValue of queryGrams(needle)) {
-    const indexed = indexes.gram.get(gramValue) ?? [];
-    if (indexed.length === 0) {
-      gramCandidates = [];
-      break;
-    }
-    gramCandidates = gramCandidates.length === 0 ? indexed : intersectSorted(gramCandidates, indexed);
-    if (gramCandidates.length === 0) break;
-  }
-  const candidateIndexes = Array.from(new Set([...direct, ...gramCandidates]));
+  const candidateIndexes = candidateIndexesForNeedle(indexes, needle);
   const data = candidateIndexes
     .map((index) => {
       const entry = searchItems[index];
@@ -571,6 +630,7 @@ const groupsByKey = new Map(groups
   .map((group) => [group.groupKey, group]));
 
 const defaultCatalog = buildDefaultCatalog(catalogItems, groupsByKey);
+const groupIndexByKey = buildGroupIndex(defaultCatalog);
 const totalPages = Math.max(1, Math.ceil(defaultCatalog.length / pageSize));
 const pages = resolvePages(totalPages);
 const failures = [];
@@ -595,6 +655,7 @@ const pageResults = pages.map((page) => {
 });
 
 const searchIndexes = buildSearchIndexes(searchItems);
+const searchIndexByItemId = new Map(searchItems.map((entry, index) => [entry.itemId, index]));
 const searchResults = searchSpec.split(",")
   .map((query) => query.trim())
   .filter(Boolean)
@@ -619,9 +680,22 @@ const groupSmokeGroups = groups
   .filter((group) => `${group?.groupKey ?? ""}`.trim() && stableNumber(group?.groupSize, 1) > 1)
   .sort((left, right) => stableNumber(right.groupSize, 0) - stableNumber(left.groupSize, 0))
   .slice(0, groupSmokeLimit);
+const groupSearchIndexByKey = new Map(groupSmokeGroups.map((group) => [
+  group.groupKey,
+  (Array.isArray(group.memberItemIds) ? group.memberItemIds : [])
+    .map((itemId) => searchIndexByItemId.get(itemId))
+    .filter((index) => Number.isInteger(index))
+    .sort((left, right) => left - right),
+]));
+const groupFacetTokenIndexByKey = buildGroupFacetTokenIndex(
+  groupSmokeGroups,
+  searchIndexByItemId,
+  searchByItemId,
+  searchTextByItemId,
+);
 
 const groupResults = groupSmokeGroups.map((group) => {
-  const result = expandGroupEntries(defaultCatalog, group, 1);
+  const result = expandGroupEntries(defaultCatalog, group, groupIndexByKey, 1);
   const missingAtlas = result.data
     .map((entry) => entry.itemId)
     .filter((itemId) => !hasDrawable(atlasByItemId.get(itemId)));
@@ -630,7 +704,7 @@ const groupResults = groupSmokeGroups.map((group) => {
   if (result.elapsedMs > maxGroupExpandMs) failures.push(`group '${group.groupKey}' expansion ${result.elapsedMs.toFixed(3)}ms exceeds ${maxGroupExpandMs}ms`);
   const facetNeedle = pickFacetFilterNeedle(group, searchByItemId);
   const facetFilter = facetNeedle
-    ? filterExpandedGroupEntries(defaultCatalog, group, searchByItemId, searchTextByItemId, facetNeedle, 1)
+    ? filterExpandedGroupEntries(defaultCatalog, group, groupIndexByKey, groupSearchIndexByKey, groupFacetTokenIndexByKey, searchItems, searchIndexes, searchByItemId, searchTextByItemId, facetNeedle, 1)
     : null;
   const facetMissingAtlas = facetFilter
     ? facetFilter.data

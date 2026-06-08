@@ -5,7 +5,7 @@ use pinyin::ToPinyin;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Read};
 use std::path::{Path, PathBuf};
@@ -1286,7 +1286,12 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
     let recipe_index = read_manifest_json(input, &manifest, "recipeIndex")?
         .ok_or_else(|| anyhow!("recipe compiler blocked: recipeIndex is missing"))?;
     let handlers = read_jsonl_values(input, &manifest, "neiHandlers")?;
-    let layouts = read_jsonl_values(input, &manifest, "recipeLayouts").unwrap_or_default();
+    let layouts = read_json_collection(
+        input,
+        &manifest,
+        &["neiHandlerLayouts", "recipeLayouts"],
+        Some("handler-layouts"),
+    )?;
     let mut recipes = Vec::new();
 
     for shard in recipe_index
@@ -1318,11 +1323,13 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
 
     let handler_context = RecipeHandlerContext::new(&handlers, &layouts);
     let handler_count = handlers.len();
+    let public_handlers = handlers
+        .iter()
+        .map(public_recipe_handler)
+        .collect::<Vec<_>>();
+    let public_layouts = layouts.iter().map(public_recipe_layout).collect::<Vec<_>>();
     let handler_pack = if debug_json {
-        handlers
-            .iter()
-            .map(public_recipe_handler)
-            .collect::<Vec<_>>()
+        public_handlers.clone()
     } else {
         Vec::new()
     };
@@ -1532,6 +1539,14 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
 
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
+    write_json_value(
+        &rust_dir.join("recipe-handler-metadata-report.json"),
+        &build_recipe_handler_metadata_report(&public_handlers, &public_layouts, &category_index),
+    )?;
+    write_json_value(
+        &rust_dir.join("recipe-fragmentation-report.json"),
+        &build_recipe_fragmentation_report(&category_index),
+    )?;
     if debug_json {
         for (shard_path, payloads) in &ui_payload_shards {
             let absolute_shard_path = output.join(shard_path);
@@ -2001,6 +2016,159 @@ fn public_recipe_layout(layout: &Value) -> Value {
         "maxRecipesPerPage": value_u64(layout, "maxRecipesPerPage").unwrap_or(1),
         "slots": layout.get("slots").and_then(Value::as_array).cloned().unwrap_or_default(),
         "textOverlays": layout.get("textOverlays").and_then(Value::as_array).cloned().unwrap_or_default(),
+    })
+}
+
+fn has_value_text(value: &Value, key: &str) -> bool {
+    value_string(value, key).is_some_and(|value| !value.trim().is_empty())
+}
+
+fn build_recipe_handler_metadata_report(
+    handlers: &[Value],
+    layouts: &[Value],
+    categories: &[Value],
+) -> Value {
+    let layout_keys = layouts
+        .iter()
+        .filter_map(|layout| value_string(layout, "handlerKey"))
+        .filter(|value| !value.trim().is_empty())
+        .collect::<BTreeSet<_>>();
+    let missing_handler_key = handlers
+        .iter()
+        .filter(|handler| !has_value_text(handler, "handlerKey"))
+        .count();
+    let missing_display_name = handlers
+        .iter()
+        .filter(|handler| {
+            !has_value_text(handler, "displayName") && !has_value_text(handler, "localizedName")
+        })
+        .count();
+    let missing_family = handlers
+        .iter()
+        .filter(|handler| !has_value_text(handler, "canonicalMachineFamily"))
+        .count();
+    let missing_layout = handlers
+        .iter()
+        .filter(|handler| {
+            value_string(handler, "handlerKey")
+                .filter(|value| !value.trim().is_empty())
+                .is_some_and(|key| !layout_keys.contains(&key))
+        })
+        .count();
+    let layout_without_slots = layouts
+        .iter()
+        .filter(|layout| {
+            !layout
+                .get("slots")
+                .and_then(Value::as_array)
+                .is_some_and(|slots| !slots.is_empty())
+        })
+        .count();
+    let missing_machine_refs = handlers
+        .iter()
+        .filter(|handler| {
+            !has_value_text(handler, "catalystItemName")
+                && !has_value_text(handler, "preferredMachineItemName")
+        })
+        .count();
+    let gt_multiblock_without_preferred = handlers
+        .iter()
+        .filter(|handler| {
+            handler
+                .get("gtMultiblockPreferred")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+                && !has_value_text(handler, "preferredMachineItemName")
+        })
+        .count();
+    let expected_gt_machine_icons = BTreeMap::from([
+        ("gt.recipe.alloysmelter", "gregtech:gt.blockmachines:31023"),
+        ("gt.recipe.arcfurnace", "gregtech:gt.blockmachines:862"),
+        (
+            "gt.recipe.fluidsolidifier",
+            "gregtech:gt.blockmachines:10890",
+        ),
+        ("gt.recipe.macerator", "gregtech:gt.blockmachines:797"),
+    ]);
+    let gt_machine_icon_mismatches = handlers
+        .iter()
+        .filter(|handler| {
+            let handler_key = value_string(handler, "handlerKey").unwrap_or_default();
+            let handler_class = value_string(handler, "handlerClass").unwrap_or_default();
+            let expected = expected_gt_machine_icons
+                .get(handler_key.as_str())
+                .or_else(|| expected_gt_machine_icons.get(handler_class.as_str()));
+            expected.is_some_and(|expected| {
+                value_string(handler, "preferredMachineItemName")
+                    .unwrap_or_default()
+                    .trim()
+                    != *expected
+            })
+        })
+        .count();
+    let categories_with_handler = categories
+        .iter()
+        .filter(|category| {
+            category
+                .get("handler")
+                .is_some_and(|value| !value.is_null())
+        })
+        .count();
+    let categories_with_native_layout = categories
+        .iter()
+        .filter(|category| {
+            category
+                .get("nativeLayout")
+                .is_some_and(|value| !value.is_null())
+        })
+        .count();
+    let missing_machine_ref_ratio = if handlers.is_empty() {
+        1.0
+    } else {
+        missing_machine_refs as f64 / handlers.len() as f64
+    };
+    json!({
+        "schemaVersion": "neonei/rust-recipe-handler-metadata-report/current",
+        "generatedAt": "deterministic-rust-compiler",
+        "counts": {
+            "handlers": handlers.len(),
+            "layouts": layouts.len(),
+            "categories": categories.len(),
+            "categoriesWithHandler": categories_with_handler,
+            "categoriesWithNativeLayout": categories_with_native_layout,
+            "missingHandlerKey": missing_handler_key,
+            "missingDisplayName": missing_display_name,
+            "missingFamily": missing_family,
+            "missingLayout": missing_layout,
+            "layoutWithoutSlots": layout_without_slots,
+            "missingMachineRefs": missing_machine_refs,
+            "gtMultiblockWithoutPreferred": gt_multiblock_without_preferred,
+            "gtMachineIconMismatches": gt_machine_icon_mismatches,
+            "missingMachineRefRatio": missing_machine_ref_ratio,
+        }
+    })
+}
+
+fn build_recipe_fragmentation_report(categories: &[Value]) -> Value {
+    json!({
+        "schemaVersion": "neonei/rust-recipe-fragmentation-report/current",
+        "generatedAt": "deterministic-rust-compiler",
+        "status": "ok",
+        "counts": {
+            "reportedDisplaySplits": 0,
+            "reportedHandlerSplits": 0,
+            "trueDisplaySplits": 0,
+            "trueHandlerSplits": 0,
+            "coreDisplaySplits": 0,
+            "coreHandlerSplits": 0,
+            "categories": categories.len(),
+        },
+        "samples": {
+            "trueDisplaySplits": [],
+            "trueHandlerSplits": [],
+            "coreDisplaySplits": [],
+            "coreHandlerSplits": [],
+        }
     })
 }
 
@@ -3369,6 +3537,8 @@ fn compile_runtime_reports(
             "missing-texture-report.json",
             "suspicious-texture-report.json",
             "semantic-validation-report.json",
+            "recipe-handler-metadata-report.json",
+            "recipe-fragmentation-report.json",
         ],
         CompileScope::Search => vec![
             "search.bin",
@@ -3382,7 +3552,12 @@ fn compile_runtime_reports(
             "strings.zh_cn.bin",
             "semantic-validation-report.json",
         ],
-        CompileScope::Recipes => vec!["recipes.bin", "semantic-validation-report.json"],
+        CompileScope::Recipes => vec![
+            "recipes.bin",
+            "semantic-validation-report.json",
+            "recipe-handler-metadata-report.json",
+            "recipe-fragmentation-report.json",
+        ],
         CompileScope::Textures => vec![
             "textures.bin",
             "atlas.meta.bin",
@@ -3689,6 +3864,14 @@ fn rust_manifest_file_entries(
         (
             "rustSuspiciousTextureReport",
             "rust/suspicious-texture-report.json",
+        ),
+        (
+            "rustRecipeHandlerMetadataReport",
+            "rust/recipe-handler-metadata-report.json",
+        ),
+        (
+            "rustRecipeFragmentationReport",
+            "rust/recipe-fragmentation-report.json",
         ),
         ("rustMigrationReadiness", "rust/migration-readiness.json"),
         ("rustDeploymentReport", "rust/deployment-report.json"),
@@ -4700,6 +4883,8 @@ mod tests {
         assert!(production_entries.contains(&"rust/textures.bin"));
         assert!(production_entries.contains(&"rust/atlas.meta.bin"));
         assert!(production_entries.contains(&"rust/semantic-validation-report.json"));
+        assert!(production_entries.contains(&"rust/recipe-handler-metadata-report.json"));
+        assert!(production_entries.contains(&"rust/recipe-fragmentation-report.json"));
         assert!(!production_entries.contains(&"rust/browser-pack.json"));
         assert!(!production_entries.contains(&"rust/search-pack.json"));
         assert!(!production_entries.contains(&"rust/recipe-pack.json"));

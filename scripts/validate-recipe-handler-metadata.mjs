@@ -23,6 +23,12 @@ function readJson(relativePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
 }
 
+function tryReadJson(relativePath) {
+  const filePath = join(distDataDir, relativePath);
+  if (!existsSync(filePath)) return null;
+  return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
 function text(value) {
   return `${value ?? ""}`.trim();
 }
@@ -43,15 +49,57 @@ function sample(entries) {
   }));
 }
 
-const handlers = Array.isArray(readJson("recipes/handler-index.json").handlers)
-  ? readJson("recipes/handler-index.json").handlers
-  : [];
-const layouts = Array.isArray(readJson("recipes/handler-layout-index.json").layouts)
-  ? readJson("recipes/handler-layout-index.json").layouts
-  : [];
-const categories = Array.isArray(readJson("recipes/recipe-category-index.json").categories)
-  ? readJson("recipes/recipe-category-index.json").categories
-  : [];
+const rustReport = tryReadJson("rust/recipe-handler-metadata-report.json");
+
+if (rustReport) {
+  const counts = rustReport?.counts ?? {};
+  const failures = [];
+  const handlers = Number(counts.handlers ?? 0) || 0;
+  const layouts = Number(counts.layouts ?? 0) || 0;
+  const missingMachineRefRatio = Number(counts.missingMachineRefRatio ?? 1) || 0;
+
+  if (handlers === 0) failures.push("handler index is empty");
+  if (layouts === 0) failures.push("handler layout index is empty");
+  if ((Number(counts.missingHandlerKey ?? 0) || 0) > 0) failures.push(`${counts.missingHandlerKey} handler(s) are missing handlerKey`);
+  if ((Number(counts.missingDisplayName ?? 0) || 0) > 0) failures.push(`${counts.missingDisplayName} handler(s) are missing display/localized name`);
+  if ((Number(counts.missingFamily ?? 0) || 0) > 0) failures.push(`${counts.missingFamily} handler(s) are missing canonical machine family`);
+  if ((Number(counts.missingLayout ?? 0) || 0) > 0) failures.push(`${counts.missingLayout} handler(s) are missing layout rows`);
+  if ((Number(counts.layoutWithoutSlots ?? 0) || 0) > 0) failures.push(`${counts.layoutWithoutSlots} handler layout(s) are missing slot facts`);
+  if ((Number(counts.gtMultiblockWithoutPreferred ?? 0) || 0) > 0) failures.push(`${counts.gtMultiblockWithoutPreferred} GT multiblock handler(s) are missing preferred machine icons`);
+  if (requireGtMachineIconRules && (Number(counts.gtMachineIconMismatches ?? 0) || 0) > 0) {
+    failures.push(`${counts.gtMachineIconMismatches} GT machine handler(s) do not match preferred large-machine icon rules`);
+  }
+  if (missingMachineRefRatio > 0.02) {
+    failures.push(`handler catalyst/preferred machine refs missing ratio ${missingMachineRefRatio.toFixed(4)} exceeds 0.02`);
+  }
+
+  const result = {
+    schemaVersion: "neonei/recipe-handler-metadata-gate/v1",
+    generatedAt: new Date().toISOString(),
+    authority: "rust",
+    distDataDir,
+    counts: {
+      ...counts,
+      gtMachineIconRulesRequired: requireGtMachineIconRules,
+      missingMachineRefRatio: Number(missingMachineRefRatio.toFixed(6)),
+    },
+    samples: rustReport?.samples ?? {},
+    failures,
+  };
+
+  mkdirSync(outputDir, { recursive: true });
+  writeFileSync(outputPath, `${JSON.stringify(result, null, 2)}\n`, "utf8");
+  console.log(JSON.stringify(result, null, 2));
+  if (gate && failures.length > 0) process.exitCode = 1;
+  process.exit();
+}
+
+const handlerIndex = readJson("recipes/handler-index.json");
+const handlerLayoutIndex = readJson("recipes/handler-layout-index.json");
+const recipeCategoryIndex = readJson("recipes/recipe-category-index.json");
+const handlers = Array.isArray(handlerIndex.handlers) ? handlerIndex.handlers : [];
+const layouts = Array.isArray(handlerLayoutIndex.layouts) ? handlerLayoutIndex.layouts : [];
+const categories = Array.isArray(recipeCategoryIndex.categories) ? recipeCategoryIndex.categories : [];
 
 const layoutByHandlerKey = new Map(layouts.filter((entry) => hasText(entry?.handlerKey)).map((entry) => [entry.handlerKey, entry]));
 const missingHandlerKey = handlers.filter((entry) => !hasText(entry?.handlerKey));

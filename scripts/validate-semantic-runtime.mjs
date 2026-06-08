@@ -62,12 +62,119 @@ function assertRuntimeFile(manifest, logicalName, failures) {
   return declaredPath;
 }
 
+function mainRustRuntime(startedAt, manifest, failures, warnings) {
+  const requiredFiles = [
+    "rustBrowserBin",
+    "rustGroupsBin",
+    "rustSearchBin",
+    "rustRecipeBin",
+    "rustTextureBin",
+    "rustAtlasMetaBin",
+    "rustAnimationBin",
+    "rustStringsZhCnBin",
+    "rustSemanticValidationReport",
+    "rustRecipeFragmentationReport",
+  ];
+  const declared = {};
+  for (const logicalName of requiredFiles) {
+    declared[logicalName] = assertRuntimeFile(manifest, logicalName, failures);
+  }
+  const semanticReport = declared.rustSemanticValidationReport
+    ? readJson(declared.rustSemanticValidationReport, false)
+    : null;
+  const fragmentationReport = declared.rustRecipeFragmentationReport
+    ? readJson(declared.rustRecipeFragmentationReport, false)
+    : null;
+  const missingTextureReport = manifest?.files?.rustMissingTextureReport
+    ? readJson(manifest.files.rustMissingTextureReport, false)
+    : null;
+  const suspiciousTextureReport = manifest?.files?.rustSuspiciousTextureReport
+    ? readJson(manifest.files.rustSuspiciousTextureReport, false)
+    : null;
+
+  const counts = semanticReport?.counts ?? {};
+  const blocking = semanticReport?.blocking ?? {};
+  const missingRepresentativeCount = stableNumber(blocking.missingRepresentativeCount ?? counts.missingRepresentativeCount, 0);
+  const representativeMismatchCount = stableNumber(blocking.representativeMismatchCount ?? counts.representativeMismatchCount, 0);
+  const duplicateFinalAssignments = stableNumber(counts.browserContractDuplicateFinalMemberAssignments, 0);
+  const missingGroupRefs = stableNumber(counts.browserContractMissingGroupRefs, 0);
+  const textureIssues =
+    stableNumber(missingTextureReport?.counts?.actionableIssues, 0)
+    + stableNumber(suspiciousTextureReport?.counts?.actionableIssues, 0);
+  const recipeFragmentationDisplaySplits = stableNumber(fragmentationReport?.counts?.trueDisplaySplits, 0);
+  const recipeFragmentationHandlerSplits = stableNumber(fragmentationReport?.counts?.trueHandlerSplits, 0);
+
+  if (!semanticReport) {
+    fail(failures, "MISSING_RUST_SEMANTIC_REPORT", "rust semantic validation report is required");
+  }
+  if (missingRepresentativeCount !== 0) {
+    fail(failures, "MISSING_REPRESENTATIVE", "semantic runtime has missing representatives", { count: missingRepresentativeCount });
+  }
+  if (representativeMismatchCount !== 0) {
+    fail(failures, "REPRESENTATIVE_MISMATCH", "semantic runtime has representative mismatches", { count: representativeMismatchCount });
+  }
+  if (duplicateFinalAssignments !== 0) {
+    fail(failures, "DUPLICATE_FINAL_BROWSER_GROUP_ASSIGNMENT", "each browser item must have at most one final group assignment", {
+      count: duplicateFinalAssignments,
+    });
+  }
+  if (missingGroupRefs !== 0) {
+    fail(failures, "MISSING_BROWSER_GROUP_REF", "browser items must reference existing groups", { count: missingGroupRefs });
+  }
+  if (textureIssues !== 0) {
+    fail(failures, "RUST_TEXTURE_REPORT_ACTIONABLE_ISSUES", "rust texture reports must be clean", { count: textureIssues });
+  }
+  if (recipeFragmentationDisplaySplits !== 0 || recipeFragmentationHandlerSplits !== 0) {
+    fail(failures, "RECIPE_FRAGMENTATION", "recipe categories must not be fragmented", {
+      displaySplits: recipeFragmentationDisplaySplits,
+      handlerSplits: recipeFragmentationHandlerSplits,
+    });
+  }
+  for (const warning of semanticReport?.warnings ?? []) {
+    warnings.push(warning);
+  }
+
+  const report = {
+    schemaVersion: "neonei/semantic-runtime-smoke/v1",
+    status: failures.length === 0 ? "ok" : "blocked",
+    authority: "rust",
+    distDataDir: "<dist-data>",
+    elapsedMs: Date.now() - startedAt,
+    counts: {
+      semanticItems: stableNumber(counts.semanticTotalItems ?? counts.items, 0),
+      variants: stableNumber(counts.semanticEstimatedPublicItems, 0),
+      identityRows: stableNumber(counts.items, 0),
+      browserItems: stableNumber(counts.browserItemCount, 0),
+      browserGroups: stableNumber(counts.groupCount, 0),
+      finalGroupedMembers: stableNumber(counts.groupedUniqueMembers, 0),
+      duplicateFinalAssignments,
+      expectedAnimatedItems: stableNumber(counts.expectedAnimatedItems, 0),
+      staticWhenExpectedAnimated: stableNumber(counts.staticWhenExpectedAnimated, 0),
+      textureActionableIssues: textureIssues,
+      recipeFragmentationDisplaySplits,
+      recipeFragmentationHandlerSplits,
+    },
+    failures,
+    warnings,
+  };
+
+  mkdirSync(reportDir, { recursive: true });
+  writeFileSync(reportPath, JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report, null, 2));
+  if (gate && failures.length > 0) process.exit(1);
+}
+
 function main() {
   const startedAt = Date.now();
   const failures = [];
   const warnings = [];
   const samples = {};
   const manifest = readJson("manifest.json");
+
+  if (manifest?.files?.rustSemanticValidationReport && !manifest?.files?.semanticItems) {
+    mainRustRuntime(startedAt, manifest, failures, warnings);
+    return;
+  }
 
   const requiredFiles = [
     "semanticItems",

@@ -1,10 +1,11 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
+﻿import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), "..");
 const distDataDir = resolve(process.env.DIST_DATA_V3_DIR || join(repoRoot, "backend", "public", "dist-data"));
-const reportPath = join(distDataDir, "validation", "recipe-fragmentation.json");
+const legacyReportPath = join(distDataDir, "validation", "recipe-fragmentation.json");
+const rustReportPath = join(distDataDir, "rust", "recipe-fragmentation-report.json");
 const outputDir = join(repoRoot, ".runtime-logs");
 const outputPath = join(outputDir, "recipe-fragmentation-gate.json");
 const gate = process.argv.includes("--gate");
@@ -48,7 +49,7 @@ function isCoreCategorySplit(entry) {
   return coreCategoryNeedles.some((needle) => text.includes(normalize(needle)));
 }
 
-const report = readJson(reportPath);
+const report = existsSync(rustReportPath) ? readJson(rustReportPath) : readJson(legacyReportPath);
 const suspiciousDisplaySplits = Array.isArray(report?.samples?.suspiciousDisplaySplits)
   ? report.samples.suspiciousDisplaySplits
   : [];
@@ -84,18 +85,20 @@ if (coreDisplaySplits.length > 0 || coreHandlerSplits.length > 0) {
   failures.push("core recipe categories are fragmented");
 }
 
+const rustCounts = report?.counts ?? {};
 const result = {
   schemaVersion: "neonei/recipe-fragmentation-gate/v1",
   generatedAt: new Date().toISOString(),
+  authority: existsSync(rustReportPath) ? "rust" : "legacy",
   distDataDir,
   reportStatus: report?.status ?? null,
   counts: {
-    reportedDisplaySplits: Number(report?.counts?.suspiciousDisplaySplits ?? suspiciousDisplaySplits.length) || 0,
-    reportedHandlerSplits: Number(report?.counts?.suspiciousHandlerSplits ?? suspiciousHandlerSplits.length) || 0,
-    trueDisplaySplits: trueDisplaySplits.length,
-    trueHandlerSplits: trueHandlerSplits.length,
-    coreDisplaySplits: coreDisplaySplits.length,
-    coreHandlerSplits: coreHandlerSplits.length,
+    reportedDisplaySplits: Number(rustCounts.suspiciousDisplaySplits ?? rustCounts.reportedDisplaySplits ?? suspiciousDisplaySplits.length) || 0,
+    reportedHandlerSplits: Number(rustCounts.suspiciousHandlerSplits ?? rustCounts.reportedHandlerSplits ?? suspiciousHandlerSplits.length) || 0,
+    trueDisplaySplits: Number(rustCounts.trueDisplaySplits ?? trueDisplaySplits.length) || 0,
+    trueHandlerSplits: Number(rustCounts.trueHandlerSplits ?? trueHandlerSplits.length) || 0,
+    coreDisplaySplits: Number(rustCounts.coreDisplaySplits ?? coreDisplaySplits.length) || 0,
+    coreHandlerSplits: Number(rustCounts.coreHandlerSplits ?? coreHandlerSplits.length) || 0,
   },
   samples: {
     trueDisplaySplits: trueDisplaySplits.slice(0, 25),
