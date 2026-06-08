@@ -151,11 +151,15 @@ function resolveRuntimeFile(fileName: string): string {
 
 function sendRuntimeCurrent(res: Response): void {
   const meta = getCurrentMeta();
+  const manifest = getRuntimeManifest();
   const manifestPath = getRuntimeManifestRelativePath();
+  const runtimeSchemaRevision = asString(manifest?.schemaRevision)
+    ?? asString(manifest?.schema)
+    ?? 'runtime.unknown';
   setNoStoreHeaders(res);
   sendOk(res, {
     runtimeId: meta.runtimeId,
-    schemaRevision: meta.schemaRevision,
+    schemaRevision: runtimeSchemaRevision,
     manifestUrl: '/api/runtime/current/manifest',
     runtimeManifestUrl: `/api/runtime/${encodeURIComponent(meta.runtimeId)}/manifest`,
     assetBaseUrl: '/api/runtime/current/asset/',

@@ -29,6 +29,7 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(routeSource.includes('capabilities'), true);
   assert.equal(routeSource.includes("manifestUrl: '/api/runtime/current/manifest'"), true);
   assert.equal(routeSource.includes("assetBaseUrl: '/api/runtime/current/asset/'"), true);
+  assert.equal(routeSource.includes('runtimeSchemaRevision'), true);
   assert.equal(routeSource.includes('runtimeManifestUrl'), true);
   assert.equal(routeSource.includes('runtimeAssetBaseUrl'), true);
   assert.equal(routeSource.includes('function assertCurrentRuntimeId'), true);
