@@ -103,12 +103,31 @@ async function createServiceWorkerHarness() {
     return responsePromise;
   };
 
+  const dispatchMessage = async (data) => {
+    let waitPromise = Promise.resolve();
+    let postedMessage = null;
+    listeners.get("message")({
+      data,
+      source: {
+        postMessage(message) {
+          postedMessage = message;
+        },
+      },
+      waitUntil(promise) {
+        waitPromise = Promise.resolve(promise);
+      },
+    });
+    await waitPromise;
+    return postedMessage;
+  };
+
   return {
     caches,
     setFetch(handler) {
       fetchImpl = handler;
     },
     dispatchFetch,
+    dispatchMessage,
   };
 }
 
@@ -172,4 +191,35 @@ test("runtime service worker switches runtime caches and serves cached files off
   assert.deepEqual(await offlineManifest.json(), { runtimeId: "beta", files: [] });
   const offlinePack = await harness.dispatchFetch(browserPackPath);
   assert.equal(await offlinePack.text(), "beta-pack");
+});
+
+test("runtime service worker cache stats count cached bodies without content-length", async () => {
+  const harness = await createServiceWorkerHarness();
+  const manifestPath = "/dist-data/manifest.json";
+  const browserPackPath = "/dist-data/runtime/browser.bin";
+
+  harness.setFetch(async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === manifestPath) {
+      return new Response(JSON.stringify({ runtimeId: "gamma", files: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.pathname === browserPackPath) {
+      return new Response("pack-without-content-length", {
+        status: 200,
+        headers: { "content-type": "application/octet-stream" },
+      });
+    }
+    return new Response("not found", { status: 404 });
+  });
+
+  await harness.dispatchFetch(manifestPath);
+  await harness.dispatchFetch(browserPackPath);
+
+  const message = await harness.dispatchMessage({ type: "NEONEI_RUNTIME_CACHE_STATUS" });
+  assert.equal(message.type, "NEONEI_RUNTIME_CACHE_STATUS_RESULT");
+  assert.equal(message.payload.runtimeId, "gamma");
+  assert.ok(message.payload.approxBytes >= "pack-without-content-length".length);
 });

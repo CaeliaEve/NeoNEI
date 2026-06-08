@@ -155,7 +155,15 @@ async function getRuntimeCacheStats() {
   for (const request of requests) {
     const response = await cache.match(request);
     const length = Number(response?.headers.get("content-length") ?? 0);
-    approxBytes += Number.isFinite(length) ? length : 0;
+    if (Number.isFinite(length) && length > 0) {
+      approxBytes += length;
+      continue;
+    }
+    try {
+      approxBytes += response ? (await response.clone().arrayBuffer()).byteLength : 0;
+    } catch {
+      approxBytes += 0;
+    }
   }
   return {
     cacheName,
