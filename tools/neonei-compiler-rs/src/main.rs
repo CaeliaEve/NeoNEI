@@ -2582,6 +2582,7 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
     let mut static_items = 0u64;
     let mut animated_items = 0u64;
     let mut missing_atlas_file_refs = Vec::new();
+    let mut missing_atlas_asset_files = Vec::new();
     let mut invalid_atlas_bounds = Vec::new();
     let mut invalid_frame_bounds = Vec::new();
     let mut actionable_texture_issues = Vec::new();
@@ -2689,15 +2690,18 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
             }),
         );
     }
+    copy_runtime_atlas_assets(input, output, &atlas_items, &mut missing_atlas_asset_files)?;
 
     if strict
         && (!missing_atlas_file_refs.is_empty()
+            || !missing_atlas_asset_files.is_empty()
             || !invalid_atlas_bounds.is_empty()
             || !invalid_frame_bounds.is_empty())
     {
         return Err(anyhow!(
-            "texture compiler blocked: missing atlas refs={}, invalid atlas bounds={}, invalid frame bounds={}",
+            "texture compiler blocked: missing atlas refs={}, missing atlas assets={}, invalid atlas bounds={}, invalid frame bounds={}",
             missing_atlas_file_refs.len(),
+            missing_atlas_asset_files.len(),
             invalid_atlas_bounds.len(),
             invalid_frame_bounds.len()
         ));
@@ -2715,6 +2719,7 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
             "nativeSpriteRows": native_sprites.len(),
             "textureRows": texture_rows.len(),
             "missingAtlasFileRefs": missing_atlas_file_refs.len(),
+            "missingAtlasAssetFiles": missing_atlas_asset_files.len(),
             "invalidAtlasBounds": invalid_atlas_bounds.len(),
             "invalidFrameBounds": invalid_frame_bounds.len(),
             "atlasMapItems": atlas_map.len(),
@@ -2724,12 +2729,14 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
         "animationTable": animation_table,
         "validation": {
             "missingAtlasFileRefs": missing_atlas_file_refs.clone(),
+            "missingAtlasAssetFiles": missing_atlas_asset_files.clone(),
             "invalidAtlasBounds": invalid_atlas_bounds.clone(),
             "invalidFrameBounds": invalid_frame_bounds.clone(),
         },
     });
     let texture_report_status = if actionable_texture_issues.is_empty()
         && missing_atlas_file_refs.is_empty()
+        && missing_atlas_asset_files.is_empty()
         && invalid_atlas_bounds.is_empty()
         && invalid_frame_bounds.is_empty()
     {
@@ -2737,18 +2744,21 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
     } else {
         "advisory"
     };
+    let actionable_issue_count = actionable_texture_issues.len() + missing_atlas_asset_files.len();
     let suspicious_texture_report = json!({
         "schemaVersion": "neonei/rust-suspicious-texture-report/current",
         "generatedAt": "deterministic-rust-compiler",
         "status": texture_report_status,
         "counts": {
-            "actionableIssues": actionable_texture_issues.len(),
+            "actionableIssues": actionable_issue_count,
             "missingAtlasFileRefs": missing_atlas_file_refs.len(),
+            "missingAtlasAssetFiles": missing_atlas_asset_files.len(),
             "invalidAtlasBounds": invalid_atlas_bounds.len(),
             "invalidFrameBounds": invalid_frame_bounds.len(),
         },
         "issues": actionable_texture_issues,
         "missingAtlasFileRefs": missing_atlas_file_refs,
+        "missingAtlasAssetFiles": missing_atlas_asset_files,
         "invalidAtlasBounds": invalid_atlas_bounds,
         "invalidFrameBounds": invalid_frame_bounds,
     });
@@ -2764,11 +2774,13 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
                 "animatedAtlasItems": animated_items,
                 "actionableIssues": suspicious_texture_report["counts"]["actionableIssues"].clone(),
                 "missingAtlasFileRefs": suspicious_texture_report["counts"]["missingAtlasFileRefs"].clone(),
+                "missingAtlasAssetFiles": suspicious_texture_report["counts"]["missingAtlasAssetFiles"].clone(),
                 "invalidAtlasBounds": suspicious_texture_report["counts"]["invalidAtlasBounds"].clone(),
                 "invalidFrameBounds": suspicious_texture_report["counts"]["invalidFrameBounds"].clone(),
             },
             "issues": suspicious_texture_report["issues"].clone(),
             "missingAtlasFileRefs": suspicious_texture_report["missingAtlasFileRefs"].clone(),
+            "missingAtlasAssetFiles": suspicious_texture_report["missingAtlasAssetFiles"].clone(),
             "invalidAtlasBounds": suspicious_texture_report["invalidAtlasBounds"].clone(),
             "invalidFrameBounds": suspicious_texture_report["invalidFrameBounds"].clone(),
         }),
@@ -2889,6 +2901,63 @@ fn normalize_runtime_atlas_file_path(value: Option<String>) -> Option<String> {
         return Some(format!("textures/{stripped}"));
     }
     Some(normalized)
+}
+
+fn copy_runtime_atlas_assets(
+    input: &Path,
+    output: &Path,
+    atlas_items: &[Value],
+    missing_atlas_asset_files: &mut Vec<String>,
+) -> Result<()> {
+    let mut atlas_paths = BTreeMap::<String, String>::new();
+    for item in atlas_items {
+        for key in ["staticAtlas", "animatedAtlas"] {
+            let Some(atlas) = item.get(key).filter(|value| value.is_object()) else {
+                continue;
+            };
+            let Some(raw_atlas_file) = optional_value_string(Some(atlas), "atlasFile") else {
+                continue;
+            };
+            let Some(runtime_atlas_file) =
+                normalize_runtime_atlas_file_path(Some(raw_atlas_file.clone()))
+            else {
+                continue;
+            };
+            atlas_paths
+                .entry(runtime_atlas_file)
+                .or_insert(raw_atlas_file);
+        }
+    }
+
+    for (runtime_atlas_file, raw_atlas_file) in atlas_paths {
+        let raw_relative = raw_atlas_file
+            .replace('\\', "/")
+            .trim_start_matches('/')
+            .to_string();
+        let source_path = input.join(&raw_relative);
+        if !source_path.is_file() {
+            missing_atlas_asset_files.push(format!(
+                "{runtime_atlas_file}:missing-source:{raw_relative}"
+            ));
+            continue;
+        }
+        let runtime_relative = runtime_atlas_file
+            .replace('\\', "/")
+            .trim_start_matches('/')
+            .to_string();
+        let destination_path = output.join(&runtime_relative);
+        if let Some(parent) = destination_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(&source_path, &destination_path).with_context(|| {
+            format!(
+                "copy runtime atlas asset {} -> {}",
+                source_path.display(),
+                destination_path.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 fn note_atlas_meta(
@@ -3604,6 +3673,30 @@ fn compile_runtime_reports(
             "path": relative,
             "bytes": size,
         }));
+    }
+
+    let texture_asset_dir = output.join("textures");
+    if texture_asset_dir.exists() {
+        for entry in walkdir::WalkDir::new(&texture_asset_dir)
+            .into_iter()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.file_type().is_file())
+        {
+            let path = entry.path();
+            let relative_path = path
+                .strip_prefix(output)
+                .unwrap_or(path)
+                .to_string_lossy()
+                .replace('\\', "/");
+            let hash = sha256_file(path)?;
+            let size = path.metadata()?.len();
+            integrity.insert(relative_path.clone(), hash);
+            sizes.insert(relative_path.clone(), size);
+            files.push(json!({
+                "path": relative_path,
+                "bytes": size,
+            }));
+        }
     }
 
     for entry in walkdir::WalkDir::new(&rust_dir)
