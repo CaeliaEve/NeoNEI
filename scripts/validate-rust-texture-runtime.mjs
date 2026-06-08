@@ -152,9 +152,13 @@ function main() {
     fail(failures, 'RUST_TEXTURE_STATIC_WHEN_EXPECTED_ANIMATED', 'items expected to animate were exported as static', { staticWhenExpectedAnimated });
   }
   const invalidFrameBounds = Array.isArray(texturePack?.validation?.invalidFrameBounds) ? texturePack.validation.invalidFrameBounds : [];
+  const invalidAtlasBounds = Array.isArray(texturePack?.validation?.invalidAtlasBounds) ? texturePack.validation.invalidAtlasBounds : [];
   const missingAtlasFileRefs = Array.isArray(texturePack?.validation?.missingAtlasFileRefs) ? texturePack.validation.missingAtlasFileRefs : [];
   if (invalidFrameBounds.length > 0 || Number(texturePack?.counts?.invalidFrameBounds ?? 0) > 0) {
     fail(failures, 'RUST_TEXTURE_INVALID_FRAME_BOUNDS', 'rust texture pack contains invalid animated frame bounds', { count: invalidFrameBounds.length });
+  }
+  if (invalidAtlasBounds.length > 0 || Number(texturePack?.counts?.invalidAtlasBounds ?? 0) > 0) {
+    fail(failures, 'RUST_TEXTURE_INVALID_ATLAS_BOUNDS', 'rust texture pack contains invalid atlas placement bounds', { count: invalidAtlasBounds.length });
   }
   if (missingAtlasFileRefs.length > 0 || Number(texturePack?.counts?.missingAtlasFileRefs ?? 0) > 0) {
     fail(failures, 'RUST_TEXTURE_MISSING_ATLAS_FILE_REFS', 'rust texture pack references missing atlas files', { count: missingAtlasFileRefs.length });
@@ -172,6 +176,7 @@ function main() {
     animatedCount,
     animationRows: animationTable.length,
     atlasMapItems: Object.keys(atlasMap).length,
+    invalidAtlasBounds: invalidAtlasBounds.length,
     failures,
     warnings,
     samples: atlasItems.slice(0, 8).map((entry) => ({ itemId: entry.itemId, hasStaticAtlas: Boolean(entry.hasStaticAtlas), hasAnimatedAtlas: Boolean(entry.hasAnimatedAtlas) })),

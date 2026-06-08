@@ -55,6 +55,7 @@ const steps = [
   { name: 'semantic runtime validation', cwd: frontendDir, command: npm, args: ['run', 'validate:semantic-runtime'] },
   { name: 'native runtime current API regression', cwd: frontendDir, command: npm, args: ['run', 'test:native-runtime-current-api'] },
   { name: 'native runtime pack schema gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-runtime-packs'] },
+  { name: 'rust texture runtime regression', cwd: frontendDir, command: npm, args: ['run', 'test:rust-texture-runtime'] },
   { name: 'native runtime projection gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-runtime-projection'] },
   { name: 'native surface worker group gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-surface-worker-groups'] },
   { name: 'native surface batching gate', cwd: frontendDir, command: npm, args: ['run', 'test:native-surface-batching'] },
