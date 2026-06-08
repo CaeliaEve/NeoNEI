@@ -76,6 +76,11 @@ test("native surface benchmark gates segmented render metrics", () => {
   assert.match(source, /lastSpriteNormalizeMs/);
   assert.match(source, /lastDrawMs/);
   assert.match(source, /frameP95Ms/);
+  assert.match(source, /latestTextureUploadToken/);
+  assert.match(source, /cancelledTextureUploads/);
+  assert.match(source, /native render context was lost/);
+  assert.match(source, /nativeRenderContextLost/);
+  assert.match(source, /nativeRenderCancelledTextureUploads/);
   assert.match(source, /native render metric \$\{metricName\} is missing or non-finite/);
 });
 

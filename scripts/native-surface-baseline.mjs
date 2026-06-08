@@ -321,7 +321,10 @@ async function main() {
     if ((final.nativeRenderMetrics.textureLoaded ?? 0) < minTexturesLoaded) {
       gateFailures.push(`native render worker loaded ${final.nativeRenderMetrics.textureLoaded ?? 0} texture(s); minimum is ${minTexturesLoaded}`);
     }
-    for (const metricName of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs"]) {
+    if (final.nativeRenderMetrics.contextLost === true) {
+      gateFailures.push(`native render context was lost: ${final.nativeRenderMetrics.contextLostReason ?? "unknown"}`);
+    }
+    for (const metricName of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "latestTextureUploadToken", "cancelledTextureUploads"]) {
       if (!Number.isFinite(Number(final.nativeRenderMetrics[metricName]))) {
         gateFailures.push(`native render metric ${metricName} is missing or non-finite`);
       }
@@ -358,6 +361,9 @@ async function main() {
     nativeRenderLastFrameMs: Math.round(report.final.nativeRenderMetrics?.lastFrameMs ?? 0),
     nativeRenderFrameP95Ms: Math.round(report.final.nativeRenderMetrics?.frameP95Ms ?? 0),
     nativeRenderLastDrawMs: Math.round(report.final.nativeRenderMetrics?.lastDrawMs ?? 0),
+    nativeRenderContextLost: Boolean(report.final.nativeRenderMetrics?.contextLost),
+    nativeRenderContextLostReason: report.final.nativeRenderMetrics?.contextLostReason ?? null,
+    nativeRenderCancelledTextureUploads: report.final.nativeRenderMetrics?.cancelledTextureUploads ?? 0,
     errors: errors.length,
     hotPathRequests: hotPathRequests.length,
     maxFlipP95Ms,
