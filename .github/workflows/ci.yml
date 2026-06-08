@@ -140,6 +140,9 @@ jobs:
         working-directory: frontend
         run: npm run audit:paths
 
+      - name: Path audit regression
+        run: node --test scripts/path-audit-regression.test.mjs
+
       - name: CI runtime workflow regression
         run: node --test scripts/ci-runtime-workflow-regression.test.mjs
 

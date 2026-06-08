@@ -22,6 +22,7 @@ test('CI covers native runtime worker, renderer, history, and service worker con
     'npm run test:native-render-frame-metrics',
     'npm run test:native-history-surface',
     'npm run test:runtime-service-worker',
+    'node --test scripts/path-audit-regression.test.mjs',
   ]) {
     assert.equal(workflow.includes(command), true, `missing frontend CI command: ${command}`);
   }

@@ -32,19 +32,29 @@ test('native surface worker keeps expanded groups on the runtime projection path
   );
 });
 
-test('native surface worker projects before paginating collapsed groups', () => {
+test('native surface worker paginates projection indices without rebuilding all entries', () => {
   const buildRuntimeEntries = workerSource.match(
     /function buildRuntimeEntries\(surface: SurfaceState\): NativeSurfaceEngineEntry\[\] \{[\s\S]*?\n\}/,
   )?.[0] ?? '';
 
   assert.equal(
-    buildRuntimeEntries.includes('const projected: NativeSurfaceEngineEntry[] = []'),
+    buildRuntimeEntries.includes('const projectionIndices = getRuntimeVisibleEntries(surface, browserPack)'),
     true,
-    'runtime entries should first build a full projected group-aware list',
+    'runtime entries should consume native projection indices',
+  );
+  assert.equal(
+    buildRuntimeEntries.includes('const start = Math.min(projectionIndices.length, (page - 1) * pageSize)'),
+    true,
+    'pagination should compute the active projection window before materializing entries',
+  );
+  assert.equal(
+    buildRuntimeEntries.includes('for (let projectionIndex = start; projectionIndex < end; projectionIndex += 1)'),
+    true,
+    'runtime entries should only materialize the active page window',
   );
   assert.equal(
     buildRuntimeEntries.includes('projected.slice(start, start + pageSize)'),
-    true,
-    'pagination should run after native group collapse/expand projection',
+    false,
+    'runtime entries must not build a full entry array and slice it after the fact',
   );
 });

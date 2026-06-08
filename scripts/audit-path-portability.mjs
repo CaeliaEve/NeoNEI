@@ -15,6 +15,7 @@ const deniedPatterns = [
 
 const ignoredDirNames = new Set([
   '.git',
+  '.omx',
   'node_modules',
   'dist',
   'build',
@@ -93,4 +94,3 @@ if (violations.length) {
 }
 
 console.log('[audit:paths] OK: no machine-specific hard paths found in portable source files.');
-

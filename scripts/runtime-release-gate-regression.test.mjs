@@ -63,14 +63,34 @@ test('runtime release gate blocks malformed or non-portable release artifacts', 
 
 test('runtime release gate keeps publish/cache/API regressions in the quick profile', () => {
   assert.equal(
+    hasStep('server bootstrap boundary regression', "args: ['--test', 'scripts/server-bootstrap-boundary-regression.test.mjs']"),
+    true,
+    'quick gate must catch production startup and child-module boundary regressions',
+  );
+  assert.equal(
     hasStep('publish compression sidecar regression', "args: ['run', 'test:publish-compression-sidecar']"),
     true,
     'quick gate must preserve br/gz sidecar and static cache policy coverage',
   );
   assert.equal(
+    hasStep('path audit regression', "args: ['--test', 'scripts/path-audit-regression.test.mjs']"),
+    true,
+    'quick gate must keep path audit scope rules under regression coverage',
+  );
+  assert.equal(
     hasStep('API/runtime audit gate', "args: ['run', 'audit:api-runtime:gate']"),
     true,
     'quick gate must block fallback and legacy dynamic hot-path regressions',
+  );
+  assert.equal(
+    hasStep('native render frame metrics gate', "args: ['run', 'test:native-render-frame-metrics']"),
+    true,
+    'quick gate must preserve native renderer frame/drop/upload metrics coverage',
+  );
+  assert.equal(
+    hasStep('native history surface gate', "args: ['run', 'test:native-history-surface']"),
+    true,
+    'quick gate must prove history uses the native atlas surface instead of DOM/GIF fallback',
   );
   assert.equal(
     gateSource.includes("? steps.filter((step) => !step.name.includes('bench') && !step.name.includes('E2E') && step.name !== 'runtime v3 regression')"),
