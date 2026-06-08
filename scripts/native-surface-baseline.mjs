@@ -159,6 +159,18 @@ async function main() {
     return performance.now() - start;
   });
   await page.waitForTimeout(350);
+  await page.waitForFunction(
+    (minimumTextures) => {
+      const render = globalThis.__NEONEI_NATIVE_RENDER_METRICS__?.();
+      return Boolean(
+        (render?.frames ?? 0) > 0
+        && (render?.drawCalls ?? 0) > 0
+        && (render?.textureLoaded ?? 0) >= minimumTextures
+      );
+    },
+    minTexturesLoaded,
+    { timeout: 1_200 },
+  ).catch(() => {});
 
   const final = await page.evaluate(() => ({
     pageText: document.body.innerText.match(/\d+\s*\/\s*\d+/)?.[0] ?? null,

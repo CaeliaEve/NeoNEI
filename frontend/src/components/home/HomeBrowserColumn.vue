@@ -10,6 +10,8 @@ defineProps<{
   totalPages: number;
   currentPage: number;
   itemSize: number;
+  searchQuery: string;
+  selectedMod: string;
   loading: boolean;
   items: Item[];
   loadError: string;
@@ -135,6 +137,8 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                   :entries="browserGridEntries"
                   :item-size="itemSize"
                   :page="currentPage"
+                  :search-query="searchQuery"
+                  :mod-id="selectedMod"
                   :atlas="currentPageAtlas"
                   :manifest-url="nativeRuntimeManifestUrl"
                   :enable-animation="true"

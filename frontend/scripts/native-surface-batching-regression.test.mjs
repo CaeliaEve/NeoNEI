@@ -80,6 +80,23 @@ test("native runtime page projection only materializes the current page window",
   );
 });
 
+test("homepage native browser surface receives search and mod filters for immediate worker projection", () => {
+  const homeColumn = readSource("src/components/home/HomeBrowserColumn.vue");
+  const nativeSurface = readSource("src/components/native-surface/NativeBrowserSurface.vue");
+  const homePage = readSource("src/views/HomePage.vue");
+  const browserComposable = readSource("src/composables/useItemBrowser.ts");
+
+  assert.match(homePage, /:search-query="searchQuery"/);
+  assert.match(homePage, /:selected-mod="selectedMod"/);
+  assert.match(homeColumn, /searchQuery: string/);
+  assert.match(homeColumn, /selectedMod: string/);
+  assert.match(homeColumn, /:search-query="searchQuery"/);
+  assert.match(homeColumn, /:mod-id="selectedMod"/);
+  assert.match(nativeSurface, /controller\.setSearch\(props\.searchQuery \?\? ""\)/);
+  assert.match(nativeSurface, /controller\.setModFilter\(props\.modId === "all" \? null : props\.modId \?\? null\)/);
+  assert.match(browserComposable, /const onSearch = \(\) => \{\s*if \(searchTimeout\) clearTimeout\(searchTimeout\);\s*currentPage\.value = 1;/);
+});
+
 
 test("native surface metrics expose layout rebuilds separately from frame requests", () => {
   const protocol = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");
@@ -111,4 +128,13 @@ test("native surface baseline measures in-browser click latency instead of Playw
   assert.match(source, /return await page\.evaluate\(\(candidates\) =>/);
   assert.match(source, /button\.click\(\)/);
   assert.doesNotMatch(source, /await element\.click\(\)/);
+});
+
+test("native surface baseline waits for the final native frame before evaluating render metrics", () => {
+  const source = readSource("../scripts/native-surface-baseline.mjs");
+  assert.match(source, /__NEONEI_NATIVE_RENDER_METRICS__/);
+  assert.match(source, /\(render\?\.frames \?\? 0\) > 0/);
+  assert.match(source, /\(render\?\.drawCalls \?\? 0\) > 0/);
+  assert.match(source, /\(render\?\.textureLoaded \?\? 0\) >= minimumTextures/);
+  assert.match(source, /timeout: 1_200/);
 });

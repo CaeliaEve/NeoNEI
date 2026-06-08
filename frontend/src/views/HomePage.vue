@@ -407,6 +407,8 @@ setGridViewportSync(syncMeasuredPageSize);
           :total-pages="totalPages"
           :current-page="currentPage"
           :item-size="itemSize"
+          :search-query="searchQuery"
+          :selected-mod="selectedMod"
           :loading="loading"
           :items="items"
           :load-error="loadError"

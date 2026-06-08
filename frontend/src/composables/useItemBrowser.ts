@@ -1263,10 +1263,10 @@ export function useItemBrowser(
 
   const onSearch = () => {
     if (searchTimeout) clearTimeout(searchTimeout);
+    currentPage.value = 1;
     searchTimeout = setTimeout(() => {
-      currentPage.value = 1;
       void loadItems();
-    }, 220);
+    }, 120);
   };
 
   const warmSearchIndex = () => {

@@ -20,6 +20,8 @@ const props = withDefaults(defineProps<{
   entries: BrowserGridEntry[];
   itemSize: number;
   page?: number;
+  searchQuery?: string;
+  modId?: string | null;
   atlas?: PageAtlasResult | null;
   manifestUrl?: string | null;
   enableAnimation?: boolean;
@@ -378,6 +380,8 @@ onMounted(async () => {
   });
   controller.setItemSize(props.itemSize);
   controller.setPage(props.page);
+  controller.setSearch(props.searchQuery ?? "");
+  controller.setModFilter(props.modId === "all" ? null : props.modId ?? null);
   controller.setSelectedItemId(props.selectedItemId);
   controller.setCompatEntries({ entries: props.entries, atlas: props.atlas ?? null });
   controller.setHistoryItems(props.historyItemIds);
@@ -420,6 +424,24 @@ watch(
   () => props.page,
   (page) => {
     controller.setPage(page);
+    requestNativeFrame();
+  },
+);
+
+watch(
+  () => props.searchQuery,
+  (query) => {
+    controller.setSearch(query ?? "");
+    controller.setPage(1);
+    requestNativeFrame();
+  },
+);
+
+watch(
+  () => props.modId,
+  (modId) => {
+    controller.setModFilter(modId === "all" ? null : modId ?? null);
+    controller.setPage(props.page);
     requestNativeFrame();
   },
 );
