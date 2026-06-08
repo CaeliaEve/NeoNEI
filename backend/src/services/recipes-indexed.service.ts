@@ -1413,9 +1413,30 @@ export class IndexedRecipesService {
     };
   }
 
+  async getRecipePageById(recipePageId: string): Promise<{ recipePageId: string; recipe: IndexedRecipe; uiPayload: Record<string, unknown> | null } | null> {
+    const normalizedRecipePageId = `${recipePageId ?? ''}`.trim();
+    if (!normalizedRecipePageId) {
+      return null;
+    }
+    const recipe = await this.getRecipeById(normalizedRecipePageId);
+    if (!recipe) {
+      return null;
+    }
+    const additionalData = recipe.additionalData && typeof recipe.additionalData === 'object'
+      ? recipe.additionalData as Record<string, unknown>
+      : null;
+    const uiPayload = additionalData?.uiPayload && typeof additionalData.uiPayload === 'object'
+      ? additionalData.uiPayload as Record<string, unknown>
+      : null;
+    return {
+      recipePageId: normalizedRecipePageId,
+      recipe,
+      uiPayload,
+    };
+  }
+
   async getRecipeById(recipeId: string): Promise<IndexedRecipe | null> {
-    const db = this.getAccelerationDatabase();
-    if (this.canUseMaterializedRecipesCore(db)) {
+    const db = this.getAccelerationDatabase();    if (this.canUseMaterializedRecipesCore(db)) {
       const row = db
         .prepare('SELECT payload FROM recipes_core WHERE recipe_id = ?')
         .get(recipeId) as MaterializedRecipeCoreRow | undefined;

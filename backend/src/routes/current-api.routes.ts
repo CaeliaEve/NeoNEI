@@ -268,6 +268,17 @@ async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): 
   });
 }
 
+async function sendRecipePage(recipePageIdParam: string | undefined, res: Response): Promise<void> {
+  setNoStoreHeaders(res);
+  const recipePageId = normalizeRequiredParam(recipePageIdParam, 'recipePageId');
+  const service = getIndexedRecipesService();
+  const page = await service.getRecipePageById(recipePageId);
+  if (!page) {
+    throw notFound('Recipe page not found');
+  }
+  sendOk(res, page);
+}
+
 function sendDiagnosticsHealth(res: Response): void {
   setNoStoreHeaders(res);
   const health = getRuntimeHealthSummary();
@@ -389,6 +400,13 @@ router.get(
 );
 
 router.get(
+  '/recipes/page/:recipePageId(*)',
+  asyncHandler(async (req, res) => {
+    await sendRecipePage(req.params.recipePageId, res);
+  }),
+);
+
+router.get(
   '/recipes/current/usage/:itemId',
   asyncHandler(async (req, res) => {
     await sendRecipeUsage(req.params.itemId, res);
@@ -420,4 +438,5 @@ router.get('/settings/runtime', (_req, res) => {
 });
 
 export default router;
+
 

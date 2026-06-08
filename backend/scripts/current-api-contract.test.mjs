@@ -98,3 +98,16 @@ test('current API responses are path portable and do not advertise machine roots
   assert.match(routeSource, /assetBaseUrl:\s*'\/api\/runtime\/current\/asset\/'/);
   assert.match(routeSource, /runtimeAssetBaseUrl:\s*`\/api\/runtime\/\$\{encodeURIComponent\(meta\.runtimeId\)\}\/asset\/`/);
 });
+
+test('recipe page API exposes low-frequency page details without browser hot-path ownership', () => {
+  assert.equal(routeSource.includes('function sendRecipePage'), true);
+  assert.equal(routeSource.includes('getRecipePageById(recipePageId)'), true);
+  assert.equal(routeSource.includes("throw notFound('Recipe page not found')"), true);
+  assert.match(routeSource, /'\/recipes\/page\/:recipePageId\(\*\)'/);
+
+  const serviceSource = fs.readFileSync('src/services/recipes-indexed.service.ts', 'utf8');
+  assert.match(serviceSource, /async getRecipePageById\(recipePageId: string\)/);
+  assert.match(serviceSource, /const recipe = await this\.getRecipeById\(normalizedRecipePageId\)/);
+  assert.match(serviceSource, /uiPayload/);
+  assert.doesNotMatch(routeSource, /images\/item/, 'recipe page API must not advertise scattered item image paths');
+});
