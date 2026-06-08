@@ -1228,7 +1228,37 @@ function buildSemanticRulePackReport({ rulePack, semanticItems, itemVariants, ra
 }
 
 
-function mergeAnimationFacts(animations, nativeSprites, renderedGifs) {
+function normalizeFramebufferCaptureAnimationFact(row) {
+  if (!row?.assetId) return null;
+  const frames = Array.isArray(row.frames) ? row.frames : [];
+  const timeline = Array.isArray(row.timeline) ? row.timeline : [];
+  const frameCount = stableNumber(row.frameCount, stableNumber(row.capturedFrameCount, frames.length));
+  if (frameCount <= 1 && frames.length <= 1 && timeline.length <= 1) return null;
+  return {
+    ...row,
+    assetId: row.assetId,
+    variantKey: row.variantKey ?? null,
+    family: row.family ?? row.rendererFamily ?? null,
+    rendererFamily: row.rendererFamily ?? null,
+    mode: row.mode ?? row.renderMode ?? row.animationMode ?? "framebuffer_capture",
+    renderMode: row.renderMode ?? null,
+    animationMode: row.animationMode ?? "framebuffer_capture",
+    captureMethod: row.captureMethod ?? null,
+    primaryArtifact: row.primaryArtifact ?? null,
+    framePattern: row.framePattern ?? null,
+    atlasFile: row.atlasFile ?? row.atlasTexture ?? row.primaryArtifact ?? null,
+    atlasTexture: row.atlasTexture ?? row.atlasFile ?? row.primaryArtifact ?? null,
+    frameCount,
+    capturedFrameCount: stableNumber(row.capturedFrameCount, frameCount),
+    frameDurationMs: stableNumber(row.frameDurationMs, 50),
+    frames,
+    timeline,
+    playbackHint: row.playbackHint ?? "native-framebuffer-capture",
+    frameDurationSource: row.frameDurationSource ?? "minecraft_tick_capture",
+  };
+}
+
+function mergeAnimationFacts(animations, nativeSprites, renderedGifs, framebufferCaptures = []) {
   const byAssetId = new Map();
   const addAll = (rows, sourceKind) => {
     for (const row of rows ?? []) {
@@ -1243,6 +1273,7 @@ function mergeAnimationFacts(animations, nativeSprites, renderedGifs) {
   addAll(animations, "index");
   addAll(nativeSprites, "native_sprite");
   addAll(renderedGifs, "rendered_gif");
+  addAll((framebufferCaptures ?? []).map(normalizeFramebufferCaptureAnimationFact).filter(Boolean), "framebuffer_capture");
   return Array.from(byAssetId.values()).sort((left, right) => `${left.assetId}`.localeCompare(`${right.assetId}`));
 }
 
@@ -2613,8 +2644,9 @@ function incrementObjectCounter(target, key) {
   target[safeKey] = stableNumber(target[safeKey], 0) + 1;
 }
 
-function classifyExpectedAnimationGap({ atlas, animation, rawAnimation, hasAnimatedAtlas, hasTiming }) {
+function classifyExpectedAnimationGap({ atlas, animation, rawAnimation, rawCapture, hasAnimatedAtlas, hasTiming }) {
   if (!atlas) return "atlas-entry-missing";
+  if (!hasAnimatedAtlas && rawCapture && stableNumber(rawCapture.frameCount, stableNumber(rawCapture.capturedFrameCount, 0)) <= 1) return "framebuffer-capture-single-frame";
   if (!hasAnimatedAtlas && rawAnimation) return "animation-fact-not-materialized";
   if (!hasAnimatedAtlas && !animation && !rawAnimation) return "animation-fact-missing";
   if (!hasAnimatedAtlas && atlas?.staticAtlas?.atlasFile) return "static-atlas-only";
@@ -2623,10 +2655,11 @@ function classifyExpectedAnimationGap({ atlas, animation, rawAnimation, hasAnima
   return "unknown";
 }
 
-function buildAnimationExpectationReport(browserItems, browserAtlasItems, animationTable, animationFacts = []) {
+function buildAnimationExpectationReport(browserItems, browserAtlasItems, animationTable, animationFacts = [], framebufferCaptures = []) {
   const atlasByItemId = new Map((browserAtlasItems ?? []).filter((entry) => entry?.itemId).map((entry) => [entry.itemId, entry]));
   const animationByItemId = new Map((animationTable ?? []).filter((entry) => entry?.itemId).map((entry) => [entry.itemId, entry]));
   const rawAnimationByAssetId = new Map((animationFacts ?? []).filter((entry) => entry?.assetId).map((entry) => [entry.assetId, entry]));
+  const rawCaptureByAssetId = new Map((framebufferCaptures ?? []).filter((entry) => entry?.assetId).map((entry) => [entry.assetId, entry]));
   const staticWhenExpectedAnimated = [];
   const byReason = {};
   const byCause = {};
@@ -2641,11 +2674,12 @@ function buildAnimationExpectationReport(browserItems, browserAtlasItems, animat
     const assetId = item.renderAssetRef ?? atlas?.assetId ?? `nesqlpp:item/${item.itemId}`;
     const animation = animationByItemId.get(item.itemId);
     const rawAnimation = rawAnimationByAssetId.get(assetId);
+    const rawCapture = rawCaptureByAssetId.get(assetId);
     const hasAnimatedAtlas = Boolean(atlas?.animatedAtlas?.atlasFile);
     const hasStaticAtlas = Boolean(atlas?.staticAtlas?.atlasFile);
     const hasTiming = Boolean(animation?.timeline?.length || animation?.frameDurationMs || atlas?.animatedAtlas?.timeline?.length || atlas?.animatedAtlas?.frameDurationMs);
     if (!hasAnimatedAtlas || !hasTiming) {
-      const cause = classifyExpectedAnimationGap({ atlas, animation, rawAnimation, hasAnimatedAtlas, hasTiming });
+      const cause = classifyExpectedAnimationGap({ atlas, animation, rawAnimation, rawCapture, hasAnimatedAtlas, hasTiming });
       incrementObjectCounter(byCause, cause);
       staticWhenExpectedAnimatedCount += 1;
       if (staticWhenExpectedAnimated.length < 200) {
@@ -2660,10 +2694,15 @@ function buildAnimationExpectationReport(browserItems, browserAtlasItems, animat
           hasAnimatedAtlas,
           hasAnimationTableEntry: Boolean(animation),
           hasRawAnimationFact: Boolean(rawAnimation),
+          hasFramebufferCapture: Boolean(rawCapture),
           hasTiming,
           atlasFile: atlas?.animatedAtlas?.atlasFile ?? atlas?.staticAtlas?.atlasFile ?? null,
           animationSourceKind: rawAnimation?.animationSourceKind ?? null,
-          frameCount: stableNumber(animation?.frameCount, stableNumber(rawAnimation?.frameCount, stableNumber(atlas?.animatedAtlas?.frameCount, 0))),
+          captureSource: rawCapture?.captureSource ?? null,
+          captureMethod: rawCapture?.captureMethod ?? null,
+          captureAnimationMode: rawCapture?.animationMode ?? null,
+          capturePrimaryArtifact: rawCapture?.primaryArtifact ?? null,
+          frameCount: stableNumber(animation?.frameCount, stableNumber(rawAnimation?.frameCount, stableNumber(rawCapture?.frameCount, stableNumber(atlas?.animatedAtlas?.frameCount, 0)))),
         });
       }
     }
@@ -2827,7 +2866,7 @@ function compileRawExport(inputDir, outputDir) {
   const browserAtlasIndex = readRawJson(inputDir, manifest, "browserAtlasIndex", "assets/textures/browser_atlas_index.json");
   const specialIndex = readRawJson(inputDir, manifest, "specialIndex", "special/index.json");
   const specialDomains = readSpecialDomains(inputDir, specialIndex);
-  const animationFacts = mergeAnimationFacts(animations, nativeSprites, renderedGifs);
+  const animationFacts = mergeAnimationFacts(animations, nativeSprites, renderedGifs, renderFramebufferCaptures);
   const nativeRenderIndex = buildNativeRenderIndex({
     backend: renderBackend,
     textureSprites: renderTextureSprites,
@@ -2996,7 +3035,7 @@ function compileRawExport(inputDir, outputDir) {
   const materializedBrowserAtlasIndex = materializeBrowserAtlasAssets(inputDir, outputDir, generatedBrowserAtlasIndex);
   const browserAtlasItems = Array.isArray(generatedBrowserAtlasIndex?.items) ? generatedBrowserAtlasIndex.items : [];
   const animationTable = buildAnimationTable(searchItems, textures, animationFacts, generatedBrowserAtlasIndex);
-  const animationExpectationReport = buildAnimationExpectationReport(browserItems, browserAtlasItems, animationTable, animationFacts);
+  const animationExpectationReport = buildAnimationExpectationReport(browserItems, browserAtlasItems, animationTable, animationFacts, renderFramebufferCaptures);
   const semanticResourceReport = buildSemanticResourceReport({
     semanticBrowserGroups,
     browserAtlasItems,
@@ -3512,6 +3551,8 @@ function createSelfTestRawExport(root) {
     JSON.stringify({ itemId: "i~minecraft~gold_ingot~0", rendererKind: "avaritia.cosmic", rendererClass: "fox.spiteful.avaritia.render.CosmicItemRenderer", usesShader: true, requiresFramebufferCapture: true, stackResolved: true }),
   ].join("\n") + "\n");
   writeGzipText(join(root, "facts/render/shader-items.jsonl.gz"), `${JSON.stringify({ itemId: "i~minecraft~gold_ingot~0", rendererKind: "avaritia.cosmic", shaderFamily: "avaritia.cosmic", captureRequired: true, preferredExport: "angelica-framebuffer-capture", browserReimplementationAllowed: false })}\n`);
+  mkdirSync(join(root, "image/item/minecraft"), { recursive: true });
+  writeFileSync(join(root, "image/item/minecraft/gold_ingot.gif"), Buffer.from("GIF89a", "ascii"));
   writeGzipText(join(root, "facts/render/framebuffer-captures.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", variantKey: "i~minecraft~gold_ingot~0", rendererFamily: "avaritia.cosmic", renderMode: "framebuffer_multiframe", primaryArtifact: "image/item/minecraft/gold_ingot.gif", frameCount: 4, frameDurationMs: 50, frames: [{ frameIndex: 0, sourcePath: "image/item/minecraft/gold_ingot_frame_0.png" }, { frameIndex: 1, sourcePath: "image/item/minecraft/gold_ingot_frame_1.png" }], timeline: [{ frameIndex: 0, durationMs: 50 }, { frameIndex: 1, durationMs: 50 }] })}\n`);
   writeGzipText(join(root, "models/entities/index.jsonl.gz"), `${JSON.stringify({ entityId: "minecraft.zombie", mobName: "minecraft.zombie", displayName: "Zombie", modelPath: "entity-models/minecraft/zombie.json", previewImage: "minecraft/zombie.gif" })}\n`);
   writeJson(join(root, "validation/export_report.json"), {
@@ -3582,4 +3623,3 @@ if (selfTest) {
     throw new Error("Self-test animation expectation report did not include v2 diagnostic breakdowns");
   }
 }
-
