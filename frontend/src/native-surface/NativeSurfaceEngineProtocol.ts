@@ -194,6 +194,8 @@ export type NativeSurfaceEngineWorkerMetrics = {
   lastEvent: NativeSurfaceEngineRequest["type"] | null;
   lastSurfaceId: NativeSurfaceId | null;
   layoutCommands: number;
+  layoutRebuilds: number;
+  frameRequests: number;
   lastHit: NativeSurfaceEngineHit;
   wasmReady: boolean;
   wasmError: string | null;

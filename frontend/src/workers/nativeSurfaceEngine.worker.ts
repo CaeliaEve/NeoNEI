@@ -34,6 +34,8 @@ type SurfaceState = {
   historyItems: string[];
   entries: NativeSurfaceEngineEntry[];
   layoutCommands: NativeSurfaceEngineLayoutCommand[];
+  layoutRebuilds: number;
+  frameRequests: number;
   lastHit: NativeSurfaceEngineHit;
   selectedItemId: string | null;
   runtimeManifestUrl: string | null;
@@ -972,6 +974,8 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     historyItems: [],
     entries: [],
     layoutCommands: [],
+    layoutRebuilds: 0,
+    frameRequests: 0,
     lastHit: null,
     selectedItemId: null,
     runtimeManifestUrl: null,
@@ -1041,6 +1045,7 @@ function computeWasmLayoutCommands(entryCount: number, viewportWidth: number, ca
 }
 
 function rebuildLayout(surface: SurfaceState): void {
+  surface.layoutRebuilds += 1;
   const activeEntries = getActiveEntries(surface).entries;
   const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
@@ -1294,6 +1299,8 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     lastEvent,
     lastSurfaceId,
     layoutCommands: lastSurface?.layoutCommands.length ?? 0,
+    layoutRebuilds: lastSurface?.layoutRebuilds ?? 0,
+    frameRequests: lastSurface?.frameRequests ?? 0,
     lastHit: lastSurface?.lastHit ?? null,
     wasmReady: Boolean(wasmEngine),
     wasmError,
@@ -1407,6 +1414,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       break;
     }
     case "frame":
+      surface.frameRequests += 1;
       return {
         type: "frame",
         id: message.id,

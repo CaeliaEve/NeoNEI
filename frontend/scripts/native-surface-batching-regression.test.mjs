@@ -67,3 +67,18 @@ test("native surface worker does not rebuild layout on every frame", () => {
   assert.match(source, /case "mutationBatch"/);
   assert.match(source, /if \(needsLayout\) rebuildLayout\(surface\)/);
 });
+
+
+test("native surface metrics expose layout rebuilds separately from frame requests", () => {
+  const protocol = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");
+  const worker = readSource("src/workers/nativeSurfaceEngine.worker.ts");
+  assert.match(protocol, /layoutRebuilds: number/);
+  assert.match(protocol, /frameRequests: number/);
+  assert.match(worker, /surface\.layoutRebuilds \+= 1/);
+  assert.match(worker, /case "frame":\s*surface\.frameRequests \+= 1;\s*return \{/);
+  assert.doesNotMatch(
+    worker,
+    /case "frame":(?:(?!case ).)*surface\.layoutRebuilds \+= 1;/s,
+    "frame requests must never increment layout rebuild metrics",
+  );
+});
