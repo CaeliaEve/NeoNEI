@@ -302,6 +302,7 @@ async function syncNativeFrame() {
   if (nativeRenderInitialized && frame?.drawCommandBuffer && frame.drawCommandCount && frame.drawCommandStride) {
     const response = await postNativeRenderEvent({
       type: "render",
+      frameToken: seq,
       commandBuffer: frame.drawCommandBuffer.slice(0),
       commandStride: frame.drawCommandStride,
       commandCount: frame.drawCommandCount,

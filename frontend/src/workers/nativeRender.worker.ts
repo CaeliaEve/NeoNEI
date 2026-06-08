@@ -26,6 +26,8 @@ let textureErrors = 0;
 let textureLoaded = 0;
 let textureUploadBatches = 0;
 let lastTextureUploadMs = 0;
+let latestFrameToken = 0;
+let droppedStaleFrames = 0;
 let lastFrameMs = 0;
 let lastParseMs = 0;
 let lastSpriteNormalizeMs = 0;
@@ -83,6 +85,8 @@ function buildMetrics(): NativeRendererFrameMetrics {
     frameAvgMs,
     frameP95Ms: percentile(frameSamples, 95),
     frameMaxMs: frameSamples.length > 0 ? Math.max(...frameSamples) : 0,
+    latestFrameToken,
+    droppedStaleFrames,
     animationEnabled,
     width,
     height,
@@ -216,6 +220,12 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       }
       return { type: "metrics", id: message.id, metrics: buildMetrics() };
     case "render": {
+      const frameToken = Math.max(0, Math.floor(Number(message.frameToken) || 0));
+      if (frameToken < latestFrameToken) {
+        droppedStaleFrames += 1;
+        return { type: "frame", id: message.id, metrics: buildMetrics() };
+      }
+      latestFrameToken = frameToken;
       const startedAt = performance.now();
       commandCount = Math.max(0, Math.floor(message.commandCount || 0));
       const parseStartedAt = performance.now();
@@ -260,6 +270,8 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       textureLoaded = 0;
       textureUploadBatches = 0;
       lastTextureUploadMs = 0;
+      latestFrameToken = 0;
+      droppedStaleFrames = 0;
       lastFrameMs = 0;
       lastParseMs = 0;
       lastSpriteNormalizeMs = 0;

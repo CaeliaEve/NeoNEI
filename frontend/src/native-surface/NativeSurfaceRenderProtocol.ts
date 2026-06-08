@@ -43,6 +43,7 @@ export type NativeRenderRequest =
   | {
     type: "render";
     id: number;
+    frameToken: number;
     commandBuffer: ArrayBuffer;
     commandStride: number;
     commandCount: number;
@@ -92,6 +93,8 @@ export type NativeRendererFrameMetrics = {
   frameAvgMs: number;
   frameP95Ms: number;
   frameMaxMs: number;
+  latestFrameToken: number;
+  droppedStaleFrames: number;
   animationEnabled: boolean;
   width: number;
   height: number;

@@ -18,7 +18,7 @@ function readRepo(relativePath) {
 
 test("native render protocol exposes segmented frame timing metrics", () => {
   const source = readFrontend("src/native-surface/NativeSurfaceRenderProtocol.ts");
-  for (const field of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "textureUploadConcurrency", "textureUploadBatches", "lastTextureUploadMs"]) {
+  for (const field of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "latestFrameToken", "droppedStaleFrames", "textureUploadConcurrency", "textureUploadBatches", "lastTextureUploadMs"]) {
     assert.match(source, new RegExp(`${field}: number`));
   }
 });
@@ -50,4 +50,18 @@ test("native surface benchmark gates segmented render metrics", () => {
   assert.match(source, /lastDrawMs/);
   assert.match(source, /frameP95Ms/);
   assert.match(source, /native render metric \$\{metricName\} is missing or non-finite/);
+});
+
+
+test("native render worker drops stale rapid-paging frames by frame token", () => {
+  const protocol = readFrontend("src/native-surface/NativeSurfaceRenderProtocol.ts");
+  const component = readFrontend("src/components/native-surface/NativeBrowserSurface.vue");
+  const worker = readFrontend("src/workers/nativeRender.worker.ts");
+
+  assert.match(protocol, /frameToken: number/);
+  assert.match(component, /frameToken: seq/);
+  assert.match(worker, /let latestFrameToken = 0/);
+  assert.match(worker, /let droppedStaleFrames = 0/);
+  assert.match(worker, /if \(frameToken < latestFrameToken\)/);
+  assert.match(worker, /droppedStaleFrames \+= 1/);
 });
