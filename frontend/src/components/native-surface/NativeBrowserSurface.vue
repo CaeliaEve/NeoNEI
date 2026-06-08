@@ -208,6 +208,9 @@ async function initializeNativeRenderWorker(width: number, height: number) {
     });
     nativeRenderInitialized = response?.type === "ready";
     updateNativeRenderVisibility();
+    if (nativeRenderInitialized) {
+      requestNativeFrame();
+    }
   } finally {
     nativeRenderInitializing = false;
   }

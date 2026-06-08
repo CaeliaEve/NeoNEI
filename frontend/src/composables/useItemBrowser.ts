@@ -1152,6 +1152,24 @@ export function useItemBrowser(
         return;
       }
 
+      const initialNativeProjection = isHomeBootstrapEligible(requestParams)
+        ? await tryLoadUnexpandedPageProjection(requestParams)
+        : null;
+      if (initialNativeProjection) {
+        await nativeWarmPromise;
+        setSharedBrowserPageCache(initialNativeProjection.cacheKey, initialNativeProjection.page);
+        applyBrowserResponse(initialNativeProjection.page, requestId, initialNativeProjection.cacheKey);
+        markInitialHomeBootstrapDone('runtime-catalog');
+        try {
+          mods.value = await api.getMods();
+        } catch (error) {
+          console.error('Failed to load mods:', error);
+          mods.value = [];
+          modsLoadError.value = '\u52a0\u8f7d\u6a21\u7ec4\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u8fde\u63a5\u540e\u91cd\u8bd5';
+        }
+        return;
+      }
+
       if (isHomeBootstrapEligible(requestParams)) {
         const response = await api.getHomeBootstrap({
           page: requestParams.page,

@@ -97,7 +97,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       enableHistoryViewport: this.historyViewportEnabled,
     });
     if (options.manifestUrl) {
-      void this.loadRuntimePacks(options.manifestUrl);
+      await this.loadRuntimePacks(options.manifestUrl);
     }
     this.touch("initialize");
   }
