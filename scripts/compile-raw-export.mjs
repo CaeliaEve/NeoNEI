@@ -2608,40 +2608,72 @@ function expectedAnimationReason(item) {
   return null;
 }
 
-function buildAnimationExpectationReport(browserItems, browserAtlasItems, animationTable) {
+function incrementObjectCounter(target, key) {
+  const safeKey = `${key ?? "unknown"}` || "unknown";
+  target[safeKey] = stableNumber(target[safeKey], 0) + 1;
+}
+
+function classifyExpectedAnimationGap({ atlas, animation, rawAnimation, hasAnimatedAtlas, hasTiming }) {
+  if (!atlas) return "atlas-entry-missing";
+  if (!hasAnimatedAtlas && rawAnimation) return "animation-fact-not-materialized";
+  if (!hasAnimatedAtlas && !animation && !rawAnimation) return "animation-fact-missing";
+  if (!hasAnimatedAtlas && atlas?.staticAtlas?.atlasFile) return "static-atlas-only";
+  if (!hasAnimatedAtlas) return "animated-atlas-missing";
+  if (!hasTiming) return "animation-timing-missing";
+  return "unknown";
+}
+
+function buildAnimationExpectationReport(browserItems, browserAtlasItems, animationTable, animationFacts = []) {
   const atlasByItemId = new Map((browserAtlasItems ?? []).filter((entry) => entry?.itemId).map((entry) => [entry.itemId, entry]));
   const animationByItemId = new Map((animationTable ?? []).filter((entry) => entry?.itemId).map((entry) => [entry.itemId, entry]));
+  const rawAnimationByAssetId = new Map((animationFacts ?? []).filter((entry) => entry?.assetId).map((entry) => [entry.assetId, entry]));
   const staticWhenExpectedAnimated = [];
+  const byReason = {};
+  const byCause = {};
   let expectedAnimatedItems = 0;
   let staticWhenExpectedAnimatedCount = 0;
   for (const item of browserItems ?? []) {
     const reason = expectedAnimationReason(item);
     if (!reason) continue;
     expectedAnimatedItems += 1;
+    incrementObjectCounter(byReason, reason);
     const atlas = atlasByItemId.get(item.itemId);
+    const assetId = item.renderAssetRef ?? atlas?.assetId ?? `nesqlpp:item/${item.itemId}`;
     const animation = animationByItemId.get(item.itemId);
+    const rawAnimation = rawAnimationByAssetId.get(assetId);
     const hasAnimatedAtlas = Boolean(atlas?.animatedAtlas?.atlasFile);
+    const hasStaticAtlas = Boolean(atlas?.staticAtlas?.atlasFile);
     const hasTiming = Boolean(animation?.timeline?.length || animation?.frameDurationMs || atlas?.animatedAtlas?.timeline?.length || atlas?.animatedAtlas?.frameDurationMs);
     if (!hasAnimatedAtlas || !hasTiming) {
+      const cause = classifyExpectedAnimationGap({ atlas, animation, rawAnimation, hasAnimatedAtlas, hasTiming });
+      incrementObjectCounter(byCause, cause);
       staticWhenExpectedAnimatedCount += 1;
       if (staticWhenExpectedAnimated.length < 200) {
         staticWhenExpectedAnimated.push({
           itemId: item.itemId,
+          assetId,
           localizedName: item.localizedName ?? null,
           reason,
+          cause,
+          hasAtlasEntry: Boolean(atlas),
+          hasStaticAtlas,
           hasAnimatedAtlas,
+          hasAnimationTableEntry: Boolean(animation),
+          hasRawAnimationFact: Boolean(rawAnimation),
           hasTiming,
           atlasFile: atlas?.animatedAtlas?.atlasFile ?? atlas?.staticAtlas?.atlasFile ?? null,
-          frameCount: stableNumber(animation?.frameCount, stableNumber(atlas?.animatedAtlas?.frameCount, 0)),
+          animationSourceKind: rawAnimation?.animationSourceKind ?? null,
+          frameCount: stableNumber(animation?.frameCount, stableNumber(rawAnimation?.frameCount, stableNumber(atlas?.animatedAtlas?.frameCount, 0))),
         });
       }
     }
   }
   return {
-    schemaVersion: "neonei/animation-expectation-report/v1",
+    schemaVersion: "neonei/animation-expectation-report/v2",
     generatedAt: new Date().toISOString(),
     status: staticWhenExpectedAnimatedCount === 0 ? "ok" : "warning",
     counts: { expectedAnimatedItems, staticWhenExpectedAnimated: staticWhenExpectedAnimatedCount },
+    breakdown: { byReason, byCause },
     samples: { staticWhenExpectedAnimated },
   };
 }
@@ -2955,7 +2987,7 @@ function compileRawExport(inputDir, outputDir) {
   const materializedBrowserAtlasIndex = materializeBrowserAtlasAssets(inputDir, outputDir, generatedBrowserAtlasIndex);
   const browserAtlasItems = Array.isArray(generatedBrowserAtlasIndex?.items) ? generatedBrowserAtlasIndex.items : [];
   const animationTable = buildAnimationTable(searchItems, textures, animationFacts, generatedBrowserAtlasIndex);
-  const animationExpectationReport = buildAnimationExpectationReport(browserItems, browserAtlasItems, animationTable);
+  const animationExpectationReport = buildAnimationExpectationReport(browserItems, browserAtlasItems, animationTable, animationFacts);
   const semanticResourceReport = buildSemanticResourceReport({
     semanticBrowserGroups,
     browserAtlasItems,
@@ -3535,6 +3567,10 @@ if (selfTest) {
   const capture = nativeRenderIndex?.capturesByAssetId?.["nesqlpp:item/i~minecraft~gold_ingot~0"];
   if (!capture || capture.frames?.length !== 2 || capture.timeline?.length !== 2) {
     throw new Error("Self-test native render capture frames were not compiled");
+  }
+  const animationExpectations = readJson(join(outputDir, "textures", "animation-expectations.json"));
+  if (animationExpectations?.schemaVersion !== "neonei/animation-expectation-report/v2" || !animationExpectations?.breakdown?.byReason || !animationExpectations?.breakdown?.byCause) {
+    throw new Error("Self-test animation expectation report did not include v2 diagnostic breakdowns");
   }
 }
 
