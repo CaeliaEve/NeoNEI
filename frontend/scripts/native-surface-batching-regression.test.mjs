@@ -82,3 +82,13 @@ test("native surface metrics expose layout rebuilds separately from frame reques
     "frame requests must never increment layout rebuild metrics",
   );
 });
+
+
+test("native surface baseline gates excessive layout rebuilds", () => {
+  const source = readSource("../scripts/native-surface-baseline.mjs");
+  assert.match(source, /maxLayoutRebuilds/);
+  assert.match(source, /max-layout-rebuilds/);
+  assert.match(source, /nativeLayoutRebuilds/);
+  assert.match(source, /nativeFrameRequests/);
+  assert.match(source, /rebuilt layout/);
+});

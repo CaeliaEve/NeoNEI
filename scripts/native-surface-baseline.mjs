@@ -30,6 +30,7 @@ const maxFlipP95Ms = Number(args.get("max-flip-p95-ms") || 80);
 const maxTextureErrors = Number(args.get("max-texture-errors") || 0);
 const minTexturesLoaded = Number(args.get("min-textures-loaded") || 1);
 const maxHotPathRequests = Number(args.get("max-hot-path-requests") || 0);
+const maxLayoutRebuilds = Number(args.get("max-layout-rebuilds") || (pageFlips + 12));
 const renderer = `${args.get("renderer") || ""}`.trim().toLowerCase();
 const requestedRenderer = renderer === "webgpu" || renderer === "webgl2" || renderer === "auto" ? renderer : null;
 const webgpuLaunchArgs = [
@@ -222,6 +223,12 @@ async function main() {
     if ((final.nativeEngineMetrics.layoutCommands ?? 0) <= 0) {
       gateFailures.push("native engine did not produce layout commands");
     }
+    if ((final.nativeEngineMetrics.layoutRebuilds ?? 0) > maxLayoutRebuilds) {
+      gateFailures.push(`native engine rebuilt layout ${final.nativeEngineMetrics.layoutRebuilds} time(s); max is ${maxLayoutRebuilds}`);
+    }
+    if ((final.nativeEngineMetrics.frameRequests ?? 0) <= 0) {
+      gateFailures.push("native engine did not receive frame requests");
+    }
   }
   if (!final.nativeRenderMetrics) {
     gateFailures.push("native render metrics are missing");
@@ -281,6 +288,8 @@ async function main() {
     flipP95Ms: Math.round(report.interactions.flipMs.p95),
     settingsOpenMs: Math.round(settingsOpenMs),
     nativeRuntimeReady: Boolean(report.final.nativeEngineMetrics?.runtimeReady),
+    nativeLayoutRebuilds: report.final.nativeEngineMetrics?.layoutRebuilds ?? 0,
+    nativeFrameRequests: report.final.nativeEngineMetrics?.frameRequests ?? 0,
     nativeRenderFrames: report.final.nativeRenderMetrics?.frames ?? 0,
     nativeRenderDrawCalls: report.final.nativeRenderMetrics?.drawCalls ?? 0,
     nativeRenderTextureLoaded: report.final.nativeRenderMetrics?.textureLoaded ?? 0,
@@ -291,6 +300,7 @@ async function main() {
     hotPathRequests: hotPathRequests.length,
     maxFlipP95Ms,
     maxSettingsOpenMs,
+    maxLayoutRebuilds,
     minTexturesLoaded,
     maxTextureErrors,
     gate: report.gate,
