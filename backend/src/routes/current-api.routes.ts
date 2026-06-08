@@ -141,15 +141,34 @@ function resolveRuntimeFile(fileName: string): string {
   return resolveDistDataFile(normalized);
 }
 
-router.get('/native-runtime/current/manifest', (_req, res) => {
+function sendRuntimeCurrent(res: Response): void {
+  const meta = getCurrentMeta();
+  const manifestPath = getRuntimeManifestRelativePath();
+  setNoStoreHeaders(res);
+  sendOk(res, {
+    runtimeId: meta.runtimeId,
+    schemaRevision: meta.schemaRevision,
+    manifestUrl: '/api/runtime/current/manifest',
+    assetBaseUrl: '/api/runtime/current/asset/',
+    legacyManifestUrl: '/api/native-runtime/current/manifest',
+    capabilities: meta.capabilities,
+    manifestPath,
+    cache: {
+      immutable: true,
+      maxAgeSeconds: 31_536_000,
+    },
+  });
+}
+
+function sendRuntimeManifest(res: Response): void {
   setNoStoreHeaders(res);
   const manifest = getRuntimeManifest();
   if (!manifest) throw notFound('Runtime manifest not found');
   sendOk(res, manifest);
-});
+}
 
-router.get('/native-runtime/current/files/:fileName(*)', (req, res) => {
-  const filePath = resolveRuntimeFile(normalizeRequiredParam(req.params.fileName, 'fileName'));
+function sendRuntimeAsset(fileName: string | undefined, res: Response): void {
+  const filePath = resolveRuntimeFile(normalizeRequiredParam(fileName, 'fileName'));
   if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     throw notFound('Runtime file not found');
   }
@@ -158,6 +177,26 @@ router.get('/native-runtime/current/files/:fileName(*)', (req, res) => {
     staleWhileRevalidateSeconds: 86_400,
   });
   res.sendFile(filePath);
+}
+
+router.get('/runtime/current', (_req, res) => {
+  sendRuntimeCurrent(res);
+});
+
+router.get('/runtime/current/manifest', (_req, res) => {
+  sendRuntimeManifest(res);
+});
+
+router.get('/runtime/current/asset/:fileName(*)', (req, res) => {
+  sendRuntimeAsset(req.params.fileName, res);
+});
+
+router.get('/native-runtime/current/manifest', (_req, res) => {
+  sendRuntimeManifest(res);
+});
+
+router.get('/native-runtime/current/files/:fileName(*)', (req, res) => {
+  sendRuntimeAsset(req.params.fileName, res);
 });
 
 router.get(

@@ -30,9 +30,27 @@ function encodeRuntimeFilePath(relativePath: string): string {
 
 function isCurrentNativeRuntimeManifestUrl(manifestUrl: string): boolean {
   try {
-    return new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").pathname.endsWith("/api/native-runtime/current/manifest");
+    const pathname = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").pathname;
+    return pathname.endsWith("/api/runtime/current/manifest")
+      || pathname.endsWith("/api/native-runtime/current/manifest");
   } catch {
-    return manifestUrl.includes("/api/native-runtime/current/manifest");
+    return manifestUrl.includes("/api/runtime/current/manifest")
+      || manifestUrl.includes("/api/native-runtime/current/manifest");
+  }
+}
+
+function resolveCurrentRuntimeAssetUrl(manifestUrl: string, relativePath: string): string {
+  const encodedPath = encodeRuntimeFilePath(relativePath);
+  try {
+    const url = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/");
+    if (url.pathname.endsWith("/api/runtime/current/manifest")) {
+      return new URL(`/api/runtime/current/asset/${encodedPath}`, url).toString();
+    }
+    return new URL(`/api/native-runtime/current/files/${encodedPath}`, url).toString();
+  } catch {
+    return manifestUrl.includes("/api/runtime/current/manifest")
+      ? `/api/runtime/current/asset/${encodedPath}`
+      : `/api/native-runtime/current/files/${encodedPath}`;
   }
 }
 
@@ -41,7 +59,7 @@ function resolveManifestRelativeUrl(manifestUrl: string, relativePath: string): 
     throw new Error(`Native runtime path is not portable: ${relativePath}`);
   }
   if (isCurrentNativeRuntimeManifestUrl(manifestUrl)) {
-    return new URL(`/api/native-runtime/current/files/${encodeRuntimeFilePath(relativePath)}`, manifestUrl).toString();
+    return resolveCurrentRuntimeAssetUrl(manifestUrl, relativePath);
   }
   return new URL(relativePath, manifestUrl).toString();
 }

@@ -7,6 +7,9 @@ const namespaceSource = fs.readFileSync('src/routes/api-namespaces.routes.ts', '
 
 test('current API exposes semantic non-versioned runtime endpoints', () => {
   for (const route of [
+    '/runtime/current',
+    '/runtime/current/manifest',
+    '/runtime/current/asset/:fileName(*)',
     '/native-runtime/current/manifest',
     '/native-runtime/current/files/:fileName(*)',
     '/recipes/current/item/:itemId',
@@ -20,6 +23,8 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(routeSource.includes("const API_SCHEMA = 'neonei/api/current'"), true);
   assert.equal(routeSource.includes('schemaRevision: API_SCHEMA_REVISION'), true);
   assert.equal(routeSource.includes('capabilities'), true);
+  assert.equal(routeSource.includes("manifestUrl: '/api/runtime/current/manifest'"), true);
+  assert.equal(routeSource.includes("assetBaseUrl: '/api/runtime/current/asset/'"), true);
 });
 
 test('current API is mounted before legacy compatibility API', () => {
