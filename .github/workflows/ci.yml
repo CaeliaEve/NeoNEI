@@ -50,6 +50,14 @@ jobs:
         working-directory: backend
         run: npm run test:runtime-health-contract
 
+      - name: Backend current runtime API contract
+        working-directory: backend
+        run: npm run test:current-api-contract
+
+      - name: Backend bootstrap boundary regression
+        working-directory: backend
+        run: node --test scripts/server-bootstrap-boundary-regression.test.mjs
+
       - name: Upload backend dist
         uses: actions/upload-artifact@v4
         if: always()
@@ -100,6 +108,30 @@ jobs:
         working-directory: frontend
         run: npm run test:browser-search-cache
 
+      - name: WASM engine gate
+        working-directory: frontend
+        run: npm run test:wasm-engine
+
+      - name: Native current API regression
+        working-directory: frontend
+        run: npm run test:native-runtime-current-api
+
+      - name: Native surface batching regression
+        working-directory: frontend
+        run: npm run test:native-surface-batching
+
+      - name: Native render frame metrics regression
+        working-directory: frontend
+        run: npm run test:native-render-frame-metrics
+
+      - name: Native history surface regression
+        working-directory: frontend
+        run: npm run test:native-history-surface
+
+      - name: Runtime service worker regression
+        working-directory: frontend
+        run: npm run test:runtime-service-worker
+
       - name: Build frontend
         working-directory: frontend
         run: npm run build
@@ -107,6 +139,9 @@ jobs:
       - name: Frontend path audit
         working-directory: frontend
         run: npm run audit:paths
+
+      - name: CI runtime workflow regression
+        run: node --test scripts/ci-runtime-workflow-regression.test.mjs
 
       - name: Upload frontend dist
         uses: actions/upload-artifact@v4
