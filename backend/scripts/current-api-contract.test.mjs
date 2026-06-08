@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+﻿import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -68,4 +68,33 @@ test('runtime file endpoint is path traversal safe and relative-rooted', () => {
   assert.match(routeSource, /getDeclaredRuntimeFilePaths/);
   assert.match(routeSource, /declaredRuntimeFiles\.has\(normalized\)/);
   assert.match(routeSource, /res\.sendFile\(filePath\)/);
+});
+
+test('runtime delivery API exposes immutable ETag asset contracts and report allowlist', () => {
+  assert.match(routeSource, /createWeakEtag/);
+  assert.match(routeSource, /setStaticAssetCacheHeaders/);
+  assert.match(routeSource, /immutable:\s*true/);
+  assert.match(routeSource, /res\.setHeader\('ETag'/);
+  assert.match(routeSource, /setNoStoreHeaders\(res\);\s*\n\s*sendOk\(res, \{\s*\n\s*runtimeId:/, 'current runtime pointer must remain no-store');
+
+  for (const report of [
+    'compile-report',
+    'missing-texture-report',
+    'suspicious-texture-report',
+    'atlas-report',
+    'performance-budget-report',
+    'api-contract-report',
+  ]) {
+    assert.equal(routeSource.includes(`'${report}'`), true, `missing report allowlist entry ${report}`);
+  }
+  assert.match(routeSource, /!\/\^\[a-z0-9-\]\+\$\/i\.test\(normalized\)/, 'report names must be simple slugs');
+  assert.match(routeSource, /throw notFound\('Runtime report is not allowed'\)/);
+});
+
+test('current API responses are path portable and do not advertise machine roots', () => {
+  assert.doesNotMatch(routeSource, /[A-Za-z]:\\\\/);
+  assert.doesNotMatch(routeSource, /E:\\\\codex/);
+  assert.doesNotMatch(routeSource, /assetBaseUrl:\s*['"](?:[A-Za-z]:|\\\\|\/runtime\/)/);
+  assert.match(routeSource, /assetBaseUrl:\s*'\/api\/runtime\/current\/asset\/'/);
+  assert.match(routeSource, /runtimeAssetBaseUrl:\s*`\/api\/runtime\/\$\{encodeURIComponent\(meta\.runtimeId\)\}\/asset\/`/);
 });

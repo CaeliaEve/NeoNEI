@@ -1,4 +1,4 @@
-import fs from 'fs';
+﻿import fs from 'fs';
 import path from 'path';
 import { Router, type Response } from 'express';
 import { PUBLIC_DIR } from '../config/runtime-paths';
@@ -6,7 +6,7 @@ import { getIndexedRecipesService } from '../services/recipes-indexed.service';
 import { getNativeRenderRuntimeDiagnostics } from '../services/native-render-runtime-diagnostics.service';
 import { getRuntimeHealthSummary } from '../services/runtime-health-summary.service';
 import { asyncHandler, badRequest, notFound } from '../utils/http';
-import { setNoStoreHeaders, setPublicCacheHeaders } from '../utils/http-cache';
+import { createWeakEtag, setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -174,21 +174,37 @@ function sendRuntimeCurrent(res: Response): void {
   });
 }
 
-function sendRuntimeManifest(res: Response): void {
-  setNoStoreHeaders(res);
+function sendRuntimeManifest(res: Response, options: { immutable?: boolean } = {}): void {
   const manifest = getRuntimeManifest();
   if (!manifest) throw notFound('Runtime manifest not found');
+  const manifestPath = getRuntimeManifestRelativePath() ?? 'runtime-manifest';
+  res.setHeader('ETag', createWeakEtag('runtime-manifest', getCurrentMeta().runtimeId, manifestPath, JSON.stringify(manifest)));
+  if (options.immutable) {
+    setStaticAssetCacheHeaders(res, {
+      maxAge: '365d',
+      immutable: true,
+      varyAcceptEncoding: true,
+    });
+  } else {
+    setNoStoreHeaders(res);
+  }
   sendOk(res, manifest);
 }
 
 function sendRuntimeAsset(fileName: string | undefined, res: Response): void {
   const filePath = resolveRuntimeFile(normalizeRequiredParam(fileName, 'fileName'));
-  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+  if (!fs.existsSync(filePath)) {
     throw notFound('Runtime file not found');
   }
-  setPublicCacheHeaders(res, {
-    maxAgeSeconds: 31_536_000,
-    staleWhileRevalidateSeconds: 86_400,
+  const stat = fs.statSync(filePath);
+  if (!stat.isFile()) {
+    throw notFound('Runtime file not found');
+  }
+  res.setHeader('ETag', createWeakEtag('runtime-asset', getCurrentMeta().runtimeId, path.relative(DIST_DATA_DIR, filePath), stat.size, stat.mtimeMs));
+  setStaticAssetCacheHeaders(res, {
+    maxAge: '365d',
+    immutable: true,
+    varyAcceptEncoding: true,
   });
   res.sendFile(filePath);
 }
@@ -330,7 +346,7 @@ router.get('/runtime/current/reports/:reportName', (req, res) => {
 
 router.get('/runtime/:runtimeId/manifest', (req, res) => {
   assertCurrentRuntimeId(req.params.runtimeId);
-  sendRuntimeManifest(res);
+  sendRuntimeManifest(res, { immutable: true });
 });
 
 router.get('/runtime/:runtimeId/asset/:fileName(*)', (req, res) => {
@@ -404,3 +420,4 @@ router.get('/settings/runtime', (_req, res) => {
 });
 
 export default router;
+
