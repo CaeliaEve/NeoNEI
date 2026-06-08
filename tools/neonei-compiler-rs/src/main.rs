@@ -2553,26 +2553,54 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
             "invalidFrameBounds": invalid_frame_bounds.clone(),
         },
     });
+    let texture_report_status = if actionable_texture_issues.is_empty()
+        && missing_atlas_file_refs.is_empty()
+        && invalid_atlas_bounds.is_empty()
+        && invalid_frame_bounds.is_empty()
+    {
+        "ok"
+    } else {
+        "advisory"
+    };
+    let suspicious_texture_report = json!({
+        "schemaVersion": "neonei/rust-suspicious-texture-report/current",
+        "generatedAt": "deterministic-rust-compiler",
+        "status": texture_report_status,
+        "counts": {
+            "actionableIssues": actionable_texture_issues.len(),
+            "missingAtlasFileRefs": missing_atlas_file_refs.len(),
+            "invalidAtlasBounds": invalid_atlas_bounds.len(),
+            "invalidFrameBounds": invalid_frame_bounds.len(),
+        },
+        "issues": actionable_texture_issues,
+        "missingAtlasFileRefs": missing_atlas_file_refs,
+        "invalidAtlasBounds": invalid_atlas_bounds,
+        "invalidFrameBounds": invalid_frame_bounds,
+    });
     write_json_value(
         &rust_dir.join("missing-texture-report.json"),
         &json!({
             "schemaVersion": "neonei/rust-missing-texture-report/current",
             "generatedAt": "deterministic-rust-compiler",
-            "status": if actionable_texture_issues.is_empty() && missing_atlas_file_refs.is_empty() && invalid_frame_bounds.is_empty() { "ok" } else { "advisory" },
+            "status": texture_report_status,
             "counts": {
                 "atlasItems": atlas_items.len(),
                 "staticAtlasItems": static_items,
                 "animatedAtlasItems": animated_items,
-                "actionableIssues": actionable_texture_issues.len(),
-                "missingAtlasFileRefs": missing_atlas_file_refs.len(),
-                "invalidAtlasBounds": invalid_atlas_bounds.len(),
-                "invalidFrameBounds": invalid_frame_bounds.len(),
+                "actionableIssues": suspicious_texture_report["counts"]["actionableIssues"].clone(),
+                "missingAtlasFileRefs": suspicious_texture_report["counts"]["missingAtlasFileRefs"].clone(),
+                "invalidAtlasBounds": suspicious_texture_report["counts"]["invalidAtlasBounds"].clone(),
+                "invalidFrameBounds": suspicious_texture_report["counts"]["invalidFrameBounds"].clone(),
             },
-            "issues": actionable_texture_issues,
-            "missingAtlasFileRefs": missing_atlas_file_refs,
-            "invalidAtlasBounds": invalid_atlas_bounds,
-            "invalidFrameBounds": invalid_frame_bounds,
+            "issues": suspicious_texture_report["issues"].clone(),
+            "missingAtlasFileRefs": suspicious_texture_report["missingAtlasFileRefs"].clone(),
+            "invalidAtlasBounds": suspicious_texture_report["invalidAtlasBounds"].clone(),
+            "invalidFrameBounds": suspicious_texture_report["invalidFrameBounds"].clone(),
         }),
+    )?;
+    write_json_value(
+        &rust_dir.join("suspicious-texture-report.json"),
+        &suspicious_texture_report,
     )?;
     if debug_json {
         write_json_value(&rust_dir.join("texture-pack.json"), &texture_output_pack)?;
@@ -3186,6 +3214,7 @@ fn compile_runtime_reports(
             "animations.bin",
             "strings.zh_cn.bin",
             "missing-texture-report.json",
+            "suspicious-texture-report.json",
             "semantic-validation-report.json",
         ],
         CompileScope::Search => vec![
@@ -3206,6 +3235,7 @@ fn compile_runtime_reports(
             "atlas.meta.bin",
             "animations.bin",
             "missing-texture-report.json",
+            "suspicious-texture-report.json",
             "semantic-validation-report.json",
         ],
     };
@@ -3502,6 +3532,10 @@ fn rust_manifest_file_entries(
         (
             "rustMissingTextureReport",
             "rust/missing-texture-report.json",
+        ),
+        (
+            "rustSuspiciousTextureReport",
+            "rust/suspicious-texture-report.json",
         ),
         ("rustMigrationReadiness", "rust/migration-readiness.json"),
         ("rustDeploymentReport", "rust/deployment-report.json"),
