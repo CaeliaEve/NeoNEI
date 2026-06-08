@@ -105,6 +105,31 @@ struct RawExportSummary {
     missing_declared_files: Vec<String>,
     file_counts: BTreeMap<String, u64>,
     file_hashes: BTreeMap<String, String>,
+    #[serde(rename = "zeroRecipeDiagnostics")]
+    zero_recipe_diagnostics: Option<ZeroRecipeDiagnostics>,
+}
+
+#[derive(Debug, Serialize)]
+struct ZeroRecipeDiagnostics {
+    status: Option<String>,
+    #[serde(rename = "totalHandlers")]
+    total_handlers: u64,
+    #[serde(rename = "handlersWithLoadedRecipes")]
+    handlers_with_loaded_recipes: u64,
+    #[serde(rename = "handlersWithExportedRecipes")]
+    handlers_with_exported_recipes: u64,
+    #[serde(rename = "legalZeroRecipeHandlers")]
+    legal_zero_recipe_handlers: u64,
+    #[serde(rename = "expectedEmptyHandlers")]
+    expected_empty_handlers: u64,
+    #[serde(rename = "nativeCoveredZeroExports")]
+    native_covered_zero_exports: u64,
+    #[serde(rename = "nonRecipeInfoZeroExports")]
+    non_recipe_info_zero_exports: u64,
+    #[serde(rename = "suspiciousZeroExports")]
+    suspicious_zero_exports: u64,
+    #[serde(rename = "partialExports")]
+    partial_exports: u64,
 }
 
 fn main() -> Result<()> {
@@ -272,6 +297,7 @@ fn summarize_raw_export(
     if missing_declared_files.is_empty() {
         warnings.push("all declared manifest files exist".to_string());
     }
+    let zero_recipe_diagnostics = read_zero_recipe_diagnostics(input, manifest, warnings)?;
 
     Ok(RawExportSummary {
         manifest_schema_version: manifest.schema_version.clone(),
@@ -283,7 +309,56 @@ fn summarize_raw_export(
         missing_declared_files,
         file_counts,
         file_hashes,
+        zero_recipe_diagnostics,
     })
+}
+
+fn read_zero_recipe_diagnostics(
+    input: &Path,
+    manifest: &RawManifest,
+    warnings: &mut Vec<String>,
+) -> Result<Option<ZeroRecipeDiagnostics>> {
+    let path = resolve_manifest_path(input, manifest, "neiHandlerAnomalies")
+        .or_else(|| {
+            let candidate = input.join("validation").join("nei_handler_anomalies.json");
+            candidate.exists().then_some(candidate)
+        });
+    let Some(path) = path else {
+        warnings.push("zero-recipe diagnostics are missing: validation/nei_handler_anomalies.json".to_string());
+        return Ok(None);
+    };
+    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let value: Value = serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+    Ok(zero_recipe_diagnostics_from_value(&value))
+}
+
+fn zero_recipe_diagnostics_from_value(value: &Value) -> Option<ZeroRecipeDiagnostics> {
+    let summary = value.get("summary").and_then(Value::as_object)?;
+    let expected_empty_handlers = object_u64(summary, "expectedEmptyHandlers");
+    let native_covered_zero_exports = object_u64(summary, "nativeCoveredZeroExports");
+    let non_recipe_info_zero_exports = object_u64(summary, "nonRecipeInfoZeroExports");
+    let legal_zero_recipe_handlers = object_u64(summary, "legalZeroRecipeHandlers").max(
+        expected_empty_handlers + native_covered_zero_exports + non_recipe_info_zero_exports,
+    );
+    Some(ZeroRecipeDiagnostics {
+        status: summary
+            .get("status")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        total_handlers: object_u64(summary, "totalHandlers"),
+        handlers_with_loaded_recipes: object_u64(summary, "handlersWithLoadedRecipes"),
+        handlers_with_exported_recipes: object_u64(summary, "handlersWithExportedRecipes"),
+        legal_zero_recipe_handlers,
+        expected_empty_handlers,
+        native_covered_zero_exports,
+        non_recipe_info_zero_exports,
+        suspicious_zero_exports: object_u64(summary, "suspiciousZeroExports"),
+        partial_exports: object_u64(summary, "partialExports"),
+    })
+}
+
+fn object_u64(map: &serde_json::Map<String, Value>, key: &str) -> u64 {
+    map.get(key).and_then(Value::as_u64).unwrap_or(0)
 }
 
 fn count_jsonl_rows(path: &Path) -> Result<u64> {
@@ -4163,6 +4238,28 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[40..44].try_into().unwrap()), 3);
         assert_eq!(u32::from_le_bytes(payload[44..48].try_into().unwrap()), 7);
         assert_eq!(u32::from_le_bytes(payload[48..52].try_into().unwrap()), 5);
+    }
+
+    #[test]
+    fn zero_recipe_diagnostics_distinguish_legal_and_suspicious_handlers() {
+        let value = json!({
+            "summary": {
+                "status": "warning",
+                "totalHandlers": 8,
+                "handlersWithLoadedRecipes": 6,
+                "handlersWithExportedRecipes": 4,
+                "expectedEmptyHandlers": 2,
+                "nativeCoveredZeroExports": 3,
+                "nonRecipeInfoZeroExports": 1,
+                "suspiciousZeroExports": 1,
+                "partialExports": 2
+            }
+        });
+        let diagnostics = zero_recipe_diagnostics_from_value(&value).unwrap();
+        assert_eq!(diagnostics.status.as_deref(), Some("warning"));
+        assert_eq!(diagnostics.legal_zero_recipe_handlers, 6);
+        assert_eq!(diagnostics.suspicious_zero_exports, 1);
+        assert_eq!(diagnostics.partial_exports, 2);
     }
 
     #[test]
