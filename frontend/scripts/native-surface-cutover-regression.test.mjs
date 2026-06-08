@@ -21,4 +21,7 @@ test("native browser surface retires the DOM grid on the production native path"
   assert.match(source, /nativeTexturesReady\s*=\s*response\?\.type\s*===\s*"textureLoaded"\s*&&\s*response\.loaded\s*>\s*0/);
   assert.match(source, /nativeFirstFrameReady\s*=\s*response\?\.type\s*===\s*"frame"/);
   assert.match(source, /resetNativeRenderReadiness\(\)/);
+  const legacyCanvas = readSource("src/components/HomeCanvasGrid.vue");
+  assert.doesNotMatch(legacyCanvas, /\/images\/item/);
+  assert.doesNotMatch(legacyCanvas, /getPreferredStaticImageUrlFromEntity/);
 });

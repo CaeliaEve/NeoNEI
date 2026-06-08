@@ -1,6 +1,6 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
-import { getPreferredStaticImageUrlFromEntity, type BrowserGridEntry, type Item } from "../services/api";
+import type { BrowserGridEntry, Item } from "../services/api";
 import type { PageAtlasResult, PageAtlasSpriteEntry } from "../services/pageAtlas";
 import {
   getSharedAnimationNowMs,
@@ -279,20 +279,9 @@ function getItemForEntry(entry: BrowserGridEntry): Item {
   return entry.kind === "item" ? entry.item : entry.group.representative;
 }
 
-function shouldUseDirectStaticCorrection(item: Item): boolean {
-  void item;
-  // Homepage item rendering is atlas-authoritative. Direct `/images/item/*`
-  // corrections reintroduce slow per-texture requests and hide NESQL++ atlas
-  // coverage defects, so missing GT machine textures must be fixed in the
-  // exported browser atlas instead.
-  return false;
-}
-
 function getStaticImageSrc(item: Item): string {
-  if (shouldUseDirectStaticCorrection(item) && item.imageFileName) {
-    return `/images/item/${item.imageFileName.replace(/\\/g, "/").split("/").map(encodeURIComponent).join("/")}`;
-  }
-  return getPreferredStaticImageUrlFromEntity(item);
+  void item;
+  return "";
 }
 
 function drawPlaceholder(ctx: CanvasRenderingContext2D, rect: GridRect) {
@@ -736,7 +725,7 @@ function draw() {
 
     const src = getStaticImageSrc(rect.item);
     const staticImage = staticImages.get(src);
-    if ((!props.atlas?.atlasUrl || shouldUseDirectStaticCorrection(rect.item)) && staticImage) {
+    if ((!props.atlas?.atlasUrl) && staticImage) {
       drawStaticImage(ctx, staticImage, rect);
       drawGroupOverlay(ctx, rect);
       continue;
@@ -788,7 +777,7 @@ async function ensureStaticImage(item: Item): Promise<HTMLImageElement | null> {
     return null;
   }
   const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(item.itemId) : null;
-  if (!shouldUseDirectStaticCorrection(item) && globalEntry && getLoadedGlobalAtlasImage(globalEntry.staticAtlas?.atlasFile)) {
+  if (globalEntry && getLoadedGlobalAtlasImage(globalEntry.staticAtlas?.atlasFile)) {
     return null;
   }
   const src = getStaticImageSrc(item);
@@ -883,10 +872,6 @@ function warmStaticImages() {
   props.entries.forEach((entry) => {
     const item = getItemForEntry(entry);
     if (hasGlobalBrowserAtlas() && getGlobalBrowserAtlasEntry(item.itemId)) {
-      return;
-    }
-    if (shouldUseDirectStaticCorrection(item)) {
-      void ensureStaticImage(item);
       return;
     }
     const globalEntry = hasGlobalBrowserAtlas() ? getGlobalBrowserAtlasEntry(item.itemId) : null;
