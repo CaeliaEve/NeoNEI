@@ -20,6 +20,7 @@
         "validate:native-render": "node ../scripts/validate-native-render-smoke.mjs --self-test --gate",
         "bench:browser-v3": "node ../scripts/bench-browser-v3.mjs --gate",
         "bench:native-surface": "node ../scripts/native-surface-baseline.mjs",
+        "bench:native-surface:gate": "node ../scripts/native-surface-baseline.mjs --gate --max-flip-p95-ms=80 --max-settings-open-ms=250 --min-textures-loaded=1 --max-texture-errors=0 --max-hot-path-requests=0",
         "validate:runtime-contracts": "node ../scripts/validate-runtime-contracts.mjs --gate",
         "validate:semantic-runtime": "node ../scripts/validate-semantic-runtime.mjs --gate",
         "audit:api-runtime": "node ../scripts/audit-api-runtime.mjs",

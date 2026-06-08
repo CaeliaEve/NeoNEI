@@ -26,6 +26,10 @@ const pageFlips = Number(args.get("page-flips") || 30);
 const gate = args.has("gate");
 const requireWebgpu = args.has("require-webgpu");
 const maxSettingsOpenMs = Number(args.get("max-settings-open-ms") || 250);
+const maxFlipP95Ms = Number(args.get("max-flip-p95-ms") || 80);
+const maxTextureErrors = Number(args.get("max-texture-errors") || 0);
+const minTexturesLoaded = Number(args.get("min-textures-loaded") || 1);
+const maxHotPathRequests = Number(args.get("max-hot-path-requests") || 0);
 const renderer = `${args.get("renderer") || ""}`.trim().toLowerCase();
 const requestedRenderer = renderer === "webgpu" || renderer === "webgl2" || renderer === "auto" ? renderer : null;
 const webgpuLaunchArgs = [
@@ -81,6 +85,13 @@ async function main() {
     }, requestedRenderer);
   }
   const errors = [];
+  const hotPathRequests = [];
+  page.on("request", (request) => {
+    const requestUrl = request.url();
+    if (/\/(?:api\/)?browser(?:-|\/)?page-pack|\/(?:api\/)?browser\/pages|pagePackByIds|getBrowserPagePack/i.test(requestUrl)) {
+      hotPathRequests.push(requestUrl);
+    }
+  });
   page.on("console", (message) => {
     if (message.type() === "error") errors.push(message.text());
   });
@@ -114,7 +125,7 @@ async function main() {
   const flipDurations = [];
   for (let i = 0; i < pageFlips; i += 1) {
     const start = performance.now();
-    await clickButtonByLabel(page, ["下一页", "?", ">", "Next"]);
+    await clickButtonByLabel(page, ["\u4e0b\u4e00\u9875", "Next", ">"]);
     await page.waitForTimeout(16);
     flipDurations.push(performance.now() - start);
   }
@@ -142,7 +153,7 @@ async function main() {
     const input = document.querySelector("input[type='text'], input:not([type])");
     if (!input) return null;
     const start = performance.now();
-    input.value = "铁锭";
+    input.value = "\u94c1\u952d";
     input.dispatchEvent(new Event("input", { bubbles: true }));
     await new Promise((resolve) => setTimeout(resolve, 350));
     input.value = "";
@@ -184,10 +195,17 @@ async function main() {
       searchMs,
     },
     errors,
+    hotPathRequests,
   };
   const gateFailures = [];
   if (errors.length > 0) {
     gateFailures.push(`${errors.length} console/page error(s) captured`);
+  }
+  if (hotPathRequests.length > maxHotPathRequests) {
+    gateFailures.push(`${hotPathRequests.length} browser page-pack hot-path request(s) captured; max is ${maxHotPathRequests}`);
+  }
+  if (Number.isFinite(maxFlipP95Ms) && report.interactions.flipMs.p95 > maxFlipP95Ms) {
+    gateFailures.push(`page flip p95 ${Math.round(report.interactions.flipMs.p95)}ms exceeds ${maxFlipP95Ms}ms`);
   }
   if ((final.canvasCount ?? 0) <= 0) {
     gateFailures.push("no canvas elements were found");
@@ -230,6 +248,12 @@ async function main() {
     if ((final.nativeRenderMetrics.drawCalls ?? 0) <= 0) {
       gateFailures.push("native render worker did not issue draw calls");
     }
+    if ((final.nativeRenderMetrics.textureErrors ?? 0) > maxTextureErrors) {
+      gateFailures.push(`native render worker reported ${final.nativeRenderMetrics.textureErrors} texture error(s); max is ${maxTextureErrors}`);
+    }
+    if ((final.nativeRenderMetrics.textureLoaded ?? 0) < minTexturesLoaded) {
+      gateFailures.push(`native render worker loaded ${final.nativeRenderMetrics.textureLoaded ?? 0} texture(s); minimum is ${minTexturesLoaded}`);
+    }
     for (const metricName of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs"]) {
       if (!Number.isFinite(Number(final.nativeRenderMetrics[metricName]))) {
         gateFailures.push(`native render metric ${metricName} is missing or non-finite`);
@@ -264,6 +288,11 @@ async function main() {
     nativeRenderFrameP95Ms: Math.round(report.final.nativeRenderMetrics?.frameP95Ms ?? 0),
     nativeRenderLastDrawMs: Math.round(report.final.nativeRenderMetrics?.lastDrawMs ?? 0),
     errors: errors.length,
+    hotPathRequests: hotPathRequests.length,
+    maxFlipP95Ms,
+    maxSettingsOpenMs,
+    minTexturesLoaded,
+    maxTextureErrors,
     gate: report.gate,
   }, null, 2));
 
@@ -276,5 +305,3 @@ main().catch((error) => {
   console.error(`[native-surface-baseline] failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
-
-

@@ -65,6 +65,7 @@ const steps = [
   { name: 'search v3 bench', cwd: frontendDir, command: npm, args: ['run', 'bench:search-v3'] },
   { name: 'recipe v3 bench', cwd: frontendDir, command: npm, args: ['run', 'bench:recipe-v3'] },
   { name: 'browser atlas v3 bench', cwd: frontendDir, command: npm, args: ['run', 'bench:browser-atlas-v3'] },
+  { name: 'native surface browser bench', cwd: frontendDir, command: npm, args: ['run', 'bench:native-surface:gate'] },
 ];
 
 const quick = process.argv.includes('--quick');

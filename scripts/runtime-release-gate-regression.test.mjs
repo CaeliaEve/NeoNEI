@@ -30,6 +30,11 @@ test('runtime release gate blocks malformed or non-portable release artifacts', 
     'full release gate must cover the browser critical-path E2E suite',
   );
   assert.equal(
+    hasStep('native surface browser bench', "args: ['run', 'bench:native-surface:gate']"),
+    true,
+    'full release gate must prove the native GPU browser surface with real browser metrics',
+  );
+  assert.equal(
     hasStep('raw export path hygiene self-test', "args: ['run', 'test:export-paths']"),
     true,
     'release gate must block machine-specific paths in consumed export payloads',
