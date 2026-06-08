@@ -39,6 +39,17 @@ let width = 0;
 let height = 0;
 let nativeRenderer: NativeRendererBackend | null = null;
 const uploadedTextureKeys = new Set<string>();
+let rendererMaxTextureSize = 0;
+
+type TextureTile = {
+  key: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+const virtualTextureTiles = new Map<string, TextureTile[]>();
 
 function percentile(values: number[], p: number): number {
   if (values.length <= 0) return 0;
@@ -119,7 +130,7 @@ function chooseBackend(requested: "auto" | "webgpu" | "webgl2", activeCanvas: Of
 }
 
 function normalizeSpriteCommands(commands: NativeRenderSpriteCommand[]) {
-  return commands
+  const normalized = commands
     .map((command) => ({
       textureKey: `${command.textureKey ?? ""}`,
       sourceX: Math.max(0, Math.floor(Number(command.sourceX) || 0)),
@@ -138,14 +149,80 @@ function normalizeSpriteCommands(commands: NativeRenderSpriteCommand[]) {
       && command.destWidth > 0
       && command.destHeight > 0
     );
+  return splitSpriteCommandsForVirtualTiles(normalized);
+}
+
+function splitSpriteCommandsForVirtualTiles(commands: NativeRenderSpriteCommand[]): NativeRenderSpriteCommand[] {
+  const result: NativeRenderSpriteCommand[] = [];
+  for (const command of commands) {
+    const tiles = virtualTextureTiles.get(command.textureKey);
+    if (!tiles?.length) {
+      result.push(command);
+      continue;
+    }
+    const sourceTop = command.sourceY;
+    const sourceBottom = command.sourceY + command.sourceHeight;
+    for (const tile of tiles) {
+      const overlapTop = Math.max(sourceTop, tile.y);
+      const overlapBottom = Math.min(sourceBottom, tile.y + tile.height);
+      if (overlapBottom <= overlapTop) continue;
+      const sourceSliceHeight = overlapBottom - overlapTop;
+      const destOffsetRatio = (overlapTop - sourceTop) / command.sourceHeight;
+      const destHeightRatio = sourceSliceHeight / command.sourceHeight;
+      result.push({
+        ...command,
+        textureKey: tile.key,
+        sourceY: overlapTop - tile.y,
+        sourceHeight: sourceSliceHeight,
+        destY: command.destY + command.destHeight * destOffsetRatio,
+        destHeight: command.destHeight * destHeightRatio,
+      });
+    }
+  }
+  return result;
+}
+
+function canUploadWholeBitmap(bitmap: ImageBitmap): boolean {
+  if (rendererMaxTextureSize <= 0) return true;
+  return bitmap.width <= rendererMaxTextureSize && bitmap.height <= rendererMaxTextureSize;
+}
+
+async function uploadVirtualTextureTiles(key: string, bitmap: ImageBitmap): Promise<boolean> {
+  if (!nativeRenderer || rendererMaxTextureSize <= 0 || bitmap.width > rendererMaxTextureSize) return false;
+  const tiles: TextureTile[] = [];
+  for (let y = 0, tileIndex = 0; y < bitmap.height; y += rendererMaxTextureSize, tileIndex += 1) {
+    const tileHeight = Math.min(rendererMaxTextureSize, bitmap.height - y);
+    const tileKey = `${key}::tile:${tileIndex}`;
+    const tileBitmap = await createImageBitmap(bitmap, 0, y, bitmap.width, tileHeight);
+    try {
+      if (!nativeRenderer.registerTexture(tileKey, tileBitmap)) return false;
+      tiles.push({
+        key: tileKey,
+        x: 0,
+        y,
+        width: bitmap.width,
+        height: tileHeight,
+      });
+    } finally {
+      tileBitmap.close();
+    }
+  }
+  if (tiles.length <= 0) return false;
+  virtualTextureTiles.set(key, tiles);
+  uploadedTextureKeys.add(key);
+  textureLoaded = nativeRenderer.textureCount();
+  return true;
 }
 
 async function uploadTexture(key: string, url: string): Promise<void> {
   if (!nativeRenderer || uploadedTextureKeys.has(key)) return;
   const bitmap = await loadTextureBitmap(url);
   try {
-    if (nativeRenderer.registerTexture(key, bitmap)) {
+    if (canUploadWholeBitmap(bitmap) && nativeRenderer.registerTexture(key, bitmap)) {
+      virtualTextureTiles.delete(key);
       uploadedTextureKeys.add(key);
+      textureLoaded = nativeRenderer.textureCount();
+    } else if (await uploadVirtualTextureTiles(key, bitmap)) {
       textureLoaded = nativeRenderer.textureCount();
     } else {
       textureErrors += 1;
@@ -184,6 +261,7 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       backend = chooseBackend(message.renderer, canvas);
       nativeRenderer?.dispose();
       uploadedTextureKeys.clear();
+      virtualTextureTiles.clear();
       textureLoaded = 0;
       nativeRenderer = backend === "webgpu"
         ? await WebGpuNativeRenderer.create(canvas)
@@ -198,6 +276,7 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
         backendFallbackReason = "webgpu unavailable in render worker";
       }
       const limits = backend === "webgpu" ? { maxTextureSize: 0, maxTextureUnits: 0 } : detectWebglLimits(canvas);
+      rendererMaxTextureSize = limits.maxTextureSize;
       return { type: "ready", id: message.id, backend, limits, metrics: buildMetrics() };
     }
     case "loadTextures": {
@@ -259,6 +338,7 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       nativeRenderer?.dispose();
       nativeRenderer = null;
       uploadedTextureKeys.clear();
+      virtualTextureTiles.clear();
       canvas = null;
       requestedBackend = null;
       backend = null;
@@ -268,6 +348,7 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       vertexCount = 0;
       textureErrors = 0;
       textureLoaded = 0;
+      rendererMaxTextureSize = 0;
       textureUploadBatches = 0;
       lastTextureUploadMs = 0;
       latestFrameToken = 0;

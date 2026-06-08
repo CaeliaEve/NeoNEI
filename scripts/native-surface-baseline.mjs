@@ -48,19 +48,16 @@ function percentile(values, p) {
 }
 
 async function clickButtonByLabel(page, labels) {
-  const handle = await page.evaluateHandle((candidates) => {
+  return await page.evaluate((candidates) => {
     const buttons = Array.from(document.querySelectorAll("button"));
-    return buttons.find((button) => {
-      const text = `${button.textContent || ""} ${button.getAttribute("aria-label") || ""} ${button.getAttribute("title") || ""}`;
+    const button = buttons.find((candidateButton) => {
+      const text = `${candidateButton.textContent || ""} ${candidateButton.getAttribute("aria-label") || ""} ${candidateButton.getAttribute("title") || ""}`;
       return candidates.some((candidate) => text.includes(candidate));
     }) || null;
-  }, labels);
-  const element = handle.asElement();
-  if (element) {
-    await element.click();
+    if (!(button instanceof HTMLButtonElement)) return false;
+    button.click();
     return true;
-  }
-  return false;
+  }, labels);
 }
 
 async function main() {

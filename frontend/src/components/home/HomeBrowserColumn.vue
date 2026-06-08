@@ -134,6 +134,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                   viewport-role="browser"
                   :entries="browserGridEntries"
                   :item-size="itemSize"
+                  :page="currentPage"
                   :atlas="currentPageAtlas"
                   :manifest-url="nativeRuntimeManifestUrl"
                   :enable-animation="true"

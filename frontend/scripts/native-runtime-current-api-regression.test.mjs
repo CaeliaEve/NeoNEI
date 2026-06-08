@@ -34,3 +34,17 @@ test("homepage native runtime manifest defaults to current API", () => {
     "homepage native runtime should use the semantic current API, not a hardcoded static rust manifest",
   );
 });
+
+
+test("native runtime packs are on by default unless explicitly disabled", () => {
+  const distRuntime = readSource("src/services/distDataRuntime.ts");
+
+  assert.match(distRuntime, /runtimePacksEnabled === "0"/);
+  assert.match(distRuntime, /runtimePacksEnabled === "false"/);
+  assert.match(distRuntime, /runtimePacksEnabled === "off"/);
+  assert.doesNotMatch(
+    distRuntime,
+    /runtimePacksEnabled !== "1" && runtimePacksEnabled !== "true"/,
+    "native runtime packs must not require an opt-in env flag on the production homepage",
+  );
+});

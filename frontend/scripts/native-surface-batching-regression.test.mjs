@@ -68,6 +68,18 @@ test("native surface worker does not rebuild layout on every frame", () => {
   assert.match(source, /if \(needsLayout\) rebuildLayout\(surface\)/);
 });
 
+test("native runtime page projection only materializes the current page window", () => {
+  const source = readSource("src/workers/nativeSurfaceEngine.worker.ts");
+  assert.match(source, /const start = Math\.min\(projectionIndices\.length, \(page - 1\) \* pageSize\)/);
+  assert.match(source, /const end = Math\.min\(projectionIndices\.length, start \+ pageSize\)/);
+  assert.match(source, /for \(let projectionIndex = start; projectionIndex < end; projectionIndex \+= 1\)/);
+  assert.doesNotMatch(
+    source,
+    /const projected: NativeSurfaceEngineEntry\[\] = \[\];[\s\S]*projectionIndices\.length[\s\S]*projected\.slice/,
+    "page flips must not rebuild all projected entries before slicing the active page",
+  );
+});
+
 
 test("native surface metrics expose layout rebuilds separately from frame requests", () => {
   const protocol = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");
@@ -91,4 +103,12 @@ test("native surface baseline gates excessive layout rebuilds", () => {
   assert.match(source, /nativeLayoutRebuilds/);
   assert.match(source, /nativeFrameRequests/);
   assert.match(source, /rebuilt layout/);
+});
+
+test("native surface baseline measures in-browser click latency instead of Playwright actionability overhead", () => {
+  const source = readSource("../scripts/native-surface-baseline.mjs");
+  assert.match(source, /async function clickButtonByLabel/);
+  assert.match(source, /return await page\.evaluate\(\(candidates\) =>/);
+  assert.match(source, /button\.click\(\)/);
+  assert.doesNotMatch(source, /await element\.click\(\)/);
 });

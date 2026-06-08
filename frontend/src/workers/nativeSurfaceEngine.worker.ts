@@ -859,9 +859,18 @@ function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] 
   const browserPack = surface.browserPack;
   if (!browserPack) return [];
   const projectionIndices = getRuntimeVisibleEntries(surface, browserPack);
+  const page = Math.max(1, surface.page);
+  const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
+  const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
+  const gap = 4;
+  const columns = computeColumns(viewportWidth, cardSize, gap);
+  const rows = Math.max(1, Math.floor(Math.max(1, surface.viewport?.height ?? cardSize) / (cardSize + gap)));
+  const pageSize = Math.max(1, columns * rows);
+  const start = Math.min(projectionIndices.length, (page - 1) * pageSize);
+  const end = Math.min(projectionIndices.length, start + pageSize);
   const emittedCollapsedGroups = new Set<string>();
-  const projected: NativeSurfaceEngineEntry[] = [];
-  for (let projectionIndex = 0; projectionIndex < projectionIndices.length; projectionIndex += 1) {
+  const entries: NativeSurfaceEngineEntry[] = [];
+  for (let projectionIndex = start; projectionIndex < end; projectionIndex += 1) {
     const encodedIndex = projectionIndices[projectionIndex] ?? 0;
     const wasmCollapsedGroup = encodedIndex >= 0x80000000;
     const index = encodedIndex % 0x80000000;
@@ -874,32 +883,24 @@ function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] 
       emittedCollapsedGroups.add(groupKey);
       const group = surface.groupByKey.get(groupKey);
       const representativeItemId = group?.representativeItemId || itemId;
-      projected.push({
+      entries.push({
         key: `native-group:${groupKey}`,
         kind: "group-collapsed",
-        entryIndex: projected.length,
+        entryIndex: entries.length,
         itemId: representativeItemId,
         groupKey,
       });
       continue;
     }
-    projected.push({
+    entries.push({
       key: groupKey ? `native-item:${groupKey}:${itemId}:${index}` : `native-item:${itemId}:${index}`,
       kind: "item",
-      entryIndex: projected.length,
+      entryIndex: entries.length,
       itemId,
       groupKey: groupKey || null,
     });
   }
-  const page = Math.max(1, surface.page);
-  const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
-  const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
-  const gap = 4;
-  const columns = computeColumns(viewportWidth, cardSize, gap);
-  const rows = Math.max(1, Math.floor(Math.max(1, surface.viewport?.height ?? cardSize) / (cardSize + gap)));
-  const pageSize = Math.max(1, columns * rows);
-  const start = Math.min(projected.length, (page - 1) * pageSize);
-  return projected.slice(start, start + pageSize).map((entry, entryIndex) => ({ ...entry, entryIndex }));
+  return entries;
 }
 
 function buildRuntimeBrowserIndexByItemId(browserPack: NativeCompactBrowserPack | null): Map<string, number> {

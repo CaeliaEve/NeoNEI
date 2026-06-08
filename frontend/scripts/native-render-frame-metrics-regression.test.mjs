@@ -43,6 +43,16 @@ test("native render worker batches atlas texture uploads instead of decoding all
   assert.match(source, /lastTextureUploadMs/);
 });
 
+test("native render worker virtualizes oversized atlas textures into GPU-safe tiles", () => {
+  const source = readFrontend("src/workers/nativeRender.worker.ts");
+  assert.match(source, /const virtualTextureTiles = new Map/);
+  assert.match(source, /async function uploadVirtualTextureTiles/);
+  assert.match(source, /createImageBitmap\(bitmap, 0, y, bitmap\.width, tileHeight\)/);
+  assert.match(source, /splitSpriteCommandsForVirtualTiles/);
+  assert.match(source, /textureKey: tile\.key/);
+  assert.match(source, /sourceY: overlapTop - tile\.y/);
+});
+
 test("native surface benchmark gates segmented render metrics", () => {
   const source = readRepo("scripts/native-surface-baseline.mjs");
   assert.match(source, /lastParseMs/);

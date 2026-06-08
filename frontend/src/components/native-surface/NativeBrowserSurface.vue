@@ -11,7 +11,7 @@ import type {
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 import {
-  getAllGlobalBrowserAtlasTextureDescriptors,
+  getGlobalBrowserAtlasTextureDescriptorsForKeys,
 } from "../../services/globalBrowserAtlas";
 
 const props = withDefaults(defineProps<{
@@ -19,6 +19,7 @@ const props = withDefaults(defineProps<{
   viewportRole?: NativeSurfaceViewportRole;
   entries: BrowserGridEntry[];
   itemSize: number;
+  page?: number;
   atlas?: PageAtlasResult | null;
   manifestUrl?: string | null;
   enableAnimation?: boolean;
@@ -27,6 +28,7 @@ const props = withDefaults(defineProps<{
   selectedItemId?: string | null;
 }>(), {
   viewportRole: "browser",
+  page: 1,
   atlas: null,
   manifestUrl: null,
   enableAnimation: true,
@@ -50,6 +52,7 @@ let resizeObserver: ResizeObserver | null = null;
 let nativeFrameSeq = 0;
 let nativeTextureSeq = 0;
 let nativeHitSeq = 0;
+let nativeFrameScheduled = false;
 const nativeRenderVisible = ref(false);
 const nativeHoveredHit = ref<{
   kind: BrowserGridEntry["kind"];
@@ -79,7 +82,8 @@ const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
 function normalizeNativeRenderBackend(value: unknown): Exclude<NativeRendererBackendKind, "compat-canvas"> {
   const normalized = `${value ?? ""}`.trim().toLowerCase();
   if (normalized === "webgpu" || normalized === "auto") return normalized;
-  return "webgl2";
+  if (normalized === "webgl2") return "webgl2";
+  return "auto";
 }
 
 function updateNativeRenderVisibility() {
@@ -224,11 +228,11 @@ function syncViewport(width?: number, height?: number) {
   };
   controller.setViewport(viewport);
   if (!nativeRenderInitialized) {
-    void initializeNativeRenderWorker(nextWidth, nextHeight).then(() => syncNativeTextures());
+    void initializeNativeRenderWorker(nextWidth, nextHeight);
   } else if (nativeRenderInitialized) {
     void postNativeRenderEvent({ type: "resize", viewport });
   }
-  void syncNativeFrame();
+  requestNativeFrame();
 }
 
 function toLocalPointer(event: MouseEvent) {
@@ -295,11 +299,14 @@ async function handleNativeContextMenu(event: MouseEvent) {
 }
 
 async function syncNativeFrame() {
+  nativeFrameScheduled = false;
   const seq = ++nativeFrameSeq;
   const nowMs = performance.now();
   const frame = await controller.requestFrame(nowMs);
   if (seq !== nativeFrameSeq) return;
   if (nativeRenderInitialized && frame?.drawCommandBuffer && frame.drawCommandCount && frame.drawCommandStride) {
+    await syncNativeTexturesForFrame(frame.spriteCommands ?? []);
+    if (seq !== nativeFrameSeq) return;
     const response = await postNativeRenderEvent({
       type: "render",
       frameToken: seq,
@@ -315,10 +322,26 @@ async function syncNativeFrame() {
   }
 }
 
-async function syncNativeTextures() {
+function requestNativeFrame() {
+  if (nativeFrameScheduled) return;
+  nativeFrameScheduled = true;
+  if (typeof requestAnimationFrame === "function") {
+    requestAnimationFrame(() => {
+      void syncNativeFrame();
+    });
+    return;
+  }
+  window.setTimeout(() => {
+    void syncNativeFrame();
+  }, 0);
+}
+
+async function syncNativeTexturesForFrame(spriteCommands: Array<{ textureKey?: string | null }>): Promise<void> {
   if (!nativeRenderInitialized) return;
   const seq = ++nativeTextureSeq;
-  const textures = await getAllGlobalBrowserAtlasTextureDescriptors();
+  const textures = getGlobalBrowserAtlasTextureDescriptorsForKeys(
+    spriteCommands.map((command) => command.textureKey ?? ""),
+  );
   if (seq !== nativeTextureSeq) return;
   if (textures.length <= 0) {
     nativeTexturesReady = true;
@@ -341,6 +364,7 @@ async function syncNativeTextures() {
   if (seq !== nativeTextureSeq) return;
   nativeTexturesReady = response?.type === "textureLoaded" && response.loaded > 0;
   updateNativeRenderVisibility();
+  requestNativeFrame();
 }
 
 onMounted(async () => {
@@ -353,11 +377,12 @@ onMounted(async () => {
     enableHistoryViewport: props.viewportRole === "history",
   });
   controller.setItemSize(props.itemSize);
+  controller.setPage(props.page);
   controller.setSelectedItemId(props.selectedItemId);
   controller.setCompatEntries({ entries: props.entries, atlas: props.atlas ?? null });
   controller.setHistoryItems(props.historyItemIds);
   syncViewport();
-  void syncNativeFrame();
+  requestNativeFrame();
   emitViewportResize();
   resizeObserver = new ResizeObserver((entries) => {
     const rect = entries[0]?.contentRect;
@@ -386,17 +411,24 @@ watch(
   () => [props.entries, props.atlas] as const,
   () => {
     controller.setCompatEntries({ entries: props.entries, atlas: props.atlas ?? null });
-    void syncNativeFrame();
-    void syncNativeTextures();
+    requestNativeFrame();
   },
   { deep: false },
+);
+
+watch(
+  () => props.page,
+  (page) => {
+    controller.setPage(page);
+    requestNativeFrame();
+  },
 );
 
 watch(
   () => props.itemSize,
   (size) => {
     controller.setItemSize(size);
-    void syncNativeFrame();
+    requestNativeFrame();
   },
 );
 
@@ -404,7 +436,7 @@ watch(
   () => props.selectedItemId,
   (itemId) => {
     controller.setSelectedItemId(itemId ?? null);
-    void syncNativeFrame();
+    requestNativeFrame();
   },
 );
 
@@ -423,7 +455,7 @@ watch(
 
 watch(itemIdsSignature, () => {
   controller.setHistoryItems(props.historyItemIds);
-  void syncNativeFrame();
+  requestNativeFrame();
 });
 </script>
 

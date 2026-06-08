@@ -2652,13 +2652,29 @@ fn build_compact_atlas_meta_payload_from_atlas_items(atlas_items: &[Value]) -> R
     Ok(payload)
 }
 
+fn normalize_runtime_atlas_file_path(value: Option<String>) -> Option<String> {
+    let normalized = value?
+        .replace('\\', "/")
+        .trim_start_matches('/')
+        .to_string();
+    if normalized.is_empty() {
+        return None;
+    }
+    if let Some(stripped) = normalized.strip_prefix("assets/textures/") {
+        return Some(format!("textures/{stripped}"));
+    }
+    Some(normalized)
+}
+
 fn note_atlas_meta(
     atlas_rows: &mut BTreeMap<String, AtlasMetaRow>,
     atlas: &Value,
     kind_flag: u32,
     frame_count: u32,
 ) {
-    let Some(atlas_file) = optional_value_string(Some(atlas), "atlasFile") else {
+    let Some(atlas_file) =
+        normalize_runtime_atlas_file_path(optional_value_string(Some(atlas), "atlasFile"))
+    else {
         return;
     };
     let width = value_u64(atlas, "atlasWidth")
@@ -2749,7 +2765,7 @@ fn build_compact_animation_payload_from_table(animation_table: &[Value]) -> Resu
         let atlas_file = intern_compact_string(
             &mut strings,
             &mut string_refs,
-            value_string(animation, "atlasFile"),
+            normalize_runtime_atlas_file_path(value_string(animation, "atlasFile")),
         );
         let frame_start = frames.len() as u32;
         let frame_duration_ms = value_u64(animation, "frameDurationMs").unwrap_or(0) as u32;
@@ -2835,12 +2851,12 @@ fn build_compact_texture_payload_from_atlas_items(atlas_items: &[Value]) -> Resu
         let static_file = intern_compact_string(
             &mut strings,
             &mut string_refs,
-            optional_value_string(static_atlas, "atlasFile"),
+            normalize_runtime_atlas_file_path(optional_value_string(static_atlas, "atlasFile")),
         );
         let animated_file = intern_compact_string(
             &mut strings,
             &mut string_refs,
-            optional_value_string(animated_atlas, "atlasFile"),
+            normalize_runtime_atlas_file_path(optional_value_string(animated_atlas, "atlasFile")),
         );
         let frame_start = frames.len() as u32;
         let frame_duration_ms =
@@ -4047,6 +4063,24 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[12..16].try_into().unwrap()), 1);
         assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 1);
         assert_eq!(u32::from_le_bytes(payload[24..28].try_into().unwrap()), 10);
+    }
+
+    #[test]
+    fn runtime_atlas_paths_are_dist_data_relative() {
+        assert_eq!(
+            normalize_runtime_atlas_file_path(Some(
+                "assets/textures/atlas-assets/atlases/item-native-static.png".to_string()
+            ))
+            .as_deref(),
+            Some("textures/atlas-assets/atlases/item-native-static.png")
+        );
+        assert_eq!(
+            normalize_runtime_atlas_file_path(Some(
+                "textures/atlas-assets/atlases/item-native-static.png".to_string()
+            ))
+            .as_deref(),
+            Some("textures/atlas-assets/atlases/item-native-static.png")
+        );
     }
 
     #[test]

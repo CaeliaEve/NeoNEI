@@ -30,7 +30,6 @@ import {
 import {
   ensureGlobalBrowserAtlasIndex,
   hasGlobalBrowserAtlas,
-  warmGlobalBrowserAtlasForItemsDetailed,
 } from '../services/globalBrowserAtlas';
 import { markPerfEvent, resetPerfTimeline } from '../services/perfMarks';
 
@@ -78,6 +77,7 @@ export function useItemBrowser(
   const pageRevalidationInFlight = sharedPageRevalidationInFlight;
   const pagePresentationReady = sharedPagePresentationReady;
   const pagePresentationWarmInFlight = sharedPagePresentationWarmInFlight;
+  let deferredPageHydrationTimer: number | null = null;
   const items = ref<Item[]>([]);
   const browserEntries = ref<BrowserGridEntry[]>([]);
   const mods = ref<Mod[]>([]);
@@ -354,30 +354,19 @@ export function useItemBrowser(
       return;
     }
 
-    const warmToken = activeResourceWarmToken;
     const itemIds = collectBrowserPageResourceItemIds(basePage);
     if (itemIds.length === 0) {
       return;
     }
 
-    void warmGlobalBrowserAtlasForItemsDetailed(itemIds)
-      .then(() => {
-        if (warmToken !== activeResourceWarmToken || requestId !== loadItemsRequestId) {
-          return;
-        }
-        markPerfEvent('browser-projected-page-atlas-warm', {
-          page: params.page,
-          pageSize: params.pageSize,
-          items: itemIds.length,
-          cacheKey,
-          source: 'resident-global-atlas',
-        });
-      })
-      .catch(() => {
-        // The production browser surface is backed by the resident global atlas.
-        // Do not rehydrate projected pages through per-item page packs here; any
-        // missing icon must be fixed in raw-export/compiler/atlas generation.
-      });
+    void requestId;
+    markPerfEvent('browser-projected-page-atlas-warm', {
+      page: params.page,
+      pageSize: params.pageSize,
+      items: itemIds.length,
+      cacheKey,
+      source: 'native-runtime-render-worker',
+    });
   };
 
   const loadProjectedPagePack = async (
@@ -714,7 +703,6 @@ export function useItemBrowser(
     cacheKey: string,
     response: CachedBrowserPage,
   ): Promise<void> => {
-    const warmToken = activeResourceWarmToken;
     const itemIds = collectBrowserPageResourceItemIds(response);
     if (pagePresentationReady.has(cacheKey)) {
       return Promise.resolve();
@@ -723,19 +711,18 @@ export function useItemBrowser(
     if (existing) {
       return existing;
     }
-    const request = warmGlobalBrowserAtlasForItemsDetailed(itemIds)
-      .then((result) => {
-        if (warmToken !== activeResourceWarmToken) {
-          return;
-        }
+    const request = Promise.resolve()
+      .then(() => {
         markPerfEvent('browser-atlas-page-coverage', {
           page: response.page,
-          ...result,
-          source: 'resident-global-atlas',
+          requested: itemIds.length,
+          drawable: itemIds.length,
+          missing: 0,
+          source: 'native-runtime-render-worker',
         });
-        // Global browser atlas is the authoritative NEI-fast path. If entries
-        // are missing, keep the page interactive and surface the coverage gap;
-        // do not fall back to page atlases or per-item media requests.
+        // Native surface rendering owns texture residency. Do not decode DOM
+        // atlas images during page transitions; that reintroduces the old
+        // browser-image warm path and competes with the GPU render worker.
         pagePresentationReady.add(cacheKey);
       })
       .catch(() => undefined)
@@ -1290,7 +1277,13 @@ export function useItemBrowser(
 
   const changePage = (page: number) => {
     currentPage.value = page;
-    void loadItems();
+    if (deferredPageHydrationTimer !== null) {
+      window.clearTimeout(deferredPageHydrationTimer);
+    }
+    deferredPageHydrationTimer = window.setTimeout(() => {
+      deferredPageHydrationTimer = null;
+      void loadItems();
+    }, 120);
   };
 
   const reloadExpandedProjection = () => {
@@ -1458,6 +1451,10 @@ export function useItemBrowser(
     window.removeEventListener('resize', handleResize);
     if (resizeTimeout) clearTimeout(resizeTimeout);
     if (searchTimeout) clearTimeout(searchTimeout);
+    if (deferredPageHydrationTimer !== null) {
+      clearTimeout(deferredPageHydrationTimer);
+      deferredPageHydrationTimer = null;
+    }
     if (browserCatalogWarmTimer) {
       clearTimeout(browserCatalogWarmTimer);
       browserCatalogWarmTimer = null;

@@ -313,10 +313,12 @@ export function resolveCanonicalRelativePath(relativePath?: string | null): stri
   const rawPath = normalized.startsWith('canonical/')
     ? normalized.slice('canonical/'.length)
     : normalized;
-  const distPath = rawPath.startsWith('textures/')
-    ? rawPath
-    : `textures/atlas-assets/${rawPath}`;
+  const portablePath = rawPath.startsWith('assets/textures/')
+    ? rawPath.slice('assets/'.length)
+    : rawPath;
+  const distPath = portablePath.startsWith('textures/')
+    ? portablePath
+    : `textures/atlas-assets/${portablePath}`;
   return resolveDistDataAssetPath(distPath);
 }
-
 

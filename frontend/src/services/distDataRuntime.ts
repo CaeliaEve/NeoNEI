@@ -296,7 +296,7 @@ export function resolveDistDataNativeRuntimeManifestPath(): string | null {
   }
 
   const runtimePacksEnabled = `${import.meta.env.VITE_ENABLE_NATIVE_RUNTIME_PACKS ?? ""}`.trim().toLowerCase();
-  if (runtimePacksEnabled !== "1" && runtimePacksEnabled !== "true") {
+  if (runtimePacksEnabled === "0" || runtimePacksEnabled === "false" || runtimePacksEnabled === "off") {
     return null;
   }
 

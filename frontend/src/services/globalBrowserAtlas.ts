@@ -485,6 +485,20 @@ export function getGlobalBrowserAtlasTextureDescriptorsForItems(itemIds: string[
     .filter((entry): entry is { key: string; url: string } => Boolean(entry));
 }
 
+export function getGlobalBrowserAtlasTextureDescriptorsForKeys(textureKeys: string[]): Array<{ key: string; url: string }> {
+  const atlasFiles = new Set<string>();
+  for (const textureKey of textureKeys) {
+    const normalized = normalizeAtlasFile(textureKey);
+    if (normalized) atlasFiles.add(normalized);
+  }
+  return Array.from(atlasFiles)
+    .map((atlasFile) => {
+      const rawUrl = resolveCanonicalRelativePath(atlasFile);
+      return rawUrl ? { key: atlasFile, url: withAtlasVersion(rawUrl) } : null;
+    })
+    .filter((entry): entry is { key: string; url: string } => Boolean(entry));
+}
+
 export async function getAllGlobalBrowserAtlasTextureDescriptors(): Promise<Array<{ key: string; url: string }>> {
   const available = await ensureGlobalBrowserAtlasIndex();
   if (!available) return [];
