@@ -155,6 +155,7 @@ function runBackgroundNodeJob<T extends { ok: true }>(
       env: {
         ...process.env,
         ...extraEnv,
+        NEONEI_BACKEND_MODULE_ROOT: path.resolve(__dirname, '..'),
       },
       windowsHide: true,
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -195,8 +196,14 @@ function runBackgroundNodeJob<T extends { ok: true }>(
 
 function compileAccelerationSnapshotInChild(candidateDbPath: string): Promise<BackgroundCompileSummary> {
   const inlineCode = `
-const { compileAccelerationDatabase } = require('./src/services/acceleration-db-pipeline.service');
-const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = require('./src/config/runtime-paths');
+const path = require('path');
+const moduleRoot = process.env.NEONEI_BACKEND_MODULE_ROOT;
+function requireFromBackendRoot(modulePath) {
+  if (!moduleRoot) throw new Error('NEONEI_BACKEND_MODULE_ROOT is required');
+  return require(path.join(moduleRoot, modulePath));
+}
+const { compileAccelerationDatabase } = requireFromBackendRoot('services/acceleration-db-pipeline.service');
+const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = requireFromBackendRoot('config/runtime-paths');
 compileAccelerationDatabase({
   targetDbPath: process.env.ACCELERATION_DB_FILE,
   sourceRoots: {
@@ -227,9 +234,15 @@ compileAccelerationDatabase({
 
 function materializePublishPayloadsInChild(): Promise<BackgroundPublishSummary> {
   const inlineCode = `
-const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = require('./src/config/runtime-paths');
-const { getAccelerationDatabaseManager } = require('./src/models/database');
-const { ensurePublishPayloadsReady } = require('./src/services/acceleration-db-pipeline.service');
+const path = require('path');
+const moduleRoot = process.env.NEONEI_BACKEND_MODULE_ROOT;
+function requireFromBackendRoot(modulePath) {
+  if (!moduleRoot) throw new Error('NEONEI_BACKEND_MODULE_ROOT is required');
+  return require(path.join(moduleRoot, modulePath));
+}
+const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = requireFromBackendRoot('config/runtime-paths');
+const { getAccelerationDatabaseManager } = requireFromBackendRoot('models/database');
+const { ensurePublishPayloadsReady } = requireFromBackendRoot('services/acceleration-db-pipeline.service');
 (async () => {
   const manager = getAccelerationDatabaseManager();
   await manager.init();
@@ -340,4 +353,3 @@ export async function reconcileAccelerationRuntime(
     lastError: null,
   });
 }
-

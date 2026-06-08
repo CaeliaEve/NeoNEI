@@ -40,9 +40,12 @@ test('bootstrap boundary owns startup lifecycle and delegates app construction',
 
 
 
-test('background acceleration child jobs resolve modules from dist root', () => {
-  assert.match(accelerationRuntimeSource, /cwd:\s*path\.resolve\(__dirname, '\.\.'\)/);
-  assert.match(accelerationRuntimeSource, /require\('\.\/services\/acceleration-db-pipeline\.service\.js'\)/);
-  assert.match(accelerationRuntimeSource, /require\('\.\/config\/runtime-paths\.js'\)/);
+test('background acceleration child jobs resolve modules from the active src or dist root', () => {
+  assert.match(accelerationRuntimeSource, /NEONEI_BACKEND_MODULE_ROOT:\s*path\.resolve\(__dirname, '\.\.'\)/);
+  assert.match(accelerationRuntimeSource, /function requireFromBackendRoot\(modulePath\)/);
+  assert.match(accelerationRuntimeSource, /require\(path\.join\(moduleRoot, modulePath\)\)/);
+  assert.match(accelerationRuntimeSource, /requireFromBackendRoot\('services\/acceleration-db-pipeline\.service'\)/);
+  assert.match(accelerationRuntimeSource, /requireFromBackendRoot\('config\/runtime-paths'\)/);
+  assert.doesNotMatch(accelerationRuntimeSource, /require\('\.\/src\//);
   assert.doesNotMatch(accelerationRuntimeSource, /require\('\.\/dist\//);
 });
