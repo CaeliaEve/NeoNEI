@@ -16,10 +16,15 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
     '/runtime/:runtimeId/reports/:reportName',
     '/native-runtime/current/manifest',
     '/native-runtime/current/files/:fileName(*)',
+    '/recipes/item/:itemId',
+    '/recipes/usage/:itemId',
     '/recipes/current/item/:itemId',
     '/recipes/current/usage/:itemId',
+    '/diagnostics/health',
+    '/diagnostics/runtime-summary',
     '/health/current/runtime',
     '/metrics/current/native-surface',
+    '/settings/runtime',
   ]) {
     assert.equal(routeSource.includes(route), true, `missing ${route}`);
   }
@@ -34,6 +39,11 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(routeSource.includes('runtimeAssetBaseUrl'), true);
   assert.equal(routeSource.includes('function assertCurrentRuntimeId'), true);
   assert.equal(routeSource.includes('function sendRuntimeReport'), true);
+  assert.equal(routeSource.includes('function sendDiagnosticsHealth'), true);
+  assert.equal(routeSource.includes('function sendDiagnosticsRuntimeSummary'), true);
+  assert.equal(routeSource.includes('function sendRuntimeSettings'), true);
+  assert.equal(routeSource.includes("allowDomGridFallback: false"), true);
+  assert.equal(routeSource.includes("allowPerItemImageHotLoad: false"), true);
 });
 
 test('current API is mounted before legacy compatibility API', () => {

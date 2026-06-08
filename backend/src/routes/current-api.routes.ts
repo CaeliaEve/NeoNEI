@@ -226,6 +226,92 @@ function sendRuntimeReport(reportName: string | undefined, res: Response): void 
   res.sendFile(filePath);
 }
 
+async function sendRecipeItem(itemIdParam: string | undefined, res: Response): Promise<void> {
+  setNoStoreHeaders(res);
+  const itemId = normalizeRequiredParam(itemIdParam, 'itemId');
+  const service = getIndexedRecipesService();
+  const summary = await service.getItemRecipeSummary(itemId);
+  const recipes = await service.getCraftingRecipesForItem(itemId);
+  sendOk(res, {
+    itemId,
+    summary,
+    recipes,
+  });
+}
+
+async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): Promise<void> {
+  setNoStoreHeaders(res);
+  const itemId = normalizeRequiredParam(itemIdParam, 'itemId');
+  const service = getIndexedRecipesService();
+  const summary = await service.getItemRecipeSummary(itemId);
+  const usages = await service.getUsageRecipesForItem(itemId);
+  sendOk(res, {
+    itemId,
+    summary,
+    usages,
+  });
+}
+
+function sendDiagnosticsHealth(res: Response): void {
+  setNoStoreHeaders(res);
+  const health = getRuntimeHealthSummary();
+  const manifest = getRuntimeManifest();
+  const runtimeFiles = Array.isArray(manifest?.packs) ? manifest.packs.length : health.files.declared;
+  sendOk(res, {
+    runtimeId: getCurrentMeta().runtimeId,
+    schema: asString(manifest?.schema) ?? 'neonei/runtime/current',
+    schemaRevision: typeof manifest?.schemaRevision === 'number' ? manifest.schemaRevision : asString(manifest?.schemaRevision),
+    integrityOk: health.status !== 'blocked' && health.files.missing.length === 0,
+    packCount: runtimeFiles,
+    atlasCount: health.counts.browserAtlasItems,
+    missingTextures: health.coverage.semanticAtlasMissing,
+    missingAnimations: health.coverage.staticWhenExpectedAnimated,
+    generatedAt: health.generatedAt,
+    sourceExportName: health.distData.source,
+    warnings: health.validation.warnings,
+    checks: {
+      manifest: manifest ? 'ok' : 'missing',
+      assets: health.files.missing.length === 0 ? 'ok' : 'missing',
+      reports: 'ok',
+    },
+    health,
+  });
+}
+
+function sendDiagnosticsRuntimeSummary(res: Response): void {
+  setNoStoreHeaders(res);
+  const health = getRuntimeHealthSummary();
+  sendOk(res, {
+    runtimeId: getCurrentMeta().runtimeId,
+    counts: {
+      items: health.counts.items,
+      groups: health.counts.browserGroups,
+      recipes: health.counts.recipes,
+      atlasItems: health.counts.browserAtlasItems,
+      animatedTextures: health.counts.animatedBrowserAtlasItems ?? health.counts.animationTableItems,
+    },
+    warnings: health.validation.warnings,
+    coverage: health.coverage,
+  });
+}
+
+function sendRuntimeSettings(res: Response): void {
+  setNoStoreHeaders(res);
+  sendOk(res, {
+    apiBaseUrl: '/api',
+    runtimeMode: 'native',
+    rendererPreference: 'webgpu-first',
+    allowDomGridFallback: false,
+    allowPerItemImageHotLoad: false,
+    debugPanels: process.env.NEONEI_DEBUG_PANELS === '1' || process.env.NEONEI_DEBUG_PANELS?.toLowerCase() === 'true',
+    runtime: {
+      currentUrl: '/api/runtime/current',
+      manifestUrl: '/api/runtime/current/manifest',
+      assetBaseUrl: '/api/runtime/current/asset/',
+    },
+  });
+}
+
 router.get('/runtime/current', (_req, res) => {
   sendRuntimeCurrent(res);
 });
@@ -266,56 +352,43 @@ router.get('/native-runtime/current/files/:fileName(*)', (req, res) => {
 });
 
 router.get(
+  '/recipes/item/:itemId',
+  asyncHandler(async (req, res) => {
+    await sendRecipeItem(req.params.itemId, res);
+  }),
+);
+
+router.get(
   '/recipes/current/item/:itemId',
   asyncHandler(async (req, res) => {
-    setNoStoreHeaders(res);
-    const itemId = normalizeRequiredParam(req.params.itemId, 'itemId');
-    const service = getIndexedRecipesService();
-    const summary = await service.getItemRecipeSummary(itemId);
-    const recipes = await service.getCraftingRecipesForItem(itemId);
-    sendOk(res, {
-      itemId,
-      summary,
-      recipes,
-    });
+    await sendRecipeItem(req.params.itemId, res);
+  }),
+);
+
+router.get(
+  '/recipes/usage/:itemId',
+  asyncHandler(async (req, res) => {
+    await sendRecipeUsage(req.params.itemId, res);
   }),
 );
 
 router.get(
   '/recipes/current/usage/:itemId',
   asyncHandler(async (req, res) => {
-    setNoStoreHeaders(res);
-    const itemId = normalizeRequiredParam(req.params.itemId, 'itemId');
-    const service = getIndexedRecipesService();
-    const summary = await service.getItemRecipeSummary(itemId);
-    const usages = await service.getUsageRecipesForItem(itemId);
-    sendOk(res, {
-      itemId,
-      summary,
-      usages,
-    });
+    await sendRecipeUsage(req.params.itemId, res);
   }),
 );
 
+router.get('/diagnostics/health', (_req, res) => {
+  sendDiagnosticsHealth(res);
+});
+
+router.get('/diagnostics/runtime-summary', (_req, res) => {
+  sendDiagnosticsRuntimeSummary(res);
+});
+
 router.get('/health/current/runtime', (_req, res) => {
-  setNoStoreHeaders(res);
-  const health = getRuntimeHealthSummary();
-  const manifest = getRuntimeManifest();
-  const runtimeFiles = Array.isArray(manifest?.packs) ? manifest.packs.length : health.files.declared;
-  sendOk(res, {
-    runtimeId: getCurrentMeta().runtimeId,
-    schema: asString(manifest?.schema) ?? 'neonei/runtime/current',
-    schemaRevision: typeof manifest?.schemaRevision === 'number' ? manifest.schemaRevision : null,
-    integrityOk: health.status !== 'blocked' && health.files.missing.length === 0,
-    packCount: runtimeFiles,
-    atlasCount: health.counts.browserAtlasItems,
-    missingTextures: health.coverage.semanticAtlasMissing,
-    missingAnimations: health.coverage.staticWhenExpectedAnimated,
-    generatedAt: health.generatedAt,
-    sourceExportName: health.distData.source,
-    warnings: health.validation.warnings,
-    health,
-  });
+  sendDiagnosticsHealth(res);
 });
 
 router.get('/metrics/current/native-surface', (_req, res) => {
@@ -324,6 +397,10 @@ router.get('/metrics/current/native-surface', (_req, res) => {
     nativeRender: getNativeRenderRuntimeDiagnostics(),
     runtimeHealth: getRuntimeHealthSummary(),
   });
+});
+
+router.get('/settings/runtime', (_req, res) => {
+  sendRuntimeSettings(res);
 });
 
 export default router;
