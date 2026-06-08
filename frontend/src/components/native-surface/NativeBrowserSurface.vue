@@ -89,7 +89,13 @@ function normalizeNativeRenderBackend(value: unknown): Exclude<NativeRendererBac
 }
 
 function updateNativeRenderVisibility() {
-  nativeRenderVisible.value = nativeRenderInitialized && nativeTexturesReady && nativeFirstFrameReady;
+  // Keep the last committed GPU frame visible while the next atlas batch is
+  // streaming. Hiding the canvas during rapid page changes reintroduces the
+  // old "blank while textures load" feeling; the renderer already drops stale
+  // frame tokens, so the correct native-runtime behavior is: show the loading
+  // status only before the first frame, then atomically swap to newer frames
+  // once their resident atlas textures are ready.
+  nativeRenderVisible.value = nativeRenderInitialized && nativeFirstFrameReady;
 }
 
 function resetNativeRenderReadiness() {

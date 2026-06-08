@@ -16,7 +16,8 @@ test("native browser surface retires the DOM grid on the production native path"
 
   assert.doesNotMatch(source, /HomeCanvasGrid/);
   assert.match(source, /Browser grid DOM fallback is retired on this path\./);
-  assert.match(source, /nativeRenderVisible\.value\s*=\s*nativeRenderInitialized\s*&&\s*nativeTexturesReady\s*&&\s*nativeFirstFrameReady/);
+  assert.match(source, /nativeRenderVisible\.value\s*=\s*nativeRenderInitialized\s*&&\s*nativeFirstFrameReady/);
+  assert.doesNotMatch(source, /nativeRenderVisible\.value\s*=\s*nativeRenderInitialized\s*&&\s*nativeTexturesReady\s*&&\s*nativeFirstFrameReady/);
   assert.match(source, /nativeTexturesReady\s*=\s*response\?\.type\s*===\s*"textureLoaded"\s*&&\s*response\.loaded\s*>\s*0/);
   assert.match(source, /nativeFirstFrameReady\s*=\s*response\?\.type\s*===\s*"frame"/);
   assert.match(source, /resetNativeRenderReadiness\(\)/);
