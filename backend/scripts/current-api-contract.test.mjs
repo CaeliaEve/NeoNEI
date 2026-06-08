@@ -34,6 +34,10 @@ test('runtime file endpoint is path traversal safe and relative-rooted', () => {
   assert.match(routeSource, /DIST_DATA_MANIFEST_FILE/);
   assert.match(routeSource, /files\?\.rustRuntimeManifest/);
   assert.match(routeSource, /nativeRuntime\?\.runtimeManifest/);
+  assert.match(routeSource, /typeof value !== 'string'/);
+  assert.match(routeSource, /function collectPortableRuntimePaths/);
+  assert.match(routeSource, /Array\.isArray\(value\)/);
+  assert.match(routeSource, /collectPortableRuntimePaths\(runtimeManifest\?\.files, declared\)/);
   assert.match(routeSource, /normalized\.includes\('\.\.'\)/);
   assert.match(routeSource, /path\.isAbsolute\(normalized\)/);
   assert.match(routeSource, /startsWith\(`\$\{runtimeRoot\}\$\{path\.sep\}`\)/);

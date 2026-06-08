@@ -39,6 +39,7 @@ function asString(value: unknown): string | null {
 }
 
 function isPortableRuntimePath(value: unknown): value is string {
+  if (typeof value !== 'string') return false;
   const normalized = `${value ?? ''}`.trim().replace(/\\/g, '/');
   return Boolean(normalized)
     && !normalized.includes('..')
@@ -66,6 +67,20 @@ function getRuntimeManifestFile(): string | null {
   return resolveDistDataFile(relativePath);
 }
 
+function collectPortableRuntimePaths(value: unknown, output: Set<string>): void {
+  if (isPortableRuntimePath(value)) {
+    output.add(value.replace(/\\/g, '/'));
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) collectPortableRuntimePaths(item, output);
+    return;
+  }
+  const record = asRecord(value);
+  if (!record) return;
+  for (const item of Object.values(record)) collectPortableRuntimePaths(item, output);
+}
+
 function getDeclaredRuntimeFilePaths(): Set<string> {
   const declared = new Set<string>();
   const runtimeManifestPath = getRuntimeManifestRelativePath();
@@ -73,13 +88,8 @@ function getDeclaredRuntimeFilePaths(): Set<string> {
 
   const runtimeManifest = getRuntimeManifest();
   const entrypoints = asRecord(runtimeManifest?.entrypoints);
-  const files = asRecord(runtimeManifest?.files);
-  for (const source of [entrypoints, files]) {
-    if (!source) continue;
-    for (const value of Object.values(source)) {
-      if (isPortableRuntimePath(value)) declared.add(value.replace(/\\/g, '/'));
-    }
-  }
+  collectPortableRuntimePaths(entrypoints, declared);
+  collectPortableRuntimePaths(runtimeManifest?.files, declared);
   return declared;
 }
 
