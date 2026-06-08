@@ -1,4 +1,4 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
@@ -26,7 +26,7 @@ test("history strip renders through the native browser surface", () => {
 test("native browser surface keeps history rendering on the atlas path without DOM grid fallback", () => {
   const source = readSource("src/components/native-surface/NativeBrowserSurface.vue");
 
-  assert.match(source, /getAllGlobalBrowserAtlasTextureDescriptors/);
+  assert.match(source, /getGlobalBrowserAtlasTextureDescriptorsForKeys/);
   assert.match(source, /spriteCommands: frame\.spriteCommands \?\? \[\]/);
   assert.match(source, /controller\.setHistoryItems\(props\.historyItemIds\)/);
   assert.doesNotMatch(source, /<HomeCanvasGrid/);
@@ -44,3 +44,4 @@ test("history surface projects entries from native runtime packs", () => {
   assert.match(workerSource, /source: "runtime-history-pack"/);
   assert.doesNotMatch(workerSource, /&& !surface\.enableHistoryViewport/);
 });
+

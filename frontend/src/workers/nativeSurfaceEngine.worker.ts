@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   NativeSurfaceEngineRequest,
   NativeSurfaceEngineResponse,
   NativeSurfaceEngineEntry,
@@ -45,6 +45,7 @@ type SurfaceState = {
   runtimeBrowserIndexByItemId: Map<string, number>;
   groupByKey: Map<string, NativeRuntimeGroup>;
   searchByItemId: Map<string, NativeRuntimeSearchItem>;
+  runtimeSearchExactIndex: Map<string, Uint32Array>;
   stringByItemId: Map<string, NativeRuntimeStringItem>;
   textureByItemId: Map<string, NativeRuntimeTextureItem>;
   animationByItemId: Map<string, NativeRuntimeAnimationItem>;
@@ -56,6 +57,12 @@ type SurfaceState = {
   runtimeBrowserWasmLen: number;
   runtimeBrowserWasmItemCount: number;
   runtimeBrowserWasmProjectedEntries: number;
+  currentPageSize: number;
+  currentWindowEntries: number;
+  lastProjectionMs: number;
+  lastProjectionTotalEntries: number;
+  lastProjectionQuery: string;
+  lastProjectionSource: "browser" | "search" | "empty";
   runtimeSearchWasmPtr: number;
   runtimeSearchWasmLen: number;
   runtimeGroupWasmPtr: number;
@@ -750,6 +757,85 @@ function parseNativeAnimationPack(payloadBuffer: ArrayBuffer): Map<string, Nativ
 }
 
 
+function normalizeRuntimeSearchKey(value: unknown): string {
+  return `${value ?? ""}`.trim().toLowerCase().replace(/\s+/g, "");
+}
+
+function addRuntimeSearchIndexCandidate(
+  index: Map<string, number[]>,
+  key: string,
+  browserIndex: number,
+): void {
+  const normalized = normalizeRuntimeSearchKey(key);
+  if (!normalized) return;
+  const list = index.get(normalized);
+  if (list) {
+    list.push(browserIndex);
+    return;
+  }
+  index.set(normalized, [browserIndex]);
+}
+
+function buildRuntimeSearchExactIndex(searchByItemId: Map<string, NativeRuntimeSearchItem>): Map<string, Uint32Array> {
+  const mutableIndex = new Map<string, number[]>();
+  for (const item of searchByItemId.values()) {
+    const browserIndex = Math.max(0, Math.floor(Number(item.browserIndex) || 0));
+    addRuntimeSearchIndexCandidate(mutableIndex, item.itemId, browserIndex);
+    addRuntimeSearchIndexCandidate(mutableIndex, item.publicItemId, browserIndex);
+    addRuntimeSearchIndexCandidate(mutableIndex, item.localizedName, browserIndex);
+    addRuntimeSearchIndexCandidate(mutableIndex, item.modId, browserIndex);
+    addRuntimeSearchIndexCandidate(mutableIndex, item.normalizedLocalizedName, browserIndex);
+    addRuntimeSearchIndexCandidate(mutableIndex, item.normalizedInternalName, browserIndex);
+    addRuntimeSearchIndexCandidate(mutableIndex, item.normalizedItemId, browserIndex);
+    addRuntimeSearchIndexCandidate(mutableIndex, item.pinyinFull, browserIndex);
+    addRuntimeSearchIndexCandidate(mutableIndex, item.pinyinAcronym, browserIndex);
+    for (const token of `${item.normalizedSearchTerms ?? ""}`.split(/[|,;\s]+/)) {
+      addRuntimeSearchIndexCandidate(mutableIndex, token, browserIndex);
+    }
+  }
+  const result = new Map<string, Uint32Array>();
+  for (const [key, values] of mutableIndex) {
+    values.sort((left, right) => left - right);
+    const unique: number[] = [];
+    let previous = -1;
+    for (const value of values) {
+      if (value === previous) continue;
+      unique.push(value);
+      previous = value;
+    }
+    result.set(key, Uint32Array.from(unique));
+  }
+  return result;
+}
+
+function computeIndexedRuntimeVisibleEntries(
+  surface: SurfaceState,
+  browserPack: NativeCompactBrowserPack,
+  normalizedQuery: string,
+): Uint32Array | null {
+  if (!normalizedQuery || surface.runtimeSearchExactIndex.size <= 0) return null;
+  const candidateIndices = surface.runtimeSearchExactIndex.get(normalizedQuery);
+  if (!candidateIndices) return null;
+  const normalizedMod = `${surface.modId ?? ""}`.trim().toLowerCase();
+  const expanded = new Set(surface.expandedGroups);
+  const collapsedSeen = new Set<string>();
+  const projected: number[] = [];
+  for (const browserIndex of candidateIndices) {
+    const row = getNativeCompactBrowserRow(browserPack, browserIndex);
+    if (!row) continue;
+    const modId = `${browserPack.strings[row.modIdRef] ?? ""}`.trim().toLowerCase();
+    if (normalizedMod && modId !== normalizedMod) continue;
+    const groupKey = browserPack.strings[row.groupKeyRef] ?? "";
+    const collapsedGroup = Boolean(groupKey) && !expanded.has(groupKey);
+    if (collapsedGroup) {
+      if (collapsedSeen.has(groupKey)) continue;
+      collapsedSeen.add(groupKey);
+    }
+    projected.push(collapsedGroup ? (browserIndex | 0x80000000) >>> 0 : browserIndex >>> 0);
+  }
+  surface.runtimeBrowserWasmProjectedEntries = projected.length;
+  return Uint32Array.from(projected);
+}
 function writeWasmUtf8(value: string): { ptr: number; len: number } {
   const alloc = wasmEngine?.neonei_engine_alloc;
   const memory = wasmEngine?.memory;
@@ -839,7 +925,10 @@ function getRuntimeVisibleEntries(surface: SurfaceState, browserPack: NativeComp
     "wasm-visible-v2-no-ts-fallback",
   ].join("|");
   if (surface.runtimeVisibleCacheKey === cacheKey && surface.runtimeVisibleEntries) return surface.runtimeVisibleEntries;
-  const visibleEntries = computeWasmRuntimeVisibleEntries(surface, browserPack.itemCount);
+  const projectionStartedAt = performance.now();
+  const normalizedQuery = `${surface.query ?? ""}`.trim().toLowerCase().replace(/\s+/g, "");
+  const indexedVisibleEntries = computeIndexedRuntimeVisibleEntries(surface, browserPack, normalizedQuery);
+  const visibleEntries = indexedVisibleEntries ?? computeWasmRuntimeVisibleEntries(surface, browserPack.itemCount);
   if (!visibleEntries) {
     surface.runtimeError = wasmError
       ? `WASM/browser visible projection unavailable: ${wasmError}`
@@ -847,10 +936,18 @@ function getRuntimeVisibleEntries(surface: SurfaceState, browserPack: NativeComp
     surface.runtimeVisibleCacheKey = cacheKey;
     surface.runtimeVisibleEntries = new Uint32Array();
     surface.runtimeBrowserWasmProjectedEntries = 0;
+    surface.lastProjectionMs = performance.now() - projectionStartedAt;
+    surface.lastProjectionTotalEntries = 0;
+    surface.lastProjectionQuery = `${surface.query ?? ""}`;
+    surface.lastProjectionSource = "empty";
     return surface.runtimeVisibleEntries;
   }
   surface.runtimeVisibleCacheKey = cacheKey;
   surface.runtimeVisibleEntries = visibleEntries;
+  surface.lastProjectionMs = performance.now() - projectionStartedAt;
+  surface.lastProjectionTotalEntries = visibleEntries.length;
+  surface.lastProjectionQuery = `${surface.query ?? ""}`;
+  surface.lastProjectionSource = surface.lastProjectionQuery.trim().length > 0 ? "search" : "browser";
   surface.runtimeError = null;
   return visibleEntries;
 }
@@ -868,6 +965,8 @@ function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] 
   const pageSize = Math.max(1, columns * rows);
   const start = Math.min(projectionIndices.length, (page - 1) * pageSize);
   const end = Math.min(projectionIndices.length, start + pageSize);
+  surface.currentPageSize = pageSize;
+  surface.currentWindowEntries = Math.max(0, end - start);
   const emittedCollapsedGroups = new Set<string>();
   const entries: NativeSurfaceEngineEntry[] = [];
   for (let projectionIndex = start; projectionIndex < end; projectionIndex += 1) {
@@ -986,6 +1085,7 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     runtimeBrowserIndexByItemId: new Map(),
     groupByKey: new Map(),
     searchByItemId: new Map(),
+    runtimeSearchExactIndex: new Map(),
     stringByItemId: new Map(),
     textureByItemId: new Map(),
     animationByItemId: new Map(),
@@ -997,6 +1097,12 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     runtimeBrowserWasmLen: 0,
     runtimeBrowserWasmItemCount: 0,
     runtimeBrowserWasmProjectedEntries: 0,
+    currentPageSize: 0,
+    currentWindowEntries: 0,
+    lastProjectionMs: 0,
+    lastProjectionTotalEntries: 0,
+    lastProjectionQuery: "",
+    lastProjectionSource: "empty",
     runtimeSearchWasmPtr: 0,
     runtimeSearchWasmLen: 0,
     runtimeGroupWasmPtr: 0,
@@ -1291,9 +1397,16 @@ function applyMutation(surface: SurfaceState, mutation: NativeSurfaceEngineMutat
   }
 }
 
+function getProjectionSourceForMetrics(surface: SurfaceState | null): NativeSurfaceEngineWorkerMetrics["projectionSource"] {
+  if (!surface) return "empty";
+  if (surface.browserPack) return surface.enableHistoryViewport ? "runtime-history-pack" : "runtime-browser-pack";
+  if (surface.entries.length > 0) return "compat-entries";
+  return "empty";
+}
+
 function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
   const lastSurface = lastSurfaceId ? surfaces.get(lastSurfaceId) : null;
-  const projectionSource = lastSurface ? getActiveEntries(lastSurface).source : "empty";
+  const projectionSource = getProjectionSourceForMetrics(lastSurface);
   return {
     initializedSurfaces: Array.from(surfaces.values()).filter((surface) => surface.initialized).length,
     events,
@@ -1310,7 +1423,7 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     runtimeError: lastSurface?.runtimeError ?? null,
     projectionSource,
     nativeBrowserEntries: lastSurface?.browserPack?.itemCount ?? 0,
-    nativeBrowserProjectedEntries: lastSurface?.runtimeProjectionIndices?.length ?? 0,
+    nativeBrowserProjectedEntries: lastSurface?.runtimeVisibleEntries?.length ?? 0,
     nativeBrowserWasmEntries: lastSurface?.runtimeBrowserWasmItemCount ?? 0,
     nativeBrowserWasmProjectedEntries: lastSurface?.runtimeBrowserWasmProjectedEntries ?? 0,
     nativeGroupWasmEntries: lastSurface?.runtimeGroupWasmCount ?? 0,
@@ -1318,6 +1431,15 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     nativeTextureWasmEntries: lastSurface?.runtimeTextureWasmItemCount ?? 0,
     nativeAnimationWasmEntries: lastSurface?.runtimeAnimationWasmItemCount ?? 0,
     nativeBrowserStrings: lastSurface?.stringByItemId.size ?? lastSurface?.browserPack?.stringCount ?? 0,
+    currentPage: lastSurface?.page ?? 1,
+    currentQuery: lastSurface?.query ?? "",
+    currentModFilter: lastSurface?.modId ?? null,
+    currentPageSize: lastSurface?.currentPageSize ?? 0,
+    currentWindowEntries: lastSurface?.currentWindowEntries ?? 0,
+    lastProjectionMs: lastSurface?.lastProjectionMs ?? 0,
+    lastProjectionTotalEntries: lastSurface?.lastProjectionTotalEntries ?? 0,
+    lastProjectionQuery: lastSurface?.lastProjectionQuery ?? "",
+    lastProjectionSource: lastSurface?.lastProjectionSource ?? "empty",
     updatedAt: performance.now(),
   };
 }
@@ -1351,6 +1473,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         surface.runtimeBrowserIndexByItemId = buildRuntimeBrowserIndexByItemId(surface.browserPack);
         surface.groupByKey = groupPack ? parseNativeGroupPack(groupPack.buffer) : new Map();
         surface.searchByItemId = searchPack ? parseNativeSearchPack(searchPack.buffer) : new Map();
+        surface.runtimeSearchExactIndex = buildRuntimeSearchExactIndex(surface.searchByItemId);
         surface.stringByItemId = stringPack ? parseNativeStringPack(stringPack.buffer) : new Map();
         surface.textureByItemId = texturePack ? parseNativeTexturePack(texturePack.buffer) : new Map();
         surface.animationByItemId = animationPack ? parseNativeAnimationPack(animationPack.buffer) : new Map();
@@ -1371,6 +1494,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         surface.runtimeBrowserIndexByItemId = new Map();
         surface.groupByKey = new Map();
         surface.searchByItemId = new Map();
+        surface.runtimeSearchExactIndex = new Map();
         surface.stringByItemId = new Map();
         surface.textureByItemId = new Map();
         surface.animationByItemId = new Map();
@@ -1455,12 +1579,3 @@ self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   if (!message?.type || !message.surfaceId) return;
   void handleRequest(message).then((response) => self.postMessage(response));
 };
-
-
-
-
-
-
-
-
-

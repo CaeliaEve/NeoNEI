@@ -138,3 +138,23 @@ test("native surface baseline waits for the final native frame before evaluating
   assert.match(source, /\(render\?\.textureLoaded \?\? 0\) >= minimumTextures/);
   assert.match(source, /timeout: 1_200/);
 });
+
+test("native surface baseline measures actual native search projection latency", () => {
+  const baseline = readSource("../scripts/native-surface-baseline.mjs");
+  const protocol = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");
+  const worker = readSource("src/workers/nativeSurfaceEngine.worker.ts");
+
+  assert.match(baseline, /const maxSearchMs = Number\(args\.get\("max-search-ms"\)/);
+  assert.match(baseline, /const searchProbe = await page\.evaluate\(async \(\) =>/);
+  assert.match(baseline, /metrics\.currentQuery === query/);
+  assert.match(baseline, /metrics\.lastProjectionQuery === query/);
+  assert.match(baseline, /metrics\.lastProjectionSource === "search"/);
+  assert.match(baseline, /native search response/);
+  assert.doesNotMatch(baseline, /setTimeout\(resolve, 350\)/);
+
+  assert.match(protocol, /currentQuery: string/);
+  assert.match(protocol, /lastProjectionMs: number/);
+  assert.match(protocol, /lastProjectionSource: "browser" \| "search" \| "empty"/);
+  assert.match(worker, /lastProjectionMs = performance\.now\(\) - projectionStartedAt/);
+  assert.match(worker, /lastProjectionSource = surface\.lastProjectionQuery\.trim\(\)\.length > 0 \? "search" : "browser"/);
+});

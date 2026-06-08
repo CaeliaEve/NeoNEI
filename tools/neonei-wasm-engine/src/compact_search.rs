@@ -132,6 +132,23 @@ pub fn compact_search_string(
     std::str::from_utf8(tail.get(0..len)?).ok()
 }
 
+fn normalized_string_matches(value: &str, normalized_query: &str) -> bool {
+    if value.contains(normalized_query) {
+        return true;
+    }
+    // Most search pack fields are already normalized by the compiler. Only pay
+    // the allocation cost for the rare legacy/mixed-case string that cannot be
+    // matched directly. This keeps the hot search projection path close to a
+    // zero-allocation NEI-style scan.
+    if value
+        .chars()
+        .any(|ch| ch.is_whitespace() || ch.is_uppercase())
+    {
+        return normalize_search_text(value).contains(normalized_query);
+    }
+    false
+}
+
 fn row_matches_query(
     search_pack: &[u8],
     header: CompactSearchHeader,
@@ -155,7 +172,7 @@ fn row_matches_query(
     .into_iter()
     .any(|string_ref| {
         let value = compact_search_string(search_pack, header, string_ref).unwrap_or("");
-        normalize_search_text(value).contains(normalized_query)
+        normalized_string_matches(value, normalized_query)
     })
 }
 
@@ -289,3 +306,4 @@ mod tests {
         ));
     }
 }
+

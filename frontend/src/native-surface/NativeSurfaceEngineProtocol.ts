@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   NativeSurfaceLayoutCommand,
   NativeRendererBackendKind,
   NativeSurfaceId,
@@ -212,8 +212,18 @@ export type NativeSurfaceEngineWorkerMetrics = {
   nativeTextureWasmEntries: number;
   nativeAnimationWasmEntries: number;
   nativeBrowserStrings: number;
+  currentPage: number;
+  currentQuery: string;
+  currentModFilter: string | null;
+  currentPageSize: number;
+  currentWindowEntries: number;
+  lastProjectionMs: number;
+  lastProjectionTotalEntries: number;
+  lastProjectionQuery: string;
+  lastProjectionSource: "browser" | "search" | "empty";
   updatedAt: number;
 };
+
 
 
 

@@ -28,6 +28,7 @@ const requireWebgpu = args.has("require-webgpu");
 const maxSettingsOpenMs = Number(args.get("max-settings-open-ms") || 250);
 const maxFlipP95Ms = Number(args.get("max-flip-p95-ms") || 80);
 const maxTextureErrors = Number(args.get("max-texture-errors") || 0);
+const maxSearchMs = Number(args.get("max-search-ms") || 250);
 const minTexturesLoaded = Number(args.get("min-textures-loaded") || 1);
 const maxHotPathRequests = Number(args.get("max-hot-path-requests") || 0);
 const maxLayoutRebuilds = Number(args.get("max-layout-rebuilds") || (pageFlips + 12));
@@ -147,18 +148,59 @@ async function main() {
   });
   await page.waitForTimeout(150);
 
-  const searchMs = await page.evaluate(async () => {
-    const input = document.querySelector("input[type='text'], input:not([type])");
-    if (!input) return null;
+  await page.waitForFunction(
+    () => {
+      const engine = globalThis.__NEONEI_NATIVE_SURFACE_ENGINE_METRICS__?.();
+      const render = globalThis.__NEONEI_NATIVE_RENDER_METRICS__?.();
+      return Boolean(
+        engine?.runtimeReady === true
+        && (engine?.runtimePacks ?? 0) > 0
+        && (engine?.layoutCommands ?? 0) > 0
+        && (render?.frames ?? 0) > 0
+        && (render?.textureLoaded ?? 0) >= 1
+      );
+    },
+    null,
+    { timeout: 8_000 },
+  ).catch(() => {});
+  const searchProbe = await page.evaluate(async () => {
+    const input = document.querySelector("input.chrome-search-input, .search-anchor input[type='text'], input[type='text'], input:not([type])");
+    if (!(input instanceof HTMLInputElement)) return { searchMs: null, metrics: null, reason: "missing-input" };
+    const query = "\u94c1\u952d";
     const start = performance.now();
-    input.value = "\u94c1\u952d";
+    input.value = query;
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    await new Promise((resolve) => setTimeout(resolve, 350));
+    let metrics = null;
+    while (performance.now() - start < 2000) {
+      metrics = globalThis.__NEONEI_NATIVE_SURFACE_ENGINE_METRICS__?.() ?? null;
+      if (
+        metrics
+        && metrics.currentQuery === query
+        && metrics.lastProjectionQuery === query
+        && metrics.lastProjectionSource === "search"
+        && (metrics.layoutCommands ?? 0) > 0
+        && (metrics.currentWindowEntries ?? 0) > 0
+      ) {
+        const elapsed = performance.now() - start;
+        input.value = "";
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        return { searchMs: elapsed, metrics, reason: "ready" };
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
     input.value = "";
     input.dispatchEvent(new Event("input", { bubbles: true }));
-    return performance.now() - start;
+    return { searchMs: performance.now() - start, metrics, reason: "timeout" };
   });
-  await page.waitForTimeout(350);
+  const searchMs = searchProbe.searchMs;
+  await page.waitForFunction(
+    () => {
+      const metrics = globalThis.__NEONEI_NATIVE_SURFACE_ENGINE_METRICS__?.();
+      return Boolean(metrics && metrics.currentQuery === "" && metrics.lastProjectionSource !== "search");
+    },
+    null,
+    { timeout: 1_000 },
+  ).catch(() => {});
   await page.waitForFunction(
     (minimumTextures) => {
       const render = globalThis.__NEONEI_NATIVE_RENDER_METRICS__?.();
@@ -203,6 +245,7 @@ async function main() {
       settingsOpenMs,
       settingsCanvasCount,
       searchMs,
+      searchProbe,
     },
     errors,
     hotPathRequests,
@@ -222,6 +265,14 @@ async function main() {
   }
   if (Number.isFinite(maxSettingsOpenMs) && settingsOpenMs > maxSettingsOpenMs) {
     gateFailures.push(`settings panel open time ${Math.round(settingsOpenMs)}ms exceeds ${maxSettingsOpenMs}ms`);
+  }
+  if (searchMs === null || !Number.isFinite(Number(searchMs))) {
+    gateFailures.push(`native search probe did not complete (${searchProbe?.reason ?? "unknown"})`);
+  } else if (Number.isFinite(maxSearchMs) && Number(searchMs) > maxSearchMs) {
+    gateFailures.push(`native search response ${Math.round(Number(searchMs))}ms exceeds ${maxSearchMs}ms (${searchProbe?.reason ?? "unknown"})`);
+  }
+  if (searchProbe?.reason && searchProbe.reason !== "ready") {
+    gateFailures.push(`native search probe ended with ${searchProbe.reason}`);
   }
   if (!final.nativeEngineMetrics) {
     gateFailures.push("native engine metrics are missing");
@@ -296,6 +347,8 @@ async function main() {
     flipAvgMs: Math.round(report.interactions.flipMs.avg),
     flipP95Ms: Math.round(report.interactions.flipMs.p95),
     settingsOpenMs: Math.round(settingsOpenMs),
+    searchMs: searchMs === null ? null : Math.round(Number(searchMs)),
+    searchProbeReason: searchProbe?.reason ?? null,
     nativeRuntimeReady: Boolean(report.final.nativeEngineMetrics?.runtimeReady),
     nativeLayoutRebuilds: report.final.nativeEngineMetrics?.layoutRebuilds ?? 0,
     nativeFrameRequests: report.final.nativeEngineMetrics?.frameRequests ?? 0,
@@ -309,6 +362,7 @@ async function main() {
     hotPathRequests: hotPathRequests.length,
     maxFlipP95Ms,
     maxSettingsOpenMs,
+    maxSearchMs,
     maxLayoutRebuilds,
     minTexturesLoaded,
     maxTextureErrors,
@@ -324,3 +378,10 @@ main().catch((error) => {
   console.error(`[native-surface-baseline] failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
+
+
+
+
+
+
+
