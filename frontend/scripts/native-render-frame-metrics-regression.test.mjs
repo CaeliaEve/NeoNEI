@@ -18,7 +18,7 @@ function readRepo(relativePath) {
 
 test("native render protocol exposes segmented frame timing metrics", () => {
   const source = readFrontend("src/native-surface/NativeSurfaceRenderProtocol.ts");
-  for (const field of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "latestFrameToken", "droppedStaleFrames", "textureUploadConcurrency", "textureUploadBatches", "lastTextureUploadMs"]) {
+  for (const field of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "latestFrameToken", "droppedStaleFrames", "textureUploadConcurrency", "textureUploadBatches", "latestTextureUploadToken", "cancelledTextureUploads", "lastTextureUploadMs"]) {
     assert.match(source, new RegExp(`${field}: number`));
   }
   assert.match(source, /contextLost: boolean/);
@@ -43,6 +43,21 @@ test("native render worker batches atlas texture uploads instead of decoding all
   assert.doesNotMatch(source, /Promise\.all\(uniqueTextures\.map/);
   assert.match(source, /textureUploadBatches/);
   assert.match(source, /lastTextureUploadMs/);
+});
+
+test("native render worker cancels obsolete atlas uploads during rapid paging", () => {
+  const protocol = readFrontend("src/native-surface/NativeSurfaceRenderProtocol.ts");
+  const worker = readFrontend("src/workers/nativeRender.worker.ts");
+
+  assert.match(protocol, /latestTextureUploadToken: number/);
+  assert.match(protocol, /cancelledTextureUploads: number/);
+  assert.match(worker, /let latestTextureUploadToken = 0/);
+  assert.match(worker, /let cancelledTextureUploads = 0/);
+  assert.match(worker, /const uploadToken = latestTextureUploadToken \+ 1/);
+  assert.match(worker, /latestTextureUploadToken = uploadToken/);
+  assert.match(worker, /if \(uploadToken !== latestTextureUploadToken\)/);
+  assert.match(worker, /cancelledTextureUploads \+= 1/);
+  assert.match(worker, /await uploadTexturesInBatches\(uniqueTextures, uploadToken\)/);
 });
 
 test("native render worker virtualizes oversized atlas textures into GPU-safe tiles", () => {

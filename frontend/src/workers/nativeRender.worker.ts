@@ -25,6 +25,8 @@ let vertexCount = 0;
 let textureErrors = 0;
 let textureLoaded = 0;
 let textureUploadBatches = 0;
+let latestTextureUploadToken = 0;
+let cancelledTextureUploads = 0;
 let lastTextureUploadMs = 0;
 let latestFrameToken = 0;
 let droppedStaleFrames = 0;
@@ -89,6 +91,8 @@ function buildMetrics(): NativeRendererFrameMetrics {
     textureErrors,
     textureUploadConcurrency: TEXTURE_UPLOAD_CONCURRENCY,
     textureUploadBatches,
+    latestTextureUploadToken,
+    cancelledTextureUploads,
     lastTextureUploadMs,
     lastFrameMs,
     lastParseMs,
@@ -235,15 +239,20 @@ async function uploadTexture(key: string, url: string): Promise<void> {
   }
 }
 
-async function uploadTexturesInBatches(textures: Array<{ key: string; url: string }>): Promise<void> {
+async function uploadTexturesInBatches(textures: Array<{ key: string; url: string }>, uploadToken: number): Promise<void> {
   const startedAt = performance.now();
   textureUploadBatches = 0;
   const pending = textures.filter((texture) => texture.key && !uploadedTextureKeys.has(texture.key));
   for (let offset = 0; offset < pending.length; offset += TEXTURE_UPLOAD_CONCURRENCY) {
+    if (uploadToken !== latestTextureUploadToken) {
+      cancelledTextureUploads += 1;
+      break;
+    }
     const batch = pending.slice(offset, offset + TEXTURE_UPLOAD_CONCURRENCY);
     textureUploadBatches += 1;
     await Promise.all(batch.map(async (texture) => {
       try {
+        if (uploadToken !== latestTextureUploadToken) return;
         await uploadTexture(texture.key, texture.url);
       } catch {
         textureErrors += 1;
@@ -283,8 +292,10 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       return { type: "ready", id: message.id, backend, limits, metrics: buildMetrics() };
     }
     case "loadTextures": {
+      const uploadToken = latestTextureUploadToken + 1;
+      latestTextureUploadToken = uploadToken;
       const uniqueTextures = Array.from(new Map(message.textures.map((texture) => [texture.key, texture])).values());
-      await uploadTexturesInBatches(uniqueTextures);
+      await uploadTexturesInBatches(uniqueTextures, uploadToken);
       return {
         type: "textureLoaded",
         id: message.id,
@@ -353,6 +364,8 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       textureLoaded = 0;
       rendererMaxTextureSize = 0;
       textureUploadBatches = 0;
+      latestTextureUploadToken = 0;
+      cancelledTextureUploads = 0;
       lastTextureUploadMs = 0;
       latestFrameToken = 0;
       droppedStaleFrames = 0;

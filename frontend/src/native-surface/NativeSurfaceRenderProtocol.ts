@@ -85,6 +85,8 @@ export type NativeRendererFrameMetrics = {
   textureErrors: number;
   textureUploadConcurrency: number;
   textureUploadBatches: number;
+  latestTextureUploadToken: number;
+  cancelledTextureUploads: number;
   lastTextureUploadMs: number;
   lastFrameMs: number;
   lastParseMs: number;
