@@ -324,7 +324,7 @@ async function main() {
     if (final.nativeRenderMetrics.contextLost === true) {
       gateFailures.push(`native render context was lost: ${final.nativeRenderMetrics.contextLostReason ?? "unknown"}`);
     }
-    for (const metricName of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "latestTextureUploadToken", "cancelledTextureUploads"]) {
+    for (const metricName of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "latestTextureUploadToken", "cancelledTextureUploads", "lastTextureReadyDelayMs"]) {
       if (!Number.isFinite(Number(final.nativeRenderMetrics[metricName]))) {
         gateFailures.push(`native render metric ${metricName} is missing or non-finite`);
       }
@@ -361,6 +361,7 @@ async function main() {
     nativeRenderLastFrameMs: Math.round(report.final.nativeRenderMetrics?.lastFrameMs ?? 0),
     nativeRenderFrameP95Ms: Math.round(report.final.nativeRenderMetrics?.frameP95Ms ?? 0),
     nativeRenderLastDrawMs: Math.round(report.final.nativeRenderMetrics?.lastDrawMs ?? 0),
+    nativeRenderTextureDelayMs: Math.round(report.final.nativeRenderMetrics?.lastTextureReadyDelayMs ?? 0),
     nativeRenderContextLost: Boolean(report.final.nativeRenderMetrics?.contextLost),
     nativeRenderContextLostReason: report.final.nativeRenderMetrics?.contextLostReason ?? null,
     nativeRenderCancelledTextureUploads: report.final.nativeRenderMetrics?.cancelledTextureUploads ?? 0,

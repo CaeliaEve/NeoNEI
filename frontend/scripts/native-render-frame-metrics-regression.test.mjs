@@ -18,7 +18,7 @@ function readRepo(relativePath) {
 
 test("native render protocol exposes segmented frame timing metrics", () => {
   const source = readFrontend("src/native-surface/NativeSurfaceRenderProtocol.ts");
-  for (const field of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "latestFrameToken", "droppedStaleFrames", "textureUploadConcurrency", "textureUploadBatches", "latestTextureUploadToken", "cancelledTextureUploads", "lastTextureUploadMs"]) {
+  for (const field of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "latestFrameToken", "droppedStaleFrames", "textureUploadConcurrency", "textureUploadBatches", "latestTextureUploadToken", "cancelledTextureUploads", "lastTextureUploadMs", "lastTextureReadyDelayMs"]) {
     assert.match(source, new RegExp(`${field}: number`));
   }
   assert.match(source, /contextLost: boolean/);
@@ -43,6 +43,7 @@ test("native render worker batches atlas texture uploads instead of decoding all
   assert.doesNotMatch(source, /Promise\.all\(uniqueTextures\.map/);
   assert.match(source, /textureUploadBatches/);
   assert.match(source, /lastTextureUploadMs/);
+  assert.match(source, /lastTextureReadyDelayMs/);
 });
 
 test("native render worker cancels obsolete atlas uploads during rapid paging", () => {
@@ -55,6 +56,8 @@ test("native render worker cancels obsolete atlas uploads during rapid paging", 
   assert.match(worker, /let cancelledTextureUploads = 0/);
   assert.match(worker, /const uploadToken = latestTextureUploadToken \+ 1/);
   assert.match(worker, /latestTextureUploadToken = uploadToken/);
+  assert.match(worker, /textureUploadRequestedAt = performance\.now\(\)/);
+  assert.match(worker, /lastTextureReadyDelayMs = performance\.now\(\) - textureUploadRequestedAt/);
   assert.match(worker, /if \(uploadToken !== latestTextureUploadToken\)/);
   assert.match(worker, /cancelledTextureUploads \+= 1/);
   assert.match(worker, /await uploadTexturesInBatches\(uniqueTextures, uploadToken\)/);
@@ -78,6 +81,8 @@ test("native surface benchmark gates segmented render metrics", () => {
   assert.match(source, /frameP95Ms/);
   assert.match(source, /latestTextureUploadToken/);
   assert.match(source, /cancelledTextureUploads/);
+  assert.match(source, /lastTextureReadyDelayMs/);
+  assert.match(source, /nativeRenderTextureDelayMs/);
   assert.match(source, /native render context was lost/);
   assert.match(source, /nativeRenderContextLost/);
   assert.match(source, /nativeRenderCancelledTextureUploads/);

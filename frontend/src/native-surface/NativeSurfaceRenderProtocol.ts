@@ -88,6 +88,7 @@ export type NativeRendererFrameMetrics = {
   latestTextureUploadToken: number;
   cancelledTextureUploads: number;
   lastTextureUploadMs: number;
+  lastTextureReadyDelayMs: number;
   lastFrameMs: number;
   lastParseMs: number;
   lastSpriteNormalizeMs: number;

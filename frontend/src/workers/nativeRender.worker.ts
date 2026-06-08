@@ -28,6 +28,8 @@ let textureUploadBatches = 0;
 let latestTextureUploadToken = 0;
 let cancelledTextureUploads = 0;
 let lastTextureUploadMs = 0;
+let lastTextureReadyDelayMs = 0;
+let textureUploadRequestedAt = 0;
 let latestFrameToken = 0;
 let droppedStaleFrames = 0;
 let lastFrameMs = 0;
@@ -94,6 +96,7 @@ function buildMetrics(): NativeRendererFrameMetrics {
     latestTextureUploadToken,
     cancelledTextureUploads,
     lastTextureUploadMs,
+    lastTextureReadyDelayMs,
     lastFrameMs,
     lastParseMs,
     lastSpriteNormalizeMs,
@@ -294,8 +297,12 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
     case "loadTextures": {
       const uploadToken = latestTextureUploadToken + 1;
       latestTextureUploadToken = uploadToken;
+      textureUploadRequestedAt = performance.now();
       const uniqueTextures = Array.from(new Map(message.textures.map((texture) => [texture.key, texture])).values());
       await uploadTexturesInBatches(uniqueTextures, uploadToken);
+      if (uploadToken === latestTextureUploadToken) {
+        lastTextureReadyDelayMs = performance.now() - textureUploadRequestedAt;
+      }
       return {
         type: "textureLoaded",
         id: message.id,
@@ -367,6 +374,8 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       latestTextureUploadToken = 0;
       cancelledTextureUploads = 0;
       lastTextureUploadMs = 0;
+      lastTextureReadyDelayMs = 0;
+      textureUploadRequestedAt = 0;
       latestFrameToken = 0;
       droppedStaleFrames = 0;
       lastFrameMs = 0;
