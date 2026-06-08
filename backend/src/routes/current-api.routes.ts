@@ -1,6 +1,6 @@
 ﻿import fs from 'fs';
 import path from 'path';
-import { Router, type Response } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import { PUBLIC_DIR } from '../config/runtime-paths';
 import { getIndexedRecipesService } from '../services/recipes-indexed.service';
 import { getNativeRenderRuntimeDiagnostics } from '../services/native-render-runtime-diagnostics.service';
@@ -15,6 +15,8 @@ const API_SCHEMA = 'neonei/api/current';
 const API_SCHEMA_REVISION = 1;
 const DIST_DATA_DIR = path.join(PUBLIC_DIR, 'dist-data');
 const DIST_DATA_MANIFEST_FILE = path.join(DIST_DATA_DIR, 'manifest.json');
+const CURRENT_RUNTIME_ASSET_ROUTE = '/runtime/current/asset/:fileName(*)';
+const PINNED_RUNTIME_ASSET_ROUTE = '/runtime/:runtimeId/asset/:fileName(*)';
 
 function readJson(filePath: string): JsonRecord | null {
   try {
@@ -209,6 +211,18 @@ function sendRuntimeAsset(fileName: string | undefined, res: Response): void {
   res.sendFile(filePath);
 }
 
+function assetPathFromMountedRequest(req: Request): string {
+  return decodeURIComponent(req.path.replace(/^\/+/, ''));
+}
+
+function sendMountedRuntimeAsset(req: Request, res: Response, next: NextFunction): void {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    next();
+    return;
+  }
+  sendRuntimeAsset(assetPathFromMountedRequest(req), res);
+}
+
 function resolveRuntimeReport(reportName: string | undefined): string {
   const normalized = normalizeRequiredParam(reportName, 'reportName')
     .replace(/\.json$/i, '')
@@ -347,9 +361,11 @@ router.get('/runtime/current/manifest', (_req, res) => {
   sendRuntimeManifest(res);
 });
 
-router.get('/runtime/current/asset/:fileName(*)', (req, res) => {
+router.get(CURRENT_RUNTIME_ASSET_ROUTE, (req, res) => {
   sendRuntimeAsset(req.params.fileName, res);
 });
+
+router.use('/runtime/current/asset', sendMountedRuntimeAsset);
 
 router.get('/runtime/current/reports/:reportName', (req, res) => {
   sendRuntimeReport(req.params.reportName, res);
@@ -360,9 +376,18 @@ router.get('/runtime/:runtimeId/manifest', (req, res) => {
   sendRuntimeManifest(res, { immutable: true });
 });
 
-router.get('/runtime/:runtimeId/asset/:fileName(*)', (req, res) => {
+router.get(PINNED_RUNTIME_ASSET_ROUTE, (req, res) => {
   assertCurrentRuntimeId(req.params.runtimeId);
   sendRuntimeAsset(req.params.fileName, res);
+});
+
+router.use('/runtime/:runtimeId/asset', (req, res, next) => {
+  if (req.method !== 'GET' && req.method !== 'HEAD') {
+    next();
+    return;
+  }
+  assertCurrentRuntimeId(req.params.runtimeId);
+  sendRuntimeAsset(assetPathFromMountedRequest(req), res);
 });
 
 router.get('/runtime/:runtimeId/reports/:reportName', (req, res) => {
