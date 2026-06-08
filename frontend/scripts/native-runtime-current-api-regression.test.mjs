@@ -50,3 +50,18 @@ test("native runtime packs are on by default unless explicitly disabled", () => 
     "native runtime packs must not require an opt-in env flag on the production homepage",
   );
 });
+
+test("recipe detail hydration uses the low-frequency current recipe page API", () => {
+  const client = readSource("src/runtime/indexedRecipeClient.ts");
+  const facade = readSource("src/services/api/runtimeFacade.ts");
+  const hydrator = readSource("src/composables/useRecipeDetailHydrator.ts");
+
+  assert.match(client, /getCurrentRecipePage/);
+  assert.match(client, /\/recipes\/page\/\$\{encodeURIComponent\(normalizedRecipePageId\)\}/);
+  assert.match(client, /CurrentApiEnvelope/);
+  assert.match(facade, /getCurrentRecipePage\(recipePageId: string/);
+  assert.match(hydrator, /hydrateFromCurrentRecipePageApi/);
+  assert.match(hydrator, /api\.getCurrentRecipePage\(recipeId\)/);
+  assert.match(hydrator, /convertIndexedRecipe\(page\.recipe\)/);
+  assert.match(hydrator, /additionalData\.uiPayload = page\.uiPayload/);
+});

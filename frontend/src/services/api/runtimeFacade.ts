@@ -62,7 +62,7 @@
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../../runtime/patternClient';
 import { specialDataRuntimeClient } from '../../runtime/specialDataClient';
 import { renderContractRuntimeClient } from '../../runtime/renderContractClient';
-import { indexedRecipeRuntimeClient, type IndexedMachineRecipesResponse } from '../../runtime/indexedRecipeClient';
+import { indexedRecipeRuntimeClient, type CurrentRecipePageResponse, type IndexedMachineRecipesResponse } from '../../runtime/indexedRecipeClient';
 import { itemRuntimeClient, type ItemMachinesResponse } from '../../runtime/itemClient';
 import {
   browserCatalogClient,
@@ -365,6 +365,10 @@ export const api = {
   // Get recipe by ID
   async getIndexedRecipe(recipeId: string): Promise<indexedRecipe> {
     return indexedRecipeRuntimeClient.getRecipe(recipeId);
+  },
+
+  async getCurrentRecipePage(recipePageId: string, options?: SearchItemsFastOptions): Promise<CurrentRecipePageResponse> {
+    return indexedRecipeRuntimeClient.getCurrentRecipePage(recipePageId, options);
   },
 
   async getIndexedRecipesByIds(recipeIds: string[], options?: SearchItemsFastOptions): Promise<indexedRecipe[]> {

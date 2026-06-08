@@ -1,6 +1,7 @@
 import { ref, type Ref } from 'vue';
-import type { Recipe } from '../services/api';
+import { api, type Recipe } from '../services/api';
 import { extractVariantGroups } from './recipe-browser/helpers';
+import { convertIndexedRecipe } from '../domain/recipeNormalization';
 
 export function useRecipeDetailHydrator(args: {
   itemIdRef: Ref<string | undefined>;
@@ -221,6 +222,35 @@ export function useRecipeDetailHydrator(args: {
     };
   };
 
+  const hydrateFromCurrentRecipePageApi = async (recipeIds: string[]): Promise<Recipe[]> => {
+    const hydrated: Recipe[] = [];
+    const nextFailures = new Set(detailFailedRecipeIds.value);
+
+    await Promise.all(recipeIds.map(async (recipeId) => {
+      try {
+        const page = await api.getCurrentRecipePage(recipeId);
+        const normalized = convertIndexedRecipe(page.recipe);
+        const additionalData =
+          normalized.additionalData && typeof normalized.additionalData === 'object'
+            ? ({ ...(normalized.additionalData as Record<string, unknown>) } as Record<string, unknown>)
+            : {};
+        if (page.uiPayload) {
+          additionalData.uiPayload = page.uiPayload;
+        }
+        hydrated.push({
+          ...normalized,
+          additionalData: additionalData as Recipe['additionalData'],
+        });
+        nextFailures.delete(recipeId);
+      } catch {
+        nextFailures.add(recipeId);
+      }
+    }));
+
+    detailFailedRecipeIds.value = nextFailures;
+    return hydrated;
+  };
+
   const hydrateRecipeDetails = async (recipeIds: string[], source = 'unknown') => {
     const contextEpoch = detailEpoch;
     const contextItemId = itemIdRef.value;
@@ -266,6 +296,21 @@ export function useRecipeDetailHydrator(args: {
       if (currentRecipes.length > 0) {
         setDetailedRecipes(currentRecipes);
         mergeDetailedRecipesIntoState(currentRecipes);
+      }
+      const currentRecipeIds = new Set(currentRecipes.map((recipe) => recipe.recipeId));
+      const apiHydrationTargets = missing.filter((recipeId) => {
+        const current = currentRecipes.find((recipe) => recipe.recipeId === recipeId);
+        return !currentRecipeIds.has(recipeId) || !hasBootstrapRichData(current);
+      });
+      if (apiHydrationTargets.length > 0) {
+        const hydratedRecipes = await hydrateFromCurrentRecipePageApi(apiHydrationTargets);
+        if (disposed || contextEpoch !== detailEpoch || contextItemId !== itemIdRef.value) {
+          return;
+        }
+        if (hydratedRecipes.length > 0) {
+          setDetailedRecipes(hydratedRecipes);
+          mergeDetailedRecipesIntoState(hydratedRecipes);
+        }
       }
     } finally {
       inflightHydrationKeys.delete(hydrationKey);
