@@ -83,6 +83,9 @@ test("native surface benchmark gates segmented render metrics", () => {
   assert.match(source, /cancelledTextureUploads/);
   assert.match(source, /lastTextureReadyDelayMs/);
   assert.match(source, /nativeRenderTextureDelayMs/);
+  assert.match(source, /max-native-texture-delay-ms/);
+  assert.match(source, /native texture ready delay/);
+  assert.match(source, /maxNativeTextureDelayMs/);
   assert.match(source, /native render context was lost/);
   assert.match(source, /nativeRenderContextLost/);
   assert.match(source, /nativeRenderCancelledTextureUploads/);

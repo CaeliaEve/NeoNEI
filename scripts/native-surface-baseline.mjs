@@ -28,6 +28,7 @@ const requireWebgpu = args.has("require-webgpu");
 const maxSettingsOpenMs = Number(args.get("max-settings-open-ms") || 250);
 const maxFlipP95Ms = Number(args.get("max-flip-p95-ms") || 80);
 const maxTextureErrors = Number(args.get("max-texture-errors") || 0);
+const maxNativeTextureDelayMs = Number(args.get("max-native-texture-delay-ms") || 250);
 const maxSearchMs = Number(args.get("max-search-ms") || 250);
 const minTexturesLoaded = Number(args.get("min-textures-loaded") || 1);
 const maxHotPathRequests = Number(args.get("max-hot-path-requests") || 0);
@@ -330,6 +331,9 @@ async function main() {
     if (final.nativeRenderMetrics.contextLost === true) {
       gateFailures.push(`native render context was lost: ${final.nativeRenderMetrics.contextLostReason ?? "unknown"}`);
     }
+    if (Number.isFinite(maxNativeTextureDelayMs) && Number(final.nativeRenderMetrics.lastTextureReadyDelayMs ?? 0) > maxNativeTextureDelayMs) {
+      gateFailures.push(`native texture ready delay ${Math.round(Number(final.nativeRenderMetrics.lastTextureReadyDelayMs ?? 0))}ms exceeds ${maxNativeTextureDelayMs}ms`);
+    }
     for (const metricName of ["lastParseMs", "lastSpriteNormalizeMs", "lastDrawMs", "frameAvgMs", "frameP95Ms", "frameMaxMs", "latestTextureUploadToken", "cancelledTextureUploads", "lastTextureReadyDelayMs"]) {
       if (!Number.isFinite(Number(final.nativeRenderMetrics[metricName]))) {
         gateFailures.push(`native render metric ${metricName} is missing or non-finite`);
@@ -379,6 +383,7 @@ async function main() {
     maxLayoutRebuilds,
     minTexturesLoaded,
     maxTextureErrors,
+    maxNativeTextureDelayMs,
     gate: report.gate,
   }, null, 2));
 
@@ -391,10 +396,3 @@ main().catch((error) => {
   console.error(`[native-surface-baseline] failed: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 });
-
-
-
-
-
-
-
