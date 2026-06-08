@@ -265,7 +265,9 @@ function main() {
     warnings.push({
       code: "ANIMATION_EXPECTATION_WARNING",
       message: "some expected animated families were compiled without animated atlas/timing; fix exporter facts before release gating this as blocking",
+      schemaVersion: animationExpectations.schemaVersion ?? null,
       counts: animationExpectations.counts,
+      breakdown: animationExpectations.breakdown ?? null,
       samples: animationExpectations.samples?.staticWhenExpectedAnimated?.slice?.(0, 20) ?? [],
     });
   }
