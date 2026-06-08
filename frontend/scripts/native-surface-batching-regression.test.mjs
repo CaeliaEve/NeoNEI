@@ -55,3 +55,15 @@ test("native surface controller stops sending compat entries once native runtime
     "native runtime path should make compat entry suppression visible in metrics",
   );
 });
+
+
+test("native surface worker does not rebuild layout on every frame", () => {
+  const source = readSource("src/workers/nativeSurfaceEngine.worker.ts");
+  assert.doesNotMatch(
+    source,
+    /case "frame":\s*rebuildLayout\(surface\)/,
+    "frame requests must reuse the latest mutation-built layout instead of rebuilding every animation frame",
+  );
+  assert.match(source, /case "mutationBatch"/);
+  assert.match(source, /if \(needsLayout\) rebuildLayout\(surface\)/);
+});

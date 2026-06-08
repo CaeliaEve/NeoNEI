@@ -1407,7 +1407,6 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       break;
     }
     case "frame":
-      rebuildLayout(surface);
       return {
         type: "frame",
         id: message.id,
