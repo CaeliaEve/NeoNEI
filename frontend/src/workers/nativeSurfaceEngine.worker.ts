@@ -46,6 +46,8 @@ type SurfaceState = {
   groupByKey: Map<string, NativeRuntimeGroup>;
   searchByItemId: Map<string, NativeRuntimeSearchItem>;
   runtimeSearchExactIndex: Map<string, Uint32Array>;
+  runtimeSearchSortedKeys: string[];
+  runtimeSearchPrefixCache: Map<string, Uint32Array>;
   stringByItemId: Map<string, NativeRuntimeStringItem>;
   textureByItemId: Map<string, NativeRuntimeTextureItem>;
   animationByItemId: Map<string, NativeRuntimeAnimationItem>;
@@ -776,25 +778,9 @@ function addRuntimeSearchIndexCandidate(
   index.set(normalized, [browserIndex]);
 }
 
-function buildRuntimeSearchExactIndex(searchByItemId: Map<string, NativeRuntimeSearchItem>): Map<string, Uint32Array> {
-  const mutableIndex = new Map<string, number[]>();
-  for (const item of searchByItemId.values()) {
-    const browserIndex = Math.max(0, Math.floor(Number(item.browserIndex) || 0));
-    addRuntimeSearchIndexCandidate(mutableIndex, item.itemId, browserIndex);
-    addRuntimeSearchIndexCandidate(mutableIndex, item.publicItemId, browserIndex);
-    addRuntimeSearchIndexCandidate(mutableIndex, item.localizedName, browserIndex);
-    addRuntimeSearchIndexCandidate(mutableIndex, item.modId, browserIndex);
-    addRuntimeSearchIndexCandidate(mutableIndex, item.normalizedLocalizedName, browserIndex);
-    addRuntimeSearchIndexCandidate(mutableIndex, item.normalizedInternalName, browserIndex);
-    addRuntimeSearchIndexCandidate(mutableIndex, item.normalizedItemId, browserIndex);
-    addRuntimeSearchIndexCandidate(mutableIndex, item.pinyinFull, browserIndex);
-    addRuntimeSearchIndexCandidate(mutableIndex, item.pinyinAcronym, browserIndex);
-    for (const token of `${item.normalizedSearchTerms ?? ""}`.split(/[|,;\s]+/)) {
-      addRuntimeSearchIndexCandidate(mutableIndex, token, browserIndex);
-    }
-  }
+function dedupeRuntimeSearchIndex(index: Map<string, number[]>): Map<string, Uint32Array> {
   const result = new Map<string, Uint32Array>();
-  for (const [key, values] of mutableIndex) {
+  for (const [key, values] of index) {
     values.sort((left, right) => left - right);
     const unique: number[] = [];
     let previous = -1;
@@ -808,13 +794,76 @@ function buildRuntimeSearchExactIndex(searchByItemId: Map<string, NativeRuntimeS
   return result;
 }
 
+function buildRuntimeSearchExactIndex(searchByItemId: Map<string, NativeRuntimeSearchItem>): Map<string, Uint32Array> {
+  const exactIndex = new Map<string, number[]>();
+  const addKey = (key: unknown, browserIndex: number): void => {
+    addRuntimeSearchIndexCandidate(exactIndex, `${key ?? ""}`, browserIndex);
+  };
+  for (const item of searchByItemId.values()) {
+    const browserIndex = Math.max(0, Math.floor(Number(item.browserIndex) || 0));
+    addKey(item.itemId, browserIndex);
+    addKey(item.publicItemId, browserIndex);
+    addKey(item.localizedName, browserIndex);
+    addKey(item.modId, browserIndex);
+    addKey(item.normalizedLocalizedName, browserIndex);
+    addKey(item.normalizedInternalName, browserIndex);
+    addKey(item.normalizedItemId, browserIndex);
+    addKey(item.pinyinFull, browserIndex);
+    addKey(item.pinyinAcronym, browserIndex);
+    for (const token of `${item.normalizedSearchTerms ?? ""}`.split(/[|,;\s]+/)) {
+      addKey(token, browserIndex);
+    }
+  }
+  return dedupeRuntimeSearchIndex(exactIndex);
+}
+
+function lowerBoundRuntimeSearchKey(keys: string[], target: string): number {
+  let left = 0;
+  let right = keys.length;
+  while (left < right) {
+    const middle = (left + right) >>> 1;
+    if ((keys[middle] ?? "") < target) left = middle + 1;
+    else right = middle;
+  }
+  return left;
+}
+
+function getRuntimeSearchPrefixCandidates(surface: SurfaceState, normalizedQuery: string): Uint32Array | null {
+  const cached = surface.runtimeSearchPrefixCache.get(normalizedQuery);
+  if (cached) return cached;
+  if (surface.runtimeSearchSortedKeys.length <= 0) return null;
+  const merged: number[] = [];
+  const seen = new Set<number>();
+  for (
+    let index = lowerBoundRuntimeSearchKey(surface.runtimeSearchSortedKeys, normalizedQuery);
+    index < surface.runtimeSearchSortedKeys.length;
+    index += 1
+  ) {
+    const key = surface.runtimeSearchSortedKeys[index] ?? "";
+    if (!key.startsWith(normalizedQuery)) break;
+    const candidates = surface.runtimeSearchExactIndex.get(key);
+    if (!candidates) continue;
+    for (const candidate of candidates) {
+      if (seen.has(candidate)) continue;
+      seen.add(candidate);
+      merged.push(candidate);
+    }
+  }
+  if (merged.length <= 0) return null;
+  merged.sort((left, right) => left - right);
+  const compact = Uint32Array.from(merged);
+  surface.runtimeSearchPrefixCache.set(normalizedQuery, compact);
+  return compact;
+}
+
 function computeIndexedRuntimeVisibleEntries(
   surface: SurfaceState,
   browserPack: NativeCompactBrowserPack,
   normalizedQuery: string,
 ): Uint32Array | null {
   if (!normalizedQuery || surface.runtimeSearchExactIndex.size <= 0) return null;
-  const candidateIndices = surface.runtimeSearchExactIndex.get(normalizedQuery);
+  const candidateIndices = surface.runtimeSearchExactIndex.get(normalizedQuery)
+    ?? getRuntimeSearchPrefixCandidates(surface, normalizedQuery);
   if (!candidateIndices) return null;
   const normalizedMod = `${surface.modId ?? ""}`.trim().toLowerCase();
   const expanded = new Set(surface.expandedGroups);
@@ -1086,6 +1135,8 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     groupByKey: new Map(),
     searchByItemId: new Map(),
     runtimeSearchExactIndex: new Map(),
+    runtimeSearchSortedKeys: [],
+    runtimeSearchPrefixCache: new Map(),
     stringByItemId: new Map(),
     textureByItemId: new Map(),
     animationByItemId: new Map(),
@@ -1474,6 +1525,8 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         surface.groupByKey = groupPack ? parseNativeGroupPack(groupPack.buffer) : new Map();
         surface.searchByItemId = searchPack ? parseNativeSearchPack(searchPack.buffer) : new Map();
         surface.runtimeSearchExactIndex = buildRuntimeSearchExactIndex(surface.searchByItemId);
+        surface.runtimeSearchSortedKeys = Array.from(surface.runtimeSearchExactIndex.keys()).sort();
+        surface.runtimeSearchPrefixCache = new Map();
         surface.stringByItemId = stringPack ? parseNativeStringPack(stringPack.buffer) : new Map();
         surface.textureByItemId = texturePack ? parseNativeTexturePack(texturePack.buffer) : new Map();
         surface.animationByItemId = animationPack ? parseNativeAnimationPack(animationPack.buffer) : new Map();

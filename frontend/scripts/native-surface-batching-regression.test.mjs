@@ -158,3 +158,17 @@ test("native surface baseline measures actual native search projection latency",
   assert.match(worker, /lastProjectionMs = performance\.now\(\) - projectionStartedAt/);
   assert.match(worker, /lastProjectionSource = surface\.lastProjectionQuery\.trim\(\)\.length > 0 \? "search" : "browser"/);
 });
+
+test("native surface worker keeps prefix search on the native index hot path", () => {
+  const worker = readSource("src/workers/nativeSurfaceEngine.worker.ts");
+
+  assert.match(worker, /runtimeSearchSortedKeys: string\[\]/);
+  assert.match(worker, /runtimeSearchPrefixCache: Map<string, Uint32Array>/);
+  assert.match(worker, /function lowerBoundRuntimeSearchKey/);
+  assert.match(worker, /function getRuntimeSearchPrefixCandidates/);
+  assert.match(
+    worker,
+    /surface\.runtimeSearchExactIndex\.get\(normalizedQuery\)\s*\?\?\s*getRuntimeSearchPrefixCandidates\(surface, normalizedQuery\)/,
+    "partial/prefix searches should use the native candidate index before falling back to WASM scan",
+  );
+});
