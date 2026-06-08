@@ -2407,6 +2407,7 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
     let mut static_items = 0u64;
     let mut animated_items = 0u64;
     let mut missing_atlas_file_refs = Vec::new();
+    let mut invalid_atlas_bounds = Vec::new();
     let mut invalid_frame_bounds = Vec::new();
     let mut actionable_texture_issues = Vec::new();
     let mut animation_table = Vec::new();
@@ -2457,6 +2458,12 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
                 item.get("staticAtlas"),
                 &mut missing_atlas_file_refs,
             );
+            validate_atlas_bounds(
+                &item_id,
+                "static",
+                item.get("staticAtlas"),
+                &mut invalid_atlas_bounds,
+            );
         }
         if item
             .get("hasAnimatedAtlas")
@@ -2466,6 +2473,12 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
             animated_items += 1;
             let animated_atlas = item.get("animatedAtlas");
             validate_atlas_ref(&item_id, animated_atlas, &mut missing_atlas_file_refs);
+            validate_atlas_bounds(
+                &item_id,
+                "animated",
+                animated_atlas,
+                &mut invalid_atlas_bounds,
+            );
             validate_frame_bounds(&item_id, animated_atlas, &mut invalid_frame_bounds);
 
             let frame_duration_ms = animated_atlas
@@ -2502,10 +2515,15 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
         );
     }
 
-    if strict && (!missing_atlas_file_refs.is_empty() || !invalid_frame_bounds.is_empty()) {
+    if strict
+        && (!missing_atlas_file_refs.is_empty()
+            || !invalid_atlas_bounds.is_empty()
+            || !invalid_frame_bounds.is_empty())
+    {
         return Err(anyhow!(
-            "texture compiler blocked: missing atlas refs={}, invalid frame bounds={}",
+            "texture compiler blocked: missing atlas refs={}, invalid atlas bounds={}, invalid frame bounds={}",
             missing_atlas_file_refs.len(),
+            invalid_atlas_bounds.len(),
             invalid_frame_bounds.len()
         ));
     }
@@ -2522,6 +2540,7 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
             "nativeSpriteRows": native_sprites.len(),
             "textureRows": texture_rows.len(),
             "missingAtlasFileRefs": missing_atlas_file_refs.len(),
+            "invalidAtlasBounds": invalid_atlas_bounds.len(),
             "invalidFrameBounds": invalid_frame_bounds.len(),
             "atlasMapItems": atlas_map.len(),
         },
@@ -2530,6 +2549,7 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
         "animationTable": animation_table,
         "validation": {
             "missingAtlasFileRefs": missing_atlas_file_refs.clone(),
+            "invalidAtlasBounds": invalid_atlas_bounds.clone(),
             "invalidFrameBounds": invalid_frame_bounds.clone(),
         },
     });
@@ -2545,10 +2565,12 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
                 "animatedAtlasItems": animated_items,
                 "actionableIssues": actionable_texture_issues.len(),
                 "missingAtlasFileRefs": missing_atlas_file_refs.len(),
+                "invalidAtlasBounds": invalid_atlas_bounds.len(),
                 "invalidFrameBounds": invalid_frame_bounds.len(),
             },
             "issues": actionable_texture_issues,
             "missingAtlasFileRefs": missing_atlas_file_refs,
+            "invalidAtlasBounds": invalid_atlas_bounds,
             "invalidFrameBounds": invalid_frame_bounds,
         }),
     )?;
@@ -3605,6 +3627,36 @@ fn validate_atlas_ref(item_id: &str, atlas: Option<&Value>, missing_refs: &mut V
     }
 }
 
+fn validate_atlas_bounds(
+    item_id: &str,
+    atlas_kind: &str,
+    atlas: Option<&Value>,
+    invalid_bounds: &mut Vec<String>,
+) {
+    let Some(atlas) = atlas else {
+        return;
+    };
+    let has_rect = ["x", "y", "width", "height"]
+        .iter()
+        .any(|key| atlas.get(*key).is_some());
+    if !has_rect && atlas_kind == "animated" {
+        return;
+    }
+    let atlas_width = value_u64(atlas, "atlasWidth").unwrap_or(0);
+    let atlas_height = value_u64(atlas, "atlasHeight").unwrap_or(0);
+    let x = value_u64(atlas, "x").unwrap_or(0);
+    let y = value_u64(atlas, "y").unwrap_or(0);
+    let width = value_u64(atlas, "width").unwrap_or(0);
+    let height = value_u64(atlas, "height").unwrap_or(0);
+    if width == 0
+        || height == 0
+        || (atlas_width > 0 && x.saturating_add(width) > atlas_width)
+        || (atlas_height > 0 && y.saturating_add(height) > atlas_height)
+    {
+        invalid_bounds.push(format!("{item_id}:{atlas_kind}:out-of-bounds"));
+    }
+}
+
 fn validate_frame_bounds(item_id: &str, atlas: Option<&Value>, invalid_bounds: &mut Vec<String>) {
     let Some(atlas) = atlas else {
         return;
@@ -4108,6 +4160,85 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[8..12].try_into().unwrap()), 1);
         assert_eq!(u32::from_le_bytes(payload[12..16].try_into().unwrap()), 2);
         assert_eq!(u32::from_le_bytes(payload[20..24].try_into().unwrap()), 6);
+    }
+
+    #[test]
+    fn atlas_bounds_validation_blocks_out_of_bounds_static_rects() {
+        let valid = json!({
+            "atlasFile": "textures/atlas/static-main.webp",
+            "atlasWidth": 64,
+            "atlasHeight": 64,
+            "x": 48,
+            "y": 48,
+            "width": 16,
+            "height": 16,
+        });
+        let invalid = json!({
+            "atlasFile": "textures/atlas/static-main.webp",
+            "atlasWidth": 64,
+            "atlasHeight": 64,
+            "x": 60,
+            "y": 48,
+            "width": 16,
+            "height": 16,
+        });
+        let zero_sized = json!({
+            "atlasFile": "textures/atlas/static-main.webp",
+            "atlasWidth": 64,
+            "atlasHeight": 64,
+            "x": 0,
+            "y": 0,
+            "width": 0,
+            "height": 16,
+        });
+        let mut invalid_bounds = Vec::new();
+        validate_atlas_bounds("valid-item", "static", Some(&valid), &mut invalid_bounds);
+        assert!(invalid_bounds.is_empty());
+
+        validate_atlas_bounds("bad-item", "static", Some(&invalid), &mut invalid_bounds);
+        validate_atlas_bounds("zero-item", "static", Some(&zero_sized), &mut invalid_bounds);
+        assert_eq!(
+            invalid_bounds,
+            vec![
+                "bad-item:static:out-of-bounds".to_string(),
+                "zero-item:static:out-of-bounds".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn atlas_bounds_validation_allows_animated_frame_only_atlas() {
+        let frame_only = json!({
+            "atlasFile": "textures/atlas/animated-main.webp",
+            "atlasWidth": 16,
+            "atlasHeight": 128,
+            "frameCount": 8,
+            "frames": [[0, 0, 0, 16, 16], [1, 0, 16, 16, 16]],
+        });
+        let animated_with_bad_rect = json!({
+            "atlasFile": "textures/atlas/animated-main.webp",
+            "atlasWidth": 16,
+            "atlasHeight": 128,
+            "x": 8,
+            "y": 120,
+            "width": 16,
+            "height": 16,
+            "frames": [[0, 0, 0, 16, 16]],
+        });
+        let mut invalid_bounds = Vec::new();
+        validate_atlas_bounds("frame-only-item", "animated", Some(&frame_only), &mut invalid_bounds);
+        assert!(invalid_bounds.is_empty());
+
+        validate_atlas_bounds(
+            "bad-animated-item",
+            "animated",
+            Some(&animated_with_bad_rect),
+            &mut invalid_bounds,
+        );
+        assert_eq!(
+            invalid_bounds,
+            vec!["bad-animated-item:animated:out-of-bounds".to_string()]
+        );
     }
 
     #[test]
