@@ -119,6 +119,14 @@ function normalizeRequiredParam(value: string | undefined, name: string): string
   return normalized;
 }
 
+function assertCurrentRuntimeId(runtimeId: string | undefined): void {
+  const requested = normalizeRequiredParam(runtimeId, 'runtimeId');
+  const current = getCurrentMeta().runtimeId;
+  if (requested !== current) {
+    throw notFound('Runtime id is not the current published runtime');
+  }
+}
+
 function resolveDistDataFile(relativeFileName: string): string {
   const normalized = `${relativeFileName ?? ''}`.trim().replace(/\\/g, '/');
   if (!normalized || normalized.includes('..') || path.isAbsolute(normalized)) {
@@ -149,7 +157,9 @@ function sendRuntimeCurrent(res: Response): void {
     runtimeId: meta.runtimeId,
     schemaRevision: meta.schemaRevision,
     manifestUrl: '/api/runtime/current/manifest',
+    runtimeManifestUrl: `/api/runtime/${encodeURIComponent(meta.runtimeId)}/manifest`,
     assetBaseUrl: '/api/runtime/current/asset/',
+    runtimeAssetBaseUrl: `/api/runtime/${encodeURIComponent(meta.runtimeId)}/asset/`,
     legacyManifestUrl: '/api/native-runtime/current/manifest',
     capabilities: meta.capabilities,
     manifestPath,
@@ -179,6 +189,39 @@ function sendRuntimeAsset(fileName: string | undefined, res: Response): void {
   res.sendFile(filePath);
 }
 
+function resolveRuntimeReport(reportName: string | undefined): string {
+  const normalized = normalizeRequiredParam(reportName, 'reportName')
+    .replace(/\.json$/i, '')
+    .trim();
+  if (!/^[a-z0-9-]+$/i.test(normalized)) {
+    throw badRequest('reportName must be a simple report slug');
+  }
+  const allowedReports: Record<string, string> = {
+    'compile-report': 'rust/integrity.json',
+    'missing-texture-report': 'rust/missing-texture-report.json',
+    'suspicious-texture-report': 'rust/suspicious-texture-report.json',
+    'atlas-report': 'textures/atlas-manifest.json',
+    'performance-budget-report': 'rust/size-report.json',
+    'api-contract-report': 'validation/report.json',
+    'deployment-report': 'rust/deployment-report.json',
+    'semantic-validation-report': 'rust/semantic-validation-report.json',
+  };
+  const reportPath = allowedReports[normalized];
+  if (!reportPath) {
+    throw notFound('Runtime report is not allowed');
+  }
+  return resolveDistDataFile(reportPath);
+}
+
+function sendRuntimeReport(reportName: string | undefined, res: Response): void {
+  const filePath = resolveRuntimeReport(reportName);
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    throw notFound('Runtime report not found');
+  }
+  setNoStoreHeaders(res);
+  res.sendFile(filePath);
+}
+
 router.get('/runtime/current', (_req, res) => {
   sendRuntimeCurrent(res);
 });
@@ -189,6 +232,25 @@ router.get('/runtime/current/manifest', (_req, res) => {
 
 router.get('/runtime/current/asset/:fileName(*)', (req, res) => {
   sendRuntimeAsset(req.params.fileName, res);
+});
+
+router.get('/runtime/current/reports/:reportName', (req, res) => {
+  sendRuntimeReport(req.params.reportName, res);
+});
+
+router.get('/runtime/:runtimeId/manifest', (req, res) => {
+  assertCurrentRuntimeId(req.params.runtimeId);
+  sendRuntimeManifest(res);
+});
+
+router.get('/runtime/:runtimeId/asset/:fileName(*)', (req, res) => {
+  assertCurrentRuntimeId(req.params.runtimeId);
+  sendRuntimeAsset(req.params.fileName, res);
+});
+
+router.get('/runtime/:runtimeId/reports/:reportName', (req, res) => {
+  assertCurrentRuntimeId(req.params.runtimeId);
+  sendRuntimeReport(req.params.reportName, res);
 });
 
 router.get('/native-runtime/current/manifest', (_req, res) => {

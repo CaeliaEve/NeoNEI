@@ -10,6 +10,10 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
     '/runtime/current',
     '/runtime/current/manifest',
     '/runtime/current/asset/:fileName(*)',
+    '/runtime/current/reports/:reportName',
+    '/runtime/:runtimeId/manifest',
+    '/runtime/:runtimeId/asset/:fileName(*)',
+    '/runtime/:runtimeId/reports/:reportName',
     '/native-runtime/current/manifest',
     '/native-runtime/current/files/:fileName(*)',
     '/recipes/current/item/:itemId',
@@ -25,6 +29,10 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(routeSource.includes('capabilities'), true);
   assert.equal(routeSource.includes("manifestUrl: '/api/runtime/current/manifest'"), true);
   assert.equal(routeSource.includes("assetBaseUrl: '/api/runtime/current/asset/'"), true);
+  assert.equal(routeSource.includes('runtimeManifestUrl'), true);
+  assert.equal(routeSource.includes('runtimeAssetBaseUrl'), true);
+  assert.equal(routeSource.includes('function assertCurrentRuntimeId'), true);
+  assert.equal(routeSource.includes('function sendRuntimeReport'), true);
 });
 
 test('current API is mounted before legacy compatibility API', () => {
