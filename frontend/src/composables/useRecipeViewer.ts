@@ -1,4 +1,4 @@
-﻿import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
+﻿import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 import {
   api,
   type indexedItemRecipeSummaryResponse,
@@ -25,6 +25,13 @@ import {
   RECIPE_PAGE_PREWARM_MAX_RECIPES,
 } from './recipe-display/recipeMediaPrewarm';
 import { markPerfEvent } from '../services/perfMarks';
+import {
+  createRecipeSwitchLatencyTracker,
+  logDetailHydration,
+  logRecipeSwitchLatency,
+  logSearchLatency,
+  waitForPaint,
+} from './recipe-display/recipeViewerTelemetry';
 
 const CATEGORY_PACK_PAGE_SIZE = 8;
 const CATEGORY_PACK_IDS_ONLY_LIMIT = 0;
@@ -58,12 +65,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     resetRecipeCache,
   } = useRecipeCacheState();
   const perf = usePerfInstrumentation('recipe-viewer');
-  const pendingRecipeSwitchLatency = ref<{
-    requestSeq: number;
-    source: string;
-    startedAt: number;
-    fromRecipeId: string | null;
-  } | null>(null);
+
   const loadError = ref('');
   const producedByGraph = ref<RecipeGraph>({ docs: new Map(), producedByIndex: new Map(), usedInIndex: new Map() });
   const usedInGraph = ref<RecipeGraph>({ docs: new Map(), producedByIndex: new Map(), usedInIndex: new Map() });
@@ -82,7 +84,6 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   const categoryPackRequestsInFlight = new Map<string, Promise<void>>();
   let disposed = false;
   let loadRequestSeq = 0;
-  let recipeSwitchSeq = 0;
   let backgroundHydrationSeq = 0;
   let recipeFirstPageVisibleItemId: string | null = null;
 
@@ -91,50 +92,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       ? performance.now()
       : Date.now();
 
-  const markRecipeSwitch = (source: string) => {
-    const currentRecipeId = currentBaseRecipe.value?.recipeId ?? null;
-    pendingRecipeSwitchLatency.value = {
-      requestSeq: ++recipeSwitchSeq,
-      source,
-      startedAt: getNow(),
-      fromRecipeId: currentRecipeId,
-    };
-  };
 
-  const waitForPaint = async () => {
-    await nextTick();
-    await new Promise<void>((resolve) => {
-      if (typeof requestAnimationFrame === 'function') {
-        requestAnimationFrame(() => resolve());
-        return;
-      }
-      resolve();
-    });
-  };
-
-  const logSearchLatency = (query: string, resultCount: number, durationMs: number) => {
-    if (!import.meta.env.DEV) return;
-    console.debug(
-      `[obs] recipe-search-latency query="${query}" results=${resultCount} latency=${durationMs.toFixed(2)}ms`,
-    );
-  };
-
-  const logRecipeSwitchLatency = (
-    source: string,
-    fromRecipeId: string | null,
-    toRecipeId: string | null,
-    durationMs: number,
-  ) => {
-    if (!import.meta.env.DEV) return;
-    console.debug(
-      `[obs] recipe-switch-latency source=${source} from=${fromRecipeId ?? 'null'} to=${toRecipeId ?? 'null'} latency=${durationMs.toFixed(2)}ms`,
-    );
-  };
-
-  const logDetailHydration = (recipeIds: string[], durationMs: number, source: string) => {
-    if (!import.meta.env.DEV) return;
-    console.debug(`[obs] recipe-detail-hydration source=${source} count=${recipeIds.length} latency=${durationMs.toFixed(2)}ms ids=${recipeIds.join(',')}`);
-  };
 
   const {
     detailFailedRecipeIds,
@@ -232,6 +190,14 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     getSelectedVariant,
     getImagePath,
   });
+
+  const recipeSwitchLatency = createRecipeSwitchLatencyTracker({
+    getCurrentRecipeId: () => currentBaseRecipe.value?.recipeId ?? null,
+    getNow,
+    waitForPaint,
+    logRecipeSwitchLatency,
+  });
+  const markRecipeSwitch = recipeSwitchLatency.mark;
 
   const setRecipeVariant = (slotKey: string, variantIndex: number) => {
     const recipe = currentBaseRecipe.value;
@@ -972,7 +938,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
         lastItemId.value = itemId;
         clearSelectedVariants();
         clearRecipeSearch();
-        pendingRecipeSwitchLatency.value = null;
+        recipeSwitchLatency.clear();
       }
 
       const bootstrapStartedAt = getNow();
@@ -1228,16 +1194,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
 
   watch(
     () => `${currentTab.value}|${selectedMachineIndex.value}|${currentPage.value}|${currentBaseRecipe.value?.recipeId ?? ''}`,
-    async () => {
-      const pending = pendingRecipeSwitchLatency.value;
-      if (!pending) return;
-      const expectedSeq = pending.requestSeq;
-      await waitForPaint();
-      if (pendingRecipeSwitchLatency.value?.requestSeq !== expectedSeq) return;
-      const toRecipeId = currentBaseRecipe.value?.recipeId ?? null;
-      const durationMs = getNow() - pending.startedAt;
-      logRecipeSwitchLatency(pending.source, pending.fromRecipeId, toRecipeId, durationMs);
-      pendingRecipeSwitchLatency.value = null;
+    () => {
+      void recipeSwitchLatency.flush();
     },
   );
 
