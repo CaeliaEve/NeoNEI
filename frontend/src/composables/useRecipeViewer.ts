@@ -12,6 +12,7 @@ import { buildRecipeGraph, type RecipeGraph } from '../domain/recipeGraph';
 import { resolveRecipePresentationProfile } from '../services/uiTypeMapping';
 import { useRecipeBrowserSelectors } from './recipe-browser/useRecipeBrowserSelectors';
 import { createRecipeSearchController } from './recipe-browser/recipeSearchController';
+import { createRecipeMergeState } from './recipe-browser/recipeMergeState';
 import {
   getCategoryRecipesPerPage,
   getLoadedRecipeIdSet as buildLoadedRecipeIdSet,
@@ -344,44 +345,18 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     });
   };
 
-  const applyMergedRecipes = (mergedById: Map<string, typeof recipes.value.producedBy[number]>) => {
-    const producedBy = bootstrapRecipeIndex.value.producedByRecipes
-      .map((recipeId) => mergedById.get(recipeId))
-      .filter((recipe): recipe is typeof recipes.value.producedBy[number] => Boolean(recipe));
-    const usedIn = bootstrapRecipeIndex.value.usedInRecipes
-      .map((recipeId) => mergedById.get(recipeId))
-      .filter((recipe): recipe is typeof recipes.value.usedIn[number] => Boolean(recipe));
-
-    recipes.value = { producedBy, usedIn };
-    rebuildIndexesAndGraphs();
-  };
-
-  const mergeIndexedRecipesIntoState = (indexedRecipes: Array<{ id: string } & Record<string, unknown>>) => {
-    const mergedById = new Map<string, typeof recipes.value.producedBy[number]>();
-    for (const recipe of [...recipes.value.producedBy, ...recipes.value.usedIn]) {
-      mergedById.set(recipe.recipeId, recipe);
-    }
-    for (const indexedRecipe of indexedRecipes) {
-      const normalizedRecipe = convertIndexedRecipe(indexedRecipe as never);
-      mergedById.set(normalizedRecipe.recipeId, normalizedRecipe);
-    }
-    applyMergedRecipes(mergedById);
-  };
-
-  const removePendingRecipeIds = (kind: 'producedBy' | 'usedIn', recipeIds: string[]) => {
-    if (recipeIds.length === 0) return;
-    const next = new Set(recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean));
-    if (kind === 'producedBy') {
-      pendingProducedByRecipeIds.value = pendingProducedByRecipeIds.value.filter((recipeId) => !next.has(recipeId));
-      return;
-    }
-    pendingUsageRecipeIds.value = pendingUsageRecipeIds.value.filter((recipeId) => !next.has(recipeId));
-  };
-
-  const removePendingRecipeIdsFromAll = (recipeIds: string[]) => {
-    removePendingRecipeIds('producedBy', recipeIds);
-    removePendingRecipeIds('usedIn', recipeIds);
-  };
+  const {
+    applyMergedRecipes,
+    mergeIndexedRecipesIntoState,
+    removePendingRecipeIds,
+    removePendingRecipeIdsFromAll,
+  } = createRecipeMergeState({
+    recipes,
+    bootstrapRecipeIndex,
+    pendingProducedByRecipeIds,
+    pendingUsageRecipeIds,
+    rebuildIndexesAndGraphs,
+  });
 
   const requestRemainingShardHydration = (
     itemId: string,
