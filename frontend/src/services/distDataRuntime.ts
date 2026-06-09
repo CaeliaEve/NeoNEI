@@ -29,6 +29,17 @@ import {
   getNativeCompactBrowserRow,
   parseNativeCompactBrowserPack,
 } from "../native-surface/NativeRuntimeBrowserPack";
+import {
+  fetchDistDataArrayBuffer,
+  fetchDistDataJson,
+  getDistDataBasePath,
+  joinDistDataAssetPath,
+  preserveEncodedDistDataFileNamePath,
+} from "./distDataRuntimeAssetResolver";
+export {
+  resolveDistDataAssetPath,
+  resolveDistDataNativeRuntimeManifestPath,
+} from "./distDataRuntimeAssetResolver";
 
 type DistDataManifest = {
   schemaVersion?: string;
@@ -245,102 +256,6 @@ let browserAtlasIndexRequest: Promise<BrowserAtlasIndexResponse | null> | null =
 let cachedBrowserAtlasIndex: BrowserAtlasIndexResponse | null = null;
 let nativeRenderIndexRequest: Promise<NativeRenderIndex | null> | null = null;
 let cachedNativeRenderIndex: NativeRenderIndex | null = null;
-
-function trimSlashes(value: string): string {
-  return value.replace(/^\/+|\/+$/g, "");
-}
-
-function normalizeBasePath(value: unknown): string {
-  const raw = `${value ?? ""}`.trim();
-  if (!raw) {
-    return "/dist-data";
-  }
-  return raw.replace(/\/+$/g, "");
-}
-
-function getConfiguredBasePath(): string {
-  const envBasePath = normalizeBasePath(import.meta.env.VITE_DIST_DATA_BASE_URL);
-  if (typeof window === "undefined") {
-    return envBasePath;
-  }
-
-  try {
-    const override = window.localStorage.getItem("neonei:dist-data-base-url");
-    if (override?.trim()) {
-      return normalizeBasePath(override);
-    }
-  } catch {
-    // Storage can be unavailable in privacy modes; keep the env/default base path.
-  }
-
-  return envBasePath;
-}
-
-function joinAssetPath(basePath: string, assetPath: string): string {
-  const normalizedAssetPath = `${assetPath ?? ""}`.trim();
-  if (!normalizedAssetPath) {
-    throw new Error("Missing dist-data asset path");
-  }
-  if (/^https?:\/\//i.test(normalizedAssetPath)) {
-    return normalizedAssetPath;
-  }
-  if (/^https?:\/\//i.test(basePath)) {
-    return `${basePath}/${trimSlashes(normalizedAssetPath)}`;
-  }
-  return `${basePath.startsWith("/") ? basePath : `/${basePath}`}/${trimSlashes(normalizedAssetPath)}`;
-}
-
-function preserveEncodedFileNamePath(assetPath: string): string {
-  // Raw-export payload indexes store filenames that already contain percent-encoded
-  // recipe IDs (for example "%3D%3D"). Browsers/Express decode one URL layer
-  // before static-file lookup, so encode literal percent signs once more to
-  // address the on-disk filename instead of a decoded variant.
-  return assetPath.replace(/%/g, "%25");
-}
-
-export function resolveDistDataAssetPath(assetPath?: string | null): string | null {
-  const normalizedAssetPath = `${assetPath ?? ""}`.trim();
-  if (!normalizedAssetPath) {
-    return null;
-  }
-  return joinAssetPath(getConfiguredBasePath(), normalizedAssetPath);
-}
-
-export function resolveDistDataNativeRuntimeManifestPath(): string | null {
-  const explicitManifestUrl = `${import.meta.env.VITE_NATIVE_RUNTIME_MANIFEST_URL ?? ""}`.trim();
-  if (explicitManifestUrl) {
-    return explicitManifestUrl;
-  }
-
-  const runtimePacksEnabled = `${import.meta.env.VITE_ENABLE_NATIVE_RUNTIME_PACKS ?? ""}`.trim().toLowerCase();
-  if (runtimePacksEnabled === "0" || runtimePacksEnabled === "false" || runtimePacksEnabled === "off") {
-    return null;
-  }
-
-  return "/api/runtime/current/manifest";
-}
-
-async function fetchJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    cache: "force-cache",
-    credentials: "same-origin",
-  });
-  if (!response.ok) {
-    throw new Error(`dist-data request failed (${response.status}) for ${url}`);
-  }
-  return response.json() as Promise<T>;
-}
-
-async function fetchArrayBuffer(url: string): Promise<ArrayBuffer> {
-  const response = await fetch(url, {
-    cache: "force-cache",
-    credentials: "same-origin",
-  });
-  if (!response.ok) {
-    throw new Error(`dist-data request failed (${response.status}) for ${url}`);
-  }
-  return response.arrayBuffer();
-}
 
 function decodeBytes(buffer: ArrayBuffer, offset: number, length: number): string {
   return textDecoder.decode(new Uint8Array(buffer, offset, length));
@@ -1114,19 +1029,19 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
 
     const [nativeBrowserPack, nativeGroups, rustBrowserPack, searchPack] = await Promise.all([
       rustBrowserPath
-        ? fetchArrayBuffer(joinAssetPath(getConfiguredBasePath(), rustBrowserPath))
+        ? fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), rustBrowserPath))
           .then((buffer) => parseNativeBinaryPackEnvelope(buffer, "neonei/browser-pack/current").payload)
           .then(parseNativeBrowserPackPayload)
           .catch(() => null)
         : Promise.resolve(null),
       rustGroupPath
-        ? fetchArrayBuffer(joinAssetPath(getConfiguredBasePath(), rustGroupPath))
+        ? fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), rustGroupPath))
           .then((buffer) => parseNativeBinaryPackEnvelope(buffer, "neonei/group-pack/current").payload)
           .then(parseNativeGroupPackPayload)
           .catch(() => [])
         : Promise.resolve(null),
       rustBrowserPath && rustBrowserPath.endsWith(".json")
-        ? fetchJson<DistDataRustBrowserPackPayload>(joinAssetPath(getConfiguredBasePath(), rustBrowserPath)).catch(() => null)
+        ? fetchDistDataJson<DistDataRustBrowserPackPayload>(joinDistDataAssetPath(getDistDataBasePath(), rustBrowserPath)).catch(() => null)
         : Promise.resolve(null),
       getDistDataSearchPack(),
     ]);
@@ -1156,11 +1071,11 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
           { schemaVersion: rustBrowserPack?.schemaVersion, groups: rustBrowserPack?.groups ?? [] } satisfies DistDataGroupPayload,
         ]
       : await Promise.all([
-          fetchJson<DistDataBrowserCatalogPayload>(joinAssetPath(getConfiguredBasePath(), catalogPath)),
+          fetchDistDataJson<DistDataBrowserCatalogPayload>(joinDistDataAssetPath(getDistDataBasePath(), catalogPath)),
           hiddenCatalogPath
-            ? fetchJson<DistDataBrowserCatalogPayload>(joinAssetPath(getConfiguredBasePath(), hiddenCatalogPath)).catch(() => ({ items: [] }))
+            ? fetchDistDataJson<DistDataBrowserCatalogPayload>(joinDistDataAssetPath(getDistDataBasePath(), hiddenCatalogPath)).catch(() => ({ items: [] }))
             : Promise.resolve({ items: [] } satisfies DistDataBrowserCatalogPayload),
-          fetchJson<DistDataGroupPayload>(joinAssetPath(getConfiguredBasePath(), groupPath)),
+          fetchDistDataJson<DistDataGroupPayload>(joinDistDataAssetPath(getDistDataBasePath(), groupPath)),
         ]);
     const catalog = Array.isArray(catalogPayload.items) ? catalogPayload.items.filter((entry) => entry?.itemId) : [];
     const hiddenCatalog = Array.isArray(hiddenCatalogPayload.items) ? hiddenCatalogPayload.items.filter((entry) => entry?.itemId) : [];
@@ -1236,7 +1151,7 @@ export async function getDistDataManifest(): Promise<DistDataManifest | null> {
     return manifestRequest;
   }
 
-  manifestRequest = fetchJson<DistDataManifest>(joinAssetPath(getConfiguredBasePath(), "manifest.json"))
+  manifestRequest = fetchDistDataJson<DistDataManifest>(joinDistDataAssetPath(getDistDataBasePath(), "manifest.json"))
     .catch(() => null)
     .finally(() => {
       manifestRequest = null;
@@ -1258,7 +1173,7 @@ export async function getDistDataSearchPack(): Promise<DistDataSearchPack | null
     const runtimeEntrypoints = runtimeManifest?.entrypoints ?? (!Array.isArray(runtimeManifest?.files) ? runtimeManifest?.files : undefined) ?? {};
     const binarySearchPath = `${manifest?.files?.rustSearchBin ?? runtimeEntrypoints.search ?? ""}`.trim();
     if (manifest && binarySearchPath) {
-      const binaryPack = await fetchArrayBuffer(joinAssetPath(getConfiguredBasePath(), binarySearchPath))
+      const binaryPack = await fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), binarySearchPath))
         .then((buffer) => parseNativeBinaryPackEnvelope(buffer, "neonei/search-pack/current").payload)
         .then((payload) => parseNativeSearchPackPayload(manifest, payload))
         .catch((error) => {
@@ -1286,7 +1201,7 @@ export async function getDistDataSearchPack(): Promise<DistDataSearchPack | null
     }
 
     for (const searchPath of searchPaths) {
-      const payload = await fetchJson<DistDataSearchPayload>(joinAssetPath(getConfiguredBasePath(), searchPath)).catch(() => null);
+      const payload = await fetchDistDataJson<DistDataSearchPayload>(joinDistDataAssetPath(getDistDataBasePath(), searchPath)).catch(() => null);
       const pack = payload ? coerceSearchPack(manifest, payload) : null;
       if (!payload || !pack?.items.length) {
         if (searchPath === `${manifest.files?.rustSearchPack ?? ""}`.trim()) {
@@ -1512,7 +1427,7 @@ async function getRustRuntimeManifest(): Promise<DistDataRustRuntimeManifest | n
     if (!manifest || !runtimeManifestPath) {
       return null;
     }
-    const payload = await fetchJson<DistDataRustRuntimeManifest>(joinAssetPath(getConfiguredBasePath(), runtimeManifestPath)).catch(() => null);
+    const payload = await fetchDistDataJson<DistDataRustRuntimeManifest>(joinDistDataAssetPath(getDistDataBasePath(), runtimeManifestPath)).catch(() => null);
     if (!payload || typeof payload !== "object") {
       reportDistDataSchemaMismatch(manifest, runtimeManifestPath, "Rust runtime manifest is missing or invalid");
       return null;
@@ -1571,7 +1486,7 @@ async function getRustRecipePack(): Promise<DistDataRustRecipePackPayload | null
     if (!recipeBinaryPath) {
       return null;
     }
-    const buffer = await fetchArrayBuffer(joinAssetPath(getConfiguredBasePath(), recipeBinaryPath)).catch(() => null);
+    const buffer = await fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), recipeBinaryPath)).catch(() => null);
     const payload = buffer
       ? (() => {
           const envelope = parseNativeBinaryPackEnvelope(buffer, "neonei/recipe-pack/current");
@@ -1631,7 +1546,7 @@ async function getRecipeItemIndex(): Promise<Map<string, DistDataRecipeItemIndex
     if (!manifest || !indexPath) {
       return null;
     }
-    const payload = await fetchJson<DistDataRecipeItemIndexPayload>(joinAssetPath(getConfiguredBasePath(), indexPath));
+    const payload = await fetchDistDataJson<DistDataRecipeItemIndexPayload>(joinDistDataAssetPath(getDistDataBasePath(), indexPath));
     const entries = Array.isArray(payload.items) ? payload.items.filter((entry) => entry?.itemId) : [];
     if (!Array.isArray(payload.items)) {
       reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data recipe item index is missing items[]", {
@@ -2061,7 +1976,7 @@ async function getRecipeUiPayloadIndex(): Promise<Map<string, DistDataRecipeUiPa
     if (!manifest || !indexPath) {
       return null;
     }
-    const payload = await fetchJson<DistDataRecipeUiPayloadIndexPayload>(joinAssetPath(getConfiguredBasePath(), indexPath));
+    const payload = await fetchDistDataJson<DistDataRecipeUiPayloadIndexPayload>(joinDistDataAssetPath(getDistDataBasePath(), indexPath));
     const entries = Array.isArray(payload.recipes) ? payload.recipes.filter((entry) => entry?.recipeId && entry?.path) : [];
     if (!Array.isArray(payload.recipes)) {
       reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data recipe UI payload index is missing recipes[]", {
@@ -2099,17 +2014,17 @@ export async function getDistDataRecipeUiPayload(recipeId: string): Promise<Reci
   const payloadKey = `${entry?.payloadKey ?? ""}`.trim();
   let payload: RecipeUiPayload | null = null;
   if (payloadKey) {
-    const shardUrl = joinAssetPath(getConfiguredBasePath(), preserveEncodedFileNamePath(payloadPath));
+    const shardUrl = joinDistDataAssetPath(getDistDataBasePath(), preserveEncodedDistDataFileNamePath(payloadPath));
     let shardRequest = cachedRecipeUiPayloadShards.get(shardUrl);
     if (!shardRequest) {
-      shardRequest = fetchJson<DistDataRecipeUiPayloadShard>(shardUrl).catch(() => null);
+      shardRequest = fetchDistDataJson<DistDataRecipeUiPayloadShard>(shardUrl).catch(() => null);
       cachedRecipeUiPayloadShards.set(shardUrl, shardRequest);
     }
     const shard = await shardRequest;
     payload = shard?.payloads?.[payloadKey] ?? null;
   } else {
-    payload = await fetchJson<RecipeUiPayload>(
-      joinAssetPath(getConfiguredBasePath(), preserveEncodedFileNamePath(payloadPath)),
+    payload = await fetchDistDataJson<RecipeUiPayload>(
+      joinDistDataAssetPath(getDistDataBasePath(), preserveEncodedDistDataFileNamePath(payloadPath)),
     ).catch(() => null);
   }
   if (!payload?.recipeId) {
@@ -2140,7 +2055,7 @@ export async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexR
     }
     const rustTextureBinaryPath = await getRustTextureBinaryPath(manifest);
     if (rustTextureBinaryPath) {
-      const buffer = await fetchArrayBuffer(joinAssetPath(getConfiguredBasePath(), rustTextureBinaryPath)).catch(() => null);
+      const buffer = await fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), rustTextureBinaryPath)).catch(() => null);
       const rustAtlas = buffer
         ? (() => {
             const envelope = parseNativeBinaryPackEnvelope(buffer, "neonei/texture-pack/current");
@@ -2161,7 +2076,7 @@ export async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexR
     if (!atlasPath) {
       return null;
     }
-    const payload = await fetchJson<BrowserAtlasIndexResponse>(joinAssetPath(getConfiguredBasePath(), atlasPath));
+    const payload = await fetchDistDataJson<BrowserAtlasIndexResponse>(joinDistDataAssetPath(getDistDataBasePath(), atlasPath));
     if (!payload || !Array.isArray(payload.items)) {
       reportDistDataSchemaMismatch(manifest, atlasPath, "Dist-data browser atlas index is missing items[]", {
         schemaVersion: payload?.schemaVersion ?? null,
@@ -2193,7 +2108,7 @@ export async function getDistDataNativeRenderIndex(): Promise<NativeRenderIndex 
     if (!manifest || !indexPath) {
       return null;
     }
-    const payload = await fetchJson<NativeRenderIndex>(joinAssetPath(getConfiguredBasePath(), indexPath));
+    const payload = await fetchDistDataJson<NativeRenderIndex>(joinDistDataAssetPath(getDistDataBasePath(), indexPath));
     if (!payload || typeof payload !== "object") {
       reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data native render index is not an object", {
         schemaVersion: (payload as { schemaVersion?: unknown } | null)?.schemaVersion ?? null,
