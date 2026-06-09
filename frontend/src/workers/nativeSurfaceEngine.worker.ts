@@ -36,6 +36,13 @@ import {
   type NativeRuntimeSearchItem,
   type NativeRuntimeStringItem,
 } from "./nativeSurfaceRuntimeParsers";
+import {
+  buildLayoutCommandBuffer,
+  buildNativeSurfaceLayoutCommands,
+  computeNativeSurfaceColumns,
+  computeWasmLayoutCommands,
+  toLayoutU32,
+} from "./nativeSurfaceLayout";
 
 type SurfaceState = {
   initialized: boolean;
@@ -215,12 +222,6 @@ async function ensureWasmEngine(): Promise<NativeWasmEngineExports | null> {
     }
   })();
   return wasmEnginePromise;
-}
-
-function computeColumns(viewportWidth: number, cardSize: number, gap: number): number {
-  const wasmColumns = wasmEngine?.neonei_engine_compute_columns(toU32(viewportWidth), toU32(cardSize), toU32(gap));
-  if (Number.isFinite(wasmColumns) && wasmColumns && wasmColumns > 0) return Math.max(1, Math.floor(wasmColumns));
-  return Math.max(1, Math.floor((viewportWidth + gap) / (cardSize + gap)));
 }
 
 function disposeWasmPayloads(surface: SurfaceState): void {
@@ -575,7 +576,7 @@ function buildRuntimeEntries(surface: SurfaceState): NativeSurfaceEngineEntry[] 
   const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
   const gap = 4;
-  const columns = computeColumns(viewportWidth, cardSize, gap);
+  const columns = computeNativeSurfaceColumns(wasmEngine, viewportWidth, cardSize, gap);
   const rows = Math.max(1, Math.floor(Math.max(1, surface.viewport?.height ?? cardSize) / (cardSize + gap)));
   const pageSize = Math.max(1, columns * rows);
   const start = Math.min(projectionIndices.length, (page - 1) * pageSize);
@@ -742,42 +743,13 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
   return next;
 }
 
-const WASM_LAYOUT_COMMAND_U32_STRIDE = 7;
-
-function computeWasmLayoutCommands(entryCount: number, viewportWidth: number, cardSize: number, gap: number): Uint32Array | null {
-  const writeLayout = wasmEngine?.neonei_engine_write_layout_commands;
-  const allocU32 = wasmEngine?.neonei_engine_alloc_u32;
-  const deallocU32 = wasmEngine?.neonei_engine_dealloc_u32;
-  const memory = wasmEngine?.memory;
-  const count = Math.max(0, Math.floor(entryCount));
-  if (!writeLayout || !allocU32 || !deallocU32 || !memory) return null;
-  if (count <= 0) return new Uint32Array();
-  const outLen = count * WASM_LAYOUT_COMMAND_U32_STRIDE;
-  const outPtr = allocU32(outLen);
-  if (!outPtr) return null;
-  try {
-    const writtenCount = writeLayout(
-      toU32(count),
-      toU32(viewportWidth),
-      toU32(cardSize),
-      toU32(gap),
-      outPtr,
-      outLen,
-    );
-    const clampedCount = Math.min(count, Math.max(0, Math.floor(writtenCount)));
-    return Uint32Array.from(new Uint32Array(memory.buffer, outPtr, clampedCount * WASM_LAYOUT_COMMAND_U32_STRIDE));
-  } finally {
-    deallocU32(outPtr, outLen);
-  }
-}
-
 function rebuildLayout(surface: SurfaceState): void {
   surface.layoutRebuilds += 1;
   const activeEntries = getActiveEntries(surface).entries;
   const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
   const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
   const gap = 4;
-  const nativeLayout = computeWasmLayoutCommands(activeEntries.length, viewportWidth, cardSize, gap);
+  const nativeLayout = computeWasmLayoutCommands(wasmEngine, activeEntries.length, viewportWidth, cardSize, gap);
   if (!nativeLayout) {
     surface.runtimeError = wasmError
       ? `WASM layout command writer unavailable: ${wasmError}`
@@ -785,54 +757,8 @@ function rebuildLayout(surface: SurfaceState): void {
     surface.layoutCommands = [];
     return;
   }
-  surface.layoutCommands = activeEntries.map((entry, index) => {
-    const offset = index * WASM_LAYOUT_COMMAND_U32_STRIDE;
-    const x = nativeLayout[offset + 1] ?? 0;
-    const y = nativeLayout[offset + 2] ?? 0;
-    const size = nativeLayout[offset + 3] ?? cardSize;
-    const iconX = nativeLayout[offset + 4] ?? x;
-    const iconY = nativeLayout[offset + 5] ?? y;
-    const iconSize = nativeLayout[offset + 6] ?? size;
-    return {
-      key: entry.key,
-      kind: entry.kind,
-      entryIndex: entry.entryIndex,
-      itemId: entry.itemId,
-      groupKey: entry.groupKey ?? null,
-      x,
-      y,
-      size,
-      iconX,
-      iconY,
-      iconSize,
-    };
-  });
+  surface.layoutCommands = buildNativeSurfaceLayoutCommands(activeEntries, nativeLayout, cardSize);
   surface.runtimeError = null;
-}
-
-function buildLayoutCommandBuffer(
-  commands: NativeSurfaceEngineLayoutCommand[],
-  hoverKey: string | null,
-  selectedItemId: string | null,
-): ArrayBuffer {
-  const stride = NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE;
-  const values = new Uint32Array(commands.length * stride);
-  commands.forEach((command, index) => {
-    const offset = index * stride;
-    values[offset] = toU32(command.entryIndex);
-    values[offset + 1] = toU32(command.x);
-    values[offset + 2] = toU32(command.y);
-    values[offset + 3] = toU32(command.size);
-    values[offset + 4] = toU32(command.iconX);
-    values[offset + 5] = toU32(command.iconY);
-    values[offset + 6] = toU32(command.iconSize);
-    values[offset + 7] = command.kind === "item" ? 0 : command.kind === "group-collapsed" ? 1 : 2;
-    values[offset + 8] = (command.kind === "group-collapsed" ? 1 : 0)
-      | (command.kind === "group-header" ? 2 : 0)
-      | (hoverKey === command.key ? 4 : 0)
-      | (selectedItemId && command.itemId === selectedItemId ? 8 : 0);
-  });
-  return values.buffer;
 }
 
 function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequest, { type: "hitTest" }>): NativeSurfaceEngineHit {
