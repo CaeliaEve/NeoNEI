@@ -17,7 +17,10 @@ import {
 } from "./NativeSurfaceMetrics";
 import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
 import type { NativeSurfaceEngineEntry, NativeSurfaceEngineMutation } from "./NativeSurfaceEngineProtocol";
-import { loadNativeRuntimeBuffers } from "./runtimeLoader";
+import {
+  loadNativeRuntimeBuffersForProfile,
+  type NativeRuntimePackProfile,
+} from "./runtimePackCache";
 import type { Item } from "../services/api";
 
 function normalizeRenderer(renderer?: NativeRendererBackendKind): NativeRendererBackendKind {
@@ -99,7 +102,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       enableHistoryViewport: this.historyViewportEnabled,
     });
     if (options.manifestUrl) {
-      await this.loadRuntimePacks(options.manifestUrl);
+      await this.loadRuntimePacks(options.manifestUrl, options.runtimePackProfile);
     }
     this.touch("initialize");
   }
@@ -340,14 +343,14 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
     this.mutationFlushPromise = null;
   }
 
-  private async loadRuntimePacks(manifestUrl: string): Promise<void> {
+  private async loadRuntimePacks(manifestUrl: string, profile: NativeRuntimePackProfile = "full"): Promise<void> {
     this.nativeRuntimeReady = false;
     this.nativeRuntimePacks = 0;
     this.nativeRuntimeError = null;
     this.touch("runtimePacks:loading");
     try {
-      const runtime = await loadNativeRuntimeBuffers(manifestUrl);
-      const packs = Object.values(runtime.packs).map((pack) => ({
+      const runtime = await loadNativeRuntimeBuffersForProfile(manifestUrl, profile);
+      const packs = Object.values(runtime.packs).filter(Boolean).map((pack) => ({
         name: pack.name,
         path: pack.path,
         url: pack.url,
@@ -355,7 +358,9 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
         byteLength: pack.header.byteLength,
         payloadLength: pack.header.payloadLength,
         payloadEncoding: pack.payloadEncoding,
-        buffer: pack.payloadBuffer,
+        // postMessage transfers pack buffers to the worker; clone so the shared
+        // runtime pack cache remains resident for other surfaces.
+        buffer: pack.payloadBuffer.slice(0),
       }));
       const response = await postNativeSurfaceEngineEvent({
         type: "runtimePacks",

@@ -10,6 +10,8 @@ import { parseNativeCompactBrowserPack } from "./NativeRuntimeBrowserPack";
 
 const NATIVE_PACK_MAGIC = "NNEIBIN\0";
 const NATIVE_PACK_HEADER_BYTES = 24;
+const manifestRequestCache = new Map<string, Promise<NativeRuntimeManifest>>();
+const packRequestCache = new Map<string, Promise<NativeRuntimePack>>();
 
 function isPortableRelativePath(path: string): boolean {
   return Boolean(path)
@@ -141,7 +143,11 @@ function detectPayloadEncoding(name: NativeRuntimePackName, payloadBuffer: Array
 }
 
 export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<NativeRuntimeManifest> {
-  const response = await fetch(manifestUrl, { cache: "no-cache" });
+  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
+  const existing = manifestRequestCache.get(normalizedManifestUrl);
+  if (existing) return existing;
+  const request = (async () => {
+  const response = await fetch(normalizedManifestUrl, { cache: "no-cache" });
   if (!response.ok) {
     throw new Error(`Failed to load native runtime manifest: ${response.status} ${response.statusText}`);
   }
@@ -150,17 +156,25 @@ export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<Na
     return (payload as CurrentNativeRuntimeManifestEnvelope).data ?? {};
   }
   return payload as NativeRuntimeManifest;
+  })().catch((error) => {
+    manifestRequestCache.delete(normalizedManifestUrl);
+    throw error;
+  });
+  manifestRequestCache.set(normalizedManifestUrl, request);
+  return request;
 }
 
-export async function loadNativeRuntimeBuffers(manifestUrl: string): Promise<NativeRuntimeBuffers> {
-  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
-  const manifest = await loadNativeRuntimeManifest(normalizedManifestUrl);
-  const entrypoints = getManifestEntrypoints(manifest);
-  const packs = {} as Record<NativeRuntimePackName, NativeRuntimePack>;
-
-  await Promise.all((Object.keys(NATIVE_RUNTIME_PACK_SCHEMAS) as NativeRuntimePackName[]).map(async (name) => {
-    const path = entrypoints[name];
-    const url = resolveManifestRelativeUrl(normalizedManifestUrl, path);
+async function loadNativeRuntimePack(
+  normalizedManifestUrl: string,
+  entrypoints: Record<NativeRuntimePackName, string>,
+  name: NativeRuntimePackName,
+): Promise<NativeRuntimePack> {
+  const path = entrypoints[name];
+  const url = resolveManifestRelativeUrl(normalizedManifestUrl, path);
+  const cacheKey = `${normalizedManifestUrl}::${name}::${url}`;
+  const existing = packRequestCache.get(cacheKey);
+  if (existing) return existing;
+  const request = (async () => {
     const response = await fetch(url, { cache: "force-cache" });
     if (!response.ok) {
       throw new Error(`Failed to load native runtime pack ${name}: ${response.status} ${response.statusText}`);
@@ -168,7 +182,7 @@ export async function loadNativeRuntimeBuffers(manifestUrl: string): Promise<Nat
     const buffer = await response.arrayBuffer();
     const header = parseNativeRuntimePackHeader(buffer, NATIVE_RUNTIME_PACK_SCHEMAS[name]);
     const payloadBuffer = getNativeRuntimePackPayloadBuffer(buffer, header);
-    packs[name] = {
+    return {
       name,
       path,
       url,
@@ -177,6 +191,28 @@ export async function loadNativeRuntimeBuffers(manifestUrl: string): Promise<Nat
       payloadBuffer,
       payloadEncoding: detectPayloadEncoding(name, payloadBuffer),
     };
+  })().catch((error) => {
+    packRequestCache.delete(cacheKey);
+    throw error;
+  });
+  packRequestCache.set(cacheKey, request);
+  return request;
+}
+
+export async function loadNativeRuntimeBuffers(
+  manifestUrl: string,
+  packNames?: readonly NativeRuntimePackName[],
+): Promise<NativeRuntimeBuffers> {
+  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
+  const manifest = await loadNativeRuntimeManifest(normalizedManifestUrl);
+  const entrypoints = getManifestEntrypoints(manifest);
+  const packs: Partial<Record<NativeRuntimePackName, NativeRuntimePack>> = {};
+  const requestedPackNames = packNames?.length
+    ? Array.from(new Set(packNames))
+    : (Object.keys(NATIVE_RUNTIME_PACK_SCHEMAS) as NativeRuntimePackName[]);
+
+  await Promise.all(requestedPackNames.map(async (name) => {
+    packs[name] = await loadNativeRuntimePack(normalizedManifestUrl, entrypoints, name);
   }));
 
   return {

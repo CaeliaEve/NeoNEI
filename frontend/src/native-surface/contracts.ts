@@ -1,6 +1,7 @@
 import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../services/api";
 import type { PageAtlasResult } from "../services/pageAtlas";
 import type { NativeRenderSpriteCommand } from "./NativeSurfaceRenderProtocol";
+import type { NativeRuntimePackProfile } from "./runtimePackCache";
 
 export type NativeRendererBackendKind = "auto" | "webgpu" | "webgl2" | "compat-canvas";
 
@@ -39,6 +40,7 @@ export interface NativeSurfaceInitializeOptions {
   preferredRenderer?: NativeRendererBackendKind;
   enableAnimations?: boolean;
   enableHistoryViewport?: boolean;
+  runtimePackProfile?: NativeRuntimePackProfile;
 }
 
 export interface NativeSurfaceCompatEntries {

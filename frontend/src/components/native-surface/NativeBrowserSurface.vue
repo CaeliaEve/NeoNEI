@@ -9,6 +9,7 @@ import type {
   NativeSurfacePointer,
   NativeSurfaceViewportRole,
 } from "../../native-surface/contracts";
+import type { NativeRuntimePackProfile } from "../../native-surface/runtimePackCache";
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 import {
@@ -47,6 +48,10 @@ const emit = defineEmits<{
   groupContextmenu: [group: BrowserVariantGroup, event: MouseEvent];
   viewportResize: [element: HTMLElement | null];
 }>();
+
+function resolveRuntimePackProfile(): NativeRuntimePackProfile {
+  return props.viewportRole === "history" ? "history-surface" : "browser-surface";
+}
 
 const hostRef = ref<HTMLElement | null>(null);
 const nativeRenderCanvasRef = ref<HTMLCanvasElement | null>(null);
@@ -416,6 +421,7 @@ onMounted(async () => {
   await controller.initialize({
     surfaceId: props.surfaceId,
     manifestUrl: props.manifestUrl ?? undefined,
+    runtimePackProfile: resolveRuntimePackProfile(),
     preferredRenderer: "compat-canvas",
     enableAnimations: props.enableAnimation,
     enableHistoryViewport: props.viewportRole === "history",
@@ -510,6 +516,7 @@ watch(
     void controller.initialize({
       surfaceId: props.surfaceId,
       manifestUrl: props.manifestUrl ?? undefined,
+      runtimePackProfile: resolveRuntimePackProfile(),
       preferredRenderer: "compat-canvas",
       enableAnimations: enabled,
       enableHistoryViewport: props.viewportRole === "history",

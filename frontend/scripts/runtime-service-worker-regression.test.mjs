@@ -11,12 +11,13 @@ test("runtime service worker is registered by the frontend shell", async () => {
 test("runtime service worker caches binary packs, atlas images, and native engine assets", async () => {
   const worker = await readFile(new URL("../public/neonei-sw.js", import.meta.url), "utf8");
   assert.ok(worker.includes("dist-data\\/runtime"), "runtime binary pack path should be cached");
-  assert.ok(worker.includes("dist-data\\/(?:runtime\\/|rust\\/)"), "rust binary pack path should be cached");
+  assert.ok(worker.includes("dist-data\\/(?:runtime\\/|rust\\/|textures\\/atlas-assets\\/)"), "rust binary pack and atlas-assets paths should be cached");
     assert.ok(worker.includes("api\\/runtime\\/(?:current|[^/]+)\\/asset"), "semantic runtime asset API should be cached");
   assert.ok(worker.includes("api\\/runtime\\/(?:current|[^/]+)\\/manifest"), "semantic runtime manifest API should be network-first");
   assert.ok(worker.includes("api\\/native-runtime\\/current\\/files"), "legacy runtime file API remains cached only for compatibility");
   assert.ok(worker.includes("api\\/native-runtime\\/current\\/manifest"), "legacy runtime manifest API remains network-first only for compatibility");
   assert.ok(worker.includes("textures\\/atlas"), "atlas texture path should be cached");
+  assert.ok(worker.includes("png|webp"), "png atlas assets should be cached");
   assert.ok(worker.includes("native\\/engine"), "native engine path should be cached");
   assert.match(worker, /cacheFirst/);
   assert.match(worker, /runtimeManifestNetworkFirst/);

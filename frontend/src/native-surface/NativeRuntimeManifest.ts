@@ -80,7 +80,7 @@ export interface NativeRuntimePack {
 export interface NativeRuntimeBuffers {
   manifest: NativeRuntimeManifest;
   manifestUrl: string;
-  packs: Record<NativeRuntimePackName, NativeRuntimePack>;
+  packs: Partial<Record<NativeRuntimePackName, NativeRuntimePack>>;
 }
 
 
