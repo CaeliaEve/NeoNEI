@@ -36,6 +36,7 @@ import {
   queueRenderableMediaPrewarmFromUnknown,
 } from '../services/animationBudget';
 import { createRecipeShardHydrator } from './recipe-browser/recipeShardHydrator';
+import { createRecipeNavigationController } from './recipe-browser/recipeNavigationController';
 import {
   buildCategoryPrewarmPageSequence,
   primeRecipePayloadMedia,
@@ -693,6 +694,26 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     await requestCategoryPack(itemId, requestSeq, category, mode, page);
   };
 
+  const {
+    selectMachine,
+    nextPage,
+    prevPage,
+    setPage,
+    selectRecipeById,
+  } = createRecipeNavigationController({
+    itemIdRef,
+    selectedMachineIndex,
+    currentPage,
+    totalPages,
+    currentCategory,
+    currentCategoryPages,
+    currentCategoryOrderedRecipeIds,
+    playClick,
+    markRecipeSwitch,
+    getNow,
+    getLoadRequestSeq: () => loadRequestSeq,
+    ensureCategoryPageReady,
+  });
   const requestCurrentPagePack = (
     itemId: string,
     requestSeq: number,
@@ -915,73 +936,6 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     }
   };
 
-  const selectMachine = (index: number) => {
-    if (index === selectedMachineIndex.value) return;
-    markRecipeSwitch('machine-select');
-    playClick();
-    selectedMachineIndex.value = index;
-    currentPage.value = 0;
-  };
-
-  const navigateToPage = (targetPage: number, source: 'page-next' | 'page-prev' | 'page-set') => {
-    if (targetPage < 0 || targetPage >= totalPages.value || targetPage === currentPage.value) {
-      return;
-    }
-    markRecipeSwitch(source);
-    playClick();
-    currentPage.value = targetPage;
-    const itemId = itemIdRef.value;
-    const category = currentCategory.value;
-    if (itemId && category) {
-      const startedAt = getNow();
-      void ensureCategoryPageReady(itemId, loadRequestSeq, category, targetPage, 'visible')
-        .then(() => {
-          markPerfEvent('recipe-page-hydration-complete', {
-            itemId,
-            categoryKey: category.categoryKey,
-            machineKey: category.machineKey ?? null,
-            page: targetPage,
-            source,
-            durationMs: getNow() - startedAt,
-          });
-        })
-        .catch((error) => {
-          markPerfEvent('recipe-page-hydration-failed', {
-            itemId,
-            categoryKey: category.categoryKey,
-            machineKey: category.machineKey ?? null,
-            page: targetPage,
-            source,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        });
-    }
-    markPerfEvent('recipe-page-switched-immediate', {
-      itemId: itemId ?? null,
-      categoryKey: category?.categoryKey ?? null,
-      machineKey: category?.machineKey ?? null,
-      page: targetPage,
-      source,
-    });
-  };
-
-  const nextPage = () => {
-    if (totalPages.value <= 0) return;
-    void navigateToPage((currentPage.value + 1) % totalPages.value, 'page-next');
-  };
-
-  const prevPage = () => {
-    if (totalPages.value <= 0) return;
-    void navigateToPage((currentPage.value - 1 + totalPages.value) % totalPages.value, 'page-prev');
-  };
-
-  const setPage = (page: number) => {
-    if (page < 0 || page >= totalPages.value || page === currentPage.value) {
-      return;
-    }
-    void navigateToPage(page, 'page-set');
-  };
-
   const setCurrentTab = (tab: 'usedIn' | 'producedBy') => {
     if (tab !== 'usedIn' && tab !== 'producedBy') return;
     if (tab === currentTab.value) return;
@@ -992,18 +946,6 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   const retryLoadRecipes = () => {
     loadError.value = '';
     void loadRecipes();
-  };
-
-  const selectRecipeById = (recipeId: string): boolean => {
-    if (!recipeId) return false;
-    const orderedRecipeIds = currentCategoryOrderedRecipeIds.value;
-    const index = orderedRecipeIds.length > 0
-      ? orderedRecipeIds.findIndex((id) => id === recipeId)
-      : currentCategoryPages.value.findIndex((recipe) => recipe.recipeId === recipeId);
-    if (index < 0) return false;
-    const targetPage = Math.floor(index / Math.max(1, getCategoryRecipesPerPage(currentCategory.value)));
-    void navigateToPage(targetPage, 'page-set');
-    return true;
   };
 
   const scheduleRecipeSearch = (query: string) => recipeSearchController.schedule(query);
@@ -1169,6 +1111,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     selectRecipeById,
   };
 }
+
 
 
 
