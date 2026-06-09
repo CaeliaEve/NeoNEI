@@ -61,6 +61,7 @@ import {
   type DistDataBrowserRuntime,
   type DistDataRawGroup,
 } from "./distDataBrowserRuntime";
+import { createDistDataRuntimeRenderApi } from "./distDataRuntimeRender";
 export {
   resolveDistDataAssetPath,
   resolveDistDataNativeRuntimeManifestPath,
@@ -173,10 +174,6 @@ let recipeUiPayloadIndexRequest: Promise<Map<string, DistDataRecipeUiPayloadInde
 let cachedRecipeUiPayloadIndex: Map<string, DistDataRecipeUiPayloadIndexEntry> | null = null;
 const cachedRecipeUiPayloads = new Map<string, RecipeUiPayload>();
 const cachedRecipeUiPayloadShards = new Map<string, Promise<DistDataRecipeUiPayloadShard | null>>();
-let browserAtlasIndexRequest: Promise<BrowserAtlasIndexResponse | null> | null = null;
-let cachedBrowserAtlasIndex: BrowserAtlasIndexResponse | null = null;
-let nativeRenderIndexRequest: Promise<NativeRenderIndex | null> | null = null;
-let cachedNativeRenderIndex: NativeRenderIndex | null = null;
 
 function reportDistDataSchemaMismatch(
   manifest: DistDataManifest,
@@ -1177,157 +1174,21 @@ export async function getDistDataRecipeUiPayload(recipeId: string): Promise<Reci
   cachedRecipeUiPayloads.set(normalizedRecipeId, payload);
   return payload;
 }
-export async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
-  if (cachedBrowserAtlasIndex) {
-    return cachedBrowserAtlasIndex;
-  }
-  if (browserAtlasIndexRequest) {
-    return browserAtlasIndexRequest;
-  }
+const renderRuntimeApi = createDistDataRuntimeRenderApi({
+  getDistDataManifest,
+  getRustTextureBinaryPath,
+  reportDistDataSchemaMismatch,
+});
 
-  browserAtlasIndexRequest = (async () => {
-    const manifest = await getDistDataManifest();
-    const rustTexturePath = `${manifest?.files?.rustTexturePack ?? ""}`.trim();
-    if (!manifest) {
-      return null;
-    }
-    const rustTextureBinaryPath = await getRustTextureBinaryPath(manifest);
-    if (rustTextureBinaryPath) {
-      const buffer = await fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), rustTextureBinaryPath)).catch(() => null);
-      const rustAtlas = buffer
-        ? (() => {
-            const envelope = parseNativeBinaryPackEnvelope(buffer, "neonei/texture-pack/current");
-            return parseCompactTexturePayloadToAtlasIndex(envelope.payload);
-          })()
-        : null;
-      if (!rustAtlas || !Array.isArray(rustAtlas.items)) {
-        reportDistDataSchemaMismatch(manifest, rustTextureBinaryPath, "Binary textures.bin atlas is missing items[]", {
-          schemaVersion: rustAtlas?.schemaVersion ?? null,
-        });
-        return null;
-      }
-      cachedBrowserAtlasIndex = rustAtlas;
-      return cachedBrowserAtlasIndex;
-    }
+export const getDistDataBrowserAtlasIndex = renderRuntimeApi.getDistDataBrowserAtlasIndex;
+export const getDistDataNativeRenderIndex = renderRuntimeApi.getDistDataNativeRenderIndex;
+export const getNativeRendererForItem = renderRuntimeApi.getNativeRendererForItem;
+export const getNativeShaderForItem = renderRuntimeApi.getNativeShaderForItem;
+export const getNativeCaptureByAssetId = renderRuntimeApi.getNativeCaptureByAssetId;
+export const getNativeCaptureByVariantKey = renderRuntimeApi.getNativeCaptureByVariantKey;
+export const getNativeSpriteByIconName = renderRuntimeApi.getNativeSpriteByIconName;
+export const getNativeRenderFactsForItem = renderRuntimeApi.getNativeRenderFactsForItem;
 
-    const atlasPath = `${manifest.files?.browserAtlasIndex ?? ""}`.trim();
-    if (!atlasPath) {
-      return null;
-    }
-    const payload = await fetchDistDataJson<BrowserAtlasIndexResponse>(joinDistDataAssetPath(getDistDataBasePath(), atlasPath));
-    if (!payload || !Array.isArray(payload.items)) {
-      reportDistDataSchemaMismatch(manifest, atlasPath, "Dist-data browser atlas index is missing items[]", {
-        schemaVersion: payload?.schemaVersion ?? null,
-      });
-      return null;
-    }
-    cachedBrowserAtlasIndex = payload;
-    return cachedBrowserAtlasIndex;
-  })()
-    .catch(() => null)
-    .finally(() => {
-      browserAtlasIndexRequest = null;
-    });
-
-  return browserAtlasIndexRequest;
-}
-
-export async function getDistDataNativeRenderIndex(): Promise<NativeRenderIndex | null> {
-  if (cachedNativeRenderIndex) {
-    return cachedNativeRenderIndex;
-  }
-  if (nativeRenderIndexRequest) {
-    return nativeRenderIndexRequest;
-  }
-
-  nativeRenderIndexRequest = (async () => {
-    const manifest = await getDistDataManifest();
-    const indexPath = `${manifest?.files?.nativeRenderIndex ?? ""}`.trim();
-    if (!manifest || !indexPath) {
-      return null;
-    }
-    const payload = await fetchDistDataJson<NativeRenderIndex>(joinDistDataAssetPath(getDistDataBasePath(), indexPath));
-    if (!payload || typeof payload !== "object") {
-      reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data native render index is not an object", {
-        schemaVersion: (payload as { schemaVersion?: unknown } | null)?.schemaVersion ?? null,
-      });
-      return null;
-    }
-    const hasRendererIndex = payload.itemRendererByItemId && typeof payload.itemRendererByItemId === "object";
-    if (!hasRendererIndex) {
-      reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data native render index is missing itemRendererByItemId", {
-        schemaVersion: payload.schemaVersion ?? null,
-      });
-    }
-    cachedNativeRenderIndex = payload;
-    return cachedNativeRenderIndex;
-  })()
-    .catch(() => null)
-    .finally(() => {
-      nativeRenderIndexRequest = null;
-    });
-
-  return nativeRenderIndexRequest;
-}
-
-function getItemAssetId(itemId?: string | null): string {
-  const normalizedItemId = `${itemId ?? ""}`.trim();
-  return normalizedItemId ? `nesqlpp:item/${normalizedItemId}` : "";
-}
-
-export async function getNativeRendererForItem(itemId?: string | null): Promise<NativeItemRendererEntry | null> {
-  const normalizedItemId = `${itemId ?? ""}`.trim();
-  if (!normalizedItemId) return null;
-  const index = await getDistDataNativeRenderIndex();
-  return index?.itemRendererByItemId?.[normalizedItemId] ?? null;
-}
-
-export async function getNativeShaderForItem(itemId?: string | null): Promise<NativeShaderItemEntry | null> {
-  const normalizedItemId = `${itemId ?? ""}`.trim();
-  if (!normalizedItemId) return null;
-  const index = await getDistDataNativeRenderIndex();
-  return index?.shaderByItemId?.[normalizedItemId] ?? null;
-}
-
-export async function getNativeCaptureByAssetId(assetId?: string | null): Promise<NativeFramebufferCaptureEntry | null> {
-  const normalizedAssetId = `${assetId ?? ""}`.trim();
-  if (!normalizedAssetId) return null;
-  const index = await getDistDataNativeRenderIndex();
-  return index?.capturesByAssetId?.[normalizedAssetId] ?? null;
-}
-
-export async function getNativeCaptureByVariantKey(variantKey?: string | null): Promise<NativeFramebufferCaptureEntry | null> {
-  const normalizedVariantKey = `${variantKey ?? ""}`.trim();
-  if (!normalizedVariantKey) return null;
-  const index = await getDistDataNativeRenderIndex();
-  return index?.capturesByVariantKey?.[normalizedVariantKey] ?? null;
-}
-
-export async function getNativeSpriteByIconName(iconName?: string | null): Promise<NativeTextureSpriteEntry | null> {
-  const normalizedIconName = `${iconName ?? ""}`.trim();
-  if (!normalizedIconName) return null;
-  const index = await getDistDataNativeRenderIndex();
-  return index?.spriteByIconName?.[normalizedIconName] ?? null;
-}
-
-export async function getNativeRenderFactsForItem(itemId?: string | null, renderAssetRef?: string | null): Promise<{
-  renderer: NativeItemRendererEntry | null;
-  shader: NativeShaderItemEntry | null;
-  capture: NativeFramebufferCaptureEntry | null;
-} | null> {
-  const normalizedItemId = `${itemId ?? ""}`.trim();
-  const normalizedAssetId = `${renderAssetRef ?? getItemAssetId(normalizedItemId)}`.trim();
-  if (!normalizedItemId && !normalizedAssetId) return null;
-  const index = await getDistDataNativeRenderIndex();
-  if (!index) return null;
-  return {
-    renderer: normalizedItemId ? index.itemRendererByItemId?.[normalizedItemId] ?? null : null,
-    shader: normalizedItemId ? index.shaderByItemId?.[normalizedItemId] ?? null : null,
-    capture: (normalizedAssetId ? index.capturesByAssetId?.[normalizedAssetId] : null)
-      ?? (normalizedItemId ? index.capturesByVariantKey?.[normalizedItemId] : null)
-      ?? null,
-  };
-}
 export function resetDistDataRuntimeCache(): void {
   manifestRequest = null;
   searchPackRequest = null;
@@ -1344,10 +1205,7 @@ export function resetDistDataRuntimeCache(): void {
   cachedRecipeUiPayloadIndex = null;
   cachedRecipeUiPayloads.clear();
   cachedRecipeUiPayloadShards.clear();
-  browserAtlasIndexRequest = null;
-  cachedBrowserAtlasIndex = null;
-  nativeRenderIndexRequest = null;
-  cachedNativeRenderIndex = null;
+  renderRuntimeApi.reset();
 }
 
 
