@@ -17,7 +17,8 @@ pub mod layout;
 pub use compact_animation::{compact_animation_select_frame_index, parse_compact_animation_header};
 pub use compact_browser::{
     compact_browser_project_count, compact_browser_project_indices,
-    compact_browser_project_visible_indices, parse_compact_browser_header,
+    compact_browser_project_visible_indices, compact_browser_project_visible_indices_with_groups,
+    parse_compact_browser_header,
 };
 pub use compact_group::parse_compact_group_header;
 pub use compact_search::{compact_search_project_visible_indices, parse_compact_search_header};
@@ -230,6 +231,50 @@ pub unsafe extern "C" fn neonei_engine_compact_browser_project_visible_indices(
     };
     compact_browser_project_visible_indices(pack, query, mod_filter, expanded_groups, out)
         .unwrap_or(0)
+}
+
+/// Writes group-aware visible entries using both browser and group packs.
+/// Expanded groups are emitted in-place from the group member list, matching
+/// the native NEI interaction model instead of leaving far-away browser rows in
+/// their original raw order.
+#[no_mangle]
+pub unsafe extern "C" fn neonei_engine_compact_browser_project_visible_indices_with_groups(
+    browser_ptr: *const u8,
+    browser_len: u32,
+    group_ptr: *const u8,
+    group_len: u32,
+    query_ptr: *const u8,
+    query_len: u32,
+    mod_ptr: *const u8,
+    mod_len: u32,
+    expanded_ptr: *const u8,
+    expanded_len: u32,
+    out_ptr: *mut u32,
+    out_len: u32,
+) -> u32 {
+    let Some(browser_pack) = wasm_slice(browser_ptr, browser_len) else {
+        return 0;
+    };
+    let Some(group_pack) = wasm_slice(group_ptr, group_len) else {
+        return 0;
+    };
+    let query = wasm_str(query_ptr, query_len).unwrap_or("");
+    let mod_filter = wasm_str(mod_ptr, mod_len).unwrap_or("");
+    let expanded_groups = wasm_str(expanded_ptr, expanded_len).unwrap_or("");
+    let out = if out_ptr.is_null() || out_len == 0 {
+        None
+    } else {
+        Some(std::slice::from_raw_parts_mut(out_ptr, out_len as usize))
+    };
+    compact_browser_project_visible_indices_with_groups(
+        browser_pack,
+        group_pack,
+        query,
+        mod_filter,
+        expanded_groups,
+        out,
+    )
+    .unwrap_or(0)
 }
 
 /// Returns the compact group count, or 0 when the payload is invalid.

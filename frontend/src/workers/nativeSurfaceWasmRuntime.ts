@@ -54,6 +54,20 @@ export type NativeWasmEngineExports = {
     outPtr: number,
     outLen: number,
   ) => number;
+  neonei_engine_compact_browser_project_visible_indices_with_groups?: (
+    browserPtr: number,
+    browserLen: number,
+    groupPtr: number,
+    groupLen: number,
+    queryPtr: number,
+    queryLen: number,
+    modPtr: number,
+    modLen: number,
+    expandedPtr: number,
+    expandedLen: number,
+    outPtr: number,
+    outLen: number,
+  ) => number;
   neonei_engine_compact_group_count?: (ptr: number, len: number) => number;
   neonei_engine_compact_string_item_count?: (ptr: number, len: number) => number;
   neonei_engine_compact_texture_item_count?: (ptr: number, len: number) => number;
@@ -230,6 +244,7 @@ export function freeWasmBytes(bytes: { ptr: number; len: number }): void {
 
 export function computeWasmRuntimeVisibleEntries(surface: SurfaceState, itemCount: number): Uint32Array | null {
   const projectVisible = wasmEngine?.neonei_engine_compact_browser_project_visible_indices;
+  const projectVisibleWithGroups = wasmEngine?.neonei_engine_compact_browser_project_visible_indices_with_groups;
   const projectSearchVisible = wasmEngine?.neonei_engine_compact_search_project_visible_indices;
   const allocU32 = wasmEngine?.neonei_engine_alloc_u32;
   const deallocU32 = wasmEngine?.neonei_engine_dealloc_u32;
@@ -255,6 +270,10 @@ export function computeWasmRuntimeVisibleEntries(surface: SurfaceState, itemCoun
       && typeof projectSearchVisible === "function"
       && surface.runtimeSearchWasmPtr > 0
       && surface.runtimeSearchWasmLen > 0;
+    const canUseNativeGroupPack = typeof projectVisibleWithGroups === "function"
+      && surface.runtimeGroupWasmPtr > 0
+      && surface.runtimeGroupWasmLen > 0
+      && !canUseSearchPack;
     const count = canUseSearchPack
       ? projectSearchVisible(
         surface.runtimeBrowserWasmPtr,
@@ -270,6 +289,21 @@ export function computeWasmRuntimeVisibleEntries(surface: SurfaceState, itemCoun
         outPtr,
         outCapacity,
       )
+      : canUseNativeGroupPack
+        ? projectVisibleWithGroups(
+          surface.runtimeBrowserWasmPtr,
+          surface.runtimeBrowserWasmLen,
+          surface.runtimeGroupWasmPtr,
+          surface.runtimeGroupWasmLen,
+          query.ptr,
+          query.len,
+          mod.ptr,
+          mod.len,
+          expanded.ptr,
+          expanded.len,
+          outPtr,
+          outCapacity,
+        )
       : projectVisible(
         surface.runtimeBrowserWasmPtr,
         surface.runtimeBrowserWasmLen,

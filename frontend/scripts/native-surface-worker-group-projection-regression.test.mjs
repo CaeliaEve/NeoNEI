@@ -6,6 +6,8 @@ const workerSource = fs.readFileSync('src/workers/nativeSurfaceEngine.worker.ts'
 const wasmRuntimeSource = fs.readFileSync('src/workers/nativeSurfaceWasmRuntime.ts', 'utf8');
 const nativeProjectionSource = `${workerSource}
 ${wasmRuntimeSource}`;
+const rustBrowserSource = fs.readFileSync('../tools/neonei-wasm-engine/src/compact_browser.rs', 'utf8');
+const rustLibSource = fs.readFileSync('../tools/neonei-wasm-engine/src/lib.rs', 'utf8');
 const nativeSurfaceSource = fs.readFileSync('src/components/native-surface/NativeBrowserSurface.vue', 'utf8');
 const homeBrowserColumnSource = fs.readFileSync('src/components/home/HomeBrowserColumn.vue', 'utf8');
 const homePageSource = fs.readFileSync('src/views/HomePage.vue', 'utf8');
@@ -31,6 +33,11 @@ test('native surface worker keeps expanded groups on the runtime projection path
     nativeProjectionSource.includes('neonei_engine_compact_browser_project_visible_indices'),
     true,
     'group-aware projection should be delegated through the WASM runtime when available',
+  );
+  assert.match(
+    wasmRuntimeSource,
+    /neonei_engine_compact_browser_project_visible_indices_with_groups/,
+    'browser projection should use the Native/WASM group-pack ABI when groups.bin is loaded',
   );
   assert.equal(
     nativeProjectionSource.includes('runtimeVisibleCacheKey'),
@@ -91,6 +98,34 @@ test('native surface worker paginates projection indices without rebuilding all 
     buildRuntimeEntries.includes('projected.slice(start, start + pageSize)'),
     false,
     'runtime entries must not build a full entry array and slice it after the fact',
+  );
+});
+
+test('WASM browser projection expands group members in-place from groups.bin', () => {
+  assert.match(
+    rustLibSource,
+    /neonei_engine_compact_browser_project_visible_indices_with_groups/,
+    'WASM ABI should expose the browser+groups projection entrypoint',
+  );
+  assert.match(
+    rustBrowserSource,
+    /compact_browser_project_visible_indices_with_groups/,
+    'Rust projection should have a groups.bin-aware projection function',
+  );
+  assert.match(
+    rustBrowserSource,
+    /emit_group_members_at_anchor/,
+    'expanded group members should be emitted at the clicked anchor position',
+  );
+  assert.match(
+    rustBrowserSource,
+    /build_browser_index_by_item_id/,
+    'group member itemIds should be mapped back to browser rows natively',
+  );
+  assert.match(
+    rustBrowserSource,
+    /if !emitted_groups\.insert\(group_key\.to_owned\(\)\) \{[\s\S]*continue;/,
+    'later raw rows for an already emitted group should not duplicate expanded members far away',
   );
 });
 

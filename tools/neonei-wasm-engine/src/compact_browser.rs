@@ -242,6 +242,166 @@ pub fn compact_browser_project_visible_indices(
     Some(count)
 }
 
+fn build_browser_index_by_item_id(
+    bytes: &[u8],
+    header: CompactBrowserHeader,
+) -> Option<std::collections::HashMap<String, u32>> {
+    let mut index_by_item_id = std::collections::HashMap::<String, u32>::new();
+    for index in 0..header.item_count {
+        let row = compact_browser_row(bytes, header, index)?;
+        let item_id = compact_browser_string(bytes, header, row.item_id_ref).unwrap_or("");
+        if !item_id.is_empty() {
+            index_by_item_id.entry(item_id.to_owned()).or_insert(index);
+        }
+    }
+    Some(index_by_item_id)
+}
+
+fn emit_group_members_at_anchor(
+    browser_pack: &[u8],
+    browser_header: CompactBrowserHeader,
+    group_pack: &[u8],
+    group_header: crate::compact_group::CompactGroupHeader,
+    index_by_item_id: &std::collections::HashMap<String, u32>,
+    group_key: &str,
+    current_index: u32,
+    out: &mut Option<&mut [u32]>,
+    count: &mut u32,
+) -> Option<()> {
+    let Some(group_row) = crate::compact_group::compact_group_find_row(group_pack, group_header, group_key) else {
+        if let Some(out_indices) = out.as_deref_mut() {
+            let out_index = *count as usize;
+            if out_index < out_indices.len() {
+                out_indices[out_index] = encode_visible_entry(current_index, false);
+            }
+        }
+        *count = count.saturating_add(1);
+        return Some(());
+    };
+    let mut emitted_any = false;
+    let mut emitted_indices = std::collections::HashSet::<u32>::new();
+    for member_offset in 0..group_row.member_count {
+        let absolute_member_index = group_row.member_start.saturating_add(member_offset);
+        let string_ref = crate::compact_group::compact_group_member_string_ref(
+            group_pack,
+            group_header,
+            absolute_member_index,
+        )?;
+        let item_id =
+            crate::compact_group::compact_group_string(group_pack, group_header, string_ref)
+                .unwrap_or("");
+        let Some(member_browser_index) = index_by_item_id.get(item_id).copied() else {
+            continue;
+        };
+        if !emitted_indices.insert(member_browser_index) {
+            continue;
+        }
+        let member_row = compact_browser_row(browser_pack, browser_header, member_browser_index)?;
+        let member_group_key =
+            compact_browser_string(browser_pack, browser_header, member_row.group_key_ref)
+                .unwrap_or("");
+        if member_group_key != group_key {
+            continue;
+        }
+        if let Some(out_indices) = out.as_deref_mut() {
+            let out_index = *count as usize;
+            if out_index < out_indices.len() {
+                out_indices[out_index] = encode_visible_entry(member_browser_index, false);
+            }
+        }
+        *count = count.saturating_add(1);
+        emitted_any = true;
+    }
+    if !emitted_any {
+        if let Some(out_indices) = out.as_deref_mut() {
+            let out_index = *count as usize;
+            if out_index < out_indices.len() {
+                out_indices[out_index] = encode_visible_entry(current_index, false);
+            }
+        }
+        *count = count.saturating_add(1);
+    }
+    Some(())
+}
+
+/// Projects browser rows after search/mod filtering and native group collapse,
+/// expanding opened groups in-place using the compact group member list.
+pub fn compact_browser_project_visible_indices_with_groups(
+    browser_pack: &[u8],
+    group_pack: &[u8],
+    query: &str,
+    mod_filter: &str,
+    expanded_groups: &str,
+    mut out: Option<&mut [u32]>,
+) -> Option<u32> {
+    let browser_header = parse_compact_browser_header(browser_pack)?;
+    let group_header = crate::compact_group::parse_compact_group_header(group_pack)?;
+    let index_by_item_id = build_browser_index_by_item_id(browser_pack, browser_header)?;
+    let normalized_query = normalize_search_text(query);
+    let normalized_mod = mod_filter.trim().to_lowercase();
+    let expanded = expanded_group_keys(expanded_groups);
+    let mut emitted_groups = std::collections::HashSet::<String>::new();
+    let mut count = 0u32;
+
+    for index in 0..browser_header.item_count {
+        let row = compact_browser_row(browser_pack, browser_header, index)?;
+        let item_id = compact_browser_string(browser_pack, browser_header, row.item_id_ref).unwrap_or("");
+        let localized_name =
+            compact_browser_string(browser_pack, browser_header, row.localized_name_ref).unwrap_or("");
+        let mod_id = compact_browser_string(browser_pack, browser_header, row.mod_id_ref).unwrap_or("");
+        let group_key = compact_browser_string(browser_pack, browser_header, row.group_key_ref).unwrap_or("");
+
+        if !normalized_mod.is_empty() && mod_id.to_lowercase() != normalized_mod {
+            continue;
+        }
+        if !normalized_query.is_empty() {
+            let haystack =
+                normalize_search_text(&format!("{localized_name}|{item_id}|{mod_id}|{group_key}"));
+            if !haystack.contains(&normalized_query) {
+                continue;
+            }
+        }
+
+        if group_key.is_empty() {
+            if let Some(out_indices) = out.as_deref_mut() {
+                let out_index = count as usize;
+                if out_index < out_indices.len() {
+                    out_indices[out_index] = encode_visible_entry(index, false);
+                }
+            }
+            count = count.saturating_add(1);
+            continue;
+        }
+
+        if !emitted_groups.insert(group_key.to_owned()) {
+            continue;
+        }
+        if expanded.contains(group_key) {
+            emit_group_members_at_anchor(
+                browser_pack,
+                browser_header,
+                group_pack,
+                group_header,
+                &index_by_item_id,
+                group_key,
+                index,
+                &mut out,
+                &mut count,
+            )?;
+        } else {
+            if let Some(out_indices) = out.as_deref_mut() {
+                let out_index = count as usize;
+                if out_index < out_indices.len() {
+                    out_indices[out_index] = encode_visible_entry(index, true);
+                }
+            }
+            count = count.saturating_add(1);
+        }
+    }
+
+    Some(count)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -287,6 +447,62 @@ mod tests {
             for value in row {
                 out.extend_from_slice(&value.to_le_bytes());
             }
+        }
+        out.extend_from_slice(&string_table);
+        out
+    }
+
+    fn pack_browser_fixture(strings: &[&str], rows: &[[u32; 6]]) -> Vec<u8> {
+        let mut string_table = Vec::new();
+        let mut offsets = Vec::new();
+        for value in strings {
+            offsets.push(string_table.len() as u32);
+            string_table.extend_from_slice(value.as_bytes());
+            string_table.push(0);
+        }
+        let mut out = Vec::new();
+        out.extend_from_slice(COMPACT_BROWSER_MAGIC);
+        out.extend_from_slice(&COMPACT_BROWSER_VERSION.to_le_bytes());
+        out.extend_from_slice(&(rows.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(offsets.len() as u32).to_le_bytes());
+        out.extend_from_slice(&COMPACT_BROWSER_ROW_STRIDE.to_le_bytes());
+        for offset in offsets {
+            out.extend_from_slice(&offset.to_le_bytes());
+        }
+        for row in rows {
+            for value in row {
+                out.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        out.extend_from_slice(&string_table);
+        out
+    }
+
+    fn pack_group_fixture(strings: &[&str], rows: &[[u32; 6]], members: &[u32]) -> Vec<u8> {
+        let mut string_table = Vec::new();
+        let mut offsets = Vec::new();
+        for value in strings {
+            offsets.push(string_table.len() as u32);
+            string_table.extend_from_slice(value.as_bytes());
+            string_table.push(0);
+        }
+        let mut out = Vec::new();
+        out.extend_from_slice(b"NEIGRP1\0");
+        out.extend_from_slice(&1u32.to_le_bytes());
+        out.extend_from_slice(&(rows.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(offsets.len() as u32).to_le_bytes());
+        out.extend_from_slice(&(members.len() as u32).to_le_bytes());
+        out.extend_from_slice(&6u32.to_le_bytes());
+        for offset in offsets {
+            out.extend_from_slice(&offset.to_le_bytes());
+        }
+        for row in rows {
+            for value in row {
+                out.extend_from_slice(&value.to_le_bytes());
+            }
+        }
+        for member in members {
+            out.extend_from_slice(&member.to_le_bytes());
         }
         out.extend_from_slice(&string_table);
         out
@@ -354,5 +570,61 @@ mod tests {
         assert_eq!(expanded_count, 3);
         assert_eq!(expanded[1], 1);
         assert_eq!(expanded[2], COMPACT_BROWSER_GROUP_COLLAPSED_FLAG | 2);
+    }
+
+    #[test]
+    fn expands_group_members_at_anchor_from_group_pack() {
+        let browser = pack_browser_fixture(
+            &[
+                "mod:a",
+                "A",
+                "mod",
+                "",
+                "mod:b",
+                "B",
+                "g",
+                "mod:middle",
+                "Middle",
+                "mod:c",
+                "C",
+            ],
+            &[
+                [0, 1, 2, 3, 0, 0],
+                [4, 5, 2, 6, 1, 1],
+                [7, 8, 2, 3, 2, 0],
+                [9, 10, 2, 6, 3, 1],
+            ],
+        );
+        let groups = pack_group_fixture(
+            &["g", "Group", "mod:b", "mod:c"],
+            &[[0, 1, 2, 0, 2, 2]],
+            &[2, 3],
+        );
+
+        let mut collapsed = [u32::MAX; 6];
+        let collapsed_count = compact_browser_project_visible_indices_with_groups(
+            &browser,
+            &groups,
+            "",
+            "",
+            "",
+            Some(&mut collapsed),
+        )
+        .unwrap();
+        assert_eq!(collapsed_count, 3);
+        assert_eq!(&collapsed[..3], &[0, COMPACT_BROWSER_GROUP_COLLAPSED_FLAG | 1, 2]);
+
+        let mut expanded = [u32::MAX; 6];
+        let expanded_count = compact_browser_project_visible_indices_with_groups(
+            &browser,
+            &groups,
+            "",
+            "",
+            "g",
+            Some(&mut expanded),
+        )
+        .unwrap();
+        assert_eq!(expanded_count, 4);
+        assert_eq!(&expanded[..4], &[0, 1, 3, 2]);
     }
 }
