@@ -7,10 +7,12 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
 const source = readFileSync(resolve(frontendRoot, 'src/composables/useItemBrowser.ts'), 'utf8').replace(/\r\n/g, '\n');
+const schedulerSource = readFileSync(resolve(frontendRoot, 'src/composables/browser/browserInteractionScheduler.ts'), 'utf8').replace(/\r\n/g, '\n');
 
 test('homepage search and paging commits within one frame instead of legacy debounce delay', () => {
-  assert.match(source, /const INTERACTION_COMMIT_DELAY_MS = 16/);
-  assert.match(source, /searchTimeout = setTimeout\(\(\) => \{\n\s+void loadItems\(\);\n\s+\}, INTERACTION_COMMIT_DELAY_MS\)/);
-  assert.match(source, /deferredPageHydrationTimer = window\.setTimeout\(\(\) => \{\n\s+deferredPageHydrationTimer = null;\n\s+void loadItems\(\);\n\s+\}, INTERACTION_COMMIT_DELAY_MS\)/);
+  assert.match(schedulerSource, /export const INTERACTION_COMMIT_DELAY_MS = 16/);
+  assert.match(source, /interactionScheduler\.scheduleSearchCommit\(\(\) => \{\n\s+void loadItems\(\);\n\s+\}\)/);
+  assert.match(source, /interactionScheduler\.schedulePageHydration\(\(\) => \{\n\s+void loadItems\(\);\n\s+\}\)/);
+  assert.match(source, /interactionScheduler\.clear\(\)/);
   assert.doesNotMatch(source, /\}, 120\);/);
 });

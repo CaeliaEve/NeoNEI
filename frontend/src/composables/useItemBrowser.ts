@@ -55,10 +55,11 @@ import {
   normalizeExpandedGroups,
   normalizeFacetFilters,
 } from './browser/browserProjectionUtils';
+import {
+  createBrowserInteractionScheduler,
+} from './browser/browserInteractionScheduler';
 
 const SEARCH_LOCAL_PROJECTION_MAX_TOTAL = 1600;
-const INTERACTION_COMMIT_DELAY_MS = 16;
-
 let nativeBrowserWarmTimer: ReturnType<typeof setTimeout> | null = null;
 const nativeBrowserWarmScopes = new Set<string>();
 const nativeBrowserWarmPromises = new Map<string, Promise<void>>();
@@ -75,7 +76,7 @@ export function useItemBrowser(
   const pageRevalidationInFlight = sharedPageRevalidationInFlight;
   const pagePresentationReady = sharedPagePresentationReady;
   const pagePresentationWarmInFlight = sharedPagePresentationWarmInFlight;
-  let deferredPageHydrationTimer: number | null = null;
+  const interactionScheduler = createBrowserInteractionScheduler();
   const items = ref<Item[]>([]);
   const browserEntries = ref<BrowserGridEntry[]>([]);
   const mods = ref<Mod[]>([]);
@@ -96,7 +97,6 @@ export function useItemBrowser(
 
   let loadItemsRequestId = 0;
   let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
-  let searchTimeout: ReturnType<typeof setTimeout> | undefined;
   let initialHomeBootstrapMarked = false;
   let firstBrowserTileVisibleMarked = false;
   let activeResourceWarmToken = 0;
@@ -1225,11 +1225,10 @@ export function useItemBrowser(
   };
 
   const onSearch = () => {
-    if (searchTimeout) clearTimeout(searchTimeout);
     currentPage.value = 1;
-    searchTimeout = setTimeout(() => {
+    interactionScheduler.scheduleSearchCommit(() => {
       void loadItems();
-    }, INTERACTION_COMMIT_DELAY_MS);
+    });
   };
 
   const warmSearchIndex = () => {
@@ -1240,13 +1239,9 @@ export function useItemBrowser(
 
   const changePage = (page: number) => {
     currentPage.value = page;
-    if (deferredPageHydrationTimer !== null) {
-      window.clearTimeout(deferredPageHydrationTimer);
-    }
-    deferredPageHydrationTimer = window.setTimeout(() => {
-      deferredPageHydrationTimer = null;
+    interactionScheduler.schedulePageHydration(() => {
       void loadItems();
-    }, INTERACTION_COMMIT_DELAY_MS);
+    });
   };
 
   const reloadExpandedProjection = () => {
@@ -1412,12 +1407,8 @@ export function useItemBrowser(
 
   onUnmounted(() => {
     window.removeEventListener('resize', handleResize);
+    interactionScheduler.clear();
     if (resizeTimeout) clearTimeout(resizeTimeout);
-    if (searchTimeout) clearTimeout(searchTimeout);
-    if (deferredPageHydrationTimer !== null) {
-      clearTimeout(deferredPageHydrationTimer);
-      deferredPageHydrationTimer = null;
-    }
     if (nativeBrowserWarmTimer) {
       clearTimeout(nativeBrowserWarmTimer);
       nativeBrowserWarmTimer = null;
