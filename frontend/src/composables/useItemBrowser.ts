@@ -58,6 +58,7 @@ import {
 import {
   createBrowserInteractionScheduler,
 } from './browser/browserInteractionScheduler';
+import { createBrowserPagePresentationWarmManager } from './browser/browserPagePresentationWarm';
 
 const SEARCH_LOCAL_PROJECTION_MAX_TOTAL = 1600;
 let nativeBrowserWarmTimer: ReturnType<typeof setTimeout> | null = null;
@@ -77,6 +78,10 @@ export function useItemBrowser(
   const pagePresentationReady = sharedPagePresentationReady;
   const pagePresentationWarmInFlight = sharedPagePresentationWarmInFlight;
   const interactionScheduler = createBrowserInteractionScheduler();
+  const pagePresentationWarm = createBrowserPagePresentationWarmManager(
+    pagePresentationReady,
+    pagePresentationWarmInFlight,
+  );
   const items = ref<Item[]>([]);
   const browserEntries = ref<BrowserGridEntry[]>([]);
   const mods = ref<Mod[]>([]);
@@ -99,7 +104,6 @@ export function useItemBrowser(
   let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
   let initialHomeBootstrapMarked = false;
   let firstBrowserTileVisibleMarked = false;
-  let activeResourceWarmToken = 0;
 
   const buildPageCacheKey = (params: {
     page: number;
@@ -646,65 +650,6 @@ export function useItemBrowser(
     return request;
   };
 
-  const ensureBrowserPagePresentationWarm = (
-    cacheKey: string,
-    response: CachedBrowserPage,
-  ): Promise<void> => {
-    const itemIds = collectBrowserPageResourceItemIds(response);
-    if (pagePresentationReady.has(cacheKey)) {
-      return Promise.resolve();
-    }
-    const existing = pagePresentationWarmInFlight.get(cacheKey);
-    if (existing) {
-      return existing;
-    }
-    const request = Promise.resolve()
-      .then(() => {
-        markPerfEvent('browser-atlas-page-coverage', {
-          page: response.page,
-          requested: itemIds.length,
-          drawable: itemIds.length,
-          missing: 0,
-          source: 'native-runtime-render-worker',
-        });
-        // Native surface rendering owns texture residency. Do not decode DOM
-        // atlas images during page transitions; that reintroduces the old
-        // browser-image warm path and competes with the GPU render worker.
-        pagePresentationReady.add(cacheKey);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        pagePresentationWarmInFlight.delete(cacheKey);
-      });
-
-    pagePresentationWarmInFlight.set(cacheKey, request);
-    return request;
-  };
-
-  const waitForBrowserPagePresentation = async (
-    cacheKey: string,
-    response: CachedBrowserPage,
-    waitMs: number,
-  ) => {
-    if (waitMs <= 0) {
-      const warmToken = activeResourceWarmToken;
-      window.setTimeout(() => {
-        if (warmToken !== activeResourceWarmToken || pagePresentationReady.has(cacheKey)) {
-          return;
-        }
-        void ensureBrowserPagePresentationWarm(cacheKey, response);
-      }, 0);
-      return;
-    }
-    const warmPromise = ensureBrowserPagePresentationWarm(cacheKey, response);
-    await Promise.race([
-      warmPromise,
-      new Promise<void>((resolve) => {
-        setTimeout(resolve, waitMs);
-      }),
-    ]);
-  };
-
   const clearBrowserPageState = () => {
     pageCache.clear();
     pageRequestInFlight.clear();
@@ -724,7 +669,7 @@ export function useItemBrowser(
     }
 
     if (cacheKey) {
-      void waitForBrowserPagePresentation(cacheKey, response, 0);
+      void pagePresentationWarm.waitForPresentation(cacheKey, response, 0);
     }
 
     browserEntries.value = response.data;
@@ -932,7 +877,7 @@ export function useItemBrowser(
 
   const loadItems = async () => {
     const requestId = ++loadItemsRequestId;
-    activeResourceWarmToken += 1;
+    pagePresentationWarm.invalidate();
     loadError.value = '';
     const requestParams = buildRequestParams(currentPage.value);
     const cacheKey = buildPageCacheKey(requestParams);
@@ -943,7 +888,7 @@ export function useItemBrowser(
       if (hadVisibleEntries) {
         loading.value = false;
         transitioning.value = true;
-        void waitForBrowserPagePresentation(cacheKey, cached, 0);
+        void pagePresentationWarm.waitForPresentation(cacheKey, cached, 0);
       } else {
         loading.value = false;
         transitioning.value = false;
@@ -960,7 +905,7 @@ export function useItemBrowser(
       if (hadVisibleEntries) {
         loading.value = false;
         transitioning.value = true;
-        void waitForBrowserPagePresentation(localUnexpandedProjection.cacheKey, localUnexpandedProjection.page, 0);
+        void pagePresentationWarm.waitForPresentation(localUnexpandedProjection.cacheKey, localUnexpandedProjection.page, 0);
       } else {
         loading.value = false;
         transitioning.value = false;
@@ -978,7 +923,7 @@ export function useItemBrowser(
       if (hadVisibleEntries) {
         loading.value = false;
         transitioning.value = true;
-        void waitForBrowserPagePresentation(localProjection.cacheKey, localProjection.page, 0);
+        void pagePresentationWarm.waitForPresentation(localProjection.cacheKey, localProjection.page, 0);
       } else {
         loading.value = false;
         transitioning.value = false;
@@ -1013,7 +958,7 @@ export function useItemBrowser(
       if (expandedProjection) {
         setSharedBrowserPageCache(expandedProjection.cacheKey, expandedProjection.page);
         if (hadVisibleEntries) {
-          void waitForBrowserPagePresentation(expandedProjection.cacheKey, expandedProjection.page, 0);
+          void pagePresentationWarm.waitForPresentation(expandedProjection.cacheKey, expandedProjection.page, 0);
         }
         applyBrowserResponse(expandedProjection.page, requestId, expandedProjection.cacheKey);
         hydrateProjectedBrowserPageMedia(
@@ -1029,7 +974,7 @@ export function useItemBrowser(
       if (unexpandedProjection) {
         setSharedBrowserPageCache(unexpandedProjection.cacheKey, unexpandedProjection.page);
         if (hadVisibleEntries) {
-          void waitForBrowserPagePresentation(unexpandedProjection.cacheKey, unexpandedProjection.page, 0);
+          void pagePresentationWarm.waitForPresentation(unexpandedProjection.cacheKey, unexpandedProjection.page, 0);
         }
         applyBrowserResponse(unexpandedProjection.page, requestId, unexpandedProjection.cacheKey);
         return;
@@ -1041,7 +986,7 @@ export function useItemBrowser(
         if (persistent) {
           setSharedBrowserPageCache(cacheKey, persistent.page);
           if (hadVisibleEntries) {
-            void waitForBrowserPagePresentation(cacheKey, persistent.page, 0);
+            void pagePresentationWarm.waitForPresentation(cacheKey, persistent.page, 0);
           }
           applyBrowserResponse(persistent.page, requestId, cacheKey);
           loading.value = false;
@@ -1066,7 +1011,7 @@ export function useItemBrowser(
       });
       setSharedBrowserPageCache(normalizedCacheKey, normalized);
       if (hadVisibleEntries) {
-        void waitForBrowserPagePresentation(normalizedCacheKey, normalized, 0);
+        void pagePresentationWarm.waitForPresentation(normalizedCacheKey, normalized, 0);
       }
       applyBrowserResponse(normalized, requestId, normalizedCacheKey);
     } catch (error) {
@@ -1089,7 +1034,7 @@ export function useItemBrowser(
 
   const loadInitialHomeState = async () => {
     const requestId = ++loadItemsRequestId;
-    activeResourceWarmToken += 1;
+    pagePresentationWarm.invalidate();
     loading.value = true;
     transitioning.value = false;
     modsLoading.value = true;
@@ -1249,7 +1194,7 @@ export function useItemBrowser(
     const localProjection = tryProjectExpandedGroupsFromLocalCaches(requestParams);
     if (localProjection) {
       const requestId = ++loadItemsRequestId;
-      activeResourceWarmToken += 1;
+      pagePresentationWarm.invalidate();
       loadError.value = '';
       loading.value = false;
       transitioning.value = false;
