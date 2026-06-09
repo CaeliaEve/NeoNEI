@@ -14,6 +14,14 @@ import { useRecipeBrowserSelectors } from './recipe-browser/useRecipeBrowserSele
 import { createRecipeSearchController } from './recipe-browser/recipeSearchController';
 import { createRecipeMergeState } from './recipe-browser/recipeMergeState';
 import {
+  buildCategoryGroupRequestKey,
+  buildMachineGroupRequestKey,
+  collectAdjacentRecipePages,
+  collectNeighborCategoryIndexes,
+  computeCategoryPackWindow,
+  resolveCategoryMachineRoute,
+} from './recipe-browser/recipeCategoryPackUtils';
+import {
   getCategoryRecipesPerPage,
   getLoadedRecipeIdSet as buildLoadedRecipeIdSet,
   getLoadedRecipeMap,
@@ -399,7 +407,13 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     voltageTier?: string | null,
     options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; category?: MachineCategory | null },
   ) => {
-    const requestKey = `${machineKey}:${options?.offset ?? 0}:${options?.limit ?? CATEGORY_PACK_PAGE_SIZE}:${options?.includeRecipeIds ? 1 : 0}`;
+    const requestKey = buildMachineGroupRequestKey({
+      machineKey,
+      offset: options?.offset,
+      limit: options?.limit,
+      includeRecipeIds: options?.includeRecipeIds,
+      defaultLimit: CATEGORY_PACK_PAGE_SIZE,
+    });
     if (!machineKey || requestedProducedByGroupKeys.value.has(requestKey)) {
       return;
     }
@@ -437,7 +451,13 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     voltageTier?: string | null,
     options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; category?: MachineCategory | null },
   ) => {
-    const requestKey = `${machineKey}:${options?.offset ?? 0}:${options?.limit ?? CATEGORY_PACK_PAGE_SIZE}:${options?.includeRecipeIds ? 1 : 0}`;
+    const requestKey = buildMachineGroupRequestKey({
+      machineKey,
+      offset: options?.offset,
+      limit: options?.limit,
+      includeRecipeIds: options?.includeRecipeIds,
+      defaultLimit: CATEGORY_PACK_PAGE_SIZE,
+    });
     if (!machineKey || requestedUsageGroupKeys.value.has(requestKey)) {
       return;
     }
@@ -474,7 +494,14 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     categoryKey: string,
     options?: { offset?: number; limit?: number; includeRecipeIds?: boolean; category?: MachineCategory | null },
   ) => {
-    const requestKey = `${tab}:${categoryKey}:${options?.offset ?? 0}:${options?.limit ?? CATEGORY_PACK_PAGE_SIZE}:${options?.includeRecipeIds ? 1 : 0}`;
+    const requestKey = buildCategoryGroupRequestKey({
+      tab,
+      categoryKey,
+      offset: options?.offset,
+      limit: options?.limit,
+      includeRecipeIds: options?.includeRecipeIds,
+      defaultLimit: CATEGORY_PACK_PAGE_SIZE,
+    });
     if (!categoryKey || requestedCategoryGroupKeys.value.has(requestKey)) {
       return;
     }
@@ -542,7 +569,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
         await existing;
       } else {
         const promise = (async () => {
-          if (category.type !== 'machine' || !`${category.machineKey ?? ''}`.trim()) {
+          const machineRoute = resolveCategoryMachineRoute(category);
+          if (!machineRoute.isMachineRoute) {
             await loadCategoryGroup(itemId, requestSeq, tab, category.categoryKey, {
               offset: 0,
               limit: CATEGORY_PACK_IDS_ONLY_LIMIT,
@@ -552,10 +580,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
             return;
           }
 
-          const machineKey = `${category.machineKey ?? ''}`.trim();
-          const machineType = machineKey.split('::')[0]?.trim() || category.name;
           if (tab === 'usedIn') {
-            await loadUsedInMachineGroup(itemId, requestSeq, machineType, machineKey, category.voltageTier ?? null, {
+            await loadUsedInMachineGroup(itemId, requestSeq, machineRoute.machineType, machineRoute.machineKey, category.voltageTier ?? null, {
               offset: 0,
               limit: CATEGORY_PACK_IDS_ONLY_LIMIT,
               includeRecipeIds: true,
@@ -564,7 +590,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
             return;
           }
 
-          await loadProducedByMachineGroup(itemId, requestSeq, machineType, machineKey, category.voltageTier ?? null, {
+          await loadProducedByMachineGroup(itemId, requestSeq, machineRoute.machineType, machineRoute.machineKey, category.voltageTier ?? null, {
             offset: 0,
             limit: CATEGORY_PACK_IDS_ONLY_LIMIT,
             includeRecipeIds: true,
@@ -597,10 +623,11 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       return;
     }
 
-    const clampedOffset = Math.max(
-      0,
-      Math.min(targetStart, Math.max(0, orderedRecipeIds.length - packWindowSize)),
-    );
+    const clampedOffset = computeCategoryPackWindow({
+      targetStart,
+      orderedRecipeCount: orderedRecipeIds.length,
+      packWindowSize,
+    });
     const inflightKey = `${lookupKey}:${clampedOffset}:${packWindowSize}:0`;
     const existing = categoryPackRequestsInFlight.get(inflightKey);
     if (existing) {
@@ -609,7 +636,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     }
 
     const promise = (async () => {
-      if (category.type !== 'machine' || !`${category.machineKey ?? ''}`.trim()) {
+      const machineRoute = resolveCategoryMachineRoute(category);
+      if (!machineRoute.isMachineRoute) {
         await loadCategoryGroup(itemId, requestSeq, tab, category.categoryKey, {
           offset: clampedOffset,
           limit: packWindowSize,
@@ -619,10 +647,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
         return;
       }
 
-      const machineKey = `${category.machineKey ?? ''}`.trim();
-      const machineType = machineKey.split('::')[0]?.trim() || category.name;
       if (tab === 'usedIn') {
-        await loadUsedInMachineGroup(itemId, requestSeq, machineType, machineKey, category.voltageTier ?? null, {
+        await loadUsedInMachineGroup(itemId, requestSeq, machineRoute.machineType, machineRoute.machineKey, category.voltageTier ?? null, {
           offset: clampedOffset,
           limit: packWindowSize,
           includeRecipeIds: false,
@@ -631,7 +657,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
         return;
       }
 
-      await loadProducedByMachineGroup(itemId, requestSeq, machineType, machineKey, category.voltageTier ?? null, {
+      await loadProducedByMachineGroup(itemId, requestSeq, machineRoute.machineType, machineRoute.machineKey, category.voltageTier ?? null, {
         offset: clampedOffset,
         limit: packWindowSize,
         includeRecipeIds: false,
@@ -716,16 +742,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       return;
     }
 
-    const normalizedIndex = ((selectedMachineIndex.value % categories.length) + categories.length) % categories.length;
-    const candidateIndexes = [
-      (normalizedIndex + 1) % categories.length,
-      (normalizedIndex - 1 + categories.length) % categories.length,
-    ];
-
-    const seen = new Set<number>([normalizedIndex]);
-    for (const index of candidateIndexes) {
-      if (seen.has(index)) continue;
-      seen.add(index);
+    for (const index of collectNeighborCategoryIndexes(selectedMachineIndex.value, categories.length)) {
       const category = categories[index];
       if (!category || isCategoryPackComplete(category)) {
         continue;
@@ -746,10 +763,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       return;
     }
 
-    const normalizedPage = Math.max(0, Math.floor(currentPage.value));
-    const candidatePages = [normalizedPage + 1, normalizedPage - 1]
-      .filter((page, index, values) => page >= 0 && page < pageCount && values.indexOf(page) === index);
-    for (const page of candidatePages) {
+    for (const page of collectAdjacentRecipePages(currentPage.value, pageCount)) {
       void ensureCategoryPageReady(itemId, loadRequestSeq, category, page, 'prefetch');
     }
   };
