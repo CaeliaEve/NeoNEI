@@ -2,12 +2,12 @@
   NativeSurfaceEngineRequest,
   NativeSurfaceEngineResponse,
   NativeSurfaceEngineEntry,
-  NativeSurfaceEngineHit,
   NativeSurfaceEngineWorkerMetrics,
 } from "../native-surface/NativeSurfaceEngineProtocol";
 import { NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE } from "../native-surface/NativeSurfaceEngineProtocol";
 import { createSurfaceState, type SurfaceState } from "./nativeSurfaceWorkerState";
 import { applyNativeSurfaceMutation } from "./nativeSurfaceWorkerMutations";
+import { hitTestNativeSurface } from "./nativeSurfaceWorkerHitTest";
 import type { NativeSurfaceId } from "../native-surface/contracts";
 import {
   getNativeCompactBrowserRow,
@@ -506,46 +506,6 @@ function rebuildLayout(surface: SurfaceState): void {
   surface.runtimeError = null;
 }
 
-function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequest, { type: "hitTest" }>): NativeSurfaceEngineHit {
-  const viewportWidth = Math.max(1, Math.floor(surface.viewport?.width ?? 1));
-  const cardSize = Math.max(1, Math.floor(surface.itemSize || 44));
-  const gap = 4;
-  const nativeIndex = wasmEngine?.neonei_engine_hit_test_index(
-    toU32(message.x),
-    toU32(message.y),
-    toU32(viewportWidth),
-    toU32(cardSize),
-    toU32(gap),
-    toU32(surface.layoutCommands.length),
-  );
-  const hit = Number.isInteger(nativeIndex) && nativeIndex >= 0
-    ? surface.layoutCommands[nativeIndex]
-    : null;
-  if (!hit) {
-    surface.lastHit = null;
-    return null;
-  }
-  surface.lastHit = {
-    key: hit.key,
-    kind: hit.kind,
-    entryIndex: hit.entryIndex,
-    itemId: hit.itemId,
-    groupKey: hit.groupKey ?? null,
-    viewport: message.viewport,
-    tooltip: {
-      itemId: hit.itemId,
-      publicItemId: surface.searchByItemId.get(hit.itemId)?.publicItemId ?? null,
-      ...(surface.stringByItemId.get(hit.itemId) ?? {}),
-      groupKey: hit.groupKey ?? surface.stringByItemId.get(hit.itemId)?.groupKey ?? null,
-      groupLabel: surface.groupByKey.get(hit.groupKey ?? "")?.groupLabel
-        ?? surface.stringByItemId.get(hit.itemId)?.groupLabel
-        ?? null,
-      groupSize: surface.groupByKey.get(hit.groupKey ?? "")?.groupSize ?? null,
-    },
-  };
-  return surface.lastHit;
-}
-
 function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
   const lastSurface = lastSurfaceId ? surfaces.get(lastSurfaceId) ?? null : null;
   return buildNativeSurfaceMetrics({
@@ -680,7 +640,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         type: "hitTest",
         id: message.id,
         surfaceId: message.surfaceId,
-        hit: hitTest(surface, message),
+        hit: hitTestNativeSurface(surface, message, wasmEngine),
         metrics: buildMetrics(),
       };
     case "destroy":
@@ -703,5 +663,6 @@ self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   if (!message?.type || !message.surfaceId) return;
   void handleRequest(message).then((response) => self.postMessage(response));
 };
+
 
 
