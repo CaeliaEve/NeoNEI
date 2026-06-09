@@ -36,6 +36,9 @@ import {
   joinDistDataAssetPath,
   preserveEncodedDistDataFileNamePath,
 } from "./distDataRuntimeAssetResolver";
+import { parseNativeBinaryPackEnvelope } from "./distDataNativeBinaryPack";
+import { parseCompactRecipePayload } from "./distDataRuntimeBinaryRecipePack";
+import { parseCompactTexturePayloadToAtlasIndex } from "./distDataRuntimeBinaryTexturePack";
 export {
   resolveDistDataAssetPath,
   resolveDistDataNativeRuntimeManifestPath,
@@ -181,15 +184,6 @@ type DistDataRustRuntimeManifest = {
   files?: Array<{ path?: string; bytes?: number }> | Record<string, string | undefined>;
 };
 
-type NativeBinaryPackEnvelope = {
-  schema: string;
-  payload: ArrayBuffer;
-};
-
-const NATIVE_BINARY_PACK_MAGIC = "NNEIBIN\0";
-const NATIVE_BINARY_PACK_HEADER_BYTES = 24;
-const COMPACT_RECIPE_MAGIC = "NEIRCP1\0";
-const COMPACT_TEXTURE_MAGIC = "NEITEX1\0";
 const COMPACT_SEARCH_MAGIC = "NEISRC2\0";
 const COMPACT_SEARCH_HEADER_BYTES = 8 + 4 * 4;
 const COMPACT_SEARCH_ROW_STRIDE = 13;
@@ -257,284 +251,6 @@ let cachedBrowserAtlasIndex: BrowserAtlasIndexResponse | null = null;
 let nativeRenderIndexRequest: Promise<NativeRenderIndex | null> | null = null;
 let cachedNativeRenderIndex: NativeRenderIndex | null = null;
 
-function decodeBytes(buffer: ArrayBuffer, offset: number, length: number): string {
-  return textDecoder.decode(new Uint8Array(buffer, offset, length));
-}
-
-function parseNativeBinaryPackEnvelope(buffer: ArrayBuffer, expectedSchema: string): NativeBinaryPackEnvelope {
-  if (buffer.byteLength < NATIVE_BINARY_PACK_HEADER_BYTES) {
-    throw new Error(`Native binary pack is too small: ${buffer.byteLength}`);
-  }
-  const view = new DataView(buffer);
-  const magic = decodeBytes(buffer, 0, 8);
-  const version = view.getUint32(8, true);
-  const schemaLength = view.getUint32(12, true);
-  const payloadLength = Number(view.getBigUint64(16, true));
-  const schemaStart = NATIVE_BINARY_PACK_HEADER_BYTES;
-  const schemaEnd = schemaStart + schemaLength;
-  const payloadEnd = schemaEnd + payloadLength;
-  if (magic !== NATIVE_BINARY_PACK_MAGIC) {
-    throw new Error(`Native binary pack magic mismatch: ${magic}`);
-  }
-  if (version !== 1) {
-    throw new Error(`Native binary pack version mismatch: ${version}`);
-  }
-  if (schemaEnd > buffer.byteLength || payloadEnd !== buffer.byteLength) {
-    throw new Error(`Native binary pack length mismatch: schema=${schemaLength}, payload=${payloadLength}, bytes=${buffer.byteLength}`);
-  }
-  const schema = decodeBytes(buffer, schemaStart, schemaLength);
-  if (schema !== expectedSchema) {
-    throw new Error(`Native binary pack schema mismatch: expected ${expectedSchema}, got ${schema}`);
-  }
-  return { schema, payload: buffer.slice(schemaEnd, payloadEnd) };
-}
-
-function compactRecipeString(strings: string[], index: number): string {
-  return strings[index] ?? "";
-}
-
-function parseCompactRecipePayload(payload: ArrayBuffer): DistDataRustRecipePackPayload {
-  if (payload.byteLength < 52) {
-    throw new Error(`Compact recipe payload is too small: ${payload.byteLength}`);
-  }
-  const view = new DataView(payload);
-  const magic = decodeBytes(payload, 0, 8);
-  if (magic !== COMPACT_RECIPE_MAGIC) {
-    throw new Error(`Compact recipe magic mismatch: ${magic}`);
-  }
-  const version = view.getUint32(8, true);
-  if (version !== 1) {
-    throw new Error(`Compact recipe version mismatch: ${version}`);
-  }
-  const stringCount = view.getUint32(12, true);
-  const itemCount = view.getUint32(16, true);
-  const refCount = view.getUint32(20, true);
-  const uiCount = view.getUint32(24, true);
-  const categoryCount = view.getUint32(28, true);
-  const categorySourceCount = view.getUint32(32, true);
-  const itemStride = view.getUint32(36, true);
-  const refStride = view.getUint32(40, true);
-  const uiStride = view.getUint32(44, true);
-  const categoryStride = view.getUint32(48, true);
-  if (itemStride < 5 || refStride < 3 || uiStride < 7 || categoryStride < 5) {
-    throw new Error(`Compact recipe stride mismatch: item=${itemStride}, ref=${refStride}, ui=${uiStride}, category=${categoryStride}`);
-  }
-
-  let cursor = 52;
-  const bytesNeeded = (count: number, stride = 1) => count * stride * 4;
-  const stringOffsetsStart = cursor;
-  cursor += bytesNeeded(stringCount);
-  const itemRowsStart = cursor;
-  cursor += bytesNeeded(itemCount, itemStride);
-  const refRowsStart = cursor;
-  cursor += bytesNeeded(refCount, refStride);
-  const uiRowsStart = cursor;
-  cursor += bytesNeeded(uiCount, uiStride);
-  const categoryRowsStart = cursor;
-  cursor += bytesNeeded(categoryCount, categoryStride);
-  const categorySourcesStart = cursor;
-  cursor += bytesNeeded(categorySourceCount);
-  const stringsStart = cursor;
-  if (stringsStart > payload.byteLength) {
-    throw new Error(`Compact recipe table exceeds payload length: ${stringsStart}/${payload.byteLength}`);
-  }
-
-  const strings: string[] = [];
-  const bytes = new Uint8Array(payload);
-  for (let index = 0; index < stringCount; index += 1) {
-    const offset = view.getUint32(stringOffsetsStart + index * 4, true);
-    const start = stringsStart + offset;
-    if (start >= payload.byteLength) {
-      strings.push("");
-      continue;
-    }
-    let end = start;
-    while (end < payload.byteLength && bytes[end] !== 0) {
-      end += 1;
-    }
-    strings.push(decodeBytes(payload, start, end - start));
-  }
-
-  const readRowValue = (start: number, row: number, stride: number, column: number): number => (
-    view.getUint32(start + (row * stride + column) * 4, true)
-  );
-  const readRef = (row: number): { recipeId: string; categoryId: string; displayName: string } => {
-    if (row < 0 || row >= refCount) {
-      return { recipeId: "", categoryId: "", displayName: "" };
-    }
-    return {
-      recipeId: compactRecipeString(strings, readRowValue(refRowsStart, row, refStride, 0)),
-      categoryId: compactRecipeString(strings, readRowValue(refRowsStart, row, refStride, 1)),
-      displayName: compactRecipeString(strings, readRowValue(refRowsStart, row, refStride, 2)),
-    };
-  };
-
-  const itemIndex: DistDataRecipeItemIndexEntry[] = [];
-  for (let row = 0; row < itemCount; row += 1) {
-    const itemId = compactRecipeString(strings, readRowValue(itemRowsStart, row, itemStride, 0));
-    const producedStart = readRowValue(itemRowsStart, row, itemStride, 1);
-    const producedCount = readRowValue(itemRowsStart, row, itemStride, 2);
-    const usedStart = readRowValue(itemRowsStart, row, itemStride, 3);
-    const usedCount = readRowValue(itemRowsStart, row, itemStride, 4);
-    if (!itemId) continue;
-    const producedBy = Array.from({ length: producedCount }, (_, offset) => readRef(producedStart + offset)).filter((entry) => entry.recipeId);
-    const usedIn = Array.from({ length: usedCount }, (_, offset) => readRef(usedStart + offset)).filter((entry) => entry.recipeId);
-    itemIndex.push({ itemId, producedBy, usedIn });
-  }
-
-  const uiPayloadIndex: DistDataRecipeUiPayloadIndexEntry[] = [];
-  for (let row = 0; row < uiCount; row += 1) {
-    const recipeId = compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 0));
-    const path = compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 1));
-    if (!recipeId || !path) continue;
-    uiPayloadIndex.push({
-      recipeId,
-      path,
-      payloadKey: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 2)) || undefined,
-      familyKey: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 3)) || undefined,
-      recipeType: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 4)) || undefined,
-      machineType: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 5)) || undefined,
-    });
-  }
-
-  const categoryIndex: DistDataRustRecipeCategoryEntry[] = [];
-  for (let row = 0; row < categoryCount; row += 1) {
-    const categoryId = compactRecipeString(strings, readRowValue(categoryRowsStart, row, categoryStride, 0));
-    if (!categoryId) continue;
-    const sourceStart = readRowValue(categoryRowsStart, row, categoryStride, 3);
-    const sourceCount = readRowValue(categoryRowsStart, row, categoryStride, 4);
-    const sourceCategoryIds = Array.from({ length: sourceCount }, (_, offset) => {
-      const sourceRow = sourceStart + offset;
-      if (sourceRow < 0 || sourceRow >= categorySourceCount) return "";
-      return compactRecipeString(strings, view.getUint32(categorySourcesStart + sourceRow * 4, true));
-    }).filter(Boolean);
-    categoryIndex.push({
-      categoryId,
-      displayName: compactRecipeString(strings, readRowValue(categoryRowsStart, row, categoryStride, 1)) || categoryId,
-      recipeCount: readRowValue(categoryRowsStart, row, categoryStride, 2),
-      sourceCategoryIds,
-    });
-  }
-
-  return { schemaVersion: "neonei/recipe-pack/current", itemIndex, uiPayloadIndex, categoryIndex };
-}
-
-function parseCompactTexturePayloadToAtlasIndex(payload: ArrayBuffer): BrowserAtlasIndexResponse {
-  const headerBytes = 8 + 6 * 4;
-  const rowStride = 10;
-  const frameStride = 5;
-  if (payload.byteLength < headerBytes) {
-    throw new Error(`Compact texture payload is too small: ${payload.byteLength}`);
-  }
-  const view = new DataView(payload);
-  const magic = decodeBytes(payload, 0, 8);
-  if (magic !== COMPACT_TEXTURE_MAGIC) {
-    throw new Error(`Compact texture magic mismatch: ${magic}`);
-  }
-  const version = view.getUint32(8, true);
-  const itemCount = view.getUint32(12, true);
-  const stringCount = view.getUint32(16, true);
-  const frameCount = view.getUint32(20, true);
-  const actualRowStride = view.getUint32(24, true);
-  const actualFrameStride = view.getUint32(28, true);
-  if (version !== 1 || actualRowStride !== rowStride || actualFrameStride !== frameStride) {
-    throw new Error(`Compact texture stride mismatch: version=${version}, row=${actualRowStride}, frame=${actualFrameStride}`);
-  }
-
-  const offsetsStart = headerBytes;
-  const rowsStart = offsetsStart + stringCount * 4;
-  const framesStart = rowsStart + itemCount * rowStride * 4;
-  const stringsStart = framesStart + frameCount * frameStride * 4;
-  if (stringsStart > payload.byteLength) {
-    throw new Error(`Compact texture table exceeds payload length: ${stringsStart}/${payload.byteLength}`);
-  }
-
-  const bytes = new Uint8Array(payload);
-  const strings: string[] = [];
-  for (let index = 0; index < stringCount; index += 1) {
-    const offset = view.getUint32(offsetsStart + index * 4, true);
-    const start = stringsStart + offset;
-    if (start >= payload.byteLength) {
-      strings.push("");
-      continue;
-    }
-    let end = start;
-    while (end < payload.byteLength && bytes[end] !== 0) {
-      end += 1;
-    }
-    strings.push(decodeBytes(payload, start, end - start));
-  }
-
-  const items: BrowserAtlasIndexResponse["items"] = [];
-  let animatedItemCount = 0;
-  for (let index = 0; index < itemCount; index += 1) {
-    const rowOffset = rowsStart + index * rowStride * 4;
-    const itemId = compactRecipeString(strings, view.getUint32(rowOffset, true));
-    if (!itemId) continue;
-    const staticAtlasFile = compactRecipeString(strings, view.getUint32(rowOffset + 4, true));
-    const staticX = view.getUint32(rowOffset + 8, true);
-    const staticY = view.getUint32(rowOffset + 12, true);
-    const staticWidth = view.getUint32(rowOffset + 16, true);
-    const staticHeight = view.getUint32(rowOffset + 20, true);
-    const animatedAtlasFile = compactRecipeString(strings, view.getUint32(rowOffset + 24, true));
-    const frameStart = view.getUint32(rowOffset + 28, true);
-    const rowFrameCount = view.getUint32(rowOffset + 32, true);
-    const frameDurationMs = view.getUint32(rowOffset + 36, true);
-
-    const frames: NonNullable<BrowserAtlasIndexResponse["items"][number]["animatedAtlas"]>["frames"] = [];
-    const timeline: NonNullable<BrowserAtlasIndexResponse["items"][number]["animatedAtlas"]>["timeline"] = [];
-    for (let frameIndex = 0; frameIndex < rowFrameCount; frameIndex += 1) {
-      const absoluteFrameIndex = frameStart + frameIndex;
-      if (absoluteFrameIndex >= frameCount) break;
-      const frameOffset = framesStart + absoluteFrameIndex * frameStride * 4;
-      const width = view.getUint32(frameOffset + 8, true);
-      const height = view.getUint32(frameOffset + 12, true);
-      if (width <= 0 || height <= 0) continue;
-      const frame = {
-        index: frameIndex,
-        frameIndex,
-        timelineIndex: frameIndex,
-        durationMs: Math.max(16, view.getUint32(frameOffset + 16, true) || frameDurationMs || 50),
-        x: view.getUint32(frameOffset, true),
-        y: view.getUint32(frameOffset + 4, true),
-        width,
-        height,
-      };
-      frames.push(frame);
-      timeline.push(frame);
-    }
-    const hasAnimatedAtlas = Boolean(animatedAtlasFile && frames.length > 0);
-    if (hasAnimatedAtlas) animatedItemCount += 1;
-    items.push({
-      itemId,
-      hasStaticAtlas: Boolean(staticAtlasFile && staticWidth > 0 && staticHeight > 0),
-      hasAnimatedAtlas,
-      staticAtlas: staticAtlasFile && staticWidth > 0 && staticHeight > 0 ? {
-        atlasFile: staticAtlasFile,
-        x: staticX,
-        y: staticY,
-        width: staticWidth,
-        height: staticHeight,
-      } : null,
-      animatedAtlas: hasAnimatedAtlas ? {
-        atlasFile: animatedAtlasFile,
-        frameDurationMs: frameDurationMs || null,
-        frameCount: frames.length,
-        frames,
-        timeline,
-      } : null,
-    });
-  }
-
-  return {
-    schemaVersion: "neonei/texture-pack/current",
-    itemCount: items.length,
-    animatedItemCount,
-    missingAtlasCount: items.filter((item) => !item.hasStaticAtlas && !item.hasAnimatedAtlas).length,
-    items,
-  };
-}
-
 function parseNativeBrowserPackPayload(payload: ArrayBuffer): DistDataNativeBrowserPackPayload {
   const pack = parseNativeCompactBrowserPack(payload);
   const items: DistDataBrowserItem[] = [];
@@ -563,7 +279,7 @@ function parseNativeSearchPackPayload(manifest: DistDataManifest, payload: Array
     throw new Error(`Compact search payload is too small: ${payload.byteLength}`);
   }
   const bytes = new Uint8Array(payload);
-  const magic = decodeBytes(payload, 0, 8);
+  const magic = textDecoder.decode(new Uint8Array(payload, 0, 8));
   if (magic !== COMPACT_SEARCH_MAGIC) {
     throw new Error(`Compact search magic mismatch: ${magic}`);
   }
@@ -635,7 +351,7 @@ function parseNativeGroupPackPayload(payload: ArrayBuffer): DistDataRawGroup[] {
     return [];
   }
   const bytes = new Uint8Array(payload);
-  const magic = decodeBytes(payload, 0, 8);
+  const magic = textDecoder.decode(new Uint8Array(payload, 0, 8));
   if (magic !== COMPACT_GROUP_MAGIC) {
     throw new Error(`Compact group magic mismatch: ${magic}`);
   }
