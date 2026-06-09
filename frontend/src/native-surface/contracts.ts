@@ -60,6 +60,7 @@ export interface NativeTooltipPayload {
   title: string;
   subtitle?: string;
   itemId?: string;
+  publicItemId?: string | null;
   groupKey?: string;
   localizedName?: string | null;
   modId?: string | null;

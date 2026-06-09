@@ -34,6 +34,7 @@ export type NativeSurfaceEngineRuntimePack = {
 
 export type NativeSurfaceEngineTooltipData = {
   itemId: string;
+  publicItemId?: string | null;
   localizedName?: string | null;
   modId?: string | null;
   internalName?: string | null;

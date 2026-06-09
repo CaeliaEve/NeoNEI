@@ -1477,28 +1477,14 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
             "displayName": category_display_name,
         });
 
-        for input in recipe
-            .get("inputs")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-        {
-            if let Some(item_id) = value_string(&input, "itemId") {
-                used_in.entry(item_id).or_default().push(ref_value.clone());
-            }
+        for item_id in input_item_ids {
+            used_in.entry(item_id).or_default().push(ref_value.clone());
         }
-        for output in recipe
-            .get("outputs")
-            .and_then(Value::as_array)
-            .cloned()
-            .unwrap_or_default()
-        {
-            if let Some(item_id) = value_string(&output, "itemId") {
-                produced_by
-                    .entry(item_id)
-                    .or_default()
-                    .push(ref_value.clone());
-            }
+        for item_id in output_item_ids {
+            produced_by
+                .entry(item_id)
+                .or_default()
+                .push(ref_value.clone());
         }
         if debug_json {
             recipe_pack.push(recipe.clone());

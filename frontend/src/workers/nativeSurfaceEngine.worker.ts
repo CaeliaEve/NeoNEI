@@ -1395,6 +1395,7 @@ function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequ
     viewport: message.viewport,
     tooltip: {
       itemId: hit.itemId,
+      publicItemId: surface.searchByItemId.get(hit.itemId)?.publicItemId ?? null,
       ...(surface.stringByItemId.get(hit.itemId) ?? {}),
       groupKey: hit.groupKey ?? surface.stringByItemId.get(hit.itemId)?.groupKey ?? null,
       groupLabel: surface.groupByKey.get(hit.groupKey ?? "")?.groupLabel

@@ -1941,15 +1941,15 @@ export async function getDistDataRecipeBootstrap(itemId: string): Promise<Recipe
   const [runtime, recipeIndex, rustRecipePack] = await Promise.all([getBrowserRuntime(), getRecipeItemIndex(), getRustRecipePack()]);
   const indexEntry = recipeIndex?.get(normalizedItemId);
   const item = runtime?.itemById.get(normalizedItemId);
-  if (!indexEntry || !item) {
+  if (!item) {
     return null;
   }
 
-  const producedByRecipes = collectRecipeIds(indexEntry.producedBy);
-  const usedInRecipes = collectRecipeIds(indexEntry.usedIn);
+  const producedByRecipes = collectRecipeIds(indexEntry?.producedBy);
+  const usedInRecipes = collectRecipeIds(indexEntry?.usedIn);
   const categoryLookup = buildCategoryLookup(rustRecipePack);
-  const producedByCategoryGroups = buildCategorySummaries(indexEntry.producedBy, categoryLookup);
-  const usedInCategoryGroups = buildCategorySummaries(indexEntry.usedIn, categoryLookup);
+  const producedByCategoryGroups = buildCategorySummaries(indexEntry?.producedBy, categoryLookup);
+  const usedInCategoryGroups = buildCategorySummaries(indexEntry?.usedIn, categoryLookup);
   return {
     item,
     recipeIndex: {

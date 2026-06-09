@@ -67,6 +67,7 @@ const nativeHoveredHit = ref<{
     title: string;
     subtitle?: string;
     itemId?: string;
+    publicItemId?: string | null;
     groupKey?: string;
     localizedName?: string | null;
     modId?: string | null;
@@ -310,9 +311,12 @@ async function handleNativeClick(event: MouseEvent) {
   const hit = await controller.hitTest(toLocalPointer(event));
   if (!hit) return;
   const entry = findEntryByNativeHit(hit);
-  if (!entry) return;
+  if (!entry) {
+    if (hit.kind === "item") emit("itemClick", hit.item);
+    return;
+  }
   if (entry.kind === "item") {
-    emit("itemClick", entry.item);
+    emit("itemClick", hit.item);
     return;
   }
   emit("groupClick", entry.group);
@@ -323,10 +327,13 @@ async function handleNativeContextMenu(event: MouseEvent) {
   const hit = await controller.hitTest(toLocalPointer(event));
   if (!hit) return;
   const entry = findEntryByNativeHit(hit);
-  if (!entry) return;
   event.preventDefault();
+  if (!entry) {
+    if (hit.kind === "item") emit("itemContextmenu", hit.item, event);
+    return;
+  }
   if (entry.kind === "item") {
-    emit("itemContextmenu", entry.item, event);
+    emit("itemContextmenu", hit.item, event);
     return;
   }
   emit("groupContextmenu", entry.group, event);
@@ -353,6 +360,9 @@ async function syncNativeFrame() {
     if (seq !== nativeFrameSeq) return;
     nativeFirstFrameReady = response?.type === "frame";
     updateNativeRenderVisibility();
+    if (props.enableAnimation && nativeRenderVisible.value && nativeRenderInitialized) {
+      requestNativeFrame();
+    }
   }
 }
 

@@ -43,8 +43,10 @@ function toEngineEntries(entries: NativeSurfaceCompatEntries["entries"]): Native
 }
 
 function buildSyntheticItem(itemId: string, tooltip: NativeTooltipPayload | null): Item {
+  const publicItemId = tooltip?.publicItemId ? `${tooltip.publicItemId}` : null;
   return {
     itemId,
+    publicItemId,
     localizedName: tooltip?.localizedName || tooltip?.title || itemId,
     modId: tooltip?.modId || "",
     internalName: tooltip?.internalName || itemId,
@@ -223,6 +225,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
         title: response.hit.tooltip.groupLabel || response.hit.tooltip.localizedName || response.hit.tooltip.itemId,
         subtitle: response.hit.tooltip.modId ?? undefined,
         itemId: response.hit.tooltip.itemId,
+        publicItemId: response.hit.tooltip.publicItemId ?? null,
         groupKey: response.hit.tooltip.groupKey ?? response.hit.groupKey ?? undefined,
         localizedName: response.hit.tooltip.localizedName ?? null,
         modId: response.hit.tooltip.modId ?? null,
@@ -245,6 +248,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
     const baseItem = getEntryItem(entry);
     const item = nativeTooltip ? {
       ...baseItem,
+      publicItemId: nativeTooltip.publicItemId || baseItem.publicItemId || null,
       localizedName: nativeTooltip.localizedName || nativeTooltip.title || baseItem.localizedName,
       modId: nativeTooltip.modId || baseItem.modId,
       internalName: nativeTooltip.internalName || baseItem.internalName,
