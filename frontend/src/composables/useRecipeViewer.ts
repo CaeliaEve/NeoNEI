@@ -12,6 +12,14 @@ import { buildRecipeGraph, type RecipeGraph } from '../domain/recipeGraph';
 import { resolveRecipePresentationProfile } from '../services/uiTypeMapping';
 import { useRecipeBrowserSelectors } from './recipe-browser/useRecipeBrowserSelectors';
 import { createRecipeSearchController } from './recipe-browser/recipeSearchController';
+import {
+  getCategoryRecipesPerPage,
+  getLoadedRecipeIdSet as buildLoadedRecipeIdSet,
+  getLoadedRecipeMap,
+  getRecipeCategoryLookupKey,
+  getStoredCategoryOrderedRecipeIds,
+  setStoredCategoryOrderedRecipeIds,
+} from './recipe-browser/recipeCategoryState';
 import type { MachineCategory } from './recipe-browser/helpers';
 import { loadRecipeBootstrap } from './useRecipeBootstrap';
 import { useRecipeDetailHydrator } from './useRecipeDetailHydrator';
@@ -121,9 +129,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     getNow,
     waitForPaint,
     getFilteredRecipeCount: () => filteredRecipeCount.value,
-    getLoadedRecipeIds: (tab) => new Set(
-      (tab === 'usedIn' ? recipes.value.usedIn : recipes.value.producedBy).map((recipe) => recipe.recipeId),
-    ),
+    getLoadedRecipeIds: (tab) => buildLoadedRecipeIdSet(recipes.value, tab),
     mergeIndexedRecipesIntoState: (indexedRecipes) => mergeIndexedRecipesIntoState(indexedRecipes),
     removePendingRecipeIdsFromAll: (recipeIds) => removePendingRecipeIdsFromAll(recipeIds),
     isDisposed: () => disposed,
@@ -234,63 +240,26 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     setIndexes('producedBy', buildRecipeIndexes(recipes.value.producedBy));
   };
 
-  const getCategoryLookupKey = (tab: 'usedIn' | 'producedBy', category: MachineCategory | null | undefined) => {
-    const categoryKey = `${category?.categoryKey ?? ''}`.trim();
-    if (!categoryKey) return '';
-    return `${tab}:${categoryKey}`;
-  };
-
-  const getCategoryOrderedRecipeIds = (tab: 'usedIn' | 'producedBy', category: MachineCategory | null | undefined) => {
-    const lookupKey = getCategoryLookupKey(tab, category);
-    if (!lookupKey) return [] as string[];
-    const recipeIds = categoryRecipeIdsByKey.value[lookupKey];
-    return Array.isArray(recipeIds) ? recipeIds : [];
-  };
+  const getCategoryOrderedRecipeIds = (tab: 'usedIn' | 'producedBy', category: MachineCategory | null | undefined) => (
+    getStoredCategoryOrderedRecipeIds(
+      categoryRecipeIdsByKey,
+      tab,
+      category,
+      category?.recipes.map((recipe) => recipe.recipeId) ?? [],
+    )
+  );
 
   const setCategoryOrderedRecipeIds = (
     tab: 'usedIn' | 'producedBy',
     category: MachineCategory | null | undefined,
-    recipeIds: string[] | undefined,
-  ) => {
-    if (!category || !Array.isArray(recipeIds) || recipeIds.length === 0) {
-      return;
-    }
-    const lookupKey = getCategoryLookupKey(tab, category);
-    if (!lookupKey) return;
-    categoryRecipeIdsByKey.value = {
-      ...categoryRecipeIdsByKey.value,
-      [lookupKey]: recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean),
-    };
-  };
+    recipeIds: string[],
+  ) => setStoredCategoryOrderedRecipeIds(categoryRecipeIdsByKey, tab, category, recipeIds);
 
-  const getLoadedRecipeIdSet = (tab: 'usedIn' | 'producedBy') => new Set(
-    (tab === 'usedIn' ? recipes.value.usedIn : recipes.value.producedBy).map((recipe) => recipe.recipeId),
+  const getLoadedRecipeIdSet = (tab: 'usedIn' | 'producedBy') => buildLoadedRecipeIdSet(recipes.value, tab);
+
+  const getLoadedCurrentTabRecipeMap = () => getLoadedRecipeMap(
+    currentTab.value === 'usedIn' ? recipes.value.usedIn : recipes.value.producedBy,
   );
-
-  const getCategoryRecipesPerPage = (category: MachineCategory | null | undefined) => {
-    const sampleRecipe = category?.recipes?.[0]
-      ?? (category && currentCategory.value && category.categoryKey === currentCategory.value.categoryKey
-        ? (currentPageRecipes.value[0] ?? currentBaseRecipe.value ?? null)
-        : null);
-    if (!sampleRecipe) return 1;
-    const profile = resolveRecipePresentationProfile({
-      machineType: sampleRecipe.machineInfo?.machineType,
-      recipeType: sampleRecipe.recipeType,
-      recipeTypeData: sampleRecipe.recipeTypeData,
-      inputs: sampleRecipe.inputs,
-      additionalData: sampleRecipe.additionalData as Record<string, unknown> | undefined,
-      metadata: sampleRecipe.metadata as Record<string, unknown> | undefined,
-      preferDetailedCrafting: false,
-    });
-    return profile.component === 'FurnaceUI' ? 2 : 1;
-  };
-
-  const getLoadedCurrentTabRecipeMap = () => {
-    const loadedRecipes = currentTab.value === 'usedIn'
-      ? recipes.value.usedIn
-      : recipes.value.producedBy;
-    return new Map(loadedRecipes.map((recipe) => [recipe.recipeId, recipe] as const));
-  };
 
 
   const collectCategoryRecipesForPrewarm = (
@@ -584,7 +553,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     }
 
     const tab = currentTab.value;
-    const lookupKey = getCategoryLookupKey(tab, category);
+    const lookupKey = getRecipeCategoryLookupKey(tab, category);
     const currentOrderedRecipeIds = getCategoryOrderedRecipeIds(tab, category);
     const includeRecipeIds = currentOrderedRecipeIds.length === 0;
     const recipesPerPage = getCategoryRecipesPerPage(category);
