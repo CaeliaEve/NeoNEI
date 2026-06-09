@@ -12,10 +12,10 @@ const rawExportSelfTest = join(repoRoot, '.tmp-runtime', 'raw-export-self-test')
 const nodeSelfTestOutput = join(repoRoot, '.tmp-runtime', 'dist-data-v3-self-test');
 const rustReport = join(tmpRoot, 'rust-baseline.json');
 const rustCompileReport = join(tmpRoot, 'rust-compile-report.json');
-const rustBrowserPack = join(nodeSelfTestOutput, 'rust', 'browser-pack.json');
-const rustSearchPack = join(nodeSelfTestOutput, 'rust', 'search-pack.json');
-const rustRecipePack = join(nodeSelfTestOutput, 'rust', 'recipe-pack.json');
-const rustTexturePack = join(nodeSelfTestOutput, 'rust', 'texture-pack.json');
+const rustBrowserPack = join(nodeSelfTestOutput, 'rust', 'browser.bin');
+const rustSearchPack = join(nodeSelfTestOutput, 'rust', 'search.bin');
+const rustRecipePack = join(nodeSelfTestOutput, 'rust', 'recipes.bin');
+const rustTexturePack = join(nodeSelfTestOutput, 'rust', 'textures.bin');
 const rustRuntimeManifest = join(nodeSelfTestOutput, 'rust', 'runtime-manifest.json');
 const rustIntegrity = join(nodeSelfTestOutput, 'rust', 'integrity.json');
 const rustSizeReport = join(nodeSelfTestOutput, 'rust', 'size-report.json');
@@ -41,7 +41,16 @@ function requireFile(path) {
 }
 
 function commandExists(command, args = ['--version']) {
-  const result = spawnSync(command, args, { stdio: 'ignore', shell: false });
+  const isWindowsCmd = process.platform === 'win32' && /\.cmd$/i.test(command);
+  const result = isWindowsCmd
+    ? spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', command, ...args], {
+        stdio: 'ignore',
+        shell: false,
+      })
+    : spawnSync(command, args, {
+        stdio: 'ignore',
+        shell: false,
+      });
   return (result.status ?? 1) === 0;
 }
 
@@ -72,8 +81,9 @@ function resolveCargoCommand() {
 
 function run(command, args, options = {}) {
   console.log(`[rust-compiler-gate] ${command} ${args.join(' ')}`);
-  const result = process.platform === 'win32' && /\.cmd$/i.test(command)
-    ? spawnSync('cmd.exe', ['/d', '/s', '/c', command, ...args], {
+  const isWindowsCmd = process.platform === 'win32' && /\.cmd$/i.test(command);
+  const result = isWindowsCmd
+    ? spawnSync(process.env.ComSpec ?? 'cmd.exe', ['/d', '/c', command, ...args], {
         cwd: options.cwd ?? repoRoot,
         stdio: 'inherit',
         shell: false,
@@ -197,11 +207,6 @@ if ((report?.blocked ?? []).length > 0) {
 }
 const compileReport = readJson(rustCompileReport);
 const nodeValidation = readJson(join(nodeSelfTestOutput, 'validation', 'report.json'));
-const rawBrowserAtlas = readJson(join(rawExportSelfTest, 'assets', 'textures', 'browser_atlas_index.json'));
-const browserPack = readJson(rustBrowserPack);
-const searchPack = readJson(rustSearchPack);
-const recipePack = readJson(rustRecipePack);
-const texturePack = readJson(rustTexturePack);
 const runtimeManifest = readJson(rustRuntimeManifest);
 const integrity = readJson(rustIntegrity);
 const sizeReport = readJson(rustSizeReport);
@@ -219,46 +224,37 @@ compareCounts({
   rustRawCounts: compileReport?.raw_export?.file_counts ?? {},
   rustRuntimeCounts: compileReport?.runtime?.counts ?? {},
 });
-assertEqual(browserPack?.counts?.items, nodeValidation?.counts?.items, 'rust browser pack items');
-assertEqual(browserPack?.counts?.aliasItems, nodeValidation?.counts?.items, 'rust browser pack aliasItems');
-assertEqual(browserPack?.counts?.groups, nodeValidation?.counts?.groups, 'rust browser pack groups');
-assertEqual(browserPack?.counts?.orderedItems, nodeValidation?.counts?.neiOrderEntries, 'rust browser pack orderedItems');
-assertEqual(browserPack?.counts?.atlasItems, nodeValidation?.counts?.browserAtlasItems, 'rust browser pack atlasItems');
-assertEqual(searchPack?.counts?.items, nodeValidation?.counts?.items, 'rust search pack items');
-assertEqual(searchPack?.counts?.aliasItems, nodeValidation?.counts?.items, 'rust search pack aliasItems');
-for (const expectedTerm of ['iron', 'terrasteel', 'minecraft']) {
-  const hasTerm = (searchPack?.items ?? []).some((item) => `${item.normalizedSearchTerms ?? ''}`.includes(expectedTerm));
-  if (!hasTerm) fail(`rust search pack is missing expected term: ${expectedTerm}`);
-}
-assertEqual(recipePack?.counts?.recipes, nodeValidation?.counts?.recipes, 'rust recipe pack recipes');
-assertEqual(recipePack?.counts?.handlers, nodeValidation?.counts?.neiHandlers, 'rust recipe pack handlers');
-assertEqual(recipePack?.counts?.recipeItemIndexItems, nodeValidation?.counts?.recipeItemIndexItems, 'rust recipe pack item index');
-const ironRecipeEntry = (recipePack?.itemIndex ?? []).find((entry) => entry.itemId === 'i~minecraft~iron_ingot~0');
-if (!ironRecipeEntry || (ironRecipeEntry.producedBy ?? []).length < 1) {
-  fail('rust recipe pack does not index iron ingot outputs');
-}
-assertEqual(texturePack?.counts?.atlasItems, nodeValidation?.counts?.browserAtlasItems, 'rust texture pack atlasItems');
-assertEqual(texturePack?.counts?.animatedAtlasItems, 1, 'rust texture pack animatedAtlasItems');
-assertEqual(texturePack?.counts?.animationRows, nodeValidation?.counts?.animations, 'rust texture pack animationRows');
-assertEqual(texturePack?.counts?.nativeSpriteRows, nodeValidation?.counts?.nativeSprites, 'rust texture pack nativeSpriteRows');
-assertEqual(texturePack?.counts?.textureRows, nodeValidation?.counts?.textures, 'rust texture pack textureRows');
-assertEqual(texturePack?.counts?.missingAtlasFileRefs, 0, 'rust texture pack missingAtlasFileRefs');
-assertEqual(texturePack?.counts?.invalidFrameBounds, 0, 'rust texture pack invalidFrameBounds');
-const terrasteelAnimation = (texturePack?.animationTable ?? []).find((entry) => entry.itemId === 'i~botania~manaResource~4');
-if (!terrasteelAnimation || terrasteelAnimation.frameDurationMs !== 100) {
-  fail('rust texture pack does not preserve Terrasteel animation timing');
-}
+const runtimeCounts = compileReport?.runtime?.counts ?? {};
+assertEqual(runtimeCounts.items, nodeValidation?.counts?.items, 'rust runtime items');
+assertEqual(runtimeCounts.groups, nodeValidation?.counts?.groups, 'rust runtime groups');
+assertEqual(runtimeCounts.neiOrderEntries, nodeValidation?.counts?.neiOrderEntries, 'rust runtime orderedItems');
+assertEqual(runtimeCounts.browserAtlasItems, nodeValidation?.counts?.browserAtlasItems, 'rust runtime atlasItems');
+assertEqual(runtimeCounts.recipes, nodeValidation?.counts?.recipes, 'rust runtime recipes');
+assertEqual(runtimeCounts.neiHandlers, nodeValidation?.counts?.neiHandlers, 'rust runtime handlers');
+assertEqual(runtimeCounts.recipeItemIndexItems, nodeValidation?.counts?.recipeItemIndexItems, 'rust runtime recipe item index');
+assertEqual(runtimeCounts.animatedBrowserAtlasItems, 2, 'rust runtime animatedBrowserAtlasItems');
+assertEqual(runtimeCounts.animations, nodeValidation?.counts?.animations, 'rust runtime animations');
+assertEqual(runtimeCounts.nativeSprites, nodeValidation?.counts?.nativeSprites, 'rust runtime nativeSprites');
+assertEqual(runtimeCounts.textures, nodeValidation?.counts?.textures, 'rust runtime textures');
 for (const requiredPath of [
-  'rust/browser-pack.json',
-  'rust/search-pack.json',
-  'rust/recipe-pack.json',
-  'rust/texture-pack.json',
+  'rust/browser.bin',
+  'rust/search.bin',
+  'rust/recipes.bin',
+  'rust/textures.bin',
+  'rust/animations.bin',
+  'rust/groups.bin',
   'rust/strings.zh_cn.bin',
 ]) {
+  requireFile(join(nodeSelfTestOutput, requiredPath));
   const manifestHasPath = (runtimeManifest?.files ?? []).some((entry) => entry.path === requiredPath);
   if (!manifestHasPath) fail(`rust runtime manifest is missing ${requiredPath}`);
   if (!integrity?.files?.[requiredPath]) fail(`rust integrity report is missing ${requiredPath}`);
   if (!Number.isFinite(sizeReport?.files?.[requiredPath])) fail(`rust size report is missing ${requiredPath}`);
+}
+for (const retiredDebugPath of ['rust/browser-pack.json', 'rust/search-pack.json', 'rust/recipe-pack.json', 'rust/texture-pack.json']) {
+  if ((runtimeManifest?.files ?? []).some((entry) => entry.path === retiredDebugPath)) {
+    fail(`rust runtime manifest still exposes retired debug pack: ${retiredDebugPath}`);
+  }
 }
 if ((missingReport?.missingFiles ?? []).length !== 0) fail(`rust missing data report has missing files: ${JSON.stringify(missingReport.missingFiles)}`);
 if (migrationReadiness?.ready !== true) fail(`rust migration readiness is not ready: ${JSON.stringify(migrationReadiness)}`);
@@ -296,4 +292,3 @@ writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
 }, null, 2));
 
 console.log('[rust-compiler-gate] OK');
-

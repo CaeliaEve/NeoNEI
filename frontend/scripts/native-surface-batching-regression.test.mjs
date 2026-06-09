@@ -26,7 +26,8 @@ test("NativeSurfaceController batches high-frequency surface mutations", () => {
 
 test("native surface worker applies one layout rebuild for a mutation batch", () => {
   const source = readSource("src/workers/nativeSurfaceEngine.worker.ts");
-  assert.match(source, /function applyMutation/);
+  const mutations = readSource("src/workers/nativeSurfaceWorkerMutations.ts");
+  assert.match(mutations, /function applyNativeSurfaceMutation/);
   assert.match(source, /case "mutationBatch"/);
   assert.match(source, /for \(const mutation of message\.mutations\)/);
   assert.match(source, /if \(needsLayout\) rebuildLayout\(surface\)/);
@@ -94,7 +95,7 @@ test("homepage native browser surface receives search and mod filters for immedi
   assert.match(homeColumn, /:mod-id="selectedMod"/);
   assert.match(nativeSurface, /controller\.setSearch\(props\.searchQuery \?\? ""\)/);
   assert.match(nativeSurface, /controller\.setModFilter\(props\.modId === "all" \? null : props\.modId \?\? null\)/);
-  assert.match(browserComposable, /const onSearch = \(\) => \{\s*if \(searchTimeout\) clearTimeout\(searchTimeout\);\s*currentPage\.value = 1;/);
+  assert.match(browserComposable, /const onSearch = \(\) => \{\s*currentPage\.value = 1;\s*interactionScheduler\.scheduleSearchCommit/);
 });
 
 
@@ -104,7 +105,7 @@ test("native surface metrics expose layout rebuilds separately from frame reques
   assert.match(protocol, /layoutRebuilds: number/);
   assert.match(protocol, /frameRequests: number/);
   assert.match(worker, /surface\.layoutRebuilds \+= 1/);
-  assert.match(worker, /case "frame":\s*surface\.frameRequests \+= 1;\s*return \{/);
+  assert.match(worker, /case "frame":\s*surface\.frameRequests \+= 1;[\s\S]*return \{/);
   assert.doesNotMatch(
     worker,
     /case "frame":(?:(?!case ).)*surface\.layoutRebuilds \+= 1;/s,
@@ -163,16 +164,18 @@ test("browser page application does not trigger legacy catalog or group HTTP war
   assert.doesNotMatch(applyBody, /getBrowserGroupItems/);
   assert.doesNotMatch(applyBody, /prewarmBrowserDefaultCatalog/);
   assert.doesNotMatch(applyBody, /prewarmVisibleBrowserGroups/);
-  assert.match(applyBody, /warmNativeBrowserRuntime\(\)/);
+  assert.match(applyBody, /nativeBrowserRuntimeWarm\.scheduleWarm\(\)/);
 
-  const warmStart = source.indexOf("const runNativeBrowserRuntimeWarm = async");
-  const warmEnd = source.indexOf("const ensureNativeBrowserRuntimeReady", warmStart);
+  const warmSource = readSource("src/composables/browser/nativeBrowserRuntimeWarm.ts");
+  const warmStart = warmSource.indexOf("export function createNativeBrowserRuntimeWarmManager");
+  const warmEnd = warmSource.length;
   assert.notEqual(warmStart, -1);
   assert.notEqual(warmEnd, -1);
-  const warmBody = source.slice(warmStart, warmEnd);
+  const warmBody = warmSource.slice(warmStart, warmEnd);
   assert.doesNotMatch(warmBody, /getBrowserDefaultCatalog/);
   assert.doesNotMatch(warmBody, /getBrowserSearchCatalog/);
   assert.match(warmBody, /ensureGlobalBrowserAtlasIndex/);
+  assert.match(warmBody, /ensureGlobalBrowserAtlasIndex\(\)/);
 });
 
 test("native surface baseline measures actual native search projection latency", () => {
@@ -197,11 +200,13 @@ test("native surface baseline measures actual native search projection latency",
 
 test("native surface worker keeps prefix search on the native index hot path", () => {
   const worker = readSource("src/workers/nativeSurfaceEngine.worker.ts");
+  const projection = readSource("src/workers/nativeSurfaceProjection.ts");
+  const state = readSource("src/workers/nativeSurfaceWorkerState.ts");
 
-  assert.match(worker, /runtimeSearchSortedKeys: string\[\]/);
-  assert.match(worker, /runtimeSearchPrefixCache: Map<string, Uint32Array>/);
-  assert.match(worker, /function lowerBoundRuntimeSearchKey/);
-  assert.match(worker, /function getRuntimeSearchPrefixCandidates/);
+  assert.match(state, /runtimeSearchSortedKeys: string\[\]/);
+  assert.match(state, /runtimeSearchPrefixCache: Map<string, Uint32Array>/);
+  assert.match(projection, /function lowerBoundRuntimeSearchKey/);
+  assert.match(projection, /function getRuntimeSearchPrefixCandidates/);
   assert.match(
     worker,
     /surface\.runtimeSearchExactIndex\.get\(normalizedQuery\)\s*\?\?\s*getRuntimeSearchPrefixCandidates\(surface, normalizedQuery\)/,

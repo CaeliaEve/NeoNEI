@@ -25,13 +25,13 @@ test("native runtime loader consumes current API envelope and file endpoint", ()
 });
 
 test("homepage native runtime manifest defaults to current API", () => {
-  const distRuntime = readSource("src/services/distDataRuntime.ts");
+  const assetResolver = readSource("src/services/distDataRuntimeAssetResolver.ts");
 
-  assert.match(distRuntime, /VITE_NATIVE_RUNTIME_MANIFEST_URL/);
-  assert.match(distRuntime, /VITE_ENABLE_NATIVE_RUNTIME_PACKS/);
-  assert.match(distRuntime, /return "\/api\/runtime\/current\/manifest"/);
+  assert.match(assetResolver, /VITE_NATIVE_RUNTIME_MANIFEST_URL/);
+  assert.match(assetResolver, /VITE_ENABLE_NATIVE_RUNTIME_PACKS/);
+  assert.match(assetResolver, /return "\/api\/runtime\/current\/manifest"/);
   assert.doesNotMatch(
-    distRuntime,
+    assetResolver,
     /return joinAssetPath\(getConfiguredBasePath\(\), "rust\/runtime-manifest\.json"\)/,
     "homepage native runtime should use the semantic current API, not a hardcoded static rust manifest",
   );
@@ -39,13 +39,13 @@ test("homepage native runtime manifest defaults to current API", () => {
 
 
 test("native runtime packs are on by default unless explicitly disabled", () => {
-  const distRuntime = readSource("src/services/distDataRuntime.ts");
+  const assetResolver = readSource("src/services/distDataRuntimeAssetResolver.ts");
 
-  assert.match(distRuntime, /runtimePacksEnabled === "0"/);
-  assert.match(distRuntime, /runtimePacksEnabled === "false"/);
-  assert.match(distRuntime, /runtimePacksEnabled === "off"/);
+  assert.match(assetResolver, /runtimePacksEnabled === "0"/);
+  assert.match(assetResolver, /runtimePacksEnabled === "false"/);
+  assert.match(assetResolver, /runtimePacksEnabled === "off"/);
   assert.doesNotMatch(
-    distRuntime,
+    assetResolver,
     /runtimePacksEnabled !== "1" && runtimePacksEnabled !== "true"/,
     "native runtime packs must not require an opt-in env flag on the production homepage",
   );
