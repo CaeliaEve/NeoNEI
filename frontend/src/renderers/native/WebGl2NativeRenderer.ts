@@ -266,10 +266,10 @@ export class WebGl2NativeRenderer {
     const gl = this.gl;
     if (commands.length <= 0) return { drawCalls: 0, vertexCount: 0 };
 
-    // Base slot plus one small group badge. Trim by cursor before upload so
-    // non-group commands do not pay extra draw vertices.
-    const positions = new Float32Array(commands.length * 24);
-    const colors = new Float32Array(commands.length * 48);
+    // Base slot plus a compact three-layer group marker. Trim by cursor before
+    // upload so non-group commands do not pay extra draw vertices.
+    const positions = new Float32Array(commands.length * 48);
+    const colors = new Float32Array(commands.length * 96);
     let positionCursor = 0;
     let colorCursor = 0;
     let vertexCount = 0;
@@ -304,9 +304,13 @@ export class WebGl2NativeRenderer {
               : [0.14, 0.18, 0.32, 0.48];
       pushQuad(x1, y1, x2, y2, color);
       if (isGroup) {
-        const badge = Math.max(7, Math.floor(command.size * 0.22));
-        const badgeColor = isHovered ? [1.0, 0.76, 0.28, 0.92] : [0.20, 0.92, 1.0, 0.82];
-        pushQuad(x2 - badge, y1, x2, y1 + badge, badgeColor);
+        const badge = Math.max(10, Math.floor(command.size * 0.32));
+        const strip = Math.max(3, Math.floor(command.size * 0.07));
+        const badgeColor = isHovered ? [1.0, 0.76, 0.28, 0.94] : [0.20, 0.92, 1.0, 0.90];
+        const shadowColor = [0.02, 0.12, 0.18, 0.78];
+        pushQuad(x2 - badge - 1, y1, x2, y1 + badge + 1, shadowColor);
+        pushQuad(x2 - badge, y1, x2, y1 + strip, badgeColor);
+        pushQuad(x2 - strip, y1, x2, y1 + badge, badgeColor);
       }
     }
 

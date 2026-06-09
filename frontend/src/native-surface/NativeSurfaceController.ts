@@ -21,7 +21,7 @@ import {
   loadNativeRuntimeBuffersForProfile,
   type NativeRuntimePackProfile,
 } from "./runtimePackCache";
-import type { Item } from "../services/api";
+import type { BrowserVariantGroup, Item } from "../services/api";
 
 function normalizeRenderer(renderer?: NativeRendererBackendKind): NativeRendererBackendKind {
   if (renderer === "webgpu" || renderer === "webgl2" || renderer === "auto") return renderer;
@@ -56,6 +56,28 @@ function buildSyntheticItem(itemId: string, tooltip: NativeTooltipPayload | null
     browserGroupKey: tooltip?.groupKey ?? null,
     browserGroupLabel: tooltip?.groupLabel ?? null,
     browserGroupSize: tooltip?.groupSize ?? null,
+  };
+}
+
+function buildSyntheticGroup(item: Item, tooltip: NativeTooltipPayload | null): BrowserVariantGroup | null {
+  const groupKey = `${tooltip?.groupKey ?? item.browserGroupKey ?? ""}`.trim();
+  if (!groupKey) return null;
+  const groupSize = Math.max(1, Math.floor(Number(tooltip?.groupSize ?? item.browserGroupSize ?? 1) || 1));
+  return {
+    key: groupKey,
+    representative: {
+      ...item,
+      browserGroupKey: groupKey,
+      browserGroupLabel: tooltip?.groupLabel ?? item.browserGroupLabel ?? tooltip?.title ?? null,
+      browserGroupSize: groupSize,
+    },
+    size: groupSize,
+    visibleCount: groupSize,
+    expandable: groupSize > 1,
+    label: tooltip?.groupLabel || item.browserGroupLabel || tooltip?.title || groupKey,
+    semanticFamily: null,
+    semanticClassification: null,
+    groupSource: "native-runtime",
   };
 }
 
@@ -229,14 +251,6 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       viewport: pointer.viewport,
     });
     if (!response || response.type !== "hitTest" || !response.hit) return null;
-    const entry = this.entries.entries[response.hit.entryIndex]
-      ?? this.entries.entries.find((candidate) => {
-        const item = getEntryItem(candidate);
-        if (response.hit?.groupKey) {
-          return candidate.kind !== "item" && candidate.group.key === response.hit.groupKey;
-        }
-        return item.itemId === response.hit?.itemId;
-      });
     const nativeTooltip = response.hit.tooltip
       ? {
         title: response.hit.tooltip.groupLabel || response.hit.tooltip.localizedName || response.hit.tooltip.itemId,
@@ -251,13 +265,41 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
         groupSize: response.hit.tooltip.groupSize ?? null,
       }
       : null;
-    if (!entry) {
+    const isNativeRuntimeHit = response.hit.key.startsWith("native-");
+    if (isNativeRuntimeHit) {
       const syntheticItem = buildSyntheticItem(response.hit.itemId, nativeTooltip);
+      const syntheticGroup = response.hit.kind === "group-collapsed"
+        ? buildSyntheticGroup(syntheticItem, nativeTooltip)
+        : null;
       return {
         viewport: response.hit.viewport,
         key: response.hit.key,
-        kind: "item",
+        kind: syntheticGroup ? "group-collapsed" : "item",
         item: syntheticItem,
+        group: syntheticGroup ?? undefined,
+        groupKey: response.hit.groupKey ?? null,
+        nativeTooltip,
+      };
+    }
+    const entry = this.entries.entries[response.hit.entryIndex]
+      ?? this.entries.entries.find((candidate) => {
+        const item = getEntryItem(candidate);
+        if (response.hit?.groupKey) {
+          return candidate.kind !== "item" && candidate.group.key === response.hit.groupKey;
+        }
+        return item.itemId === response.hit?.itemId;
+      });
+    if (!entry) {
+      const syntheticItem = buildSyntheticItem(response.hit.itemId, nativeTooltip);
+      const syntheticGroup = response.hit.kind === "group-collapsed" || response.hit.groupKey
+        ? buildSyntheticGroup(syntheticItem, nativeTooltip)
+        : null;
+      return {
+        viewport: response.hit.viewport,
+        key: response.hit.key,
+        kind: syntheticGroup ? "group-collapsed" : "item",
+        item: syntheticItem,
+        group: syntheticGroup ?? undefined,
         groupKey: response.hit.groupKey ?? null,
         nativeTooltip,
       };
@@ -398,4 +440,3 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
 export function createNativeSurfaceController(surfaceId: NativeSurfaceId): NativeNeiSurfaceController {
   return new CompatNativeSurfaceController(surfaceId);
 }
-

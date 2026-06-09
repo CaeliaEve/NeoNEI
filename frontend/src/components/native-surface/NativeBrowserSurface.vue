@@ -355,6 +355,7 @@ async function handleNativeClick(event: MouseEvent) {
   const entry = findEntryByNativeHit(hit);
   if (!entry) {
     if (hit.kind === "item") emit("itemClick", hit.item);
+    else if (hit.group) emit("groupClick", hit.group);
     return;
   }
   if (entry.kind === "item") {
@@ -372,6 +373,7 @@ async function handleNativeContextMenu(event: MouseEvent) {
   event.preventDefault();
   if (!entry) {
     if (hit.kind === "item") emit("itemContextmenu", hit.item, event);
+    else if (hit.group) emit("groupContextmenu", hit.group, event);
     return;
   }
   if (entry.kind === "item") {

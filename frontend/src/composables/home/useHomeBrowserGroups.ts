@@ -9,6 +9,7 @@ export function useHomeBrowserGroups(options: {
   openUsageRecipes: (item: Item) => void;
 }) {
   const expandedBrowserGroups = ref<Set<string>>(new Set());
+  const nativeRuntimeGroups = ref<Map<string, BrowserVariantGroup>>(new Map());
 
   const toggleBrowserGroup = (groupKey: string) => {
     const next = new Set(expandedBrowserGroups.value);
@@ -23,9 +24,12 @@ export function useHomeBrowserGroups(options: {
 
   const expandedGroupFilterPanels = computed<BrowserVariantGroup[]>(() => {
     const seen = new Set<string>();
-    return options.browserGridEntries.value
+    const entryGroups = options.browserGridEntries.value
       .filter((entry) => entry.kind === "group-header")
-      .map((entry) => (entry as { kind: "group-header"; group: BrowserVariantGroup }).group)
+      .map((entry) => (entry as { kind: "group-header"; group: BrowserVariantGroup }).group);
+    const nativeGroups = Array.from(nativeRuntimeGroups.value.values())
+      .filter((group) => expandedBrowserGroups.value.has(group.key));
+    return [...nativeGroups, ...entryGroups]
       .filter((group) => {
         const key = `${group.key ?? ""}`.trim();
         if (!key || seen.has(key)) {
@@ -49,6 +53,7 @@ export function useHomeBrowserGroups(options: {
     if (!group.expandable) {
       return;
     }
+    nativeRuntimeGroups.value = new Map(nativeRuntimeGroups.value).set(group.key, group);
     toggleBrowserGroup(group.key);
   };
 

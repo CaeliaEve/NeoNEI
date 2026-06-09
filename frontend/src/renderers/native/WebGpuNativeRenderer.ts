@@ -137,9 +137,9 @@ function pushChromeQuad(
 
 function buildChromeVertices(commands: NativeRenderCommand[]): { vertices: Float32Array; vertexCount: number } {
   // Grouped entries need a visible GPU-native marker. Allocate room for the
-  // base slot plus one small corner badge per command; non-group commands use
+  // base slot plus a compact three-layer corner stack; non-group commands use
   // only the base vertices and the final array is trimmed.
-  const values = new Float32Array(commands.length * 12 * 6);
+  const values = new Float32Array(commands.length * 18 * 6);
   let cursor = 0;
   let vertexCount = 0;
   for (const command of commands) {
@@ -165,12 +165,14 @@ function buildChromeVertices(commands: NativeRenderCommand[]): { vertices: Float
     cursor = pushChromeQuad(values, cursor, x1, y1, x2, y2, color);
     vertexCount += 6;
     if (isGroup) {
-      const badge = Math.max(7, Math.floor(command.size * 0.22));
-      const bx1 = x2 - badge;
-      const by1 = y1;
-      const badgeColor = isHovered ? [1.0, 0.76, 0.28, 0.92] : [0.20, 0.92, 1.0, 0.82];
-      cursor = pushChromeQuad(values, cursor, bx1, by1, x2, y1 + badge, badgeColor);
-      vertexCount += 6;
+      const badge = Math.max(10, Math.floor(command.size * 0.32));
+      const strip = Math.max(3, Math.floor(command.size * 0.07));
+      const badgeColor = isHovered ? [1.0, 0.76, 0.28, 0.94] : [0.20, 0.92, 1.0, 0.90];
+      const shadowColor = [0.02, 0.12, 0.18, 0.78];
+      cursor = pushChromeQuad(values, cursor, x2 - badge - 1, y1, x2, y1 + badge + 1, shadowColor);
+      cursor = pushChromeQuad(values, cursor, x2 - badge, y1, x2, y1 + strip, badgeColor);
+      cursor = pushChromeQuad(values, cursor, x2 - strip, y1, x2, y1 + badge, badgeColor);
+      vertexCount += 18;
     }
   }
   return { vertices: values.slice(0, cursor), vertexCount };
