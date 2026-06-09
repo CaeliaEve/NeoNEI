@@ -188,7 +188,7 @@ async function requestWebGpuHandles(canvas: OffscreenCanvas): Promise<WebGpuHand
   context.configure({ device, format, alphaMode: "premultiplied" });
 
   const resolutionBuffer = device.createBuffer({
-    size: 8,
+    size: 16,
     usage: gpuUsage("UNIFORM") | gpuUsage("COPY_DST"),
   });
   const chromeModule = device.createShaderModule({ code: CHROME_WGSL });
@@ -331,7 +331,7 @@ export class WebGpuNativeRenderer implements NativeRendererBackend {
       return { drawCalls: 0, vertexCount: 0, spriteDrawCalls: 0, spriteVertexCount: 0 };
     }
     const { device, context } = this.handles;
-    device.queue.writeBuffer(this.handles.resolutionBuffer, 0, new Float32Array([activeWidth, activeHeight]));
+    device.queue.writeBuffer(this.handles.resolutionBuffer, 0, new Float32Array([activeWidth, activeHeight, 0, 0]));
     const encoder = device.createCommandEncoder();
     const pass = encoder.beginRenderPass({
       colorAttachments: [{
@@ -344,23 +344,30 @@ export class WebGpuNativeRenderer implements NativeRendererBackend {
 
     let drawCalls = 0;
     let vertexCount = 0;
+    const transientBuffers: AnyRecord[] = [];
     if (commands.length > 0) {
       const chromeVertices = buildChromeVertices(commands);
       const chromeBuffer = createBuffer(device, chromeVertices, gpuUsage("VERTEX") | gpuUsage("COPY_DST"));
+      transientBuffers.push(chromeBuffer);
       pass.setPipeline(this.handles.chromePipeline);
       pass.setBindGroup(0, this.handles.resolutionBindGroup);
       pass.setVertexBuffer(0, chromeBuffer);
       pass.draw(commands.length * 6);
       drawCalls += 1;
       vertexCount += commands.length * 6;
-      chromeBuffer.destroy?.();
     }
 
-    const spriteStats = this.renderSprites(device, pass, spriteCommands);
+    const spriteStats = this.renderSprites(device, pass, spriteCommands, transientBuffers);
     drawCalls += spriteStats.drawCalls;
     vertexCount += spriteStats.vertexCount;
     pass.end();
     device.queue.submit([encoder.finish()]);
+    void device.queue.onSubmittedWorkDone?.()
+      ?.finally?.(() => {
+        for (const buffer of transientBuffers) {
+          buffer.destroy?.();
+        }
+      });
     return {
       drawCalls,
       vertexCount,
@@ -369,7 +376,12 @@ export class WebGpuNativeRenderer implements NativeRendererBackend {
     };
   }
 
-  private renderSprites(device: AnyRecord, pass: AnyRecord, commands: NativeTextureSpriteCommand[]) {
+  private renderSprites(
+    device: AnyRecord,
+    pass: AnyRecord,
+    commands: NativeTextureSpriteCommand[],
+    transientBuffers: AnyRecord[],
+  ) {
     const byTexture = new Map<string, NativeTextureSpriteCommand[]>();
     for (const command of commands) {
       if (!this.textureCache.has(command.textureKey)) continue;
@@ -387,12 +399,12 @@ export class WebGpuNativeRenderer implements NativeRendererBackend {
       if (!texture) continue;
       const vertices = buildSpriteVertices(list, texture);
       const buffer = createBuffer(device, vertices, gpuUsage("VERTEX") | gpuUsage("COPY_DST"));
+      transientBuffers.push(buffer);
       pass.setBindGroup(1, texture.bindGroup);
       pass.setVertexBuffer(0, buffer);
       pass.draw(list.length * 6);
       drawCalls += 1;
       vertexCount += list.length * 6;
-      buffer.destroy?.();
     }
     return { drawCalls, vertexCount };
   }
