@@ -1,7 +1,6 @@
 ﻿import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 import {
   api,
-  type ItemSearchBasic,
   type indexedItemRecipeSummaryResponse,
 } from '../services/api';
 import { useRecipeDataState } from './state/useRecipeDataState';
@@ -12,6 +11,7 @@ import { usePerfInstrumentation } from './usePerfInstrumentation';
 import { buildRecipeGraph, type RecipeGraph } from '../domain/recipeGraph';
 import { resolveRecipePresentationProfile } from '../services/uiTypeMapping';
 import { useRecipeBrowserSelectors } from './recipe-browser/useRecipeBrowserSelectors';
+import { createRecipeSearchController } from './recipe-browser/recipeSearchController';
 import type { MachineCategory } from './recipe-browser/helpers';
 import { loadRecipeBootstrap } from './useRecipeBootstrap';
 import { useRecipeDetailHydrator } from './useRecipeDetailHydrator';
@@ -58,17 +58,12 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     resetRecipeCache,
   } = useRecipeCacheState();
   const perf = usePerfInstrumentation('recipe-viewer');
-  const searchMatchedItemIds = ref<Set<string>>(new Set<string>());
-  const searchMatchedRecipeIds = ref<Set<string> | null>(null);
-  const pendingSearchLatency = ref<{ requestSeq: number; query: string; startedAt: number } | null>(null);
   const pendingRecipeSwitchLatency = ref<{
     requestSeq: number;
     source: string;
     startedAt: number;
     fromRecipeId: string | null;
   } | null>(null);
-  const fastSearchResults = ref<ItemSearchBasic[]>([]);
-  const searchingRecipes = ref(false);
   const loadError = ref('');
   const producedByGraph = ref<RecipeGraph>({ docs: new Map(), producedByIndex: new Map(), usedInIndex: new Map() });
   const usedInGraph = ref<RecipeGraph>({ docs: new Map(), producedByIndex: new Map(), usedInIndex: new Map() });
@@ -87,11 +82,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   const categoryPackRequestsInFlight = new Map<string, Promise<void>>();
   let disposed = false;
   let loadRequestSeq = 0;
-  let searchRequestSeq = 0;
   let recipeSwitchSeq = 0;
   let backgroundHydrationSeq = 0;
-  let searchDebounce: ReturnType<typeof setTimeout> | null = null;
-  let searchAbortController: AbortController | null = null;
   let recipeFirstPageVisibleItemId: string | null = null;
 
   const getNow = (): number =>
@@ -164,16 +156,29 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     logDetailHydration,
   });
 
-  const flushSearchLatency = async (requestSeq: number) => {
-    const pending = pendingSearchLatency.value;
-    if (!pending || pending.requestSeq !== requestSeq) return;
-    await waitForPaint();
-    const durationMs = getNow() - pending.startedAt;
-    logSearchLatency(pending.query, filteredRecipeCount.value, durationMs);
-    if (pendingSearchLatency.value?.requestSeq === requestSeq) {
-      pendingSearchLatency.value = null;
-    }
-  };
+  const recipeSearchController = createRecipeSearchController({
+    itemIdRef,
+    currentTab,
+    recipeSearchQuery,
+    getNow,
+    waitForPaint,
+    getFilteredRecipeCount: () => filteredRecipeCount.value,
+    getLoadedRecipeIds: (tab) => new Set(
+      (tab === 'usedIn' ? recipes.value.usedIn : recipes.value.producedBy).map((recipe) => recipe.recipeId),
+    ),
+    mergeIndexedRecipesIntoState: (indexedRecipes) => mergeIndexedRecipesIntoState(indexedRecipes),
+    removePendingRecipeIdsFromAll: (recipeIds) => removePendingRecipeIdsFromAll(recipeIds),
+    isDisposed: () => disposed,
+    logSearchLatency,
+  });
+  const {
+    searchMatchedItemIds,
+    searchMatchedRecipeIds,
+    fastSearchResults,
+    searchingRecipes,
+  } = recipeSearchController;
+
+
 
   const getImagePath = (itemId: string) => {
     return `item:${itemId}`;
@@ -233,23 +238,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     if (!recipe) return;
     setSelectedVariant(recipe.recipeId, slotKey, variantIndex);
   };
-  const clearRecipeSearch = () => {
-    recipeSearchQuery.value = '';
-    searchingRecipes.value = false;
-    searchMatchedItemIds.value = new Set<string>();
-    searchMatchedRecipeIds.value = null;
-    fastSearchResults.value = [];
-    pendingSearchLatency.value = null;
-    searchRequestSeq += 1;
-    if (searchDebounce) {
-      clearTimeout(searchDebounce);
-      searchDebounce = null;
-    }
-    if (searchAbortController) {
-      searchAbortController.abort();
-      searchAbortController = null;
-    }
-  };
+  const clearRecipeSearch = () => recipeSearchController.clear();
 
   const clearCurrentRecipeState = () => {
     item.value = null;
@@ -982,22 +971,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
         loadError.value = '';
         lastItemId.value = itemId;
         clearSelectedVariants();
-        recipeSearchQuery.value = '';
-        pendingSearchLatency.value = null;
+        clearRecipeSearch();
         pendingRecipeSwitchLatency.value = null;
-        searchRequestSeq += 1;
-        searchMatchedItemIds.value = new Set<string>();
-        searchMatchedRecipeIds.value = null;
-        fastSearchResults.value = [];
-        searchingRecipes.value = false;
-        if (searchDebounce) {
-          clearTimeout(searchDebounce);
-          searchDebounce = null;
-        }
-        if (searchAbortController) {
-          searchAbortController.abort();
-          searchAbortController = null;
-        }
       }
 
       const bootstrapStartedAt = getNow();
@@ -1179,117 +1154,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     return true;
   };
 
-  const scheduleRecipeSearch = (query: string) => {
-    if (searchDebounce) {
-      clearTimeout(searchDebounce);
-      searchDebounce = null;
-    }
-    if (searchAbortController) {
-      searchAbortController.abort();
-      searchAbortController = null;
-    }
-
-    const normalized = query.trim();
-    if (!normalized) {
-      pendingSearchLatency.value = null;
-      searchMatchedItemIds.value = new Set<string>();
-      searchMatchedRecipeIds.value = null;
-      fastSearchResults.value = [];
-      searchingRecipes.value = false;
-      searchRequestSeq += 1;
-      return;
-    }
-
-    const itemId = itemIdRef.value;
-    if (!itemId) {
-      pendingSearchLatency.value = null;
-      searchMatchedItemIds.value = new Set<string>();
-      searchMatchedRecipeIds.value = null;
-      fastSearchResults.value = [];
-      searchingRecipes.value = false;
-      searchRequestSeq += 1;
-      return;
-    }
-
-    const tab = currentTab.value;
-    searchingRecipes.value = true;
-    searchMatchedItemIds.value = new Set<string>();
-    searchMatchedRecipeIds.value = null;
-    fastSearchResults.value = [];
-    const requestSeq = ++searchRequestSeq;
-    pendingSearchLatency.value = { requestSeq, query: normalized, startedAt: getNow() };
-    searchDebounce = setTimeout(async () => {
-      const controller = new AbortController();
-      searchAbortController = controller;
-      try {
-        const searchPayload = await api.getRecipeBootstrapSearch(itemId, tab, normalized, { signal: controller.signal });
-        if (
-          disposed
-          || controller.signal.aborted
-          || requestSeq !== searchRequestSeq
-          || itemIdRef.value !== itemId
-          || currentTab.value !== tab
-        ) {
-          return;
-        }
-
-        const matchedRecipeIds = Array.isArray(searchPayload.recipeIds)
-          ? searchPayload.recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean)
-          : [];
-        const itemMatches = Array.isArray(searchPayload.itemMatches)
-          ? searchPayload.itemMatches
-          : [];
-
-        searchMatchedItemIds.value = new Set(itemMatches.map((entry) => entry.itemId));
-        fastSearchResults.value = itemMatches.slice(0, 12);
-
-        const loadedRecipeIds = new Set(
-          (tab === 'usedIn' ? recipes.value.usedIn : recipes.value.producedBy).map((recipe) => recipe.recipeId),
-        );
-        const missingMatchedRecipeIds = matchedRecipeIds.filter((recipeId) => !loadedRecipeIds.has(recipeId));
-        if (missingMatchedRecipeIds.length > 0) {
-          const indexedRecipes = await api.getIndexedRecipesByIds(missingMatchedRecipeIds, { signal: controller.signal });
-          if (
-            disposed
-            || controller.signal.aborted
-            || requestSeq !== searchRequestSeq
-            || itemIdRef.value !== itemId
-            || currentTab.value !== tab
-          ) {
-            return;
-          }
-          mergeIndexedRecipesIntoState(indexedRecipes);
-          removePendingRecipeIdsFromAll(indexedRecipes.map((recipe) => recipe.id));
-        }
-
-        if (
-          disposed
-          || controller.signal.aborted
-          || requestSeq !== searchRequestSeq
-          || itemIdRef.value !== itemId
-          || currentTab.value !== tab
-        ) {
-          return;
-        }
-
-        searchMatchedRecipeIds.value = new Set(matchedRecipeIds);
-      } catch (error) {
-        if (controller.signal.aborted) return;
-        console.warn('Failed to search recipe bootstrap pack:', error);
-        if (requestSeq !== searchRequestSeq) return;
-        searchMatchedItemIds.value = new Set<string>();
-        searchMatchedRecipeIds.value = null;
-        fastSearchResults.value = [];
-      } finally {
-        if (searchAbortController === controller) {
-          searchAbortController = null;
-        }
-        if (requestSeq !== searchRequestSeq) return;
-        searchingRecipes.value = false;
-        void flushSearchLatency(requestSeq);
-      }
-    }, 180);
-  };
+  const scheduleRecipeSearch = (query: string) => recipeSearchController.schedule(query);
 
   watch(recipeSearchQuery, (query) => {
     selectedMachineIndex.value = 0;
@@ -1418,15 +1283,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     disposed = true;
     loadRequestSeq += 1;
     disposeDetailHydration();
-    searchRequestSeq += 1;
-    if (searchDebounce) {
-      clearTimeout(searchDebounce);
-      searchDebounce = null;
-    }
-    if (searchAbortController) {
-      searchAbortController.abort();
-      searchAbortController = null;
-    }
+    recipeSearchController.dispose();
   });
 
   return {
