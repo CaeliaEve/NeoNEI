@@ -1,19 +1,14 @@
-import type {
+﻿import type {
   NativeSurfaceEngineRequest,
   NativeSurfaceEngineResponse,
   NativeSurfaceEngineEntry,
   NativeSurfaceEngineHit,
-  NativeSurfaceEngineLayoutCommand,
   NativeSurfaceEngineMutation,
-  NativeSurfaceEngineSpriteCommand,
   NativeSurfaceEngineWorkerMetrics,
 } from "../native-surface/NativeSurfaceEngineProtocol";
 import { NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE } from "../native-surface/NativeSurfaceEngineProtocol";
-import type {
-  NativeRendererBackendKind,
-  NativeSurfaceId,
-  NativeSurfaceViewport,
-} from "../native-surface/contracts";
+import { createSurfaceState, type SurfaceState } from "./nativeSurfaceWorkerState";
+import type { NativeSurfaceId } from "../native-surface/contracts";
 import {
   getNativeCompactBrowserRow,
   parseNativeCompactBrowserPack,
@@ -21,10 +16,6 @@ import {
 } from "../native-surface/NativeRuntimeBrowserPack";
 import {
   buildSpriteFrame,
-  type NativeRuntimeAnimationItem,
-  type NativeRuntimeAtlasFrame,
-  type NativeRuntimeTextureItem,
-  type NativeRuntimeTimelineFrame,
 } from "./nativeSurfaceSpriteTimeline";
 import {
   parseNativeAnimationPack,
@@ -32,9 +23,6 @@ import {
   parseNativeSearchPack,
   parseNativeStringPack,
   parseNativeTexturePack,
-  type NativeRuntimeGroup,
-  type NativeRuntimeSearchItem,
-  type NativeRuntimeStringItem,
 } from "./nativeSurfaceRuntimeParsers";
 import {
   buildLayoutCommandBuffer,
@@ -50,70 +38,6 @@ import {
   getRuntimeSearchPrefixCandidates,
   normalizeRuntimeSearchKey,
 } from "./nativeSurfaceProjection";
-
-type SurfaceState = {
-  initialized: boolean;
-  renderer: NativeRendererBackendKind;
-  viewport: NativeSurfaceViewport | null;
-  enableAnimations: boolean;
-  enableHistoryViewport: boolean;
-  page: number;
-  itemSize: number;
-  query: string;
-  modId: string | null;
-  expandedGroups: string[];
-  historyItems: string[];
-  entries: NativeSurfaceEngineEntry[];
-  layoutCommands: NativeSurfaceEngineLayoutCommand[];
-  layoutRebuilds: number;
-  frameRequests: number;
-  lastHit: NativeSurfaceEngineHit;
-  selectedItemId: string | null;
-  runtimeManifestUrl: string | null;
-  runtimePacks: Map<string, ArrayBuffer>;
-  runtimeError: string | null;
-  browserPack: NativeCompactBrowserPack | null;
-  runtimeBrowserIndexByItemId: Map<string, number>;
-  groupByKey: Map<string, NativeRuntimeGroup>;
-  searchByItemId: Map<string, NativeRuntimeSearchItem>;
-  runtimeSearchExactIndex: Map<string, Uint32Array>;
-  runtimeSearchSortedKeys: string[];
-  runtimeSearchPrefixCache: Map<string, Uint32Array>;
-  stringByItemId: Map<string, NativeRuntimeStringItem>;
-  textureByItemId: Map<string, NativeRuntimeTextureItem>;
-  animationByItemId: Map<string, NativeRuntimeAnimationItem>;
-  runtimeProjectionCacheKey: string | null;
-  runtimeProjectionIndices: Uint32Array | null;
-  runtimeVisibleCacheKey: string | null;
-  runtimeVisibleEntries: Uint32Array | null;
-  runtimeBrowserWasmPtr: number;
-  runtimeBrowserWasmLen: number;
-  runtimeBrowserWasmItemCount: number;
-  runtimeBrowserWasmProjectedEntries: number;
-  currentPageSize: number;
-  currentWindowEntries: number;
-  lastProjectionMs: number;
-  lastProjectionTotalEntries: number;
-  lastProjectionQuery: string;
-  lastProjectionSource: "browser" | "search" | "empty";
-  runtimeSearchWasmPtr: number;
-  runtimeSearchWasmLen: number;
-  runtimeGroupWasmPtr: number;
-  runtimeGroupWasmLen: number;
-  runtimeGroupWasmCount: number;
-  runtimeStringWasmPtr: number;
-  runtimeStringWasmLen: number;
-  runtimeStringWasmItemCount: number;
-  runtimeTextureWasmPtr: number;
-  runtimeTextureWasmLen: number;
-  runtimeTextureWasmItemCount: number;
-  runtimeAnimationWasmPtr: number;
-  runtimeAnimationWasmLen: number;
-  runtimeAnimationWasmItemCount: number;
-  hasAnimatedSprites: boolean;
-  animatedSpriteCount: number;
-  nextFrameDelayMs: number | null;
-};
 
 const surfaces = new Map<NativeSurfaceId, SurfaceState>();
 let events = 0;
@@ -559,69 +483,7 @@ function getActiveEntries(surface: SurfaceState): {
 function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
   const existing = surfaces.get(surfaceId);
   if (existing) return existing;
-  const next: SurfaceState = {
-    initialized: false,
-    renderer: "compat-canvas",
-    viewport: null,
-    enableAnimations: false,
-    enableHistoryViewport: false,
-    page: 1,
-    itemSize: 44,
-    query: "",
-    modId: null,
-    expandedGroups: [],
-    historyItems: [],
-    entries: [],
-    layoutCommands: [],
-    layoutRebuilds: 0,
-    frameRequests: 0,
-    lastHit: null,
-    selectedItemId: null,
-    runtimeManifestUrl: null,
-    runtimePacks: new Map(),
-    runtimeError: null,
-    browserPack: null,
-    runtimeBrowserIndexByItemId: new Map(),
-    groupByKey: new Map(),
-    searchByItemId: new Map(),
-    runtimeSearchExactIndex: new Map(),
-    runtimeSearchSortedKeys: [],
-    runtimeSearchPrefixCache: new Map(),
-    stringByItemId: new Map(),
-    textureByItemId: new Map(),
-    animationByItemId: new Map(),
-    runtimeProjectionCacheKey: null,
-    runtimeProjectionIndices: null,
-    runtimeVisibleCacheKey: null,
-    runtimeVisibleEntries: null,
-    runtimeBrowserWasmPtr: 0,
-    runtimeBrowserWasmLen: 0,
-    runtimeBrowserWasmItemCount: 0,
-    runtimeBrowserWasmProjectedEntries: 0,
-    currentPageSize: 0,
-    currentWindowEntries: 0,
-    lastProjectionMs: 0,
-    lastProjectionTotalEntries: 0,
-    lastProjectionQuery: "",
-    lastProjectionSource: "empty",
-    runtimeSearchWasmPtr: 0,
-    runtimeSearchWasmLen: 0,
-    runtimeGroupWasmPtr: 0,
-    runtimeGroupWasmLen: 0,
-    runtimeGroupWasmCount: 0,
-    runtimeStringWasmPtr: 0,
-    runtimeStringWasmLen: 0,
-    runtimeStringWasmItemCount: 0,
-    runtimeTextureWasmPtr: 0,
-    runtimeTextureWasmLen: 0,
-    runtimeTextureWasmItemCount: 0,
-    runtimeAnimationWasmPtr: 0,
-    runtimeAnimationWasmLen: 0,
-    runtimeAnimationWasmItemCount: 0,
-    hasAnimatedSprites: false,
-    animatedSpriteCount: 0,
-    nextFrameDelayMs: null,
-  };
+  const next = createSurfaceState();
   surfaces.set(surfaceId, next);
   return next;
 }
@@ -883,3 +745,4 @@ self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   if (!message?.type || !message.surfaceId) return;
   void handleRequest(message).then((response) => self.postMessage(response));
 };
+
