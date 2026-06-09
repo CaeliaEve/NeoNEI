@@ -3,11 +3,11 @@
   NativeSurfaceEngineResponse,
   NativeSurfaceEngineEntry,
   NativeSurfaceEngineHit,
-  NativeSurfaceEngineMutation,
   NativeSurfaceEngineWorkerMetrics,
 } from "../native-surface/NativeSurfaceEngineProtocol";
 import { NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE } from "../native-surface/NativeSurfaceEngineProtocol";
 import { createSurfaceState, type SurfaceState } from "./nativeSurfaceWorkerState";
+import { applyNativeSurfaceMutation } from "./nativeSurfaceWorkerMutations";
 import type { NativeSurfaceId } from "../native-surface/contracts";
 import {
   getNativeCompactBrowserRow,
@@ -546,48 +546,6 @@ function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequ
   return surface.lastHit;
 }
 
-function applyMutation(surface: SurfaceState, mutation: NativeSurfaceEngineMutation): boolean {
-  switch (mutation.type) {
-    case "viewport":
-      surface.viewport = mutation.viewport;
-      return true;
-    case "page":
-      surface.page = Math.max(1, Math.floor(Number(mutation.page) || 1));
-      return true;
-    case "search": {
-      const nextQuery = `${mutation.query ?? ""}`;
-      if (surface.query !== nextQuery) {
-        surface.query = nextQuery;
-        surface.runtimeProjectionCacheKey = null;
-      }
-      return true;
-    }
-    case "modFilter": {
-      const nextModId = mutation.modId ? `${mutation.modId}` : null;
-      if (surface.modId !== nextModId) {
-        surface.modId = nextModId;
-        surface.runtimeProjectionCacheKey = null;
-      }
-      return true;
-    }
-    case "expandedGroups":
-      surface.expandedGroups = Array.from(new Set(mutation.groupKeys));
-      return true;
-    case "historyItems":
-      surface.historyItems = Array.from(new Set(mutation.itemIds));
-      return true;
-    case "compatEntries":
-      surface.entries = mutation.entries;
-      return true;
-    case "itemSize":
-      surface.itemSize = Math.max(1, Math.floor(Number(mutation.itemSize) || 1));
-      return true;
-    case "selectedItem":
-      surface.selectedItemId = mutation.itemId ? `${mutation.itemId}` : null;
-      return true;
-  }
-}
-
 function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
   const lastSurface = lastSurfaceId ? surfaces.get(lastSurfaceId) ?? null : null;
   return buildNativeSurfaceMetrics({
@@ -666,33 +624,33 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       rebuildLayout(surface);
       break;
     case "viewport":
-      if (applyMutation(surface, { type: "viewport", viewport: message.viewport })) rebuildLayout(surface);
+      if (applyNativeSurfaceMutation(surface, { type: "viewport", viewport: message.viewport })) rebuildLayout(surface);
       break;
     case "page":
-      if (applyMutation(surface, { type: "page", page: message.page })) rebuildLayout(surface);
+      if (applyNativeSurfaceMutation(surface, { type: "page", page: message.page })) rebuildLayout(surface);
       break;
     case "search":
-      if (applyMutation(surface, { type: "search", query: message.query })) rebuildLayout(surface);
+      if (applyNativeSurfaceMutation(surface, { type: "search", query: message.query })) rebuildLayout(surface);
       break;
     case "modFilter":
-      if (applyMutation(surface, { type: "modFilter", modId: message.modId })) rebuildLayout(surface);
+      if (applyNativeSurfaceMutation(surface, { type: "modFilter", modId: message.modId })) rebuildLayout(surface);
       break;
     case "expandedGroups":
-      if (applyMutation(surface, { type: "expandedGroups", groupKeys: message.groupKeys })) rebuildLayout(surface);
+      if (applyNativeSurfaceMutation(surface, { type: "expandedGroups", groupKeys: message.groupKeys })) rebuildLayout(surface);
       break;
     case "historyItems":
-      applyMutation(surface, { type: "historyItems", itemIds: message.itemIds });
+      applyNativeSurfaceMutation(surface, { type: "historyItems", itemIds: message.itemIds });
       break;
     case "compatEntries":
-      if (applyMutation(surface, { type: "compatEntries", entries: message.entries })) rebuildLayout(surface);
+      if (applyNativeSurfaceMutation(surface, { type: "compatEntries", entries: message.entries })) rebuildLayout(surface);
       break;
     case "itemSize":
-      if (applyMutation(surface, { type: "itemSize", itemSize: message.itemSize })) rebuildLayout(surface);
+      if (applyNativeSurfaceMutation(surface, { type: "itemSize", itemSize: message.itemSize })) rebuildLayout(surface);
       break;
     case "mutationBatch": {
       let needsLayout = false;
       for (const mutation of message.mutations) {
-        needsLayout = applyMutation(surface, mutation) || needsLayout;
+        needsLayout = applyNativeSurfaceMutation(surface, mutation) || needsLayout;
       }
       if (needsLayout) rebuildLayout(surface);
       break;
@@ -745,4 +703,5 @@ self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   if (!message?.type || !message.surfaceId) return;
   void handleRequest(message).then((response) => self.postMessage(response));
 };
+
 
