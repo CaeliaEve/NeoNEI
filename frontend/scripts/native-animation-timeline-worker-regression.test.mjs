@@ -16,9 +16,12 @@ test("native surface engine consumes texture and animation packs for sprite time
   const protocolSource = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");
   const surfaceSource = readSource("src/components/native-surface/NativeBrowserSurface.vue");
   const spriteTimelineSource = readSource("src/workers/nativeSurfaceSpriteTimeline.ts");
+  const runtimeParserSource = readSource("src/workers/nativeSurfaceRuntimeParsers.ts");
 
-  assert.match(workerSource, /function parseNativeTexturePack\(payloadBuffer: ArrayBuffer\)/);
-  assert.match(workerSource, /function parseNativeAnimationPack\(payloadBuffer: ArrayBuffer\)/);
+  assert.match(runtimeParserSource, /export function parseNativeTexturePack\(payloadBuffer: ArrayBuffer\)/);
+  assert.match(runtimeParserSource, /export function parseNativeAnimationPack\(payloadBuffer: ArrayBuffer\)/);
+  assert.match(workerSource, /parseNativeTexturePack,/);
+  assert.match(workerSource, /parseNativeAnimationPack,/);
   assert.match(workerSource, /const texturePack = message\.packs\.find\(\(pack\) => pack\.name === "textures"\)/);
   assert.match(workerSource, /const animationPack = message\.packs\.find\(\(pack\) => pack\.name === "animations"\)/);
   assert.match(spriteTimelineSource, /export function buildSpriteFrame\(/);
