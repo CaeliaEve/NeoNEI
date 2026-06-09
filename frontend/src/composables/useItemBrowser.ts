@@ -23,10 +23,6 @@ import {
   writePersistentRuntimeCache,
 } from '../services/persistentRuntimeCache';
 import { preloadBrowserSearchWorker } from '../services/browserSearchWorker';
-import {
-  ensureGlobalBrowserAtlasIndex,
-  hasGlobalBrowserAtlas,
-} from '../services/globalBrowserAtlas';
 import { markPerfEvent, resetPerfTimeline } from '../services/perfMarks';
 
 import {
@@ -55,11 +51,9 @@ import {
   createBrowserInteractionScheduler,
 } from './browser/browserInteractionScheduler';
 import { createBrowserPagePresentationWarmManager } from './browser/browserPagePresentationWarm';
+import { createNativeBrowserRuntimeWarmManager } from './browser/nativeBrowserRuntimeWarm';
 
 const SEARCH_LOCAL_PROJECTION_MAX_TOTAL = 1600;
-let nativeBrowserWarmTimer: ReturnType<typeof setTimeout> | null = null;
-const nativeBrowserWarmScopes = new Set<string>();
-const nativeBrowserWarmPromises = new Map<string, Promise<void>>();
 
 export function useItemBrowser(
   itemSize: Ref<number>,
@@ -136,72 +130,12 @@ export function useItemBrowser(
   let allowMeasuredPageCapacity = false;
   const getActiveBrowserScope = () => selectedMod.value === 'all' ? undefined : selectedMod.value;
 
-  const buildNativeBrowserWarmKey = () => `${getActiveBrowserScope() ?? 'all'}::${pageSize.value}::${itemSize.value}`;
-
-  const runNativeBrowserRuntimeWarm = async (warmKey: string, scope: string) => {
-    const startedAt = performance.now();
-    await Promise.allSettled([
-      hasGlobalBrowserAtlas()
-        ? ensureGlobalBrowserAtlasIndex()
-        : Promise.resolve(false),
-    ]).then((results) => {
-      markPerfEvent('browser-native-runtime-warm', {
-        scope,
-        durationMs: Math.round(performance.now() - startedAt),
-        catalog: 'native-worker',
-        atlasIndex: results[0]?.status ?? 'unknown',
-        atlasResident: 'background',
-      });
-    }).catch(() => undefined);
-    nativeBrowserWarmScopes.add(warmKey);
-  };
-
-  const ensureNativeBrowserRuntimeReady = async () => {
-    if (hasActiveSearch()) {
-      return;
-    }
-
-    const scope = getActiveBrowserScope() ?? 'all';
-    const warmKey = buildNativeBrowserWarmKey();
-    if (nativeBrowserWarmScopes.has(warmKey)) {
-      return;
-    }
-
-    const existing = nativeBrowserWarmPromises.get(warmKey);
-    if (existing) {
-      await existing;
-      return;
-    }
-
-    const promise = runNativeBrowserRuntimeWarm(warmKey, scope)
-      .finally(() => {
-        nativeBrowserWarmPromises.delete(warmKey);
-      });
-    nativeBrowserWarmPromises.set(warmKey, promise);
-    await promise;
-  };
-
-  const warmNativeBrowserRuntime = () => {
-    if (hasActiveSearch()) {
-      return;
-    }
-
-    const scope = getActiveBrowserScope() ?? 'all';
-    const warmKey = buildNativeBrowserWarmKey();
-    if (nativeBrowserWarmScopes.has(warmKey)) {
-      return;
-    }
-
-    if (nativeBrowserWarmTimer !== null) {
-      clearTimeout(nativeBrowserWarmTimer);
-      nativeBrowserWarmTimer = null;
-    }
-
-    nativeBrowserWarmTimer = setTimeout(() => {
-      nativeBrowserWarmTimer = null;
-      void ensureNativeBrowserRuntimeReady();
-    }, 90);
-  };
+  const nativeBrowserRuntimeWarm = createNativeBrowserRuntimeWarmManager({
+    hasActiveSearch,
+    getScope: getActiveBrowserScope,
+    getPageSize: () => pageSize.value,
+    getItemSize: () => itemSize.value,
+  });
 
   const buildExpandedProjectionCacheKey = (
     params: BrowserPageRequestParams,
@@ -674,7 +608,7 @@ export function useItemBrowser(
     totalItems.value = response.total;
     totalPages.value = response.totalPages;
     currentPage.value = response.page;
-    warmNativeBrowserRuntime();
+    nativeBrowserRuntimeWarm.scheduleWarm();
 
     if (!firstBrowserTileVisibleMarked && response.items.length > 0) {
       firstBrowserTileVisibleMarked = true;
@@ -973,7 +907,7 @@ export function useItemBrowser(
       const cacheKey = buildPageCacheKey(requestParams);
       const nativeWarmPromise = hasActiveSearch()
         ? Promise.resolve()
-        : ensureNativeBrowserRuntimeReady();
+        : nativeBrowserRuntimeWarm.ensureReady();
       const cached = pageCache.get(cacheKey);
       if (cached) {
         await nativeWarmPromise;
@@ -1280,10 +1214,7 @@ export function useItemBrowser(
     window.removeEventListener('resize', handleResize);
     interactionScheduler.clear();
     if (resizeTimeout) clearTimeout(resizeTimeout);
-    if (nativeBrowserWarmTimer) {
-      clearTimeout(nativeBrowserWarmTimer);
-      nativeBrowserWarmTimer = null;
-    }
+    nativeBrowserRuntimeWarm.dispose();
   });
 
   return {
