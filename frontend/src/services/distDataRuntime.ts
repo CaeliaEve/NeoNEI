@@ -50,11 +50,9 @@ import {
   buildGroup,
   buildModsFromRuntime,
   buildResourceManifest,
-  directlyMatchesVariant,
+  buildSearchCatalog,
   expandCatalogGroups,
   filterByModId,
-  getSearchCatalogScopeKey,
-  matchesSearch,
   paginate,
   paginateBrowserEntries,
   stableNumber,
@@ -447,73 +445,14 @@ export async function getDistDataSearchCatalog(search: string, modId?: string, i
   if (!normalizedSearch) {
     return getDistDataDefaultCatalog(modId, includeHidden) as Promise<BrowserSearchCatalogResponse | null>;
   }
-  const scopeKey = getSearchCatalogScopeKey(normalizedSearch, modId, includeHidden ? "advanced" : "default");
-  const cached = runtime.searchCatalogByScope.get(scopeKey);
-  if (cached) {
-    return paginate(cached) as BrowserSearchCatalogResponse;
-  }
   const searchPack = await getDistDataSearchPack();
-  const emittedGroups = new Set<string>();
-  const emittedItems = new Set<string>();
-  const filtered: BrowserGridEntry[] = [];
-  const sortedSearchEntries = [...(searchPack?.pack.items ?? [])].sort((a, b) => {
-    const rankA = stableNumber((a as unknown as { searchRank?: number }).searchRank, Number.MAX_SAFE_INTEGER);
-    const rankB = stableNumber((b as unknown as { searchRank?: number }).searchRank, Number.MAX_SAFE_INTEGER);
-    if (rankA !== rankB) return rankA - rankB;
-    return stableNumber((b as unknown as { popularityScore?: number }).popularityScore, 0)
-      - stableNumber((a as unknown as { popularityScore?: number }).popularityScore, 0);
-  });
-
-  for (const searchEntry of sortedSearchEntries) {
-    if (!includeHidden && runtime.hiddenItemIds.has(searchEntry.itemId)) {
-      continue;
-    }
-    if (!matchesSearch(searchEntry, normalizedSearch)) {
-      continue;
-    }
-    const item = runtime.itemById.get(searchEntry.itemId);
-    if (!item || !filterByModId(item, modId)) {
-      continue;
-    }
-
-    const groupKey = `${searchEntry.groupKey ?? item.browserGroupKey ?? ""}`.trim();
-    const groupSize = Math.max(1, stableNumber(searchEntry.groupSize ?? item.browserGroupSize, 1));
-    const representativeItemId = `${searchEntry.representativeItemId ?? ""}`.trim();
-    const isRepresentative = !representativeItemId || representativeItemId === item.itemId;
-    const shouldSurfaceVariant = groupKey && groupSize > 1 && !isRepresentative && directlyMatchesVariant(searchEntry, normalizedSearch);
-
-    if (groupKey && groupSize > 1 && !shouldSurfaceVariant) {
-      if (emittedGroups.has(groupKey)) {
-        continue;
-      }
-      const representative = runtime.itemById.get(representativeItemId) ?? item;
-      const rawGroup = runtime.groupByKey.get(groupKey) ?? {
-        groupKey,
-        groupLabel: searchEntry.groupLabel ?? item.browserGroupLabel,
-        groupSize,
-        representativeItemId: representative.itemId,
-        memberItemIds: [representative.itemId],
-        semanticFamily: searchEntry.family ?? item.semanticFamily ?? null,
-        semanticClassification: searchEntry.classification ?? item.semanticClassification ?? null,
-        groupSource: searchEntry.groupSource ?? null,
-      };
-      emittedGroups.add(groupKey);
-      filtered.push({
-        key: `collapsed:${groupKey}`,
-        kind: "group-collapsed",
-        group: buildGroup(rawGroup, representative),
-      });
-      continue;
-    }
-
-    if (emittedItems.has(item.itemId)) {
-      continue;
-    }
-    emittedItems.add(item.itemId);
-    filtered.push({ key: item.itemId, kind: "item", item });
-  }
-
-  runtime.searchCatalogByScope.set(scopeKey, filtered);
+  const filtered = buildSearchCatalog(
+    runtime,
+    searchPack?.pack.items ?? [],
+    normalizedSearch,
+    modId,
+    includeHidden,
+  );
   return paginate(filtered) as BrowserSearchCatalogResponse;
 }
 
@@ -1410,6 +1349,8 @@ export function resetDistDataRuntimeCache(): void {
   nativeRenderIndexRequest = null;
   cachedNativeRenderIndex = null;
 }
+
+
 
 
 
