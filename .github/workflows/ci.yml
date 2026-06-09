@@ -89,6 +89,9 @@ jobs:
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Set up Rust WASM target
+        run: rustup target add wasm32-unknown-unknown
+
       - name: Rust compiler gate
         working-directory: frontend
         run: npm run test:rust-compiler

@@ -16,6 +16,7 @@ test('CI covers current runtime API and production bootstrap boundaries', () => 
 
 test('CI covers native runtime worker, renderer, history, and service worker contracts', () => {
   for (const command of [
+    'rustup target add wasm32-unknown-unknown',
     'npm run test:wasm-engine',
     'npm run test:native-runtime-current-api',
     'npm run test:native-surface-batching',
