@@ -41,8 +41,8 @@ import {
   buildNativeSurfaceLayoutCommands,
   computeNativeSurfaceColumns,
   computeWasmLayoutCommands,
-  toLayoutU32,
 } from "./nativeSurfaceLayout";
+import { buildNativeSurfaceMetrics } from "./nativeSurfaceMetrics";
 
 type SurfaceState = {
   initialized: boolean;
@@ -843,54 +843,17 @@ function applyMutation(surface: SurfaceState, mutation: NativeSurfaceEngineMutat
   }
 }
 
-function getProjectionSourceForMetrics(surface: SurfaceState | null): NativeSurfaceEngineWorkerMetrics["projectionSource"] {
-  if (!surface) return "empty";
-  if (surface.browserPack) return surface.enableHistoryViewport ? "runtime-history-pack" : "runtime-browser-pack";
-  if (surface.entries.length > 0) return "compat-entries";
-  return "empty";
-}
-
 function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
-  const lastSurface = lastSurfaceId ? surfaces.get(lastSurfaceId) : null;
-  const projectionSource = getProjectionSourceForMetrics(lastSurface);
-  return {
-    initializedSurfaces: Array.from(surfaces.values()).filter((surface) => surface.initialized).length,
+  const lastSurface = lastSurfaceId ? surfaces.get(lastSurfaceId) ?? null : null;
+  return buildNativeSurfaceMetrics({
+    surfaces: surfaces.values(),
     events,
     lastEvent,
     lastSurfaceId,
-    layoutCommands: lastSurface?.layoutCommands.length ?? 0,
-    layoutRebuilds: lastSurface?.layoutRebuilds ?? 0,
-    frameRequests: lastSurface?.frameRequests ?? 0,
-    lastHit: lastSurface?.lastHit ?? null,
+    lastSurface,
     wasmReady: Boolean(wasmEngine),
     wasmError,
-    runtimeReady: Boolean(lastSurface?.runtimePacks.size),
-    runtimePacks: lastSurface?.runtimePacks.size ?? 0,
-    runtimeError: lastSurface?.runtimeError ?? null,
-    projectionSource,
-    nativeBrowserEntries: lastSurface?.browserPack?.itemCount ?? 0,
-    nativeBrowserProjectedEntries: lastSurface?.runtimeVisibleEntries?.length ?? 0,
-    nativeBrowserWasmEntries: lastSurface?.runtimeBrowserWasmItemCount ?? 0,
-    nativeBrowserWasmProjectedEntries: lastSurface?.runtimeBrowserWasmProjectedEntries ?? 0,
-    nativeGroupWasmEntries: lastSurface?.runtimeGroupWasmCount ?? 0,
-    nativeStringWasmEntries: lastSurface?.runtimeStringWasmItemCount ?? 0,
-    nativeTextureWasmEntries: lastSurface?.runtimeTextureWasmItemCount ?? 0,
-    nativeAnimationWasmEntries: lastSurface?.runtimeAnimationWasmItemCount ?? 0,
-    nativeBrowserStrings: lastSurface?.stringByItemId.size ?? lastSurface?.browserPack?.stringCount ?? 0,
-    currentPage: lastSurface?.page ?? 1,
-    currentQuery: lastSurface?.query ?? "",
-    currentModFilter: lastSurface?.modId ?? null,
-    currentPageSize: lastSurface?.currentPageSize ?? 0,
-    currentWindowEntries: lastSurface?.currentWindowEntries ?? 0,
-    lastProjectionMs: lastSurface?.lastProjectionMs ?? 0,
-    lastProjectionTotalEntries: lastSurface?.lastProjectionTotalEntries ?? 0,
-    lastProjectionQuery: lastSurface?.lastProjectionQuery ?? "",
-    lastProjectionSource: lastSurface?.lastProjectionSource ?? "empty",
-    hasAnimatedSprites: lastSurface?.hasAnimatedSprites ?? false,
-    animatedSpriteCount: lastSurface?.animatedSpriteCount ?? 0,
-    nextFrameDelayMs: lastSurface?.nextFrameDelayMs ?? null,
-    updatedAt: performance.now(),
-  };
+  });
 }
 
 async function handleRequest(message: NativeSurfaceEngineRequest): Promise<NativeSurfaceEngineResponse> {
