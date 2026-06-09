@@ -14,6 +14,7 @@ import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeS
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 import {
   getAllGlobalBrowserAtlasTextureDescriptors,
+  getGlobalBrowserAtlasTextureDescriptorsForKeys,
 } from "../../services/globalBrowserAtlas";
 
 const props = withDefaults(defineProps<{
@@ -93,6 +94,10 @@ let nativeTexturesReady = false;
 let nativeFirstFrameReady = false;
 let nativeSurfaceIntersecting = true;
 let residentAtlasTextureSignature = "";
+let activeResidentAtlasTextureSignature = "";
+let activeResidentAtlasTextureLoadPromise: Promise<boolean> | null = null;
+let residentAtlasBackgroundSignature = "";
+let residentAtlasBackgroundUploadStarted = false;
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
 
@@ -161,7 +166,7 @@ const nativeTooltipTitle = computed(() => {
   if (hit.kind === "item") {
     const baseName = hit.item.localizedName || hit.item.internalName || hit.item.itemId;
     if (hit.item.browserGroupKey && Number(hit.item.browserGroupSize ?? 1) > 1) {
-      return `${baseName} · variant`;
+      return `${baseName} 路 variant`;
     }
     return baseName;
   }
@@ -174,22 +179,22 @@ const nativeTooltipSubtitle = computed(() => {
   if (hit.nativeTooltip) {
     const groupSize = Number(hit.nativeTooltip.groupSize ?? hit.item.browserGroupSize ?? 1);
     if (hit.kind !== "item") {
-      return `${groupSize || hit.group?.size || 0} grouped variants · Click to expand`;
+      return `${groupSize || hit.group?.size || 0} grouped variants 路 Click to expand`;
     }
     if (hit.nativeTooltip.groupKey && groupSize > 1) {
-      return `Variant in ${groupSize} item semantic group · Left click: recipes · Right click: uses`;
+      return `Variant in ${groupSize} item semantic group 路 Left click: recipes 路 Right click: uses`;
     }
     return hit.nativeTooltip.modId
-      ? `${hit.nativeTooltip.modId} · Left click: recipes · Right click: uses`
-      : "Left click: recipes · Right click: uses";
+      ? `${hit.nativeTooltip.modId} 路 Left click: recipes 路 Right click: uses`
+      : "Left click: recipes 路 Right click: uses";
   }
   if (hit.kind === "item") {
     if (hit.item.browserGroupKey && Number(hit.item.browserGroupSize ?? 1) > 1) {
-      return `Variant in ${hit.item.browserGroupSize} item semantic group · Left click: recipes · Right click: uses`;
+      return `Variant in ${hit.item.browserGroupSize} item semantic group 路 Left click: recipes 路 Right click: uses`;
     }
-    return hit.item.modId ? `${hit.item.modId} · Left click: recipes · Right click: uses` : "Left click: recipes · Right click: uses";
+    return hit.item.modId ? `${hit.item.modId} 路 Left click: recipes 路 Right click: uses` : "Left click: recipes 路 Right click: uses";
   }
-  return hit.group ? `${hit.group.size} grouped variants · Click to expand` : "Grouped variants";
+  return hit.group ? `${hit.group.size} grouped variants 路 Click to expand` : "Grouped variants";
 });
 
 const nativeTooltipStyle = computed<Record<string, string> | null>(() => {
@@ -395,6 +400,9 @@ async function syncNativeFrame() {
     if (seq !== nativeFrameSeq) return;
     nativeFirstFrameReady = response?.type === "frame";
     updateNativeRenderVisibility();
+    if (nativeFirstFrameReady) {
+      queueResidentAtlasBackgroundUpload();
+    }
     if (frame.hasAnimatedSprites) {
       scheduleNextAnimatedNativeFrame(frame.nextFrameDelayMs);
     } else {
@@ -418,10 +426,43 @@ function requestNativeFrame() {
   }, 0);
 }
 
+function buildTextureSignature(textures: Array<{ key: string; url: string }>): string {
+  return textures.map((texture) => `${texture.key}:${texture.url}`).join("|");
+}
+
+function queueResidentAtlasBackgroundUpload(): void {
+  if (residentAtlasBackgroundUploadStarted || !nativeRenderInitialized) return;
+  residentAtlasBackgroundUploadStarted = true;
+  window.setTimeout(() => {
+    void (async () => {
+      const textures = await getAllGlobalBrowserAtlasTextureDescriptors();
+      if (!nativeRenderInitialized || textures.length <= 0) return;
+      const signature = buildTextureSignature(textures);
+      if (signature === residentAtlasBackgroundSignature) return;
+      residentAtlasBackgroundSignature = signature;
+      await postNativeRenderEvent({
+        type: "loadTextures",
+        textures,
+      });
+    })().finally(() => {
+      residentAtlasBackgroundUploadStarted = false;
+    });
+  }, 0);
+}
+
 async function syncNativeTexturesForFrame(spriteCommands: Array<{ textureKey?: string | null }>): Promise<void> {
   if (!nativeRenderInitialized) return;
   const seq = ++nativeTextureSeq;
-  const textures = await getAllGlobalBrowserAtlasTextureDescriptors();
+  const textureKeys = Array.from(new Set(spriteCommands.map((command) => command.textureKey ?? "").filter(Boolean)));
+  let textures = getGlobalBrowserAtlasTextureDescriptorsForKeys(textureKeys);
+  if (textures.length <= 0 && spriteCommands.length > 0) {
+    // This should be rare: sprite commands already carry atlas-file keys. If a
+    // malformed key slips through, use the resident index as a corrective path
+    // instead of showing a permanently blank native page.
+    const allTextures = await getAllGlobalBrowserAtlasTextureDescriptors();
+    const wanted = new Set(textureKeys);
+    textures = allTextures.filter((texture) => wanted.has(texture.key));
+  }
   if (seq !== nativeTextureSeq) return;
   if (textures.length <= 0 && spriteCommands.length <= 0) {
     nativeTexturesReady = true;
@@ -433,7 +474,7 @@ async function syncNativeTexturesForFrame(spriteCommands: Array<{ textureKey?: s
     updateNativeRenderVisibility();
     return;
   }
-  const signature = textures.map((texture) => `${texture.key}:${texture.url}`).join("|");
+  const signature = buildTextureSignature(textures);
   if (signature === residentAtlasTextureSignature) {
     nativeTexturesReady = true;
     updateNativeRenderVisibility();
@@ -441,15 +482,22 @@ async function syncNativeTexturesForFrame(spriteCommands: Array<{ textureKey?: s
   }
   nativeTexturesReady = false;
   updateNativeRenderVisibility();
+  const previousTextureSignature = activeResidentAtlasTextureSignature;
+  activeResidentAtlasTextureSignature = signature;
+  if (!activeResidentAtlasTextureLoadPromise || signature !== previousTextureSignature) {
+    activeResidentAtlasTextureLoadPromise = postNativeRenderEvent({
+      type: "loadTextures",
+      textures,
+    }).then((response) => response?.type === "textureLoaded" && response.loaded > 0);
+  }
+  const loaded = await activeResidentAtlasTextureLoadPromise;
+  if (seq !== nativeTextureSeq && activeResidentAtlasTextureSignature !== signature) return;
   residentAtlasTextureSignature = signature;
-  const response = await postNativeRenderEvent({
-    type: "loadTextures",
-    textures,
-  });
-  if (seq !== nativeTextureSeq) return;
-  nativeTexturesReady = response?.type === "textureLoaded" && response.loaded > 0;
+  if (activeResidentAtlasTextureSignature === signature) {
+    activeResidentAtlasTextureLoadPromise = null;
+  }
+  nativeTexturesReady = loaded;
   updateNativeRenderVisibility();
-  requestNativeFrame();
 }
 
 onMounted(async () => {
@@ -729,6 +777,8 @@ if (typeof document !== "undefined") {
   line-height: 1.4;
 }
 </style>
+
+
 
 
 

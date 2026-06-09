@@ -86,7 +86,7 @@ test('global atlas runtime never performs page-scoped atlas entry hydration', ()
   );
 });
 
-test('native renderer uploads all global atlas textures instead of the current page only', () => {
+test('native renderer uploads current frame textures first and warms the resident atlas in background', () => {
   const nativeSurfaceSource = read('src/components/native-surface/NativeBrowserSurface.vue');
   assert.match(
     globalAtlasSource,
@@ -95,8 +95,13 @@ test('native renderer uploads all global atlas textures instead of the current p
   );
   assert.match(
     nativeSurfaceSource,
-    /const textures = await getAllGlobalBrowserAtlasTextureDescriptors\(\);/,
-    'native surface should load the resident global atlas texture set',
+    /getGlobalBrowserAtlasTextureDescriptorsForKeys\(textureKeys\)/,
+    'native surface should upload current-frame atlas textures before rendering the first frame',
+  );
+  assert.match(
+    nativeSurfaceSource,
+    /queueResidentAtlasBackgroundUpload[\s\S]*getAllGlobalBrowserAtlasTextureDescriptors\(\)/,
+    'native surface should warm the resident global atlas texture set after the first frame',
   );
   assert.doesNotMatch(
     nativeSurfaceSource,
