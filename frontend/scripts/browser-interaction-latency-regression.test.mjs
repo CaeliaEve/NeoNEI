@@ -8,6 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
 const source = readFileSync(resolve(frontendRoot, 'src/composables/useItemBrowser.ts'), 'utf8').replace(/\r\n/g, '\n');
 const schedulerSource = readFileSync(resolve(frontendRoot, 'src/composables/browser/browserInteractionScheduler.ts'), 'utf8').replace(/\r\n/g, '\n');
+const searchRuntimeSource = readFileSync(resolve(frontendRoot, 'src/services/browserSearchWorker.ts'), 'utf8').replace(/\r\n/g, '\n');
 
 test('homepage search and paging commits within one frame instead of legacy debounce delay', () => {
   assert.match(schedulerSource, /export const INTERACTION_COMMIT_DELAY_MS = 16/);
@@ -15,4 +16,12 @@ test('homepage search and paging commits within one frame instead of legacy debo
   assert.match(source, /interactionScheduler\.schedulePageHydration\(\(\) => \{\n\s+void loadItems\(\);\n\s+\}\)/);
   assert.match(source, /interactionScheduler\.clear\(\)/);
   assert.doesNotMatch(source, /\}, 120\);/);
+});
+
+test('homepage search no longer uses the legacy JS prefix and gram worker hot path', () => {
+  assert.doesNotMatch(source, /queryBrowserSearchWorker/);
+  assert.doesNotMatch(searchRuntimeSource, /new Worker\(/);
+  assert.doesNotMatch(searchRuntimeSource, /browserSearch\.worker/);
+  assert.doesNotMatch(searchRuntimeSource, /prefixIndex/);
+  assert.doesNotMatch(searchRuntimeSource, /gramIndex/);
 });

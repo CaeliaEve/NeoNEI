@@ -22,11 +22,7 @@ import {
   readPersistentRuntimeCache,
   writePersistentRuntimeCache,
 } from '../services/persistentRuntimeCache';
-import {
-  preloadBrowserSearchWorker,
-  queryBrowserSearchWorker,
-  type WorkerQueryResult,
-} from '../services/browserSearchWorker';
+import { preloadBrowserSearchWorker } from '../services/browserSearchWorker';
 import {
   ensureGlobalBrowserAtlasIndex,
   hasGlobalBrowserAtlas,
@@ -750,80 +746,10 @@ export function useItemBrowser(
     return normalized;
   });
 
-  const buildSearchEntriesFromWorkerResult = async (
-    params: BrowserPageRequestParams,
-    result: WorkerQueryResult,
-  ): Promise<CachedBrowserPage> => {
-    const itemIds = result.itemIds
-      .map((itemId) => `${itemId ?? ''}`.trim())
-      .filter(Boolean);
-    const catalog = api.peekBrowserDefaultCatalog(params.modId, params.includeHidden)
-      ?? await api.getBrowserDefaultCatalog({ modId: params.modId, includeHidden: params.includeHidden }).catch(() => null);
-
-    const catalogEntryByItemId = new Map<string, BrowserDefaultCatalogEntry>();
-    for (const entry of catalog?.data ?? []) {
-      const item = entry.kind === 'item' ? entry.item : entry.group.representative;
-      if (item?.itemId) {
-        catalogEntryByItemId.set(item.itemId, entry as BrowserDefaultCatalogEntry);
-      }
-    }
-
-    const data: BrowserGridEntry[] = [];
-    const seenKeys = new Set<string>();
-    for (const itemId of itemIds) {
-      const entry = catalogEntryByItemId.get(itemId);
-      if (!entry || seenKeys.has(entry.key)) {
-        continue;
-      }
-      seenKeys.add(entry.key);
-      data.push(entry);
-    }
-
-    return {
-      data,
-      items: collectDisplayItems(data),
-      atlas: null,
-      mediaManifest: null,
-      resourceManifest: undefined,
-      total: result.total,
-      totalPages: result.totalPages,
-      page: result.page,
-    };
-  };
-
-  const loadSearchPageViaWorker = async (
-    params: BrowserPageRequestParams,
-  ): Promise<CachedBrowserPage | null> => {
-    const query = `${params.search ?? ''}`.trim();
-    if (!query || params.expandedGroups.length > 0) {
-      return null;
-    }
-
-    const result = await queryBrowserSearchWorker({
-      query,
-      modId: params.modId,
-      page: params.page,
-      pageSize: params.pageSize,
-    });
-    return buildSearchEntriesFromWorkerResult(params, result);
-  };
-
   const loadSearchPage = async (
     params: BrowserPageRequestParams,
   ): Promise<CachedBrowserPage> => fetchPageWithDedup(buildPageCacheKey(params), async () => {
     const startedAt = performance.now();
-    const workerPage = await loadSearchPageViaWorker(params).catch(() => null);
-    if (workerPage) {
-      markPerfEvent('browser-search-semantic-page', {
-        page: workerPage.page,
-        pageSize: params.pageSize,
-        total: workerPage.total,
-        elapsedMs: performance.now() - startedAt,
-        source: 'worker-search-pack',
-      });
-      return workerPage;
-    }
-
     const normalized = await loadProjectedPagePack(params);
     markPerfEvent('browser-search-semantic-page', {
       page: normalized.page,
