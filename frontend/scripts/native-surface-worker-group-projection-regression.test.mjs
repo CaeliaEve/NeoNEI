@@ -9,6 +9,7 @@ ${wasmRuntimeSource}`;
 const nativeSurfaceSource = fs.readFileSync('src/components/native-surface/NativeBrowserSurface.vue', 'utf8');
 const homeBrowserColumnSource = fs.readFileSync('src/components/home/HomeBrowserColumn.vue', 'utf8');
 const homePageSource = fs.readFileSync('src/views/HomePage.vue', 'utf8');
+const itemBrowserSource = fs.readFileSync('src/composables/useItemBrowser.ts', 'utf8');
 
 test('native surface worker keeps expanded groups on the runtime projection path', () => {
   assert.equal(
@@ -90,5 +91,38 @@ test('native surface worker paginates projection indices without rebuilding all 
     buildRuntimeEntries.includes('projected.slice(start, start + pageSize)'),
     false,
     'runtime entries must not build a full entry array and slice it after the fact',
+  );
+});
+
+test('homepage pagination uses native runtime projected totals as the browser source of truth', () => {
+  assert.match(
+    nativeSurfaceSource,
+    /runtimeProjectionUpdate: \[metrics: NativeSurfaceFrameProjectionMetrics\]/,
+    'NativeBrowserSurface should emit native projection metrics from frame results',
+  );
+  assert.match(
+    nativeSurfaceSource,
+    /emit\("runtimeProjectionUpdate", frame\.runtimeProjection\)/,
+    'native frame metrics should be surfaced to Vue instead of leaving pagination on raw totals',
+  );
+  assert.match(
+    homeBrowserColumnSource,
+    /@runtime-projection-update="emit\('runtimeProjectionUpdate', \$event\)"/,
+    'HomeBrowserColumn should forward native projected totals upward',
+  );
+  assert.match(
+    homePageSource,
+    /@runtime-projection-update="applyNativeProjectionPageMetrics"/,
+    'HomePage should apply native projected page metrics to the visible paginator',
+  );
+  assert.match(
+    itemBrowserSource,
+    /const applyNativeProjectionPageMetrics = \(metrics: NativeSurfaceFrameProjectionMetrics\)/,
+    'useItemBrowser should expose a native projection metrics sink',
+  );
+  assert.match(
+    itemBrowserSource,
+    /totalPages\.value = projectedTotalPages/,
+    'visible total pages must be derived from the native collapsed-group projection',
   );
 });

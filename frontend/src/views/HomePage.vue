@@ -97,6 +97,7 @@ const {
   warmSearchIndex,
   changePage,
   prefetchItemsPage,
+  applyNativeProjectionPageMetrics,
 } = useItemBrowser(itemSize, {
   measureVisiblePageCapacity: () => measureGridCapacityRaw(),
   includeHiddenItems: showHiddenDebugItems,
@@ -430,6 +431,7 @@ setGridViewportSync(syncMeasuredPageSize);
           @item-contextmenu="handleCardContextMenu"
           @group-click="handleBrowserGroupClick"
           @group-contextmenu="handleBrowserGroupContextMenu"
+          @runtime-projection-update="applyNativeProjectionPageMetrics"
           @expanded-group-facet-input="handleExpandedGroupFacetInput"
           @clear-expanded-group-facet-filters="clearExpandedGroupFacetFilters"
           @grid-viewport-resize="setItemGridViewportRef"

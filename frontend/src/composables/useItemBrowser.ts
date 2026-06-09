@@ -43,6 +43,7 @@ import {
 import { createBrowserPagePresentationWarmManager } from './browser/browserPagePresentationWarm';
 import { createNativeBrowserRuntimeWarmManager } from './browser/nativeBrowserRuntimeWarm';
 import { createBrowserPageProjectionLoader } from './browser/browserPageProjectionLoader';
+import type { NativeSurfaceFrameProjectionMetrics } from '../native-surface/contracts';
 
 const SEARCH_LOCAL_PROJECTION_MAX_TOTAL = 1600;
 
@@ -751,6 +752,25 @@ export function useItemBrowser(
     });
   };
 
+  const applyNativeProjectionPageMetrics = (metrics: NativeSurfaceFrameProjectionMetrics) => {
+    if (!metrics.runtimeReady || metrics.source !== 'runtime-browser-pack' || metrics.pageSize <= 0) return;
+    const activeSearch = searchQuery.value.trim();
+    if (`${metrics.query ?? ''}`.trim() !== activeSearch) return;
+    const activeMod = selectedMod.value === 'all' ? null : selectedMod.value;
+    if ((metrics.modId ?? null) !== activeMod) return;
+    const projectedTotal = Math.max(0, Math.floor(Number(metrics.totalEntries) || 0));
+    const projectedPageSize = Math.max(1, Math.floor(Number(metrics.pageSize) || pageSize.value || 1));
+    const projectedTotalPages = Math.max(1, Math.ceil(projectedTotal / projectedPageSize));
+    totalItems.value = projectedTotal;
+    totalPages.value = projectedTotalPages;
+    if (currentPage.value > projectedTotalPages) {
+      currentPage.value = projectedTotalPages;
+      interactionScheduler.schedulePageHydration(() => {
+        void loadItems();
+      });
+    }
+  };
+
   const reloadExpandedProjection = () => {
     const requestParams = buildRequestParams(currentPage.value);
     const localProjection = tryProjectExpandedGroupsFromLocalCaches(requestParams);
@@ -941,6 +961,7 @@ export function useItemBrowser(
     setExpandedGroupFacetFilter,
     clearExpandedGroupFacetFilters,
     setPageSize,
+    applyNativeProjectionPageMetrics,
     loadMods,
     loadItems,
     onSearch,

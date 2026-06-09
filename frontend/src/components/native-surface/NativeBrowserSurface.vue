@@ -6,6 +6,7 @@ import { createNativeSurfaceController } from "../../native-surface/NativeSurfac
 import type {
   NativeRendererBackendKind,
   NativeSurfaceId,
+  NativeSurfaceFrameProjectionMetrics,
   NativeSurfacePointer,
   NativeSurfaceViewportRole,
 } from "../../native-surface/contracts";
@@ -50,6 +51,7 @@ const emit = defineEmits<{
   groupClick: [group: BrowserVariantGroup];
   groupContextmenu: [group: BrowserVariantGroup, event: MouseEvent];
   viewportResize: [element: HTMLElement | null];
+  runtimeProjectionUpdate: [metrics: NativeSurfaceFrameProjectionMetrics];
 }>();
 
 function resolveRuntimePackProfile(): NativeRuntimePackProfile {
@@ -385,6 +387,15 @@ async function syncNativeFrame() {
   const nowMs = performance.now();
   const frame = await controller.requestFrame(nowMs);
   if (seq !== nativeFrameSeq) return;
+  if (
+    props.viewportRole === "browser"
+    && frame?.runtimeProjection
+    && frame.runtimeProjection.runtimeReady
+    && frame.runtimeProjection.source === "runtime-browser-pack"
+    && frame.runtimeProjection.pageSize > 0
+  ) {
+    emit("runtimeProjectionUpdate", frame.runtimeProjection);
+  }
   if (nativeRenderInitialized && frame?.drawCommandBuffer && frame.drawCommandCount && frame.drawCommandStride) {
     await syncNativeTexturesForFrame(frame.spriteCommands ?? []);
     if (seq !== nativeFrameSeq) return;

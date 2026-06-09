@@ -112,6 +112,19 @@ export interface NativeSurfaceFrameResult {
   hasAnimatedSprites?: boolean;
   animatedSpriteCount?: number;
   nextFrameDelayMs?: number | null;
+  runtimeProjection?: NativeSurfaceFrameProjectionMetrics | null;
+}
+
+export interface NativeSurfaceFrameProjectionMetrics {
+  source: "runtime-browser-pack" | "runtime-history-pack" | "compat-entries" | "empty";
+  projectionSource: "browser" | "search" | "empty";
+  totalEntries: number;
+  pageSize: number;
+  currentPage: number;
+  windowEntries: number;
+  query: string;
+  modId: string | null;
+  runtimeReady: boolean;
 }
 
 export interface NativeSurfaceMetrics {
@@ -194,7 +207,6 @@ export interface NativeRuntimeManifest {
     perItemImageFallback: false;
   };
 }
-
 
 
 

@@ -203,6 +203,17 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       hasAnimatedSprites: response.hasAnimatedSprites,
       animatedSpriteCount: response.animatedSpriteCount,
       nextFrameDelayMs: response.nextFrameDelayMs,
+      runtimeProjection: response.metrics ? {
+        source: response.metrics.projectionSource,
+        projectionSource: response.metrics.lastProjectionSource,
+        totalEntries: response.metrics.lastProjectionTotalEntries,
+        pageSize: response.metrics.currentPageSize,
+        currentPage: response.metrics.currentPage,
+        windowEntries: response.metrics.currentWindowEntries,
+        query: response.metrics.currentQuery,
+        modId: response.metrics.currentModFilter,
+        runtimeReady: response.metrics.runtimeReady,
+      } : null,
     };
   }
 
@@ -387,5 +398,4 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
 export function createNativeSurfaceController(surfaceId: NativeSurfaceId): NativeNeiSurfaceController {
   return new CompatNativeSurfaceController(surfaceId);
 }
-
 

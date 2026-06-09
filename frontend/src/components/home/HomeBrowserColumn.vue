@@ -2,6 +2,7 @@
 import type { StyleValue } from "vue";
 import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../../services/api";
 import type { PageAtlasResult } from "../../services/pageAtlas";
+import type { NativeSurfaceFrameProjectionMetrics } from "../../native-surface/contracts";
 import { resolveDistDataNativeRuntimeManifestPath } from "../../services/distDataRuntime";
 import NativeBrowserSurface from "../native-surface/NativeBrowserSurface.vue";
 
@@ -38,6 +39,7 @@ const emit = defineEmits<{
   expandedGroupFacetInput: [groupKey: string, event: Event];
   clearExpandedGroupFacetFilters: [];
   gridViewportResize: [element: HTMLElement | null];
+  runtimeProjectionUpdate: [metrics: NativeSurfaceFrameProjectionMetrics];
 }>();
 
 const bindGridViewportRef = (element: HTMLElement | null) => {
@@ -151,6 +153,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                   @group-click="emit('groupClick', $event)"
                   @group-contextmenu="(group, event) => emit('groupContextmenu', group, event)"
                   @viewport-resize="emit('gridViewportResize', $event)"
+                  @runtime-projection-update="emit('runtimeProjectionUpdate', $event)"
                 />
 
                 <div
