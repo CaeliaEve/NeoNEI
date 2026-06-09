@@ -1,7 +1,6 @@
 ﻿import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 import {
   api,
-  type PageRichMediaManifest,
   type ItemSearchBasic,
   type indexedItemRecipeSummaryResponse,
 } from '../services/api';
@@ -18,20 +17,17 @@ import { loadRecipeBootstrap } from './useRecipeBootstrap';
 import { useRecipeDetailHydrator } from './useRecipeDetailHydrator';
 import { convertIndexedRecipe } from '../domain/recipeNormalization';
 import {
-  getAnimatedAtlasImageUrl,
-  loadImageAsset,
-  primeAnimatedAtlasManifest,
-  primeRenderAnimationHintsFromUnknown,
   queueRenderableMediaPrewarmFromUnknown,
 } from '../services/animationBudget';
+import {
+  buildCategoryPrewarmPageSequence,
+  primeRecipePayloadMedia,
+  RECIPE_PAGE_PREWARM_MAX_RECIPES,
+} from './recipe-display/recipeMediaPrewarm';
 import { markPerfEvent } from '../services/perfMarks';
 
 const CATEGORY_PACK_PAGE_SIZE = 8;
 const CATEGORY_PACK_IDS_ONLY_LIMIT = 0;
-const RECIPE_PAGE_PREWARM_LOOKAHEAD = 6;
-const RECIPE_PAGE_PREWARM_LOOKBEHIND = 2;
-const RECIPE_PAGE_PREWARM_MAX_RECIPES = 18;
-const RECIPE_MEDIA_MANIFEST_PREWARM_LIMIT = 8;
 const RECIPE_BOOTSTRAP_SUMMARY_BUDGET_MS = 100;
 const RECIPE_FULL_GROUP_BUDGET_MS = 300;
 
@@ -341,53 +337,6 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     return new Map(loadedRecipes.map((recipe) => [recipe.recipeId, recipe] as const));
   };
 
-  const primeRecipePayloadMedia = (payload: { mediaManifest?: PageRichMediaManifest | null } | unknown) => {
-    primeRenderAnimationHintsFromUnknown(payload);
-    const mediaManifest =
-      payload && typeof payload === 'object' && 'mediaManifest' in payload
-        ? ((payload as { mediaManifest?: PageRichMediaManifest | null }).mediaManifest ?? null)
-        : null;
-    primeAnimatedAtlasManifest(mediaManifest);
-    const urls = Array.from(
-      new Set(
-        Object.values(mediaManifest?.animatedAtlases ?? {})
-          .map((entry) => getAnimatedAtlasImageUrl(entry))
-          .filter((url): url is string => Boolean(url)),
-      ),
-    ).slice(0, RECIPE_MEDIA_MANIFEST_PREWARM_LIMIT);
-    for (const url of urls) {
-      void loadImageAsset(url);
-    }
-  };
-
-  const buildCategoryPrewarmPageSequence = (pageCount: number, currentPageIndex: number): number[] => {
-    if (pageCount <= 0) {
-      return [];
-    }
-
-    const orderedPages: number[] = [];
-    const seenPages = new Set<number>();
-    const normalizedCurrent = ((currentPageIndex % pageCount) + pageCount) % pageCount;
-
-    const pushPage = (page: number) => {
-      const normalized = ((page % pageCount) + pageCount) % pageCount;
-      if (seenPages.has(normalized)) {
-        return;
-      }
-      seenPages.add(normalized);
-      orderedPages.push(normalized);
-    };
-
-    pushPage(normalizedCurrent);
-    for (let delta = 1; delta <= RECIPE_PAGE_PREWARM_LOOKAHEAD; delta += 1) {
-      pushPage(normalizedCurrent + delta);
-    }
-    for (let delta = 1; delta <= RECIPE_PAGE_PREWARM_LOOKBEHIND; delta += 1) {
-      pushPage(normalizedCurrent - delta);
-    }
-
-    return orderedPages;
-  };
 
   const collectCategoryRecipesForPrewarm = (
     category: MachineCategory | null | undefined,

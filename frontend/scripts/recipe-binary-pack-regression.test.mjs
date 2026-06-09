@@ -2,7 +2,12 @@
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-const source = readFileSync(new URL('../src/services/distDataRuntime.ts', import.meta.url), 'utf8');
+const runtimeSource = readFileSync(new URL('../src/services/distDataRuntime.ts', import.meta.url), 'utf8');
+const recipeBinarySource = readFileSync(new URL('../src/services/distDataRuntimeBinaryRecipePack.ts', import.meta.url), 'utf8');
+const textureBinarySource = readFileSync(new URL('../src/services/distDataRuntimeBinaryTexturePack.ts', import.meta.url), 'utf8');
+const source = `${runtimeSource}
+${recipeBinarySource}
+${textureBinarySource}`;
 
 test('dist-data recipe runtime uses binary recipes.bin as the production index path', () => {
   assert.match(source, /parseNativeBinaryPackEnvelope\(buffer, "neonei\/recipe-pack\/current"\)/,
@@ -16,11 +21,11 @@ test('dist-data recipe runtime uses binary recipes.bin as the production index p
 });
 
 test('dist-data recipe runtime does not fetch recipe-pack.json as the primary pack', () => {
-  const getRustRecipePack = source.slice(
-    source.indexOf('async function getRustRecipePack()'),
-    source.indexOf('async function getRecipeItemIndex()'),
+  const getRustRecipePack = runtimeSource.slice(
+    runtimeSource.indexOf('async function getRustRecipePack()'),
+    runtimeSource.indexOf('async function getRecipeItemIndex()'),
   );
-  assert.ok(getRustRecipePack.includes('fetchArrayBuffer'), 'recipe pack loader must fetch an ArrayBuffer');
+  assert.ok(getRustRecipePack.includes('fetchDistDataArrayBuffer'), 'recipe pack loader must fetch an ArrayBuffer');
   assert.ok(!getRustRecipePack.includes('fetchJson<DistDataRustRecipePackPayload>'),
     'recipe pack loader must not fetch recipe-pack.json JSON as the production index');
 });
@@ -37,11 +42,11 @@ test('dist-data atlas runtime uses binary textures.bin as the production atlas i
 });
 
 test('dist-data atlas runtime does not fetch texture-pack.json as the primary pack', () => {
-  const getAtlas = source.slice(
-    source.indexOf('export async function getDistDataBrowserAtlasIndex()'),
-    source.indexOf('export async function getDistDataNativeRenderIndex()'),
+  const getAtlas = runtimeSource.slice(
+    runtimeSource.indexOf('export async function getDistDataBrowserAtlasIndex()'),
+    runtimeSource.indexOf('export async function getDistDataNativeRenderIndex()'),
   );
-  assert.ok(getAtlas.includes('fetchArrayBuffer'), 'atlas loader must fetch binary textures.bin');
+  assert.ok(getAtlas.includes('fetchDistDataArrayBuffer'), 'atlas loader must fetch binary textures.bin');
   assert.ok(!getAtlas.includes('fetchJson<DistDataRustTexturePackPayload>'),
     'atlas loader must not fetch texture-pack.json JSON as the production atlas index');
 });
