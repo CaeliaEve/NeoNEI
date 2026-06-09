@@ -2,20 +2,12 @@
 import {
   api,
   type BrowserGridEntry,
-  type BrowserDefaultCatalogResponse,
-  type BrowserSearchCatalogResponse,
-  type BrowserGroupItemsResponse,
   type BrowserPagePackResponse,
   type HomeBootstrapResponse,
   type Item,
   type Mod,
   type PageAtlasResult,
 } from '../services/api';
-import { peekPageAtlas } from '../services/pageAtlas';
-import {
-  projectBrowserEntriesFromDefaultCatalog,
-  type BrowserDefaultCatalogEntry,
-} from '../services/browserLocalProjection';
 import {
   getStoredRuntimeSignature,
   primeRuntimeCacheSignature,
@@ -33,16 +25,14 @@ import {
   sharedPageRequestInFlight,
   sharedPageRevalidationInFlight,
   setSharedBrowserPageCache,
-  setSharedExpandedProjectionCache,
+  buildBrowserPageCacheKey,
   type BrowserFacetFilters,
   type BrowserPageRequestParams,
   type CachedBrowserPage,
 } from './browser/browserPageCache';
 import {
-  applyGroupFacetFilters,
   buildPersistentBrowserPageKey,
   clampNumber,
-  collectBrowserPageResourceItemIds,
   collectDisplayItems,
   normalizeExpandedGroups,
   normalizeFacetFilters,
@@ -52,6 +42,7 @@ import {
 } from './browser/browserInteractionScheduler';
 import { createBrowserPagePresentationWarmManager } from './browser/browserPagePresentationWarm';
 import { createNativeBrowserRuntimeWarmManager } from './browser/nativeBrowserRuntimeWarm';
+import { createBrowserPageProjectionLoader } from './browser/browserPageProjectionLoader';
 
 const SEARCH_LOCAL_PROJECTION_MAX_TOTAL = 1600;
 
@@ -95,26 +86,7 @@ export function useItemBrowser(
   let initialHomeBootstrapMarked = false;
   let firstBrowserTileVisibleMarked = false;
 
-  const buildPageCacheKey = (params: {
-    page: number;
-    pageSize: number;
-    search?: string;
-    modId?: string;
-    expandedGroups?: string[];
-    expandedGroupFacetFilters?: BrowserFacetFilters;
-    slotSize: number;
-    includeHidden?: boolean;
-  }) =>
-    JSON.stringify({
-      page: params.page,
-      pageSize: params.pageSize,
-      search: params.search?.trim() || '',
-      modId: params.modId || 'all',
-      expandedGroups: normalizeExpandedGroups(params.expandedGroups),
-      expandedGroupFacetFilters: normalizeFacetFilters(params.expandedGroupFacetFilters),
-      slotSize: params.slotSize,
-      includeHidden: Boolean(params.includeHidden),
-    });
+  const buildPageCacheKey = buildBrowserPageCacheKey;
 
   const buildSlotSize = () => Math.max(32, Math.ceil(itemSize.value * 0.9));
   const hasActiveSearch = () => Boolean(searchQuery.value.trim());
@@ -136,289 +108,19 @@ export function useItemBrowser(
     getPageSize: () => pageSize.value,
     getItemSize: () => itemSize.value,
   });
-
-  const buildExpandedProjectionCacheKey = (
-    params: BrowserPageRequestParams,
-    groupItemsByKey: Map<string, Item[]>,
-    catalogEntries?: BrowserDefaultCatalogEntry[],
-  ): string => JSON.stringify({
-    type: 'expanded-browser-projection',
-    version: 1,
-    page: params.page,
-    pageSize: params.pageSize,
-    search: params.search?.trim() || '',
-    modId: params.modId || 'all',
-    expandedGroups: normalizeExpandedGroups(params.expandedGroups),
-    expandedGroupFacetFilters: normalizeFacetFilters(params.expandedGroupFacetFilters),
-    slotSize: params.slotSize,
-    catalogSize: catalogEntries?.length ?? 0,
-    groups: Array.from(groupItemsByKey.entries())
-      .map(([groupKey, groupItems]) => [groupKey, groupItems.length] as const)
-      .sort(([left], [right]) => left.localeCompare(right)),
+  const browserPageProjection = createBrowserPageProjectionLoader({
+    getItemSize: () => itemSize.value,
+    isSearchLocalProjectionEligible,
   });
 
-  const buildProjectedBrowserPage = (
-    catalogEntries: BrowserDefaultCatalogEntry[],
-    params: BrowserPageRequestParams,
-    groupItemsByKey: Map<string, Item[]>,
-  ): CachedBrowserPage => {
-    const filteredGroupItemsByKey = applyGroupFacetFilters(
-      groupItemsByKey,
-      params.expandedGroupFacetFilters,
-    );
-    const projected = projectBrowserEntriesFromDefaultCatalog(
-      catalogEntries,
-      {
-        expandedGroups: params.expandedGroups,
-        groupItemsByKey: filteredGroupItemsByKey,
-        page: params.page,
-        pageSize: params.pageSize,
-      },
-    );
-    const displayItems = collectDisplayItems(projected.data);
-    return {
-      data: projected.data,
-      items: displayItems,
-      atlas: peekPageAtlas(displayItems, itemSize.value) ?? null,
-      mediaManifest: null,
-      total: projected.total,
-      totalPages: projected.totalPages,
-      page: projected.page,
-    };
-  };
-
-  const getOrBuildExpandedProjectionPage = (
-    catalogEntries: BrowserDefaultCatalogEntry[],
-    params: BrowserPageRequestParams,
-    groupItemsByKey: Map<string, Item[]>,
-  ): CachedBrowserPage => {
-    const projectionCacheKey = buildExpandedProjectionCacheKey(params, groupItemsByKey, catalogEntries);
-    const cachedProjection = sharedExpandedProjectionCache.get(projectionCacheKey);
-    if (cachedProjection) {
-      sharedExpandedProjectionCache.delete(projectionCacheKey);
-      sharedExpandedProjectionCache.set(projectionCacheKey, cachedProjection);
-      return cachedProjection;
-    }
-
-    const projectedPage = buildProjectedBrowserPage(catalogEntries, params, groupItemsByKey);
-    setSharedExpandedProjectionCache(projectionCacheKey, projectedPage);
-    return projectedPage;
-  };
-
-  const precomputeExpandedProjectionWindow = (
-    catalogEntries: BrowserDefaultCatalogEntry[],
-    params: BrowserPageRequestParams,
-    groupItemsByKey: Map<string, Item[]>,
-  ) => {
-    for (const page of [params.page - 1, params.page, params.page + 1]) {
-      if (page < 1) {
-        continue;
-      }
-      getOrBuildExpandedProjectionPage(
-        catalogEntries,
-        {
-          ...params,
-          page,
-        },
-        groupItemsByKey,
-      );
-    }
-  };
-
-  const hydrateProjectedBrowserPageMedia = (
-    cacheKey: string,
-    params: BrowserPageRequestParams,
-    basePage: CachedBrowserPage,
-    requestId: number,
-  ) => {
-    if (basePage.items.length === 0) {
-      return;
-    }
-
-    const itemIds = collectBrowserPageResourceItemIds(basePage);
-    if (itemIds.length === 0) {
-      return;
-    }
-
-    void requestId;
-    markPerfEvent('browser-projected-page-atlas-warm', {
-      page: params.page,
-      pageSize: params.pageSize,
-      items: itemIds.length,
-      cacheKey,
-      source: 'native-runtime-render-worker',
-    });
-  };
-
-  const loadProjectedPagePack = async (
-    params: BrowserPageRequestParams,
-  ): Promise<CachedBrowserPage> => {
-    const unexpandedProjection = await tryLoadUnexpandedPageProjection(params);
-    if (unexpandedProjection) {
-      return unexpandedProjection.page;
-    }
-
-    const expandedProjection = await tryLoadExpandedProjection(params);
-    if (expandedProjection) {
-      return expandedProjection.page;
-    }
-
-    throw new Error('Native browser catalog projection unavailable for current runtime');
-  };
-
-  const tryProjectExpandedGroupsFromLocalCaches = (
-    params: BrowserPageRequestParams,
-  ): { cacheKey: string; page: CachedBrowserPage } | null => {
-    const normalizedSearch = `${params.search ?? ''}`.trim();
-    if (normalizedSearch && !isSearchLocalProjectionEligible({ search: normalizedSearch })) {
-      return null;
-    }
-
-    const catalog = normalizedSearch
-      ? api.peekBrowserSearchCatalog(normalizedSearch, params.modId, params.includeHidden)
-      : api.peekBrowserDefaultCatalog(params.modId, params.includeHidden);
-    if (!catalog?.data?.length) {
-      return null;
-    }
-
-    const groupItemsByKey = new Map<string, Item[]>();
-    for (const groupKey of params.expandedGroups) {
-      const response = api.peekBrowserGroupItems(groupKey, params.modId);
-      if (!response?.items?.length) {
-        return null;
-      }
-      groupItemsByKey.set(response.groupKey, response.items);
-    }
-
-    const catalogEntries = catalog.data as BrowserDefaultCatalogEntry[];
-    precomputeExpandedProjectionWindow(catalogEntries, params, groupItemsByKey);
-    const page = getOrBuildExpandedProjectionPage(
-      catalogEntries,
-      params,
-      groupItemsByKey,
-    );
-    const cacheKey = buildPageCacheKey({
-      ...params,
-      page: page.page,
-    });
-    return { cacheKey, page };
-  };
-
-  const tryProjectUnexpandedPageFromLocalCatalog = (
-    params: BrowserPageRequestParams,
-  ): { cacheKey: string; page: CachedBrowserPage } | null => {
-    if (params.expandedGroups.length > 0) {
-      return null;
-    }
-
-    const normalizedSearch = `${params.search ?? ''}`.trim();
-    if (normalizedSearch && !isSearchLocalProjectionEligible({ search: normalizedSearch })) {
-      return null;
-    }
-
-    const catalog = normalizedSearch
-      ? api.peekBrowserSearchCatalog(normalizedSearch, params.modId, params.includeHidden)
-      : api.peekBrowserDefaultCatalog(params.modId, params.includeHidden);
-    if (!catalog?.data?.length) {
-      return null;
-    }
-
-    const catalogEntries = catalog.data as BrowserDefaultCatalogEntry[];
-    const page = buildProjectedBrowserPage(catalogEntries, params, new Map<string, Item[]>());
-    const cacheKey = buildPageCacheKey({
-      ...params,
-      page: page.page,
-    });
-    return { cacheKey, page };
-  };
-
-  const tryLoadUnexpandedPageProjection = async (
-    params: BrowserPageRequestParams,
-  ): Promise<{ cacheKey: string; page: CachedBrowserPage } | null> => {
-    if (params.expandedGroups.length > 0) {
-      return null;
-    }
-
-    const normalizedSearch = `${params.search ?? ''}`.trim();
-    if (normalizedSearch && !isSearchLocalProjectionEligible({ search: normalizedSearch })) {
-      return null;
-    }
-
-    const catalog = normalizedSearch
-      ? await api.getBrowserSearchCatalog({
-        search: normalizedSearch,
-        modId: params.modId,
-        includeHidden: params.includeHidden,
-      })
-      : await api.getBrowserDefaultCatalog({
-        modId: params.modId,
-        includeHidden: params.includeHidden,
-      });
-    const catalogEntries = catalog.data as BrowserDefaultCatalogEntry[];
-    if (catalogEntries.length <= 0) {
-      return null;
-    }
-
-    const page = buildProjectedBrowserPage(catalogEntries, params, new Map<string, Item[]>());
-    return {
-      cacheKey: buildPageCacheKey({
-        ...params,
-        page: page.page,
-      }),
-      page,
-    };
-  };
-
-  const tryLoadExpandedProjection = async (
-    params: BrowserPageRequestParams,
-  ): Promise<{ cacheKey: string; page: CachedBrowserPage } | null> => {
-    if (params.expandedGroups.length === 0) {
-      return null;
-    }
-
-    const normalizedSearch = `${params.search ?? ''}`.trim();
-    if (normalizedSearch && !isSearchLocalProjectionEligible({ search: normalizedSearch })) {
-      return null;
-    }
-
-    const [catalog, groupResponses] = await Promise.all([
-      normalizedSearch
-        ? api.getBrowserSearchCatalog({
-          search: normalizedSearch,
-          modId: params.modId,
-          includeHidden: params.includeHidden,
-        })
-        : api.getBrowserDefaultCatalog({
-          modId: params.modId,
-          includeHidden: params.includeHidden,
-        }),
-      Promise.allSettled(
-        params.expandedGroups.map((groupKey) => api.getBrowserGroupItems(groupKey, params.modId, params.includeHidden)),
-      ),
-    ]) as [(BrowserDefaultCatalogResponse | BrowserSearchCatalogResponse), PromiseSettledResult<BrowserGroupItemsResponse>[]];
-    const groupItemsByKey = new Map<string, Item[]>();
-    for (const response of groupResponses) {
-      if (response.status !== 'fulfilled') {
-        continue;
-      }
-      groupItemsByKey.set(response.value.groupKey, response.value.items);
-    }
-
-    const catalogEntries = catalog.data as BrowserDefaultCatalogEntry[];
-    precomputeExpandedProjectionWindow(catalogEntries, params, groupItemsByKey);
-    const page = getOrBuildExpandedProjectionPage(
-      catalogEntries,
-      params,
-      groupItemsByKey,
-    );
-    return {
-      cacheKey: buildPageCacheKey({
-        ...params,
-        page: page.page,
-      }),
-      page,
-    };
-  };
+  const {
+    hydrateProjectedBrowserPageMedia,
+    loadProjectedPagePack,
+    tryLoadExpandedProjection,
+    tryLoadUnexpandedPageProjection,
+    tryProjectExpandedGroupsFromLocalCaches,
+    tryProjectUnexpandedPageFromLocalCatalog,
+  } = browserPageProjection;
 
   const estimateHomeRightColumnWidth = () => {
     const viewportWidth = window.innerWidth;

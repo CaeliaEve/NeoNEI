@@ -24,6 +24,47 @@ export type BrowserPageRequestParams = {
   includeHidden?: boolean;
 };
 
+
+export function buildBrowserPageCacheKey(params: {
+  page: number;
+  pageSize: number;
+  search?: string;
+  modId?: string;
+  expandedGroups?: string[];
+  expandedGroupFacetFilters?: BrowserFacetFilters;
+  slotSize: number;
+  includeHidden?: boolean;
+}): string {
+  const normalizedGroups = Array.from(
+    new Set(
+      (params.expandedGroups ?? [])
+        .map((entry) => `${entry ?? ''}`.trim())
+        .filter(Boolean),
+    ),
+  ).sort();
+  const normalizedFacetFilters: BrowserFacetFilters = {};
+  for (const [groupKey, query] of Object.entries(params.expandedGroupFacetFilters ?? {})) {
+    const key = `${groupKey ?? ''}`.trim();
+    const value = `${query ?? ''}`.trim();
+    if (key && value) {
+      normalizedFacetFilters[key] = value;
+    }
+  }
+
+  return JSON.stringify({
+    page: params.page,
+    pageSize: params.pageSize,
+    search: params.search?.trim() || '',
+    modId: params.modId || 'all',
+    expandedGroups: normalizedGroups,
+    expandedGroupFacetFilters: Object.fromEntries(
+      Object.entries(normalizedFacetFilters).sort(([left], [right]) => left.localeCompare(right)),
+    ),
+    slotSize: params.slotSize,
+    includeHidden: Boolean(params.includeHidden),
+  });
+}
+
 const SHARED_BROWSER_PAGE_CACHE_LIMIT = 256;
 const SHARED_EXPANDED_PROJECTION_CACHE_LIMIT = 256;
 
