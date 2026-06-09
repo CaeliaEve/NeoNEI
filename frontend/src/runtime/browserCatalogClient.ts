@@ -255,10 +255,9 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     if (distDataPagePack) {
       return distDataPagePack;
     }
-    options.reportGap('browser-page-pack', '/items/browser/page-pack', 'dist-data page pack missing', { details: params });
-
     const normalizedExpandedGroups = params.expandedGroups ?? [];
     const canUseStaticBundle = !params.search?.trim() && !params.modId && normalizedExpandedGroups.length === 0;
+    let staticBundleFailure: string | null = null;
     if (canUseStaticBundle) {
       const manifest = await options.getManifest();
       const staticPath = resolvePublishedWindowPath(
@@ -279,12 +278,22 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
           if (derived) {
             return derived;
           }
+          staticBundleFailure = 'published browser page window could not derive requested page';
         } catch {
-          // Dev compatibility path handles missing publish bundle artifacts.
+          staticBundleFailure = 'published browser page window could not be read';
         }
+      } else {
+        staticBundleFailure = 'published browser page window missing';
       }
     }
 
+    options.reportGap('browser-page-pack', '/items/browser/page-pack', 'runtime browser page pack unavailable', {
+      details: {
+        ...params,
+        staticBundleFailure,
+        canUseStaticBundle,
+      },
+    });
     return browserRuntimeClient.getPagePackCompat(params);
   }
 
@@ -318,17 +327,17 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     if (distDataSearch?.items?.length) {
       return distDataSearch;
     }
-    options.reportGap('browser-search-pack', '/items/search/pack', 'dist-data search pack missing');
-
     const manifest = await options.getManifest();
     const staticPath = manifest.publishBundle?.files.browserSearchPack;
     if (staticPath) {
       try {
         return await options.fetchPublishedJson<BrowserSearchPackResponse>(staticPath);
       } catch {
-        // Dev compatibility path handles missing publish bundle artifacts.
+        options.reportGap('browser-search-pack', '/items/search/pack', 'published search pack unreadable');
+        return browserRuntimeClient.getSearchPackCompat();
       }
     }
+    options.reportGap('browser-search-pack', '/items/search/pack', 'runtime search pack missing');
     return browserRuntimeClient.getSearchPackCompat();
   }
 
@@ -342,10 +351,6 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     if (distDataSearch?.items?.length) {
       return distDataSearch;
     }
-    options.reportGap('browser-search-shard', `publish search shard ${normalizedShardId}`, 'dist-data search pack missing', {
-      details: { shardId: normalizedShardId },
-    });
-
     const cached = browserSearchShardCache.get(normalizedShardId);
     if (cached) {
       return cached;
@@ -361,6 +366,9 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
         (entry) => entry.scope === 'all' && entry.shardId === normalizedShardId,
       )?.path;
       if (!shardPath) {
+        options.reportGap('browser-search-shard', `publish search shard ${normalizedShardId}`, 'runtime search shard missing', {
+          details: { shardId: normalizedShardId },
+        });
         return null;
       }
 
@@ -369,6 +377,9 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
         browserSearchShardCache.set(normalizedShardId, shard);
         return shard;
       } catch {
+        options.reportGap('browser-search-shard', `publish search shard ${normalizedShardId}`, 'runtime search shard unreadable', {
+          details: { shardId: normalizedShardId, path: shardPath },
+        });
         return null;
       }
     })().finally(() => {

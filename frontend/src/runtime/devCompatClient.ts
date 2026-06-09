@@ -1,19 +1,15 @@
 import axios, { type AxiosRequestConfig } from 'axios';
 import { BACKEND_BASE_URL } from '../services/api/core/http';
 import { recordRuntimeDiagnostic } from './diagnostics';
+import { isRuntimeDevCompatDisabled } from './runtimeMode';
 
 const labHttp = axios.create({
   baseURL: `${BACKEND_BASE_URL.replace(/\/+$/g, '')}/lab`,
   timeout: 120000,
 });
 
-function isLabDevCompatibilityDisabled(): boolean {
-  return import.meta.env.VITE_PUBLIC_RUNTIME_ONLY === '1'
-    || import.meta.env.VITE_RUNTIME_DISABLE_DEV_COMPAT === '1';
-}
-
 function assertLabDevCompatibilityEnabled(method: string, path: string): void {
-  if (!isLabDevCompatibilityDisabled()) {
+  if (!isRuntimeDevCompatDisabled()) {
     return;
   }
 

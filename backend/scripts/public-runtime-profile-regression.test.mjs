@@ -18,7 +18,9 @@ const backendEnvExample = readFileSync(join(repoRoot, 'backend/.env.example'), '
 const rootEnvExample = readFileSync(join(repoRoot, '.env.example'), 'utf8');
 
 test('public runtime profile is explicit and disables lab/dev dynamic mounts', () => {
-  assert.match(serverSettingsSource, /publicRuntimeOnly: isEnvEnabled\(process\.env\.NEONEI_PUBLIC_RUNTIME_ONLY\)/);
+  assert.match(serverSettingsSource, /function resolvePublicRuntimeOnly/);
+  assert.match(serverSettingsSource, /process\.env\.NODE_ENV === 'production'/);
+  assert.match(serverSettingsSource, /publicRuntimeOnly: resolvePublicRuntimeOnly\(\)/);
   assert.equal(appSource.includes('registerApiNamespaces(app, { publicRuntimeOnly: options.serverSettings.publicRuntimeOnly })'), true);
   assert.match(apiNamespacesRoutesSource, /if \(!PUBLIC_RUNTIME_ONLY\) \{\s*app\.use\('\/lab'/s);
   assert.match(apiNamespacesRoutesSource, /if \(!PUBLIC_RUNTIME_ONLY\) \{[\s\S]*app\.use\('\/api\/items'/s);

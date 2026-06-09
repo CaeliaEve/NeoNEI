@@ -1,4 +1,5 @@
 import { markPerfEvent } from '../services/perfMarks';
+import { isStrictRuntimeContractsEnabledByEnv } from './runtimeMode';
 
 export type RuntimeDiagnosticKind =
   | 'contract-gap'
@@ -44,7 +45,7 @@ export function setRuntimeDiagnosticIdentity(identity: {
 }
 
 export function isStrictRuntimeContractsEnabled(): boolean {
-  if (import.meta.env.VITE_RUNTIME_V3_STRICT === '1') {
+  if (isStrictRuntimeContractsEnabledByEnv()) {
     return true;
   }
 

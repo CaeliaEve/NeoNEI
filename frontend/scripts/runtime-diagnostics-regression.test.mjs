@@ -9,16 +9,21 @@ const apiRuntimeSource = apiSource + '\n' + runtimeSessionSource;
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
 const devCompatClientSource = fs.readFileSync('src/runtime/devCompatClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const runtimeModeSource = fs.readFileSync('src/runtime/runtimeMode.ts', 'utf8').replace(/\r\n/g, '\n');
+const viteConfigSource = fs.readFileSync('vite.config.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('public runtime profile blocks lab dev compatibility calls before network IO', () => {
+  const devCompatGuardSource = `${devCompatClientSource}
+${runtimeModeSource}`;
   for (const token of [
     'VITE_PUBLIC_RUNTIME_ONLY',
     'VITE_RUNTIME_DISABLE_DEV_COMPAT',
+    'isRuntimeDevCompatDisabled',
     'LAB_DEV_COMPAT_BLOCKED',
     'assertLabDevCompatibilityEnabled',
     'public runtime profile must use compiled runtime artifacts',
   ]) {
-    assert.equal(devCompatClientSource.includes(token), true, `missing lab compatibility guard token: ${token}`);
+    assert.equal(devCompatGuardSource.includes(token), true, `missing lab compatibility guard token: ${token}`);
   }
 
   assert.match(
@@ -144,3 +149,31 @@ test('manifest updates prime the runtime diagnostic identity', () => {
   );
 });
 
+
+
+test('production builds default to strict public runtime mode', () => {
+  for (const token of [
+    'VITE_PUBLIC_RUNTIME_ONLY',
+    'VITE_RUNTIME_DISABLE_DEV_COMPAT',
+    'VITE_STRICT_RUNTIME_CONTRACTS',
+    "mode === 'development' ? '0' : '1'",
+    "'import.meta.env.VITE_PUBLIC_RUNTIME_ONLY'",
+    "'import.meta.env.VITE_RUNTIME_DISABLE_DEV_COMPAT'",
+    "'import.meta.env.VITE_STRICT_RUNTIME_CONTRACTS'",
+  ]) {
+    assert.equal(viteConfigSource.includes(token), true, `missing production runtime default token: ${token}`);
+  }
+  for (const token of [
+    'isPublicRuntimeOnly',
+    'isRuntimeDevCompatDisabled',
+    'isStrictRuntimeContractsEnabledByEnv',
+    'import.meta.env.PROD === true',
+  ]) {
+    assert.equal(runtimeModeSource.includes(token), true, `missing runtime mode helper token: ${token}`);
+  }
+  assert.equal(
+    diagnosticsSource.includes('isStrictRuntimeContractsEnabledByEnv()'),
+    true,
+    'strict runtime contracts should honor the production/public runtime mode helper',
+  );
+});

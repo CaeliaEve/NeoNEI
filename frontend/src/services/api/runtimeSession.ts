@@ -247,14 +247,11 @@ export async function getRuntimeHomeBootstrap(params: {
   if (distDataBootstrap) {
     return distDataBootstrap;
   }
-  reportRuntimeDevCompatGap('home-bootstrap', '/publish/home-bootstrap', 'dist-data home bootstrap missing', {
-    ...getRuntimeDiagnosticIdentity(),
-    details: params,
-  });
 
   const manifest = await runtimeManifestClient.getPublishManifest();
   const requestedPage = Math.max(1, Math.floor(params.page ?? 1));
   const requestedPageSize = Math.max(1, Math.floor(params.pageSize ?? 50));
+  let staticBundleFailure: string | null = null;
   const staticPath = !params.modId
     ? resolvePublishedWindowPath(
         manifest.publishBundle?.files.homeBootstrapWindows,
@@ -285,11 +282,20 @@ export async function getRuntimeHomeBootstrap(params: {
           pagePack,
         };
       }
+      staticBundleFailure = 'published home bootstrap window could not derive requested page';
     } catch {
-      // Fall through to the development compatibility route when the static publish bundle is unavailable.
+      staticBundleFailure = 'published home bootstrap window could not be read';
     }
+  } else {
+    staticBundleFailure = params.modId
+      ? 'mod-scoped home bootstrap requires runtime catalog projection'
+      : 'published home bootstrap window missing';
   }
 
+  reportRuntimeDevCompatGap('home-bootstrap', '/publish/home-bootstrap', 'runtime home bootstrap unavailable', {
+    ...getRuntimeDiagnosticIdentity(),
+    details: { ...params, staticBundleFailure },
+  });
   const data = await getHomeBootstrapCompat(params);
   updateCachedPublishManifest(data.manifest);
   if (Array.isArray(data.mods)) {
@@ -315,10 +321,19 @@ export async function getRuntimeMods(): Promise<Mod[]> {
       persistRuntimePayload('mods-list', { scope: 'all' }, published);
       return published;
     } catch {
-      // Fall through to the development compatibility route when the static publish bundle is unavailable.
+      reportRuntimeDevCompatGap('mods-list', '/items/mods', 'published mods list could not be read', {
+        ...getRuntimeDiagnosticIdentity(),
+        details: { staticPath },
+      });
+      const payload = await itemRuntimeClient.getModsCompat();
+      persistRuntimePayload('mods-list', { scope: 'all' }, payload);
+      return payload;
     }
   }
 
+  reportRuntimeDevCompatGap('mods-list', '/items/mods', 'runtime mods list missing', {
+    ...getRuntimeDiagnosticIdentity(),
+  });
   const payload = await itemRuntimeClient.getModsCompat();
   persistRuntimePayload('mods-list', { scope: 'all' }, payload);
   return payload;

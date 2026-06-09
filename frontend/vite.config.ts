@@ -14,6 +14,10 @@ export default defineConfig(({ mode }) => {
     env.VITE_BACKEND_BASE_URL || (mode === 'development' ? devProxyTarget : '')
   )
   const apiBaseUrl = normalizeBaseUrl(env.VITE_API_BASE_URL || '/api')
+  const productionRuntimeDefault = mode === 'development' ? '0' : '1'
+  const publicRuntimeOnly = env.VITE_PUBLIC_RUNTIME_ONLY || productionRuntimeDefault
+  const disableDevCompat = env.VITE_RUNTIME_DISABLE_DEV_COMPAT || productionRuntimeDefault
+  const strictRuntimeContracts = env.VITE_STRICT_RUNTIME_CONTRACTS || productionRuntimeDefault
 
   const forbidLegacyImports = {
     name: 'forbid-legacy-imports',
@@ -32,6 +36,9 @@ export default defineConfig(({ mode }) => {
     define: {
       __BACKEND_BASE_URL__: JSON.stringify(backendBaseUrl),
       __API_BASE_URL__: JSON.stringify(apiBaseUrl),
+      'import.meta.env.VITE_PUBLIC_RUNTIME_ONLY': JSON.stringify(publicRuntimeOnly),
+      'import.meta.env.VITE_RUNTIME_DISABLE_DEV_COMPAT': JSON.stringify(disableDevCompat),
+      'import.meta.env.VITE_STRICT_RUNTIME_CONTRACTS': JSON.stringify(strictRuntimeContracts),
     },
     server: {
       proxy: {
