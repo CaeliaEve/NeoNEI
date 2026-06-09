@@ -32,10 +32,10 @@ import {
 import type { MachineCategory } from './recipe-browser/helpers';
 import { loadRecipeBootstrap } from './useRecipeBootstrap';
 import { useRecipeDetailHydrator } from './useRecipeDetailHydrator';
-import { convertIndexedRecipe } from '../domain/recipeNormalization';
 import {
   queueRenderableMediaPrewarmFromUnknown,
 } from '../services/animationBudget';
+import { createRecipeShardHydrator } from './recipe-browser/recipeShardHydrator';
 import {
   buildCategoryPrewarmPageSequence,
   primeRecipePayloadMedia,
@@ -101,7 +101,6 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   const categoryPackRequestsInFlight = new Map<string, Promise<void>>();
   let disposed = false;
   let loadRequestSeq = 0;
-  let backgroundHydrationSeq = 0;
   let recipeFirstPageVisibleItemId: string | null = null;
 
   const getNow = (): number =>
@@ -364,6 +363,20 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     pendingProducedByRecipeIds,
     pendingUsageRecipeIds,
     rebuildIndexesAndGraphs,
+  });
+
+  const {
+    cancelPendingHydration,
+    hydrateRemainingRecipesInBackground,
+  } = createRecipeShardHydrator({
+    itemIdRef,
+    recipes,
+    pendingProducedByRecipeIds,
+    pendingUsageRecipeIds,
+    applyMergedRecipes,
+    rebuildIndexesAndGraphs,
+    isDisposed: () => disposed,
+    getLoadRequestSeq: () => loadRequestSeq,
   });
 
   const requestRemainingShardHydration = (
@@ -768,91 +781,6 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     }
   };
 
-  const hydrateRemainingRecipesInBackground = async (
-    itemId: string,
-    requestSeq: number,
-    pendingRecipeIds: string[],
-    preloadedShardPromise?: Promise<Awaited<ReturnType<typeof api.getRecipeBootstrapShard>> | null>,
-  ) => {
-    if (pendingRecipeIds.length === 0) {
-      rebuildIndexesAndGraphs();
-      return;
-    }
-
-    const hydrationSeq = ++backgroundHydrationSeq;
-    const mergedById = new Map<string, typeof recipes.value.producedBy[number]>();
-    for (const recipe of [...recipes.value.producedBy, ...recipes.value.usedIn]) {
-      mergedById.set(recipe.recipeId, recipe);
-    }
-
-    try {
-      const shard = (await preloadedShardPromise) ?? await api.getRecipeBootstrapShard(itemId);
-      if (
-        disposed
-        || hydrationSeq !== backgroundHydrationSeq
-        || requestSeq !== loadRequestSeq
-        || itemIdRef.value !== itemId
-      ) {
-        return;
-      }
-      primeRecipePayloadMedia(shard);
-
-      for (const indexedRecipe of [...shard.indexedCrafting, ...shard.indexedUsage]) {
-        const normalizedRecipe = convertIndexedRecipe(indexedRecipe);
-        mergedById.set(normalizedRecipe.recipeId, normalizedRecipe);
-      }
-
-      applyMergedRecipes(mergedById);
-      pendingProducedByRecipeIds.value = [];
-      pendingUsageRecipeIds.value = [];
-    } catch (shardError) {
-      console.warn('Failed to hydrate recipe shard, falling back to chunked batch load:', shardError);
-      const chunkSize = 200;
-      try {
-        for (let index = 0; index < pendingRecipeIds.length; index += chunkSize) {
-          const chunk = pendingRecipeIds.slice(index, index + chunkSize);
-          const indexedRecipes = await api.getIndexedRecipesByIds(chunk);
-          if (
-            disposed
-            || hydrationSeq !== backgroundHydrationSeq
-            || requestSeq !== loadRequestSeq
-            || itemIdRef.value !== itemId
-          ) {
-            return;
-          }
-
-          for (const indexedRecipe of indexedRecipes) {
-            const normalizedRecipe = convertIndexedRecipe(indexedRecipe);
-            mergedById.set(normalizedRecipe.recipeId, normalizedRecipe);
-          }
-        }
-
-        if (
-          disposed
-          || hydrationSeq !== backgroundHydrationSeq
-          || requestSeq !== loadRequestSeq
-          || itemIdRef.value !== itemId
-        ) {
-          return;
-        }
-
-        applyMergedRecipes(mergedById);
-        pendingProducedByRecipeIds.value = [];
-        pendingUsageRecipeIds.value = [];
-      } catch (error) {
-        console.warn('Failed to hydrate remaining recipe pages:', error);
-        if (
-          !disposed
-          && hydrationSeq === backgroundHydrationSeq
-          && requestSeq === loadRequestSeq
-          && itemIdRef.value === itemId
-        ) {
-          rebuildIndexesAndGraphs();
-        }
-      }
-    }
-  };
-
   const retryCurrentRecipeDetails = () => {
     const recipeId = currentRecipeId.value;
     if (!recipeId) return;
@@ -885,7 +813,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     loadError.value = '';
     try {
       if (lastItemId.value !== itemId) {
-        backgroundHydrationSeq += 1;
+        cancelPendingHydration();
         recipeFirstPageVisibleItemId = null;
         resetDetailHydrationContext();
         clearCurrentRecipeState();
@@ -1241,3 +1169,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     selectRecipeById,
   };
 }
+
+
+
+
+
