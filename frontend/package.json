@@ -62,7 +62,8 @@
     "test:canonical-retired": "node ../scripts/check-canonical-retired.mjs",
     "test:native-runtime-current-api": "node --test scripts/native-runtime-current-api-regression.test.mjs",
     "test:native-surface-no-blanking": "node --test scripts/native-surface-no-blanking-regression.test.mjs",
-    "test:rust-texture-runtime": "node --test scripts/rust-texture-runtime-regression.test.mjs"
+    "test:rust-texture-runtime": "node --test scripts/rust-texture-runtime-regression.test.mjs",
+    "test:browser-interaction-latency": "node --test scripts/browser-interaction-latency-regression.test.mjs"
   },
   "dependencies": {
     "axios": "^1.13.2",

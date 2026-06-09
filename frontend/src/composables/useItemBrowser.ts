@@ -57,6 +57,7 @@ import {
 } from './browser/browserProjectionUtils';
 
 const SEARCH_LOCAL_PROJECTION_MAX_TOTAL = 1600;
+const INTERACTION_COMMIT_DELAY_MS = 16;
 
 let nativeBrowserWarmTimer: ReturnType<typeof setTimeout> | null = null;
 const nativeBrowserWarmScopes = new Set<string>();
@@ -1228,7 +1229,7 @@ export function useItemBrowser(
     currentPage.value = 1;
     searchTimeout = setTimeout(() => {
       void loadItems();
-    }, 120);
+    }, INTERACTION_COMMIT_DELAY_MS);
   };
 
   const warmSearchIndex = () => {
@@ -1245,7 +1246,7 @@ export function useItemBrowser(
     deferredPageHydrationTimer = window.setTimeout(() => {
       deferredPageHydrationTimer = null;
       void loadItems();
-    }, 120);
+    }, INTERACTION_COMMIT_DELAY_MS);
   };
 
   const reloadExpandedProjection = () => {

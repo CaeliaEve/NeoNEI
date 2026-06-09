@@ -200,6 +200,9 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       drawCommandBuffer: response.commandBuffer,
       drawCommandStride: response.commandStride,
       drawCommandCount: response.commandCount,
+      hasAnimatedSprites: response.hasAnimatedSprites,
+      animatedSpriteCount: response.animatedSpriteCount,
+      nextFrameDelayMs: response.nextFrameDelayMs,
     };
   }
 

@@ -57,10 +57,13 @@ const hostRef = ref<HTMLElement | null>(null);
 const nativeRenderCanvasRef = ref<HTMLCanvasElement | null>(null);
 const controller = createNativeSurfaceController(props.surfaceId);
 let resizeObserver: ResizeObserver | null = null;
+let nativeVisibilityObserver: IntersectionObserver | null = null;
 let nativeFrameSeq = 0;
 let nativeTextureSeq = 0;
 let nativeHitSeq = 0;
 let nativeFrameScheduled = false;
+let nativeAnimationTimer: number | null = null;
+let nativeVisibilityHandler: (() => void) | null = null;
 let nativeHitScheduled = false;
 let nativePendingHitPointer: NativeSurfacePointer | null = null;
 const nativeRenderVisible = ref(false);
@@ -86,6 +89,7 @@ let nativeRenderInitialized = false;
 let nativeRenderInitializing = false;
 let nativeTexturesReady = false;
 let nativeFirstFrameReady = false;
+let nativeSurfaceIntersecting = true;
 let residentAtlasTextureSignature = "";
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
@@ -111,6 +115,30 @@ function resetNativeRenderReadiness() {
   nativeTexturesReady = false;
   nativeFirstFrameReady = false;
   nativeRenderVisible.value = false;
+}
+
+function isDocumentVisible(): boolean {
+  return typeof document === "undefined" || document.visibilityState !== "hidden";
+}
+
+function isNativeSurfaceRenderable(): boolean {
+  return isDocumentVisible() && nativeSurfaceIntersecting;
+}
+
+function clearNativeAnimationTimer() {
+  if (nativeAnimationTimer === null) return;
+  window.clearTimeout(nativeAnimationTimer);
+  nativeAnimationTimer = null;
+}
+
+function scheduleNextAnimatedNativeFrame(delayMs: number | null | undefined) {
+  clearNativeAnimationTimer();
+  if (!props.enableAnimation || !nativeRenderVisible.value || !nativeRenderInitialized || !isNativeSurfaceRenderable()) return;
+  const normalizedDelay = Math.max(16, Math.min(250, Math.floor(Number(delayMs) || 50)));
+  nativeAnimationTimer = window.setTimeout(() => {
+    nativeAnimationTimer = null;
+    requestNativeFrame();
+  }, normalizedDelay);
 }
 
 function resolveNativeRenderBackend(): Exclude<NativeRendererBackendKind, "compat-canvas"> {
@@ -365,13 +393,16 @@ async function syncNativeFrame() {
     if (seq !== nativeFrameSeq) return;
     nativeFirstFrameReady = response?.type === "frame";
     updateNativeRenderVisibility();
-    if (props.enableAnimation && nativeRenderVisible.value && nativeRenderInitialized) {
-      requestNativeFrame();
+    if (frame.hasAnimatedSprites) {
+      scheduleNextAnimatedNativeFrame(frame.nextFrameDelayMs);
+    } else {
+      clearNativeAnimationTimer();
     }
   }
 }
 
 function requestNativeFrame() {
+  clearNativeAnimationTimer();
   if (nativeFrameScheduled) return;
   nativeFrameScheduled = true;
   if (typeof requestAnimationFrame === "function") {
@@ -443,12 +474,30 @@ onMounted(async () => {
   });
   if (hostRef.value) {
     resizeObserver.observe(hostRef.value);
+    if (typeof IntersectionObserver !== "undefined") {
+      nativeVisibilityObserver = new IntersectionObserver((entries) => {
+        nativeSurfaceIntersecting = entries.some((entry) => entry.isIntersecting);
+        if (nativeSurfaceIntersecting) {
+          requestNativeFrame();
+        } else {
+          clearNativeAnimationTimer();
+        }
+      });
+      nativeVisibilityObserver.observe(hostRef.value);
+    }
   }
 });
 
 onBeforeUnmount(() => {
   resizeObserver?.disconnect();
   resizeObserver = null;
+  nativeVisibilityObserver?.disconnect();
+  nativeVisibilityObserver = null;
+  clearNativeAnimationTimer();
+  if (nativeVisibilityHandler && typeof document !== "undefined") {
+    document.removeEventListener("visibilitychange", nativeVisibilityHandler);
+    nativeVisibilityHandler = null;
+  }
   if (nativeRenderInitialized) {
     void postNativeRenderEvent({ type: "dispose" });
     nativeRenderInitialized = false;
@@ -528,6 +577,17 @@ watch(itemIdsSignature, () => {
   controller.setHistoryItems(props.historyItemIds);
   requestNativeFrame();
 });
+
+if (typeof document !== "undefined") {
+  nativeVisibilityHandler = () => {
+    if (isNativeSurfaceRenderable()) {
+      requestNativeFrame();
+    } else {
+      clearNativeAnimationTimer();
+    }
+  };
+  document.addEventListener("visibilitychange", nativeVisibilityHandler);
+}
 </script>
 
 <template>

@@ -109,6 +109,9 @@ export interface NativeSurfaceFrameResult {
   drawCommandBuffer?: ArrayBuffer | null;
   drawCommandStride?: number;
   drawCommandCount?: number;
+  hasAnimatedSprites?: boolean;
+  animatedSpriteCount?: number;
+  nextFrameDelayMs?: number | null;
 }
 
 export interface NativeSurfaceMetrics {

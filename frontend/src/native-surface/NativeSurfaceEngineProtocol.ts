@@ -179,6 +179,9 @@ export type NativeSurfaceEngineResponse =
     commandBuffer: ArrayBuffer;
     commandStride: number;
     commandCount: number;
+    hasAnimatedSprites: boolean;
+    animatedSpriteCount: number;
+    nextFrameDelayMs: number | null;
     metrics: NativeSurfaceEngineWorkerMetrics;
   }
   | {
@@ -222,6 +225,9 @@ export type NativeSurfaceEngineWorkerMetrics = {
   lastProjectionTotalEntries: number;
   lastProjectionQuery: string;
   lastProjectionSource: "browser" | "search" | "empty";
+  hasAnimatedSprites: boolean;
+  animatedSpriteCount: number;
+  nextFrameDelayMs: number | null;
   updatedAt: number;
 };
 

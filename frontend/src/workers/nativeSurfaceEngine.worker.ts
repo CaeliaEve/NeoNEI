@@ -79,6 +79,9 @@ type SurfaceState = {
   runtimeAnimationWasmPtr: number;
   runtimeAnimationWasmLen: number;
   runtimeAnimationWasmItemCount: number;
+  hasAnimatedSprites: boolean;
+  animatedSpriteCount: number;
+  nextFrameDelayMs: number | null;
 };
 
 type NativeRuntimeGroup = {
@@ -1168,6 +1171,9 @@ function getSurface(surfaceId: NativeSurfaceId): SurfaceState {
     runtimeAnimationWasmPtr: 0,
     runtimeAnimationWasmLen: 0,
     runtimeAnimationWasmItemCount: 0,
+    hasAnimatedSprites: false,
+    animatedSpriteCount: 0,
+    nextFrameDelayMs: null,
   };
   surfaces.set(surfaceId, next);
   return next;
@@ -1313,12 +1319,31 @@ function pickTimelineFrame(
   return null;
 }
 
-function buildSpriteCommands(
+type NativeSurfaceSpriteFrame = {
+  spriteCommands: NativeSurfaceEngineSpriteCommand[];
+  hasAnimatedSprites: boolean;
+  animatedSpriteCount: number;
+  nextFrameDelayMs: number | null;
+};
+
+function resolveNextTimelineDelayMs(timeline: NativeRuntimeTimelineFrame[], fallback: number | null): number | null {
+  const timelineDelay = timeline
+    .map((frame) => toU32(frame.durationMs))
+    .filter((duration) => duration > 0)
+    .reduce((min, duration) => Math.min(min, duration), Number.POSITIVE_INFINITY);
+  if (Number.isFinite(timelineDelay) && timelineDelay > 0) return timelineDelay;
+  const fallbackDelay = toU32(fallback ?? 0);
+  return fallbackDelay > 0 ? fallbackDelay : 50;
+}
+
+function buildSpriteFrame(
   surface: SurfaceState,
   commands: NativeSurfaceEngineLayoutCommand[],
   nowMs: number,
-): NativeSurfaceEngineSpriteCommand[] {
+): NativeSurfaceSpriteFrame {
   const sprites: NativeSurfaceEngineSpriteCommand[] = [];
+  let animatedSpriteCount = 0;
+  let nextFrameDelayMs: number | null = null;
   for (const command of commands) {
     if (!command.itemId) continue;
     const texture = surface.textureByItemId.get(command.itemId);
@@ -1335,6 +1360,10 @@ function buildSpriteCommands(
         nowMs,
       );
       if (frame) {
+        animatedSpriteCount += 1;
+        const timeline = animation?.timeline?.length ? animation.timeline : animatedAtlas.timeline;
+        const delayMs = resolveNextTimelineDelayMs(timeline, animation?.frameDurationMs ?? animatedAtlas.frameDurationMs);
+        nextFrameDelayMs = nextFrameDelayMs === null ? delayMs : Math.min(nextFrameDelayMs, delayMs ?? nextFrameDelayMs);
         sprites.push({
           textureKey: animation?.atlasFile || animatedAtlas.atlasFile,
           sourceX: frame.x,
@@ -1364,7 +1393,12 @@ function buildSpriteCommands(
       });
     }
   }
-  return sprites;
+  return {
+    spriteCommands: sprites,
+    hasAnimatedSprites: animatedSpriteCount > 0,
+    animatedSpriteCount,
+    nextFrameDelayMs,
+  };
 }
 
 function hitTest(surface: SurfaceState, message: Extract<NativeSurfaceEngineRequest, { type: "hitTest" }>): NativeSurfaceEngineHit {
@@ -1492,6 +1526,9 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
     lastProjectionTotalEntries: lastSurface?.lastProjectionTotalEntries ?? 0,
     lastProjectionQuery: lastSurface?.lastProjectionQuery ?? "",
     lastProjectionSource: lastSurface?.lastProjectionSource ?? "empty",
+    hasAnimatedSprites: lastSurface?.hasAnimatedSprites ?? false,
+    animatedSpriteCount: lastSurface?.animatedSpriteCount ?? 0,
+    nextFrameDelayMs: lastSurface?.nextFrameDelayMs ?? null,
     updatedAt: performance.now(),
   };
 }
@@ -1594,15 +1631,22 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
     }
     case "frame":
       surface.frameRequests += 1;
+      const spriteFrame = buildSpriteFrame(surface, surface.layoutCommands, message.nowMs);
+      surface.hasAnimatedSprites = spriteFrame.hasAnimatedSprites;
+      surface.animatedSpriteCount = spriteFrame.animatedSpriteCount;
+      surface.nextFrameDelayMs = spriteFrame.nextFrameDelayMs;
       return {
         type: "frame",
         id: message.id,
         surfaceId: message.surfaceId,
         drawCommands: surface.layoutCommands,
-        spriteCommands: buildSpriteCommands(surface, surface.layoutCommands, message.nowMs),
+        spriteCommands: spriteFrame.spriteCommands,
         commandBuffer: buildLayoutCommandBuffer(surface.layoutCommands, surface.lastHit?.key ?? null, surface.selectedItemId),
         commandStride: NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE,
         commandCount: surface.layoutCommands.length,
+        hasAnimatedSprites: spriteFrame.hasAnimatedSprites,
+        animatedSpriteCount: spriteFrame.animatedSpriteCount,
+        nextFrameDelayMs: spriteFrame.nextFrameDelayMs,
         metrics: buildMetrics(),
       };
     case "hitTest":
