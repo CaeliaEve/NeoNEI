@@ -114,9 +114,34 @@ function createBuffer(device: AnyRecord, values: Float32Array, usage: number): A
   return buffer;
 }
 
-function buildChromeVertices(commands: NativeRenderCommand[]): Float32Array {
-  const values = new Float32Array(commands.length * 6 * 6);
+function pushChromeQuad(
+  values: Float32Array,
+  cursor: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  color: number[],
+): number {
+  const vertices = [x1, y1, x2, y1, x1, y2, x1, y2, x2, y1, x2, y2];
+  for (let index = 0; index < vertices.length; index += 2) {
+    values[cursor++] = vertices[index];
+    values[cursor++] = vertices[index + 1];
+    values[cursor++] = color[0];
+    values[cursor++] = color[1];
+    values[cursor++] = color[2];
+    values[cursor++] = color[3];
+  }
+  return cursor;
+}
+
+function buildChromeVertices(commands: NativeRenderCommand[]): { vertices: Float32Array; vertexCount: number } {
+  // Grouped entries need a visible GPU-native marker. Allocate room for the
+  // base slot plus one small corner badge per command; non-group commands use
+  // only the base vertices and the final array is trimmed.
+  const values = new Float32Array(commands.length * 12 * 6);
   let cursor = 0;
+  let vertexCount = 0;
   for (const command of commands) {
     const isGroup = (command.flags & 1) !== 0;
     const isHovered = (command.flags & 4) !== 0;
@@ -137,17 +162,18 @@ function buildChromeVertices(commands: NativeRenderCommand[]): Float32Array {
           : command.kind === 1
             ? [0.08, 0.22, 0.28, 0.52]
             : [0.14, 0.18, 0.32, 0.48];
-    const vertices = [x1, y1, x2, y1, x1, y2, x1, y2, x2, y1, x2, y2];
-    for (let index = 0; index < vertices.length; index += 2) {
-      values[cursor++] = vertices[index];
-      values[cursor++] = vertices[index + 1];
-      values[cursor++] = color[0];
-      values[cursor++] = color[1];
-      values[cursor++] = color[2];
-      values[cursor++] = color[3];
+    cursor = pushChromeQuad(values, cursor, x1, y1, x2, y2, color);
+    vertexCount += 6;
+    if (isGroup) {
+      const badge = Math.max(7, Math.floor(command.size * 0.22));
+      const bx1 = x2 - badge;
+      const by1 = y1;
+      const badgeColor = isHovered ? [1.0, 0.76, 0.28, 0.92] : [0.20, 0.92, 1.0, 0.82];
+      cursor = pushChromeQuad(values, cursor, bx1, by1, x2, y1 + badge, badgeColor);
+      vertexCount += 6;
     }
   }
-  return values;
+  return { vertices: values.slice(0, cursor), vertexCount };
 }
 
 function buildSpriteVertices(commands: NativeTextureSpriteCommand[], texture: WebGpuTextureState): Float32Array {
@@ -346,15 +372,15 @@ export class WebGpuNativeRenderer implements NativeRendererBackend {
     let vertexCount = 0;
     const transientBuffers: AnyRecord[] = [];
     if (commands.length > 0) {
-      const chromeVertices = buildChromeVertices(commands);
-      const chromeBuffer = createBuffer(device, chromeVertices, gpuUsage("VERTEX") | gpuUsage("COPY_DST"));
+      const chrome = buildChromeVertices(commands);
+      const chromeBuffer = createBuffer(device, chrome.vertices, gpuUsage("VERTEX") | gpuUsage("COPY_DST"));
       transientBuffers.push(chromeBuffer);
       pass.setPipeline(this.handles.chromePipeline);
       pass.setBindGroup(0, this.handles.resolutionBindGroup);
       pass.setVertexBuffer(0, chromeBuffer);
-      pass.draw(commands.length * 6);
+      pass.draw(chrome.vertexCount);
       drawCalls += 1;
-      vertexCount += commands.length * 6;
+      vertexCount += chrome.vertexCount;
     }
 
     const spriteStats = this.renderSprites(device, pass, spriteCommands, transientBuffers);

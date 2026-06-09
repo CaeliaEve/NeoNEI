@@ -18,6 +18,7 @@ defineProps<{
   itemGridEmptySubtitle: string;
   browserGridEntries: BrowserGridEntry[];
   currentPageAtlas: PageAtlasResult | null | undefined;
+  expandedGroupKeys: string[];
   expandedGroupFilterPanels: BrowserVariantGroup[];
   expandedGroupFacetFilters: Record<string, string>;
   hasExpandedGroupFacetFilters: boolean;
@@ -139,6 +140,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                   :page="currentPage"
                   :search-query="searchQuery"
                   :mod-id="selectedMod"
+                  :expanded-groups="expandedGroupKeys"
                   :atlas="currentPageAtlas"
                   :manifest-url="nativeRuntimeManifestUrl"
                   :enable-animation="true"

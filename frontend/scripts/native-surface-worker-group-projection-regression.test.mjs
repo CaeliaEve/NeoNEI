@@ -3,6 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 
 const workerSource = fs.readFileSync('src/workers/nativeSurfaceEngine.worker.ts', 'utf8');
+const wasmRuntimeSource = fs.readFileSync('src/workers/nativeSurfaceWasmRuntime.ts', 'utf8');
+const nativeProjectionSource = `${workerSource}
+${wasmRuntimeSource}`;
+const nativeSurfaceSource = fs.readFileSync('src/components/native-surface/NativeBrowserSurface.vue', 'utf8');
+const homeBrowserColumnSource = fs.readFileSync('src/components/home/HomeBrowserColumn.vue', 'utf8');
+const homePageSource = fs.readFileSync('src/views/HomePage.vue', 'utf8');
 
 test('native surface worker keeps expanded groups on the runtime projection path', () => {
   assert.equal(
@@ -21,14 +27,42 @@ test('native surface worker keeps expanded groups on the runtime projection path
     'collapsed groups should be deduplicated before page layout',
   );
   assert.equal(
-    workerSource.includes('neonei_engine_compact_browser_project_visible_indices'),
+    nativeProjectionSource.includes('neonei_engine_compact_browser_project_visible_indices'),
     true,
-    'group-aware projection should be delegated to the WASM engine when available',
+    'group-aware projection should be delegated through the WASM runtime when available',
   );
   assert.equal(
-    workerSource.includes('runtimeVisibleCacheKey'),
+    nativeProjectionSource.includes('runtimeVisibleCacheKey'),
     true,
     'query/mod/group projection should be cached on the native runtime path',
+  );
+});
+
+test('homepage passes expanded group state into the native browser surface', () => {
+  assert.match(
+    homePageSource,
+    /expandedGroupKeys,/,
+    'HomePage should expose the active expanded group keys from useItemBrowser',
+  );
+  assert.match(
+    homeBrowserColumnSource,
+    /expandedGroupKeys: string\[\]/,
+    'HomeBrowserColumn should accept expanded group keys as a first-class prop',
+  );
+  assert.match(
+    homeBrowserColumnSource,
+    /:expanded-groups="expandedGroupKeys"/,
+    'HomeBrowserColumn should pass expanded groups into the native surface',
+  );
+  assert.match(
+    nativeSurfaceSource,
+    /expandedGroups\?: string\[\]/,
+    'NativeBrowserSurface should expose expanded groups to the GPU/native path',
+  );
+  assert.match(
+    nativeSurfaceSource,
+    /controller\.setExpandedGroups\(props\.expandedGroups\)/,
+    'NativeBrowserSurface should synchronize expanded groups into the native worker controller',
   );
 });
 

@@ -13,7 +13,7 @@ import type { NativeRuntimePackProfile } from "../../native-surface/runtimePackC
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 import {
-  getGlobalBrowserAtlasTextureDescriptorsForKeys,
+  getAllGlobalBrowserAtlasTextureDescriptors,
 } from "../../services/globalBrowserAtlas";
 
 const props = withDefaults(defineProps<{
@@ -24,6 +24,7 @@ const props = withDefaults(defineProps<{
   page?: number;
   searchQuery?: string;
   modId?: string | null;
+  expandedGroups?: string[];
   atlas?: PageAtlasResult | null;
   manifestUrl?: string | null;
   enableAnimation?: boolean;
@@ -35,6 +36,7 @@ const props = withDefaults(defineProps<{
   page: 1,
   atlas: null,
   manifestUrl: null,
+  expandedGroups: () => [],
   enableAnimation: true,
   preferAtlas: true,
   historyItemIds: () => [],
@@ -419,12 +421,15 @@ function requestNativeFrame() {
 async function syncNativeTexturesForFrame(spriteCommands: Array<{ textureKey?: string | null }>): Promise<void> {
   if (!nativeRenderInitialized) return;
   const seq = ++nativeTextureSeq;
-  const textures = getGlobalBrowserAtlasTextureDescriptorsForKeys(
-    spriteCommands.map((command) => command.textureKey ?? ""),
-  );
+  const textures = await getAllGlobalBrowserAtlasTextureDescriptors();
   if (seq !== nativeTextureSeq) return;
-  if (textures.length <= 0) {
+  if (textures.length <= 0 && spriteCommands.length <= 0) {
     nativeTexturesReady = true;
+    updateNativeRenderVisibility();
+    return;
+  }
+  if (textures.length <= 0) {
+    nativeTexturesReady = false;
     updateNativeRenderVisibility();
     return;
   }
@@ -461,6 +466,7 @@ onMounted(async () => {
   controller.setPage(props.page);
   controller.setSearch(props.searchQuery ?? "");
   controller.setModFilter(props.modId === "all" ? null : props.modId ?? null);
+  controller.setExpandedGroups(props.expandedGroups);
   controller.setSelectedItemId(props.selectedItemId);
   controller.setCompatEntries({ entries: props.entries, atlas: props.atlas ?? null });
   controller.setHistoryItems(props.historyItemIds);
@@ -538,6 +544,15 @@ watch(
   () => props.modId,
   (modId) => {
     controller.setModFilter(modId === "all" ? null : modId ?? null);
+    controller.setPage(props.page);
+    requestNativeFrame();
+  },
+);
+
+watch(
+  () => props.expandedGroups.join("|"),
+  () => {
+    controller.setExpandedGroups(props.expandedGroups);
     controller.setPage(props.page);
     requestNativeFrame();
   },
@@ -714,8 +729,6 @@ if (typeof document !== "undefined") {
   line-height: 1.4;
 }
 </style>
-
-
 
 
 

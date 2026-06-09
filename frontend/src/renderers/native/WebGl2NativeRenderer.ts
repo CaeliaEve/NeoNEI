@@ -266,10 +266,22 @@ export class WebGl2NativeRenderer {
     const gl = this.gl;
     if (commands.length <= 0) return { drawCalls: 0, vertexCount: 0 };
 
-    const positions = new Float32Array(commands.length * 12);
-    const colors = new Float32Array(commands.length * 24);
+    // Base slot plus one small group badge. Trim by cursor before upload so
+    // non-group commands do not pay extra draw vertices.
+    const positions = new Float32Array(commands.length * 24);
+    const colors = new Float32Array(commands.length * 48);
     let positionCursor = 0;
     let colorCursor = 0;
+    let vertexCount = 0;
+    const pushQuad = (x1: number, y1: number, x2: number, y2: number, color: number[]) => {
+      positions.set([x1, y1, x2, y1, x1, y2, x1, y2, x2, y1, x2, y2], positionCursor);
+      positionCursor += 12;
+      for (let i = 0; i < 6; i += 1) {
+        colors.set(color, colorCursor);
+        colorCursor += 4;
+      }
+      vertexCount += 6;
+    };
     for (const command of commands) {
       const isGroup = (command.flags & 1) !== 0;
       const isHovered = (command.flags & 4) !== 0;
@@ -279,8 +291,6 @@ export class WebGl2NativeRenderer {
       const y1 = command.y + inset;
       const x2 = command.x + command.size - inset;
       const y2 = command.y + command.size - inset;
-      positions.set([x1, y1, x2, y1, x1, y2, x1, y2, x2, y1, x2, y2], positionCursor);
-      positionCursor += 12;
       const color = isHovered
         ? [0.96, 0.68, 0.24, 0.58]
         : isSelected
@@ -292,9 +302,11 @@ export class WebGl2NativeRenderer {
             : command.kind === 1
               ? [0.08, 0.22, 0.28, 0.52]
               : [0.14, 0.18, 0.32, 0.48];
-      for (let i = 0; i < 6; i += 1) {
-        colors.set(color, colorCursor);
-        colorCursor += 4;
+      pushQuad(x1, y1, x2, y2, color);
+      if (isGroup) {
+        const badge = Math.max(7, Math.floor(command.size * 0.22));
+        const badgeColor = isHovered ? [1.0, 0.76, 0.28, 0.92] : [0.20, 0.92, 1.0, 0.82];
+        pushQuad(x2 - badge, y1, x2, y1 + badge, badgeColor);
       }
     }
 
@@ -302,17 +314,17 @@ export class WebGl2NativeRenderer {
     gl.uniform2f(this.chromeResolutionLocation, activeWidth, activeHeight);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.chromePositionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STREAM_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, positions.slice(0, positionCursor), gl.STREAM_DRAW);
     gl.enableVertexAttribArray(this.chromePositionLocation);
     gl.vertexAttribPointer(this.chromePositionLocation, 2, gl.FLOAT, false, 0, 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.chromeColorBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.STREAM_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, colors.slice(0, colorCursor), gl.STREAM_DRAW);
     gl.enableVertexAttribArray(this.chromeColorLocation);
     gl.vertexAttribPointer(this.chromeColorLocation, 4, gl.FLOAT, false, 0, 0);
 
-    gl.drawArrays(gl.TRIANGLES, 0, commands.length * 6);
-    return { drawCalls: 1, vertexCount: commands.length * 6 };
+    gl.drawArrays(gl.TRIANGLES, 0, vertexCount);
+    return { drawCalls: 1, vertexCount };
   }
 
   private renderSprites(activeWidth: number, activeHeight: number, commands: NativeTextureSpriteCommand[]) {

@@ -1,13 +1,19 @@
 ﻿import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const read = (path) => fs.readFileSync(path, 'utf8');
+const scriptDir = path.dirname(fileURLToPath(import.meta.url));
+const frontendRoot = path.resolve(scriptDir, '..');
+const read = (relativePath) => fs.readFileSync(path.join(frontendRoot, relativePath), 'utf8');
 
-const globalAtlasSource = read('frontend/src/services/globalBrowserAtlas.ts');
-const itemBrowserSource = read('frontend/src/composables/useItemBrowser.ts');
-const canvasGridSource = read('frontend/src/components/HomeCanvasGrid.vue');
-
+const globalAtlasSource = read('src/services/globalBrowserAtlas.ts');
+const itemBrowserSource = read('src/composables/useItemBrowser.ts');
+const browserPageProjectionLoaderSource = read('src/composables/browser/browserPageProjectionLoader.ts');
+const browserHotPathSource = `${itemBrowserSource}
+${browserPageProjectionLoaderSource}`;
+const canvasGridSource = read('src/components/HomeCanvasGrid.vue');
 test('global browser atlas resolves safe itemId aliases before falling back to raw images', () => {
   assert.match(
     globalAtlasSource,
@@ -38,12 +44,12 @@ test('global browser atlas resolves safe itemId aliases before falling back to r
 
 test('homepage browser fast path does not rehydrate page packs once global atlas is available', () => {
   assert.match(
-    itemBrowserSource,
-    /source: 'resident-global-atlas'/,
-    'locally projected pages should warm only the resident global atlas instead of page-pack media',
+    browserHotPathSource,
+    /source: 'native-runtime-render-worker'/,
+    'locally projected pages should warm only the native resident runtime instead of page-pack media',
   );
   assert.doesNotMatch(
-    itemBrowserSource,
+    browserHotPathSource,
     /getBrowserPagePackByIds|peekBrowserPagePackByIds/,
     'homepage item browser must not rehydrate projected pages through per-item page packs',
   );
@@ -81,7 +87,7 @@ test('global atlas runtime never performs page-scoped atlas entry hydration', ()
 });
 
 test('native renderer uploads all global atlas textures instead of the current page only', () => {
-  const nativeSurfaceSource = read('frontend/src/components/native-surface/NativeBrowserSurface.vue');
+  const nativeSurfaceSource = read('src/components/native-surface/NativeBrowserSurface.vue');
   assert.match(
     globalAtlasSource,
     /export async function getAllGlobalBrowserAtlasTextureDescriptors\(\)/,
@@ -101,31 +107,31 @@ test('native renderer uploads all global atlas textures instead of the current p
 
 
 test('worker search projection does not hydrate per-item page packs on the homepage hot path', () => {
-  const searchProjectionBlock = itemBrowserSource.slice(
-    itemBrowserSource.indexOf('const buildSearchEntriesFromWorkerResult'),
-    itemBrowserSource.indexOf('const loadSearchPageViaWorker'),
+  const searchProjectionBlock = browserPageProjectionLoaderSource.slice(
+    browserPageProjectionLoaderSource.indexOf('const buildProjectedBrowserPage'),
+    browserPageProjectionLoaderSource.indexOf('const tryProjectExpandedGroupsFromLocalCaches'),
   );
-  assert.notEqual(searchProjectionBlock.length, 0, 'search projection block should be found');
+  assert.notEqual(searchProjectionBlock.length, 0, 'catalog projection block should be found');
   assert.doesNotMatch(
     searchProjectionBlock,
     /getBrowserPagePackByIds|getBrowserPagePack\(/,
-    'worker search projection should use resident catalog entries plus global atlas, not per-item/page-pack HTTP hydration',
+    'catalog projection should use resident catalog entries plus native atlas, not per-item/page-pack HTTP hydration',
   );
   assert.match(
     searchProjectionBlock,
-    /atlas: null,[\s\S]*mediaManifest: null,/,
-    'search projection should leave media hydration to the resident global atlas/native renderer',
+    /mediaManifest: null,/,
+    'catalog projection should leave HTTP media hydration to the resident global atlas/native renderer',
   );
 });
 
 test('homepage item browser does not fetch page packs on production paging or search fallback', () => {
   assert.doesNotMatch(
-    itemBrowserSource,
+    browserHotPathSource,
     /getBrowserPagePack\(|getBrowserPagePackByIds|peekBrowserPagePackByIds/,
     'homepage paging/search should project from resident catalogs and native atlas instead of HTTP page packs',
   );
   assert.match(
-    itemBrowserSource,
+    browserPageProjectionLoaderSource,
     /const loadProjectedPagePack = async/,
     'homepage should keep a catalog-projection loader for non-worker paging paths',
   );

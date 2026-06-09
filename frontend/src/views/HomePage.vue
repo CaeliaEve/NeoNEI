@@ -85,6 +85,7 @@ const {
   totalItems,
   totalPages,
   currentPageAtlas,
+  expandedGroupKeys,
   setExpandedGroups,
   expandedGroupFacetFilters,
   setExpandedGroupFacetFilter,
@@ -415,6 +416,7 @@ setGridViewportSync(syncMeasuredPageSize);
           :item-grid-empty-subtitle="itemGridEmptySubtitle"
           :browser-grid-entries="browserGridEntries"
           :current-page-atlas="currentPageAtlas"
+          :expanded-group-keys="expandedGroupKeys"
           :expanded-group-filter-panels="expandedGroupFilterPanels"
           :expanded-group-facet-filters="expandedGroupFacetFilters"
           :has-expanded-group-facet-filters="hasExpandedGroupFacetFilters"
