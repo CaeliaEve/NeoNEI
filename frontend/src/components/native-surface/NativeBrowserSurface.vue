@@ -216,6 +216,7 @@ function getEntryItem(entry: BrowserGridEntry): Item {
 
 function findEntryByNativeHit(hit: Awaited<ReturnType<typeof controller.hitTest>>): BrowserGridEntry | null {
   if (!hit) return null;
+  if (hit.key.startsWith("native-")) return null;
   return props.entries.find((entry) => {
     if (hit.groupKey) {
       return entry.kind !== "item" && entry.group.key === hit.groupKey;

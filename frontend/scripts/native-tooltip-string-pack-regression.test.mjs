@@ -147,6 +147,11 @@ test('native runtime group hits remain expandable groups when compat entries can
   );
   assert.match(
     surfaceSource,
+    /if \(hit\.key\.startsWith\("native-"\)\) return null/,
+    'Native runtime hits should not be rematched against stale Vue entries in the surface component',
+  );
+  assert.match(
+    surfaceSource,
     /else if \(hit\.group\) emit\("groupContextmenu", hit\.group, event\)/,
     'Vue native surface should emit group context menus from native runtime hits',
   );

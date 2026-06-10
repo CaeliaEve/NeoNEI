@@ -34,9 +34,6 @@ import { buildNativeSurfaceMetrics } from "./nativeSurfaceMetrics";
 import {
   buildRuntimeBrowserIndexByItemId,
   buildRuntimeHistoryEntries as buildRuntimeHistoryEntriesFromProjection,
-  buildRuntimeSearchExactIndex,
-  getRuntimeSearchPrefixCandidates,
-  normalizeRuntimeSearchKey,
 } from "./nativeSurfaceProjection";
 import {
   computeWasmRuntimeVisibleEntries,
@@ -57,35 +54,6 @@ let events = 0;
 let lastEvent: NativeSurfaceEngineRequest["type"] | null = null;
 let lastSurfaceId: NativeSurfaceId | null = null;
 
-function computeIndexedRuntimeVisibleEntries(
-  surface: SurfaceState,
-  browserPack: NativeCompactBrowserPack,
-  normalizedQuery: string,
-): Uint32Array | null {
-  if (!normalizedQuery || surface.runtimeSearchExactIndex.size <= 0) return null;
-  const candidateIndices = surface.runtimeSearchExactIndex.get(normalizedQuery)
-    ?? getRuntimeSearchPrefixCandidates(surface, normalizedQuery);
-  if (!candidateIndices) return null;
-  const normalizedMod = `${surface.modId ?? ""}`.trim().toLowerCase();
-  const expanded = new Set(surface.expandedGroups);
-  const collapsedSeen = new Set<string>();
-  const projected: number[] = [];
-  for (const browserIndex of candidateIndices) {
-    const row = getNativeCompactBrowserRow(browserPack, browserIndex);
-    if (!row) continue;
-    const modId = `${browserPack.strings[row.modIdRef] ?? ""}`.trim().toLowerCase();
-    if (normalizedMod && modId !== normalizedMod) continue;
-    const groupKey = browserPack.strings[row.groupKeyRef] ?? "";
-    const collapsedGroup = Boolean(groupKey) && !expanded.has(groupKey);
-    if (collapsedGroup) {
-      if (collapsedSeen.has(groupKey)) continue;
-      collapsedSeen.add(groupKey);
-    }
-    projected.push(collapsedGroup ? (browserIndex | 0x80000000) >>> 0 : browserIndex >>> 0);
-  }
-  surface.runtimeBrowserWasmProjectedEntries = projected.length;
-  return Uint32Array.from(projected);
-}
 function getRuntimeVisibleEntries(surface: SurfaceState, browserPack: NativeCompactBrowserPack): Uint32Array {
   const cacheKey = [
     browserPack.itemCount,
@@ -96,9 +64,7 @@ function getRuntimeVisibleEntries(surface: SurfaceState, browserPack: NativeComp
   ].join("|");
   if (surface.runtimeVisibleCacheKey === cacheKey && surface.runtimeVisibleEntries) return surface.runtimeVisibleEntries;
   const projectionStartedAt = performance.now();
-  const normalizedQuery = `${surface.query ?? ""}`.trim().toLowerCase().replace(/\s+/g, "");
-  const indexedVisibleEntries = computeIndexedRuntimeVisibleEntries(surface, browserPack, normalizedQuery);
-  const visibleEntries = indexedVisibleEntries ?? computeWasmRuntimeVisibleEntries(surface, browserPack.itemCount);
+  const visibleEntries = computeWasmRuntimeVisibleEntries(surface, browserPack.itemCount);
   if (!visibleEntries) {
     const wasmError = getWasmError();
     surface.runtimeError = wasmError
@@ -270,9 +236,6 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         surface.runtimeBrowserIndexByItemId = buildRuntimeBrowserIndexByItemId(surface.browserPack);
         surface.groupByKey = groupPack ? parseNativeGroupPack(groupPack.buffer) : new Map();
         surface.searchByItemId = searchPack ? parseNativeSearchPack(searchPack.buffer) : new Map();
-        surface.runtimeSearchExactIndex = buildRuntimeSearchExactIndex(surface.searchByItemId);
-        surface.runtimeSearchSortedKeys = Array.from(surface.runtimeSearchExactIndex.keys()).sort();
-        surface.runtimeSearchPrefixCache = new Map();
         surface.stringByItemId = stringPack ? parseNativeStringPack(stringPack.buffer) : new Map();
         surface.textureByItemId = texturePack ? parseNativeTexturePack(texturePack.buffer) : new Map();
         surface.animationByItemId = animationPack ? parseNativeAnimationPack(animationPack.buffer) : new Map();
@@ -293,7 +256,6 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         surface.runtimeBrowserIndexByItemId = new Map();
         surface.groupByKey = new Map();
         surface.searchByItemId = new Map();
-        surface.runtimeSearchExactIndex = new Map();
         surface.stringByItemId = new Map();
         surface.textureByItemId = new Map();
         surface.animationByItemId = new Map();

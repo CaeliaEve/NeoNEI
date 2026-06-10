@@ -39,6 +39,16 @@ test('native surface worker keeps expanded groups on the runtime projection path
     /neonei_engine_compact_browser_project_visible_indices_with_groups/,
     'browser projection should use the Native/WASM group-pack ABI when groups.bin is loaded',
   );
+  assert.match(
+    wasmRuntimeSource,
+    /neonei_engine_compact_search_project_visible_indices_with_groups/,
+    'search projection should also use the Native/WASM group-pack ABI when groups.bin is loaded',
+  );
+  assert.equal(
+    workerSource.includes('computeIndexedRuntimeVisibleEntries'),
+    false,
+    'search must not bypass the Native/WASM group-pack projection through the old TypeScript index path',
+  );
   assert.equal(
     nativeProjectionSource.includes('runtimeVisibleCacheKey'),
     true,
@@ -106,6 +116,11 @@ test('WASM browser projection expands group members in-place from groups.bin', (
     rustLibSource,
     /neonei_engine_compact_browser_project_visible_indices_with_groups/,
     'WASM ABI should expose the browser+groups projection entrypoint',
+  );
+  assert.match(
+    rustLibSource,
+    /neonei_engine_compact_search_project_visible_indices_with_groups/,
+    'WASM ABI should expose the search+groups projection entrypoint',
   );
   assert.match(
     rustBrowserSource,

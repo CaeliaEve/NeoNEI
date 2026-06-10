@@ -1,6 +1,6 @@
 use crate::compact_browser::{
-    compact_browser_row, compact_browser_string, encode_visible_entry, expanded_group_keys,
-    normalize_search_text, parse_compact_browser_header,
+    build_browser_index_by_item_id, compact_browser_row, compact_browser_string,
+    encode_visible_entry, expanded_group_keys, normalize_search_text, parse_compact_browser_header,
 };
 
 const COMPACT_SEARCH_MAGIC: &[u8; 8] = b"NEISRC2\0";
@@ -224,6 +224,151 @@ pub fn compact_search_project_visible_indices(
             }
         }
         count = count.saturating_add(1);
+    }
+
+    Some(count)
+}
+
+fn emit_search_group_members_at_anchor(
+    browser_pack: &[u8],
+    browser_header: crate::compact_browser::CompactBrowserHeader,
+    group_pack: &[u8],
+    group_header: crate::compact_group::CompactGroupHeader,
+    index_by_item_id: &std::collections::HashMap<String, u32>,
+    group_key: &str,
+    current_index: u32,
+    out: &mut Option<&mut [u32]>,
+    count: &mut u32,
+) -> Option<()> {
+    let Some(group_row) = crate::compact_group::compact_group_find_row(group_pack, group_header, group_key) else {
+        if let Some(out_indices) = out.as_deref_mut() {
+            let out_index = *count as usize;
+            if out_index < out_indices.len() {
+                out_indices[out_index] = encode_visible_entry(current_index, false);
+            }
+        }
+        *count = count.saturating_add(1);
+        return Some(());
+    };
+    let mut emitted_any = false;
+    let mut emitted_indices = std::collections::HashSet::<u32>::new();
+    for member_offset in 0..group_row.member_count {
+        let absolute_member_index = group_row.member_start.saturating_add(member_offset);
+        let string_ref = crate::compact_group::compact_group_member_string_ref(
+            group_pack,
+            group_header,
+            absolute_member_index,
+        )?;
+        let item_id =
+            crate::compact_group::compact_group_string(group_pack, group_header, string_ref)
+                .unwrap_or("");
+        let Some(member_browser_index) = index_by_item_id.get(item_id).copied() else {
+            continue;
+        };
+        if !emitted_indices.insert(member_browser_index) {
+            continue;
+        }
+        let member_row = compact_browser_row(browser_pack, browser_header, member_browser_index)?;
+        let member_group_key =
+            compact_browser_string(browser_pack, browser_header, member_row.group_key_ref)
+                .unwrap_or("");
+        if member_group_key != group_key {
+            continue;
+        }
+        if let Some(out_indices) = out.as_deref_mut() {
+            let out_index = *count as usize;
+            if out_index < out_indices.len() {
+                out_indices[out_index] = encode_visible_entry(member_browser_index, false);
+            }
+        }
+        *count = count.saturating_add(1);
+        emitted_any = true;
+    }
+    if !emitted_any {
+        if let Some(out_indices) = out.as_deref_mut() {
+            let out_index = *count as usize;
+            if out_index < out_indices.len() {
+                out_indices[out_index] = encode_visible_entry(current_index, false);
+            }
+        }
+        *count = count.saturating_add(1);
+    }
+    Some(())
+}
+
+pub fn compact_search_project_visible_indices_with_groups(
+    browser_pack: &[u8],
+    search_pack: &[u8],
+    group_pack: &[u8],
+    query: &str,
+    mod_filter: &str,
+    expanded_groups: &str,
+    mut out: Option<&mut [u32]>,
+) -> Option<u32> {
+    let browser_header = parse_compact_browser_header(browser_pack)?;
+    let search_header = parse_compact_search_header(search_pack)?;
+    let group_header = crate::compact_group::parse_compact_group_header(group_pack)?;
+    let index_by_item_id = build_browser_index_by_item_id(browser_pack, browser_header)?;
+    let normalized_query = normalize_search_text(query);
+    let normalized_mod = mod_filter.trim().to_lowercase();
+    let expanded = expanded_group_keys(expanded_groups);
+    let mut emitted_groups = std::collections::HashSet::<String>::new();
+    let mut count = 0u32;
+
+    for search_index in 0..search_header.item_count {
+        let search_row = compact_search_row(search_pack, search_header, search_index)?;
+        if search_row.browser_index >= browser_header.item_count {
+            continue;
+        }
+        let search_mod =
+            compact_search_string(search_pack, search_header, search_row.mod_id_ref).unwrap_or("");
+        if !normalized_mod.is_empty() && search_mod.to_lowercase() != normalized_mod {
+            continue;
+        }
+        if !row_matches_query(search_pack, search_header, search_row, &normalized_query) {
+            continue;
+        }
+
+        let browser_row =
+            compact_browser_row(browser_pack, browser_header, search_row.browser_index)?;
+        let group_key =
+            compact_browser_string(browser_pack, browser_header, browser_row.group_key_ref)
+                .unwrap_or("");
+        if group_key.is_empty() {
+            if let Some(out_indices) = out.as_deref_mut() {
+                let out_index = count as usize;
+                if out_index < out_indices.len() {
+                    out_indices[out_index] = encode_visible_entry(search_row.browser_index, false);
+                }
+            }
+            count = count.saturating_add(1);
+            continue;
+        }
+
+        if !emitted_groups.insert(group_key.to_owned()) {
+            continue;
+        }
+        if expanded.contains(group_key) {
+            emit_search_group_members_at_anchor(
+                browser_pack,
+                browser_header,
+                group_pack,
+                group_header,
+                &index_by_item_id,
+                group_key,
+                search_row.browser_index,
+                &mut out,
+                &mut count,
+            )?;
+        } else if let Some(out_indices) = out.as_deref_mut() {
+            let out_index = count as usize;
+            if out_index < out_indices.len() {
+                out_indices[out_index] = encode_visible_entry(search_row.browser_index, true);
+            }
+            count = count.saturating_add(1);
+        } else {
+            count = count.saturating_add(1);
+        }
     }
 
     Some(count)

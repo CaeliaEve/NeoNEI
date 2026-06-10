@@ -242,7 +242,7 @@ pub fn compact_browser_project_visible_indices(
     Some(count)
 }
 
-fn build_browser_index_by_item_id(
+pub fn build_browser_index_by_item_id(
     bytes: &[u8],
     header: CompactBrowserHeader,
 ) -> Option<std::collections::HashMap<String, u32>> {

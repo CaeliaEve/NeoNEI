@@ -44,9 +44,6 @@ export type SurfaceState = {
   runtimeBrowserIndexByItemId: Map<string, number>;
   groupByKey: Map<string, NativeRuntimeGroup>;
   searchByItemId: Map<string, NativeRuntimeSearchItem>;
-  runtimeSearchExactIndex: Map<string, Uint32Array>;
-  runtimeSearchSortedKeys: string[];
-  runtimeSearchPrefixCache: Map<string, Uint32Array>;
   stringByItemId: Map<string, NativeRuntimeStringItem>;
   textureByItemId: Map<string, NativeRuntimeTextureItem>;
   animationByItemId: Map<string, NativeRuntimeAnimationItem>;
@@ -109,9 +106,6 @@ export function createSurfaceState(): SurfaceState {
     runtimeBrowserIndexByItemId: new Map(),
     groupByKey: new Map(),
     searchByItemId: new Map(),
-    runtimeSearchExactIndex: new Map(),
-    runtimeSearchSortedKeys: [],
-    runtimeSearchPrefixCache: new Map(),
     stringByItemId: new Map(),
     textureByItemId: new Map(),
     animationByItemId: new Map(),
