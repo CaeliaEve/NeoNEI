@@ -77,6 +77,9 @@ export type SurfaceState = {
   runtimeAnimationWasmItemCount: number;
   hasAnimatedSprites: boolean;
   animatedSpriteCount: number;
+  spriteCommandCount: number;
+  missingSpriteCount: number;
+  missingSpriteItemIds: string[];
   nextFrameDelayMs: number | null;
 };
 
@@ -139,6 +142,9 @@ export function createSurfaceState(): SurfaceState {
     runtimeAnimationWasmItemCount: 0,
     hasAnimatedSprites: false,
     animatedSpriteCount: 0,
+    spriteCommandCount: 0,
+    missingSpriteCount: 0,
+    missingSpriteItemIds: [],
     nextFrameDelayMs: null,
   };
 }

@@ -80,6 +80,9 @@ export type NativeRendererFrameMetrics = {
   commandCount: number;
   drawCalls: number;
   vertexCount: number;
+  spriteDrawCalls: number;
+  spriteVertexCount: number;
+  normalizedSpriteCommands: number;
   textureCount: number;
   textureLoaded: number;
   textureErrors: number;

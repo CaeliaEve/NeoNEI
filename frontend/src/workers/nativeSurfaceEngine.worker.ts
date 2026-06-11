@@ -304,6 +304,9 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       const spriteFrame = buildSpriteFrame(surface, surface.layoutCommands, message.nowMs, getWasmEngine());
       surface.hasAnimatedSprites = spriteFrame.hasAnimatedSprites;
       surface.animatedSpriteCount = spriteFrame.animatedSpriteCount;
+      surface.spriteCommandCount = spriteFrame.spriteCommands.length;
+      surface.missingSpriteCount = spriteFrame.missingSpriteCount;
+      surface.missingSpriteItemIds = spriteFrame.missingSpriteItemIds;
       surface.nextFrameDelayMs = spriteFrame.nextFrameDelayMs;
       return {
         type: "frame",

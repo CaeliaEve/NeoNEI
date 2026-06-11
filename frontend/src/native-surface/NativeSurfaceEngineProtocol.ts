@@ -227,6 +227,9 @@ export type NativeSurfaceEngineWorkerMetrics = {
   lastProjectionSource: "browser" | "search" | "empty";
   hasAnimatedSprites: boolean;
   animatedSpriteCount: number;
+  spriteCommandCount: number;
+  missingSpriteCount: number;
+  missingSpriteItemIds: string[];
   nextFrameDelayMs: number | null;
   updatedAt: number;
 };

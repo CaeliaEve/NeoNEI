@@ -60,11 +60,51 @@ export type NativeSurfaceSpriteFrame = {
   spriteCommands: NativeSurfaceEngineSpriteCommand[];
   hasAnimatedSprites: boolean;
   animatedSpriteCount: number;
+  missingSpriteCount: number;
+  missingSpriteItemIds: string[];
   nextFrameDelayMs: number | null;
 };
 
 function toU32(value: number): number {
   return Math.max(0, Math.floor(Number(value) || 0));
+}
+
+function getItemIdAliases(itemId: string): string[] {
+  const normalized = `${itemId ?? ""}`.trim();
+  if (!normalized) return [];
+  const aliases: string[] = [];
+  const parts = normalized.split("~");
+  if (parts.length >= 4 && parts[0] === "i") {
+    aliases.push(parts.slice(0, 4).join("~"));
+    aliases.push([parts[0], parts[1], parts[2], "0"].join("~"));
+  }
+  return Array.from(new Set(aliases.filter((alias) => alias && alias !== normalized)));
+}
+
+function resolveTextureItem(
+  textureByItemId: Map<string, NativeRuntimeTextureItem>,
+  itemId: string,
+): NativeRuntimeTextureItem | undefined {
+  const exact = textureByItemId.get(itemId);
+  if (exact) return exact;
+  for (const alias of getItemIdAliases(itemId)) {
+    const aliased = textureByItemId.get(alias);
+    if (aliased) return aliased;
+  }
+  return undefined;
+}
+
+function resolveAnimationItem(
+  animationByItemId: Map<string, NativeRuntimeAnimationItem>,
+  itemId: string,
+): NativeRuntimeAnimationItem | undefined {
+  const exact = animationByItemId.get(itemId);
+  if (exact) return exact;
+  for (const alias of getItemIdAliases(itemId)) {
+    const aliased = animationByItemId.get(alias);
+    if (aliased) return aliased;
+  }
+  return undefined;
 }
 
 function pickTimelineFrame(
@@ -111,8 +151,28 @@ function pickTimelineFrame(
     return frames[nativeTextureFrame] ?? frames[0] ?? null;
   }
 
-  void timeline;
-  return null;
+  const normalizedTimeline = timeline
+    .map((frame) => ({
+      frameIndex: toU32(frame.frameIndex),
+      durationMs: Math.max(16, toU32(frame.durationMs) || texture.animatedAtlas?.frameDurationMs || 50),
+    }))
+    .filter((frame) => frame.durationMs > 0);
+  if (normalizedTimeline.length <= 0) return frames[0] ?? null;
+  const totalDuration = normalizedTimeline.reduce((sum, frame) => sum + frame.durationMs, 0);
+  if (totalDuration <= 0) return frames[0] ?? null;
+  let cursor = toU32(nowMs) % totalDuration;
+  let selectedFrameIndex = normalizedTimeline[0]?.frameIndex ?? 0;
+  for (const frame of normalizedTimeline) {
+    if (cursor < frame.durationMs) {
+      selectedFrameIndex = frame.frameIndex;
+      break;
+    }
+    cursor -= frame.durationMs;
+  }
+  return frames.find((frame) => frame.index === selectedFrameIndex)
+    ?? frames[selectedFrameIndex]
+    ?? frames[0]
+    ?? null;
 }
 
 function resolveNextTimelineDelayMs(timeline: NativeRuntimeTimelineFrame[], fallback: number | null): number | null {
@@ -133,12 +193,21 @@ export function buildSpriteFrame(
 ): NativeSurfaceSpriteFrame {
   const sprites: NativeSurfaceEngineSpriteCommand[] = [];
   let animatedSpriteCount = 0;
+  let missingSpriteCount = 0;
+  const missingSpriteItemIds: string[] = [];
+  const noteMissingSprite = (itemId: string) => {
+    missingSpriteCount += 1;
+    if (missingSpriteItemIds.length < 16) missingSpriteItemIds.push(itemId);
+  };
   let nextFrameDelayMs: number | null = null;
   for (const command of commands) {
     if (!command.itemId) continue;
-    const texture = surface.textureByItemId.get(command.itemId);
-    if (!texture) continue;
-    const animation = surface.animationByItemId.get(command.itemId);
+    const texture = resolveTextureItem(surface.textureByItemId, command.itemId);
+    if (!texture) {
+      noteMissingSprite(command.itemId);
+      continue;
+    }
+    const animation = resolveAnimationItem(surface.animationByItemId, command.itemId);
     const animatedAtlas = texture.animatedAtlas;
     if (animatedAtlas?.atlasFile && animatedAtlas.frames.length > 0) {
       const frame = pickTimelineFrame(
@@ -182,12 +251,16 @@ export function buildSpriteFrame(
         destWidth: command.iconSize,
         destHeight: command.iconSize,
       });
+      continue;
     }
+    noteMissingSprite(command.itemId);
   }
   return {
     spriteCommands: sprites,
     hasAnimatedSprites: animatedSpriteCount > 0,
     animatedSpriteCount,
+    missingSpriteCount,
+    missingSpriteItemIds,
     nextFrameDelayMs,
   };
 }

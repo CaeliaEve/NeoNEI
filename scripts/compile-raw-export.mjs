@@ -1615,7 +1615,13 @@ function normalizeBlockLookupKey(modId, internalName, damage) {
 }
 
 function parseBuildCraftFacadeDescriptor(item) {
-  if (`${item?.semanticFamily ?? item?.family ?? ""}`.toLowerCase() !== "facade.buildcraft") return null;
+  const family = `${item?.semanticFamily ?? item?.family ?? ""}`.toLowerCase();
+  const itemModId = `${item?.modId ?? ""}`.toLowerCase();
+  const itemInternalName = `${item?.internalName ?? ""}`.toLowerCase();
+  const isBuildCraftFacade =
+    family === "facade.buildcraft" ||
+    (itemModId === "buildcrafttransport" && itemInternalName === "pipefacade");
+  if (!isBuildCraftFacade) return null;
   const descriptor = `${item?.nbtDescriptor ?? ""}`;
   const blockMatch = descriptor.match(/block:\s*"?([^",}]+:[^",}]+)"?/i);
   if (!blockMatch) return null;
@@ -3031,7 +3037,7 @@ function compileRawExport(inputDir, outputDir) {
     hiddenBrowserItemCount: hiddenBrowserItemIds.size,
   });
 
-  const generatedBrowserAtlasIndex = buildBrowserAtlasIndexFromResources(browserAtlasIndex, browserItems, textures, animationFacts);
+  const generatedBrowserAtlasIndex = buildBrowserAtlasIndexFromResources(browserAtlasIndex, [...browserItems, ...hiddenBrowserItems], textures, animationFacts);
   const materializedBrowserAtlasIndex = materializeBrowserAtlasAssets(inputDir, outputDir, generatedBrowserAtlasIndex);
   const browserAtlasItems = Array.isArray(generatedBrowserAtlasIndex?.items) ? generatedBrowserAtlasIndex.items : [];
   const animationTable = buildAnimationTable(searchItems, textures, animationFacts, generatedBrowserAtlasIndex);

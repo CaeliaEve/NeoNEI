@@ -34,6 +34,9 @@ export type NativeSurfaceMetricsSurface = {
   lastProjectionSource: NativeSurfaceEngineWorkerMetrics["lastProjectionSource"];
   hasAnimatedSprites: boolean;
   animatedSpriteCount: number;
+  spriteCommandCount: number;
+  missingSpriteCount: number;
+  missingSpriteItemIds: string[];
   nextFrameDelayMs: number | null;
 };
 
@@ -91,6 +94,9 @@ export function buildNativeSurfaceMetrics(params: {
     lastProjectionSource: params.lastSurface?.lastProjectionSource ?? "empty",
     hasAnimatedSprites: params.lastSurface?.hasAnimatedSprites ?? false,
     animatedSpriteCount: params.lastSurface?.animatedSpriteCount ?? 0,
+    spriteCommandCount: params.lastSurface?.spriteCommandCount ?? 0,
+    missingSpriteCount: params.lastSurface?.missingSpriteCount ?? 0,
+    missingSpriteItemIds: params.lastSurface?.missingSpriteItemIds ?? [],
     nextFrameDelayMs: params.lastSurface?.nextFrameDelayMs ?? null,
     updatedAt: performance.now(),
   };

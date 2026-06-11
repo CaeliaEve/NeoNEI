@@ -22,6 +22,9 @@ let frames = 0;
 let commandCount = 0;
 let drawCalls = 0;
 let vertexCount = 0;
+let spriteDrawCalls = 0;
+let spriteVertexCount = 0;
+let normalizedSpriteCommands = 0;
 let textureErrors = 0;
 let textureLoaded = 0;
 let textureUploadBatches = 0;
@@ -88,6 +91,9 @@ function buildMetrics(): NativeRendererFrameMetrics {
     commandCount,
     drawCalls,
     vertexCount,
+    spriteDrawCalls,
+    spriteVertexCount,
+    normalizedSpriteCommands,
     textureCount: nativeRenderer?.textureCount() ?? textureLoaded,
     textureLoaded,
     textureErrors,
@@ -332,18 +338,21 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       const parsedCommands = parseNativeLayoutCommandBuffer(message.commandBuffer, message.commandStride, commandCount);
       lastParseMs = performance.now() - parseStartedAt;
       const normalizeStartedAt = performance.now();
-      const normalizedSpriteCommands = normalizeSpriteCommands(message.spriteCommands ?? []);
+      const frameSpriteCommands = normalizeSpriteCommands(message.spriteCommands ?? []);
+      normalizedSpriteCommands = frameSpriteCommands.length;
       lastSpriteNormalizeMs = performance.now() - normalizeStartedAt;
       const drawStartedAt = performance.now();
       const renderStats = nativeRenderer?.render(
         width,
         height,
         parsedCommands,
-        normalizedSpriteCommands,
+        frameSpriteCommands,
       ) ?? { drawCalls: 0, vertexCount: 0, spriteDrawCalls: 0, spriteVertexCount: 0 };
       lastDrawMs = performance.now() - drawStartedAt;
       drawCalls = renderStats.drawCalls;
       vertexCount = renderStats.vertexCount;
+      spriteDrawCalls = renderStats.spriteDrawCalls;
+      spriteVertexCount = renderStats.spriteVertexCount;
       void message.nowMs;
       frames += 1;
       lastFrameMs = performance.now() - startedAt;
@@ -367,6 +376,9 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       commandCount = 0;
       drawCalls = 0;
       vertexCount = 0;
+      spriteDrawCalls = 0;
+      spriteVertexCount = 0;
+      normalizedSpriteCommands = 0;
       textureErrors = 0;
       textureLoaded = 0;
       rendererMaxTextureSize = 0;
