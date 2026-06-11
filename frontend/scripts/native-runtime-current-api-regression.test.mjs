@@ -21,7 +21,25 @@ test("native runtime loader consumes current API envelope and file endpoint", ()
   assert.match(loader, /api\/native-runtime\/current\/manifest/);
   assert.match(loader, /api\/native-runtime\/current\/files/);
   assert.match(loader, /encodeRuntimeFilePath/);
+  assert.match(loader, /buildNativeRuntimeRevision/);
+  assert.match(loader, /appendNativeRuntimeRevision/);
+  assert.match(loader, /neoneiRuntime/);
   assert.doesNotMatch(loader, /new URL\(`rust\//, "runtime packs must not hardcode static rust URLs in the loader");
+});
+
+test("native runtime pack fetches are versioned before using browser cache", () => {
+  const loader = readSource("src/native-surface/runtimeLoader.ts");
+
+  assert.match(loader, /getManifestFileBytes/);
+  assert.match(loader, /manifest\.runtimeId/);
+  assert.match(loader, /manifest\.generatedAt/);
+  assert.match(loader, /manifest\.sourceSignature/);
+  assert.match(loader, /fetch\(url,\s*\{\s*cache:\s*"force-cache"/s);
+  assert.doesNotMatch(
+    loader,
+    /const cacheKey = `\$\{normalizedManifestUrl\}::\$\{name\}::\$\{url\}`/,
+    "native runtime pack cache key must include manifest revision, not only the static URL",
+  );
 });
 
 test("homepage native runtime manifest defaults to current API", () => {

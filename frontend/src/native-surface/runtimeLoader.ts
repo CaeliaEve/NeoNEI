@@ -66,6 +66,39 @@ function resolveManifestRelativeUrl(manifestUrl: string, relativePath: string): 
   return new URL(relativePath, manifestUrl).toString();
 }
 
+function getManifestFileBytes(manifest: NativeRuntimeManifest, relativePath: string): number | null {
+  if (!Array.isArray(manifest.files)) return null;
+  const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
+  const row = manifest.files.find((file) => `${file?.path ?? ""}`.replace(/\\/g, "/").replace(/^\/+/, "") === normalized);
+  return Number.isFinite(Number(row?.bytes)) ? Number(row?.bytes) : null;
+}
+
+function buildNativeRuntimeRevision(manifest: NativeRuntimeManifest, relativePath: string): string {
+  return [
+    manifest.runtimeId,
+    manifest.generatedAt,
+    manifest.sourceSignature,
+    manifest.schemaRevision,
+    relativePath,
+    getManifestFileBytes(manifest, relativePath),
+  ]
+    .map((value) => `${value ?? ""}`.trim())
+    .filter(Boolean)
+    .join("|") || `${relativePath}|current`;
+}
+
+function appendNativeRuntimeRevision(url: string, revision: string): string {
+  const encoded = encodeURIComponent(revision);
+  try {
+    const next = new URL(url, globalThis.location?.href ?? "http://localhost/");
+    next.searchParams.set("neoneiRuntime", encoded);
+    return next.toString();
+  } catch {
+    const separator = url.includes("?") ? "&" : "?";
+    return `${url}${separator}neoneiRuntime=${encoded}`;
+  }
+}
+
 function getManifestEntrypoints(manifest: NativeRuntimeManifest): Record<NativeRuntimePackName, string> {
   const source = manifest.entrypoints ?? (!Array.isArray(manifest.files) ? manifest.files : undefined) ?? {};
   const result = {} as Record<NativeRuntimePackName, string>;
@@ -166,12 +199,14 @@ export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<Na
 
 async function loadNativeRuntimePack(
   normalizedManifestUrl: string,
+  manifest: NativeRuntimeManifest,
   entrypoints: Record<NativeRuntimePackName, string>,
   name: NativeRuntimePackName,
 ): Promise<NativeRuntimePack> {
   const path = entrypoints[name];
-  const url = resolveManifestRelativeUrl(normalizedManifestUrl, path);
-  const cacheKey = `${normalizedManifestUrl}::${name}::${url}`;
+  const revision = buildNativeRuntimeRevision(manifest, path);
+  const url = appendNativeRuntimeRevision(resolveManifestRelativeUrl(normalizedManifestUrl, path), revision);
+  const cacheKey = `${normalizedManifestUrl}::${name}::${path}::${revision}`;
   const existing = packRequestCache.get(cacheKey);
   if (existing) return existing;
   const request = (async () => {
@@ -212,7 +247,7 @@ export async function loadNativeRuntimeBuffers(
     : (Object.keys(NATIVE_RUNTIME_PACK_SCHEMAS) as NativeRuntimePackName[]);
 
   await Promise.all(requestedPackNames.map(async (name) => {
-    packs[name] = await loadNativeRuntimePack(normalizedManifestUrl, entrypoints, name);
+    packs[name] = await loadNativeRuntimePack(normalizedManifestUrl, manifest, entrypoints, name);
   }));
 
   return {
