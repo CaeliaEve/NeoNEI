@@ -198,18 +198,17 @@ test("native surface baseline measures actual native search projection latency",
   assert.match(worker, /lastProjectionSource = surface\.lastProjectionQuery\.trim\(\)\.length > 0 \? "search" : "browser"/);
 });
 
-test("native surface worker keeps prefix search on the native index hot path", () => {
+test("native surface worker keeps search on the WASM visible-entry hot path", () => {
   const worker = readSource("src/workers/nativeSurfaceEngine.worker.ts");
-  const projection = readSource("src/workers/nativeSurfaceProjection.ts");
+  const wasmRuntime = readSource("src/workers/nativeSurfaceWasmRuntime.ts");
   const state = readSource("src/workers/nativeSurfaceWorkerState.ts");
 
-  assert.match(state, /runtimeSearchSortedKeys: string\[\]/);
-  assert.match(state, /runtimeSearchPrefixCache: Map<string, Uint32Array>/);
-  assert.match(projection, /function lowerBoundRuntimeSearchKey/);
-  assert.match(projection, /function getRuntimeSearchPrefixCandidates/);
-  assert.match(
-    worker,
-    /surface\.runtimeSearchExactIndex\.get\(normalizedQuery\)\s*\?\?\s*getRuntimeSearchPrefixCandidates\(surface, normalizedQuery\)/,
-    "partial/prefix searches should use the native candidate index before falling back to WASM scan",
-  );
+  assert.match(state, /runtimeVisibleCacheKey: string \| null/);
+  assert.match(state, /runtimeVisibleEntries: Uint32Array \| null/);
+  assert.match(worker, /computeWasmRuntimeVisibleEntries\(surface, browserPack\.itemCount\)/);
+  assert.match(worker, /"wasm-visible-v2-no-ts-fallback"/);
+  assert.match(wasmRuntime, /neonei_engine_compact_search_project_visible_indices/);
+  assert.match(wasmRuntime, /const canUseSearchPack = normalizedQuery\.length > 0/);
+  assert.match(wasmRuntime, /projectSearchVisibleWithGroups/);
+  assert.doesNotMatch(worker, /runtimeSearchExactIndex|getRuntimeSearchPrefixCandidates|runtimeSearchPrefixCache/);
 });

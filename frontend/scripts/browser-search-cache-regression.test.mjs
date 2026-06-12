@@ -2,45 +2,44 @@ import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const projection = fs.readFileSync('src/workers/nativeSurfaceProjection.ts', 'utf8');
 const state = fs.readFileSync('src/workers/nativeSurfaceWorkerState.ts', 'utf8');
 const worker = fs.readFileSync('src/workers/nativeSurfaceEngine.worker.ts', 'utf8');
 
-test('native browser search keeps bounded prefix candidates on the native hot path', () => {
+test('native browser search stays on the WASM visible-entry hot path', () => {
   assert.equal(
-    state.includes('runtimeSearchPrefixCache: Map<string, Uint32Array>'),
+    state.includes('runtimeVisibleCacheKey: string | null'),
     true,
-    'native surface state should own a reusable prefix candidate cache',
+    'native surface state should own a reusable visible-entry cache key',
   );
   assert.equal(
-    state.includes('runtimeSearchPrefixCache: new Map()'),
+    state.includes('runtimeVisibleEntries: Uint32Array | null'),
     true,
-    'prefix candidate cache should initialize with the native surface state',
+    'native surface state should cache projected visible entries',
   );
   assert.equal(
-    worker.includes('surface.runtimeSearchPrefixCache = new Map();'),
+    worker.includes('surface.runtimeVisibleCacheKey = null;'),
     true,
-    'prefix candidate cache must be invalidated when native runtime packs are rebuilt',
+    'visible-entry cache must be invalidated when native runtime packs are rebuilt',
   );
   assert.equal(
-    projection.includes('function lowerBoundRuntimeSearchKey'),
+    worker.includes('computeWasmRuntimeVisibleEntries(surface, browserPack.itemCount)'),
     true,
-    'prefix searches should binary-search the sorted native search keys',
+    'browser projection must be computed through the WASM native runtime',
   );
   assert.equal(
-    projection.includes('export function getRuntimeSearchPrefixCandidates'),
+    worker.includes('`${surface.query ?? ""}`.trim().toLowerCase().replace(/\\s+/g, "")'),
     true,
-    'native search paging should reuse indexed prefix candidate sets',
+    'search query must participate in the visible-entry cache key',
   );
   assert.equal(
-    projection.includes('surface.runtimeSearchPrefixCache.set(normalizedQuery, compact)'),
+    worker.includes('surface.lastProjectionSource = surface.lastProjectionQuery.trim().length > 0 ? "search" : "browser"'),
     true,
-    'prefix candidate sets should be cached after first materialization',
+    'native metrics should still mark search projections on searched pages',
   );
   assert.equal(
-    worker.includes('getRuntimeSearchPrefixCandidates(surface, normalizedQuery)'),
+    worker.includes('"wasm-visible-v2-no-ts-fallback"'),
     true,
-    'surface projection must use the native prefix cache instead of the retired browserSearch worker',
+    'surface projection must stay on the no-TypeScript-fallback WASM cache generation',
   );
 });
 
