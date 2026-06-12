@@ -141,6 +141,7 @@ function detectWebglLimits(activeCanvas: OffscreenCanvas): NativeRendererLimits 
 
 function chooseBackend(requested: "auto" | "webgpu" | "webgl2", activeCanvas: OffscreenCanvas): NativeRenderBackendKind {
   if (requested === "webgl2") return "webgl2";
+  if (requested === "auto") return "webgl2";
   void activeCanvas;
   return "gpu" in navigator ? "webgpu" : "webgl2";
 }

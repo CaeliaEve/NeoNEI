@@ -107,7 +107,7 @@ function normalizeNativeRenderBackend(value: unknown): Exclude<NativeRendererBac
   const normalized = `${value ?? ""}`.trim().toLowerCase();
   if (normalized === "webgpu" || normalized === "auto") return normalized;
   if (normalized === "webgl2") return "webgl2";
-  return "auto";
+  return "webgl2";
 }
 
 function updateNativeRenderVisibility() {
@@ -152,10 +152,20 @@ function scheduleNextAnimatedNativeFrame(delayMs: number | null | undefined) {
 
 function resolveNativeRenderBackend(): Exclude<NativeRendererBackendKind, "compat-canvas"> {
   const envBackend = normalizeNativeRenderBackend(import.meta.env.VITE_NATIVE_RENDER_BACKEND);
-  if (envBackend !== "webgl2") return envBackend;
+  if (envBackend === "webgpu") return "webgpu";
   if (typeof window === "undefined") return envBackend;
   try {
-    return normalizeNativeRenderBackend(window.localStorage.getItem("neonei:native-render-backend"));
+    const explicitBackend = normalizeNativeRenderBackend(window.localStorage.getItem("neonei:native-render-backend"));
+    if (explicitBackend === "webgpu") {
+      // Retire stale browser-side WebGPU overrides from earlier experiments.
+      // The current validated native path is WASM + WebGL2 resident atlas; WebGPU
+      // remains available only through the build-time env gate until it passes the
+      // same pixel gates. Keeping the old localStorage value can make real Chrome
+      // show black pages while headless WebGL2 stays healthy.
+      window.localStorage.removeItem("neonei:native-render-backend");
+      return envBackend;
+    }
+    return explicitBackend;
   } catch {
     return envBackend;
   }
