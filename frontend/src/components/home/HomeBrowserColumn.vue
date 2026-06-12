@@ -59,46 +59,52 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
           <!-- Top Pagination Control -->
           <div
             v-if="totalPages > 1"
-            class="pagination-top py-1 px-2"
+            class="pagination-top flex justify-center py-2 px-4"
           >
-            <div class="flex items-center justify-between gap-1">
-              <!-- 上一页按钮 - 最左侧 -->
+            <div class="pager-capsule flex items-center px-2 py-0.5 gap-3 select-none">
+              <!-- 上一页按钮 -->
               <button
                 @click="emit('pageChange', currentPage - 1)"
-                class="pager-btn rounded flex-shrink-0 flex items-center justify-center transition-colors"
-                :style="{
-                  width: itemSize + 'px',
-                  height: itemSize + 'px',
-                  fontSize: itemSize * 0.5 + 'px',
-                }"
+                class="pager-arrow-btn pager-arrow-btn--prev rounded-full"
                 title="上一页"
                 aria-label="上一页"
               >
-                ◀
+                <svg
+                  class="w-3.5 h-3.5 stroke-current"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke-width="1.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="15 18 9 12 15 6" />
+                </svg>
               </button>
 
-              <!-- 页码显示 - 中间 -->
-              <div
-                class="flex items-center gap-1 px-2 py-1 pager-indicator rounded text-xs flex-shrink-0"
-              >
-                <span class="text-slate-200">{{ currentPage }}</span>
-                <span class="text-slate-200/60">/</span>
-                <span class="text-white">{{ totalPages }}</span>
+              <!-- 页码显示 (星微之光排版) -->
+              <div class="font-mono text-[10px] tracking-wider flex items-center">
+                <span class="pager-num-current text-white font-medium">{{ String(currentPage).padStart(2, '0') }}</span>
+                <span class="pager-divider mx-2">/</span>
+                <span class="pager-num-total">{{ String(totalPages).padStart(2, '0') }}</span>
               </div>
 
-              <!-- 下一页按钮 - 最右侧 -->
+              <!-- 下一页按钮 -->
               <button
                 @click="emit('pageChange', currentPage + 1)"
-                class="pager-btn rounded flex-shrink-0 flex items-center justify-center transition-colors"
-                :style="{
-                  width: itemSize + 'px',
-                  height: itemSize + 'px',
-                  fontSize: itemSize * 0.5 + 'px',
-                }"
+                class="pager-arrow-btn pager-arrow-btn--next rounded-full"
                 title="下一页"
                 aria-label="下一页"
               >
-                ▶
+                <svg
+                  class="w-3.5 h-3.5 stroke-current"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke-width="1.2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
               </button>
             </div>
           </div>

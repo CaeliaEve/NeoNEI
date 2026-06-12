@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { defineAsyncComponent, type StyleValue } from "vue";
 import type { Recipe } from "../../services/api";
 import type { MachineCategory } from "../../composables/recipe-browser/helpers";
@@ -51,38 +51,48 @@ const emit = defineEmits<{
       />
 
       <div class="recipe-machine-banner rounded">
-        <button
-          v-if="totalRecipePages > 1"
-          @click="emit('prevRecipePage')"
-          :disabled="totalRecipePages <= 1"
-          class="recipe-machine-banner__nav recipe-machine-banner__nav--left disabled:opacity-50 disabled:cursor-not-allowed"
-          title="上一页"
-          aria-label="上一页"
-        >
-          ◀
-        </button>
+        <!-- Title on Left -->
         <span
-          class="recipe-machine-banner__title text-xs font-bold text-cyan-300"
-          style="text-shadow: 0 0 18px rgba(69, 191, 255, 0.22)"
+          class="recipe-machine-banner__title text-xs font-medium tracking-wide text-slate-200"
         >
           {{ currentCategory?.name || "未知分类" }}
         </span>
-        <button
-          v-if="totalRecipePages > 1"
-          @click="emit('nextRecipePage')"
-          :disabled="totalRecipePages <= 1"
-          class="recipe-machine-banner__nav recipe-machine-banner__nav--right disabled:opacity-50 disabled:cursor-not-allowed"
-          title="下一页"
-          aria-label="下一页"
-        >
-          ▶
-        </button>
-        <span
-          v-if="totalRecipePages > 1"
-          class="recipe-machine-banner__page text-[10px]"
-        >
-          {{ recipeModalPage + 1 }}/{{ totalRecipePages }}
-        </span>
+
+        <!-- Pager Capsule on Right -->
+        <div v-if="totalRecipePages > 1" class="recipe-machine-pager flex items-center px-1.5 py-0.5 select-none">
+          <!-- Prev button -->
+          <button
+            @click="emit('prevRecipePage')"
+            :disabled="totalRecipePages <= 1"
+            class="recipe-machine-banner__nav recipe-machine-banner__nav--prev rounded-full"
+            title="上一页"
+            aria-label="上一页"
+          >
+            <svg class="w-3 h-3 stroke-current" viewBox="0 0 24 24" fill="none" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+
+          <!-- Page text (鏄熷井涔嬪厜鎺掔増) -->
+          <span class="font-mono text-[9px] tracking-wider leading-none flex items-center mx-1">
+            <span class="recipe-num-current text-white font-medium">{{ String(recipeModalPage + 1).padStart(2, '0') }}</span>
+            <span class="recipe-divider mx-1.5">/</span>
+            <span class="recipe-num-total">{{ String(totalRecipePages).padStart(2, '0') }}</span>
+          </span>
+
+          <!-- Next button -->
+          <button
+            @click="emit('nextRecipePage')"
+            :disabled="totalRecipePages <= 1"
+            class="recipe-machine-banner__nav recipe-machine-banner__nav--next rounded-full"
+            title="下一页"
+            aria-label="下一页"
+          >
+            <svg class="w-3 h-3 stroke-current" viewBox="0 0 24 24" fill="none" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+        </div>
       </div>
 
       <div

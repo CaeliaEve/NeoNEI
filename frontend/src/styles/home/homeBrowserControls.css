@@ -1,4 +1,4 @@
-/* Hide all scrollbars */
+﻿/* Hide all scrollbars */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -10,14 +10,10 @@
 
 /* Pagination Top */
 .pagination-top {
-  background: linear-gradient(180deg, rgba(14, 17, 23, 0.83), rgba(11, 14, 19, 0.86));
-  border: 1px solid rgba(162, 178, 199, 0.11);
-  border-radius: 10px;
-  backdrop-filter: blur(12px) saturate(104%);
-  -webkit-backdrop-filter: blur(12px) saturate(104%);
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.025),
-    0 5px 14px rgba(0, 0, 0, 0.28);
+  background: transparent;
+  border: none;
+  backdrop-filter: none;
+  box-shadow: none;
 }
 
 /* Modal Item Icon */
@@ -157,26 +153,97 @@
   letter-spacing: 0.1px;
 }
 
-.pager-btn {
-  border: 1px solid rgba(145, 166, 191, 0.12);
-  border-radius: 8px;
-  background: linear-gradient(180deg, rgba(20, 24, 31, 0.84), rgba(13, 16, 22, 0.88));
-  color: rgba(226, 235, 246, 0.94);
+.pager-capsule {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(20, 26, 38, 0.45); /* Deep cosmic glass */
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 9999px; /* Smooth elegant pill */
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.022),
-    0 3px 8px rgba(0, 0, 0, 0.22);
+    0 4px 14px rgba(0, 0, 0, 0.25),
+    inset 0 1px 0 rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transition:
+    background-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.pager-btn:hover {
-  border-color: rgba(174, 194, 219, 0.2);
-  background: linear-gradient(180deg, rgba(24, 30, 37, 0.88), rgba(17, 21, 28, 0.92));
+.pager-capsule:hover {
+  background: rgba(22, 30, 46, 0.55);
+  border-color: rgba(56, 189, 248, 0.25); /* Ethereal blue starlight */
+  box-shadow:
+    0 6px 20px rgba(0, 0, 0, 0.3),
+    0 0 14px rgba(56, 189, 248, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
-.pager-indicator {
-  border: 1px solid rgba(145, 166, 191, 0.1);
-  border-radius: 8px;
-  background: linear-gradient(180deg, rgba(20, 24, 31, 0.78), rgba(13, 16, 22, 0.84));
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.02);
+.pager-arrow-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.35);
+  border: 1px solid transparent;
+  transition:
+    color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    background-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.25s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.pager-arrow-btn svg {
+  transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Micro nudges arrow on hover */
+.pager-arrow-btn--prev:hover:not(:disabled) svg {
+  transform: translateX(-1px);
+}
+
+.pager-arrow-btn--next:hover:not(:disabled) svg {
+  transform: translateX(1px);
+}
+
+.pager-arrow-btn:hover:not(:disabled) {
+  color: rgba(56, 189, 248, 0.95); /* Sky blue glow */
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.06);
+}
+
+.pager-arrow-btn:active:not(:disabled) {
+  transform: scale(0.92);
+}
+
+.pager-arrow-btn:disabled {
+  opacity: 0.12;
+  color: rgba(255, 255, 255, 0.15);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Page stardust text details */
+.pager-num-current {
+  color: #ffffff;
+  font-weight: 500;
+  text-shadow: 0 0 8px rgba(255, 255, 255, 0.20);
+}
+
+.pager-divider {
+  color: rgba(56, 189, 248, 0.3);
+  transition: color 0.3s ease;
+}
+
+.pager-capsule:hover .pager-divider {
+  color: rgba(56, 189, 248, 0.6);
+}
+
+.pager-num-total {
+  color: rgba(255, 255, 255, 0.35);
 }
 
 .mini-pager-btn {
