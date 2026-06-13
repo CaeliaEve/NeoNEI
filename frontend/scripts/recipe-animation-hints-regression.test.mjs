@@ -27,8 +27,8 @@ const animatedItemIconSource = fs.readFileSync(
   'utf8',
 );
 
-const homeCanvasGridSource = fs.readFileSync(
-  'src/components/HomeCanvasGrid.vue',
+const nativeSurfaceSource = fs.readFileSync(
+  'src/components/native-surface/NativeBrowserSurface.vue',
   'utf8',
 );
 
@@ -113,9 +113,9 @@ test('homepage and card animations advance from a shared animation clock instead
     'animation budget should expose shared prepared-frame timeline resolution',
   );
   assert.equal(
-    homeCanvasGridSource.includes('resolveTimelineFrameIndex(prepared.timeline, now)'),
+    nativeSurfaceSource.includes('scheduleNextAnimatedNativeFrame(frame.nextFrameDelayMs)'),
     true,
-    'homepage browser grid should render native/captured animations from the shared clock',
+    'homepage native browser surface should advance exported atlas animations from native frame timing',
   );
   assert.equal(
     animatedItemIconSource.includes('resolveTimelineFrameIndex(animation.timeline, timestamp)'),
@@ -126,9 +126,14 @@ test('homepage and card animations advance from a shared animation clock instead
 
 test('recipe viewer prewarms current and nearby page media to reduce blank textures after rapid paging', () => {
   assert.equal(
-    recipeViewerSource.includes('RECIPE_PAGE_PREWARM_LOOKAHEAD = 6'),
+    recipeViewerSource.includes('buildCategoryPrewarmPageSequence(pageCount, pageIndex)'),
     true,
-    'recipe viewer should prewarm several pages ahead of the visible page',
+    'recipe viewer should use the shared category prewarm page sequence for nearby recipe media',
+  );
+  assert.equal(
+    recipeViewerSource.includes('RECIPE_PAGE_PREWARM_MAX_RECIPES'),
+    true,
+    'recipe viewer should cap nearby recipe media prewarm through the shared budget constant',
   );
   assert.equal(
     recipeViewerSource.includes('queueRenderableMediaPrewarmFromUnknown(recipesForPrewarm'),

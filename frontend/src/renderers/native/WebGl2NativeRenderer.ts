@@ -266,51 +266,127 @@ export class WebGl2NativeRenderer {
     const gl = this.gl;
     if (commands.length <= 0) return { drawCalls: 0, vertexCount: 0 };
 
-    // Base slot plus a compact three-layer group marker. Trim by cursor before
-    // upload so non-group commands do not pay extra draw vertices.
-    const positions = new Float32Array(commands.length * 48);
-    const colors = new Float32Array(commands.length * 96);
+    // Allocate exactly for the base quad plus the compact plus/minus marker.
+    // This keeps the native chrome path visual-only without inflating per-frame
+    // typed-array pressure during fast paging.
+    let chromeQuadCount = 0;
+    for (const command of commands) {
+      chromeQuadCount += 1;
+      if ((command.flags & 1) !== 0) chromeQuadCount += 2;
+      else if ((command.flags & 2) !== 0 || (command.flags & 16) !== 0) chromeQuadCount += 1;
+    }
+    const positions = new Float32Array(chromeQuadCount * 12);
+    const colors = new Float32Array(chromeQuadCount * 24);
     let positionCursor = 0;
     let colorCursor = 0;
     let vertexCount = 0;
-    const pushQuad = (x1: number, y1: number, x2: number, y2: number, color: number[]) => {
+    const pushQuadCorners = (
+      x1: number, y1: number, x2: number, y2: number,
+      cTL: number[], cTR: number[], cBL: number[], cBR: number[]
+    ) => {
       positions.set([x1, y1, x2, y1, x1, y2, x1, y2, x2, y1, x2, y2], positionCursor);
       positionCursor += 12;
-      for (let i = 0; i < 6; i += 1) {
-        colors.set(color, colorCursor);
-        colorCursor += 4;
-      }
+      // Triangles: TL-TR-BL and BL-TR-BR
+      colors.set(cTL, colorCursor); colorCursor += 4; // V1 (TL)
+      colors.set(cTR, colorCursor); colorCursor += 4; // V2 (TR)
+      colors.set(cBL, colorCursor); colorCursor += 4; // V3 (BL)
+      colors.set(cBL, colorCursor); colorCursor += 4; // V4 (BL)
+      colors.set(cTR, colorCursor); colorCursor += 4; // V5 (TR)
+      colors.set(cBR, colorCursor); colorCursor += 4; // V6 (BR)
       vertexCount += 6;
+    };
+    const pushQuad = (x1: number, y1: number, x2: number, y2: number, color: number[]) => {
+      pushQuadCorners(x1, y1, x2, y2, color, color, color, color);
     };
     for (const command of commands) {
       const isGroup = (command.flags & 1) !== 0;
+      const isGroupHeader = (command.flags & 2) !== 0;
       const isHovered = (command.flags & 4) !== 0;
       const isSelected = (command.flags & 8) !== 0;
+      const isGroupMember = (command.flags & 16) !== 0;
+
       const inset = isHovered || isSelected ? 0 : Math.max(2, Math.floor(command.size * 0.08));
       const x1 = command.x + inset;
       const y1 = command.y + inset;
       const x2 = command.x + command.size - inset;
       const y2 = command.y + command.size - inset;
-      const color = isHovered
-        ? [0.96, 0.68, 0.24, 0.58]
-        : isSelected
-          ? [0.14, 0.78, 0.92, 0.62]
-        : isGroup
-          ? [0.08, 0.42, 0.52, 0.56]
-          : command.kind === 0
-            ? [0.06, 0.09, 0.13, 0.42]
-            : command.kind === 1
-              ? [0.08, 0.22, 0.28, 0.52]
-              : [0.14, 0.18, 0.32, 0.48];
-      pushQuad(x1, y1, x2, y2, color);
+
+      let cTL: number[];
+      let cTR: number[];
+      let cBL: number[];
+      let cBR: number[];
+
+      if (isGroupHeader) {
+        if (isHovered) {
+          cTL = [0.96, 0.62, 0.04, 0.08];
+          cTR = [0.96, 0.62, 0.04, 0.04];
+          cBL = [0.96, 0.62, 0.04, 0.04];
+          cBR = [0.96, 0.62, 0.04, 0.01];
+        } else {
+          cTL = [0.0, 0.0, 0.0, 0.0];
+          cTR = [0.0, 0.0, 0.0, 0.0];
+          cBL = [0.0, 0.0, 0.0, 0.0];
+          cBR = [0.0, 0.0, 0.0, 0.0];
+        }
+      } else if (isGroupMember) {
+        if (isHovered) {
+          cTL = [0.96, 0.62, 0.04, 0.08];
+          cTR = [0.96, 0.62, 0.04, 0.04];
+          cBL = [0.96, 0.62, 0.04, 0.04];
+          cBR = [0.96, 0.62, 0.04, 0.01];
+        } else {
+          cTL = [0.0, 0.0, 0.0, 0.0];
+          cTR = [0.0, 0.0, 0.0, 0.0];
+          cBL = [0.0, 0.0, 0.0, 0.0];
+          cBR = [0.0, 0.0, 0.0, 0.0];
+        }
+      } else if (isGroup) {
+        if (isHovered) {
+          cTL = [0.58, 0.64, 0.72, 0.07];
+          cTR = [0.58, 0.64, 0.72, 0.03];
+          cBL = [0.58, 0.64, 0.72, 0.03];
+          cBR = [0.58, 0.64, 0.72, 0.10];
+        } else {
+          cTL = [0.0, 0.0, 0.0, 0.22];
+          cTR = [0.0, 0.0, 0.0, 0.08];
+          cBL = [0.0, 0.0, 0.0, 0.08];
+          cBR = [0.0, 0.0, 0.0, 0.32];
+        }
+      } else if (isHovered) {
+        cTL = [0.96, 0.62, 0.04, 0.08];
+        cTR = [0.96, 0.62, 0.04, 0.04];
+        cBL = [0.96, 0.62, 0.04, 0.04];
+        cBR = [0.96, 0.62, 0.04, 0.01];
+      } else if (isSelected) {
+        cTL = [0.96, 0.62, 0.04, 0.15];
+        cTR = [0.96, 0.62, 0.04, 0.08];
+        cBL = [0.96, 0.62, 0.04, 0.08];
+        cBR = [0.96, 0.62, 0.04, 0.02];
+      } else {
+        cTL = [0.0, 0.0, 0.0, 0.0];
+        cTR = [0.0, 0.0, 0.0, 0.0];
+        cBL = [0.0, 0.0, 0.0, 0.0];
+        cBR = [0.0, 0.0, 0.0, 0.0];
+      }
+
+      pushQuadCorners(x1, y1, x2, y2, cTL, cTR, cBL, cBR);
+
+      // Draw outlines (Completely borderless, no line connectors)
+
+      // Plus/Minus badges (Stable positions: do not shift with hover inset)
       if (isGroup) {
-        const badge = Math.max(10, Math.floor(command.size * 0.32));
-        const strip = Math.max(3, Math.floor(command.size * 0.07));
-        const badgeColor = isHovered ? [1.0, 0.76, 0.28, 0.94] : [0.20, 0.92, 1.0, 0.90];
-        const shadowColor = [0.02, 0.12, 0.18, 0.78];
-        pushQuad(x2 - badge - 1, y1, x2, y1 + badge + 1, shadowColor);
-        pushQuad(x2 - badge, y1, x2, y1 + strip, badgeColor);
-        pushQuad(x2 - strip, y1, x2, y1 + badge, badgeColor);
+        const plusColor = isHovered ? [0.94, 0.96, 1.0, 0.95] : [0.78, 0.82, 0.88, 0.65]; // Premium starlight white on hover, starlight silver when inactive
+        const bx2 = command.x + command.size;
+        const by1 = command.y;
+        // Horizontal line
+        pushQuad(bx2 - 17, by1 + 12.25, bx2 - 9, by1 + 13.75, plusColor);
+        // Vertical line
+        pushQuad(bx2 - 13.75, by1 + 9, bx2 - 12.25, by1 + 17, plusColor);
+      } else if (isGroupHeader || isGroupMember) {
+        const minusColor = isHovered ? [0.94, 0.96, 1.0, 0.95] : [0.78, 0.82, 0.88, 0.65]; // Premium starlight white on hover, starlight silver when inactive
+        const bx2 = command.x + command.size;
+        const by1 = command.y;
+        pushQuad(bx2 - 17, by1 + 12.25, bx2 - 9, by1 + 13.75, minusColor);
       }
     }
 
@@ -318,12 +394,12 @@ export class WebGl2NativeRenderer {
     gl.uniform2f(this.chromeResolutionLocation, activeWidth, activeHeight);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.chromePositionBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, positions.slice(0, positionCursor), gl.STREAM_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, positions.subarray(0, positionCursor), gl.STREAM_DRAW);
     gl.enableVertexAttribArray(this.chromePositionLocation);
     gl.vertexAttribPointer(this.chromePositionLocation, 2, gl.FLOAT, false, 0, 0);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, this.chromeColorBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, colors.slice(0, colorCursor), gl.STREAM_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, colors.subarray(0, colorCursor), gl.STREAM_DRAW);
     gl.enableVertexAttribArray(this.chromeColorLocation);
     gl.vertexAttribPointer(this.chromeColorLocation, 4, gl.FLOAT, false, 0, 0);
 
@@ -399,4 +475,3 @@ export class WebGl2NativeRenderer {
     gl.deleteProgram(this.spriteProgram);
   }
 }
-

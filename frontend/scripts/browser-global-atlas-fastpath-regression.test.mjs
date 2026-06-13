@@ -13,7 +13,6 @@ const itemBrowserSource = read('src/composables/useItemBrowser.ts');
 const browserPageProjectionLoaderSource = read('src/composables/browser/browserPageProjectionLoader.ts');
 const browserHotPathSource = `${itemBrowserSource}
 ${browserPageProjectionLoaderSource}`;
-const canvasGridSource = read('src/components/HomeCanvasGrid.vue');
 test('global browser atlas resolves safe itemId aliases before falling back to raw images', () => {
   assert.match(
     globalAtlasSource,
@@ -52,16 +51,6 @@ test('homepage browser fast path does not rehydrate page packs once global atlas
     browserHotPathSource,
     /getBrowserPagePackByIds|peekBrowserPagePackByIds/,
     'homepage item browser must not rehydrate projected pages through per-item page packs',
-  );
-  assert.match(
-    canvasGridSource,
-    /if \(hasGlobalBrowserAtlas\(\) && getGlobalBrowserAtlasEntry\(item\.itemId\)\) \{\s*return null;\s*\}/,
-    'canvas grid should not preload per-item fallback images for items represented by the global atlas',
-  );
-  assert.match(
-    canvasGridSource,
-    /if \(hasGlobalBrowserAtlas\(\) && getGlobalBrowserAtlasEntry\(item\.itemId\)\) \{\s*return;\s*\}/,
-    'static image warmup should skip atlas-covered entries',
   );
 });
 

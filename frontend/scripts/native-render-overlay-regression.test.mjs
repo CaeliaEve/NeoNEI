@@ -32,11 +32,10 @@ test("WebGL2 renderer parses and consumes GPU overlay flags", () => {
   assert.match(source, /const isGroup = \(command\.flags & 1\) !== 0/);
   assert.match(source, /const isHovered = \(command\.flags & 4\) !== 0/);
   assert.match(source, /const isSelected = \(command\.flags & 8\) !== 0/);
-  assert.match(source, /isHovered\s*\? \[0\.96, 0\.68, 0\.24, 0\.58\]/);
-  assert.match(source, /isSelected\s*\?\s*\[0\.14, 0\.78, 0\.92, 0\.62\]/);
-  assert.match(source, /const badge = Math\.max\(10, Math\.floor\(command\.size \* 0\.32\)\)/);
-  assert.match(source, /pushQuad\(x2 - badge, y1, x2, y1 \+ strip, badgeColor\)/);
-  assert.match(source, /pushQuad\(x2 - strip, y1, x2, y1 \+ badge, badgeColor\)/);
+  assert.match(source, /cTL = \[0\.96, 0\.62, 0\.04, 0\.08\]/);
+  assert.match(source, /cTL = \[0\.96, 0\.62, 0\.04, 0\.15\]/);
+  assert.match(source, /const bx2 = command\.x \+ command\.size/);
+  assert.match(source, /pushQuad\(bx2 - 17, by1 \+ 12\.25, bx2 - 9, by1 \+ 13\.75, plusColor\)/);
 });
 
 test("WebGPU renderer keeps overlay styling in GPU vertex data", () => {
@@ -46,8 +45,7 @@ test("WebGPU renderer keeps overlay styling in GPU vertex data", () => {
   assert.match(source, /const isHovered = \(command\.flags & 4\) !== 0/);
   assert.match(source, /const isSelected = \(command\.flags & 8\) !== 0/);
   assert.match(source, /const inset = isHovered \|\| isSelected \? 0 : Math\.max/);
-  assert.match(source, /isGroup\s*\? \[0\.08, 0\.42, 0\.52, 0\.56\]/);
-  assert.match(source, /const badge = Math\.max\(10, Math\.floor\(command\.size \* 0\.32\)\)/);
-  assert.match(source, /pushChromeQuad\(values, cursor, x2 - badge, y1, x2, y1 \+ strip, badgeColor\)/);
-  assert.match(source, /pushChromeQuad\(values, cursor, x2 - strip, y1, x2, y1 \+ badge, badgeColor\)/);
+  assert.match(source, /cTL = \[0\.0, 0\.0, 0\.0, 0\.0\]/);
+  assert.match(source, /const bx2 = command\.x \+ command\.size/);
+  assert.match(source, /cursor = pushChromeQuad\(values, cursor, bx2 - 17, by1 \+ 12\.25, bx2 - 9, by1 \+ 13\.75, plusColor\)/);
 });

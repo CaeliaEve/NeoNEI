@@ -38,11 +38,22 @@ test("native browser surface keeps history rendering on the atlas path without D
 test("history surface projects entries from native runtime packs", () => {
   const workerSource = readSource("src/workers/nativeSurfaceEngine.worker.ts");
   const protocolSource = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");
+  const layoutSource = readSource("src/workers/nativeSurfaceLayout.ts");
 
   assert.match(protocolSource, /"runtime-history-pack"/);
   assert.match(workerSource, /buildRuntimeHistoryEntries/);
   assert.match(workerSource, /runtimeBrowserIndexByItemId/);
   assert.match(workerSource, /source: "runtime-history-pack"/);
+  assert.match(
+    workerSource,
+    /case "historyItems":[\s\S]*applyNativeSurfaceMutation\(surface, \{ type: "historyItems"[\s\S]*rebuildLayout\(surface\)/,
+    "history item updates must rebuild native layout so newly clicked items appear in the strip",
+  );
+  assert.match(
+    layoutSource,
+    /!command\.key\.startsWith\("native-history:"\)[\s\S]*\? 16/,
+    "history entries must not be flagged as expanded group members just because their item belongs to a group",
+  );
   assert.doesNotMatch(workerSource, /&& !surface\.enableHistoryViewport/);
 });
 

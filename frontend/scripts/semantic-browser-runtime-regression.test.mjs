@@ -7,17 +7,16 @@ const repoRoot = path.resolve(process.cwd(), '..');
 const readSource = (relativePath) => fs.readFileSync(path.join(repoRoot, relativePath), 'utf8');
 
 test('semantic browser groups keep user-visible variant context in tooltips', () => {
-  const grid = readSource('frontend/src/components/HomeCanvasGrid.vue');
+  const nativeSurface = readSource('frontend/src/components/native-surface/NativeBrowserSurface.vue');
   const types = readSource('frontend/src/runtime/types.ts');
-  const runtime = readSource('frontend/src/services/distDataRuntime.ts');
   const projection = readSource('frontend/src/services/browserLocalProjection.ts');
 
   assert.equal(types.includes('semanticFamily?: string | null;'), true);
-  assert.equal(runtime.includes('semanticFamily: group.semanticFamily ?? null'), true);
   assert.equal(projection.includes('semanticFamily: group.semanticFamily ?? null'), true);
-  assert.equal(grid.includes('Variant in ${rect.item.browserGroupSize} item semantic group'), true);
-  assert.equal(grid.includes('rect.entry.group.groupSource === "semanticIdentity"'), true);
-  assert.equal(grid.includes('${rect.entry.group.size} variants'), true);
+  assert.equal(projection.includes('groupSource: group.groupSource ?? null'), true);
+  assert.equal(nativeSurface.includes('Variant in ${groupSize} item semantic group'), true);
+  assert.equal(nativeSurface.includes('Variant in ${hit.item.browserGroupSize} item semantic group'), true);
+  assert.equal(nativeSurface.includes('${hit.group.size} grouped variants'), true);
 });
 
 test('semantic grouping does not replace exact legacy item identity for recipes and atlas lookup', () => {

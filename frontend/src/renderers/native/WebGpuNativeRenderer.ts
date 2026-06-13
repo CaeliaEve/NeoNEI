@@ -1,4 +1,4 @@
-﻿import type { NativeRendererBackend } from "./NativeRendererBackend";
+import type { NativeRendererBackend } from "./NativeRendererBackend";
 import type { NativeRenderCommand, NativeRendererStats, NativeTextureSpriteCommand } from "./WebGl2NativeRenderer";
 
 type AnyRecord = Record<string, any>;
@@ -135,47 +135,141 @@ function pushChromeQuad(
   return cursor;
 }
 
+function pushChromeQuadCorners(
+  values: Float32Array,
+  cursor: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  cTL: number[],
+  cTR: number[],
+  cBL: number[],
+  cBR: number[],
+): number {
+  const vertices = [x1, y1, x2, y1, x1, y2, x1, y2, x2, y1, x2, y2];
+  // 6 vertices: V1 (TL), V2 (TR), V3 (BL), V4 (BL), V5 (TR), V6 (BR)
+  const colors = [cTL, cTR, cBL, cBL, cTR, cBR];
+  for (let v = 0; v < 6; v += 1) {
+    values[cursor++] = vertices[v * 2];
+    values[cursor++] = vertices[v * 2 + 1];
+    const color = colors[v];
+    values[cursor++] = color[0];
+    values[cursor++] = color[1];
+    values[cursor++] = color[2];
+    values[cursor++] = color[3];
+  }
+  return cursor;
+}
+
 function buildChromeVertices(commands: NativeRenderCommand[]): { vertices: Float32Array; vertexCount: number } {
-  // Grouped entries need a visible GPU-native marker. Allocate room for the
-  // base slot plus a compact three-layer corner stack; non-group commands use
-  // only the base vertices and the final array is trimmed.
-  const values = new Float32Array(commands.length * 18 * 6);
+  // Allocate exactly for the base quad plus compact plus/minus marker quads.
+  // WebGPU remains opt-in, but it should not pay oversized transient-buffer
+  // costs while mirroring the validated WebGL2 native chrome.
+  let chromeQuadCount = 0;
+  for (const command of commands) {
+    chromeQuadCount += 1;
+    if ((command.flags & 1) !== 0) chromeQuadCount += 2;
+    else if ((command.flags & 2) !== 0 || (command.flags & 16) !== 0) chromeQuadCount += 1;
+  }
+  const values = new Float32Array(chromeQuadCount * 6 * 6);
   let cursor = 0;
   let vertexCount = 0;
   for (const command of commands) {
     const isGroup = (command.flags & 1) !== 0;
+    const isGroupHeader = (command.flags & 2) !== 0;
     const isHovered = (command.flags & 4) !== 0;
     const isSelected = (command.flags & 8) !== 0;
+    const isGroupMember = (command.flags & 16) !== 0;
+
     const inset = isHovered || isSelected ? 0 : Math.max(2, Math.floor(command.size * 0.08));
     const x1 = command.x + inset;
     const y1 = command.y + inset;
     const x2 = command.x + command.size - inset;
     const y2 = command.y + command.size - inset;
-    const color = isHovered
-      ? [0.96, 0.68, 0.24, 0.58]
-      : isSelected
-        ? [0.14, 0.78, 0.92, 0.62]
-      : isGroup
-        ? [0.08, 0.42, 0.52, 0.56]
-        : command.kind === 0
-          ? [0.06, 0.09, 0.13, 0.42]
-          : command.kind === 1
-            ? [0.08, 0.22, 0.28, 0.52]
-            : [0.14, 0.18, 0.32, 0.48];
-    cursor = pushChromeQuad(values, cursor, x1, y1, x2, y2, color);
+
+    let cTL: number[];
+    let cTR: number[];
+    let cBL: number[];
+    let cBR: number[];
+
+    if (isGroupHeader) {
+      if (isHovered) {
+        cTL = [0.96, 0.62, 0.04, 0.08];
+        cTR = [0.96, 0.62, 0.04, 0.04];
+        cBL = [0.96, 0.62, 0.04, 0.04];
+        cBR = [0.96, 0.62, 0.04, 0.01];
+      } else {
+        cTL = [0.0, 0.0, 0.0, 0.0];
+        cTR = [0.0, 0.0, 0.0, 0.0];
+        cBL = [0.0, 0.0, 0.0, 0.0];
+        cBR = [0.0, 0.0, 0.0, 0.0];
+      }
+    } else if (isGroupMember) {
+      if (isHovered) {
+        cTL = [0.96, 0.62, 0.04, 0.08];
+        cTR = [0.96, 0.62, 0.04, 0.04];
+        cBL = [0.96, 0.62, 0.04, 0.04];
+        cBR = [0.96, 0.62, 0.04, 0.01];
+      } else {
+        cTL = [0.0, 0.0, 0.0, 0.0];
+        cTR = [0.0, 0.0, 0.0, 0.0];
+        cBL = [0.0, 0.0, 0.0, 0.0];
+        cBR = [0.0, 0.0, 0.0, 0.0];
+      }
+    } else if (isGroup) {
+      if (isHovered) {
+        cTL = [0.58, 0.64, 0.72, 0.07];
+        cTR = [0.58, 0.64, 0.72, 0.03];
+        cBL = [0.58, 0.64, 0.72, 0.03];
+        cBR = [0.58, 0.64, 0.72, 0.10];
+      } else {
+        cTL = [0.0, 0.0, 0.0, 0.22];
+        cTR = [0.0, 0.0, 0.0, 0.08];
+        cBL = [0.0, 0.0, 0.0, 0.08];
+        cBR = [0.0, 0.0, 0.0, 0.32];
+      }
+    } else if (isHovered) {
+      cTL = [0.96, 0.62, 0.04, 0.08];
+      cTR = [0.96, 0.62, 0.04, 0.04];
+      cBL = [0.96, 0.62, 0.04, 0.04];
+      cBR = [0.96, 0.62, 0.04, 0.01];
+    } else if (isSelected) {
+      cTL = [0.96, 0.62, 0.04, 0.15];
+      cTR = [0.96, 0.62, 0.04, 0.08];
+      cBL = [0.96, 0.62, 0.04, 0.08];
+      cBR = [0.96, 0.62, 0.04, 0.02];
+    } else {
+      cTL = [0.0, 0.0, 0.0, 0.0];
+      cTR = [0.0, 0.0, 0.0, 0.0];
+      cBL = [0.0, 0.0, 0.0, 0.0];
+      cBR = [0.0, 0.0, 0.0, 0.0];
+    }
+
+    cursor = pushChromeQuadCorners(values, cursor, x1, y1, x2, y2, cTL, cTR, cBL, cBR);
     vertexCount += 6;
+
+    // Draw outlines (Completely borderless, no line connectors)
+
+    // Plus/Minus badges (Stable positions: do not shift with hover inset)
     if (isGroup) {
-      const badge = Math.max(10, Math.floor(command.size * 0.32));
-      const strip = Math.max(3, Math.floor(command.size * 0.07));
-      const badgeColor = isHovered ? [1.0, 0.76, 0.28, 0.94] : [0.20, 0.92, 1.0, 0.90];
-      const shadowColor = [0.02, 0.12, 0.18, 0.78];
-      cursor = pushChromeQuad(values, cursor, x2 - badge - 1, y1, x2, y1 + badge + 1, shadowColor);
-      cursor = pushChromeQuad(values, cursor, x2 - badge, y1, x2, y1 + strip, badgeColor);
-      cursor = pushChromeQuad(values, cursor, x2 - strip, y1, x2, y1 + badge, badgeColor);
-      vertexCount += 18;
+      const plusColor = isHovered ? [0.94, 0.96, 1.0, 0.95] : [0.78, 0.82, 0.88, 0.65]; // Premium starlight white on hover, starlight silver when inactive
+      const bx2 = command.x + command.size;
+      const by1 = command.y;
+      // Horizontal line
+      cursor = pushChromeQuad(values, cursor, bx2 - 17, by1 + 12.25, bx2 - 9, by1 + 13.75, plusColor);
+      // Vertical line
+      cursor = pushChromeQuad(values, cursor, bx2 - 13.75, by1 + 9, bx2 - 12.25, by1 + 17, plusColor);
+      vertexCount += 12;
+    } else if (isGroupHeader || isGroupMember) {
+      const minusColor = isHovered ? [0.94, 0.96, 1.0, 0.95] : [0.78, 0.82, 0.88, 0.65]; // Premium starlight white on hover, starlight silver when inactive
+      const bx2 = command.x + command.size;
+      const by1 = command.y;
+      cursor = pushChromeQuad(values, cursor, bx2 - 17, by1 + 12.25, bx2 - 9, by1 + 13.75, minusColor);
+      vertexCount += 6;
     }
   }
-  return { vertices: values.slice(0, cursor), vertexCount };
+  return { vertices: values.subarray(0, cursor), vertexCount };
 }
 
 function buildSpriteVertices(commands: NativeTextureSpriteCommand[], texture: WebGpuTextureState): Float32Array {

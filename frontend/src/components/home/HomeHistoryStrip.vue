@@ -36,7 +36,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
 <template>
   <div
     :ref="bindPanelRef"
-    class="flex-shrink-0 overflow-hidden border-t-2 border-dashed border-slate-300/50 px-4 pt-3 pb-1"
+    class="history-strip flex-shrink-0 overflow-hidden px-4 pt-3 pb-1"
     :style="{
       minHeight: `${historyItemPixelSize * historyRows + (historyRows - 1) * historyGridGap + 24}px`,
       height: `${historyItemPixelSize * historyRows + (historyRows - 1) * historyGridGap + 24}px`,

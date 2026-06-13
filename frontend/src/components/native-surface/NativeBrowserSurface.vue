@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../../services/api";
 import type { PageAtlasResult } from "../../services/pageAtlas";
@@ -801,7 +801,6 @@ if (typeof document !== "undefined") {
   line-height: 1.4;
 }
 </style>
-
 
 
 

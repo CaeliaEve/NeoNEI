@@ -283,7 +283,7 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       if (applyNativeSurfaceMutation(surface, { type: "expandedGroups", groupKeys: message.groupKeys })) rebuildLayout(surface);
       break;
     case "historyItems":
-      applyNativeSurfaceMutation(surface, { type: "historyItems", itemIds: message.itemIds });
+      if (applyNativeSurfaceMutation(surface, { type: "historyItems", itemIds: message.itemIds })) rebuildLayout(surface);
       break;
     case "compatEntries":
       if (applyNativeSurfaceMutation(surface, { type: "compatEntries", entries: message.entries })) rebuildLayout(surface);
@@ -350,6 +350,5 @@ self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   if (!message?.type || !message.surfaceId) return;
   void handleRequest(message).then((response) => self.postMessage(response));
 };
-
 
 

@@ -50,9 +50,8 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
 </script>
 
 <template>
-        <!-- Items Container (38% width, right aligned) -->
         <div
-          class="items-column ml-auto flex flex-col overflow-hidden border-l border-slate-200/40"
+          class="items-column ml-auto flex flex-col overflow-hidden"
           :style="itemColumnStyle"
           @wheel="emit('itemsWheel', $event)"
         >
@@ -162,39 +161,11 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                   @runtime-projection-update="emit('runtimeProjectionUpdate', $event)"
                 />
 
-                <div
-                  v-if="expandedGroupFilterPanels.length > 0"
-                  class="expanded-group-filter-panel absolute left-3 top-3 z-20 flex max-w-[min(520px,calc(100%-1.5rem))] flex-col gap-2"
-                >
-                  <div
-                    v-for="group in expandedGroupFilterPanels"
-                    :key="group.key"
-                    class="expanded-group-filter-row"
-                  >
-                    <div class="min-w-0 flex-1">
-                      <p class="expanded-group-filter-label">{{ group.label || group.representative.localizedName }}</p>
-                      <p class="expanded-group-filter-meta">{{ group.semanticFamily || group.groupSource || 'semantic group' }} · {{ group.visibleCount || group.size }} 项</p>
-                    </div>
-                    <input
-                      class="expanded-group-filter-input"
-                      :value="expandedGroupFacetFilters[group.key] || ''"
-                      placeholder="筛选材质 / 方块 / 实体 / 流体"
-                      @input="emit('expandedGroupFacetInput', group.key, $event)"
-                    />
-                  </div>
-                  <button
-                    v-if="hasExpandedGroupFacetFilters"
-                    class="expanded-group-filter-clear"
-                    type="button"
-                    @click="emit('clearExpandedGroupFacetFilters')"
-                  >
-                    清除筛选
-                  </button>
-                </div>
+
 
                 <div
                   v-if="showTransitionOverlay"
-                  class="pointer-events-none absolute right-3 top-3 z-20 rounded-xl border border-cyan-300/25 bg-slate-950/82 px-3 py-2 text-xs text-cyan-100 shadow-[0_10px_30px_rgba(15,23,42,0.45)] backdrop-blur-md"
+                  class="pointer-events-none absolute right-3 top-3 z-20 rounded-xl border border-amber-500/20 bg-slate-950/82 px-3 py-2 text-xs text-amber-200/90 shadow-[0_10px_30px_rgba(15,23,42,0.45)] backdrop-blur-md"
                 >
                   正在切换到第 {{ currentPage }} 页...
                 </div>

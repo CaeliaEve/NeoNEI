@@ -1,6 +1,6 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -18,10 +18,13 @@ test("native browser surface retires the DOM grid on the production native path"
   assert.match(source, /Browser grid DOM fallback is retired on this path\./);
   assert.match(source, /nativeRenderVisible\.value\s*=\s*nativeRenderInitialized\s*&&\s*nativeFirstFrameReady/);
   assert.doesNotMatch(source, /nativeRenderVisible\.value\s*=\s*nativeRenderInitialized\s*&&\s*nativeTexturesReady\s*&&\s*nativeFirstFrameReady/);
-  assert.match(source, /nativeTexturesReady\s*=\s*response\?\.type\s*===\s*"textureLoaded"\s*&&\s*response\.loaded\s*>\s*0/);
+  assert.match(source, /response\?\.type\s*===\s*"textureLoaded"\s*&&\s*response\.loaded\s*>\s*0/);
+  assert.match(source, /nativeTexturesReady\s*=\s*loaded/);
   assert.match(source, /nativeFirstFrameReady\s*=\s*response\?\.type\s*===\s*"frame"/);
   assert.match(source, /resetNativeRenderReadiness\(\)/);
-  const legacyCanvas = readSource("src/components/HomeCanvasGrid.vue");
-  assert.doesNotMatch(legacyCanvas, /\/images\/item/);
-  assert.doesNotMatch(legacyCanvas, /getPreferredStaticImageUrlFromEntity/);
+  assert.equal(
+    existsSync(resolve(frontendRoot, "src/components/HomeCanvasGrid.vue")),
+    false,
+    "retired HomeCanvasGrid component must not remain as an accidental fallback path",
+  );
 });

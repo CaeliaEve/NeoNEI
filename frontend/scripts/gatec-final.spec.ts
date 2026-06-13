@@ -302,8 +302,8 @@ test('Gate C final acceptance', async ({ page }) => {
 
   const itemsColumn = page.locator('.items-column').first();
   const legacyGrid = page.locator('.items-grid-container .grid').first();
-  const canvasHost = page.locator('.home-canvas-grid').first();
-  const canvas = page.locator('.home-canvas-grid__canvas').first();
+  const canvasHost = page.locator('.native-browser-surface').first();
+  const canvas = page.locator('.native-browser-surface__render').first();
   const homePagerInfo = page.locator('.pagination-top .pager-indicator').first();
   const homePrev = await pickLocator([
     itemsColumn.getByRole('button', { name: /上一页/i }),
@@ -316,7 +316,7 @@ test('Gate C final acceptance', async ({ page }) => {
 
   const legacyGridVisible = await isVisibleSafe(legacyGrid);
   const canvasVisible = await isVisibleSafe(canvasHost) && await isVisibleSafe(canvas);
-  const homeSurfaceType = canvasVisible ? 'canvas' : (legacyGridVisible ? 'legacy-grid' : 'none');
+  const homeSurfaceType = canvasVisible ? 'native-surface' : (legacyGridVisible ? 'legacy-grid' : 'none');
   const gridVisible = homeSurfaceType !== 'none';
   const gridItems = legacyGridVisible ? await legacyGrid.locator(':scope > *').count() : 0;
   const canvasMetrics = canvasVisible
@@ -385,7 +385,7 @@ test('Gate C final acceptance', async ({ page }) => {
   };
   summary.routes.home.pass = Boolean(
     gridVisible
-    && (homeSurfaceType !== 'canvas' || canvasReady)
+    && (homeSurfaceType !== 'native-surface' || canvasReady)
     && (homeSurfaceType !== 'legacy-grid' || gridItems > 0)
     && (wheelChangedPage || homePrevResult.exists || homeNextResult.exists),
   );

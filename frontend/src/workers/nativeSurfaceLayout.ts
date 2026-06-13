@@ -122,7 +122,14 @@ export function buildLayoutCommandBuffer(
     values[offset + 8] = (command.kind === "group-collapsed" ? 1 : 0)
       | (command.kind === "group-header" ? 2 : 0)
       | (hoverKey === command.key ? 4 : 0)
-      | (selectedItemId && command.itemId === selectedItemId ? 8 : 0);
+      | (selectedItemId && command.itemId === selectedItemId ? 8 : 0)
+      | (
+        command.groupKey
+        && command.kind === "item"
+        && !command.key.startsWith("native-history:")
+          ? 16
+          : 0
+      );
   });
   return values.buffer;
 }

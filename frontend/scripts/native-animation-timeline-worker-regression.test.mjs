@@ -25,7 +25,7 @@ test("native surface engine consumes texture and animation packs for sprite time
   assert.match(workerSource, /const texturePack = message\.packs\.find\(\(pack\) => pack\.name === "textures"\)/);
   assert.match(workerSource, /const animationPack = message\.packs\.find\(\(pack\) => pack\.name === "animations"\)/);
   assert.match(spriteTimelineSource, /export function buildSpriteFrame\(/);
-  assert.match(workerSource, /const spriteFrame = buildSpriteFrame\(surface, surface\.layoutCommands, message\.nowMs, wasmEngine\)/);
+  assert.match(workerSource, /const spriteFrame = buildSpriteFrame\(surface, surface\.layoutCommands, message\.nowMs, (?:wasmEngine|getWasmEngine\(\))\)/);
   assert.match(workerSource, /hasAnimatedSprites: spriteFrame\.hasAnimatedSprites/);
   assert.match(workerSource, /animatedSpriteCount: spriteFrame\.animatedSpriteCount/);
   assert.match(workerSource, /nextFrameDelayMs: spriteFrame\.nextFrameDelayMs/);
