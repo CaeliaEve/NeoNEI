@@ -526,6 +526,22 @@ export type GlobalBrowserAtlasSpriteDescriptor = {
   sourceHeight: number;
 };
 
+function normalizeFrameSlot(frameIndex: number, frameCount: number): number {
+  if (frameCount <= 0) return 0;
+  const integerIndex = Math.floor(Number(frameIndex) || 0);
+  return ((integerIndex % frameCount) + frameCount) % frameCount;
+}
+
+export function selectAtlasFrameByTimelineIndex<T extends { index: number }>(
+  frames: T[],
+  frameIndex: number,
+): T | null {
+  if (frames.length <= 0) return null;
+  const direct = frames.find((frame) => frame.index === frameIndex);
+  if (direct) return direct;
+  return frames[normalizeFrameSlot(frameIndex, frames.length)] ?? frames[0] ?? null;
+}
+
 function pickAnimationFrame(entry: BrowserAtlasItemEntry, nowMs: number) {
   const animatedFile = normalizeAtlasFile(entry.animatedAtlas?.atlasFile);
   const frames = normalizeFrames(entry.animatedAtlas?.frames);
@@ -547,7 +563,7 @@ function pickAnimationFrame(entry: BrowserAtlasItemEntry, nowMs: number) {
     }
     cursor -= duration;
   }
-  const selectedFrame = frames.find((frame) => frame.index === selectedFrameIndex) ?? frames[selectedFrameIndex] ?? frames[0];
+  const selectedFrame = selectAtlasFrameByTimelineIndex(frames, selectedFrameIndex);
   return selectedFrame ? { textureKey: animatedFile, frame: selectedFrame } : null;
 }
 

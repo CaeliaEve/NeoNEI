@@ -367,7 +367,8 @@ export const useRecipeBrowserSelectors = ({
     if (!currentCategory.value) return '';
     const categoryKey = currentCategory.value.categoryKey?.trim();
     if (!categoryKey) return '';
-    return `${currentTab.value}:${categoryKey}`;
+    const machineKey = currentCategory.value.machineKey?.trim() ?? '';
+    return `${currentTab.value}:${categoryKey}:${machineKey}`;
   });
 
   const currentCategoryOrderedRecipeIds = computed(() => {

@@ -1438,24 +1438,33 @@ function buildNativeRenderIndex({ backend, textureSprites, itemRenderers, shader
 }
 function normalizeAnimationTimeline(sourceTimeline, frameCount, fallbackDurationMs) {
   const timeline = Array.isArray(sourceTimeline) ? sourceTimeline : [];
+  const normalizedFrameCount = Math.max(0, Math.floor(stableNumber(frameCount, 0)));
+  const normalizeFrameIndex = (value, index) => {
+    const rawIndex = Math.floor(stableNumber(value, index));
+    if (!Number.isFinite(rawIndex) || rawIndex < 0) return index;
+    if (normalizedFrameCount > 0 && rawIndex >= normalizedFrameCount) {
+      return rawIndex % normalizedFrameCount;
+    }
+    return rawIndex;
+  };
   if (timeline.length > 0) {
     return timeline
       .map((frame, index) => {
         if (Array.isArray(frame)) {
           return {
-            frameIndex: stableNumber(frame[0] ?? index, index),
+            frameIndex: normalizeFrameIndex(frame[0] ?? index, index),
             durationMs: Math.max(16, Math.round(stableNumber(frame[1], fallbackDurationMs))),
           };
         }
         return {
-          frameIndex: stableNumber(frame?.frameIndex ?? frame?.index ?? index, index),
+          frameIndex: normalizeFrameIndex(frame?.frameIndex ?? frame?.index ?? index, index),
           durationMs: Math.max(16, Math.round(stableNumber(frame?.durationMs ?? frame?.duration ?? frame?.timeMs, fallbackDurationMs))),
         };
       })
       .filter((frame) => frame.frameIndex >= 0);
   }
 
-  const count = Math.max(0, Math.floor(stableNumber(frameCount, 0)));
+  const count = normalizedFrameCount;
   return Array.from({ length: count }, (_, index) => ({
     frameIndex: index,
     durationMs: Math.max(16, Math.round(stableNumber(fallbackDurationMs, 50))),
@@ -1547,10 +1556,11 @@ function normalizeBrowserAtlasPlacement(placement, animated = false) {
   if (animated) {
     const frameCount = stableNumber(placement.frameCount, Array.isArray(placement.frames) ? placement.frames.length : 0);
     const frameDurationMs = stableNumber(placement.frameDurationMs, 50);
+    const frames = normalizeAtlasFrames(placement.frames, width, height);
     normalized.frameCount = frameCount;
     normalized.frameDurationMs = frameDurationMs;
-    normalized.frames = normalizeAtlasFrames(placement.frames, width, height);
-    normalized.timeline = normalizeAnimationTimeline(placement.timeline, frameCount, frameDurationMs);
+    normalized.frames = frames;
+    normalized.timeline = normalizeAnimationTimeline(placement.timeline, frames.length || frameCount, frameDurationMs);
   }
   return normalized;
 }
@@ -1865,7 +1875,13 @@ function buildAnimationTable(searchItems, textures, animations, browserAtlasInde
       atlasHeight: stableNumber(animated.atlasHeight, stableNumber(texture.atlasHeight, null)),
       frameCount: stableNumber(animated.frameCount, stableNumber(animation.frameCount, stableNumber(animation.capturedFrameCount, stableNumber(animation.configuredFrameCount, stableNumber(texture.frameCount, 0))))),
       frameDurationMs: stableNumber(animated.frameDurationMs, stableNumber(animation.frameDurationMs, stableNumber(texture.frameDurationMs, 50))),
-      timeline: normalizeAnimationTimeline(animated.timeline ?? animation.timeline, animated.frameCount ?? animation.frameCount ?? animation.capturedFrameCount ?? animation.configuredFrameCount ?? texture.frameCount, animated.frameDurationMs ?? animation.frameDurationMs ?? texture.frameDurationMs ?? 50),
+      timeline: normalizeAnimationTimeline(
+        animated.timeline ?? animation.timeline,
+        (Array.isArray(animated.frames) && animated.frames.length > 0)
+          ? animated.frames.length
+          : (animated.frameCount ?? animation.frameCount ?? animation.capturedFrameCount ?? animation.configuredFrameCount ?? texture.frameCount),
+        animated.frameDurationMs ?? animation.frameDurationMs ?? texture.frameDurationMs ?? 50,
+      ),
     });
   }
 

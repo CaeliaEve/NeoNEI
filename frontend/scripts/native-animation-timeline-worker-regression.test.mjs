@@ -47,6 +47,11 @@ test("native browser surface only continues RAF for visible animated frames", ()
   assert.match(protocolSource, /animatedSpriteCount: number/);
   assert.match(protocolSource, /nextFrameDelayMs: number \| null/);
   assert.match(spriteTimelineSource, /function resolveNextTimelineDelayMs/);
+  assert.match(
+    spriteTimelineSource,
+    /function selectAtlasFrameByTimelineIndex/,
+    "native sprite timeline must normalize exported frame indices against resident atlas frames",
+  );
   assert.match(surfaceSource, /function scheduleNextAnimatedNativeFrame/);
   assert.match(surfaceSource, /!isNativeSurfaceRenderable\(\)/);
   assert.match(surfaceSource, /IntersectionObserver/);

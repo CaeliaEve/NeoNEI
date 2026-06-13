@@ -2234,17 +2234,73 @@ fn encode_recipe_file_name(value: &str) -> String {
 }
 
 fn rust_recipe_ui_payload_relative_path(recipe_id: &str) -> String {
-    let shard = stable_shard(recipe_id, 128);
-    format!("rust/recipe-ui-payload-shards/{shard}.json")
+    let shard = sha1_hex_prefix(recipe_id.as_bytes(), 2);
+    format!("recipes/ui-payload-shards/{shard}.json")
 }
 
-fn stable_shard(value: &str, bucket_count: u64) -> String {
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for byte in value.as_bytes() {
-        hash ^= *byte as u64;
-        hash = hash.wrapping_mul(0x100000001b3);
+fn sha1_hex_prefix(bytes: &[u8], hex_len: usize) -> String {
+    let mut h0: u32 = 0x6745_2301;
+    let mut h1: u32 = 0xefcd_ab89;
+    let mut h2: u32 = 0x98ba_dcfe;
+    let mut h3: u32 = 0x1032_5476;
+    let mut h4: u32 = 0xc3d2_e1f0;
+
+    let bit_len = (bytes.len() as u64).wrapping_mul(8);
+    let mut message = bytes.to_vec();
+    message.push(0x80);
+    while message.len() % 64 != 56 {
+        message.push(0);
     }
-    format!("{:03}", hash % bucket_count)
+    message.extend_from_slice(&bit_len.to_be_bytes());
+
+    for chunk in message.chunks_exact(64) {
+        let mut w = [0u32; 80];
+        for (index, word) in w.iter_mut().take(16).enumerate() {
+            let offset = index * 4;
+            *word = u32::from_be_bytes([
+                chunk[offset],
+                chunk[offset + 1],
+                chunk[offset + 2],
+                chunk[offset + 3],
+            ]);
+        }
+        for index in 16..80 {
+            w[index] = (w[index - 3] ^ w[index - 8] ^ w[index - 14] ^ w[index - 16]).rotate_left(1);
+        }
+
+        let mut a = h0;
+        let mut b = h1;
+        let mut c = h2;
+        let mut d = h3;
+        let mut e = h4;
+        for (index, word) in w.iter().enumerate() {
+            let (f, k) = match index {
+                0..=19 => ((b & c) | ((!b) & d), 0x5a82_7999),
+                20..=39 => (b ^ c ^ d, 0x6ed9_eba1),
+                40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1b_bcdc),
+                _ => (b ^ c ^ d, 0xca62_c1d6),
+            };
+            let temp = a
+                .rotate_left(5)
+                .wrapping_add(f)
+                .wrapping_add(e)
+                .wrapping_add(k)
+                .wrapping_add(*word);
+            e = d;
+            d = c;
+            c = b.rotate_left(30);
+            b = a;
+            a = temp;
+        }
+        h0 = h0.wrapping_add(a);
+        h1 = h1.wrapping_add(b);
+        h2 = h2.wrapping_add(c);
+        h3 = h3.wrapping_add(d);
+        h4 = h4.wrapping_add(e);
+    }
+
+    let hex = format!("{h0:08x}{h1:08x}{h2:08x}{h3:08x}{h4:08x}");
+    hex.chars().take(hex_len).collect()
 }
 
 fn classify_recipe_family_key(recipe: &Value, fallback: &str, handler: Option<&Value>) -> String {
@@ -3330,22 +3386,24 @@ fn normalize_animation_fact_timeline(
             .enumerate()
             .map(|(index, value)| {
                 if let Some(pair) = value.as_array() {
+                    let frame_index = pair
+                        .first()
+                        .and_then(numeric_value_u64_lossy)
+                        .unwrap_or(index as u64);
                     json!({
-                        "frameIndex": pair
-                            .first()
-                            .and_then(numeric_value_u64_lossy)
-                            .unwrap_or(index as u64),
+                        "frameIndex": normalize_timeline_frame_index(frame_index, frame_count),
                         "durationMs": pair
                             .get(1)
                             .and_then(numeric_value_u64_lossy)
                             .unwrap_or(fallback_duration_ms),
                     })
                 } else if let Some(object) = value.as_object() {
+                    let frame_index = object
+                        .get("frameIndex")
+                        .and_then(numeric_value_u64_lossy)
+                        .unwrap_or(index as u64);
                     json!({
-                        "frameIndex": object
-                            .get("frameIndex")
-                            .and_then(numeric_value_u64_lossy)
-                            .unwrap_or(index as u64),
+                        "frameIndex": normalize_timeline_frame_index(frame_index, frame_count),
                         "durationMs": object
                             .get("durationMs")
                             .and_then(numeric_value_u64_lossy)
@@ -4386,10 +4444,24 @@ fn validate_frame_bounds(item_id: &str, atlas: Option<&Value>, invalid_bounds: &
     }
 }
 
+fn normalize_timeline_frame_index(frame_index: u64, frame_count: u64) -> u64 {
+    if frame_count > 0 && frame_index >= frame_count {
+        return frame_index % frame_count;
+    }
+    frame_index
+}
+
 fn normalize_timeline(animated_atlas: Option<&Value>, fallback_duration_ms: Option<u64>) -> Value {
     let Some(animated_atlas) = animated_atlas else {
         return Value::Array(Vec::new());
     };
+    let normalized_frame_count = animated_atlas
+        .get("frames")
+        .and_then(Value::as_array)
+        .map(|frames| frames.len() as u64)
+        .filter(|count| *count > 0)
+        .or_else(|| animated_atlas.get("frameCount").and_then(numeric_value_u64))
+        .unwrap_or(0);
     if let Some(timeline) = animated_atlas.get("timeline").and_then(Value::as_array) {
         return Value::Array(
             timeline
@@ -4397,21 +4469,34 @@ fn normalize_timeline(animated_atlas: Option<&Value>, fallback_duration_ms: Opti
                 .enumerate()
                 .map(|(index, value)| {
                     if let Some(pair) = value.as_array() {
+                        let frame_index = pair
+                            .first()
+                            .and_then(numeric_value_u64)
+                            .unwrap_or(index as u64);
                         json!({
-                            "frameIndex": pair.first().and_then(numeric_value_u64).unwrap_or(index as u64),
+                            "frameIndex": normalize_timeline_frame_index(frame_index, normalized_frame_count),
                             "durationMs": pair.get(1).and_then(numeric_value_u64).or(fallback_duration_ms),
                         })
                     } else {
-                        value.clone()
+                        let frame_index = value
+                            .get("frameIndex")
+                            .or_else(|| value.get("index"))
+                            .and_then(numeric_value_u64)
+                            .unwrap_or(index as u64);
+                        let duration_ms = value
+                            .get("durationMs")
+                            .and_then(numeric_value_u64)
+                            .or(fallback_duration_ms);
+                        json!({
+                            "frameIndex": normalize_timeline_frame_index(frame_index, normalized_frame_count),
+                            "durationMs": duration_ms,
+                        })
                     }
                 })
                 .collect(),
         );
     }
-    let frame_count = animated_atlas
-        .get("frameCount")
-        .and_then(numeric_value_u64)
-        .unwrap_or(0);
+    let frame_count = normalized_frame_count;
     Value::Array(
         (0..frame_count)
             .map(|frame_index| {
@@ -5120,6 +5205,34 @@ mod tests {
     }
 
     #[test]
+    fn timeline_frame_indices_wrap_to_available_exported_frames() {
+        let animated_atlas = json!({
+            "atlasFile": "textures/atlas/animated-main.webp",
+            "frameCount": 16,
+            "frameDurationMs": 50,
+            "frames": [
+                [0, 0, 0, 16, 16],
+                [1, 16, 0, 16, 16],
+                [2, 32, 0, 16, 16],
+                [3, 48, 0, 16, 16]
+            ],
+            "timeline": [
+                { "frameIndex": 0, "durationMs": 50 },
+                { "frameIndex": 4, "durationMs": 50 },
+                { "frameIndex": 5, "durationMs": 50 },
+                { "frameIndex": 15, "durationMs": 50 }
+            ]
+        });
+
+        let normalized = normalize_timeline(Some(&animated_atlas), Some(50));
+        let values = normalized.as_array().expect("timeline");
+        assert_eq!(values[0]["frameIndex"], json!(0));
+        assert_eq!(values[1]["frameIndex"], json!(0));
+        assert_eq!(values[2]["frameIndex"], json!(1));
+        assert_eq!(values[3]["frameIndex"], json!(3));
+    }
+
+    #[test]
     fn compact_string_pack_uses_native_binary_payload() {
         let items = vec![json!({
             "itemId": "minecraft:iron_ingot",
@@ -5169,7 +5282,7 @@ mod tests {
             }],
             "uiPayloadIndex": [{
                 "recipeId": "r1",
-                "path": "rust/recipe-ui-payload-shards/108.json",
+                "path": "recipes/ui-payload-shards/55.json",
                 "payloadKey": "r1",
                 "familyKey": "furnace",
                 "recipeType": "furnace",
@@ -5194,6 +5307,22 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[40..44].try_into().unwrap()), 3);
         assert_eq!(u32::from_le_bytes(payload[44..48].try_into().unwrap()), 7);
         assert_eq!(u32::from_le_bytes(payload[48..52].try_into().unwrap()), 5);
+    }
+
+    #[test]
+    fn rust_recipe_ui_payload_paths_match_raw_export_sha1_shards() {
+        assert_eq!(
+            rust_recipe_ui_payload_relative_path("r1"),
+            "recipes/ui-payload-shards/55.json"
+        );
+        assert_eq!(
+            rust_recipe_ui_payload_relative_path("r~H_tVg74GOf6PmoNkwtcMLQ=="),
+            "recipes/ui-payload-shards/45.json"
+        );
+        assert_eq!(
+            rust_recipe_ui_payload_relative_path("r~prZx3D_BO22sF1-hHpwvbA=="),
+            "recipes/ui-payload-shards/96.json"
+        );
     }
 
     #[test]

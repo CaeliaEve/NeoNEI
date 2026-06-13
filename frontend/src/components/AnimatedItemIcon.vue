@@ -10,6 +10,7 @@ import {
   getStaticPlacement,
   normalizeFrames,
   normalizeTimeline,
+  selectAtlasFrameByTimelineIndex,
   warmGlobalBrowserAtlasForItemsDetailed,
   type BrowserAtlasItemEntry,
 } from '../services/globalBrowserAtlas';
@@ -90,7 +91,7 @@ const renderAtlasAnimationFrame = (timestamp: number = getSharedAnimationNowMs()
   const atlas = getLoadedGlobalAtlasImage(animation.atlasFile);
   if (!atlas) return false;
   const frameIndex = resolveTimelineFrameIndex(animation.timeline, timestamp);
-  const frame = animation.frames.find((candidate) => candidate.index === frameIndex) ?? animation.frames[0];
+  const frame = selectAtlasFrameByTimelineIndex(animation.frames, frameIndex);
   if (!frame) return false;
   return drawAtlasSource(atlas, frame);
 };

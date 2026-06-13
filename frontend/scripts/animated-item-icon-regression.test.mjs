@@ -68,9 +68,14 @@ test('AnimatedItemIcon replays exported atlas timing instead of probing GIF file
   );
 
   assert.equal(
+    source.includes('selectAtlasFrameByTimelineIndex(animation.frames, frameIndex)'),
+    true,
+    'AnimatedItemIcon should wrap sparse/oversized timeline frame indices onto exported atlas frames',
+  );
+
+  assert.equal(
     source.includes('prepareItemAnimationFrames('),
     false,
     'AnimatedItemIcon must not fall back to per-item GIF/sprite probing',
   );
 });
-

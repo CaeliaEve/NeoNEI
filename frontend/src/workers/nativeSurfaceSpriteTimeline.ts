@@ -69,6 +69,23 @@ function toU32(value: number): number {
   return Math.max(0, Math.floor(Number(value) || 0));
 }
 
+function normalizeFrameSlot(frameIndex: number, frameCount: number): number {
+  if (frameCount <= 0) return 0;
+  const integerIndex = Math.floor(Number(frameIndex) || 0);
+  return ((integerIndex % frameCount) + frameCount) % frameCount;
+}
+
+function selectAtlasFrameByTimelineIndex(
+  frames: NativeRuntimeAtlasFrame[],
+  frameIndex: number,
+): NativeRuntimeAtlasFrame | null {
+  if (frames.length <= 0) return null;
+  return frames.find((frame) => frame.index === frameIndex)
+    ?? frames[normalizeFrameSlot(frameIndex, frames.length)]
+    ?? frames[0]
+    ?? null;
+}
+
 function getItemIdAliases(itemId: string): string[] {
   const normalized = `${itemId ?? ""}`.trim();
   if (!normalized) return [];
@@ -131,10 +148,7 @@ function pickTimelineFrame(
     )
     : invalidFrame;
   if (Number.isFinite(nativeAnimationFrame) && nativeAnimationFrame !== invalidFrame) {
-    return frames.find((frame) => frame.index === nativeAnimationFrame)
-      ?? frames[nativeAnimationFrame]
-      ?? frames[0]
-      ?? null;
+    return selectAtlasFrameByTimelineIndex(frames, nativeAnimationFrame);
   }
 
   const nativeTextureFrame = surface.runtimeTextureWasmPtr > 0
@@ -148,7 +162,7 @@ function pickTimelineFrame(
     )
     : invalidFrame;
   if (Number.isFinite(nativeTextureFrame) && nativeTextureFrame !== invalidFrame) {
-    return frames[nativeTextureFrame] ?? frames[0] ?? null;
+    return selectAtlasFrameByTimelineIndex(frames, nativeTextureFrame);
   }
 
   const normalizedTimeline = timeline
@@ -169,10 +183,7 @@ function pickTimelineFrame(
     }
     cursor -= frame.durationMs;
   }
-  return frames.find((frame) => frame.index === selectedFrameIndex)
-    ?? frames[selectedFrameIndex]
-    ?? frames[0]
-    ?? null;
+  return selectAtlasFrameByTimelineIndex(frames, selectedFrameIndex);
 }
 
 function resolveNextTimelineDelayMs(timeline: NativeRuntimeTimelineFrame[], fallback: number | null): number | null {

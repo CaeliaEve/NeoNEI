@@ -1,4 +1,4 @@
-﻿import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
+import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
 import {
   api,
   type BrowserGridEntry,
@@ -446,6 +446,25 @@ export function useItemBrowser(
     const cacheKey = buildPageCacheKey(requestParams);
     const cached = pageCache.get(cacheKey);
     const hadVisibleEntries = browserEntries.value.length > 0 && items.value.length > 0;
+    const nativeProjectionOwnsCurrentView = hadVisibleEntries && (
+      Boolean(requestParams.search?.trim())
+      || requestParams.expandedGroups.length > 0
+      || Boolean(requestParams.modId)
+    );
+
+    if (nativeProjectionOwnsCurrentView) {
+      loading.value = false;
+      transitioning.value = false;
+      loadError.value = '';
+      currentPageAtlas.value = null;
+      markPerfEvent('browser-native-projection-owned', {
+        page: requestParams.page,
+        search: requestParams.search?.trim() || '',
+        modId: requestParams.modId ?? null,
+        expandedGroups: requestParams.expandedGroups.length,
+      });
+      return;
+    }
 
     if (cached) {
       if (hadVisibleEntries) {

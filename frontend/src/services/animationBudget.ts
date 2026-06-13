@@ -499,6 +499,34 @@ const getItemImageBaseUrl = (entity: RenderableEntityLike): string => {
   });
 };
 
+let globalBrowserAtlasImport: Promise<typeof import('./globalBrowserAtlas')> | null = null;
+
+const getItemIdFromRenderAssetRef = (renderAssetRef?: string | null): string | null => {
+  const normalized = `${renderAssetRef ?? ''}`.trim();
+  const match = normalized.match(/^nesqlpp:item\/(.+)$/);
+  return match?.[1]?.trim() || null;
+};
+
+const prewarmItemViaGlobalBrowserAtlas = async (entity: RenderableEntityLike): Promise<boolean> => {
+  const itemId = `${entity.itemId ?? ''}`.trim() || getItemIdFromRenderAssetRef(entity.renderAssetRef);
+  if (!itemId) {
+    return false;
+  }
+
+  try {
+    // Dynamic import avoids a static cycle: globalBrowserAtlas imports
+    // loadImageAsset from this module, while recipe/media prewarm needs the
+    // atlas-resident item path. This keeps item prewarm on the Native/atlas
+    // route instead of touching retired /images/item URLs.
+    globalBrowserAtlasImport ??= import('./globalBrowserAtlas');
+    const { warmGlobalBrowserAtlasForItemsDetailed } = await globalBrowserAtlasImport;
+    const coverage = await warmGlobalBrowserAtlasForItemsDetailed([itemId]);
+    return coverage.drawableCount > 0 && coverage.missingCount === 0;
+  } catch {
+    return false;
+  }
+};
+
 const resolvePreparedAnimationFrames = async (
   baseUrl: string,
   renderAssetRef?: string | null,
@@ -885,7 +913,14 @@ export const isImageAssetDecoded = (src?: string | null): boolean => {
 export const prewarmRenderableEntityMedia = async (
   entity: RenderableEntityLike,
 ): Promise<void> => {
-  if (entity.itemId || entity.imageFileName || entity.renderAssetRef || entity.preferredImageUrl) {
+  const itemId = `${entity.itemId ?? ''}`.trim() || getItemIdFromRenderAssetRef(entity.renderAssetRef);
+  if (itemId) {
+    await primeNativeRenderFactsForEntity({ ...entity, itemId });
+    await prewarmItemViaGlobalBrowserAtlas({ ...entity, itemId });
+    return;
+  }
+
+  if (entity.imageFileName || entity.renderAssetRef || entity.preferredImageUrl) {
     const itemImageUrl = getItemImageBaseUrl(entity);
     const nativeRenderHint = await primeNativeRenderFactsForEntity(entity);
     const effectiveRenderHint = entity.renderHint ?? nativeRenderHint;

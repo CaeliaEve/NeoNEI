@@ -991,17 +991,19 @@ export const buildCategorySkeletonsFromSummary = (
 ): MachineCategory[] => {
   return categories.map((group) => {
     const normalizedName = normalizeMachineCategoryName(group.name);
+    const rawCategoryKey = `${group.categoryKey ?? ''}`.trim();
+    const rawMachineKey = `${group.machineKey ?? ''}`.trim();
     const canonicalMachineKey = group.type === 'machine'
-      ? buildCanonicalMachineKey({
-          machineKey: group.machineKey ?? null,
-          categoryKey: group.categoryKey,
+      ? (rawMachineKey || rawCategoryKey || buildCanonicalMachineKey({
+          machineKey: null,
+          categoryKey: rawCategoryKey,
           name: normalizedName,
           voltageTier: group.voltageTier ?? null,
-        }) || getMachineKey(normalizedName, group.voltageTier ?? null)
+        }) || getMachineKey(normalizedName, group.voltageTier ?? null))
       : null;
-    const categoryKey = group.type === 'machine'
+    const categoryKey = rawCategoryKey || (group.type === 'machine'
       ? `machine:${canonicalMachineKey ?? `${normalizedName}::${group.voltageTier ?? ''}`}`
-      : group.categoryKey;
+      : normalizedName);
     return ({
     type: group.type,
     name: normalizedName,

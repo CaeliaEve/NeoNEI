@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   HomeBootstrapResponse,
   Item,
   Mod,
@@ -152,6 +152,9 @@ type DistDataRecipeUiPayloadShard = {
   schemaVersion?: string;
   payloads?: Record<string, RecipeUiPayload>;
 };
+
+const LEGACY_RUST_RECIPE_UI_SHARD_PREFIX = "rust/recipe-ui-payload-shards/";
+const CURRENT_RECIPE_UI_SHARD_PREFIX = "recipes/ui-payload-shards/";
 
 export type DistDataSearchPack = {
   manifest: DistDataManifest;
@@ -710,6 +713,104 @@ function collectRecipeIds(entries?: Array<{ recipeId?: string }>): string[] {
   ));
 }
 
+function normalizeRecipeUiPayloadPath(path: string): string {
+  const normalized = `${path ?? ""}`.trim().replace(/\\/g, "/").replace(/^\/+/g, "");
+  return normalized;
+}
+
+function isLegacyRustRecipeUiPayloadPath(path: string): boolean {
+  return normalizeRecipeUiPayloadPath(path).startsWith(LEGACY_RUST_RECIPE_UI_SHARD_PREFIX);
+}
+
+function leftRotate(value: number, bits: number): number {
+  return ((value << bits) | (value >>> (32 - bits))) >>> 0;
+}
+
+function sha1Hex(value: string): string {
+  const bytes = Array.from(new TextEncoder().encode(value));
+  const bitLength = bytes.length * 8;
+  bytes.push(0x80);
+  while (bytes.length % 64 !== 56) {
+    bytes.push(0);
+  }
+  for (let shift = 56; shift >= 0; shift -= 8) {
+    bytes.push(Math.floor(bitLength / (2 ** shift)) & 0xff);
+  }
+
+  let h0 = 0x67452301;
+  let h1 = 0xefcdab89;
+  let h2 = 0x98badcfe;
+  let h3 = 0x10325476;
+  let h4 = 0xc3d2e1f0;
+
+  for (let chunkStart = 0; chunkStart < bytes.length; chunkStart += 64) {
+    const words = new Array<number>(80).fill(0);
+    for (let index = 0; index < 16; index += 1) {
+      const offset = chunkStart + index * 4;
+      words[index] = (
+        ((bytes[offset] ?? 0) << 24)
+        | ((bytes[offset + 1] ?? 0) << 16)
+        | ((bytes[offset + 2] ?? 0) << 8)
+        | (bytes[offset + 3] ?? 0)
+      ) >>> 0;
+    }
+    for (let index = 16; index < 80; index += 1) {
+      words[index] = leftRotate(
+        (words[index - 3] ^ words[index - 8] ^ words[index - 14] ^ words[index - 16]) >>> 0,
+        1,
+      );
+    }
+
+    let a = h0;
+    let b = h1;
+    let c = h2;
+    let d = h3;
+    let e = h4;
+    for (let index = 0; index < 80; index += 1) {
+      let f = 0;
+      let k = 0;
+      if (index <= 19) {
+        f = (b & c) | ((~b) & d);
+        k = 0x5a827999;
+      } else if (index <= 39) {
+        f = b ^ c ^ d;
+        k = 0x6ed9eba1;
+      } else if (index <= 59) {
+        f = (b & c) | (b & d) | (c & d);
+        k = 0x8f1bbcdc;
+      } else {
+        f = b ^ c ^ d;
+        k = 0xca62c1d6;
+      }
+      const temp = (leftRotate(a, 5) + f + e + k + (words[index] ?? 0)) >>> 0;
+      e = d;
+      d = c;
+      c = leftRotate(b, 30);
+      b = a;
+      a = temp;
+    }
+
+    h0 = (h0 + a) >>> 0;
+    h1 = (h1 + b) >>> 0;
+    h2 = (h2 + c) >>> 0;
+    h3 = (h3 + d) >>> 0;
+    h4 = (h4 + e) >>> 0;
+  }
+
+  return [h0, h1, h2, h3, h4]
+    .map((word) => word.toString(16).padStart(8, "0"))
+    .join("");
+}
+
+function resolveRecipeUiPayloadPath(entry: DistDataRecipeUiPayloadIndexEntry): string {
+  const normalizedPath = normalizeRecipeUiPayloadPath(entry.path);
+  if (!isLegacyRustRecipeUiPayloadPath(normalizedPath)) {
+    return normalizedPath;
+  }
+  const hash = sha1Hex(`${entry.recipeId ?? ""}`);
+  return `${CURRENT_RECIPE_UI_SHARD_PREFIX}${hash.slice(0, 2)}.json`;
+}
+
 function normalizeRecipeCategoryKey(value: unknown): string {
   let key = `${value ?? ""}`.trim();
   if (key.startsWith("machine:")) {
@@ -880,15 +981,17 @@ function buildIndexedRecipeFromUiPayload(
     oreDictName: null,
   }));
   const outputs = outputItemIds.map((itemId) => toRecipeItemStack(itemId, runtime, 1));
+  const payloadRecipeType = `${payload.recipeType ?? payload.familyKey ?? "unknown"}`;
+  const payloadMachineType = `${payload.machineType ?? payload.familyKey ?? payloadRecipeType}`;
 
   return {
     id: recipeId,
-    recipeType: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
+    recipeType: payloadRecipeType,
     recipeTypeData: {
-      id: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
-      category: `${payload.machineType ?? payload.familyKey ?? "unknown"}`,
-      type: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
-      machineType: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
+      id: payloadRecipeType,
+      category: payloadMachineType,
+      type: payloadRecipeType,
+      machineType: payloadMachineType,
       itemInputDimension: { width: inputWidth, height: inputHeight },
       itemOutputDimension: { width: outputWidth, height: outputHeight },
       fluidInputDimension: { width: 0, height: 0 },
@@ -904,9 +1007,9 @@ function buildIndexedRecipeFromUiPayload(
       ? (payload as { fluidOutputs?: unknown[] }).fluidOutputs
       : [],
     machineInfo: {
-      machineId: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
-      category: `${payload.machineType ?? payload.familyKey ?? "unknown"}`,
-      machineType: `${payload.recipeType ?? payload.familyKey ?? "unknown"}`,
+      machineId: payloadRecipeType,
+      category: payloadMachineType,
+      machineType: payloadMachineType,
       iconInfo: `${metadata.handlerIcon ?? ""}`,
       shapeless: Boolean(metadata.shapeless),
       parsedVoltageTier: null,
@@ -1100,7 +1203,13 @@ async function getRecipeUiPayloadIndex(): Promise<Map<string, DistDataRecipeUiPa
       ? rustRecipePack.uiPayloadIndex.filter((entry) => entry?.recipeId && entry?.path)
       : [];
     if (rustEntries.length > 0) {
-      cachedRecipeUiPayloadIndex = new Map(rustEntries.map((entry) => [entry.recipeId, entry]));
+      cachedRecipeUiPayloadIndex = new Map(rustEntries.map((entry) => [
+        entry.recipeId,
+        {
+          ...entry,
+          path: normalizeRecipeUiPayloadPath(entry.path),
+        },
+      ]));
       return cachedRecipeUiPayloadIndex;
     }
     if (`${manifest?.files?.rustRecipePack ?? ""}`.trim()) {
@@ -1121,7 +1230,13 @@ async function getRecipeUiPayloadIndex(): Promise<Map<string, DistDataRecipeUiPa
     if (!entries.length) {
       return null;
     }
-    cachedRecipeUiPayloadIndex = new Map(entries.map((entry) => [entry.recipeId, entry]));
+    cachedRecipeUiPayloadIndex = new Map(entries.map((entry) => [
+      entry.recipeId,
+      {
+        ...entry,
+        path: normalizeRecipeUiPayloadPath(entry.path),
+      },
+    ]));
     return cachedRecipeUiPayloadIndex;
   })()
     .catch(() => null)
@@ -1142,7 +1257,7 @@ export async function getDistDataRecipeUiPayload(recipeId: string): Promise<Reci
   }
   const index = await getRecipeUiPayloadIndex();
   const entry = index?.get(normalizedRecipeId);
-  const payloadPath = `${entry?.path ?? ""}`.trim();
+  const payloadPath = entry ? await resolveRecipeUiPayloadPath(entry) : "";
   if (!payloadPath) {
     return null;
   }
@@ -1207,9 +1322,6 @@ export function resetDistDataRuntimeCache(): void {
   cachedRecipeUiPayloadShards.clear();
   renderRuntimeApi.reset();
 }
-
-
-
 
 
 

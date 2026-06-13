@@ -7,6 +7,11 @@ const browserSource = fs.readFileSync(
   'utf8',
 );
 
+const browserPresentationWarmSource = fs.readFileSync(
+  'src/composables/browser/browserPagePresentationWarm.ts',
+  'utf8',
+);
+
 const animationBudgetSource = fs.readFileSync(
   'src/services/animationBudget.ts',
   'utf8',
@@ -14,9 +19,9 @@ const animationBudgetSource = fs.readFileSync(
 
 test('homepage browser pages warm only the resident global atlas without reviving page media fallbacks', () => {
   assert.equal(
-    browserSource.includes("source: 'resident-global-atlas'"),
+    browserPresentationWarmSource.includes("source: 'native-runtime-render-worker'"),
     true,
-    'browser page presentation should report resident global atlas coverage',
+    'browser page presentation should report Native render-worker residency instead of DOM image warming',
   );
   assert.equal(
     browserSource.includes('queueRenderableMediaPrewarmFromUnknown(response.data'),
@@ -34,14 +39,24 @@ test('homepage browser pages warm only the resident global atlas without revivin
     'browser page application should not prewarm page-scoped animated atlas images',
   );
   assert.equal(
-    browserSource.includes('warmGlobalBrowserAtlasForItemsDetailed(itemIds)'),
+    browserPresentationWarmSource.includes('Do not decode DOM\n        // atlas images during page transitions'),
     true,
-    'browser presentation warming should use the resident global atlas coverage path',
+    'browser presentation warming should explicitly avoid DOM atlas decode work on page transitions',
   );
   assert.equal(
     browserSource.includes('animatedOnly: true'),
     false,
     'homepage should not keep animated-only per-item media prewarm fallback',
+  );
+  assert.equal(
+    animationBudgetSource.includes('prewarmItemViaGlobalBrowserAtlas'),
+    true,
+    'shared media prewarm should route item candidates through the resident global atlas',
+  );
+  assert.equal(
+    animationBudgetSource.includes('await prewarmItemViaGlobalBrowserAtlas({ ...entity, itemId });'),
+    true,
+    'recipe/page item prewarm must not fetch retired /images/item URLs when an itemId is available',
   );
 });
 

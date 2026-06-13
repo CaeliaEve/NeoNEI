@@ -3,9 +3,13 @@ import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
 const runtimeSource = readFileSync(new URL('../src/services/distDataRuntime.ts', import.meta.url), 'utf8');
+const renderRuntimeSource = readFileSync(new URL('../src/services/distDataRuntimeRender.ts', import.meta.url), 'utf8');
+const recipeBrowserSelectorsSource = readFileSync(new URL('../src/composables/recipe-browser/useRecipeBrowserSelectors.ts', import.meta.url), 'utf8');
+const recipeBrowserHelpersSource = readFileSync(new URL('../src/composables/recipe-browser/helpers.ts', import.meta.url), 'utf8');
 const recipeBinarySource = readFileSync(new URL('../src/services/distDataRuntimeBinaryRecipePack.ts', import.meta.url), 'utf8');
 const textureBinarySource = readFileSync(new URL('../src/services/distDataRuntimeBinaryTexturePack.ts', import.meta.url), 'utf8');
 const source = `${runtimeSource}
+${renderRuntimeSource}
 ${recipeBinarySource}
 ${textureBinarySource}`;
 
@@ -18,6 +22,24 @@ test('dist-data recipe runtime uses binary recipes.bin as the production index p
     'recipe runtime must discover recipes.bin from runtime-manifest entrypoints');
   assert.match(source, /COMPACT_RECIPE_MAGIC = "NEIRCP1\\0"/,
     'recipe runtime must recognize the compact recipe payload magic');
+});
+
+test('dist-data recipe runtime routes binary UI shard entries to canonical recipe shards', () => {
+  assert.match(
+    runtimeSource,
+    /function normalizeRecipeUiPayloadPath\(path: string\): string/,
+    'recipe UI payload paths from recipes.bin must be normalized before fetch',
+  );
+  assert.match(
+    runtimeSource,
+    /LEGACY_RUST_RECIPE_UI_SHARD_PREFIX = "rust\/recipe-ui-payload-shards\/"/,
+    'runtime should recognize stale rust shard prefixes emitted by older binary packs',
+  );
+  assert.match(
+    runtimeSource,
+    /CURRENT_RECIPE_UI_SHARD_PREFIX = "recipes\/ui-payload-shards\/"/,
+    'runtime should resolve stale shard prefixes to the canonical dist-data recipe shard tree',
+  );
 });
 
 test('dist-data recipe runtime does not fetch recipe-pack.json as the primary pack', () => {
@@ -42,11 +64,29 @@ test('dist-data atlas runtime uses binary textures.bin as the production atlas i
 });
 
 test('dist-data atlas runtime does not fetch texture-pack.json as the primary pack', () => {
-  const getAtlas = runtimeSource.slice(
-    runtimeSource.indexOf('export async function getDistDataBrowserAtlasIndex()'),
-    runtimeSource.indexOf('export async function getDistDataNativeRenderIndex()'),
+  const getAtlas = renderRuntimeSource.slice(
+    renderRuntimeSource.indexOf('async function getDistDataBrowserAtlasIndex()'),
+    renderRuntimeSource.indexOf('async function getDistDataNativeRenderIndex()'),
   );
   assert.ok(getAtlas.includes('fetchDistDataArrayBuffer'), 'atlas loader must fetch binary textures.bin');
   assert.ok(!getAtlas.includes('fetchJson<DistDataRustTexturePackPayload>'),
     'atlas loader must not fetch texture-pack.json JSON as the production atlas index');
+});
+
+test('recipe category windows preserve raw runtime category keys through the viewer', () => {
+  assert.match(
+    recipeBrowserHelpersSource,
+    /const rawCategoryKey = `\$\{group\.categoryKey \?\? ''\}`\.trim\(\)/,
+    'summary categories must preserve raw dist-data category keys such as display~furnace',
+  );
+  assert.match(
+    recipeBrowserHelpersSource,
+    /const rawMachineKey = `\$\{group\.machineKey \?\? ''\}`\.trim\(\)/,
+    'summary categories must preserve raw machine keys for category pack fetches',
+  );
+  assert.match(
+    recipeBrowserSelectorsSource,
+    /return `\$\{currentTab\.value\}:\$\{categoryKey\}:\$\{machineKey\}`/,
+    'viewer must read recipeIds from the same category+machine key used by category pack writes',
+  );
 });

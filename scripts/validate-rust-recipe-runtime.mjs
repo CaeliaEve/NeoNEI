@@ -85,9 +85,9 @@ function main() {
     });
   }
 
-  const nonRustEntries = entries.filter((entry) => !`${entry.path}`.replaceAll('\\', '/').startsWith('rust/recipe-ui-payload-shards/'));
+  const nonRustEntries = entries.filter((entry) => !`${entry.path}`.replaceAll('\\', '/').startsWith('recipes/ui-payload-shards/'));
   if (nonRustEntries.length > 0) {
-    fail(failures, 'RUST_UI_PAYLOAD_INDEX_LEAKS_LEGACY_SHARDS', 'rust ui payload index contains non-rust shard paths', {
+    fail(failures, 'RUST_UI_PAYLOAD_INDEX_LEAKS_NON_CANONICAL_SHARDS', 'rust ui payload index contains non-canonical recipe shard paths', {
       sample: nonRustEntries.slice(0, 5).map((entry) => entry.path),
     });
   }
