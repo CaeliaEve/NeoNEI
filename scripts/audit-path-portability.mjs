@@ -19,6 +19,7 @@ const ignoredDirNames = new Set([
   'node_modules',
   'dist',
   'build',
+  'target',
   '.tmp',
   '.tmp-runtime',
   '.runtime-logs',
@@ -50,7 +51,12 @@ function shouldSkipDir(dirPath) {
   const name = path.basename(dirPath);
   if (ignoredDirNames.has(name)) return true;
   const rel = path.relative(repoRoot, dirPath).replace(/\\/g, '/');
-  return rel === 'backend/data' || rel.startsWith('backend/data/') || rel === 'frontend/dist' || rel.startsWith('frontend/dist/');
+  return rel === 'backend/data'
+    || rel.startsWith('backend/data/')
+    || rel === 'backend/public/dist-data'
+    || rel.startsWith('backend/public/dist-data/')
+    || rel === 'frontend/dist'
+    || rel.startsWith('frontend/dist/');
 }
 
 function* walk(dir) {
