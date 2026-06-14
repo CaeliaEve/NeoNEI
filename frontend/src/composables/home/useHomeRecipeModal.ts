@@ -1,10 +1,12 @@
 import { computed, ref, watch, type Ref } from "vue";
 import type { Router } from "vue-router";
 import type { Item } from "../../services/api";
+import { normalizeThaumcraftAspectItemIdForRecipeLookup } from "../../services/thaumcraftAspects";
 import { useRecipeViewer } from "../useRecipeViewer";
 import { useHomeRecipePresentation } from "./useHomeRecipePresentation";
 
 type RecipeTab = "usedIn" | "producedBy";
+const ASPECT_SOURCE_MACHINE_NAME = "\u7269\u54c1\u4e2d\u7684\u8981\u7d20";
 
 export function useHomeRecipeModal(options: {
   items: Ref<Item[]>;
@@ -15,7 +17,10 @@ export function useHomeRecipeModal(options: {
   const showRecipeModal = ref(false);
   const recipeModalItem = ref<Item | null>(null);
   const recipeModalMode = ref<RecipeTab>("producedBy");
-  const modalRecipeItemId = computed(() => recipeModalItem.value?.itemId);
+  const modalRecipeItemId = computed(() => {
+    const itemId = recipeModalItem.value?.itemId;
+    return itemId ? normalizeThaumcraftAspectItemIdForRecipeLookup(itemId) : undefined;
+  });
 
   const {
     loading: recipeModalLoading,
@@ -122,24 +127,25 @@ export function useHomeRecipeModal(options: {
   };
 
   const handleRecipeItemClick = (itemId: string, itemOptions?: { tab?: RecipeTab }) => {
-    const item = options.items.value.find((candidate) => candidate.itemId === itemId);
+    const normalizedItemId = normalizeThaumcraftAspectItemIdForRecipeLookup(itemId);
+    const item = options.items.value.find((candidate) => candidate.itemId === normalizedItemId);
     if (item) {
       if (itemOptions?.tab) {
         setCurrentTab(itemOptions.tab);
         recipeModalMode.value = itemOptions.tab;
-        pendingRecipeMachineName.value = itemOptions.tab === "producedBy" ? "物品中的要素" : null;
+        pendingRecipeMachineName.value = itemOptions.tab === "producedBy" ? ASPECT_SOURCE_MACHINE_NAME : null;
       }
       openRecipeModal(item);
       return;
     }
     void options.router.push({
       name: "recipe",
-      params: { itemId },
+      params: { itemId: normalizedItemId },
       query: itemOptions?.tab
         ? {
             tab: itemOptions.tab,
             mode: itemOptions.tab === "usedIn" ? "u" : "r",
-            machineName: itemOptions.tab === "producedBy" ? "物品中的要素" : undefined,
+            machineName: itemOptions.tab === "producedBy" ? ASPECT_SOURCE_MACHINE_NAME : undefined,
             page: "0",
           }
         : undefined,

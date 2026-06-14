@@ -2,10 +2,13 @@ import type { Recipe } from '../services/api';
 import { parseAdditionalData } from './useRecipeSlots';
 import {
   ASPECT_COLORS,
-  ASPECT_HASH_TO_NAME,
+  extractThaumcraftAspectHash,
+  getCanonicalThaumcraftAspectItemId,
   getThaumcraftAspectTexturePath,
   normalizeAspectName,
   parseAspectNameFromLocalized,
+  resolveCanonicalThaumcraftAspectHash,
+  resolveThaumcraftAspectNameFromHash,
 } from '../services/thaumcraftAspects';
 
 export interface RitualItemStack {
@@ -22,6 +25,18 @@ export interface RitualAspectCost {
   color: string;
   hash?: string;
   itemId?: string;
+}
+
+interface MetadataAspectItem {
+  itemId?: unknown;
+  displayName?: unknown;
+  localizedName?: unknown;
+  name?: unknown;
+  amount?: unknown;
+  count?: unknown;
+  stackSize?: unknown;
+  imageFileName?: unknown;
+  renderAssetRef?: unknown;
 }
 
 export function normalizeCount(value: unknown): number {
@@ -102,74 +117,148 @@ export function collectRecipeItemStacks(node: unknown, output: RitualItemStack[]
 }
 
 export function isThaumcraftAspectItem(itemId: string, localizedName?: string): boolean {
-  const parts = itemId.split('~');
-  const modId = `${parts[1] ?? ''}`.toLowerCase();
-  const internalName = `${parts[2] ?? ''}`.toLowerCase();
-  if (modId === 'thaumcraftneiplugin' && internalName === 'aspect') return true;
+  if (extractThaumcraftAspectHash(itemId)) return true;
 
   const parsedAspectName = parseAspectNameFromLocalized(localizedName);
   return Boolean(parsedAspectName && parsedAspectName !== 'Unknown');
 }
 
-function extractAspectHash(itemId: string): string | undefined {
-  const parts = itemId.split('~');
-  const hash = parts[parts.length - 1];
-  return hash && hash.length > 8 ? hash : undefined;
+function getAspectMergeKey(aspect: Pick<RitualAspectCost, 'name' | 'hash' | 'itemId'>): string {
+  return aspect.itemId || (aspect.hash ? `hash:${aspect.hash}` : `name:${aspect.name}`);
 }
 
-function resolveAspectName(input: RitualItemStack, hash: string | undefined): string {
-  const localized = parseAspectNameFromLocalized(input.localizedName);
+function resolveAspectName(input: {
+  itemId?: string | null;
+  localizedName?: string | null;
+  displayName?: string | null;
+  name?: string | null;
+  imageFileName?: string | null;
+}, hash?: string | null): string {
+  const localized = parseAspectNameFromLocalized(input.localizedName ?? input.displayName ?? input.name ?? undefined);
   if (localized && localized !== 'Unknown') return localized;
-  if (hash && ASPECT_HASH_TO_NAME[hash]) return normalizeAspectName(ASPECT_HASH_TO_NAME[hash]);
+  const hashName = resolveThaumcraftAspectNameFromHash(hash) ?? resolveThaumcraftAspectNameFromHash(input.itemId) ?? resolveThaumcraftAspectNameFromHash(input.imageFileName);
+  if (hashName) return normalizeAspectName(hashName);
+  const rawName = input.name ?? input.displayName ?? input.localizedName;
+  if (rawName) return normalizeAspectName(rawName);
   return 'Unknown';
+}
+
+function buildAspectCost(input: {
+  itemId?: string | null;
+  localizedName?: string | null;
+  displayName?: string | null;
+  name?: string | null;
+  imageFileName?: string | null;
+  amount: number;
+}): RitualAspectCost | null {
+  const rawHash = extractThaumcraftAspectHash(input.itemId) ?? extractThaumcraftAspectHash(input.imageFileName);
+  const hash = resolveCanonicalThaumcraftAspectHash(rawHash);
+  const name = resolveAspectName(input, hash);
+  if (name === 'Unknown' && !hash) return null;
+  const itemId = hash
+    ? getCanonicalThaumcraftAspectItemId(hash) ?? undefined
+    : input.itemId?.trim() || undefined;
+  return {
+    name,
+    amount: Math.floor(input.amount),
+    color: ASPECT_COLORS[name] || '#d7e0ff',
+    hash: hash ?? undefined,
+    itemId,
+  };
+}
+
+function mergeAspectCost(merged: Map<string, RitualAspectCost>, next: RitualAspectCost): void {
+  const key = getAspectMergeKey(next);
+  const existing = merged.get(key);
+  if (existing) {
+    existing.amount += next.amount;
+    if (!existing.hash && next.hash) existing.hash = next.hash;
+    if (!existing.itemId && next.itemId) existing.itemId = next.itemId;
+    if (existing.name === 'Unknown' && next.name !== 'Unknown') existing.name = next.name;
+    existing.color = ASPECT_COLORS[existing.name] || next.color || existing.color;
+    return;
+  }
+  merged.set(key, next);
+}
+
+function collectStructuredAspectItems(metadata: Record<string, unknown>): RitualAspectCost[] {
+  const aspectItems = Array.isArray(metadata.aspectItems) ? metadata.aspectItems : [];
+  return aspectItems
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const item = entry as MetadataAspectItem;
+      const amount = Number(item.amount ?? item.count ?? item.stackSize);
+      if (!Number.isFinite(amount) || amount <= 0) return null;
+      return buildAspectCost({
+        itemId: typeof item.itemId === 'string' ? item.itemId : null,
+        localizedName:
+          (typeof item.localizedName === 'string' && item.localizedName)
+          || (typeof item.displayName === 'string' && item.displayName)
+          || null,
+        displayName: typeof item.displayName === 'string' ? item.displayName : null,
+        name: typeof item.name === 'string' ? item.name : null,
+        imageFileName: typeof item.imageFileName === 'string' ? item.imageFileName : null,
+        amount,
+      });
+    })
+    .filter((entry): entry is RitualAspectCost => Boolean(entry));
+}
+
+function collectAspectMapCosts(metadata: unknown): RitualAspectCost[] {
+  if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) return [];
+  const costs: RitualAspectCost[] = [];
+  for (const [rawName, rawAmount] of Object.entries(metadata as Record<string, unknown>)) {
+      const amount = Number(rawAmount);
+      if (!Number.isFinite(amount) || amount <= 0) continue;
+      const cost = buildAspectCost({
+        itemId: extractThaumcraftAspectHash(rawName) ? rawName : null,
+        name: rawName,
+        amount,
+      });
+      if (cost) costs.push(cost);
+    }
+  return costs;
 }
 
 export function buildThaumcraftAspectCosts(recipe: Recipe, sourceNode: unknown): RitualAspectCost[] {
   const merged = new Map<string, RitualAspectCost>();
-  const metadata = mergeRecipeMetadata(recipe).aspects;
+  const recipeMetadata = mergeRecipeMetadata(recipe);
+  const structuredCosts = collectStructuredAspectItems(recipeMetadata);
+  for (const cost of structuredCosts) {
+    mergeAspectCost(merged, cost);
+  }
 
-  if (metadata && typeof metadata === 'object') {
-    for (const [rawName, rawAmount] of Object.entries(metadata as Record<string, unknown>)) {
-      const amount = Number(rawAmount);
-      if (!Number.isFinite(amount) || amount <= 0) continue;
-      const name = normalizeAspectName(rawName);
-      merged.set(name, {
-        name,
-        amount: Math.floor(amount),
-        color: ASPECT_COLORS[name] || '#d7e0ff',
-      });
+  if (structuredCosts.length === 0) {
+    for (const cost of collectAspectMapCosts(recipeMetadata.aspects)) {
+      mergeAspectCost(merged, cost);
     }
   }
 
   const rawInputs: RitualItemStack[] = [];
   collectRecipeItemStacks(sourceNode, rawInputs);
 
-  for (const input of rawInputs) {
-    if (!isThaumcraftAspectItem(input.itemId, input.localizedName)) continue;
-    const hash = extractAspectHash(input.itemId);
-    const name = resolveAspectName(input, hash);
-    const existing = merged.get(name);
-    if (existing) {
-      existing.amount += input.count;
-      if (!existing.hash && hash) existing.hash = hash;
-      if (!existing.itemId) existing.itemId = input.itemId;
-      continue;
+  if (structuredCosts.length === 0) {
+    for (const input of rawInputs) {
+      if (!isThaumcraftAspectItem(input.itemId, input.localizedName)) continue;
+      const cost = buildAspectCost({
+        itemId: input.itemId,
+        localizedName: input.localizedName ?? null,
+        imageFileName: input.imageFileName ?? null,
+        amount: input.count,
+      });
+      if (cost) mergeAspectCost(merged, cost);
     }
-    merged.set(name, {
-      name,
-      amount: input.count,
-      color: ASPECT_COLORS[name] || '#d7e0ff',
-      hash,
-      itemId: input.itemId,
-    });
   }
 
   return Array.from(merged.values()).sort((a, b) => b.amount - a.amount);
 }
 
 export function getThaumcraftAspectItemId(aspect: RitualAspectCost): string | null {
-  if (aspect.itemId) return aspect.itemId;
-  if (aspect.hash) return `i~thaumcraftneiplugin~Aspect~0~${aspect.hash}`;
+  if (aspect.hash) return getCanonicalThaumcraftAspectItemId(aspect.hash);
+  if (aspect.itemId) {
+    const hash = extractThaumcraftAspectHash(aspect.itemId);
+    return hash ? getCanonicalThaumcraftAspectItemId(hash) : aspect.itemId;
+  }
   return null;
 }
 

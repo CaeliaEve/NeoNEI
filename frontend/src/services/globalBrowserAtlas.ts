@@ -41,6 +41,13 @@ function getItemIdAliases(itemId: string): string[] {
   const aliases: string[] = [];
   const parts = normalized.split("~");
   if (parts.length >= 4 && parts[0] === "i") {
+    const modId = `${parts[1] ?? ""}`.toLowerCase();
+    const internalName = `${parts[2] ?? ""}`.toLowerCase();
+    if (modId === "thaumcraftneiplugin" && internalName === "aspect" && parts[4]) {
+      aliases.push([parts[0], parts[1], parts[2], "0", parts[4]].join("~"));
+      aliases.push([parts[0], parts[1], parts[2], "1", parts[4]].join("~"));
+      return Array.from(new Set(aliases.filter((alias) => alias && alias !== normalized)));
+    }
     const base = parts.slice(0, 4).join("~");
     aliases.push(base);
     aliases.push([parts[0], parts[1], parts[2], "0"].join("~"));

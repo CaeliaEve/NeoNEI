@@ -71,6 +71,90 @@
   'ziktSttgODmt120cOv1Kcg==': 'Lucrum',
 };
 
+function normalizeAspectHashKey(hash: string): string {
+  return hash
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^.*?aspect~\d+~/i, '')
+    .replace(/\.(?:png|gif)$/i, '')
+    .replace(/:variant:.+$/i, '')
+    .replace(/~+$/g, '')
+    .replace(/=+$/g, '')
+    .toLowerCase();
+}
+
+const ASPECT_HASH_NAME_LOOKUP = new Map<string, string>();
+const ASPECT_HASH_CANONICAL_LOOKUP = new Map<string, string>();
+const ASPECT_PRIMARY_HASH_BY_NAME = new Map<string, string>();
+
+for (const [hash, name] of Object.entries(ASPECT_HASH_TO_NAME)) {
+  const normalizedName = normalizeAspectHashKey(name);
+  if (normalizedName && !ASPECT_PRIMARY_HASH_BY_NAME.has(normalizedName)) {
+    ASPECT_PRIMARY_HASH_BY_NAME.set(normalizedName, hash);
+  }
+}
+
+for (const [hash, name] of Object.entries(ASPECT_HASH_TO_NAME)) {
+  const primaryHash = ASPECT_PRIMARY_HASH_BY_NAME.get(normalizeAspectHashKey(name)) ?? hash;
+  ASPECT_HASH_NAME_LOOKUP.set(hash, name);
+  ASPECT_HASH_NAME_LOOKUP.set(normalizeAspectHashKey(hash), name);
+  ASPECT_HASH_CANONICAL_LOOKUP.set(hash, primaryHash);
+  ASPECT_HASH_CANONICAL_LOOKUP.set(normalizeAspectHashKey(hash), primaryHash);
+}
+
+function cleanAspectHash(hash: string): string {
+  return hash
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/\.(?:png|gif)$/i, '')
+    .replace(/:variant:.+$/i, '')
+    .replace(/~+$/g, '');
+}
+
+export function resolveThaumcraftAspectNameFromHash(hash?: string | null): string | null {
+  if (!hash) return null;
+  const cleaned = cleanAspectHash(hash);
+  return ASPECT_HASH_NAME_LOOKUP.get(cleaned)
+    ?? ASPECT_HASH_NAME_LOOKUP.get(normalizeAspectHashKey(cleaned))
+    ?? null;
+}
+
+export function resolveCanonicalThaumcraftAspectHash(hash?: string | null): string | null {
+  if (!hash) return null;
+  const cleaned = cleanAspectHash(hash);
+  return ASPECT_HASH_CANONICAL_LOOKUP.get(cleaned)
+    ?? ASPECT_HASH_CANONICAL_LOOKUP.get(normalizeAspectHashKey(cleaned))
+    ?? cleaned
+    ?? null;
+}
+
+export function getCanonicalThaumcraftAspectItemId(hash?: string | null): string | null {
+  const canonicalHash = resolveCanonicalThaumcraftAspectHash(hash);
+  return canonicalHash ? `i~thaumcraftneiplugin~Aspect~0~${canonicalHash}` : null;
+}
+
+export function normalizeThaumcraftAspectItemIdForRecipeLookup(itemId: string): string {
+  const hash = extractThaumcraftAspectHash(itemId);
+  return (hash && getCanonicalThaumcraftAspectItemId(hash)) || itemId;
+}
+
+export function extractThaumcraftAspectHash(value?: string | null): string | null {
+  const normalized = `${value ?? ''}`.trim().replace(/\\/g, '/');
+  if (!normalized) return null;
+
+  const itemIdMatch = normalized.match(/(?:^|[:/])i~thaumcraftneiplugin~aspect~\d+~([^~:/\\]+={0,2})/i);
+  if (itemIdMatch?.[1]) {
+    return cleanAspectHash(itemIdMatch[1]);
+  }
+
+  const imagePathMatch = normalized.match(/(?:^|\/)thaumcraftneiplugin\/aspect~\d+~([^/]+?)\.(?:png|gif)$/i);
+  if (imagePathMatch?.[1]) {
+    return cleanAspectHash(imagePathMatch[1]);
+  }
+
+  return null;
+}
+
 export const ASPECT_COLORS: Record<string, string> = {
   Aer: '#ffff7e',
   Terra: '#56c000',
@@ -339,9 +423,12 @@ const NATIVE_ASPECT_TEXTURE_NAMES = new Set([
 ]);
 
 export function normalizeAspectName(name: string): string {
+  const hashName = resolveThaumcraftAspectNameFromHash(extractThaumcraftAspectHash(name));
+  if (hashName) return hashName;
+
   const trimmed = name
     .trim()
-    .replace(/^(?:要素|源质|aspect|aspects|essentia)\s*[:：]\s*/i, '')
+    .replace(/^(?:要素|源质|瑕佺礌|婧愯川|aspect|aspects|essentia)\s*[:：]\s*/i, '')
     .trim();
   if (!trimmed) return 'Unknown';
 
@@ -358,14 +445,16 @@ export function normalizeAspectName(name: string): string {
 }
 
 export function getThaumcraftAspectTexturePath(
-  aspect: { name?: string | null; hash?: string | null } | string | null | undefined,
+  aspect: { name?: string | null; hash?: string | null; itemId?: string | null; imageFileName?: string | null } | string | null | undefined,
 ): string | null {
   const candidates =
     typeof aspect === 'string'
       ? [aspect]
       : [
           aspect?.name || null,
-          aspect?.hash ? ASPECT_HASH_TO_NAME[aspect.hash] || null : null,
+          aspect?.itemId || null,
+          aspect?.imageFileName || null,
+          aspect?.hash ? resolveThaumcraftAspectNameFromHash(aspect.hash) || null : null,
         ];
 
   for (const rawName of candidates) {
@@ -385,7 +474,7 @@ export function getThaumcraftAspectTexturePath(
 export function parseAspectNameFromLocalized(localizedName?: string): string | null {
   if (!localizedName) return null;
 
-  const zh = localizedName.match(/(?:要素|源质)\s*[:：]\s*(.+)$/);
+  const zh = localizedName.match(/(?:要素|源质|瑕佺礌|婧愯川)\s*[:：]\s*(.+)$/);
   if (zh) {
     return normalizeAspectName(zh[1]);
   }

@@ -433,7 +433,14 @@ watch(
             }"
             @click="handleAspectClick(entry.aspect)"
           >
+            <AnimatedItemIcon
+              v-if="getThaumcraftAspectItemId(entry.aspect)"
+              :item-id="getThaumcraftAspectItemId(entry.aspect) || ''"
+              :size="34"
+              class="aspect-icon"
+            />
             <img
+              v-else
               :src="getThaumcraftAspectImagePath(entry.aspect)"
               class="aspect-icon"
               :alt="entry.aspect.name"

@@ -1,13 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { getImageUrl, type Recipe } from '../services/api';
+import type { Recipe } from '../services/api';
 import type { UITypeConfig } from '../services/uiTypeMapping';
 import {
   collectRecipeItemStacks,
-  getThaumcraftAspectImagePath,
   isThaumcraftAspectItem,
   type RitualItemStack,
 } from '../composables/ritualFamilyMetadata';
+import {
+  extractThaumcraftAspectHash,
+  getCanonicalThaumcraftAspectItemId,
+  parseAspectNameFromLocalized,
+} from '../services/thaumcraftAspects';
 import { buildOutputSlots, parseAdditionalData, resolveRuntimeItemSummary, type ResolvedSlot } from '../composables/useRecipeSlots';
 import { useSound } from '../services/sound.service';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
@@ -30,7 +34,11 @@ const inputItems = ref<RitualItemStack[]>([]);
 const outputSlot = ref<ResolvedSlot | null>(null);
 
 const machineType = computed(() => props.recipe.machineInfo?.machineType || props.recipe.recipeType || '');
-const isCombination = computed(() => machineType.value.includes('要素组合'));
+const normalizedMachineType = computed(() => machineType.value.toLowerCase());
+const isCombination = computed(() =>
+  normalizedMachineType.value.includes('\u8981\u7d20\u7ec4\u5408')
+  || normalizedMachineType.value.includes('aspect combination')
+);
 const inputAspects = computed(() =>
   inputItems.value.filter((item) => isThaumcraftAspectItem(item.itemId, item.localizedName)),
 );
@@ -50,7 +58,10 @@ const sourceColumns = computed(() => {
   return Math.max(4, Math.min(8, count));
 });
 const aspectTitle = computed(() =>
-  outputSlot.value?.localizedName?.replace(/^要素:\s*/i, '') || outputSlot.value?.itemId || 'Unknown',
+  parseAspectNameFromLocalized(outputSlot.value?.localizedName)
+  || outputSlot.value?.localizedName?.replace(/^(?:\u8981\u7d20|\u6e90\u8d28)\s*[:\uff1a]\s*/i, '')
+  || outputSlot.value?.itemId
+  || 'Unknown',
 );
 
 function getRawInputSource(recipe: Recipe): unknown {
@@ -73,20 +84,9 @@ async function initialize() {
   outputSlot.value = output ?? null;
 }
 
-function extractAspectHashFromItemId(itemId: string): string | undefined {
-  const parts = itemId.split('~');
-  const hash = parts[parts.length - 1];
-  return hash && hash.length > 8 ? hash : undefined;
-}
-
-function getAspectStaticImage(item: Pick<RitualItemStack, 'itemId' | 'count' | 'localizedName'>): string {
-  return getThaumcraftAspectImagePath({
-    name: item.localizedName || 'Unknown',
-    amount: item.count,
-    color: '#d7e0ff',
-    hash: extractAspectHashFromItemId(item.itemId),
-    itemId: item.itemId,
-  });
+function getAspectNativeItemId(item: Pick<RitualItemStack, 'itemId'>): string {
+  const hash = extractThaumcraftAspectHash(item.itemId);
+  return (hash && getCanonicalThaumcraftAspectItemId(hash)) || item.itemId;
 }
 
 function isResolvedAspectSlot(slot: ResolvedSlot | null): boolean {
@@ -95,7 +95,8 @@ function isResolvedAspectSlot(slot: ResolvedSlot | null): boolean {
 
 function handleItemClick(itemId: string) {
   playClick();
-  emit('item-click', itemId);
+  const hash = extractThaumcraftAspectHash(itemId);
+  emit('item-click', (hash && getCanonicalThaumcraftAspectItemId(hash)) || itemId);
 }
 
 onMounted(() => {
@@ -116,7 +117,7 @@ watch(
     <div class="aspect-grid" aria-hidden="true" />
 
     <section class="aspect-summary">
-      <div class="summary-pill">{{ isCombination ? '要素组合' : '物品中的要素' }}</div>
+      <div class="summary-pill">{{ isCombination ? '\u8981\u7d20\u7ec4\u5408' : '\u7269\u54c1\u4e2d\u7684\u8981\u7d20' }}</div>
       <div class="summary-title">{{ aspectTitle }}</div>
       <div class="summary-subtitle">
         {{ isCombination ? 'Aspect synthesis matrix' : `${sourceItems.length} item sources` }}
@@ -128,16 +129,16 @@ watch(
       <div class="core-ring core-ring-inner" />
       <RecipeItemTooltip
         v-if="outputSlot"
-        :item-id="outputSlot.itemId"
+        :item-id="isResolvedAspectSlot(outputSlot) ? getAspectNativeItemId(outputSlot) : outputSlot.itemId"
         :count="outputSlot.count"
         @click="handleItemClick(outputSlot.itemId)"
       >
         <div class="aspect-focus">
-          <img
+          <AnimatedItemIcon
             v-if="isResolvedAspectSlot(outputSlot)"
-            :src="getAspectStaticImage(outputSlot)"
+            :item-id="getAspectNativeItemId(outputSlot)"
+            :size="54"
             class="aspect-focus-icon aspect-native-icon"
-            alt=""
           />
           <AnimatedItemIcon
             v-else
@@ -158,15 +159,15 @@ watch(
         :key="aspect.itemId"
       >
         <RecipeItemTooltip
-          :item-id="aspect.itemId"
+          :item-id="getAspectNativeItemId(aspect)"
           :count="aspect.count"
           @click="handleItemClick(aspect.itemId)"
         >
           <div class="aspect-input-slot">
-            <img
-              :src="getAspectStaticImage(aspect)"
+            <AnimatedItemIcon
+              :item-id="getAspectNativeItemId(aspect)"
+              :size="42"
               class="aspect-icon aspect-native-icon"
-              alt=""
             />
             <span v-if="aspect.count > 1" class="count">{{ aspect.count }}</span>
           </div>

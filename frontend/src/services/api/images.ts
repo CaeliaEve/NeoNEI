@@ -1,14 +1,13 @@
 import { BACKEND_BASE_URL } from './core/http';
 import {
-  ASPECT_HASH_TO_NAME,
+  extractThaumcraftAspectHash,
   getThaumcraftAspectTexturePath,
   parseAspectNameFromLocalized,
+  resolveThaumcraftAspectNameFromHash,
 } from '../thaumcraftAspects';
 import { resolveDistDataAssetPath } from '../distDataRuntime';
 
 const FALLBACK_ITEM_IMAGE_PATH = 'minecraft/barrier~0.png';
-const THAUMCRAFT_ASPECT_MOD_ID = 'thaumcraftneiplugin';
-const THAUMCRAFT_ASPECT_INTERNAL_NAME = 'Aspect';
 const THAUMCRAFT_ASPECT_PLACEHOLDER_URL = '/placeholder.png';
 
 function buildItemImageUrl(path: string): string {
@@ -47,24 +46,11 @@ function stripVariantSuffixFromImageFileName(imageFileName: string): string {
 }
 
 function getThaumcraftAspectHashFromItemId(itemId: string | null | undefined): string | null {
-  const parts = `${itemId ?? ''}`.split('~');
-  if (parts.length < 5) return null;
-  const [, modId, internalName, , hash] = parts;
-  if (
-    modId?.toLowerCase() !== THAUMCRAFT_ASPECT_MOD_ID ||
-    internalName?.toLowerCase() !== THAUMCRAFT_ASPECT_INTERNAL_NAME.toLowerCase() ||
-    !hash
-  ) {
-    return null;
-  }
-  return hash;
+  return extractThaumcraftAspectHash(itemId);
 }
 
 function getThaumcraftAspectHashFromImageFileName(imageFileName: string | null | undefined): string | null {
-  const normalized = imageFileName ? normalizeImageFileName(imageFileName) : '';
-  if (!normalized) return null;
-  const match = normalized.match(/(?:^|\/)thaumcraftneiplugin\/aspect~\d+~([^/]+)\.(?:png|gif)$/i);
-  return match?.[1] ?? null;
+  return extractThaumcraftAspectHash(imageFileName ? normalizeImageFileName(imageFileName) : null);
 }
 
 function getThaumcraftStaticAspectUrl(
@@ -74,7 +60,7 @@ function getThaumcraftStaticAspectUrl(
   const parsedName = parseAspectNameFromLocalized(localizedName ?? undefined);
   return getThaumcraftAspectTexturePath({
     hash,
-    name: parsedName || (hash ? ASPECT_HASH_TO_NAME[hash] : null),
+    name: parsedName || resolveThaumcraftAspectNameFromHash(hash),
   });
 }
 

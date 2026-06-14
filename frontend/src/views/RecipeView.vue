@@ -13,6 +13,7 @@ import RecipeStatePanel from '../components/RecipeStatePanel.vue';
 import AnimatedItemIcon from '../components/AnimatedItemIcon.vue';
 import { useSound } from '../services/sound.service';
 import { resolveRecipePresentationProfile } from '../services/uiTypeMapping';
+import { normalizeThaumcraftAspectItemIdForRecipeLookup } from '../services/thaumcraftAspects';
 import { useRecipeViewer } from '../composables/useRecipeViewer';
 import { useRecipeRouteSync } from '../composables/useRecipeRouteSync';
 import { api, type EcosystemOverview, type MultiblockBlueprint } from '../services/api';
@@ -32,7 +33,9 @@ const recipeDisplayRouterRef = ref<RecipeDisplayHandle | null>(null);
 const itemId = computed(() => {
   const routeItemId = route.params.itemId;
   const rawItemId = props.itemId ?? (Array.isArray(routeItemId) ? routeItemId[0] : routeItemId);
-  return typeof rawItemId === 'string' && rawItemId.length > 0 ? rawItemId : undefined;
+  return typeof rawItemId === 'string' && rawItemId.length > 0
+    ? normalizeThaumcraftAspectItemIdForRecipeLookup(rawItemId)
+    : undefined;
 });
 const isRecipeIndexMode = computed(() => !itemId.value);
 
@@ -296,9 +299,10 @@ const goBack = () => {
 
 const handleItemClick = (clickedItemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => {
   playClick();
+  const normalizedItemId = normalizeThaumcraftAspectItemIdForRecipeLookup(clickedItemId);
   router.push({
     name: 'recipe',
-    params: { itemId: clickedItemId },
+    params: { itemId: normalizedItemId },
     query: options?.tab
       ? {
           tab: options.tab,

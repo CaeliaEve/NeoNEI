@@ -319,7 +319,18 @@ watch(
               @click="handleAspectClick(aspect)"
             >
               <div class="slot-item aspect-slot magnetic-hover" :class="{'is-clickable': Boolean(getThaumcraftAspectItemId(aspect))}">
-                <img :src="getThaumcraftAspectImagePath(aspect)" class="aspect-icon" @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }" />
+                <AnimatedItemIcon
+                  v-if="getThaumcraftAspectItemId(aspect)"
+                  :item-id="getThaumcraftAspectItemId(aspect) || ''"
+                  :size="28"
+                  class="aspect-icon"
+                />
+                <img
+                  v-else
+                  :src="getThaumcraftAspectImagePath(aspect)"
+                  class="aspect-icon"
+                  @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png'; }"
+                />
                 <span class="minimal-badge aspect-badge">{{ aspect.amount }}</span>
               </div>
             </RecipeItemTooltip>

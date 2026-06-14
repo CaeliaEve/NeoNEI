@@ -491,7 +491,14 @@ const aspectEntries = computed(() => {
             @click="handleAspectClick(entry.aspect)"
           >
             <div class="aspect-main">
+              <AnimatedItemIcon
+                v-if="getThaumcraftAspectItemId(entry.aspect)"
+                :item-id="getThaumcraftAspectItemId(entry.aspect) || ''"
+                :size="30"
+                class="aspect-icon"
+              />
               <img
+                v-else
                 :src="getThaumcraftAspectImagePath(entry.aspect)"
                 class="aspect-icon"
                 :alt="entry.aspect.name"
