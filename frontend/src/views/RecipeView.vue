@@ -375,6 +375,17 @@ const openItemFromRecipeIndex = (clickedItemId: string) => {
   });
 };
 
+const openRecipeWorkspaceDestination = (
+  destination: 'home' | 'gt-diagrams' | 'forestry-bee-tree' | 'runtime-health',
+) => {
+  playClick();
+  if (destination === 'home') {
+    router.push('/');
+    return;
+  }
+  router.push({ name: destination });
+};
+
 
 const handleOverlayStateChange = (state: RecipeOverlayUiState) => {
   overlayUiState.value = state;
@@ -618,6 +629,7 @@ onBeforeUnmount(() => {
         v-if="isRecipeIndexMode"
         @select="openItemFromRecipeIndex"
         @clear="clearRecipeSearch"
+        @navigate="openRecipeWorkspaceDestination"
       />
 
       <template v-else>
