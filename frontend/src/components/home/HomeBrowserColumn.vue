@@ -23,6 +23,9 @@ defineProps<{
   expandedGroupFilterPanels: BrowserVariantGroup[];
   expandedGroupFacetFilters: Record<string, string>;
   hasExpandedGroupFacetFilters: boolean;
+  hasBrowserGroups: boolean;
+  allBrowserGroupsExpanded: boolean;
+  groupToggleBusy: boolean;
   showTransitionOverlay: boolean;
   selectedItemId?: string | null;
 }>();
@@ -40,6 +43,8 @@ const emit = defineEmits<{
   clearExpandedGroupFacetFilters: [];
   gridViewportResize: [element: HTMLElement | null];
   runtimeProjectionUpdate: [metrics: NativeSurfaceFrameProjectionMetrics];
+  toggleAllGroups: [];
+  openRecipe: [];
 }>();
 
 const bindGridViewportRef = (element: HTMLElement | null) => {
@@ -55,12 +60,23 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
           :style="itemColumnStyle"
           @wheel="emit('itemsWheel', $event)"
         >
-          <!-- Top Pagination Control -->
+          <!-- Top Controls & Pagination -->
           <div
-            v-if="totalPages > 1"
-            class="pagination-top flex justify-center py-2 px-4"
+            class="pagination-top flex justify-center items-center py-2 px-4 gap-3"
           >
-            <div class="pager-capsule flex items-center px-2 py-0.5 gap-3 select-none">
+            <!-- Recipe 跳转按钮 -->
+            <button
+              @click="emit('openRecipe')"
+              class="recipe-entry-btn-browser"
+              title="进入 Recipe 界面"
+            >
+              Recipe
+            </button>
+
+            <div
+              v-if="totalPages > 1"
+              class="pager-capsule flex items-center px-2 py-0.5 gap-3 select-none"
+            >
               <!-- 上一页按钮 -->
               <button
                 @click="emit('pageChange', currentPage - 1)"
@@ -106,6 +122,19 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                 </svg>
               </button>
             </div>
+
+            <!-- "组" 按钮 -->
+            <button
+              @click="emit('toggleAllGroups')"
+              class="group-toggle-btn"
+              :class="{ 'group-toggle-btn--active': allBrowserGroupsExpanded }"
+              :disabled="!hasBrowserGroups || groupToggleBusy"
+              :aria-busy="groupToggleBusy ? 'true' : undefined"
+              :aria-label="!hasBrowserGroups ? '当前筛选范围没有分组' : (allBrowserGroupsExpanded ? '收起当前范围全部分组' : '展开当前范围全部分组')"
+              :title="!hasBrowserGroups ? '当前筛选范围没有分组' : (allBrowserGroupsExpanded ? '收起当前范围全部分组' : '展开当前范围全部分组')"
+            >
+              {{ groupToggleBusy ? '...' : '组' }}
+            </button>
           </div>
 
           <!-- Items Grid Container -->

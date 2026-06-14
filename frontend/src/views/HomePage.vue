@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 
 
 import {
@@ -292,13 +292,21 @@ const {
 
 const {
   expandedGroupFilterPanels,
+  hasBrowserGroups,
+  allBrowserGroupsExpanded,
+  groupToggleBusy,
   hasExpandedGroupFacetFilters,
   handleExpandedGroupFacetInput,
   handleBrowserGroupClick,
   handleBrowserGroupContextMenu,
+  toggleAllGroups,
 } = useHomeBrowserGroups({
   browserGridEntries,
+  expandedGroupKeys,
   expandedGroupFacetFilters,
+  searchQuery,
+  selectedMod,
+  includeHiddenItems: showHiddenDebugItems,
   setExpandedGroups,
   setExpandedGroupFacetFilter,
   openUsageRecipes,
@@ -327,17 +335,6 @@ setGridViewportSync(syncMeasuredPageSize);
 
 <template>
   <div class="homepage-shell h-screen overflow-hidden flex">
-    <div class="fixed top-4 left-4 z-50">
-      <button
-        @click="openRecipeEntry"
-        class="recipe-entry-btn px-4 py-2 rounded-xl text-sm font-semibold"
-        title="进入 Recipe 界面"
-        aria-label="进入 Recipe 界面"
-      >
-        Recipe
-      </button>
-    </div>
-
     <!-- Mod Filter Panel (Fixed Top, offset to have left 18% and right 12%) -->
     <div
       class="mod-filter-anchor fixed top-0 z-40 pt-0 pb-1 px-2"
@@ -421,6 +418,9 @@ setGridViewportSync(syncMeasuredPageSize);
           :expanded-group-filter-panels="expandedGroupFilterPanels"
           :expanded-group-facet-filters="expandedGroupFacetFilters"
           :has-expanded-group-facet-filters="hasExpandedGroupFacetFilters"
+          :has-browser-groups="hasBrowserGroups"
+          :all-browser-groups-expanded="allBrowserGroupsExpanded"
+          :group-toggle-busy="groupToggleBusy"
           :show-transition-overlay="showTransitionOverlay"
           :selected-item-id="recipeModalItem?.itemId ?? null"
           @items-wheel="handleItemsWheel"
@@ -435,6 +435,8 @@ setGridViewportSync(syncMeasuredPageSize);
           @expanded-group-facet-input="handleExpandedGroupFacetInput"
           @clear-expanded-group-facet-filters="clearExpandedGroupFacetFilters"
           @grid-viewport-resize="setItemGridViewportRef"
+          @toggle-all-groups="toggleAllGroups"
+          @open-recipe="openRecipeEntry"
         >
           <template #history>
             <HomeHistoryStrip

@@ -342,3 +342,104 @@
   color: rgba(245, 158, 11, 0.9);
 }
 
+.group-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 12px;
+  background: rgba(255, 255, 255, 0.02);
+  border: none;
+  border-radius: 9999px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: rgba(255, 255, 255, 0.55);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.15s ease;
+}
+
+.group-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.95);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.3),
+    0 0 14px rgba(245, 158, 11, 0.08);
+}
+
+.group-toggle-btn:active {
+  transform: scale(0.95);
+}
+
+.group-toggle-btn--active {
+  background: rgba(245, 158, 11, 0.12);
+  color: rgba(245, 158, 11, 0.95);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+  box-shadow:
+    0 8px 32px rgba(0, 0, 0, 0.25),
+    inset 0 0 8px rgba(245, 158, 11, 0.1);
+}
+
+.group-toggle-btn--active:hover {
+  background: rgba(245, 158, 11, 0.18);
+  border-color: rgba(245, 158, 11, 0.3);
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.3),
+    0 0 14px rgba(245, 158, 11, 0.15);
+}
+
+.group-toggle-btn:disabled {
+  opacity: 0.28;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.recipe-entry-btn-browser {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 28px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 9999px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  color: rgba(255, 255, 255, 0.75);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  user-select: none;
+  transition:
+    background-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    border-color 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.15s ease;
+}
+
+.recipe-entry-btn-browser:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+  box-shadow:
+    0 12px 36px rgba(0, 0, 0, 0.3),
+    0 0 14px rgba(34, 211, 238, 0.08);
+}
+
+.recipe-entry-btn-browser:active {
+  transform: scale(0.95);
+}
+
