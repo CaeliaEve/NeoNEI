@@ -6,6 +6,7 @@ import RecipeBrowseControls from '../components/RecipeBrowseControls.vue';
 import MultiblockBlueprintDialog from '../components/MultiblockBlueprintDialog.vue';
 import VirtualRecipeGrid from '../components/VirtualRecipeGrid.vue';
 import RecipeSearch from '../components/RecipeSearch.vue';
+import RecipeSearchPanel from '../components/RecipeSearchPanel.vue';
 import RecipeChromeButton from '../components/RecipeChromeButton.vue';
 import RecipeBrowserStage from '../components/RecipeBrowserStage.vue';
 import RecipeStatePanel from '../components/RecipeStatePanel.vue';
@@ -28,7 +29,12 @@ const router = useRouter();
 const { playClick } = useSound();
 const recipeDisplayRouterRef = ref<RecipeDisplayHandle | null>(null);
 
-const itemId = computed(() => props.itemId ?? (route.params.itemId as string | undefined));
+const itemId = computed(() => {
+  const routeItemId = route.params.itemId;
+  const rawItemId = props.itemId ?? (Array.isArray(routeItemId) ? routeItemId[0] : routeItemId);
+  return typeof rawItemId === 'string' && rawItemId.length > 0 ? rawItemId : undefined;
+});
+const isRecipeIndexMode = computed(() => !itemId.value);
 
 const showMultiblockDialog = ref(false);
 const multiblockLoading = ref(false);
@@ -67,7 +73,7 @@ const copy = {
   sourceMod: '\u6765\u6e90\u6a21\u7ec4',
   producedByCount: '\u6765\u6e90',
   usedInCount: '\u7528\u9014',
-  openOracle: 'Open Oracle',
+  openOracle: '\u914d\u65b9\u7d22\u5f15',
   openGTDiagrams: 'GT Diagrams',
   openBeeTree: 'Bee Tree',
   overlayFailed: 'Overlay \u53d1\u9001\u5931\u8d25',
@@ -243,6 +249,8 @@ const currentPresentationProfile = computed(() => {
 const isFurnaceCanvas = computed(() => currentPresentationProfile.value?.component === 'FurnaceUI');
 
 const shellToneClass = computed(() => {
+  if (isRecipeIndexMode.value) return 'tone-neutral';
+
   const family = currentPresentationProfile.value?.uiConfig.presentation?.family;
   if (family === 'thaumcraft') return 'tone-arcane';
   if (family === 'blood_magic') return 'tone-blood';
@@ -278,6 +286,7 @@ const isWideRecipeCanvas = computed(() => {
 });
 
 const shellLayoutClass = computed(() => {
+  if (isRecipeIndexMode.value) return '';
   return isWideRecipeCanvas.value ? 'recipe-workbench-canvas' : '';
 });
 
@@ -302,9 +311,8 @@ const handleItemClick = (clickedItemId: string, options?: { tab?: 'usedIn' | 'pr
 };
 
 const openOracle = () => {
-  if (!itemId.value) return;
   playClick();
-  router.push({ name: 'recipe-oracle', params: { itemId: itemId.value } });
+  router.push({ name: 'recipe' });
 };
 
 const openGTDiagrams = () => {
@@ -348,6 +356,16 @@ const getVariantLabelSuffix = (group: (typeof displayVariantGroups.value)[number
 };
 
 const handleFastSearchSelect = (clickedItemId: string) => {
+  if (!clickedItemId) return;
+  playClick();
+  clearRecipeSearch();
+  router.push({
+    name: 'recipe',
+    params: { itemId: clickedItemId },
+  });
+};
+
+const openItemFromRecipeIndex = (clickedItemId: string) => {
   if (!clickedItemId) return;
   playClick();
   clearRecipeSearch();
@@ -591,106 +609,113 @@ onBeforeUnmount(() => {
         <button class="back-button" @click="goBack">
           {{ copy.backHome }}
         </button>
-        <button class="blueprint-button" @click="openMultiblockBlueprint">
+        <button v-if="!isRecipeIndexMode" class="blueprint-button" @click="openMultiblockBlueprint">
           {{ copy.blueprintButton }}
         </button>
       </div>
 
-      <RecipeStatePanel
-        v-if="loading"
-        class="loading-state"
-        variant="loading"
-        :title="copy.loadingRecipeDataTitle"
-        :subtitle="copy.loadingRecipeDataSubtitle"
+      <RecipeSearchPanel
+        v-if="isRecipeIndexMode"
+        @select="openItemFromRecipeIndex"
+        @clear="clearRecipeSearch"
       />
 
-      <RecipeStatePanel
-        v-else-if="loadError"
-        class="no-recipes"
-        variant="error"
-        :title="loadError || copy.recipeLoadErrorTitle"
-        :subtitle="copy.recipeLoadErrorSubtitle"
-      >
-        <template #actions>
-          <RecipeChromeButton @click="retryLoadRecipes">{{ copy.retry }}</RecipeChromeButton>
-          <RecipeChromeButton @click="goBack">{{ copy.backHome }}</RecipeChromeButton>
-        </template>
-      </RecipeStatePanel>
+      <template v-else>
+        <RecipeStatePanel
+          v-if="loading"
+          class="loading-state"
+          variant="loading"
+          :title="copy.loadingRecipeDataTitle"
+          :subtitle="copy.loadingRecipeDataSubtitle"
+        />
 
-      <RecipeStatePanel
-        v-else-if="totalRecipeCount === 0"
-        class="no-recipes"
-        :title="copy.noRecipesTitle"
-        :subtitle="copy.noRecipesSubtitle"
-      >
-        <template #actions>
-          <RecipeChromeButton @click="retryLoadRecipes">{{ copy.reload }}</RecipeChromeButton>
-          <RecipeChromeButton @click="goBack">{{ copy.backHome }}</RecipeChromeButton>
-        </template>
-      </RecipeStatePanel>
-
-      <div v-else class="recipe-content">
-        <RecipeBrowseControls
-          :tabs="browseTabs"
-          :active-tab="currentTab"
-          :machine-categories="machineCategories"
-          :selected-machine-index="selectedMachineIndex"
-          :progress-text="(currentPage + 1) + ' / ' + totalPages"
-          :prev-label="copy.previousPage"
-          :next-label="copy.nextPage"
-          :prev-title="copy.previousPage"
-          :next-title="copy.nextPage"
-          prev-test-id="recipe-prev-page"
-          next-test-id="recipe-next-page"
-          :prev-disabled="totalPages <= 1"
-          :next-disabled="totalPages <= 1"
-          pager-class="pagination"
-          @select-tab="(tab) => setCurrentTab(tab as 'usedIn' | 'producedBy')"
-          @select-machine="selectMachine"
-          @prev="prevPage"
-          @next="nextPage"
+        <RecipeStatePanel
+          v-else-if="loadError"
+          class="no-recipes"
+          variant="error"
+          :title="loadError || copy.recipeLoadErrorTitle"
+          :subtitle="copy.recipeLoadErrorSubtitle"
         >
-          <template #summary>
-            <div class="recipe-header">
-              <div class="item-info">
-                <AnimatedItemIcon
-                  v-if="item"
-                  :item-id="item.itemId"
-                  :render-asset-ref="item.renderAssetRef || null"
-                  :image-file-name="item.imageFileName || null"
-                  :size="44"
-                  class="item-icon"
-                />
-                <div class="item-heading-copy">
-                  <h1 v-if="item">{{ item.localizedName }}</h1>
-                  <div v-if="item" class="ecosystem-rail">
-                    <div class="ecosystem-rail-head">
-                      <span class="ecosystem-title">{{ copy.ecosystemTitle }}</span>
-                      <span class="ecosystem-flow">{{ copy.ecosystemFlow }}</span>
-                    </div>
-                    <div class="ecosystem-stat-list">
-                      <span v-for="stat in ecosystemStats" :key="stat.label" class="ecosystem-stat-chip">
-                        <strong>{{ stat.label }}</strong>
-                        <span>{{ stat.value }}</span>
-                      </span>
-                      <span
-                        v-for="lane in ecosystemLaneStatus"
-                        :key="lane.id"
-                        :class="['ecosystem-lane-chip', lane.ok ? 'is-ready' : 'is-missing']"
-                      >
-                        {{ lane.label }}
-                      </span>
-                      <div class="ecosystem-cta-row">
-                        <button class="ecosystem-cta" @click="openOracle">{{ copy.openOracle }}</button>
-                        <button class="ecosystem-cta ecosystem-cta-secondary" @click="openGTDiagrams">{{ copy.openGTDiagrams }}</button>
-                        <button class="ecosystem-cta ecosystem-cta-secondary" @click="openBeeTree">{{ copy.openBeeTree }}</button>
+          <template #actions>
+            <RecipeChromeButton @click="retryLoadRecipes">{{ copy.retry }}</RecipeChromeButton>
+            <RecipeChromeButton @click="goBack">{{ copy.backHome }}</RecipeChromeButton>
+          </template>
+        </RecipeStatePanel>
+
+        <RecipeStatePanel
+          v-else-if="totalRecipeCount === 0"
+          class="no-recipes"
+          :title="copy.noRecipesTitle"
+          :subtitle="copy.noRecipesSubtitle"
+        >
+          <template #actions>
+            <RecipeChromeButton @click="retryLoadRecipes">{{ copy.reload }}</RecipeChromeButton>
+            <RecipeChromeButton @click="goBack">{{ copy.backHome }}</RecipeChromeButton>
+          </template>
+        </RecipeStatePanel>
+
+        <div v-else class="recipe-content">
+          <RecipeBrowseControls
+            :tabs="browseTabs"
+            :active-tab="currentTab"
+            :machine-categories="machineCategories"
+            :selected-machine-index="selectedMachineIndex"
+            :progress-text="(currentPage + 1) + ' / ' + totalPages"
+            :prev-label="copy.previousPage"
+            :next-label="copy.nextPage"
+            :prev-title="copy.previousPage"
+            :next-title="copy.nextPage"
+            prev-test-id="recipe-prev-page"
+            next-test-id="recipe-next-page"
+            :prev-disabled="totalPages <= 1"
+            :next-disabled="totalPages <= 1"
+            pager-class="pagination"
+            @select-tab="(tab) => setCurrentTab(tab as 'usedIn' | 'producedBy')"
+            @select-machine="selectMachine"
+            @prev="prevPage"
+            @next="nextPage"
+          >
+            <template #summary>
+              <div class="recipe-header">
+                <div class="item-info">
+                  <AnimatedItemIcon
+                    v-if="item"
+                    :item-id="item.itemId"
+                    :render-asset-ref="item.renderAssetRef || null"
+                    :image-file-name="item.imageFileName || null"
+                    :size="44"
+                    class="item-icon"
+                  />
+                  <div class="item-heading-copy">
+                    <h1 v-if="item">{{ item.localizedName }}</h1>
+                    <div v-if="item" class="ecosystem-rail">
+                      <div class="ecosystem-rail-head">
+                        <span class="ecosystem-title">{{ copy.ecosystemTitle }}</span>
+                        <span class="ecosystem-flow">{{ copy.ecosystemFlow }}</span>
+                      </div>
+                      <div class="ecosystem-stat-list">
+                        <span v-for="stat in ecosystemStats" :key="stat.label" class="ecosystem-stat-chip">
+                          <strong>{{ stat.label }}</strong>
+                          <span>{{ stat.value }}</span>
+                        </span>
+                        <span
+                          v-for="lane in ecosystemLaneStatus"
+                          :key="lane.id"
+                          :class="['ecosystem-lane-chip', lane.ok ? 'is-ready' : 'is-missing']"
+                        >
+                          {{ lane.label }}
+                        </span>
+                        <div class="ecosystem-cta-row">
+                          <button class="ecosystem-cta" @click="openOracle">{{ copy.openOracle }}</button>
+                          <button class="ecosystem-cta ecosystem-cta-secondary" @click="openGTDiagrams">{{ copy.openGTDiagrams }}</button>
+                          <button class="ecosystem-cta ecosystem-cta-secondary" @click="openBeeTree">{{ copy.openBeeTree }}</button>
+                        </div>
                       </div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </template>
+            </template>
 
           <template #search>
             <div class="recipe-search-row">
@@ -852,6 +877,7 @@ onBeforeUnmount(() => {
           />
         </div>
       </div>
+      </template>
     </div>
 
     <MultiblockBlueprintDialog

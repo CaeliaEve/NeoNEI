@@ -218,8 +218,8 @@ const resetItemFilters = () => {
   void loadItems();
 };
 
-const openRecipeOracleEntry = () => {
-  void router.push({ name: 'recipe-oracle' });
+const openRecipeEntry = () => {
+  void router.push({ name: 'recipe' });
 };
 
 const {
@@ -329,7 +329,7 @@ setGridViewportSync(syncMeasuredPageSize);
   <div class="homepage-shell h-screen overflow-hidden flex">
     <div class="fixed top-4 left-4 z-50">
       <button
-        @click="openRecipeOracleEntry"
+        @click="openRecipeEntry"
         class="recipe-entry-btn px-4 py-2 rounded-xl text-sm font-semibold"
         title="进入 Recipe 界面"
         aria-label="进入 Recipe 界面"

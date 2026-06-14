@@ -502,25 +502,25 @@ test('Gate C final acceptance', async ({ page }) => {
   await oracleResult.click();
   await page.waitForTimeout(1200);
 
-  const stage = page.locator('.display-stage .oracle-stage-slot').first();
+  const stage = page.locator('.recipe-display .recipe-stage-shell, .recipe-display').first();
   const stageVisible = (await stage.count()) > 0 && (await stage.isVisible());
 
-  const oracleInfo = page.locator('.stage-footer .recipe-progress').first();
+  const oracleInfo = page.locator('[data-testid="recipe-pagination"] .page-info').first();
   const oraclePrev = await pickLocator([
-    page.getByTestId('oracle-prev-recipe'),
-    page.getByRole('button', { name: /(?:\u4E0A\u4E00\u914D\u65B9|prev)/i }),
+    page.getByTestId('recipe-prev-page'),
+    page.getByRole('button', { name: /(?:\u4E0A\u4E00\u9875|prev)/i }),
   ]);
   const oracleNext = await pickLocator([
-    page.getByTestId('oracle-next-recipe'),
-    page.getByRole('button', { name: /(?:\u4E0B\u4E00\u914D\u65B9|next)/i }),
+    page.getByTestId('recipe-next-page'),
+    page.getByRole('button', { name: /(?:\u4E0B\u4E00\u9875|next)/i }),
   ]);
 
   const oraclePrevResult = await clickWithResponse(page, oraclePrev, oracleInfo, 'oracle-prev', { attempts: 1, settleMs: 120 });
   const oracleNextResult = await clickWithResponse(page, oracleNext, oracleInfo, 'oracle-next', { attempts: 1, settleMs: 120 });
 
   const oracleShotMode = await captureEvidenceShot(page, ORACLE_SHOT, [
-    page.locator('.oracle-panel').first(),
-    page.locator('.display-stage').first(),
+    page.locator('.recipe-index-panel').first(),
+    page.locator('.recipe-display').first(),
     page.locator('main').first(),
   ]);
 

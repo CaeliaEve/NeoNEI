@@ -8,16 +8,23 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/HomePage.vue')
   },
   {
-    path: '/recipe/:itemId',
+    path: '/recipe/:itemId?',
     name: 'recipe',
     component: () => import('../views/RecipeView.vue'),
     props: true
   },
   {
     path: '/oracle/:itemId?',
-    name: 'recipe-oracle',
-    component: () => import('../views/RecipeOracleView.vue'),
-    props: true
+    redirect: (to) => {
+      const rawItemId = to.params.itemId;
+      const itemId = Array.isArray(rawItemId) ? rawItemId[0] : rawItemId;
+      return {
+        name: 'recipe',
+        params: itemId ? { itemId } : {},
+        query: to.query,
+        hash: to.hash,
+      };
+    }
   },
   {
     path: '/gt-diagrams',
