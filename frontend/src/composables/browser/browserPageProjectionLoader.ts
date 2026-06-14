@@ -149,7 +149,7 @@ export function createBrowserPageProjectionLoader(options: {
 
     const groupItemsByKey = new Map<string, Item[]>();
     for (const groupKey of params.expandedGroups) {
-      const response = api.peekBrowserGroupItems(groupKey, params.modId);
+      const response = api.peekBrowserGroupItems(groupKey, params.modId, params.includeHidden);
       if (!response?.items?.length) {
         return null;
       }

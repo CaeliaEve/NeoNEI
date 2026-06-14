@@ -438,7 +438,7 @@ export function useItemBrowser(
     return task;
   };
 
-  const loadItems = async () => {
+  const loadItems = async (options?: { forceDataProjection?: boolean }) => {
     const requestId = ++loadItemsRequestId;
     pagePresentationWarm.invalidate();
     loadError.value = '';
@@ -452,7 +452,7 @@ export function useItemBrowser(
       || Boolean(requestParams.modId)
     );
 
-    if (nativeProjectionOwnsCurrentView) {
+    if (!options?.forceDataProjection && nativeProjectionOwnsCurrentView) {
       loading.value = false;
       transitioning.value = false;
       loadError.value = '';
@@ -809,7 +809,7 @@ export function useItemBrowser(
       );
       return true;
     }
-    void loadItems();
+    void loadItems({ forceDataProjection: true });
     return false;
   };
 
@@ -991,4 +991,3 @@ export function useItemBrowser(
     clearCachedPages: clearBrowserPageState,
   };
 }
-
