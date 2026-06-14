@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Recipe } from '../services/api';
 import AnimatedItemIcon from './AnimatedItemIcon.vue';
 
@@ -27,7 +27,67 @@ interface Emits {
 const props = defineProps<Props>();
 const emit = defineEmits<Emits>();
 
+const MACHINE_ICON_SLOT_SIZE = 50;
+const MACHINE_ICON_GAP = 12;
+const MACHINE_ICON_PAGE_CONTROL_RESERVE = 142;
+
+const rootRef = ref<HTMLElement | null>(null);
 const optionRefs = ref<Array<HTMLButtonElement | null>>([]);
+const categoryPage = ref(0);
+const visibleCategoryCapacity = ref(1);
+let resizeObserver: ResizeObserver | null = null;
+
+const calculateVisibleCapacity = () => {
+  const width = Math.max(0, Math.floor(rootRef.value?.clientWidth ?? 0));
+  if (width <= 0) {
+    visibleCategoryCapacity.value = Math.max(1, Math.min(props.categories.length || 1, visibleCategoryCapacity.value));
+    return;
+  }
+
+  const itemStride = MACHINE_ICON_SLOT_SIZE + MACHINE_ICON_GAP;
+  const fullRowCapacity = Math.max(1, Math.floor((width + MACHINE_ICON_GAP) / itemStride));
+  if (props.categories.length <= fullRowCapacity) {
+    visibleCategoryCapacity.value = Math.max(1, props.categories.length || 1);
+    return;
+  }
+
+  const pagedWidth = Math.max(MACHINE_ICON_SLOT_SIZE, width - MACHINE_ICON_PAGE_CONTROL_RESERVE);
+  visibleCategoryCapacity.value = Math.max(1, Math.floor((pagedWidth + MACHINE_ICON_GAP) / itemStride));
+};
+
+const totalCategoryPages = computed(() => {
+  const total = props.categories.length;
+  if (total <= 0) return 1;
+  return Math.max(1, Math.ceil(total / Math.max(1, visibleCategoryCapacity.value)));
+});
+
+const hasCategoryPages = computed(() => totalCategoryPages.value > 1);
+
+const normalizedCategoryPage = computed(() => {
+  const maxPage = totalCategoryPages.value - 1;
+  return Math.min(maxPage, Math.max(0, categoryPage.value));
+});
+
+const pagedCategories = computed(() => {
+  const capacity = Math.max(1, visibleCategoryCapacity.value);
+  const start = normalizedCategoryPage.value * capacity;
+  return props.categories.slice(start, start + capacity).map((category, offset) => ({
+    category,
+    index: start + offset,
+  }));
+});
+
+const syncCategoryPageForIndex = (index: number) => {
+  const capacity = Math.max(1, visibleCategoryCapacity.value);
+  const maxPage = totalCategoryPages.value - 1;
+  const nextPage = Math.min(maxPage, Math.max(0, Math.floor(Math.max(0, index) / capacity)));
+  categoryPage.value = nextPage;
+};
+
+const goToCategoryPage = (direction: -1 | 1) => {
+  const maxPage = totalCategoryPages.value - 1;
+  categoryPage.value = Math.min(maxPage, Math.max(0, normalizedCategoryPage.value + direction));
+};
 
 const getMachineIconPath = (icon: string | null): string => {
   if (!icon) return '/placeholder.png';
@@ -52,6 +112,7 @@ const getMachineIconItemId = (icon: string | null): string | null => {
 };
 
 const handleSelect = (index: number) => {
+  syncCategoryPageForIndex(index);
   emit('update:modelValue', index);
   emit('select', index);
 };
@@ -74,11 +135,17 @@ const getDisplayName = (name: string): string => {
   if (/^rt~gregtech~gt\.recipe\.electricimplosioncompressor/i.test(normalized)) return '电动聚爆压缩机';
   if (/^rt~gregtech~gt\.recipe\.compressor/i.test(normalized)) return '压缩机';
   if (/^rt~gregtech~gt\.recipe\.bender/i.test(normalized)) return '压模机';
-  return normalized.replace(/^\s*[A-Za-z0-9_ -]+\s+-\s+/, '').replace(/\s*\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)\s*$/i, '').trim() || normalized;
+  return normalized
+    .replace(/^\s*[A-Za-z0-9_ -]+\s+-\s+/, '')
+    .replace(/\s*\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)\s*$/i, '')
+    .trim() || normalized;
 };
 
 const focusOption = (index: number) => {
-  optionRefs.value[index]?.focus();
+  syncCategoryPageForIndex(index);
+  void nextTick(() => {
+    optionRefs.value[index]?.focus();
+  });
 };
 
 const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
@@ -108,69 +175,136 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
     focusOption(maxIndex);
   }
 };
+
+watch(
+  () => [props.categories.length, props.modelValue, visibleCategoryCapacity.value] as const,
+  () => {
+    calculateVisibleCapacity();
+    syncCategoryPageForIndex(props.modelValue);
+  },
+  { flush: 'post' },
+);
+
+watch(totalCategoryPages, (pages) => {
+  categoryPage.value = Math.min(Math.max(0, pages - 1), Math.max(0, categoryPage.value));
+});
+
+onMounted(() => {
+  calculateVisibleCapacity();
+  resizeObserver = new ResizeObserver(() => {
+    calculateVisibleCapacity();
+    syncCategoryPageForIndex(props.modelValue);
+  });
+  if (rootRef.value) {
+    resizeObserver.observe(rootRef.value);
+  }
+});
+
+onBeforeUnmount(() => {
+  resizeObserver?.disconnect();
+  resizeObserver = null;
+});
 </script>
 
 <template>
-  <div class="machine-type-icons">
-    <div class="icons-container" role="listbox" aria-label="配方类别" aria-orientation="horizontal">
-      <button
-        v-for="(category, index) in categories"
-        :data-testid="`recipe-machine-option-${index}`"
-        :key="`${category.recipeType}-${index}`"
-        :ref="(el) => setOptionRef(el, index)"
-        type="button"
-        class="icon-wrapper"
-        :class="{ 'icon-active': modelValue === index }"
-        role="option"
-        :aria-selected="modelValue === index"
-        :tabindex="modelValue === index ? 0 : -1"
-        :aria-label="`${getDisplayName(category.name)} (${getCategoryCount(category)} 个)`"
-        @click="handleSelect(index)"
-        @keydown="handleOptionKeydown($event, index)"
-      >
-        <span class="machine-icon-container" aria-hidden="true">
-          <AnimatedItemIcon
-            v-if="getMachineIconItemId(category.machineIcon)"
-            :item-id="getMachineIconItemId(category.machineIcon)!"
-            :size="38"
-            class="machine-icon"
-          />
+  <div ref="rootRef" class="machine-type-icons" :class="{ 'machine-type-icons--paged': hasCategoryPages }">
+    <button
+      v-if="hasCategoryPages"
+      type="button"
+      class="category-page-btn category-page-btn--prev"
+      :disabled="normalizedCategoryPage <= 0"
+      title="上一组配方类别"
+      aria-label="上一组配方类别"
+      @click="goToCategoryPage(-1)"
+    >
+      <svg class="category-page-btn__icon" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6" />
+      </svg>
+    </button>
 
-          <img
-            v-else-if="category.machineIcon"
-            :src="getMachineIconPath(category.machineIcon)"
-            class="machine-icon"
-            @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png' }"
-          />
+    <div class="icons-viewport">
+      <div class="icons-container" role="listbox" aria-label="配方类别" aria-orientation="horizontal">
+        <button
+          v-for="{ category, index } in pagedCategories"
+          :data-testid="`recipe-machine-option-${index}`"
+          :key="`${category.recipeType}-${index}`"
+          :ref="(el) => setOptionRef(el, index)"
+          type="button"
+          class="icon-wrapper"
+          :class="{ 'icon-active': modelValue === index }"
+          role="option"
+          :aria-selected="modelValue === index"
+          :tabindex="modelValue === index ? 0 : -1"
+          :aria-label="`${getDisplayName(category.name)} (${getCategoryCount(category)} 个)`"
+          @click="handleSelect(index)"
+          @keydown="handleOptionKeydown($event, index)"
+        >
+          <span class="machine-icon-container" aria-hidden="true">
+            <AnimatedItemIcon
+              v-if="getMachineIconItemId(category.machineIcon)"
+              :item-id="getMachineIconItemId(category.machineIcon)!"
+              :size="38"
+              class="machine-icon"
+            />
 
-          <span v-else-if="category.type === 'crafting'" class="crafting-icon">
-            <svg viewBox="0 0 24 24" width="32" height="32">
-              <rect x="2" y="2" width="20" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
-              <rect x="5" y="5" width="4" height="4" fill="currentColor"/>
-              <rect x="10" y="5" width="4" height="4" fill="currentColor"/>
-              <rect x="15" y="5" width="4" height="4" fill="currentColor"/>
-              <rect x="5" y="10" width="4" height="4" fill="currentColor"/>
-              <rect x="10" y="10" width="4" height="4" fill="currentColor"/>
-              <rect x="15" y="10" width="4" height="4" fill="currentColor"/>
-              <rect x="5" y="15" width="4" height="4" fill="currentColor"/>
-              <rect x="10" y="15" width="4" height="4" fill="currentColor"/>
-              <rect x="15" y="15" width="4" height="4" fill="currentColor"/>
-            </svg>
+            <img
+              v-else-if="category.machineIcon"
+              :src="getMachineIconPath(category.machineIcon)"
+              class="machine-icon"
+              @error="(e) => { (e.target as HTMLImageElement).src = '/placeholder.png' }"
+            />
+
+            <span v-else-if="category.type === 'crafting'" class="crafting-icon">
+              <svg viewBox="0 0 24 24" width="32" height="32">
+                <rect x="2" y="2" width="20" height="20" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>
+                <rect x="5" y="5" width="4" height="4" fill="currentColor"/>
+                <rect x="10" y="5" width="4" height="4" fill="currentColor"/>
+                <rect x="15" y="5" width="4" height="4" fill="currentColor"/>
+                <rect x="5" y="10" width="4" height="4" fill="currentColor"/>
+                <rect x="10" y="10" width="4" height="4" fill="currentColor"/>
+                <rect x="15" y="10" width="4" height="4" fill="currentColor"/>
+                <rect x="5" y="15" width="4" height="4" fill="currentColor"/>
+                <rect x="10" y="15" width="4" height="4" fill="currentColor"/>
+                <rect x="15" y="15" width="4" height="4" fill="currentColor"/>
+              </svg>
+            </span>
+
+            <span v-else class="fallback-icon">?</span>
           </span>
 
-          <span v-else class="fallback-icon">?</span>
-        </span>
-
-        <span class="recipe-count-badge" aria-hidden="true">{{ getCategoryCount(category) }}</span>
-        <span class="icon-tooltip" role="tooltip">{{ getDisplayName(category.name) }} ({{ getCategoryCount(category) }} 个)</span>
-      </button>
+          <span class="recipe-count-badge" aria-hidden="true">{{ getCategoryCount(category) }}</span>
+          <span class="icon-tooltip" role="tooltip">{{ getDisplayName(category.name) }} ({{ getCategoryCount(category) }} 个)</span>
+        </button>
+      </div>
     </div>
+
+    <div v-if="hasCategoryPages" class="category-page-status" aria-live="polite">
+      {{ normalizedCategoryPage + 1 }}/{{ totalCategoryPages }}
+    </div>
+
+    <button
+      v-if="hasCategoryPages"
+      type="button"
+      class="category-page-btn category-page-btn--next"
+      :disabled="normalizedCategoryPage >= totalCategoryPages - 1"
+      title="下一组配方类别"
+      aria-label="下一组配方类别"
+      @click="goToCategoryPage(1)"
+    >
+      <svg class="category-page-btn__icon" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="9 18 15 12 9 6" />
+      </svg>
+    </button>
   </div>
 </template>
 <style scoped>
 .machine-type-icons {
   position: relative;
   z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.018), transparent 18%),
     radial-gradient(circle at 50% 0%, rgba(107, 211, 255, 0.04), transparent 30%),
@@ -184,15 +318,91 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
     0 14px 28px rgba(0, 0, 0, 0.22);
 }
 
+.icons-viewport {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+}
+
 .icons-container {
   display: flex;
   gap: 12px;
   justify-content: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   overflow: visible;
+  min-width: 0;
+}
+
+.machine-type-icons--paged .icons-container {
+  justify-content: center;
+}
+
+.category-page-btn {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 50px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  appearance: none;
+  border: 1px solid rgba(147, 166, 191, 0.16);
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.02), transparent 18%),
+    linear-gradient(180deg, rgba(24, 31, 41, 0.92), rgba(13, 18, 26, 0.98));
+  color: rgba(222, 233, 246, 0.86);
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 8px 14px rgba(0, 0, 0, 0.18);
+  transition:
+    border-color 170ms ease,
+    background 170ms ease,
+    color 170ms ease,
+    transform 170ms ease,
+    box-shadow 170ms ease;
+}
+
+.category-page-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: rgba(182, 199, 220, 0.28);
+  color: rgba(238, 245, 252, 0.98);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.03),
+    0 0 0 1px rgba(107, 211, 255, 0.05),
+    0 12px 18px rgba(0, 0, 0, 0.22);
+}
+
+.category-page-btn:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+.category-page-btn__icon {
+  width: 14px;
+  height: 14px;
+  stroke: currentColor;
+}
+
+.category-page-status {
+  flex: 0 0 auto;
+  min-width: 36px;
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(147, 166, 191, 0.14);
+  border-radius: 999px;
+  background: rgba(8, 12, 18, 0.52);
+  color: rgba(205, 218, 234, 0.84);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.025);
 }
 
 .icon-wrapper {
+  flex: 0 0 50px;
   position: relative;
   width: 50px;
   height: 50px;
@@ -347,13 +557,26 @@ const handleOptionKeydown = (event: KeyboardEvent, index: number) => {
 @media (max-width: 768px) {
   .machine-type-icons {
     padding: 8px;
+    gap: 6px;
   }
 
   .icons-container {
     gap: 8px;
   }
 
+  .category-page-btn {
+    width: 26px;
+    height: 42px;
+    border-radius: 12px;
+  }
+
+  .category-page-status {
+    min-width: 32px;
+    font-size: 9px;
+  }
+
   .icon-wrapper {
+    flex-basis: 42px;
     width: 42px;
     height: 42px;
   }
