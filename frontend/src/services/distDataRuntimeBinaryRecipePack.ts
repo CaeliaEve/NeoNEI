@@ -28,6 +28,10 @@ export type CompactRecipeCategoryEntry = {
   sourceCategoryIds?: string[];
   handler?: Record<string, unknown> | null;
   nativeLayout?: Record<string, unknown> | null;
+  machineIcon?: {
+    itemId?: string;
+    renderAssetRef?: string;
+  } | null;
 };
 
 export type CompactRecipePackPayload = {
@@ -165,6 +169,13 @@ export function parseCompactRecipePayload(payload: ArrayBuffer): CompactRecipePa
       displayName: compactRecipeString(strings, readRowValue(categoryRowsStart, row, categoryStride, 1)) || categoryId,
       recipeCount: readRowValue(categoryRowsStart, row, categoryStride, 2),
       sourceCategoryIds,
+      machineIcon: categoryStride >= 7
+        ? (() => {
+            const itemId = compactRecipeString(strings, readRowValue(categoryRowsStart, row, categoryStride, 5));
+            const renderAssetRef = compactRecipeString(strings, readRowValue(categoryRowsStart, row, categoryStride, 6));
+            return itemId || renderAssetRef ? { ...(itemId ? { itemId } : {}), ...(renderAssetRef ? { renderAssetRef } : {}) } : null;
+          })()
+        : null,
     });
   }
 

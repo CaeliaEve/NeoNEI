@@ -1404,6 +1404,31 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
                 "output",
             ],
         );
+        let machine_icon = recipe_machine_icon(recipe, public_handler.as_ref());
+        let machine_info = json!({
+            "machineType": machine_type,
+            "machineId": nested_value_string(recipe, &["machine", "machineId"]).unwrap_or_else(|| recipe_type.clone()),
+            "category": nested_value_string(recipe, &["machine", "category"]).unwrap_or_else(|| family_key.clone()),
+            "iconInfo": nested_value_string(recipe, &["machine", "iconInfoRaw"]).unwrap_or_default(),
+            "canonicalMachineFamily": public_handler
+                .as_ref()
+                .and_then(|handler| handler.get("canonicalMachineFamily").cloned())
+                .unwrap_or(Value::Null),
+            "catalystItemName": public_handler
+                .as_ref()
+                .and_then(|handler| handler.get("catalystItemName").cloned())
+                .unwrap_or(Value::Null),
+            "preferredMachineItemName": public_handler
+                .as_ref()
+                .and_then(|handler| handler.get("preferredMachineItemName").cloned())
+                .unwrap_or(Value::Null),
+            "gtMultiblockPreferred": public_handler
+                .as_ref()
+                .and_then(|handler| handler.get("gtMultiblockPreferred"))
+                .and_then(Value::as_bool)
+                .unwrap_or(false),
+            "machineIcon": machine_icon.clone().unwrap_or(Value::Null),
+        });
         let payload_meta = json!({
             "recipeId": recipe_id,
             "path": rust_recipe_ui_payload_relative_path(&recipe_id),
@@ -1413,13 +1438,8 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
             "machineType": machine_type,
             "handlerKey": handler_key,
             "handler": public_handler,
-            "machineInfo": public_handler.as_ref().map(|handler| json!({
-                "machineType": machine_type,
-                "canonicalMachineFamily": handler.get("canonicalMachineFamily").cloned().unwrap_or(Value::Null),
-                "catalystItemName": handler.get("catalystItemName").cloned().unwrap_or(Value::Null),
-                "preferredMachineItemName": handler.get("preferredMachineItemName").cloned().unwrap_or(Value::Null),
-                "gtMultiblockPreferred": handler.get("gtMultiblockPreferred").and_then(Value::as_bool).unwrap_or(false),
-            })),
+            "machineInfo": machine_info,
+            "machineIcon": machine_icon,
             "nativeLayout": public_layout,
             "inputItemIds": input_item_ids,
             "outputItemIds": output_item_ids,
@@ -1447,12 +1467,10 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
             payload_object.remove("path");
             payload_object.remove("payloadKey");
         }
-        if debug_json {
-            ui_payload_shards
-                .entry(rust_recipe_ui_payload_relative_path(&recipe_id))
-                .or_default()
-                .insert(recipe_id.clone(), payload_entry);
-        }
+        ui_payload_shards
+            .entry(rust_recipe_ui_payload_relative_path(&recipe_id))
+            .or_default()
+            .insert(recipe_id.clone(), payload_entry);
         ui_payload_index.push(payload_meta);
 
         let category_display_name = recipe_category_display_name(recipe, handler);
@@ -1469,8 +1487,12 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
                     source_category_ids: Vec::new(),
                     handler: public_handler.clone(),
                     native_layout: public_layout.clone(),
+                    machine_icon: machine_icon.clone(),
                 });
         category.recipe_count += 1;
+        if category.machine_icon.is_none() {
+            category.machine_icon = machine_icon.clone();
+        }
         if !category.source_category_ids.contains(&raw_category_id) {
             category.source_category_ids.push(raw_category_id.clone());
         }
@@ -1523,6 +1545,7 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
                 "sourceCategoryIds": category.source_category_ids,
                 "handler": category.handler,
                 "nativeLayout": category.native_layout,
+                "machineIcon": category.machine_icon,
             })
         })
         .collect::<Vec<_>>();
@@ -1537,20 +1560,55 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
         &rust_dir.join("recipe-fragmentation-report.json"),
         &build_recipe_fragmentation_report(&category_index),
     )?;
-    if debug_json {
-        for (shard_path, payloads) in &ui_payload_shards {
-            let absolute_shard_path = output.join(shard_path);
-            if let Some(parent) = absolute_shard_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            write_json_value(
-                &absolute_shard_path,
-                &json!({
-                    "schemaVersion": "neonei/recipe-ui-payload-shard/v1",
-                    "payloads": payloads,
-                }),
-            )?;
+    let recipes_dir = output.join("recipes");
+    fs::create_dir_all(&recipes_dir)?;
+    write_json_value(
+        &recipes_dir.join("handler-index.json"),
+        &json!({
+            "schemaVersion": "neonei/recipe-handler-index/v1",
+            "handlers": public_handlers.clone(),
+        }),
+    )?;
+    write_json_value(
+        &recipes_dir.join("handler-layout-index.json"),
+        &json!({
+            "schemaVersion": "neonei/recipe-handler-layout-index/v1",
+            "layouts": public_layouts.clone(),
+        }),
+    )?;
+    write_json_value(
+        &recipes_dir.join("recipe-category-index.json"),
+        &json!({
+            "schemaVersion": "neonei/recipe-category-index/v1",
+            "categories": category_index.clone(),
+        }),
+    )?;
+    write_json_value(
+        &recipes_dir.join("item-index.json"),
+        &json!({
+            "schemaVersion": "neonei/recipe-item-index/v1",
+            "items": item_index.clone(),
+        }),
+    )?;
+    write_json_value(
+        &recipes_dir.join("ui-payload-index.json"),
+        &json!({
+            "schemaVersion": "neonei/recipe-ui-payload-index/v1",
+            "recipes": ui_payload_index.clone(),
+        }),
+    )?;
+    for (shard_path, payloads) in &ui_payload_shards {
+        let absolute_shard_path = output.join(shard_path);
+        if let Some(parent) = absolute_shard_path.parent() {
+            fs::create_dir_all(parent)?;
         }
+        write_json_value(
+            &absolute_shard_path,
+            &json!({
+                "schemaVersion": "neonei/recipe-ui-payload-shard/v1",
+                "payloads": payloads,
+            }),
+        )?;
     }
     let recipe_output_pack = json!({
         "schemaVersion": "neonei/rust-recipe-pack/current",
@@ -1640,7 +1698,7 @@ fn build_compact_recipe_payload_from_pack(pack: &Value) -> Result<Vec<u8>> {
     let mut item_rows = Vec::<[u32; 5]>::new();
     let mut ref_rows = Vec::<[u32; 3]>::new();
     let mut ui_rows = Vec::<[u32; 7]>::new();
-    let mut category_rows = Vec::<[u32; 5]>::new();
+    let mut category_rows = Vec::<[u32; 7]>::new();
     let mut category_sources = Vec::<u32>::new();
 
     for item in pack
@@ -1787,6 +1845,16 @@ fn build_compact_recipe_payload_from_pack(pack: &Value) -> Result<Vec<u8>> {
                 .min(u32::MAX as u64) as u32,
             source_start,
             source_count,
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                nested_value_string(category, &["machineIcon", "itemId"]),
+            ),
+            intern_compact_string(
+                &mut strings,
+                &mut string_refs,
+                nested_value_string(category, &["machineIcon", "renderAssetRef"]),
+            ),
         ]);
     }
 
@@ -1801,7 +1869,7 @@ fn build_compact_recipe_payload_from_pack(pack: &Value) -> Result<Vec<u8>> {
     let item_stride = 5u32;
     let ref_stride = 3u32;
     let ui_stride = 7u32;
-    let category_stride = 5u32;
+    let category_stride = 7u32;
     let mut payload = Vec::with_capacity(
         8 + 11 * 4
             + string_offsets.len() * 4
@@ -1862,6 +1930,7 @@ struct RecipeCategoryAccumulator {
     source_category_ids: Vec<String>,
     handler: Option<Value>,
     native_layout: Option<Value>,
+    machine_icon: Option<Value>,
 }
 
 struct RecipeHandlerContext<'a> {
@@ -2204,6 +2273,78 @@ fn recipe_category_id_from_display_name(display_name: &str, raw_id: &str) -> Str
         return raw_id.to_string();
     }
     format!("display~{}", encode_recipe_file_name(&normalized))
+}
+
+fn normalize_machine_icon_item_id(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    if let Some(stripped) = trimmed.strip_prefix("nesqlpp:item/") {
+        return normalize_machine_icon_item_id(stripped);
+    }
+    if let Some(stripped) = trimmed.strip_prefix("item:") {
+        return normalize_machine_icon_item_id(stripped);
+    }
+    if trimmed.starts_with("i~") {
+        return Some(trimmed.to_string());
+    }
+    let parts = trimmed.split(':').collect::<Vec<_>>();
+    if parts.len() >= 2 && !parts[0].is_empty() && !parts[1].is_empty() {
+        let damage = parts.get(2).copied().unwrap_or("0");
+        return Some(format!("i~{}~{}~{}", parts[0], parts[1], damage));
+    }
+    None
+}
+
+fn recipe_machine_icon(recipe: &Value, public_handler: Option<&Value>) -> Option<Value> {
+    let render_asset_ref = first_non_empty(&[
+        nested_value_string(recipe, &["machine", "iconRef"]),
+        nested_value_string(recipe, &["renderHints", "machineIconAssetRef"]),
+        nested_value_string(recipe, &["machine", "machineIcon", "renderAssetRef"]),
+        nested_value_string(recipe, &["metadata", "machineInfo", "machineIcon", "renderAssetRef"]),
+        public_handler.and_then(|handler| nested_value_string(handler, &["machineIcon", "renderAssetRef"])),
+    ]);
+    let item_id = first_non_empty(&[
+        render_asset_ref
+            .as_deref()
+            .and_then(normalize_machine_icon_item_id),
+        nested_value_string(recipe, &["machine", "machineIcon", "itemId"])
+            .as_deref()
+            .and_then(normalize_machine_icon_item_id),
+        nested_value_string(recipe, &["metadata", "machineInfo", "machineIcon", "itemId"])
+            .as_deref()
+            .and_then(normalize_machine_icon_item_id),
+        public_handler
+            .and_then(|handler| value_string(handler, "preferredMachineItemName"))
+            .as_deref()
+            .and_then(normalize_machine_icon_item_id),
+        public_handler
+            .and_then(|handler| value_string(handler, "catalystItemName"))
+            .as_deref()
+            .and_then(normalize_machine_icon_item_id),
+    ]);
+    let image_file_name = first_non_empty(&[
+        nested_value_string(recipe, &["machine", "machineIcon", "imageFileName"]),
+        nested_value_string(recipe, &["metadata", "machineInfo", "machineIcon", "imageFileName"]),
+        public_handler.and_then(|handler| nested_value_string(handler, &["machineIcon", "imageFileName"])),
+    ]);
+
+    if item_id.is_none() && render_asset_ref.is_none() && image_file_name.is_none() {
+        return None;
+    }
+
+    let mut object = serde_json::Map::new();
+    if let Some(value) = item_id {
+        object.insert("itemId".to_string(), Value::String(value));
+    }
+    if let Some(value) = render_asset_ref {
+        object.insert("renderAssetRef".to_string(), Value::String(value));
+    }
+    if let Some(value) = image_file_name {
+        object.insert("imageFileName".to_string(), Value::String(value));
+    }
+    Some(Value::Object(object))
 }
 
 fn normalize_recipe_category_name(value: &str) -> String {
@@ -3931,6 +4072,22 @@ fn compile_runtime_reports(
             CompileScope::Textures => artifact_names.push("texture-pack.json"),
         }
     }
+    if !matches!(scope, CompileScope::All) {
+        for artifact_name in [
+            "browser.bin",
+            "groups.bin",
+            "search.bin",
+            "recipes.bin",
+            "textures.bin",
+            "atlas.meta.bin",
+            "animations.bin",
+            "strings.zh_cn.bin",
+        ] {
+            if !artifact_names.contains(&artifact_name) && rust_dir.join(artifact_name).exists() {
+                artifact_names.push(artifact_name);
+            }
+        }
+    }
     let mut files = Vec::new();
     let mut integrity = BTreeMap::new();
     let mut sizes = BTreeMap::new();
@@ -3954,8 +4111,9 @@ fn compile_runtime_reports(
         }));
     }
 
+    let should_hash_texture_assets = matches!(scope, CompileScope::All | CompileScope::Textures);
     let texture_asset_dir = output.join("textures");
-    if texture_asset_dir.exists() {
+    if should_hash_texture_assets && texture_asset_dir.exists() {
         for entry in walkdir::WalkDir::new(&texture_asset_dir)
             .into_iter()
             .filter_map(Result::ok)
@@ -4016,7 +4174,7 @@ fn compile_runtime_reports(
             "capabilities": capabilities,
             "files": files,
             "compileScope": scope.as_str(),
-            "entrypoints": rust_entrypoints(scope),
+            "entrypoints": rust_entrypoints_from_integrity(&integrity),
             "pathPolicy": {
                 "portableRelativePathsOnly": true,
                 "absolutePathsAllowed": false,
@@ -4320,37 +4478,23 @@ impl CompileScope {
     }
 }
 
-fn rust_entrypoints(scope: CompileScope) -> Value {
-    match scope {
-        CompileScope::All => json!({
-            "browser": "rust/browser.bin",
-            "groups": "rust/groups.bin",
-            "search": "rust/search.bin",
-            "recipes": "rust/recipes.bin",
-            "textures": "rust/textures.bin",
-            "atlasMeta": "rust/atlas.meta.bin",
-            "animations": "rust/animations.bin",
-            "stringsZhCn": "rust/strings.zh_cn.bin",
-        }),
-        CompileScope::Search => json!({
-            "search": "rust/search.bin",
-            "stringsZhCn": "rust/strings.zh_cn.bin",
-        }),
-        CompileScope::Browser => json!({
-            "browser": "rust/browser.bin",
-            "groups": "rust/groups.bin",
-            "search": "rust/search.bin",
-            "stringsZhCn": "rust/strings.zh_cn.bin",
-        }),
-        CompileScope::Recipes => json!({
-            "recipes": "rust/recipes.bin",
-        }),
-        CompileScope::Textures => json!({
-            "textures": "rust/textures.bin",
-            "atlasMeta": "rust/atlas.meta.bin",
-            "animations": "rust/animations.bin",
-        }),
+fn rust_entrypoints_from_integrity(integrity: &BTreeMap<String, String>) -> Value {
+    let mut entrypoints = serde_json::Map::new();
+    for (key, path) in [
+        ("browser", "rust/browser.bin"),
+        ("groups", "rust/groups.bin"),
+        ("search", "rust/search.bin"),
+        ("recipes", "rust/recipes.bin"),
+        ("textures", "rust/textures.bin"),
+        ("atlasMeta", "rust/atlas.meta.bin"),
+        ("animations", "rust/animations.bin"),
+        ("stringsZhCn", "rust/strings.zh_cn.bin"),
+    ] {
+        if integrity.contains_key(path) {
+            entrypoints.insert(key.to_string(), Value::String(path.to_string()));
+        }
     }
+    Value::Object(entrypoints)
 }
 
 fn validate_atlas_ref(item_id: &str, atlas: Option<&Value>, missing_refs: &mut Vec<String>) {
@@ -5293,7 +5437,11 @@ mod tests {
                 "categoryId": "display~furnace",
                 "displayName": "Furnace",
                 "recipeCount": 1,
-                "sourceCategoryIds": ["codechicken.nei.recipe.furnacerecipehandler"]
+                "sourceCategoryIds": ["codechicken.nei.recipe.furnacerecipehandler"],
+                "machineIcon": {
+                    "itemId": "i~minecraft~furnace~0",
+                    "renderAssetRef": "nesqlpp:item/i~minecraft~furnace~0"
+                }
             }]
         });
         let payload = build_compact_recipe_payload_from_pack(&pack).unwrap();
@@ -5306,7 +5454,7 @@ mod tests {
         assert_eq!(u32::from_le_bytes(payload[36..40].try_into().unwrap()), 5);
         assert_eq!(u32::from_le_bytes(payload[40..44].try_into().unwrap()), 3);
         assert_eq!(u32::from_le_bytes(payload[44..48].try_into().unwrap()), 7);
-        assert_eq!(u32::from_le_bytes(payload[48..52].try_into().unwrap()), 5);
+        assert_eq!(u32::from_le_bytes(payload[48..52].try_into().unwrap()), 7);
     }
 
     #[test]

@@ -931,6 +931,34 @@ function recipeCategoryIdFromDisplayName(displayName, rawId) {
   return `display~${encodeRecipeFileName(normalized)}`;
 }
 
+function normalizeMachineIconItemId(value) {
+  const raw = `${value ?? ""}`.trim();
+  if (!raw) return "";
+  if (raw.startsWith("nesqlpp:item/")) return normalizeMachineIconItemId(raw.slice("nesqlpp:item/".length));
+  if (raw.startsWith("item:")) return normalizeMachineIconItemId(raw.slice("item:".length));
+  if (raw.startsWith("i~")) return raw;
+  const parts = raw.split(":");
+  if (parts.length >= 2 && parts[0] && parts[1]) return `i~${parts[0]}~${parts[1]}~${parts[2] || "0"}`;
+  return "";
+}
+
+function buildMachineIconObject(recipe, publicHandler = null) {
+  const renderAssetRef = `${recipe.machine?.iconRef ?? recipe.renderHints?.machineIconAssetRef ?? recipe.machine?.machineIcon?.renderAssetRef ?? recipe.metadata?.machineInfo?.machineIcon?.renderAssetRef ?? publicHandler?.machineIcon?.renderAssetRef ?? ""}`.trim();
+  const itemId =
+    normalizeMachineIconItemId(renderAssetRef)
+    || normalizeMachineIconItemId(recipe.machine?.machineIcon?.itemId)
+    || normalizeMachineIconItemId(recipe.metadata?.machineInfo?.machineIcon?.itemId)
+    || normalizeMachineIconItemId(publicHandler?.preferredMachineItemName)
+    || normalizeMachineIconItemId(publicHandler?.catalystItemName);
+  const imageFileName = `${recipe.machine?.machineIcon?.imageFileName ?? recipe.metadata?.machineInfo?.machineIcon?.imageFileName ?? publicHandler?.machineIcon?.imageFileName ?? ""}`.trim();
+  if (!itemId && !renderAssetRef && !imageFileName) return null;
+  return {
+    ...(itemId ? { itemId } : {}),
+    ...(renderAssetRef ? { renderAssetRef } : {}),
+    ...(imageFileName ? { imageFileName } : {}),
+  };
+}
+
 function includesAny(value, needles) {
   return needles.some((needle) => value.includes(needle));
 }
@@ -984,6 +1012,7 @@ function buildRecipeUiPayload(recipe, handlerContext = null) {
   const familyKey = classifyRecipeFamilyKey(recipe, rawFamilyKey, publicHandler);
   const recipeType = `${recipe.recipeType ?? recipe.machine?.machineId ?? familyKey}`.trim() || familyKey;
   const machineType = `${publicHandler?.localizedName ?? publicHandler?.displayName ?? recipe.machine?.displayName ?? recipe.displayName ?? recipe.machine?.machineId ?? recipeType}`.trim() || recipeType;
+  const machineIcon = buildMachineIconObject(recipe, publicHandler);
   const payload = {
     recipeId,
     familyKey,
@@ -991,13 +1020,18 @@ function buildRecipeUiPayload(recipe, handlerContext = null) {
     recipeType,
     handlerKey: publicHandler?.handlerKey ?? null,
     handler: publicHandler,
-    machineInfo: publicHandler ? {
+    machineInfo: {
       machineType,
-      canonicalMachineFamily: publicHandler.canonicalMachineFamily,
-      catalystItemName: publicHandler.catalystItemName,
-      preferredMachineItemName: publicHandler.preferredMachineItemName,
-      gtMultiblockPreferred: publicHandler.gtMultiblockPreferred,
-    } : null,
+      machineId: recipe.machine?.machineId ?? recipeType,
+      category: recipe.machine?.category ?? familyKey,
+      iconInfo: recipe.machine?.iconInfoRaw ?? "",
+      canonicalMachineFamily: publicHandler?.canonicalMachineFamily ?? null,
+      catalystItemName: publicHandler?.catalystItemName ?? null,
+      preferredMachineItemName: publicHandler?.preferredMachineItemName ?? null,
+      gtMultiblockPreferred: publicHandler?.gtMultiblockPreferred ?? false,
+      machineIcon,
+    },
+    machineIcon,
     nativeLayout,
     inputItemIds: Array.from(inputItemIds),
     outputItemIds: Array.from(outputItemIds),
@@ -3099,6 +3133,7 @@ function compileRawExport(inputDir, outputDir) {
     const rawCategoryId = recipeCategoryRawId(recipe, recipeHandlerContext);
     const key = recipeCategoryIdFromDisplayName(displayName, rawCategoryId);
     const { handler, layout } = resolveRecipeHandler(recipe, recipeHandlerContext);
+    const machineIcon = buildMachineIconObject(recipe, publicRecipeHandler(handler));
     const existing = recipeCategories.get(key) ?? {
       categoryId: key,
       recipeCount: 0,
@@ -3106,8 +3141,12 @@ function compileRawExport(inputDir, outputDir) {
       sourceCategoryIds: [],
       handler: publicRecipeHandler(handler),
       nativeLayout: publicRecipeLayout(layout),
+      machineIcon,
     };
     existing.recipeCount += 1;
+    if (!existing.machineIcon && machineIcon) {
+      existing.machineIcon = machineIcon;
+    }
     if (!existing.sourceCategoryIds.includes(rawCategoryId)) {
       existing.sourceCategoryIds.push(rawCategoryId);
     }
@@ -3553,7 +3592,7 @@ function createSelfTestRawExport(root) {
     JSON.stringify({ legacyItemId: "i~minecraft~gold_ingot~0", publicItemId: "item:i~minecraft~gold_ingot~0", family: "legacy.item", classification: "untagged-legacy" }),
   ].join("\n") + "\n");
   writeGzipText(join(root, "facts/fluids.jsonl.gz"), `${JSON.stringify({ fluidId: "f~gregtech~molten.iron", localizedName: "Molten Iron" })}\n`);
-  writeGzipText(join(root, "facts/recipes/furnace.jsonl.gz"), `${JSON.stringify({ recipeId: "r1", family: "minecraft", machine: { machineId: "furnace", displayName: "Furnace" }, inputs: [{ itemId: "i~minecraft~iron_ore~0" }], outputs: [{ itemId: "i~minecraft~iron_ingot~0" }, { itemId: "i~botania~manaResource~4" }] })}\n`);
+  writeGzipText(join(root, "facts/recipes/furnace.jsonl.gz"), `${JSON.stringify({ recipeId: "r1", family: "minecraft", machine: { machineId: "furnace", displayName: "Furnace", iconRef: "nesqlpp:item/i~minecraft~furnace~0" }, renderHints: { machineIconAssetRef: "nesqlpp:item/i~minecraft~furnace~0" }, inputs: [{ itemId: "i~minecraft~iron_ore~0" }], outputs: [{ itemId: "i~minecraft~iron_ingot~0" }, { itemId: "i~botania~manaResource~4" }] })}\n`);
   writeJson(join(root, "facts/recipes/index.json"), { schemaVersion: "nesqlpp/raw-export/alpha1/recipe-index", strategy: "by-handler", recipeCount: 1, shards: [{ handlerId: "furnace", path: "facts/recipes/furnace.jsonl.gz", recipeCount: 1 }] });
   writeGzipText(join(root, "facts/nei/groups.jsonl.gz"), `${JSON.stringify({ groupKey: "nei:iron", groupLabel: "Iron", groupSize: 1, representativeItemId: "i~minecraft~iron_ingot~0", memberItemIds: ["i~minecraft~iron_ingot~0"] })}\n`);
   writeGzipText(join(root, "facts/nei/order.jsonl.gz"), `${JSON.stringify({ entryOrder: 0, entryKind: "item", itemId: "i~minecraft~iron_ingot~0" })}\n${JSON.stringify({ entryOrder: 1, entryKind: "item", itemId: "i~botania~manaResource~4" })}\n${JSON.stringify({ entryOrder: 2, entryKind: "item", itemId: "i~minecraft~gold_ingot~0" })}\n`);

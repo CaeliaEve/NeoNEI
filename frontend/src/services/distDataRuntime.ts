@@ -22,6 +22,7 @@ import type {
   NativeShaderItemEntry,
   NativeTextureSpriteEntry,
   indexedRecipe,
+  indexedMachineInfo,
 } from "../runtime/types";
 import { reportRuntimeSchemaMismatch } from "../runtime/diagnostics";
 import {
@@ -123,6 +124,11 @@ type DistDataRustRecipeCategoryEntry = {
   sourceCategoryIds?: string[];
   handler?: Record<string, unknown> | null;
   nativeLayout?: Record<string, unknown> | null;
+  machineIcon?: {
+    itemId?: string | null;
+    renderAssetRef?: string | null;
+    imageFileName?: string | null;
+  } | null;
 };
 
 type DistDataRustRecipePackPayload = {
@@ -834,8 +840,9 @@ function buildCategoryLookup(recipePack: DistDataRustRecipePackPayload | null | 
 function buildCategorySummaries(
   entries?: Array<{ categoryId?: string; displayName?: string }>,
   categoryLookup?: Map<string, DistDataRustRecipeCategoryEntry>,
+  runtime?: DistDataBrowserRuntime,
 ) {
-  const byCategory = new Map<string, { name: string; recipeCount: number }>();
+  const byCategory = new Map<string, { name: string; recipeCount: number; machineIcon: indexedMachineInfo["machineIcon"] | null }>();
   for (const entry of entries ?? []) {
     const categoryKey = `${entry?.categoryId ?? ""}`.trim();
     if (!categoryKey) {
@@ -850,6 +857,7 @@ function buildCategorySummaries(
     byCategory.set(categoryKey, {
       name: `${category?.displayName ?? entry?.displayName ?? categoryKey}`.trim() || categoryKey,
       recipeCount: 1,
+      machineIcon: runtime ? toIndexedMachineIconFromRaw(category?.machineIcon, runtime) : null,
     });
   }
   return Array.from(byCategory.entries())
@@ -861,7 +869,7 @@ function buildCategorySummaries(
       categoryKey,
       machineKey: categoryKey,
       voltageTier: null,
-      machineIcon: null,
+      machineIcon: summary.machineIcon,
     }))
     .sort((left, right) => right.recipeCount - left.recipeCount || left.name.localeCompare(right.name));
 }
@@ -888,20 +896,55 @@ function toRecipeItemStack(itemId: string, runtime: DistDataBrowserRuntime, coun
   };
 }
 
-function toIndexedMachineIcon(itemId: string, runtime: DistDataBrowserRuntime) {
-  const normalizedItemId = `${itemId ?? ""}`.trim();
+function normalizeMachineIconItemId(value: unknown): string {
+  const raw = `${value ?? ""}`.trim();
+  if (!raw) return "";
+  if (raw.startsWith("nesqlpp:item/")) return normalizeMachineIconItemId(raw.slice("nesqlpp:item/".length));
+  if (raw.startsWith("item:")) return normalizeMachineIconItemId(raw.slice("item:".length));
+  if (raw.startsWith("i~")) return raw;
+  const parts = raw.split(":");
+  if (parts.length >= 2 && parts[0] && parts[1]) {
+    return `i~${parts[0]}~${parts[1]}~${parts[2] || "0"}`;
+  }
+  return "";
+}
+
+function buildIndexedMachineIcon(
+  itemId: string,
+  runtime: DistDataBrowserRuntime,
+  extras?: { renderAssetRef?: string | null; imageFileName?: string | null },
+): indexedMachineInfo["machineIcon"] | null {
+  const normalizedItemId = normalizeMachineIconItemId(itemId);
   if (!normalizedItemId) return null;
   const item = runtime.itemById.get(normalizedItemId);
-  if (!item) return null;
+  if (!item && !extras?.renderAssetRef && !extras?.imageFileName) return null;
   return {
-    itemId: item.itemId,
-    modId: item.modId,
-    internalName: item.internalName,
-    localizedName: item.localizedName,
-    renderAssetRef: item.renderAssetRef ?? null,
-    renderHint: item.renderHint ?? null,
-    imageFileName: item.imageFileName ?? "",
+    itemId: item?.itemId ?? normalizedItemId,
+    modId: item?.modId ?? "unknown",
+    internalName: item?.internalName ?? normalizedItemId,
+    localizedName: item?.localizedName ?? normalizedItemId,
+    renderAssetRef: extras?.renderAssetRef ?? item?.renderAssetRef ?? null,
+    renderHint: item?.renderHint ?? null,
+    imageFileName: extras?.imageFileName ?? item?.imageFileName ?? "",
   };
+}
+
+function toIndexedMachineIcon(itemId: string, runtime: DistDataBrowserRuntime) {
+  return buildIndexedMachineIcon(itemId, runtime);
+}
+
+function toIndexedMachineIconFromRaw(raw: unknown, runtime: DistDataBrowserRuntime): indexedMachineInfo["machineIcon"] | null {
+  if (!raw || typeof raw !== "object") {
+    return buildIndexedMachineIcon(`${raw ?? ""}`, runtime);
+  }
+  const icon = raw as Record<string, unknown>;
+  const renderAssetRef = `${icon.renderAssetRef ?? ""}`.trim();
+  const imageFileName = `${icon.imageFileName ?? ""}`.trim();
+  const itemId =
+    normalizeMachineIconItemId(icon.itemId)
+    || normalizeMachineIconItemId(renderAssetRef)
+    || normalizeMachineIconItemId(icon.internalName);
+  return buildIndexedMachineIcon(itemId, runtime, { renderAssetRef, imageFileName });
 }
 
 function stableSlotDimension(value: unknown, fallback: number): number {
@@ -947,7 +990,11 @@ function buildIndexedRecipeFromUiPayload(
     || `${handler.catalystItemName ?? ""}`.trim()
     || `${payloadMachineInfo.preferredMachineItemName ?? ""}`.trim()
     || `${payloadMachineInfo.catalystItemName ?? ""}`.trim();
-  const handlerMachineIcon = toIndexedMachineIcon(handlerMachineItemId, runtime);
+  const handlerMachineIcon =
+    toIndexedMachineIconFromRaw(payloadMachineInfo.machineIcon, runtime)
+    || toIndexedMachineIconFromRaw((payload as Record<string, unknown>).machineIcon, runtime)
+    || toIndexedMachineIconFromRaw((handler as Record<string, unknown>).machineIcon, runtime)
+    || toIndexedMachineIcon(handlerMachineItemId, runtime);
 
   const inputWidth = stableSlotDimension(layout?.itemInputWidth, Math.min(3, Math.max(1, Number(payload.slotCount?.input ?? 1) || 1)));
   const inputHeight = stableSlotDimension(
@@ -997,6 +1044,7 @@ function buildIndexedRecipeFromUiPayload(
       fluidInputDimension: { width: 0, height: 0 },
       fluidOutputDimension: { width: 0, height: 0 },
       shapeless: Boolean(metadata.shapeless),
+      ...(handlerMachineIcon ? { machineIcon: handlerMachineIcon } : {}),
     },
     inputs,
     outputs,
@@ -1101,8 +1149,8 @@ export async function getDistDataRecipeBootstrap(itemId: string): Promise<Recipe
   const producedByRecipes = collectRecipeIds(indexEntry?.producedBy);
   const usedInRecipes = collectRecipeIds(indexEntry?.usedIn);
   const categoryLookup = buildCategoryLookup(rustRecipePack);
-  const producedByCategoryGroups = buildCategorySummaries(indexEntry?.producedBy, categoryLookup);
-  const usedInCategoryGroups = buildCategorySummaries(indexEntry?.usedIn, categoryLookup);
+  const producedByCategoryGroups = buildCategorySummaries(indexEntry?.producedBy, categoryLookup, runtime);
+  const usedInCategoryGroups = buildCategorySummaries(indexEntry?.usedIn, categoryLookup, runtime);
   return {
     item,
     recipeIndex: {
@@ -1322,6 +1370,3 @@ export function resetDistDataRuntimeCache(): void {
   cachedRecipeUiPayloadShards.clear();
   renderRuntimeApi.reset();
 }
-
-
-

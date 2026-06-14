@@ -189,11 +189,10 @@ const hasGTData = computed(() => {
 
 // Get machine icon path
 const getMachineIconPath = computed(() => {
-  if (!props.recipe.recipeTypeData?.machineIcon) {
+  const icon = props.recipe.recipeTypeData?.machineIcon || props.recipe.machineInfo?.machineIcon;
+  if (!icon) {
     return null;
   }
-
-  const icon = props.recipe.recipeTypeData.machineIcon;
   if (icon.imageFileName) {
     return getImageUrlFromFileName(icon.imageFileName);
   }
@@ -205,9 +204,10 @@ const getMachineIconPath = computed(() => {
   return null;
 });
 
-const machineIconItemId = computed(() => props.recipe.recipeTypeData?.machineIcon?.itemId ?? null);
-const machineIconRenderAssetRef = computed(() => props.recipe.recipeTypeData?.machineIcon?.renderAssetRef ?? null);
-const machineIconImageFileName = computed(() => props.recipe.recipeTypeData?.machineIcon?.imageFileName ?? null);
+const resolvedMachineIcon = computed(() => props.recipe.recipeTypeData?.machineIcon || props.recipe.machineInfo?.machineIcon || null);
+const machineIconItemId = computed(() => resolvedMachineIcon.value?.itemId ?? null);
+const machineIconRenderAssetRef = computed(() => resolvedMachineIcon.value?.renderAssetRef ?? null);
+const machineIconImageFileName = computed(() => resolvedMachineIcon.value?.imageFileName ?? null);
 
 // Check if has machine icon
 const hasMachineIcon = computed(() => {

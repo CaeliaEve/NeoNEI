@@ -90,3 +90,21 @@ test('recipe category windows preserve raw runtime category keys through the vie
     'viewer must read recipeIds from the same category+machine key used by category pack writes',
   );
 });
+
+test('recipe category summaries preserve exported machine icons from native recipe packs', () => {
+  assert.match(
+    recipeBinarySource,
+    /machineIcon:\s*categoryStride >= 7/,
+    'binary recipe parser must preserve compact category machineIcon columns',
+  );
+  assert.match(
+    runtimeSource,
+    /toIndexedMachineIconFromRaw\(category\?\.machineIcon, runtime\)/,
+    'runtime category summaries must project exported machine icons instead of forcing null icons',
+  );
+  assert.match(
+    runtimeSource,
+    /toIndexedMachineIconFromRaw\(payloadMachineInfo\.machineIcon, runtime\)/,
+    'recipe UI payloads must prefer exported machineInfo.machineIcon for recipe title icons',
+  );
+});
