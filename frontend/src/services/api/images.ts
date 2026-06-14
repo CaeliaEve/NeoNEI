@@ -1,5 +1,9 @@
 import { BACKEND_BASE_URL } from './core/http';
-import { ASPECT_HASH_TO_NAME, getThaumcraftAspectTexturePath } from '../thaumcraftAspects';
+import {
+  ASPECT_HASH_TO_NAME,
+  getThaumcraftAspectTexturePath,
+  parseAspectNameFromLocalized,
+} from '../thaumcraftAspects';
 import { resolveDistDataAssetPath } from '../distDataRuntime';
 
 const FALLBACK_ITEM_IMAGE_PATH = 'minecraft/barrier~0.png';
@@ -48,7 +52,7 @@ function getThaumcraftAspectHashFromItemId(itemId: string | null | undefined): s
   const [, modId, internalName, , hash] = parts;
   if (
     modId?.toLowerCase() !== THAUMCRAFT_ASPECT_MOD_ID ||
-    internalName !== THAUMCRAFT_ASPECT_INTERNAL_NAME ||
+    internalName?.toLowerCase() !== THAUMCRAFT_ASPECT_INTERNAL_NAME.toLowerCase() ||
     !hash
   ) {
     return null;
@@ -56,9 +60,22 @@ function getThaumcraftAspectHashFromItemId(itemId: string | null | undefined): s
   return hash;
 }
 
-function getThaumcraftStaticAspectUrl(hash: string | null): string | null {
-  if (!hash) return null;
-  return getThaumcraftAspectTexturePath({ hash, name: ASPECT_HASH_TO_NAME[hash] });
+function getThaumcraftAspectHashFromImageFileName(imageFileName: string | null | undefined): string | null {
+  const normalized = imageFileName ? normalizeImageFileName(imageFileName) : '';
+  if (!normalized) return null;
+  const match = normalized.match(/(?:^|\/)thaumcraftneiplugin\/aspect~\d+~([^/]+)\.(?:png|gif)$/i);
+  return match?.[1] ?? null;
+}
+
+function getThaumcraftStaticAspectUrl(
+  hash: string | null,
+  localizedName?: string | null,
+): string | null {
+  const parsedName = parseAspectNameFromLocalized(localizedName ?? undefined);
+  return getThaumcraftAspectTexturePath({
+    hash,
+    name: parsedName || (hash ? ASPECT_HASH_TO_NAME[hash] : null),
+  });
 }
 
 function normalizeThaumcraftAspectImageFileName(imageFileName: string | null | undefined): string | null {
@@ -127,11 +144,17 @@ export function getItemImageUrlFromEntity(item: {
   renderAssetRef?: string | null;
   imageFileName?: string | null;
   itemId?: string | null;
+  localizedName?: string | null;
 } | null | undefined): string {
   const aspectHash = getThaumcraftAspectHashFromItemId(item?.itemId);
   if (aspectHash) {
-    const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHash);
+    const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHash, item?.localizedName);
     return staticAspectUrl || THAUMCRAFT_ASPECT_PLACEHOLDER_URL;
+  }
+  const aspectHashFromImage = getThaumcraftAspectHashFromImageFileName(item?.imageFileName);
+  if (aspectHashFromImage) {
+    const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHashFromImage, item?.localizedName);
+    if (staticAspectUrl) return staticAspectUrl;
   }
   const aspectImageFileName = normalizeThaumcraftAspectImageFileName(item?.imageFileName);
   if (aspectImageFileName) {
@@ -158,11 +181,17 @@ export function getPreferredStaticImageUrlFromEntity(item: {
   renderAssetRef?: string | null;
   imageFileName?: string | null;
   itemId?: string | null;
+  localizedName?: string | null;
 } | null | undefined): string {
   const aspectHash = getThaumcraftAspectHashFromItemId(item?.itemId);
   if (aspectHash) {
-    const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHash);
+    const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHash, item?.localizedName);
     return staticAspectUrl || THAUMCRAFT_ASPECT_PLACEHOLDER_URL;
+  }
+  const aspectHashFromImage = getThaumcraftAspectHashFromImageFileName(item?.imageFileName);
+  if (aspectHashFromImage) {
+    const staticAspectUrl = getThaumcraftStaticAspectUrl(aspectHashFromImage, item?.localizedName);
+    if (staticAspectUrl) return staticAspectUrl;
   }
   const aspectImageFileName = normalizeThaumcraftAspectImageFileName(item?.imageFileName);
   if (aspectImageFileName) {
@@ -321,4 +350,3 @@ export function resolveCanonicalRelativePath(relativePath?: string | null): stri
     : `textures/atlas-assets/${portablePath}`;
   return resolveDistDataAssetPath(distPath);
 }
-

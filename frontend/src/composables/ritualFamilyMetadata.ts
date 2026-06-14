@@ -102,11 +102,13 @@ export function collectRecipeItemStacks(node: unknown, output: RitualItemStack[]
 }
 
 export function isThaumcraftAspectItem(itemId: string, localizedName?: string): boolean {
-  if (itemId.includes('thaumcraftneiplugin~Aspect') || itemId.includes('~Aspect~')) return true;
-  return typeof localizedName === 'string' && (
-    localizedName.includes('??:') ||
-    /aspects?:/i.test(localizedName)
-  );
+  const parts = itemId.split('~');
+  const modId = `${parts[1] ?? ''}`.toLowerCase();
+  const internalName = `${parts[2] ?? ''}`.toLowerCase();
+  if (modId === 'thaumcraftneiplugin' && internalName === 'aspect') return true;
+
+  const parsedAspectName = parseAspectNameFromLocalized(localizedName);
+  return Boolean(parsedAspectName && parsedAspectName !== 'Unknown');
 }
 
 function extractAspectHash(itemId: string): string | undefined {

@@ -127,6 +127,11 @@ export const ASPECT_COLORS: Record<string, string> = {
   Fabrico: '#809d80',
   Pannus: '#eaeac2',
   Machina: '#8080a0',
+  Aequalitas: '#d7f4ff',
+  Vesania: '#d98cff',
+  Primordium: '#b99cff',
+  Astrum: '#8fb6ff',
+  Gloria: '#ffd980',
 };
 
 export const ASPECT_ICON_DAMAGE: Record<string, number> = {
@@ -247,6 +252,17 @@ const ASPECT_NAME_MAP: Record<string, string> = {
   unknown: 'Unknown',
 };
 
+// Several GTNH add-ons expose custom aspects with user-facing names while the
+// exported native icon pack keeps the five historical custom texture names.
+// Keep display names intact, but resolve those names to their native texture.
+const ASPECT_TEXTURE_NAME_ALIASES: Record<string, string> = {
+  aequalitas: 'custom1',
+  vesania: 'custom2',
+  primordium: 'custom3',
+  astrum: 'custom4',
+  gloria: 'custom5',
+};
+
 // Keep this list in sync with frontend/public/textures/thaumcraft-aspects-exported.
 // Aspect icons are a tiny fixed native resource pack: resolve them locally instead of
 // issuing per-aspect backend image fallbacks, so recipe pages keep NEI-like instant flips.
@@ -323,7 +339,10 @@ const NATIVE_ASPECT_TEXTURE_NAMES = new Set([
 ]);
 
 export function normalizeAspectName(name: string): string {
-  const trimmed = name.trim();
+  const trimmed = name
+    .trim()
+    .replace(/^(?:要素|源质|aspect|aspects|essentia)\s*[:：]\s*/i, '')
+    .trim();
   if (!trimmed) return 'Unknown';
 
   const lowered = trimmed.toLowerCase();
@@ -354,7 +373,7 @@ export function getThaumcraftAspectTexturePath(
     const normalized = normalizeAspectName(rawName);
     if (!normalized || normalized === 'Unknown') continue;
 
-    const textureName = normalized.toLowerCase();
+    const textureName = ASPECT_TEXTURE_NAME_ALIASES[normalized.toLowerCase()] || normalized.toLowerCase();
     if (NATIVE_ASPECT_TEXTURE_NAMES.has(textureName)) {
       return `/textures/thaumcraft-aspects-exported/${textureName}.gif`;
     }
@@ -366,16 +385,15 @@ export function getThaumcraftAspectTexturePath(
 export function parseAspectNameFromLocalized(localizedName?: string): string | null {
   if (!localizedName) return null;
 
-  const zh = localizedName.match(/要素:\s*(.+)$/);
+  const zh = localizedName.match(/(?:要素|源质)\s*[:：]\s*(.+)$/);
   if (zh) {
     return normalizeAspectName(zh[1]);
   }
 
-  const en = localizedName.match(/aspects?:\s*(.+)$/i);
+  const en = localizedName.match(/(?:aspects?|essentia)\s*[:：]\s*(.+)$/i);
   if (en) {
     return normalizeAspectName(en[1]);
   }
 
   return null;
 }
-
