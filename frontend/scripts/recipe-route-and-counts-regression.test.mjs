@@ -53,3 +53,20 @@ test('recipe browser selectors use bootstrap totals for tab counts before full h
   );
 });
 
+test('recipe browser selectors keep summary category tabs stable during lazy hydration', () => {
+  assert.equal(
+    selectorsSource.includes('authoritative tab list'),
+    true,
+    'selectors should document that exported summary categories are the stable tab authority',
+  );
+  assert.equal(
+    selectorsSource.includes('loadedRecipeCount >= expectedRecipeCount'),
+    false,
+    'selectors must not switch from summary categories to loaded categories after hydration completes',
+  );
+  assert.equal(
+    selectorsSource.includes('merged.push(category)'),
+    false,
+    'selectors must not append newly loaded extra categories to the non-search summary tab list',
+  );
+});

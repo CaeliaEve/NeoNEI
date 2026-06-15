@@ -228,13 +228,6 @@ export const useRecipeBrowserSelectors = ({
     const summaryGroups = currentTab.value === 'producedBy'
       ? (summary?.producedByMachineGroups ?? summary?.machineGroups ?? [])
       : (summary?.usedInMachineGroups ?? []);
-    const loadedRecipeCount = currentRecipesInTab.value.length;
-    const expectedRecipeCount = currentTab.value === 'producedBy'
-      ? (summary?.counts?.producedBy ?? 0)
-      : (summary?.counts?.usedIn ?? 0);
-    if (!recipeSearchQuery.value.trim() && expectedRecipeCount > 0 && loadedRecipeCount >= expectedRecipeCount) {
-      return loadedCategories;
-    }
     const preferMachineSummaryCategories = shouldPreferMachineSummaryGroups(rawSummaryCategoryGroups, summaryGroups);
     const summaryCategoryGroups = preferMachineSummaryCategories
       ? []
@@ -312,6 +305,11 @@ export const useRecipeBrowserSelectors = ({
       loadedByKey.set(getCategoryMatchKey(category), category);
     }
 
+    // Non-search recipe tabs must keep the exported NEI category summary as the
+    // authoritative tab list. Lazy page/window hydration may discover loaded
+    // recipes at different times; using those loaded recipes to add/remove tabs
+    // makes the category row jump from 3 -> 4/5 -> 3 while a recipe page opens.
+    // Loaded categories only enrich matching summary skeletons with recipe data.
     if (preferMachineSummaryCategories) {
       return summaryCategories.map((summaryCategory) => {
         const loaded = loadedByKey.get(getCategoryMatchKey(summaryCategory));
@@ -331,7 +329,6 @@ export const useRecipeBrowserSelectors = ({
       });
     }
 
-    const usedKeys = new Set<string>();
     const merged: MachineCategory[] = [];
     for (const summaryCategory of summaryCategories) {
       const key = getCategoryMatchKey(summaryCategory);
@@ -349,13 +346,6 @@ export const useRecipeBrowserSelectors = ({
       } else {
         merged.push(summaryCategory);
       }
-      usedKeys.add(key);
-    }
-
-    for (const category of loadedCategories) {
-      const key = getCategoryMatchKey(category);
-      if (usedKeys.has(key)) continue;
-      merged.push(category);
     }
 
     return merged;
