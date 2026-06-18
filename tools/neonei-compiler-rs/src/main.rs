@@ -58,6 +58,7 @@ enum CompileScope {
     Search,
     Browser,
     Recipes,
+    Ui,
     Textures,
 }
 
@@ -163,11 +164,13 @@ fn main() -> Result<()> {
                 CompileScope::All => {
                     compile_browser_pack(&input, &output, strict, debug_json)?;
                     compile_recipe_pack(&input, &output, strict, debug_json)?;
+                    compile_ui_pack(&input, &output, strict, debug_json)?;
                     compile_texture_pack(&input, &output, strict, debug_json)?;
                 }
                 CompileScope::Search => compile_search_pack(&input, &output, strict, debug_json)?,
                 CompileScope::Browser => compile_browser_pack(&input, &output, strict, debug_json)?,
                 CompileScope::Recipes => compile_recipe_pack(&input, &output, strict, debug_json)?,
+                CompileScope::Ui => compile_ui_pack(&input, &output, strict, debug_json)?,
                 CompileScope::Textures => {
                     compile_texture_pack(&input, &output, strict, debug_json)?
                 }
@@ -828,6 +831,10 @@ fn intern_compact_string(
 }
 
 fn push_u32(bytes: &mut Vec<u8>, value: u32) {
+    bytes.extend_from_slice(&value.to_le_bytes());
+}
+
+fn push_i32(bytes: &mut Vec<u8>, value: i32) {
     bytes.extend_from_slice(&value.to_le_bytes());
 }
 
@@ -1691,6 +1698,509 @@ fn compile_dist_recipe_pack(
     Ok(())
 }
 
+fn compile_ui_pack(input: &Path, output: &Path, strict: bool, _debug_json: bool) -> Result<()> {
+    let manifest = read_manifest(input)?;
+    let template_catalog = read_manifest_json(input, &manifest, "uiTemplateCatalog")?;
+    let Some(template_catalog) = template_catalog else {
+        if strict {
+            return Err(anyhow!(
+                "ui-pack compiler blocked: uiTemplateCatalog is missing"
+            ));
+        }
+        return Ok(());
+    };
+    let templates = ui_template_catalog_templates(&template_catalog);
+    if strict && templates.is_empty() {
+        return Err(anyhow!(
+            "ui-pack compiler blocked: uiTemplateCatalog has no templates"
+        ));
+    }
+
+    let recipe_ui_index = match read_compiled_recipe_ui_payload_index(output)? {
+        Some(entries) => entries,
+        None => build_raw_recipe_ui_payload_index(input, &manifest)?,
+    };
+    if strict && recipe_ui_index.is_empty() {
+        return Err(anyhow!(
+            "ui-pack compiler blocked: no recipe UI payload index entries are available"
+        ));
+    }
+
+    let bindings = build_ui_template_bindings(&recipe_ui_index, &templates);
+    let bound_recipe_count = bindings
+        .iter()
+        .filter(|entry| value_string(entry, "templateKey").is_some_and(|value| !value.is_empty()))
+        .count();
+    if strict && !recipe_ui_index.is_empty() && bound_recipe_count == 0 {
+        return Err(anyhow!(
+            "ui-pack compiler blocked: no recipe bindings matched a captured UI template"
+        ));
+    }
+
+    let ui_pack_dir = output.join("rust").join("ui-pack");
+    fs::create_dir_all(&ui_pack_dir)?;
+
+    let mut strings = vec![String::new()];
+    let mut string_refs = HashMap::new();
+    string_refs.insert(String::new(), 0u32);
+    let template_payload =
+        build_compact_ui_template_payload(&templates, &mut strings, &mut string_refs)?;
+    let binding_payload =
+        build_compact_ui_binding_payload(&bindings, &mut strings, &mut string_refs)?;
+    let string_payload = build_compact_ui_string_payload(&strings)?;
+    let assets_manifest = build_ui_assets_manifest(&templates);
+    let unbound_recipes = bindings
+        .iter()
+        .filter(|entry| {
+            value_string(entry, "templateKey")
+                .unwrap_or_default()
+                .is_empty()
+        })
+        .take(100)
+        .map(|entry| {
+            json!({
+                "recipeId": value_string(entry, "recipeId").unwrap_or_default(),
+                "familyKey": value_string(entry, "familyKey").unwrap_or_default(),
+                "recipeType": value_string(entry, "recipeType").unwrap_or_default(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let status = if recipe_ui_index.is_empty() {
+        "empty"
+    } else if bound_recipe_count == bindings.len() {
+        "ready"
+    } else {
+        "partial"
+    };
+
+    write_binary_pack_payload(
+        &ui_pack_dir.join("ui_templates.bin"),
+        "neonei/ui-template-pack/current",
+        &template_payload,
+    )?;
+    write_binary_pack_payload(
+        &ui_pack_dir.join("ui_bindings.bin"),
+        "neonei/ui-binding-pack/current",
+        &binding_payload,
+    )?;
+    write_binary_pack_payload(
+        &ui_pack_dir.join("ui_strings.bin"),
+        "neonei/ui-string-pack/current",
+        &string_payload,
+    )?;
+    write_json_value(
+        &ui_pack_dir.join("ui_assets.manifest.json"),
+        &assets_manifest,
+    )?;
+    write_json_value(
+        &ui_pack_dir.join("ui_pack_report.json"),
+        &json!({
+            "schemaVersion": "neonei/ui-pack-report/current",
+            "generatedAt": "deterministic-rust-compiler",
+            "status": status,
+            "source": {
+                "uiTemplateCatalog": manifest.files.get("uiTemplateCatalog").cloned().unwrap_or_default(),
+                "recipeUiPayloadIndex": "recipes/ui-payload-index.json",
+            },
+            "summary": {
+                "templateCount": templates.len(),
+                "bindingCount": bindings.len(),
+                "boundRecipeCount": bound_recipe_count,
+                "unboundRecipeCount": bindings.len().saturating_sub(bound_recipe_count),
+                "slotCount": templates.iter().map(ui_template_slot_count).sum::<usize>(),
+                "textOverlayCount": templates.iter().map(ui_template_text_count).sum::<usize>(),
+                "stringCount": strings.len(),
+                "assetCount": assets_manifest.get("assets").and_then(Value::as_array).map(|items| items.len()).unwrap_or(0),
+            },
+            "artifacts": {
+                "uiTemplates": "rust/ui-pack/ui_templates.bin",
+                "uiBindings": "rust/ui-pack/ui_bindings.bin",
+                "uiStrings": "rust/ui-pack/ui_strings.bin",
+                "uiAssetsManifest": "rust/ui-pack/ui_assets.manifest.json",
+            },
+            "unboundRecipes": unbound_recipes,
+        }),
+    )?;
+    Ok(())
+}
+
+fn read_compiled_recipe_ui_payload_index(output: &Path) -> Result<Option<Vec<Value>>> {
+    let path = output.join("recipes").join("ui-payload-index.json");
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let value: Value =
+        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+    Ok(Some(
+        value
+            .get("recipes")
+            .and_then(Value::as_array)
+            .cloned()
+            .unwrap_or_default(),
+    ))
+}
+
+fn build_raw_recipe_ui_payload_index(input: &Path, manifest: &RawManifest) -> Result<Vec<Value>> {
+    let recipe_index = read_manifest_json(input, manifest, "recipeIndex")?
+        .ok_or_else(|| anyhow!("ui-pack compiler blocked: recipeIndex is missing"))?;
+    let handlers = read_jsonl_values(input, manifest, "neiHandlers")?;
+    let layouts = read_json_collection(
+        input,
+        manifest,
+        &["neiHandlerLayouts", "recipeLayouts"],
+        Some("handler-layouts"),
+    )?;
+    let handler_context = RecipeHandlerContext::new(&handlers, &layouts);
+    let mut recipes = Vec::new();
+    for shard in recipe_index
+        .get("shards")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+    {
+        let Some(path) = shard.get("path").and_then(Value::as_str) else {
+            continue;
+        };
+        let shard_path = input.join(path.replace('\\', "/").trim_start_matches('/'));
+        recipes.extend(read_jsonl_file_values(&shard_path)?);
+    }
+
+    let mut entries = Vec::with_capacity(recipes.len());
+    for recipe in &recipes {
+        let recipe_id = recipe_id(recipe);
+        let (handler, _layout) = handler_context.resolve(recipe);
+        let public_handler = handler.map(public_recipe_handler);
+        let raw_family_key = first_non_empty(&[
+            value_string(recipe, "family"),
+            value_string(recipe, "sourcePlugin"),
+            value_string(recipe, "recipeType"),
+            nested_value_string(recipe, &["machine", "machineId"]),
+        ])
+        .unwrap_or_else(|| "unknown".to_string());
+        let family_key = classify_recipe_family_key(recipe, &raw_family_key, handler);
+        let recipe_type = first_non_empty(&[
+            value_string(recipe, "recipeType"),
+            nested_value_string(recipe, &["machine", "machineId"]),
+            Some(family_key.clone()),
+        ])
+        .unwrap_or_else(|| family_key.clone());
+        let machine_type = first_non_empty(&[
+            public_handler
+                .as_ref()
+                .and_then(|handler| value_string(handler, "localizedName")),
+            public_handler
+                .as_ref()
+                .and_then(|handler| value_string(handler, "displayName")),
+            nested_value_string(recipe, &["machine", "displayName"]),
+            value_string(recipe, "displayName"),
+            nested_value_string(recipe, &["machine", "machineId"]),
+            Some(recipe_type.clone()),
+        ])
+        .unwrap_or_else(|| recipe_type.clone());
+        let handler_key = public_handler
+            .as_ref()
+            .and_then(|handler| value_string(handler, "handlerKey"));
+        entries.push(json!({
+            "recipeId": recipe_id,
+            "path": rust_recipe_ui_payload_relative_path(&recipe_id),
+            "payloadKey": recipe_id,
+            "familyKey": family_key,
+            "recipeType": recipe_type,
+            "machineType": machine_type,
+            "handlerKey": handler_key,
+        }));
+    }
+    Ok(entries)
+}
+
+fn ui_template_catalog_templates(catalog: &Value) -> Vec<Value> {
+    let mut templates = catalog
+        .get("templates")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|template| {
+            value_string(template, "templateKey").is_some_and(|value| !value.trim().is_empty())
+        })
+        .collect::<Vec<_>>();
+    templates.sort_by(|left, right| {
+        value_string(left, "templateKey").cmp(&value_string(right, "templateKey"))
+    });
+    templates
+}
+
+fn build_ui_template_bindings(recipe_index: &[Value], templates: &[Value]) -> Vec<Value> {
+    let template_by_family = templates
+        .iter()
+        .filter_map(|template| Some((value_string(template, "familyKey")?, template)))
+        .collect::<BTreeMap<_, _>>();
+    let mut bindings = recipe_index
+        .iter()
+        .filter_map(|entry| {
+            let recipe_id = value_string(entry, "recipeId")?;
+            let family_key = value_string(entry, "familyKey").unwrap_or_default();
+            let template = template_by_family.get(&family_key).copied();
+            Some(json!({
+                "recipeId": recipe_id,
+                "path": value_string(entry, "path").unwrap_or_default(),
+                "payloadKey": value_string(entry, "payloadKey").unwrap_or_default(),
+                "familyKey": family_key,
+                "recipeType": value_string(entry, "recipeType").unwrap_or_default(),
+                "machineType": value_string(entry, "machineType").unwrap_or_default(),
+                "templateKey": template.and_then(|template| value_string(template, "templateKey")).unwrap_or_default(),
+                "templateSignature": template.and_then(|template| value_string(template, "templateSignature")).unwrap_or_default(),
+                "canonicalMachineFamily": template.and_then(|template| value_string(template, "canonicalMachineFamily")).unwrap_or_default(),
+                "layoutKind": template.and_then(|template| value_string(template, "layoutKind")).unwrap_or_default(),
+            }))
+        })
+        .collect::<Vec<_>>();
+    bindings.sort_by(|left, right| {
+        value_string(left, "recipeId").cmp(&value_string(right, "recipeId"))
+    });
+    bindings
+}
+
+fn build_ui_assets_manifest(templates: &[Value]) -> Value {
+    let mut assets_by_ref: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    for template in templates {
+        let asset = value_string(template, "imageResource").unwrap_or_default();
+        if asset.trim().is_empty() {
+            continue;
+        }
+        let template_key = value_string(template, "templateKey").unwrap_or_default();
+        assets_by_ref.entry(asset).or_default().push(template_key);
+    }
+    let assets = assets_by_ref
+        .into_iter()
+        .map(|(asset_ref, mut template_keys)| {
+            template_keys.sort();
+            template_keys.dedup();
+            json!({
+                "assetRef": asset_ref,
+                "kind": "template-background",
+                "templateKeys": template_keys,
+            })
+        })
+        .collect::<Vec<_>>();
+    json!({
+        "schemaVersion": "neonei/ui-assets-manifest/current",
+        "generatedAt": "deterministic-rust-compiler",
+        "assets": assets,
+    })
+}
+
+fn ui_template_slot_count(template: &Value) -> usize {
+    template
+        .get("slots")
+        .and_then(Value::as_array)
+        .map(|values| values.len())
+        .unwrap_or(0)
+}
+
+fn ui_template_text_count(template: &Value) -> usize {
+    template
+        .get("textOverlays")
+        .and_then(Value::as_array)
+        .map(|values| values.len())
+        .unwrap_or(0)
+}
+
+fn build_compact_ui_template_payload(
+    templates: &[Value],
+    strings: &mut Vec<String>,
+    string_refs: &mut HashMap<String, u32>,
+) -> Result<Vec<u8>> {
+    let mut template_bytes = Vec::new();
+    let mut slot_bytes = Vec::new();
+    let mut text_bytes = Vec::new();
+    let mut slot_count = 0u32;
+    let mut text_count = 0u32;
+
+    for template in templates {
+        let slot_start = slot_count;
+        if let Some(slots) = template.get("slots").and_then(Value::as_array) {
+            for slot in slots {
+                push_u32(
+                    &mut slot_bytes,
+                    intern_compact_string(strings, string_refs, value_string(slot, "role")),
+                );
+                push_u32(
+                    &mut slot_bytes,
+                    value_u64(slot, "startIndex").unwrap_or(0) as u32,
+                );
+                push_u32(
+                    &mut slot_bytes,
+                    value_u64(slot, "columns").unwrap_or(0) as u32,
+                );
+                push_u32(&mut slot_bytes, value_u64(slot, "rows").unwrap_or(0) as u32);
+                push_i32(&mut slot_bytes, value_i64(slot, "x").unwrap_or(0) as i32);
+                push_i32(&mut slot_bytes, value_i64(slot, "y").unwrap_or(0) as i32);
+                slot_count += 1;
+            }
+        }
+        let slot_total = slot_count.saturating_sub(slot_start);
+        let text_start = text_count;
+        if let Some(overlays) = template.get("textOverlays").and_then(Value::as_array) {
+            for overlay in overlays {
+                push_u32(
+                    &mut text_bytes,
+                    intern_compact_string(strings, string_refs, value_string(overlay, "text")),
+                );
+                push_i32(&mut text_bytes, value_i64(overlay, "x").unwrap_or(0) as i32);
+                push_i32(&mut text_bytes, value_i64(overlay, "y").unwrap_or(0) as i32);
+                push_u32(
+                    &mut text_bytes,
+                    value_u64(overlay, "width").unwrap_or(0) as u32,
+                );
+                push_u32(
+                    &mut text_bytes,
+                    value_u64(overlay, "height").unwrap_or(0) as u32,
+                );
+                text_count += 1;
+            }
+        }
+        let text_total = text_count.saturating_sub(text_start);
+
+        push_u32(
+            &mut template_bytes,
+            intern_compact_string(strings, string_refs, value_string(template, "templateKey")),
+        );
+        push_u32(
+            &mut template_bytes,
+            intern_compact_string(
+                strings,
+                string_refs,
+                value_string(template, "templateSignature"),
+            ),
+        );
+        push_u32(
+            &mut template_bytes,
+            intern_compact_string(strings, string_refs, value_string(template, "familyKey")),
+        );
+        push_u32(
+            &mut template_bytes,
+            intern_compact_string(
+                strings,
+                string_refs,
+                value_string(template, "canonicalMachineFamily"),
+            ),
+        );
+        push_u32(
+            &mut template_bytes,
+            intern_compact_string(strings, string_refs, value_string(template, "layoutKind")),
+        );
+        push_u32(
+            &mut template_bytes,
+            value_u64(template, "width").unwrap_or(0) as u32,
+        );
+        push_u32(
+            &mut template_bytes,
+            value_u64(template, "height").unwrap_or(0) as u32,
+        );
+        push_i32(
+            &mut template_bytes,
+            value_i64(template, "yShift").unwrap_or(0) as i32,
+        );
+        push_u32(
+            &mut template_bytes,
+            value_u64(template, "maxRecipesPerPage").unwrap_or(1) as u32,
+        );
+        push_u32(
+            &mut template_bytes,
+            intern_compact_string(
+                strings,
+                string_refs,
+                value_string(template, "imageResource"),
+            ),
+        );
+        push_u32(
+            &mut template_bytes,
+            value_u64(template, "handlerCount").unwrap_or(0) as u32,
+        );
+        push_u32(&mut template_bytes, slot_start);
+        push_u32(&mut template_bytes, slot_total);
+        push_u32(&mut template_bytes, text_start);
+        push_u32(&mut template_bytes, text_total);
+    }
+
+    let mut payload =
+        Vec::with_capacity(8 + 7 * 4 + template_bytes.len() + slot_bytes.len() + text_bytes.len());
+    payload.extend_from_slice(b"NEIUIT1\0");
+    push_u32(&mut payload, 1);
+    push_u32(&mut payload, templates.len() as u32);
+    push_u32(&mut payload, slot_count);
+    push_u32(&mut payload, text_count);
+    push_u32(&mut payload, 15);
+    push_u32(&mut payload, 6);
+    push_u32(&mut payload, 5);
+    payload.extend_from_slice(&template_bytes);
+    payload.extend_from_slice(&slot_bytes);
+    payload.extend_from_slice(&text_bytes);
+    Ok(payload)
+}
+
+fn build_compact_ui_binding_payload(
+    bindings: &[Value],
+    strings: &mut Vec<String>,
+    string_refs: &mut HashMap<String, u32>,
+) -> Result<Vec<u8>> {
+    let mut row_bytes = Vec::new();
+    for binding in bindings {
+        for key in [
+            "recipeId",
+            "path",
+            "payloadKey",
+            "familyKey",
+            "recipeType",
+            "machineType",
+            "templateKey",
+            "templateSignature",
+            "canonicalMachineFamily",
+            "layoutKind",
+        ] {
+            push_u32(
+                &mut row_bytes,
+                intern_compact_string(strings, string_refs, value_string(binding, key)),
+            );
+        }
+        let flags = if value_string(binding, "templateKey").is_some_and(|value| !value.is_empty()) {
+            1
+        } else {
+            0
+        };
+        push_u32(&mut row_bytes, flags);
+    }
+    let mut payload = Vec::with_capacity(8 + 3 * 4 + row_bytes.len());
+    payload.extend_from_slice(b"NEIUIB1\0");
+    push_u32(&mut payload, 1);
+    push_u32(&mut payload, bindings.len() as u32);
+    push_u32(&mut payload, 11);
+    payload.extend_from_slice(&row_bytes);
+    Ok(payload)
+}
+
+fn build_compact_ui_string_payload(strings: &[String]) -> Result<Vec<u8>> {
+    let mut string_offsets = Vec::<u32>::with_capacity(strings.len());
+    let mut string_bytes = Vec::<u8>::new();
+    for value in strings {
+        string_offsets.push(string_bytes.len() as u32);
+        string_bytes.extend_from_slice(value.as_bytes());
+        string_bytes.push(0);
+    }
+    let mut payload = Vec::with_capacity(8 + 3 * 4 + string_offsets.len() * 4 + string_bytes.len());
+    payload.extend_from_slice(b"NEIUIS1\0");
+    push_u32(&mut payload, 1);
+    push_u32(&mut payload, strings.len() as u32);
+    push_u32(&mut payload, string_bytes.len() as u32);
+    for offset in string_offsets {
+        push_u32(&mut payload, offset);
+    }
+    payload.extend_from_slice(&string_bytes);
+    Ok(payload)
+}
+
 fn build_compact_recipe_payload_from_pack(pack: &Value) -> Result<Vec<u8>> {
     let mut strings = vec![String::new()];
     let mut string_refs = HashMap::new();
@@ -2302,8 +2812,12 @@ fn recipe_machine_icon(recipe: &Value, public_handler: Option<&Value>) -> Option
         nested_value_string(recipe, &["machine", "iconRef"]),
         nested_value_string(recipe, &["renderHints", "machineIconAssetRef"]),
         nested_value_string(recipe, &["machine", "machineIcon", "renderAssetRef"]),
-        nested_value_string(recipe, &["metadata", "machineInfo", "machineIcon", "renderAssetRef"]),
-        public_handler.and_then(|handler| nested_value_string(handler, &["machineIcon", "renderAssetRef"])),
+        nested_value_string(
+            recipe,
+            &["metadata", "machineInfo", "machineIcon", "renderAssetRef"],
+        ),
+        public_handler
+            .and_then(|handler| nested_value_string(handler, &["machineIcon", "renderAssetRef"])),
     ]);
     let item_id = first_non_empty(&[
         render_asset_ref
@@ -2312,9 +2826,12 @@ fn recipe_machine_icon(recipe: &Value, public_handler: Option<&Value>) -> Option
         nested_value_string(recipe, &["machine", "machineIcon", "itemId"])
             .as_deref()
             .and_then(normalize_machine_icon_item_id),
-        nested_value_string(recipe, &["metadata", "machineInfo", "machineIcon", "itemId"])
-            .as_deref()
-            .and_then(normalize_machine_icon_item_id),
+        nested_value_string(
+            recipe,
+            &["metadata", "machineInfo", "machineIcon", "itemId"],
+        )
+        .as_deref()
+        .and_then(normalize_machine_icon_item_id),
         public_handler
             .and_then(|handler| value_string(handler, "preferredMachineItemName"))
             .as_deref()
@@ -2326,8 +2843,12 @@ fn recipe_machine_icon(recipe: &Value, public_handler: Option<&Value>) -> Option
     ]);
     let image_file_name = first_non_empty(&[
         nested_value_string(recipe, &["machine", "machineIcon", "imageFileName"]),
-        nested_value_string(recipe, &["metadata", "machineInfo", "machineIcon", "imageFileName"]),
-        public_handler.and_then(|handler| nested_value_string(handler, &["machineIcon", "imageFileName"])),
+        nested_value_string(
+            recipe,
+            &["metadata", "machineInfo", "machineIcon", "imageFileName"],
+        ),
+        public_handler
+            .and_then(|handler| nested_value_string(handler, &["machineIcon", "imageFileName"])),
     ]);
 
     if item_id.is_none() && render_asset_ref.is_none() && image_file_name.is_none() {
@@ -4028,6 +4549,11 @@ fn compile_runtime_reports(
             "semantic-validation-report.json",
             "recipe-handler-metadata-report.json",
             "recipe-fragmentation-report.json",
+            "ui-pack/ui_templates.bin",
+            "ui-pack/ui_bindings.bin",
+            "ui-pack/ui_strings.bin",
+            "ui-pack/ui_assets.manifest.json",
+            "ui-pack/ui_pack_report.json",
         ],
         CompileScope::Search => vec![
             "search.bin",
@@ -4046,6 +4572,14 @@ fn compile_runtime_reports(
             "semantic-validation-report.json",
             "recipe-handler-metadata-report.json",
             "recipe-fragmentation-report.json",
+        ],
+        CompileScope::Ui => vec![
+            "semantic-validation-report.json",
+            "ui-pack/ui_templates.bin",
+            "ui-pack/ui_bindings.bin",
+            "ui-pack/ui_strings.bin",
+            "ui-pack/ui_assets.manifest.json",
+            "ui-pack/ui_pack_report.json",
         ],
         CompileScope::Textures => vec![
             "textures.bin",
@@ -4069,6 +4603,7 @@ fn compile_runtime_reports(
                 artifact_names.extend(["browser-pack.json", "search-pack.json"])
             }
             CompileScope::Recipes => artifact_names.push("recipe-pack.json"),
+            CompileScope::Ui => {}
             CompileScope::Textures => artifact_names.push("texture-pack.json"),
         }
     }
@@ -4082,6 +4617,9 @@ fn compile_runtime_reports(
             "atlas.meta.bin",
             "animations.bin",
             "strings.zh_cn.bin",
+            "ui-pack/ui_templates.bin",
+            "ui-pack/ui_bindings.bin",
+            "ui-pack/ui_strings.bin",
         ] {
             if !artifact_names.contains(&artifact_name) && rust_dir.join(artifact_name).exists() {
                 artifact_names.push(artifact_name);
@@ -4416,6 +4954,14 @@ fn rust_manifest_file_entries(
             ("rustAtlasMetaBin", "rust/atlas.meta.bin"),
             ("rustAnimationBin", "rust/animations.bin"),
             ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
+            ("rustUiTemplatesBin", "rust/ui-pack/ui_templates.bin"),
+            ("rustUiBindingsBin", "rust/ui-pack/ui_bindings.bin"),
+            ("rustUiStringsBin", "rust/ui-pack/ui_strings.bin"),
+            (
+                "rustUiAssetsManifest",
+                "rust/ui-pack/ui_assets.manifest.json",
+            ),
+            ("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"),
         ]),
         CompileScope::Search => entries.extend([
             ("rustSearchBin", "rust/search.bin"),
@@ -4428,6 +4974,16 @@ fn rust_manifest_file_entries(
             ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
         ]),
         CompileScope::Recipes => entries.extend([("rustRecipeBin", "rust/recipes.bin")]),
+        CompileScope::Ui => entries.extend([
+            ("rustUiTemplatesBin", "rust/ui-pack/ui_templates.bin"),
+            ("rustUiBindingsBin", "rust/ui-pack/ui_bindings.bin"),
+            ("rustUiStringsBin", "rust/ui-pack/ui_strings.bin"),
+            (
+                "rustUiAssetsManifest",
+                "rust/ui-pack/ui_assets.manifest.json",
+            ),
+            ("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"),
+        ]),
         CompileScope::Textures => entries.extend([
             ("rustTextureBin", "rust/textures.bin"),
             ("rustAtlasMetaBin", "rust/atlas.meta.bin"),
@@ -4448,6 +5004,7 @@ fn rust_manifest_file_entries(
                 ("rustSearchPack", "rust/search-pack.json"),
             ]),
             CompileScope::Recipes => entries.push(("rustRecipePack", "rust/recipe-pack.json")),
+            CompileScope::Ui => entries.push(("rustUiPackReport", "rust/ui-pack/ui_pack_report.json")),
             CompileScope::Textures => entries.push(("rustTexturePack", "rust/texture-pack.json")),
         }
     }
@@ -4473,6 +5030,7 @@ impl CompileScope {
             CompileScope::Search => "search",
             CompileScope::Browser => "browser",
             CompileScope::Recipes => "recipes",
+            CompileScope::Ui => "ui",
             CompileScope::Textures => "textures",
         }
     }
@@ -4489,6 +5047,9 @@ fn rust_entrypoints_from_integrity(integrity: &BTreeMap<String, String>) -> Valu
         ("atlasMeta", "rust/atlas.meta.bin"),
         ("animations", "rust/animations.bin"),
         ("stringsZhCn", "rust/strings.zh_cn.bin"),
+        ("uiTemplates", "rust/ui-pack/ui_templates.bin"),
+        ("uiBindings", "rust/ui-pack/ui_bindings.bin"),
+        ("uiStrings", "rust/ui-pack/ui_strings.bin"),
     ] {
         if integrity.contains_key(path) {
             entrypoints.insert(key.to_string(), Value::String(path.to_string()));
@@ -4689,6 +5250,7 @@ fn rust_capabilities(scope: CompileScope) -> Value {
             "search.zh-cn",
             "strings.zh-cn",
             "native-render.webgl2",
+            "recipes.ui-pack",
         ]),
         CompileScope::Search => json!(["search.zh-cn", "strings.zh-cn"]),
         CompileScope::Browser => json!([
@@ -4699,6 +5261,7 @@ fn rust_capabilities(scope: CompileScope) -> Value {
             "native-render.webgl2"
         ]),
         CompileScope::Recipes => json!(["recipes.lookup"]),
+        CompileScope::Ui => json!(["recipes.ui-pack", "native-render.webgl2"]),
         CompileScope::Textures => json!(["atlas.static", "atlas.animated", "atlas.meta"]),
     }
 }
@@ -4931,6 +5494,11 @@ fn summarize_runtime_output(output: Option<&Path>) -> Result<RuntimeSummary> {
         ("recipeHandlerIndex", "recipes/handler-index.json"),
         ("browserAtlasIndex", "textures/browser-atlas-index.json"),
         ("animationTable", "textures/animation-table.json"),
+        ("uiTemplatesBin", "rust/ui-pack/ui_templates.bin"),
+        ("uiBindingsBin", "rust/ui-pack/ui_bindings.bin"),
+        ("uiStringsBin", "rust/ui-pack/ui_strings.bin"),
+        ("uiAssetsManifest", "rust/ui-pack/ui_assets.manifest.json"),
+        ("uiPackReport", "rust/ui-pack/ui_pack_report.json"),
         ("runtimeValidationReport", "validation/report.json"),
     ] {
         let path = output.join(relative_path);
@@ -5474,6 +6042,71 @@ mod tests {
     }
 
     #[test]
+    fn compact_ui_pack_uses_shared_native_string_table() {
+        let templates = vec![json!({
+            "templateKey": "furnace@default",
+            "templateSignature": "abc123",
+            "familyKey": "furnace",
+            "canonicalMachineFamily": "furnace",
+            "layoutKind": "furnace",
+            "width": 166,
+            "height": 65,
+            "yShift": -4,
+            "maxRecipesPerPage": 2,
+            "imageResource": "textures/gui/furnace.png",
+            "handlerCount": 1,
+            "slots": [
+                { "role": "item-input", "startIndex": 0, "columns": 1, "rows": 1, "x": 45, "y": 24 },
+                { "role": "item-output", "startIndex": 1, "columns": 1, "rows": 1, "x": 115, "y": 24 }
+            ],
+            "textOverlays": [{ "text": "EU/t", "x": 80, "y": 10, "width": 24, "height": 8 }]
+        })];
+        let recipe_index = vec![json!({
+            "recipeId": "r1",
+            "path": "recipes/ui-payload-shards/55.json",
+            "payloadKey": "r1",
+            "familyKey": "furnace",
+            "recipeType": "furnace",
+            "machineType": "Furnace"
+        })];
+        let bindings = build_ui_template_bindings(&recipe_index, &templates);
+        let mut strings = vec![String::new()];
+        let mut string_refs = HashMap::new();
+        string_refs.insert(String::new(), 0u32);
+        let template_payload =
+            build_compact_ui_template_payload(&templates, &mut strings, &mut string_refs).unwrap();
+        let binding_payload =
+            build_compact_ui_binding_payload(&bindings, &mut strings, &mut string_refs).unwrap();
+        let string_payload = build_compact_ui_string_payload(&strings).unwrap();
+
+        assert_eq!(&template_payload[0..8], b"NEIUIT1\0");
+        assert_eq!(
+            u32::from_le_bytes(template_payload[8..12].try_into().unwrap()),
+            1
+        );
+        assert_eq!(
+            u32::from_le_bytes(template_payload[12..16].try_into().unwrap()),
+            1
+        );
+        assert_eq!(
+            u32::from_le_bytes(template_payload[16..20].try_into().unwrap()),
+            2
+        );
+        assert_eq!(
+            u32::from_le_bytes(template_payload[20..24].try_into().unwrap()),
+            1
+        );
+        assert_eq!(&binding_payload[0..8], b"NEIUIB1\0");
+        assert_eq!(
+            u32::from_le_bytes(binding_payload[12..16].try_into().unwrap()),
+            1
+        );
+        assert_eq!(&string_payload[0..8], b"NEIUIS1\0");
+        assert!(u32::from_le_bytes(string_payload[12..16].try_into().unwrap()) > 8);
+        assert_eq!(bindings[0]["templateKey"], json!("furnace@default"));
+    }
+
+    #[test]
     fn zero_recipe_diagnostics_distinguish_legal_and_suspicious_handlers() {
         let value = json!({
             "summary": {
@@ -5506,6 +6139,11 @@ mod tests {
         assert!(production_entries.contains(&"rust/recipes.bin"));
         assert!(production_entries.contains(&"rust/textures.bin"));
         assert!(production_entries.contains(&"rust/atlas.meta.bin"));
+        assert!(production_entries.contains(&"rust/ui-pack/ui_templates.bin"));
+        assert!(production_entries.contains(&"rust/ui-pack/ui_bindings.bin"));
+        assert!(production_entries.contains(&"rust/ui-pack/ui_strings.bin"));
+        assert!(production_entries.contains(&"rust/ui-pack/ui_assets.manifest.json"));
+        assert!(production_entries.contains(&"rust/ui-pack/ui_pack_report.json"));
         assert!(production_entries.contains(&"rust/semantic-validation-report.json"));
         assert!(production_entries.contains(&"rust/recipe-handler-metadata-report.json"));
         assert!(production_entries.contains(&"rust/recipe-fragmentation-report.json"));

@@ -444,7 +444,7 @@ function fileSizeIfPresent(filePath) {
 }
 
 function validateRawManifest(inputDir, manifest) {
-  const knownCapabilities = new Set(["facts", "assets", "models", "special", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers", "angelicaNativeRenderFacts"]);
+  const knownCapabilities = new Set(["facts", "assets", "models", "special", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers", "uiFamilyCensus", "uiTemplateCatalog", "angelicaNativeRenderFacts"]);
   const warnings = [];
   const missing = [];
   const empty = [];
@@ -3537,6 +3537,7 @@ function createSelfTestRawExport(root) {
     "assets/textures",
     "assets/animations",
     "models/entities",
+    "validation",
   ]) {
     mkdirSync(join(root, relativeDir), { recursive: true });
   }
@@ -3544,7 +3545,7 @@ function createSelfTestRawExport(root) {
     schemaVersion: "nesqlpp/raw-export/alpha1",
     repositoryName: "self-test",
     generatedAt: new Date().toISOString(),
-    capabilities: ["facts", "assets", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers", "angelicaNativeRenderFacts"],
+    capabilities: ["facts", "assets", "validation", "semanticIdentity", "nativeNeiRules", "nativeNeiHandlers", "uiFamilyCensus", "uiTemplateCatalog", "angelicaNativeRenderFacts"],
     files: {
       items: "facts/items.jsonl.gz",
       semanticItems: "facts/items/semantic-items.jsonl.gz",
@@ -3559,6 +3560,7 @@ function createSelfTestRawExport(root) {
       neiHiddenItems: "facts/nei/hiddenitems.jsonl.gz",
       neiHandlers: "facts/nei/handlers.jsonl.gz",
       neiHandlerLayouts: "facts/nei/handler-layouts.jsonl.gz",
+      uiTemplateCatalog: "validation/ui-template-catalog.json",
       textures: "assets/textures/index.jsonl.gz",
       animations: "assets/animations/index.jsonl.gz",
       nativeSprites: "assets/animations/native-sprites.jsonl.gz",
@@ -3600,6 +3602,45 @@ function createSelfTestRawExport(root) {
   writeGzipText(join(root, "facts/nei/hiddenitems.jsonl.gz"), `${JSON.stringify({ itemExpression: "IC2:itemCropSeed" })}\n`);
   writeGzipText(join(root, "facts/nei/handlers.jsonl.gz"), `${JSON.stringify({ handlerKey: "codechicken.nei.recipe.furnacerecipehandler", handlerClass: "codechicken.nei.recipe.FurnaceRecipeHandler", displayName: "Furnace", localizedName: "Furnace", canonicalMachineFamily: "furnace", modId: "minecraft", modName: "Minecraft", catalystItemName: "minecraft:furnace", preferredMachineItemName: "minecraft:furnace", maxRecipesPerPage: 2, handlerWidth: 166, handlerHeight: 65 })}\n${JSON.stringify({ handlerKey: "pneumaticcraft.common.thirdparty.nei.neirefinerymanager", handlerClass: "pneumaticCraft.common.thirdparty.nei.NEIRefineryManager", displayName: "NEIRefinery Manager", localizedName: "NEIRefinery Manager", canonicalMachineFamily: "botania", modId: "PneumaticCraft", modName: "PneumaticCraft", catalystItemName: "PneumaticCraft:refinery", preferredMachineItemName: "PneumaticCraft:refinery", maxRecipesPerPage: 4, handlerWidth: 166, handlerHeight: 80 })}\n`);
   writeGzipText(join(root, "facts/nei/handler-layouts.jsonl.gz"), `${JSON.stringify({ handlerKey: "codechicken.nei.recipe.furnacerecipehandler", handlerClass: "codechicken.nei.recipe.FurnaceRecipeHandler", layoutKind: "furnace", width: 166, height: 65, yShift: 0, maxRecipesPerPage: 2, slots: [{ role: "item-input", startIndex: 0, columns: 1, rows: 1, x: 45, y: 24 }, { role: "item-output", startIndex: 1, columns: 1, rows: 1, x: 115, y: 24 }], textOverlays: [] })}\n`);
+  writeJson(join(root, "validation/ui-template-catalog.json"), {
+    schemaVersion: "nesqlpp/ui-template-catalog/v1",
+    generatedAt: "self-test",
+    source: {
+      kind: "raw-export-self-test",
+      resource: "facts/nei/handler-layouts.jsonl.gz",
+      censusSchemaVersion: "nesqlpp/ui-family-census/v1",
+      censusFamilyCount: 1,
+      censusHandlerCount: 1,
+      layoutSpecProvider: "self-test",
+    },
+    summary: {
+      handlerCount: 1,
+      templateCount: 1,
+      familyCount: 1,
+      layoutKindCount: 1,
+      slotCount: 2,
+      overlayCount: 0,
+    },
+    templates: [{
+      templateKey: "furnace@default",
+      templateSignature: "self-test-furnace",
+      familyKey: "furnace",
+      canonicalMachineFamily: "furnace",
+      layoutKind: "furnace",
+      width: 166,
+      height: 65,
+      yShift: 0,
+      maxRecipesPerPage: 2,
+      imageResource: "textures/gui/container/furnace.png",
+      handlerCount: 1,
+      slotCount: 2,
+      handlerIds: ["codechicken.nei.recipe.furnacerecipehandler"],
+      handlerClasses: ["codechicken.nei.recipe.FurnaceRecipeHandler"],
+      modIds: ["minecraft"],
+      slots: [{ role: "item-input", startIndex: 0, columns: 1, rows: 1, x: 45, y: 24 }, { role: "item-output", startIndex: 1, columns: 1, rows: 1, x: 115, y: 24 }],
+      textOverlays: [],
+    }],
+  });
   writeGzipText(join(root, "assets/textures/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~iron_ingot~0", atlasFile: "static-atlas-0.webp" })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", atlasFile: "animated-atlas-0.webp", frameCount: 8, frameDurationMs: 100 })}\n${JSON.stringify({ assetId: "nesqlpp:item/i~minecraft~gold_ingot~0", atlasFile: "generated-static-atlas-0.webp", rect: { x: 0, y: 0, width: 16, height: 16 } })}\n`);
   writeGzipText(join(root, "assets/animations/index.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", frameCount: 8, frameDurationMs: 100 })}\n`);
   writeGzipText(join(root, "assets/animations/native-sprites.jsonl.gz"), `${JSON.stringify({ assetId: "nesqlpp:item/i~botania~manaResource~4", animationMode: "native_sprite", frameCount: 8, frameDurationMs: 100, spriteMetadataFile: "textures/items/terrasteel.png.mcmeta" })}\n`);

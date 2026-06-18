@@ -7,7 +7,10 @@ export type NativeRuntimePackSchema =
   | "neonei/recipe-pack/current"
   | "neonei/texture-pack/current"
   | "neonei/animation-pack/current"
-  | "neonei/string-pack/current";
+  | "neonei/string-pack/current"
+  | "neonei/ui-template-pack/current"
+  | "neonei/ui-binding-pack/current"
+  | "neonei/ui-string-pack/current";
 
 export const NATIVE_RUNTIME_PACK_SCHEMAS: Record<NativeRuntimePackName, NativeRuntimePackSchema> = {
   browser: "neonei/browser-pack/current",
@@ -27,6 +30,9 @@ export interface NativeRuntimeManifestFiles {
   textures?: string;
   animations?: string;
   stringsZhCn?: string;
+  uiTemplates?: string;
+  uiBindings?: string;
+  uiStrings?: string;
   integrity?: string;
   sizeReport?: string;
   missingDataReport?: string;
@@ -53,6 +59,7 @@ export type NativeRuntimeCapability =
   | "groups.collapse"
   | "groups.semantic-nbt"
   | "recipes.lookup"
+  | "recipes.ui-pack"
   | "search.zh-cn"
   | "strings.zh-cn"
   | "native-render.webgl2"

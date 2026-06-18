@@ -12,6 +12,7 @@ import {
   type BrowserAtlasItemEntry,
 } from '../services/globalBrowserAtlas';
 import { getSharedAnimationNowMs, resolveTimelineFrameIndex } from '../services/animationBudget';
+import { loadUiPackRuntime, type UiPackRuntime } from '../services/uiPackRuntime';
 import {
   WebGl2NativeRenderer,
   type NativeTextureSpriteCommand,
@@ -74,6 +75,7 @@ const renderError = ref<string | null>(null);
 const renderReady = ref(false);
 const missingTextureCount = ref(0);
 const currentDpr = ref(1);
+const uiPackRuntime = ref<UiPackRuntime | null>(null);
 const preparedSources = new Map<string, PreparedAtlasSource>();
 const registeredTextureKeys = new Set<string>();
 let loadSequence = 0;
@@ -86,8 +88,24 @@ const nativeLayout = computed(() => {
   return layout && typeof layout === 'object' ? layout as Record<string, unknown> : null;
 });
 
+const resolvedNativeLayout = computed(() => {
+  const binding = uiPackRuntime.value?.bindingsByRecipeId.get(props.recipe.recipeId);
+  const template = binding?.templateKey
+    ? uiPackRuntime.value?.templatesByKey.get(binding.templateKey) ?? null
+    : null;
+  if (!template) {
+    return nativeLayout.value;
+  }
+  return {
+    width: template.width,
+    height: template.height,
+    slots: template.slots,
+    textOverlays: template.textOverlays,
+  };
+});
+
 const slots = computed<NativeSlotFact[]>(() => {
-  const raw = nativeLayout.value?.slots;
+  const raw = resolvedNativeLayout.value?.slots;
   return Array.isArray(raw) ? raw as NativeSlotFact[] : [];
 });
 
@@ -105,8 +123,8 @@ const subtitle = computed(() => String(
     ?? 'native-nei',
 ));
 
-const layoutWidth = computed(() => Math.max(166, Number(nativeLayout.value?.width ?? 166)));
-const layoutHeight = computed(() => Math.max(65, Number(nativeLayout.value?.height ?? 65)));
+const layoutWidth = computed(() => Math.max(166, Number(resolvedNativeLayout.value?.width ?? 166)));
+const layoutHeight = computed(() => Math.max(65, Number(resolvedNativeLayout.value?.height ?? 65)));
 const displayWidth = computed(() => Math.ceil(layoutWidth.value * NATIVE_SCALE));
 const displayHeight = computed(() => Math.ceil(layoutHeight.value * NATIVE_SCALE));
 const canvasStyle = computed(() => ({
@@ -176,6 +194,8 @@ const slotCells = computed<CanvasCell[]>(() => {
 const renderSignature = computed(() => JSON.stringify({
   recipeId: props.recipe.recipeId,
   familyKey: props.uiPayload?.familyKey ?? '',
+  uiPackStatus: uiPackRuntime.value?.status ?? 'loading',
+  uiPackTemplateKey: uiPackRuntime.value?.bindingsByRecipeId.get(props.recipe.recipeId)?.templateKey ?? '',
   layoutWidth: layoutWidth.value,
   layoutHeight: layoutHeight.value,
   slots: slots.value,
@@ -449,6 +469,10 @@ function resetRendererState() {
   renderReady.value = false;
 }
 
+async function hydrateUiPackRuntime() {
+  uiPackRuntime.value = await loadUiPackRuntime('/api/runtime/current/manifest');
+}
+
 async function rebuildRenderer() {
   if (!mounted) return;
   const sequence = ++loadSequence;
@@ -508,6 +532,7 @@ function handleResize() {
 onMounted(() => {
   mounted = true;
   window.addEventListener('resize', handleResize, { passive: true });
+  void hydrateUiPackRuntime();
   void rebuildRenderer();
 });
 
@@ -577,6 +602,7 @@ onBeforeUnmount(() => {
 
     <footer class="native-nei-footer">
       <span>{{ slotCells.length }} slots</span>
+      <span>UI pack: {{ uiPackRuntime?.status ?? 'loading' }}</span>
       <span v-if="renderReady">WebGL2 atlas path active</span>
       <span v-if="missingTextureCount > 0" class="native-nei-warning">{{ missingTextureCount }} atlas entries missing</span>
     </footer>

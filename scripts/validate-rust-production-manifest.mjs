@@ -45,6 +45,11 @@ const requiredRustFiles = {
   rustTextureBin: files.rustTextureBin,
   rustAnimationBin: files.rustAnimationBin,
   rustStringsZhCnBin: files.rustStringsZhCnBin,
+  rustUiTemplatesBin: files.rustUiTemplatesBin,
+  rustUiBindingsBin: files.rustUiBindingsBin,
+  rustUiStringsBin: files.rustUiStringsBin,
+  rustUiAssetsManifest: files.rustUiAssetsManifest,
+  rustUiPackReport: files.rustUiPackReport,
 };
 for (const [key, relativePath] of Object.entries(requiredRustFiles)) {
   if (!`${relativePath ?? ''}`.trim()) {
@@ -71,6 +76,9 @@ for (const [entrypoint, expectedPath] of Object.entries({
   textures: 'rust/textures.bin',
   animations: 'rust/animations.bin',
   stringsZhCn: 'rust/strings.zh_cn.bin',
+  uiTemplates: 'rust/ui-pack/ui_templates.bin',
+  uiBindings: 'rust/ui-pack/ui_bindings.bin',
+  uiStrings: 'rust/ui-pack/ui_strings.bin',
 })) {
   const actualPath = `${runtimeEntrypoints[entrypoint] ?? ''}`.replaceAll('\\', '/');
   if (actualPath !== expectedPath) {

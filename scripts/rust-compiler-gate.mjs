@@ -16,6 +16,9 @@ const rustBrowserPack = join(nodeSelfTestOutput, 'rust', 'browser.bin');
 const rustSearchPack = join(nodeSelfTestOutput, 'rust', 'search.bin');
 const rustRecipePack = join(nodeSelfTestOutput, 'rust', 'recipes.bin');
 const rustTexturePack = join(nodeSelfTestOutput, 'rust', 'textures.bin');
+const rustUiTemplatesPack = join(nodeSelfTestOutput, 'rust', 'ui-pack', 'ui_templates.bin');
+const rustUiBindingsPack = join(nodeSelfTestOutput, 'rust', 'ui-pack', 'ui_bindings.bin');
+const rustUiStringsPack = join(nodeSelfTestOutput, 'rust', 'ui-pack', 'ui_strings.bin');
 const rustRuntimeManifest = join(nodeSelfTestOutput, 'rust', 'runtime-manifest.json');
 const rustIntegrity = join(nodeSelfTestOutput, 'rust', 'integrity.json');
 const rustSizeReport = join(nodeSelfTestOutput, 'rust', 'size-report.json');
@@ -216,7 +219,7 @@ const deploymentReport = readJson(rustDeploymentReport);
 if (runtimeManifest?.schema !== 'neonei/runtime/current') fail(`rust runtime manifest has wrong schema: ${runtimeManifest?.schema}`);
 if (!Number.isInteger(runtimeManifest?.schemaRevision) || runtimeManifest.schemaRevision < 1) fail('rust runtime manifest is missing schemaRevision');
 if (!/^rust-[a-f0-9]{16}$/.test(`${runtimeManifest?.runtimeId ?? ''}`)) fail(`rust runtime manifest has invalid runtimeId: ${runtimeManifest?.runtimeId}`);
-for (const capability of ['atlas.static', 'atlas.animated', 'groups.collapse', 'groups.semantic-nbt', 'recipes.lookup', 'search.zh-cn', 'strings.zh-cn', 'native-render.webgl2']) {
+for (const capability of ['atlas.static', 'atlas.animated', 'groups.collapse', 'groups.semantic-nbt', 'recipes.lookup', 'recipes.ui-pack', 'search.zh-cn', 'strings.zh-cn', 'native-render.webgl2']) {
   if (!(runtimeManifest?.capabilities ?? []).includes(capability)) fail(`rust runtime manifest is missing capability: ${capability}`);
 }
 compareCounts({
@@ -244,6 +247,11 @@ for (const requiredPath of [
   'rust/animations.bin',
   'rust/groups.bin',
   'rust/strings.zh_cn.bin',
+  'rust/ui-pack/ui_templates.bin',
+  'rust/ui-pack/ui_bindings.bin',
+  'rust/ui-pack/ui_strings.bin',
+  'rust/ui-pack/ui_assets.manifest.json',
+  'rust/ui-pack/ui_pack_report.json',
 ]) {
   requireFile(join(nodeSelfTestOutput, requiredPath));
   const manifestHasPath = (runtimeManifest?.files ?? []).some((entry) => entry.path === requiredPath);
@@ -256,6 +264,19 @@ for (const retiredDebugPath of ['rust/browser-pack.json', 'rust/search-pack.json
     fail(`rust runtime manifest still exposes retired debug pack: ${retiredDebugPath}`);
   }
 }
+for (const [entrypoint, expectedPath] of Object.entries({
+  uiTemplates: 'rust/ui-pack/ui_templates.bin',
+  uiBindings: 'rust/ui-pack/ui_bindings.bin',
+  uiStrings: 'rust/ui-pack/ui_strings.bin',
+})) {
+  if (runtimeManifest?.entrypoints?.[entrypoint] !== expectedPath) {
+    fail(`rust runtime manifest is missing ${entrypoint} UI entrypoint`);
+  }
+}
+const uiPackReport = readJson(join(nodeSelfTestOutput, 'rust', 'ui-pack', 'ui_pack_report.json'));
+if (uiPackReport?.status !== 'ready') fail(`ui pack report is not ready: ${JSON.stringify(uiPackReport)}`);
+assertEqual(uiPackReport?.summary?.templateCount, 1, 'ui pack template count');
+assertEqual(uiPackReport?.summary?.boundRecipeCount, 1, 'ui pack bound recipe count');
 if ((missingReport?.missingFiles ?? []).length !== 0) fail(`rust missing data report has missing files: ${JSON.stringify(missingReport.missingFiles)}`);
 if (migrationReadiness?.ready !== true) fail(`rust migration readiness is not ready: ${JSON.stringify(migrationReadiness)}`);
 if (deploymentReport?.schemaVersion !== 'neonei/rust-deployment-report/current') fail('rust deployment report has wrong schemaVersion');
@@ -286,6 +307,9 @@ writeFileSync(join(tmpRoot, 'gate-summary.json'), JSON.stringify({
   searchPack: rustSearchPack.replaceAll('\\', '/'),
   recipePack: rustRecipePack.replaceAll('\\', '/'),
   texturePack: rustTexturePack.replaceAll('\\', '/'),
+  uiTemplatesPack: rustUiTemplatesPack.replaceAll('\\', '/'),
+  uiBindingsPack: rustUiBindingsPack.replaceAll('\\', '/'),
+  uiStringsPack: rustUiStringsPack.replaceAll('\\', '/'),
   runtimeManifest: rustRuntimeManifest.replaceAll('\\', '/'),
   deploymentReport: rustDeploymentReport.replaceAll('\\', '/'),
   nodeSelfTestOutput: nodeSelfTestOutput.replaceAll('\\', '/'),

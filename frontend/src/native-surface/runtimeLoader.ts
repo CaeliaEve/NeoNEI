@@ -5,8 +5,8 @@
   type NativeRuntimePack,
   type NativeRuntimePackName,
   type NativeRuntimePackSchema,
-} from "./NativeRuntimeManifest";
-import { parseNativeCompactBrowserPack } from "./NativeRuntimeBrowserPack";
+} from "./NativeRuntimeManifest.ts";
+import { parseNativeCompactBrowserPack } from "./NativeRuntimeBrowserPack.ts";
 
 const NATIVE_PACK_MAGIC = "NNEIBIN\0";
 const NATIVE_PACK_HEADER_BYTES = 24;
