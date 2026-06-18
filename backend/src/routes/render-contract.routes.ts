@@ -4,6 +4,8 @@ import { getRenderContractService } from '../services/render-contract.service';
 import { getUiPayloadsService } from '../services/ui-payloads.service';
 import { getBrowserAtlasIndexService } from '../services/browser-atlas-index.service';
 import { getBrowserLayoutIndexService } from '../services/browser-layout-index.service';
+import { getUiFamilyCensusService } from '../services/ui-family-census.service';
+import { notFound } from '../utils/http';
 
 const router = Router();
 
@@ -33,6 +35,25 @@ router.get(
   '/browser-layout-index',
   asyncHandler(async (_req, res) => {
     res.json(getBrowserLayoutIndexService().getIndex());
+  })
+);
+
+router.get(
+  '/ui-family-census',
+  asyncHandler(async (_req, res) => {
+    res.json(getUiFamilyCensusService().getReport());
+  })
+);
+
+router.get(
+  '/ui-family-census/:familyKey',
+  asyncHandler(async (req, res) => {
+    const familyKey = String(req.params.familyKey || '').trim();
+    const family = getUiFamilyCensusService().getFamilyByKey(familyKey);
+    if (!family) {
+      throw notFound(`UI family census entry not found: ${familyKey}`);
+    }
+    res.json(family);
   })
 );
 

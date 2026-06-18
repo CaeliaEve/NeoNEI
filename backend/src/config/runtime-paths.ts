@@ -168,3 +168,7 @@ export const NESQL_ATLAS_REGISTRY_FILE = pickFirstExistingPath([
   pickEnv('NESQL_ATLAS_REGISTRY_FILE'),
   NESQL_CANONICAL_DIR ? path.join(NESQL_CANONICAL_DIR, 'atlas-registry.json') : undefined,
 ]);
+export const NESQL_UI_FAMILY_CENSUS_FILE = pickFirstExistingPath([
+  pickEnv('NESQL_UI_FAMILY_CENSUS_FILE'),
+  NESQL_REPOSITORY_PATH ? path.join(NESQL_REPOSITORY_PATH, 'raw-export', 'validation', 'ui-family-census.json') : undefined,
+]);

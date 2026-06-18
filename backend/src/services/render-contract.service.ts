@@ -6,10 +6,12 @@ import {
   NESQL_ANIMATED_ATLAS_MANIFEST_FILE,
   NESQL_RENDER_INDEX_FILE,
   NESQL_ATLAS_REGISTRY_FILE,
+  NESQL_UI_FAMILY_CENSUS_FILE,
   NESQL_CANONICAL_DIR,
 } from '../config/runtime-paths';
 import { notFound } from '../utils/http';
 import { countManifestAssets } from './manifest-counts';
+import { getUiFamilyCensusService } from './ui-family-census.service';
 
 type JsonValue = Record<string, unknown>;
 
@@ -41,6 +43,14 @@ export interface RenderContractOverview {
     animatedAtlasManifest: { path: string; exists: boolean; assetCount: number; groupCount: number };
     renderIndex: { path: string; exists: boolean; assetCount: number };
     atlasRegistry: { path: string; exists: boolean; atlasCount: number; assetCount: number };
+    uiFamilyCensus: {
+      path: string;
+      exists: boolean;
+      handlerCount: number;
+      familyCount: number;
+      modCount: number;
+      layoutKindCount: number;
+    };
   };
 }
 
@@ -152,6 +162,7 @@ export class RenderContractService {
     const animatedAtlasManifest = readJsonIfExists(NESQL_ANIMATED_ATLAS_MANIFEST_FILE);
     const renderIndex = readJsonIfExists(NESQL_RENDER_INDEX_FILE);
     const atlasRegistry = readJsonIfExists(NESQL_ATLAS_REGISTRY_FILE);
+    const uiFamilyCensus = getUiFamilyCensusService().getReportOrNull();
 
     return {
       canonicalDir: NESQL_CANONICAL_DIR || '',
@@ -193,6 +204,14 @@ export class RenderContractService {
             typeof atlasRegistry?.assetCount === 'number'
               ? (atlasRegistry.assetCount as number)
               : 0,
+        },
+        uiFamilyCensus: {
+          path: NESQL_UI_FAMILY_CENSUS_FILE,
+          exists: Boolean(uiFamilyCensus),
+          handlerCount: uiFamilyCensus?.summary.handlerCount ?? 0,
+          familyCount: uiFamilyCensus?.summary.familyCount ?? 0,
+          modCount: uiFamilyCensus?.summary.modCount ?? 0,
+          layoutKindCount: uiFamilyCensus?.summary.layoutKindCount ?? 0,
         },
       },
     };
