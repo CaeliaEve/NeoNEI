@@ -172,3 +172,11 @@ export const NESQL_UI_FAMILY_CENSUS_FILE = pickFirstExistingPath([
   pickEnv('NESQL_UI_FAMILY_CENSUS_FILE'),
   NESQL_REPOSITORY_PATH ? path.join(NESQL_REPOSITORY_PATH, 'raw-export', 'validation', 'ui-family-census.json') : undefined,
 ]);
+export const NESQL_UI_TEMPLATE_CATALOG_FILE = pickFirstExistingPath([
+  pickEnv('NESQL_UI_TEMPLATE_CATALOG_FILE'),
+  NESQL_REPOSITORY_PATH ? path.join(NESQL_REPOSITORY_PATH, 'raw-export', 'validation', 'ui-template-catalog.json') : undefined,
+]);
+export const NESQL_UI_PAYLOAD_INDEX_FILE = pickFirstExistingPath([
+  pickEnv('NESQL_UI_PAYLOAD_INDEX_FILE'),
+  path.join(PUBLIC_DIR, 'dist-data', 'recipes', 'ui-payload-index.json'),
+]);

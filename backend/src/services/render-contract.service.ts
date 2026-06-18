@@ -7,11 +7,15 @@ import {
   NESQL_RENDER_INDEX_FILE,
   NESQL_ATLAS_REGISTRY_FILE,
   NESQL_UI_FAMILY_CENSUS_FILE,
+  NESQL_UI_TEMPLATE_CATALOG_FILE,
+  NESQL_UI_PAYLOAD_INDEX_FILE,
   NESQL_CANONICAL_DIR,
 } from '../config/runtime-paths';
 import { notFound } from '../utils/http';
 import { countManifestAssets } from './manifest-counts';
 import { getUiFamilyCensusService } from './ui-family-census.service';
+import { getUiTemplateCatalogService } from './ui-template-catalog.service';
+import { getUiTemplateBindingIndexService } from './ui-template-binding-index.service';
 
 type JsonValue = Record<string, unknown>;
 
@@ -49,6 +53,26 @@ export interface RenderContractOverview {
       handlerCount: number;
       familyCount: number;
       modCount: number;
+      layoutKindCount: number;
+    };
+    uiTemplateCatalog: {
+      path: string;
+      exists: boolean;
+      handlerCount: number;
+      templateCount: number;
+      familyCount: number;
+      layoutKindCount: number;
+      slotCount: number;
+      overlayCount: number;
+    };
+    uiTemplateBindingIndex: {
+      path: string;
+      exists: boolean;
+      recipeCount: number;
+      boundRecipeCount: number;
+      unboundRecipeCount: number;
+      templateCount: number;
+      familyCount: number;
       layoutKindCount: number;
     };
   };
@@ -163,6 +187,8 @@ export class RenderContractService {
     const renderIndex = readJsonIfExists(NESQL_RENDER_INDEX_FILE);
     const atlasRegistry = readJsonIfExists(NESQL_ATLAS_REGISTRY_FILE);
     const uiFamilyCensus = getUiFamilyCensusService().getReportOrNull();
+    const uiTemplateCatalog = getUiTemplateCatalogService().getReportOrNull();
+    const uiTemplateBindingIndex = getUiTemplateBindingIndexService().getReportOrNull();
 
     return {
       canonicalDir: NESQL_CANONICAL_DIR || '',
@@ -212,6 +238,26 @@ export class RenderContractService {
           familyCount: uiFamilyCensus?.summary.familyCount ?? 0,
           modCount: uiFamilyCensus?.summary.modCount ?? 0,
           layoutKindCount: uiFamilyCensus?.summary.layoutKindCount ?? 0,
+        },
+        uiTemplateCatalog: {
+          path: NESQL_UI_TEMPLATE_CATALOG_FILE,
+          exists: Boolean(uiTemplateCatalog),
+          handlerCount: uiTemplateCatalog?.summary.handlerCount ?? 0,
+          templateCount: uiTemplateCatalog?.summary.templateCount ?? 0,
+          familyCount: uiTemplateCatalog?.summary.familyCount ?? 0,
+          layoutKindCount: uiTemplateCatalog?.summary.layoutKindCount ?? 0,
+          slotCount: uiTemplateCatalog?.summary.slotCount ?? 0,
+          overlayCount: uiTemplateCatalog?.summary.overlayCount ?? 0,
+        },
+        uiTemplateBindingIndex: {
+          path: NESQL_UI_PAYLOAD_INDEX_FILE,
+          exists: Boolean(uiTemplateBindingIndex),
+          recipeCount: uiTemplateBindingIndex?.summary.recipeCount ?? 0,
+          boundRecipeCount: uiTemplateBindingIndex?.summary.boundRecipeCount ?? 0,
+          unboundRecipeCount: uiTemplateBindingIndex?.summary.unboundRecipeCount ?? 0,
+          templateCount: uiTemplateBindingIndex?.summary.templateCount ?? 0,
+          familyCount: uiTemplateBindingIndex?.summary.familyCount ?? 0,
+          layoutKindCount: uiTemplateBindingIndex?.summary.layoutKindCount ?? 0,
         },
       },
     };

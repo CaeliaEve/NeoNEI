@@ -5,6 +5,8 @@ import { getUiPayloadsService } from '../services/ui-payloads.service';
 import { getBrowserAtlasIndexService } from '../services/browser-atlas-index.service';
 import { getBrowserLayoutIndexService } from '../services/browser-layout-index.service';
 import { getUiFamilyCensusService } from '../services/ui-family-census.service';
+import { getUiTemplateCatalogService } from '../services/ui-template-catalog.service';
+import { getUiTemplateBindingIndexService } from '../services/ui-template-binding-index.service';
 import { notFound } from '../utils/http';
 
 const router = Router();
@@ -54,6 +56,44 @@ router.get(
       throw notFound(`UI family census entry not found: ${familyKey}`);
     }
     res.json(family);
+  })
+);
+
+router.get(
+  '/ui-template-catalog',
+  asyncHandler(async (_req, res) => {
+    res.json(getUiTemplateCatalogService().getReport());
+  })
+);
+
+router.get(
+  '/ui-template-catalog/:templateKey',
+  asyncHandler(async (req, res) => {
+    const templateKey = String(req.params.templateKey || '').trim();
+    const template = getUiTemplateCatalogService().getTemplateByKey(templateKey);
+    if (!template) {
+      throw notFound(`UI template catalog entry not found: ${templateKey}`);
+    }
+    res.json(template);
+  })
+);
+
+router.get(
+  '/ui-template-binding-index',
+  asyncHandler(async (_req, res) => {
+    res.json(getUiTemplateBindingIndexService().getReport());
+  })
+);
+
+router.get(
+  '/ui-template-binding-index/:recipeId',
+  asyncHandler(async (req, res) => {
+    const recipeId = String(req.params.recipeId || '').trim();
+    const binding = getUiTemplateBindingIndexService().getBindingByRecipeId(recipeId);
+    if (!binding) {
+      throw notFound(`UI template binding entry not found: ${recipeId}`);
+    }
+    res.json(binding);
   })
 );
 
