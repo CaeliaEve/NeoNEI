@@ -150,7 +150,7 @@ export class WebGl2NativeRenderer {
   private readonly textureCache = new Map<string, TextureState>();
   private readonly maxTextureSize: number;
 
-  static create(activeCanvas: OffscreenCanvas): WebGl2NativeRenderer | null {
+  static create(activeCanvas: HTMLCanvasElement | OffscreenCanvas): WebGl2NativeRenderer | null {
     const gl = activeCanvas.getContext("webgl2", {
       alpha: true,
       antialias: false,
@@ -213,7 +213,7 @@ export class WebGl2NativeRenderer {
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
   }
 
-  registerTexture(key: string, bitmap: ImageBitmap): boolean {
+  registerTexture(key: string, bitmap: TexImageSource): boolean {
     const width = Math.max(1, bitmap.width);
     const height = Math.max(1, bitmap.height);
     if (this.maxTextureSize <= 0 || width > this.maxTextureSize || height > this.maxTextureSize) {

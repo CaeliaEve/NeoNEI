@@ -31,7 +31,7 @@ export const BloodAlchemyTableUI = defineAsyncComponent(() => import('../BloodAl
 export const BloodBindingRitualUI = defineAsyncComponent(() => import('../BloodBindingRitualUI.vue'));
 export const BloodOrbCraftingUI = defineAsyncComponent(() => import('../BloodOrbCraftingUI.vue'));
 export const MultiblockBlueprintUI = defineAsyncComponent(() => import('../MultiblockBlueprintUI.vue'));
-export const NeiNativeLayoutRenderer = defineAsyncComponent(() => import('../NeiNativeLayoutRenderer.vue'));
+export const NativeNeiRecipeCanvas = defineAsyncComponent(() => import('../NativeNeiRecipeCanvas.vue'));
 
 export const componentRegistry: Record<string, Component> = {
   StandardCraftingUI,

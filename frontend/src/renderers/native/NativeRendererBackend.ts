@@ -1,6 +1,6 @@
 ﻿import type { NativeTextureSpriteCommand, NativeRenderCommand, NativeRendererStats } from "./WebGl2NativeRenderer";
 
-export type NativeRendererTextureSource = ImageBitmap;
+export type NativeRendererTextureSource = TexImageSource;
 
 export type NativeRendererDiagnostics = {
   contextLost: boolean;

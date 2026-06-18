@@ -12,7 +12,7 @@ import {
   ThaumcraftAspectUI,
   ThaumcraftCrucibleUI,
   ThaumcraftInfusionUI,
-  NeiNativeLayoutRenderer,
+  NativeNeiRecipeCanvas,
 } from './recipe-display/recipeComponentRegistry';
 import { useRecipeDebugPanel } from '../composables/recipe-display/useRecipeDebugPanel';
 import { useRecipePresentation } from '../composables/recipe-display/useRecipePresentation';
@@ -244,7 +244,7 @@ if (isDev && typeof window !== 'undefined') {
         :ui-config="uiConfig"
         @item-click="(itemId: string) => emit('item-click', itemId)"
       />
-      <NeiNativeLayoutRenderer
+      <NativeNeiRecipeCanvas
         v-else-if="shouldUseNativeLayoutRenderer"
         :recipe="recipe"
         :ui-payload="resolvedRecipeUiPayload"

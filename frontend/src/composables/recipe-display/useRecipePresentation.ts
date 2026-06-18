@@ -61,6 +61,10 @@ export function useRecipePresentation(source: RecipePresentationSource) {
       return 'NEIRecipeDisplay';
     }
 
+    if (shouldUseNativeLayoutRenderer.value) {
+      return 'NativeNeiRecipeCanvas';
+    }
+
     if (!componentRegistry[presentationProfile.value.component]) {
       return 'StandardCraftingUI (fallback)';
     }
