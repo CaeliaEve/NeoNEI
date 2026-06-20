@@ -22,6 +22,21 @@ export interface UiPackTextOverlay {
   height: number;
 }
 
+export interface UiPackRect {
+  id: string;
+  kind: string;
+  role: string;
+  label: string;
+  tooltip: string;
+  action: string;
+  itemId: string;
+  payloadKey: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface UiPackTemplate {
   templateKey: string;
   templateSignature: string;
@@ -37,6 +52,8 @@ export interface UiPackTemplate {
   slotCount: number;
   slots: UiPackSlot[];
   textOverlays: UiPackTextOverlay[];
+  hotspots: UiPackRect[];
+  viewports: UiPackRect[];
 }
 
 export interface UiPackBinding {
@@ -61,6 +78,8 @@ export interface UiPackRuntimeSummary {
   stringCount: number;
   slotCount: number;
   textOverlayCount: number;
+  hotspotCount: number;
+  viewportCount: number;
   assetCount: number;
 }
 
@@ -185,21 +204,28 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
   }
   const version = readU32(view, 8);
   if (version !== 1) {
-    throw new Error(`UI template pack has invalid version: ${version}`);
+    if (version !== 2 && version !== 3) {
+      throw new Error(`UI template pack has invalid version: ${version}`);
+    }
   }
   const templateCount = readU32(view, 12);
   const slotCount = readU32(view, 16);
   const textCount = readU32(view, 20);
-  const templateStride = readU32(view, 24);
-  const slotStride = readU32(view, 28);
-  const textStride = readU32(view, 32);
-  if (templateStride !== 15 || slotStride !== 6 || textStride !== 5) {
-    throw new Error(`UI template pack has unexpected strides: ${templateStride}/${slotStride}/${textStride}`);
+  const hotspotCount = version >= 2 ? readU32(view, 24) : 0;
+  const viewportCount = version >= 2 ? readU32(view, 28) : 0;
+  const templateStride = readU32(view, version >= 2 ? 32 : 24);
+  const slotStride = readU32(view, version >= 2 ? 36 : 28);
+  const textStride = readU32(view, version >= 2 ? 40 : 32);
+  const rectStride = version >= 2 ? readU32(view, 44) : 0;
+  if ((version === 1 && templateStride !== 15) || (version >= 2 && templateStride !== 19) || slotStride !== 6 || textStride !== 5 || (version === 2 && rectStride !== 9) || (version >= 3 && rectStride !== 12)) {
+    throw new Error(`UI template pack has unexpected strides: ${templateStride}/${slotStride}/${textStride}/${rectStride}`);
   }
   const templateBytes = templateCount * templateStride * 4;
   const slotBytes = slotCount * slotStride * 4;
   const textBytes = textCount * textStride * 4;
-  let cursor = 36;
+  const hotspotBytes = hotspotCount * rectStride * 4;
+  const viewportBytes = viewportCount * rectStride * 4;
+  let cursor = version >= 2 ? 48 : 36;
   const templates: UiPackTemplate[] = [];
   const templateRows: Array<{
     templateKey: string;
@@ -217,6 +243,10 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     slotCount: number;
     textStart: number;
     textCount: number;
+    hotspotStart: number;
+    hotspotCount: number;
+    viewportStart: number;
+    viewportCount: number;
   }> = [];
   for (let index = 0; index < templateCount; index += 1) {
     const rowOffset = cursor + index * templateStride * 4;
@@ -236,6 +266,10 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
       slotCount: readU32(view, rowOffset + 48),
       textStart: readU32(view, rowOffset + 52),
       textCount: readU32(view, rowOffset + 56),
+      hotspotStart: version >= 2 ? readU32(view, rowOffset + 60) : 0,
+      hotspotCount: version >= 2 ? readU32(view, rowOffset + 64) : 0,
+      viewportStart: version >= 2 ? readU32(view, rowOffset + 68) : 0,
+      viewportCount: version >= 2 ? readU32(view, rowOffset + 72) : 0,
     });
   }
   cursor += templateBytes;
@@ -263,6 +297,35 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
       height: readU32(view, rowOffset + 16),
     });
   }
+  cursor += textBytes;
+  const readRect = (rowOffset: number): UiPackRect => ({
+    id: resolveString(strings, readU32(view, rowOffset + 0)),
+    kind: resolveString(strings, readU32(view, rowOffset + 4)),
+    role: resolveString(strings, readU32(view, rowOffset + 8)),
+    label: resolveString(strings, readU32(view, rowOffset + 12)),
+    tooltip: resolveString(strings, readU32(view, rowOffset + 16)),
+    action: version >= 3 ? resolveString(strings, readU32(view, rowOffset + 20)) : "",
+    itemId: version >= 3 ? resolveString(strings, readU32(view, rowOffset + 24)) : "",
+    payloadKey: version >= 3 ? resolveString(strings, readU32(view, rowOffset + 28)) : "",
+    x: readI32(view, rowOffset + (version >= 3 ? 32 : 20)),
+    y: readI32(view, rowOffset + (version >= 3 ? 36 : 24)),
+    width: readU32(view, rowOffset + (version >= 3 ? 40 : 28)),
+    height: readU32(view, rowOffset + (version >= 3 ? 44 : 32)),
+  });
+  const hotspots: UiPackRect[] = [];
+  if (version >= 2) {
+    for (let index = 0; index < hotspotCount; index += 1) {
+      hotspots.push(readRect(cursor + index * rectStride * 4));
+    }
+  }
+  cursor += hotspotBytes;
+  const viewports: UiPackRect[] = [];
+  if (version >= 2) {
+    for (let index = 0; index < viewportCount; index += 1) {
+      viewports.push(readRect(cursor + index * rectStride * 4));
+    }
+  }
+  cursor += viewportBytes;
 
   return templateRows.map((templateRow) => ({
     templateKey: templateRow.templateKey,
@@ -279,6 +342,8 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     slotCount: templateRow.slotCount,
     slots: slots.slice(templateRow.slotStart, templateRow.slotStart + templateRow.slotCount),
     textOverlays: overlays.slice(templateRow.textStart, templateRow.textStart + templateRow.textCount),
+    hotspots: hotspots.slice(templateRow.hotspotStart, templateRow.hotspotStart + templateRow.hotspotCount),
+    viewports: viewports.slice(templateRow.viewportStart, templateRow.viewportStart + templateRow.viewportCount),
   }));
 }
 
@@ -364,6 +429,8 @@ async function loadUiPackRuntimeInternal(normalizedManifestUrl: string): Promise
         stringCount: 0,
         slotCount: 0,
         textOverlayCount: 0,
+        hotspotCount: 0,
+        viewportCount: 0,
         assetCount: 0,
       },
       error: "UI pack entrypoints are unavailable on this runtime manifest.",
@@ -414,6 +481,8 @@ async function loadUiPackRuntimeInternal(normalizedManifestUrl: string): Promise
         stringCount: strings.length,
         slotCount: templates.reduce((total, template) => total + template.slots.length, 0),
         textOverlayCount: templates.reduce((total, template) => total + template.textOverlays.length, 0),
+        hotspotCount: templates.reduce((total, template) => total + template.hotspots.length, 0),
+        viewportCount: templates.reduce((total, template) => total + template.viewports.length, 0),
         assetCount: new Set(templates.map((template) => template.imageResource).filter(Boolean)).size,
       },
     };
@@ -435,6 +504,8 @@ async function loadUiPackRuntimeInternal(normalizedManifestUrl: string): Promise
         stringCount: 0,
         slotCount: 0,
         textOverlayCount: 0,
+        hotspotCount: 0,
+        viewportCount: 0,
         assetCount: 0,
       },
       error: error instanceof Error ? error.message : String(error),
@@ -463,6 +534,8 @@ export function loadUiPackRuntime(manifestUrl = "/api/runtime/current/manifest")
       stringCount: 0,
       slotCount: 0,
       textOverlayCount: 0,
+      hotspotCount: 0,
+      viewportCount: 0,
       assetCount: 0,
     },
     error: error instanceof Error ? error.message : String(error),

@@ -17,6 +17,53 @@ function readJson(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
 }
 
+function readBinaryPackHeader(filePath) {
+  const bytes = readFileSync(filePath);
+  if (bytes.length < 24 || bytes.subarray(0, 8).toString('utf8') !== 'NNEIBIN\0') {
+    throw new Error(`invalid NeoNEI binary pack header: ${filePath}`);
+  }
+  const schemaLength = bytes.readUInt32LE(12);
+  const payloadLength = Number(bytes.readBigUInt64LE(16));
+  const schemaStart = 24;
+  const payloadStart = schemaStart + schemaLength;
+  if (payloadStart + payloadLength > bytes.length) {
+    throw new Error(`truncated NeoNEI binary pack payload: ${filePath}`);
+  }
+  return {
+    schema: bytes.subarray(schemaStart, payloadStart).toString('utf8'),
+    payloadOffset: payloadStart,
+    payloadLength,
+    bytes,
+  };
+}
+
+function readUiTemplatePayloadHeader(filePath) {
+  const pack = readBinaryPackHeader(filePath);
+  const offset = pack.payloadOffset;
+  if (pack.schema !== 'neonei/ui-template-pack/current') {
+    throw new Error(`UI template binary pack schema mismatch: ${pack.schema}`);
+  }
+  if (pack.bytes.length < offset + 48) {
+    throw new Error(`truncated UI template payload header: ${filePath}`);
+  }
+  const magic = pack.bytes.subarray(offset, offset + 8).toString('utf8');
+  return {
+    schema: pack.schema,
+    magic,
+    version: pack.bytes.readUInt32LE(offset + 8),
+    templateCount: pack.bytes.readUInt32LE(offset + 12),
+    slotCount: pack.bytes.readUInt32LE(offset + 16),
+    textOverlayCount: pack.bytes.readUInt32LE(offset + 20),
+    hotspotCount: pack.bytes.readUInt32LE(offset + 24),
+    viewportCount: pack.bytes.readUInt32LE(offset + 28),
+    templateStride: pack.bytes.readUInt32LE(offset + 32),
+    slotStride: pack.bytes.readUInt32LE(offset + 36),
+    textStride: pack.bytes.readUInt32LE(offset + 40),
+    rectStride: pack.bytes.readUInt32LE(offset + 44),
+    payloadBytes: pack.payloadLength,
+  };
+}
+
 function fail(failures, code, message, details = {}) {
   failures.push({ code, message, details });
 }
@@ -34,15 +81,12 @@ const warnings = [];
 
 const requiredRustFiles = {
   rustRuntimeManifest: files.rustRuntimeManifest,
-  rustBrowserPack: files.rustBrowserPack,
-  rustSearchPack: files.rustSearchPack,
-  rustRecipePack: files.rustRecipePack,
-  rustTexturePack: files.rustTexturePack,
   rustBrowserBin: files.rustBrowserBin,
   rustGroupsBin: files.rustGroupsBin,
   rustSearchBin: files.rustSearchBin,
   rustRecipeBin: files.rustRecipeBin,
   rustTextureBin: files.rustTextureBin,
+  rustAtlasMetaBin: files.rustAtlasMetaBin,
   rustAnimationBin: files.rustAnimationBin,
   rustStringsZhCnBin: files.rustStringsZhCnBin,
   rustUiTemplatesBin: files.rustUiTemplatesBin,
@@ -50,6 +94,7 @@ const requiredRustFiles = {
   rustUiStringsBin: files.rustUiStringsBin,
   rustUiAssetsManifest: files.rustUiAssetsManifest,
   rustUiPackReport: files.rustUiPackReport,
+  rustNativeUiLayoutReport: files.rustNativeUiLayoutReport,
 };
 for (const [key, relativePath] of Object.entries(requiredRustFiles)) {
   if (!`${relativePath ?? ''}`.trim()) {
@@ -63,8 +108,21 @@ const runtimeManifestPath = files.rustRuntimeManifest ? join(distDataDir, files.
 const runtimeManifest = runtimeManifestPath && existsSync(runtimeManifestPath) ? readJson(runtimeManifestPath) : null;
 const runtimeFiles = Array.isArray(runtimeManifest?.files) ? runtimeManifest.files : [];
 const runtimeEntrypoints = runtimeManifest?.entrypoints && typeof runtimeManifest.entrypoints === 'object' ? runtimeManifest.entrypoints : {};
-for (const expected of ['browser-pack.json', 'search-pack.json', 'recipe-pack.json', 'texture-pack.json']) {
-  if (!runtimeFiles.some((entry) => `${typeof entry === 'string' ? entry : entry?.path ?? ''}`.endsWith(expected))) {
+for (const expected of [
+  'rust/browser.bin',
+  'rust/groups.bin',
+  'rust/search.bin',
+  'rust/recipes.bin',
+  'rust/textures.bin',
+  'rust/atlas.meta.bin',
+  'rust/animations.bin',
+  'rust/strings.zh_cn.bin',
+  'rust/ui-pack/ui_templates.bin',
+  'rust/ui-pack/ui_bindings.bin',
+  'rust/ui-pack/ui_strings.bin',
+  'rust/native-ui-layout-report.json',
+]) {
+  if (!runtimeFiles.some((entry) => `${typeof entry === 'string' ? entry : entry?.path ?? ''}`.replaceAll('\\', '/') === expected)) {
     fail(failures, 'RUST_RUNTIME_MANIFEST_ARTIFACT_MISSING', `rust runtime manifest does not list ${expected}`, { expected });
   }
 }
@@ -96,14 +154,56 @@ for (const [entrypoint, expectedPath] of Object.entries({
 }
 
 const productionCore = {
-  browser: files.rustBrowserPack,
-  search: files.rustSearchPack,
-  recipes: files.rustRecipePack,
-  textures: files.rustTexturePack,
+  browser: files.rustBrowserBin,
+  search: files.rustSearchBin,
+  recipes: files.rustRecipeBin,
+  textures: files.rustTextureBin,
+  atlasMeta: files.rustAtlasMetaBin,
+  uiTemplates: files.rustUiTemplatesBin,
+  uiBindings: files.rustUiBindingsBin,
 };
 for (const [domain, relativePath] of Object.entries(productionCore)) {
-  if (!`${relativePath ?? ''}`.replaceAll('\\', '/').startsWith('rust/')) {
-    fail(failures, 'PRODUCTION_CORE_NOT_RUST', `production ${domain} runtime is not Rust-backed`, { domain, path: relativePath ?? null });
+  const normalizedPath = `${relativePath ?? ''}`.replaceAll('\\', '/');
+  if (!normalizedPath.startsWith('rust/') || !normalizedPath.endsWith('.bin')) {
+    fail(failures, 'PRODUCTION_CORE_NOT_RUST_BINARY', `production ${domain} runtime is not Rust binary-backed`, { domain, path: relativePath ?? null });
+  }
+}
+
+let uiTemplateHeader = null;
+if (files.rustUiTemplatesBin && existsSync(join(distDataDir, files.rustUiTemplatesBin))) {
+  try {
+    uiTemplateHeader = readUiTemplatePayloadHeader(join(distDataDir, files.rustUiTemplatesBin));
+  } catch (error) {
+    fail(failures, 'UI_TEMPLATE_PACK_HEADER_INVALID', 'UI template binary pack header is invalid', {
+      path: files.rustUiTemplatesBin,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
+if (uiTemplateHeader) {
+  if (uiTemplateHeader.magic !== 'NEIUIT1\0') {
+    fail(failures, 'UI_TEMPLATE_PACK_MAGIC_MISMATCH', 'UI template pack has wrong native magic', { magic: uiTemplateHeader.magic });
+  }
+  if (uiTemplateHeader.version !== 3 || uiTemplateHeader.templateStride !== 19 || uiTemplateHeader.slotStride !== 6 || uiTemplateHeader.textStride !== 5 || uiTemplateHeader.rectStride !== 12) {
+    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V3_ACTION_IR', 'UI template pack is not the v3 action-rect native format', uiTemplateHeader);
+  }
+}
+
+const uiPackReportPath = files.rustUiPackReport ? join(distDataDir, files.rustUiPackReport) : null;
+const uiPackReport = uiPackReportPath && existsSync(uiPackReportPath) ? readJson(uiPackReportPath) : null;
+const uiPackFormat = uiPackReport?.format ?? {};
+if (uiPackReport) {
+  if (uiPackFormat.templatePackVersion !== 3 || uiPackFormat.rectStride !== 12 || uiPackFormat.hotspotActionFields !== true) {
+    fail(failures, 'UI_PACK_REPORT_MISSING_V3_ACTION_IR', 'UI pack report does not declare v3 hotspot action IR capability', { format: uiPackFormat });
+  }
+}
+
+for (const debugKey of ['rustBrowserPack', 'rustSearchPack', 'rustRecipePack', 'rustTexturePack']) {
+  if (`${files[debugKey] ?? ''}`.trim()) {
+    fail(failures, 'DEBUG_JSON_PACK_DECLARED_IN_PRODUCTION', `production manifest must not declare debug JSON pack ${debugKey}`, {
+      key: debugKey,
+      path: files[debugKey],
+    });
   }
 }
 
@@ -121,6 +221,14 @@ const report = {
   sourceRepository: manifest.sourceRepository ?? null,
   requiredRustFiles,
   runtimeManifestFiles: runtimeFiles,
+  uiTemplatePack: uiTemplateHeader,
+  uiPackReport: uiPackReport
+    ? {
+        status: uiPackReport.status ?? null,
+        summary: uiPackReport.summary ?? null,
+        format: uiPackFormat,
+      }
+    : null,
   failures,
   warnings,
 };

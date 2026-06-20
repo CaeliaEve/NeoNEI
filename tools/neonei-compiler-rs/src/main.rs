@@ -1366,7 +1366,8 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
             nested_value_string(recipe, &["machine", "machineId"]),
         ])
         .unwrap_or_else(|| "unknown".to_string());
-        let family_key = classify_recipe_family_key(recipe, &raw_family_key, handler);
+        let family_key = captured_ui_family_key(handler, layout)
+            .unwrap_or_else(|| classify_recipe_family_key(recipe, &raw_family_key, handler));
         let recipe_type = first_non_empty(&[
             value_string(recipe, "recipeType"),
             nested_value_string(recipe, &["machine", "machineId"]),
@@ -1809,8 +1810,22 @@ fn compile_ui_pack(input: &Path, output: &Path, strict: bool, _debug_json: bool)
                 "unboundRecipeCount": bindings.len().saturating_sub(bound_recipe_count),
                 "slotCount": templates.iter().map(ui_template_slot_count).sum::<usize>(),
                 "textOverlayCount": templates.iter().map(ui_template_text_count).sum::<usize>(),
+                "hotspotCount": templates.iter().map(|template| ui_template_rect_count(template, "hotspots")).sum::<usize>(),
+                "viewportCount": templates.iter().map(|template| ui_template_rect_count(template, "viewports")).sum::<usize>(),
+                "hotspotActionCount": templates.iter().map(|template| ui_template_rect_action_count(template, "hotspots")).sum::<usize>(),
+                "viewportActionCount": templates.iter().map(|template| ui_template_rect_action_count(template, "viewports")).sum::<usize>(),
                 "stringCount": strings.len(),
                 "assetCount": assets_manifest.get("assets").and_then(Value::as_array).map(|items| items.len()).unwrap_or(0),
+            },
+            "format": {
+                "templatePackMagic": "NEIUIT1\\u0000",
+                "templatePackVersion": 3,
+                "templateStride": 19,
+                "slotStride": 6,
+                "textStride": 5,
+                "rectStride": 12,
+                "hotspotActionFields": true,
+                "hotspotActionFieldNames": ["action", "itemId", "payloadKey"],
             },
             "artifacts": {
                 "uiTemplates": "rust/ui-pack/ui_templates.bin",
@@ -1869,7 +1884,7 @@ fn build_raw_recipe_ui_payload_index(input: &Path, manifest: &RawManifest) -> Re
     let mut entries = Vec::with_capacity(recipes.len());
     for recipe in &recipes {
         let recipe_id = recipe_id(recipe);
-        let (handler, _layout) = handler_context.resolve(recipe);
+        let (handler, layout) = handler_context.resolve(recipe);
         let public_handler = handler.map(public_recipe_handler);
         let raw_family_key = first_non_empty(&[
             value_string(recipe, "family"),
@@ -1878,7 +1893,8 @@ fn build_raw_recipe_ui_payload_index(input: &Path, manifest: &RawManifest) -> Re
             nested_value_string(recipe, &["machine", "machineId"]),
         ])
         .unwrap_or_else(|| "unknown".to_string());
-        let family_key = classify_recipe_family_key(recipe, &raw_family_key, handler);
+        let family_key = captured_ui_family_key(handler, layout)
+            .unwrap_or_else(|| classify_recipe_family_key(recipe, &raw_family_key, handler));
         let recipe_type = first_non_empty(&[
             value_string(recipe, "recipeType"),
             nested_value_string(recipe, &["machine", "machineId"]),
@@ -2007,6 +2023,27 @@ fn ui_template_text_count(template: &Value) -> usize {
         .unwrap_or(0)
 }
 
+fn ui_template_rect_count(template: &Value, key: &str) -> usize {
+    template
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| values.len())
+        .unwrap_or(0)
+}
+
+fn ui_template_rect_action_count(template: &Value, key: &str) -> usize {
+    template
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|values| {
+            values
+                .iter()
+                .filter(|rect| value_string(rect, "action").is_some_and(|value| !value.is_empty()))
+                .count()
+        })
+        .unwrap_or(0)
+}
+
 fn build_compact_ui_template_payload(
     templates: &[Value],
     strings: &mut Vec<String>,
@@ -2015,8 +2052,12 @@ fn build_compact_ui_template_payload(
     let mut template_bytes = Vec::new();
     let mut slot_bytes = Vec::new();
     let mut text_bytes = Vec::new();
+    let mut hotspot_bytes = Vec::new();
+    let mut viewport_bytes = Vec::new();
     let mut slot_count = 0u32;
     let mut text_count = 0u32;
+    let mut hotspot_count = 0u32;
+    let mut viewport_count = 0u32;
 
     for template in templates {
         let slot_start = slot_count;
@@ -2062,6 +2103,22 @@ fn build_compact_ui_template_payload(
             }
         }
         let text_total = text_count.saturating_sub(text_start);
+        let hotspot_start = hotspot_count;
+        if let Some(hotspots) = template.get("hotspots").and_then(Value::as_array) {
+            for hotspot in hotspots {
+                push_compact_ui_rect(&mut hotspot_bytes, strings, string_refs, hotspot);
+                hotspot_count += 1;
+            }
+        }
+        let hotspot_total = hotspot_count.saturating_sub(hotspot_start);
+        let viewport_start = viewport_count;
+        if let Some(viewports) = template.get("viewports").and_then(Value::as_array) {
+            for viewport in viewports {
+                push_compact_ui_rect(&mut viewport_bytes, strings, string_refs, viewport);
+                viewport_count += 1;
+            }
+        }
+        let viewport_total = viewport_count.saturating_sub(viewport_start);
 
         push_u32(
             &mut template_bytes,
@@ -2123,22 +2180,64 @@ fn build_compact_ui_template_payload(
         push_u32(&mut template_bytes, slot_total);
         push_u32(&mut template_bytes, text_start);
         push_u32(&mut template_bytes, text_total);
+        push_u32(&mut template_bytes, hotspot_start);
+        push_u32(&mut template_bytes, hotspot_total);
+        push_u32(&mut template_bytes, viewport_start);
+        push_u32(&mut template_bytes, viewport_total);
     }
 
-    let mut payload =
-        Vec::with_capacity(8 + 7 * 4 + template_bytes.len() + slot_bytes.len() + text_bytes.len());
+    let mut payload = Vec::with_capacity(
+        8 + 10 * 4
+            + template_bytes.len()
+            + slot_bytes.len()
+            + text_bytes.len()
+            + hotspot_bytes.len()
+            + viewport_bytes.len(),
+    );
     payload.extend_from_slice(b"NEIUIT1\0");
-    push_u32(&mut payload, 1);
+    push_u32(&mut payload, 3);
     push_u32(&mut payload, templates.len() as u32);
     push_u32(&mut payload, slot_count);
     push_u32(&mut payload, text_count);
-    push_u32(&mut payload, 15);
+    push_u32(&mut payload, hotspot_count);
+    push_u32(&mut payload, viewport_count);
+    push_u32(&mut payload, 19);
     push_u32(&mut payload, 6);
     push_u32(&mut payload, 5);
+    push_u32(&mut payload, 12);
     payload.extend_from_slice(&template_bytes);
     payload.extend_from_slice(&slot_bytes);
     payload.extend_from_slice(&text_bytes);
+    payload.extend_from_slice(&hotspot_bytes);
+    payload.extend_from_slice(&viewport_bytes);
     Ok(payload)
+}
+
+fn push_compact_ui_rect(
+    bytes: &mut Vec<u8>,
+    strings: &mut Vec<String>,
+    string_refs: &mut HashMap<String, u32>,
+    rect: &Value,
+) {
+    for key in [
+        "id",
+        "kind",
+        "role",
+        "label",
+        "tooltip",
+        "action",
+        "itemId",
+        "payloadKey",
+    ] {
+        push_u32(
+            bytes,
+            intern_compact_string(strings, string_refs, value_string(rect, key)),
+        );
+    }
+    push_i32(bytes, value_i64(rect, "x").unwrap_or(0) as i32);
+    push_i32(bytes, value_i64(rect, "y").unwrap_or(0) as i32);
+    push_u32(bytes, value_u64(rect, "width").unwrap_or(0) as u32);
+    push_u32(bytes, value_u64(rect, "height").unwrap_or(0) as u32);
 }
 
 fn build_compact_ui_binding_payload(
@@ -2571,6 +2670,7 @@ fn public_recipe_handler(handler: &Value) -> Value {
         "handlerWidth": value_u64(handler, "handlerWidth").unwrap_or(166),
         "handlerHeight": value_u64(handler, "handlerHeight").unwrap_or(65),
         "yShift": value_i64(handler, "yShift").unwrap_or(0),
+        "imageResource": value_string(handler, "imageResource"),
     })
 }
 
@@ -2578,13 +2678,22 @@ fn public_recipe_layout(layout: &Value) -> Value {
     json!({
         "handlerKey": value_string(layout, "handlerKey"),
         "handlerClass": value_string(layout, "handlerClass"),
+        "canonicalMachineFamily": value_string(layout, "canonicalMachineFamily"),
         "layoutKind": value_string(layout, "layoutKind").unwrap_or_else(|| "native-nei".to_string()),
         "width": value_u64(layout, "width").unwrap_or(166),
         "height": value_u64(layout, "height").unwrap_or(65),
         "yShift": value_i64(layout, "yShift").unwrap_or(0),
         "maxRecipesPerPage": value_u64(layout, "maxRecipesPerPage").unwrap_or(1),
+        "imageResource": value_string(layout, "imageResource"),
+        "imageRegion": layout.get("imageRegion").cloned().unwrap_or(Value::Null),
         "slots": layout.get("slots").and_then(Value::as_array).cloned().unwrap_or_default(),
         "textOverlays": layout.get("textOverlays").and_then(Value::as_array).cloned().unwrap_or_default(),
+        "dynamicPrimitives": layout.get("dynamicPrimitives").and_then(Value::as_array).cloned().unwrap_or_default(),
+        "progressBars": layout.get("progressBars").and_then(Value::as_array).cloned().unwrap_or_default(),
+        "fluidBars": layout.get("fluidBars").and_then(Value::as_array).cloned().unwrap_or_default(),
+        "energyBars": layout.get("energyBars").and_then(Value::as_array).cloned().unwrap_or_default(),
+        "hotspots": layout.get("hotspots").and_then(Value::as_array).cloned().unwrap_or_default(),
+        "viewports": layout.get("viewports").and_then(Value::as_array).cloned().unwrap_or_default(),
     })
 }
 
@@ -3052,6 +3161,45 @@ fn classify_recipe_family_key(recipe: &Value, fallback: &str, handler: Option<&V
         return family;
     }
     fallback.to_string()
+}
+
+fn captured_ui_family_key(handler: Option<&Value>, layout: Option<&Value>) -> Option<String> {
+    let handler = handler?;
+    let layout = layout?;
+    let family = value_string(handler, "canonicalMachineFamily")?;
+    if family.trim().is_empty() {
+        return None;
+    }
+    let layout_kind =
+        value_string(layout, "layoutKind").unwrap_or_else(|| "native-nei".to_string());
+    let width = value_u64(layout, "width").unwrap_or(166);
+    let height = value_u64(layout, "height").unwrap_or(65);
+    let y_shift = value_i64(layout, "yShift").unwrap_or(0);
+    let max_recipes_per_page = value_u64(layout, "maxRecipesPerPage").unwrap_or(1);
+    let image_resource = first_non_empty(&[
+        value_string(layout, "imageResource"),
+        value_string(handler, "imageResource"),
+    ])
+    .unwrap_or_default();
+    Some(format!(
+        "{}|{}|{}x{}@{}#{}|{}",
+        normalize_ui_family_key_part(&family),
+        normalize_ui_family_key_part(&layout_kind),
+        width,
+        height,
+        y_shift,
+        max_recipes_per_page,
+        normalize_ui_family_key_part(&image_resource)
+    ))
+}
+
+fn normalize_ui_family_key_part(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        "unknown".to_string()
+    } else {
+        trimmed.to_lowercase()
+    }
 }
 
 fn collect_recipe_item_ids(recipe: &Value, keys: &[&str]) -> Vec<String> {
@@ -4533,6 +4681,7 @@ fn compile_runtime_reports(
 ) -> Result<()> {
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
+    compile_native_ui_layout_report(output)?;
 
     let mut artifact_names = match scope {
         CompileScope::All => vec![
@@ -4549,6 +4698,7 @@ fn compile_runtime_reports(
             "semantic-validation-report.json",
             "recipe-handler-metadata-report.json",
             "recipe-fragmentation-report.json",
+            "native-ui-layout-report.json",
             "ui-pack/ui_templates.bin",
             "ui-pack/ui_bindings.bin",
             "ui-pack/ui_strings.bin",
@@ -4572,6 +4722,7 @@ fn compile_runtime_reports(
             "semantic-validation-report.json",
             "recipe-handler-metadata-report.json",
             "recipe-fragmentation-report.json",
+            "native-ui-layout-report.json",
         ],
         CompileScope::Ui => vec![
             "semantic-validation-report.json",
@@ -4620,6 +4771,7 @@ fn compile_runtime_reports(
             "ui-pack/ui_templates.bin",
             "ui-pack/ui_bindings.bin",
             "ui-pack/ui_strings.bin",
+            "native-ui-layout-report.json",
         ] {
             if !artifact_names.contains(&artifact_name) && rust_dir.join(artifact_name).exists() {
                 artifact_names.push(artifact_name);
@@ -4807,6 +4959,170 @@ fn compile_runtime_reports(
     Ok(())
 }
 
+fn compile_native_ui_layout_report(output: &Path) -> Result<Option<Value>> {
+    let handler_layout_path = output.join("recipes").join("handler-layout-index.json");
+    if !handler_layout_path.exists() {
+        return Ok(None);
+    }
+    let ui_payload_path = output.join("recipes").join("ui-payload-index.json");
+    let handler_layout_index = read_json_file(&handler_layout_path)?;
+    let ui_payload_index = if ui_payload_path.exists() {
+        read_json_file(&ui_payload_path)?
+    } else {
+        json!({ "recipes": [] })
+    };
+    let layouts = json_array(&handler_layout_index, "layouts");
+    let recipes = json_array(&ui_payload_index, "recipes");
+    let gt_layouts = layouts
+        .iter()
+        .filter(|layout| is_gregtech_native_layout(layout))
+        .collect::<Vec<_>>();
+    let gt_recipe_entries = recipes
+        .iter()
+        .filter(|entry| is_gregtech_recipe_ui_entry(entry))
+        .collect::<Vec<_>>();
+
+    let mut failures = Vec::new();
+    if layouts.is_empty() {
+        failures.push("handler layout index is empty".to_string());
+    }
+    if !gt_layouts.is_empty()
+        && gt_layouts
+            .iter()
+            .filter(|layout| primitive_count(layout, "progressBars") > 0)
+            .count()
+            == 0
+    {
+        failures.push("gregtech-machine handler layouts have no drawable progressBars".to_string());
+    }
+    if !gt_recipe_entries.is_empty()
+        && gt_recipe_entries
+            .iter()
+            .filter(|entry| {
+                primitive_count(
+                    entry.get("nativeLayout").unwrap_or(&Value::Null),
+                    "progressBars",
+                ) > 0
+            })
+            .count()
+            == 0
+    {
+        failures
+            .push("gregtech-machine recipe UI payloads have no drawable progressBars".to_string());
+    }
+    if !gt_recipe_entries.is_empty()
+        && gt_recipe_entries
+            .iter()
+            .filter(|entry| has_image_region(entry.get("nativeLayout").unwrap_or(&Value::Null)))
+            .count()
+            == 0
+    {
+        failures.push(
+            "gregtech-machine recipe UI payloads have no captured background imageRegion"
+                .to_string(),
+        );
+    }
+
+    let report = json!({
+        "schemaVersion": "neonei/native-ui-layout-report/current",
+        "generatedAt": "deterministic-rust-compiler",
+        "status": if failures.is_empty() { "ready" } else { "blocked" },
+        "source": {
+            "handlerLayoutIndex": "recipes/handler-layout-index.json",
+            "recipeUiPayloadIndex": if ui_payload_path.exists() { "recipes/ui-payload-index.json" } else { "" },
+        },
+        "counts": {
+            "handlerLayouts": layouts.len(),
+            "handlerLayoutsWithBackgroundRegions": layouts.iter().filter(|layout| has_image_region(layout)).count(),
+            "handlerLayoutsWithProgressBars": layouts.iter().filter(|layout| primitive_count(layout, "progressBars") > 0).count(),
+            "handlerLayoutsWithFluidBars": layouts.iter().filter(|layout| primitive_count(layout, "fluidBars") > 0).count(),
+            "handlerLayoutsWithEnergyBars": layouts.iter().filter(|layout| primitive_count(layout, "energyBars") > 0).count(),
+            "handlerLayoutsWithHotspots": layouts.iter().filter(|layout| primitive_count(layout, "hotspots") > 0).count(),
+            "handlerLayoutsWithViewports": layouts.iter().filter(|layout| primitive_count(layout, "viewports") > 0).count(),
+            "gregtechHandlerLayouts": gt_layouts.len(),
+            "gregtechHandlerLayoutsWithBackgroundRegions": gt_layouts.iter().filter(|layout| has_image_region(layout)).count(),
+            "gregtechHandlerLayoutsWithProgressBars": gt_layouts.iter().filter(|layout| primitive_count(layout, "progressBars") > 0).count(),
+            "recipeUiPayloads": recipes.len(),
+            "gregtechRecipeUiPayloads": gt_recipe_entries.len(),
+            "gregtechRecipeUiPayloadsWithBackgroundRegions": gt_recipe_entries.iter().filter(|entry| has_image_region(entry.get("nativeLayout").unwrap_or(&Value::Null))).count(),
+            "gregtechRecipeUiPayloadsWithProgressBars": gt_recipe_entries.iter().filter(|entry| primitive_count(entry.get("nativeLayout").unwrap_or(&Value::Null), "progressBars") > 0).count(),
+            "gregtechRecipeUiPayloadsWithHotspots": gt_recipe_entries.iter().filter(|entry| primitive_count(entry.get("nativeLayout").unwrap_or(&Value::Null), "hotspots") > 0).count(),
+            "gregtechRecipeUiPayloadsWithViewports": gt_recipe_entries.iter().filter(|entry| primitive_count(entry.get("nativeLayout").unwrap_or(&Value::Null), "viewports") > 0).count(),
+        },
+        "samples": {
+            "gregtechHandlerLayoutsMissingProgressBars": gt_layouts.iter()
+                .filter(|layout| primitive_count(layout, "progressBars") == 0)
+                .take(25)
+                .map(|layout| json!({
+                    "handlerKey": value_string(layout, "handlerKey"),
+                    "handlerClass": value_string(layout, "handlerClass"),
+                    "layoutKind": value_string(layout, "layoutKind"),
+                }))
+                .collect::<Vec<_>>(),
+            "gregtechRecipePayloadsMissingProgressBars": gt_recipe_entries.iter()
+                .filter(|entry| primitive_count(entry.get("nativeLayout").unwrap_or(&Value::Null), "progressBars") == 0)
+                .take(25)
+                .map(|entry| json!({
+                    "recipeId": value_string(entry, "recipeId"),
+                    "familyKey": value_string(entry, "familyKey"),
+                    "handlerKey": value_string(entry, "handlerKey"),
+                }))
+                .collect::<Vec<_>>(),
+        },
+        "failures": failures,
+    });
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+    write_json_value(&rust_dir.join("native-ui-layout-report.json"), &report)?;
+    Ok(Some(report))
+}
+
+fn read_json_file(path: &Path) -> Result<Value> {
+    let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
+    serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))
+}
+
+fn json_array(value: &Value, key: &str) -> Vec<Value> {
+    value
+        .get(key)
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn is_gregtech_native_layout(layout: &Value) -> bool {
+    value_string(layout, "canonicalMachineFamily")
+        .map(|value| value.trim().eq_ignore_ascii_case("gregtech-machine"))
+        .unwrap_or(false)
+}
+
+fn is_gregtech_recipe_ui_entry(entry: &Value) -> bool {
+    entry
+        .get("nativeLayout")
+        .is_some_and(is_gregtech_native_layout)
+        || value_string(entry, "familyKey")
+            .map(|value| value.starts_with("gregtech-machine|"))
+            .unwrap_or(false)
+}
+
+fn primitive_count(layout: &Value, key: &str) -> usize {
+    layout
+        .get(key)
+        .and_then(Value::as_array)
+        .map(|items| items.iter().filter(|item| has_drawable_rect(item)).count())
+        .unwrap_or(0)
+}
+
+fn has_drawable_rect(value: &Value) -> bool {
+    let width = value_u64(value, "width").unwrap_or(0);
+    let height = value_u64(value, "height").unwrap_or(0);
+    width > 0 && height > 0
+}
+
+fn has_image_region(value: &Value) -> bool {
+    value.get("imageRegion").is_some_and(has_drawable_rect)
+}
+
 fn purge_debug_json_artifacts(output: &Path) -> Result<()> {
     let rust_dir = output.join("rust");
     for artifact_name in [
@@ -4941,6 +5257,10 @@ fn rust_manifest_file_entries(
             "rustRecipeFragmentationReport",
             "rust/recipe-fragmentation-report.json",
         ),
+        (
+            "rustNativeUiLayoutReport",
+            "rust/native-ui-layout-report.json",
+        ),
         ("rustMigrationReadiness", "rust/migration-readiness.json"),
         ("rustDeploymentReport", "rust/deployment-report.json"),
     ];
@@ -5004,7 +5324,9 @@ fn rust_manifest_file_entries(
                 ("rustSearchPack", "rust/search-pack.json"),
             ]),
             CompileScope::Recipes => entries.push(("rustRecipePack", "rust/recipe-pack.json")),
-            CompileScope::Ui => entries.push(("rustUiPackReport", "rust/ui-pack/ui_pack_report.json")),
+            CompileScope::Ui => {
+                entries.push(("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"))
+            }
             CompileScope::Textures => entries.push(("rustTexturePack", "rust/texture-pack.json")),
         }
     }
@@ -5247,6 +5569,7 @@ fn rust_capabilities(scope: CompileScope) -> Value {
             "groups.collapse",
             "groups.semantic-nbt",
             "recipes.lookup",
+            "recipes.native-ui-layout",
             "search.zh-cn",
             "strings.zh-cn",
             "native-render.webgl2",
@@ -5260,7 +5583,7 @@ fn rust_capabilities(scope: CompileScope) -> Value {
             "strings.zh-cn",
             "native-render.webgl2"
         ]),
-        CompileScope::Recipes => json!(["recipes.lookup"]),
+        CompileScope::Recipes => json!(["recipes.lookup", "recipes.native-ui-layout"]),
         CompileScope::Ui => json!(["recipes.ui-pack", "native-render.webgl2"]),
         CompileScope::Textures => json!(["atlas.static", "atlas.animated", "atlas.meta"]),
     }
@@ -5499,6 +5822,7 @@ fn summarize_runtime_output(output: Option<&Path>) -> Result<RuntimeSummary> {
         ("uiStringsBin", "rust/ui-pack/ui_strings.bin"),
         ("uiAssetsManifest", "rust/ui-pack/ui_assets.manifest.json"),
         ("uiPackReport", "rust/ui-pack/ui_pack_report.json"),
+        ("nativeUiLayoutReport", "rust/native-ui-layout-report.json"),
         ("runtimeValidationReport", "validation/report.json"),
     ] {
         let path = output.join(relative_path);
@@ -6042,6 +6366,128 @@ mod tests {
     }
 
     #[test]
+    fn captured_ui_family_key_matches_nesqlpp_census_contract() {
+        let handler = json!({
+            "handlerKey": "gt.recipe.assemblyline",
+            "canonicalMachineFamily": "GregTech-Machine",
+            "imageResource": "textures/gui/legacy.png"
+        });
+        let layout = json!({
+            "handlerKey": "gt.recipe.assemblyline",
+            "layoutKind": "Machine",
+            "width": 176,
+            "height": 90,
+            "yShift": -4,
+            "maxRecipesPerPage": 2,
+            "imageResource": " textures/gui/GT5UAssemblyLine.png "
+        });
+
+        assert_eq!(
+            captured_ui_family_key(Some(&handler), Some(&layout)).as_deref(),
+            Some("gregtech-machine|machine|176x90@-4#2|textures/gui/gt5uassemblyline.png")
+        );
+    }
+
+    #[test]
+    fn public_recipe_layout_preserves_native_background_and_dynamic_primitives() {
+        let layout = json!({
+            "handlerKey": "gt.recipe.assemblyline",
+            "canonicalMachineFamily": "gregtech-machine",
+            "layoutKind": "machine",
+            "width": 176,
+            "height": 90,
+            "imageResource": "textures/gui/gt5u_assembly_line.png",
+            "imageRegion": { "x": 4, "y": 8, "width": 176, "height": 90 },
+            "progressBars": [{
+                "kind": "progress-bar",
+                "role": "gt-progress",
+                "x": 78,
+                "y": 24,
+                "width": 20,
+                "height": 18
+            }],
+            "dynamicPrimitives": [{
+                "kind": "progress-bar",
+                "x": 78,
+                "y": 24,
+                "width": 20,
+                "height": 18
+            }],
+            "hotspots": [{
+                "id": "machine-info",
+                "label": "Machine info",
+                "x": 6,
+                "y": 6,
+                "width": 48,
+                "height": 12
+            }],
+            "viewports": [{
+                "id": "preview",
+                "kind": "item-preview",
+                "x": 120,
+                "y": 8,
+                "width": 32,
+                "height": 32
+            }]
+        });
+
+        let public_layout = public_recipe_layout(&layout);
+
+        assert_eq!(
+            public_layout["imageResource"],
+            json!("textures/gui/gt5u_assembly_line.png")
+        );
+        assert_eq!(
+            public_layout["canonicalMachineFamily"],
+            json!("gregtech-machine")
+        );
+        assert_eq!(public_layout["imageRegion"]["x"], json!(4));
+        assert_eq!(
+            public_layout["progressBars"].as_array().unwrap()[0]["role"],
+            json!("gt-progress")
+        );
+        assert_eq!(
+            public_layout["dynamicPrimitives"].as_array().unwrap()[0]["width"],
+            json!(20)
+        );
+        assert_eq!(
+            public_layout["hotspots"].as_array().unwrap()[0]["label"],
+            json!("Machine info")
+        );
+        assert_eq!(
+            public_layout["viewports"].as_array().unwrap()[0]["kind"],
+            json!("item-preview")
+        );
+    }
+
+    #[test]
+    fn ui_template_bindings_use_captured_family_keys_not_simple_recipe_families() {
+        let captured_family_key =
+            "gregtech-machine|machine|176x90@-4#2|textures/gui/gt5uassemblyline.png";
+        let templates = vec![json!({
+            "templateKey": "ui-template/assembly-line",
+            "templateSignature": "assemblyline123",
+            "familyKey": captured_family_key,
+            "canonicalMachineFamily": "gregtech-machine",
+            "layoutKind": "machine"
+        })];
+        let recipe_index = vec![json!({
+            "recipeId": "r_gt_assembly_line",
+            "familyKey": captured_family_key,
+            "recipeType": "gt.recipe.assemblyline",
+            "machineType": "Assembly Line"
+        })];
+
+        let bindings = build_ui_template_bindings(&recipe_index, &templates);
+
+        assert_eq!(
+            bindings[0]["templateKey"],
+            json!("ui-template/assembly-line")
+        );
+        assert_eq!(bindings[0]["familyKey"], json!(captured_family_key));
+    }
+
+    #[test]
     fn compact_ui_pack_uses_shared_native_string_table() {
         let templates = vec![json!({
             "templateKey": "furnace@default",
@@ -6082,7 +6528,7 @@ mod tests {
         assert_eq!(&template_payload[0..8], b"NEIUIT1\0");
         assert_eq!(
             u32::from_le_bytes(template_payload[8..12].try_into().unwrap()),
-            1
+            3
         );
         assert_eq!(
             u32::from_le_bytes(template_payload[12..16].try_into().unwrap()),
@@ -6095,6 +6541,22 @@ mod tests {
         assert_eq!(
             u32::from_le_bytes(template_payload[20..24].try_into().unwrap()),
             1
+        );
+        assert_eq!(
+            u32::from_le_bytes(template_payload[24..28].try_into().unwrap()),
+            0
+        );
+        assert_eq!(
+            u32::from_le_bytes(template_payload[28..32].try_into().unwrap()),
+            0
+        );
+        assert_eq!(
+            u32::from_le_bytes(template_payload[32..36].try_into().unwrap()),
+            19
+        );
+        assert_eq!(
+            u32::from_le_bytes(template_payload[44..48].try_into().unwrap()),
+            12
         );
         assert_eq!(&binding_payload[0..8], b"NEIUIB1\0");
         assert_eq!(
@@ -6129,6 +6591,60 @@ mod tests {
     }
 
     #[test]
+    fn native_ui_layout_report_counts_gregtech_progress_and_backgrounds() {
+        let temp = tempfile::tempdir().unwrap();
+        let recipes_dir = temp.path().join("recipes");
+        fs::create_dir_all(&recipes_dir).unwrap();
+        write_json_value(
+            &recipes_dir.join("handler-layout-index.json"),
+            &json!({
+                "schemaVersion": "neonei/recipe-handler-layout-index/v1",
+                "layouts": [{
+                    "handlerKey": "gt.recipe.test",
+                    "handlerClass": "gregtech.nei.GTNEIDefaultHandler",
+                    "canonicalMachineFamily": "gregtech-machine",
+                    "layoutKind": "machine",
+                    "imageRegion": { "x": 0, "y": 0, "width": 176, "height": 90 },
+                    "progressBars": [{ "x": 78, "y": 24, "width": 20, "height": 18 }]
+                }]
+            }),
+        )
+        .unwrap();
+        write_json_value(
+            &recipes_dir.join("ui-payload-index.json"),
+            &json!({
+                "schemaVersion": "neonei/recipe-ui-payload-index/v1",
+                "recipes": [{
+                    "recipeId": "gt:test",
+                    "familyKey": "gregtech-machine|machine|176x90@0#1|textures/gui/test.png",
+                    "nativeLayout": {
+                        "canonicalMachineFamily": "gregtech-machine",
+                        "imageRegion": { "x": 0, "y": 0, "width": 176, "height": 90 },
+                        "progressBars": [{ "x": 78, "y": 24, "width": 20, "height": 18 }]
+                    }
+                }]
+            }),
+        )
+        .unwrap();
+
+        let report = compile_native_ui_layout_report(temp.path())
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(report["status"], json!("ready"));
+        assert_eq!(report["counts"]["gregtechHandlerLayouts"], json!(1));
+        assert_eq!(
+            report["counts"]["gregtechRecipeUiPayloadsWithProgressBars"],
+            json!(1)
+        );
+        assert!(temp
+            .path()
+            .join("rust")
+            .join("native-ui-layout-report.json")
+            .exists());
+    }
+
+    #[test]
     fn production_manifest_entries_exclude_debug_json_packs() {
         let production_entries = rust_manifest_file_entries(CompileScope::All, false)
             .into_iter()
@@ -6144,6 +6660,7 @@ mod tests {
         assert!(production_entries.contains(&"rust/ui-pack/ui_strings.bin"));
         assert!(production_entries.contains(&"rust/ui-pack/ui_assets.manifest.json"));
         assert!(production_entries.contains(&"rust/ui-pack/ui_pack_report.json"));
+        assert!(production_entries.contains(&"rust/native-ui-layout-report.json"));
         assert!(production_entries.contains(&"rust/semantic-validation-report.json"));
         assert!(production_entries.contains(&"rust/recipe-handler-metadata-report.json"));
         assert!(production_entries.contains(&"rust/recipe-fragmentation-report.json"));

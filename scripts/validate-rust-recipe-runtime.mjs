@@ -21,6 +21,24 @@ function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
+function readBinaryPackHeader(filePath) {
+  const bytes = readFileSync(filePath);
+  if (bytes.length < 24 || bytes.subarray(0, 8).toString('utf8') !== 'NNEIBIN\0') {
+    throw new Error(`invalid NeoNEI binary pack header: ${filePath}`);
+  }
+  const schemaLength = bytes.readUInt32LE(12);
+  const payloadLength = Number(bytes.readBigUInt64LE(16));
+  const schemaStart = 24;
+  const payloadStart = schemaStart + schemaLength;
+  if (payloadStart + payloadLength > bytes.length) {
+    throw new Error(`truncated NeoNEI binary pack payload: ${filePath}`);
+  }
+  return {
+    schema: bytes.subarray(schemaStart, payloadStart).toString('utf8'),
+    payloadLength,
+  };
+}
+
 function fail(failures, code, message, details = {}) {
   failures.push({ code, message, details });
 }
@@ -33,22 +51,37 @@ function main() {
     throw new Error(`dist-data manifest not found: ${manifestPath}`);
   }
   const manifest = readJson(manifestPath);
-  const rustRecipePackRelativePath = `${manifest.files?.rustRecipePack ?? ''}`.trim();
-  if (!rustRecipePackRelativePath) {
-    fail(failures, 'RUST_RECIPE_PACK_NOT_DECLARED', 'manifest does not declare files.rustRecipePack');
+  const rustRecipeBinRelativePath = `${manifest.files?.rustRecipeBin ?? ''}`.trim();
+  if (!rustRecipeBinRelativePath) {
+    fail(failures, 'RUST_RECIPE_BIN_NOT_DECLARED', 'manifest does not declare files.rustRecipeBin');
+  }
+  const rustRecipeBinPath = join(distDataDir, rustRecipeBinRelativePath || 'rust/recipes.bin');
+  if (!existsSync(rustRecipeBinPath)) {
+    fail(failures, 'RUST_RECIPE_BIN_MISSING', 'rust recipe binary pack file is missing', { path: rustRecipeBinRelativePath });
+  }
+  const recipeBinHeader = existsSync(rustRecipeBinPath) ? readBinaryPackHeader(rustRecipeBinPath) : null;
+  if (recipeBinHeader?.schema !== 'neonei/recipe-pack/current') {
+    fail(failures, 'RUST_RECIPE_BIN_SCHEMA_MISMATCH', 'rust recipe binary pack schema is wrong', {
+      path: rustRecipeBinRelativePath || null,
+      schema: recipeBinHeader?.schema ?? null,
+    });
   }
 
-  const rustRecipePackPath = join(distDataDir, rustRecipePackRelativePath || 'rust/recipe-pack.json');
-  if (!existsSync(rustRecipePackPath)) {
-    fail(failures, 'RUST_RECIPE_PACK_MISSING', 'rust recipe pack file is missing', { path: rustRecipePackRelativePath });
+  const uiPayloadIndexPath = join(distDataDir, 'recipes', 'ui-payload-index.json');
+  const categoryIndexPath = join(distDataDir, 'recipes', 'recipe-category-index.json');
+  if (!existsSync(uiPayloadIndexPath)) {
+    fail(failures, 'RUST_UI_PAYLOAD_INDEX_MISSING', 'compiled recipe UI payload index is missing');
   }
-
-  const rustRecipePack = existsSync(rustRecipePackPath) ? readJson(rustRecipePackPath) : null;
-  const entries = Array.isArray(rustRecipePack?.uiPayloadIndex)
-    ? rustRecipePack.uiPayloadIndex.filter((entry) => entry?.recipeId && entry?.path && entry?.payloadKey)
+  if (!existsSync(categoryIndexPath)) {
+    fail(failures, 'RUST_CATEGORY_INDEX_MISSING', 'compiled recipe category index is missing');
+  }
+  const uiPayloadIndex = existsSync(uiPayloadIndexPath) ? readJson(uiPayloadIndexPath) : null;
+  const categoryIndex = existsSync(categoryIndexPath) ? readJson(categoryIndexPath) : null;
+  const entries = Array.isArray(uiPayloadIndex?.recipes)
+    ? uiPayloadIndex.recipes.filter((entry) => entry?.recipeId && entry?.path && entry?.payloadKey)
     : [];
-  const categories = Array.isArray(rustRecipePack?.categoryIndex)
-    ? rustRecipePack.categoryIndex.filter((category) => `${category?.categoryId ?? ''}`.trim())
+  const categories = Array.isArray(categoryIndex?.categories)
+    ? categoryIndex.categories.filter((category) => `${category?.categoryId ?? ''}`.trim())
     : [];
   const categoryIds = categories.map((category) => `${category.categoryId}`.trim());
   const uniqueCategoryIds = new Set(categoryIds);
@@ -62,7 +95,7 @@ function main() {
     });
   }
   const categoryRecipeCount = categories.reduce((sum, category) => sum + Math.max(0, Number(category.recipeCount ?? 0) || 0), 0);
-  const recipeCount = Number(rustRecipePack?.counts?.recipes ?? 0);
+  const recipeCount = Number(uiPayloadIndex?.recipes?.length ?? 0);
   if (recipeCount <= 0) {
     fail(failures, 'RUST_RECIPE_COUNT_EMPTY', 'rust recipe pack recipe count is empty');
   }
@@ -148,7 +181,9 @@ function main() {
     distDataDir,
     source: manifest.source ?? null,
     sourceRepository: manifest.sourceRepository ?? null,
-    rustRecipePack: rustRecipePackRelativePath || null,
+    rustRecipeBin: rustRecipeBinRelativePath || null,
+    rustRecipeBinSchema: recipeBinHeader?.schema ?? null,
+    rustRecipeBinPayloadBytes: recipeBinHeader?.payloadLength ?? null,
     recipeCount,
     categoryCount: categories.length,
     categoryRecipeCount,

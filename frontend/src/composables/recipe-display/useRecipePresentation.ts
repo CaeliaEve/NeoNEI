@@ -7,6 +7,7 @@ import {
   type UITypeConfig,
 } from '../../services/uiTypeMapping';
 import { componentRegistry, resolveRegisteredRecipeComponent } from '../../components/recipe-display/recipeComponentRegistry';
+import { isNativeLayoutRendererEligible } from './nativeLayoutRendering';
 
 interface RecipePresentationSource {
   recipe: Recipe;
@@ -53,7 +54,7 @@ export function useRecipePresentation(source: RecipePresentationSource) {
   const shouldUseDetailedCrafting = computed(() => presentationProfile.value.renderMode === 'detailed_crafting');
   const shouldUseNativeLayoutRenderer = computed(() => {
     const layout = resolvedRecipeUiPayload.value?.nativeLayout;
-    return Boolean(layout) && presentationProfile.value.component === 'StandardCraftingUI';
+    return Boolean(layout) && isNativeLayoutRendererEligible(presentationProfile.value.component, layout);
   });
   const currentComponent = computed(() => resolveRegisteredRecipeComponent(presentationProfile.value.component));
   const displayedComponentName = computed(() => {

@@ -56,7 +56,7 @@ function resolveCurrentRuntimeAssetUrl(manifestUrl: string, relativePath: string
   }
 }
 
-function resolveManifestRelativeUrl(manifestUrl: string, relativePath: string): string {
+export function resolveManifestRelativeUrl(manifestUrl: string, relativePath: string): string {
   if (!isPortableRelativePath(relativePath)) {
     throw new Error(`Native runtime path is not portable: ${relativePath}`);
   }

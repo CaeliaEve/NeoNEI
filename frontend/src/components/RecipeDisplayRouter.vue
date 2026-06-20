@@ -37,7 +37,6 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<Emits>();
 
 const detailedCraftingRef = ref<RecipeDisplayHandle | null>(null);
-const shouldUseRouterScale = computed(() => props.scaleToFit);
 const {
   currentComponent,
   displayedComponentName,
@@ -48,6 +47,7 @@ const {
   shouldUseNativeLayoutRenderer,
   uiConfig,
 } = useRecipePresentation(props);
+const shouldUseRouterScale = computed(() => props.scaleToFit && !shouldUseNativeLayoutRenderer.value);
 
 const {
   containerRef,

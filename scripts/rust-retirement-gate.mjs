@@ -146,19 +146,27 @@ assertEqual(rustCompile?.runtime?.counts?.items, nodeReport?.counts?.items, 'run
 assertEqual(rustCompile?.runtime?.counts?.recipes, nodeReport?.counts?.recipes, 'runtime recipe count');
 assertEqual(rustCompile?.runtime?.counts?.browserAtlasItems, nodeReport?.counts?.browserAtlasItems, 'runtime atlas count');
 if (rustReadiness?.ready !== true) fail(`Rust migration readiness is not green: ${JSON.stringify(rustReadiness)}`);
-const expectedArtifactCount = compileScope === 'all' ? 4 : compileScope === 'browser' ? 2 : 1;
+const expectedArtifactCount = compileScope === 'all' ? 12 : compileScope === 'browser' ? 4 : 1;
 if ((rustManifest?.files ?? []).length < expectedArtifactCount) fail('Rust runtime manifest does not list compiled artifacts');
 if (compileScope === 'all' || compileScope === 'recipes') {
-  const rustRecipePackPath = join(distDataDir, 'rust', 'recipe-pack.json');
-  if (!existsSync(rustRecipePackPath)) fail('Rust recipe pack is missing');
-  const rustRecipePack = readJson(rustRecipePackPath);
-  const rustRecipeCount = rustRecipePack?.counts?.recipes ?? 0;
-  if (rustRecipeCount !== nodeReport?.counts?.recipes) fail(`Rust recipe pack count mismatch: ${rustRecipeCount} !== ${nodeReport?.counts?.recipes}`);
-  if (!Array.isArray(rustRecipePack?.itemIndex) || rustRecipePack.itemIndex.length < 1) fail('Rust recipe pack itemIndex is empty');
-  if (!Array.isArray(rustRecipePack?.uiPayloadIndex) || rustRecipePack.uiPayloadIndex.length !== rustRecipeCount) fail('Rust recipe pack uiPayloadIndex is incomplete');
-  if (!Array.isArray(rustRecipePack?.categoryIndex) || rustRecipePack.categoryIndex.length < 1) fail('Rust recipe pack categoryIndex is empty');
-  const sampleUiPayload = rustRecipePack.uiPayloadIndex.find((entry) => entry?.recipeId && entry?.path && entry?.payloadKey);
-  if (!sampleUiPayload) fail('Rust recipe pack uiPayloadIndex lacks routeable entries');
+  const recipeBinPath = join(distDataDir, 'rust', 'recipes.bin');
+  if (!existsSync(recipeBinPath)) fail('Rust recipe binary pack is missing');
+  const uiPayloadIndexPath = join(distDataDir, 'recipes', 'ui-payload-index.json');
+  const categoryIndexPath = join(distDataDir, 'recipes', 'recipe-category-index.json');
+  const nativeUiLayoutReportPath = join(distDataDir, 'rust', 'native-ui-layout-report.json');
+  if (!existsSync(uiPayloadIndexPath)) fail('Rust recipe UI payload index is missing');
+  if (!existsSync(categoryIndexPath)) fail('Rust recipe category index is missing');
+  if (!existsSync(nativeUiLayoutReportPath)) fail('Rust native UI layout report is missing');
+  const uiPayloadIndex = readJson(uiPayloadIndexPath);
+  const categoryIndex = readJson(categoryIndexPath);
+  const nativeUiLayoutReport = readJson(nativeUiLayoutReportPath);
+  const uiPayloadEntries = Array.isArray(uiPayloadIndex?.recipes) ? uiPayloadIndex.recipes : [];
+  const categories = Array.isArray(categoryIndex?.categories) ? categoryIndex.categories : [];
+  if (uiPayloadEntries.length !== nodeReport?.counts?.recipes) fail(`Rust UI payload index count mismatch: ${uiPayloadEntries.length} !== ${nodeReport?.counts?.recipes}`);
+  if (categories.length < 1) fail('Rust recipe category index is empty');
+  if (nativeUiLayoutReport?.status === 'blocked') fail(`Rust native UI layout report is blocked: ${JSON.stringify(nativeUiLayoutReport?.failures ?? [])}`);
+  const sampleUiPayload = uiPayloadEntries.find((entry) => entry?.recipeId && entry?.path && entry?.payloadKey);
+  if (!sampleUiPayload) fail('Rust UI payload index lacks routeable entries');
   const sampleShardPath = join(distDataDir, sampleUiPayload.path);
   if (!existsSync(sampleShardPath)) fail('Rust recipe UI payload shard is missing: ' + sampleUiPayload.path);
   const sampleShard = readJson(sampleShardPath);
@@ -189,6 +197,9 @@ if (compileScope !== 'search') {
   runStep('frontend typecheck', process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'typecheck'], { cwd: frontendDir });
   runStep('frontend runtime contracts', 'node', ['../scripts/validate-runtime-contracts.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
   runStep('frontend rust production manifest validation', 'node', ['../scripts/validate-rust-production-manifest.mjs', '--gate', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
+  if (!selfTestMode) {
+    runStep('frontend native UI layout validation', 'node', ['../scripts/validate-native-ui-layouts.mjs', '--gate', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
+  }
   runStep('frontend browser page validation', 'node', ['../scripts/validate-browser-pages-v3.mjs', '--gate'], { cwd: frontendDir, env: distEnv });
   runStep('frontend rust browser runtime validation', 'node', ['../scripts/validate-rust-browser-runtime.mjs', '--gate', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
   runStep('frontend rust texture runtime validation', 'node', ['../scripts/validate-rust-texture-runtime.mjs', '--gate', '--dist-data', distDataDir], { cwd: frontendDir, env: distEnv });
