@@ -80,6 +80,23 @@ type TextureState = {
   height: number;
 };
 
+function textureSourceSize(bitmap: TexImageSource): { width: number; height: number } {
+  const source = bitmap as TexImageSource & {
+    width?: number;
+    height?: number;
+    videoWidth?: number;
+    videoHeight?: number;
+    displayWidth?: number;
+    displayHeight?: number;
+  };
+  const width = Number(source.width ?? source.videoWidth ?? source.displayWidth ?? 0);
+  const height = Number(source.height ?? source.videoHeight ?? source.displayHeight ?? 0);
+  return {
+    width: Math.max(1, Number.isFinite(width) ? width : 1),
+    height: Math.max(1, Number.isFinite(height) ? height : 1),
+  };
+}
+
 function createShader(gl: WebGL2RenderingContext, type: number, source: string): WebGLShader | null {
   const shader = gl.createShader(type);
   if (!shader) return null;
@@ -214,8 +231,7 @@ export class WebGl2NativeRenderer {
   }
 
   registerTexture(key: string, bitmap: TexImageSource): boolean {
-    const width = Math.max(1, bitmap.width);
-    const height = Math.max(1, bitmap.height);
+    const { width, height } = textureSourceSize(bitmap);
     if (this.maxTextureSize <= 0 || width > this.maxTextureSize || height > this.maxTextureSize) {
       return false;
     }

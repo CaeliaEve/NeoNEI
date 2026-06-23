@@ -107,6 +107,8 @@ function createDistFixture() {
   writeJson(join(rustDir, 'native-ui-layout-report.json'), {
     schemaVersion: 'neonei/native-ui-layout-report/current',
     status: 'ready',
+    geometryStatus: 'ready',
+    backgroundStatus: 'captured',
     counts: {
       handlerLayouts: 1,
       handlerLayoutsWithHotspots: 0,
@@ -115,6 +117,8 @@ function createDistFixture() {
       gregtechHandlerLayoutsWithProgressBars: 1,
       recipeUiPayloads: 1,
       gregtechRecipeUiPayloads: 1,
+      gregtechRecipeUiPayloadsWithBackgroundRegions: 1,
+      gregtechRecipeUiPayloadsWithNativeBackgrounds: 1,
       gregtechRecipeUiPayloadsWithProgressBars: 1,
       gregtechRecipeUiPayloadsWithHotspots: 0,
       gregtechRecipeUiPayloadsWithViewports: 0,
@@ -127,6 +131,17 @@ function createDistFixture() {
       handlerClass: 'gregtech.nei.GTNEIDefaultHandler',
       canonicalMachineFamily: 'gregtech-machine',
       layoutKind: 'machine',
+      width: 176,
+      height: 90,
+      maxRecipesPerPage: 1,
+      nativeBackground: {
+        status: 'captured',
+        kind: 'gt-modular-ui',
+        assetRef: 'assets/ui-backgrounds/gregtech/nei_single_recipe.png',
+        resource: 'gregtech:textures/gui/background/nei_single_recipe.png',
+        scaling: 'nine-slice',
+        texture: { width: 64, height: 64, borderU: 2, borderV: 2 },
+      },
       progressBars: [{ x: 78, y: 24, width: 20, height: 18 }],
     }],
   });
@@ -134,11 +149,18 @@ function createDistFixture() {
     schemaVersion: 'neonei/recipe-ui-payload-index/v1',
     recipes: [{
       recipeId: 'gt:test',
-      familyKey: 'gregtech-machine|machine|176x90@0#1|textures/gui/test.png',
+      familyKey: 'gregtech-machine|machine|176x90@0#1|gt-modular-ui:assets/ui-backgrounds/gregtech/nei_single_recipe.png',
       handlerKey: 'gt.recipe.test',
       nativeLayout: {
         canonicalMachineFamily: 'gregtech-machine',
         imageRegion: { x: 0, y: 0, width: 176, height: 90 },
+        nativeBackground: {
+          status: 'captured',
+          kind: 'gt-modular-ui',
+          assetRef: 'assets/ui-backgrounds/gregtech/nei_single_recipe.png',
+          scaling: 'nine-slice',
+          texture: { width: 64, height: 64, borderU: 2, borderV: 2 },
+        },
         progressBars: [{ x: 78, y: 24, width: 20, height: 18 }],
       },
     }],
@@ -219,8 +241,27 @@ test('native UI production gates require UI template pack v3 action-rect IR', ()
     const layoutGate = runGate('scripts/validate-native-ui-layouts.mjs', distDataDir);
     assert.equal(layoutGate.uiPack.templateHeader.version, 3);
     assert.equal(layoutGate.uiPack.templateHeader.rectStride, 12);
+    assert.equal(layoutGate.report.backgroundStatus, 'captured');
+    assert.equal(layoutGate.report.counts.gregtechRecipeUiPayloadsWithNativeBackgrounds, 1);
     assert.equal(layoutGate.failures.length, 0);
   } finally {
     rmSync(distDataDir, { recursive: true, force: true });
   }
+});
+
+test('native UI background contract uses materialized nine-slice ModularUI assets', () => {
+  const compiler = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/main.rs'), 'utf8');
+  const canvas = readFileSync(join(repoRoot, 'frontend/src/components/NativeNeiRecipeCanvas.vue'), 'utf8');
+  assert.equal(compiler.includes('materialize_ui_background_assets(input, output, &assets_manifest)'), true);
+  assert.equal(compiler.includes('nativeBackground'), true);
+  assert.equal(compiler.includes('assetRef'), true);
+  assert.equal(compiler.includes('assets/ui-backgrounds/'), true);
+  assert.equal(canvas.includes('nativeBackgroundAssetRef'), true);
+  assert.equal(canvas.includes('nativeBackgroundTextureSpec'), true);
+  assert.equal(canvas.includes('pushBackgroundCommands'), true);
+  assert.equal(canvas.includes('nineSlice'), true);
+  assert.equal(canvas.includes("backgroundSource.value.textureKey === nativeBackgroundTextureKey.value ? 'captured' : 'error'"), true);
+  assert.equal(canvas.includes("if (`${nativeBackground.value?.status ?? ''}` === 'captured')"), true);
+  assert.equal(canvas.includes('Semantic GT backgrounds without a captured asset may use the procedural fallback.'), true);
+  assert.equal(canvas.includes('Fall through to semantic GT fallback when the raw-export did not carry the asset.'), false);
 });

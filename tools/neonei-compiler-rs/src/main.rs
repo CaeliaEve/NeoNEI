@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Context, Result};
+﻿use anyhow::{anyhow, Context, Result};
 use clap::{Parser, Subcommand, ValueEnum};
 use flate2::read::GzDecoder;
 use pinyin::ToPinyin;
@@ -7,9 +7,10 @@ use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Read};
+use std::io::{BufRead, BufReader, BufWriter, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+
 
 #[derive(Parser, Debug)]
 #[command(name = "neonei-compiler")]
@@ -55,13 +56,13 @@ enum Command {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
 enum CompileScope {
     All,
+    NativeUi,
     Search,
     Browser,
     Recipes,
     Ui,
     Textures,
 }
-
 #[derive(Debug, Deserialize)]
 struct RawManifest {
     #[serde(rename = "schemaVersion")]
@@ -166,6 +167,11 @@ fn main() -> Result<()> {
                     compile_recipe_pack(&input, &output, strict, debug_json)?;
                     compile_ui_pack(&input, &output, strict, debug_json)?;
                     compile_texture_pack(&input, &output, strict, debug_json)?;
+                }
+                CompileScope::NativeUi => {
+                    compile_browser_pack(&input, &output, strict, debug_json)?;
+                    compile_recipe_pack(&input, &output, strict, debug_json)?;
+                    compile_ui_pack(&input, &output, strict, debug_json)?;
                 }
                 CompileScope::Search => compile_search_pack(&input, &output, strict, debug_json)?,
                 CompileScope::Browser => compile_browser_pack(&input, &output, strict, debug_json)?,
@@ -401,7 +407,8 @@ fn compile_browser_pack(input: &Path, output: &Path, strict: bool, debug_json: b
         Some("groups"),
     )?;
     let texture_rows = read_json_collection(input, &manifest, &["textures"], Some("textures"))?;
-    let atlas = read_manifest_json(input, &manifest, "browserAtlasIndex")?.unwrap_or(Value::Null);
+    let atlas =
+        read_optional_manifest_json(input, &manifest, "browserAtlasIndex")?.unwrap_or(Value::Null);
     let atlas = repaired_browser_atlas(&atlas, &texture_rows, &items);
 
     if strict && items.is_empty() {
@@ -1349,7 +1356,7 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
     let mut used_in: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     let mut recipe_pack = Vec::new();
     let mut ui_payload_index = Vec::new();
-    let mut ui_payload_shards: BTreeMap<String, BTreeMap<String, Value>> = BTreeMap::new();
+    let mut ui_payload_shards = RecipeUiPayloadShardWriters::new(output)?;
     let mut category_map: BTreeMap<String, RecipeCategoryAccumulator> = BTreeMap::new();
     let mut recipe_count = 0usize;
 
@@ -1457,7 +1464,16 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
                 "density": if input_item_ids.len() + output_item_ids.len() > 12 { "dense" } else { "normal" },
             },
         });
-        let mut payload_entry = payload_meta.clone();
+        let payload_index_entry = json!({
+            "recipeId": recipe_id,
+            "path": rust_recipe_ui_payload_relative_path(&recipe_id),
+            "payloadKey": recipe_id,
+            "familyKey": family_key,
+            "recipeType": recipe_type,
+            "machineType": machine_type,
+            "handlerKey": handler_key,
+        });
+        let mut payload_entry = payload_meta;
         if let Some(payload_object) = payload_entry.as_object_mut() {
             payload_object.insert(
                 "schemaVersion".to_string(),
@@ -1475,11 +1491,8 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
             payload_object.remove("path");
             payload_object.remove("payloadKey");
         }
-        ui_payload_shards
-            .entry(rust_recipe_ui_payload_relative_path(&recipe_id))
-            .or_default()
-            .insert(recipe_id.clone(), payload_entry);
-        ui_payload_index.push(payload_meta);
+        ui_payload_shards.write_payload(&recipe_id, &payload_entry)?;
+        ui_payload_index.push(payload_index_entry);
 
         let category_display_name = recipe_category_display_name(recipe, handler);
         let raw_category_id = recipe_category_raw_id(recipe, handler);
@@ -1605,19 +1618,7 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
             "recipes": ui_payload_index.clone(),
         }),
     )?;
-    for (shard_path, payloads) in &ui_payload_shards {
-        let absolute_shard_path = output.join(shard_path);
-        if let Some(parent) = absolute_shard_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        write_json_value(
-            &absolute_shard_path,
-            &json!({
-                "schemaVersion": "neonei/recipe-ui-payload-shard/v1",
-                "payloads": payloads,
-            }),
-        )?;
-    }
+    ui_payload_shards.finish()?;
     let recipe_output_pack = json!({
         "schemaVersion": "neonei/rust-recipe-pack/current",
         "counts": {
@@ -1750,6 +1751,17 @@ fn compile_ui_pack(input: &Path, output: &Path, strict: bool, _debug_json: bool)
         build_compact_ui_binding_payload(&bindings, &mut strings, &mut string_refs)?;
     let string_payload = build_compact_ui_string_payload(&strings)?;
     let assets_manifest = build_ui_assets_manifest(&templates);
+    let ui_background_assets = materialize_ui_background_assets(input, output, &assets_manifest)?;
+    let missing_ui_background_assets = ui_background_assets
+        .get("missing")
+        .and_then(Value::as_array)
+        .map(|items| items.len())
+        .unwrap_or(0);
+    if strict && missing_ui_background_assets > 0 {
+        return Err(anyhow!(
+            "ui-pack compiler blocked: {missing_ui_background_assets} native UI background asset(s) are missing"
+        ));
+    }
     let unbound_recipes = bindings
         .iter()
         .filter(|entry| {
@@ -1818,7 +1830,7 @@ fn compile_ui_pack(input: &Path, output: &Path, strict: bool, _debug_json: bool)
                 "assetCount": assets_manifest.get("assets").and_then(Value::as_array).map(|items| items.len()).unwrap_or(0),
             },
             "format": {
-                "templatePackMagic": "NEIUIT1\\u0000",
+                "templatePackMagic": "NEIUIT1_NUL",
                 "templatePackVersion": 3,
                 "templateStride": 19,
                 "slotStride": 6,
@@ -1832,6 +1844,9 @@ fn compile_ui_pack(input: &Path, output: &Path, strict: bool, _debug_json: bool)
                 "uiBindings": "rust/ui-pack/ui_bindings.bin",
                 "uiStrings": "rust/ui-pack/ui_strings.bin",
                 "uiAssetsManifest": "rust/ui-pack/ui_assets.manifest.json",
+            },
+            "assets": {
+                "uiBackgrounds": ui_background_assets,
             },
             "unboundRecipes": unbound_recipes,
         }),
@@ -1983,10 +1998,20 @@ fn build_ui_assets_manifest(templates: &[Value]) -> Value {
     for template in templates {
         let asset = value_string(template, "imageResource").unwrap_or_default();
         if asset.trim().is_empty() {
-            continue;
+            // Template backgrounds may be exported through the structured
+            // nativeBackground contract instead of legacy imageResource.
+        } else {
+            let template_key = value_string(template, "templateKey").unwrap_or_default();
+            assets_by_ref.entry(asset).or_default().push(template_key);
         }
         let template_key = value_string(template, "templateKey").unwrap_or_default();
-        assets_by_ref.entry(asset).or_default().push(template_key);
+        if let Some(asset) = template
+            .get("nativeBackground")
+            .and_then(|background| value_string(background, "assetRef"))
+            .filter(|value| !value.trim().is_empty())
+        {
+            assets_by_ref.entry(asset).or_default().push(template_key);
+        }
     }
     let assets = assets_by_ref
         .into_iter()
@@ -2005,6 +2030,78 @@ fn build_ui_assets_manifest(templates: &[Value]) -> Value {
         "generatedAt": "deterministic-rust-compiler",
         "assets": assets,
     })
+}
+
+fn materialize_ui_background_assets(
+    input: &Path,
+    output: &Path,
+    assets_manifest: &Value,
+) -> Result<Value> {
+    let mut copied = Vec::new();
+    let mut missing = Vec::new();
+    let Some(assets) = assets_manifest.get("assets").and_then(Value::as_array) else {
+        return Ok(json!({
+            "schemaVersion": "neonei/ui-background-assets/current",
+            "copied": copied,
+            "missing": missing,
+        }));
+    };
+    for asset in assets {
+        let asset_ref = value_string(asset, "assetRef").unwrap_or_default();
+        if !asset_ref.starts_with("assets/ui-backgrounds/") {
+            continue;
+        }
+        let Some(relative) = portable_relative_path(&asset_ref) else {
+            missing.push(json!({
+                "assetRef": asset_ref,
+                "reason": "non-portable-path",
+            }));
+            continue;
+        };
+        let source = input.join(&relative);
+        if !source.is_file() {
+            missing.push(json!({
+                "assetRef": asset_ref,
+                "path": normalize_path(relative.as_path()),
+                "reason": "raw-export-asset-missing",
+            }));
+            continue;
+        }
+        let target = output.join(&relative);
+        if let Some(parent) = target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(&source, &target).with_context(|| {
+            format!(
+                "copy UI background asset {} -> {}",
+                source.display(),
+                target.display()
+            )
+        })?;
+        copied.push(json!({
+            "assetRef": asset_ref,
+            "path": normalize_path(relative.as_path()),
+        }));
+    }
+    Ok(json!({
+        "schemaVersion": "neonei/ui-background-assets/current",
+        "copied": copied,
+        "missing": missing,
+    }))
+}
+
+fn portable_relative_path(value: &str) -> Option<PathBuf> {
+    let normalized = value.replace('\\', "/").trim_start_matches('/').to_string();
+    if normalized.is_empty()
+        || normalized.contains("://")
+        || normalized.contains(':')
+        || normalized
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+    {
+        return None;
+    }
+    Some(PathBuf::from(normalized))
 }
 
 fn ui_template_slot_count(template: &Value) -> usize {
@@ -2611,23 +2708,7 @@ impl<'a> RecipeHandlerContext<'a> {
     }
 
     fn resolve(&self, recipe: &Value) -> (Option<&'a Value>, Option<&'a Value>) {
-        let candidates = [
-            nested_value_string(recipe, &["metadata", "handlerKey"]),
-            nested_value_string(recipe, &["metadata", "handlerClass"]),
-            nested_value_string(recipe, &["metadata", "handler"]),
-            nested_value_string(recipe, &["metadata", "handlerId"]),
-            nested_value_string(recipe, &["metadata", "handlerName"]),
-            nested_value_string(recipe, &["additionalData", "handlerKey"]),
-            nested_value_string(recipe, &["additionalData", "handlerClass"]),
-            nested_value_string(recipe, &["additionalData", "handler"]),
-            nested_value_string(recipe, &["additionalData", "handlerId"]),
-            nested_value_string(recipe, &["additionalData", "handlerName"]),
-            nested_value_string(recipe, &["machine", "machineId"]),
-            nested_value_string(recipe, &["machine", "displayName"]),
-            value_string(recipe, "family"),
-            value_string(recipe, "sourcePlugin"),
-            value_string(recipe, "recipeType"),
-        ];
+        let candidates = recipe_handler_candidates(recipe);
         for candidate in candidates.into_iter().flatten() {
             let candidate = candidate.trim();
             if candidate.is_empty() {
@@ -2652,6 +2733,48 @@ impl<'a> RecipeHandlerContext<'a> {
         }
         (None, None)
     }
+}
+
+fn recipe_handler_candidates(recipe: &Value) -> Vec<Option<String>> {
+    let raw_candidates = [
+        nested_value_string(recipe, &["metadata", "handlerKey"]),
+        nested_value_string(recipe, &["metadata", "handlerClass"]),
+        nested_value_string(recipe, &["metadata", "handler"]),
+        nested_value_string(recipe, &["metadata", "handlerId"]),
+        nested_value_string(recipe, &["metadata", "handlerName"]),
+        nested_value_string(recipe, &["additionalData", "handlerKey"]),
+        nested_value_string(recipe, &["additionalData", "handlerClass"]),
+        nested_value_string(recipe, &["additionalData", "handler"]),
+        nested_value_string(recipe, &["additionalData", "handlerId"]),
+        nested_value_string(recipe, &["additionalData", "handlerName"]),
+        nested_value_string(recipe, &["machine", "machineId"]),
+        nested_value_string(recipe, &["machine", "displayName"]),
+        value_string(recipe, "family"),
+        value_string(recipe, "sourcePlugin"),
+        value_string(recipe, "recipeType"),
+    ];
+    let mut candidates = Vec::with_capacity(raw_candidates.len() * 2);
+    for candidate in raw_candidates {
+        if let Some(value) = candidate.as_deref() {
+            if let Some(handler_key) = runtime_recipe_type_handler_key(value) {
+                candidates.push(Some(handler_key));
+            }
+        }
+        candidates.push(candidate);
+    }
+    candidates
+}
+
+fn runtime_recipe_type_handler_key(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    let remainder = trimmed.strip_prefix("rt~")?;
+    let mut parts = remainder.split('~');
+    let _mod_id = parts.next()?;
+    let handler_key = parts.next()?.trim();
+    if handler_key.is_empty() {
+        return None;
+    }
+    Some(handler_key.to_string())
 }
 
 fn public_recipe_handler(handler: &Value) -> Value {
@@ -2686,6 +2809,7 @@ fn public_recipe_layout(layout: &Value) -> Value {
         "maxRecipesPerPage": value_u64(layout, "maxRecipesPerPage").unwrap_or(1),
         "imageResource": value_string(layout, "imageResource"),
         "imageRegion": layout.get("imageRegion").cloned().unwrap_or(Value::Null),
+        "nativeBackground": layout.get("nativeBackground").cloned().unwrap_or(Value::Null),
         "slots": layout.get("slots").and_then(Value::as_array).cloned().unwrap_or_default(),
         "textOverlays": layout.get("textOverlays").and_then(Value::as_array).cloned().unwrap_or_default(),
         "dynamicPrimitives": layout.get("dynamicPrimitives").and_then(Value::as_array).cloned().unwrap_or_default(),
@@ -3009,6 +3133,77 @@ fn rust_recipe_ui_payload_relative_path(recipe_id: &str) -> String {
     format!("recipes/ui-payload-shards/{shard}.json")
 }
 
+struct RecipeUiPayloadShardWriter {
+    writer: BufWriter<File>,
+    first_payload: bool,
+}
+
+struct RecipeUiPayloadShardWriters {
+    output: PathBuf,
+    writers: BTreeMap<String, RecipeUiPayloadShardWriter>,
+}
+
+impl RecipeUiPayloadShardWriters {
+    fn new(output: &Path) -> Result<Self> {
+        fs::create_dir_all(output.join("recipes").join("ui-payload-shards"))?;
+        Ok(Self {
+            output: output.to_path_buf(),
+            writers: BTreeMap::new(),
+        })
+    }
+
+    fn write_payload(&mut self, recipe_id: &str, payload: &Value) -> Result<()> {
+        let shard_path = rust_recipe_ui_payload_relative_path(recipe_id);
+        if !self.writers.contains_key(&shard_path) {
+            let absolute_path = self.output.join(&shard_path);
+            if let Some(parent) = absolute_path.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            let file = File::create(&absolute_path).with_context(|| {
+                format!("create recipe UI payload shard {}", absolute_path.display())
+            })?;
+            let mut writer = BufWriter::new(file);
+            writer.write_all(
+                b"{\n  \"schemaVersion\": \"neonei/recipe-ui-payload-shard/v1\",\n  \"payloads\": {",
+            )?;
+            self.writers.insert(
+                shard_path.clone(),
+                RecipeUiPayloadShardWriter {
+                    writer,
+                    first_payload: true,
+                },
+            );
+        }
+        let shard = self
+            .writers
+            .get_mut(&shard_path)
+            .ok_or_else(|| anyhow!("recipe UI payload shard writer disappeared: {shard_path}"))?;
+        if shard.first_payload {
+            shard.writer.write_all(b"\n")?;
+            shard.first_payload = false;
+        } else {
+            shard.writer.write_all(b",\n")?;
+        }
+        write!(shard.writer, "    {}: ", serde_json::to_string(recipe_id)?)?;
+        serde_json::to_writer(&mut shard.writer, payload)?;
+        Ok(())
+    }
+
+    fn finish(self) -> Result<()> {
+        for (shard_path, mut shard) in self.writers {
+            if shard.first_payload {
+                shard.writer.write_all(b"\n")?;
+            }
+            shard.writer.write_all(b"  }\n}\n")?;
+            shard
+                .writer
+                .flush()
+                .with_context(|| format!("flush recipe UI payload shard {shard_path}"))?;
+        }
+        Ok(())
+    }
+}
+
 fn sha1_hex_prefix(bytes: &[u8], hex_len: usize) -> String {
     let mut h0: u32 = 0x6745_2301;
     let mut h1: u32 = 0xefcd_ab89;
@@ -3164,9 +3359,11 @@ fn classify_recipe_family_key(recipe: &Value, fallback: &str, handler: Option<&V
 }
 
 fn captured_ui_family_key(handler: Option<&Value>, layout: Option<&Value>) -> Option<String> {
-    let handler = handler?;
     let layout = layout?;
-    let family = value_string(handler, "canonicalMachineFamily")?;
+    let family = first_non_empty(&[
+        handler.and_then(|handler| value_string(handler, "canonicalMachineFamily")),
+        value_string(layout, "canonicalMachineFamily"),
+    ])?;
     if family.trim().is_empty() {
         return None;
     }
@@ -3178,7 +3375,7 @@ fn captured_ui_family_key(handler: Option<&Value>, layout: Option<&Value>) -> Op
     let max_recipes_per_page = value_u64(layout, "maxRecipesPerPage").unwrap_or(1);
     let image_resource = first_non_empty(&[
         value_string(layout, "imageResource"),
-        value_string(handler, "imageResource"),
+        handler.and_then(|handler| value_string(handler, "imageResource")),
     ])
     .unwrap_or_default();
     Some(format!(
@@ -4705,6 +4902,22 @@ fn compile_runtime_reports(
             "ui-pack/ui_assets.manifest.json",
             "ui-pack/ui_pack_report.json",
         ],
+        CompileScope::NativeUi => vec![
+            "browser.bin",
+            "groups.bin",
+            "search.bin",
+            "recipes.bin",
+            "strings.zh_cn.bin",
+            "semantic-validation-report.json",
+            "recipe-handler-metadata-report.json",
+            "recipe-fragmentation-report.json",
+            "native-ui-layout-report.json",
+            "ui-pack/ui_templates.bin",
+            "ui-pack/ui_bindings.bin",
+            "ui-pack/ui_strings.bin",
+            "ui-pack/ui_assets.manifest.json",
+            "ui-pack/ui_pack_report.json",
+        ],
         CompileScope::Search => vec![
             "search.bin",
             "strings.zh_cn.bin",
@@ -4749,6 +4962,9 @@ fn compile_runtime_reports(
                 "recipe-pack.json",
                 "texture-pack.json",
             ]),
+            CompileScope::NativeUi => {
+                artifact_names.extend(["browser-pack.json", "search-pack.json", "recipe-pack.json"])
+            }
             CompileScope::Search => artifact_names.push("search-pack.json"),
             CompileScope::Browser => {
                 artifact_names.extend(["browser-pack.json", "search-pack.json"])
@@ -4977,12 +5193,24 @@ fn compile_native_ui_layout_report(output: &Path) -> Result<Option<Value>> {
         .iter()
         .filter(|layout| is_gregtech_native_layout(layout))
         .collect::<Vec<_>>();
+    let layout_by_family = layouts
+        .iter()
+        .filter_map(|layout| Some((captured_ui_family_key(None, Some(layout))?, layout)))
+        .collect::<BTreeMap<_, _>>();
     let gt_recipe_entries = recipes
         .iter()
         .filter(|entry| is_gregtech_recipe_ui_entry(entry))
         .collect::<Vec<_>>();
+    let gt_recipe_layouts = gt_recipe_entries
+        .iter()
+        .filter_map(|entry| {
+            value_string(entry, "familyKey")
+                .and_then(|family_key| layout_by_family.get(&family_key).copied())
+        })
+        .collect::<Vec<_>>();
 
     let mut failures = Vec::new();
+    let mut background_asset_gaps = Vec::new();
     if layouts.is_empty() {
         failures.push("handler layout index is empty".to_string());
     }
@@ -4995,38 +5223,51 @@ fn compile_native_ui_layout_report(output: &Path) -> Result<Option<Value>> {
     {
         failures.push("gregtech-machine handler layouts have no drawable progressBars".to_string());
     }
-    if !gt_recipe_entries.is_empty()
-        && gt_recipe_entries
+    if !gt_recipe_layouts.is_empty()
+        && gt_recipe_layouts
             .iter()
-            .filter(|entry| {
-                primitive_count(
-                    entry.get("nativeLayout").unwrap_or(&Value::Null),
-                    "progressBars",
-                ) > 0
-            })
+            .filter(|layout| primitive_count(layout, "progressBars") > 0)
             .count()
             == 0
     {
         failures
             .push("gregtech-machine recipe UI payloads have no drawable progressBars".to_string());
     }
-    if !gt_recipe_entries.is_empty()
-        && gt_recipe_entries
-            .iter()
-            .filter(|entry| has_image_region(entry.get("nativeLayout").unwrap_or(&Value::Null)))
-            .count()
-            == 0
-    {
-        failures.push(
-            "gregtech-machine recipe UI payloads have no captured background imageRegion"
+    let gt_recipe_entries_with_background_regions = gt_recipe_layouts
+        .iter()
+        .filter(|layout| has_image_region(layout))
+        .count();
+    let gt_recipe_entries_with_native_backgrounds = gt_recipe_layouts
+        .iter()
+        .filter(|layout| has_native_background(layout))
+        .count();
+    if !gt_recipe_layouts.is_empty() && gt_recipe_entries_with_native_backgrounds == 0 {
+        background_asset_gaps.push(
+            "gregtech-machine recipe UI payloads have no nativeBackground capture facts"
                 .to_string(),
         );
     }
+    let geometry_status = if failures.is_empty() {
+        "ready"
+    } else {
+        "blocked"
+    };
+    let background_status = if gt_recipe_entries_with_background_regions > 0 {
+        "captured"
+    } else if gt_recipe_entries_with_native_backgrounds > 0 {
+        "semantic"
+    } else if background_asset_gaps.is_empty() {
+        "ready"
+    } else {
+        "missing"
+    };
 
     let report = json!({
         "schemaVersion": "neonei/native-ui-layout-report/current",
         "generatedAt": "deterministic-rust-compiler",
-        "status": if failures.is_empty() { "ready" } else { "blocked" },
+        "status": geometry_status,
+        "geometryStatus": geometry_status,
+        "backgroundStatus": background_status,
         "source": {
             "handlerLayoutIndex": "recipes/handler-layout-index.json",
             "recipeUiPayloadIndex": if ui_payload_path.exists() { "recipes/ui-payload-index.json" } else { "" },
@@ -5044,10 +5285,11 @@ fn compile_native_ui_layout_report(output: &Path) -> Result<Option<Value>> {
             "gregtechHandlerLayoutsWithProgressBars": gt_layouts.iter().filter(|layout| primitive_count(layout, "progressBars") > 0).count(),
             "recipeUiPayloads": recipes.len(),
             "gregtechRecipeUiPayloads": gt_recipe_entries.len(),
-            "gregtechRecipeUiPayloadsWithBackgroundRegions": gt_recipe_entries.iter().filter(|entry| has_image_region(entry.get("nativeLayout").unwrap_or(&Value::Null))).count(),
-            "gregtechRecipeUiPayloadsWithProgressBars": gt_recipe_entries.iter().filter(|entry| primitive_count(entry.get("nativeLayout").unwrap_or(&Value::Null), "progressBars") > 0).count(),
-            "gregtechRecipeUiPayloadsWithHotspots": gt_recipe_entries.iter().filter(|entry| primitive_count(entry.get("nativeLayout").unwrap_or(&Value::Null), "hotspots") > 0).count(),
-            "gregtechRecipeUiPayloadsWithViewports": gt_recipe_entries.iter().filter(|entry| primitive_count(entry.get("nativeLayout").unwrap_or(&Value::Null), "viewports") > 0).count(),
+            "gregtechRecipeUiPayloadsWithBackgroundRegions": gt_recipe_entries_with_background_regions,
+            "gregtechRecipeUiPayloadsWithNativeBackgrounds": gt_recipe_entries_with_native_backgrounds,
+            "gregtechRecipeUiPayloadsWithProgressBars": gt_recipe_layouts.iter().filter(|layout| primitive_count(layout, "progressBars") > 0).count(),
+            "gregtechRecipeUiPayloadsWithHotspots": gt_recipe_layouts.iter().filter(|layout| primitive_count(layout, "hotspots") > 0).count(),
+            "gregtechRecipeUiPayloadsWithViewports": gt_recipe_layouts.iter().filter(|layout| primitive_count(layout, "viewports") > 0).count(),
         },
         "samples": {
             "gregtechHandlerLayoutsMissingProgressBars": gt_layouts.iter()
@@ -5060,7 +5302,10 @@ fn compile_native_ui_layout_report(output: &Path) -> Result<Option<Value>> {
                 }))
                 .collect::<Vec<_>>(),
             "gregtechRecipePayloadsMissingProgressBars": gt_recipe_entries.iter()
-                .filter(|entry| primitive_count(entry.get("nativeLayout").unwrap_or(&Value::Null), "progressBars") == 0)
+                .filter(|entry| value_string(entry, "familyKey")
+                    .and_then(|family_key| layout_by_family.get(&family_key).copied())
+                    .map(|layout| primitive_count(layout, "progressBars") == 0)
+                    .unwrap_or(true))
                 .take(25)
                 .map(|entry| json!({
                     "recipeId": value_string(entry, "recipeId"),
@@ -5070,6 +5315,7 @@ fn compile_native_ui_layout_report(output: &Path) -> Result<Option<Value>> {
                 .collect::<Vec<_>>(),
         },
         "failures": failures,
+        "backgroundAssetGaps": background_asset_gaps,
     });
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
@@ -5121,6 +5367,16 @@ fn has_drawable_rect(value: &Value) -> bool {
 
 fn has_image_region(value: &Value) -> bool {
     value.get("imageRegion").is_some_and(has_drawable_rect)
+}
+
+fn has_native_background(value: &Value) -> bool {
+    let Some(background) = value.get("nativeBackground") else {
+        return has_image_region(value);
+    };
+    let status = value_string(background, "status").unwrap_or_default();
+    let kind = value_string(background, "kind").unwrap_or_default();
+    matches!(status.as_str(), "captured" | "semantic")
+        && matches!(kind.as_str(), "texture-region" | "gt-modular-ui")
 }
 
 fn purge_debug_json_artifacts(output: &Path) -> Result<()> {
@@ -5283,6 +5539,21 @@ fn rust_manifest_file_entries(
             ),
             ("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"),
         ]),
+        CompileScope::NativeUi => entries.extend([
+            ("rustBrowserBin", "rust/browser.bin"),
+            ("rustGroupsBin", "rust/groups.bin"),
+            ("rustSearchBin", "rust/search.bin"),
+            ("rustRecipeBin", "rust/recipes.bin"),
+            ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
+            ("rustUiTemplatesBin", "rust/ui-pack/ui_templates.bin"),
+            ("rustUiBindingsBin", "rust/ui-pack/ui_bindings.bin"),
+            ("rustUiStringsBin", "rust/ui-pack/ui_strings.bin"),
+            (
+                "rustUiAssetsManifest",
+                "rust/ui-pack/ui_assets.manifest.json",
+            ),
+            ("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"),
+        ]),
         CompileScope::Search => entries.extend([
             ("rustSearchBin", "rust/search.bin"),
             ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
@@ -5318,6 +5589,11 @@ fn rust_manifest_file_entries(
                 ("rustRecipePack", "rust/recipe-pack.json"),
                 ("rustTexturePack", "rust/texture-pack.json"),
             ]),
+            CompileScope::NativeUi => entries.extend([
+                ("rustBrowserPack", "rust/browser-pack.json"),
+                ("rustSearchPack", "rust/search-pack.json"),
+                ("rustRecipePack", "rust/recipe-pack.json"),
+            ]),
             CompileScope::Search => entries.push(("rustSearchPack", "rust/search-pack.json")),
             CompileScope::Browser => entries.extend([
                 ("rustBrowserPack", "rust/browser-pack.json"),
@@ -5349,6 +5625,7 @@ impl CompileScope {
     fn as_str(self) -> &'static str {
         match self {
             CompileScope::All => "all",
+            CompileScope::NativeUi => "native-ui",
             CompileScope::Search => "search",
             CompileScope::Browser => "browser",
             CompileScope::Recipes => "recipes",
@@ -5549,6 +5826,22 @@ fn read_manifest_json(
     Ok(Some(value))
 }
 
+fn read_optional_manifest_json(
+    input: &Path,
+    manifest: &RawManifest,
+    logical_name: &str,
+) -> Result<Option<Value>> {
+    let Some(path) = resolve_manifest_path(input, manifest, logical_name) else {
+        return Ok(None);
+    };
+    if !path.exists() {
+        return Ok(None);
+    }
+    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
+    let value = serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+    Ok(Some(value))
+}
+
 fn read_jsonl_values(
     input: &Path,
     manifest: &RawManifest,
@@ -5574,6 +5867,16 @@ fn rust_capabilities(scope: CompileScope) -> Value {
             "strings.zh-cn",
             "native-render.webgl2",
             "recipes.ui-pack",
+        ]),
+        CompileScope::NativeUi => json!([
+            "groups.collapse",
+            "groups.semantic-nbt",
+            "recipes.lookup",
+            "recipes.native-ui-layout",
+            "recipes.ui-pack",
+            "search.zh-cn",
+            "strings.zh-cn",
+            "native-render.webgl2"
         ]),
         CompileScope::Search => json!(["search.zh-cn", "strings.zh-cn"]),
         CompileScope::Browser => json!([
@@ -6272,7 +6575,7 @@ mod tests {
     fn compact_string_pack_uses_native_binary_payload() {
         let items = vec![json!({
             "itemId": "minecraft:iron_ingot",
-            "localizedName": "閾侀敪",
+            "localizedName": "Iron Ingot",
             "modId": "minecraft",
             "internalName": "item.ingotIron",
             "groupKey": "",
@@ -6290,12 +6593,12 @@ mod tests {
         let items = vec![json!({
             "itemId": "minecraft:iron_ingot",
             "publicItemId": "item:minecraft:iron_ingot",
-            "localizedName": "閾侀敪",
+            "localizedName": "Iron Ingot",
             "modId": "minecraft",
-            "normalizedLocalizedName": "閾侀敪",
+            "normalizedLocalizedName": "iron ingot",
             "normalizedInternalName": "item ingotiron",
             "normalizedItemId": "minecraft iron_ingot",
-            "normalizedSearchTerms": "iron ingot minecraft 閾侀敪",
+            "normalizedSearchTerms": "iron ingot minecraft item ingotiron",
             "pinyinFull": "tieding",
             "pinyinAcronym": "td",
             "popularityScore": 3,
@@ -6389,6 +6692,46 @@ mod tests {
     }
 
     #[test]
+    fn runtime_recipe_type_ids_resolve_to_nei_handler_keys() {
+        let handlers = vec![json!({
+            "handlerKey": "gt.recipe.laserengraver",
+            "handlerClass": "gt.recipe.laserengraver",
+            "canonicalMachineFamily": "gregtech-machine"
+        })];
+        let layouts = vec![json!({
+            "handlerKey": "gt.recipe.laserengraver",
+            "canonicalMachineFamily": "gregtech-machine",
+            "layoutKind": "machine",
+            "width": 166,
+            "height": 135,
+            "maxRecipesPerPage": 2,
+            "progressBars": [{ "x": 78, "y": 24, "width": 20, "height": 18 }]
+        })];
+        let recipe = json!({
+            "family": "gregtech",
+            "sourcePlugin": "gregtech",
+            "machine": {
+                "machineId": "rt~gregtech~gt.recipe.laserengraver~MV",
+                "displayName": "gregtech - Laser Engraver (MV)"
+            }
+        });
+        let context = RecipeHandlerContext::new(&handlers, &layouts);
+
+        let (handler, layout) = context.resolve(&recipe);
+
+        assert_eq!(
+            handler
+                .and_then(|value| value_string(value, "handlerKey"))
+                .as_deref(),
+            Some("gt.recipe.laserengraver")
+        );
+        assert_eq!(
+            captured_ui_family_key(handler, layout).as_deref(),
+            Some("gregtech-machine|machine|166x135@0#2|unknown")
+        );
+    }
+
+    #[test]
     fn public_recipe_layout_preserves_native_background_and_dynamic_primitives() {
         let layout = json!({
             "handlerKey": "gt.recipe.assemblyline",
@@ -6398,6 +6741,12 @@ mod tests {
             "height": 90,
             "imageResource": "textures/gui/gt5u_assembly_line.png",
             "imageRegion": { "x": 4, "y": 8, "width": 176, "height": 90 },
+            "nativeBackground": {
+                "status": "captured",
+                "kind": "gt-modular-ui",
+                "assetRef": "assets/ui-backgrounds/gregtech/nei_single_recipe.png",
+                "scaling": "nine-slice"
+            },
             "progressBars": [{
                 "kind": "progress-bar",
                 "role": "gt-progress",
@@ -6443,6 +6792,10 @@ mod tests {
         );
         assert_eq!(public_layout["imageRegion"]["x"], json!(4));
         assert_eq!(
+            public_layout["nativeBackground"]["assetRef"],
+            json!("assets/ui-backgrounds/gregtech/nei_single_recipe.png")
+        );
+        assert_eq!(
             public_layout["progressBars"].as_array().unwrap()[0]["role"],
             json!("gt-progress")
         );
@@ -6485,6 +6838,49 @@ mod tests {
             json!("ui-template/assembly-line")
         );
         assert_eq!(bindings[0]["familyKey"], json!(captured_family_key));
+    }
+
+    #[test]
+    fn ui_assets_manifest_and_materializer_include_native_background_assets() {
+        let templates = vec![json!({
+            "templateKey": "gt-machine@default",
+            "imageResource": "",
+            "nativeBackground": {
+                "status": "captured",
+                "kind": "gt-modular-ui",
+                "assetRef": "assets/ui-backgrounds/gregtech/nei_single_recipe.png",
+                "scaling": "nine-slice"
+            }
+        })];
+        let manifest = build_ui_assets_manifest(&templates);
+        assert_eq!(manifest["assets"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            manifest["assets"][0]["assetRef"],
+            json!("assets/ui-backgrounds/gregtech/nei_single_recipe.png")
+        );
+
+        let input = tempfile::tempdir().unwrap();
+        let output = tempfile::tempdir().unwrap();
+        let source = input
+            .path()
+            .join("assets/ui-backgrounds/gregtech/nei_single_recipe.png");
+        fs::create_dir_all(source.parent().unwrap()).unwrap();
+        fs::write(&source, b"png").unwrap();
+
+        let materialized =
+            materialize_ui_background_assets(input.path(), output.path(), &manifest).unwrap();
+
+        assert_eq!(
+            fs::read(
+                output
+                    .path()
+                    .join("assets/ui-backgrounds/gregtech/nei_single_recipe.png")
+            )
+            .unwrap(),
+            b"png"
+        );
+        assert_eq!(materialized["copied"].as_array().unwrap().len(), 1);
+        assert_eq!(materialized["missing"].as_array().unwrap().len(), 0);
     }
 
     #[test]
@@ -6604,7 +7000,18 @@ mod tests {
                     "handlerClass": "gregtech.nei.GTNEIDefaultHandler",
                     "canonicalMachineFamily": "gregtech-machine",
                     "layoutKind": "machine",
+                    "width": 176,
+                    "height": 90,
+                    "maxRecipesPerPage": 1,
                     "imageRegion": { "x": 0, "y": 0, "width": 176, "height": 90 },
+                    "nativeBackground": {
+                        "status": "captured",
+                        "kind": "gt-modular-ui",
+                        "assetRef": "assets/ui-backgrounds/gregtech/nei_single_recipe.png",
+                        "resource": "gregtech:textures/gui/background/nei_single_recipe.png",
+                        "scaling": "nine-slice",
+                        "texture": { "width": 64, "height": 64, "borderU": 2, "borderV": 2 }
+                    },
                     "progressBars": [{ "x": 78, "y": 24, "width": 20, "height": 18 }]
                 }]
             }),
@@ -6616,7 +7023,7 @@ mod tests {
                 "schemaVersion": "neonei/recipe-ui-payload-index/v1",
                 "recipes": [{
                     "recipeId": "gt:test",
-                    "familyKey": "gregtech-machine|machine|176x90@0#1|textures/gui/test.png",
+                    "familyKey": "gregtech-machine|machine|176x90@0#1|unknown",
                     "nativeLayout": {
                         "canonicalMachineFamily": "gregtech-machine",
                         "imageRegion": { "x": 0, "y": 0, "width": 176, "height": 90 },
@@ -6635,6 +7042,11 @@ mod tests {
         assert_eq!(report["counts"]["gregtechHandlerLayouts"], json!(1));
         assert_eq!(
             report["counts"]["gregtechRecipeUiPayloadsWithProgressBars"],
+            json!(1)
+        );
+        assert_eq!(report["backgroundStatus"], json!("captured"));
+        assert_eq!(
+            report["counts"]["gregtechRecipeUiPayloadsWithNativeBackgrounds"],
             json!(1)
         );
         assert!(temp
@@ -6679,3 +7091,4 @@ mod tests {
         assert!(debug_entries.contains(&"rust/texture-pack.json"));
     }
 }
+

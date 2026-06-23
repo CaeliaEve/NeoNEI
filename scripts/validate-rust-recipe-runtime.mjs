@@ -21,7 +21,9 @@ function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
 
-function readBinaryPackHeader(filePath) {
+const COMPACT_RECIPE_MAGIC = 'NEIRCP1\0';
+
+function readNativeBinaryPack(filePath) {
   const bytes = readFileSync(filePath);
   if (bytes.length < 24 || bytes.subarray(0, 8).toString('utf8') !== 'NNEIBIN\0') {
     throw new Error(`invalid NeoNEI binary pack header: ${filePath}`);
@@ -36,6 +38,154 @@ function readBinaryPackHeader(filePath) {
   return {
     schema: bytes.subarray(schemaStart, payloadStart).toString('utf8'),
     payloadLength,
+    payload: bytes.subarray(payloadStart, payloadStart + payloadLength),
+  };
+}
+
+function readBinaryPackHeader(filePath) {
+  const { schema, payloadLength } = readNativeBinaryPack(filePath);
+  return { schema, payloadLength };
+}
+
+function parseCompactRecipeIndex(filePath, sampleLimit) {
+  const pack = readNativeBinaryPack(filePath);
+  if (pack.schema !== 'neonei/recipe-pack/current') {
+    return { schema: pack.schema, payloadLength: pack.payloadLength, failures: [`schema mismatch: ${pack.schema}`] };
+  }
+
+  const payload = pack.payload;
+  const failures = [];
+  if (payload.length < 52 || payload.subarray(0, 8).toString('utf8') !== COMPACT_RECIPE_MAGIC) {
+    return { schema: pack.schema, payloadLength: pack.payloadLength, failures: ['compact recipe payload magic mismatch'] };
+  }
+  const version = payload.readUInt32LE(8);
+  const stringCount = payload.readUInt32LE(12);
+  const itemCount = payload.readUInt32LE(16);
+  const refCount = payload.readUInt32LE(20);
+  const uiCount = payload.readUInt32LE(24);
+  const categoryCount = payload.readUInt32LE(28);
+  const categorySourceCount = payload.readUInt32LE(32);
+  const itemStride = payload.readUInt32LE(36);
+  const refStride = payload.readUInt32LE(40);
+  const uiStride = payload.readUInt32LE(44);
+  const categoryStride = payload.readUInt32LE(48);
+  if (version !== 1) failures.push(`compact recipe version mismatch: ${version}`);
+  if (itemStride < 5 || refStride < 3 || uiStride < 7 || categoryStride < 5) {
+    failures.push(`compact recipe stride mismatch: item=${itemStride}, ref=${refStride}, ui=${uiStride}, category=${categoryStride}`);
+  }
+
+  const bytesNeeded = (count, stride = 1) => count * stride * 4;
+  let cursor = 52;
+  const stringOffsetsStart = cursor;
+  cursor += bytesNeeded(stringCount);
+  const itemRowsStart = cursor;
+  cursor += bytesNeeded(itemCount, itemStride);
+  const refRowsStart = cursor;
+  cursor += bytesNeeded(refCount, refStride);
+  const uiRowsStart = cursor;
+  cursor += bytesNeeded(uiCount, uiStride);
+  const categoryRowsStart = cursor;
+  cursor += bytesNeeded(categoryCount, categoryStride);
+  const categorySourcesStart = cursor;
+  cursor += bytesNeeded(categorySourceCount);
+  const stringsStart = cursor;
+  if (stringsStart > payload.length) {
+    failures.push(`compact recipe tables exceed payload length: ${stringsStart}/${payload.length}`);
+  }
+
+  const stringCache = new Map();
+  function stringAt(index) {
+    if (!Number.isInteger(index) || index <= 0 || index >= stringCount || stringOffsetsStart + index * 4 + 4 > payload.length) {
+      return '';
+    }
+    const cached = stringCache.get(index);
+    if (cached !== undefined) return cached;
+    const offset = payload.readUInt32LE(stringOffsetsStart + index * 4);
+    const start = stringsStart + offset;
+    if (start < stringsStart || start >= payload.length) {
+      stringCache.set(index, '');
+      return '';
+    }
+    let end = start;
+    while (end < payload.length && payload[end] !== 0) end += 1;
+    const value = payload.subarray(start, end).toString('utf8');
+    stringCache.set(index, value);
+    return value;
+  }
+  function rowValue(start, row, stride, column) {
+    const offset = start + (row * stride + column) * 4;
+    return offset + 4 <= payload.length ? payload.readUInt32LE(offset) : 0;
+  }
+
+  let validUiEntryCount = 0;
+  const nonCanonicalPaths = [];
+  const sampled = [];
+  const shardPaths = new Set();
+  for (let row = 0; row < uiCount; row += 1) {
+    const recipeId = stringAt(rowValue(uiRowsStart, row, uiStride, 0));
+    const shardPath = stringAt(rowValue(uiRowsStart, row, uiStride, 1)).replaceAll('\\', '/');
+    const payloadKey = stringAt(rowValue(uiRowsStart, row, uiStride, 2));
+    if (recipeId && shardPath && payloadKey) validUiEntryCount += 1;
+    if (shardPath) {
+      shardPaths.add(shardPath);
+      if (!shardPath.startsWith('recipes/ui-payload-shards/') && nonCanonicalPaths.length < 5) {
+        nonCanonicalPaths.push(shardPath);
+      }
+    }
+    if (sampled.length < sampleLimit && recipeId && shardPath && payloadKey) {
+      sampled.push({
+        recipeId,
+        path: shardPath,
+        payloadKey,
+        familyKey: stringAt(rowValue(uiRowsStart, row, uiStride, 3)),
+        recipeType: stringAt(rowValue(uiRowsStart, row, uiStride, 4)),
+        machineType: stringAt(rowValue(uiRowsStart, row, uiStride, 5)),
+      });
+    }
+  }
+
+  let categoryRecipeCount = 0;
+  let categoriesWithDisplayName = 0;
+  const categoryIds = [];
+  const categoryDisplayMissing = [];
+  for (let row = 0; row < categoryCount; row += 1) {
+    const categoryId = stringAt(rowValue(categoryRowsStart, row, categoryStride, 0));
+    const displayName = stringAt(rowValue(categoryRowsStart, row, categoryStride, 1));
+    categoryRecipeCount += rowValue(categoryRowsStart, row, categoryStride, 2);
+    if (categoryId) categoryIds.push(categoryId);
+    if (displayName) categoriesWithDisplayName += 1;
+    if (categoryId && !displayName && categoryDisplayMissing.length < 5) categoryDisplayMissing.push(categoryId);
+  }
+  const uniqueCategoryCount = new Set(categoryIds).size;
+
+  return {
+    schema: pack.schema,
+    payloadLength: pack.payloadLength,
+    failures,
+    header: {
+      version,
+      stringCount,
+      itemCount,
+      refCount,
+      uiCount,
+      categoryCount,
+      categorySourceCount,
+      itemStride,
+      refStride,
+      uiStride,
+      categoryStride,
+    },
+    recipeCount: uiCount,
+    validUiEntryCount,
+    categoryCount,
+    categoryRecipeCount,
+    categoryIds: categoryIds.length,
+    uniqueCategoryCount,
+    categoriesWithDisplayName,
+    categoryDisplayMissing,
+    nonCanonicalPaths,
+    shardPathCount: shardPaths.size,
+    samples: sampled,
   };
 }
 
@@ -59,12 +209,19 @@ function main() {
   if (!existsSync(rustRecipeBinPath)) {
     fail(failures, 'RUST_RECIPE_BIN_MISSING', 'rust recipe binary pack file is missing', { path: rustRecipeBinRelativePath });
   }
-  const recipeBinHeader = existsSync(rustRecipeBinPath) ? readBinaryPackHeader(rustRecipeBinPath) : null;
+  const sampleLimit = Math.max(0, Number(readArg('--sample-limit')) || 8);
+  const recipeBinaryIndex = existsSync(rustRecipeBinPath) ? parseCompactRecipeIndex(rustRecipeBinPath, sampleLimit) : null;
+  const recipeBinHeader = recipeBinaryIndex
+    ? { schema: recipeBinaryIndex.schema, payloadLength: recipeBinaryIndex.payloadLength }
+    : null;
   if (recipeBinHeader?.schema !== 'neonei/recipe-pack/current') {
     fail(failures, 'RUST_RECIPE_BIN_SCHEMA_MISMATCH', 'rust recipe binary pack schema is wrong', {
       path: rustRecipeBinRelativePath || null,
       schema: recipeBinHeader?.schema ?? null,
     });
+  }
+  for (const message of recipeBinaryIndex?.failures ?? []) {
+    fail(failures, 'RUST_RECIPE_BIN_COMPACT_INDEX_INVALID', 'rust recipe binary compact index is invalid', { message });
   }
 
   const uiPayloadIndexPath = join(distDataDir, 'recipes', 'ui-payload-index.json');
@@ -75,33 +232,25 @@ function main() {
   if (!existsSync(categoryIndexPath)) {
     fail(failures, 'RUST_CATEGORY_INDEX_MISSING', 'compiled recipe category index is missing');
   }
-  const uiPayloadIndex = existsSync(uiPayloadIndexPath) ? readJson(uiPayloadIndexPath) : null;
-  const categoryIndex = existsSync(categoryIndexPath) ? readJson(categoryIndexPath) : null;
-  const entries = Array.isArray(uiPayloadIndex?.recipes)
-    ? uiPayloadIndex.recipes.filter((entry) => entry?.recipeId && entry?.path && entry?.payloadKey)
-    : [];
-  const categories = Array.isArray(categoryIndex?.categories)
-    ? categoryIndex.categories.filter((category) => `${category?.categoryId ?? ''}`.trim())
-    : [];
-  const categoryIds = categories.map((category) => `${category.categoryId}`.trim());
-  const uniqueCategoryIds = new Set(categoryIds);
-  if (categories.length <= 0) {
+  const entries = recipeBinaryIndex?.samples ?? [];
+  const recipeCount = Number(recipeBinaryIndex?.recipeCount ?? 0);
+  const categoryCount = Number(recipeBinaryIndex?.categoryCount ?? 0);
+  const categoryRecipeCount = Number(recipeBinaryIndex?.categoryRecipeCount ?? 0);
+  if (categoryCount <= 0) {
     fail(failures, 'RUST_CATEGORY_INDEX_EMPTY', 'rust recipe category index is empty');
   }
-  if (uniqueCategoryIds.size !== categoryIds.length) {
+  if (recipeBinaryIndex && recipeBinaryIndex.uniqueCategoryCount !== recipeBinaryIndex.categoryIds) {
     fail(failures, 'RUST_CATEGORY_INDEX_DUPLICATES', 'rust recipe category index contains duplicate category ids', {
-      categoryCount: categoryIds.length,
-      uniqueCategoryCount: uniqueCategoryIds.size,
+      categoryCount: recipeBinaryIndex.categoryIds,
+      uniqueCategoryCount: recipeBinaryIndex.uniqueCategoryCount,
     });
   }
-  const categoryRecipeCount = categories.reduce((sum, category) => sum + Math.max(0, Number(category.recipeCount ?? 0) || 0), 0);
-  const recipeCount = Number(uiPayloadIndex?.recipes?.length ?? 0);
   if (recipeCount <= 0) {
     fail(failures, 'RUST_RECIPE_COUNT_EMPTY', 'rust recipe pack recipe count is empty');
   }
-  if (entries.length !== recipeCount) {
+  if (recipeBinaryIndex && recipeBinaryIndex.validUiEntryCount !== recipeCount) {
     fail(failures, 'RUST_UI_PAYLOAD_INDEX_COUNT_MISMATCH', 'rust ui payload index does not cover every recipe', {
-      entries: entries.length,
+      entries: recipeBinaryIndex.validUiEntryCount,
       recipeCount,
     });
   }
@@ -111,25 +260,21 @@ function main() {
       recipeCount,
     });
   }
-  const categoryDisplayMissing = categories.filter((category) => !`${category.displayName ?? ''}`.trim());
-  if (categoryDisplayMissing.length > 0) {
+  if ((recipeBinaryIndex?.categoryDisplayMissing?.length ?? 0) > 0) {
     fail(failures, 'RUST_CATEGORY_DISPLAY_NAME_MISSING', 'rust category index contains categories without display names', {
-      sample: categoryDisplayMissing.slice(0, 5).map((category) => category.categoryId),
+      sample: recipeBinaryIndex.categoryDisplayMissing,
     });
   }
 
-  const nonRustEntries = entries.filter((entry) => !`${entry.path}`.replaceAll('\\', '/').startsWith('recipes/ui-payload-shards/'));
-  if (nonRustEntries.length > 0) {
+  if ((recipeBinaryIndex?.nonCanonicalPaths?.length ?? 0) > 0) {
     fail(failures, 'RUST_UI_PAYLOAD_INDEX_LEAKS_NON_CANONICAL_SHARDS', 'rust ui payload index contains non-canonical recipe shard paths', {
-      sample: nonRustEntries.slice(0, 5).map((entry) => entry.path),
+      sample: recipeBinaryIndex.nonCanonicalPaths,
     });
   }
 
-  const sampleLimit = Math.min(entries.length, Number(readArg('--sample-limit')) || 8);
-  const sampled = entries.slice(0, sampleLimit);
   const shardCache = new Map();
   const checked = [];
-  for (const entry of sampled) {
+  for (const entry of entries) {
     const shardPath = `${entry.path}`.replaceAll('\\', '/');
     const absoluteShardPath = join(distDataDir, shardPath);
     if (!existsSync(absoluteShardPath)) {
@@ -184,12 +329,14 @@ function main() {
     rustRecipeBin: rustRecipeBinRelativePath || null,
     rustRecipeBinSchema: recipeBinHeader?.schema ?? null,
     rustRecipeBinPayloadBytes: recipeBinHeader?.payloadLength ?? null,
+    rustRecipeBinHeader: recipeBinaryIndex?.header ?? null,
     recipeCount,
-    categoryCount: categories.length,
+    categoryCount,
     categoryRecipeCount,
-    uiPayloadIndexCount: entries.length,
+    uiPayloadIndexCount: recipeBinaryIndex?.validUiEntryCount ?? 0,
     checkedCount: checked.length,
-    shardCount: shardCache.size,
+    shardCount: recipeBinaryIndex?.shardPathCount ?? shardCache.size,
+    checkedShardCount: shardCache.size,
     failures,
     warnings,
     samples: checked,

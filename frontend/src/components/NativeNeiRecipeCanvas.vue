@@ -18,6 +18,7 @@ import {
   WebGl2NativeRenderer,
   type NativeTextureSpriteCommand,
 } from '../renderers/native/WebGl2NativeRenderer';
+import type { NativeRendererBackend } from '../renderers/native/NativeRendererBackend';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
 interface NativeSlotFact {
@@ -95,6 +96,7 @@ interface NativeLayoutSurface {
   height?: number;
   imageResource?: string;
   imageRegion?: NativeImageRegionFact;
+  nativeBackground?: Record<string, unknown> | null;
   slots?: NativeSlotFact[];
   textOverlays?: NativeTextOverlayFact[];
   dynamicPrimitives?: NativeDynamicPrimitiveFact[];
@@ -114,13 +116,19 @@ type PreparedAtlasSource = {
 
 type PreparedBackgroundSource = {
   textureKey: string;
-  image: HTMLImageElement;
+  image: HTMLImageElement | HTMLCanvasElement;
   sourceX: number;
   sourceY: number;
   sourceWidth: number;
   sourceHeight: number;
+  destX?: number;
+  destY?: number;
   width: number;
   height: number;
+  nineSlice?: {
+    borderU: number;
+    borderV: number;
+  };
 };
 
 const props = defineProps<{
@@ -143,7 +151,7 @@ const DYNAMIC_BORDER_COLOR = 'rgba(238, 244, 252, 0.22)';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const shellRef = ref<HTMLElement | null>(null);
-const renderer = ref<WebGl2NativeRenderer | null>(null);
+const renderer = ref<NativeRendererBackend | null>(null);
 const renderError = ref<string | null>(null);
 const renderReady = ref(false);
 const missingTextureCount = ref(0);
@@ -182,6 +190,7 @@ const resolvedNativeLayout = computed<NativeLayoutSurface | null>(() => {
       height: template.height,
       imageResource: template.imageResource,
       imageRegion: inlineLayout?.imageRegion,
+      nativeBackground: inlineLayout?.nativeBackground ?? (template as unknown as NativeLayoutSurface).nativeBackground,
       slots: template.slots,
       textOverlays: template.textOverlays,
       dynamicPrimitives: inlineLayout?.dynamicPrimitives,
@@ -261,7 +270,62 @@ const backgroundImageRegion = computed(() => {
   };
 });
 
+const nativeBackground = computed<Record<string, unknown> | null>(() => {
+  const background = resolvedNativeLayout.value?.nativeBackground;
+  return background && typeof background === 'object' ? background as Record<string, unknown> : null;
+});
+
+const semanticGtBackground = computed(() => (
+  `${nativeBackground.value?.kind ?? ''}` === 'gt-modular-ui'
+  && ['semantic', 'captured'].includes(`${nativeBackground.value?.status ?? ''}`)
+));
+
+const semanticBackgroundTextureKey = computed(() => (
+  semanticGtBackground.value ? `ui-background:gt-modular-ui:${layoutWidth.value}x${layoutHeight.value}:${currentDpr.value}` : null
+));
+
+const nativeBackgroundAssetRef = computed(() => {
+  const assetRef = `${nativeBackground.value?.assetRef ?? ''}`.trim();
+  return assetRef.length > 0 ? assetRef : null;
+});
+
+const nativeBackgroundTextureKey = computed(() => {
+  const assetRef = nativeBackgroundAssetRef.value;
+  return assetRef ? `ui-background:${assetRef}` : null;
+});
+
+function nativeBackgroundRect(name: 'recipeBackgroundOffset' | 'recipeBackgroundSize'): Record<string, unknown> | null {
+  const value = nativeBackground.value?.[name];
+  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
+}
+
+function nativeBackgroundTextureSpec(): { width: number; height: number; borderU: number; borderV: number } {
+  const texture = nativeBackground.value?.texture;
+  const object = texture && typeof texture === 'object' ? texture as Record<string, unknown> : {};
+  const width = Math.max(1, Number(object.width ?? 64) || 64);
+  const height = Math.max(1, Number(object.height ?? 64) || 64);
+  const borderU = Math.max(0, Number(object.borderU ?? object.border ?? 0) || 0);
+  const borderV = Math.max(0, Number(object.borderV ?? object.border ?? borderU) || borderU);
+  return { width, height, borderU, borderV };
+}
+
+function nativeBackgroundTargetRect() {
+  const offset = nativeBackgroundRect('recipeBackgroundOffset');
+  const size = nativeBackgroundRect('recipeBackgroundSize');
+  const x = Math.max(0, Number(offset?.x ?? 0) || 0);
+  const y = Math.max(0, Number(offset?.y ?? 0) || 0);
+  const width = Math.max(1, Number(size?.width ?? layoutWidth.value) || layoutWidth.value);
+  const height = Math.max(1, Number(size?.height ?? layoutHeight.value) || layoutHeight.value);
+  return { x, y, width, height };
+}
+
 const backgroundState = computed(() => {
+  if (nativeBackgroundAssetRef.value) {
+    if (backgroundLoadError.value) return 'error';
+    if (!backgroundSource.value) return 'loading';
+    return backgroundSource.value.textureKey === nativeBackgroundTextureKey.value ? 'captured' : 'error';
+  }
+  if (semanticGtBackground.value) return backgroundSource.value ? 'semantic' : 'loading';
   if (!backgroundAssetRef.value) return 'none';
   if (backgroundSource.value) return 'ready';
   if (backgroundLoadError.value) return 'error';
@@ -377,6 +441,7 @@ const renderSignature = computed(() => JSON.stringify({
   layoutHeight: layoutHeight.value,
   backgroundAssetRef: backgroundAssetRef.value ?? '',
   backgroundImageRegion: backgroundImageRegion.value,
+  nativeBackground: nativeBackground.value,
   slots: slots.value,
   textOverlays: textOverlays.value,
   dynamicPrimitives: dynamicPrimitives.value,
@@ -552,7 +617,44 @@ function createSlotTexture(kind: ReturnType<typeof textureKindForRole>, dpr: num
   return canvas;
 }
 
-function ensureSlotTextures(activeRenderer: WebGl2NativeRenderer) {
+function createGtModularUiBackgroundTexture(width: number, height: number, dpr: number): HTMLCanvasElement {
+  const logicalWidth = Math.max(1, Math.round(width));
+  const logicalHeight = Math.max(1, Math.round(height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(logicalWidth * dpr));
+  canvas.height = Math.max(1, Math.round(logicalHeight * dpr));
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return canvas;
+  ctx.scale(dpr, dpr);
+  ctx.imageSmoothingEnabled = false;
+
+  ctx.fillStyle = '#0f1115';
+  ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+
+  const panelX = 3;
+  const panelY = 3;
+  const panelWidth = Math.max(1, logicalWidth - 6);
+  const panelHeight = Math.max(1, logicalHeight - 6);
+  const gradient = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelHeight);
+  gradient.addColorStop(0, '#4b4f55');
+  gradient.addColorStop(0.48, '#34383e');
+  gradient.addColorStop(1, '#24282e');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
+
+  ctx.strokeStyle = '#8f969f';
+  ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelWidth - 1, panelHeight - 1);
+  ctx.strokeStyle = '#171a1f';
+  ctx.strokeRect(panelX + 1.5, panelY + 1.5, panelWidth - 3, panelHeight - 3);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillRect(panelX + 2, panelY + 2, Math.max(0, panelWidth - 4), 1);
+  ctx.fillStyle = 'rgba(0,0,0,0.24)';
+  ctx.fillRect(panelX + 2, panelY + panelHeight - 3, Math.max(0, panelWidth - 4), 1);
+  return canvas;
+}
+
+function ensureSlotTextures(activeRenderer: NativeRendererBackend) {
   const kinds: Array<ReturnType<typeof textureKindForRole>> = ['item-input', 'item-output', 'fluid-input', 'fluid-output'];
   for (const kind of kinds) {
     const key = `recipe-slot:${kind}:${currentDpr.value}`;
@@ -601,7 +703,7 @@ function dynamicPrimitiveColors(primitive: NativeDynamicPrimitiveFact): string[]
   ];
 }
 
-function ensureSolidColorTexture(activeRenderer: WebGl2NativeRenderer, color: string) {
+function ensureSolidColorTexture(activeRenderer: NativeRendererBackend, color: string) {
   const key = solidTextureKey(color);
   if (registeredTextureKeys.has(key)) return;
   if (activeRenderer.registerTexture(key, createSolidColorTexture(color))) {
@@ -609,7 +711,7 @@ function ensureSolidColorTexture(activeRenderer: WebGl2NativeRenderer, color: st
   }
 }
 
-function ensureDynamicPrimitiveTextures(activeRenderer: WebGl2NativeRenderer) {
+function ensureDynamicPrimitiveTextures(activeRenderer: NativeRendererBackend) {
   for (const primitive of dynamicPrimitives.value) {
     for (const color of dynamicPrimitiveColors(primitive)) {
       ensureSolidColorTexture(activeRenderer, color);
@@ -630,9 +732,77 @@ function resolveBackgroundAssetUrl(): string | null {
   }
 }
 
-async function ensureBackgroundTexture(activeRenderer: WebGl2NativeRenderer) {
+function resolveNativeBackgroundAssetUrl(): string | null {
+  const assetRef = nativeBackgroundAssetRef.value;
+  const manifestUrl = uiPackRuntime.value?.manifestUrl;
+  if (!assetRef || !manifestUrl) {
+    return null;
+  }
+  try {
+    return resolveManifestRelativeUrl(manifestUrl, assetRef);
+  } catch {
+    return null;
+  }
+}
+
+async function ensureBackgroundTexture(activeRenderer: NativeRendererBackend) {
   backgroundSource.value = null;
   backgroundLoadError.value = null;
+  const nativeAssetKey = nativeBackgroundTextureKey.value;
+  const nativeAssetUrl = resolveNativeBackgroundAssetUrl();
+  if (nativeAssetKey && nativeAssetUrl) {
+    try {
+      const image = await loadImageAsset(nativeAssetUrl);
+      if (!mounted) return;
+      if (activeRenderer.registerTexture(nativeAssetKey, image)) {
+        registeredTextureKeys.add(nativeAssetKey);
+      }
+      const texture = nativeBackgroundTextureSpec();
+      const target = nativeBackgroundTargetRect();
+      backgroundSource.value = {
+        textureKey: nativeAssetKey,
+        image,
+        sourceX: 0,
+        sourceY: 0,
+        sourceWidth: Math.max(1, Math.min(texture.width, image.width)),
+        sourceHeight: Math.max(1, Math.min(texture.height, image.height)),
+        destX: target.x,
+        destY: target.y,
+        width: target.width,
+        height: target.height,
+        nineSlice: `${nativeBackground.value?.scaling ?? ''}` === 'nine-slice'
+          ? { borderU: texture.borderU, borderV: texture.borderV }
+          : undefined,
+      };
+      return;
+    } catch (error) {
+      backgroundLoadError.value = error instanceof Error ? error.message : String(error);
+      if (`${nativeBackground.value?.status ?? ''}` === 'captured') {
+        return;
+      }
+      // Semantic GT backgrounds without a captured asset may use the procedural fallback.
+    }
+  }
+  const semanticKey = semanticBackgroundTextureKey.value;
+  if (semanticGtBackground.value && semanticKey) {
+    const texture = createGtModularUiBackgroundTexture(layoutWidth.value, layoutHeight.value, currentDpr.value);
+    if (activeRenderer.registerTexture(semanticKey, texture)) {
+      registeredTextureKeys.add(semanticKey);
+    }
+    backgroundSource.value = {
+      textureKey: semanticKey,
+      image: texture,
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: texture.width,
+      sourceHeight: texture.height,
+      destX: 0,
+      destY: 0,
+      width: layoutWidth.value,
+      height: layoutHeight.value,
+    };
+    return;
+  }
   const textureKey = backgroundTextureKey.value;
   const backgroundUrl = resolveBackgroundAssetUrl();
   if (!textureKey || !backgroundUrl) {
@@ -758,6 +928,78 @@ function pushSolidSpriteRect(
   });
 }
 
+function pushTextureSpriteRect(
+  commands: NativeTextureSpriteCommand[],
+  textureKey: string,
+  sourceX: number,
+  sourceY: number,
+  sourceWidth: number,
+  sourceHeight: number,
+  destX: number,
+  destY: number,
+  destWidth: number,
+  destHeight: number,
+) {
+  if (sourceWidth <= 0 || sourceHeight <= 0 || destWidth <= 0 || destHeight <= 0) return;
+  const dpr = currentDpr.value;
+  commands.push({
+    textureKey,
+    sourceX,
+    sourceY,
+    sourceWidth,
+    sourceHeight,
+    destX: Math.round(destX * dpr),
+    destY: Math.round(destY * dpr),
+    destWidth: Math.max(1, Math.round(destWidth * dpr)),
+    destHeight: Math.max(1, Math.round(destHeight * dpr)),
+  });
+}
+
+function pushBackgroundCommands(commands: NativeTextureSpriteCommand[], background: PreparedBackgroundSource) {
+  const x = Math.max(0, Number(background.destX ?? 0));
+  const y = Math.max(0, Number(background.destY ?? 0));
+  const width = Math.max(1, Number(background.width ?? 0));
+  const height = Math.max(1, Number(background.height ?? 0));
+  const nineSlice = background.nineSlice;
+  if (!nineSlice) {
+    pushTextureSpriteRect(
+      commands,
+      background.textureKey,
+      background.sourceX,
+      background.sourceY,
+      background.sourceWidth,
+      background.sourceHeight,
+      x,
+      y,
+      width,
+      height,
+    );
+    return;
+  }
+
+  const srcW = Math.max(1, background.sourceWidth);
+  const srcH = Math.max(1, background.sourceHeight);
+  const borderX = Math.max(0, Math.min(nineSlice.borderU, Math.floor(srcW / 2), Math.floor(width / 2)));
+  const borderY = Math.max(0, Math.min(nineSlice.borderV, Math.floor(srcH / 2), Math.floor(height / 2)));
+  const srcMidW = Math.max(0, srcW - borderX * 2);
+  const srcMidH = Math.max(0, srcH - borderY * 2);
+  const dstMidW = Math.max(0, width - borderX * 2);
+  const dstMidH = Math.max(0, height - borderY * 2);
+  const sx = background.sourceX;
+  const sy = background.sourceY;
+  const key = background.textureKey;
+
+  pushTextureSpriteRect(commands, key, sx, sy, borderX, borderY, x, y, borderX, borderY);
+  pushTextureSpriteRect(commands, key, sx + borderX + srcMidW, sy, borderX, borderY, x + borderX + dstMidW, y, borderX, borderY);
+  pushTextureSpriteRect(commands, key, sx, sy + borderY + srcMidH, borderX, borderY, x, y + borderY + dstMidH, borderX, borderY);
+  pushTextureSpriteRect(commands, key, sx + borderX + srcMidW, sy + borderY + srcMidH, borderX, borderY, x + borderX + dstMidW, y + borderY + dstMidH, borderX, borderY);
+  pushTextureSpriteRect(commands, key, sx + borderX, sy, srcMidW, borderY, x + borderX, y, dstMidW, borderY);
+  pushTextureSpriteRect(commands, key, sx + borderX, sy + borderY + srcMidH, srcMidW, borderY, x + borderX, y + borderY + dstMidH, dstMidW, borderY);
+  pushTextureSpriteRect(commands, key, sx, sy + borderY, borderX, srcMidH, x, y + borderY, borderX, dstMidH);
+  pushTextureSpriteRect(commands, key, sx + borderX + srcMidW, sy + borderY, borderX, srcMidH, x + borderX + dstMidW, y + borderY, borderX, dstMidH);
+  pushTextureSpriteRect(commands, key, sx + borderX, sy + borderY, srcMidW, srcMidH, x + borderX, y + borderY, dstMidW, dstMidH);
+}
+
 function pushDynamicPrimitiveCommands(commands: NativeTextureSpriteCommand[], primitive: NativeDynamicPrimitiveFact) {
   const x = Math.max(0, Number(primitive.x ?? 0));
   const y = Math.max(0, Number(primitive.y ?? 0));
@@ -797,17 +1039,7 @@ function buildSpriteCommands(nowMs: number): NativeTextureSpriteCommand[] {
   const commands: NativeTextureSpriteCommand[] = [];
   const background = backgroundSource.value;
   if (background) {
-    commands.push({
-      textureKey: background.textureKey,
-      sourceX: background.sourceX,
-      sourceY: background.sourceY,
-      sourceWidth: background.sourceWidth,
-      sourceHeight: background.sourceHeight,
-      destX: 0,
-      destY: 0,
-      destWidth: Math.round(layoutWidth.value * dpr),
-      destHeight: Math.round(layoutHeight.value * dpr),
-    });
+    pushBackgroundCommands(commands, background);
   }
   for (const primitive of dynamicPrimitives.value) {
     pushDynamicPrimitiveCommands(commands, primitive);

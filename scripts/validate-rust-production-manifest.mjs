@@ -78,6 +78,8 @@ const manifest = readJson(manifestPath);
 const files = manifest.files ?? {};
 const failures = [];
 const warnings = [];
+const compileScope = `${manifest.nativeRuntime?.compileScope ?? 'all'}`;
+const textureRuntimeRequired = compileScope === 'all' || compileScope === 'textures';
 
 const requiredRustFiles = {
   rustRuntimeManifest: files.rustRuntimeManifest,
@@ -85,9 +87,6 @@ const requiredRustFiles = {
   rustGroupsBin: files.rustGroupsBin,
   rustSearchBin: files.rustSearchBin,
   rustRecipeBin: files.rustRecipeBin,
-  rustTextureBin: files.rustTextureBin,
-  rustAtlasMetaBin: files.rustAtlasMetaBin,
-  rustAnimationBin: files.rustAnimationBin,
   rustStringsZhCnBin: files.rustStringsZhCnBin,
   rustUiTemplatesBin: files.rustUiTemplatesBin,
   rustUiBindingsBin: files.rustUiBindingsBin,
@@ -96,6 +95,11 @@ const requiredRustFiles = {
   rustUiPackReport: files.rustUiPackReport,
   rustNativeUiLayoutReport: files.rustNativeUiLayoutReport,
 };
+if (textureRuntimeRequired) {
+  requiredRustFiles.rustTextureBin = files.rustTextureBin;
+  requiredRustFiles.rustAtlasMetaBin = files.rustAtlasMetaBin;
+  requiredRustFiles.rustAnimationBin = files.rustAnimationBin;
+}
 for (const [key, relativePath] of Object.entries(requiredRustFiles)) {
   if (!`${relativePath ?? ''}`.trim()) {
     fail(failures, 'RUST_RUNTIME_FILE_NOT_DECLARED', `manifest does not declare files.${key}`, { key });
@@ -108,36 +112,41 @@ const runtimeManifestPath = files.rustRuntimeManifest ? join(distDataDir, files.
 const runtimeManifest = runtimeManifestPath && existsSync(runtimeManifestPath) ? readJson(runtimeManifestPath) : null;
 const runtimeFiles = Array.isArray(runtimeManifest?.files) ? runtimeManifest.files : [];
 const runtimeEntrypoints = runtimeManifest?.entrypoints && typeof runtimeManifest.entrypoints === 'object' ? runtimeManifest.entrypoints : {};
-for (const expected of [
+const runtimeCompileScope = `${runtimeManifest?.compileScope ?? compileScope}`;
+const expectedRuntimeArtifacts = [
   'rust/browser.bin',
   'rust/groups.bin',
   'rust/search.bin',
   'rust/recipes.bin',
-  'rust/textures.bin',
-  'rust/atlas.meta.bin',
-  'rust/animations.bin',
   'rust/strings.zh_cn.bin',
   'rust/ui-pack/ui_templates.bin',
   'rust/ui-pack/ui_bindings.bin',
   'rust/ui-pack/ui_strings.bin',
   'rust/native-ui-layout-report.json',
-]) {
+];
+if (textureRuntimeRequired) {
+  expectedRuntimeArtifacts.push('rust/textures.bin', 'rust/atlas.meta.bin', 'rust/animations.bin');
+}
+for (const expected of expectedRuntimeArtifacts) {
   if (!runtimeFiles.some((entry) => `${typeof entry === 'string' ? entry : entry?.path ?? ''}`.replaceAll('\\', '/') === expected)) {
     fail(failures, 'RUST_RUNTIME_MANIFEST_ARTIFACT_MISSING', `rust runtime manifest does not list ${expected}`, { expected });
   }
 }
-for (const [entrypoint, expectedPath] of Object.entries({
+const expectedEntrypoints = {
   browser: 'rust/browser.bin',
   groups: 'rust/groups.bin',
   search: 'rust/search.bin',
   recipes: 'rust/recipes.bin',
-  textures: 'rust/textures.bin',
-  animations: 'rust/animations.bin',
   stringsZhCn: 'rust/strings.zh_cn.bin',
   uiTemplates: 'rust/ui-pack/ui_templates.bin',
   uiBindings: 'rust/ui-pack/ui_bindings.bin',
   uiStrings: 'rust/ui-pack/ui_strings.bin',
-})) {
+};
+if (textureRuntimeRequired) {
+  expectedEntrypoints.textures = 'rust/textures.bin';
+  expectedEntrypoints.animations = 'rust/animations.bin';
+}
+for (const [entrypoint, expectedPath] of Object.entries(expectedEntrypoints)) {
   const actualPath = `${runtimeEntrypoints[entrypoint] ?? ''}`.replaceAll('\\', '/');
   if (actualPath !== expectedPath) {
     fail(failures, 'RUST_RUNTIME_BINARY_ENTRYPOINT_MISSING', `rust runtime manifest does not expose binary entrypoint ${entrypoint}`, {
@@ -157,11 +166,13 @@ const productionCore = {
   browser: files.rustBrowserBin,
   search: files.rustSearchBin,
   recipes: files.rustRecipeBin,
-  textures: files.rustTextureBin,
-  atlasMeta: files.rustAtlasMetaBin,
   uiTemplates: files.rustUiTemplatesBin,
   uiBindings: files.rustUiBindingsBin,
 };
+if (textureRuntimeRequired) {
+  productionCore.textures = files.rustTextureBin;
+  productionCore.atlasMeta = files.rustAtlasMetaBin;
+}
 for (const [domain, relativePath] of Object.entries(productionCore)) {
   const normalizedPath = `${relativePath ?? ''}`.replaceAll('\\', '/');
   if (!normalizedPath.startsWith('rust/') || !normalizedPath.endsWith('.bin')) {

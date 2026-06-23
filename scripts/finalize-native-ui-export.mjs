@@ -15,7 +15,7 @@ const distDataDir = resolve(
     ?? process.env.RUST_GATE_DIST_DATA
     ?? join(repoRoot, 'backend', 'public', 'dist-data'),
 );
-const compileScope = readArg('--scope') ?? 'all';
+const explicitCompileScope = readArg('--scope');
 const skipCompile = args.includes('--skip-compile');
 const skipCargoTest = args.includes('--skip-cargo-test');
 const runExtendedRuntime = args.includes('--extended-runtime');
@@ -114,6 +114,25 @@ function runStep(name, command, stepArgs, options = {}) {
 function readJson(filePath) {
   return JSON.parse(readFileSync(filePath, 'utf8'));
 }
+
+function resolveCompileScope() {
+  if (explicitCompileScope) return explicitCompileScope;
+  if (!rawExportInput) return 'all';
+  const manifestPath = join(resolve(rawExportInput), 'manifest.json');
+  if (!existsSync(manifestPath)) return 'all';
+  const manifest = readJson(manifestPath);
+  const profile = `${manifest.profile ?? ''}`;
+  const selection = `${manifest.selection ?? ''}`;
+  const files = manifest.files ?? {};
+  const hasBrowserAtlas = Boolean(`${files.browserAtlasIndex ?? files.browserAtlas ?? ''}`.trim())
+    || existsSync(join(resolve(rawExportInput), 'assets', 'textures', 'browser_atlas_index.json'));
+  if (profile.includes('data') || selection.includes('-images') || !hasBrowserAtlas) {
+    return 'native-ui';
+  }
+  return 'all';
+}
+
+const compileScope = resolveCompileScope();
 
 function writeSummary(status, message = null) {
   mkdirSync(reportDir, { recursive: true });
