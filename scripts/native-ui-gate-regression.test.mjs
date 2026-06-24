@@ -281,6 +281,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const reports = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/reports.rs'), 'utf8');
   const runtime = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/runtime.rs'), 'utf8');
   const text = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/text.rs'), 'utf8');
+  const uiTemplates = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/ui_templates.rs'), 'utf8');
   const packsMod = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs.rs'), 'utf8');
   const searchPack = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/search.rs'), 'utf8');
   const browserPack = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/browser.rs'), 'utf8');
@@ -429,6 +430,16 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(text.includes('pub fn normalize_search_terms'), true);
   assert.equal(text.includes('pub fn build_pinyin_fields('), true);
   assert.equal(text.includes('use pinyin::ToPinyin;'), true);
+  assert.equal(main.includes('mod ui_templates;'), true);
+  assert.equal(main.includes('use ui_templates::{'), true);
+  assert.equal(main.includes('fn ui_template_catalog_templates('), false);
+  assert.equal(main.includes('fn build_ui_template_bindings('), false);
+  assert.equal(main.includes('fn build_ui_assets_manifest('), false);
+  assert.equal(main.includes('fn materialize_ui_background_assets('), false);
+  assert.equal(uiTemplates.includes('pub fn ui_template_catalog_templates('), true);
+  assert.equal(uiTemplates.includes('pub fn build_ui_template_bindings('), true);
+  assert.equal(uiTemplates.includes('pub fn build_ui_assets_manifest('), true);
+  assert.equal(uiTemplates.includes('pub fn materialize_ui_background_assets('), true);
   assert.equal(main.includes('mod packs;'), true);
   assert.equal(main.includes('use packs::search::{'), true);
   assert.equal(main.includes('fn compile_search_pack('), false);
