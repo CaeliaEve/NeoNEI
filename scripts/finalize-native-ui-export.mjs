@@ -16,10 +16,12 @@ const distDataDir = resolve(
     ?? join(repoRoot, 'backend', 'public', 'dist-data'),
 );
 const explicitCompileScope = readArg('--scope');
+const explicitCompiler = readArg('--compiler') ?? process.env.NEONEI_COMPILER_BIN ?? null;
 const skipCompile = args.includes('--skip-compile');
 const skipCargoTest = args.includes('--skip-cargo-test');
 const runExtendedRuntime = args.includes('--extended-runtime');
 const cargoCommand = resolveCargoCommand();
+const compilerCommand = resolveCompilerCommand();
 
 const steps = [];
 
@@ -38,6 +40,10 @@ function usage() {
     '  --skip-cargo-test    Skip compiler unit tests before compilation.',
     '  --extended-runtime   Also run browser/texture runtime validators after the three final gates.',
     '  --scope <scope>      Rust compile scope; default: all.',
+    '  --compiler <path>    Use an external elysium-compiler binary instead of the in-repo Cargo compiler.',
+    '',
+    'Environment:',
+    '  NEONEI_COMPILER_BIN  External compiler binary path or command, overridden by --compiler.',
   ].join('\n');
 }
 
@@ -75,6 +81,24 @@ function resolveCargoCommand() {
     'cargo',
   ].filter(Boolean);
   return candidates.find((candidate) => existsSync(candidate) || commandExists(candidate)) ?? 'cargo';
+}
+
+function resolveCompilerCommand() {
+  if (!explicitCompiler) {
+    return {
+      mode: 'in-repo-cargo',
+      command: cargoCommand,
+      cargoToml,
+    };
+  }
+  const command = explicitCompiler.includes('\\') || explicitCompiler.includes('/')
+    ? resolve(explicitCompiler)
+    : explicitCompiler;
+  return {
+    mode: 'external-binary',
+    command,
+    cargoToml: null,
+  };
 }
 
 function runStep(name, command, stepArgs, options = {}) {
@@ -143,6 +167,7 @@ function writeSummary(status, message = null) {
     rawExportInput: rawExportInput ? resolve(rawExportInput).replaceAll('\\', '/') : null,
     distDataDir: distDataDir.replaceAll('\\', '/'),
     compileScope,
+    compiler: compilerCommand,
     skipCompile,
     skipCargoTest,
     runExtendedRuntime,
@@ -155,15 +180,29 @@ if (!skipCompile) {
   const rawExportDir = resolve(rawExportInput);
   if (!existsSync(rawExportDir)) fail(`raw export directory does not exist: ${rawExportDir}`);
   if (!existsSync(join(rawExportDir, 'manifest.json'))) fail(`raw export manifest is missing: ${join(rawExportDir, 'manifest.json')}`);
-  if (!existsSync(cargoToml)) fail(`missing Rust compiler manifest: ${cargoToml}`);
-  if (!skipCargoTest) {
-    runStep('rust compiler tests', cargoCommand, ['test', '--manifest-path', cargoToml]);
+  if (compilerCommand.mode === 'external-binary') {
+    if (compilerCommand.command.includes('\\') || compilerCommand.command.includes('/')) {
+      if (!existsSync(compilerCommand.command)) fail(`external compiler binary does not exist: ${compilerCommand.command}`);
+    } else if (!commandExists(compilerCommand.command)) {
+      fail(`external compiler command is not executable: ${compilerCommand.command}`);
+    }
+  } else {
+    if (!existsSync(cargoToml)) fail(`missing Rust compiler manifest: ${cargoToml}`);
+    if (!skipCargoTest) {
+      runStep('rust compiler tests', cargoCommand, ['test', '--manifest-path', cargoToml]);
+    }
   }
   mkdirSync(dirname(rustReport), { recursive: true });
-  runStep('rust compiler strict full compile', cargoCommand, [
-    'run', '--manifest-path', cargoToml, '--',
-    'compile', '--input', rawExportDir, '--output', distDataDir, '--report', rustReport, '--scope', compileScope, '--strict',
-  ]);
+  if (compilerCommand.mode === 'external-binary') {
+    runStep('elysium compiler strict compile', compilerCommand.command, [
+      'compile', '--input', rawExportDir, '--output', distDataDir, '--report', rustReport, '--scope', compileScope, '--strict',
+    ]);
+  } else {
+    runStep('rust compiler strict full compile', cargoCommand, [
+      'run', '--manifest-path', cargoToml, '--',
+      'compile', '--input', rawExportDir, '--output', distDataDir, '--report', rustReport, '--scope', compileScope, '--strict',
+    ]);
+  }
 } else if (!existsSync(join(distDataDir, 'manifest.json'))) {
   fail(`compiled dist-data manifest is missing: ${join(distDataDir, 'manifest.json')}`);
 }

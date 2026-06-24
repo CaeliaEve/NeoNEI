@@ -1,138 +1,40 @@
-﻿use anyhow::{anyhow, Context, Result};
-use clap::{Parser, Subcommand, ValueEnum};
-use flate2::read::GzDecoder;
+use anyhow::{anyhow, Context, Result};
+use clap::Parser;
+mod binary;
+mod cli;
+mod io;
+mod json_ext;
+mod manifest;
+mod native_ui_report;
+mod raw_export;
+mod reports;
+mod runtime;
+use binary::{push_i32, push_u32, write_binary_pack, write_binary_pack_payload};
+use cli::{Cli, Command, CompileScope};
+use io::{normalize_path, sha256_file, write_json_value};
+use json_ext::{
+    first_non_empty, nested_value_string, numeric_value_u64, numeric_value_u64_lossy,
+    optional_value_string, optional_value_u64, value_i64, value_string, value_u64,
+};
+use manifest::{
+    portable_relative_path, read_json_collection, read_jsonl_file_values, read_jsonl_values,
+    read_manifest, read_manifest_json, read_optional_manifest_json, resolve_manifest_path,
+    RawManifest,
+};
+use native_ui_report::compile_native_ui_layout_report;
 use pinyin::ToPinyin;
-use serde::{Deserialize, Serialize};
+use raw_export::summarize_raw_export;
+use reports::{summarize_runtime_output, write_report, CompilerReport};
+use runtime::{
+    is_text_runtime_artifact, runtime_id_from_integrity, rust_capabilities,
+    rust_entrypoints_from_integrity, rust_manifest_file_entries,
+};
 use serde_json::{json, Value};
-use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-
-
-#[derive(Parser, Debug)]
-#[command(name = "neonei-compiler")]
-#[command(about = "NeoNEI Rust runtime data compiler scaffold", long_about = None)]
-struct Cli {
-    #[command(subcommand)]
-    command: Command,
-}
-
-#[derive(Subcommand, Debug)]
-enum Command {
-    /// Read a Raw Export and emit a deterministic baseline report.
-    Baseline {
-        #[arg(long)]
-        input: PathBuf,
-        #[arg(long)]
-        report: PathBuf,
-        #[arg(long)]
-        threads: Option<usize>,
-        #[arg(long, default_value_t = false)]
-        strict: bool,
-    },
-    /// Placeholder compile command; currently validates input and writes a scaffold report.
-    Compile {
-        #[arg(long)]
-        input: PathBuf,
-        #[arg(long)]
-        output: PathBuf,
-        #[arg(long)]
-        report: PathBuf,
-        #[arg(long, value_enum, default_value_t = CompileScope::All)]
-        scope: CompileScope,
-        #[arg(long)]
-        threads: Option<usize>,
-        #[arg(long, default_value_t = false)]
-        strict: bool,
-        /// Emit large JSON debug packs next to binary runtime packs.
-        #[arg(long, default_value_t = false)]
-        debug_json: bool,
-    },
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
-enum CompileScope {
-    All,
-    NativeUi,
-    Search,
-    Browser,
-    Recipes,
-    Ui,
-    Textures,
-}
-#[derive(Debug, Deserialize)]
-struct RawManifest {
-    #[serde(rename = "schemaVersion")]
-    schema_version: Option<String>,
-    #[serde(default)]
-    files: BTreeMap<String, String>,
-    #[serde(default)]
-    capabilities: Vec<String>,
-    #[serde(rename = "generatedAt")]
-    generated_at: Option<Value>,
-    #[serde(rename = "repositoryName")]
-    repository_name: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct CompilerReport {
-    schema_version: &'static str,
-    mode: String,
-    input: String,
-    output: Option<String>,
-    elapsed_ms: u128,
-    raw_export: RawExportSummary,
-    runtime: RuntimeSummary,
-    warnings: Vec<String>,
-    blocked: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct RuntimeSummary {
-    counts: BTreeMap<String, u64>,
-    sizes: BTreeMap<String, u64>,
-}
-
-#[derive(Debug, Serialize)]
-struct RawExportSummary {
-    manifest_schema_version: Option<String>,
-    repository_name: Option<String>,
-    generated_at: Option<Value>,
-    capabilities: Vec<String>,
-    declared_files: usize,
-    existing_declared_files: usize,
-    missing_declared_files: Vec<String>,
-    file_counts: BTreeMap<String, u64>,
-    file_hashes: BTreeMap<String, String>,
-    #[serde(rename = "zeroRecipeDiagnostics")]
-    zero_recipe_diagnostics: Option<ZeroRecipeDiagnostics>,
-}
-
-#[derive(Debug, Serialize)]
-struct ZeroRecipeDiagnostics {
-    status: Option<String>,
-    #[serde(rename = "totalHandlers")]
-    total_handlers: u64,
-    #[serde(rename = "handlersWithLoadedRecipes")]
-    handlers_with_loaded_recipes: u64,
-    #[serde(rename = "handlersWithExportedRecipes")]
-    handlers_with_exported_recipes: u64,
-    #[serde(rename = "legalZeroRecipeHandlers")]
-    legal_zero_recipe_handlers: u64,
-    #[serde(rename = "expectedEmptyHandlers")]
-    expected_empty_handlers: u64,
-    #[serde(rename = "nativeCoveredZeroExports")]
-    native_covered_zero_exports: u64,
-    #[serde(rename = "nonRecipeInfoZeroExports")]
-    non_recipe_info_zero_exports: u64,
-    #[serde(rename = "suspiciousZeroExports")]
-    suspicious_zero_exports: u64,
-    #[serde(rename = "partialExports")]
-    partial_exports: u64,
-}
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -252,140 +154,6 @@ fn configure_threads(threads: Option<usize>) {
             .build_global()
             .ok();
     }
-}
-
-fn read_manifest(input: &Path) -> Result<RawManifest> {
-    let manifest_path = input.join("manifest.json");
-    let text = fs::read_to_string(&manifest_path)
-        .with_context(|| format!("read manifest {}", manifest_path.display()))?;
-    serde_json::from_str(&text)
-        .with_context(|| format!("parse manifest {}", manifest_path.display()))
-}
-
-fn summarize_raw_export(
-    input: &Path,
-    manifest: &RawManifest,
-    warnings: &mut Vec<String>,
-    blocked: &mut Vec<String>,
-) -> Result<RawExportSummary> {
-    let mut existing_declared_files = 0usize;
-    let mut missing_declared_files = Vec::new();
-    let mut file_counts = BTreeMap::new();
-    let mut file_hashes = BTreeMap::new();
-
-    for (logical_name, relative_path) in &manifest.files {
-        let normalized = relative_path
-            .replace('\\', "/")
-            .trim_start_matches('/')
-            .to_string();
-        let path = input.join(&normalized);
-        if !path.exists() {
-            missing_declared_files.push(format!("{}:{}", logical_name, normalized));
-            continue;
-        }
-        if path.is_dir() {
-            warnings.push(format!(
-                "manifest path is a directory and was not hashed as a file: {}:{}",
-                logical_name, normalized
-            ));
-            existing_declared_files += 1;
-            continue;
-        }
-        existing_declared_files += 1;
-        file_hashes.insert(logical_name.clone(), sha256_file(&path)?);
-        if normalized.ends_with(".jsonl") || normalized.ends_with(".jsonl.gz") {
-            file_counts.insert(logical_name.clone(), count_jsonl_rows(&path)?);
-        }
-    }
-
-    for required in ["items", "fluids", "recipeIndex", "browserAtlasIndex"] {
-        if !manifest.files.contains_key(required) {
-            blocked.push(format!("missing required manifest file key: {}", required));
-        }
-    }
-    if missing_declared_files.is_empty() {
-        warnings.push("all declared manifest files exist".to_string());
-    }
-    let zero_recipe_diagnostics = read_zero_recipe_diagnostics(input, manifest, warnings)?;
-
-    Ok(RawExportSummary {
-        manifest_schema_version: manifest.schema_version.clone(),
-        repository_name: manifest.repository_name.clone(),
-        generated_at: manifest.generated_at.clone(),
-        capabilities: manifest.capabilities.clone(),
-        declared_files: manifest.files.len(),
-        existing_declared_files,
-        missing_declared_files,
-        file_counts,
-        file_hashes,
-        zero_recipe_diagnostics,
-    })
-}
-
-fn read_zero_recipe_diagnostics(
-    input: &Path,
-    manifest: &RawManifest,
-    warnings: &mut Vec<String>,
-) -> Result<Option<ZeroRecipeDiagnostics>> {
-    let path = resolve_manifest_path(input, manifest, "neiHandlerAnomalies").or_else(|| {
-        let candidate = input.join("validation").join("nei_handler_anomalies.json");
-        candidate.exists().then_some(candidate)
-    });
-    let Some(path) = path else {
-        warnings.push(
-            "zero-recipe diagnostics are missing: validation/nei_handler_anomalies.json"
-                .to_string(),
-        );
-        return Ok(None);
-    };
-    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let value: Value =
-        serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
-    Ok(zero_recipe_diagnostics_from_value(&value))
-}
-
-fn zero_recipe_diagnostics_from_value(value: &Value) -> Option<ZeroRecipeDiagnostics> {
-    let summary = value.get("summary").and_then(Value::as_object)?;
-    let expected_empty_handlers = object_u64(summary, "expectedEmptyHandlers");
-    let native_covered_zero_exports = object_u64(summary, "nativeCoveredZeroExports");
-    let non_recipe_info_zero_exports = object_u64(summary, "nonRecipeInfoZeroExports");
-    let legal_zero_recipe_handlers = object_u64(summary, "legalZeroRecipeHandlers")
-        .max(expected_empty_handlers + native_covered_zero_exports + non_recipe_info_zero_exports);
-    Some(ZeroRecipeDiagnostics {
-        status: summary
-            .get("status")
-            .and_then(Value::as_str)
-            .map(str::to_string),
-        total_handlers: object_u64(summary, "totalHandlers"),
-        handlers_with_loaded_recipes: object_u64(summary, "handlersWithLoadedRecipes"),
-        handlers_with_exported_recipes: object_u64(summary, "handlersWithExportedRecipes"),
-        legal_zero_recipe_handlers,
-        expected_empty_handlers,
-        native_covered_zero_exports,
-        non_recipe_info_zero_exports,
-        suspicious_zero_exports: object_u64(summary, "suspiciousZeroExports"),
-        partial_exports: object_u64(summary, "partialExports"),
-    })
-}
-
-fn object_u64(map: &serde_json::Map<String, Value>, key: &str) -> u64 {
-    map.get(key).and_then(Value::as_u64).unwrap_or(0)
-}
-
-fn count_jsonl_rows(path: &Path) -> Result<u64> {
-    let reader: Box<dyn Read> = if path.extension().and_then(|value| value.to_str()) == Some("gz") {
-        Box::new(GzDecoder::new(File::open(path)?))
-    } else {
-        Box::new(File::open(path)?)
-    };
-    let buf = BufReader::new(reader);
-    let mut count = 0u64;
-    for line in buf.lines() {
-        if !line?.trim().is_empty() {
-            count += 1;
-        }
-    }
-    Ok(count)
 }
 
 fn compile_browser_pack(input: &Path, output: &Path, strict: bool, debug_json: bool) -> Result<()> {
@@ -835,14 +603,6 @@ fn intern_compact_string(
     strings.push(normalized.clone());
     refs.insert(normalized, next);
     next
-}
-
-fn push_u32(bytes: &mut Vec<u8>, value: u32) {
-    bytes.extend_from_slice(&value.to_le_bytes());
-}
-
-fn push_i32(bytes: &mut Vec<u8>, value: i32) {
-    bytes.extend_from_slice(&value.to_le_bytes());
 }
 
 fn build_compact_browser_payload(input: &Path, manifest: &RawManifest) -> Result<Vec<u8>> {
@@ -2088,20 +1848,6 @@ fn materialize_ui_background_assets(
         "copied": copied,
         "missing": missing,
     }))
-}
-
-fn portable_relative_path(value: &str) -> Option<PathBuf> {
-    let normalized = value.replace('\\', "/").trim_start_matches('/').to_string();
-    if normalized.is_empty()
-        || normalized.contains("://")
-        || normalized.contains(':')
-        || normalized
-            .split('/')
-            .any(|part| part.is_empty() || part == "." || part == "..")
-    {
-        return None;
-    }
-    Some(PathBuf::from(normalized))
 }
 
 fn ui_template_slot_count(template: &Value) -> usize {
@@ -3438,22 +3184,6 @@ fn includes_any(value: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| value.contains(needle))
 }
 
-fn first_non_empty(values: &[Option<String>]) -> Option<String> {
-    values
-        .iter()
-        .flatten()
-        .map(|value| value.trim().to_string())
-        .find(|value| !value.is_empty())
-}
-
-fn nested_value_string(value: &Value, path: &[&str]) -> Option<String> {
-    let mut current = value;
-    for key in path {
-        current = current.get(*key)?;
-    }
-    current.as_str().map(str::to_string)
-}
-
 fn compact_fact_object(value: Option<&Value>) -> Option<Value> {
     match compact_fact_value(value?, 0) {
         Some(Value::Object(map)) if !map.is_empty() => Some(Value::Object(map)),
@@ -3503,10 +3233,6 @@ fn compact_fact_value(value: &Value, depth: usize) -> Option<Value> {
         }
     }
 }
-fn value_i64(value: &Value, key: &str) -> Option<i64> {
-    value.get(key)?.as_i64()
-}
-
 fn item_id_from_asset_id(asset_id: &str) -> Option<String> {
     asset_id.strip_prefix("nesqlpp:item/").map(str::to_string)
 }
@@ -4878,7 +4604,7 @@ fn compile_runtime_reports(
 ) -> Result<()> {
     let rust_dir = output.join("rust");
     fs::create_dir_all(&rust_dir)?;
-    compile_native_ui_layout_report(output)?;
+    compile_native_ui_layout_report(output, captured_ui_family_key)?;
 
     let mut artifact_names = match scope {
         CompileScope::All => vec![
@@ -5175,210 +4901,6 @@ fn compile_runtime_reports(
     Ok(())
 }
 
-fn compile_native_ui_layout_report(output: &Path) -> Result<Option<Value>> {
-    let handler_layout_path = output.join("recipes").join("handler-layout-index.json");
-    if !handler_layout_path.exists() {
-        return Ok(None);
-    }
-    let ui_payload_path = output.join("recipes").join("ui-payload-index.json");
-    let handler_layout_index = read_json_file(&handler_layout_path)?;
-    let ui_payload_index = if ui_payload_path.exists() {
-        read_json_file(&ui_payload_path)?
-    } else {
-        json!({ "recipes": [] })
-    };
-    let layouts = json_array(&handler_layout_index, "layouts");
-    let recipes = json_array(&ui_payload_index, "recipes");
-    let gt_layouts = layouts
-        .iter()
-        .filter(|layout| is_gregtech_native_layout(layout))
-        .collect::<Vec<_>>();
-    let layout_by_family = layouts
-        .iter()
-        .filter_map(|layout| Some((captured_ui_family_key(None, Some(layout))?, layout)))
-        .collect::<BTreeMap<_, _>>();
-    let gt_recipe_entries = recipes
-        .iter()
-        .filter(|entry| is_gregtech_recipe_ui_entry(entry))
-        .collect::<Vec<_>>();
-    let gt_recipe_layouts = gt_recipe_entries
-        .iter()
-        .filter_map(|entry| {
-            value_string(entry, "familyKey")
-                .and_then(|family_key| layout_by_family.get(&family_key).copied())
-        })
-        .collect::<Vec<_>>();
-
-    let mut failures = Vec::new();
-    let mut background_asset_gaps = Vec::new();
-    if layouts.is_empty() {
-        failures.push("handler layout index is empty".to_string());
-    }
-    if !gt_layouts.is_empty()
-        && gt_layouts
-            .iter()
-            .filter(|layout| primitive_count(layout, "progressBars") > 0)
-            .count()
-            == 0
-    {
-        failures.push("gregtech-machine handler layouts have no drawable progressBars".to_string());
-    }
-    if !gt_recipe_layouts.is_empty()
-        && gt_recipe_layouts
-            .iter()
-            .filter(|layout| primitive_count(layout, "progressBars") > 0)
-            .count()
-            == 0
-    {
-        failures
-            .push("gregtech-machine recipe UI payloads have no drawable progressBars".to_string());
-    }
-    let gt_recipe_entries_with_background_regions = gt_recipe_layouts
-        .iter()
-        .filter(|layout| has_image_region(layout))
-        .count();
-    let gt_recipe_entries_with_native_backgrounds = gt_recipe_layouts
-        .iter()
-        .filter(|layout| has_native_background(layout))
-        .count();
-    if !gt_recipe_layouts.is_empty() && gt_recipe_entries_with_native_backgrounds == 0 {
-        background_asset_gaps.push(
-            "gregtech-machine recipe UI payloads have no nativeBackground capture facts"
-                .to_string(),
-        );
-    }
-    let geometry_status = if failures.is_empty() {
-        "ready"
-    } else {
-        "blocked"
-    };
-    let background_status = if gt_recipe_entries_with_background_regions > 0 {
-        "captured"
-    } else if gt_recipe_entries_with_native_backgrounds > 0 {
-        "semantic"
-    } else if background_asset_gaps.is_empty() {
-        "ready"
-    } else {
-        "missing"
-    };
-
-    let report = json!({
-        "schemaVersion": "neonei/native-ui-layout-report/current",
-        "generatedAt": "deterministic-rust-compiler",
-        "status": geometry_status,
-        "geometryStatus": geometry_status,
-        "backgroundStatus": background_status,
-        "source": {
-            "handlerLayoutIndex": "recipes/handler-layout-index.json",
-            "recipeUiPayloadIndex": if ui_payload_path.exists() { "recipes/ui-payload-index.json" } else { "" },
-        },
-        "counts": {
-            "handlerLayouts": layouts.len(),
-            "handlerLayoutsWithBackgroundRegions": layouts.iter().filter(|layout| has_image_region(layout)).count(),
-            "handlerLayoutsWithProgressBars": layouts.iter().filter(|layout| primitive_count(layout, "progressBars") > 0).count(),
-            "handlerLayoutsWithFluidBars": layouts.iter().filter(|layout| primitive_count(layout, "fluidBars") > 0).count(),
-            "handlerLayoutsWithEnergyBars": layouts.iter().filter(|layout| primitive_count(layout, "energyBars") > 0).count(),
-            "handlerLayoutsWithHotspots": layouts.iter().filter(|layout| primitive_count(layout, "hotspots") > 0).count(),
-            "handlerLayoutsWithViewports": layouts.iter().filter(|layout| primitive_count(layout, "viewports") > 0).count(),
-            "gregtechHandlerLayouts": gt_layouts.len(),
-            "gregtechHandlerLayoutsWithBackgroundRegions": gt_layouts.iter().filter(|layout| has_image_region(layout)).count(),
-            "gregtechHandlerLayoutsWithProgressBars": gt_layouts.iter().filter(|layout| primitive_count(layout, "progressBars") > 0).count(),
-            "recipeUiPayloads": recipes.len(),
-            "gregtechRecipeUiPayloads": gt_recipe_entries.len(),
-            "gregtechRecipeUiPayloadsWithBackgroundRegions": gt_recipe_entries_with_background_regions,
-            "gregtechRecipeUiPayloadsWithNativeBackgrounds": gt_recipe_entries_with_native_backgrounds,
-            "gregtechRecipeUiPayloadsWithProgressBars": gt_recipe_layouts.iter().filter(|layout| primitive_count(layout, "progressBars") > 0).count(),
-            "gregtechRecipeUiPayloadsWithHotspots": gt_recipe_layouts.iter().filter(|layout| primitive_count(layout, "hotspots") > 0).count(),
-            "gregtechRecipeUiPayloadsWithViewports": gt_recipe_layouts.iter().filter(|layout| primitive_count(layout, "viewports") > 0).count(),
-        },
-        "samples": {
-            "gregtechHandlerLayoutsMissingProgressBars": gt_layouts.iter()
-                .filter(|layout| primitive_count(layout, "progressBars") == 0)
-                .take(25)
-                .map(|layout| json!({
-                    "handlerKey": value_string(layout, "handlerKey"),
-                    "handlerClass": value_string(layout, "handlerClass"),
-                    "layoutKind": value_string(layout, "layoutKind"),
-                }))
-                .collect::<Vec<_>>(),
-            "gregtechRecipePayloadsMissingProgressBars": gt_recipe_entries.iter()
-                .filter(|entry| value_string(entry, "familyKey")
-                    .and_then(|family_key| layout_by_family.get(&family_key).copied())
-                    .map(|layout| primitive_count(layout, "progressBars") == 0)
-                    .unwrap_or(true))
-                .take(25)
-                .map(|entry| json!({
-                    "recipeId": value_string(entry, "recipeId"),
-                    "familyKey": value_string(entry, "familyKey"),
-                    "handlerKey": value_string(entry, "handlerKey"),
-                }))
-                .collect::<Vec<_>>(),
-        },
-        "failures": failures,
-        "backgroundAssetGaps": background_asset_gaps,
-    });
-    let rust_dir = output.join("rust");
-    fs::create_dir_all(&rust_dir)?;
-    write_json_value(&rust_dir.join("native-ui-layout-report.json"), &report)?;
-    Ok(Some(report))
-}
-
-fn read_json_file(path: &Path) -> Result<Value> {
-    let text = fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-    serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))
-}
-
-fn json_array(value: &Value, key: &str) -> Vec<Value> {
-    value
-        .get(key)
-        .and_then(Value::as_array)
-        .cloned()
-        .unwrap_or_default()
-}
-
-fn is_gregtech_native_layout(layout: &Value) -> bool {
-    value_string(layout, "canonicalMachineFamily")
-        .map(|value| value.trim().eq_ignore_ascii_case("gregtech-machine"))
-        .unwrap_or(false)
-}
-
-fn is_gregtech_recipe_ui_entry(entry: &Value) -> bool {
-    entry
-        .get("nativeLayout")
-        .is_some_and(is_gregtech_native_layout)
-        || value_string(entry, "familyKey")
-            .map(|value| value.starts_with("gregtech-machine|"))
-            .unwrap_or(false)
-}
-
-fn primitive_count(layout: &Value, key: &str) -> usize {
-    layout
-        .get(key)
-        .and_then(Value::as_array)
-        .map(|items| items.iter().filter(|item| has_drawable_rect(item)).count())
-        .unwrap_or(0)
-}
-
-fn has_drawable_rect(value: &Value) -> bool {
-    let width = value_u64(value, "width").unwrap_or(0);
-    let height = value_u64(value, "height").unwrap_or(0);
-    width > 0 && height > 0
-}
-
-fn has_image_region(value: &Value) -> bool {
-    value.get("imageRegion").is_some_and(has_drawable_rect)
-}
-
-fn has_native_background(value: &Value) -> bool {
-    let Some(background) = value.get("nativeBackground") else {
-        return has_image_region(value);
-    };
-    let status = value_string(background, "status").unwrap_or_default();
-    let kind = value_string(background, "kind").unwrap_or_default();
-    matches!(status.as_str(), "captured" | "semantic")
-        && matches!(kind.as_str(), "texture-region" | "gt-modular-ui")
-}
-
 fn purge_debug_json_artifacts(output: &Path) -> Result<()> {
     let rust_dir = output.join("rust");
     for artifact_name in [
@@ -5403,12 +4925,6 @@ fn purge_debug_json_artifacts(output: &Path) -> Result<()> {
         })?;
     }
     Ok(())
-}
-
-fn is_text_runtime_artifact(path: &Path) -> bool {
-    path.extension()
-        .and_then(|value| value.to_str())
-        .is_some_and(|extension| matches!(extension, "json" | "txt" | "log"))
 }
 
 fn update_dist_manifest_with_rust_runtime(
@@ -5482,179 +4998,6 @@ fn update_dist_manifest_with_rust_runtime(
     });
 
     write_json_value(&manifest_path, &manifest)
-}
-
-fn rust_manifest_file_entries(
-    scope: CompileScope,
-    debug_json: bool,
-) -> Vec<(&'static str, &'static str)> {
-    let mut entries = vec![
-        ("rustRuntimeManifest", "rust/runtime-manifest.json"),
-        ("rustIntegrity", "rust/integrity.json"),
-        ("rustSizeReport", "rust/size-report.json"),
-        ("rustMissingDataReport", "rust/missing-data-report.json"),
-        (
-            "rustSemanticValidationReport",
-            "rust/semantic-validation-report.json",
-        ),
-        (
-            "rustMissingTextureReport",
-            "rust/missing-texture-report.json",
-        ),
-        (
-            "rustSuspiciousTextureReport",
-            "rust/suspicious-texture-report.json",
-        ),
-        (
-            "rustRecipeHandlerMetadataReport",
-            "rust/recipe-handler-metadata-report.json",
-        ),
-        (
-            "rustRecipeFragmentationReport",
-            "rust/recipe-fragmentation-report.json",
-        ),
-        (
-            "rustNativeUiLayoutReport",
-            "rust/native-ui-layout-report.json",
-        ),
-        ("rustMigrationReadiness", "rust/migration-readiness.json"),
-        ("rustDeploymentReport", "rust/deployment-report.json"),
-    ];
-    match scope {
-        CompileScope::All => entries.extend([
-            ("rustBrowserBin", "rust/browser.bin"),
-            ("rustGroupsBin", "rust/groups.bin"),
-            ("rustSearchBin", "rust/search.bin"),
-            ("rustRecipeBin", "rust/recipes.bin"),
-            ("rustTextureBin", "rust/textures.bin"),
-            ("rustAtlasMetaBin", "rust/atlas.meta.bin"),
-            ("rustAnimationBin", "rust/animations.bin"),
-            ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
-            ("rustUiTemplatesBin", "rust/ui-pack/ui_templates.bin"),
-            ("rustUiBindingsBin", "rust/ui-pack/ui_bindings.bin"),
-            ("rustUiStringsBin", "rust/ui-pack/ui_strings.bin"),
-            (
-                "rustUiAssetsManifest",
-                "rust/ui-pack/ui_assets.manifest.json",
-            ),
-            ("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"),
-        ]),
-        CompileScope::NativeUi => entries.extend([
-            ("rustBrowserBin", "rust/browser.bin"),
-            ("rustGroupsBin", "rust/groups.bin"),
-            ("rustSearchBin", "rust/search.bin"),
-            ("rustRecipeBin", "rust/recipes.bin"),
-            ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
-            ("rustUiTemplatesBin", "rust/ui-pack/ui_templates.bin"),
-            ("rustUiBindingsBin", "rust/ui-pack/ui_bindings.bin"),
-            ("rustUiStringsBin", "rust/ui-pack/ui_strings.bin"),
-            (
-                "rustUiAssetsManifest",
-                "rust/ui-pack/ui_assets.manifest.json",
-            ),
-            ("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"),
-        ]),
-        CompileScope::Search => entries.extend([
-            ("rustSearchBin", "rust/search.bin"),
-            ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
-        ]),
-        CompileScope::Browser => entries.extend([
-            ("rustBrowserBin", "rust/browser.bin"),
-            ("rustGroupsBin", "rust/groups.bin"),
-            ("rustSearchBin", "rust/search.bin"),
-            ("rustStringsZhCnBin", "rust/strings.zh_cn.bin"),
-        ]),
-        CompileScope::Recipes => entries.extend([("rustRecipeBin", "rust/recipes.bin")]),
-        CompileScope::Ui => entries.extend([
-            ("rustUiTemplatesBin", "rust/ui-pack/ui_templates.bin"),
-            ("rustUiBindingsBin", "rust/ui-pack/ui_bindings.bin"),
-            ("rustUiStringsBin", "rust/ui-pack/ui_strings.bin"),
-            (
-                "rustUiAssetsManifest",
-                "rust/ui-pack/ui_assets.manifest.json",
-            ),
-            ("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"),
-        ]),
-        CompileScope::Textures => entries.extend([
-            ("rustTextureBin", "rust/textures.bin"),
-            ("rustAtlasMetaBin", "rust/atlas.meta.bin"),
-            ("rustAnimationBin", "rust/animations.bin"),
-        ]),
-    }
-    if debug_json {
-        match scope {
-            CompileScope::All => entries.extend([
-                ("rustBrowserPack", "rust/browser-pack.json"),
-                ("rustSearchPack", "rust/search-pack.json"),
-                ("rustRecipePack", "rust/recipe-pack.json"),
-                ("rustTexturePack", "rust/texture-pack.json"),
-            ]),
-            CompileScope::NativeUi => entries.extend([
-                ("rustBrowserPack", "rust/browser-pack.json"),
-                ("rustSearchPack", "rust/search-pack.json"),
-                ("rustRecipePack", "rust/recipe-pack.json"),
-            ]),
-            CompileScope::Search => entries.push(("rustSearchPack", "rust/search-pack.json")),
-            CompileScope::Browser => entries.extend([
-                ("rustBrowserPack", "rust/browser-pack.json"),
-                ("rustSearchPack", "rust/search-pack.json"),
-            ]),
-            CompileScope::Recipes => entries.push(("rustRecipePack", "rust/recipe-pack.json")),
-            CompileScope::Ui => {
-                entries.push(("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"))
-            }
-            CompileScope::Textures => entries.push(("rustTexturePack", "rust/texture-pack.json")),
-        }
-    }
-    entries
-}
-
-fn runtime_id_from_integrity(integrity: &BTreeMap<String, String>) -> String {
-    let mut hasher = Sha256::new();
-    for (path, hash) in integrity {
-        hasher.update(path.as_bytes());
-        hasher.update(b"\0");
-        hasher.update(hash.as_bytes());
-        hasher.update(b"\n");
-    }
-    let digest = format!("{:x}", hasher.finalize());
-    format!("rust-{}", &digest[..16])
-}
-
-impl CompileScope {
-    fn as_str(self) -> &'static str {
-        match self {
-            CompileScope::All => "all",
-            CompileScope::NativeUi => "native-ui",
-            CompileScope::Search => "search",
-            CompileScope::Browser => "browser",
-            CompileScope::Recipes => "recipes",
-            CompileScope::Ui => "ui",
-            CompileScope::Textures => "textures",
-        }
-    }
-}
-
-fn rust_entrypoints_from_integrity(integrity: &BTreeMap<String, String>) -> Value {
-    let mut entrypoints = serde_json::Map::new();
-    for (key, path) in [
-        ("browser", "rust/browser.bin"),
-        ("groups", "rust/groups.bin"),
-        ("search", "rust/search.bin"),
-        ("recipes", "rust/recipes.bin"),
-        ("textures", "rust/textures.bin"),
-        ("atlasMeta", "rust/atlas.meta.bin"),
-        ("animations", "rust/animations.bin"),
-        ("stringsZhCn", "rust/strings.zh_cn.bin"),
-        ("uiTemplates", "rust/ui-pack/ui_templates.bin"),
-        ("uiBindings", "rust/ui-pack/ui_bindings.bin"),
-        ("uiStrings", "rust/ui-pack/ui_strings.bin"),
-    ] {
-        if integrity.contains_key(path) {
-            entrypoints.insert(key.to_string(), Value::String(path.to_string()));
-        }
-    }
-    Value::Object(entrypoints)
 }
 
 fn validate_atlas_ref(item_id: &str, atlas: Option<&Value>, missing_refs: &mut Vec<String>) {
@@ -5813,125 +5156,6 @@ fn normalize_timeline(animated_atlas: Option<&Value>, fallback_duration_ms: Opti
     )
 }
 
-fn read_manifest_json(
-    input: &Path,
-    manifest: &RawManifest,
-    logical_name: &str,
-) -> Result<Option<Value>> {
-    let Some(path) = resolve_manifest_path(input, manifest, logical_name) else {
-        return Ok(None);
-    };
-    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let value = serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
-    Ok(Some(value))
-}
-
-fn read_optional_manifest_json(
-    input: &Path,
-    manifest: &RawManifest,
-    logical_name: &str,
-) -> Result<Option<Value>> {
-    let Some(path) = resolve_manifest_path(input, manifest, logical_name) else {
-        return Ok(None);
-    };
-    if !path.exists() {
-        return Ok(None);
-    }
-    let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-    let value = serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
-    Ok(Some(value))
-}
-
-fn read_jsonl_values(
-    input: &Path,
-    manifest: &RawManifest,
-    logical_name: &str,
-) -> Result<Vec<Value>> {
-    let Some(path) = resolve_manifest_path(input, manifest, logical_name) else {
-        return Ok(Vec::new());
-    };
-    read_jsonl_file_values(&path)
-}
-
-fn rust_capabilities(scope: CompileScope) -> Value {
-    match scope {
-        CompileScope::All => json!([
-            "atlas.static",
-            "atlas.animated",
-            "atlas.meta",
-            "groups.collapse",
-            "groups.semantic-nbt",
-            "recipes.lookup",
-            "recipes.native-ui-layout",
-            "search.zh-cn",
-            "strings.zh-cn",
-            "native-render.webgl2",
-            "recipes.ui-pack",
-        ]),
-        CompileScope::NativeUi => json!([
-            "groups.collapse",
-            "groups.semantic-nbt",
-            "recipes.lookup",
-            "recipes.native-ui-layout",
-            "recipes.ui-pack",
-            "search.zh-cn",
-            "strings.zh-cn",
-            "native-render.webgl2"
-        ]),
-        CompileScope::Search => json!(["search.zh-cn", "strings.zh-cn"]),
-        CompileScope::Browser => json!([
-            "groups.collapse",
-            "groups.semantic-nbt",
-            "search.zh-cn",
-            "strings.zh-cn",
-            "native-render.webgl2"
-        ]),
-        CompileScope::Recipes => json!(["recipes.lookup", "recipes.native-ui-layout"]),
-        CompileScope::Ui => json!(["recipes.ui-pack", "native-render.webgl2"]),
-        CompileScope::Textures => json!(["atlas.static", "atlas.animated", "atlas.meta"]),
-    }
-}
-
-fn read_json_collection(
-    input: &Path,
-    manifest: &RawManifest,
-    logical_names: &[&str],
-    array_field: Option<&str>,
-) -> Result<Vec<Value>> {
-    for logical_name in logical_names {
-        let Some(path) = resolve_manifest_path(input, manifest, logical_name) else {
-            continue;
-        };
-        if path.extension().and_then(|value| value.to_str()) == Some("jsonl")
-            || path.extension().and_then(|value| value.to_str()) == Some("gz")
-        {
-            return read_jsonl_file_values(&path);
-        }
-        let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
-        let value: Value =
-            serde_json::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
-        if let Some(rows) = value.as_array() {
-            return Ok(rows.clone());
-        }
-        if let Some(field) = array_field {
-            if let Some(rows) = value.get(field).and_then(Value::as_array) {
-                return Ok(rows.clone());
-            }
-        }
-        if let Some(rows) = value.get("items").and_then(Value::as_array) {
-            return Ok(rows.clone());
-        }
-        if let Some(rows) = value.get("groups").and_then(Value::as_array) {
-            return Ok(rows.clone());
-        }
-        if let Some(rows) = value.get("animations").and_then(Value::as_array) {
-            return Ok(rows.clone());
-        }
-        return Ok(vec![value]);
-    }
-    Ok(Vec::new())
-}
-
 fn runtime_file_descriptors(
     input: &Path,
     manifest: &RawManifest,
@@ -5954,76 +5178,6 @@ fn runtime_file_descriptors(
         }));
     }
     Ok(files)
-}
-
-fn read_jsonl_file_values(path: &Path) -> Result<Vec<Value>> {
-    let reader: Box<dyn Read> = if path.extension().and_then(|value| value.to_str()) == Some("gz") {
-        Box::new(GzDecoder::new(File::open(&path)?))
-    } else {
-        Box::new(File::open(&path)?)
-    };
-    let buf = BufReader::new(reader);
-    let mut rows = Vec::new();
-    for (index, line) in buf.lines().enumerate() {
-        let line = line?;
-        if line.trim().is_empty() {
-            continue;
-        }
-        rows.push(
-            serde_json::from_str(&line)
-                .with_context(|| format!("parse {} line {}", path.display(), index + 1))?,
-        );
-    }
-    Ok(rows)
-}
-
-fn resolve_manifest_path(
-    input: &Path,
-    manifest: &RawManifest,
-    logical_name: &str,
-) -> Option<PathBuf> {
-    let relative_path = manifest.files.get(logical_name)?;
-    let normalized = relative_path
-        .replace('\\', "/")
-        .trim_start_matches('/')
-        .to_string();
-    Some(input.join(normalized))
-}
-
-fn value_string(value: &Value, key: &str) -> Option<String> {
-    value.get(key)?.as_str().map(str::to_string)
-}
-
-fn value_u64(value: &Value, key: &str) -> Option<u64> {
-    numeric_value_u64(value.get(key)?)
-}
-
-fn optional_value_string(value: Option<&Value>, key: &str) -> Option<String> {
-    value?.get(key)?.as_str().map(str::to_string)
-}
-
-fn optional_value_u64(value: Option<&Value>, key: &str) -> Option<u64> {
-    value_u64(value?, key)
-}
-
-fn numeric_value_u64(value: &Value) -> Option<u64> {
-    match value {
-        Value::Number(number) => number.as_u64(),
-        Value::String(text) => text.trim().parse::<u64>().ok(),
-        Value::Object(object) => object.get("value").and_then(numeric_value_u64),
-        _ => None,
-    }
-}
-
-fn numeric_value_u64_lossy(value: &Value) -> Option<u64> {
-    match value {
-        Value::Number(number) => number
-            .as_u64()
-            .or_else(|| number.as_f64().map(|value| value as u64)),
-        Value::String(text) => text.trim().parse::<u64>().ok(),
-        Value::Object(object) => object.get("value").and_then(numeric_value_u64_lossy),
-        _ => None,
-    }
 }
 
 fn normalize_text(value: &str) -> String {
@@ -6067,106 +5221,6 @@ fn build_pinyin_fields(localized_name: &str) -> (String, String) {
     (full, acronym)
 }
 
-fn sha256_file(path: &Path) -> Result<String> {
-    let mut file = File::open(path)?;
-    let mut hasher = Sha256::new();
-    let mut buffer = [0u8; 1024 * 128];
-    loop {
-        let read = file.read(&mut buffer)?;
-        if read == 0 {
-            break;
-        }
-        hasher.update(&buffer[..read]);
-    }
-    Ok(format!("{:x}", hasher.finalize()))
-}
-
-fn summarize_runtime_output(output: Option<&Path>) -> Result<RuntimeSummary> {
-    let mut counts = BTreeMap::new();
-    let mut sizes = BTreeMap::new();
-    let Some(output) = output else {
-        return Ok(RuntimeSummary { counts, sizes });
-    };
-
-    let validation_report = output.join("validation").join("report.json");
-    if validation_report.exists() {
-        let text = fs::read_to_string(&validation_report).with_context(|| {
-            format!(
-                "read runtime validation report {}",
-                validation_report.display()
-            )
-        })?;
-        let value: Value = serde_json::from_str(&text).with_context(|| {
-            format!(
-                "parse runtime validation report {}",
-                validation_report.display()
-            )
-        })?;
-        if let Some(report_counts) = value.get("counts").and_then(Value::as_object) {
-            for (key, value) in report_counts {
-                if let Some(count) = value.as_u64() {
-                    counts.insert(key.clone(), count);
-                }
-            }
-        }
-    }
-
-    for (logical_name, relative_path) in [
-        ("manifest", "manifest.json"),
-        ("browserItemCatalog", "browser/item-catalog.json"),
-        ("browserGroupIndex", "browser/group-index.json"),
-        ("searchPack", "search/all.json"),
-        ("recipeItemIndex", "recipes/item-index.json"),
-        ("recipeHandlerIndex", "recipes/handler-index.json"),
-        ("browserAtlasIndex", "textures/browser-atlas-index.json"),
-        ("animationTable", "textures/animation-table.json"),
-        ("uiTemplatesBin", "rust/ui-pack/ui_templates.bin"),
-        ("uiBindingsBin", "rust/ui-pack/ui_bindings.bin"),
-        ("uiStringsBin", "rust/ui-pack/ui_strings.bin"),
-        ("uiAssetsManifest", "rust/ui-pack/ui_assets.manifest.json"),
-        ("uiPackReport", "rust/ui-pack/ui_pack_report.json"),
-        ("nativeUiLayoutReport", "rust/native-ui-layout-report.json"),
-        ("runtimeValidationReport", "validation/report.json"),
-    ] {
-        let path = output.join(relative_path);
-        if path.exists() {
-            sizes.insert(logical_name.to_string(), path.metadata()?.len());
-        }
-    }
-
-    Ok(RuntimeSummary { counts, sizes })
-}
-
-fn write_report(path: &Path, report: &CompilerReport) -> Result<()> {
-    let text = serde_json::to_string_pretty(report)?;
-    fs::write(path, text).with_context(|| format!("write report {}", path.display()))
-}
-
-fn write_binary_pack(path: &Path, schema: &str, value: &Value) -> Result<()> {
-    let payload = serde_json::to_vec(value)?;
-    write_binary_pack_payload(path, schema, &payload)
-}
-
-fn write_binary_pack_payload(path: &Path, schema: &str, payload: &[u8]) -> Result<()> {
-    let schema_bytes = schema.as_bytes();
-    let mut bytes = Vec::with_capacity(24 + schema_bytes.len() + payload.len());
-    bytes.extend_from_slice(b"NNEIBIN\0");
-    bytes.extend_from_slice(&1u32.to_le_bytes());
-    bytes.extend_from_slice(&(schema_bytes.len() as u32).to_le_bytes());
-    bytes.extend_from_slice(&(payload.len() as u64).to_le_bytes());
-    bytes.extend_from_slice(schema_bytes);
-    bytes.extend_from_slice(payload);
-    fs::write(path, bytes).with_context(|| format!("write {}", path.display()))
-}
-fn write_json_value(path: &Path, value: &Value) -> Result<()> {
-    let text = serde_json::to_string_pretty(value)?;
-    fs::write(path, format!("{text}\n")).with_context(|| format!("write {}", path.display()))
-}
-
-fn normalize_path(path: &Path) -> String {
-    path.to_string_lossy().replace('\\', "/")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -6178,7 +5232,7 @@ mod tests {
 
     #[test]
     fn empty_runtime_summary_without_output() {
-        let summary = summarize_runtime_output(None).unwrap();
+        let summary = reports::summarize_runtime_output(None).unwrap();
         assert!(summary.counts.is_empty());
         assert!(summary.sizes.is_empty());
     }
@@ -6979,7 +6033,7 @@ mod tests {
                 "partialExports": 2
             }
         });
-        let diagnostics = zero_recipe_diagnostics_from_value(&value).unwrap();
+        let diagnostics = raw_export::zero_recipe_diagnostics_from_value(&value).unwrap();
         assert_eq!(diagnostics.status.as_deref(), Some("warning"));
         assert_eq!(diagnostics.legal_zero_recipe_handlers, 6);
         assert_eq!(diagnostics.suspicious_zero_exports, 1);
@@ -7034,7 +6088,7 @@ mod tests {
         )
         .unwrap();
 
-        let report = compile_native_ui_layout_report(temp.path())
+        let report = compile_native_ui_layout_report(temp.path(), captured_ui_family_key)
             .unwrap()
             .unwrap();
 
@@ -7091,4 +6145,3 @@ mod tests {
         assert!(debug_entries.contains(&"rust/texture-pack.json"));
     }
 }
-
