@@ -18,7 +18,7 @@ mod texture_animation;
 mod ui_templates;
 mod validation;
 use atlas_repair::{repaired_browser_atlas, select_group_representative};
-use binary::{write_binary_pack, write_binary_pack_payload};
+use binary::write_binary_pack_payload;
 use cli::{Cli, Command, CompileScope};
 use io::{normalize_path, write_json_value};
 use json_ext::{first_non_empty, nested_value_string, value_string, value_u64};
@@ -37,8 +37,8 @@ use packs::search::{
 };
 use packs::texture::{
     build_compact_animation_payload_from_table, build_compact_atlas_meta_payload_from_atlas_items,
-    build_compact_texture_payload_from_atlas_items, copy_runtime_atlas_assets,
-    normalize_runtime_atlas_file_path, normalize_timeline,
+    build_compact_texture_payload_from_atlas_items, compile_dist_texture_pack,
+    copy_runtime_atlas_assets, normalize_runtime_atlas_file_path, normalize_timeline,
 };
 use packs::ui::{
     build_compact_ui_binding_payload, build_compact_ui_string_payload,
@@ -1410,76 +1410,6 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
         &animation_payload,
     )?;
     let atlas_meta_payload = build_compact_atlas_meta_payload_from_atlas_items(&atlas_items)?;
-    write_binary_pack_payload(
-        &rust_dir.join("atlas.meta.bin"),
-        "neonei/atlas-meta-pack/current",
-        &atlas_meta_payload,
-    )?;
-    Ok(())
-}
-
-fn compile_dist_texture_pack(
-    input: &Path,
-    output: &Path,
-    strict: bool,
-    debug_json: bool,
-) -> Result<()> {
-    let manifest = read_manifest(input)?;
-    let texture_files = runtime_file_descriptors(
-        input,
-        &manifest,
-        &[
-            ("textureManifest", "textureManifest"),
-            ("browserAtlasIndex", "browserAtlasIndex"),
-            ("nativeRenderIndex", "nativeRenderIndex"),
-            ("animationTable", "animationTable"),
-            ("animationExpectationReport", "animationExpectationReport"),
-        ],
-    )?;
-    if strict
-        && !texture_files.iter().any(|value| {
-            value
-                .get("logicalName")
-                .and_then(Value::as_str)
-                .is_some_and(|value| value == "textureManifest")
-        })
-    {
-        return Err(anyhow!(
-            "texture compiler blocked: textureManifest is missing"
-        ));
-    }
-    let texture_pack = json!({
-        "schemaVersion": "neonei/rust-texture-pack/current",
-        "sourceKind": "dist-data",
-        "counts": { "files": texture_files.len() },
-        "files": texture_files,
-    });
-    let animation_pack = json!({
-        "schemaVersion": "neonei/rust-animation-pack/current",
-        "sourceKind": "dist-data",
-        "files": runtime_file_descriptors(
-            input,
-            &manifest,
-            &[("animationTable", "animationTable"), ("animationExpectationReport", "animationExpectationReport")],
-        )?,
-    });
-
-    let rust_dir = output.join("rust");
-    fs::create_dir_all(&rust_dir)?;
-    if debug_json {
-        write_json_value(&rust_dir.join("texture-pack.json"), &texture_pack)?;
-    }
-    write_binary_pack(
-        &rust_dir.join("textures.bin"),
-        "neonei/texture-pack/current",
-        &texture_pack,
-    )?;
-    write_binary_pack(
-        &rust_dir.join("animations.bin"),
-        "neonei/animation-pack/current",
-        &animation_pack,
-    )?;
-    let atlas_meta_payload = build_compact_atlas_meta_payload_from_atlas_items(&[])?;
     write_binary_pack_payload(
         &rust_dir.join("atlas.meta.bin"),
         "neonei/atlas-meta-pack/current",

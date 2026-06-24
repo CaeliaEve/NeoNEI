@@ -1,8 +1,12 @@
-use crate::binary::{intern_compact_string, push_u32};
+use crate::binary::{
+    intern_compact_string, push_u32, write_binary_pack, write_binary_pack_payload,
+};
+use crate::io::write_json_value;
 use crate::json_ext::{
     numeric_value_u64, optional_value_string, optional_value_u64, value_string, value_u64,
 };
-use anyhow::{Context, Result};
+use crate::manifest::{read_manifest, runtime_file_descriptors};
+use anyhow::{anyhow, Context, Result};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -152,6 +156,76 @@ pub fn copy_runtime_atlas_assets(
             )
         })?;
     }
+    Ok(())
+}
+
+pub fn compile_dist_texture_pack(
+    input: &Path,
+    output: &Path,
+    strict: bool,
+    debug_json: bool,
+) -> Result<()> {
+    let manifest = read_manifest(input)?;
+    let texture_files = runtime_file_descriptors(
+        input,
+        &manifest,
+        &[
+            ("textureManifest", "textureManifest"),
+            ("browserAtlasIndex", "browserAtlasIndex"),
+            ("nativeRenderIndex", "nativeRenderIndex"),
+            ("animationTable", "animationTable"),
+            ("animationExpectationReport", "animationExpectationReport"),
+        ],
+    )?;
+    if strict
+        && !texture_files.iter().any(|value| {
+            value
+                .get("logicalName")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == "textureManifest")
+        })
+    {
+        return Err(anyhow!(
+            "texture compiler blocked: textureManifest is missing"
+        ));
+    }
+    let texture_pack = json!({
+        "schemaVersion": "neonei/rust-texture-pack/current",
+        "sourceKind": "dist-data",
+        "counts": { "files": texture_files.len() },
+        "files": texture_files,
+    });
+    let animation_pack = json!({
+        "schemaVersion": "neonei/rust-animation-pack/current",
+        "sourceKind": "dist-data",
+        "files": runtime_file_descriptors(
+            input,
+            &manifest,
+            &[("animationTable", "animationTable"), ("animationExpectationReport", "animationExpectationReport")],
+        )?,
+    });
+
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+    if debug_json {
+        write_json_value(&rust_dir.join("texture-pack.json"), &texture_pack)?;
+    }
+    write_binary_pack(
+        &rust_dir.join("textures.bin"),
+        "neonei/texture-pack/current",
+        &texture_pack,
+    )?;
+    write_binary_pack(
+        &rust_dir.join("animations.bin"),
+        "neonei/animation-pack/current",
+        &animation_pack,
+    )?;
+    let atlas_meta_payload = build_compact_atlas_meta_payload_from_atlas_items(&[])?;
+    write_binary_pack_payload(
+        &rust_dir.join("atlas.meta.bin"),
+        "neonei/atlas-meta-pack/current",
+        &atlas_meta_payload,
+    )?;
     Ok(())
 }
 

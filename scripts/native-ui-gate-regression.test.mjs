@@ -315,7 +315,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(cli.includes('pub fn as_str'), true);
   assert.equal(cli.includes('NeoNEI/Elysium runtime data compiler'), true);
   assert.equal(main.includes('mod binary;'), true);
-  assert.equal(main.includes('use binary::{'), true);
+  assert.equal(main.includes('use binary::write_binary_pack_payload;'), true);
   assert.equal(main.includes('intern_compact_string'), false);
   assert.equal(main.includes('fn write_binary_pack('), false);
   assert.equal(main.includes('fn intern_compact_string('), false);
@@ -498,6 +498,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(browserPack.includes('pub fn build_compact_group_payload_from_groups('), true);
   assert.equal(browserPack.includes('fn compile_recipe_pack('), false);
   assert.equal(browserPack.includes('fn compile_ui_pack('), false);
+  assert.equal(main.includes('fn compile_dist_texture_pack('), false);
   assert.equal(main.includes('fn build_compact_texture_payload_from_atlas_items('), false);
   assert.equal(main.includes('fn build_compact_animation_payload_from_table('), false);
   assert.equal(main.includes('fn build_compact_atlas_meta_payload_from_atlas_items('), false);
@@ -508,6 +509,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(texturePack.includes('pub fn build_compact_texture_payload_from_atlas_items('), true);
   assert.equal(texturePack.includes('pub fn build_compact_animation_payload_from_table('), true);
   assert.equal(texturePack.includes('pub fn build_compact_atlas_meta_payload_from_atlas_items('), true);
+  assert.equal(texturePack.includes('pub fn compile_dist_texture_pack('), true);
   assert.equal(texturePack.includes('pub fn copy_runtime_atlas_assets('), true);
   assert.equal(texturePack.includes('pub fn normalize_runtime_atlas_file_path('), true);
   assert.equal(texturePack.includes('pub fn normalize_timeline('), true);
