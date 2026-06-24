@@ -283,6 +283,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const reports = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/reports.rs'), 'utf8');
   const runtime = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/runtime.rs'), 'utf8');
   const text = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/text.rs'), 'utf8');
+  const textureAnimation = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/texture_animation.rs'), 'utf8');
   const uiTemplates = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/ui_templates.rs'), 'utf8');
   const packsMod = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs.rs'), 'utf8');
   const searchPack = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/search.rs'), 'utf8');
@@ -452,6 +453,16 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(text.includes('pub fn normalize_search_terms'), true);
   assert.equal(text.includes('pub fn build_pinyin_fields('), true);
   assert.equal(text.includes('use pinyin::ToPinyin;'), true);
+  assert.equal(main.includes('mod texture_animation;'), true);
+  assert.equal(main.includes('use texture_animation::{'), true);
+  assert.equal(main.includes('fn expected_animated_item('), false);
+  assert.equal(main.includes('fn promote_animation_facts_to_animated_atlas('), false);
+  assert.equal(main.includes('fn normalize_animation_fact_timeline('), false);
+  assert.equal(main.includes('fn expected_animation_reason('), false);
+  assert.equal(textureAnimation.includes('pub fn expected_animated_item('), true);
+  assert.equal(textureAnimation.includes('pub fn promote_animation_facts_to_animated_atlas('), true);
+  assert.equal(textureAnimation.includes('fn normalize_animation_fact_timeline('), true);
+  assert.equal(textureAnimation.includes('pub fn expected_animation_reason('), true);
   assert.equal(main.includes('mod ui_templates;'), true);
   assert.equal(main.includes('use ui_templates::{'), true);
   assert.equal(main.includes('fn ui_template_catalog_templates('), false);
