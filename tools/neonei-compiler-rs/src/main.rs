@@ -8,6 +8,7 @@ mod manifest;
 mod native_ui_report;
 mod packs;
 mod raw_export;
+mod recipe_ui_payload;
 mod reports;
 mod runtime;
 mod text;
@@ -43,13 +44,15 @@ use packs::ui::{
     build_compact_ui_template_payload,
 };
 use raw_export::summarize_raw_export;
+use recipe_ui_payload::{
+    encode_recipe_file_name, rust_recipe_ui_payload_relative_path, RecipeUiPayloadShardWriters,
+};
 use reports::{summarize_runtime_output, write_report, CompilerReport};
 use runtime::compile_runtime_reports;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
-use std::fs::{self, File};
-use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::path::Path;
 use std::time::Instant;
 use text::{build_pinyin_fields, normalize_search_terms, normalize_text};
 use validation::{
@@ -1780,157 +1783,6 @@ fn normalize_recipe_category_name(value: &str) -> String {
         stripped.push(character);
     }
     normalize_text(&stripped)
-}
-
-fn encode_recipe_file_name(value: &str) -> String {
-    value
-        .chars()
-        .map(|character| match character {
-            'a'..='z' | 'A'..='Z' | '0'..='9' | '-' | '_' | '.' | '~' => character,
-            _ => '_',
-        })
-        .collect()
-}
-
-fn rust_recipe_ui_payload_relative_path(recipe_id: &str) -> String {
-    let shard = sha1_hex_prefix(recipe_id.as_bytes(), 2);
-    format!("recipes/ui-payload-shards/{shard}.json")
-}
-
-struct RecipeUiPayloadShardWriter {
-    writer: BufWriter<File>,
-    first_payload: bool,
-}
-
-struct RecipeUiPayloadShardWriters {
-    output: PathBuf,
-    writers: BTreeMap<String, RecipeUiPayloadShardWriter>,
-}
-
-impl RecipeUiPayloadShardWriters {
-    fn new(output: &Path) -> Result<Self> {
-        fs::create_dir_all(output.join("recipes").join("ui-payload-shards"))?;
-        Ok(Self {
-            output: output.to_path_buf(),
-            writers: BTreeMap::new(),
-        })
-    }
-
-    fn write_payload(&mut self, recipe_id: &str, payload: &Value) -> Result<()> {
-        let shard_path = rust_recipe_ui_payload_relative_path(recipe_id);
-        if !self.writers.contains_key(&shard_path) {
-            let absolute_path = self.output.join(&shard_path);
-            if let Some(parent) = absolute_path.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            let file = File::create(&absolute_path).with_context(|| {
-                format!("create recipe UI payload shard {}", absolute_path.display())
-            })?;
-            let mut writer = BufWriter::new(file);
-            writer.write_all(
-                b"{\n  \"schemaVersion\": \"neonei/recipe-ui-payload-shard/v1\",\n  \"payloads\": {",
-            )?;
-            self.writers.insert(
-                shard_path.clone(),
-                RecipeUiPayloadShardWriter {
-                    writer,
-                    first_payload: true,
-                },
-            );
-        }
-        let shard = self
-            .writers
-            .get_mut(&shard_path)
-            .ok_or_else(|| anyhow!("recipe UI payload shard writer disappeared: {shard_path}"))?;
-        if shard.first_payload {
-            shard.writer.write_all(b"\n")?;
-            shard.first_payload = false;
-        } else {
-            shard.writer.write_all(b",\n")?;
-        }
-        write!(shard.writer, "    {}: ", serde_json::to_string(recipe_id)?)?;
-        serde_json::to_writer(&mut shard.writer, payload)?;
-        Ok(())
-    }
-
-    fn finish(self) -> Result<()> {
-        for (shard_path, mut shard) in self.writers {
-            if shard.first_payload {
-                shard.writer.write_all(b"\n")?;
-            }
-            shard.writer.write_all(b"  }\n}\n")?;
-            shard
-                .writer
-                .flush()
-                .with_context(|| format!("flush recipe UI payload shard {shard_path}"))?;
-        }
-        Ok(())
-    }
-}
-
-fn sha1_hex_prefix(bytes: &[u8], hex_len: usize) -> String {
-    let mut h0: u32 = 0x6745_2301;
-    let mut h1: u32 = 0xefcd_ab89;
-    let mut h2: u32 = 0x98ba_dcfe;
-    let mut h3: u32 = 0x1032_5476;
-    let mut h4: u32 = 0xc3d2_e1f0;
-
-    let bit_len = (bytes.len() as u64).wrapping_mul(8);
-    let mut message = bytes.to_vec();
-    message.push(0x80);
-    while message.len() % 64 != 56 {
-        message.push(0);
-    }
-    message.extend_from_slice(&bit_len.to_be_bytes());
-
-    for chunk in message.chunks_exact(64) {
-        let mut w = [0u32; 80];
-        for (index, word) in w.iter_mut().take(16).enumerate() {
-            let offset = index * 4;
-            *word = u32::from_be_bytes([
-                chunk[offset],
-                chunk[offset + 1],
-                chunk[offset + 2],
-                chunk[offset + 3],
-            ]);
-        }
-        for index in 16..80 {
-            w[index] = (w[index - 3] ^ w[index - 8] ^ w[index - 14] ^ w[index - 16]).rotate_left(1);
-        }
-
-        let mut a = h0;
-        let mut b = h1;
-        let mut c = h2;
-        let mut d = h3;
-        let mut e = h4;
-        for (index, word) in w.iter().enumerate() {
-            let (f, k) = match index {
-                0..=19 => ((b & c) | ((!b) & d), 0x5a82_7999),
-                20..=39 => (b ^ c ^ d, 0x6ed9_eba1),
-                40..=59 => ((b & c) | (b & d) | (c & d), 0x8f1b_bcdc),
-                _ => (b ^ c ^ d, 0xca62_c1d6),
-            };
-            let temp = a
-                .rotate_left(5)
-                .wrapping_add(f)
-                .wrapping_add(e)
-                .wrapping_add(k)
-                .wrapping_add(*word);
-            e = d;
-            d = c;
-            c = b.rotate_left(30);
-            b = a;
-            a = temp;
-        }
-        h0 = h0.wrapping_add(a);
-        h1 = h1.wrapping_add(b);
-        h2 = h2.wrapping_add(c);
-        h3 = h3.wrapping_add(d);
-        h4 = h4.wrapping_add(e);
-    }
-
-    let hex = format!("{h0:08x}{h1:08x}{h2:08x}{h3:08x}{h4:08x}");
-    hex.chars().take(hex_len).collect()
 }
 
 fn classify_recipe_family_key(recipe: &Value, fallback: &str, handler: Option<&Value>) -> String {

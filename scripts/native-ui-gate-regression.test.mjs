@@ -275,6 +275,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const jsonExt = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/json_ext.rs'), 'utf8');
   const manifest = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/manifest.rs'), 'utf8');
   const nativeUiReport = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/native_ui_report.rs'), 'utf8');
+  const recipeUiPayload = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/recipe_ui_payload.rs'), 'utf8');
   const rawExport = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/raw_export.rs'), 'utf8');
   const validation = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/validation.rs'), 'utf8');
   const reports = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/reports.rs'), 'utf8');
@@ -401,7 +402,14 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('fn runtime_id_from_integrity('), false);
   assert.equal(main.includes('fn rust_entrypoints_from_integrity('), false);
   assert.equal(main.includes('fn rust_capabilities('), false);
-  assert.equal(main.includes('sha1_hex_prefix('), true);
+  assert.equal(main.includes('mod recipe_ui_payload;'), true);
+  assert.equal(main.includes('use recipe_ui_payload::{'), true);
+  assert.equal(main.includes('fn rust_recipe_ui_payload_relative_path('), false);
+  assert.equal(main.includes('fn sha1_hex_prefix('), false);
+  assert.equal(main.includes('struct RecipeUiPayloadShardWriters'), false);
+  assert.equal(recipeUiPayload.includes('pub fn rust_recipe_ui_payload_relative_path('), true);
+  assert.equal(recipeUiPayload.includes('pub fn sha1_hex_prefix('), true);
+  assert.equal(recipeUiPayload.includes('pub struct RecipeUiPayloadShardWriters'), true);
   assert.equal(runtime.includes('pub fn is_text_runtime_artifact('), true);
   assert.equal(runtime.includes('pub fn rust_manifest_file_entries('), true);
   assert.equal(runtime.includes('pub fn runtime_id_from_integrity('), true);
