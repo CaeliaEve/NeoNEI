@@ -16,8 +16,8 @@ use binary::{write_binary_pack, write_binary_pack_payload};
 use cli::{Cli, Command, CompileScope};
 use io::{normalize_path, write_json_value};
 use json_ext::{
-    first_non_empty, nested_value_string, numeric_value_u64, numeric_value_u64_lossy,
-    optional_value_string, optional_value_u64, value_i64, value_string, value_u64,
+    first_non_empty, nested_value_string, numeric_value_u64_lossy, optional_value_string,
+    optional_value_u64, value_i64, value_string, value_u64,
 };
 use manifest::{
     portable_relative_path, read_json_collection, read_jsonl_file_values, read_jsonl_values,
@@ -52,7 +52,10 @@ use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 use text::{build_pinyin_fields, normalize_search_terms, normalize_text};
-use validation::compile_semantic_validation_report;
+use validation::{
+    compile_semantic_validation_report, validate_atlas_bounds, validate_atlas_ref,
+    validate_frame_bounds,
+};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -3078,97 +3081,6 @@ fn purge_debug_json_artifacts(output: &Path) -> Result<()> {
         })?;
     }
     Ok(())
-}
-
-fn validate_atlas_ref(item_id: &str, atlas: Option<&Value>, missing_refs: &mut Vec<String>) {
-    let Some(atlas) = atlas else {
-        missing_refs.push(format!("{item_id}:missing-atlas-object"));
-        return;
-    };
-    if atlas
-        .get("atlasFile")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .unwrap_or_default()
-        .is_empty()
-    {
-        missing_refs.push(format!("{item_id}:missing-atlas-file"));
-    }
-}
-
-fn validate_atlas_bounds(
-    item_id: &str,
-    atlas_kind: &str,
-    atlas: Option<&Value>,
-    invalid_bounds: &mut Vec<String>,
-) {
-    let Some(atlas) = atlas else {
-        return;
-    };
-    let has_rect = ["x", "y", "width", "height"]
-        .iter()
-        .any(|key| atlas.get(*key).is_some());
-    if !has_rect && atlas_kind == "animated" {
-        return;
-    }
-    let atlas_width = value_u64(atlas, "atlasWidth").unwrap_or(0);
-    let atlas_height = value_u64(atlas, "atlasHeight").unwrap_or(0);
-    let x = value_u64(atlas, "x").unwrap_or(0);
-    let y = value_u64(atlas, "y").unwrap_or(0);
-    let width = value_u64(atlas, "width").unwrap_or(0);
-    let height = value_u64(atlas, "height").unwrap_or(0);
-    if width == 0
-        || height == 0
-        || (atlas_width > 0 && x.saturating_add(width) > atlas_width)
-        || (atlas_height > 0 && y.saturating_add(height) > atlas_height)
-    {
-        invalid_bounds.push(format!("{item_id}:{atlas_kind}:out-of-bounds"));
-    }
-}
-
-fn validate_frame_bounds(item_id: &str, atlas: Option<&Value>, invalid_bounds: &mut Vec<String>) {
-    let Some(atlas) = atlas else {
-        return;
-    };
-    let atlas_width = value_u64(atlas, "atlasWidth").unwrap_or(0);
-    let atlas_height = value_u64(atlas, "atlasHeight").unwrap_or(0);
-    let Some(frames) = atlas.get("frames").and_then(Value::as_array) else {
-        return;
-    };
-    for (index, frame) in frames.iter().enumerate() {
-        let bounds = if let Some(values) = frame.as_array() {
-            if values.len() < 5 {
-                invalid_bounds.push(format!("{item_id}:frame-{index}:short"));
-                continue;
-            }
-            Some((
-                values.get(1).and_then(numeric_value_u64).unwrap_or(0),
-                values.get(2).and_then(numeric_value_u64).unwrap_or(0),
-                values.get(3).and_then(numeric_value_u64).unwrap_or(0),
-                values.get(4).and_then(numeric_value_u64).unwrap_or(0),
-            ))
-        } else if frame.is_object() {
-            Some((
-                value_u64(frame, "x").unwrap_or(0),
-                value_u64(frame, "y").unwrap_or(0),
-                value_u64(frame, "width").unwrap_or(0),
-                value_u64(frame, "height").unwrap_or(0),
-            ))
-        } else {
-            invalid_bounds.push(format!("{item_id}:frame-{index}:unsupported-shape"));
-            None
-        };
-        let Some((x, y, width, height)) = bounds else {
-            continue;
-        };
-        if width == 0
-            || height == 0
-            || (atlas_width > 0 && x + width > atlas_width)
-            || (atlas_height > 0 && y + height > atlas_height)
-        {
-            invalid_bounds.push(format!("{item_id}:frame-{index}:out-of-bounds"));
-        }
-    }
 }
 
 #[cfg(test)]

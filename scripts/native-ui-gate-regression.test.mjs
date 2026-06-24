@@ -480,8 +480,14 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(rawExport.includes('fn read_zero_recipe_diagnostics('), true);
   assert.equal(rawExport.includes('pub fn zero_recipe_diagnostics_from_value('), true);
   assert.equal(main.includes('mod validation;'), true);
-  assert.equal(main.includes('use validation::compile_semantic_validation_report;'), true);
+  assert.equal(main.includes('use validation::{'), true);
   assert.equal(main.includes('fn compile_semantic_validation_report('), false);
+  assert.equal(main.includes('fn validate_atlas_ref('), false);
+  assert.equal(main.includes('fn validate_atlas_bounds('), false);
+  assert.equal(main.includes('fn validate_frame_bounds('), false);
   assert.equal(validation.includes('pub fn compile_semantic_validation_report('), true);
+  assert.equal(validation.includes('pub fn validate_atlas_ref('), true);
+  assert.equal(validation.includes('pub fn validate_atlas_bounds('), true);
+  assert.equal(validation.includes('pub fn validate_frame_bounds('), true);
   assert.equal(rawExport.includes('use crate::manifest::{count_jsonl_rows, resolve_manifest_path, RawManifest};'), true);
 });
