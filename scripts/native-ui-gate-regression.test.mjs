@@ -299,7 +299,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(finalizer.includes('--compiler <path>'), true);
   assert.equal(finalizer.includes('compiler: compilerCommand'), true);
   assert.equal(main.includes('mod atlas_repair;'), true);
-  assert.equal(main.includes('use atlas_repair::{'), true);
+  assert.equal(main.includes('use atlas_repair::select_group_representative;'), true);
   assert.equal(main.includes('fn repaired_browser_atlas('), false);
   assert.equal(main.includes('fn select_group_representative('), false);
   assert.equal(main.includes('fn atlas_drawable_score('), false);
@@ -454,7 +454,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(runtime.includes('use crate::cli::CompileScope;'), true);
   assert.equal(runtime.includes('use crate::native_ui_report::{compile_native_ui_layout_report, CapturedUiFamilyKeyFn};'), true);
   assert.equal(main.includes('mod text;'), true);
-  assert.equal(main.includes('use text::{build_pinyin_fields, normalize_search_terms, normalize_text};'), true);
+  assert.equal(main.includes('use text::{build_pinyin_fields, normalize_search_terms, normalize_text};'), false);
+  assert.equal(browserPack.includes('use crate::text::{build_pinyin_fields, normalize_search_terms, normalize_text};'), true);
   assert.equal(main.includes('fn normalize_text('), false);
   assert.equal(main.includes('fn normalize_search_terms'), false);
   assert.equal(main.includes('fn build_pinyin_fields('), false);
@@ -494,10 +495,12 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(searchPack.includes('fn compile_recipe_pack('), false);
   assert.equal(searchPack.includes('fn compile_ui_pack('), false);
   assert.equal(searchPack.includes('fn compile_dist_browser_pack('), false);
+  assert.equal(main.includes('fn compile_browser_pack('), false);
   assert.equal(main.includes('fn compile_dist_browser_pack('), false);
   assert.equal(main.includes('fn build_compact_browser_payload_from_items('), false);
   assert.equal(main.includes('fn build_compact_group_payload_from_groups('), false);
   assert.equal(packsMod.includes('pub mod browser;'), true);
+  assert.equal(browserPack.includes('pub fn compile_browser_pack('), true);
   assert.equal(browserPack.includes('pub fn compile_dist_browser_pack('), true);
   assert.equal(browserPack.includes('pub fn build_compact_browser_payload_from_items('), true);
   assert.equal(browserPack.includes('pub fn build_compact_group_payload_from_groups('), true);
