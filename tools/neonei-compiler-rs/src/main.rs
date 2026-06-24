@@ -9,6 +9,7 @@ mod native_ui_report;
 mod raw_export;
 mod reports;
 mod runtime;
+mod text;
 use binary::{push_i32, push_u32, write_binary_pack, write_binary_pack_payload};
 use cli::{Cli, Command, CompileScope};
 use io::{normalize_path, write_json_value};
@@ -21,7 +22,6 @@ use manifest::{
     read_manifest, read_manifest_json, read_optional_manifest_json, runtime_file_descriptors,
     RawManifest,
 };
-use pinyin::ToPinyin;
 use raw_export::summarize_raw_export;
 use reports::{summarize_runtime_output, write_report, CompilerReport};
 use runtime::compile_runtime_reports;
@@ -31,6 +31,7 @@ use std::fs::{self, File};
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+use text::{build_pinyin_fields, normalize_search_terms, normalize_text};
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
@@ -4772,47 +4773,6 @@ fn normalize_timeline(animated_atlas: Option<&Value>, fallback_duration_ms: Opti
             })
             .collect(),
     )
-}
-
-fn normalize_text(value: &str) -> String {
-    value
-        .to_lowercase()
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn normalize_search_terms<'a>(values: impl Iterator<Item = &'a str>) -> String {
-    let mut terms = values
-        .flat_map(|value| {
-            normalize_text(value)
-                .split(' ')
-                .map(str::to_string)
-                .collect::<Vec<_>>()
-        })
-        .filter(|value| !value.trim().is_empty())
-        .collect::<Vec<_>>();
-    terms.sort();
-    terms.dedup();
-    terms.join(" ")
-}
-
-fn build_pinyin_fields(localized_name: &str) -> (String, String) {
-    let syllables = localized_name
-        .chars()
-        .filter_map(|character| {
-            character
-                .to_pinyin()
-                .map(|pinyin| pinyin.plain().to_string())
-        })
-        .filter(|value| !value.trim().is_empty())
-        .collect::<Vec<_>>();
-    let full = syllables.join("");
-    let acronym = syllables
-        .iter()
-        .filter_map(|part| part.chars().next())
-        .collect::<String>();
-    (full, acronym)
 }
 
 #[cfg(test)]

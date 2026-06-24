@@ -278,6 +278,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const rawExport = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/raw_export.rs'), 'utf8');
   const reports = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/reports.rs'), 'utf8');
   const runtime = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/runtime.rs'), 'utf8');
+  const text = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/text.rs'), 'utf8');
   assert.equal(finalizer.includes("readArg('--compiler') ?? process.env.NEONEI_COMPILER_BIN"), true);
   assert.equal(finalizer.includes("mode: 'external-binary'"), true);
   assert.equal(finalizer.includes('elysium compiler strict compile'), true);
@@ -401,6 +402,15 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(runtime.includes('captured_ui_family_key: CapturedUiFamilyKeyFn'), true);
   assert.equal(runtime.includes('use crate::cli::CompileScope;'), true);
   assert.equal(runtime.includes('use crate::native_ui_report::{compile_native_ui_layout_report, CapturedUiFamilyKeyFn};'), true);
+  assert.equal(main.includes('mod text;'), true);
+  assert.equal(main.includes('use text::{build_pinyin_fields, normalize_search_terms, normalize_text};'), true);
+  assert.equal(main.includes('fn normalize_text('), false);
+  assert.equal(main.includes('fn normalize_search_terms'), false);
+  assert.equal(main.includes('fn build_pinyin_fields('), false);
+  assert.equal(text.includes('pub fn normalize_text('), true);
+  assert.equal(text.includes('pub fn normalize_search_terms'), true);
+  assert.equal(text.includes('pub fn build_pinyin_fields('), true);
+  assert.equal(text.includes('use pinyin::ToPinyin;'), true);
   assert.equal(main.includes('mod raw_export;'), true);
   assert.equal(main.includes('use raw_export::summarize_raw_export;'), true);
   assert.equal(main.includes('fn summarize_raw_export('), false);
