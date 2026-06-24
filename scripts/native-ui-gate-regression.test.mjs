@@ -284,6 +284,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const browserPack = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/browser.rs'), 'utf8');
   const texturePack = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/texture.rs'), 'utf8');
   const recipePack = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/recipe.rs'), 'utf8');
+  const uiPack = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/ui.rs'), 'utf8');
   assert.equal(finalizer.includes("readArg('--compiler') ?? process.env.NEONEI_COMPILER_BIN"), true);
   assert.equal(finalizer.includes("mode: 'external-binary'"), true);
   assert.equal(finalizer.includes('elysium compiler strict compile'), true);
@@ -301,7 +302,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(cli.includes('NeoNEI/Elysium runtime data compiler'), true);
   assert.equal(main.includes('mod binary;'), true);
   assert.equal(main.includes('use binary::{'), true);
-  assert.equal(main.includes('intern_compact_string'), true);
+  assert.equal(main.includes('intern_compact_string'), false);
   assert.equal(main.includes('fn write_binary_pack('), false);
   assert.equal(main.includes('fn intern_compact_string('), false);
   assert.equal(binary.includes('pub fn write_binary_pack('), true);
@@ -458,6 +459,16 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(recipePack.includes('pub fn build_compact_recipe_payload_from_pack('), true);
   assert.equal(recipePack.includes('fn compile_recipe_pack('), false);
   assert.equal(recipePack.includes('fn compile_ui_pack('), false);
+  assert.equal(main.includes('fn build_compact_ui_template_payload('), false);
+  assert.equal(main.includes('fn build_compact_ui_binding_payload('), false);
+  assert.equal(main.includes('fn build_compact_ui_string_payload('), false);
+  assert.equal(main.includes('fn push_compact_ui_rect('), false);
+  assert.equal(packsMod.includes('pub mod ui;'), true);
+  assert.equal(uiPack.includes('pub fn build_compact_ui_template_payload('), true);
+  assert.equal(uiPack.includes('pub fn build_compact_ui_binding_payload('), true);
+  assert.equal(uiPack.includes('pub fn build_compact_ui_string_payload('), true);
+  assert.equal(uiPack.includes('fn push_compact_ui_rect('), true);
+  assert.equal(uiPack.includes('fn compile_recipe_pack('), false);
   assert.equal(main.includes('mod raw_export;'), true);
   assert.equal(main.includes('use raw_export::summarize_raw_export;'), true);
   assert.equal(main.includes('fn summarize_raw_export('), false);
