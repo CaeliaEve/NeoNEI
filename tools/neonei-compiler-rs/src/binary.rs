@@ -1,4 +1,4 @@
-﻿use anyhow::{Context, Result};
+use anyhow::{Context, Result};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -26,4 +26,19 @@ pub fn write_binary_pack_payload(path: &Path, schema: &str, payload: &[u8]) -> R
     bytes.extend_from_slice(schema_bytes);
     bytes.extend_from_slice(payload);
     fs::write(path, bytes).with_context(|| format!("write {}", path.display()))
+}
+
+pub fn intern_compact_string(
+    strings: &mut Vec<String>,
+    refs: &mut std::collections::HashMap<String, u32>,
+    value: Option<String>,
+) -> u32 {
+    let normalized = value.unwrap_or_default();
+    if let Some(existing) = refs.get(&normalized) {
+        return *existing;
+    }
+    let next = strings.len() as u32;
+    strings.push(normalized.clone());
+    refs.insert(normalized, next);
+    next
 }

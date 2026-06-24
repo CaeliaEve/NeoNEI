@@ -295,12 +295,15 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(cli.includes('pub fn as_str'), true);
   assert.equal(cli.includes('NeoNEI/Elysium runtime data compiler'), true);
   assert.equal(main.includes('mod binary;'), true);
-  assert.equal(main.includes('use binary::{push_i32, push_u32, write_binary_pack, write_binary_pack_payload};'), true);
+  assert.equal(main.includes('use binary::{'), true);
+  assert.equal(main.includes('intern_compact_string'), true);
   assert.equal(main.includes('fn write_binary_pack('), false);
+  assert.equal(main.includes('fn intern_compact_string('), false);
   assert.equal(binary.includes('pub fn write_binary_pack('), true);
   assert.equal(binary.includes('pub fn write_binary_pack_payload('), true);
   assert.equal(binary.includes('pub fn push_u32('), true);
   assert.equal(binary.includes('pub fn push_i32('), true);
+  assert.equal(binary.includes('pub fn intern_compact_string('), true);
   assert.equal(main.includes('mod io;'), true);
   assert.equal(main.includes('use io::{normalize_path, write_json_value};'), true);
   assert.equal(main.includes('fn sha256_file('), false);

@@ -10,7 +10,9 @@ mod raw_export;
 mod reports;
 mod runtime;
 mod text;
-use binary::{push_i32, push_u32, write_binary_pack, write_binary_pack_payload};
+use binary::{
+    intern_compact_string, push_i32, push_u32, write_binary_pack, write_binary_pack_payload,
+};
 use cli::{Cli, Command, CompileScope};
 use io::{normalize_path, write_json_value};
 use json_ext::{
@@ -585,21 +587,6 @@ fn compile_search_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
         &string_pack,
     )?;
     Ok(())
-}
-
-fn intern_compact_string(
-    strings: &mut Vec<String>,
-    refs: &mut HashMap<String, u32>,
-    value: Option<String>,
-) -> u32 {
-    let normalized = value.unwrap_or_default();
-    if let Some(existing) = refs.get(&normalized) {
-        return *existing;
-    }
-    let next = strings.len() as u32;
-    strings.push(normalized.clone());
-    refs.insert(normalized, next);
-    next
 }
 
 fn build_compact_browser_payload(input: &Path, manifest: &RawManifest) -> Result<Vec<u8>> {
