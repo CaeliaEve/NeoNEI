@@ -416,9 +416,13 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('fn rust_capabilities('), false);
   assert.equal(main.includes('mod recipe_ui_payload;'), true);
   assert.equal(main.includes('use recipe_ui_payload::{'), true);
+  assert.equal(main.includes('fn read_compiled_recipe_ui_payload_index('), false);
+  assert.equal(main.includes('fn build_raw_recipe_ui_payload_index('), false);
   assert.equal(main.includes('fn rust_recipe_ui_payload_relative_path('), false);
   assert.equal(main.includes('fn sha1_hex_prefix('), false);
   assert.equal(main.includes('struct RecipeUiPayloadShardWriters'), false);
+  assert.equal(recipeUiPayload.includes('pub fn read_compiled_recipe_ui_payload_index('), true);
+  assert.equal(recipeUiPayload.includes('pub fn build_raw_recipe_ui_payload_index('), true);
   assert.equal(recipeUiPayload.includes('pub fn rust_recipe_ui_payload_relative_path('), true);
   assert.equal(recipeUiPayload.includes('pub fn sha1_hex_prefix('), true);
   assert.equal(recipeUiPayload.includes('pub struct RecipeUiPayloadShardWriters'), true);
