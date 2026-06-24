@@ -21,14 +21,10 @@ use manifest::{
     read_manifest, read_manifest_json, read_optional_manifest_json, resolve_manifest_path,
     RawManifest,
 };
-use native_ui_report::compile_native_ui_layout_report;
 use pinyin::ToPinyin;
 use raw_export::summarize_raw_export;
 use reports::{summarize_runtime_output, write_report, CompilerReport};
-use runtime::{
-    is_text_runtime_artifact, runtime_id_from_integrity, rust_capabilities,
-    rust_entrypoints_from_integrity, rust_manifest_file_entries,
-};
+use runtime::compile_runtime_reports;
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs::{self, File};
@@ -84,7 +80,7 @@ fn main() -> Result<()> {
                 }
             }
             compile_semantic_validation_report(&input, &output)?;
-            compile_runtime_reports(&output, scope, strict, debug_json)?;
+            compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?;
             run_baseline(&input, Some(&output), &report, strict)
         }
     }
@@ -4596,311 +4592,6 @@ fn compile_semantic_validation_report(input: &Path, output: &Path) -> Result<()>
     )
 }
 
-fn compile_runtime_reports(
-    output: &Path,
-    scope: CompileScope,
-    strict: bool,
-    debug_json: bool,
-) -> Result<()> {
-    let rust_dir = output.join("rust");
-    fs::create_dir_all(&rust_dir)?;
-    compile_native_ui_layout_report(output, captured_ui_family_key)?;
-
-    let mut artifact_names = match scope {
-        CompileScope::All => vec![
-            "browser.bin",
-            "groups.bin",
-            "search.bin",
-            "recipes.bin",
-            "textures.bin",
-            "atlas.meta.bin",
-            "animations.bin",
-            "strings.zh_cn.bin",
-            "missing-texture-report.json",
-            "suspicious-texture-report.json",
-            "semantic-validation-report.json",
-            "recipe-handler-metadata-report.json",
-            "recipe-fragmentation-report.json",
-            "native-ui-layout-report.json",
-            "ui-pack/ui_templates.bin",
-            "ui-pack/ui_bindings.bin",
-            "ui-pack/ui_strings.bin",
-            "ui-pack/ui_assets.manifest.json",
-            "ui-pack/ui_pack_report.json",
-        ],
-        CompileScope::NativeUi => vec![
-            "browser.bin",
-            "groups.bin",
-            "search.bin",
-            "recipes.bin",
-            "strings.zh_cn.bin",
-            "semantic-validation-report.json",
-            "recipe-handler-metadata-report.json",
-            "recipe-fragmentation-report.json",
-            "native-ui-layout-report.json",
-            "ui-pack/ui_templates.bin",
-            "ui-pack/ui_bindings.bin",
-            "ui-pack/ui_strings.bin",
-            "ui-pack/ui_assets.manifest.json",
-            "ui-pack/ui_pack_report.json",
-        ],
-        CompileScope::Search => vec![
-            "search.bin",
-            "strings.zh_cn.bin",
-            "semantic-validation-report.json",
-        ],
-        CompileScope::Browser => vec![
-            "browser.bin",
-            "groups.bin",
-            "search.bin",
-            "strings.zh_cn.bin",
-            "semantic-validation-report.json",
-        ],
-        CompileScope::Recipes => vec![
-            "recipes.bin",
-            "semantic-validation-report.json",
-            "recipe-handler-metadata-report.json",
-            "recipe-fragmentation-report.json",
-            "native-ui-layout-report.json",
-        ],
-        CompileScope::Ui => vec![
-            "semantic-validation-report.json",
-            "ui-pack/ui_templates.bin",
-            "ui-pack/ui_bindings.bin",
-            "ui-pack/ui_strings.bin",
-            "ui-pack/ui_assets.manifest.json",
-            "ui-pack/ui_pack_report.json",
-        ],
-        CompileScope::Textures => vec![
-            "textures.bin",
-            "atlas.meta.bin",
-            "animations.bin",
-            "missing-texture-report.json",
-            "suspicious-texture-report.json",
-            "semantic-validation-report.json",
-        ],
-    };
-    if debug_json {
-        match scope {
-            CompileScope::All => artifact_names.extend([
-                "browser-pack.json",
-                "search-pack.json",
-                "recipe-pack.json",
-                "texture-pack.json",
-            ]),
-            CompileScope::NativeUi => {
-                artifact_names.extend(["browser-pack.json", "search-pack.json", "recipe-pack.json"])
-            }
-            CompileScope::Search => artifact_names.push("search-pack.json"),
-            CompileScope::Browser => {
-                artifact_names.extend(["browser-pack.json", "search-pack.json"])
-            }
-            CompileScope::Recipes => artifact_names.push("recipe-pack.json"),
-            CompileScope::Ui => {}
-            CompileScope::Textures => artifact_names.push("texture-pack.json"),
-        }
-    }
-    if !matches!(scope, CompileScope::All) {
-        for artifact_name in [
-            "browser.bin",
-            "groups.bin",
-            "search.bin",
-            "recipes.bin",
-            "textures.bin",
-            "atlas.meta.bin",
-            "animations.bin",
-            "strings.zh_cn.bin",
-            "ui-pack/ui_templates.bin",
-            "ui-pack/ui_bindings.bin",
-            "ui-pack/ui_strings.bin",
-            "native-ui-layout-report.json",
-        ] {
-            if !artifact_names.contains(&artifact_name) && rust_dir.join(artifact_name).exists() {
-                artifact_names.push(artifact_name);
-            }
-        }
-    }
-    let mut files = Vec::new();
-    let mut integrity = BTreeMap::new();
-    let mut sizes = BTreeMap::new();
-    let mut missing = Vec::new();
-    let mut path_violations = Vec::new();
-
-    for artifact_name in artifact_names {
-        let path = rust_dir.join(artifact_name);
-        let relative = format!("rust/{artifact_name}");
-        if !path.exists() {
-            missing.push(relative.clone());
-            continue;
-        }
-        let hash = sha256_file(&path)?;
-        let size = path.metadata()?.len();
-        integrity.insert(relative.clone(), hash);
-        sizes.insert(relative.clone(), size);
-        files.push(json!({
-            "path": relative,
-            "bytes": size,
-        }));
-    }
-
-    let should_hash_texture_assets = matches!(scope, CompileScope::All | CompileScope::Textures);
-    let texture_asset_dir = output.join("textures");
-    if should_hash_texture_assets && texture_asset_dir.exists() {
-        for entry in walkdir::WalkDir::new(&texture_asset_dir)
-            .into_iter()
-            .filter_map(Result::ok)
-            .filter(|entry| entry.file_type().is_file())
-        {
-            let path = entry.path();
-            let relative_path = path
-                .strip_prefix(output)
-                .unwrap_or(path)
-                .to_string_lossy()
-                .replace('\\', "/");
-            let hash = sha256_file(path)?;
-            let size = path.metadata()?.len();
-            integrity.insert(relative_path.clone(), hash);
-            sizes.insert(relative_path.clone(), size);
-            files.push(json!({
-                "path": relative_path,
-                "bytes": size,
-            }));
-        }
-    }
-
-    for entry in walkdir::WalkDir::new(&rust_dir)
-        .into_iter()
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_file())
-        .filter(|entry| is_text_runtime_artifact(entry.path()))
-    {
-        let path = entry.path();
-        let text = fs::read_to_string(path).unwrap_or_default();
-        for needle in ["E:\\", "C:\\", "\\\\", "file://"] {
-            if text.contains(needle) {
-                path_violations.push(format!("{} contains {}", normalize_path(path), needle));
-            }
-        }
-    }
-
-    if strict && (!missing.is_empty() || !path_violations.is_empty()) {
-        return Err(anyhow!(
-            "runtime report blocked: missing={}, path violations={}",
-            missing.len(),
-            path_violations.len()
-        ));
-    }
-
-    let total_bytes = sizes.values().sum::<u64>();
-    let runtime_id = runtime_id_from_integrity(&integrity);
-    let generated_at = "deterministic-rust-compiler";
-    let capabilities = rust_capabilities(scope);
-    write_json_value(
-        &rust_dir.join("runtime-manifest.json"),
-        &json!({
-            "schema": "neonei/runtime/current",
-            "schemaVersion": "neonei/rust-runtime-manifest/current",
-            "schemaRevision": 1,
-            "runtimeId": runtime_id,
-            "generatedAt": generated_at,
-            "capabilities": capabilities,
-            "files": files,
-            "compileScope": scope.as_str(),
-            "entrypoints": rust_entrypoints_from_integrity(&integrity),
-            "pathPolicy": {
-                "portableRelativePathsOnly": true,
-                "absolutePathsAllowed": false,
-                "windowsPathsAllowed": false,
-            },
-        }),
-    )?;
-    write_json_value(
-        &rust_dir.join("integrity.json"),
-        &json!({
-            "schemaVersion": "neonei/rust-integrity/current",
-            "algorithm": "sha256",
-            "files": integrity,
-        }),
-    )?;
-    write_json_value(
-        &rust_dir.join("size-report.json"),
-        &json!({
-            "schemaVersion": "neonei/rust-size-report/current",
-            "totalBytes": total_bytes,
-            "files": sizes,
-        }),
-    )?;
-    write_json_value(
-        &rust_dir.join("missing-data-report.json"),
-        &json!({
-            "schemaVersion": "neonei/rust-missing-data-report/current",
-            "missingFiles": missing,
-        }),
-    )?;
-    write_json_value(
-        &rust_dir.join("migration-readiness.json"),
-        &json!({
-            "schemaVersion": "neonei/rust-migration-readiness/current",
-            "ready": missing.is_empty() && path_violations.is_empty(),
-            "checks": {
-                "requiredArtifactsPresent": missing.is_empty(),
-                "pathPortable": path_violations.is_empty(),
-                "integrityHashesGenerated": true,
-                "sizeReportGenerated": true,
-            },
-            "pathViolations": path_violations,
-        }),
-    )?;
-    write_json_value(
-        &rust_dir.join("deployment-report.json"),
-        &json!({
-            "schemaVersion": "neonei/rust-deployment-report/current",
-            "runtimeId": runtime_id,
-            "generatedAt": generated_at,
-            "compileScope": scope.as_str(),
-            "runtimeSize": {
-                "totalBytes": total_bytes,
-                "files": sizes,
-            },
-            "cache": {
-                "immutableRuntimeFiles": integrity.len(),
-                "estimatedRuntimeCacheBytes": total_bytes,
-                "cacheKeyInputs": {
-                    "runtimeId": runtime_id,
-                    "integrityAlgorithm": "sha256",
-                },
-            },
-            "missingData": {
-                "missingFiles": missing,
-                "missingFileCount": missing.len(),
-            },
-            "schema": {
-                "runtime": "neonei/runtime/current",
-                "schemaRevision": 1,
-                "capabilities": capabilities,
-            },
-            "deploymentChecks": {
-                "requiredArtifactsPresent": missing.is_empty(),
-                "pathPortable": path_violations.is_empty(),
-                "integrityHashesGenerated": true,
-                "sizeReportGenerated": true,
-                "capabilitiesGenerated": true,
-            },
-            "pathViolations": path_violations,
-        }),
-    )?;
-    update_dist_manifest_with_rust_runtime(
-        output,
-        scope,
-        debug_json,
-        &integrity,
-        &sizes,
-        &runtime_id,
-        total_bytes,
-    )?;
-    Ok(())
-}
-
 fn purge_debug_json_artifacts(output: &Path) -> Result<()> {
     let rust_dir = output.join("rust");
     for artifact_name in [
@@ -4925,79 +4616,6 @@ fn purge_debug_json_artifacts(output: &Path) -> Result<()> {
         })?;
     }
     Ok(())
-}
-
-fn update_dist_manifest_with_rust_runtime(
-    output: &Path,
-    scope: CompileScope,
-    debug_json: bool,
-    integrity: &BTreeMap<String, String>,
-    sizes: &BTreeMap<String, u64>,
-    runtime_id: &str,
-    total_bytes: u64,
-) -> Result<()> {
-    let manifest_path = output.join("manifest.json");
-    let mut manifest = if manifest_path.exists() {
-        let text = fs::read_to_string(&manifest_path)
-            .with_context(|| format!("read dist manifest {}", manifest_path.display()))?;
-        serde_json::from_str::<Value>(&text)
-            .with_context(|| format!("parse dist manifest {}", manifest_path.display()))?
-    } else {
-        json!({
-            "schemaVersion": "neonei/dist-data/current",
-            "source": "rust-compiler",
-            "files": {},
-        })
-    };
-
-    if !manifest.is_object() {
-        return Err(anyhow!(
-            "dist manifest must be a JSON object: {}",
-            manifest_path.display()
-        ));
-    }
-    if manifest.get("files").and_then(Value::as_object).is_none() {
-        manifest["files"] = json!({});
-    }
-    let files = manifest["files"]
-        .as_object_mut()
-        .ok_or_else(|| anyhow!("dist manifest files must be a JSON object"))?;
-
-    if !debug_json {
-        for key in [
-            "rustBrowserPack",
-            "rustSearchPack",
-            "rustRecipePack",
-            "rustTexturePack",
-        ] {
-            files.remove(key);
-        }
-    }
-
-    for (key, relative_path) in rust_manifest_file_entries(scope, debug_json) {
-        if integrity.contains_key(relative_path) || relative_path.ends_with("runtime-manifest.json")
-        {
-            files.insert(key.to_string(), Value::String(relative_path.to_string()));
-        }
-    }
-
-    manifest["nativeRuntime"] = json!({
-        "schemaVersion": "neonei/native-runtime-dist/current",
-        "runtimeId": runtime_id,
-        "compileScope": scope.as_str(),
-        "status": "ready",
-        "authority": "rust",
-        "runtimeManifest": "rust/runtime-manifest.json",
-        "totalBytes": total_bytes,
-        "files": sizes,
-        "hashes": integrity,
-        "pathPolicy": {
-            "portableRelativePathsOnly": true,
-            "absolutePathsAllowed": false,
-        },
-    });
-
-    write_json_value(&manifest_path, &manifest)
 }
 
 fn validate_atlas_ref(item_id: &str, atlas: Option<&Value>, missing_refs: &mut Vec<String>) {
@@ -6088,9 +5706,10 @@ mod tests {
         )
         .unwrap();
 
-        let report = compile_native_ui_layout_report(temp.path(), captured_ui_family_key)
-            .unwrap()
-            .unwrap();
+        let report =
+            native_ui_report::compile_native_ui_layout_report(temp.path(), captured_ui_family_key)
+                .unwrap()
+                .unwrap();
 
         assert_eq!(report["status"], json!("ready"));
         assert_eq!(report["counts"]["gregtechHandlerLayouts"], json!(1));
@@ -6112,7 +5731,7 @@ mod tests {
 
     #[test]
     fn production_manifest_entries_exclude_debug_json_packs() {
-        let production_entries = rust_manifest_file_entries(CompileScope::All, false)
+        let production_entries = runtime::rust_manifest_file_entries(CompileScope::All, false)
             .into_iter()
             .map(|(_, path)| path)
             .collect::<Vec<_>>();
@@ -6135,7 +5754,7 @@ mod tests {
         assert!(!production_entries.contains(&"rust/recipe-pack.json"));
         assert!(!production_entries.contains(&"rust/texture-pack.json"));
 
-        let debug_entries = rust_manifest_file_entries(CompileScope::All, true)
+        let debug_entries = runtime::rust_manifest_file_entries(CompileScope::All, true)
             .into_iter()
             .map(|(_, path)| path)
             .collect::<Vec<_>>();

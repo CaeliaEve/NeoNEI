@@ -333,8 +333,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(jsonExt.includes('pub fn numeric_value_u64('), true);
   assert.equal(jsonExt.includes('pub fn numeric_value_u64_lossy('), true);
   assert.equal(main.includes('mod native_ui_report;'), true);
-  assert.equal(main.includes('use native_ui_report::compile_native_ui_layout_report;'), true);
-  assert.equal(main.includes('compile_native_ui_layout_report(output, captured_ui_family_key)?'), true);
+  assert.equal(main.includes('use native_ui_report::compile_native_ui_layout_report;'), false);
+  assert.equal(main.includes('compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?'), true);
   assert.equal(main.includes('fn compile_native_ui_layout_report('), false);
   assert.equal(main.includes('fn is_gregtech_native_layout('), false);
   assert.equal(main.includes('fn is_gregtech_recipe_ui_entry('), false);
@@ -378,7 +378,10 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(reports.includes('pub fn summarize_runtime_output('), true);
   assert.equal(reports.includes('pub fn write_report('), true);
   assert.equal(main.includes('mod runtime;'), true);
-  assert.equal(main.includes('use runtime::{'), true);
+  assert.equal(main.includes('use runtime::compile_runtime_reports;'), true);
+  assert.equal(main.includes('compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?'), true);
+  assert.equal(main.includes('fn compile_runtime_reports('), false);
+  assert.equal(main.includes('fn update_dist_manifest_with_rust_runtime('), false);
   assert.equal(main.includes('fn is_text_runtime_artifact('), false);
   assert.equal(main.includes('fn rust_manifest_file_entries('), false);
   assert.equal(main.includes('fn runtime_id_from_integrity('), false);
@@ -390,7 +393,11 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(runtime.includes('pub fn runtime_id_from_integrity('), true);
   assert.equal(runtime.includes('pub fn rust_entrypoints_from_integrity('), true);
   assert.equal(runtime.includes('pub fn rust_capabilities('), true);
+  assert.equal(runtime.includes('pub fn compile_runtime_reports('), true);
+  assert.equal(runtime.includes('fn update_dist_manifest_with_rust_runtime('), true);
+  assert.equal(runtime.includes('captured_ui_family_key: CapturedUiFamilyKeyFn'), true);
   assert.equal(runtime.includes('use crate::cli::CompileScope;'), true);
+  assert.equal(runtime.includes('use crate::native_ui_report::{compile_native_ui_layout_report, CapturedUiFamilyKeyFn};'), true);
   assert.equal(main.includes('mod raw_export;'), true);
   assert.equal(main.includes('use raw_export::summarize_raw_export;'), true);
   assert.equal(main.includes('fn summarize_raw_export('), false);
