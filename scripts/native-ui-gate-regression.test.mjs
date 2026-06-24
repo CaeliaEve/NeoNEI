@@ -282,6 +282,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const packsMod = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs.rs'), 'utf8');
   const searchPack = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/search.rs'), 'utf8');
   const browserPack = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/browser.rs'), 'utf8');
+  const texturePack = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/texture.rs'), 'utf8');
   assert.equal(finalizer.includes("readArg('--compiler') ?? process.env.NEONEI_COMPILER_BIN"), true);
   assert.equal(finalizer.includes("mode: 'external-binary'"), true);
   assert.equal(finalizer.includes('elysium compiler strict compile'), true);
@@ -438,6 +439,19 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(browserPack.includes('pub fn build_compact_group_payload_from_groups('), true);
   assert.equal(browserPack.includes('fn compile_recipe_pack('), false);
   assert.equal(browserPack.includes('fn compile_ui_pack('), false);
+  assert.equal(main.includes('fn build_compact_texture_payload_from_atlas_items('), false);
+  assert.equal(main.includes('fn build_compact_animation_payload_from_table('), false);
+  assert.equal(main.includes('fn build_compact_atlas_meta_payload_from_atlas_items('), false);
+  assert.equal(main.includes('fn normalize_runtime_atlas_file_path('), false);
+  assert.equal(main.includes('fn normalize_timeline('), false);
+  assert.equal(packsMod.includes('pub mod texture;'), true);
+  assert.equal(texturePack.includes('pub fn build_compact_texture_payload_from_atlas_items('), true);
+  assert.equal(texturePack.includes('pub fn build_compact_animation_payload_from_table('), true);
+  assert.equal(texturePack.includes('pub fn build_compact_atlas_meta_payload_from_atlas_items('), true);
+  assert.equal(texturePack.includes('pub fn normalize_runtime_atlas_file_path('), true);
+  assert.equal(texturePack.includes('pub fn normalize_timeline('), true);
+  assert.equal(texturePack.includes('fn compile_recipe_pack('), false);
+  assert.equal(texturePack.includes('fn compile_ui_pack('), false);
   assert.equal(main.includes('mod raw_export;'), true);
   assert.equal(main.includes('use raw_export::summarize_raw_export;'), true);
   assert.equal(main.includes('fn summarize_raw_export('), false);
