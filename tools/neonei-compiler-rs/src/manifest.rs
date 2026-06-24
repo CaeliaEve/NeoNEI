@@ -172,3 +172,27 @@ pub fn portable_relative_path(value: &str) -> Option<PathBuf> {
     }
     Some(PathBuf::from(normalized))
 }
+
+pub fn runtime_file_descriptors(
+    input: &Path,
+    manifest: &RawManifest,
+    logical_pairs: &[(&str, &str)],
+) -> Result<Vec<Value>> {
+    let mut files = Vec::new();
+    for (public_name, manifest_key) in logical_pairs {
+        let Some(path) = resolve_manifest_path(input, manifest, manifest_key) else {
+            continue;
+        };
+        if !path.exists() {
+            continue;
+        }
+        files.push(serde_json::json!({
+            "logicalName": public_name,
+            "manifestKey": manifest_key,
+            "path": path.strip_prefix(input).unwrap_or(path.as_path()).to_string_lossy().replace('\\', "/"),
+            "bytes": path.metadata()?.len(),
+            "sha256": crate::io::sha256_file(&path)?,
+        }));
+    }
+    Ok(files)
+}

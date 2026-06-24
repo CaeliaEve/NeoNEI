@@ -11,14 +11,14 @@ mod reports;
 mod runtime;
 use binary::{push_i32, push_u32, write_binary_pack, write_binary_pack_payload};
 use cli::{Cli, Command, CompileScope};
-use io::{normalize_path, sha256_file, write_json_value};
+use io::{normalize_path, write_json_value};
 use json_ext::{
     first_non_empty, nested_value_string, numeric_value_u64, numeric_value_u64_lossy,
     optional_value_string, optional_value_u64, value_i64, value_string, value_u64,
 };
 use manifest::{
     portable_relative_path, read_json_collection, read_jsonl_file_values, read_jsonl_values,
-    read_manifest, read_manifest_json, read_optional_manifest_json, resolve_manifest_path,
+    read_manifest, read_manifest_json, read_optional_manifest_json, runtime_file_descriptors,
     RawManifest,
 };
 use pinyin::ToPinyin;
@@ -4772,30 +4772,6 @@ fn normalize_timeline(animated_atlas: Option<&Value>, fallback_duration_ms: Opti
             })
             .collect(),
     )
-}
-
-fn runtime_file_descriptors(
-    input: &Path,
-    manifest: &RawManifest,
-    logical_pairs: &[(&str, &str)],
-) -> Result<Vec<Value>> {
-    let mut files = Vec::new();
-    for (public_name, manifest_key) in logical_pairs {
-        let Some(path) = resolve_manifest_path(input, manifest, manifest_key) else {
-            continue;
-        };
-        if !path.exists() {
-            continue;
-        }
-        files.push(json!({
-            "logicalName": public_name,
-            "manifestKey": manifest_key,
-            "path": normalize_path(path.strip_prefix(input).unwrap_or(path.as_path())),
-            "bytes": path.metadata()?.len(),
-            "sha256": sha256_file(&path)?,
-        }));
-    }
-    Ok(files)
 }
 
 fn normalize_text(value: &str) -> String {

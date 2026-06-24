@@ -301,7 +301,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(binary.includes('pub fn push_u32('), true);
   assert.equal(binary.includes('pub fn push_i32('), true);
   assert.equal(main.includes('mod io;'), true);
-  assert.equal(main.includes('use io::{normalize_path, sha256_file, write_json_value};'), true);
+  assert.equal(main.includes('use io::{normalize_path, write_json_value};'), true);
   assert.equal(main.includes('fn sha256_file('), false);
   assert.equal(main.includes('fn write_json_value('), false);
   assert.equal(main.includes('fn normalize_path('), false);
@@ -353,6 +353,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('fn read_manifest('), false);
   assert.equal(main.includes('fn read_json_collection('), false);
   assert.equal(main.includes('fn portable_relative_path('), false);
+  assert.equal(main.includes('fn runtime_file_descriptors('), false);
   assert.equal(manifest.includes('pub struct RawManifest'), true);
   assert.equal(manifest.includes('pub fn read_manifest('), true);
   assert.equal(manifest.includes('pub fn read_manifest_json('), true);
@@ -363,6 +364,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(manifest.includes('pub fn count_jsonl_rows('), true);
   assert.equal(manifest.includes('pub fn resolve_manifest_path('), true);
   assert.equal(manifest.includes('pub fn portable_relative_path('), true);
+  assert.equal(manifest.includes('pub fn runtime_file_descriptors('), true);
+  assert.equal(manifest.includes('crate::io::sha256_file'), true);
   assert.equal(main.includes('mod reports;'), true);
   assert.equal(main.includes('use reports::{'), true);
   assert.equal(main.includes('struct CompilerReport'), false);
