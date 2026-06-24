@@ -276,6 +276,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const manifest = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/manifest.rs'), 'utf8');
   const nativeUiReport = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/native_ui_report.rs'), 'utf8');
   const rawExport = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/raw_export.rs'), 'utf8');
+  const validation = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/validation.rs'), 'utf8');
   const reports = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/reports.rs'), 'utf8');
   const runtime = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/runtime.rs'), 'utf8');
   const text = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/text.rs'), 'utf8');
@@ -478,5 +479,9 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(rawExport.includes('pub fn summarize_raw_export('), true);
   assert.equal(rawExport.includes('fn read_zero_recipe_diagnostics('), true);
   assert.equal(rawExport.includes('pub fn zero_recipe_diagnostics_from_value('), true);
+  assert.equal(main.includes('mod validation;'), true);
+  assert.equal(main.includes('use validation::compile_semantic_validation_report;'), true);
+  assert.equal(main.includes('fn compile_semantic_validation_report('), false);
+  assert.equal(validation.includes('pub fn compile_semantic_validation_report('), true);
   assert.equal(rawExport.includes('use crate::manifest::{count_jsonl_rows, resolve_manifest_path, RawManifest};'), true);
 });
