@@ -501,12 +501,14 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('fn build_compact_texture_payload_from_atlas_items('), false);
   assert.equal(main.includes('fn build_compact_animation_payload_from_table('), false);
   assert.equal(main.includes('fn build_compact_atlas_meta_payload_from_atlas_items('), false);
+  assert.equal(main.includes('fn copy_runtime_atlas_assets('), false);
   assert.equal(main.includes('fn normalize_runtime_atlas_file_path('), false);
   assert.equal(main.includes('fn normalize_timeline('), false);
   assert.equal(packsMod.includes('pub mod texture;'), true);
   assert.equal(texturePack.includes('pub fn build_compact_texture_payload_from_atlas_items('), true);
   assert.equal(texturePack.includes('pub fn build_compact_animation_payload_from_table('), true);
   assert.equal(texturePack.includes('pub fn build_compact_atlas_meta_payload_from_atlas_items('), true);
+  assert.equal(texturePack.includes('pub fn copy_runtime_atlas_assets('), true);
   assert.equal(texturePack.includes('pub fn normalize_runtime_atlas_file_path('), true);
   assert.equal(texturePack.includes('pub fn normalize_timeline('), true);
   assert.equal(texturePack.includes('fn compile_recipe_pack('), false);

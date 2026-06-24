@@ -2,9 +2,11 @@ use crate::binary::{intern_compact_string, push_u32};
 use crate::json_ext::{
     numeric_value_u64, optional_value_string, optional_value_u64, value_string, value_u64,
 };
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
+use std::fs;
+use std::path::Path;
 
 #[derive(Clone, Debug, Default)]
 struct AtlasMetaRow {
@@ -94,6 +96,63 @@ pub fn normalize_runtime_atlas_file_path(value: Option<String>) -> Option<String
         return Some(format!("textures/{stripped}"));
     }
     Some(normalized)
+}
+
+pub fn copy_runtime_atlas_assets(
+    input: &Path,
+    output: &Path,
+    atlas_items: &[Value],
+    missing_atlas_asset_files: &mut Vec<String>,
+) -> Result<()> {
+    let mut atlas_paths = BTreeMap::<String, String>::new();
+    for item in atlas_items {
+        for key in ["staticAtlas", "animatedAtlas"] {
+            let Some(atlas) = item.get(key).filter(|value| value.is_object()) else {
+                continue;
+            };
+            let Some(raw_atlas_file) = optional_value_string(Some(atlas), "atlasFile") else {
+                continue;
+            };
+            let Some(runtime_atlas_file) =
+                normalize_runtime_atlas_file_path(Some(raw_atlas_file.clone()))
+            else {
+                continue;
+            };
+            atlas_paths
+                .entry(runtime_atlas_file)
+                .or_insert(raw_atlas_file);
+        }
+    }
+
+    for (runtime_atlas_file, raw_atlas_file) in atlas_paths {
+        let raw_relative = raw_atlas_file
+            .replace('\\', "/")
+            .trim_start_matches('/')
+            .to_string();
+        let source_path = input.join(&raw_relative);
+        if !source_path.is_file() {
+            missing_atlas_asset_files.push(format!(
+                "{runtime_atlas_file}:missing-source:{raw_relative}"
+            ));
+            continue;
+        }
+        let runtime_relative = runtime_atlas_file
+            .replace('\\', "/")
+            .trim_start_matches('/')
+            .to_string();
+        let destination_path = output.join(&runtime_relative);
+        if let Some(parent) = destination_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::copy(&source_path, &destination_path).with_context(|| {
+            format!(
+                "copy runtime atlas asset {} -> {}",
+                source_path.display(),
+                destination_path.display()
+            )
+        })?;
+    }
+    Ok(())
 }
 
 fn note_atlas_meta(

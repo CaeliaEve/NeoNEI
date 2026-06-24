@@ -21,9 +21,7 @@ use atlas_repair::{repaired_browser_atlas, select_group_representative};
 use binary::{write_binary_pack, write_binary_pack_payload};
 use cli::{Cli, Command, CompileScope};
 use io::{normalize_path, write_json_value};
-use json_ext::{
-    first_non_empty, nested_value_string, optional_value_string, value_string, value_u64,
-};
+use json_ext::{first_non_empty, nested_value_string, value_string, value_u64};
 use manifest::{
     read_json_collection, read_jsonl_file_values, read_jsonl_values, read_manifest,
     read_manifest_json, read_optional_manifest_json, runtime_file_descriptors, RawManifest,
@@ -39,8 +37,8 @@ use packs::search::{
 };
 use packs::texture::{
     build_compact_animation_payload_from_table, build_compact_atlas_meta_payload_from_atlas_items,
-    build_compact_texture_payload_from_atlas_items, normalize_runtime_atlas_file_path,
-    normalize_timeline,
+    build_compact_texture_payload_from_atlas_items, copy_runtime_atlas_assets,
+    normalize_runtime_atlas_file_path, normalize_timeline,
 };
 use packs::ui::{
     build_compact_ui_binding_payload, build_compact_ui_string_payload,
@@ -1417,63 +1415,6 @@ fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: b
         "neonei/atlas-meta-pack/current",
         &atlas_meta_payload,
     )?;
-    Ok(())
-}
-
-fn copy_runtime_atlas_assets(
-    input: &Path,
-    output: &Path,
-    atlas_items: &[Value],
-    missing_atlas_asset_files: &mut Vec<String>,
-) -> Result<()> {
-    let mut atlas_paths = BTreeMap::<String, String>::new();
-    for item in atlas_items {
-        for key in ["staticAtlas", "animatedAtlas"] {
-            let Some(atlas) = item.get(key).filter(|value| value.is_object()) else {
-                continue;
-            };
-            let Some(raw_atlas_file) = optional_value_string(Some(atlas), "atlasFile") else {
-                continue;
-            };
-            let Some(runtime_atlas_file) =
-                normalize_runtime_atlas_file_path(Some(raw_atlas_file.clone()))
-            else {
-                continue;
-            };
-            atlas_paths
-                .entry(runtime_atlas_file)
-                .or_insert(raw_atlas_file);
-        }
-    }
-
-    for (runtime_atlas_file, raw_atlas_file) in atlas_paths {
-        let raw_relative = raw_atlas_file
-            .replace('\\', "/")
-            .trim_start_matches('/')
-            .to_string();
-        let source_path = input.join(&raw_relative);
-        if !source_path.is_file() {
-            missing_atlas_asset_files.push(format!(
-                "{runtime_atlas_file}:missing-source:{raw_relative}"
-            ));
-            continue;
-        }
-        let runtime_relative = runtime_atlas_file
-            .replace('\\', "/")
-            .trim_start_matches('/')
-            .to_string();
-        let destination_path = output.join(&runtime_relative);
-        if let Some(parent) = destination_path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        fs::copy(&source_path, &destination_path).with_context(|| {
-            format!(
-                "copy runtime atlas asset {} -> {}",
-                source_path.display(),
-                destination_path.display()
-            )
-        })?;
-    }
     Ok(())
 }
 
