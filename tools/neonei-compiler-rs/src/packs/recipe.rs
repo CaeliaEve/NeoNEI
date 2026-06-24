@@ -1,8 +1,66 @@
-use crate::binary::{intern_compact_string, push_u32};
+use crate::binary::{intern_compact_string, push_u32, write_binary_pack_payload};
+use crate::io::write_json_value;
 use crate::json_ext::{nested_value_string, value_string, value_u64};
-use anyhow::Result;
-use serde_json::Value;
+use crate::manifest::{read_manifest, runtime_file_descriptors};
+use anyhow::{anyhow, Result};
+use serde_json::{json, Value};
 use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+
+pub fn compile_dist_recipe_pack(
+    input: &Path,
+    output: &Path,
+    strict: bool,
+    debug_json: bool,
+) -> Result<()> {
+    let manifest = read_manifest(input)?;
+    let recipe_files = runtime_file_descriptors(
+        input,
+        &manifest,
+        &[
+            ("itemIndex", "recipeItemIndex"),
+            ("handlers", "recipeHandlers"),
+            ("handlerLayouts", "recipeHandlerLayouts"),
+            ("categoryIndex", "recipeCategories"),
+            ("uiPayloadIndex", "recipeUiPayloadIndex"),
+        ],
+    )?;
+    if strict
+        && !recipe_files.iter().any(|value| {
+            value
+                .get("logicalName")
+                .and_then(Value::as_str)
+                .is_some_and(|value| value == "itemIndex")
+        })
+    {
+        return Err(anyhow!(
+            "recipe compiler blocked: recipeItemIndex is missing"
+        ));
+    }
+
+    let recipe_output_pack = json!({
+        "schemaVersion": "neonei/rust-recipe-pack/current",
+        "sourceKind": "dist-data",
+        "counts": {
+            "files": recipe_files.len(),
+        },
+        "files": recipe_files,
+    });
+
+    let rust_dir = output.join("rust");
+    fs::create_dir_all(&rust_dir)?;
+    if debug_json {
+        write_json_value(&rust_dir.join("recipe-pack.json"), &recipe_output_pack)?;
+    }
+    let compact_recipe_payload = build_compact_recipe_payload_from_pack(&recipe_output_pack)?;
+    write_binary_pack_payload(
+        &rust_dir.join("recipes.bin"),
+        "neonei/recipe-pack/current",
+        &compact_recipe_payload,
+    )?;
+    Ok(())
+}
 
 pub fn build_compact_recipe_payload_from_pack(pack: &Value) -> Result<Vec<u8>> {
     let mut strings = vec![String::new()];

@@ -24,13 +24,13 @@ use io::{normalize_path, write_json_value};
 use json_ext::{first_non_empty, nested_value_string, value_string, value_u64};
 use manifest::{
     read_json_collection, read_jsonl_file_values, read_jsonl_values, read_manifest,
-    read_manifest_json, read_optional_manifest_json, runtime_file_descriptors,
+    read_manifest_json, read_optional_manifest_json,
 };
 use packs::browser::{
     build_compact_browser_payload_from_items, build_compact_group_payload_from_groups,
     compile_dist_browser_pack,
 };
-use packs::recipe::build_compact_recipe_payload_from_pack;
+use packs::recipe::{build_compact_recipe_payload_from_pack, compile_dist_recipe_pack};
 use packs::search::{
     build_compact_search_payload_from_items, build_compact_string_payload_from_items,
     compile_search_pack,
@@ -819,60 +819,6 @@ fn compile_recipe_pack(input: &Path, output: &Path, strict: bool, debug_json: bo
         "uiPayloadIndex": ui_payload_index,
         "categoryIndex": category_index,
     });
-    if debug_json {
-        write_json_value(&rust_dir.join("recipe-pack.json"), &recipe_output_pack)?;
-    }
-    let compact_recipe_payload = build_compact_recipe_payload_from_pack(&recipe_output_pack)?;
-    write_binary_pack_payload(
-        &rust_dir.join("recipes.bin"),
-        "neonei/recipe-pack/current",
-        &compact_recipe_payload,
-    )?;
-    Ok(())
-}
-
-fn compile_dist_recipe_pack(
-    input: &Path,
-    output: &Path,
-    strict: bool,
-    debug_json: bool,
-) -> Result<()> {
-    let manifest = read_manifest(input)?;
-    let recipe_files = runtime_file_descriptors(
-        input,
-        &manifest,
-        &[
-            ("itemIndex", "recipeItemIndex"),
-            ("handlers", "recipeHandlers"),
-            ("handlerLayouts", "recipeHandlerLayouts"),
-            ("categoryIndex", "recipeCategories"),
-            ("uiPayloadIndex", "recipeUiPayloadIndex"),
-        ],
-    )?;
-    if strict
-        && !recipe_files.iter().any(|value| {
-            value
-                .get("logicalName")
-                .and_then(Value::as_str)
-                .is_some_and(|value| value == "itemIndex")
-        })
-    {
-        return Err(anyhow!(
-            "recipe compiler blocked: recipeItemIndex is missing"
-        ));
-    }
-
-    let recipe_output_pack = json!({
-        "schemaVersion": "neonei/rust-recipe-pack/current",
-        "sourceKind": "dist-data",
-        "counts": {
-            "files": recipe_files.len(),
-        },
-        "files": recipe_files,
-    });
-
-    let rust_dir = output.join("rust");
-    fs::create_dir_all(&rust_dir)?;
     if debug_json {
         write_json_value(&rust_dir.join("recipe-pack.json"), &recipe_output_pack)?;
     }

@@ -519,8 +519,10 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(texturePack.includes('pub fn normalize_timeline('), true);
   assert.equal(texturePack.includes('fn compile_recipe_pack('), false);
   assert.equal(texturePack.includes('fn compile_ui_pack('), false);
+  assert.equal(main.includes('fn compile_dist_recipe_pack('), false);
   assert.equal(main.includes('fn build_compact_recipe_payload_from_pack('), false);
   assert.equal(packsMod.includes('pub mod recipe;'), true);
+  assert.equal(recipePack.includes('pub fn compile_dist_recipe_pack('), true);
   assert.equal(recipePack.includes('pub fn build_compact_recipe_payload_from_pack('), true);
   assert.equal(recipePack.includes('fn compile_recipe_pack('), false);
   assert.equal(recipePack.includes('fn compile_ui_pack('), false);
