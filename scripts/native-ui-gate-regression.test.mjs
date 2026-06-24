@@ -270,6 +270,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const finalizer = readFileSync(join(repoRoot, 'scripts/finalize-native-ui-export.mjs'), 'utf8');
   const main = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/main.rs'), 'utf8');
   const cli = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/cli.rs'), 'utf8');
+  const atlasRepair = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/atlas_repair.rs'), 'utf8');
   const binary = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/binary.rs'), 'utf8');
   const io = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/io.rs'), 'utf8');
   const jsonExt = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/json_ext.rs'), 'utf8');
@@ -295,6 +296,14 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(finalizer.includes("mode: 'in-repo-cargo'"), true);
   assert.equal(finalizer.includes('--compiler <path>'), true);
   assert.equal(finalizer.includes('compiler: compilerCommand'), true);
+  assert.equal(main.includes('mod atlas_repair;'), true);
+  assert.equal(main.includes('use atlas_repair::{'), true);
+  assert.equal(main.includes('fn repaired_browser_atlas('), false);
+  assert.equal(main.includes('fn select_group_representative('), false);
+  assert.equal(main.includes('fn atlas_drawable_score('), false);
+  assert.equal(atlasRepair.includes('pub fn repaired_browser_atlas('), true);
+  assert.equal(atlasRepair.includes('pub fn select_group_representative('), true);
+  assert.equal(atlasRepair.includes('fn atlas_drawable_score('), true);
   assert.equal(main.includes('mod cli;'), true);
   assert.equal(main.includes('use cli::{Cli, Command, CompileScope};'), true);
   assert.equal(main.includes('#[derive(Parser, Debug)]'), false);
