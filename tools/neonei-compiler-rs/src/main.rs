@@ -49,10 +49,10 @@ use packs::ui::{
 use raw_export::summarize_raw_export;
 use recipe_domain::{
     build_recipe_fragmentation_report, build_recipe_handler_metadata_report,
-    captured_ui_family_key, classify_recipe_family_key, public_recipe_handler,
-    public_recipe_layout, recipe_category_display_name, recipe_category_id_from_display_name,
-    recipe_category_raw_id, recipe_id, recipe_machine_icon, RecipeCategoryAccumulator,
-    RecipeHandlerContext,
+    captured_ui_family_key, classify_recipe_family_key, collect_recipe_item_ids,
+    compact_fact_object, public_recipe_handler, public_recipe_layout, recipe_category_display_name,
+    recipe_category_id_from_display_name, recipe_category_raw_id, recipe_id, recipe_machine_icon,
+    RecipeCategoryAccumulator, RecipeHandlerContext,
 };
 use recipe_ui_payload::{rust_recipe_ui_payload_relative_path, RecipeUiPayloadShardWriters};
 use reports::{summarize_runtime_output, write_report, CompilerReport};
@@ -1129,84 +1129,6 @@ fn build_raw_recipe_ui_payload_index(input: &Path, manifest: &RawManifest) -> Re
     Ok(entries)
 }
 
-fn collect_recipe_item_ids(recipe: &Value, keys: &[&str]) -> Vec<String> {
-    let mut ids = Vec::new();
-    for key in keys {
-        collect_recipe_item_ids_from_value(recipe.get(*key), &mut ids);
-    }
-    ids.sort();
-    ids.dedup();
-    ids
-}
-
-fn collect_recipe_item_ids_from_value(value: Option<&Value>, ids: &mut Vec<String>) {
-    match value {
-        Some(Value::Array(values)) => {
-            for value in values {
-                collect_recipe_item_ids_from_value(Some(value), ids);
-            }
-        }
-        Some(Value::Object(map)) => {
-            if let Some(item_id) = map.get("itemId").and_then(Value::as_str) {
-                ids.push(item_id.to_string());
-            }
-            for key in ["items", "item", "input", "output", "ingredients", "results"] {
-                collect_recipe_item_ids_from_value(map.get(key), ids);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn compact_fact_object(value: Option<&Value>) -> Option<Value> {
-    match compact_fact_value(value?, 0) {
-        Some(Value::Object(map)) if !map.is_empty() => Some(Value::Object(map)),
-        _ => None,
-    }
-}
-
-fn compact_fact_value(value: &Value, depth: usize) -> Option<Value> {
-    if depth > 5 {
-        return None;
-    }
-    match value {
-        Value::Null => None,
-        Value::Bool(_) | Value::Number(_) => Some(value.clone()),
-        Value::String(text) => {
-            let trimmed = text.trim();
-            if trimmed.is_empty() || trimmed.len() > 512 {
-                None
-            } else {
-                Some(Value::String(trimmed.to_string()))
-            }
-        }
-        Value::Array(entries) => {
-            let compacted = entries
-                .iter()
-                .take(64)
-                .filter_map(|entry| compact_fact_value(entry, depth + 1))
-                .collect::<Vec<_>>();
-            if compacted.is_empty() {
-                None
-            } else {
-                Some(Value::Array(compacted))
-            }
-        }
-        Value::Object(entries) => {
-            let mut compacted = serde_json::Map::new();
-            for (key, entry) in entries {
-                if let Some(value) = compact_fact_value(entry, depth + 1) {
-                    compacted.insert(key.clone(), value);
-                }
-            }
-            if compacted.is_empty() {
-                None
-            } else {
-                Some(Value::Object(compacted))
-            }
-        }
-    }
-}
 fn compile_texture_pack(input: &Path, output: &Path, strict: bool, debug_json: bool) -> Result<()> {
     let manifest = read_manifest(input)?;
     if manifest.files.contains_key("textureManifest") {

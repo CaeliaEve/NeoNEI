@@ -429,11 +429,15 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('fn public_recipe_layout('), false);
   assert.equal(main.includes('fn captured_ui_family_key('), false);
   assert.equal(main.includes('fn classify_recipe_family_key('), false);
+  assert.equal(main.includes('fn collect_recipe_item_ids('), false);
+  assert.equal(main.includes('fn compact_fact_object('), false);
   assert.equal(recipeDomain.includes('pub struct RecipeHandlerContext'), true);
   assert.equal(recipeDomain.includes('pub fn public_recipe_handler('), true);
   assert.equal(recipeDomain.includes('pub fn public_recipe_layout('), true);
   assert.equal(recipeDomain.includes('pub fn captured_ui_family_key('), true);
   assert.equal(recipeDomain.includes('pub fn classify_recipe_family_key('), true);
+  assert.equal(recipeDomain.includes('pub fn collect_recipe_item_ids('), true);
+  assert.equal(recipeDomain.includes('pub fn compact_fact_object('), true);
   assert.equal(runtime.includes('pub fn is_text_runtime_artifact('), true);
   assert.equal(runtime.includes('pub fn rust_manifest_file_entries('), true);
   assert.equal(runtime.includes('pub fn runtime_id_from_integrity('), true);
