@@ -276,6 +276,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const manifest = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/manifest.rs'), 'utf8');
   const nativeUiReport = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/native_ui_report.rs'), 'utf8');
   const recipeUiPayload = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/recipe_ui_payload.rs'), 'utf8');
+  const recipeDomain = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/recipe_domain.rs'), 'utf8');
   const rawExport = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/raw_export.rs'), 'utf8');
   const validation = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/validation.rs'), 'utf8');
   const reports = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/reports.rs'), 'utf8');
@@ -411,6 +412,18 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(recipeUiPayload.includes('pub fn rust_recipe_ui_payload_relative_path('), true);
   assert.equal(recipeUiPayload.includes('pub fn sha1_hex_prefix('), true);
   assert.equal(recipeUiPayload.includes('pub struct RecipeUiPayloadShardWriters'), true);
+  assert.equal(main.includes('mod recipe_domain;'), true);
+  assert.equal(main.includes('use recipe_domain::{'), true);
+  assert.equal(main.includes('struct RecipeHandlerContext'), false);
+  assert.equal(main.includes('fn public_recipe_handler('), false);
+  assert.equal(main.includes('fn public_recipe_layout('), false);
+  assert.equal(main.includes('fn captured_ui_family_key('), false);
+  assert.equal(main.includes('fn classify_recipe_family_key('), false);
+  assert.equal(recipeDomain.includes('pub struct RecipeHandlerContext'), true);
+  assert.equal(recipeDomain.includes('pub fn public_recipe_handler('), true);
+  assert.equal(recipeDomain.includes('pub fn public_recipe_layout('), true);
+  assert.equal(recipeDomain.includes('pub fn captured_ui_family_key('), true);
+  assert.equal(recipeDomain.includes('pub fn classify_recipe_family_key('), true);
   assert.equal(runtime.includes('pub fn is_text_runtime_artifact('), true);
   assert.equal(runtime.includes('pub fn rust_manifest_file_entries('), true);
   assert.equal(runtime.includes('pub fn runtime_id_from_integrity('), true);
