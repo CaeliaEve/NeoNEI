@@ -250,12 +250,13 @@ test('native UI production gates require UI template pack v3 action-rect IR', ()
 });
 
 test('native UI background contract uses materialized nine-slice ModularUI assets', () => {
-  const compiler = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/main.rs'), 'utf8');
+  const compiler = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/packs/ui.rs'), 'utf8');
+  const uiTemplates = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/ui_templates.rs'), 'utf8');
   const canvas = readFileSync(join(repoRoot, 'frontend/src/components/NativeNeiRecipeCanvas.vue'), 'utf8');
   assert.equal(compiler.includes('materialize_ui_background_assets(input, output, &assets_manifest)'), true);
-  assert.equal(compiler.includes('nativeBackground'), true);
-  assert.equal(compiler.includes('assetRef'), true);
-  assert.equal(compiler.includes('assets/ui-backgrounds/'), true);
+  assert.equal(uiTemplates.includes('nativeBackground'), true);
+  assert.equal(uiTemplates.includes('assetRef'), true);
+  assert.equal(uiTemplates.includes('assets/ui-backgrounds/'), true);
   assert.equal(canvas.includes('nativeBackgroundAssetRef'), true);
   assert.equal(canvas.includes('nativeBackgroundTextureSpec'), true);
   assert.equal(canvas.includes('pushBackgroundCommands'), true);
@@ -528,11 +529,13 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(recipePack.includes('pub fn build_compact_recipe_payload_from_pack('), true);
   assert.equal(recipePack.includes('fn compile_recipe_pack('), false);
   assert.equal(recipePack.includes('fn compile_ui_pack('), false);
+  assert.equal(main.includes('fn compile_ui_pack('), false);
   assert.equal(main.includes('fn build_compact_ui_template_payload('), false);
   assert.equal(main.includes('fn build_compact_ui_binding_payload('), false);
   assert.equal(main.includes('fn build_compact_ui_string_payload('), false);
   assert.equal(main.includes('fn push_compact_ui_rect('), false);
   assert.equal(packsMod.includes('pub mod ui;'), true);
+  assert.equal(uiPack.includes('pub fn compile_ui_pack('), true);
   assert.equal(uiPack.includes('pub fn build_compact_ui_template_payload('), true);
   assert.equal(uiPack.includes('pub fn build_compact_ui_binding_payload('), true);
   assert.equal(uiPack.includes('pub fn build_compact_ui_string_payload('), true);
