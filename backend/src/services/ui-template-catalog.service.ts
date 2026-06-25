@@ -206,7 +206,7 @@ export class UiTemplateCatalogService {
     const report = this.getReportOrNull();
     if (!report) {
       throw notFound(
-        'NESQL++ NEI UI template catalog is not available. Re-export raw-export/validation/ui-template-catalog.json.',
+        'Compiled UI template catalog is not available. Re-run the Elysium compiler so dist-data/rust/ui-pack/ui_template_catalog.json is generated.',
       );
     }
     return report;

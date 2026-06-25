@@ -198,7 +198,7 @@ const checkAnimation = async () => {
   // browser atlas/render index. Do not fall back to per-item GIF/sprite probing
   // here; that path reintroduces page-local texture fetches and hides exporter
   // defects behind slow frontend work. Missing atlas entries must be fixed in
-  // raw-export/compile validation.
+  // Elysium compiler/dist-data validation.
   renderMode.value = 'atlas';
   isLoaded.value = true;
 };

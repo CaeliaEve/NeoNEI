@@ -166,7 +166,7 @@ export class UiFamilyCensusService {
     const report = this.getReportOrNull();
     if (!report) {
       throw notFound(
-        'NESQL++ NEI UI family census is not available. Re-export raw-export/validation/ui-family-census.json.',
+        'Compiled UI family census is not available. Re-run the Elysium compiler so dist-data/rust/ui-pack/ui_family_census.json is generated.',
       );
     }
     return report;

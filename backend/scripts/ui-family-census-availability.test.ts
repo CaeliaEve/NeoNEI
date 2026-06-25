@@ -7,18 +7,18 @@ import { UiFamilyCensusService } from '../src/services/ui-family-census.service'
 
 test('ui family census service reads the exported census and resolves families', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-ui-family-census-'));
-  const censusFilePath = path.join(tempDir, 'raw-export', 'validation', 'ui-family-census.json');
+  const censusFilePath = path.join(tempDir, 'dist-data', 'rust', 'ui-pack', 'ui_family_census.json');
   fs.mkdirSync(path.dirname(censusFilePath), { recursive: true });
   fs.writeFileSync(
     censusFilePath,
     JSON.stringify({
-      schemaVersion: 'nesqlpp/raw-export/alpha1/ui-family-census',
+      schemaVersion: 'neonei/ui-family-census/current',
       generatedAt: '1710000000000',
       source: {
-        kind: 'bundled-nei-handler-metadata',
-        resource: 'nesql/nei/handler-metadata.json',
+        kind: 'compiled-ui-template-catalog',
+        resource: 'rust/ui-pack/ui_template_catalog.json',
         entryCount: 2,
-        classifier: 'NeiUiFamilyClassifier',
+        classifier: 'elysium-compiler',
       },
       summary: {
         handlerCount: 2,

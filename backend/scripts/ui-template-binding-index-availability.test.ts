@@ -8,7 +8,8 @@ import { UiTemplateBindingIndexService } from '../src/services/ui-template-bindi
 test('ui template binding index service joins payload indices with the template catalog', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-ui-template-binding-index-'));
   const recipeIndexFilePath = path.join(tempDir, 'dist-data', 'recipes', 'ui-payload-index.json');
-  const catalogFilePath = path.join(tempDir, 'raw-export', 'validation', 'ui-template-catalog.json');
+  const catalogFilePath = path.join(tempDir, 'dist-data', 'rust', 'ui-pack', 'ui_template_catalog.json');
+  const bindingIndexFilePath = path.join(tempDir, 'dist-data', 'rust', 'ui-pack', 'ui_template_binding_index.json');
   fs.mkdirSync(path.dirname(recipeIndexFilePath), { recursive: true });
   fs.mkdirSync(path.dirname(catalogFilePath), { recursive: true });
 
@@ -41,15 +42,15 @@ test('ui template binding index service joins payload indices with the template 
   fs.writeFileSync(
     catalogFilePath,
     JSON.stringify({
-      schemaVersion: 'nesqlpp/raw-export/alpha1/ui-template-catalog',
+      schemaVersion: 'neonei/ui-template-catalog/current',
       generatedAt: '1710000000000',
       source: {
-        kind: 'ui-family-census',
-        resource: 'raw-export/validation/ui-family-census.json',
-        censusSchemaVersion: 'nesqlpp/raw-export/alpha1/ui-family-census',
+        kind: 'compiled-dist-data',
+        resource: 'rust/ui-pack/ui_template_catalog.json',
+        censusSchemaVersion: 'neonei/ui-family-census/current',
         censusFamilyCount: 1,
         censusHandlerCount: 2,
-        layoutSpecProvider: 'NeiUiTemplateLayoutSpecs',
+        layoutSpecProvider: 'elysium-compiler',
       },
       summary: {
         handlerCount: 2,
@@ -88,6 +89,7 @@ test('ui template binding index service joins payload indices with the template 
   );
 
   const service = new UiTemplateBindingIndexService({
+    bindingIndexFilePath,
     recipeUiPayloadIndexFilePath: recipeIndexFilePath,
     templateCatalogFilePath: catalogFilePath,
   });
@@ -100,7 +102,21 @@ test('ui template binding index service joins payload indices with the template 
   assert.equal(service.getBindingByRecipeId('recipe.beta')?.templateKey, null);
   assert.equal(service.getReportOrNull() !== null, true);
 
+  fs.writeFileSync(
+    bindingIndexFilePath,
+    JSON.stringify(report),
+    'utf8',
+  );
+  const compiledService = new UiTemplateBindingIndexService({
+    bindingIndexFilePath,
+    recipeUiPayloadIndexFilePath: path.join(tempDir, 'missing-recipe-index.json'),
+    templateCatalogFilePath: path.join(tempDir, 'missing-template-catalog.json'),
+  });
+  assert.equal(compiledService.getReport()?.summary.recipeCount, 2);
+  assert.equal(compiledService.getBindingByRecipeId('recipe.alpha')?.templateKey, 'ui-template/1234567890abcdef');
+
   const missing = new UiTemplateBindingIndexService({
+    bindingIndexFilePath: path.join(tempDir, 'missing-binding-index.json'),
     recipeUiPayloadIndexFilePath: path.join(tempDir, 'missing.json'),
     templateCatalogFilePath: catalogFilePath,
   });

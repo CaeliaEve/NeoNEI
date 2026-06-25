@@ -93,6 +93,15 @@ pub fn rust_manifest_file_entries(
                 "rustUiAssetsManifest",
                 "rust/ui-pack/ui_assets.manifest.json",
             ),
+            (
+                "rustUiTemplateCatalog",
+                "rust/ui-pack/ui_template_catalog.json",
+            ),
+            (
+                "rustUiTemplateBindingIndex",
+                "rust/ui-pack/ui_template_binding_index.json",
+            ),
+            ("rustUiFamilyCensus", "rust/ui-pack/ui_family_census.json"),
             ("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"),
         ]),
         CompileScope::NativeUi => entries.extend([
@@ -108,6 +117,15 @@ pub fn rust_manifest_file_entries(
                 "rustUiAssetsManifest",
                 "rust/ui-pack/ui_assets.manifest.json",
             ),
+            (
+                "rustUiTemplateCatalog",
+                "rust/ui-pack/ui_template_catalog.json",
+            ),
+            (
+                "rustUiTemplateBindingIndex",
+                "rust/ui-pack/ui_template_binding_index.json",
+            ),
+            ("rustUiFamilyCensus", "rust/ui-pack/ui_family_census.json"),
             ("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"),
         ]),
         CompileScope::Search => entries.extend([
@@ -129,6 +147,15 @@ pub fn rust_manifest_file_entries(
                 "rustUiAssetsManifest",
                 "rust/ui-pack/ui_assets.manifest.json",
             ),
+            (
+                "rustUiTemplateCatalog",
+                "rust/ui-pack/ui_template_catalog.json",
+            ),
+            (
+                "rustUiTemplateBindingIndex",
+                "rust/ui-pack/ui_template_binding_index.json",
+            ),
+            ("rustUiFamilyCensus", "rust/ui-pack/ui_family_census.json"),
             ("rustUiPackReport", "rust/ui-pack/ui_pack_report.json"),
         ]),
         CompileScope::Textures => entries.extend([
@@ -269,6 +296,9 @@ pub fn compile_runtime_reports(
             "ui-pack/ui_bindings.bin",
             "ui-pack/ui_strings.bin",
             "ui-pack/ui_assets.manifest.json",
+            "ui-pack/ui_template_catalog.json",
+            "ui-pack/ui_template_binding_index.json",
+            "ui-pack/ui_family_census.json",
             "ui-pack/ui_pack_report.json",
         ],
         CompileScope::NativeUi => vec![
@@ -285,6 +315,9 @@ pub fn compile_runtime_reports(
             "ui-pack/ui_bindings.bin",
             "ui-pack/ui_strings.bin",
             "ui-pack/ui_assets.manifest.json",
+            "ui-pack/ui_template_catalog.json",
+            "ui-pack/ui_template_binding_index.json",
+            "ui-pack/ui_family_census.json",
             "ui-pack/ui_pack_report.json",
         ],
         CompileScope::Search => vec![
@@ -312,6 +345,9 @@ pub fn compile_runtime_reports(
             "ui-pack/ui_bindings.bin",
             "ui-pack/ui_strings.bin",
             "ui-pack/ui_assets.manifest.json",
+            "ui-pack/ui_template_catalog.json",
+            "ui-pack/ui_template_binding_index.json",
+            "ui-pack/ui_family_census.json",
             "ui-pack/ui_pack_report.json",
         ],
         CompileScope::Textures => vec![
@@ -356,6 +392,10 @@ pub fn compile_runtime_reports(
             "ui-pack/ui_templates.bin",
             "ui-pack/ui_bindings.bin",
             "ui-pack/ui_strings.bin",
+            "ui-pack/ui_assets.manifest.json",
+            "ui-pack/ui_template_catalog.json",
+            "ui-pack/ui_template_binding_index.json",
+            "ui-pack/ui_family_census.json",
             "native-ui-layout-report.json",
         ] {
             if !artifact_names.contains(&artifact_name) && rust_dir.join(artifact_name).exists() {

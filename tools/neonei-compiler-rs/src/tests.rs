@@ -1080,6 +1080,21 @@ fn minimal_native_ui_fixture_compiles_through_stable_cli_boundary() {
         .unwrap()
         .iter()
         .any(|entry| entry["path"] == json!("rust/ui-pack/ui_assets.manifest.json")));
+    assert!(runtime_manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["path"] == json!("rust/ui-pack/ui_template_catalog.json")));
+    assert!(runtime_manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["path"] == json!("rust/ui-pack/ui_template_binding_index.json")));
+    assert!(runtime_manifest["files"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|entry| entry["path"] == json!("rust/ui-pack/ui_family_census.json")));
 
     let ui_pack_report: serde_json::Value = serde_json::from_str(
         &fs::read_to_string(output.path().join("rust/ui-pack/ui_pack_report.json")).unwrap(),
@@ -1094,6 +1109,27 @@ fn minimal_native_ui_fixture_compiles_through_stable_cli_boundary() {
             .len(),
         0
     );
+    let ui_template_catalog =
+        read_fixture_json(output.path().join("rust/ui-pack/ui_template_catalog.json"));
+    let ui_binding_index = read_fixture_json(
+        output
+            .path()
+            .join("rust/ui-pack/ui_template_binding_index.json"),
+    );
+    let ui_family_census =
+        read_fixture_json(output.path().join("rust/ui-pack/ui_family_census.json"));
+    assert_eq!(
+        ui_template_catalog["schemaVersion"],
+        json!("neonei/ui-template-catalog/current")
+    );
+    assert_eq!(
+        ui_binding_index["schemaVersion"],
+        json!("neonei/ui-template-binding-index/current")
+    );
+    assert_eq!(
+        ui_family_census["schemaVersion"],
+        json!("neonei/ui-family-census/current")
+    );
 }
 
 #[test]
@@ -1104,6 +1140,9 @@ fn native_ui_gt_fixture_matches_expected_reports_and_copies_background_asset() {
         "rust/native-ui-layout-report.json",
         "rust/ui-pack/ui_pack_report.json",
         "rust/ui-pack/ui_assets.manifest.json",
+        "rust/ui-pack/ui_template_catalog.json",
+        "rust/ui-pack/ui_template_binding_index.json",
+        "rust/ui-pack/ui_family_census.json",
         "rust/integrity.json",
     ] {
         assert_expected_json_matches("raw-export-native-ui-gt", output.path(), relative_path);
@@ -1137,6 +1176,9 @@ fn semantic_background_only_fixture_compiles_without_materialized_asset() {
         "rust/native-ui-layout-report.json",
         "rust/ui-pack/ui_pack_report.json",
         "rust/ui-pack/ui_assets.manifest.json",
+        "rust/ui-pack/ui_template_catalog.json",
+        "rust/ui-pack/ui_template_binding_index.json",
+        "rust/ui-pack/ui_family_census.json",
         "rust/integrity.json",
     ] {
         assert_expected_json_matches(
@@ -1164,6 +1206,13 @@ fn sharded_recipes_fixture_compiles_all_declared_shards() {
         output.path(),
         "recipes/ui-payload-index.json",
     );
+    for relative_path in [
+        "rust/ui-pack/ui_template_catalog.json",
+        "rust/ui-pack/ui_template_binding_index.json",
+        "rust/ui-pack/ui_family_census.json",
+    ] {
+        assert_expected_json_matches("raw-export-sharded-recipes", output.path(), relative_path);
+    }
 }
 
 #[test]
@@ -1184,6 +1233,9 @@ fn texture_atlas_fixture_materializes_runtime_atlas_without_missing_refs() {
         "rust/runtime-manifest.json",
         "rust/missing-texture-report.json",
         "rust/suspicious-texture-report.json",
+        "rust/ui-pack/ui_template_catalog.json",
+        "rust/ui-pack/ui_template_binding_index.json",
+        "rust/ui-pack/ui_family_census.json",
     ] {
         assert_expected_json_matches("raw-export-texture-atlas", output.path(), relative_path);
     }

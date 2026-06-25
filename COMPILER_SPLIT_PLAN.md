@@ -59,6 +59,15 @@ This avoids creating cross-repository version friction while Native UI export, U
 - Added expected report corpus under `tools/neonei-compiler-rs/fixtures/expected/` for runtime manifests, native UI layout reports, UI pack reports, UI asset manifests, integrity reports, texture reports, and sharded recipe UI payload indexes.
 - Added Rust conformance tests that compile each fixture through the stable `Cli -> run_command` boundary and compare key outputs against the expected corpus.
 
+### 2026-06-25 — Phase 4 consumer decoupling completed
+
+- Added compiled dist-data UI contract outputs under `rust/ui-pack/`: `ui_template_catalog.json`, `ui_template_binding_index.json`, and `ui_family_census.json`.
+- Added these UI contract artifacts to the Rust runtime manifest, dist-data manifest, integrity report, and fixture expected corpus so consumers can verify them without reading raw-export internals.
+- Changed backend default UI template / binding / family census paths to read compiled `backend/public/dist-data/rust/ui-pack/*` artifacts instead of NESQL++ `raw-export/validation/*` files.
+- Updated `UiTemplateBindingIndexService` to prefer the compiler-produced binding index and only rebuild from compiled dist-data recipe/template artifacts when that product file is absent.
+- Added `scripts/compiler-decoupling-gate.mjs`, a runtime boundary gate that fails if `frontend/src` or `backend/src` directly references `tools/neonei-compiler-rs`, compiler fixtures, raw-export directory paths, or compiler Cargo manifests.
+- Locked the new decoupling boundary in `scripts/native-ui-gate-regression.test.mjs` and backend service tests.
+
 ## Goals
 
 - Make the compiler a clean build-time product, not a large tool hidden inside NeoNEI.
@@ -251,7 +260,7 @@ recipe UI payload index
 
 ## Phase 4 — NeoNEI Consumer Decoupling
 
-**Status:** Pending audit after the CLI/schema fixture corpus is complete.
+**Status:** Completed on 2026-06-25. NeoNEI frontend/backend runtime code now consumes compiled dist-data contracts only; compiler/raw-export knowledge is constrained to build/finalizer/test/gate surfaces.
 
 ### Work
 
@@ -273,10 +282,10 @@ The backend should serve compiled runtime artifacts, not compile-time intermedia
 
 ### Acceptance Criteria
 
-- Frontend runtime loaders only depend on dist-data manifests.
-- Finalizer is the only NeoNEI script that knows how to call the compiler.
-- Validator scripts verify dist-data outputs rather than compiler internals.
-- No frontend/backend import depends on `tools/neonei-compiler-rs` paths.
+- Frontend runtime loaders only depend on dist-data manifests. **Done:** `scripts/compiler-decoupling-gate.mjs --gate` scans `frontend/src`.
+- Finalizer is the only NeoNEI production script that knows how to call the compiler. **Done:** compiler source path access is confined to finalizer/gates/tests, not runtime code.
+- Validator scripts verify dist-data outputs rather than compiler internals. **Done:** backend UI services now default to compiled `rust/ui-pack/*` JSON products.
+- No frontend/backend import depends on `tools/neonei-compiler-rs` paths. **Done:** enforced by `scripts/compiler-decoupling-gate.mjs --gate`.
 
 ## Phase 5 — Extraction Readiness Gate
 
@@ -344,8 +353,12 @@ Run after each phase:
 cd E:\codex\ae2\NeoNEI
 cargo test --manifest-path tools/neonei-compiler-rs/Cargo.toml
 node --test scripts/native-ui-gate-regression.test.mjs
+node scripts/compiler-decoupling-gate.mjs --gate
 node --check scripts/validate-native-ui-layouts.mjs
 node --check scripts/validate-rust-recipe-runtime.mjs
+cd backend
+npm run build
+node -r ts-node/register --test scripts/ui-template-catalog-availability.test.ts scripts/ui-template-binding-index-availability.test.ts scripts/ui-family-census-availability.test.ts
 cd frontend
 npm run typecheck --if-present
 npm run build --if-present

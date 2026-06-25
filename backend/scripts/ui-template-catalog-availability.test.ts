@@ -7,20 +7,20 @@ import { UiTemplateCatalogService } from '../src/services/ui-template-catalog.se
 
 test('ui template catalog service reads the exported catalog and resolves templates', () => {
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-ui-template-catalog-'));
-  const catalogFilePath = path.join(tempDir, 'raw-export', 'validation', 'ui-template-catalog.json');
+  const catalogFilePath = path.join(tempDir, 'dist-data', 'rust', 'ui-pack', 'ui_template_catalog.json');
   fs.mkdirSync(path.dirname(catalogFilePath), { recursive: true });
   fs.writeFileSync(
     catalogFilePath,
     JSON.stringify({
-      schemaVersion: 'nesqlpp/raw-export/alpha1/ui-template-catalog',
+      schemaVersion: 'neonei/ui-template-catalog/current',
       generatedAt: '1710000000000',
       source: {
-        kind: 'ui-family-census',
-        resource: 'raw-export/validation/ui-family-census.json',
-        censusSchemaVersion: 'nesqlpp/raw-export/alpha1/ui-family-census',
+        kind: 'compiled-dist-data',
+        resource: 'rust/ui-pack/ui_template_catalog.json',
+        censusSchemaVersion: 'neonei/ui-family-census/current',
         censusFamilyCount: 1,
         censusHandlerCount: 2,
-        layoutSpecProvider: 'NeiUiTemplateLayoutSpecs',
+        layoutSpecProvider: 'elysium-compiler',
       },
       summary: {
         handlerCount: 2,

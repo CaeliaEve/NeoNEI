@@ -269,6 +269,9 @@ test('native UI background contract uses materialized nine-slice ModularUI asset
 
 test('compiler extraction boundary supports external elysium-compiler binary', () => {
   const finalizer = readFileSync(join(repoRoot, 'scripts/finalize-native-ui-export.mjs'), 'utf8');
+  const decouplingGate = readFileSync(join(repoRoot, 'scripts/compiler-decoupling-gate.mjs'), 'utf8');
+  const runtimePaths = readFileSync(join(repoRoot, 'backend/src/config/runtime-paths.ts'), 'utf8');
+  const bindingService = readFileSync(join(repoRoot, 'backend/src/services/ui-template-binding-index.service.ts'), 'utf8');
   const main = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/main.rs'), 'utf8');
   const lib = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/lib.rs'), 'utf8');
   const compilerTests = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/tests.rs'), 'utf8');
@@ -323,7 +326,21 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(compilerTests.includes('raw-export-semantic-background-only'), true);
   assert.equal(compilerTests.includes('raw-export-sharded-recipes'), true);
   assert.equal(compilerTests.includes('raw-export-texture-atlas'), true);
+  assert.equal(compilerTests.includes('rust/ui-pack/ui_template_catalog.json'), true);
+  assert.equal(compilerTests.includes('rust/ui-pack/ui_template_binding_index.json'), true);
+  assert.equal(compilerTests.includes('rust/ui-pack/ui_family_census.json'), true);
   assert.equal(compilerTests.includes('assert_expected_json_matches'), true);
+  assert.equal(decouplingGate.includes('schemaVersion: \'neonei/compiler-decoupling-gate/v1\''), true);
+  assert.equal(decouplingGate.includes('frontend/src'), true);
+  assert.equal(decouplingGate.includes('backend/src'), true);
+  assert.equal(decouplingGate.includes('tools[\\\\/]neonei-compiler-rs|neonei-compiler-rs'), true);
+  assert.equal(decouplingGate.includes('raw-export[\\\\/]'), true);
+  assert.equal(runtimePaths.includes('DIST_DATA_DIR'), true);
+  assert.equal(runtimePaths.includes("'rust', 'ui-pack', 'ui_template_catalog.json'"), true);
+  assert.equal(runtimePaths.includes("'rust', 'ui-pack', 'ui_template_binding_index.json'"), true);
+  assert.equal(runtimePaths.includes("'rust', 'ui-pack', 'ui_family_census.json'"), true);
+  assert.equal(bindingService.includes('readCompiledBindingIndex'), true);
+  assert.equal(bindingService.includes('getCompiledBindingReport'), true);
   assert.equal(compilerTests.includes('write_minimal_native_ui_fixture'), false);
   assert.equal(compilerTests.includes('run_command(Cli {'), true);
   assert.equal(main.includes('use commands::run_command;'), false);

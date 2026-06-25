@@ -62,6 +62,7 @@ function pickImageRootPath(candidates: Array<string | undefined>): string {
 
 export const DATA_DIR = resolvedDataDir;
 export const PUBLIC_DIR = path.resolve(__dirname, '..', '..', 'public');
+export const DIST_DATA_DIR = path.resolve(pickEnv('DIST_DATA_DIR', 'DIST_DATA_V3_DIR') || path.join(PUBLIC_DIR, 'dist-data'));
 export const RUNTIME_DIR = path.resolve(pickEnv('NEONEI_RUNTIME_DIR') || path.join(DATA_DIR, 'runtime'));
 export const CACHE_DIR = path.resolve(pickEnv('NEONEI_CACHE_DIR') || path.join(DATA_DIR, 'cache'));
 export const DB_FILE = pickEnv('DB_FILE') || path.join(DATA_DIR, 'database.db');
@@ -158,11 +159,11 @@ export const NESQL_RENDER_INDEX_FILE = pickFirstExistingPath([
 ]);
 export const NESQL_BROWSER_ATLAS_INDEX_FILE = pickFirstExistingPath([
   pickEnv('NESQL_BROWSER_ATLAS_INDEX_FILE'),
-  path.join(PUBLIC_DIR, 'dist-data', 'textures', 'browser-atlas-index.json'),
+  path.join(DIST_DATA_DIR, 'textures', 'browser-atlas-index.json'),
 ]);
 export const NESQL_BROWSER_LAYOUT_INDEX_FILE = pickFirstExistingPath([
   pickEnv('NESQL_BROWSER_LAYOUT_INDEX_FILE'),
-  path.join(PUBLIC_DIR, 'dist-data', 'browser', 'item-catalog.json'),
+  path.join(DIST_DATA_DIR, 'browser', 'item-catalog.json'),
 ]);
 export const NESQL_ATLAS_REGISTRY_FILE = pickFirstExistingPath([
   pickEnv('NESQL_ATLAS_REGISTRY_FILE'),
@@ -170,13 +171,17 @@ export const NESQL_ATLAS_REGISTRY_FILE = pickFirstExistingPath([
 ]);
 export const NESQL_UI_FAMILY_CENSUS_FILE = pickFirstExistingPath([
   pickEnv('NESQL_UI_FAMILY_CENSUS_FILE'),
-  NESQL_REPOSITORY_PATH ? path.join(NESQL_REPOSITORY_PATH, 'raw-export', 'validation', 'ui-family-census.json') : undefined,
+  path.join(DIST_DATA_DIR, 'rust', 'ui-pack', 'ui_family_census.json'),
 ]);
 export const NESQL_UI_TEMPLATE_CATALOG_FILE = pickFirstExistingPath([
   pickEnv('NESQL_UI_TEMPLATE_CATALOG_FILE'),
-  NESQL_REPOSITORY_PATH ? path.join(NESQL_REPOSITORY_PATH, 'raw-export', 'validation', 'ui-template-catalog.json') : undefined,
+  path.join(DIST_DATA_DIR, 'rust', 'ui-pack', 'ui_template_catalog.json'),
+]);
+export const NESQL_UI_TEMPLATE_BINDING_INDEX_FILE = pickFirstExistingPath([
+  pickEnv('NESQL_UI_TEMPLATE_BINDING_INDEX_FILE'),
+  path.join(DIST_DATA_DIR, 'rust', 'ui-pack', 'ui_template_binding_index.json'),
 ]);
 export const NESQL_UI_PAYLOAD_INDEX_FILE = pickFirstExistingPath([
   pickEnv('NESQL_UI_PAYLOAD_INDEX_FILE'),
-  path.join(PUBLIC_DIR, 'dist-data', 'recipes', 'ui-payload-index.json'),
+  path.join(DIST_DATA_DIR, 'recipes', 'ui-payload-index.json'),
 ]);

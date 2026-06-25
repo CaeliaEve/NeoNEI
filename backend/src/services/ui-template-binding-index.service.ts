@@ -1,5 +1,9 @@
 import fs from 'fs';
-import { NESQL_UI_PAYLOAD_INDEX_FILE, NESQL_UI_TEMPLATE_CATALOG_FILE } from '../config/runtime-paths';
+import {
+  NESQL_UI_PAYLOAD_INDEX_FILE,
+  NESQL_UI_TEMPLATE_BINDING_INDEX_FILE,
+  NESQL_UI_TEMPLATE_CATALOG_FILE,
+} from '../config/runtime-paths';
 import { notFound } from '../utils/http';
 import {
   UiTemplateCatalogService,
@@ -57,6 +61,7 @@ export interface UiTemplateBindingIndexReport {
 }
 
 export interface UiTemplateBindingIndexServiceOptions {
+  bindingIndexFilePath?: string;
   recipeUiPayloadIndexFilePath?: string;
   templateCatalogFilePath?: string;
 }
@@ -112,13 +117,67 @@ function readRecipeUiPayloadIndex(filePath: string): RecipeUiPayloadIndexEntry[]
   return recipes;
 }
 
+function normalizeBindingIndexEntry(value: unknown): UiTemplateBindingIndexEntry | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  const recipeId = asString(record.recipeId);
+  const path = asString(record.path);
+  if (!recipeId || !path) {
+    return null;
+  }
+  return {
+    recipeId,
+    path,
+    payloadKey: asString(record.payloadKey),
+    familyKey: asString(record.familyKey),
+    recipeType: asString(record.recipeType),
+    machineType: asString(record.machineType),
+    templateKey: asString(record.templateKey) || null,
+    templateSignature: asString(record.templateSignature) || null,
+    canonicalMachineFamily: asString(record.canonicalMachineFamily) || null,
+    layoutKind: asString(record.layoutKind) || null,
+  };
+}
+
+function readCompiledBindingIndex(filePath: string): UiTemplateBindingIndexReport | null {
+  if (!filePath || !fs.existsSync(filePath)) {
+    return null;
+  }
+  const raw = fs.readFileSync(filePath, 'utf8');
+  const record = JSON.parse(raw) as Record<string, unknown>;
+  const summary = record.summary && typeof record.summary === 'object' && !Array.isArray(record.summary)
+    ? record.summary as Record<string, unknown>
+    : {};
+  const bindings = Array.isArray(record.bindings)
+    ? record.bindings.map(normalizeBindingIndexEntry).filter((entry): entry is UiTemplateBindingIndexEntry => Boolean(entry))
+    : [];
+  return {
+    schemaVersion: asString(record.schemaVersion) || 'neonei/ui-template-binding-index/current',
+    generatedAt: asString(record.generatedAt),
+    source: record.source as UiTemplateBindingIndexSource,
+    summary: {
+      recipeCount: Number(summary.recipeCount ?? bindings.length),
+      boundRecipeCount: Number(summary.boundRecipeCount ?? bindings.filter((entry) => entry.templateKey).length),
+      unboundRecipeCount: Number(summary.unboundRecipeCount ?? bindings.filter((entry) => !entry.templateKey).length),
+      templateCount: Number(summary.templateCount ?? 0),
+      familyCount: Number(summary.familyCount ?? 0),
+      layoutKindCount: Number(summary.layoutKindCount ?? 0),
+    },
+    bindings,
+  };
+}
+
 export class UiTemplateBindingIndexService {
   private cache: CachedBindingIndex | null = null;
+  private readonly bindingIndexFilePath: string;
   private readonly recipeUiPayloadIndexFilePath: string;
   private readonly templateCatalogFilePath: string;
   private readonly templateCatalogService: UiTemplateCatalogService;
 
   constructor(options: UiTemplateBindingIndexServiceOptions = {}) {
+    this.bindingIndexFilePath = options.bindingIndexFilePath ?? NESQL_UI_TEMPLATE_BINDING_INDEX_FILE;
     this.recipeUiPayloadIndexFilePath = options.recipeUiPayloadIndexFilePath ?? NESQL_UI_PAYLOAD_INDEX_FILE;
     this.templateCatalogFilePath = options.templateCatalogFilePath ?? NESQL_UI_TEMPLATE_CATALOG_FILE;
     this.templateCatalogService = new UiTemplateCatalogService({
@@ -130,13 +189,18 @@ export class UiTemplateBindingIndexService {
     const report = this.getReportOrNull();
     if (!report) {
       throw notFound(
-        'NESQL++ UI template binding index is not available. Re-export recipes/ui-payload-index.json and raw-export/validation/ui-template-catalog.json.',
+        'Compiled UI template binding index is not available. Re-run the Elysium compiler so dist-data/rust/ui-pack/ui_template_binding_index.json is generated.',
       );
     }
     return report;
   }
 
   getReportOrNull(): UiTemplateBindingIndexReport | null {
+    const compiled = this.getCompiledBindingReport();
+    if (compiled) {
+      return compiled;
+    }
+
     const recipeIndex = this.getRecipeIndex();
     const templateCatalog = this.getTemplateCatalog();
     if (!recipeIndex || !templateCatalog) {
@@ -239,6 +303,27 @@ export class UiTemplateBindingIndexService {
     return { mtimeMs: stat.mtimeMs, recipes };
   }
 
+  private getCompiledBindingReport(): UiTemplateBindingIndexReport | null {
+    if (!this.bindingIndexFilePath || !fs.existsSync(this.bindingIndexFilePath)) {
+      return null;
+    }
+    const stat = fs.statSync(this.bindingIndexFilePath);
+    const cacheKey = `compiled:${stat.mtimeMs}`;
+    if (this.cache && this.cache.cacheKey === cacheKey) {
+      return this.cache.report;
+    }
+    const report = readCompiledBindingIndex(this.bindingIndexFilePath);
+    if (!report) {
+      return null;
+    }
+    const bindingIndex = new Map<string, UiTemplateBindingIndexEntry>();
+    for (const binding of report.bindings) {
+      bindingIndex.set(binding.recipeId, binding);
+    }
+    this.cache = { cacheKey, report, bindingIndex };
+    return report;
+  }
+
   private getTemplateCatalog(): { mtimeMs: number; report: UiTemplateCatalogReport } | null {
     if (!this.templateCatalogFilePath || !fs.existsSync(this.templateCatalogFilePath)) {
       return null;
@@ -252,6 +337,11 @@ export class UiTemplateBindingIndexService {
   }
 
   private getCacheOrNull(): CachedBindingIndex | null {
+    const compiled = this.getCompiledBindingReport();
+    if (compiled && this.cache) {
+      return this.cache;
+    }
+
     const recipeIndex = this.getRecipeIndex();
     const templateCatalog = this.getTemplateCatalog();
     if (!recipeIndex || !templateCatalog) {

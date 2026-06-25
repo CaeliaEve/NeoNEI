@@ -6,7 +6,9 @@ use crate::recipe_ui_payload::{
     build_raw_recipe_ui_payload_index, read_compiled_recipe_ui_payload_index,
 };
 use crate::ui_templates::{
-    build_ui_assets_manifest, build_ui_template_bindings, materialize_ui_background_assets,
+    build_ui_assets_manifest, build_ui_family_census_report,
+    build_ui_template_binding_index_report, build_ui_template_bindings,
+    build_ui_template_catalog_report, materialize_ui_background_assets,
     ui_template_catalog_templates, ui_template_rect_action_count, ui_template_rect_count,
     ui_template_slot_count, ui_template_text_count,
 };
@@ -67,6 +69,16 @@ pub fn compile_ui_pack(input: &Path, output: &Path, strict: bool, _debug_json: b
         build_compact_ui_binding_payload(&bindings, &mut strings, &mut string_refs)?;
     let string_payload = build_compact_ui_string_payload(&strings)?;
     let assets_manifest = build_ui_assets_manifest(&templates);
+    let template_catalog_report = build_ui_template_catalog_report(
+        &manifest
+            .files
+            .get("uiTemplateCatalog")
+            .cloned()
+            .unwrap_or_default(),
+        &templates,
+    );
+    let binding_index_report = build_ui_template_binding_index_report(&bindings, &templates);
+    let family_census_report = build_ui_family_census_report(&templates);
     let ui_background_assets = materialize_ui_background_assets(input, output, &assets_manifest)?;
     let missing_ui_background_assets = ui_background_assets
         .get("missing")
@@ -120,6 +132,18 @@ pub fn compile_ui_pack(input: &Path, output: &Path, strict: bool, _debug_json: b
     write_json_value(
         &ui_pack_dir.join("ui_assets.manifest.json"),
         &assets_manifest,
+    )?;
+    write_json_value(
+        &ui_pack_dir.join("ui_template_catalog.json"),
+        &template_catalog_report,
+    )?;
+    write_json_value(
+        &ui_pack_dir.join("ui_template_binding_index.json"),
+        &binding_index_report,
+    )?;
+    write_json_value(
+        &ui_pack_dir.join("ui_family_census.json"),
+        &family_census_report,
     )?;
     write_json_value(
         &ui_pack_dir.join("ui_pack_report.json"),
