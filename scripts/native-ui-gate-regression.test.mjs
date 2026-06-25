@@ -271,6 +271,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const finalizer = readFileSync(join(repoRoot, 'scripts/finalize-native-ui-export.mjs'), 'utf8');
   const main = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/main.rs'), 'utf8');
   const lib = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/lib.rs'), 'utf8');
+  const compilerTests = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/tests.rs'), 'utf8');
   const baseline = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/baseline.rs'), 'utf8');
   const commands = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/commands.rs'), 'utf8');
   const cli = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/cli.rs'), 'utf8');
@@ -308,6 +309,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('mod commands;'), false);
   assert.equal(lib.includes('mod baseline;'), true);
   assert.equal(lib.includes('pub mod commands;'), true);
+  assert.equal(lib.includes('#[cfg(test)]'), true);
+  assert.equal(lib.includes('mod tests;'), true);
   assert.equal(main.includes('use commands::run_command;'), false);
   assert.equal(main.includes('use baseline::run_baseline;'), false);
   assert.equal(main.includes('fn run_baseline('), false);
@@ -318,7 +321,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('mod atlas_repair;'), false);
   assert.equal(lib.includes('mod atlas_repair;'), true);
   assert.equal(main.includes('use atlas_repair::select_group_representative;'), false);
-  assert.equal(lib.includes('use atlas_repair::select_group_representative;'), true);
+  assert.equal(lib.includes('use atlas_repair::select_group_representative;'), false);
+  assert.equal(compilerTests.includes('use crate::atlas_repair::select_group_representative;'), true);
   assert.equal(main.includes('fn repaired_browser_atlas('), false);
   assert.equal(main.includes('fn select_group_representative('), false);
   assert.equal(main.includes('fn atlas_drawable_score('), false);
@@ -350,7 +354,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('mod io;'), false);
   assert.equal(lib.includes('mod io;'), true);
   assert.equal(main.includes('use io::{normalize_path, write_json_value};'), false);
-  assert.equal(lib.includes('use io::{normalize_path, write_json_value};'), true);
+  assert.equal(lib.includes('use io::{normalize_path, write_json_value};'), false);
+  assert.equal(compilerTests.includes('use crate::io::{normalize_path, write_json_value};'), true);
   assert.equal(main.includes('fn sha256_file('), false);
   assert.equal(main.includes('fn write_json_value('), false);
   assert.equal(main.includes('fn normalize_path('), false);
@@ -360,7 +365,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('mod json_ext;'), false);
   assert.equal(lib.includes('mod json_ext;'), true);
   assert.equal(main.includes('use json_ext::{'), false);
-  assert.equal(lib.includes('use json_ext::{'), true);
+  assert.equal(lib.includes('use json_ext::{'), false);
+  assert.equal(compilerTests.includes('use crate::json_ext::{'), true);
   assert.equal(main.includes('fn first_non_empty('), false);
   assert.equal(main.includes('fn nested_value_string('), false);
   assert.equal(main.includes('fn read_json_file('), false);
@@ -454,7 +460,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('mod recipe_ui_payload;'), false);
   assert.equal(lib.includes('mod recipe_ui_payload;'), true);
   assert.equal(main.includes('use recipe_ui_payload::rust_recipe_ui_payload_relative_path;'), false);
-  assert.equal(lib.includes('use recipe_ui_payload::rust_recipe_ui_payload_relative_path;'), true);
+  assert.equal(lib.includes('use recipe_ui_payload::rust_recipe_ui_payload_relative_path;'), false);
+  assert.equal(compilerTests.includes('use crate::recipe_ui_payload::rust_recipe_ui_payload_relative_path;'), true);
   assert.equal(main.includes('fn read_compiled_recipe_ui_payload_index('), false);
   assert.equal(main.includes('fn build_raw_recipe_ui_payload_index('), false);
   assert.equal(main.includes('fn rust_recipe_ui_payload_relative_path('), false);
@@ -468,7 +475,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('mod recipe_domain;'), false);
   assert.equal(lib.includes('mod recipe_domain;'), true);
   assert.equal(main.includes('use recipe_domain::{'), false);
-  assert.equal(lib.includes('use recipe_domain::{'), true);
+  assert.equal(lib.includes('use recipe_domain::{'), false);
+  assert.equal(compilerTests.includes('use crate::recipe_domain::{'), true);
   assert.equal(main.includes('struct RecipeHandlerContext'), false);
   assert.equal(main.includes('fn public_recipe_handler('), false);
   assert.equal(main.includes('fn public_recipe_layout('), false);
@@ -507,7 +515,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('mod texture_animation;'), false);
   assert.equal(lib.includes('mod texture_animation;'), true);
   assert.equal(main.includes('use texture_animation::{'), false);
-  assert.equal(lib.includes('use texture_animation::{'), true);
+  assert.equal(lib.includes('use texture_animation::{'), false);
+  assert.equal(compilerTests.includes('use crate::texture_animation::{'), true);
   assert.equal(main.includes('fn expected_animated_item('), false);
   assert.equal(main.includes('fn promote_animation_facts_to_animated_atlas('), false);
   assert.equal(main.includes('fn normalize_animation_fact_timeline('), false);
@@ -519,7 +528,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('mod ui_templates;'), false);
   assert.equal(lib.includes('mod ui_templates;'), true);
   assert.equal(main.includes('use ui_templates::{'), false);
-  assert.equal(lib.includes('use ui_templates::{'), true);
+  assert.equal(lib.includes('use ui_templates::{'), false);
+  assert.equal(compilerTests.includes('use crate::ui_templates::{'), true);
   assert.equal(main.includes('fn ui_template_catalog_templates('), false);
   assert.equal(main.includes('fn build_ui_template_bindings('), false);
   assert.equal(main.includes('fn build_ui_assets_manifest('), false);
@@ -531,7 +541,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('mod packs;'), false);
   assert.equal(lib.includes('mod packs;'), true);
   assert.equal(main.includes('use packs::search::{'), false);
-  assert.equal(lib.includes('use packs::search::{'), true);
+  assert.equal(lib.includes('use packs::search::{'), false);
+  assert.equal(compilerTests.includes('use crate::packs::search::{'), true);
   assert.equal(main.includes('fn compile_search_pack('), false);
   assert.equal(main.includes('fn build_compact_search_payload_from_items('), false);
   assert.equal(main.includes('fn build_compact_string_payload_from_items('), false);
@@ -606,7 +617,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('mod validation;'), false);
   assert.equal(lib.includes('mod validation;'), true);
   assert.equal(main.includes('use validation::{'), false);
-  assert.equal(lib.includes('use validation::{'), true);
+  assert.equal(lib.includes('use validation::{'), false);
+  assert.equal(compilerTests.includes('use crate::validation::{'), true);
   assert.equal(main.includes('fn compile_semantic_validation_report('), false);
   assert.equal(main.includes('fn validate_atlas_ref('), false);
   assert.equal(main.includes('fn validate_atlas_bounds('), false);
