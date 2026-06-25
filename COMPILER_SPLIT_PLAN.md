@@ -220,7 +220,7 @@ Fallback behavior:
 
 ## Phase 3 — Schema and Fixture Corpus
 
-**Status:** Mostly completed. The compiler-owned fixtures now cover minimal Native UI, GregTech captured UI, missing captured background failure, semantic-only background, sharded recipes, and texture atlas assets. Schema examples are emitted by the `schemas` command and documented in `tools/neonei-compiler-rs/README.md`; remaining Phase 3 work is limited to adding more domain-specific fixture breadth if new raw-export contracts appear.
+**Status:** Completed on 2026-06-25 for the current raw-export contracts. The compiler-owned fixtures cover minimal Native UI, GregTech captured UI, missing captured background failure, semantic-only background, sharded recipes, texture atlas assets, compiled UI contract JSON, and recipe UI payload indexes with Native UI primitives. Schema examples are emitted by the `schemas` command and documented in `tools/neonei-compiler-rs/README.md`; future raw-export contracts should add new fixtures as normal maintenance, not as unfinished Phase 3 work.
 
 ### Work
 
