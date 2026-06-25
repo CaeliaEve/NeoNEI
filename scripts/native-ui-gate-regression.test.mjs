@@ -313,6 +313,9 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(lib.includes('mod tests;'), true);
   assert.equal(compilerTests.includes('minimal_native_ui_fixture_compiles_through_stable_cli_boundary'), true);
   assert.equal(compilerTests.includes('missing_captured_ui_background_fixture_fails_strict_compile'), true);
+  assert.equal(compilerTests.includes('compiler_fixture_path("raw-export-minimal")'), true);
+  assert.equal(compilerTests.includes('compiler_fixture_path("raw-export-missing-background-should-fail")'), true);
+  assert.equal(compilerTests.includes('write_minimal_native_ui_fixture'), false);
   assert.equal(compilerTests.includes('run_command(Cli {'), true);
   assert.equal(main.includes('use commands::run_command;'), false);
   assert.equal(main.includes('use baseline::run_baseline;'), false);
