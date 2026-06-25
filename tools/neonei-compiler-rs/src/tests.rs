@@ -41,6 +41,40 @@ fn compiler_fixture_path(name: &str) -> std::path::PathBuf {
         .join(name)
 }
 
+fn read_fixture_json(path: impl AsRef<Path>) -> serde_json::Value {
+    serde_json::from_str(&fs::read_to_string(path).unwrap()).unwrap()
+}
+
+fn compile_fixture(fixture: &str, scope: CompileScope, strict: bool) -> tempfile::TempDir {
+    let output = tempfile::tempdir().unwrap();
+    let report = output.path().join("compiler-report.json");
+    run_command(Cli {
+        command: Command::Compile {
+            input: compiler_fixture_path(fixture),
+            output: output.path().to_path_buf(),
+            report,
+            scope,
+            threads: Some(1),
+            strict,
+            debug_json: false,
+        },
+    })
+    .unwrap();
+    output
+}
+
+fn assert_expected_json_matches(fixture: &str, output: &Path, relative_path: &str) {
+    let expected = compiler_fixture_path("expected")
+        .join(fixture)
+        .join(relative_path);
+    let actual = output.join(relative_path);
+    assert_eq!(
+        read_fixture_json(actual),
+        read_fixture_json(expected),
+        "expected output mismatch for {fixture}:{relative_path}"
+    );
+}
+
 #[test]
 fn normalize_path_uses_forward_slashes() {
     assert!(normalize_path(Path::new("a/b")).contains('/'));
@@ -1019,22 +1053,8 @@ fn stable_cli_inspect_validate_and_schemas_cover_fixture_contracts() {
 
 #[test]
 fn minimal_native_ui_fixture_compiles_through_stable_cli_boundary() {
-    let output = tempfile::tempdir().unwrap();
+    let output = compile_fixture("raw-export-minimal", CompileScope::NativeUi, false);
     let report = output.path().join("compiler-report.json");
-    let raw = compiler_fixture_path("raw-export-minimal");
-
-    run_command(Cli {
-        command: Command::Compile {
-            input: raw,
-            output: output.path().to_path_buf(),
-            report: report.clone(),
-            scope: CompileScope::NativeUi,
-            threads: Some(1),
-            strict: false,
-            debug_json: false,
-        },
-    })
-    .unwrap();
 
     assert!(report.exists());
     assert!(output.path().join("rust/runtime-manifest.json").exists());
@@ -1074,6 +1094,99 @@ fn minimal_native_ui_fixture_compiles_through_stable_cli_boundary() {
             .len(),
         0
     );
+}
+
+#[test]
+fn native_ui_gt_fixture_matches_expected_reports_and_copies_background_asset() {
+    let output = compile_fixture("raw-export-native-ui-gt", CompileScope::NativeUi, true);
+    for relative_path in [
+        "rust/runtime-manifest.json",
+        "rust/native-ui-layout-report.json",
+        "rust/ui-pack/ui_pack_report.json",
+        "rust/ui-pack/ui_assets.manifest.json",
+        "rust/integrity.json",
+    ] {
+        assert_expected_json_matches("raw-export-native-ui-gt", output.path(), relative_path);
+    }
+    assert!(output
+        .path()
+        .join("assets/ui-backgrounds/gregtech/nei_single_recipe.png")
+        .is_file());
+}
+
+#[test]
+fn semantic_background_only_fixture_compiles_without_materialized_asset() {
+    let output = compile_fixture(
+        "raw-export-semantic-background-only",
+        CompileScope::NativeUi,
+        true,
+    );
+    let layout_report = read_fixture_json(output.path().join("rust/native-ui-layout-report.json"));
+    let ui_assets = read_fixture_json(output.path().join("rust/ui-pack/ui_assets.manifest.json"));
+    let ui_pack_report = read_fixture_json(output.path().join("rust/ui-pack/ui_pack_report.json"));
+
+    assert_eq!(layout_report["backgroundStatus"], json!("semantic"));
+    assert_eq!(layout_report["status"], json!("ready"));
+    assert!(ui_assets["assets"].as_array().unwrap().is_empty());
+    assert!(ui_pack_report["assets"]["uiBackgrounds"]["missing"]
+        .as_array()
+        .unwrap()
+        .is_empty());
+    for relative_path in [
+        "rust/runtime-manifest.json",
+        "rust/native-ui-layout-report.json",
+        "rust/ui-pack/ui_pack_report.json",
+        "rust/ui-pack/ui_assets.manifest.json",
+        "rust/integrity.json",
+    ] {
+        assert_expected_json_matches(
+            "raw-export-semantic-background-only",
+            output.path(),
+            relative_path,
+        );
+    }
+}
+
+#[test]
+fn sharded_recipes_fixture_compiles_all_declared_shards() {
+    let output = compile_fixture("raw-export-sharded-recipes", CompileScope::NativeUi, true);
+    let ui_payload_index = read_fixture_json(output.path().join("recipes/ui-payload-index.json"));
+    let recipes = ui_payload_index["recipes"].as_array().unwrap();
+    assert_eq!(recipes.len(), 2);
+    assert!(recipes
+        .iter()
+        .any(|entry| entry["recipeId"] == json!("r_fixture_shard_a")));
+    assert!(recipes
+        .iter()
+        .any(|entry| entry["recipeId"] == json!("r_fixture_shard_b")));
+    assert_expected_json_matches(
+        "raw-export-sharded-recipes",
+        output.path(),
+        "recipes/ui-payload-index.json",
+    );
+}
+
+#[test]
+fn texture_atlas_fixture_materializes_runtime_atlas_without_missing_refs() {
+    let output = compile_fixture("raw-export-texture-atlas", CompileScope::All, true);
+    let missing_texture_report =
+        read_fixture_json(output.path().join("rust/missing-texture-report.json"));
+    assert_eq!(missing_texture_report["status"], json!("ok"));
+    assert_eq!(
+        missing_texture_report["counts"]["missingAtlasAssetFiles"],
+        json!(0)
+    );
+    assert!(output
+        .path()
+        .join("textures/atlas/static-fixture.webp")
+        .is_file());
+    for relative_path in [
+        "rust/runtime-manifest.json",
+        "rust/missing-texture-report.json",
+        "rust/suspicious-texture-report.json",
+    ] {
+        assert_expected_json_matches("raw-export-texture-atlas", output.path(), relative_path);
+    }
 }
 
 #[test]

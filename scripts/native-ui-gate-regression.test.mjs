@@ -319,6 +319,11 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(compilerTests.includes('missing_captured_ui_background_fixture_fails_strict_compile'), true);
   assert.equal(compilerTests.includes('compiler_fixture_path("raw-export-minimal")'), true);
   assert.equal(compilerTests.includes('compiler_fixture_path("raw-export-missing-background-should-fail")'), true);
+  assert.equal(compilerTests.includes('raw-export-native-ui-gt'), true);
+  assert.equal(compilerTests.includes('raw-export-semantic-background-only'), true);
+  assert.equal(compilerTests.includes('raw-export-sharded-recipes'), true);
+  assert.equal(compilerTests.includes('raw-export-texture-atlas'), true);
+  assert.equal(compilerTests.includes('assert_expected_json_matches'), true);
   assert.equal(compilerTests.includes('write_minimal_native_ui_fixture'), false);
   assert.equal(compilerTests.includes('run_command(Cli {'), true);
   assert.equal(main.includes('use commands::run_command;'), false);

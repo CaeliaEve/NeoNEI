@@ -50,6 +50,15 @@ This avoids creating cross-repository version friction while Native UI export, U
 - Removed the in-test temporary raw-export generator from `src/tests.rs`; fixture tests now use stable on-disk fixtures via `compiler_fixture_path(...)`.
 - Locked the fixture corpus in `scripts/native-ui-gate-regression.test.mjs` so regression gates reject a return to ad-hoc generated fixtures.
 
+### 2026-06-25 — Phase 3 fixture corpus expanded
+
+- Added `raw-export-native-ui-gt`, a GregTech native UI fixture proving captured `assets/ui-backgrounds/gregtech/nei_single_recipe.png` is copied into dist-data and listed by UI/runtime reports.
+- Added `raw-export-semantic-background-only`, proving semantic GT backgrounds can compile strictly without a materialized captured asset when the raw-export uses `nativeBackground.status = semantic` and does not declare an `assetRef`.
+- Added `raw-export-sharded-recipes`, proving the compiler reads every recipe shard declared by `recipes/recipe-index.json` and emits all recipe UI payload index entries.
+- Added `raw-export-texture-atlas`, proving strict texture compilation copies runtime atlas assets and reports zero missing atlas asset files.
+- Added expected report corpus under `tools/neonei-compiler-rs/fixtures/expected/` for runtime manifests, native UI layout reports, UI pack reports, UI asset manifests, integrity reports, texture reports, and sharded recipe UI payload indexes.
+- Added Rust conformance tests that compile each fixture through the stable `Cli -> run_command` boundary and compare key outputs against the expected corpus.
+
 ## Goals
 
 - Make the compiler a clean build-time product, not a large tool hidden inside NeoNEI.
@@ -195,7 +204,7 @@ Fallback behavior:
 
 ## Phase 3 — Schema and Fixture Corpus
 
-**Status:** In progress. `raw-export-minimal` and `raw-export-missing-background-should-fail` are landed as compiler-owned fixtures; the remaining fixture families and schema examples are still pending.
+**Status:** Mostly completed. The compiler-owned fixtures now cover minimal Native UI, GregTech captured UI, missing captured background failure, semantic-only background, sharded recipes, and texture atlas assets. Schema examples are emitted by the `schemas` command and documented in `tools/neonei-compiler-rs/README.md`; remaining Phase 3 work is limited to adding more domain-specific fixture breadth if new raw-export contracts appear.
 
 ### Work
 
