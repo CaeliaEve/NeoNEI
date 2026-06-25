@@ -44,6 +44,171 @@ fn write_jsonl(path: &Path, rows: &[serde_json::Value]) {
     fs::write(path, format!("{text}\n")).unwrap();
 }
 
+fn write_minimal_native_ui_fixture(raw: &Path, include_background_asset: bool) {
+    fs::create_dir_all(raw.join("recipes/shards")).unwrap();
+    if include_background_asset {
+        fs::create_dir_all(raw.join("assets/ui-backgrounds/gregtech")).unwrap();
+        fs::write(
+            raw.join("assets/ui-backgrounds/gregtech/nei_single_recipe.png"),
+            b"fixture-png",
+        )
+        .unwrap();
+    }
+
+    write_json_value(
+        &raw.join("manifest.json"),
+        &json!({
+            "schemaVersion": "neonei/raw-export-fixture/v1",
+            "files": {
+                "items": "items.jsonl",
+                "neiOrder": "nei-order.jsonl",
+                "browserGroups": "browser-groups.json",
+                "textures": "textures.json",
+                "recipeIndex": "recipes/recipe-index.json",
+                "neiHandlers": "recipes/handlers.jsonl",
+                "neiHandlerLayouts": "recipes/handler-layouts.json",
+                "uiTemplateCatalog": "recipes/ui-template-catalog.json"
+            }
+        }),
+    )
+    .unwrap();
+    write_jsonl(
+        &raw.join("items.jsonl"),
+        &[json!({
+            "itemId": "i~minecraft~iron_ingot~0",
+            "localizedName": "Iron Ingot",
+            "modId": "minecraft",
+            "internalName": "item.ingotIron",
+            "damage": 0,
+            "renderAssetRef": "nesqlpp:item/i~minecraft~iron_ingot~0"
+        })],
+    );
+    write_jsonl(
+        &raw.join("nei-order.jsonl"),
+        &[json!({ "itemId": "i~minecraft~iron_ingot~0", "entryOrder": 1 })],
+    );
+    write_json_value(
+        &raw.join("browser-groups.json"),
+        &json!({
+            "groups": [{
+                "groupKey": "minecraft:iron",
+                "groupLabel": "Iron",
+                "representativeItemId": "i~minecraft~iron_ingot~0",
+                "memberItemIds": ["i~minecraft~iron_ingot~0"]
+            }]
+        }),
+    )
+    .unwrap();
+    write_json_value(
+        &raw.join("textures.json"),
+        &json!({
+            "textures": [{
+                "itemId": "i~minecraft~iron_ingot~0",
+                "assetId": "nesqlpp:item/i~minecraft~iron_ingot~0",
+                "hasStaticAtlas": true,
+                "staticAtlas": {
+                    "atlasFile": "textures/atlas/static-fixture.webp",
+                    "atlasWidth": 64,
+                    "atlasHeight": 64,
+                    "x": 0,
+                    "y": 0,
+                    "width": 16,
+                    "height": 16
+                }
+            }]
+        }),
+    )
+    .unwrap();
+    write_json_value(
+        &raw.join("recipes/recipe-index.json"),
+        &json!({
+            "recipeCount": 1,
+            "shards": [{ "path": "recipes/shards/recipes-000.jsonl", "count": 1 }]
+        }),
+    )
+    .unwrap();
+    write_jsonl(
+        &raw.join("recipes/handlers.jsonl"),
+        &[json!({
+            "handlerKey": "gt.recipe.test",
+            "handlerClass": "gregtech.nei.GTNEIDefaultHandler",
+            "canonicalMachineFamily": "gregtech-machine",
+            "localizedName": "Test GT Machine"
+        })],
+    );
+    write_json_value(
+        &raw.join("recipes/handler-layouts.json"),
+        &json!({
+            "handler-layouts": [{
+                "handlerKey": "gt.recipe.test",
+                "handlerClass": "gregtech.nei.GTNEIDefaultHandler",
+                "canonicalMachineFamily": "gregtech-machine",
+                "layoutKind": "machine",
+                "width": 176,
+                "height": 90,
+                "maxRecipesPerPage": 1,
+                "imageRegion": { "x": 0, "y": 0, "width": 176, "height": 90 },
+                "nativeBackground": {
+                    "status": "captured",
+                    "kind": "gt-modular-ui",
+                    "assetRef": "assets/ui-backgrounds/gregtech/nei_single_recipe.png",
+                    "resource": "gregtech:textures/gui/background/nei_single_recipe.png",
+                    "scaling": "nine-slice",
+                    "texture": { "width": 64, "height": 64, "borderU": 2, "borderV": 2 }
+                },
+                "progressBars": [{ "x": 78, "y": 24, "width": 20, "height": 18 }]
+            }]
+        }),
+    )
+    .unwrap();
+    write_jsonl(
+        &raw.join("recipes/shards/recipes-000.jsonl"),
+        &[json!({
+            "recipeId": "r_fixture_gt",
+            "family": "gregtech",
+            "sourcePlugin": "gregtech",
+            "recipeType": "gt.recipe.test",
+            "inputs": [{ "itemId": "i~minecraft~iron_ingot~0" }],
+            "outputs": [{ "itemId": "i~minecraft~iron_ingot~0" }],
+            "machine": { "machineId": "gt.recipe.test", "displayName": "Test GT Machine" },
+            "nativeLayout": {
+                "canonicalMachineFamily": "gregtech-machine",
+                "imageRegion": { "x": 0, "y": 0, "width": 176, "height": 90 },
+                "progressBars": [{ "x": 78, "y": 24, "width": 20, "height": 18 }],
+                "nativeBackground": {
+                    "status": "captured",
+                    "assetRef": "assets/ui-backgrounds/gregtech/nei_single_recipe.png"
+                }
+            }
+        })],
+    );
+    write_json_value(
+        &raw.join("recipes/ui-template-catalog.json"),
+        &json!({
+            "templates": [{
+                "templateKey": "gt-fixture@default",
+                "templateSignature": "gt-fixture",
+                "familyKey": "gregtech-machine|machine|176x90@0#1|unknown",
+                "canonicalMachineFamily": "gregtech-machine",
+                "layoutKind": "machine",
+                "width": 176,
+                "height": 90,
+                "maxRecipesPerPage": 1,
+                "nativeBackground": {
+                    "status": "captured",
+                    "kind": "gt-modular-ui",
+                    "assetRef": "assets/ui-backgrounds/gregtech/nei_single_recipe.png",
+                    "scaling": "nine-slice",
+                    "texture": { "width": 64, "height": 64, "borderU": 2, "borderV": 2 }
+                },
+                "slots": [{ "role": "item-input", "x": 45, "y": 24, "width": 16, "height": 16 }],
+                "progressBars": [{ "x": 78, "y": 24, "width": 20, "height": 18 }]
+            }]
+        }),
+    )
+    .unwrap();
+}
+
 #[test]
 fn normalize_path_uses_forward_slashes() {
     assert!(normalize_path(Path::new("a/b")).contains('/'));
@@ -971,166 +1136,7 @@ fn minimal_native_ui_fixture_compiles_through_stable_cli_boundary() {
     let report = output.path().join("compiler-report.json");
     let raw = input.path();
 
-    fs::create_dir_all(raw.join("recipes/shards")).unwrap();
-    fs::create_dir_all(raw.join("assets/ui-backgrounds/gregtech")).unwrap();
-    fs::write(
-        raw.join("assets/ui-backgrounds/gregtech/nei_single_recipe.png"),
-        b"fixture-png",
-    )
-    .unwrap();
-
-    write_json_value(
-        &raw.join("manifest.json"),
-        &json!({
-            "schemaVersion": "neonei/raw-export-fixture/v1",
-            "files": {
-                "items": "items.jsonl",
-                "neiOrder": "nei-order.jsonl",
-                "browserGroups": "browser-groups.json",
-                "textures": "textures.json",
-                "recipeIndex": "recipes/recipe-index.json",
-                "neiHandlers": "recipes/handlers.jsonl",
-                "neiHandlerLayouts": "recipes/handler-layouts.json",
-                "uiTemplateCatalog": "recipes/ui-template-catalog.json"
-            }
-        }),
-    )
-    .unwrap();
-    write_jsonl(
-        &raw.join("items.jsonl"),
-        &[json!({
-            "itemId": "i~minecraft~iron_ingot~0",
-            "localizedName": "Iron Ingot",
-            "modId": "minecraft",
-            "internalName": "item.ingotIron",
-            "damage": 0,
-            "renderAssetRef": "nesqlpp:item/i~minecraft~iron_ingot~0"
-        })],
-    );
-    write_jsonl(
-        &raw.join("nei-order.jsonl"),
-        &[json!({ "itemId": "i~minecraft~iron_ingot~0", "entryOrder": 1 })],
-    );
-    write_json_value(
-        &raw.join("browser-groups.json"),
-        &json!({
-            "groups": [{
-                "groupKey": "minecraft:iron",
-                "groupLabel": "Iron",
-                "representativeItemId": "i~minecraft~iron_ingot~0",
-                "memberItemIds": ["i~minecraft~iron_ingot~0"]
-            }]
-        }),
-    )
-    .unwrap();
-    write_json_value(
-        &raw.join("textures.json"),
-        &json!({
-            "textures": [{
-                "itemId": "i~minecraft~iron_ingot~0",
-                "assetId": "nesqlpp:item/i~minecraft~iron_ingot~0",
-                "hasStaticAtlas": true,
-                "staticAtlas": {
-                    "atlasFile": "textures/atlas/static-fixture.webp",
-                    "atlasWidth": 64,
-                    "atlasHeight": 64,
-                    "x": 0,
-                    "y": 0,
-                    "width": 16,
-                    "height": 16
-                }
-            }]
-        }),
-    )
-    .unwrap();
-    write_json_value(
-        &raw.join("recipes/recipe-index.json"),
-        &json!({
-            "recipeCount": 1,
-            "shards": [{ "path": "recipes/shards/recipes-000.jsonl", "count": 1 }]
-        }),
-    )
-    .unwrap();
-    write_jsonl(
-        &raw.join("recipes/handlers.jsonl"),
-        &[json!({
-            "handlerKey": "gt.recipe.test",
-            "handlerClass": "gregtech.nei.GTNEIDefaultHandler",
-            "canonicalMachineFamily": "gregtech-machine",
-            "localizedName": "Test GT Machine"
-        })],
-    );
-    write_json_value(
-        &raw.join("recipes/handler-layouts.json"),
-        &json!({
-            "handler-layouts": [{
-                "handlerKey": "gt.recipe.test",
-                "handlerClass": "gregtech.nei.GTNEIDefaultHandler",
-                "canonicalMachineFamily": "gregtech-machine",
-                "layoutKind": "machine",
-                "width": 176,
-                "height": 90,
-                "maxRecipesPerPage": 1,
-                "imageRegion": { "x": 0, "y": 0, "width": 176, "height": 90 },
-                "nativeBackground": {
-                    "status": "captured",
-                    "kind": "gt-modular-ui",
-                    "assetRef": "assets/ui-backgrounds/gregtech/nei_single_recipe.png",
-                    "resource": "gregtech:textures/gui/background/nei_single_recipe.png",
-                    "scaling": "nine-slice",
-                    "texture": { "width": 64, "height": 64, "borderU": 2, "borderV": 2 }
-                },
-                "progressBars": [{ "x": 78, "y": 24, "width": 20, "height": 18 }]
-            }]
-        }),
-    )
-    .unwrap();
-    write_jsonl(
-        &raw.join("recipes/shards/recipes-000.jsonl"),
-        &[json!({
-            "recipeId": "r_fixture_gt",
-            "family": "gregtech",
-            "sourcePlugin": "gregtech",
-            "recipeType": "gt.recipe.test",
-            "inputs": [{ "itemId": "i~minecraft~iron_ingot~0" }],
-            "outputs": [{ "itemId": "i~minecraft~iron_ingot~0" }],
-            "machine": { "machineId": "gt.recipe.test", "displayName": "Test GT Machine" },
-            "nativeLayout": {
-                "canonicalMachineFamily": "gregtech-machine",
-                "imageRegion": { "x": 0, "y": 0, "width": 176, "height": 90 },
-                "progressBars": [{ "x": 78, "y": 24, "width": 20, "height": 18 }],
-                "nativeBackground": {
-                    "status": "captured",
-                    "assetRef": "assets/ui-backgrounds/gregtech/nei_single_recipe.png"
-                }
-            }
-        })],
-    );
-    write_json_value(
-        &raw.join("recipes/ui-template-catalog.json"),
-        &json!({
-            "templates": [{
-                "templateKey": "gt-fixture@default",
-                "templateSignature": "gt-fixture",
-                "familyKey": "gregtech-machine|machine|176x90@0#1|unknown",
-                "canonicalMachineFamily": "gregtech-machine",
-                "layoutKind": "machine",
-                "width": 176,
-                "height": 90,
-                "maxRecipesPerPage": 1,
-                "nativeBackground": {
-                    "status": "captured",
-                    "kind": "gt-modular-ui",
-                    "assetRef": "assets/ui-backgrounds/gregtech/nei_single_recipe.png",
-                    "scaling": "nine-slice",
-                    "texture": { "width": 64, "height": 64, "borderU": 2, "borderV": 2 }
-                },
-                "slots": [{ "role": "item-input", "x": 45, "y": 24, "width": 16, "height": 16 }],
-                "progressBars": [{ "x": 78, "y": 24, "width": 20, "height": 18 }]
-            }]
-        }),
-    )
-    .unwrap();
+    write_minimal_native_ui_fixture(raw, true);
 
     run_command(Cli {
         command: Command::Compile {
@@ -1183,4 +1189,37 @@ fn minimal_native_ui_fixture_compiles_through_stable_cli_boundary() {
             .len(),
         0
     );
+}
+
+#[test]
+fn missing_captured_ui_background_fixture_fails_strict_compile() {
+    let input = tempfile::tempdir().unwrap();
+    let output = tempfile::tempdir().unwrap();
+    let report = output.path().join("compiler-report.json");
+
+    write_minimal_native_ui_fixture(input.path(), false);
+
+    let error = run_command(Cli {
+        command: Command::Compile {
+            input: input.path().to_path_buf(),
+            output: output.path().to_path_buf(),
+            report,
+            scope: CompileScope::NativeUi,
+            threads: Some(1),
+            strict: true,
+            debug_json: false,
+        },
+    })
+    .expect_err(
+        "strict compile must fail when a captured UI background asset is declared but missing",
+    );
+
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("ui-pack compiler blocked")
+            && message.contains("native UI background asset")
+            && message.contains("missing"),
+        "unexpected error: {message}"
+    );
+    assert!(!output.path().join("rust/runtime-manifest.json").exists());
 }
