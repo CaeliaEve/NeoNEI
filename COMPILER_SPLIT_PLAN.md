@@ -68,6 +68,13 @@ This avoids creating cross-repository version friction while Native UI export, U
 - Added `scripts/compiler-decoupling-gate.mjs`, a runtime boundary gate that fails if `frontend/src` or `backend/src` directly references `tools/neonei-compiler-rs`, compiler fixtures, raw-export directory paths, or compiler Cargo manifests.
 - Locked the new decoupling boundary in `scripts/native-ui-gate-regression.test.mjs` and backend service tests.
 
+### 2026-06-25 — Phase 5 extraction readiness gate completed
+
+- Added `scripts/compiler-extraction-readiness-gate.mjs`, which builds the release compiler binary and runs `scripts/finalize-native-ui-export.mjs --compiler <release-binary>` against the compiler-owned Native UI fixture in strict mode.
+- Fixed recipe UI payload index projection so lightweight `recipes/ui-payload-index.json` includes `nativeLayout` primitives such as GregTech `progressBars`; this lets finalizer gates verify Native UI geometry without reading full payload shards.
+- Refreshed fixture expected outputs and added Rust coverage proving sharded recipe UI index entries preserve drawable progress bars.
+- Verified the external binary path through the finalizer and downstream production/native UI gates.
+
 ## Goals
 
 - Make the compiler a clean build-time product, not a large tool hidden inside NeoNEI.
@@ -289,17 +296,17 @@ The backend should serve compiled runtime artifacts, not compile-time intermedia
 
 ## Phase 5 — Extraction Readiness Gate
 
-**Status:** Pending. This cannot be marked complete until the stable CLI, fixture corpus, consumer decoupling audit, and external-binary strict compile gate all pass.
+**Status:** Completed on 2026-06-25 for in-repo extraction readiness. The compiler is now structurally ready to be moved to a future `elysium-compiler` repository, subject to the product decision that NESQL++ raw-export schemas are stable enough to pay cross-repo versioning cost.
 
 The compiler is ready to move to a standalone repository only when all conditions are met:
 
-- `main.rs` is thin and modules are cleanly separated.
-- CLI is stable and documented.
-- Fixture corpus covers Native UI, recipes, search, browser, textures, and asset failures.
-- NeoNEI finalizer supports external compiler binary.
-- NeoNEI runtime only consumes dist-data contracts.
-- NESQL++ raw-export schema has stopped changing every feature iteration.
-- Full finalizer run passes with strict mode using the external binary path.
+- `main.rs` is thin and modules are cleanly separated. **Done.**
+- CLI is stable and documented. **Done:** `inspect`, `validate`, `schemas`, `compile`.
+- Fixture corpus covers Native UI, recipes, search, browser, textures, and asset failures. **Done for the current contracts.**
+- NeoNEI finalizer supports external compiler binary. **Done:** `--compiler` / `NEONEI_COMPILER_BIN`.
+- NeoNEI runtime only consumes dist-data contracts. **Done:** enforced by `scripts/compiler-decoupling-gate.mjs --gate`.
+- NESQL++ raw-export schema has stopped changing every feature iteration. **Operational caveat:** extraction should still wait until this remains true across real exports.
+- Full finalizer run passes with strict mode using the external binary path. **Done:** enforced by `scripts/compiler-extraction-readiness-gate.mjs --gate`.
 
 ## Future Repo Name
 
@@ -354,6 +361,7 @@ cd E:\codex\ae2\NeoNEI
 cargo test --manifest-path tools/neonei-compiler-rs/Cargo.toml
 node --test scripts/native-ui-gate-regression.test.mjs
 node scripts/compiler-decoupling-gate.mjs --gate
+node scripts/compiler-extraction-readiness-gate.mjs --gate
 node --check scripts/validate-native-ui-layouts.mjs
 node --check scripts/validate-rust-recipe-runtime.mjs
 cd backend

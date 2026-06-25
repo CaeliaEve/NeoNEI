@@ -4,8 +4,8 @@ use crate::manifest::{
     RawManifest,
 };
 use crate::recipe_domain::{
-    captured_ui_family_key, classify_recipe_family_key, public_recipe_handler, recipe_id,
-    RecipeHandlerContext,
+    captured_ui_family_key, classify_recipe_family_key, public_recipe_handler,
+    public_recipe_layout, recipe_id, RecipeHandlerContext,
 };
 use anyhow::{anyhow, Context, Result};
 use serde_json::json;
@@ -80,6 +80,9 @@ pub fn build_raw_recipe_ui_payload_index(
         let recipe_id = recipe_id(recipe);
         let (handler, layout) = handler_context.resolve(recipe);
         let public_handler = handler.map(public_recipe_handler);
+        let public_layout = layout
+            .map(public_recipe_layout)
+            .or_else(|| recipe.get("nativeLayout").cloned());
         let raw_family_key = first_non_empty(&[
             value_string(recipe, "family"),
             value_string(recipe, "sourcePlugin"),
@@ -119,6 +122,7 @@ pub fn build_raw_recipe_ui_payload_index(
             "recipeType": recipe_type,
             "machineType": machine_type,
             "handlerKey": handler_key,
+            "nativeLayout": public_layout,
         }));
     }
     Ok(entries)

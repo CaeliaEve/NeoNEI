@@ -1136,6 +1136,7 @@ fn minimal_native_ui_fixture_compiles_through_stable_cli_boundary() {
 fn native_ui_gt_fixture_matches_expected_reports_and_copies_background_asset() {
     let output = compile_fixture("raw-export-native-ui-gt", CompileScope::NativeUi, true);
     for relative_path in [
+        "recipes/ui-payload-index.json",
         "rust/runtime-manifest.json",
         "rust/native-ui-layout-report.json",
         "rust/ui-pack/ui_pack_report.json",
@@ -1172,6 +1173,7 @@ fn semantic_background_only_fixture_compiles_without_materialized_asset() {
         .unwrap()
         .is_empty());
     for relative_path in [
+        "recipes/ui-payload-index.json",
         "rust/runtime-manifest.json",
         "rust/native-ui-layout-report.json",
         "rust/ui-pack/ui_pack_report.json",
@@ -1201,6 +1203,11 @@ fn sharded_recipes_fixture_compiles_all_declared_shards() {
     assert!(recipes
         .iter()
         .any(|entry| entry["recipeId"] == json!("r_fixture_shard_b")));
+    assert!(recipes
+        .iter()
+        .all(|entry| entry["nativeLayout"]["progressBars"]
+            .as_array()
+            .is_some_and(|bars| !bars.is_empty())));
     assert_expected_json_matches(
         "raw-export-sharded-recipes",
         output.path(),
@@ -1230,6 +1237,7 @@ fn texture_atlas_fixture_materializes_runtime_atlas_without_missing_refs() {
         .join("textures/atlas/static-fixture.webp")
         .is_file());
     for relative_path in [
+        "recipes/ui-payload-index.json",
         "rust/runtime-manifest.json",
         "rust/missing-texture-report.json",
         "rust/suspicious-texture-report.json",

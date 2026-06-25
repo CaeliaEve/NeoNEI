@@ -270,6 +270,7 @@ test('native UI background contract uses materialized nine-slice ModularUI asset
 test('compiler extraction boundary supports external elysium-compiler binary', () => {
   const finalizer = readFileSync(join(repoRoot, 'scripts/finalize-native-ui-export.mjs'), 'utf8');
   const decouplingGate = readFileSync(join(repoRoot, 'scripts/compiler-decoupling-gate.mjs'), 'utf8');
+  const extractionGate = readFileSync(join(repoRoot, 'scripts/compiler-extraction-readiness-gate.mjs'), 'utf8');
   const runtimePaths = readFileSync(join(repoRoot, 'backend/src/config/runtime-paths.ts'), 'utf8');
   const bindingService = readFileSync(join(repoRoot, 'backend/src/services/ui-template-binding-index.service.ts'), 'utf8');
   const main = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/main.rs'), 'utf8');
@@ -335,6 +336,14 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(decouplingGate.includes('backend/src'), true);
   assert.equal(decouplingGate.includes('tools[\\\\/]neonei-compiler-rs|neonei-compiler-rs'), true);
   assert.equal(decouplingGate.includes('raw-export[\\\\/]'), true);
+  assert.equal(extractionGate.includes('schemaVersion: \'neonei/compiler-extraction-readiness-gate/v1\''), true);
+  assert.equal(extractionGate.includes("'cargo'"), true);
+  assert.equal(extractionGate.includes("'build'"), true);
+  assert.equal(extractionGate.includes("'--release'"), true);
+  assert.equal(extractionGate.includes('finalize-native-ui-export.mjs'), true);
+  assert.equal(extractionGate.includes('--compiler'), true);
+  assert.equal(recipeUiPayload.includes('"nativeLayout": public_layout'), true);
+  assert.equal(recipePack.includes('"nativeLayout": public_layout'), true);
   assert.equal(runtimePaths.includes('DIST_DATA_DIR'), true);
   assert.equal(runtimePaths.includes("'rust', 'ui-pack', 'ui_template_catalog.json'"), true);
   assert.equal(runtimePaths.includes("'rust', 'ui-pack', 'ui_template_binding_index.json'"), true);

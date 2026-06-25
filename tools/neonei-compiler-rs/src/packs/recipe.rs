@@ -200,6 +200,7 @@ pub fn compile_recipe_pack(
             "recipeType": recipe_type,
             "machineType": machine_type,
             "handlerKey": handler_key,
+            "nativeLayout": public_layout,
         });
         let mut payload_entry = payload_meta;
         if let Some(payload_object) = payload_entry.as_object_mut() {
