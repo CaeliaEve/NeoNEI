@@ -1,9 +1,10 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use clap::Parser;
 mod atlas_repair;
 mod baseline;
 mod binary;
 mod cli;
+mod commands;
 mod io;
 mod json_ext;
 mod manifest;
@@ -20,42 +21,44 @@ mod ui_templates;
 mod validation;
 #[cfg(test)]
 use atlas_repair::select_group_representative;
-use baseline::run_baseline;
-use cli::{Cli, Command, CompileScope};
+use cli::Cli;
+#[cfg(test)]
+use cli::CompileScope;
+use commands::run_command;
+#[cfg(test)]
 use io::{normalize_path, write_json_value};
+#[cfg(test)]
 use json_ext::{value_string, value_u64};
 #[cfg(test)]
 use packs::browser::build_compact_group_payload_from_groups;
-use packs::browser::compile_browser_pack;
 #[cfg(test)]
 use packs::recipe::build_compact_recipe_payload_from_pack;
-use packs::recipe::compile_recipe_pack;
+#[cfg(test)]
 use packs::search::{
     build_compact_search_payload_from_items, build_compact_string_payload_from_items,
-    compile_search_pack,
 };
-use packs::texture::compile_texture_pack;
 #[cfg(test)]
 use packs::texture::{
     build_compact_animation_payload_from_table, build_compact_atlas_meta_payload_from_atlas_items,
     build_compact_texture_payload_from_atlas_items, normalize_runtime_atlas_file_path,
     normalize_timeline,
 };
-use packs::ui::compile_ui_pack;
 #[cfg(test)]
 use packs::ui::{
     build_compact_ui_binding_payload, build_compact_ui_string_payload,
     build_compact_ui_template_payload,
 };
-use recipe_domain::captured_ui_family_key;
 #[cfg(test)]
-use recipe_domain::{public_recipe_layout, RecipeHandlerContext};
+use recipe_domain::{captured_ui_family_key, public_recipe_layout, RecipeHandlerContext};
 #[cfg(test)]
 use recipe_ui_payload::rust_recipe_ui_payload_relative_path;
-use runtime::{compile_runtime_reports, purge_debug_json_artifacts};
+#[cfg(test)]
 use serde_json::json;
+#[cfg(test)]
 use std::collections::{BTreeMap, HashMap};
+#[cfg(test)]
 use std::fs;
+#[cfg(test)]
 use std::path::Path;
 #[cfg(test)]
 use texture_animation::{
@@ -65,71 +68,11 @@ use texture_animation::{
 use ui_templates::{
     build_ui_assets_manifest, build_ui_template_bindings, materialize_ui_background_assets,
 };
-use validation::compile_semantic_validation_report;
 #[cfg(test)]
 use validation::{validate_atlas_bounds, validate_frame_bounds};
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
-    match cli.command {
-        Command::Baseline {
-            input,
-            report,
-            threads,
-            strict,
-        } => {
-            configure_threads(threads);
-            run_baseline(&input, None, &report, strict)
-        }
-        Command::Compile {
-            input,
-            output,
-            report,
-            scope,
-            threads,
-            strict,
-            debug_json,
-        } => {
-            configure_threads(threads);
-            fs::create_dir_all(&output)
-                .with_context(|| format!("create output directory {}", output.display()))?;
-            if !debug_json {
-                purge_debug_json_artifacts(&output)?;
-            }
-            match scope {
-                CompileScope::All => {
-                    compile_browser_pack(&input, &output, strict, debug_json)?;
-                    compile_recipe_pack(&input, &output, strict, debug_json)?;
-                    compile_ui_pack(&input, &output, strict, debug_json)?;
-                    compile_texture_pack(&input, &output, strict, debug_json)?;
-                }
-                CompileScope::NativeUi => {
-                    compile_browser_pack(&input, &output, strict, debug_json)?;
-                    compile_recipe_pack(&input, &output, strict, debug_json)?;
-                    compile_ui_pack(&input, &output, strict, debug_json)?;
-                }
-                CompileScope::Search => compile_search_pack(&input, &output, strict, debug_json)?,
-                CompileScope::Browser => compile_browser_pack(&input, &output, strict, debug_json)?,
-                CompileScope::Recipes => compile_recipe_pack(&input, &output, strict, debug_json)?,
-                CompileScope::Ui => compile_ui_pack(&input, &output, strict, debug_json)?,
-                CompileScope::Textures => {
-                    compile_texture_pack(&input, &output, strict, debug_json)?
-                }
-            }
-            compile_semantic_validation_report(&input, &output)?;
-            compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?;
-            run_baseline(&input, Some(&output), &report, strict)
-        }
-    }
-}
-
-fn configure_threads(threads: Option<usize>) {
-    if let Some(threads) = threads {
-        rayon::ThreadPoolBuilder::new()
-            .num_threads(threads)
-            .build_global()
-            .ok();
-    }
+    run_command(Cli::parse())
 }
 
 #[cfg(test)]

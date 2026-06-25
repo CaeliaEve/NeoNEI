@@ -271,6 +271,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   const finalizer = readFileSync(join(repoRoot, 'scripts/finalize-native-ui-export.mjs'), 'utf8');
   const main = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/main.rs'), 'utf8');
   const baseline = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/baseline.rs'), 'utf8');
+  const commands = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/commands.rs'), 'utf8');
   const cli = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/cli.rs'), 'utf8');
   const atlasRepair = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/atlas_repair.rs'), 'utf8');
   const binary = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/binary.rs'), 'utf8');
@@ -300,9 +301,14 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(finalizer.includes('--compiler <path>'), true);
   assert.equal(finalizer.includes('compiler: compilerCommand'), true);
   assert.equal(main.includes('mod baseline;'), true);
-  assert.equal(main.includes('use baseline::run_baseline;'), true);
+  assert.equal(main.includes('mod commands;'), true);
+  assert.equal(main.includes('use commands::run_command;'), true);
+  assert.equal(main.includes('use baseline::run_baseline;'), false);
   assert.equal(main.includes('fn run_baseline('), false);
   assert.equal(baseline.includes('pub fn run_baseline('), true);
+  assert.equal(commands.includes('use crate::baseline::run_baseline;'), true);
+  assert.equal(commands.includes('pub fn run_command('), true);
+  assert.equal(commands.includes('fn configure_threads('), true);
   assert.equal(main.includes('mod atlas_repair;'), true);
   assert.equal(main.includes('use atlas_repair::select_group_representative;'), true);
   assert.equal(main.includes('fn repaired_browser_atlas('), false);
@@ -312,7 +318,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(atlasRepair.includes('pub fn select_group_representative('), true);
   assert.equal(atlasRepair.includes('fn atlas_drawable_score('), true);
   assert.equal(main.includes('mod cli;'), true);
-  assert.equal(main.includes('use cli::{Cli, Command, CompileScope};'), true);
+  assert.equal(main.includes('use cli::Cli;'), true);
+  assert.equal(commands.includes('use crate::cli::{Cli, Command, CompileScope};'), true);
   assert.equal(main.includes('#[derive(Parser, Debug)]'), false);
   assert.equal(cli.includes('pub struct Cli'), true);
   assert.equal(cli.includes('pub enum Command'), true);
@@ -364,7 +371,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(jsonExt.includes('pub fn numeric_value_u64_lossy('), true);
   assert.equal(main.includes('mod native_ui_report;'), true);
   assert.equal(main.includes('use native_ui_report::compile_native_ui_layout_report;'), false);
-  assert.equal(main.includes('compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?'), true);
+  assert.equal(main.includes('compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?'), false);
+  assert.equal(commands.includes('compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?'), true);
   assert.equal(main.includes('fn compile_native_ui_layout_report('), false);
   assert.equal(main.includes('fn is_gregtech_native_layout('), false);
   assert.equal(main.includes('fn is_gregtech_recipe_ui_entry('), false);
@@ -413,8 +421,9 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(reports.includes('pub fn summarize_runtime_output('), true);
   assert.equal(reports.includes('pub fn write_report('), true);
   assert.equal(main.includes('mod runtime;'), true);
-  assert.equal(main.includes('use runtime::{compile_runtime_reports, purge_debug_json_artifacts};'), true);
-  assert.equal(main.includes('compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?'), true);
+  assert.equal(main.includes('use runtime::{compile_runtime_reports, purge_debug_json_artifacts};'), false);
+  assert.equal(commands.includes('use crate::runtime::{compile_runtime_reports, purge_debug_json_artifacts};'), true);
+  assert.equal(commands.includes('compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?'), true);
   assert.equal(main.includes('fn purge_debug_json_artifacts('), false);
   assert.equal(main.includes('fn compile_runtime_reports('), false);
   assert.equal(main.includes('fn update_dist_manifest_with_rust_runtime('), false);
