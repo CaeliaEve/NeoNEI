@@ -1,8 +1,8 @@
 mod atlas_repair;
-mod baseline;
 mod binary;
 pub mod cli;
 pub mod commands;
+mod diagnostics;
 mod io;
 mod json_ext;
 mod manifest;
@@ -13,6 +13,7 @@ mod recipe_domain;
 mod recipe_ui_payload;
 mod reports;
 mod runtime;
+mod schemas;
 mod text;
 mod texture_animation;
 mod ui_templates;

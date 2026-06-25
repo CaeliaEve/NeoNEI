@@ -1,5 +1,5 @@
-use crate::baseline::run_baseline;
 use crate::cli::{Cli, Command, CompileScope};
+use crate::diagnostics::{run_diagnostics_report, DiagnosticsMode};
 use crate::packs::browser::compile_browser_pack;
 use crate::packs::recipe::compile_recipe_pack;
 use crate::packs::search::compile_search_pack;
@@ -7,21 +7,37 @@ use crate::packs::texture::compile_texture_pack;
 use crate::packs::ui::compile_ui_pack;
 use crate::recipe_domain::captured_ui_family_key;
 use crate::runtime::{compile_runtime_reports, purge_debug_json_artifacts};
+use crate::schemas::write_schema_catalog;
 use crate::validation::compile_semantic_validation_report;
 use anyhow::{Context, Result};
 use std::fs;
 
 pub fn run_command(cli: Cli) -> Result<()> {
     match cli.command {
-        Command::Baseline {
+        Command::Inspect {
             input,
             report,
             threads,
-            strict,
         } => {
             configure_threads(threads);
-            run_baseline(&input, None, &report, strict)
+            run_diagnostics_report(&input, None, &report, false, DiagnosticsMode::Inspect)
         }
+        Command::Validate {
+            input,
+            report,
+            output,
+            threads,
+        } => {
+            configure_threads(threads);
+            run_diagnostics_report(
+                &input,
+                output.as_deref(),
+                &report,
+                true,
+                DiagnosticsMode::Validate,
+            )
+        }
+        Command::Schemas { output } => write_schema_catalog(output.as_deref()),
         Command::Compile {
             input,
             output,
@@ -59,7 +75,13 @@ pub fn run_command(cli: Cli) -> Result<()> {
             }
             compile_semantic_validation_report(&input, &output)?;
             compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?;
-            run_baseline(&input, Some(&output), &report, strict)
+            run_diagnostics_report(
+                &input,
+                Some(&output),
+                &report,
+                strict,
+                DiagnosticsMode::Compile,
+            )
         }
     }
 }

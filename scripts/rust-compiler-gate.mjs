@@ -10,7 +10,7 @@ const mainRs = join(crateDir, 'src', 'main.rs');
 const tmpRoot = join(repoRoot, '.tmp-runtime', 'rust-compiler-gate');
 const rawExportSelfTest = join(repoRoot, '.tmp-runtime', 'raw-export-self-test');
 const nodeSelfTestOutput = join(repoRoot, '.tmp-runtime', 'dist-data-v3-self-test');
-const rustReport = join(tmpRoot, 'rust-baseline.json');
+const rustReport = join(tmpRoot, 'rust-inspect.json');
 const rustCompileReport = join(tmpRoot, 'rust-compile-report.json');
 const rustBrowserPack = join(nodeSelfTestOutput, 'rust', 'browser.bin');
 const rustSearchPack = join(nodeSelfTestOutput, 'rust', 'search.bin');
@@ -161,11 +161,13 @@ const mainText = read(mainRs);
 assertIncludes(cargoText, 'name = "neonei-compiler"', 'Cargo.toml');
 assertIncludes(cargoText, 'serde_json', 'Cargo.toml');
 assertIncludes(cargoText, 'flate2', 'Cargo.toml');
-assertIncludes(mainText, 'enum Command', 'main.rs');
-assertIncludes(mainText, 'Baseline', 'main.rs');
-assertIncludes(mainText, 'Compile', 'main.rs');
-assertIncludes(mainText, 'count_jsonl_rows', 'main.rs');
-assertIncludes(mainText, 'summarize_runtime_output', 'main.rs');
+const cliText = read(join(crateDir, 'src', 'cli.rs'));
+assertIncludes(cliText, 'pub enum Command', 'cli.rs');
+assertIncludes(cliText, 'Inspect', 'cli.rs');
+assertIncludes(cliText, 'Validate', 'cli.rs');
+assertIncludes(cliText, 'Schemas', 'cli.rs');
+assertIncludes(cliText, 'Compile', 'cli.rs');
+assertIncludes(mainText, 'run_command(Cli::parse())', 'main.rs');
 
 if (!runCargo) {
   console.log(JSON.stringify({
@@ -193,7 +195,7 @@ run(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'test:raw-export']
 if (!existsSync(rawExportSelfTest)) fail(`Node self-test raw export was not generated: ${rawExportSelfTest}`);
 run(cargoCommand, [
   'run', '--manifest-path', cargoToml, '--',
-  'baseline', '--input', rawExportSelfTest, '--report', rustReport, '--strict',
+  'inspect', '--input', rawExportSelfTest, '--report', rustReport,
 ]);
 run(cargoCommand, [
   'run', '--manifest-path', cargoToml, '--',
@@ -203,10 +205,10 @@ run(cargoCommand, [
 const report = readJson(rustReport);
 const counts = report?.raw_export?.file_counts ?? {};
 if (counts.items !== 3 || counts.fluids !== 1 || counts.groups !== 1 || counts.neiOrder !== 3) {
-  fail(`unexpected Rust baseline counts: ${JSON.stringify(counts)}`);
+  fail(`unexpected Rust inspect counts: ${JSON.stringify(counts)}`);
 }
 if ((report?.blocked ?? []).length > 0) {
-  fail(`Rust baseline reported blockers: ${JSON.stringify(report.blocked)}`);
+  fail(`Rust inspect reported blockers: ${JSON.stringify(report.blocked)}`);
 }
 const compileReport = readJson(rustCompileReport);
 const nodeValidation = readJson(join(nodeSelfTestOutput, 'validation', 'report.json'));

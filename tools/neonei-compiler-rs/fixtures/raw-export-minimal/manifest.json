@@ -8,6 +8,8 @@
     "recipeIndex": "recipes/recipe-index.json",
     "neiHandlers": "recipes/handlers.jsonl",
     "neiHandlerLayouts": "recipes/handler-layouts.json",
-    "uiTemplateCatalog": "recipes/ui-template-catalog.json"
+    "uiTemplateCatalog": "recipes/ui-template-catalog.json",
+    "fluids": "fluids.jsonl",
+    "browserAtlasIndex": "browser-atlas-index.json"
   }
 }

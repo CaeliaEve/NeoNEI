@@ -11,16 +11,30 @@ pub struct Cli {
 
 #[derive(Subcommand, Debug)]
 pub enum Command {
-    /// Read a Raw Export and emit a deterministic baseline report.
-    Baseline {
+    /// Inspect a Raw Export and emit a deterministic diagnostics report without compiling.
+    Inspect {
         #[arg(long)]
         input: PathBuf,
         #[arg(long)]
         report: PathBuf,
         #[arg(long)]
         threads: Option<usize>,
-        #[arg(long, default_value_t = false)]
-        strict: bool,
+    },
+    /// Validate Raw Export and optional dist-data contracts, failing on blockers.
+    Validate {
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long)]
+        report: PathBuf,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        threads: Option<usize>,
+    },
+    /// Emit the stable compiler schema/catalog contract.
+    Schemas {
+        #[arg(long)]
+        output: Option<PathBuf>,
     },
     /// Compile raw-export data into NeoNEI/Elysium runtime packs.
     Compile {

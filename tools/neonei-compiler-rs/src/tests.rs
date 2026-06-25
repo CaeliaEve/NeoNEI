@@ -962,6 +962,62 @@ fn production_manifest_entries_exclude_debug_json_packs() {
 }
 
 #[test]
+fn stable_cli_inspect_validate_and_schemas_cover_fixture_contracts() {
+    let temp = tempfile::tempdir().unwrap();
+    let raw = compiler_fixture_path("raw-export-minimal");
+    let inspect_report = temp.path().join("inspect-report.json");
+    let validate_report = temp.path().join("validate-report.json");
+    let schema_catalog = temp.path().join("schemas/catalog.json");
+
+    run_command(Cli {
+        command: Command::Inspect {
+            input: raw.clone(),
+            report: inspect_report.clone(),
+            threads: Some(1),
+        },
+    })
+    .unwrap();
+    run_command(Cli {
+        command: Command::Validate {
+            input: raw,
+            report: validate_report.clone(),
+            output: None,
+            threads: Some(1),
+        },
+    })
+    .unwrap();
+    run_command(Cli {
+        command: Command::Schemas {
+            output: Some(schema_catalog.clone()),
+        },
+    })
+    .unwrap();
+
+    let inspect: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(inspect_report).unwrap()).unwrap();
+    let validate: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(validate_report).unwrap()).unwrap();
+    let schemas: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(schema_catalog).unwrap()).unwrap();
+
+    assert_eq!(inspect["mode"], json!("inspect"));
+    assert_eq!(validate["mode"], json!("validate"));
+    assert!(validate["blocked"].as_array().unwrap().is_empty());
+    assert_eq!(
+        schemas["schemaVersion"],
+        json!("elysium-compiler/schema-catalog/v1")
+    );
+    assert!(schemas["compiler"]["cli"]["commands"]
+        .as_array()
+        .unwrap()
+        .contains(&json!("schemas")));
+    assert_eq!(
+        schemas["rawExport"]["nativeBackground"]["strictPolicy"],
+        json!("a captured nativeBackground.assetRef must point to a materialized raw-export asset")
+    );
+}
+
+#[test]
 fn minimal_native_ui_fixture_compiles_through_stable_cli_boundary() {
     let output = tempfile::tempdir().unwrap();
     let report = output.path().join("compiler-report.json");

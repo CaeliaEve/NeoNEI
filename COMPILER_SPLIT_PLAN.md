@@ -24,14 +24,23 @@ This avoids creating cross-repository version friction while Native UI export, U
 
 ## Progress / Completion Log
 
-### 2026-06-25 — Phase 1/2 compiler split foundation
+### 2026-06-25 — Phase 1 compiler split foundation
 
 - Completed thin binary entrypoint: `tools/neonei-compiler-rs/src/main.rs` now only parses CLI args and dispatches to the library.
-- Split compiler orchestration into `src/commands.rs`; moved baseline reporting into `src/baseline.rs`; moved runtime report/debug cleanup into `src/runtime.rs`.
+- Split compiler orchestration into `src/commands.rs`; moved diagnostics reporting into `src/diagnostics.rs`; moved runtime report/debug cleanup into `src/runtime.rs`.
 - Split pack compiler responsibilities into `src/packs/browser.rs`, `src/packs/search.rs`, `src/packs/recipe.rs`, `src/packs/texture.rs`, and `src/packs/ui.rs`.
 - Moved unit tests out of the library root into `src/tests.rs`.
-- Added finalizer support for external compiler invocation via `--compiler` / `NEONEI_COMPILER_BIN`, while keeping the in-repo Cargo compiler as the default development path.
 - Verification used during landing: Rust compiler tests, native UI gate regression, script syntax checks, frontend typecheck/build, and CodeGraph sync.
+
+### 2026-06-25 — Phase 2 stable CLI boundary completed
+
+- Replaced the old `baseline` command with explicit product commands: `inspect`, `validate`, `schemas`, and `compile`.
+- Added `src/diagnostics.rs` as the shared Raw Export / dist-data diagnostics engine for `inspect`, `validate`, and post-compile reports.
+- Added `src/schemas.rs` to emit the stable Elysium compiler schema/catalog contract, including raw-export manifest requirements, captured `nativeBackground.assetRef` policy, dist-data runtime entrypoints, UI pack schemas, and recipe UI payload index schema.
+- Updated `scripts/rust-compiler-gate.mjs` to use `inspect` instead of the retired `baseline` command.
+- Updated `scripts/native-ui-gate-regression.test.mjs` so the architecture gate rejects a return to `baseline` and requires `diagnostics` / `schemas` modules plus `Inspect` / `Validate` / `Schemas` CLI variants.
+- Added Rust coverage proving `inspect`, `validate`, and `schemas` run through the stable `Cli -> run_command` boundary against compiler-owned fixtures.
+- Updated `tools/neonei-compiler-rs/README.md` to document the current CLI and runtime outputs.
 
 ### 2026-06-25 — Phase 3 fixture corpus started
 
@@ -141,7 +150,7 @@ node --check scripts/validate-rust-recipe-runtime.mjs
 
 ## Phase 2 — Stable CLI Boundary
 
-**Status:** Partially completed. The stable `compile` boundary and external binary invocation are landed; `inspect`, `validate`, and `schemas` subcommands still need to be added before this phase is fully complete.
+**Status:** Completed on 2026-06-25. The stable `compile`, `inspect`, `validate`, and `schemas` commands are landed; external binary invocation remains supported through `scripts/finalize-native-ui-export.mjs --compiler` / `NEONEI_COMPILER_BIN`.
 
 ### Work
 
