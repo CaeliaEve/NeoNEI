@@ -270,6 +270,7 @@ test('native UI background contract uses materialized nine-slice ModularUI asset
 test('compiler extraction boundary supports external elysium-compiler binary', () => {
   const finalizer = readFileSync(join(repoRoot, 'scripts/finalize-native-ui-export.mjs'), 'utf8');
   const main = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/main.rs'), 'utf8');
+  const baseline = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/baseline.rs'), 'utf8');
   const cli = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/cli.rs'), 'utf8');
   const atlasRepair = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/atlas_repair.rs'), 'utf8');
   const binary = readFileSync(join(repoRoot, 'tools/neonei-compiler-rs/src/binary.rs'), 'utf8');
@@ -298,6 +299,10 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(finalizer.includes("mode: 'in-repo-cargo'"), true);
   assert.equal(finalizer.includes('--compiler <path>'), true);
   assert.equal(finalizer.includes('compiler: compilerCommand'), true);
+  assert.equal(main.includes('mod baseline;'), true);
+  assert.equal(main.includes('use baseline::run_baseline;'), true);
+  assert.equal(main.includes('fn run_baseline('), false);
+  assert.equal(baseline.includes('pub fn run_baseline('), true);
   assert.equal(main.includes('mod atlas_repair;'), true);
   assert.equal(main.includes('use atlas_repair::select_group_representative;'), true);
   assert.equal(main.includes('fn repaired_browser_atlas('), false);
@@ -373,7 +378,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(nativeUiReport.includes('fn is_gregtech_native_layout('), true);
   assert.equal(nativeUiReport.includes('fn has_native_background('), true);
   assert.equal(main.includes('mod manifest;'), true);
-  assert.equal(main.includes('use manifest::read_manifest;'), true);
+  assert.equal(main.includes('use manifest::read_manifest;'), false);
+  assert.equal(baseline.includes('use crate::manifest::read_manifest;'), true);
   assert.equal(main.includes('struct RawManifest'), false);
   assert.equal(main.includes('fn read_manifest('), false);
   assert.equal(main.includes('fn read_json_collection('), false);
@@ -392,7 +398,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(manifest.includes('pub fn runtime_file_descriptors('), true);
   assert.equal(manifest.includes('crate::io::sha256_file'), true);
   assert.equal(main.includes('mod reports;'), true);
-  assert.equal(main.includes('use reports::{'), true);
+  assert.equal(main.includes('use reports::{'), false);
+  assert.equal(baseline.includes('use crate::reports::{summarize_runtime_output, write_report, CompilerReport};'), true);
   assert.equal(main.includes('struct CompilerReport'), false);
   assert.equal(main.includes('struct RuntimeSummary'), false);
   assert.equal(main.includes('struct RawExportSummary'), false);
@@ -548,7 +555,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(uiPack.includes('fn push_compact_ui_rect('), true);
   assert.equal(uiPack.includes('fn compile_recipe_pack('), false);
   assert.equal(main.includes('mod raw_export;'), true);
-  assert.equal(main.includes('use raw_export::summarize_raw_export;'), true);
+  assert.equal(main.includes('use raw_export::summarize_raw_export;'), false);
+  assert.equal(baseline.includes('use crate::raw_export::summarize_raw_export;'), true);
   assert.equal(main.includes('fn summarize_raw_export('), false);
   assert.equal(main.includes('fn read_zero_recipe_diagnostics('), false);
   assert.equal(main.includes('fn zero_recipe_diagnostics_from_value('), false);

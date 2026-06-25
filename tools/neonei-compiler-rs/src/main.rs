@@ -1,6 +1,7 @@
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use clap::Parser;
 mod atlas_repair;
+mod baseline;
 mod binary;
 mod cli;
 mod io;
@@ -19,10 +20,10 @@ mod ui_templates;
 mod validation;
 #[cfg(test)]
 use atlas_repair::select_group_representative;
+use baseline::run_baseline;
 use cli::{Cli, Command, CompileScope};
 use io::{normalize_path, write_json_value};
 use json_ext::{value_string, value_u64};
-use manifest::read_manifest;
 #[cfg(test)]
 use packs::browser::build_compact_group_payload_from_groups;
 use packs::browser::compile_browser_pack;
@@ -46,19 +47,16 @@ use packs::ui::{
     build_compact_ui_binding_payload, build_compact_ui_string_payload,
     build_compact_ui_template_payload,
 };
-use raw_export::summarize_raw_export;
 use recipe_domain::captured_ui_family_key;
 #[cfg(test)]
 use recipe_domain::{public_recipe_layout, RecipeHandlerContext};
 #[cfg(test)]
 use recipe_ui_payload::rust_recipe_ui_payload_relative_path;
-use reports::{summarize_runtime_output, write_report, CompilerReport};
 use runtime::{compile_runtime_reports, purge_debug_json_artifacts};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
-use std::time::Instant;
 #[cfg(test)]
 use texture_animation::{
     expected_animated_item, expected_animation_reason, promote_animation_facts_to_animated_atlas,
@@ -123,63 +121,6 @@ fn main() -> Result<()> {
             run_baseline(&input, Some(&output), &report, strict)
         }
     }
-}
-
-fn run_baseline(input: &Path, output: Option<&Path>, report: &Path, strict: bool) -> Result<()> {
-    let started = Instant::now();
-    let manifest = read_manifest(input)?;
-    let mut warnings = Vec::new();
-    let mut blocked = Vec::new();
-    let summary = summarize_raw_export(input, &manifest, &mut warnings, &mut blocked)?;
-    let runtime = summarize_runtime_output(output)?;
-
-    if strict && !blocked.is_empty() {
-        fs::create_dir_all(report.parent().unwrap_or_else(|| Path::new(".")))?;
-        write_report(
-            report,
-            &CompilerReport {
-                schema_version: "neonei/rust-compiler-report/current",
-                mode: if output.is_some() {
-                    "compile"
-                } else {
-                    "baseline"
-                }
-                .to_string(),
-                input: normalize_path(input),
-                output: output.map(normalize_path),
-                elapsed_ms: started.elapsed().as_millis(),
-                raw_export: summary,
-                runtime,
-                warnings,
-                blocked,
-            },
-        )?;
-        return Err(anyhow!(
-            "Raw Export baseline blocked; see {}",
-            report.display()
-        ));
-    }
-
-    fs::create_dir_all(report.parent().unwrap_or_else(|| Path::new(".")))?;
-    write_report(
-        report,
-        &CompilerReport {
-            schema_version: "neonei/rust-compiler-report/current",
-            mode: if output.is_some() {
-                "compile"
-            } else {
-                "baseline"
-            }
-            .to_string(),
-            input: normalize_path(input),
-            output: output.map(normalize_path),
-            elapsed_ms: started.elapsed().as_millis(),
-            raw_export: summary,
-            runtime,
-            warnings,
-            blocked,
-        },
-    )
 }
 
 fn configure_threads(threads: Option<usize>) {
