@@ -316,7 +316,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(cli.includes('pub fn as_str'), true);
   assert.equal(cli.includes('NeoNEI/Elysium runtime data compiler'), true);
   assert.equal(main.includes('mod binary;'), true);
-  assert.equal(main.includes('use binary::write_binary_pack_payload;'), true);
+  assert.equal(main.includes('use binary::write_binary_pack_payload;'), false);
   assert.equal(main.includes('intern_compact_string'), false);
   assert.equal(main.includes('fn write_binary_pack('), false);
   assert.equal(main.includes('fn intern_compact_string('), false);
@@ -373,7 +373,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(nativeUiReport.includes('fn is_gregtech_native_layout('), true);
   assert.equal(nativeUiReport.includes('fn has_native_background('), true);
   assert.equal(main.includes('mod manifest;'), true);
-  assert.equal(main.includes('use manifest::{'), true);
+  assert.equal(main.includes('use manifest::read_manifest;'), true);
   assert.equal(main.includes('struct RawManifest'), false);
   assert.equal(main.includes('fn read_manifest('), false);
   assert.equal(main.includes('fn read_json_collection('), false);
@@ -416,7 +416,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('fn rust_entrypoints_from_integrity('), false);
   assert.equal(main.includes('fn rust_capabilities('), false);
   assert.equal(main.includes('mod recipe_ui_payload;'), true);
-  assert.equal(main.includes('use recipe_ui_payload::{'), true);
+  assert.equal(main.includes('use recipe_ui_payload::rust_recipe_ui_payload_relative_path;'), true);
   assert.equal(main.includes('fn read_compiled_recipe_ui_payload_index('), false);
   assert.equal(main.includes('fn build_raw_recipe_ui_payload_index('), false);
   assert.equal(main.includes('fn rust_recipe_ui_payload_relative_path('), false);
@@ -526,11 +526,12 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(texturePack.includes('fn compile_recipe_pack('), false);
   assert.equal(texturePack.includes('fn compile_ui_pack('), false);
   assert.equal(main.includes('fn compile_dist_recipe_pack('), false);
+  assert.equal(main.includes('fn compile_recipe_pack('), false);
   assert.equal(main.includes('fn build_compact_recipe_payload_from_pack('), false);
   assert.equal(packsMod.includes('pub mod recipe;'), true);
+  assert.equal(recipePack.includes('pub fn compile_recipe_pack('), true);
   assert.equal(recipePack.includes('pub fn compile_dist_recipe_pack('), true);
   assert.equal(recipePack.includes('pub fn build_compact_recipe_payload_from_pack('), true);
-  assert.equal(recipePack.includes('fn compile_recipe_pack('), false);
   assert.equal(recipePack.includes('fn compile_ui_pack('), false);
   assert.equal(main.includes('fn compile_ui_pack('), false);
   assert.equal(main.includes('fn build_compact_ui_template_payload('), false);
