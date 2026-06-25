@@ -53,7 +53,7 @@ use recipe_domain::{public_recipe_layout, RecipeHandlerContext};
 #[cfg(test)]
 use recipe_ui_payload::rust_recipe_ui_payload_relative_path;
 use reports::{summarize_runtime_output, write_report, CompilerReport};
-use runtime::compile_runtime_reports;
+use runtime::{compile_runtime_reports, purge_debug_json_artifacts};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -189,32 +189,6 @@ fn configure_threads(threads: Option<usize>) {
             .build_global()
             .ok();
     }
-}
-
-fn purge_debug_json_artifacts(output: &Path) -> Result<()> {
-    let rust_dir = output.join("rust");
-    for artifact_name in [
-        "browser-pack.json",
-        "search-pack.json",
-        "recipe-pack.json",
-        "texture-pack.json",
-    ] {
-        let path = rust_dir.join(artifact_name);
-        if path.exists() {
-            fs::remove_file(&path)
-                .with_context(|| format!("remove stale debug artifact {}", path.display()))?;
-        }
-    }
-    let payload_shards = rust_dir.join("recipe-ui-payload-shards");
-    if payload_shards.exists() {
-        fs::remove_dir_all(&payload_shards).with_context(|| {
-            format!(
-                "remove stale debug shard directory {}",
-                payload_shards.display()
-            )
-        })?;
-    }
-    Ok(())
 }
 
 #[cfg(test)]

@@ -406,8 +406,9 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(reports.includes('pub fn summarize_runtime_output('), true);
   assert.equal(reports.includes('pub fn write_report('), true);
   assert.equal(main.includes('mod runtime;'), true);
-  assert.equal(main.includes('use runtime::compile_runtime_reports;'), true);
+  assert.equal(main.includes('use runtime::{compile_runtime_reports, purge_debug_json_artifacts};'), true);
   assert.equal(main.includes('compile_runtime_reports(&output, scope, strict, debug_json, captured_ui_family_key)?'), true);
+  assert.equal(main.includes('fn purge_debug_json_artifacts('), false);
   assert.equal(main.includes('fn compile_runtime_reports('), false);
   assert.equal(main.includes('fn update_dist_manifest_with_rust_runtime('), false);
   assert.equal(main.includes('fn is_text_runtime_artifact('), false);
@@ -415,6 +416,7 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(main.includes('fn runtime_id_from_integrity('), false);
   assert.equal(main.includes('fn rust_entrypoints_from_integrity('), false);
   assert.equal(main.includes('fn rust_capabilities('), false);
+  assert.equal(runtime.includes('pub fn purge_debug_json_artifacts('), true);
   assert.equal(main.includes('mod recipe_ui_payload;'), true);
   assert.equal(main.includes('use recipe_ui_payload::rust_recipe_ui_payload_relative_path;'), true);
   assert.equal(main.includes('fn read_compiled_recipe_ui_payload_index('), false);

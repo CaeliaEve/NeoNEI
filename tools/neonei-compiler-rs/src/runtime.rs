@@ -14,6 +14,32 @@ pub fn is_text_runtime_artifact(path: &Path) -> bool {
         .is_some_and(|extension| matches!(extension, "json" | "txt" | "log"))
 }
 
+pub fn purge_debug_json_artifacts(output: &Path) -> Result<()> {
+    let rust_dir = output.join("rust");
+    for artifact_name in [
+        "browser-pack.json",
+        "search-pack.json",
+        "recipe-pack.json",
+        "texture-pack.json",
+    ] {
+        let path = rust_dir.join(artifact_name);
+        if path.exists() {
+            fs::remove_file(&path)
+                .with_context(|| format!("remove stale debug artifact {}", path.display()))?;
+        }
+    }
+    let payload_shards = rust_dir.join("recipe-ui-payload-shards");
+    if payload_shards.exists() {
+        fs::remove_dir_all(&payload_shards).with_context(|| {
+            format!(
+                "remove stale debug shard directory {}",
+                payload_shards.display()
+            )
+        })?;
+    }
+    Ok(())
+}
+
 pub fn rust_manifest_file_entries(
     scope: CompileScope,
     debug_json: bool,
