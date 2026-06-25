@@ -311,6 +311,8 @@ test('compiler extraction boundary supports external elysium-compiler binary', (
   assert.equal(lib.includes('pub mod commands;'), true);
   assert.equal(lib.includes('#[cfg(test)]'), true);
   assert.equal(lib.includes('mod tests;'), true);
+  assert.equal(compilerTests.includes('minimal_native_ui_fixture_compiles_through_stable_cli_boundary'), true);
+  assert.equal(compilerTests.includes('run_command(Cli {'), true);
   assert.equal(main.includes('use commands::run_command;'), false);
   assert.equal(main.includes('use baseline::run_baseline;'), false);
   assert.equal(main.includes('fn run_baseline('), false);
