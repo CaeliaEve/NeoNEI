@@ -84,5 +84,9 @@ PATH_PORTABILITY_PLAN.md
 *_PLAN.md
 
 # Rust build outputs
-tools/neonei-compiler-rs/target/
 
+
+
+tools/elysium-compiler/*.exe
+tools/elysium-compiler/bin/
+tools/elysium-compiler/cache/

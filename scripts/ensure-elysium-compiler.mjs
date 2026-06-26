@@ -1,0 +1,93 @@
+﻿import { createHash } from 'node:crypto';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const args = process.argv.slice(2);
+const lockPath = resolve(readArg('--lock') ?? join(repoRoot, 'tools', 'elysium-compiler', 'elysium-compiler.lock.json'));
+const json = args.includes('--json');
+const buildLocal = args.includes('--build-local') || process.env.NEONEI_BUILD_LOCAL_COMPILER === '1';
+
+function readArg(name) {
+  const index = args.indexOf(name);
+  return index >= 0 ? args[index + 1] : null;
+}
+
+function fail(message) {
+  if (json) console.log(JSON.stringify({ status: 'failed', message, lockPath }, null, 2));
+  else console.error(`[ensure-elysium-compiler] ${message}`);
+  process.exit(1);
+}
+
+function commandExists(command) {
+  const result = spawnSync(command, ['--help'], { stdio: 'ignore', shell: false });
+  return (result.status ?? 1) === 0;
+}
+
+function sha256(file) {
+  return createHash('sha256').update(readFileSync(file)).digest('hex');
+}
+
+function resolveCandidate(candidate) {
+  if (!candidate) return null;
+  return candidate.includes('\\') || candidate.includes('/') ? resolve(repoRoot, candidate) : candidate;
+}
+
+function maybeBuildLocalCompiler(lock) {
+  if (!buildLocal) return null;
+  const manifest = resolve(repoRoot, '..', 'elysium-compiler', 'Cargo.toml');
+  if (!existsSync(manifest)) return null;
+  const result = spawnSync('cargo', ['build', '--release', '-p', 'elysium-compiler', '--manifest-path', manifest], {
+    cwd: repoRoot,
+    stdio: json ? 'pipe' : 'inherit',
+    encoding: json ? 'utf8' : undefined,
+    shell: false,
+  });
+  if ((result.status ?? 1) !== 0) {
+    fail(`local elysium-compiler build failed${json ? `: ${result.stderr || result.stdout}` : ''}`);
+  }
+  return resolveCandidate(lock.localFallbacks?.[0]);
+}
+
+if (!existsSync(lockPath)) fail(`compiler lock file missing: ${lockPath}`);
+const lock = JSON.parse(readFileSync(lockPath, 'utf8').replace(/^\uFEFF/, ''));
+const envCompiler = process.env.NEONEI_COMPILER_BIN?.trim();
+const candidates = envCompiler
+  ? [resolveCandidate(envCompiler)]
+  : [resolveCandidate(lock.binary), ...(lock.localFallbacks ?? []).map(resolveCandidate), maybeBuildLocalCompiler(lock)];
+const compiler = candidates.find((candidate) => {
+  if (!candidate) return false;
+  if (candidate.includes('\\') || candidate.includes('/')) return existsSync(candidate);
+  return commandExists(candidate);
+});
+
+if (!compiler) {
+  fail(`compiler binary is not available. Checked: ${candidates.filter(Boolean).join(', ')}. Set NEONEI_COMPILER_BIN or run with --build-local from a sibling elysium-compiler checkout.`);
+}
+if (compiler.includes('\\') || compiler.includes('/')) {
+  const actual = sha256(compiler);
+  if (!envCompiler && lock.sha256 && actual !== `${lock.sha256}`.toLowerCase()) {
+    fail(`compiler checksum mismatch for ${compiler}: expected ${lock.sha256}, got ${actual}`);
+  }
+}
+
+const result = spawnSync(compiler, ['schemas'], { encoding: 'utf8', stdio: 'pipe', shell: false });
+if ((result.status ?? 1) !== 0) fail(`compiler schemas command failed: ${result.stderr || result.stdout}`);
+const catalog = JSON.parse(result.stdout);
+const metadata = catalog.compiler?.metadata ?? {};
+for (const [field, expected] of [
+  ['name', lock.compiler],
+  ['version', lock.version],
+  ['rawExportSchemaVersion', lock.rawExportSchemaVersion],
+  ['compiledDistSchemaVersion', lock.compiledDistSchemaVersion],
+]) {
+  if (expected && metadata[field] !== expected) {
+    fail(`compiler metadata mismatch for ${field}: expected ${expected}, got ${metadata[field]}`);
+  }
+}
+
+const report = { status: 'ok', compiler, lockPath, metadata };
+if (json) console.log(JSON.stringify(report, null, 2));
+else console.log(compiler);

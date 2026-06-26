@@ -11,7 +11,7 @@ const inputArg = readArg("--input");
 const outputArg = readArg("--output");
 const allowLegacyCompile = args.includes("--legacy-compile-ok") || process.env.NEONEI_ALLOW_LEGACY_JS_COMPILE === "1";
 if (!selfTest && !allowLegacyCompile) {
-  console.warn("[compile-raw-export] JS compiler is retired from the production path; use tools/neonei-compiler-rs for Rust runtime packs. This run is compatibility-only.");
+  console.warn("[compile-raw-export] JS compiler is retired from the production path; use the pinned tools/elysium-compiler binary for runtime packs. This run is compatibility-only.");
 }
 
 
@@ -2684,11 +2684,11 @@ function expectedAnimationReason(item) {
     item?.facetSummary,
   ].filter(Boolean).join(" "));
   if (!haystack) return null;
-  if (/(singularity|奇点|cosmic|寰宇|crystal matrix|水晶矩阵|infinity (armor|tool|sword|pickaxe|axe|shovel|hoe|bow)|无尽(胸甲|头盔|护腿|靴子|工具|剑|镐|斧|铲|锄|弓))/i.test(haystack)) return "avaritia-cosmic-or-singularity";
-  if (/(nasa.*rocket|galacticraft.*rocket|火箭.*galacticraft|nasa.*火箭)/i.test(haystack)) return "galacticraft-dynamic-item";
+  if (/(singularity|濂囩偣|cosmic|瀵板畤|crystal matrix|姘存櫠鐭╅樀|infinity (armor|tool|sword|pickaxe|axe|shovel|hoe|bow)|鏃犲敖(鑳哥敳|澶寸洈|鎶よ吙|闈村瓙|宸ュ叿|鍓憒闀恷鏂閾瞸閿剕寮?)/i.test(haystack)) return "avaritia-cosmic-or-singularity";
+  if (/(nasa.*rocket|galacticraft.*rocket|鐏.*galacticraft|nasa.*鐏)/i.test(haystack)) return "galacticraft-dynamic-item";
   if (
     (modId === "thaumcraftneiplugin" && internalName === "aspect") ||
-    /^要素\s*[:：]/u.test(localizedName) ||
+    /^瑕佺礌\s*[:锛歖/u.test(localizedName) ||
     /\bthaumcraftneiplugin\b.*\baspect\b/i.test(haystack) ||
     /\bthaumic(?:tinkerer|bases|horizons)?\b.*\bmobaspect\b/i.test(haystack)
   ) return "thaumcraft-aspect";

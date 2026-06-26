@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
+﻿import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -6,10 +6,8 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const gate = args.includes('--gate');
 
-const runtimeRoots = [
-  'frontend/src',
-  'backend/src',
-].map((entry) => join(repoRoot, entry));
+const runtimeRoots = ['frontend/src', 'backend/src'].map((entry) => join(repoRoot, entry));
+const retiredCompilerSource = join(repoRoot, 'tools', 'neonei-compiler-rs');
 
 const allowedRuntimeRawExportFiles = new Set([
   'backend/src/services/ecosystem.service.ts',
@@ -17,8 +15,8 @@ const allowedRuntimeRawExportFiles = new Set([
 
 const requiredFiles = [
   'scripts/finalize-native-ui-export.mjs',
-  'tools/neonei-compiler-rs/src/packs/ui.rs',
-  'tools/neonei-compiler-rs/src/runtime.rs',
+  'scripts/ensure-elysium-compiler.mjs',
+  'tools/elysium-compiler/elysium-compiler.lock.json',
   'backend/src/config/runtime-paths.ts',
   'backend/src/services/ui-template-catalog.service.ts',
   'backend/src/services/ui-template-binding-index.service.ts',
@@ -31,24 +29,20 @@ const requiredSnippets = [
     snippets: [
       '--compiler <path>',
       'NEONEI_COMPILER_BIN',
-      "mode: 'external-binary'",
+      "mode: 'pinned-external-binary'",
+      "mode: 'explicit-external-binary'",
       "'compile', '--input'",
+      'scripts/ensure-elysium-compiler.mjs',
     ],
   },
   {
-    file: 'tools/neonei-compiler-rs/src/packs/ui.rs',
+    file: 'scripts/ensure-elysium-compiler.mjs',
     snippets: [
-      'ui_template_catalog.json',
-      'ui_template_binding_index.json',
-      'ui_family_census.json',
-    ],
-  },
-  {
-    file: 'tools/neonei-compiler-rs/src/runtime.rs',
-    snippets: [
-      'rustUiTemplateCatalog',
-      'rustUiTemplateBindingIndex',
-      'rustUiFamilyCensus',
+      'elysium-compiler.lock.json',
+      'sha256',
+      'rawExportSchemaVersion',
+      'compiledDistSchemaVersion',
+      "['schemas']",
     ],
   },
   {
@@ -72,9 +66,9 @@ const requiredSnippets = [
 
 const forbiddenRuntimePatterns = [
   {
-    code: 'COMPILER_SOURCE_PATH_IN_RUNTIME',
+    code: 'RETIRED_COMPILER_SOURCE_PATH_IN_RUNTIME',
     pattern: /tools[\\/]neonei-compiler-rs|neonei-compiler-rs/g,
-    message: 'runtime code must not reference the in-repo compiler source path',
+    message: 'runtime code must not reference the retired in-repo compiler source path',
   },
   {
     code: 'COMPILER_FIXTURE_PATH_IN_RUNTIME',
@@ -133,13 +127,7 @@ function scanRuntimeBoundaries() {
       const matches = [...text.matchAll(rule.pattern)];
       for (const match of matches) {
         const line = text.slice(0, match.index).split(/\r?\n/).length;
-        failures.push({
-          code: rule.code,
-          file: relativePath,
-          line,
-          message: rule.message,
-          match: match[0],
-        });
+        failures.push({ code: rule.code, file: relativePath, line, message: rule.message, match: match[0] });
       }
     }
   }
@@ -148,9 +136,16 @@ function scanRuntimeBoundaries() {
 
 function verifyRequiredContracts() {
   const failures = [];
+  if (existsSync(retiredCompilerSource)) {
+    failures.push({
+      code: 'IN_REPO_COMPILER_SOURCE_RECREATED',
+      file: 'tools/neonei-compiler-rs',
+      message: 'retired in-repo compiler source path must not exist; use pinned tools/elysium-compiler binary or elysium-compiler repo',
+    });
+  }
   for (const relativePath of requiredFiles) {
     if (!existsSync(join(repoRoot, relativePath))) {
-      failures.push({ code: 'REQUIRED_FILE_MISSING', file: relativePath, message: 'required compiler boundary file is missing' });
+      failures.push({ code: 'REQUIRED_FILE_MISSING', file: relativePath, message: 'required external compiler boundary file is missing' });
     }
   }
   for (const requirement of requiredSnippets) {
@@ -161,7 +156,7 @@ function verifyRequiredContracts() {
         failures.push({
           code: 'REQUIRED_CONTRACT_SNIPPET_MISSING',
           file: requirement.file,
-          message: `required compiler boundary snippet is missing: ${snippet}`,
+          message: `required external compiler boundary snippet is missing: ${snippet}`,
         });
       }
     }
@@ -173,11 +168,12 @@ const runtimeFailures = scanRuntimeBoundaries();
 const contractFailures = verifyRequiredContracts();
 const failures = [...runtimeFailures, ...contractFailures];
 const report = {
-  schemaVersion: 'neonei/compiler-decoupling-gate/v1',
+  schemaVersion: 'neonei/compiler-decoupling-gate/v2',
   generatedAt: new Date().toISOString(),
   status: failures.length === 0 ? 'passed' : 'failed',
   runtimeRoots: runtimeRoots.map(repoRelative),
   allowedRuntimeRawExportFiles: Array.from(allowedRuntimeRawExportFiles),
+  retiredCompilerSource: repoRelative(retiredCompilerSource),
   checks: {
     runtimeForbiddenReferences: runtimeFailures.length,
     requiredContractFailures: contractFailures.length,
@@ -186,6 +182,4 @@ const report = {
 };
 
 console.log(JSON.stringify(report, null, 2));
-if (gate && failures.length > 0) {
-  process.exit(1);
-}
+if (gate && failures.length > 0) process.exit(1);

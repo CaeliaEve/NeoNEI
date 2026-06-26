@@ -8,21 +8,12 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const gate = args.includes('--gate');
-const skipBuild = args.includes('--skip-build');
 const fixture = readArg('--fixture') ?? 'raw-export-native-ui-gt';
 const scope = readArg('--scope') ?? 'native-ui';
-const cargoToml = join(repoRoot, 'tools', 'neonei-compiler-rs', 'Cargo.toml');
-const compilerBin = join(
-  repoRoot,
-  'tools',
-  'neonei-compiler-rs',
-  'target',
-  'release',
-  process.platform === 'win32' ? 'neonei-compiler.exe' : 'neonei-compiler',
-);
-const rawExport = join(repoRoot, 'tools', 'neonei-compiler-rs', 'fixtures', fixture);
-
 const steps = [];
+const compilerBin = readArg('--compiler') ?? resolvePinnedCompiler();
+const rawExport = resolve(readArg('--raw-export') ?? join(repoRoot, 'tools', 'elysium-compiler', 'fixtures', fixture));
+
 
 function readArg(name) {
   const index = args.indexOf(name);
@@ -52,6 +43,14 @@ function run(name, command, commandArgs, options = {}) {
   return step;
 }
 
+function resolvePinnedCompiler() {
+  const step = run('resolve pinned elysium compiler', 'node', ['scripts/ensure-elysium-compiler.mjs'], { capture: true });
+  if (step.status !== 0) {
+    fail(`pinned compiler resolution failed: ${step.stderr || step.stdout}`);
+  }
+  return step.stdout.trim();
+}
+
 function fail(message) {
   const report = buildReport('failed', message);
   console.log(JSON.stringify(report, null, 2));
@@ -60,7 +59,7 @@ function fail(message) {
 
 function buildReport(status, message = null, distDataDir = null) {
   return {
-    schemaVersion: 'neonei/compiler-extraction-readiness-gate/v1',
+    schemaVersion: 'neonei/compiler-extraction-readiness-gate/v2',
     generatedAt: new Date().toISOString(),
     status,
     message,
@@ -73,37 +72,26 @@ function buildReport(status, message = null, distDataDir = null) {
   };
 }
 
-if (!existsSync(cargoToml)) {
-  fail(`compiler Cargo.toml missing: ${cargoToml}`);
-} else if (!existsSync(rawExport)) {
+if (!existsSync(rawExport)) {
   fail(`compiler fixture missing: ${rawExport}`);
+} else if (!existsSync(compilerBin)) {
+  fail(`elysium compiler binary missing: ${compilerBin}`);
 } else {
-  if (!skipBuild) {
-    const build = run('release compiler build', 'cargo', ['build', '--release', '--manifest-path', cargoToml]);
-    if (build.status !== 0) {
-      fail(`release compiler build failed with exit code ${build.status}`);
+  const distDataDir = mkdtempSync(join(tmpdir(), 'neonei-external-compiler-gate-'));
+  try {
+    const finalizer = run('external compiler finalizer strict compile', 'node', [
+      'scripts/finalize-native-ui-export.mjs',
+      '--compiler', compilerBin,
+      '--raw-export', rawExport,
+      '--dist-data', distDataDir,
+      '--scope', scope,
+    ]);
+    if (finalizer.status !== 0) {
+      fail(`external compiler finalizer failed with exit code ${finalizer.status}`);
+    } else {
+      console.log(JSON.stringify(buildReport('passed', null, distDataDir), null, 2));
     }
-  }
-
-  if (!existsSync(compilerBin)) {
-    fail(`release compiler binary missing: ${compilerBin}`);
-  } else {
-    const distDataDir = mkdtempSync(join(tmpdir(), 'neonei-external-compiler-gate-'));
-    try {
-      const finalizer = run('external compiler finalizer strict compile', 'node', [
-        'scripts/finalize-native-ui-export.mjs',
-        '--compiler', compilerBin,
-        '--raw-export', rawExport,
-        '--dist-data', distDataDir,
-        '--scope', scope,
-      ]);
-      if (finalizer.status !== 0) {
-        fail(`external compiler finalizer failed with exit code ${finalizer.status}`);
-      } else {
-        console.log(JSON.stringify(buildReport('passed', null, distDataDir), null, 2));
-      }
-    } finally {
-      rmSync(distDataDir, { recursive: true, force: true });
-    }
+  } finally {
+    rmSync(distDataDir, { recursive: true, force: true });
   }
 }

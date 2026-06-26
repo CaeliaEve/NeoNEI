@@ -7,7 +7,6 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
 const reportDir = join(repoRoot, '.runtime-logs');
 const reportPath = join(reportDir, 'native-ui-final-export.json');
-const cargoToml = join(repoRoot, 'tools', 'neonei-compiler-rs', 'Cargo.toml');
 const rustReport = resolve(readArg('--report') ?? join(reportDir, 'native-ui-final-rust-compile-report.json'));
 const rawExportInput = readArg('--raw-export') ?? process.env.RUST_GATE_RAW_EXPORT ?? null;
 const distDataDir = resolve(
@@ -18,10 +17,8 @@ const distDataDir = resolve(
 const explicitCompileScope = readArg('--scope');
 const explicitCompiler = readArg('--compiler') ?? process.env.NEONEI_COMPILER_BIN ?? null;
 const skipCompile = args.includes('--skip-compile');
-const skipCargoTest = args.includes('--skip-cargo-test');
 const runExtendedRuntime = args.includes('--extended-runtime');
-const cargoCommand = resolveCargoCommand();
-const compilerCommand = resolveCompilerCommand();
+let compilerCommand = null;
 
 const steps = [];
 
@@ -37,13 +34,12 @@ function usage() {
     '',
     'Options:',
     '  --skip-compile       Validate an already compiled dist-data directory.',
-    '  --skip-cargo-test    Skip compiler unit tests before compilation.',
     '  --extended-runtime   Also run browser/texture runtime validators after the three final gates.',
     '  --scope <scope>      Rust compile scope; default: all.',
-    '  --compiler <path>    Use an external elysium-compiler binary instead of the in-repo Cargo compiler.',
+    '  --compiler <path>    Use an explicit local elysium-compiler binary instead of the pinned lock binary.',
     '',
     'Environment:',
-    '  NEONEI_COMPILER_BIN  External compiler binary path or command, overridden by --compiler.',
+    '  NEONEI_COMPILER_BIN  Explicit compiler binary path or command, overridden by --compiler.',
   ].join('\n');
 }
 
@@ -53,52 +49,32 @@ function fail(message) {
   process.exit(1);
 }
 
-function commandExists(command, commandArgs = ['--version']) {
+function commandExists(command, commandArgs = ['--help']) {
   const result = spawnSync(command, commandArgs, { stdio: 'ignore', shell: false });
   return (result.status ?? 1) === 0;
 }
 
-function windowsRustCargoCandidates() {
-  if (process.platform !== 'win32') return [];
-  return ['C', 'D', 'E', 'F']
-    .flatMap((drive) => [
-      join(`${drive}:`, 'Rust', 'cargo', 'bin', 'cargo.exe'),
-      join(`${drive}:`, 'Rust', 'rustup', 'toolchains', 'stable-x86_64-pc-windows-msvc', 'bin', 'cargo.exe'),
-    ]);
-}
-
-function userCargoCandidate() {
-  if (process.platform !== 'win32' || !process.env.USERPROFILE) return null;
-  return join(process.env.USERPROFILE, '.cargo', 'bin', 'cargo.exe');
-}
-
-function resolveCargoCommand() {
-  const candidates = [
-    process.env.CARGO,
-    process.env.CARGO_HOME ? join(process.env.CARGO_HOME, 'bin', process.platform === 'win32' ? 'cargo.exe' : 'cargo') : null,
-    userCargoCandidate(),
-    ...windowsRustCargoCandidates(),
-    'cargo',
-  ].filter(Boolean);
-  return candidates.find((candidate) => existsSync(candidate) || commandExists(candidate)) ?? 'cargo';
+function resolvePinnedCompiler() {
+  const result = spawnSync('node', ['scripts/ensure-elysium-compiler.mjs'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: 'pipe',
+    shell: false,
+  });
+  if ((result.status ?? 1) !== 0) {
+    fail(`pinned elysium-compiler resolution failed: ${result.stderr || result.stdout}`);
+  }
+  return result.stdout.trim();
 }
 
 function resolveCompilerCommand() {
-  if (!explicitCompiler) {
-    return {
-      mode: 'in-repo-cargo',
-      command: cargoCommand,
-      cargoToml,
-    };
+  if (explicitCompiler) {
+    const command = explicitCompiler.includes('\\') || explicitCompiler.includes('/')
+      ? resolve(explicitCompiler)
+      : explicitCompiler;
+    return { mode: 'explicit-external-binary', command };
   }
-  const command = explicitCompiler.includes('\\') || explicitCompiler.includes('/')
-    ? resolve(explicitCompiler)
-    : explicitCompiler;
-  return {
-    mode: 'external-binary',
-    command,
-    cargoToml: null,
-  };
+  return { mode: 'pinned-external-binary', command: resolvePinnedCompiler() };
 }
 
 function runStep(name, command, stepArgs, options = {}) {
@@ -169,40 +145,26 @@ function writeSummary(status, message = null) {
     compileScope,
     compiler: compilerCommand,
     skipCompile,
-    skipCargoTest,
     runExtendedRuntime,
     steps,
   }, null, 2)}\n`, 'utf8');
 }
 
 if (!skipCompile) {
+  compilerCommand = resolveCompilerCommand();
   if (!rawExportInput) fail(`${usage()}\n\nMissing --raw-export.`);
   const rawExportDir = resolve(rawExportInput);
   if (!existsSync(rawExportDir)) fail(`raw export directory does not exist: ${rawExportDir}`);
   if (!existsSync(join(rawExportDir, 'manifest.json'))) fail(`raw export manifest is missing: ${join(rawExportDir, 'manifest.json')}`);
-  if (compilerCommand.mode === 'external-binary') {
-    if (compilerCommand.command.includes('\\') || compilerCommand.command.includes('/')) {
-      if (!existsSync(compilerCommand.command)) fail(`external compiler binary does not exist: ${compilerCommand.command}`);
-    } else if (!commandExists(compilerCommand.command)) {
-      fail(`external compiler command is not executable: ${compilerCommand.command}`);
-    }
-  } else {
-    if (!existsSync(cargoToml)) fail(`missing Rust compiler manifest: ${cargoToml}`);
-    if (!skipCargoTest) {
-      runStep('rust compiler tests', cargoCommand, ['test', '--manifest-path', cargoToml]);
-    }
+  if (compilerCommand.command.includes('\\') || compilerCommand.command.includes('/')) {
+    if (!existsSync(compilerCommand.command)) fail(`external compiler binary does not exist: ${compilerCommand.command}`);
+  } else if (!commandExists(compilerCommand.command)) {
+    fail(`external compiler command is not executable: ${compilerCommand.command}`);
   }
   mkdirSync(dirname(rustReport), { recursive: true });
-  if (compilerCommand.mode === 'external-binary') {
-    runStep('elysium compiler strict compile', compilerCommand.command, [
-      'compile', '--input', rawExportDir, '--output', distDataDir, '--report', rustReport, '--scope', compileScope, '--strict',
-    ]);
-  } else {
-    runStep('rust compiler strict full compile', cargoCommand, [
-      'run', '--manifest-path', cargoToml, '--',
-      'compile', '--input', rawExportDir, '--output', distDataDir, '--report', rustReport, '--scope', compileScope, '--strict',
-    ]);
-  }
+  runStep('elysium compiler strict compile', compilerCommand.command, [
+    'compile', '--input', rawExportDir, '--output', distDataDir, '--report', rustReport, '--scope', compileScope, '--strict',
+  ]);
 } else if (!existsSync(join(distDataDir, 'manifest.json'))) {
   fail(`compiled dist-data manifest is missing: ${join(distDataDir, 'manifest.json')}`);
 }
@@ -229,5 +191,6 @@ console.log(JSON.stringify({
   nativeUiLayoutReport: manifest?.files?.rustNativeUiLayoutReport ?? null,
   nativeUiStatus: nativeReport?.status ?? null,
   nativeUiCounts: nativeReport?.counts ?? null,
+  compiler: manifest?.compiler ?? null,
   reportPath,
 }, null, 2));

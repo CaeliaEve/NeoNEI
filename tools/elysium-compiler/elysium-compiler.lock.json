@@ -1,0 +1,12 @@
+{
+    "compiler":  "elysium-compiler",
+    "version":  "0.1.0",
+    "target":  "windows-x64",
+    "binary":  "tools/elysium-compiler/bin/elysium-compiler.exe",
+    "sha256":  "abd5d84e4852b3dcbf9515c0ea203dfc68c26d031fbdc22c2fdd4c262da3abc2",
+    "rawExportSchemaVersion":  "1.0",
+    "compiledDistSchemaVersion":  "1.0",
+    "localFallbacks":  [
+                           "../elysium-compiler/target/release/elysium-compiler.exe"
+                       ]
+}
