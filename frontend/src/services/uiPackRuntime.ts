@@ -3,6 +3,7 @@ import {
   loadNativeRuntimeManifest,
   parseNativeRuntimePackHeader,
 } from "../native-surface/runtimeLoader.ts";
+import { assertNativeUiRuntimeManifest } from "../native-surface/NativeRuntimeCapabilityGate.ts";
 import type { NativeRuntimeManifest } from "../native-surface/NativeRuntimeManifest";
 
 export interface UiPackSlot {
@@ -83,7 +84,7 @@ export interface UiPackRuntimeSummary {
   assetCount: number;
 }
 
-export type UiPackRuntimeStatus = "ready" | "missing" | "error";
+export type UiPackRuntimeStatus = "ready" | "error";
 
 export interface UiPackRuntime {
   status: UiPackRuntimeStatus;
@@ -384,15 +385,13 @@ function parseUiBindings(payloadBuffer: ArrayBuffer, strings: string[]): UiPackB
   return bindings;
 }
 
-function parseUiPackManifest(manifest: NativeRuntimeManifest): { templates?: string; bindings?: string; strings?: string } | null {
-  const source = manifest.entrypoints ?? (!Array.isArray(manifest.files) ? manifest.files : undefined) ?? {};
-  const templates = asString(source.uiTemplates);
-  const bindings = asString(source.uiBindings);
-  const strings = asString(source.uiStrings);
-  if (!templates || !bindings || !strings) {
-    return null;
-  }
-  return { templates, bindings, strings };
+function parseUiPackManifest(manifest: NativeRuntimeManifest): { templates: string; bindings: string; strings: string } {
+  const entrypoints = assertNativeUiRuntimeManifest(manifest);
+  return {
+    templates: asString(entrypoints.uiTemplates),
+    bindings: asString(entrypoints.uiBindings),
+    strings: asString(entrypoints.uiStrings),
+  };
 }
 
 async function fetchPackBuffer(url: string): Promise<ArrayBuffer> {
@@ -411,31 +410,6 @@ function unwrapUiPackPayload(buffer: ArrayBuffer, expectedSchema: "neonei/ui-tem
 async function loadUiPackRuntimeInternal(normalizedManifestUrl: string): Promise<UiPackRuntime> {
   const manifest = await loadNativeRuntimeManifest(normalizedManifestUrl);
   const entrypoints = parseUiPackManifest(manifest);
-  if (!entrypoints) {
-    return {
-      status: "missing",
-      manifestUrl: normalizedManifestUrl,
-      templates: [],
-      bindings: [],
-      strings: [],
-      templatesByKey: new Map(),
-      templatesByFamilyKey: new Map(),
-      bindingsByRecipeId: new Map(),
-      summary: {
-        templateCount: 0,
-        bindingCount: 0,
-        boundRecipeCount: 0,
-        unboundRecipeCount: 0,
-        stringCount: 0,
-        slotCount: 0,
-        textOverlayCount: 0,
-        hotspotCount: 0,
-        viewportCount: 0,
-        assetCount: 0,
-      },
-      error: "UI pack entrypoints are unavailable on this runtime manifest.",
-    };
-  }
 
   try {
     const templateUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.templates);

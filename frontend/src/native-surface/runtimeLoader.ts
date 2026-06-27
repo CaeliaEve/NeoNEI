@@ -7,6 +7,7 @@
   type NativeRuntimePackSchema,
 } from "./NativeRuntimeManifest.ts";
 import { parseNativeCompactBrowserPack } from "./NativeRuntimeBrowserPack.ts";
+import { assertNativeRuntimePackEntrypoints } from "./NativeRuntimeCapabilityGate.ts";
 
 const NATIVE_PACK_MAGIC = "NNEIBIN\0";
 const NATIVE_PACK_HEADER_BYTES = 24;
@@ -97,19 +98,6 @@ function appendNativeRuntimeRevision(url: string, revision: string): string {
     const separator = url.includes("?") ? "&" : "?";
     return `${url}${separator}neoneiRuntime=${encoded}`;
   }
-}
-
-function getManifestEntrypoints(manifest: NativeRuntimeManifest): Record<NativeRuntimePackName, string> {
-  const source = manifest.entrypoints ?? (!Array.isArray(manifest.files) ? manifest.files : undefined) ?? {};
-  const result = {} as Record<NativeRuntimePackName, string>;
-  for (const packName of Object.keys(NATIVE_RUNTIME_PACK_SCHEMAS) as NativeRuntimePackName[]) {
-    const path = source[packName];
-    if (!path) {
-      throw new Error(`Native runtime manifest is missing ${packName} entrypoint`);
-    }
-    result[packName] = path;
-  }
-  return result;
 }
 
 function decodeAscii(view: DataView, offset: number, length: number): string {
@@ -240,11 +228,11 @@ export async function loadNativeRuntimeBuffers(
 ): Promise<NativeRuntimeBuffers> {
   const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
   const manifest = await loadNativeRuntimeManifest(normalizedManifestUrl);
-  const entrypoints = getManifestEntrypoints(manifest);
   const packs: Partial<Record<NativeRuntimePackName, NativeRuntimePack>> = {};
   const requestedPackNames = packNames?.length
     ? Array.from(new Set(packNames))
     : (Object.keys(NATIVE_RUNTIME_PACK_SCHEMAS) as NativeRuntimePackName[]);
+  const entrypoints = assertNativeRuntimePackEntrypoints(manifest, requestedPackNames);
 
   await Promise.all(requestedPackNames.map(async (name) => {
     packs[name] = await loadNativeRuntimePack(normalizedManifestUrl, manifest, entrypoints, name);

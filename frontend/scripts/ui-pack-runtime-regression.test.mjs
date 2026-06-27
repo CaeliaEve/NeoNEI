@@ -153,6 +153,7 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
   const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
   const manifest = {
     schema: 'neonei/runtime/current',
+    capabilities: ['recipes.native-ui-layout', 'recipes.ui-pack', 'native-render.webgl2'],
     entrypoints: {
       uiTemplates: 'rust/ui-pack/ui_templates.bin',
       uiBindings: 'rust/ui-pack/ui_bindings.bin',
@@ -185,6 +186,69 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     assert.equal(runtime.summary.stringCount, strings.length);
     assert.equal(runtime.templatesByKey.get('furnace@default')?.layoutKind, 'furnace');
     assert.equal(runtime.bindingsByRecipeId.get('r1')?.templateKey, 'furnace@default');
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearUiPackRuntimeCache();
+  }
+});
+
+test('loadUiPackRuntime fails explicitly when native UI runtime capabilities are missing', async () => {
+  clearUiPackRuntimeCache();
+  const manifest = {
+    schema: 'neonei/runtime/current',
+    capabilities: ['recipes.lookup'],
+    entrypoints: {
+      uiTemplates: 'rust/ui-pack/ui_templates.bin',
+      uiBindings: 'rust/ui-pack/ui_bindings.bin',
+      uiStrings: 'rust/ui-pack/ui_strings.bin',
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/api/runtime/current/manifest?case=missing-capability')) {
+      return new Response(JSON.stringify(manifest), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`runtime ABI gate should not fetch UI pack artifacts: ${url}`);
+  };
+  try {
+    const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=missing-capability');
+    assert.equal(runtime.status, 'error');
+    assert.match(runtime.error ?? '', /missing required capabilities: recipes\.native-ui-layout, recipes\.ui-pack, native-render\.webgl2/);
+    assert.equal(runtime.summary.templateCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearUiPackRuntimeCache();
+  }
+});
+
+test('loadUiPackRuntime fails explicitly when native UI runtime entrypoints are missing', async () => {
+  clearUiPackRuntimeCache();
+  const manifest = {
+    schema: 'neonei/runtime/current',
+    capabilities: {
+      'recipes.native-ui-layout': true,
+      'recipes.ui-pack': true,
+      'native-render.webgl2': true,
+    },
+    entrypoints: {
+      uiTemplates: 'rust/ui-pack/ui_templates.bin',
+      uiStrings: 'rust/ui-pack/ui_strings.bin',
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/api/runtime/current/manifest?case=missing-entrypoint')) {
+      return new Response(JSON.stringify(manifest), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`runtime ABI gate should not fetch UI pack artifacts: ${url}`);
+  };
+  try {
+    const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=missing-entrypoint');
+    assert.equal(runtime.status, 'error');
+    assert.match(runtime.error ?? '', /missing required entrypoints: uiBindings/);
+    assert.equal(runtime.summary.bindingCount, 0);
   } finally {
     globalThis.fetch = originalFetch;
     clearUiPackRuntimeCache();

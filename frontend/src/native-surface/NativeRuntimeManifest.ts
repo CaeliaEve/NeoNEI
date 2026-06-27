@@ -58,10 +58,14 @@ export type NativeRuntimeCapability =
   | "atlas.animated"
   | "groups.collapse"
   | "groups.semantic-nbt"
+  | "recipes.native-ui-layout"
   | "recipes.lookup"
   | "recipes.ui-pack"
   | "search.zh-cn"
   | "strings.zh-cn"
+  | "native_ui.surface"
+  | "native_ui.design_space_coordinates"
+  | "native_ui.background_asset"
   | "native-render.webgl2"
   | "native-render.webgpu";
 
