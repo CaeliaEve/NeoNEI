@@ -1,22 +1,15 @@
-import fs from 'fs';
 import { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from '../config/runtime-paths';
 import { getAccelerationDatabaseManager } from '../models/database';
 import { NeoNeiCompilerService, type CompilerSourceRoots } from './neonei-compiler.service';
-import { logger } from '../utils/logger';
 import {
-  compileAccelerationSnapshotInChild,
-  materializePublishPayloadsInChild,
-} from './acceleration-runtime-job-runner.service';
-import { activateCompiledAccelerationSnapshot } from './acceleration-runtime-snapshot-activator.service';
-import {
-  announceAccelerationRuntimeReady,
-  announceAccelerationSnapshotCompile,
-  announceAccelerationSnapshotStale,
-  announcePublishPayloadMaterialization,
   decideAccelerationReconcilePhase,
-  logAccelerationSnapshotPromotedPayload,
 } from './acceleration-runtime-phase-machine.service';
 import { verifyAccelerationCompilerBoundary } from './acceleration-runtime-compiler-boundary-reporter.service';
+import {
+  refreshAccelerationSnapshot,
+  refreshPublishPayloadMaterialization,
+  skipPublishPayloadMaterializationOnStartup,
+} from './acceleration-runtime-reconcile-worker.service';
 export {
   accelerationRuntime,
   createAccelerationRuntimeMiddleware,
@@ -38,7 +31,6 @@ export async function reconcileAccelerationRuntime(
 ): Promise<void> {
   await verifyAccelerationCompilerBoundary();
   const compiler = new NeoNeiCompilerService(accelerationDbManager, ACCELERATION_SOURCE_ROOTS);
-  const candidateDbPath = `${accelerationDbManager.getDbPath()}.next`;
 
   const reconcileDecision = decideAccelerationReconcilePhase({
     fresh: compiler.isAccelerationStateFresh(),
@@ -46,39 +38,12 @@ export async function reconcileAccelerationRuntime(
   });
 
   if (reconcileDecision === 'compile-snapshot') {
-    announceAccelerationSnapshotStale();
-    logger.info('[ACCELERATION_DB] stale; runtime will stay online while compiling next snapshot');
-    if (fs.existsSync(candidateDbPath)) {
-      fs.rmSync(candidateDbPath, { force: true });
-    }
-
-    announceAccelerationSnapshotCompile();
-    const compileResult = await compileAccelerationSnapshotInChild(candidateDbPath);
-
-    await activateCompiledAccelerationSnapshot({
-      manager: accelerationDbManager,
-      compiledDbPath: candidateDbPath,
-      signature: compileResult.signature,
-    });
-    logger.info('[ACCELERATION_DB] promoted background snapshot', logAccelerationSnapshotPromotedPayload(compileResult));
-    announceAccelerationRuntimeReady();
-    return;
+    return refreshAccelerationSnapshot({ manager: accelerationDbManager });
   }
 
   if (reconcileDecision === 'ready-noop') {
-    logger.info(
-      '[PUBLISH_PAYLOADS] startup materialization skipped; set NEONEI_PUBLISH_MATERIALIZE_ON_START=1 to refresh publish bundles on boot',
-    );
-    announceAccelerationRuntimeReady();
-    return;
+    return skipPublishPayloadMaterializationOnStartup();
   }
 
-  announcePublishPayloadMaterialization();
-  const publishPayloadsResult = await materializePublishPayloadsInChild();
-  logger.info(
-    publishPayloadsResult.materialized
-      ? '[PUBLISH_PAYLOADS] materialized in background'
-      : '[PUBLISH_PAYLOADS] already fresh',
-  );
-  announceAccelerationRuntimeReady();
+  return refreshPublishPayloadMaterialization();
 }

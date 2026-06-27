@@ -6,8 +6,10 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '..');
 const runtimeServicePath = resolve(root, 'src/services/acceleration-runtime.service.ts');
 const phaseMachinePath = resolve(root, 'src/services/acceleration-runtime-phase-machine.service.ts');
+const reconcileWorkerPath = resolve(root, 'src/services/acceleration-runtime-reconcile-worker.service.ts');
 const runtimeService = readFileSync(runtimeServicePath, 'utf8');
 const phaseMachine = readFileSync(phaseMachinePath, 'utf8');
+const reconcileWorker = readFileSync(reconcileWorkerPath, 'utf8');
 
 test('acceleration reconcile phase decisions live in a dedicated phase machine', () => {
   assert.equal(existsSync(phaseMachinePath), true, 'acceleration-runtime-phase-machine.service.ts must exist');
@@ -39,11 +41,16 @@ test('acceleration runtime service delegates phase decisions and announcements',
   assert.match(runtimeService, /const reconcileDecision = decideAccelerationReconcilePhase\(\{/);
   assert.match(runtimeService, /if \(reconcileDecision === 'compile-snapshot'\)/);
   assert.match(runtimeService, /if \(reconcileDecision === 'ready-noop'\)/);
-  assert.match(runtimeService, /announceAccelerationSnapshotStale\(\)/);
-  assert.match(runtimeService, /announceAccelerationSnapshotCompile\(\)/);
-  assert.match(runtimeService, /announcePublishPayloadMaterialization\(\)/);
-  assert.match(runtimeService, /announceAccelerationRuntimeReady\(\)/);
-  assert.match(runtimeService, /logAccelerationSnapshotPromotedPayload\(compileResult\)/);
+  assert.match(reconcileWorker, /announceAccelerationSnapshotStale\(\)/);
+  assert.match(reconcileWorker, /announceAccelerationSnapshotCompile\(\)/);
+  assert.match(reconcileWorker, /announcePublishPayloadMaterialization\(\)/);
+  assert.match(reconcileWorker, /announceAccelerationRuntimeReady\(\)/);
+  assert.match(reconcileWorker, /logAccelerationSnapshotPromotedPayload\(compileResult\)/);
+  assert.doesNotMatch(runtimeService, /announceAccelerationSnapshotStale\(\)/);
+  assert.doesNotMatch(runtimeService, /announceAccelerationSnapshotCompile\(\)/);
+  assert.doesNotMatch(runtimeService, /announcePublishPayloadMaterialization\(\)/);
+  assert.doesNotMatch(runtimeService, /announceAccelerationRuntimeReady\(\)/);
+  assert.doesNotMatch(runtimeService, /logAccelerationSnapshotPromotedPayload\(compileResult\)/);
   assert.doesNotMatch(runtimeService, /import \{\s*setAccelerationRuntimePhase\s*\} from '\.\/acceleration-runtime-state\.service'/);
   assert.doesNotMatch(runtimeService, /setAccelerationRuntimePhase\('/);
 });

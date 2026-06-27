@@ -6,8 +6,10 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '..');
 const runtimeServicePath = resolve(root, 'src/services/acceleration-runtime.service.ts');
 const activatorPath = resolve(root, 'src/services/acceleration-runtime-snapshot-activator.service.ts');
+const reconcileWorkerPath = resolve(root, 'src/services/acceleration-runtime-reconcile-worker.service.ts');
 const runtimeService = readFileSync(runtimeServicePath, 'utf8');
 const activator = readFileSync(activatorPath, 'utf8');
+const reconcileWorker = readFileSync(reconcileWorkerPath, 'utf8');
 
 test('acceleration snapshot activation lives in a dedicated activator module', () => {
   assert.equal(existsSync(activatorPath), true, 'acceleration-runtime-snapshot-activator.service.ts must exist');
@@ -21,10 +23,12 @@ test('acceleration snapshot activation lives in a dedicated activator module', (
   assert.match(activator, /setAccelerationRuntimePhase\('ready', 'Acceleration snapshot refreshed\.'/);
 });
 
-test('acceleration runtime service delegates snapshot activation', () => {
-  assert.match(runtimeService, /from '\.\/acceleration-runtime-snapshot-activator\.service'/);
-  assert.match(runtimeService, /await activateCompiledAccelerationSnapshot\(\{/);
-  assert.match(runtimeService, /signature: compileResult\.signature/);
+test('acceleration reconcile worker delegates snapshot activation', () => {
+  assert.match(reconcileWorker, /from '\.\/acceleration-runtime-snapshot-activator\.service'/);
+  assert.match(reconcileWorker, /await activateCompiledAccelerationSnapshot\(\{/);
+  assert.match(reconcileWorker, /signature: compileResult\.signature/);
+  assert.doesNotMatch(runtimeService, /from '\.\/acceleration-runtime-snapshot-activator\.service'/);
+  assert.doesNotMatch(runtimeService, /activateCompiledAccelerationSnapshot\(/);
   assert.doesNotMatch(runtimeService, /promoteCompiledAccelerationDatabase/);
   assert.doesNotMatch(runtimeService, /setAccelerationRuntimeBlocking/);
   assert.doesNotMatch(runtimeService, /waitForAccelerationApiIdle/);
