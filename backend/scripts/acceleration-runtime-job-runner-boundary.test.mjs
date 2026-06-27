@@ -42,6 +42,7 @@ test('acceleration runtime job runner keeps active backend-root module resolutio
   assert.match(jobRunner, /NEONEI_BACKEND_MODULE_ROOT:\s*path\.resolve\(__dirname, '\.\.'\)/);
   assert.match(jobRunner, /function requireFromBackendRoot\(modulePath\)/);
   assert.match(jobRunner, /require\(path\.join\(moduleRoot, modulePath\)\)/);
+  assert.match(jobRunner, /requireFromBackendRoot\('services\/acceleration-runtime-compiler-probe\.service'\)/);
   assert.doesNotMatch(jobRunner, /require\('\.\/src\//);
   assert.doesNotMatch(jobRunner, /require\('\.\/dist\//);
 });

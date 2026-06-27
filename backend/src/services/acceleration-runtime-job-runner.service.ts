@@ -92,15 +92,10 @@ function requireFromBackendRoot(modulePath) {
   return require(path.join(moduleRoot, modulePath));
 }
 const { compileAccelerationDatabase } = requireFromBackendRoot('services/acceleration-db-pipeline.service');
-const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = requireFromBackendRoot('config/runtime-paths');
+const { getAccelerationCompilerSourceRoots } = requireFromBackendRoot('services/acceleration-runtime-compiler-probe.service');
 compileAccelerationDatabase({
   targetDbPath: process.env.ACCELERATION_DB_FILE,
-  sourceRoots: {
-    itemsDir: SPLIT_ITEMS_DIR,
-    recipesDir: SPLIT_RECIPES_DIR,
-    canonicalDir: NESQL_CANONICAL_DIR,
-    imageRoot: IMAGES_PATH,
-  },
+  sourceRoots: getAccelerationCompilerSourceRoots(),
 }).then((result) => {
   console.log('ACCEL_COMPILE_RESULT ' + JSON.stringify({
     ok: true,
@@ -129,7 +124,7 @@ function requireFromBackendRoot(modulePath) {
   if (!moduleRoot) throw new Error('NEONEI_BACKEND_MODULE_ROOT is required');
   return require(path.join(moduleRoot, modulePath));
 }
-const { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } = requireFromBackendRoot('config/runtime-paths');
+const { getAccelerationCompilerSourceRoots } = requireFromBackendRoot('services/acceleration-runtime-compiler-probe.service');
 const { getAccelerationDatabaseManager } = requireFromBackendRoot('models/database');
 const { ensurePublishPayloadsReady } = requireFromBackendRoot('services/acceleration-db-pipeline.service');
 (async () => {
@@ -138,12 +133,7 @@ const { ensurePublishPayloadsReady } = requireFromBackendRoot('services/accelera
   try {
     const materialized = await ensurePublishPayloadsReady({
       manager,
-      sourceRoots: {
-        itemsDir: SPLIT_ITEMS_DIR,
-        recipesDir: SPLIT_RECIPES_DIR,
-        canonicalDir: NESQL_CANONICAL_DIR,
-        imageRoot: IMAGES_PATH,
-      },
+      sourceRoots: getAccelerationCompilerSourceRoots(),
     });
     console.log('PUBLISH_PAYLOAD_RESULT ' + JSON.stringify({ ok: true, materialized }));
   } finally {

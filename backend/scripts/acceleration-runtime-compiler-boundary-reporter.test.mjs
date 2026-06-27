@@ -40,9 +40,9 @@ test('acceleration compiler boundary reporter owns ABI evidence shape and log ev
 
 test('acceleration runtime reconciler delegates compiler boundary evidence before compilation work', () => {
   const verifyIndex = runtimeService.indexOf('await verifyAccelerationCompilerBoundary()');
-  const compilerIndex = runtimeService.indexOf('new NeoNeiCompilerService');
+  const compilerProbeIndex = runtimeService.indexOf('probeAccelerationCompilerState({ manager: accelerationDbManager })');
   const decisionIndex = runtimeService.indexOf('decideAccelerationReconcilePhase({');
   assert.ok(verifyIndex >= 0, 'reconciler should verify compiler boundary');
-  assert.ok(compilerIndex > verifyIndex, 'compiler service should be created after boundary verification');
-  assert.ok(decisionIndex > compilerIndex, 'reconcile decision should happen after compiler service construction');
+  assert.ok(compilerProbeIndex > verifyIndex, 'compiler probe should run after boundary verification');
+  assert.ok(decisionIndex > compilerProbeIndex, 'reconcile decision should happen after compiler probe');
 });
