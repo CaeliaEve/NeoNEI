@@ -22,6 +22,7 @@ export type ElysiumCompilerHandshake = {
   compiler: string;
   lockPath: string;
   metadata: ElysiumCompilerMetadata;
+  commands?: unknown;
   abi?: unknown;
   capabilities: ElysiumCompilerCapabilityContract;
 };
@@ -85,6 +86,7 @@ export class ElysiumCompilerClient {
       exportAbiVersion: report.metadata?.exportAbiVersion,
       packAbiVersion: report.metadata?.packAbiVersion,
       runtimeAbiVersion: report.metadata?.runtimeAbiVersion,
+      commands: capabilities.commands,
       nativeUiCapabilities: capabilities.nativeUi.requiredCapabilities,
     });
     return { ...report, capabilities };

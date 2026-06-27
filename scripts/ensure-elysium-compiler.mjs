@@ -30,6 +30,28 @@ function sha256(file) {
   return createHash('sha256').update(readFileSync(file)).digest('hex');
 }
 
+function verifyCommandSurface(candidate) {
+  const requiredCommands = {
+    schemas: ['schemas', '--help'],
+    validate: ['validate', '--help'],
+    compile: ['compile', '--help'],
+  };
+  const commands = {};
+  const failures = [];
+  for (const [name, commandArgs] of Object.entries(requiredCommands)) {
+    const result = spawnSync(candidate, commandArgs, { encoding: 'utf8', stdio: 'pipe', shell: false });
+    const ok = (result.status ?? 1) === 0;
+    commands[name] = {
+      ok,
+      usage: ok ? `${result.stdout}`.split(/\r?\n/).find((line) => line.startsWith('Usage:')) ?? null : null,
+    };
+    if (!ok) {
+      failures.push(`${name}: ${result.stderr || result.stdout}`.trim());
+    }
+  }
+  return { ok: failures.length === 0, commands, failures };
+}
+
 function resolveCandidate(candidate) {
   if (!candidate) return null;
   return candidate.includes('\\') || candidate.includes('/') ? resolve(repoRoot, candidate) : candidate;
@@ -71,6 +93,7 @@ const mismatches = [];
 let selected = null;
 let selectedCatalog = null;
 let selectedMetadata = null;
+let selectedCommands = null;
 
 for (const candidate of availableCandidates) {
   if (candidate.includes('\\') || candidate.includes('/')) {
@@ -109,9 +132,16 @@ for (const candidate of availableCandidates) {
     continue;
   }
 
+  const commandSurface = verifyCommandSurface(candidate);
+  if (!commandSurface.ok) {
+    mismatches.push(`${candidate}: missing required command surface: ${commandSurface.failures.join('; ')}`);
+    continue;
+  }
+
   selected = candidate;
   selectedCatalog = catalog;
   selectedMetadata = metadata;
+  selectedCommands = commandSurface.commands;
   break;
 }
 
@@ -119,6 +149,13 @@ if (!selected) {
   fail(`no compiler candidate satisfied the lock contract. ${mismatches.join(' | ')}`);
 }
 
-const report = { status: 'ok', compiler: selected, lockPath, metadata: selectedMetadata, abi: selectedCatalog?.abi };
+const report = {
+  status: 'ok',
+  compiler: selected,
+  lockPath,
+  metadata: selectedMetadata,
+  commands: selectedCommands,
+  abi: selectedCatalog?.abi,
+};
 if (json) console.log(JSON.stringify(report, null, 2));
 else console.log(selected);

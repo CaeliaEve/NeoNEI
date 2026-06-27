@@ -6,6 +6,7 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '..');
 const clientSource = readFileSync(resolve(root, 'src/compiler-client/elysium-compiler-client.ts'), 'utf8');
 const gateSource = readFileSync(resolve(root, 'src/compiler-client/elysium-compiler-capability-gate.ts'), 'utf8');
+const ensureSource = readFileSync(resolve(root, '../scripts/ensure-elysium-compiler.mjs'), 'utf8');
 const runtimeSource = readFileSync(resolve(root, 'src/services/acceleration-runtime.service.ts'), 'utf8');
 const reporterSource = readFileSync(resolve(root, 'src/services/acceleration-runtime-compiler-boundary-reporter.service.ts'), 'utf8');
 
@@ -24,10 +25,23 @@ test('compiler client exposes a typed native UI capability gate', () => {
   assert.match(gateSource, /missing required native UI capabilities/);
 });
 
+test('compiler client requires the external compiler command surface', () => {
+  assert.match(gateSource, /export const REQUIRED_COMPILER_COMMANDS/);
+  for (const command of ['schemas', 'validate', 'compile']) {
+    assert.match(gateSource, new RegExp(`'${command}'`));
+    assert.match(ensureSource, new RegExp(`${command}.*--help|--help.*${command}`, 's'));
+  }
+  assert.match(ensureSource, /function verifyCommandSurface/);
+  assert.match(ensureSource, /commands: selectedCommands/);
+  assert.match(gateSource, /missing required compiler commands/);
+  assert.match(gateSource, /commands: string\[\]/);
+});
+
 test('compiler handshake attaches validated capabilities before callers can use it', () => {
   assert.match(clientSource, /assertCompilerNativeUiCapabilityGate\(report as ElysiumCompilerHandshake\)/);
   assert.match(clientSource, /capabilities: ElysiumCompilerCapabilityContract/);
   assert.match(clientSource, /return \{ \.\.\.report, capabilities \}/);
+  assert.match(clientSource, /commands: capabilities\.commands/);
   assert.match(clientSource, /nativeUiCapabilities: capabilities\.nativeUi\.requiredCapabilities/);
   assert.doesNotMatch(clientSource, /return report;/);
 });

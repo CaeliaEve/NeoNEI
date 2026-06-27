@@ -6,6 +6,12 @@ export const REQUIRED_NATIVE_UI_CAPABILITIES = Object.freeze([
   'native_ui.background_asset',
 ]);
 
+export const REQUIRED_COMPILER_COMMANDS = Object.freeze([
+  'schemas',
+  'validate',
+  'compile',
+]);
+
 export type ElysiumNativeUiAbi = {
   coordinateSpace: string;
   fallbackPolicy: string;
@@ -14,8 +20,12 @@ export type ElysiumNativeUiAbi = {
   runtimeTransform: string;
 };
 
-export type ElysiumCompilerCapabilityContract = {
+export type ElysiumCompilerAbiContract = {
   nativeUi: ElysiumNativeUiAbi;
+};
+
+export type ElysiumCompilerCapabilityContract = ElysiumCompilerAbiContract & {
+  commands: string[];
 };
 
 function asRecord(value: unknown): Record<string, unknown> | null {
@@ -40,7 +50,7 @@ function requireStringArray(value: unknown, path: string): string[] {
 
 export function extractCompilerCapabilityContract(
   handshake: ElysiumCompilerHandshake,
-): ElysiumCompilerCapabilityContract {
+): ElysiumCompilerAbiContract {
   const abi = asRecord(handshake.abi);
   const exportAbi = asRecord(abi?.exportAbi);
   const nativeUi = asRecord(exportAbi?.nativeUi);
@@ -64,6 +74,14 @@ export function extractCompilerCapabilityContract(
 
 export function assertCompilerNativeUiCapabilityGate(handshake: ElysiumCompilerHandshake): ElysiumCompilerCapabilityContract {
   const contract = extractCompilerCapabilityContract(handshake);
+  const commandReport = asRecord(handshake.commands);
+  const availableCommands = Object.keys(commandReport ?? {}).filter((command) => asRecord(commandReport?.[command])?.ok === true);
+  const missingCommands = REQUIRED_COMPILER_COMMANDS.filter((command) => !availableCommands.includes(command));
+  if (missingCommands.length > 0) {
+    throw new Error(
+      `elysium-compiler ABI gate failed: missing required compiler commands: ${missingCommands.join(', ')}`,
+    );
+  }
   const available = new Set(contract.nativeUi.requiredCapabilities);
   const missing = REQUIRED_NATIVE_UI_CAPABILITIES.filter((capability) => !available.has(capability));
   if (missing.length > 0) {
@@ -71,5 +89,5 @@ export function assertCompilerNativeUiCapabilityGate(handshake: ElysiumCompilerH
       `elysium-compiler ABI gate failed: missing required native UI capabilities: ${missing.join(', ')}`,
     );
   }
-  return contract;
+  return { ...contract, commands: availableCommands };
 }
