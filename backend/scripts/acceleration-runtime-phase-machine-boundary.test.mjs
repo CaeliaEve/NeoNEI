@@ -39,8 +39,8 @@ test('acceleration phase machine owns user-visible phase announcements', () => {
 test('acceleration runtime service delegates phase decisions and announcements', () => {
   assert.match(runtimeService, /from '\.\/acceleration-runtime-phase-machine\.service'/);
   assert.match(runtimeService, /const reconcileDecision = decideAccelerationReconcilePhase\(\{/);
-  assert.match(runtimeService, /if \(reconcileDecision === 'compile-snapshot'\)/);
-  assert.match(runtimeService, /if \(reconcileDecision === 'ready-noop'\)/);
+  assert.match(runtimeService, /dispatchAccelerationReconcile\(\{/);
+  assert.doesNotMatch(runtimeService, /if \(reconcileDecision ===/);
   assert.match(reconcileWorker, /announceAccelerationSnapshotStale\(\)/);
   assert.match(reconcileWorker, /announceAccelerationSnapshotCompile\(\)/);
   assert.match(reconcileWorker, /announcePublishPayloadMaterialization\(\)/);

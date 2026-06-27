@@ -4,11 +4,7 @@ import {
 } from './acceleration-runtime-phase-machine.service';
 import { verifyAccelerationCompilerBoundary } from './acceleration-runtime-compiler-boundary-reporter.service';
 import { probeAccelerationCompilerState } from './acceleration-runtime-compiler-probe.service';
-import {
-  refreshAccelerationSnapshot,
-  refreshPublishPayloadMaterialization,
-  skipPublishPayloadMaterializationOnStartup,
-} from './acceleration-runtime-reconcile-worker.service';
+import { dispatchAccelerationReconcile } from './acceleration-runtime-reconcile-dispatcher.service';
 export {
   accelerationRuntime,
   createAccelerationRuntimeMiddleware,
@@ -29,13 +25,8 @@ export async function reconcileAccelerationRuntime(
     publishMaterializeOnStart: options?.publishMaterializeOnStart,
   });
 
-  if (reconcileDecision === 'compile-snapshot') {
-    return refreshAccelerationSnapshot({ manager: accelerationDbManager });
-  }
-
-  if (reconcileDecision === 'ready-noop') {
-    return skipPublishPayloadMaterializationOnStartup();
-  }
-
-  return refreshPublishPayloadMaterialization();
+  return dispatchAccelerationReconcile({
+    decision: reconcileDecision,
+    manager: accelerationDbManager,
+  });
 }

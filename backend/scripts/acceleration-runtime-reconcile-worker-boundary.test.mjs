@@ -6,8 +6,10 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '..');
 const runtimeServicePath = resolve(root, 'src/services/acceleration-runtime.service.ts');
 const reconcileWorkerPath = resolve(root, 'src/services/acceleration-runtime-reconcile-worker.service.ts');
+const dispatcherPath = resolve(root, 'src/services/acceleration-runtime-reconcile-dispatcher.service.ts');
 const runtimeService = readFileSync(runtimeServicePath, 'utf8');
 const reconcileWorker = readFileSync(reconcileWorkerPath, 'utf8');
+const dispatcher = readFileSync(dispatcherPath, 'utf8');
 
 test('acceleration reconcile work lives behind a dedicated worker boundary', () => {
   assert.equal(existsSync(reconcileWorkerPath), true, 'acceleration-runtime-reconcile-worker.service.ts must exist');
@@ -18,11 +20,15 @@ test('acceleration reconcile work lives behind a dedicated worker boundary', () 
   assert.match(reconcileWorker, /export function removeExistingAccelerationCandidateSnapshot/);
 });
 
-test('acceleration runtime service schedules decisions instead of executing reconcile work inline', () => {
-  assert.match(runtimeService, /from '\.\/acceleration-runtime-reconcile-worker\.service'/);
-  assert.match(runtimeService, /return refreshAccelerationSnapshot\(\{ manager: accelerationDbManager \}\)/);
-  assert.match(runtimeService, /return skipPublishPayloadMaterializationOnStartup\(\)/);
-  assert.match(runtimeService, /return refreshPublishPayloadMaterialization\(\)/);
+test('acceleration dispatcher schedules worker operations instead of executing reconcile work inline from runtime service', () => {
+  assert.match(dispatcher, /from '\.\/acceleration-runtime-reconcile-worker\.service'/);
+  assert.match(dispatcher, /refreshAccelerationSnapshot\(\{ manager \}\)/);
+  assert.match(dispatcher, /skipPublishPayloadMaterializationOnStartup\(\)/);
+  assert.match(dispatcher, /refreshPublishPayloadMaterialization\(\)/);
+  assert.doesNotMatch(runtimeService, /from '\.\/acceleration-runtime-reconcile-worker\.service'/);
+  assert.doesNotMatch(runtimeService, /refreshAccelerationSnapshot\(/);
+  assert.doesNotMatch(runtimeService, /skipPublishPayloadMaterializationOnStartup\(/);
+  assert.doesNotMatch(runtimeService, /refreshPublishPayloadMaterialization\(/);
   assert.doesNotMatch(runtimeService, /import fs from 'fs'/);
   assert.doesNotMatch(runtimeService, /fs\.existsSync/);
   assert.doesNotMatch(runtimeService, /fs\.rmSync/);
