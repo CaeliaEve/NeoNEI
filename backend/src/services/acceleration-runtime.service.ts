@@ -1,13 +1,13 @@
 import fs from 'fs';
 import { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from '../config/runtime-paths';
 import { getAccelerationDatabaseManager } from '../models/database';
-import { promoteCompiledAccelerationDatabase } from './acceleration-db-pipeline.service';
 import { NeoNeiCompilerService, type CompilerSourceRoots } from './neonei-compiler.service';
 import { logger } from '../utils/logger';
 import {
   compileAccelerationSnapshotInChild,
   materializePublishPayloadsInChild,
 } from './acceleration-runtime-job-runner.service';
+import { activateCompiledAccelerationSnapshot } from './acceleration-runtime-snapshot-activator.service';
 import { verifyElysiumCompilerBoundary } from '../compiler-client/elysium-compiler-client';
 export {
   accelerationRuntime,
@@ -17,9 +17,7 @@ export {
   type AccelerationRuntimeState,
 } from './acceleration-runtime-state.service';
 import {
-  setAccelerationRuntimeBlocking,
   setAccelerationRuntimePhase,
-  waitForAccelerationApiIdle,
 } from './acceleration-runtime-state.service';
 
 export const ACCELERATION_SOURCE_ROOTS: CompilerSourceRoots = {
@@ -58,25 +56,10 @@ export async function reconcileAccelerationRuntime(
     });
     const compileResult = await compileAccelerationSnapshotInChild(candidateDbPath);
 
-    setAccelerationRuntimePhase('promoting', 'Promoting freshly compiled acceleration snapshot.', {
-      stale: true,
-      lastCompiledSignature: compileResult.signature,
-    });
-    setAccelerationRuntimeBlocking(true);
-    try {
-      await waitForAccelerationApiIdle();
-      await promoteCompiledAccelerationDatabase({
-        manager: accelerationDbManager,
-        compiledDbPath: candidateDbPath,
-      });
-    } finally {
-      setAccelerationRuntimeBlocking(false);
-    }
-
-    setAccelerationRuntimePhase('ready', 'Acceleration snapshot refreshed.', {
-      stale: false,
-      lastCompiledSignature: compileResult.signature,
-      lastError: null,
+    await activateCompiledAccelerationSnapshot({
+      manager: accelerationDbManager,
+      compiledDbPath: candidateDbPath,
+      signature: compileResult.signature,
     });
     logger.info('[ACCELERATION_DB] promoted background snapshot', {
       itemsImported: compileResult.itemsImported,

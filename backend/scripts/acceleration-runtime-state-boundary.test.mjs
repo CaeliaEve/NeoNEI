@@ -21,13 +21,13 @@ test('acceleration runtime state lives in a dedicated kernel-state module', () =
 
 test('acceleration runtime service re-exports state but does not own middleware state logic', () => {
   assert.match(runtimeService, /from '\.\/acceleration-runtime-state\.service'/);
-  assert.match(runtimeService, /setAccelerationRuntimeBlocking\(true\)/);
-  assert.match(runtimeService, /setAccelerationRuntimeBlocking\(false\)/);
-  assert.match(runtimeService, /waitForAccelerationApiIdle\(\)/);
   assert.doesNotMatch(runtimeService, /import type \{ Request, RequestHandler \} from 'express'/);
   assert.doesNotMatch(runtimeService, /sendErrorEnvelope/);
   assert.doesNotMatch(runtimeService, /activeApiRequests \+= 1/);
   assert.doesNotMatch(runtimeService, /activeApiRequests = Math\.max/);
+  assert.doesNotMatch(runtimeService, /setAccelerationRuntimeBlocking\(true\)/);
+  assert.doesNotMatch(runtimeService, /setAccelerationRuntimeBlocking\(false\)/);
+  assert.doesNotMatch(runtimeService, /waitForAccelerationApiIdle\(\)/);
   assert.doesNotMatch(runtimeService, /function isTrackedAccelerationApiRequest/);
   assert.doesNotMatch(runtimeService, /export function createAccelerationRuntimeMiddleware\(\): RequestHandler/);
 });
@@ -36,6 +36,7 @@ test('acceleration runtime middleware and idle gate stay with state ownership', 
   assert.match(runtimeState, /import type \{ Request, RequestHandler \} from 'express'/);
   assert.match(runtimeState, /sendErrorEnvelope/);
   assert.match(runtimeState, /function isTrackedAccelerationApiRequest/);
+  assert.match(runtimeState, /export function setAccelerationRuntimeBlocking\(blocking: boolean\)/);
   assert.match(runtimeState, /export function createAccelerationRuntimeMiddleware\(\): RequestHandler/);
   assert.match(runtimeState, /accelerationRuntime\.activeApiRequests \+= 1/);
   assert.match(runtimeState, /accelerationRuntime\.activeApiRequests = Math\.max/);
