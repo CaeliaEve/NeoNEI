@@ -8,6 +8,14 @@ import {
   materializePublishPayloadsInChild,
 } from './acceleration-runtime-job-runner.service';
 import { activateCompiledAccelerationSnapshot } from './acceleration-runtime-snapshot-activator.service';
+import {
+  announceAccelerationRuntimeReady,
+  announceAccelerationSnapshotCompile,
+  announceAccelerationSnapshotStale,
+  announcePublishPayloadMaterialization,
+  decideAccelerationReconcilePhase,
+  logAccelerationSnapshotPromotedPayload,
+} from './acceleration-runtime-phase-machine.service';
 import { verifyElysiumCompilerBoundary } from '../compiler-client/elysium-compiler-client';
 export {
   accelerationRuntime,
@@ -15,9 +23,6 @@ export {
   setAccelerationRuntimePhase,
   type AccelerationRuntimePhase,
   type AccelerationRuntimeState,
-} from './acceleration-runtime-state.service';
-import {
-  setAccelerationRuntimePhase,
 } from './acceleration-runtime-state.service';
 
 export const ACCELERATION_SOURCE_ROOTS: CompilerSourceRoots = {
@@ -44,19 +49,19 @@ export async function reconcileAccelerationRuntime(
   const compiler = new NeoNeiCompilerService(accelerationDbManager, ACCELERATION_SOURCE_ROOTS);
   const candidateDbPath = `${accelerationDbManager.getDbPath()}.next`;
 
-  if (!compiler.isAccelerationStateFresh()) {
-    setAccelerationRuntimePhase('stale', 'Acceleration snapshot is stale; compiling next snapshot in background.', {
-      stale: true,
-      lastError: null,
-    });
+  const reconcileDecision = decideAccelerationReconcilePhase({
+    fresh: compiler.isAccelerationStateFresh(),
+    publishMaterializeOnStart: options?.publishMaterializeOnStart,
+  });
+
+  if (reconcileDecision === 'compile-snapshot') {
+    announceAccelerationSnapshotStale();
     logger.info('[ACCELERATION_DB] stale; runtime will stay online while compiling next snapshot');
     if (fs.existsSync(candidateDbPath)) {
       fs.rmSync(candidateDbPath, { force: true });
     }
 
-    setAccelerationRuntimePhase('compiling', 'Compiling next acceleration snapshot in background.', {
-      stale: true,
-    });
+    announceAccelerationSnapshotCompile();
     const compileResult = await compileAccelerationSnapshotInChild(candidateDbPath);
 
     await activateCompiledAccelerationSnapshot({
@@ -64,41 +69,25 @@ export async function reconcileAccelerationRuntime(
       compiledDbPath: candidateDbPath,
       signature: compileResult.signature,
     });
-    logger.info('[ACCELERATION_DB] promoted background snapshot', {
-      itemsImported: compileResult.itemsImported,
-      recipesImported: compileResult.recipesImported,
-      signature: compileResult.signature,
-    });
-    setAccelerationRuntimePhase('ready', 'Acceleration runtime ready.', {
-      stale: false,
-      lastError: null,
-    });
+    logger.info('[ACCELERATION_DB] promoted background snapshot', logAccelerationSnapshotPromotedPayload(compileResult));
+    announceAccelerationRuntimeReady();
     return;
   }
 
-  if (!options?.publishMaterializeOnStart) {
+  if (reconcileDecision === 'ready-noop') {
     logger.info(
       '[PUBLISH_PAYLOADS] startup materialization skipped; set NEONEI_PUBLISH_MATERIALIZE_ON_START=1 to refresh publish bundles on boot',
     );
-    setAccelerationRuntimePhase('ready', 'Acceleration runtime ready.', {
-      stale: false,
-      lastError: null,
-    });
+    announceAccelerationRuntimeReady();
     return;
   }
 
-  setAccelerationRuntimePhase('materializing', 'Refreshing publish hot payloads.', {
-    stale: false,
-    lastError: null,
-  });
+  announcePublishPayloadMaterialization();
   const publishPayloadsResult = await materializePublishPayloadsInChild();
   logger.info(
     publishPayloadsResult.materialized
       ? '[PUBLISH_PAYLOADS] materialized in background'
       : '[PUBLISH_PAYLOADS] already fresh',
   );
-  setAccelerationRuntimePhase('ready', 'Acceleration runtime ready.', {
-    stale: false,
-    lastError: null,
-  });
+  announceAccelerationRuntimeReady();
 }
