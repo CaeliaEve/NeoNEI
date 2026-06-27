@@ -8,6 +8,7 @@ import { promoteCompiledAccelerationDatabase } from './acceleration-db-pipeline.
 import { NeoNeiCompilerService, type CompilerSourceRoots } from './neonei-compiler.service';
 import { sendErrorEnvelope } from '../utils/error-response';
 import { logger } from '../utils/logger';
+import { verifyElysiumCompilerBoundary } from '../compiler-client/elysium-compiler-client';
 
 export type AccelerationRuntimePhase =
   | 'initializing'
@@ -277,6 +278,13 @@ export async function reconcileAccelerationRuntime(
   accelerationDbManager: ReturnType<typeof getAccelerationDatabaseManager>,
   options?: { publishMaterializeOnStart?: boolean },
 ): Promise<void> {
+  const compilerHandshake = await verifyElysiumCompilerBoundary();
+  logger.info('[ACCELERATION_DB] external compiler boundary verified', {
+    compiler: compilerHandshake.compiler,
+    exportAbiVersion: compilerHandshake.metadata?.exportAbiVersion,
+    packAbiVersion: compilerHandshake.metadata?.packAbiVersion,
+    runtimeAbiVersion: compilerHandshake.metadata?.runtimeAbiVersion,
+  });
   const compiler = new NeoNeiCompilerService(accelerationDbManager, ACCELERATION_SOURCE_ROOTS);
   const candidateDbPath = `${accelerationDbManager.getDbPath()}.next`;
 

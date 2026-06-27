@@ -57,37 +57,68 @@ const envCompiler = process.env.NEONEI_COMPILER_BIN?.trim();
 const candidates = envCompiler
   ? [resolveCandidate(envCompiler)]
   : [resolveCandidate(lock.binary), ...(lock.localFallbacks ?? []).map(resolveCandidate), maybeBuildLocalCompiler(lock)];
-const compiler = candidates.find((candidate) => {
+const availableCandidates = candidates.filter((candidate) => {
   if (!candidate) return false;
   if (candidate.includes('\\') || candidate.includes('/')) return existsSync(candidate);
   return commandExists(candidate);
 });
 
-if (!compiler) {
+if (availableCandidates.length === 0) {
   fail(`compiler binary is not available. Checked: ${candidates.filter(Boolean).join(', ')}. Set NEONEI_COMPILER_BIN or run with --build-local from a sibling elysium-compiler checkout.`);
 }
-if (compiler.includes('\\') || compiler.includes('/')) {
-  const actual = sha256(compiler);
-  if (!envCompiler && lock.sha256 && actual !== `${lock.sha256}`.toLowerCase()) {
-    fail(`compiler checksum mismatch for ${compiler}: expected ${lock.sha256}, got ${actual}`);
+
+const mismatches = [];
+let selected = null;
+let selectedCatalog = null;
+let selectedMetadata = null;
+
+for (const candidate of availableCandidates) {
+  if (candidate.includes('\\') || candidate.includes('/')) {
+    const actual = sha256(candidate);
+    if (!envCompiler && lock.sha256 && candidate === resolveCandidate(lock.binary) && actual !== `${lock.sha256}`.toLowerCase()) {
+      mismatches.push(`${candidate}: checksum expected ${lock.sha256}, got ${actual}`);
+      continue;
+    }
   }
+
+  const result = spawnSync(candidate, ['schemas'], { encoding: 'utf8', stdio: 'pipe', shell: false });
+  if ((result.status ?? 1) !== 0) {
+    mismatches.push(`${candidate}: schemas failed: ${result.stderr || result.stdout}`);
+    continue;
+  }
+
+  const catalog = JSON.parse(result.stdout);
+  const metadata = catalog.compiler?.metadata ?? {};
+  const failures = [];
+  for (const [field, expected] of [
+    ['name', lock.compiler],
+    ['version', lock.version],
+    ['rawExportSchemaVersion', lock.rawExportSchemaVersion],
+    ['compiledDistSchemaVersion', lock.compiledDistSchemaVersion],
+    ['exportAbiVersion', lock.exportAbiVersion],
+    ['packAbiVersion', lock.packAbiVersion],
+    ['runtimeAbiVersion', lock.runtimeAbiVersion],
+  ]) {
+    if (expected && metadata[field] !== expected) {
+      failures.push(`${field}: expected ${expected}, got ${metadata[field]}`);
+    }
+  }
+
+  if (failures.length > 0) {
+    mismatches.push(`${candidate}: ${failures.join('; ')}`);
+    continue;
+  }
+
+  selected = candidate;
+  selectedCatalog = catalog;
+  selectedMetadata = metadata;
+  break;
 }
 
-const result = spawnSync(compiler, ['schemas'], { encoding: 'utf8', stdio: 'pipe', shell: false });
-if ((result.status ?? 1) !== 0) fail(`compiler schemas command failed: ${result.stderr || result.stdout}`);
-const catalog = JSON.parse(result.stdout);
-const metadata = catalog.compiler?.metadata ?? {};
-for (const [field, expected] of [
-  ['name', lock.compiler],
-  ['version', lock.version],
-  ['rawExportSchemaVersion', lock.rawExportSchemaVersion],
-  ['compiledDistSchemaVersion', lock.compiledDistSchemaVersion],
-]) {
-  if (expected && metadata[field] !== expected) {
-    fail(`compiler metadata mismatch for ${field}: expected ${expected}, got ${metadata[field]}`);
-  }
+if (!selected) {
+  fail(`no compiler candidate satisfied the lock contract. ${mismatches.join(' | ')}`);
 }
 
-const report = { status: 'ok', compiler, lockPath, metadata };
+const report = { status: 'ok', compiler: selected, lockPath, metadata: selectedMetadata, abi: selectedCatalog?.abi };
 if (json) console.log(JSON.stringify(report, null, 2));
-else console.log(compiler);
+else console.log(selected);
