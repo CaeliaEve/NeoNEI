@@ -14,6 +14,8 @@ const NATIVE_PACK_HEADER_BYTES = 24;
 const manifestRequestCache = new Map<string, Promise<NativeRuntimeManifest>>();
 const packRequestCache = new Map<string, Promise<NativeRuntimePack>>();
 
+export type NativeRuntimeManifestGate = (manifest: NativeRuntimeManifest) => void;
+
 function isPortableRelativePath(path: string): boolean {
   return Boolean(path)
     && !path.startsWith("/")
@@ -225,6 +227,7 @@ async function loadNativeRuntimePack(
 export async function loadNativeRuntimeBuffers(
   manifestUrl: string,
   packNames?: readonly NativeRuntimePackName[],
+  manifestGate?: NativeRuntimeManifestGate,
 ): Promise<NativeRuntimeBuffers> {
   const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
   const manifest = await loadNativeRuntimeManifest(normalizedManifestUrl);
@@ -232,6 +235,7 @@ export async function loadNativeRuntimeBuffers(
   const requestedPackNames = packNames?.length
     ? Array.from(new Set(packNames))
     : (Object.keys(NATIVE_RUNTIME_PACK_SCHEMAS) as NativeRuntimePackName[]);
+  manifestGate?.(manifest);
   const entrypoints = assertNativeRuntimePackEntrypoints(manifest, requestedPackNames);
 
   await Promise.all(requestedPackNames.map(async (name) => {

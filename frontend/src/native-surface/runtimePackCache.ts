@@ -1,34 +1,17 @@
-import { loadNativeRuntimeBuffers } from "./runtimeLoader";
+import { loadNativeRuntimeBuffers } from "./runtimeLoader.ts";
 import type {
   NativeRuntimeBuffers,
-  NativeRuntimePackName,
-} from "./NativeRuntimeManifest";
-
-export type NativeRuntimePackProfile =
-  | "browser-surface"
-  | "history-surface"
-  | "search"
-  | "recipe"
-  | "full";
-
-const PROFILE_PACKS: Record<NativeRuntimePackProfile, readonly NativeRuntimePackName[]> = {
-  // Browser search is part of the right-side NEI interaction, so search stays in
-  // this profile for now; recipes are intentionally excluded from first paint.
-  "browser-surface": ["browser", "groups", "search", "textures", "animations", "stringsZhCn"],
-  "history-surface": ["browser", "textures", "animations", "stringsZhCn"],
-  search: ["browser", "groups", "search", "stringsZhCn"],
-  recipe: ["recipes", "textures", "animations", "stringsZhCn"],
-  full: ["browser", "groups", "search", "recipes", "textures", "animations", "stringsZhCn"],
-};
+} from "./NativeRuntimeManifest.ts";
+import {
+  assertNativeRuntimeProfilePolicy,
+  getNativeRuntimePackNamesForProfile,
+  type NativeRuntimePackProfile,
+} from "./NativeRuntimeProfilePolicy.ts";
 
 const runtimeProfileRequests = new Map<string, Promise<NativeRuntimeBuffers>>();
 
 function normalizeManifestUrl(manifestUrl: string): string {
   return new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
-}
-
-export function getNativeRuntimePackNamesForProfile(profile: NativeRuntimePackProfile): readonly NativeRuntimePackName[] {
-  return PROFILE_PACKS[profile] ?? PROFILE_PACKS.full;
 }
 
 export function clearNativeRuntimePackCache(): void {
@@ -44,7 +27,11 @@ export function loadNativeRuntimeBuffersForProfile(
   const cacheKey = `${normalizedManifestUrl}::${profile}::${packNames.join(",")}`;
   const existing = runtimeProfileRequests.get(cacheKey);
   if (existing) return existing;
-  const request = loadNativeRuntimeBuffers(normalizedManifestUrl, packNames)
+  const request = loadNativeRuntimeBuffers(
+    normalizedManifestUrl,
+    packNames,
+    (manifest) => assertNativeRuntimeProfilePolicy(manifest, profile),
+  )
     .catch((error) => {
       runtimeProfileRequests.delete(cacheKey);
       throw error;

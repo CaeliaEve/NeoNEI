@@ -19,8 +19,8 @@ import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
 import type { NativeSurfaceEngineEntry, NativeSurfaceEngineMutation } from "./NativeSurfaceEngineProtocol";
 import {
   loadNativeRuntimeBuffersForProfile,
-  type NativeRuntimePackProfile,
 } from "./runtimePackCache";
+import type { NativeRuntimePackProfile } from "./NativeRuntimeProfilePolicy";
 import type { BrowserVariantGroup, Item } from "../services/api";
 
 function normalizeRenderer(renderer?: NativeRendererBackendKind): NativeRendererBackendKind {

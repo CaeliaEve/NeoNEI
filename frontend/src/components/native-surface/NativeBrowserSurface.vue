@@ -10,7 +10,7 @@ import type {
   NativeSurfacePointer,
   NativeSurfaceViewportRole,
 } from "../../native-surface/contracts";
-import type { NativeRuntimePackProfile } from "../../native-surface/runtimePackCache";
+import type { NativeRuntimePackProfile } from "../../native-surface/NativeRuntimeProfilePolicy";
 import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 import {
@@ -801,7 +801,6 @@ if (typeof document !== "undefined") {
   line-height: 1.4;
 }
 </style>
-
 
 
 

@@ -1,7 +1,7 @@
 import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../services/api";
 import type { PageAtlasResult } from "../services/pageAtlas";
 import type { NativeRenderSpriteCommand } from "./NativeSurfaceRenderProtocol";
-import type { NativeRuntimePackProfile } from "./runtimePackCache";
+import type { NativeRuntimePackProfile } from "./NativeRuntimeProfilePolicy";
 
 export type NativeRendererBackendKind = "auto" | "webgpu" | "webgl2" | "compat-canvas";
 
@@ -207,6 +207,5 @@ export interface NativeRuntimeManifest {
     perItemImageFallback: false;
   };
 }
-
 
 
