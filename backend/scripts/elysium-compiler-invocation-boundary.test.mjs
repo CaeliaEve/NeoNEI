@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
 const clientSource = readFileSync(resolve(root, 'src/compiler-client/elysium-compiler-client.ts'), 'utf8');
+const fixtureSmokeSource = readFileSync(resolve(root, '../scripts/elysium-compiler-fixture-smoke.mjs'), 'utf8');
 const runtimeService = readFileSync(resolve(root, 'src/services/acceleration-runtime.service.ts'), 'utf8');
 const jobRunner = readFileSync(resolve(root, 'src/services/acceleration-runtime-job-runner.service.ts'), 'utf8');
 
@@ -41,4 +42,22 @@ test('external compiler invocation boundary is not wired into runtime scheduler 
   assert.doesNotMatch(jobRunner, /new ElysiumCompilerClient/);
   assert.doesNotMatch(jobRunner, /elysium-compiler compile/);
   assert.match(jobRunner, /compileAccelerationSnapshotInChild/);
+});
+
+test('fixture smoke gate proves external compiler validate and compile produce runtime packs', () => {
+  assert.match(fixtureSmokeSource, /ensure-elysium-compiler\.mjs/);
+  assert.match(fixtureSmokeSource, /raw-export-minimal/);
+  assert.match(fixtureSmokeSource, /runCompiler\(compiler, \['validate', '--input', fixturePath, '--report', validateReport\]/);
+  assert.match(fixtureSmokeSource, /\['compile', '--input', fixturePath, '--output', outputDir, '--report', compileReport, '--scope', scope\]/);
+  for (const output of [
+    'manifest.json',
+    'runtime-manifest.json',
+    'ui_templates.bin',
+    'ui_bindings.bin',
+    'ui_strings.bin',
+  ]) {
+    assert.equal(fixtureSmokeSource.includes(output), true, `fixture smoke missing required output: ${output}`);
+  }
+  assert.match(fixtureSmokeSource, /external compiler smoke missing required outputs/);
+  assert.match(fixtureSmokeSource, /runtimeManifestSchema/);
 });
