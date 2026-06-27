@@ -8,7 +8,10 @@ const serverSource = readFileSync(resolve(root, 'src/server.ts'), 'utf8');
 const bootstrapSource = readFileSync(resolve(root, 'src/bootstrap-server.ts'), 'utf8');
 const appSource = readFileSync(resolve(root, 'src/app.ts'), 'utf8');
 const serverSettingsSource = readFileSync(resolve(root, 'src/config/server-settings.ts'), 'utf8');
-const accelerationRuntimeSource = readFileSync(resolve(root, 'src/services/acceleration-runtime.service.ts'), 'utf8');
+const accelerationRuntimeJobRunnerSource = readFileSync(
+  resolve(root, 'src/services/acceleration-runtime-job-runner.service.ts'),
+  'utf8',
+);
 
 test('server entrypoint delegates startup to bootstrap boundary', () => {
   assert.match(serverSource, /import\s+\{\s*startServer\s*\}\s+from\s+['"]\.\/bootstrap-server['"]/);
@@ -41,11 +44,11 @@ test('bootstrap boundary owns startup lifecycle and delegates app construction',
 
 
 test('background acceleration child jobs resolve modules from the active src or dist root', () => {
-  assert.match(accelerationRuntimeSource, /NEONEI_BACKEND_MODULE_ROOT:\s*path\.resolve\(__dirname, '\.\.'\)/);
-  assert.match(accelerationRuntimeSource, /function requireFromBackendRoot\(modulePath\)/);
-  assert.match(accelerationRuntimeSource, /require\(path\.join\(moduleRoot, modulePath\)\)/);
-  assert.match(accelerationRuntimeSource, /requireFromBackendRoot\('services\/acceleration-db-pipeline\.service'\)/);
-  assert.match(accelerationRuntimeSource, /requireFromBackendRoot\('config\/runtime-paths'\)/);
-  assert.doesNotMatch(accelerationRuntimeSource, /require\('\.\/src\//);
-  assert.doesNotMatch(accelerationRuntimeSource, /require\('\.\/dist\//);
+  assert.match(accelerationRuntimeJobRunnerSource, /NEONEI_BACKEND_MODULE_ROOT:\s*path\.resolve\(__dirname, '\.\.'\)/);
+  assert.match(accelerationRuntimeJobRunnerSource, /function requireFromBackendRoot\(modulePath\)/);
+  assert.match(accelerationRuntimeJobRunnerSource, /require\(path\.join\(moduleRoot, modulePath\)\)/);
+  assert.match(accelerationRuntimeJobRunnerSource, /requireFromBackendRoot\('services\/acceleration-db-pipeline\.service'\)/);
+  assert.match(accelerationRuntimeJobRunnerSource, /requireFromBackendRoot\('config\/runtime-paths'\)/);
+  assert.doesNotMatch(accelerationRuntimeJobRunnerSource, /require\('\.\/src\//);
+  assert.doesNotMatch(accelerationRuntimeJobRunnerSource, /require\('\.\/dist\//);
 });
