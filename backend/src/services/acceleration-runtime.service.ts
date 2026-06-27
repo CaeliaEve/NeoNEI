@@ -1,33 +1,24 @@
 ﻿import fs from 'fs';
 import path from 'path';
 import { spawn } from 'child_process';
-import type { Request, RequestHandler } from 'express';
 import { IMAGES_PATH, NESQL_CANONICAL_DIR, SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from '../config/runtime-paths';
 import { getAccelerationDatabaseManager } from '../models/database';
 import { promoteCompiledAccelerationDatabase } from './acceleration-db-pipeline.service';
 import { NeoNeiCompilerService, type CompilerSourceRoots } from './neonei-compiler.service';
-import { sendErrorEnvelope } from '../utils/error-response';
 import { logger } from '../utils/logger';
 import { verifyElysiumCompilerBoundary } from '../compiler-client/elysium-compiler-client';
-
-export type AccelerationRuntimePhase =
-  | 'initializing'
-  | 'ready'
-  | 'stale'
-  | 'compiling'
-  | 'promoting'
-  | 'materializing'
-  | 'error';
-
-export type AccelerationRuntimeState = {
-  phase: AccelerationRuntimePhase;
-  message: string;
-  activeApiRequests: number;
-  blocking: boolean;
-  stale: boolean;
-  lastCompiledSignature: string | null;
-  lastError: string | null;
-};
+export {
+  accelerationRuntime,
+  createAccelerationRuntimeMiddleware,
+  setAccelerationRuntimePhase,
+  type AccelerationRuntimePhase,
+  type AccelerationRuntimeState,
+} from './acceleration-runtime-state.service';
+import {
+  setAccelerationRuntimeBlocking,
+  setAccelerationRuntimePhase,
+  waitForAccelerationApiIdle,
+} from './acceleration-runtime-state.service';
 
 type BackgroundCompileSummary = {
   ok: true;
@@ -49,84 +40,6 @@ export const ACCELERATION_SOURCE_ROOTS: CompilerSourceRoots = {
   canonicalDir: NESQL_CANONICAL_DIR,
   imageRoot: IMAGES_PATH,
 };
-
-export const accelerationRuntime: AccelerationRuntimeState = {
-  phase: 'initializing',
-  message: 'starting',
-  activeApiRequests: 0,
-  blocking: false,
-  stale: false,
-  lastCompiledSignature: null,
-  lastError: null,
-};
-
-export function setAccelerationRuntimePhase(
-  phase: AccelerationRuntimePhase,
-  message: string,
-  extras?: Partial<Pick<AccelerationRuntimeState, 'stale' | 'lastCompiledSignature' | 'lastError'>>,
-): void {
-  accelerationRuntime.phase = phase;
-  accelerationRuntime.message = message;
-  if (typeof extras?.stale === 'boolean') {
-    accelerationRuntime.stale = extras.stale;
-  }
-  if (typeof extras?.lastCompiledSignature !== 'undefined') {
-    accelerationRuntime.lastCompiledSignature = extras.lastCompiledSignature;
-  }
-  if (typeof extras?.lastError !== 'undefined') {
-    accelerationRuntime.lastError = extras.lastError;
-  }
-}
-
-function isTrackedAccelerationApiRequest(req: Request): boolean {
-  const routePath = `${req.originalUrl ?? req.url ?? ''}`.split('?')[0] || '';
-  return routePath.startsWith('/api') && routePath !== '/api/health';
-}
-
-export function createAccelerationRuntimeMiddleware(): RequestHandler {
-  return (req, res, next) => {
-    if (!isTrackedAccelerationApiRequest(req)) {
-      return next();
-    }
-
-    if (accelerationRuntime.blocking) {
-      res.setHeader('Retry-After', '1');
-      return sendErrorEnvelope(
-        req,
-        res,
-        503,
-        'ACCELERATION_RUNTIME_WARMING',
-        'Acceleration database is switching snapshots. Retry shortly.',
-        {
-          status: 'warming',
-          phase: accelerationRuntime.phase,
-        },
-      );
-    }
-
-    accelerationRuntime.activeApiRequests += 1;
-    let released = false;
-    const release = () => {
-      if (released) {
-        return;
-      }
-      released = true;
-      accelerationRuntime.activeApiRequests = Math.max(0, accelerationRuntime.activeApiRequests - 1);
-    };
-
-    res.on('finish', release);
-    res.on('close', release);
-    return next();
-  };
-}
-
-async function waitForAccelerationApiIdle(timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (accelerationRuntime.activeApiRequests > 0 && Date.now() < deadline) {
-    // eslint-disable-next-line no-await-in-loop
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-}
 
 function pipeChildOutput(prefix: string, chunk: Buffer, onStructuredLine?: (line: string) => void): void {
   const text = chunk.toString('utf8');
@@ -307,7 +220,7 @@ export async function reconcileAccelerationRuntime(
       stale: true,
       lastCompiledSignature: compileResult.signature,
     });
-    accelerationRuntime.blocking = true;
+    setAccelerationRuntimeBlocking(true);
     try {
       await waitForAccelerationApiIdle();
       await promoteCompiledAccelerationDatabase({
@@ -315,7 +228,7 @@ export async function reconcileAccelerationRuntime(
         compiledDbPath: candidateDbPath,
       });
     } finally {
-      accelerationRuntime.blocking = false;
+      setAccelerationRuntimeBlocking(false);
     }
 
     setAccelerationRuntimePhase('ready', 'Acceleration snapshot refreshed.', {
