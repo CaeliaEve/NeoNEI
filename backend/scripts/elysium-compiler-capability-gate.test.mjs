@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, '..');
 const clientSource = readFileSync(resolve(root, 'src/compiler-client/elysium-compiler-client.ts'), 'utf8');
 const gateSource = readFileSync(resolve(root, 'src/compiler-client/elysium-compiler-capability-gate.ts'), 'utf8');
 const runtimeSource = readFileSync(resolve(root, 'src/services/acceleration-runtime.service.ts'), 'utf8');
+const reporterSource = readFileSync(resolve(root, 'src/services/acceleration-runtime-compiler-boundary-reporter.service.ts'), 'utf8');
 
 test('compiler client exposes a typed native UI capability gate', () => {
   assert.match(gateSource, /export const REQUIRED_NATIVE_UI_CAPABILITIES/);
@@ -31,9 +32,11 @@ test('compiler handshake attaches validated capabilities before callers can use 
   assert.doesNotMatch(clientSource, /return report;/);
 });
 
-test('acceleration runtime consumes the typed native UI capability contract', () => {
-  assert.match(runtimeSource, /compilerHandshake\.capabilities\.nativeUi\.requiredCapabilities/);
-  assert.match(runtimeSource, /compilerHandshake\.capabilities\.nativeUi\.coordinateSpace/);
-  assert.match(runtimeSource, /compilerHandshake\.capabilities\.nativeUi\.runtimeTransform/);
+test('acceleration compiler boundary reporter consumes the typed native UI capability contract', () => {
+  assert.match(reporterSource, /handshake\.capabilities\.nativeUi\.requiredCapabilities/);
+  assert.match(reporterSource, /handshake\.capabilities\.nativeUi\.coordinateSpace/);
+  assert.match(reporterSource, /handshake\.capabilities\.nativeUi\.runtimeTransform/);
+  assert.match(runtimeSource, /verifyAccelerationCompilerBoundary\(\)/);
+  assert.doesNotMatch(runtimeSource, /compilerHandshake\.capabilities\.nativeUi/);
   assert.doesNotMatch(runtimeSource, /abi\?\.exportAbi\?\.nativeUi/);
 });
