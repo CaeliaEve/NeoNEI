@@ -2,6 +2,10 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger';
+import {
+  assertCompilerNativeUiCapabilityGate,
+  type ElysiumCompilerCapabilityContract,
+} from './elysium-compiler-capability-gate';
 
 export type ElysiumCompilerMetadata = {
   name?: string;
@@ -19,6 +23,11 @@ export type ElysiumCompilerHandshake = {
   lockPath: string;
   metadata: ElysiumCompilerMetadata;
   abi?: unknown;
+  capabilities: ElysiumCompilerCapabilityContract;
+};
+
+type RawElysiumCompilerHandshake = Omit<ElysiumCompilerHandshake, 'capabilities'> & {
+  capabilities?: unknown;
 };
 
 const backendRoot = path.resolve(__dirname, '..', '..');
@@ -65,18 +74,20 @@ export class ElysiumCompilerClient {
     if (!fs.existsSync(this.lockPath)) {
       throw new Error(`elysium-compiler lock file missing: ${this.lockPath}`);
     }
-    const report = await runNodeJson<ElysiumCompilerHandshake>(
+    const report = await runNodeJson<RawElysiumCompilerHandshake>(
       [ensureScript, '--lock', this.lockPath, '--json'],
       'elysium-compiler handshake',
     );
+    const capabilities = assertCompilerNativeUiCapabilityGate(report as ElysiumCompilerHandshake);
     logger.info('[ELYSIUM_COMPILER] handshake ok', {
       compiler: report.compiler,
       version: report.metadata?.version,
       exportAbiVersion: report.metadata?.exportAbiVersion,
       packAbiVersion: report.metadata?.packAbiVersion,
       runtimeAbiVersion: report.metadata?.runtimeAbiVersion,
+      nativeUiCapabilities: capabilities.nativeUi.requiredCapabilities,
     });
-    return report;
+    return { ...report, capabilities };
   }
 }
 

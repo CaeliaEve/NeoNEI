@@ -37,6 +37,9 @@ export async function reconcileAccelerationRuntime(
     exportAbiVersion: compilerHandshake.metadata?.exportAbiVersion,
     packAbiVersion: compilerHandshake.metadata?.packAbiVersion,
     runtimeAbiVersion: compilerHandshake.metadata?.runtimeAbiVersion,
+    nativeUiCapabilities: compilerHandshake.capabilities.nativeUi.requiredCapabilities,
+    nativeUiCoordinateSpace: compilerHandshake.capabilities.nativeUi.coordinateSpace,
+    nativeUiRuntimeTransform: compilerHandshake.capabilities.nativeUi.runtimeTransform,
   });
   const compiler = new NeoNeiCompilerService(accelerationDbManager, ACCELERATION_SOURCE_ROOTS);
   const candidateDbPath = `${accelerationDbManager.getDbPath()}.next`;
