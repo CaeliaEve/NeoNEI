@@ -18,6 +18,14 @@ import {
 import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
 import type { NativeSurfaceEngineEntry, NativeSurfaceEngineMutation } from "./NativeSurfaceEngineProtocol";
 import {
+  beginNativeRuntimeLoad,
+  createNativeRuntimeControlState,
+  markNativeRuntimeError,
+  markNativeRuntimeReady,
+  shouldSendCompatEntriesToWorker,
+  toNativeRuntimeMetricsPatch,
+} from "./NativeRuntimeControlPlane";
+import {
   loadNativeRuntimeBuffersForProfile,
 } from "./runtimePackCache";
 import type { NativeRuntimePackProfile } from "./NativeRuntimeProfilePolicy";
@@ -97,9 +105,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
   private modFilter: string | null = null;
   private expandedGroups: string[] = [];
   private selectedItemId: string | null = null;
-  private nativeRuntimeReady = false;
-  private nativeRuntimePacks = 0;
-  private nativeRuntimeError: string | null = null;
+  private nativeRuntime = createNativeRuntimeControlState();
   private pendingMutations = new Map<NativeSurfaceEngineMutation["type"], NativeSurfaceEngineMutation>();
   private mutationFlushTimer: ReturnType<typeof setTimeout> | number | null = null;
   private mutationFlushTimerKind: "raf" | "timeout" | null = null;
@@ -340,9 +346,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
       viewportHeight: this.viewport?.height ?? 0,
       animationEnabled: this.animationEnabled,
       historyViewportEnabled: this.historyViewportEnabled,
-      nativeRuntimeReady: this.nativeRuntimeReady,
-      nativeRuntimePacks: this.nativeRuntimePacks,
-      nativeRuntimeError: this.nativeRuntimeError,
+      ...toNativeRuntimeMetricsPatch(this.nativeRuntime),
     }, eventName);
   }
 
@@ -367,7 +371,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
   }
 
   private shouldSendCompatEntriesToWorker(): boolean {
-    return !this.nativeRuntimeReady || this.nativeRuntimePacks <= 0;
+    return shouldSendCompatEntriesToWorker(this.nativeRuntime);
   }
 
   private async flushMutationsNow(): Promise<void> {
@@ -400,9 +404,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
   }
 
   private async loadRuntimePacks(manifestUrl: string, profile: NativeRuntimePackProfile = "full"): Promise<void> {
-    this.nativeRuntimeReady = false;
-    this.nativeRuntimePacks = 0;
-    this.nativeRuntimeError = null;
+    beginNativeRuntimeLoad(this.nativeRuntime);
     this.touch("runtimePacks:loading");
     try {
       const runtime = await loadNativeRuntimeBuffersForProfile(manifestUrl, profile);
@@ -424,14 +426,10 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
         manifestUrl: runtime.manifestUrl,
         packs,
       });
-      this.nativeRuntimeReady = Boolean(response);
-      this.nativeRuntimePacks = packs.length;
-      this.nativeRuntimeError = null;
-      this.touch("runtimePacks:ready");
+      markNativeRuntimeReady(this.nativeRuntime, Boolean(response), packs.length);
+      this.touch(this.nativeRuntime.ready ? "runtimePacks:ready" : "runtimePacks:error");
     } catch (error) {
-      this.nativeRuntimeReady = false;
-      this.nativeRuntimePacks = 0;
-      this.nativeRuntimeError = error instanceof Error ? error.message : String(error);
+      markNativeRuntimeError(this.nativeRuntime, error);
       this.touch("runtimePacks:error");
     }
   }

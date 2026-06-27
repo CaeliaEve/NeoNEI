@@ -1,10 +1,12 @@
 import type { NativeSurfaceId, NativeSurfaceMetrics } from "./contracts";
 import { getNativeSurfaceEngineMetrics } from "./NativeSurfaceEngineClient";
 import { getNativeRenderWorkerMetrics } from "./NativeRenderWorkerClient";
+import { createNativeRuntimeControlState, toNativeRuntimeMetricsPatch } from "./NativeRuntimeControlPlane";
 
 const metricsBySurface = new Map<NativeSurfaceId, NativeSurfaceMetrics>();
 
 export function createNativeSurfaceMetrics(surfaceId: NativeSurfaceId): NativeSurfaceMetrics {
+  const nativeRuntime = createNativeRuntimeControlState();
   return {
     surfaceId,
     initialized: false,
@@ -15,9 +17,7 @@ export function createNativeSurfaceMetrics(surfaceId: NativeSurfaceId): NativeSu
     viewportHeight: 0,
     animationEnabled: false,
     historyViewportEnabled: false,
-    nativeRuntimeReady: false,
-    nativeRuntimePacks: 0,
-    nativeRuntimeError: null,
+    ...toNativeRuntimeMetricsPatch(nativeRuntime),
     lastEvent: null,
     eventCount: 0,
     updatedAt: performance.now(),

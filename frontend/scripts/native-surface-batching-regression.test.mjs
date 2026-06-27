@@ -42,9 +42,11 @@ test("native surface protocol exposes explicit mutation batch contract", () => {
 
 test("native surface controller stops sending compat entries once native runtime is ready", () => {
   const source = readSource("src/native-surface/NativeSurfaceController.ts");
+  const controlPlane = readSource("src/native-surface/NativeRuntimeControlPlane.ts");
 
   assert.match(source, /shouldSendCompatEntriesToWorker\(\)/);
-  assert.match(source, /return !this\.nativeRuntimeReady \|\| this\.nativeRuntimePacks <= 0/);
+  assert.match(source, /return shouldSendCompatEntriesToWorker\(this\.nativeRuntime\)/);
+  assert.match(controlPlane, /return !state\.ready \|\| state\.packCount <= 0/);
   assert.match(
     source,
     /if \(this\.shouldSendCompatEntriesToWorker\(\)\) \{\s*this\.queueMutation\(\{ type: "compatEntries"/,
