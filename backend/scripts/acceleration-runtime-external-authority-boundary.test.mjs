@@ -34,6 +34,8 @@ test('phase machine can select external runtime without routing through internal
   assert.match(phaseMachine, /compilerAuthority\?: 'internal-sqlite' \| 'external-runtime'/);
   assert.match(phaseMachine, /if \(input\.compilerAuthority === 'external-runtime'\) return 'compile-external-runtime'/);
   assert.match(runtimeService, /resolveAccelerationCompilerAuthority\(\)/);
+  assert.match(runtimeService, /compilerAuthority === 'internal-sqlite'/);
+  assert.match(runtimeService, /: \{ fresh: false \}/);
   assert.match(runtimeService, /compilerAuthority,/);
 });
 

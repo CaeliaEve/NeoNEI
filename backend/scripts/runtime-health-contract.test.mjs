@@ -11,13 +11,23 @@ test('runtime health exposes the stable public health contract', () => {
     true,
     'runtime health summary must keep a stable schemaVersion',
   );
-  for (const field of ['distData', 'counts', 'coverage', 'validation', 'files', 'nativeRender']) {
+  for (const field of ['distData', 'counts', 'coverage', 'validation', 'files', 'compiler', 'nativeRender']) {
     assert.equal(
       serviceSource.includes(`${field}:`),
       true,
       `runtime health summary should expose ${field}`,
     );
   }
+  assert.equal(
+    serviceSource.includes('resolveAccelerationCompilerAuthority'),
+    true,
+    'runtime health should expose the active compiler authority',
+  );
+  assert.equal(
+    serviceSource.includes('externalRuntimePromotion'),
+    true,
+    'runtime health should expose external runtime promotion status',
+  );
   assert.equal(
     routeSource.includes("router.get('/health'"),
     true,

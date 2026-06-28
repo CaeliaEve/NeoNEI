@@ -136,6 +136,7 @@ router.get('/diagnostics',
       },
       nativeRender: getNativeRenderRuntimeDiagnostics(),
       health: getRuntimeHealthSummary(),
+      compiler: getRuntimeHealthSummary().compiler,
     });
   }),
 );

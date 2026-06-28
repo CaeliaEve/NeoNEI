@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { PUBLIC_DIR } from '../config/runtime-paths';
+import { resolveAccelerationCompilerAuthority } from './acceleration-runtime-compiler-authority.service';
 import { getNativeRenderRuntimeDiagnostics } from './native-render-runtime-diagnostics.service';
 
 type JsonRecord = Record<string, unknown>;
@@ -52,6 +53,16 @@ export interface RuntimeHealthSummary {
     present: number;
     missing: Array<{ key: string; path: string }>;
     totalBytes: number;
+  };
+  compiler: {
+    authority: ReturnType<typeof resolveAccelerationCompilerAuthority>;
+    externalRuntimePromotion: {
+      reportPath: string | null;
+      promotedAt: string | null;
+      runtimeId: string | null;
+      runtimeManifestSchema: string | null;
+      copiedFiles: number | null;
+    };
   };
   nativeRender: ReturnType<typeof getNativeRenderRuntimeDiagnostics>;
 }
@@ -124,6 +135,20 @@ function readDistJsonByManifestKey(manifest: JsonRecord | null, key: string): Js
   return readJson(path.join(DIST_DATA_DIR, relativePath));
 }
 
+function readExternalRuntimePromotionSummary(manifest: JsonRecord | null): RuntimeHealthSummary['compiler']['externalRuntimePromotion'] {
+  const files = asRecord(manifest?.files);
+  const reportRelativePath = asString(files?.externalRuntimePromotionReport);
+  const report = reportRelativePath ? readJson(path.join(DIST_DATA_DIR, reportRelativePath)) : null;
+  const copiedFiles = Array.isArray(report?.copiedFiles) ? report.copiedFiles.length : null;
+  return {
+    reportPath: reportRelativePath,
+    promotedAt: asString(report?.promotedAt),
+    runtimeId: asString(report?.runtimeId),
+    runtimeManifestSchema: asString(report?.runtimeManifestSchema),
+    copiedFiles,
+  };
+}
+
 function chooseStatus(args: {
   manifestExists: boolean;
   missingFileCount: number;
@@ -167,6 +192,8 @@ export function getRuntimeHealthSummary(): RuntimeHealthSummary {
   const recipeFragmentation = readDistJsonByManifestKey(manifest, 'recipeFragmentation');
   const exportPathHygiene = readDistJsonByManifestKey(manifest, 'exportPathHygiene');
   const files = readDeclaredFileStats(asRecord(manifest?.files));
+  const compilerAuthority = resolveAccelerationCompilerAuthority();
+  const externalRuntimePromotion = readExternalRuntimePromotionSummary(manifest);
 
   const compilerValidationBlocked = (asNumber(validationCounts?.manifestBlocked) ?? 0) > 0
     || (asNumber(validationCounts?.nativeRenderCaptureGateBlocked) ?? 0) > 0;
@@ -232,6 +259,10 @@ export function getRuntimeHealthSummary(): RuntimeHealthSummary {
       ],
     },
     files,
+    compiler: {
+      authority: compilerAuthority,
+      externalRuntimePromotion,
+    },
     nativeRender: getNativeRenderRuntimeDiagnostics(),
   };
 

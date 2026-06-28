@@ -20,7 +20,9 @@ export async function reconcileAccelerationRuntime(
 ): Promise<void> {
   await verifyAccelerationCompilerBoundary();
   const compilerAuthority = resolveAccelerationCompilerAuthority();
-  const compilerProbe = probeAccelerationCompilerState({ manager: accelerationDbManager });
+  const compilerProbe = compilerAuthority === 'internal-sqlite'
+    ? probeAccelerationCompilerState({ manager: accelerationDbManager })
+    : { fresh: false };
 
   const reconcileDecision = decideAccelerationReconcilePhase({
     fresh: compilerProbe.fresh,
