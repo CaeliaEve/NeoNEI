@@ -52,6 +52,7 @@ import {
   buildModsFromRuntime,
   buildResourceManifest,
   buildSearchCatalog,
+  buildSortedSearchEntries,
   expandCatalogGroups,
   filterByModId,
   paginate,
@@ -338,6 +339,7 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
       groupByKey,
       defaultCatalogByScope: new Map(),
       searchCatalogByScope: new Map(),
+      sortedSearchEntries: buildSortedSearchEntries(searchPack?.pack.items ?? []),
     };
     return cachedBrowserRuntime;
   })()
@@ -451,10 +453,8 @@ export async function getDistDataSearchCatalog(search: string, modId?: string, i
   if (!normalizedSearch) {
     return getDistDataDefaultCatalog(modId, includeHidden) as Promise<BrowserSearchCatalogResponse | null>;
   }
-  const searchPack = await getDistDataSearchPack();
   const filtered = buildSearchCatalog(
     runtime,
-    searchPack?.pack.items ?? [],
     normalizedSearch,
     modId,
     includeHidden,

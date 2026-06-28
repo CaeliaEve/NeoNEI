@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   BrowserDefaultCatalogResponse,
   BrowserGridEntry,
   BrowserPagePackResponse,
@@ -52,6 +52,7 @@ export type DistDataBrowserRuntime = {
   groupByKey: Map<string, DistDataRawGroup>;
   defaultCatalogByScope: Map<string, BrowserGridEntry[]>;
   searchCatalogByScope: Map<string, BrowserGridEntry[]>;
+  sortedSearchEntries: BrowserSearchPackEntry[];
 };
 
 export function stableNumber(value: unknown, fallback = 0): number {
@@ -228,10 +229,18 @@ export function expandCatalogGroups(
   return result;
 }
 
+export function buildSortedSearchEntries(searchPackItems: BrowserSearchPackEntry[]): BrowserSearchPackEntry[] {
+  return [...searchPackItems].sort((a, b) => {
+    const rankA = stableNumber((a as unknown as { searchRank?: number }).searchRank, Number.MAX_SAFE_INTEGER);
+    const rankB = stableNumber((b as unknown as { searchRank?: number }).searchRank, Number.MAX_SAFE_INTEGER);
+    if (rankA !== rankB) return rankA - rankB;
+    return stableNumber((b as unknown as { popularityScore?: number }).popularityScore, 0)
+      - stableNumber((a as unknown as { popularityScore?: number }).popularityScore, 0);
+  });
+}
 
 export function buildSearchCatalog(
   runtime: DistDataBrowserRuntime,
-  searchPackItems: BrowserSearchPackEntry[],
   search: string,
   modId?: string,
   includeHidden = false,
@@ -246,15 +255,8 @@ export function buildSearchCatalog(
   const emittedGroups = new Set<string>();
   const emittedItems = new Set<string>();
   const filtered: BrowserGridEntry[] = [];
-  const sortedSearchEntries = [...searchPackItems].sort((a, b) => {
-    const rankA = stableNumber((a as unknown as { searchRank?: number }).searchRank, Number.MAX_SAFE_INTEGER);
-    const rankB = stableNumber((b as unknown as { searchRank?: number }).searchRank, Number.MAX_SAFE_INTEGER);
-    if (rankA !== rankB) return rankA - rankB;
-    return stableNumber((b as unknown as { popularityScore?: number }).popularityScore, 0)
-      - stableNumber((a as unknown as { popularityScore?: number }).popularityScore, 0);
-  });
 
-  for (const searchEntry of sortedSearchEntries) {
+  for (const searchEntry of runtime.sortedSearchEntries) {
     if (!includeHidden && runtime.hiddenItemIds.has(searchEntry.itemId)) {
       continue;
     }
