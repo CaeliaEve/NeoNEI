@@ -4,6 +4,7 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { PUBLIC_DIR } from '../config/runtime-paths';
 import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
 import { getIndexedRecipesService } from '../services/recipes-indexed.service';
+import { getRuntimeRecipePackService } from '../services/runtime-recipe-pack.service';
 import { getNativeRenderRuntimeDiagnostics } from '../services/native-render-runtime-diagnostics.service';
 import { getRuntimeHealthSummary } from '../services/runtime-health-summary.service';
 import { asyncHandler, badRequest, notFound } from '../utils/http';
@@ -137,10 +138,12 @@ function assertCurrentRuntimeId(runtimeId: string | undefined): void {
   }
 }
 
-function assertRecipeApiPackBackedOrAllowed(): void {
-  if (resolveAccelerationCompilerAuthority() !== 'external-runtime') {
-    return;
-  }
+function isExternalRuntimeAuthority(): boolean {
+  return resolveAccelerationCompilerAuthority() === 'external-runtime';
+}
+
+function assertRecipePagePackBackedOrAllowed(): void {
+  if (!isExternalRuntimeAuthority()) return;
   throw notImplemented('Recipe query endpoints are not yet pack-backed for external-runtime authority; use runtime manifest/assets until the pack query surface lands.');
 }
 
@@ -272,9 +275,14 @@ function sendRuntimeReport(reportName: string | undefined, res: Response): void 
 }
 
 async function sendRecipeItem(itemIdParam: string | undefined, res: Response): Promise<void> {
-  assertRecipeApiPackBackedOrAllowed();
   setNoStoreHeaders(res);
   const itemId = normalizeRequiredParam(itemIdParam, 'itemId');
+  if (isExternalRuntimeAuthority()) {
+    const payload = getRuntimeRecipePackService().getItemProducedBy(itemId);
+    if (!payload) throw notFound('Recipe item not found in runtime recipe pack');
+    sendOk(res, payload);
+    return;
+  }
   const service = getIndexedRecipesService();
   const summary = await service.getItemRecipeSummary(itemId);
   const recipes = await service.getCraftingRecipesForItem(itemId);
@@ -286,9 +294,14 @@ async function sendRecipeItem(itemIdParam: string | undefined, res: Response): P
 }
 
 async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): Promise<void> {
-  assertRecipeApiPackBackedOrAllowed();
   setNoStoreHeaders(res);
   const itemId = normalizeRequiredParam(itemIdParam, 'itemId');
+  if (isExternalRuntimeAuthority()) {
+    const payload = getRuntimeRecipePackService().getItemUsedIn(itemId);
+    if (!payload) throw notFound('Recipe item not found in runtime recipe pack');
+    sendOk(res, payload);
+    return;
+  }
   const service = getIndexedRecipesService();
   const summary = await service.getItemRecipeSummary(itemId);
   const usages = await service.getUsageRecipesForItem(itemId);
@@ -300,7 +313,7 @@ async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): 
 }
 
 async function sendRecipePage(recipePageIdParam: string | undefined, res: Response): Promise<void> {
-  assertRecipeApiPackBackedOrAllowed();
+  assertRecipePagePackBackedOrAllowed();
   setNoStoreHeaders(res);
   const recipePageId = normalizeRequiredParam(recipePageIdParam, 'recipePageId');
   const service = getIndexedRecipesService();
