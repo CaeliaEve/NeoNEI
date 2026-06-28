@@ -10,6 +10,7 @@ const runtimeServicePath = resolve(root, 'src/services/acceleration-runtime.serv
 const dispatcherPath = resolve(root, 'src/services/acceleration-runtime-reconcile-dispatcher.service.ts');
 const workerPath = resolve(root, 'src/services/acceleration-runtime-reconcile-worker.service.ts');
 const jobRunnerPath = resolve(root, 'src/services/acceleration-runtime-job-runner.service.ts');
+const identityPath = resolve(root, 'src/services/external-runtime-identity.service.ts');
 
 const authority = readFileSync(authorityPath, 'utf8');
 const phaseMachine = readFileSync(phaseMachinePath, 'utf8');
@@ -17,6 +18,7 @@ const runtimeService = readFileSync(runtimeServicePath, 'utf8');
 const dispatcher = readFileSync(dispatcherPath, 'utf8');
 const worker = readFileSync(workerPath, 'utf8');
 const jobRunner = readFileSync(jobRunnerPath, 'utf8');
+const identity = readFileSync(identityPath, 'utf8');
 
 test('compiler authority policy is explicit and fail-closed', () => {
   assert.equal(existsSync(authorityPath), true, 'compiler authority policy module must exist');
@@ -32,11 +34,21 @@ test('compiler authority policy is explicit and fail-closed', () => {
 test('phase machine can select external runtime without routing through internal sqlite compile', () => {
   assert.match(phaseMachine, /'compile-external-runtime'/);
   assert.match(phaseMachine, /compilerAuthority\?: 'internal-sqlite' \| 'external-runtime'/);
-  assert.match(phaseMachine, /if \(input\.compilerAuthority === 'external-runtime'\) return 'compile-external-runtime'/);
+  assert.match(phaseMachine, /if \(input\.compilerAuthority === 'external-runtime' && !input\.fresh\) return 'compile-external-runtime'/);
   assert.match(runtimeService, /resolveAccelerationCompilerAuthority\(\)/);
   assert.match(runtimeService, /compilerAuthority === 'internal-sqlite'/);
-  assert.match(runtimeService, /: \{ fresh: false \}/);
+  assert.match(runtimeService, /probeExternalRuntimeIdentityFreshness\(\{ rawExportRoot: getExternalRuntimeRawExportRoot\(\) \}\)/);
   assert.match(runtimeService, /compilerAuthority,/);
+});
+
+test('external runtime identity is a first-class freshness boundary', () => {
+  assert.equal(existsSync(identityPath), true, 'external runtime identity module must exist');
+  assert.match(identity, /export function computeExternalRuntimeSourceIdentity/);
+  assert.match(identity, /export function readExternalRuntimePromotionIdentity/);
+  assert.match(identity, /export function probeExternalRuntimeIdentityFreshness/);
+  assert.match(identity, /sourceIdentity\.identity === current\.identity/);
+  assert.doesNotMatch(identity, /NeoNeiCompilerService/);
+  assert.doesNotMatch(identity, /compiler_state/);
 });
 
 test('dispatcher maps external runtime to a separate worker action', () => {
@@ -54,6 +66,8 @@ test('external runtime child job invokes elysium-compiler and promotion kernel o
   assert.match(jobRunner, /new ElysiumCompilerClient\(\)/);
   assert.match(jobRunner, /compiler\.validate\(\{ input, report: validateReport, output \}\)/);
   assert.match(jobRunner, /compiler\.compile\(\{ input, output, report: compileReport, scope: 'native-ui', strict: true \}\)/);
-  assert.match(jobRunner, /promoteExternalRuntimeArtifact\(\{ artifactRoot: output \}\)/);
+  assert.match(jobRunner, /promoteExternalRuntimeArtifact\(\{ artifactRoot: output, sourceIdentity \}\)/);
+  assert.match(jobRunner, /computeExternalRuntimeSourceIdentity\(input\)/);
+  assert.match(jobRunner, /sourceIdentity: sourceIdentity\.identity/);
   assert.match(jobRunner, /EXTERNAL_RUNTIME_RESULT/);
 });

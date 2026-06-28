@@ -92,6 +92,15 @@ test('external runtime artifact promotion publishes compiler packs into dist-dat
       artifactRoot,
       distDataDir,
       promotedAt: '2026-06-28T00:00:00.000Z',
+      sourceIdentity: {
+        schemaVersion: 'neonei/external-runtime-source-identity/current',
+        rootDir: artifactRoot,
+        identity: 'sha256:fixture-source-identity',
+        fileCount: 1,
+        totalBytes: 1,
+        manifestSchemaVersion: 'fixture/raw/v1',
+        files: [{ path: 'manifest.json', bytes: 1, mtimeMs: 1 }],
+      },
     });
 
     assert.equal(result.schemaVersion, 'neonei/external-runtime-artifact-promotion/current');
@@ -120,10 +129,14 @@ test('external runtime artifact promotion publishes compiler packs into dist-dat
     assert.equal(distManifest.files.rustUiTemplatesBin, 'rust/ui-pack/ui_templates.bin');
     assert.equal(distManifest.files.rustUiBindingsBin, 'rust/ui-pack/ui_bindings.bin');
     assert.equal(distManifest.files.rustUiStringsBin, 'rust/ui-pack/ui_strings.bin');
+    assert.equal(distManifest.externalRuntimeSourceIdentity.identity, 'sha256:fixture-source-identity');
     assert.equal(
       distManifest.files.externalRuntimePromotionReport,
       'rust/external-runtime-artifact-promotion-report.json',
     );
+    const promotionReport = JSON.parse(readFileSync(join(distDataDir, 'rust', 'external-runtime-artifact-promotion-report.json'), 'utf8'));
+    assert.equal(promotionReport.sourceIdentity.identity, 'sha256:fixture-source-identity');
+    assert.equal(result.sourceIdentity.identity, 'sha256:fixture-source-identity');
     assert.equal(Array.isArray(result.copiedFiles), true);
     assert.ok(result.copiedFiles.length >= 9, 'promotion should copy every compiler-declared runtime file');
     for (const entry of result.copiedFiles) {

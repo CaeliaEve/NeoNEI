@@ -12,6 +12,7 @@ export type AccelerationCompilePromotionSummary = {
   signature: string;
   runtimeId?: string | null;
   promotedFiles?: number;
+  sourceIdentity?: string | null;
 };
 
 export function decideAccelerationReconcilePhase(input: {
@@ -19,7 +20,7 @@ export function decideAccelerationReconcilePhase(input: {
   compilerAuthority?: 'internal-sqlite' | 'external-runtime';
   publishMaterializeOnStart?: boolean;
 }): AccelerationReconcileDecision {
-  if (input.compilerAuthority === 'external-runtime') return 'compile-external-runtime';
+  if (input.compilerAuthority === 'external-runtime' && !input.fresh) return 'compile-external-runtime';
   if (!input.fresh) return 'compile-snapshot';
   if (input.publishMaterializeOnStart) return 'materialize-publish-payloads';
   return 'ready-noop';
@@ -59,5 +60,6 @@ export function logAccelerationSnapshotPromotedPayload(summary: AccelerationComp
     signature: summary.signature,
     runtimeId: summary.runtimeId ?? null,
     promotedFiles: summary.promotedFiles ?? null,
+    sourceIdentity: summary.sourceIdentity ?? null,
   };
 }

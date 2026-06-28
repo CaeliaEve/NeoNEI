@@ -6,6 +6,7 @@ import {
   loadElysiumCompiledArtifactDescriptor,
   type ElysiumCompiledArtifactDescriptor,
 } from '../compiler-client/elysium-compiled-artifact-loader';
+import type { ExternalRuntimeSourceIdentity } from './external-runtime-identity.service';
 
 const PROMOTION_SCHEMA_VERSION = 'neonei/external-runtime-artifact-promotion/current' as const;
 const DEFAULT_PROMOTION_REPORT = 'rust/external-runtime-artifact-promotion-report.json';
@@ -17,6 +18,7 @@ export type ExternalRuntimeArtifactPromotionOptions = {
   distDataDir?: string;
   promotedAt?: string;
   reportRelativePath?: string;
+  sourceIdentity?: ExternalRuntimeSourceIdentity;
 };
 
 export type ExternalRuntimeArtifactPromotionFile = {
@@ -36,6 +38,7 @@ export type ExternalRuntimeArtifactPromotionResult = {
   manifestPath: string;
   runtimeManifestPath: string;
   reportPath: string;
+  sourceIdentity: ExternalRuntimeSourceIdentity | null;
   copiedFiles: ExternalRuntimeArtifactPromotionFile[];
 };
 
@@ -148,6 +151,7 @@ function materializeDistManifest(args: {
   descriptor: ElysiumCompiledArtifactDescriptor;
   reportRelativePath: string;
   promotedAt: string;
+  sourceIdentity?: ExternalRuntimeSourceIdentity;
 }): JsonRecord {
   const manifestPath = path.join(args.distDataDir, 'manifest.json');
   const existing = fs.existsSync(manifestPath) ? readJsonObject(manifestPath, 'dist manifest') : {};
@@ -165,8 +169,10 @@ function materializeDistManifest(args: {
       'elysium-compiler',
       args.descriptor.runtimeId ?? 'runtime-id-missing',
       args.descriptor.runtimeManifestSchema ?? 'runtime-schema-missing',
+      args.sourceIdentity?.identity ?? 'source-identity-missing',
       args.promotedAt,
     ].join('::'),
+    externalRuntimeSourceIdentity: args.sourceIdentity ?? null,
     files: {
       ...(existing.files && typeof existing.files === 'object' && !Array.isArray(existing.files) ? existing.files as JsonRecord : {}),
       ...artifactFiles,
@@ -214,6 +220,7 @@ export function promoteExternalRuntimeArtifact(
     descriptor,
     reportRelativePath,
     promotedAt,
+    sourceIdentity: options.sourceIdentity,
   });
   atomicWriteJson(path.join(distDataDir, 'manifest.json'), distManifest);
 
@@ -227,6 +234,7 @@ export function promoteExternalRuntimeArtifact(
     manifestPath: path.join(distDataDir, 'manifest.json'),
     runtimeManifestPath: path.join(distDataDir, 'rust', 'runtime-manifest.json'),
     reportPath: resolveUnderRoot(distDataDir, reportRelativePath, 'promotion report'),
+    sourceIdentity: options.sourceIdentity ?? null,
     copiedFiles: copiedFiles.sort((left, right) => left.path.localeCompare(right.path)),
   };
   atomicWriteJson(result.reportPath, result);

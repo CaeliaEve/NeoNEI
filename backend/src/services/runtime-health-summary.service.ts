@@ -61,6 +61,7 @@ export interface RuntimeHealthSummary {
       promotedAt: string | null;
       runtimeId: string | null;
       runtimeManifestSchema: string | null;
+      sourceIdentity: string | null;
       copiedFiles: number | null;
     };
   };
@@ -140,11 +141,13 @@ function readExternalRuntimePromotionSummary(manifest: JsonRecord | null): Runti
   const reportRelativePath = asString(files?.externalRuntimePromotionReport);
   const report = reportRelativePath ? readJson(path.join(DIST_DATA_DIR, reportRelativePath)) : null;
   const copiedFiles = Array.isArray(report?.copiedFiles) ? report.copiedFiles.length : null;
+  const sourceIdentity = asRecord(report?.sourceIdentity);
   return {
     reportPath: reportRelativePath,
     promotedAt: asString(report?.promotedAt),
     runtimeId: asString(report?.runtimeId),
     runtimeManifestSchema: asString(report?.runtimeManifestSchema),
+    sourceIdentity: asString(sourceIdentity?.identity),
     copiedFiles,
   };
 }

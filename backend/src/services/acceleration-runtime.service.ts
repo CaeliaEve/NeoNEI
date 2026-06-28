@@ -4,7 +4,11 @@ import {
 } from './acceleration-runtime-phase-machine.service';
 import { verifyAccelerationCompilerBoundary } from './acceleration-runtime-compiler-boundary-reporter.service';
 import { probeAccelerationCompilerState } from './acceleration-runtime-compiler-probe.service';
-import { resolveAccelerationCompilerAuthority } from './acceleration-runtime-compiler-authority.service';
+import {
+  getExternalRuntimeRawExportRoot,
+  resolveAccelerationCompilerAuthority,
+} from './acceleration-runtime-compiler-authority.service';
+import { probeExternalRuntimeIdentityFreshness } from './external-runtime-identity.service';
 import { dispatchAccelerationReconcile } from './acceleration-runtime-reconcile-dispatcher.service';
 export {
   accelerationRuntime,
@@ -22,7 +26,7 @@ export async function reconcileAccelerationRuntime(
   const compilerAuthority = resolveAccelerationCompilerAuthority();
   const compilerProbe = compilerAuthority === 'internal-sqlite'
     ? probeAccelerationCompilerState({ manager: accelerationDbManager })
-    : { fresh: false };
+    : probeExternalRuntimeIdentityFreshness({ rawExportRoot: getExternalRuntimeRawExportRoot() });
 
   const reconcileDecision = decideAccelerationReconcilePhase({
     fresh: compilerProbe.fresh,

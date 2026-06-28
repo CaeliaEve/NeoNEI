@@ -19,6 +19,7 @@ export type BackgroundExternalRuntimeSummary = {
   promotedFiles: number;
   reportPath: string;
   signature: string;
+  sourceIdentity: string;
 };
 
 export type BackgroundPublishSummary = {
@@ -140,6 +141,7 @@ function requireFromBackendRoot(modulePath) {
 const { ElysiumCompilerClient } = requireFromBackendRoot('compiler-client/elysium-compiler-client');
 const { promoteExternalRuntimeArtifact } = requireFromBackendRoot('services/external-runtime-artifact-promotion.service');
 const { getExternalRuntimeRawExportRoot } = requireFromBackendRoot('services/acceleration-runtime-compiler-authority.service');
+const { computeExternalRuntimeSourceIdentity } = requireFromBackendRoot('services/external-runtime-identity.service');
 
 function hashDirectory(rootDir) {
   const hash = crypto.createHash('sha256');
@@ -166,6 +168,7 @@ function hashDirectory(rootDir) {
 
 (async () => {
   const input = getExternalRuntimeRawExportRoot();
+  const sourceIdentity = computeExternalRuntimeSourceIdentity(input);
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-external-runtime-'));
   const output = path.join(workDir, 'compiled');
   const validateReport = path.join(workDir, 'validate-report.json');
@@ -174,7 +177,7 @@ function hashDirectory(rootDir) {
     const compiler = new ElysiumCompilerClient();
     await compiler.validate({ input, report: validateReport, output });
     await compiler.compile({ input, output, report: compileReport, scope: 'native-ui', strict: true });
-    const promotion = promoteExternalRuntimeArtifact({ artifactRoot: output });
+    const promotion = promoteExternalRuntimeArtifact({ artifactRoot: output, sourceIdentity });
     console.log('EXTERNAL_RUNTIME_RESULT ' + JSON.stringify({
       ok: true,
       stage: 'external-runtime',
@@ -183,6 +186,7 @@ function hashDirectory(rootDir) {
       promotedFiles: promotion.copiedFiles.length,
       reportPath: promotion.reportPath,
       signature: hashDirectory(output),
+      sourceIdentity: sourceIdentity.identity,
     }));
   } finally {
     fs.rmSync(workDir, { recursive: true, force: true });
