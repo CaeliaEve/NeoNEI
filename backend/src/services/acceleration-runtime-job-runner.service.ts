@@ -11,6 +11,16 @@ export type BackgroundCompileSummary = {
   signature: string;
 };
 
+export type BackgroundExternalRuntimeSummary = {
+  ok: true;
+  stage: 'external-runtime';
+  runtimeId: string | null;
+  runtimeManifestSchema: string | null;
+  promotedFiles: number;
+  reportPath: string;
+  signature: string;
+};
+
 export type BackgroundPublishSummary = {
   ok: true;
   materialized: boolean;
@@ -114,6 +124,80 @@ compileAccelerationDatabase({
   return runBackgroundNodeJob<BackgroundCompileSummary>('compile-acceleration-db', 'ACCEL_COMPILE_RESULT', inlineCode, {
     ACCELERATION_DB_FILE: candidateDbPath,
   });
+}
+
+export function compileExternalRuntimeArtifactInChild(): Promise<BackgroundExternalRuntimeSummary> {
+  const inlineCode = `
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const crypto = require('crypto');
+const moduleRoot = process.env.NEONEI_BACKEND_MODULE_ROOT;
+function requireFromBackendRoot(modulePath) {
+  if (!moduleRoot) throw new Error('NEONEI_BACKEND_MODULE_ROOT is required');
+  return require(path.join(moduleRoot, modulePath));
+}
+const { ElysiumCompilerClient } = requireFromBackendRoot('compiler-client/elysium-compiler-client');
+const { promoteExternalRuntimeArtifact } = requireFromBackendRoot('services/external-runtime-artifact-promotion.service');
+const { getExternalRuntimeRawExportRoot } = requireFromBackendRoot('services/acceleration-runtime-compiler-authority.service');
+
+function hashDirectory(rootDir) {
+  const hash = crypto.createHash('sha256');
+  const stack = [''];
+  while (stack.length > 0) {
+    const relativeDir = stack.pop();
+    const absoluteDir = path.join(rootDir, relativeDir);
+    for (const name of fs.readdirSync(absoluteDir).sort()) {
+      const relativePath = path.join(relativeDir, name).split(path.sep).join('/');
+      const absolutePath = path.join(rootDir, relativePath);
+      const stat = fs.statSync(absolutePath);
+      if (stat.isDirectory()) {
+        stack.push(relativePath);
+        continue;
+      }
+      if (!stat.isFile()) continue;
+      hash.update(relativePath);
+      hash.update(String(stat.size));
+      hash.update(String(Math.floor(stat.mtimeMs)));
+    }
+  }
+  return hash.digest('hex');
+}
+
+(async () => {
+  const input = getExternalRuntimeRawExportRoot();
+  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-external-runtime-'));
+  const output = path.join(workDir, 'compiled');
+  const validateReport = path.join(workDir, 'validate-report.json');
+  const compileReport = path.join(workDir, 'compile-report.json');
+  try {
+    const compiler = new ElysiumCompilerClient();
+    await compiler.validate({ input, report: validateReport, output });
+    await compiler.compile({ input, output, report: compileReport, scope: 'native-ui', strict: true });
+    const promotion = promoteExternalRuntimeArtifact({ artifactRoot: output });
+    console.log('EXTERNAL_RUNTIME_RESULT ' + JSON.stringify({
+      ok: true,
+      stage: 'external-runtime',
+      runtimeId: promotion.runtimeId,
+      runtimeManifestSchema: promotion.runtimeManifestSchema,
+      promotedFiles: promotion.copiedFiles.length,
+      reportPath: promotion.reportPath,
+      signature: hashDirectory(output),
+    }));
+  } finally {
+    fs.rmSync(workDir, { recursive: true, force: true });
+  }
+  process.exit(0);
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
+`;
+  return runBackgroundNodeJob<BackgroundExternalRuntimeSummary>(
+    'compile-external-runtime-artifact',
+    'EXTERNAL_RUNTIME_RESULT',
+    inlineCode,
+  );
 }
 
 export function materializePublishPayloadsInChild(): Promise<BackgroundPublishSummary> {

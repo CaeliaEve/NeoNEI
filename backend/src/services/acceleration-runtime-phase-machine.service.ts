@@ -2,19 +2,24 @@ import { setAccelerationRuntimePhase } from './acceleration-runtime-state.servic
 
 export type AccelerationReconcileDecision =
   | 'compile-snapshot'
+  | 'compile-external-runtime'
   | 'materialize-publish-payloads'
   | 'ready-noop';
 
 export type AccelerationCompilePromotionSummary = {
-  itemsImported: number;
-  recipesImported: number;
+  itemsImported?: number;
+  recipesImported?: number;
   signature: string;
+  runtimeId?: string | null;
+  promotedFiles?: number;
 };
 
 export function decideAccelerationReconcilePhase(input: {
   fresh: boolean;
+  compilerAuthority?: 'internal-sqlite' | 'external-runtime';
   publishMaterializeOnStart?: boolean;
 }): AccelerationReconcileDecision {
+  if (input.compilerAuthority === 'external-runtime') return 'compile-external-runtime';
   if (!input.fresh) return 'compile-snapshot';
   if (input.publishMaterializeOnStart) return 'materialize-publish-payloads';
   return 'ready-noop';
@@ -49,8 +54,10 @@ export function announceAccelerationRuntimeReady(): void {
 
 export function logAccelerationSnapshotPromotedPayload(summary: AccelerationCompilePromotionSummary): Record<string, unknown> {
   return {
-    itemsImported: summary.itemsImported,
-    recipesImported: summary.recipesImported,
+    itemsImported: summary.itemsImported ?? null,
+    recipesImported: summary.recipesImported ?? null,
     signature: summary.signature,
+    runtimeId: summary.runtimeId ?? null,
+    promotedFiles: summary.promotedFiles ?? null,
   };
 }

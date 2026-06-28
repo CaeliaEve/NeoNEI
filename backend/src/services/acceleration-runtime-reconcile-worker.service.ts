@@ -2,6 +2,7 @@ import fs from 'fs';
 import { getAccelerationDatabaseManager } from '../models/database';
 import { logger } from '../utils/logger';
 import {
+  compileExternalRuntimeArtifactInChild,
   compileAccelerationSnapshotInChild,
   materializePublishPayloadsInChild,
   type BackgroundPublishSummary,
@@ -52,6 +53,17 @@ export async function refreshAccelerationSnapshot(input: AccelerationSnapshotRef
     signature: compileResult.signature,
   });
   logger.info('[ACCELERATION_DB] promoted background snapshot', logAccelerationSnapshotPromotedPayload(compileResult));
+  announceAccelerationRuntimeReady();
+}
+
+export async function refreshExternalRuntimeArtifact(): Promise<void> {
+  announceAccelerationSnapshotStale();
+  logger.info('[EXTERNAL_RUNTIME] stale; compiling next external runtime artifact with elysium-compiler');
+
+  announceAccelerationSnapshotCompile();
+  const compileResult = await compileExternalRuntimeArtifactInChild();
+
+  logger.info('[EXTERNAL_RUNTIME] promoted external runtime artifact', logAccelerationSnapshotPromotedPayload(compileResult));
   announceAccelerationRuntimeReady();
 }
 

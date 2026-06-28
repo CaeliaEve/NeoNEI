@@ -39,9 +39,12 @@ test('elysium compiler client wraps validate and compile commands behind handsha
 test('external compiler invocation boundary is not wired into runtime scheduler as a hidden fallback', () => {
   assert.doesNotMatch(runtimeService, /\.compile\(\{[^}]*elysium/s);
   assert.doesNotMatch(runtimeService, /\.validate\(\{/);
-  assert.doesNotMatch(jobRunner, /new ElysiumCompilerClient/);
-  assert.doesNotMatch(jobRunner, /elysium-compiler compile/);
+  assert.doesNotMatch(runtimeService, /new ElysiumCompilerClient/);
+  assert.doesNotMatch(runtimeService, /elysium-compiler compile/);
   assert.match(jobRunner, /compileAccelerationSnapshotInChild/);
+  assert.match(jobRunner, /compileExternalRuntimeArtifactInChild/);
+  assert.match(jobRunner, /new ElysiumCompilerClient\(\)/);
+  assert.match(jobRunner, /promoteExternalRuntimeArtifact/);
 });
 
 test('fixture smoke gate proves external compiler validate and compile produce runtime packs', () => {

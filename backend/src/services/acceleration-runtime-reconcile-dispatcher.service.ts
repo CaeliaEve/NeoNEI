@@ -1,6 +1,7 @@
 import type { AccelerationReconcileDecision } from './acceleration-runtime-phase-machine.service';
 import type { AccelerationRuntimeManager } from './acceleration-runtime-reconcile-worker.service';
 import {
+  refreshExternalRuntimeArtifact,
   refreshAccelerationSnapshot,
   refreshPublishPayloadMaterialization,
   skipPublishPayloadMaterializationOnStartup,
@@ -15,6 +16,7 @@ export type AccelerationReconcileHandler = (input: AccelerationReconcileDispatch
 
 export const ACCELERATION_RECONCILE_HANDLERS: Readonly<Record<AccelerationReconcileDecision, AccelerationReconcileHandler>> = {
   'compile-snapshot': ({ manager }) => refreshAccelerationSnapshot({ manager }),
+  'compile-external-runtime': () => refreshExternalRuntimeArtifact(),
   'materialize-publish-payloads': () => refreshPublishPayloadMaterialization(),
   'ready-noop': () => skipPublishPayloadMaterializationOnStartup(),
 };

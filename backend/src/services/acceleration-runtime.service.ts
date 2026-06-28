@@ -4,6 +4,7 @@ import {
 } from './acceleration-runtime-phase-machine.service';
 import { verifyAccelerationCompilerBoundary } from './acceleration-runtime-compiler-boundary-reporter.service';
 import { probeAccelerationCompilerState } from './acceleration-runtime-compiler-probe.service';
+import { resolveAccelerationCompilerAuthority } from './acceleration-runtime-compiler-authority.service';
 import { dispatchAccelerationReconcile } from './acceleration-runtime-reconcile-dispatcher.service';
 export {
   accelerationRuntime,
@@ -18,10 +19,12 @@ export async function reconcileAccelerationRuntime(
   options?: { publishMaterializeOnStart?: boolean },
 ): Promise<void> {
   await verifyAccelerationCompilerBoundary();
+  const compilerAuthority = resolveAccelerationCompilerAuthority();
   const compilerProbe = probeAccelerationCompilerState({ manager: accelerationDbManager });
 
   const reconcileDecision = decideAccelerationReconcilePhase({
     fresh: compilerProbe.fresh,
+    compilerAuthority,
     publishMaterializeOnStart: options?.publishMaterializeOnStart,
   });
 
