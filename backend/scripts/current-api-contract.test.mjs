@@ -111,3 +111,18 @@ test('recipe page API exposes low-frequency page details without browser hot-pat
   assert.match(serviceSource, /uiPayload/);
   assert.doesNotMatch(routeSource, /images\/item/, 'recipe page API must not advertise scattered item image paths');
 });
+
+test('external-runtime authority fails closed for non-pack-backed recipe query endpoints', () => {
+  assert.match(routeSource, /resolveAccelerationCompilerAuthority/);
+  assert.match(routeSource, /function assertRecipeApiPackBackedOrAllowed/);
+  assert.match(routeSource, /resolveAccelerationCompilerAuthority\(\) !== 'external-runtime'/);
+  assert.match(routeSource, /RUNTIME_PACK_QUERY_NOT_IMPLEMENTED/);
+  assert.match(routeSource, /statusCode = 501/);
+  assert.match(routeSource, /Recipe query endpoints are not yet pack-backed/);
+  for (const sender of ['sendRecipeItem', 'sendRecipeUsage', 'sendRecipePage']) {
+    const index = routeSource.indexOf(`async function ${sender}`);
+    assert.notEqual(index, -1, `${sender} must exist`);
+    const body = routeSource.slice(index, routeSource.indexOf('\n}', index) + 2);
+    assert.match(body, /assertRecipeApiPackBackedOrAllowed\(\)/, `${sender} must guard external-runtime`);
+  }
+});

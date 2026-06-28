@@ -2,6 +2,7 @@
 import path from 'path';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { PUBLIC_DIR } from '../config/runtime-paths';
+import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
 import { getIndexedRecipesService } from '../services/recipes-indexed.service';
 import { getNativeRenderRuntimeDiagnostics } from '../services/native-render-runtime-diagnostics.service';
 import { getRuntimeHealthSummary } from '../services/runtime-health-summary.service';
@@ -121,12 +122,26 @@ function normalizeRequiredParam(value: string | undefined, name: string): string
   return normalized;
 }
 
+function notImplemented(message: string): Error & { statusCode: number; code: string } {
+  const error = new Error(message) as Error & { statusCode: number; code: string };
+  error.statusCode = 501;
+  error.code = 'RUNTIME_PACK_QUERY_NOT_IMPLEMENTED';
+  return error;
+}
+
 function assertCurrentRuntimeId(runtimeId: string | undefined): void {
   const requested = normalizeRequiredParam(runtimeId, 'runtimeId');
   const current = getCurrentMeta().runtimeId;
   if (requested !== current) {
     throw notFound('Runtime id is not the current published runtime');
   }
+}
+
+function assertRecipeApiPackBackedOrAllowed(): void {
+  if (resolveAccelerationCompilerAuthority() !== 'external-runtime') {
+    return;
+  }
+  throw notImplemented('Recipe query endpoints are not yet pack-backed for external-runtime authority; use runtime manifest/assets until the pack query surface lands.');
 }
 
 function resolveDistDataFile(relativeFileName: string): string {
@@ -257,6 +272,7 @@ function sendRuntimeReport(reportName: string | undefined, res: Response): void 
 }
 
 async function sendRecipeItem(itemIdParam: string | undefined, res: Response): Promise<void> {
+  assertRecipeApiPackBackedOrAllowed();
   setNoStoreHeaders(res);
   const itemId = normalizeRequiredParam(itemIdParam, 'itemId');
   const service = getIndexedRecipesService();
@@ -270,6 +286,7 @@ async function sendRecipeItem(itemIdParam: string | undefined, res: Response): P
 }
 
 async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): Promise<void> {
+  assertRecipeApiPackBackedOrAllowed();
   setNoStoreHeaders(res);
   const itemId = normalizeRequiredParam(itemIdParam, 'itemId');
   const service = getIndexedRecipesService();
@@ -283,6 +300,7 @@ async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): 
 }
 
 async function sendRecipePage(recipePageIdParam: string | undefined, res: Response): Promise<void> {
+  assertRecipeApiPackBackedOrAllowed();
   setNoStoreHeaders(res);
   const recipePageId = normalizeRequiredParam(recipePageIdParam, 'recipePageId');
   const service = getIndexedRecipesService();
@@ -463,5 +481,3 @@ router.get('/settings/runtime', (_req, res) => {
 });
 
 export default router;
-
-
