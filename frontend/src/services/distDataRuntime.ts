@@ -47,12 +47,12 @@ import {
   type DistDataRustRuntimeManifest,
 } from "./distDataRuntimeManifest";
 import {
+  buildBrowserByIdsPack,
   buildBrowserPagePack,
   buildCatalogByModId,
   buildDefaultCatalog,
   buildGroup,
   buildModsFromRuntime,
-  buildResourceManifest,
   buildSearchCatalog,
   buildSortedSearchEntries,
   filterByModId,
@@ -342,6 +342,7 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
       defaultCatalogByScope: new Map(),
       searchCatalogByScope: new Map(),
       pagePackByScope: new Map(),
+      byIdsPackByScope: new Map(),
       sortedSearchEntries: buildSortedSearchEntries(searchPack?.pack.items ?? []),
       mods: [],
     };
@@ -513,25 +514,7 @@ export async function getDistDataBrowserPagePackByIds(itemIds: string[]): Promis
   if (!runtime) {
     return null;
   }
-  const seen = new Set<string>();
-  const data = itemIds
-    .map((itemId) => `${itemId ?? ""}`.trim())
-    .filter((itemId) => {
-      if (!itemId || seen.has(itemId)) {
-        return false;
-      }
-      seen.add(itemId);
-      return true;
-    })
-    .map((itemId) => runtime.itemById.get(itemId))
-    .filter((item): item is Item => Boolean(item))
-    .map((item) => ({ key: item.itemId, kind: "item" as const, item }));
-  return {
-    data,
-    atlas: null,
-    mediaManifest: null,
-    resourceManifest: buildResourceManifest(data),
-  };
+  return buildBrowserByIdsPack(runtime, itemIds);
 }
 
 export async function getDistDataGroupItems(groupKey: string, modId?: string, includeHidden = false): Promise<BrowserGroupItemsResponse | null> {

@@ -1,4 +1,5 @@
 import type {
+  BrowserByIdsPackResponse,
   BrowserDefaultCatalogResponse,
   BrowserGridEntry,
   BrowserPagePackResponse,
@@ -64,6 +65,7 @@ export type DistDataBrowserRuntime = {
   defaultCatalogByScope: Map<string, BrowserGridEntry[]>;
   searchCatalogByScope: Map<string, BrowserGridEntry[]>;
   pagePackByScope: Map<string, BrowserPagePackResponse>;
+  byIdsPackByScope: Map<string, BrowserByIdsPackResponse>;
   sortedSearchEntries: BrowserSearchPackEntry[];
   mods: Mod[];
 };
@@ -190,6 +192,24 @@ export function getBrowserPagePackScopeKey(params: BrowserPagePackRequest): stri
     `page:${normalizedPage}`,
     `pageSize:${pageSize}`,
   ].join("::");
+}
+
+
+export function normalizeBrowserByIdsItemIds(itemIds: string[]): string[] {
+  const seen = new Set<string>();
+  return itemIds
+    .map((itemId) => `${itemId ?? ""}`.trim())
+    .filter((itemId) => {
+      if (!itemId || seen.has(itemId)) {
+        return false;
+      }
+      seen.add(itemId);
+      return true;
+    });
+}
+
+export function getBrowserByIdsPackScopeKey(itemIds: string[]): string {
+  return `ids:${normalizeBrowserByIdsItemIds(itemIds).join("\u001f")}`;
 }
 
 export function getRuntimeCatalog(runtime: DistDataBrowserRuntime, includeHidden?: boolean, modId?: string): DistDataBrowserItem[] {
@@ -430,6 +450,31 @@ export function buildResourceManifest(entries: BrowserGridEntry[]) {
   };
 }
 
+
+
+export function buildBrowserByIdsPack(
+  runtime: DistDataBrowserRuntime,
+  itemIds: string[],
+): BrowserByIdsPackResponse {
+  const scopeKey = getBrowserByIdsPackScopeKey(itemIds);
+  const cached = runtime.byIdsPackByScope.get(scopeKey);
+  if (cached) {
+    return cached;
+  }
+
+  const data = normalizeBrowserByIdsItemIds(itemIds)
+    .map((itemId) => runtime.itemById.get(itemId))
+    .filter((item): item is Item => Boolean(item))
+    .map((item) => ({ key: item.itemId, kind: "item" as const, item }));
+  const byIdsPack: BrowserByIdsPackResponse = {
+    data,
+    atlas: null,
+    mediaManifest: null,
+    resourceManifest: buildResourceManifest(data),
+  };
+  runtime.byIdsPackByScope.set(scopeKey, byIdsPack);
+  return byIdsPack;
+}
 
 export function buildBrowserPagePack(
   runtime: DistDataBrowserRuntime,

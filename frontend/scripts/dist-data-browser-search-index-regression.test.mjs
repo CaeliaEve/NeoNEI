@@ -63,3 +63,21 @@ test('dist-data browser runtime owns browser page pack cache by normalized scope
   assert.doesNotMatch(pagePackBody, /paginateBrowserEntries\(/, 'page route must not paginate outside runtime page-pack cache');
   assert.doesNotMatch(pagePackBody, /buildResourceManifest\(/, 'page route must not derive resource manifests outside runtime page-pack cache');
 });
+
+test('dist-data browser runtime owns by-id browser pack cache', () => {
+  assert.match(runtimeSource, /byIdsPackByScope: Map<string, BrowserByIdsPackResponse>/);
+  assert.match(runtimeSource, /export function normalizeBrowserByIdsItemIds\(/);
+  assert.match(runtimeSource, /export function getBrowserByIdsPackScopeKey\(/);
+  assert.match(runtimeSource, /export function buildBrowserByIdsPack\(/);
+  assert.match(runtimeSource, /runtime\.byIdsPackByScope\.get\(scopeKey\)/);
+  assert.match(runtimeSource, /runtime\.byIdsPackByScope\.set\(scopeKey, byIdsPack\)/);
+  assert.match(distDataSource, /byIdsPackByScope: new Map\(\)/);
+  assert.match(distDataSource, /return buildBrowserByIdsPack\(runtime, itemIds\)/);
+
+  const byIdsIndex = distDataSource.indexOf('export async function getDistDataBrowserPagePackByIds');
+  assert.notEqual(byIdsIndex, -1, 'getDistDataBrowserPagePackByIds must exist');
+  const byIdsBody = distDataSource.slice(byIdsIndex, distDataSource.indexOf('export async function getDistDataGroupItems'));
+  assert.doesNotMatch(byIdsBody, /new Set<string>\(\)/, 'by-id route must not own dedupe state');
+  assert.doesNotMatch(byIdsBody, /runtime\.itemById\.get/, 'by-id route must not map item ids outside runtime cache');
+  assert.doesNotMatch(byIdsBody, /buildResourceManifest\(/, 'by-id route must not derive resource manifests outside runtime cache');
+});
