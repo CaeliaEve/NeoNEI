@@ -69,3 +69,19 @@ test('runtime recipe pack service reads produced-by and used-in refs from compil
     rmSync(workDir, { recursive: true, force: true });
   }
 });
+
+
+test('runtime recipe pack service builds map-backed query indexes', () => {
+  const source = readFileSync(join(backendRoot, 'src/services/runtime-recipe-pack.service.ts'), 'utf8').replace(/\r\n/g, '\n');
+  assert.match(source, /itemById: Map<string, RuntimeRecipeItemIndexEntry>/);
+  assert.match(source, /uiPayloadByRecipeId: Map<string, RuntimeRecipeUiPayloadIndexEntry>/);
+  assert.match(source, /categoriesById: Map<string, RuntimeRecipeCategory>/);
+  assert.match(source, /itemById: new Map\(parsed\.itemIndex\.map/);
+  assert.match(source, /uiPayloadByRecipeId: new Map\(parsed\.uiPayloadIndex\.map/);
+  assert.match(source, /categoriesById: new Map\(parsed\.categoryIndex\.map/);
+  assert.match(source, /pack\.itemById\.get\(normalizedItemId\)/);
+  assert.match(source, /pack\.uiPayloadByRecipeId\.get\(normalizedRecipePageId\)/);
+  assert.doesNotMatch(source, /pack\.itemIndex\.find/);
+  assert.doesNotMatch(source, /pack\.uiPayloadIndex\.find/);
+  assert.doesNotMatch(source, /pack\.categoryIndex\.filter/);
+});

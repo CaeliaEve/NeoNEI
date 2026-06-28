@@ -55,15 +55,25 @@ export type RuntimeRecipePage = {
   uiPayload: JsonRecord | null;
 };
 
-type RuntimeRecipePack = {
-  signature: string;
-  itemIndex: Array<{
-    itemId: string;
-    producedBy?: RuntimeRecipeRef[];
-    usedIn?: RuntimeRecipeRef[];
-  }>;
+type RuntimeRecipeItemIndexEntry = {
+  itemId: string;
+  producedBy?: RuntimeRecipeRef[];
+  usedIn?: RuntimeRecipeRef[];
+};
+
+type RuntimeRecipeCategory = RuntimeRecipeItemQuery['summary']['categories'][number];
+
+type ParsedRuntimeRecipePack = {
+  itemIndex: RuntimeRecipeItemIndexEntry[];
   uiPayloadIndex: RuntimeRecipeUiPayloadIndexEntry[];
-  categoryIndex: RuntimeRecipeItemQuery['summary']['categories'];
+  categoryIndex: RuntimeRecipeCategory[];
+};
+
+type RuntimeRecipePack = ParsedRuntimeRecipePack & {
+  signature: string;
+  itemById: Map<string, RuntimeRecipeItemIndexEntry>;
+  uiPayloadByRecipeId: Map<string, RuntimeRecipeUiPayloadIndexEntry>;
+  categoriesById: Map<string, RuntimeRecipeCategory>;
 };
 
 const COMPACT_RECIPE_MAGIC = 'NEIRCP1\0';
@@ -153,7 +163,7 @@ function compactString(strings: string[], index: number): string {
   return strings[index] ?? '';
 }
 
-function parseCompactRecipePack(buffer: Buffer): Omit<RuntimeRecipePack, 'signature'> {
+function parseCompactRecipePack(buffer: Buffer): ParsedRuntimeRecipePack {
   buffer = unwrapNativeBinaryPackEnvelope(buffer, RECIPE_PACK_SCHEMA);
   if (buffer.byteLength < 52) {
     throw new Error(`Runtime recipe pack is too small: ${buffer.byteLength}`);
@@ -226,7 +236,7 @@ function parseCompactRecipePack(buffer: Buffer): Omit<RuntimeRecipePack, 'signat
     };
   };
 
-  const itemIndex: RuntimeRecipePack['itemIndex'] = [];
+  const itemIndex: RuntimeRecipeItemIndexEntry[] = [];
   for (let row = 0; row < itemCount; row += 1) {
     const itemId = compactString(strings, readRowValue(itemRowsStart, row, itemStride, 0));
     if (!itemId) continue;
@@ -257,7 +267,7 @@ function parseCompactRecipePack(buffer: Buffer): Omit<RuntimeRecipePack, 'signat
     });
   }
 
-  const categoryIndex: RuntimeRecipePack['categoryIndex'] = [];
+  const categoryIndex: RuntimeRecipeCategory[] = [];
   for (let row = 0; row < categoryCount; row += 1) {
     const categoryId = compactString(strings, readRowValue(categoryRowsStart, row, categoryStride, 0));
     if (!categoryId) continue;
@@ -306,7 +316,13 @@ export class RuntimeRecipePackService {
       throw new Error(`Runtime recipe pack not found: ${packPath}`);
     }
     const parsed = parseCompactRecipePack(fs.readFileSync(packPath));
-    this.cache = { signature, ...parsed };
+    this.cache = {
+      signature,
+      ...parsed,
+      itemById: new Map(parsed.itemIndex.map((entry) => [entry.itemId, entry])),
+      uiPayloadByRecipeId: new Map(parsed.uiPayloadIndex.map((entry) => [entry.recipeId, entry])),
+      categoriesById: new Map(parsed.categoryIndex.map((entry) => [entry.categoryId, entry])),
+    };
     return this.cache;
   }
 
@@ -322,7 +338,7 @@ export class RuntimeRecipePackService {
     const normalizedRecipePageId = `${recipePageId ?? ''}`.trim();
     if (!normalizedRecipePageId) return null;
     const pack = this.loadPack();
-    const entry = pack.uiPayloadIndex.find((candidate) => candidate.recipeId === normalizedRecipePageId);
+    const entry = pack.uiPayloadByRecipeId.get(normalizedRecipePageId);
     if (!entry) return null;
     const shard = readJsonRequired(resolveDistDataFile(entry.path), 'UI payload shard');
     const payloads = asRecord(shard.payloads);
@@ -358,11 +374,12 @@ export class RuntimeRecipePackService {
     const normalizedItemId = `${itemId ?? ''}`.trim();
     if (!normalizedItemId) return null;
     const pack = this.loadPack();
-    const entry = pack.itemIndex.find((candidate) => candidate.itemId === normalizedItemId);
+    const entry = pack.itemById.get(normalizedItemId);
     if (!entry) return null;
     const recipes = [...(entry[relation] ?? [])];
     const categoryIds = new Set(recipes.map((recipe) => recipe.categoryId).filter(Boolean));
-    const categories = pack.categoryIndex.filter((category) => categoryIds.has(category.categoryId));
+    const categories = Array.from(categoryIds, (categoryId) => pack.categoriesById.get(categoryId))
+      .filter((category): category is RuntimeRecipeCategory => Boolean(category));
     return {
       itemId: normalizedItemId,
       summary: {
