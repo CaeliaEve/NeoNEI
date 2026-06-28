@@ -2,6 +2,7 @@ import type {
   BrowserByIdsPackResponse,
   BrowserDefaultCatalogResponse,
   BrowserGridEntry,
+  BrowserGroupItemsResponse,
   BrowserPagePackResponse,
   BrowserSearchPackEntry,
   BrowserVariantGroup,
@@ -66,6 +67,7 @@ export type DistDataBrowserRuntime = {
   searchCatalogByScope: Map<string, BrowserGridEntry[]>;
   pagePackByScope: Map<string, BrowserPagePackResponse>;
   byIdsPackByScope: Map<string, BrowserByIdsPackResponse>;
+  groupItemsByScope: Map<string, BrowserGroupItemsResponse | null>;
   sortedSearchEntries: BrowserSearchPackEntry[];
   mods: Mod[];
 };
@@ -194,6 +196,13 @@ export function getBrowserPagePackScopeKey(params: BrowserPagePackRequest): stri
   ].join("::");
 }
 
+
+
+export function getBrowserGroupItemsScopeKey(groupKey: string, modId?: string, includeHidden = false): string {
+  const normalizedGroupKey = `${groupKey ?? ""}`.trim();
+  const mode: BrowserCatalogMode = includeHidden ? "advanced" : "default";
+  return `${getCatalogScopeKey(modId, mode)}::group:${normalizedGroupKey}`;
+}
 
 export function normalizeBrowserByIdsItemIds(itemIds: string[]): string[] {
   const seen = new Set<string>();
@@ -451,6 +460,35 @@ export function buildResourceManifest(entries: BrowserGridEntry[]) {
 }
 
 
+
+
+export function buildBrowserGroupItems(
+  runtime: DistDataBrowserRuntime,
+  groupKey: string,
+  modId?: string,
+  includeHidden = false,
+): BrowserGroupItemsResponse | null {
+  const normalizedGroupKey = `${groupKey ?? ""}`.trim();
+  if (!normalizedGroupKey) {
+    return null;
+  }
+  const scopeKey = getBrowserGroupItemsScopeKey(normalizedGroupKey, modId, includeHidden);
+  if (runtime.groupItemsByScope.has(scopeKey)) {
+    return runtime.groupItemsByScope.get(scopeKey) ?? null;
+  }
+
+  const items = (runtime.memberItemsByGroupKey.get(normalizedGroupKey) ?? [])
+    .filter((item) => filterByModId(item, modId) && (includeHidden || !runtime.hiddenItemIds.has(item.itemId)));
+  const response = items.length > 0
+    ? {
+        groupKey: normalizedGroupKey,
+        total: items.length,
+        items,
+      } satisfies BrowserGroupItemsResponse
+    : null;
+  runtime.groupItemsByScope.set(scopeKey, response);
+  return response;
+}
 
 export function buildBrowserByIdsPack(
   runtime: DistDataBrowserRuntime,

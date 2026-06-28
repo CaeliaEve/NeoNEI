@@ -48,6 +48,7 @@ import {
 } from "./distDataRuntimeManifest";
 import {
   buildBrowserByIdsPack,
+  buildBrowserGroupItems,
   buildBrowserPagePack,
   buildCatalogByModId,
   buildDefaultCatalog,
@@ -55,7 +56,6 @@ import {
   buildModsFromRuntime,
   buildSearchCatalog,
   buildSortedSearchEntries,
-  filterByModId,
   paginate,
   stableNumber,
   toItem,
@@ -343,6 +343,7 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
       searchCatalogByScope: new Map(),
       pagePackByScope: new Map(),
       byIdsPackByScope: new Map(),
+      groupItemsByScope: new Map(),
       sortedSearchEntries: buildSortedSearchEntries(searchPack?.pack.items ?? []),
       mods: [],
     };
@@ -519,20 +520,10 @@ export async function getDistDataBrowserPagePackByIds(itemIds: string[]): Promis
 
 export async function getDistDataGroupItems(groupKey: string, modId?: string, includeHidden = false): Promise<BrowserGroupItemsResponse | null> {
   const runtime = await getBrowserRuntime();
-  const normalizedGroupKey = `${groupKey ?? ""}`.trim();
-  if (!runtime || !normalizedGroupKey) {
+  if (!runtime) {
     return null;
   }
-  const items = (runtime.memberItemsByGroupKey.get(normalizedGroupKey) ?? [])
-    .filter((item) => filterByModId(item, modId) && (includeHidden || !runtime.hiddenItemIds.has(item.itemId)));
-  if (!items.length) {
-    return null;
-  }
-  return {
-    groupKey: normalizedGroupKey,
-    total: items.length,
-    items,
-  };
+  return buildBrowserGroupItems(runtime, groupKey, modId, includeHidden);
 }
 
 async function getRustRuntimeManifest(): Promise<DistDataRustRuntimeManifest | null> {

@@ -81,3 +81,20 @@ test('dist-data browser runtime owns by-id browser pack cache', () => {
   assert.doesNotMatch(byIdsBody, /runtime\.itemById\.get/, 'by-id route must not map item ids outside runtime cache');
   assert.doesNotMatch(byIdsBody, /buildResourceManifest\(/, 'by-id route must not derive resource manifests outside runtime cache');
 });
+
+test('dist-data browser runtime owns group item member window cache', () => {
+  assert.match(runtimeSource, /groupItemsByScope: Map<string, BrowserGroupItemsResponse \| null>/);
+  assert.match(runtimeSource, /export function getBrowserGroupItemsScopeKey\(/);
+  assert.match(runtimeSource, /export function buildBrowserGroupItems\(/);
+  assert.match(runtimeSource, /runtime\.groupItemsByScope\.has\(scopeKey\)/);
+  assert.match(runtimeSource, /runtime\.groupItemsByScope\.set\(scopeKey, response\)/);
+  assert.match(distDataSource, /groupItemsByScope: new Map\(\)/);
+  assert.match(distDataSource, /return buildBrowserGroupItems\(runtime, groupKey, modId, includeHidden\)/);
+
+  const groupItemsIndex = distDataSource.indexOf('export async function getDistDataGroupItems');
+  assert.notEqual(groupItemsIndex, -1, 'getDistDataGroupItems must exist');
+  const groupItemsBody = distDataSource.slice(groupItemsIndex, distDataSource.indexOf('async function getRustRuntimeManifest'));
+  assert.doesNotMatch(groupItemsBody, /memberItemsByGroupKey/, 'group route must not directly read group member indexes');
+  assert.doesNotMatch(groupItemsBody, /hiddenItemIds/, 'group route must not directly filter hidden items');
+  assert.doesNotMatch(groupItemsBody, /filterByModId\(/, 'group route must not own mod filtering');
+});
