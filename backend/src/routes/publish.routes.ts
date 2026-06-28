@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router, type Router as ExpressRouter } from 'express';
 import { asyncHandler, serviceUnavailable } from '../utils/http';
 import { getPublishManifestService } from '../services/publish-manifest.service';
 import { getPublishReleaseService } from '../services/publish-release.service';
@@ -9,7 +9,12 @@ import { getPageAtlasService } from '../services/page-atlas.service';
 import { attachRenderHintsToEntries, buildBrowserRichMediaManifest } from '../services/browser-render-hints.service';
 import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
 
-const router = Router();
+export type PublishRoutesMode = 'public-runtime' | 'lab-control';
+
+export type CreatePublishRoutesOptions = {
+  mode?: PublishRoutesMode;
+};
+
 const itemsService = new ItemsService({ splitExportFallback: false });
 
 function isExternalRuntimeAuthority(): boolean {
@@ -30,121 +35,138 @@ function collectDisplayItems(entries: BrowserPageEntry[]): Item[] {
   return ordered;
 }
 
-router.get(
-  '/releases',
-  asyncHandler(async (_req, res) => {
-    setNoStoreHeaders(res);
-    res.json({
-      releases: getPublishReleaseService().listReleases(),
-    });
-  }),
-);
+function registerLabControlRoutes(router: ExpressRouter): void {
+  router.get(
+    '/releases',
+    asyncHandler(async (_req, res) => {
+      setNoStoreHeaders(res);
+      res.json({
+        releases: getPublishReleaseService().listReleases(),
+      });
+    }),
+  );
 
-router.post(
-  '/releases/:sourceSignature/activate',
-  asyncHandler(async (req, res) => {
-    const sourceSignature = `${req.params.sourceSignature ?? ''}`.trim();
-    const result = getPublishReleaseService().activateRelease(sourceSignature);
-    getPublishManifestService().invalidate();
-    res.json(result);
-  }),
-);
-router.get(
-  '/manifest',
-  asyncHandler(async (req, res) => {
-    const manifest = getPublishManifestService().getRuntimeManifest();
-    const etag = createWeakEtag('publish-manifest', manifest.version, manifest.sourceSignature, manifest.compiledAt, manifest.publishRevision, manifest.publishCompiledAt, manifest.runtimeCacheKey);
-    setNoStoreHeaders(res);
-    if (sendNotModifiedIfEtagMatches(req, res, etag)) {
-      return;
-    }
-    res.json(manifest);
-  }),
-);
+  router.post(
+    '/releases/:sourceSignature/activate',
+    asyncHandler(async (req, res) => {
+      const sourceSignature = `${req.params.sourceSignature ?? ''}`.trim();
+      const result = getPublishReleaseService().activateRelease(sourceSignature);
+      getPublishManifestService().invalidate();
+      res.json(result);
+    }),
+  );
+}
 
-router.get(
-  '/home-bootstrap',
-  asyncHandler(async (req, res) => {
-    const page = parseInt(req.query.page as string) || 1;
-    const pageSize = parseInt(req.query.pageSize as string) || 50;
-    const slotSize = parseInt(req.query.slotSize as string) || 48;
-    const modIdRaw = typeof req.query.modId === 'string' ? req.query.modId.trim() : '';
-    const modId = modIdRaw && modIdRaw !== 'all' ? modIdRaw : undefined;
-
-    const manifest = getPublishManifestService().getRuntimeManifest();
-    const etag = createWeakEtag(
-      'publish-home-bootstrap',
-      manifest.version,
-      manifest.runtimeCacheKey,
-      manifest.compiledAt,
-      page,
-      pageSize,
-      slotSize,
-      modId ?? 'all',
-    );
-    setPublicCacheHeaders(res, {
-      maxAgeSeconds: 120,
-      staleWhileRevalidateSeconds: 900,
-      staleIfErrorSeconds: 3600,
-    });
-    if (sendNotModifiedIfEtagMatches(req, res, etag)) {
-      return;
-    }
-
-    const shouldUseMaterializedHomeBootstrap = page === 1
-      && !modId
-      && (manifest.publishBundle?.files.homeBootstrapWindows?.length ?? 0) > 0;
-    if (shouldUseMaterializedHomeBootstrap) {
-      const materialized = getPublishPayloadService().getHomeBootstrapWindow({
-        slotSize: Math.max(24, Math.min(128, Number(slotSize))),
-      }, manifest.sourceSignature);
-      if (materialized) {
-        const pagePack = derivePagePackFromWindow(materialized.pagePack, 1, pageSize);
-        if (pagePack) {
-          res.json({
-            manifest,
-            mods: materialized.mods,
-            pagePack,
-          });
-          return;
-        }
+function registerPublicReadRoutes(router: ExpressRouter): void {
+  router.get(
+    '/manifest',
+    asyncHandler(async (req, res) => {
+      const manifest = getPublishManifestService().getRuntimeManifest();
+      const etag = createWeakEtag('publish-manifest', manifest.version, manifest.sourceSignature, manifest.compiledAt, manifest.publishRevision, manifest.publishCompiledAt, manifest.runtimeCacheKey);
+      setNoStoreHeaders(res);
+      if (sendNotModifiedIfEtagMatches(req, res, etag)) {
+        return;
       }
-    }
+      res.json(manifest);
+    }),
+  );
 
-    if (isExternalRuntimeAuthority()) {
-      throw serviceUnavailable(
-        'External runtime publish home bootstrap requires a materialized publish bundle; dynamic SQLite fallback is disabled.',
-        'EXTERNAL_RUNTIME_PUBLISH_BUNDLE_REQUIRED',
-      );
-    }
+  router.get(
+    '/home-bootstrap',
+    asyncHandler(async (req, res) => {
+      const page = parseInt(req.query.page as string) || 1;
+      const pageSize = parseInt(req.query.pageSize as string) || 50;
+      const slotSize = parseInt(req.query.slotSize as string) || 48;
+      const modIdRaw = typeof req.query.modId === 'string' ? req.query.modId.trim() : '';
+      const modId = modIdRaw && modIdRaw !== 'all' ? modIdRaw : undefined;
 
-    const [mods, pagePack] = await Promise.all([
-      itemsService.getMods(),
-      itemsService.getBrowserItems({
+      const manifest = getPublishManifestService().getRuntimeManifest();
+      const etag = createWeakEtag(
+        'publish-home-bootstrap',
+        manifest.version,
+        manifest.runtimeCacheKey,
+        manifest.compiledAt,
         page,
         pageSize,
-        modId,
-        expandedGroups: [],
-      }),
-    ]);
-    attachRenderHintsToEntries(pagePack.data);
-    const displayItems = collectDisplayItems(pagePack.data);
+        slotSize,
+        modId ?? 'all',
+      );
+      setPublicCacheHeaders(res, {
+        maxAgeSeconds: 120,
+        staleWhileRevalidateSeconds: 900,
+        staleIfErrorSeconds: 3600,
+      });
+      if (sendNotModifiedIfEtagMatches(req, res, etag)) {
+        return;
+      }
 
-    const atlas = await getPageAtlasService().buildAtlas(
-      displayItems,
-      Math.max(24, Math.min(128, Number(slotSize))),
-    );
+      const shouldUseMaterializedHomeBootstrap = page === 1
+        && !modId
+        && (manifest.publishBundle?.files.homeBootstrapWindows?.length ?? 0) > 0;
+      if (shouldUseMaterializedHomeBootstrap) {
+        const materialized = getPublishPayloadService().getHomeBootstrapWindow({
+          slotSize: Math.max(24, Math.min(128, Number(slotSize))),
+        }, manifest.sourceSignature);
+        if (materialized) {
+          const pagePack = derivePagePackFromWindow(materialized.pagePack, 1, pageSize);
+          if (pagePack) {
+            res.json({
+              manifest,
+              mods: materialized.mods,
+              pagePack,
+            });
+            return;
+          }
+        }
+      }
 
-    res.json({
-      manifest,
-      mods,
-      pagePack: {
-        ...pagePack,
-        atlas,
-        mediaManifest: buildBrowserRichMediaManifest(displayItems),
-      },
-    });
-  }),
-);
+      if (isExternalRuntimeAuthority()) {
+        throw serviceUnavailable(
+          'External runtime publish home bootstrap requires a materialized publish bundle; dynamic SQLite fallback is disabled.',
+          'EXTERNAL_RUNTIME_PUBLISH_BUNDLE_REQUIRED',
+        );
+      }
 
-export default router;
+      const [mods, pagePack] = await Promise.all([
+        itemsService.getMods(),
+        itemsService.getBrowserItems({
+          page,
+          pageSize,
+          modId,
+          expandedGroups: [],
+        }),
+      ]);
+      attachRenderHintsToEntries(pagePack.data);
+      const displayItems = collectDisplayItems(pagePack.data);
+
+      const atlas = await getPageAtlasService().buildAtlas(
+        displayItems,
+        Math.max(24, Math.min(128, Number(slotSize))),
+      );
+
+      res.json({
+        manifest,
+        mods,
+        pagePack: {
+          ...pagePack,
+          atlas,
+          mediaManifest: buildBrowserRichMediaManifest(displayItems),
+        },
+      });
+    }),
+  );
+}
+
+export function createPublishRoutes(options: CreatePublishRoutesOptions = {}): ExpressRouter {
+  const router = Router();
+  if ((options.mode ?? 'public-runtime') === 'lab-control') {
+    registerLabControlRoutes(router);
+  }
+  registerPublicReadRoutes(router);
+  return router;
+}
+
+export const publicPublishRoutes = createPublishRoutes({ mode: 'public-runtime' });
+export const labPublishRoutes = createPublishRoutes({ mode: 'lab-control' });
+
+export default publicPublishRoutes;

@@ -8,7 +8,7 @@ import gtDiagramsRoutes from './gt-diagrams.routes';
 import forestryGeneticsRoutes from './forestry-genetics.routes';
 import renderContractRoutes from './render-contract.routes';
 import recipeBootstrapRoutes from './recipe-bootstrap.routes';
-import publishRoutes from './publish.routes';
+import { labPublishRoutes, publicPublishRoutes } from './publish.routes';
 import runtimeRoutes from './runtime.routes';
 import v1Routes from './v1.routes';
 import currentApiRoutes from './current-api.routes';
@@ -40,7 +40,7 @@ export function registerApiNamespaces(app: Application, options: RegisterApiName
     app.use('/lab/patterns', patternsRoutes);
     app.use('/lab/recipes', indexedRecipesRoutes);
     app.use('/lab/recipe-bootstrap', recipeBootstrapRoutes);
-    app.use('/lab/publish', publishRoutes);
+    app.use('/lab/publish', labPublishRoutes);
     app.use('/lab/render-contract', renderContractRoutes);
     app.use('/lab/multiblocks', multiblocksRoutes);
     app.use('/lab/ecosystem', ecosystemRoutes);
@@ -61,6 +61,6 @@ export function registerApiNamespaces(app: Application, options: RegisterApiName
     app.use('/api/render-contract', tagApiTier('legacy-compat'), renderContractRoutes);
     app.use('/api/recipe-bootstrap', tagApiTier('legacy-compat'), recipeBootstrapRoutes);
   }
-  app.use('/api/publish', tagApiTier('public-runtime'), publishRoutes);
+  app.use('/api/publish', tagApiTier('public-runtime'), publicPublishRoutes);
   app.use('/api/v1', tagApiTier('public-runtime'), v1Routes);
 }
