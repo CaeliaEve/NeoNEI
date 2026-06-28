@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { asyncHandler } from '../utils/http';
+import { asyncHandler, serviceUnavailable } from '../utils/http';
 import { getPublishManifestService } from '../services/publish-manifest.service';
 import { getPublishReleaseService } from '../services/publish-release.service';
 import { derivePagePackFromWindow, getPublishPayloadService } from '../services/publish-payload.service';
@@ -7,9 +7,14 @@ import { createWeakEtag, sendNotModifiedIfEtagMatches, setNoStoreHeaders, setPub
 import { ItemsService, type BrowserPageEntry, type Item } from '../services/items.service';
 import { getPageAtlasService } from '../services/page-atlas.service';
 import { attachRenderHintsToEntries, buildBrowserRichMediaManifest } from '../services/browser-render-hints.service';
+import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
 
 const router = Router();
 const itemsService = new ItemsService({ splitExportFallback: false });
+
+function isExternalRuntimeAuthority(): boolean {
+  return resolveAccelerationCompilerAuthority() === 'external-runtime';
+}
 
 function collectDisplayItems(entries: BrowserPageEntry[]): Item[] {
   const ordered: Item[] = [];
@@ -86,8 +91,11 @@ router.get(
       return;
     }
 
-    if (page === 1 && !modId && (manifest.publishBundle?.files.homeBootstrapWindows?.length ?? 0) > 0) {
-        const materialized = getPublishPayloadService().getHomeBootstrapWindow({
+    const shouldUseMaterializedHomeBootstrap = page === 1
+      && !modId
+      && (manifest.publishBundle?.files.homeBootstrapWindows?.length ?? 0) > 0;
+    if (shouldUseMaterializedHomeBootstrap) {
+      const materialized = getPublishPayloadService().getHomeBootstrapWindow({
         slotSize: Math.max(24, Math.min(128, Number(slotSize))),
       }, manifest.sourceSignature);
       if (materialized) {
@@ -101,6 +109,13 @@ router.get(
           return;
         }
       }
+    }
+
+    if (isExternalRuntimeAuthority()) {
+      throw serviceUnavailable(
+        'External runtime publish home bootstrap requires a materialized publish bundle; dynamic SQLite fallback is disabled.',
+        'EXTERNAL_RUNTIME_PUBLISH_BUNDLE_REQUIRED',
+      );
     }
 
     const [mods, pagePack] = await Promise.all([

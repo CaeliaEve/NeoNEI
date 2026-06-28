@@ -21,3 +21,10 @@ export function notFound(message: string): Error & { statusCode: number; code: s
   error.code = 'NOT_FOUND';
   return error;
 }
+
+export function serviceUnavailable(message: string, code = 'SERVICE_UNAVAILABLE'): Error & { statusCode: number; code: string } {
+  const error = new Error(message) as Error & { statusCode: number; code: string };
+  error.statusCode = 503;
+  error.code = code;
+  return error;
+}
