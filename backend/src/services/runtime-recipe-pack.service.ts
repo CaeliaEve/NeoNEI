@@ -29,6 +29,32 @@ export type RuntimeRecipeItemQuery = {
   recipes: RuntimeRecipeRef[];
 };
 
+export type RuntimeRecipeUiPayloadIndexEntry = {
+  recipeId: string;
+  path: string;
+  payloadKey?: string;
+  familyKey?: string;
+  recipeType?: string;
+  machineType?: string;
+  handlerKey?: string;
+};
+
+export type RuntimeRecipePage = {
+  recipePageId: string;
+  recipe: {
+    id: string;
+    recipeType: string;
+    outputs: unknown[];
+    inputs: unknown[];
+    fluidInputs: unknown[];
+    fluidOutputs: unknown[];
+    machineInfo: JsonRecord | null;
+    metadata: JsonRecord | null;
+    additionalData: JsonRecord;
+  };
+  uiPayload: JsonRecord | null;
+};
+
 type RuntimeRecipePack = {
   signature: string;
   itemIndex: Array<{
@@ -36,6 +62,7 @@ type RuntimeRecipePack = {
     producedBy?: RuntimeRecipeRef[];
     usedIn?: RuntimeRecipeRef[];
   }>;
+  uiPayloadIndex: RuntimeRecipeUiPayloadIndexEntry[];
   categoryIndex: RuntimeRecipeItemQuery['summary']['categories'];
 };
 
@@ -50,6 +77,14 @@ function readJson(filePath: string): JsonRecord | null {
   } catch {
     return null;
   }
+}
+
+function readJsonRequired(filePath: string, label: string): JsonRecord {
+  const parsed = readJson(filePath);
+  if (!parsed) {
+    throw new Error(`Runtime recipe ${label} is missing or invalid JSON: ${filePath}`);
+  }
+  return parsed;
 }
 
 function asRecord(value: unknown): JsonRecord | null {
@@ -153,6 +188,7 @@ function parseCompactRecipePack(buffer: Buffer): Omit<RuntimeRecipePack, 'signat
   cursor += bytesNeeded(itemCount, itemStride);
   const refRowsStart = cursor;
   cursor += bytesNeeded(refCount, refStride);
+  const uiRowsStart = cursor;
   cursor += bytesNeeded(uiCount, uiStride);
   const categoryRowsStart = cursor;
   cursor += bytesNeeded(categoryCount, categoryStride);
@@ -205,6 +241,22 @@ function parseCompactRecipePack(buffer: Buffer): Omit<RuntimeRecipePack, 'signat
     });
   }
 
+  const uiPayloadIndex: RuntimeRecipeUiPayloadIndexEntry[] = [];
+  for (let row = 0; row < uiCount; row += 1) {
+    const recipeId = compactString(strings, readRowValue(uiRowsStart, row, uiStride, 0));
+    const payloadPath = compactString(strings, readRowValue(uiRowsStart, row, uiStride, 1));
+    if (!recipeId || !payloadPath) continue;
+    uiPayloadIndex.push({
+      recipeId,
+      path: payloadPath,
+      payloadKey: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 2)) || undefined,
+      familyKey: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 3)) || undefined,
+      recipeType: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 4)) || undefined,
+      machineType: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 5)) || undefined,
+      handlerKey: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 6)) || undefined,
+    });
+  }
+
   const categoryIndex: RuntimeRecipePack['categoryIndex'] = [];
   for (let row = 0; row < categoryCount; row += 1) {
     const categoryId = compactString(strings, readRowValue(categoryRowsStart, row, categoryStride, 0));
@@ -226,7 +278,7 @@ function parseCompactRecipePack(buffer: Buffer): Omit<RuntimeRecipePack, 'signat
     });
   }
 
-  return { itemIndex, categoryIndex };
+  return { itemIndex, uiPayloadIndex, categoryIndex };
 }
 
 export class RuntimeRecipePackService {
@@ -266,6 +318,42 @@ export class RuntimeRecipePackService {
     return this.getItemQuery(itemId, 'usedIn');
   }
 
+  getRecipePage(recipePageId: string): RuntimeRecipePage | null {
+    const normalizedRecipePageId = `${recipePageId ?? ''}`.trim();
+    if (!normalizedRecipePageId) return null;
+    const pack = this.loadPack();
+    const entry = pack.uiPayloadIndex.find((candidate) => candidate.recipeId === normalizedRecipePageId);
+    if (!entry) return null;
+    const shard = readJsonRequired(resolveDistDataFile(entry.path), 'UI payload shard');
+    const payloads = asRecord(shard.payloads);
+    const uiPayload = asRecord(payloads?.[normalizedRecipePageId]);
+    if (!uiPayload) return null;
+    const machineInfo = asRecord(uiPayload.machineInfo);
+    const metadata = asRecord(uiPayload.metadata);
+    return {
+      recipePageId: normalizedRecipePageId,
+      recipe: {
+        id: normalizedRecipePageId,
+        recipeType: entry.recipeType ?? entry.familyKey ?? 'runtime-pack',
+        outputs: [],
+        inputs: [],
+        fluidInputs: [],
+        fluidOutputs: [],
+        machineInfo: machineInfo ?? (entry.machineType ? { machineType: entry.machineType } : null),
+        metadata,
+        additionalData: {
+          uiPayload,
+          uiFamilyKey: entry.familyKey ?? null,
+          uiPayloadPath: entry.path,
+          handlerKey: entry.handlerKey ?? null,
+          machineType: entry.machineType ?? null,
+          runtimePackBacked: true,
+        },
+      },
+      uiPayload,
+    };
+  }
+
   private getItemQuery(itemId: string, relation: 'producedBy' | 'usedIn'): RuntimeRecipeItemQuery | null {
     const normalizedItemId = `${itemId ?? ''}`.trim();
     if (!normalizedItemId) return null;
@@ -290,9 +378,6 @@ export class RuntimeRecipePackService {
     };
   }
 
-  getRecipePage(_recipePageId: string): null {
-    return null;
-  }
 }
 
 let runtimeRecipePackService: RuntimeRecipePackService | null = null;

@@ -123,13 +123,6 @@ function normalizeRequiredParam(value: string | undefined, name: string): string
   return normalized;
 }
 
-function notImplemented(message: string): Error & { statusCode: number; code: string } {
-  const error = new Error(message) as Error & { statusCode: number; code: string };
-  error.statusCode = 501;
-  error.code = 'RUNTIME_PACK_QUERY_NOT_IMPLEMENTED';
-  return error;
-}
-
 function assertCurrentRuntimeId(runtimeId: string | undefined): void {
   const requested = normalizeRequiredParam(runtimeId, 'runtimeId');
   const current = getCurrentMeta().runtimeId;
@@ -140,11 +133,6 @@ function assertCurrentRuntimeId(runtimeId: string | undefined): void {
 
 function isExternalRuntimeAuthority(): boolean {
   return resolveAccelerationCompilerAuthority() === 'external-runtime';
-}
-
-function assertRecipePagePackBackedOrAllowed(): void {
-  if (!isExternalRuntimeAuthority()) return;
-  throw notImplemented('Recipe query endpoints are not yet pack-backed for external-runtime authority; use runtime manifest/assets until the pack query surface lands.');
 }
 
 function resolveDistDataFile(relativeFileName: string): string {
@@ -313,9 +301,16 @@ async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): 
 }
 
 async function sendRecipePage(recipePageIdParam: string | undefined, res: Response): Promise<void> {
-  assertRecipePagePackBackedOrAllowed();
   setNoStoreHeaders(res);
   const recipePageId = normalizeRequiredParam(recipePageIdParam, 'recipePageId');
+  if (isExternalRuntimeAuthority()) {
+    const page = getRuntimeRecipePackService().getRecipePage(recipePageId);
+    if (!page) {
+      throw notFound('Recipe page not found in runtime recipe pack');
+    }
+    sendOk(res, page);
+    return;
+  }
   const service = getIndexedRecipesService();
   const page = await service.getRecipePageById(recipePageId);
   if (!page) {

@@ -57,6 +57,13 @@ test('runtime recipe pack service reads produced-by and used-in refs from compil
     assert.equal(Array.isArray(used?.recipes), true);
     assert.equal(typeof produced?.summary.counts.producedBy, 'number');
     assert.equal(typeof used?.summary.counts.usedIn, 'number');
+    const page = service.getRecipePage('r_fixture_gt');
+    assert.equal(page?.recipePageId, 'r_fixture_gt');
+    assert.equal(page?.recipe.id, 'r_fixture_gt');
+    assert.equal(page?.recipe.additionalData.runtimePackBacked, true);
+    assert.equal(page?.recipe.additionalData.uiPayloadPath, 'recipes/ui-payload-shards/91.json');
+    assert.equal(page?.uiPayload?.recipeId, 'r_fixture_gt');
+    assert.equal(page?.uiPayload?.schemaVersion, 'neonei/recipe-ui-payload/v1');
   } finally {
     delete process.env.DIST_DATA_DIR;
     rmSync(workDir, { recursive: true, force: true });
