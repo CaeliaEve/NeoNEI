@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { getPublishManifestService } from '../services/publish-manifest.service';
 import { asyncHandler } from '../utils/http';
+import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
 import {
   createWeakEtag,
   sendNotModifiedIfEtagMatches,
@@ -10,28 +11,32 @@ import {
 
 const router = Router();
 
-const runtimeContracts = {
-  version: 1,
-  contracts: {
-    manifest: '/contracts/runtime/manifest.schema.json',
-    browser: '/contracts/runtime/browser.schema.json',
-    search: '/contracts/runtime/search.schema.json',
-    recipe: '/contracts/runtime/recipe.schema.json',
-    texture: '/contracts/runtime/texture.schema.json',
-    error: '/contracts/runtime/error.schema.json',
-    api: '/contracts/runtime/api.schema.json',
-  },
-  runtime: {
-    manifest: '/api/v1/runtime/manifest',
-    distDataManifest: '/dist-data/manifest.json',
-    publishManifest: '/api/publish/manifest',
-  },
-  compatibility: {
-    devItems: '/api/items',
-    devRecipesIndexed: '/api/recipes-indexed',
-    devRecipeBootstrap: '/api/recipe-bootstrap',
-  },
-};
+function getRuntimeContracts() {
+  const externalRuntimeAuthority = resolveAccelerationCompilerAuthority() === 'external-runtime';
+  const legacyApiBase = externalRuntimeAuthority ? '/lab' : '/api';
+  return {
+    version: 1,
+    contracts: {
+      manifest: '/contracts/runtime/manifest.schema.json',
+      browser: '/contracts/runtime/browser.schema.json',
+      search: '/contracts/runtime/search.schema.json',
+      recipe: '/contracts/runtime/recipe.schema.json',
+      texture: '/contracts/runtime/texture.schema.json',
+      error: '/contracts/runtime/error.schema.json',
+      api: '/contracts/runtime/api.schema.json',
+    },
+    runtime: {
+      manifest: '/api/v1/runtime/manifest',
+      distDataManifest: '/dist-data/manifest.json',
+      publishManifest: '/api/publish/manifest',
+    },
+    compatibility: {
+      devItems: `${legacyApiBase}/items`,
+      devRecipesIndexed: externalRuntimeAuthority ? '/lab/recipes' : '/api/recipes-indexed',
+      devRecipeBootstrap: `${legacyApiBase}/recipe-bootstrap`,
+    },
+  };
+}
 
 router.get('/health', (_req, res) => {
   setNoStoreHeaders(res);
@@ -74,7 +79,7 @@ router.get('/runtime/contracts', (_req, res) => {
     maxAgeSeconds: 300,
     staleWhileRevalidateSeconds: 3600,
   });
-  res.json(runtimeContracts);
+  res.json(getRuntimeContracts());
 });
 
 export default router;

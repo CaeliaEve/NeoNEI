@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs';
+import fs from 'node:fs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
@@ -48,7 +48,7 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
 
 test('current API is mounted before legacy compatibility API', () => {
   const currentIndex = namespaceSource.indexOf("app.use('/api', tagApiTier('public-runtime'), currentApiRoutes)");
-  const legacyIndex = namespaceSource.indexOf("app.use('/api', tagApiTier('legacy-compat'))");
+  const legacyIndex = namespaceSource.indexOf("app.use('/api/recipes-indexed', tagApiTier('legacy-compat'), indexedRecipesRoutes)");
   assert.notEqual(currentIndex, -1);
   assert.notEqual(legacyIndex, -1);
   assert.equal(currentIndex < legacyIndex, true, 'current API must be routed before legacy compatibility API');
@@ -126,4 +126,40 @@ test('external-runtime authority uses runtime recipe pack for item usage and pag
   assert.notEqual(pageIndex, -1, 'sendRecipePage must exist');
   const pageBody = routeSource.slice(pageIndex, routeSource.indexOf('\n}', pageIndex) + 2);
   assert.match(pageBody, /isExternalRuntimeAuthority\(\)/, 'sendRecipePage must use runtime pack under external runtime');
+});
+
+
+test('external-runtime authority keeps legacy sqlite recipe namespaces out of production /api', () => {
+  assert.match(namespaceSource, /resolveAccelerationCompilerAuthority/);
+  assert.match(namespaceSource, /externalRuntimeAuthority = resolveAccelerationCompilerAuthority\(\) === 'external-runtime'/);
+  assert.match(namespaceSource, /exposeLegacyApiNamespace = !PUBLIC_RUNTIME_ONLY && !externalRuntimeAuthority/);
+  assert.match(namespaceSource, /if \(exposeLegacyApiNamespace\) \{/);
+  assert.match(namespaceSource, /app\.use\('\/lab\/recipes', indexedRecipesRoutes\)/);
+  assert.match(namespaceSource, /app\.use\('\/lab\/recipe-bootstrap', recipeBootstrapRoutes\)/);
+  assert.match(namespaceSource, /app\.use\('\/api\/recipes-indexed', tagApiTier\('legacy-compat'\), indexedRecipesRoutes\)/);
+  assert.match(namespaceSource, /app\.use\('\/api\/recipe-bootstrap', tagApiTier\('legacy-compat'\), recipeBootstrapRoutes\)/);
+
+  const legacyApiGateIndex = namespaceSource.indexOf('if (exposeLegacyApiNamespace) {');
+  assert.notEqual(legacyApiGateIndex, -1, 'legacy api gate must exist');
+  const legacyApiGateBody = namespaceSource.slice(legacyApiGateIndex, namespaceSource.indexOf("  app.use('/api/publish'", legacyApiGateIndex));
+  assert.match(legacyApiGateBody, /app\.use\('\/api\/recipes-indexed', tagApiTier\('legacy-compat'\), indexedRecipesRoutes\)/);
+  assert.match(legacyApiGateBody, /app\.use\('\/api\/recipe-bootstrap', tagApiTier\('legacy-compat'\), recipeBootstrapRoutes\)/);
+
+  const labGateIndex = namespaceSource.indexOf('if (!PUBLIC_RUNTIME_ONLY) {');
+  assert.notEqual(labGateIndex, -1, 'lab api gate must exist');
+  const labGateBody = namespaceSource.slice(labGateIndex, namespaceSource.indexOf("\n  app.use('/api'", labGateIndex));
+  assert.match(labGateBody, /app\.use\('\/lab\/recipes', indexedRecipesRoutes\)/);
+  assert.match(labGateBody, /app\.use\('\/lab\/recipe-bootstrap', recipeBootstrapRoutes\)/);
+});
+
+test('v1 runtime contracts point dev compatibility recipe APIs to lab under external runtime authority', () => {
+  const v1Source = fs.readFileSync('src/routes/v1.routes.ts', 'utf8');
+  assert.match(v1Source, /resolveAccelerationCompilerAuthority/);
+  assert.match(v1Source, /externalRuntimeAuthority = resolveAccelerationCompilerAuthority\(\) === 'external-runtime'/);
+  assert.match(v1Source, /legacyApiBase = externalRuntimeAuthority \? '\/lab' : '\/api'/);
+  assert.match(v1Source, /devRecipesIndexed: externalRuntimeAuthority \? '\/lab\/recipes' : '\/api\/recipes-indexed'/);
+  assert.match(v1Source, /devRecipeBootstrap: `\$\{legacyApiBase\}\/recipe-bootstrap`/);
+  assert.doesNotMatch(v1Source, /devRecipesIndexed: '\/api\/recipes-indexed'/);
+  assert.doesNotMatch(v1Source, /externalRuntimeAuthority \? '\/lab\/recipes-indexed'/);
+  assert.doesNotMatch(v1Source, /devRecipeBootstrap: '\/api\/recipe-bootstrap'/);
 });
