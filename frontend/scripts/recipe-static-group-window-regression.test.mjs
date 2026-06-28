@@ -1,11 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const frontendApiSource = fs.readFileSync('frontend/src/services/api.ts', 'utf8');
-const backendManifestSource = fs.readFileSync('backend/src/services/publish-payload.service.ts', 'utf8');
+const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = path.resolve(frontendRoot, '..');
+const frontendTypeSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/types.ts'), 'utf8');
+const frontendRecipeClientSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeClient.ts'), 'utf8');
+const frontendRecipeBootstrapClientSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeBootstrapClient.ts'), 'utf8');
+const backendManifestSource = fs.readFileSync(path.join(repoRoot, 'backend/src/services/publish-payload.service.ts'), 'utf8');
 const backendMaterializerSource = fs.readFileSync(
-  'backend/src/services/publish-payload-materializer.service.ts',
+  path.join(repoRoot, 'backend/src/services/publish-payload-materializer.service.ts'),
   'utf8',
 );
 
@@ -82,37 +88,37 @@ test('publish materializer writes bounded static recipe group windows', () => {
 
 test('frontend recipe group fetches prefer static windows before live API fallback', () => {
   assert.match(
-    frontendApiSource,
+    frontendTypeSource,
     /recipeCoverage\?:\s*\{/,
     'frontend manifest type should accept recipe coverage counters from published bundles',
   );
   assert.match(
-    frontendApiSource,
+    frontendTypeSource,
     /recipeGroupWindowBasePath\?:\s*string\s*\|\s*null/,
     'frontend manifest type should understand static recipe group window paths',
   );
   assert.match(
-    frontendApiSource,
+    frontendRecipeClientSource,
     /function canUsePublishedRecipeGroupWindow\(/,
     'frontend should gate static recipe group windows separately from ids-only indexes',
   );
   assert.match(
-    frontendApiSource,
+    frontendRecipeClientSource,
     /function resolvePublishedRecipeGroupWindowPath\(/,
     'frontend should resolve static window paths without building live API URLs',
   );
   assert.match(
-    frontendApiSource,
+    frontendRecipeBootstrapClientSource,
     /getRecipeBootstrapProducedByGroup[\s\S]*canUsePublishedRecipeGroupWindow[\s\S]*fetchPublishedJson<RecipeBootstrapMachineGroupPayload>/,
     'produced-by machine groups should try static recipe windows before live API fallback',
   );
   assert.match(
-    frontendApiSource,
+    frontendRecipeBootstrapClientSource,
     /getRecipeBootstrapUsedInGroup[\s\S]*canUsePublishedRecipeGroupWindow[\s\S]*fetchPublishedJson<RecipeBootstrapMachineGroupPayload>/,
     'used-in machine groups should try static recipe windows before live API fallback',
   );
   assert.match(
-    frontendApiSource,
+    frontendRecipeBootstrapClientSource,
     /getRecipeBootstrapCategoryGroup[\s\S]*canUsePublishedRecipeGroupWindow[\s\S]*fetchPublishedJson<RecipeBootstrapCategoryGroupPayload>/,
     'category groups should try static recipe windows before live API fallback',
   );

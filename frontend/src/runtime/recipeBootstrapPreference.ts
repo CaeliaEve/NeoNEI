@@ -1,4 +1,9 @@
+import { isRuntimeDevCompatDisabled } from './runtimeMode';
+
 export function shouldPreferLiveRecipeBootstrap(): boolean {
+  if (isRuntimeDevCompatDisabled()) {
+    return false;
+  }
   if (import.meta.env.VITE_PREFER_LIVE_RECIPE_BOOTSTRAP === '1') {
     return true;
   }
