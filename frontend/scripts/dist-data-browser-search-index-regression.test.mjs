@@ -21,3 +21,17 @@ test('dist-data browser runtime pre-sorts search packs once per browser runtime'
   assert.doesNotMatch(buildSearchBody, /sortedSearchEntriesBySignature/, 'search hot path must not use weak signature cache keys');
   assert.doesNotMatch(buildSearchBody, /searchPackItems/, 'search hot path must not keep per-query pack input plumbing');
 });
+
+test('dist-data browser runtime indexes catalogs by mod id before scoped catalog queries', () => {
+  assert.match(runtimeSource, /catalogByModId: Map<string, DistDataBrowserItem\[]>/);
+  assert.match(runtimeSource, /advancedCatalogByModId: Map<string, DistDataBrowserItem\[]>/);
+  assert.match(runtimeSource, /export function buildCatalogByModId\(/);
+  assert.match(runtimeSource, /return \(includeHidden \? runtime\.advancedCatalogByModId : runtime\.catalogByModId\)\.get\(scope\) \?\? \[]/);
+  assert.match(distDataSource, /catalogByModId: buildCatalogByModId\(catalog, itemById\)/);
+  assert.match(distDataSource, /advancedCatalogByModId: buildCatalogByModId\(advancedCatalog, itemById\)/);
+
+  const buildDefaultIndex = runtimeSource.indexOf('export function buildDefaultCatalog');
+  assert.notEqual(buildDefaultIndex, -1, 'buildDefaultCatalog must exist');
+  const buildDefaultBody = runtimeSource.slice(buildDefaultIndex, runtimeSource.indexOf('export function expandCatalogGroups'));
+  assert.doesNotMatch(buildDefaultBody, /filterByModId\(item, modId\)/, 'scoped default catalog must not scan all mods then filter each item');
+});

@@ -45,6 +45,8 @@ export type DistDataBrowserRuntime = {
   advancedCatalog: DistDataBrowserItem[];
   hiddenItemIds: Set<string>;
   groups: DistDataRawGroup[];
+  catalogByModId: Map<string, DistDataBrowserItem[]>;
+  advancedCatalogByModId: Map<string, DistDataBrowserItem[]>;
   itemById: Map<string, Item>;
   catalogEntryByItemId: Map<string, DistDataBrowserItem>;
   searchEntryByItemId: Map<string, BrowserSearchPackEntry>;
@@ -156,8 +158,29 @@ export function getSearchCatalogScopeKey(search: string, modId?: string, mode: B
   return `${getCatalogScopeKey(modId, mode)}::${normalizeNeedle(search)}`;
 }
 
-export function getRuntimeCatalog(runtime: DistDataBrowserRuntime, includeHidden?: boolean): DistDataBrowserItem[] {
-  return includeHidden ? runtime.advancedCatalog : runtime.catalog;
+export function getRuntimeCatalog(runtime: DistDataBrowserRuntime, includeHidden?: boolean, modId?: string): DistDataBrowserItem[] {
+  const scope = `${modId ?? ""}`.trim();
+  if (!scope || scope === "all") {
+    return includeHidden ? runtime.advancedCatalog : runtime.catalog;
+  }
+  return (includeHidden ? runtime.advancedCatalogByModId : runtime.catalogByModId).get(scope) ?? [];
+}
+
+export function buildCatalogByModId(
+  catalog: DistDataBrowserItem[],
+  itemById: Map<string, Item>,
+): Map<string, DistDataBrowserItem[]> {
+  const catalogByModId = new Map<string, DistDataBrowserItem[]>();
+  for (const entry of catalog) {
+    const modId = `${itemById.get(entry.itemId)?.modId ?? "unknown"}`.trim() || "unknown";
+    const scopedCatalog = catalogByModId.get(modId);
+    if (scopedCatalog) {
+      scopedCatalog.push(entry);
+    } else {
+      catalogByModId.set(modId, [entry]);
+    }
+  }
+  return catalogByModId;
 }
 
 export function buildDefaultCatalog(runtime: DistDataBrowserRuntime, modId?: string, includeHidden = false): BrowserGridEntry[] {
@@ -169,9 +192,9 @@ export function buildDefaultCatalog(runtime: DistDataBrowserRuntime, modId?: str
 
   const emittedGroups = new Set<string>();
   const entries: BrowserGridEntry[] = [];
-  for (const catalogEntry of getRuntimeCatalog(runtime, includeHidden)) {
+  for (const catalogEntry of getRuntimeCatalog(runtime, includeHidden, modId)) {
     const item = runtime.itemById.get(catalogEntry.itemId);
-    if (!item || !filterByModId(item, modId)) {
+    if (!item) {
       continue;
     }
 

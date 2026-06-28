@@ -47,6 +47,7 @@ import {
   type DistDataRustRuntimeManifest,
 } from "./distDataRuntimeManifest";
 import {
+  buildCatalogByModId,
   buildDefaultCatalog,
   buildGroup,
   buildModsFromRuntime,
@@ -332,6 +333,8 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
       advancedCatalog,
       hiddenItemIds,
       groups,
+      catalogByModId: buildCatalogByModId(catalog, itemById),
+      advancedCatalogByModId: buildCatalogByModId(advancedCatalog, itemById),
       itemById,
       catalogEntryByItemId,
       searchEntryByItemId,
