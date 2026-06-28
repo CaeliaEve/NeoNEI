@@ -47,6 +47,7 @@ import {
   type DistDataRustRuntimeManifest,
 } from "./distDataRuntimeManifest";
 import {
+  buildBrowserPagePack,
   buildCatalogByModId,
   buildDefaultCatalog,
   buildGroup,
@@ -54,10 +55,8 @@ import {
   buildResourceManifest,
   buildSearchCatalog,
   buildSortedSearchEntries,
-  expandCatalogGroups,
   filterByModId,
   paginate,
-  paginateBrowserEntries,
   stableNumber,
   toItem,
   type DistDataBrowserItem,
@@ -342,6 +341,7 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
       groupByKey,
       defaultCatalogByScope: new Map(),
       searchCatalogByScope: new Map(),
+      pagePackByScope: new Map(),
       sortedSearchEntries: buildSortedSearchEntries(searchPack?.pack.items ?? []),
       mods: [],
     };
@@ -505,18 +505,7 @@ export async function getDistDataBrowserPagePack(params: {
   if (!runtime) {
     return null;
   }
-  const normalizedSearch = `${params.search ?? ""}`.trim();
-  const baseEntries = normalizedSearch
-    ? (await getDistDataSearchCatalog(normalizedSearch, params.modId, params.includeHidden))?.data ?? []
-    : buildDefaultCatalog(runtime, params.modId, params.includeHidden);
-  const expandedEntries = expandCatalogGroups(baseEntries, runtime, params.expandedGroups);
-  const page = paginateBrowserEntries(expandedEntries, params.page, params.pageSize);
-  return {
-    ...page,
-    atlas: null,
-    mediaManifest: null,
-    resourceManifest: buildResourceManifest(page.data),
-  };
+  return buildBrowserPagePack(runtime, params);
 }
 
 export async function getDistDataBrowserPagePackByIds(itemIds: string[]): Promise<BrowserByIdsPackResponse | null> {

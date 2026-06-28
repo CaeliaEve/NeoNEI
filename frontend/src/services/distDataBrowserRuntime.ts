@@ -40,6 +40,15 @@ export type DistDataRawGroup = {
 
 type BrowserCatalogMode = "default" | "advanced";
 
+export type BrowserPagePackRequest = {
+  page?: number;
+  pageSize?: number;
+  search?: string;
+  modId?: string;
+  expandedGroups?: string[];
+  includeHidden?: boolean;
+};
+
 export type DistDataBrowserRuntime = {
   catalog: DistDataBrowserItem[];
   advancedCatalog: DistDataBrowserItem[];
@@ -54,6 +63,7 @@ export type DistDataBrowserRuntime = {
   groupByKey: Map<string, DistDataRawGroup>;
   defaultCatalogByScope: Map<string, BrowserGridEntry[]>;
   searchCatalogByScope: Map<string, BrowserGridEntry[]>;
+  pagePackByScope: Map<string, BrowserPagePackResponse>;
   sortedSearchEntries: BrowserSearchPackEntry[];
   mods: Mod[];
 };
@@ -157,6 +167,29 @@ export function getCatalogScopeKey(modId?: string, mode: BrowserCatalogMode = "d
 
 export function getSearchCatalogScopeKey(search: string, modId?: string, mode: BrowserCatalogMode = "default"): string {
   return `${getCatalogScopeKey(modId, mode)}::${normalizeNeedle(search)}`;
+}
+
+
+export function getExpandedGroupsScopeKey(expandedGroups?: string[]): string {
+  return Array.from(new Set((expandedGroups ?? [])
+    .map((groupKey) => `${groupKey ?? ""}`.trim())
+    .filter(Boolean)))
+    .sort()
+    .join(",");
+}
+
+export function getBrowserPagePackScopeKey(params: BrowserPagePackRequest): string {
+  const mode: BrowserCatalogMode = params.includeHidden ? "advanced" : "default";
+  const normalizedPage = Math.max(1, Math.floor(Number(params.page) || 1));
+  const rawPageSize = Math.floor(Number(params.pageSize));
+  const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 ? `${rawPageSize}` : "auto";
+  return [
+    getCatalogScopeKey(params.modId, mode),
+    `q:${normalizeNeedle(`${params.search ?? ""}`)}`,
+    `expanded:${getExpandedGroupsScopeKey(params.expandedGroups)}`,
+    `page:${normalizedPage}`,
+    `pageSize:${pageSize}`,
+  ].join("::");
 }
 
 export function getRuntimeCatalog(runtime: DistDataBrowserRuntime, includeHidden?: boolean, modId?: string): DistDataBrowserItem[] {
@@ -397,6 +430,33 @@ export function buildResourceManifest(entries: BrowserGridEntry[]) {
   };
 }
 
+
+export function buildBrowserPagePack(
+  runtime: DistDataBrowserRuntime,
+  params: BrowserPagePackRequest,
+): BrowserPagePackResponse {
+  const scopeKey = getBrowserPagePackScopeKey(params);
+  const cached = runtime.pagePackByScope.get(scopeKey);
+  if (cached) {
+    return cached;
+  }
+
+  const normalizedSearch = `${params.search ?? ""}`.trim();
+  const baseEntries = normalizedSearch
+    ? buildSearchCatalog(runtime, normalizedSearch, params.modId, params.includeHidden)
+    : buildDefaultCatalog(runtime, params.modId, params.includeHidden);
+  const expandedEntries = expandCatalogGroups(baseEntries, runtime, params.expandedGroups);
+  const page = paginateBrowserEntries(expandedEntries, params.page, params.pageSize);
+  const pagePack: BrowserPagePackResponse = {
+    ...page,
+    atlas: null,
+    mediaManifest: null,
+    resourceManifest: buildResourceManifest(page.data),
+  };
+  runtime.pagePackByScope.set(scopeKey, pagePack);
+  return pagePack;
+}
+
 export function buildModsFromRuntime(runtime: DistDataBrowserRuntime): Mod[] {
   if (runtime.mods.length) {
     return runtime.mods;
@@ -420,5 +480,3 @@ export function buildModsFromRuntime(runtime: DistDataBrowserRuntime): Mod[] {
   runtime.mods = sortedMods;
   return sortedMods;
 }
-
-

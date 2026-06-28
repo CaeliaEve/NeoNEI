@@ -46,3 +46,20 @@ test('dist-data browser runtime precomputes mods for home bootstrap', () => {
   const homeBootstrapBody = distDataSource.slice(homeBootstrapIndex, distDataSource.indexOf('export async function getDistDataBrowserPagePack'));
   assert.doesNotMatch(homeBootstrapBody, /buildModsFromRuntime\(runtime\)/, 'home bootstrap must use runtime-owned precomputed mods');
 });
+
+test('dist-data browser runtime owns browser page pack cache by normalized scope', () => {
+  assert.match(runtimeSource, /pagePackByScope: Map<string, BrowserPagePackResponse>/);
+  assert.match(runtimeSource, /export function getBrowserPagePackScopeKey\(/);
+  assert.match(runtimeSource, /export function buildBrowserPagePack\(/);
+  assert.match(runtimeSource, /runtime\.pagePackByScope\.get\(scopeKey\)/);
+  assert.match(runtimeSource, /runtime\.pagePackByScope\.set\(scopeKey, pagePack\)/);
+  assert.match(distDataSource, /pagePackByScope: new Map\(\)/);
+  assert.match(distDataSource, /return buildBrowserPagePack\(runtime, params\)/);
+
+  const pagePackIndex = distDataSource.indexOf('export async function getDistDataBrowserPagePack');
+  assert.notEqual(pagePackIndex, -1, 'getDistDataBrowserPagePack must exist');
+  const pagePackBody = distDataSource.slice(pagePackIndex, distDataSource.indexOf('export async function getDistDataBrowserPagePackByIds'));
+  assert.doesNotMatch(pagePackBody, /expandCatalogGroups\(/, 'page route must not expand groups outside runtime page-pack cache');
+  assert.doesNotMatch(pagePackBody, /paginateBrowserEntries\(/, 'page route must not paginate outside runtime page-pack cache');
+  assert.doesNotMatch(pagePackBody, /buildResourceManifest\(/, 'page route must not derive resource manifests outside runtime page-pack cache');
+});
