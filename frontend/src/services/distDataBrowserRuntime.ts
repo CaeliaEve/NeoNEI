@@ -55,6 +55,7 @@ export type DistDataBrowserRuntime = {
   defaultCatalogByScope: Map<string, BrowserGridEntry[]>;
   searchCatalogByScope: Map<string, BrowserGridEntry[]>;
   sortedSearchEntries: BrowserSearchPackEntry[];
+  mods: Mod[];
 };
 
 export function stableNumber(value: unknown, fallback = 0): number {
@@ -397,6 +398,9 @@ export function buildResourceManifest(entries: BrowserGridEntry[]) {
 }
 
 export function buildModsFromRuntime(runtime: DistDataBrowserRuntime): Mod[] {
+  if (runtime.mods.length) {
+    return runtime.mods;
+  }
   const mods = new Map<string, Mod>();
   for (const entry of buildDefaultCatalog(runtime)) {
     const item = entry.kind === "item" ? entry.item : entry.group.representative;
@@ -412,7 +416,9 @@ export function buildModsFromRuntime(runtime: DistDataBrowserRuntime): Mod[] {
       itemCount: 1,
     });
   }
-  return Array.from(mods.values()).sort((left, right) => right.itemCount - left.itemCount || left.modName.localeCompare(right.modName));
+  const sortedMods = Array.from(mods.values()).sort((left, right) => right.itemCount - left.itemCount || left.modName.localeCompare(right.modName));
+  runtime.mods = sortedMods;
+  return sortedMods;
 }
 
 

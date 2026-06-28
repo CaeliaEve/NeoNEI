@@ -328,7 +328,7 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
       }
     }
 
-    cachedBrowserRuntime = {
+    const runtime: DistDataBrowserRuntime = {
       catalog,
       advancedCatalog,
       hiddenItemIds,
@@ -343,7 +343,10 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
       defaultCatalogByScope: new Map(),
       searchCatalogByScope: new Map(),
       sortedSearchEntries: buildSortedSearchEntries(searchPack?.pack.items ?? []),
+      mods: [],
     };
+    runtime.mods = buildModsFromRuntime(runtime);
+    cachedBrowserRuntime = runtime;
     return cachedBrowserRuntime;
   })()
     .catch(() => null)
@@ -485,7 +488,7 @@ export async function getDistDataHomeBootstrap(params: {
   }
   return {
     manifest: buildPublicManifestFromDistData(manifest),
-    mods: buildModsFromRuntime(runtime),
+    mods: runtime.mods,
     pagePack,
   };
 }

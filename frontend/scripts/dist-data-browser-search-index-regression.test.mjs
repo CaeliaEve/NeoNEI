@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -34,4 +34,15 @@ test('dist-data browser runtime indexes catalogs by mod id before scoped catalog
   assert.notEqual(buildDefaultIndex, -1, 'buildDefaultCatalog must exist');
   const buildDefaultBody = runtimeSource.slice(buildDefaultIndex, runtimeSource.indexOf('export function expandCatalogGroups'));
   assert.doesNotMatch(buildDefaultBody, /filterByModId\(item, modId\)/, 'scoped default catalog must not scan all mods then filter each item');
+});
+
+test('dist-data browser runtime precomputes mods for home bootstrap', () => {
+  assert.match(runtimeSource, /mods: Mod\[]/);
+  assert.match(distDataSource, /runtime\.mods = buildModsFromRuntime\(runtime\)/);
+  assert.match(distDataSource, /mods: runtime\.mods/);
+
+  const homeBootstrapIndex = distDataSource.indexOf('export async function getDistDataHomeBootstrap');
+  assert.notEqual(homeBootstrapIndex, -1, 'getDistDataHomeBootstrap must exist');
+  const homeBootstrapBody = distDataSource.slice(homeBootstrapIndex, distDataSource.indexOf('export async function getDistDataBrowserPagePack'));
+  assert.doesNotMatch(homeBootstrapBody, /buildModsFromRuntime\(runtime\)/, 'home bootstrap must use runtime-owned precomputed mods');
 });
