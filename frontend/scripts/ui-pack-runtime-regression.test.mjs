@@ -55,13 +55,16 @@ function encodeTemplatePack(strings) {
   const index = new Map(strings.map((value, idx) => [value, idx]));
   const bytes = [];
   bytes.push(...new TextEncoder().encode('NEIUIT1\0'));
-  pushU32(bytes, 1);
+  pushU32(bytes, 3);
   pushU32(bytes, 1);
   pushU32(bytes, 2);
   pushU32(bytes, 1);
-  pushU32(bytes, 15);
+  pushU32(bytes, 0);
+  pushU32(bytes, 0);
+  pushU32(bytes, 19);
   pushU32(bytes, 6);
   pushU32(bytes, 5);
+  pushU32(bytes, 12);
   const row = [
     index.get('furnace@default') ?? 0,
     index.get('self-test-furnace') ?? 0,
@@ -78,15 +81,18 @@ function encodeTemplatePack(strings) {
     2,
     0,
     1,
+    0,
+    0,
+    0,
+    0,
   ];
-  for (const value of row.slice(0, 5)) pushU32(bytes, value);
-  for (const value of row.slice(5, 7)) pushU32(bytes, value);
-  pushI32(bytes, row[7]);
-  for (const value of row.slice(8, 11)) pushU32(bytes, value);
-  pushU32(bytes, row[11]);
-  pushU32(bytes, row[12]);
-  pushU32(bytes, row[13]);
-  pushU32(bytes, row[14]);
+  row.forEach((value, idx) => {
+    if (idx === 7) {
+      pushI32(bytes, value);
+    } else {
+      pushU32(bytes, value);
+    }
+  });
   pushU32(bytes, index.get('item-input') ?? 0);
   pushU32(bytes, 0);
   pushU32(bytes, 1);
@@ -133,6 +139,75 @@ function encodeBindingPack(strings) {
   return encodeBinaryPack('neonei/ui-binding-pack/current', new Uint8Array(bytes).buffer);
 }
 
+function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 'ok', artifacts = {} }) {
+  const baseArtifacts = [
+    {
+      logicalName: 'rustUiTemplatesBin',
+      path: 'rust/ui-pack/ui_templates.bin',
+      kind: 'binary-pack',
+      status: 'present',
+      bytes: templatePack.byteLength,
+      envelopeSchema: 'neonei/ui-template-pack/current',
+      payloadMagic: 'NEIUIT1_NUL',
+      version: 3,
+      sections: [],
+    },
+    {
+      logicalName: 'rustUiBindingsBin',
+      path: 'rust/ui-pack/ui_bindings.bin',
+      kind: 'binary-pack',
+      status: 'present',
+      bytes: bindingPack.byteLength,
+      envelopeSchema: 'neonei/ui-binding-pack/current',
+      payloadMagic: 'NEIUIB1_NUL',
+      version: 1,
+      sections: [],
+    },
+    {
+      logicalName: 'rustUiStringsBin',
+      path: 'rust/ui-pack/ui_strings.bin',
+      kind: 'binary-pack',
+      status: 'present',
+      bytes: stringPack.byteLength,
+      envelopeSchema: 'neonei/ui-string-pack/current',
+      payloadMagic: 'NEIUIS1_NUL',
+      version: 1,
+      sections: [],
+    },
+  ].map((artifact) => ({ ...artifact, ...(artifacts[artifact.logicalName] ?? {}) }));
+  return {
+    schemaVersion: 'elysium-compiler/ui-pack-abi-validation/v1',
+    packAbiVersion: 'elysium.pack.v1',
+    generatedAt: 'deterministic-rust-compiler',
+    status,
+    compileScope: 'native-ui',
+    expectedArtifactCount: 8,
+    presentArtifactCount: status === 'ok' ? 8 : 7,
+    missingRequiredArtifacts: status === 'ok' ? [] : ['rust/ui-pack/ui_templates.bin'],
+    sectionViolations: [],
+    artifacts: baseArtifacts,
+    policy: {
+      missingRequiredArtifact: 'fail-closed',
+      envelopeSchema: 'NNEIBIN version 1 envelope schema must match the declared UI pack schema',
+      binarySectionLayout: 'UI binary sections must have exact magic, version, stride, and byte length',
+      stringRefIntegrity: 'all UI template and binding string references must resolve into ui_strings.bin',
+      legacyFallback: 'forbidden',
+    },
+  };
+}
+
+function withRuntimeFiles(manifest, { templatePack, bindingPack, stringPack, abiReport }) {
+  return {
+    ...manifest,
+    files: [
+      { path: 'rust/ui-pack/ui_templates.bin', bytes: templatePack.byteLength },
+      { path: 'rust/ui-pack/ui_bindings.bin', bytes: bindingPack.byteLength },
+      { path: 'rust/ui-pack/ui_strings.bin', bytes: stringPack.byteLength },
+      { path: 'rust/ui-pack-abi-validation-report.json', bytes: JSON.stringify(abiReport).length },
+    ],
+  };
+}
+
 test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
   clearUiPackRuntimeCache();
   const strings = [
@@ -151,7 +226,8 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
   const templatePack = encodeTemplatePack(strings);
   const bindingPack = encodeBindingPack(strings);
   const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
-  const manifest = {
+  const abiReport = buildUiPackAbiReport({ templatePack, bindingPack, stringPack });
+  const manifest = withRuntimeFiles({
     schema: 'neonei/runtime/current',
     capabilities: ['recipes.native-ui-layout', 'recipes.ui-pack', 'native-render.webgl2'],
     entrypoints: {
@@ -159,12 +235,15 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
       uiBindings: 'rust/ui-pack/ui_bindings.bin',
       uiStrings: 'rust/ui-pack/ui_strings.bin',
     },
-  };
+  }, { templatePack, bindingPack, stringPack, abiReport });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input);
     if (url.endsWith('/api/runtime/current/manifest')) {
       return new Response(JSON.stringify(manifest), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.includes('/api/runtime/current/asset/rust/ui-pack-abi-validation-report.json')) {
+      return new Response(JSON.stringify(abiReport), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     if (url.includes('/api/runtime/current/asset/rust/ui-pack/ui_templates.bin')) {
       return new Response(templatePack, { status: 200 });
@@ -186,6 +265,127 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     assert.equal(runtime.summary.stringCount, strings.length);
     assert.equal(runtime.templatesByKey.get('furnace@default')?.layoutKind, 'furnace');
     assert.equal(runtime.bindingsByRecipeId.get('r1')?.templateKey, 'furnace@default');
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearUiPackRuntimeCache();
+  }
+});
+
+test('loadUiPackRuntime fails closed before pack fetch when ABI validation report is blocked', async () => {
+  clearUiPackRuntimeCache();
+  const strings = ['', 'furnace@default'];
+  const templatePack = encodeTemplatePack([
+    '',
+    'furnace@default',
+    'self-test-furnace',
+    'furnace',
+    'textures/gui/container/furnace.png',
+    'item-input',
+    'item-output',
+    'EU/t',
+    'r1',
+    'recipes/ui-payload-shards/55.json',
+    'Furnace',
+  ]);
+  const bindingPack = encodeBindingPack([
+    '',
+    'furnace@default',
+    'self-test-furnace',
+    'furnace',
+    'textures/gui/container/furnace.png',
+    'item-input',
+    'item-output',
+    'EU/t',
+    'r1',
+    'recipes/ui-payload-shards/55.json',
+    'Furnace',
+  ]);
+  const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const abiReport = buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status: 'blocked' });
+  const manifest = withRuntimeFiles({
+    schema: 'neonei/runtime/current',
+    capabilities: ['recipes.native-ui-layout', 'recipes.ui-pack', 'native-render.webgl2'],
+    entrypoints: {
+      uiTemplates: 'rust/ui-pack/ui_templates.bin',
+      uiBindings: 'rust/ui-pack/ui_bindings.bin',
+      uiStrings: 'rust/ui-pack/ui_strings.bin',
+    },
+  }, { templatePack, bindingPack, stringPack, abiReport });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/api/runtime/current/manifest?case=blocked-abi')) {
+      return new Response(JSON.stringify(manifest), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.includes('/api/runtime/current/asset/rust/ui-pack-abi-validation-report.json')) {
+      return new Response(JSON.stringify(abiReport), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`runtime ABI gate should not fetch UI pack artifacts: ${url}`);
+  };
+  try {
+    const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=blocked-abi');
+    assert.equal(runtime.status, 'error');
+    assert.match(runtime.error ?? '', /ABI validation report is not ok: blocked/);
+    assert.equal(runtime.summary.templateCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearUiPackRuntimeCache();
+  }
+});
+
+test('loadUiPackRuntime rejects ABI reports that do not match manifest entrypoints', async () => {
+  clearUiPackRuntimeCache();
+  const strings = [
+    '',
+    'furnace@default',
+    'self-test-furnace',
+    'furnace',
+    'textures/gui/container/furnace.png',
+    'item-input',
+    'item-output',
+    'EU/t',
+    'r1',
+    'recipes/ui-payload-shards/55.json',
+    'Furnace',
+  ];
+  const templatePack = encodeTemplatePack(strings);
+  const bindingPack = encodeBindingPack(strings);
+  const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const abiReport = buildUiPackAbiReport({
+    templatePack,
+    bindingPack,
+    stringPack,
+    artifacts: {
+      rustUiTemplatesBin: {
+        path: 'rust/ui-pack/other_templates.bin',
+      },
+    },
+  });
+  const manifest = withRuntimeFiles({
+    schema: 'neonei/runtime/current',
+    capabilities: ['recipes.native-ui-layout', 'recipes.ui-pack', 'native-render.webgl2'],
+    entrypoints: {
+      uiTemplates: 'rust/ui-pack/ui_templates.bin',
+      uiBindings: 'rust/ui-pack/ui_bindings.bin',
+      uiStrings: 'rust/ui-pack/ui_strings.bin',
+    },
+  }, { templatePack, bindingPack, stringPack, abiReport });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/api/runtime/current/manifest?case=abi-path-mismatch')) {
+      return new Response(JSON.stringify(manifest), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.includes('/api/runtime/current/asset/rust/ui-pack-abi-validation-report.json')) {
+      return new Response(JSON.stringify(abiReport), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`runtime ABI gate should not fetch UI pack artifacts: ${url}`);
+  };
+  try {
+    const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=abi-path-mismatch');
+    assert.equal(runtime.status, 'error');
+    assert.match(runtime.error ?? '', /artifact path mismatch for rustUiTemplatesBin/);
+    assert.equal(runtime.summary.templateCount, 0);
   } finally {
     globalThis.fetch = originalFetch;
     clearUiPackRuntimeCache();

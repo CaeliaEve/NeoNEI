@@ -3,8 +3,14 @@ import {
   loadNativeRuntimeManifest,
   parseNativeRuntimePackHeader,
 } from "../native-surface/runtimeLoader.ts";
-import { assertNativeUiRuntimeManifest } from "../native-surface/NativeRuntimeCapabilityGate.ts";
-import type { NativeRuntimeManifest } from "../native-surface/NativeRuntimeManifest";
+import {
+  assertNativeUiRuntimeManifest,
+  getNativeRuntimeEntrypointSource,
+} from "../native-surface/NativeRuntimeCapabilityGate.ts";
+import type {
+  NativeRuntimeManifest,
+  NativeRuntimeManifestFiles,
+} from "../native-surface/NativeRuntimeManifest";
 
 export interface UiPackSlot {
   role: string;
@@ -100,6 +106,42 @@ export interface UiPackRuntime {
 }
 
 const UI_PACK_REQUEST_CACHE = new Map<string, Promise<UiPackRuntime>>();
+const UI_PACK_ABI_VALIDATION_REPORT_PATH = "rust/ui-pack-abi-validation-report.json";
+const UI_PACK_ABI_VALIDATION_SCHEMA_VERSION = "elysium-compiler/ui-pack-abi-validation/v1";
+const UI_TEMPLATE_PACK_SCHEMA = "neonei/ui-template-pack/current";
+const UI_BINDING_PACK_SCHEMA = "neonei/ui-binding-pack/current";
+const UI_STRING_PACK_SCHEMA = "neonei/ui-string-pack/current";
+const UI_TEMPLATE_PACK_MAGIC = "NEIUIT1\0";
+const UI_BINDING_PACK_MAGIC = "NEIUIB1\0";
+const UI_STRING_PACK_MAGIC = "NEIUIS1\0";
+const UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIT1_NUL";
+const UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIB1_NUL";
+const UI_STRING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIS1_NUL";
+const UI_TEMPLATE_PAYLOAD_VERSION = 3;
+const UI_BINDING_PAYLOAD_VERSION = 1;
+const UI_STRING_PAYLOAD_VERSION = 1;
+const UI_TEMPLATE_ROW_STRIDE_U32 = 19;
+const UI_SLOT_ROW_STRIDE_U32 = 6;
+const UI_TEXT_ROW_STRIDE_U32 = 5;
+const UI_RECT_ROW_STRIDE_U32 = 12;
+const UI_BINDING_ROW_STRIDE_U32 = 11;
+
+type UiPackEntrypoints = {
+  templates: string;
+  bindings: string;
+  strings: string;
+  abiReport: string;
+};
+
+type JsonRecord = Record<string, unknown>;
+
+type UiPackArtifactContract = {
+  logicalName: string;
+  path: string;
+  envelopeSchema: string;
+  payloadMagic: string;
+  version: number;
+};
 
 function isPortableRelativePath(path: string): boolean {
   return Boolean(path)
@@ -153,81 +195,202 @@ function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function asNumber(value: unknown, fallback = 0): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+function asRecord(value: unknown): JsonRecord | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
+}
+
+function asManifestFilesRecord(value: NativeRuntimeManifest["entrypoints"] | NativeRuntimeManifest["files"]): NativeRuntimeManifestFiles | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as NativeRuntimeManifestFiles : null;
+}
+
+function normalizeRuntimePath(value: string): string {
+  return value.trim().replace(/\\/g, "/").replace(/^\/+/, "");
+}
+
+function asRuntimePath(value: unknown): string {
+  return normalizeRuntimePath(asString(value));
+}
+
+function pathsEqual(left: unknown, right: unknown): boolean {
+  const normalizedLeft = asRuntimePath(left);
+  const normalizedRight = asRuntimePath(right);
+  return Boolean(normalizedLeft) && normalizedLeft === normalizedRight;
+}
+
+function manifestDeclaresRuntimePath(manifest: NativeRuntimeManifest, relativePath: string): boolean {
+  const normalized = normalizeRuntimePath(relativePath);
+  const entrypoints = getNativeRuntimeEntrypointSource(manifest);
+  if (Object.values(entrypoints).some((value) => pathsEqual(value, normalized))) {
+    return true;
+  }
+  const files = manifest.files;
+  if (Array.isArray(files)) {
+    return files.some((file) => pathsEqual(file?.path, normalized));
+  }
+  const fileRecord = asManifestFilesRecord(files);
+  return fileRecord ? Object.values(fileRecord).some((value) => pathsEqual(value, normalized)) : false;
+}
+
+function getManifestFileBytes(manifest: NativeRuntimeManifest, relativePath: string): number | null {
+  const normalized = normalizeRuntimePath(relativePath);
+  if (!Array.isArray(manifest.files)) return null;
+  const row = manifest.files.find((file) => pathsEqual(file?.path, normalized));
+  const bytes = Number(row?.bytes);
+  return Number.isFinite(bytes) && bytes >= 0 ? bytes : null;
+}
+
+function resolveUiPackAbiReportPath(manifest: NativeRuntimeManifest): string {
+  const entrypoints = getNativeRuntimeEntrypointSource(manifest);
+  const explicitEntrypoint = asRuntimePath(
+    entrypoints.rustUiPackAbiValidationReport
+      ?? entrypoints.uiPackAbiValidationReport
+      ?? entrypoints.uiPackAbiReport,
+  );
+  if (explicitEntrypoint) return explicitEntrypoint;
+
+  const fileRecord = asManifestFilesRecord(manifest.files);
+  const explicitFile = asRuntimePath(
+    fileRecord?.rustUiPackAbiValidationReport
+      ?? fileRecord?.uiPackAbiValidationReport
+      ?? fileRecord?.uiPackAbiReport,
+  );
+  if (explicitFile) return explicitFile;
+
+  if (manifestDeclaresRuntimePath(manifest, UI_PACK_ABI_VALIDATION_REPORT_PATH)) {
+    return UI_PACK_ABI_VALIDATION_REPORT_PATH;
+  }
+
+  throw new Error(
+    `native UI runtime manifest does not declare required ABI validation report: ${UI_PACK_ABI_VALIDATION_REPORT_PATH}`,
+  );
 }
 
 function readU32(view: DataView, offset: number): number {
+  if (offset < 0 || offset + 4 > view.byteLength) {
+    throw new Error(`UI pack u32 read out of bounds: offset=${offset}, bytes=${view.byteLength}`);
+  }
   return view.getUint32(offset, true);
 }
 
 function readI32(view: DataView, offset: number): number {
+  if (offset < 0 || offset + 4 > view.byteLength) {
+    throw new Error(`UI pack i32 read out of bounds: offset=${offset}, bytes=${view.byteLength}`);
+  }
   return view.getInt32(offset, true);
+}
+
+function decodePayloadMagic(payloadBuffer: ArrayBuffer, label: string): string {
+  if (payloadBuffer.byteLength < 8) {
+    throw new Error(`${label} is too small: ${payloadBuffer.byteLength} bytes`);
+  }
+  return new TextDecoder("utf-8").decode(new Uint8Array(payloadBuffer, 0, 8));
+}
+
+function assertPayloadLength(payloadBuffer: ArrayBuffer, expectedLength: number, label: string): void {
+  if (payloadBuffer.byteLength !== expectedLength) {
+    throw new Error(`${label} has invalid byte length: expected=${expectedLength}, actual=${payloadBuffer.byteLength}`);
+  }
+}
+
+function checkedTableBytes(rowCount: number, strideU32: number, label: string): number {
+  const bytes = rowCount * strideU32 * 4;
+  if (!Number.isSafeInteger(bytes) || bytes < 0) {
+    throw new Error(`${label} section byte length overflow: rows=${rowCount}, stride=${strideU32}`);
+  }
+  return bytes;
 }
 
 function decodeStringTable(payloadBuffer: ArrayBuffer): string[] {
   const view = new DataView(payloadBuffer);
-  const magic = new TextDecoder("utf-8").decode(new Uint8Array(view.buffer, view.byteOffset, 8));
-  if (magic !== "NEIUIS1\0") {
+  const magic = decodePayloadMagic(payloadBuffer, "UI string pack");
+  if (magic !== UI_STRING_PACK_MAGIC) {
     throw new Error(`UI string pack has invalid magic: ${magic}`);
   }
   const version = readU32(view, 8);
-  if (version !== 1) {
+  if (version !== UI_STRING_PAYLOAD_VERSION) {
     throw new Error(`UI string pack has invalid version: ${version}`);
   }
   const stringCount = readU32(view, 12);
   const byteLength = readU32(view, 16);
   const offsetStart = 20;
+  const byteStart = offsetStart + checkedTableBytes(stringCount, 1, "UI string offset");
+  assertPayloadLength(payloadBuffer, byteStart + byteLength, "UI string pack");
   const offsets: number[] = [];
+  let previousOffset = 0;
   for (let index = 0; index < stringCount; index += 1) {
-    offsets.push(readU32(view, offsetStart + index * 4));
+    const offset = readU32(view, offsetStart + index * 4);
+    if (offset > byteLength || (index > 0 && offset < previousOffset)) {
+      throw new Error(`UI string pack has invalid string offset: index=${index}, offset=${offset}, bytes=${byteLength}`);
+    }
+    previousOffset = offset;
+    offsets.push(offset);
   }
-  const byteStart = offsetStart + stringCount * 4;
   const bytes = new Uint8Array(payloadBuffer, byteStart, byteLength);
+  if (byteLength > 0 && bytes[byteLength - 1] !== 0) {
+    throw new Error("UI string pack must be NUL-terminated");
+  }
   const decoder = new TextDecoder("utf-8");
   return offsets.map((offset, index) => {
     const start = offset;
     const next = index + 1 < offsets.length ? offsets[index + 1] : bytes.length;
-    const end = Math.max(start, next > 0 ? next - 1 : bytes.length);
+    const end = next > start && bytes[next - 1] === 0 ? next - 1 : next;
     return decoder.decode(bytes.slice(start, end));
   });
 }
 
 function resolveString(strings: string[], index: number): string {
-  return index >= 0 && index < strings.length ? strings[index] : "";
+  if (index < 0 || index >= strings.length) {
+    throw new Error(`UI pack string reference out of bounds: index=${index}, stringCount=${strings.length}`);
+  }
+  return strings[index];
+}
+
+function assertRowRange(tableName: string, start: number, count: number, total: number): void {
+  const end = start + count;
+  if (start < 0 || count < 0 || end > total) {
+    throw new Error(`${tableName} row range is out of bounds: start=${start}, count=${count}, total=${total}`);
+  }
+}
+
+function sliceRows<T>(tableName: string, rows: T[], start: number, count: number): T[] {
+  assertRowRange(tableName, start, count, rows.length);
+  return rows.slice(start, start + count);
 }
 
 function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPackTemplate[] {
   const view = new DataView(payloadBuffer);
-  const magic = new TextDecoder("utf-8").decode(new Uint8Array(view.buffer, view.byteOffset, 8));
-  if (magic !== "NEIUIT1\0") {
+  const magic = decodePayloadMagic(payloadBuffer, "UI template pack");
+  if (magic !== UI_TEMPLATE_PACK_MAGIC) {
     throw new Error(`UI template pack has invalid magic: ${magic}`);
   }
   const version = readU32(view, 8);
-  if (version !== 1) {
-    if (version !== 2 && version !== 3) {
-      throw new Error(`UI template pack has invalid version: ${version}`);
-    }
+  if (version !== UI_TEMPLATE_PAYLOAD_VERSION) {
+    throw new Error(`UI template pack has invalid version: ${version}`);
   }
   const templateCount = readU32(view, 12);
   const slotCount = readU32(view, 16);
   const textCount = readU32(view, 20);
-  const hotspotCount = version >= 2 ? readU32(view, 24) : 0;
-  const viewportCount = version >= 2 ? readU32(view, 28) : 0;
-  const templateStride = readU32(view, version >= 2 ? 32 : 24);
-  const slotStride = readU32(view, version >= 2 ? 36 : 28);
-  const textStride = readU32(view, version >= 2 ? 40 : 32);
-  const rectStride = version >= 2 ? readU32(view, 44) : 0;
-  if ((version === 1 && templateStride !== 15) || (version >= 2 && templateStride !== 19) || slotStride !== 6 || textStride !== 5 || (version === 2 && rectStride !== 9) || (version >= 3 && rectStride !== 12)) {
+  const hotspotCount = readU32(view, 24);
+  const viewportCount = readU32(view, 28);
+  const templateStride = readU32(view, 32);
+  const slotStride = readU32(view, 36);
+  const textStride = readU32(view, 40);
+  const rectStride = readU32(view, 44);
+  if (
+    templateStride !== UI_TEMPLATE_ROW_STRIDE_U32
+    || slotStride !== UI_SLOT_ROW_STRIDE_U32
+    || textStride !== UI_TEXT_ROW_STRIDE_U32
+    || rectStride !== UI_RECT_ROW_STRIDE_U32
+  ) {
     throw new Error(`UI template pack has unexpected strides: ${templateStride}/${slotStride}/${textStride}/${rectStride}`);
   }
-  const templateBytes = templateCount * templateStride * 4;
-  const slotBytes = slotCount * slotStride * 4;
-  const textBytes = textCount * textStride * 4;
-  const hotspotBytes = hotspotCount * rectStride * 4;
-  const viewportBytes = viewportCount * rectStride * 4;
-  let cursor = version >= 2 ? 48 : 36;
-  const templates: UiPackTemplate[] = [];
+  const templateBytes = checkedTableBytes(templateCount, templateStride, "UI template");
+  const slotBytes = checkedTableBytes(slotCount, slotStride, "UI slot");
+  const textBytes = checkedTableBytes(textCount, textStride, "UI text");
+  const hotspotBytes = checkedTableBytes(hotspotCount, rectStride, "UI hotspot");
+  const viewportBytes = checkedTableBytes(viewportCount, rectStride, "UI viewport");
+  let cursor = 48;
+  assertPayloadLength(payloadBuffer, cursor + templateBytes + slotBytes + textBytes + hotspotBytes + viewportBytes, "UI template pack");
   const templateRows: Array<{
     templateKey: string;
     templateSignature: string;
@@ -267,10 +430,10 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
       slotCount: readU32(view, rowOffset + 48),
       textStart: readU32(view, rowOffset + 52),
       textCount: readU32(view, rowOffset + 56),
-      hotspotStart: version >= 2 ? readU32(view, rowOffset + 60) : 0,
-      hotspotCount: version >= 2 ? readU32(view, rowOffset + 64) : 0,
-      viewportStart: version >= 2 ? readU32(view, rowOffset + 68) : 0,
-      viewportCount: version >= 2 ? readU32(view, rowOffset + 72) : 0,
+      hotspotStart: readU32(view, rowOffset + 60),
+      hotspotCount: readU32(view, rowOffset + 64),
+      viewportStart: readU32(view, rowOffset + 68),
+      viewportCount: readU32(view, rowOffset + 72),
     });
   }
   cursor += templateBytes;
@@ -305,26 +468,22 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     role: resolveString(strings, readU32(view, rowOffset + 8)),
     label: resolveString(strings, readU32(view, rowOffset + 12)),
     tooltip: resolveString(strings, readU32(view, rowOffset + 16)),
-    action: version >= 3 ? resolveString(strings, readU32(view, rowOffset + 20)) : "",
-    itemId: version >= 3 ? resolveString(strings, readU32(view, rowOffset + 24)) : "",
-    payloadKey: version >= 3 ? resolveString(strings, readU32(view, rowOffset + 28)) : "",
-    x: readI32(view, rowOffset + (version >= 3 ? 32 : 20)),
-    y: readI32(view, rowOffset + (version >= 3 ? 36 : 24)),
-    width: readU32(view, rowOffset + (version >= 3 ? 40 : 28)),
-    height: readU32(view, rowOffset + (version >= 3 ? 44 : 32)),
+    action: resolveString(strings, readU32(view, rowOffset + 20)),
+    itemId: resolveString(strings, readU32(view, rowOffset + 24)),
+    payloadKey: resolveString(strings, readU32(view, rowOffset + 28)),
+    x: readI32(view, rowOffset + 32),
+    y: readI32(view, rowOffset + 36),
+    width: readU32(view, rowOffset + 40),
+    height: readU32(view, rowOffset + 44),
   });
   const hotspots: UiPackRect[] = [];
-  if (version >= 2) {
-    for (let index = 0; index < hotspotCount; index += 1) {
-      hotspots.push(readRect(cursor + index * rectStride * 4));
-    }
+  for (let index = 0; index < hotspotCount; index += 1) {
+    hotspots.push(readRect(cursor + index * rectStride * 4));
   }
   cursor += hotspotBytes;
   const viewports: UiPackRect[] = [];
-  if (version >= 2) {
-    for (let index = 0; index < viewportCount; index += 1) {
-      viewports.push(readRect(cursor + index * rectStride * 4));
-    }
+  for (let index = 0; index < viewportCount; index += 1) {
+    viewports.push(readRect(cursor + index * rectStride * 4));
   }
   cursor += viewportBytes;
 
@@ -341,29 +500,34 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     imageResource: templateRow.imageResource,
     handlerCount: templateRow.handlerCount,
     slotCount: templateRow.slotCount,
-    slots: slots.slice(templateRow.slotStart, templateRow.slotStart + templateRow.slotCount),
-    textOverlays: overlays.slice(templateRow.textStart, templateRow.textStart + templateRow.textCount),
-    hotspots: hotspots.slice(templateRow.hotspotStart, templateRow.hotspotStart + templateRow.hotspotCount),
-    viewports: viewports.slice(templateRow.viewportStart, templateRow.viewportStart + templateRow.viewportCount),
+    slots: sliceRows("UI template slots", slots, templateRow.slotStart, templateRow.slotCount),
+    textOverlays: sliceRows("UI template text overlays", overlays, templateRow.textStart, templateRow.textCount),
+    hotspots: sliceRows("UI template hotspots", hotspots, templateRow.hotspotStart, templateRow.hotspotCount),
+    viewports: sliceRows("UI template viewports", viewports, templateRow.viewportStart, templateRow.viewportCount),
   }));
 }
 
 function parseUiBindings(payloadBuffer: ArrayBuffer, strings: string[]): UiPackBinding[] {
   const view = new DataView(payloadBuffer);
-  const magic = new TextDecoder("utf-8").decode(new Uint8Array(view.buffer, view.byteOffset, 8));
-  if (magic !== "NEIUIB1\0") {
+  const magic = decodePayloadMagic(payloadBuffer, "UI binding pack");
+  if (magic !== UI_BINDING_PACK_MAGIC) {
     throw new Error(`UI binding pack has invalid magic: ${magic}`);
   }
   const version = readU32(view, 8);
-  if (version !== 1) {
+  if (version !== UI_BINDING_PAYLOAD_VERSION) {
     throw new Error(`UI binding pack has invalid version: ${version}`);
   }
   const bindingCount = readU32(view, 12);
   const rowStride = readU32(view, 16);
-  if (rowStride !== 11) {
+  if (rowStride !== UI_BINDING_ROW_STRIDE_U32) {
     throw new Error(`UI binding pack has unexpected row stride: ${rowStride}`);
   }
   const payloadOffset = 20;
+  assertPayloadLength(
+    payloadBuffer,
+    payloadOffset + checkedTableBytes(bindingCount, rowStride, "UI binding"),
+    "UI binding pack",
+  );
   const bindings: UiPackBinding[] = [];
   for (let index = 0; index < bindingCount; index += 1) {
     const rowOffset = payloadOffset + index * rowStride * 4;
@@ -385,12 +549,17 @@ function parseUiBindings(payloadBuffer: ArrayBuffer, strings: string[]): UiPackB
   return bindings;
 }
 
-function parseUiPackManifest(manifest: NativeRuntimeManifest): { templates: string; bindings: string; strings: string } {
+function parseUiPackManifest(manifest: NativeRuntimeManifest): UiPackEntrypoints {
   const entrypoints = assertNativeUiRuntimeManifest(manifest);
+  const abiReport = resolveUiPackAbiReportPath(manifest);
+  if (!manifestDeclaresRuntimePath(manifest, abiReport)) {
+    throw new Error(`native UI ABI validation report is not declared by runtime manifest files: ${abiReport}`);
+  }
   return {
     templates: asString(entrypoints.uiTemplates),
     bindings: asString(entrypoints.uiBindings),
     strings: asString(entrypoints.uiStrings),
+    abiReport,
   };
 }
 
@@ -402,7 +571,123 @@ async function fetchPackBuffer(url: string): Promise<ArrayBuffer> {
   return response.arrayBuffer();
 }
 
-function unwrapUiPackPayload(buffer: ArrayBuffer, expectedSchema: "neonei/ui-template-pack/current" | "neonei/ui-binding-pack/current" | "neonei/ui-string-pack/current"): ArrayBuffer {
+async function fetchJsonRecord(url: string, label: string): Promise<JsonRecord> {
+  const response = await fetch(url, { cache: "no-cache" });
+  if (!response.ok) {
+    throw new Error(`Failed to load ${label}: ${response.status} ${response.statusText}`);
+  }
+  const payload = await response.json() as unknown;
+  const record = asRecord(payload);
+  if (!record) {
+    throw new Error(`${label} is not a JSON object`);
+  }
+  return record;
+}
+
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((item) => `${item ?? ""}`.trim()).filter(Boolean) : [];
+}
+
+function asFiniteNumber(value: unknown): number | null {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+function buildUiPackArtifactContracts(entrypoints: UiPackEntrypoints): UiPackArtifactContract[] {
+  return [
+    {
+      logicalName: "rustUiTemplatesBin",
+      path: entrypoints.templates,
+      envelopeSchema: UI_TEMPLATE_PACK_SCHEMA,
+      payloadMagic: UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT,
+      version: UI_TEMPLATE_PAYLOAD_VERSION,
+    },
+    {
+      logicalName: "rustUiBindingsBin",
+      path: entrypoints.bindings,
+      envelopeSchema: UI_BINDING_PACK_SCHEMA,
+      payloadMagic: UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
+      version: UI_BINDING_PAYLOAD_VERSION,
+    },
+    {
+      logicalName: "rustUiStringsBin",
+      path: entrypoints.strings,
+      envelopeSchema: UI_STRING_PACK_SCHEMA,
+      payloadMagic: UI_STRING_PACK_PAYLOAD_MAGIC_REPORT,
+      version: UI_STRING_PAYLOAD_VERSION,
+    },
+  ];
+}
+
+function assertUiPackAbiValidationReport(
+  report: JsonRecord,
+  manifest: NativeRuntimeManifest,
+  entrypoints: UiPackEntrypoints,
+): void {
+  const schemaVersion = asString(report.schemaVersion);
+  if (schemaVersion !== UI_PACK_ABI_VALIDATION_SCHEMA_VERSION) {
+    throw new Error(`native UI ABI validation report schema mismatch: expected ${UI_PACK_ABI_VALIDATION_SCHEMA_VERSION}, got ${schemaVersion || "<missing>"}`);
+  }
+  const status = asString(report.status);
+  if (status !== "ok") {
+    throw new Error(`native UI ABI validation report is not ok: ${status || "<missing>"}`);
+  }
+  const policy = asRecord(report.policy);
+  if (asString(policy?.legacyFallback) !== "forbidden") {
+    throw new Error("native UI ABI validation report must forbid legacyFallback");
+  }
+  const missingRequiredArtifacts = asStringArray(report.missingRequiredArtifacts);
+  if (missingRequiredArtifacts.length > 0) {
+    throw new Error(`native UI ABI validation report declares missing artifacts: ${missingRequiredArtifacts.join(", ")}`);
+  }
+  const sectionViolations = asStringArray(report.sectionViolations);
+  if (sectionViolations.length > 0) {
+    throw new Error(`native UI ABI validation report declares section violations: ${sectionViolations.join("; ")}`);
+  }
+
+  const artifacts = Array.isArray(report.artifacts)
+    ? report.artifacts.map(asRecord).filter((value): value is JsonRecord => Boolean(value))
+    : [];
+  const byLogicalName = new Map<string, JsonRecord>();
+  const byPath = new Map<string, JsonRecord>();
+  for (const artifact of artifacts) {
+    const logicalName = asString(artifact.logicalName);
+    const path = asRuntimePath(artifact.path);
+    if (logicalName) byLogicalName.set(logicalName, artifact);
+    if (path) byPath.set(path, artifact);
+  }
+
+  for (const contract of buildUiPackArtifactContracts(entrypoints)) {
+    const normalizedPath = normalizeRuntimePath(contract.path);
+    const artifact = byLogicalName.get(contract.logicalName) ?? byPath.get(normalizedPath);
+    if (!artifact) {
+      throw new Error(`native UI ABI validation report is missing artifact contract: ${contract.logicalName}`);
+    }
+    const artifactPath = asRuntimePath(artifact.path);
+    if (artifactPath !== normalizedPath) {
+      throw new Error(`native UI ABI artifact path mismatch for ${contract.logicalName}: expected ${normalizedPath}, got ${artifactPath || "<missing>"}`);
+    }
+    if (asString(artifact.status) !== "present") {
+      throw new Error(`native UI ABI artifact is not present: ${contract.logicalName}`);
+    }
+    if (asString(artifact.envelopeSchema) !== contract.envelopeSchema) {
+      throw new Error(`native UI ABI envelope schema mismatch for ${contract.logicalName}`);
+    }
+    if (asString(artifact.payloadMagic) !== contract.payloadMagic) {
+      throw new Error(`native UI ABI payload magic mismatch for ${contract.logicalName}`);
+    }
+    if (asFiniteNumber(artifact.version) !== contract.version) {
+      throw new Error(`native UI ABI payload version mismatch for ${contract.logicalName}`);
+    }
+    const reportBytes = asFiniteNumber(artifact.bytes);
+    const manifestBytes = getManifestFileBytes(manifest, normalizedPath);
+    if (reportBytes !== null && manifestBytes !== null && reportBytes !== manifestBytes) {
+      throw new Error(`native UI ABI artifact byte mismatch for ${contract.logicalName}: report=${reportBytes}, manifest=${manifestBytes}`);
+    }
+  }
+}
+
+function unwrapUiPackPayload(buffer: ArrayBuffer, expectedSchema: typeof UI_TEMPLATE_PACK_SCHEMA | typeof UI_BINDING_PACK_SCHEMA | typeof UI_STRING_PACK_SCHEMA): ArrayBuffer {
   const header = parseNativeRuntimePackHeader(buffer, expectedSchema);
   return getNativeRuntimePackPayloadBuffer(buffer, header);
 }
@@ -411,89 +696,64 @@ async function loadUiPackRuntimeInternal(normalizedManifestUrl: string): Promise
   const manifest = await loadNativeRuntimeManifest(normalizedManifestUrl);
   const entrypoints = parseUiPackManifest(manifest);
 
-  try {
-    const templateUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.templates);
-    const bindingUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.bindings);
-    const stringUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.strings);
-    const [templateBuffer, bindingBuffer, stringBuffer] = await Promise.all([
-      fetchPackBuffer(templateUrl),
-      fetchPackBuffer(bindingUrl),
-      fetchPackBuffer(stringUrl),
-    ]);
-    const templatePayload = unwrapUiPackPayload(templateBuffer, "neonei/ui-template-pack/current");
-    const bindingPayload = unwrapUiPackPayload(bindingBuffer, "neonei/ui-binding-pack/current");
-    const stringPayload = unwrapUiPackPayload(stringBuffer, "neonei/ui-string-pack/current");
-    const strings = decodeStringTable(stringPayload);
-    const templates = parseUiTemplates(templatePayload, strings);
-    const bindings = parseUiBindings(bindingPayload, strings);
-    const templatesByKey = new Map<string, UiPackTemplate>();
-    const templatesByFamilyKey = new Map<string, UiPackTemplate>();
-    const bindingsByRecipeId = new Map<string, UiPackBinding>();
-    let boundRecipeCount = 0;
-    for (const template of templates) {
-      if (template.templateKey) templatesByKey.set(template.templateKey, template);
-      if (template.familyKey) templatesByFamilyKey.set(template.familyKey, template);
-    }
-    for (const binding of bindings) {
-      if (binding.recipeId) bindingsByRecipeId.set(binding.recipeId, binding);
-      if (binding.bound) boundRecipeCount += 1;
-    }
-    return {
-      status: "ready",
-      manifestUrl: normalizedManifestUrl,
-      templates,
-      bindings,
-      strings,
-      templatesByKey,
-      templatesByFamilyKey,
-      bindingsByRecipeId,
-      summary: {
-        templateCount: templates.length,
-        bindingCount: bindings.length,
-        boundRecipeCount,
-        unboundRecipeCount: Math.max(0, bindings.length - boundRecipeCount),
-        stringCount: strings.length,
-        slotCount: templates.reduce((total, template) => total + template.slots.length, 0),
-        textOverlayCount: templates.reduce((total, template) => total + template.textOverlays.length, 0),
-        hotspotCount: templates.reduce((total, template) => total + template.hotspots.length, 0),
-        viewportCount: templates.reduce((total, template) => total + template.viewports.length, 0),
-        assetCount: new Set(templates.map((template) => template.imageResource).filter(Boolean)).size,
-      },
-    };
-  } catch (error) {
-    return {
-      status: "error",
-      manifestUrl: normalizedManifestUrl,
-      templates: [],
-      bindings: [],
-      strings: [],
-      templatesByKey: new Map(),
-      templatesByFamilyKey: new Map(),
-      bindingsByRecipeId: new Map(),
-      summary: {
-        templateCount: 0,
-        bindingCount: 0,
-        boundRecipeCount: 0,
-        unboundRecipeCount: 0,
-        stringCount: 0,
-        slotCount: 0,
-        textOverlayCount: 0,
-        hotspotCount: 0,
-        viewportCount: 0,
-        assetCount: 0,
-      },
-      error: error instanceof Error ? error.message : String(error),
-    };
+  const abiReportUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.abiReport);
+  const abiReport = await fetchJsonRecord(abiReportUrl, "native UI ABI validation report");
+  assertUiPackAbiValidationReport(abiReport, manifest, entrypoints);
+
+  const templateUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.templates);
+  const bindingUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.bindings);
+  const stringUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.strings);
+  const [templateBuffer, bindingBuffer, stringBuffer] = await Promise.all([
+    fetchPackBuffer(templateUrl),
+    fetchPackBuffer(bindingUrl),
+    fetchPackBuffer(stringUrl),
+  ]);
+  const templatePayload = unwrapUiPackPayload(templateBuffer, UI_TEMPLATE_PACK_SCHEMA);
+  const bindingPayload = unwrapUiPackPayload(bindingBuffer, UI_BINDING_PACK_SCHEMA);
+  const stringPayload = unwrapUiPackPayload(stringBuffer, UI_STRING_PACK_SCHEMA);
+  const strings = decodeStringTable(stringPayload);
+  const templates = parseUiTemplates(templatePayload, strings);
+  const bindings = parseUiBindings(bindingPayload, strings);
+  const templatesByKey = new Map<string, UiPackTemplate>();
+  const templatesByFamilyKey = new Map<string, UiPackTemplate>();
+  const bindingsByRecipeId = new Map<string, UiPackBinding>();
+  let boundRecipeCount = 0;
+  for (const template of templates) {
+    if (template.templateKey) templatesByKey.set(template.templateKey, template);
+    if (template.familyKey) templatesByFamilyKey.set(template.familyKey, template);
   }
+  for (const binding of bindings) {
+    if (binding.recipeId) bindingsByRecipeId.set(binding.recipeId, binding);
+    if (binding.bound) boundRecipeCount += 1;
+  }
+  return {
+    status: "ready",
+    manifestUrl: normalizedManifestUrl,
+    templates,
+    bindings,
+    strings,
+    templatesByKey,
+    templatesByFamilyKey,
+    bindingsByRecipeId,
+    summary: {
+      templateCount: templates.length,
+      bindingCount: bindings.length,
+      boundRecipeCount,
+      unboundRecipeCount: Math.max(0, bindings.length - boundRecipeCount),
+      stringCount: strings.length,
+      slotCount: templates.reduce((total, template) => total + template.slots.length, 0),
+      textOverlayCount: templates.reduce((total, template) => total + template.textOverlays.length, 0),
+      hotspotCount: templates.reduce((total, template) => total + template.hotspots.length, 0),
+      viewportCount: templates.reduce((total, template) => total + template.viewports.length, 0),
+      assetCount: new Set(templates.map((template) => template.imageResource).filter(Boolean)).size,
+    },
+  };
 }
 
-export function loadUiPackRuntime(manifestUrl = "/api/runtime/current/manifest"): Promise<UiPackRuntime> {
-  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
-  const existing = UI_PACK_REQUEST_CACHE.get(normalizedManifestUrl);
-  if (existing) return existing;
-  const request = loadUiPackRuntimeInternal(normalizedManifestUrl).catch((error) => ({
-    status: "error" as const,
-    manifestUrl: normalizedManifestUrl,
+function createErrorRuntime(manifestUrl: string, error: unknown): UiPackRuntime {
+  return {
+    status: "error",
+    manifestUrl,
     templates: [],
     bindings: [],
     strings: [],
@@ -513,7 +773,15 @@ export function loadUiPackRuntime(manifestUrl = "/api/runtime/current/manifest")
       assetCount: 0,
     },
     error: error instanceof Error ? error.message : String(error),
-  }));
+  };
+}
+
+export function loadUiPackRuntime(manifestUrl = "/api/runtime/current/manifest"): Promise<UiPackRuntime> {
+  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
+  const existing = UI_PACK_REQUEST_CACHE.get(normalizedManifestUrl);
+  if (existing) return existing;
+  const request = loadUiPackRuntimeInternal(normalizedManifestUrl)
+    .catch((error) => createErrorRuntime(normalizedManifestUrl, error));
   UI_PACK_REQUEST_CACHE.set(normalizedManifestUrl, request);
   return request;
 }
