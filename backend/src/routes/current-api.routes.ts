@@ -1,110 +1,37 @@
-﻿import fs from 'fs';
-import path from 'path';
+import fs from 'fs';
 import { Router, type NextFunction, type Request, type Response } from 'express';
-import { PUBLIC_DIR } from '../config/runtime-paths';
 import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
 import { getIndexedRecipesService } from '../services/recipes-indexed.service';
 import { getRuntimeRecipePackService } from '../services/runtime-recipe-pack.service';
 import { getNativeRenderRuntimeDiagnostics } from '../services/native-render-runtime-diagnostics.service';
 import { getRuntimeHealthSummary } from '../services/runtime-health-summary.service';
+import {
+  getCurrentRuntimeArtifact,
+  getCurrentRuntimeSnapshot,
+  resolveDistDataRuntimeFile,
+} from '../services/current-runtime-snapshot.service';
 import { asyncHandler, badRequest, notFound } from '../utils/http';
 import { createWeakEtag, setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
 
-type JsonRecord = Record<string, unknown>;
 
 const router = Router();
 const API_SCHEMA = 'neonei/api/current';
 const API_SCHEMA_REVISION = 1;
-const DIST_DATA_DIR = path.join(PUBLIC_DIR, 'dist-data');
-const DIST_DATA_MANIFEST_FILE = path.join(DIST_DATA_DIR, 'manifest.json');
 const CURRENT_RUNTIME_ASSET_ROUTE = '/runtime/current/asset/:fileName(*)';
 const PINNED_RUNTIME_ASSET_ROUTE = '/runtime/:runtimeId/asset/:fileName(*)';
-
-function readJson(filePath: string): JsonRecord | null {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as JsonRecord;
-  } catch {
-    return null;
-  }
-}
-
-function getRuntimeManifest(): JsonRecord | null {
-  const manifestPath = getRuntimeManifestFile();
-  return manifestPath ? readJson(manifestPath) : null;
-}
-
-function asRecord(value: unknown): JsonRecord | null {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : null;
-}
-
 function asString(value: unknown): string | null {
   const text = `${value ?? ''}`.trim();
   return text || null;
 }
 
-function isPortableRuntimePath(value: unknown): value is string {
-  if (typeof value !== 'string') return false;
-  const normalized = `${value ?? ''}`.trim().replace(/\\/g, '/');
-  return Boolean(normalized)
-    && !normalized.includes('..')
-    && !path.isAbsolute(normalized)
-    && !/^[A-Za-z]:[\\/]/.test(normalized);
-}
-
-function getDistDataManifest(): JsonRecord | null {
-  return readJson(DIST_DATA_MANIFEST_FILE);
-}
-
-function getRuntimeManifestRelativePath(): string | null {
-  const distManifest = getDistDataManifest();
-  const files = asRecord(distManifest?.files);
-  const nativeRuntime = asRecord(distManifest?.nativeRuntime);
-  const declared = asString(files?.rustRuntimeManifest)
-    ?? asString(nativeRuntime?.runtimeManifest)
-    ?? asString(files?.runtimeManifest);
-  return isPortableRuntimePath(declared) ? declared.replace(/\\/g, '/') : null;
-}
-
-function getRuntimeManifestFile(): string | null {
-  const relativePath = getRuntimeManifestRelativePath();
-  if (!relativePath) return null;
-  return resolveDistDataFile(relativePath);
-}
-
-function collectPortableRuntimePaths(value: unknown, output: Set<string>): void {
-  if (isPortableRuntimePath(value)) {
-    output.add(value.replace(/\\/g, '/'));
-    return;
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) collectPortableRuntimePaths(item, output);
-    return;
-  }
-  const record = asRecord(value);
-  if (!record) return;
-  for (const item of Object.values(record)) collectPortableRuntimePaths(item, output);
-}
-
-function getDeclaredRuntimeFilePaths(): Set<string> {
-  const declared = new Set<string>();
-  const runtimeManifestPath = getRuntimeManifestRelativePath();
-  if (runtimeManifestPath) declared.add(runtimeManifestPath);
-
-  const runtimeManifest = getRuntimeManifest();
-  const entrypoints = asRecord(runtimeManifest?.entrypoints);
-  collectPortableRuntimePaths(entrypoints, declared);
-  collectPortableRuntimePaths(runtimeManifest?.files, declared);
-  return declared;
-}
-
 function getCurrentMeta() {
-  const manifest = getRuntimeManifest();
-  const capabilities = asRecord(manifest?.capabilities) ?? {};
+  const snapshot = getCurrentRuntimeSnapshot();
+  const capabilities = snapshot?.capabilities ?? {};
   const health = getRuntimeHealthSummary();
   return {
     schema: API_SCHEMA,
     schemaRevision: API_SCHEMA_REVISION,
-    runtimeId: asString(manifest?.runtimeId) ?? asString(health.distData.runtime?.runtimeId) ?? health.distData.source ?? 'runtime-missing',
+    runtimeId: snapshot?.runtimeId ?? asString(health.distData.runtime?.runtimeId) ?? health.distData.source ?? 'runtime-missing',
     capabilities,
   };
 }
@@ -135,35 +62,19 @@ function isExternalRuntimeAuthority(): boolean {
   return resolveAccelerationCompilerAuthority() === 'external-runtime';
 }
 
-function resolveDistDataFile(relativeFileName: string): string {
-  const normalized = `${relativeFileName ?? ''}`.trim().replace(/\\/g, '/');
-  if (!normalized || normalized.includes('..') || path.isAbsolute(normalized)) {
+function resolveRuntimeReportFile(reportPath: string): string {
+  try {
+    return resolveDistDataRuntimeFile(reportPath);
+  } catch {
     throw badRequest('fileName must be a runtime-relative file path');
   }
-  const resolved = path.resolve(DIST_DATA_DIR, normalized);
-  const runtimeRoot = path.resolve(DIST_DATA_DIR);
-  if (resolved !== runtimeRoot && !resolved.startsWith(`${runtimeRoot}${path.sep}`)) {
-    throw badRequest('fileName escapes dist-data root');
-  }
-  return resolved;
-}
-
-function resolveRuntimeFile(fileName: string): string {
-  const normalized = `${fileName ?? ''}`.trim().replace(/\\/g, '/');
-  const declaredRuntimeFiles = getDeclaredRuntimeFilePaths();
-  if (!declaredRuntimeFiles.has(normalized)) {
-    throw notFound('Runtime file is not declared by the current runtime manifest');
-  }
-  return resolveDistDataFile(normalized);
 }
 
 function sendRuntimeCurrent(res: Response): void {
   const meta = getCurrentMeta();
-  const manifest = getRuntimeManifest();
-  const manifestPath = getRuntimeManifestRelativePath();
-  const runtimeSchemaRevision = asString(manifest?.schemaRevision)
-    ?? asString(manifest?.schema)
-    ?? 'runtime.unknown';
+  const snapshot = getCurrentRuntimeSnapshot();
+  const manifestPath = snapshot?.manifestPath ?? null;
+  const runtimeSchemaRevision = snapshot?.runtimeSchemaRevision ?? 'runtime.unknown';
   setNoStoreHeaders(res);
   sendOk(res, {
     runtimeId: meta.runtimeId,
@@ -183,10 +94,9 @@ function sendRuntimeCurrent(res: Response): void {
 }
 
 function sendRuntimeManifest(res: Response, options: { immutable?: boolean } = {}): void {
-  const manifest = getRuntimeManifest();
-  if (!manifest) throw notFound('Runtime manifest not found');
-  const manifestPath = getRuntimeManifestRelativePath() ?? 'runtime-manifest';
-  res.setHeader('ETag', createWeakEtag('runtime-manifest', getCurrentMeta().runtimeId, manifestPath, JSON.stringify(manifest)));
+  const snapshot = getCurrentRuntimeSnapshot();
+  if (!snapshot) throw notFound('Runtime manifest not found');
+  res.setHeader('ETag', createWeakEtag('runtime-manifest', snapshot.runtimeId, snapshot.manifestPath, snapshot.fingerprint));
   if (options.immutable) {
     setStaticAssetCacheHeaders(res, {
       maxAge: '365d',
@@ -196,25 +106,19 @@ function sendRuntimeManifest(res: Response, options: { immutable?: boolean } = {
   } else {
     setNoStoreHeaders(res);
   }
-  sendOk(res, manifest);
+  sendOk(res, snapshot.manifest);
 }
 
 function sendRuntimeAsset(fileName: string | undefined, res: Response): void {
-  const filePath = resolveRuntimeFile(normalizeRequiredParam(fileName, 'fileName'));
-  if (!fs.existsSync(filePath)) {
-    throw notFound('Runtime file not found');
-  }
-  const stat = fs.statSync(filePath);
-  if (!stat.isFile()) {
-    throw notFound('Runtime file not found');
-  }
-  res.setHeader('ETag', createWeakEtag('runtime-asset', getCurrentMeta().runtimeId, path.relative(DIST_DATA_DIR, filePath), stat.size, stat.mtimeMs));
+  const artifact = getCurrentRuntimeArtifact(normalizeRequiredParam(fileName, 'fileName'));
+  if (!artifact) throw notFound('Runtime file is not declared by the current runtime manifest');
+  res.setHeader('ETag', createWeakEtag('runtime-asset', getCurrentMeta().runtimeId, artifact.relativePath, artifact.bytes, artifact.mtimeMs));
   setStaticAssetCacheHeaders(res, {
     maxAge: '365d',
     immutable: true,
     varyAcceptEncoding: true,
   });
-  res.sendFile(filePath);
+  res.sendFile(artifact.absolutePath);
 }
 
 function assetPathFromMountedRequest(req: Request): string {
@@ -250,7 +154,7 @@ function resolveRuntimeReport(reportName: string | undefined): string {
   if (!reportPath) {
     throw notFound('Runtime report is not allowed');
   }
-  return resolveDistDataFile(reportPath);
+  return resolveRuntimeReportFile(reportPath);
 }
 
 function sendRuntimeReport(reportName: string | undefined, res: Response): void {
@@ -322,12 +226,12 @@ async function sendRecipePage(recipePageIdParam: string | undefined, res: Respon
 function sendDiagnosticsHealth(res: Response): void {
   setNoStoreHeaders(res);
   const health = getRuntimeHealthSummary();
-  const manifest = getRuntimeManifest();
-  const runtimeFiles = Array.isArray(manifest?.packs) ? manifest.packs.length : health.files.declared;
+  const snapshot = getCurrentRuntimeSnapshot();
+  const runtimeFiles = snapshot ? Object.keys(snapshot.artifactsByPath).length : health.files.declared;
   sendOk(res, {
     runtimeId: getCurrentMeta().runtimeId,
-    schema: asString(manifest?.schema) ?? 'neonei/runtime/current',
-    schemaRevision: typeof manifest?.schemaRevision === 'number' ? manifest.schemaRevision : asString(manifest?.schemaRevision),
+    schema: asString(snapshot?.manifest.schema) ?? 'neonei/runtime/current',
+    schemaRevision: snapshot?.runtimeSchemaRevision,
     integrityOk: health.status !== 'blocked' && health.files.missing.length === 0,
     packCount: runtimeFiles,
     atlasCount: health.counts.browserAtlasItems,
@@ -337,7 +241,7 @@ function sendDiagnosticsHealth(res: Response): void {
     sourceExportName: health.distData.source,
     warnings: health.validation.warnings,
     checks: {
-      manifest: manifest ? 'ok' : 'missing',
+      manifest: snapshot ? 'ok' : 'missing',
       assets: health.files.missing.length === 0 ? 'ok' : 'missing',
       reports: 'ok',
     },

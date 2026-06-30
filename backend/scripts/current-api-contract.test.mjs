@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 const routeSource = fs.readFileSync('src/routes/current-api.routes.ts', 'utf8');
 const namespaceSource = fs.readFileSync('src/routes/api-namespaces.routes.ts', 'utf8');
+const currentRuntimeSnapshotSource = fs.readFileSync('src/services/current-runtime-snapshot.service.ts', 'utf8');
 
 test('current API exposes semantic non-versioned runtime endpoints', () => {
   for (const route of [
@@ -55,19 +56,40 @@ test('current API is mounted before legacy compatibility API', () => {
 });
 
 test('runtime file endpoint is path traversal safe and relative-rooted', () => {
-  assert.match(routeSource, /DIST_DATA_MANIFEST_FILE/);
-  assert.match(routeSource, /files\?\.rustRuntimeManifest/);
-  assert.match(routeSource, /nativeRuntime\?\.runtimeManifest/);
-  assert.match(routeSource, /typeof value !== 'string'/);
-  assert.match(routeSource, /function collectPortableRuntimePaths/);
-  assert.match(routeSource, /Array\.isArray\(value\)/);
-  assert.match(routeSource, /collectPortableRuntimePaths\(runtimeManifest\?\.files, declared\)/);
-  assert.match(routeSource, /normalized\.includes\('\.\.'\)/);
-  assert.match(routeSource, /path\.isAbsolute\(normalized\)/);
-  assert.match(routeSource, /startsWith\(`\$\{runtimeRoot\}\$\{path\.sep\}`\)/);
-  assert.match(routeSource, /getDeclaredRuntimeFilePaths/);
-  assert.match(routeSource, /declaredRuntimeFiles\.has\(normalized\)/);
-  assert.match(routeSource, /res\.sendFile\(filePath\)/);
+  assert.match(currentRuntimeSnapshotSource, /DIST_DATA_MANIFEST_FILE/);
+  assert.match(currentRuntimeSnapshotSource, /files\?\.rustRuntimeManifest/);
+  assert.match(currentRuntimeSnapshotSource, /nativeRuntime\?\.runtimeManifest/);
+  assert.match(currentRuntimeSnapshotSource, /typeof value !== 'string'/);
+  assert.match(currentRuntimeSnapshotSource, /function collectPortableRuntimePaths/);
+  assert.match(currentRuntimeSnapshotSource, /Array\.isArray\(value\)/);
+  assert.match(currentRuntimeSnapshotSource, /collectPortableRuntimePaths\(runtimeManifest\.files, declared\)/);
+  assert.match(currentRuntimeSnapshotSource, /normalized\.includes\('\.\.'\)/);
+  assert.match(currentRuntimeSnapshotSource, /path\.isAbsolute\(normalized\)/);
+  assert.match(currentRuntimeSnapshotSource, /startsWith\(`\$\{runtimeRoot\}\$\{path\.sep\}`\)/);
+  assert.match(currentRuntimeSnapshotSource, /collectDeclaredRuntimeFilePaths/);
+  assert.match(currentRuntimeSnapshotSource, /snapshot\.declaredFiles\.includes\(normalized\)/);
+  assert.match(routeSource, /getCurrentRuntimeArtifact\(normalizeRequiredParam\(fileName, 'fileName'\)\)/);
+  assert.match(routeSource, /res\.sendFile\(artifact\.absolutePath\)/);
+});
+
+test('current runtime snapshot service owns immutable manifest and artifact inventory', () => {
+  assert.match(currentRuntimeSnapshotSource, /export type CurrentRuntimeSnapshot = Readonly/);
+  assert.match(currentRuntimeSnapshotSource, /revision: number/);
+  assert.match(currentRuntimeSnapshotSource, /artifactsByPath: Readonly<Record<string, CurrentRuntimeArtifact>>/);
+  assert.match(currentRuntimeSnapshotSource, /Object\.freeze\(\{/);
+  assert.match(currentRuntimeSnapshotSource, /function publishCurrentRuntimeSnapshot/);
+  assert.match(currentRuntimeSnapshotSource, /export function getCurrentRuntimeSnapshot/);
+  assert.match(currentRuntimeSnapshotSource, /export function getCurrentRuntimeArtifact/);
+  assert.match(routeSource, /getCurrentRuntimeSnapshot/);
+  assert.match(routeSource, /getCurrentRuntimeArtifact/);
+  assert.doesNotMatch(routeSource, /function getDeclaredRuntimeFilePaths/);
+  assert.doesNotMatch(routeSource, /function resolveRuntimeFile/);
+
+  const assetIndex = routeSource.indexOf('function sendRuntimeAsset');
+  assert.notEqual(assetIndex, -1, 'sendRuntimeAsset must exist');
+  const assetBody = routeSource.slice(assetIndex, routeSource.indexOf('\n}', assetIndex) + 2);
+  assert.doesNotMatch(assetBody, /fs\.statSync/);
+  assert.doesNotMatch(assetBody, /fs\.existsSync/);
 });
 
 test('runtime delivery API exposes immutable ETag asset contracts and report allowlist', () => {
