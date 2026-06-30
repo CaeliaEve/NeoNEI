@@ -1,14 +1,13 @@
-import fs from 'fs';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
 import { getIndexedRecipesService } from '../services/recipes-indexed.service';
 import { getRuntimeRecipePackService } from '../services/runtime-recipe-pack.service';
 import { getRuntimeHealthSummary, type RuntimeHealthSummary } from '../services/runtime-health-summary.service';
+import { resolveCurrentRuntimeReport } from '../services/current-runtime-report-registry.service';
 import {
   getCurrentRuntimeSnapshot,
   isPortableRuntimePath,
   normalizeRuntimePath,
-  resolveDistDataRuntimeFile,
   type CurrentRuntimeArtifact,
   type CurrentRuntimeSnapshot,
 } from '../services/current-runtime-snapshot.service';
@@ -79,14 +78,6 @@ function assertCurrentRuntimeId(runtimeId: string | undefined, context: CurrentR
 
 function isExternalRuntimeAuthority(): boolean {
   return resolveAccelerationCompilerAuthority() === 'external-runtime';
-}
-
-function resolveRuntimeReportFile(reportPath: string): string {
-  try {
-    return resolveDistDataRuntimeFile(reportPath);
-  } catch {
-    throw badRequest('fileName must be a runtime-relative file path');
-  }
 }
 
 function sendRuntimeCurrent(res: Response): void {
@@ -171,37 +162,10 @@ function sendMountedRuntimeAsset(req: Request, res: Response, next: NextFunction
   sendRuntimeAsset(assetPathFromMountedRequest(req), res);
 }
 
-function resolveRuntimeReport(reportName: string | undefined): string {
-  const normalized = normalizeRequiredParam(reportName, 'reportName')
-    .replace(/\.json$/i, '')
-    .trim();
-  if (!/^[a-z0-9-]+$/i.test(normalized)) {
-    throw badRequest('reportName must be a simple report slug');
-  }
-  const allowedReports: Record<string, string> = {
-    'compile-report': 'rust/integrity.json',
-    'missing-texture-report': 'rust/missing-texture-report.json',
-    'suspicious-texture-report': 'rust/suspicious-texture-report.json',
-    'atlas-report': 'textures/atlas-manifest.json',
-    'performance-budget-report': 'rust/size-report.json',
-    'api-contract-report': 'validation/report.json',
-    'deployment-report': 'rust/deployment-report.json',
-    'semantic-validation-report': 'rust/semantic-validation-report.json',
-  };
-  const reportPath = allowedReports[normalized];
-  if (!reportPath) {
-    throw notFound('Runtime report is not allowed');
-  }
-  return resolveRuntimeReportFile(reportPath);
-}
-
 function sendRuntimeReport(reportName: string | undefined, res: Response): void {
-  const filePath = resolveRuntimeReport(reportName);
-  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
-    throw notFound('Runtime report not found');
-  }
+  const report = resolveCurrentRuntimeReport(reportName);
   setNoStoreHeaders(res);
-  res.sendFile(filePath);
+  res.sendFile(report.absolutePath);
 }
 
 async function sendRecipeItem(itemIdParam: string | undefined, res: Response): Promise<void> {

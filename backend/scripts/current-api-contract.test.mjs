@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 const routeSource = fs.readFileSync('src/routes/current-api.routes.ts', 'utf8');
 const namespaceSource = fs.readFileSync('src/routes/api-namespaces.routes.ts', 'utf8');
 const currentRuntimeSnapshotSource = fs.readFileSync('src/services/current-runtime-snapshot.service.ts', 'utf8');
+const currentRuntimeReportRegistrySource = fs.readFileSync('src/services/current-runtime-report-registry.service.ts', 'utf8');
 
 test('current API exposes semantic non-versioned runtime endpoints', () => {
   for (const route of [
@@ -108,6 +109,19 @@ test('runtime delivery API exposes immutable ETag asset contracts and report all
   assert.match(routeSource, /immutable:\s*true/);
   assert.match(routeSource, /res\.setHeader\('ETag'/);
   assert.match(routeSource, /setNoStoreHeaders\(res\);\s*\n\s*sendOk\(res, \{\s*\n\s*runtimeId:/, 'current runtime pointer must remain no-store');
+  assert.match(routeSource, /resolveCurrentRuntimeReport\(reportName\)/);
+  assert.match(routeSource, /res\.sendFile\(report\.absolutePath\)/);
+  assert.doesNotMatch(routeSource, /const allowedReports/);
+  assert.doesNotMatch(routeSource, /function resolveRuntimeReport/);
+  assert.doesNotMatch(routeSource, /fs\.existsSync/);
+  assert.doesNotMatch(routeSource, /fs\.statSync/);
+  assert.match(currentRuntimeReportRegistrySource, /const CURRENT_RUNTIME_REPORTS = Object\.freeze/);
+  assert.match(currentRuntimeReportRegistrySource, /export function resolveCurrentRuntimeReport/);
+  assert.match(currentRuntimeReportRegistrySource, /resolveDistDataRuntimeFile\(relativePath\)/);
+  assert.match(currentRuntimeReportRegistrySource, /fs\.statSync\(absolutePath\)/);
+  assert.match(currentRuntimeReportRegistrySource, /stat\.isFile\(\)/);
+  assert.match(currentRuntimeReportRegistrySource, /bytes: stat\.size/);
+  assert.match(currentRuntimeReportRegistrySource, /mtimeMs: stat\.mtimeMs/);
 
   for (const report of [
     'compile-report',
@@ -116,11 +130,13 @@ test('runtime delivery API exposes immutable ETag asset contracts and report all
     'atlas-report',
     'performance-budget-report',
     'api-contract-report',
+    'deployment-report',
+    'semantic-validation-report',
   ]) {
-    assert.equal(routeSource.includes(`'${report}'`), true, `missing report allowlist entry ${report}`);
+    assert.equal(currentRuntimeReportRegistrySource.includes(`'${report}'`), true, `missing report allowlist entry ${report}`);
   }
-  assert.match(routeSource, /!\/\^\[a-z0-9-\]\+\$\/i\.test\(normalized\)/, 'report names must be simple slugs');
-  assert.match(routeSource, /throw notFound\('Runtime report is not allowed'\)/);
+  assert.match(currentRuntimeReportRegistrySource, /!\/\^\[a-z0-9-\]\+\$\/i\.test\(normalized\)/, 'report names must be simple slugs');
+  assert.match(currentRuntimeReportRegistrySource, /throw notFound\('Runtime report is not allowed'\)/);
 });
 
 test('current API responses are path portable and do not advertise machine roots', () => {
