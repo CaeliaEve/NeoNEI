@@ -10,6 +10,7 @@ import { fetchDistDataArrayBuffer, fetchDistDataJson, getDistDataBasePath, joinD
 import { parseNativeBinaryPackEnvelope } from "./distDataNativeBinaryPack";
 import { parseCompactTexturePayloadToAtlasIndex } from "./distDataRuntimeBinaryTexturePack";
 import type { DistDataManifest } from "./distDataRuntimeManifest";
+import { RUNTIME_PACK_CONTRACTS } from "./distDataRuntimePackAbi";
 
 type RenderRuntimeDeps = {
   getDistDataManifest: () => Promise<DistDataManifest | null>;
@@ -39,13 +40,17 @@ async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse
     }
     const rustTextureBinaryPath = await deps.getRustTextureBinaryPath(manifest);
     if (rustTextureBinaryPath) {
-      const buffer = await fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), rustTextureBinaryPath)).catch(() => null);
-      const rustAtlas = buffer
-        ? (() => {
-            const envelope = parseNativeBinaryPackEnvelope(buffer, "neonei/texture-pack/current");
-            return parseCompactTexturePayloadToAtlasIndex(envelope.payload);
-          })()
-        : null;
+      let rustAtlas: BrowserAtlasIndexResponse | null = null;
+      try {
+        const buffer = await fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), rustTextureBinaryPath));
+        const envelope = parseNativeBinaryPackEnvelope(buffer, RUNTIME_PACK_CONTRACTS.textures.schema);
+        rustAtlas = parseCompactTexturePayloadToAtlasIndex(envelope.payload);
+      } catch (error) {
+        deps.reportDistDataSchemaMismatch(manifest, rustTextureBinaryPath, "Binary textures.bin failed to parse", {
+          error: error instanceof Error ? error.message : `${error}`,
+        });
+        return null;
+      }
       if (!rustAtlas || !Array.isArray(rustAtlas.items)) {
         deps.reportDistDataSchemaMismatch(manifest, rustTextureBinaryPath, "Binary textures.bin atlas is missing items[]", {
           schemaVersion: rustAtlas?.schemaVersion ?? null,

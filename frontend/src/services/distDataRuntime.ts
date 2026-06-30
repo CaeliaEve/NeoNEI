@@ -6,7 +6,6 @@ import type {
   RecipeBootstrapCategoryGroupPayload,
   RecipeBootstrapMachineGroupPayload,
   RecipeUiPayload,
-  BrowserAtlasIndexResponse,
   BrowserByIdsPackResponse,
   BrowserDefaultCatalogResponse,
   BrowserGridEntry,
@@ -34,7 +33,6 @@ import {
 } from "./distDataRuntimeAssetResolver";
 import { parseNativeBinaryPackEnvelope } from "./distDataNativeBinaryPack";
 import { parseCompactRecipePayload } from "./distDataRuntimeBinaryRecipePack";
-import { parseCompactTexturePayloadToAtlasIndex } from "./distDataRuntimeBinaryTexturePack";
 import {
   parseNativeBrowserPackPayload,
   parseNativeGroupPackPayload,
@@ -64,6 +62,14 @@ import {
   type DistDataRawGroup,
 } from "./distDataBrowserRuntime";
 import { createDistDataRuntimeRenderApi } from "./distDataRuntimeRender";
+import {
+  RUNTIME_PACK_CONTRACTS,
+  resolveNativePackPath,
+  resolvePackValidationReportPath,
+  validatePackAbiReport,
+  type PackValidationReport,
+  type RuntimePackContract,
+} from "./distDataRuntimePackAbi";
 export {
   resolveDistDataAssetPath,
   resolveDistDataNativeRuntimeManifestPath,
@@ -93,13 +99,6 @@ type DistDataNativeBrowserPackPayload = {
 };
 
 
-type DistDataRustTexturePackPayload = {
-  schemaVersion?: string;
-  atlas?: BrowserAtlasIndexResponse | null;
-  atlasMap?: Record<string, unknown>;
-  animationTable?: unknown[];
-  counts?: Record<string, unknown>;
-};
 type BrowserCatalogMode = "default" | "advanced";
 
 type DistDataGroupPayload = {
@@ -180,6 +179,8 @@ let rustRecipePackRequest: Promise<DistDataRustRecipePackPayload | null> | null 
 let cachedRustRecipePack: DistDataRustRecipePackPayload | null = null;
 let rustRuntimeManifestRequest: Promise<DistDataRustRuntimeManifest | null> | null = null;
 let cachedRustRuntimeManifest: DistDataRustRuntimeManifest | null = null;
+let packValidationReportRequest: Promise<PackValidationReport | null> | null = null;
+let cachedPackValidationReport: PackValidationReport | null = null;
 let recipeUiPayloadIndexRequest: Promise<Map<string, DistDataRecipeUiPayloadIndexEntry> | null> | null = null;
 let cachedRecipeUiPayloadIndex: Map<string, DistDataRecipeUiPayloadIndexEntry> | null = null;
 const cachedRecipeUiPayloads = new Map<string, RecipeUiPayload>();
@@ -220,35 +221,73 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
 
   browserRuntimeRequest = (async () => {
     const manifest = await getDistDataManifest();
-    const runtimeManifest = await getRustRuntimeManifest();
-    const runtimeEntrypoints = runtimeManifest?.entrypoints ?? (!Array.isArray(runtimeManifest?.files) ? runtimeManifest?.files : undefined) ?? {};
-    const rustBrowserPath = `${manifest?.files?.rustBrowserPack ?? manifest?.files?.rustBrowserBin ?? runtimeEntrypoints.browser ?? ""}`.trim();
-    const rustGroupPath = `${manifest?.files?.rustGroupsBin ?? runtimeEntrypoints.groups ?? ""}`.trim();
-    const catalogPath = `${manifest?.files?.browserCatalog ?? ""}`.trim();
-    const hiddenCatalogPath = `${manifest?.files?.hiddenBrowserCatalog ?? ""}`.trim();
-    const groupPath = `${manifest?.files?.browserGroups ?? ""}`.trim();
-    if (!manifest || (!rustBrowserPath && (!catalogPath || !groupPath))) {
+    if (!manifest) {
       return null;
     }
+    const declaredNativeBrowserPath = await getDeclaredNativeBinaryPackPath(manifest, RUNTIME_PACK_CONTRACTS.browser);
+    const declaredNativeGroupPath = await getDeclaredNativeBinaryPackPath(manifest, RUNTIME_PACK_CONTRACTS.groups);
+    const nativeBrowserPath = declaredNativeBrowserPath
+      ? await assertNativeBinaryPackContract(manifest, RUNTIME_PACK_CONTRACTS.browser)
+      : null;
+    const nativeGroupPath = declaredNativeGroupPath
+      ? await assertNativeBinaryPackContract(manifest, RUNTIME_PACK_CONTRACTS.groups)
+      : null;
+    const rustBrowserJsonPath = `${manifest.files?.rustBrowserPack ?? ""}`.trim();
+    const catalogPath = `${manifest.files?.browserCatalog ?? ""}`.trim();
+    const hiddenCatalogPath = `${manifest.files?.hiddenBrowserCatalog ?? ""}`.trim();
+    const groupPath = `${manifest.files?.browserGroups ?? ""}`.trim();
+    if ((declaredNativeBrowserPath || declaredNativeGroupPath) && (!nativeBrowserPath || !nativeGroupPath)) {
+      reportDistDataSchemaMismatch(
+        manifest,
+        declaredNativeBrowserPath ?? declaredNativeGroupPath ?? "rust/browser.bin",
+        "Native browser runtime requires ABI-approved browser.bin and groups.bin artifacts before JSON fallback is allowed",
+        {
+          declaredBrowserPath: declaredNativeBrowserPath,
+          declaredGroupPath: declaredNativeGroupPath,
+          approvedBrowserPath: nativeBrowserPath,
+          approvedGroupPath: nativeGroupPath,
+        },
+      );
+      return null;
+    }
+    if ((!nativeBrowserPath || !nativeGroupPath) && (!rustBrowserJsonPath && (!catalogPath || !groupPath))) {
+      return null;
+    }
+    let nativeBrowserPack: DistDataNativeBrowserPackPayload | null = null;
+    let nativeGroups: DistDataRawGroup[] | null = null;
+    let rustBrowserPack: DistDataRustBrowserPackPayload | null = null;
+    if (nativeBrowserPath && nativeGroupPath) {
+      try {
+        const [browserBuffer, groupBuffer] = await Promise.all([
+          fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), nativeBrowserPath)),
+          fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), nativeGroupPath)),
+        ]);
+        nativeBrowserPack = parseNativeBrowserPackPayload(
+          parseNativeBinaryPackEnvelope(browserBuffer, RUNTIME_PACK_CONTRACTS.browser.schema).payload,
+        );
+        nativeGroups = parseNativeGroupPackPayload(
+          parseNativeBinaryPackEnvelope(groupBuffer, RUNTIME_PACK_CONTRACTS.groups.schema).payload,
+        );
+      } catch (error) {
+        reportDistDataSchemaMismatch(manifest, nativeBrowserPath, "Native browser binary packs failed to parse", {
+          error: error instanceof Error ? error.message : `${error}`,
+          browserPath: nativeBrowserPath,
+          groupPath: nativeGroupPath,
+        });
+        return null;
+      }
+    } else if (rustBrowserJsonPath) {
+      rustBrowserPack = await fetchDistDataJson<DistDataRustBrowserPackPayload>(
+        joinDistDataAssetPath(getDistDataBasePath(), rustBrowserJsonPath),
+      ).catch((error) => {
+        reportDistDataSchemaMismatch(manifest, rustBrowserJsonPath, "Rust browser JSON pack is not readable", {
+          error: error instanceof Error ? error.message : `${error}`,
+        });
+        return null;
+      });
+    }
 
-    const [nativeBrowserPack, nativeGroups, rustBrowserPack, searchPack] = await Promise.all([
-      rustBrowserPath
-        ? fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), rustBrowserPath))
-          .then((buffer) => parseNativeBinaryPackEnvelope(buffer, "neonei/browser-pack/current").payload)
-          .then(parseNativeBrowserPackPayload)
-          .catch(() => null)
-        : Promise.resolve(null),
-      rustGroupPath
-        ? fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), rustGroupPath))
-          .then((buffer) => parseNativeBinaryPackEnvelope(buffer, "neonei/group-pack/current").payload)
-          .then(parseNativeGroupPackPayload)
-          .catch(() => [])
-        : Promise.resolve(null),
-      rustBrowserPath && rustBrowserPath.endsWith(".json")
-        ? fetchDistDataJson<DistDataRustBrowserPackPayload>(joinDistDataAssetPath(getDistDataBasePath(), rustBrowserPath)).catch(() => null)
-        : Promise.resolve(null),
-      getDistDataSearchPack(),
-    ]);
+    const searchPack = await getDistDataSearchPack();
     const canUseNativeBrowserPack = Boolean(nativeBrowserPack?.items.some((entry) => entry?.itemId));
     const canUseRustBrowserPack = !canUseNativeBrowserPack && Boolean(
       rustBrowserPack
@@ -256,17 +295,23 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
       && Array.isArray(rustBrowserPack.groups)
       && rustBrowserPack.items.some((entry) => entry?.itemId),
     );
-    if (rustBrowserPath && !canUseNativeBrowserPack && !canUseRustBrowserPack) {
-      reportDistDataSchemaMismatch(manifest, rustBrowserPath, "Rust browser pack is missing usable items[]/groups[]", {
+    if (nativeBrowserPath && !canUseNativeBrowserPack) {
+      reportDistDataSchemaMismatch(manifest, nativeBrowserPath, "Native browser.bin is missing usable items[]", {
+        schemaVersion: RUNTIME_PACK_CONTRACTS.browser.schema,
+      });
+      return null;
+    }
+    if (rustBrowserJsonPath && !canUseRustBrowserPack && !canUseNativeBrowserPack) {
+      reportDistDataSchemaMismatch(manifest, rustBrowserJsonPath, "Rust browser pack is missing usable items[]/groups[]", {
         schemaVersion: rustBrowserPack?.schemaVersion ?? null,
       });
       return null;
     }
     const [catalogPayload, hiddenCatalogPayload, groupPayload] = canUseNativeBrowserPack
       ? [
-          { schemaVersion: "neonei/browser-pack/current", items: nativeBrowserPack?.items ?? [] } satisfies DistDataBrowserCatalogPayload,
+          { schemaVersion: RUNTIME_PACK_CONTRACTS.browser.schema, items: nativeBrowserPack?.items ?? [] } satisfies DistDataBrowserCatalogPayload,
           { items: [] } satisfies DistDataBrowserCatalogPayload,
-          { schemaVersion: "neonei/group-pack/current", groups: nativeGroups ?? [] } satisfies DistDataGroupPayload,
+          { schemaVersion: RUNTIME_PACK_CONTRACTS.groups.schema, groups: nativeGroups ?? [] } satisfies DistDataGroupPayload,
         ]
       : canUseRustBrowserPack
       ? [
@@ -287,12 +332,12 @@ async function getBrowserRuntime(): Promise<DistDataBrowserRuntime | null> {
     const hiddenItemIds = new Set(hiddenCatalog.map((entry) => entry.itemId).filter(Boolean));
     const groups = Array.isArray(groupPayload.groups) ? groupPayload.groups.filter((entry) => entry?.groupKey) : [];
     if (!Array.isArray(catalogPayload.items)) {
-      reportDistDataSchemaMismatch(manifest, catalogPath, "Dist-data browser catalog is missing items[]", {
+      reportDistDataSchemaMismatch(manifest, catalogPath || nativeBrowserPath || rustBrowserJsonPath, "Dist-data browser catalog is missing items[]", {
         schemaVersion: catalogPayload.schemaVersion ?? null,
       });
     }
     if (!Array.isArray(groupPayload.groups)) {
-      reportDistDataSchemaMismatch(manifest, groupPath, "Dist-data browser groups payload is missing groups[]", {
+      reportDistDataSchemaMismatch(manifest, groupPath || nativeGroupPath || rustBrowserJsonPath, "Dist-data browser groups payload is missing groups[]", {
         schemaVersion: groupPayload.schemaVersion ?? null,
       });
     }
@@ -382,34 +427,53 @@ export async function getDistDataSearchPack(): Promise<DistDataSearchPack | null
 
   searchPackRequest = (async () => {
     const manifest = await getDistDataManifest();
-    const runtimeManifest = await getRustRuntimeManifest();
-    const runtimeEntrypoints = runtimeManifest?.entrypoints ?? (!Array.isArray(runtimeManifest?.files) ? runtimeManifest?.files : undefined) ?? {};
-    const binarySearchPath = `${manifest?.files?.rustSearchBin ?? runtimeEntrypoints.search ?? ""}`.trim();
-    if (manifest && binarySearchPath) {
-      const binaryPack = await fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), binarySearchPath))
-        .then((buffer) => parseNativeBinaryPackEnvelope(buffer, "neonei/search-pack/current").payload)
-        .then((payload) => parseNativeSearchPackPayload(buildRuntimeCacheKey(manifest), payload))
-        .catch((error) => {
-          reportDistDataSchemaMismatch(manifest, binarySearchPath, "Rust binary search pack is not readable", {
-            message: error instanceof Error ? error.message : String(error),
+    if (!manifest) {
+      return null;
+    }
+    const declaredBinarySearchPath = await getDeclaredNativeBinaryPackPath(manifest, RUNTIME_PACK_CONTRACTS.search);
+    const binarySearchPath = declaredBinarySearchPath
+      ? await assertNativeBinaryPackContract(manifest, RUNTIME_PACK_CONTRACTS.search)
+      : null;
+    if (declaredBinarySearchPath && !binarySearchPath) {
+      reportDistDataSchemaMismatch(
+        manifest,
+        declaredBinarySearchPath,
+        "Native search runtime requires an ABI-approved search.bin artifact before JSON fallback is allowed",
+      );
+      return null;
+    }
+    if (binarySearchPath) {
+      try {
+        const buffer = await fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), binarySearchPath));
+        const binaryPack = parseNativeSearchPackPayload(
+          buildRuntimeCacheKey(manifest),
+          parseNativeBinaryPackEnvelope(buffer, RUNTIME_PACK_CONTRACTS.search.schema).payload,
+        );
+        if (!binaryPack.items.length) {
+          reportDistDataSchemaMismatch(manifest, binarySearchPath, "Rust binary search pack is missing usable items[]", {
+            schemaVersion: RUNTIME_PACK_CONTRACTS.search.schema,
           });
           return null;
-        });
-      if (binaryPack?.items.length) {
+        }
         cachedSearchPack = {
           manifest,
           runtimeCacheKey: buildRuntimeCacheKey(manifest),
           pack: binaryPack,
         };
         return cachedSearchPack;
+      } catch (error) {
+        reportDistDataSchemaMismatch(manifest, binarySearchPath, "Rust binary search pack is not readable", {
+          message: error instanceof Error ? error.message : String(error),
+        });
+        return null;
       }
     }
 
     const searchPaths = Array.from(new Set([
-      `${manifest?.files?.rustSearchPack ?? ""}`.trim(),
-      `${manifest?.files?.searchAll ?? ""}`.trim(),
+      `${manifest.files?.rustSearchPack ?? ""}`.trim(),
+      `${manifest.files?.searchAll ?? ""}`.trim(),
     ].filter(Boolean)));
-    if (!manifest || searchPaths.length <= 0) {
+    if (searchPaths.length <= 0) {
       return null;
     }
 
@@ -556,30 +620,98 @@ async function getRustRuntimeManifest(): Promise<DistDataRustRuntimeManifest | n
   return rustRuntimeManifestRequest;
 }
 
-async function getRustRecipeBinaryPath(manifest: DistDataManifest): Promise<string | null> {
+async function getPackValidationReport(
+  manifest: DistDataManifest,
+  runtimeManifest: DistDataRustRuntimeManifest | null,
+): Promise<PackValidationReport | null> {
+  if (cachedPackValidationReport) {
+    return cachedPackValidationReport;
+  }
+  if (packValidationReportRequest) {
+    return packValidationReportRequest;
+  }
+
+  const reportPath = resolvePackValidationReportPath(manifest, runtimeManifest);
+  if (!reportPath) {
+    reportDistDataSchemaMismatch(manifest, "rust/pack-validation-report.json", "Pack ABI validation report is not declared by dist-data or runtime manifest");
+    return null;
+  }
+
+  packValidationReportRequest = fetchDistDataJson<PackValidationReport>(joinDistDataAssetPath(getDistDataBasePath(), reportPath))
+    .then((payload) => {
+      if (!payload || typeof payload !== "object") {
+        reportDistDataSchemaMismatch(manifest, reportPath, "Pack ABI validation report is missing or invalid");
+        return null;
+      }
+      cachedPackValidationReport = payload;
+      return cachedPackValidationReport;
+    })
+    .catch((error) => {
+      reportDistDataSchemaMismatch(manifest, reportPath, "Pack ABI validation report is not readable", {
+        error: error instanceof Error ? error.message : `${error}`,
+      });
+      return null;
+    })
+    .finally(() => {
+      packValidationReportRequest = null;
+    });
+  return packValidationReportRequest;
+}
+
+async function assertNativeBinaryPackContract(
+  manifest: DistDataManifest,
+  contract: RuntimePackContract,
+): Promise<string | null> {
   const runtimeManifest = await getRustRuntimeManifest();
-  const runtimeRecipePath = `${runtimeManifest?.entrypoints?.recipes ?? ""}`.trim();
-  if (runtimeRecipePath) {
-    return runtimeRecipePath;
+  const binaryPath = resolveNativePackPath(manifest, runtimeManifest, contract);
+  if (!binaryPath) {
+    return null;
   }
-  const jsonRecipePath = `${manifest.files?.rustRecipePack ?? ""}`.trim();
-  if (jsonRecipePath.endsWith("recipe-pack.json")) {
-    return jsonRecipePath.replace(/recipe-pack\.json$/, "recipes.bin");
+  const report = await getPackValidationReport(manifest, runtimeManifest);
+  if (!report) {
+    return null;
   }
-  return null;
+  const validation = validatePackAbiReport(report, contract, binaryPath);
+  if (!validation.ok) {
+    const reportPath = resolvePackValidationReportPath(manifest, runtimeManifest);
+    reportDistDataSchemaMismatch(manifest, binaryPath, `${contract.description} is not allowed by pack ABI validation report`, {
+      reportPath,
+      violations: validation.violations,
+    });
+    return null;
+  }
+  return binaryPath;
+}
+
+async function getDeclaredNativeBinaryPackPath(
+  manifest: DistDataManifest,
+  contract: RuntimePackContract,
+): Promise<string | null> {
+  const runtimeManifest = await getRustRuntimeManifest();
+  return resolveNativePackPath(manifest, runtimeManifest, contract);
+}
+
+async function getRequiredNativeBinaryPackPath(
+  manifest: DistDataManifest,
+  contract: RuntimePackContract,
+): Promise<string | null> {
+  const declaredPath = await getDeclaredNativeBinaryPackPath(manifest, contract);
+  if (!declaredPath) {
+    return null;
+  }
+  const approvedPath = await assertNativeBinaryPackContract(manifest, contract);
+  if (!approvedPath) {
+    throw new Error(`${contract.description} is declared but not approved by pack ABI validation report`);
+  }
+  return approvedPath;
+}
+
+async function getRustRecipeBinaryPath(manifest: DistDataManifest): Promise<string | null> {
+  return getRequiredNativeBinaryPackPath(manifest, RUNTIME_PACK_CONTRACTS.recipes);
 }
 
 async function getRustTextureBinaryPath(manifest: DistDataManifest): Promise<string | null> {
-  const runtimeManifest = await getRustRuntimeManifest();
-  const runtimeTexturePath = `${runtimeManifest?.entrypoints?.textures ?? ""}`.trim();
-  if (runtimeTexturePath) {
-    return runtimeTexturePath;
-  }
-  const jsonTexturePath = `${manifest.files?.rustTexturePack ?? ""}`.trim();
-  if (jsonTexturePath.endsWith("texture-pack.json")) {
-    return jsonTexturePath.replace(/texture-pack\.json$/, "textures.bin");
-  }
-  return null;
+  return getRequiredNativeBinaryPackPath(manifest, RUNTIME_PACK_CONTRACTS.textures);
 }
 
 async function getRustRecipePack(): Promise<DistDataRustRecipePackPayload | null> {
@@ -599,13 +731,17 @@ async function getRustRecipePack(): Promise<DistDataRustRecipePackPayload | null
     if (!recipeBinaryPath) {
       return null;
     }
-    const buffer = await fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), recipeBinaryPath)).catch(() => null);
-    const payload = buffer
-      ? (() => {
-          const envelope = parseNativeBinaryPackEnvelope(buffer, "neonei/recipe-pack/current");
-          return parseCompactRecipePayload(envelope.payload);
-        })()
-      : null;
+    let payload: DistDataRustRecipePackPayload | null = null;
+    try {
+      const buffer = await fetchDistDataArrayBuffer(joinDistDataAssetPath(getDistDataBasePath(), recipeBinaryPath));
+      const envelope = parseNativeBinaryPackEnvelope(buffer, RUNTIME_PACK_CONTRACTS.recipes.schema);
+      payload = parseCompactRecipePayload(envelope.payload);
+    } catch (error) {
+      reportDistDataSchemaMismatch(manifest, recipeBinaryPath, "Binary recipes.bin failed to parse", {
+        error: error instanceof Error ? error.message : `${error}`,
+      });
+      return null;
+    }
     if (!payload || !Array.isArray(payload.itemIndex) || payload.itemIndex.length <= 0) {
       reportDistDataSchemaMismatch(manifest, recipeBinaryPath, "Binary recipes.bin is missing usable itemIndex[]", {
         schemaVersion: payload?.schemaVersion ?? null,
@@ -1333,6 +1469,8 @@ export function resetDistDataRuntimeCache(): void {
   cachedRustRecipePack = null;
   rustRuntimeManifestRequest = null;
   cachedRustRuntimeManifest = null;
+  packValidationReportRequest = null;
+  cachedPackValidationReport = null;
   recipeUiPayloadIndexRequest = null;
   cachedRecipeUiPayloadIndex = null;
   cachedRecipeUiPayloads.clear();

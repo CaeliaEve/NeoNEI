@@ -14,12 +14,14 @@ ${recipeBinarySource}
 ${textureBinarySource}`;
 
 test('dist-data recipe runtime uses binary recipes.bin as the production index path', () => {
-  assert.match(source, /parseNativeBinaryPackEnvelope\(buffer, "neonei\/recipe-pack\/current"\)/,
+  assert.match(source, /RUNTIME_PACK_CONTRACTS\.recipes\.schema/,
+    'recipe runtime must read the current recipe binary schema from the pack ABI contract');
+  assert.match(source, /parseNativeBinaryPackEnvelope\(buffer, RUNTIME_PACK_CONTRACTS\.recipes\.schema\)/,
     'recipe runtime must validate the native binary recipe pack envelope');
   assert.match(source, /parseCompactRecipePayload\(envelope\.payload\)/,
     'recipe runtime must parse NEIRCP compact payloads');
-  assert.match(source, /runtimeManifest\?\.entrypoints\?\.recipes/,
-    'recipe runtime must discover recipes.bin from runtime-manifest entrypoints');
+  assert.match(source, /RUNTIME_PACK_CONTRACTS\.recipes/,
+    'recipe runtime must discover recipes.bin through the explicit runtime pack contract');
   assert.match(source, /COMPACT_RECIPE_MAGIC = "NEIRCP1\\0"/,
     'recipe runtime must recognize the compact recipe payload magic');
 });
@@ -53,12 +55,14 @@ test('dist-data recipe runtime does not fetch recipe-pack.json as the primary pa
 });
 
 test('dist-data atlas runtime uses binary textures.bin as the production atlas index path', () => {
-  assert.match(source, /parseNativeBinaryPackEnvelope\(buffer, "neonei\/texture-pack\/current"\)/,
+  assert.match(source, /RUNTIME_PACK_CONTRACTS\.textures\.schema/,
+    'atlas runtime must read the current texture binary schema from the pack ABI contract');
+  assert.match(source, /parseNativeBinaryPackEnvelope\(buffer, RUNTIME_PACK_CONTRACTS\.textures\.schema\)/,
     'atlas runtime must validate the native binary texture pack envelope');
   assert.match(source, /parseCompactTexturePayloadToAtlasIndex\(envelope\.payload\)/,
     'atlas runtime must project NEITEX compact payloads into atlas index entries');
-  assert.match(source, /runtimeManifest\?\.entrypoints\?\.textures/,
-    'atlas runtime must discover textures.bin from runtime-manifest entrypoints');
+  assert.match(source, /RUNTIME_PACK_CONTRACTS\.textures/,
+    'atlas runtime must discover textures.bin through the explicit runtime pack contract');
   assert.match(source, /COMPACT_TEXTURE_MAGIC = "NEITEX1\\0"/,
     'atlas runtime must recognize the compact texture payload magic');
 });
