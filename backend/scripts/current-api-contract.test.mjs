@@ -6,6 +6,7 @@ const routeSource = fs.readFileSync('src/routes/current-api.routes.ts', 'utf8');
 const namespaceSource = fs.readFileSync('src/routes/api-namespaces.routes.ts', 'utf8');
 const currentRuntimeSnapshotSource = fs.readFileSync('src/services/current-runtime-snapshot.service.ts', 'utf8');
 const currentRuntimeApiSource = fs.readFileSync('src/services/current-runtime-api.service.ts', 'utf8');
+const currentRuntimeRecipeApiSource = fs.readFileSync('src/services/current-runtime-recipe-api.service.ts', 'utf8');
 const currentRuntimeReportRegistrySource = fs.readFileSync('src/services/current-runtime-report-registry.service.ts', 'utf8');
 
 test('current API exposes semantic non-versioned runtime endpoints', () => {
@@ -161,8 +162,9 @@ test('current API responses are path portable and do not advertise machine roots
 
 test('recipe page API exposes low-frequency page details without browser hot-path ownership', () => {
   assert.equal(routeSource.includes('function sendRecipePage'), true);
-  assert.equal(routeSource.includes('getRecipePageById(recipePageId)'), true);
-  assert.equal(routeSource.includes("throw notFound('Recipe page not found')"), true);
+  assert.equal(routeSource.includes('getCurrentRecipePage(recipePageIdParam)'), true);
+  assert.equal(currentRuntimeRecipeApiSource.includes('getRecipePageById(recipePageId)'), true);
+  assert.equal(currentRuntimeRecipeApiSource.includes("throw notFound('Recipe page not found')"), true);
   assert.match(routeSource, /'\/recipes\/page\/:recipePageId\(\*\)'/);
 
   const serviceSource = fs.readFileSync('src/services/recipes-indexed.service.ts', 'utf8');
@@ -170,22 +172,26 @@ test('recipe page API exposes low-frequency page details without browser hot-pat
   assert.match(serviceSource, /const recipe = await this\.getRecipeById\(normalizedRecipePageId\)/);
   assert.match(serviceSource, /uiPayload/);
   assert.doesNotMatch(routeSource, /images\/item/, 'recipe page API must not advertise scattered item image paths');
+  assert.doesNotMatch(currentRuntimeRecipeApiSource, /images\/item/, 'recipe API service must not advertise scattered item image paths');
 });
 
 test('external-runtime authority uses runtime recipe pack for item usage and page queries', () => {
-  assert.match(routeSource, /resolveAccelerationCompilerAuthority/);
-  assert.match(routeSource, /getRuntimeRecipePackService/);
-  assert.match(routeSource, /function isExternalRuntimeAuthority/);
-  assert.match(routeSource, /resolveAccelerationCompilerAuthority\(\) === 'external-runtime'/);
-  assert.match(routeSource, /getRuntimeRecipePackService\(\)\.getItemProducedBy\(itemId\)/);
-  assert.match(routeSource, /getRuntimeRecipePackService\(\)\.getItemUsedIn\(itemId\)/);
-  assert.match(routeSource, /getRuntimeRecipePackService\(\)\.getRecipePage\(recipePageId\)/);
+  assert.match(currentRuntimeRecipeApiSource, /resolveAccelerationCompilerAuthority/);
+  assert.match(currentRuntimeRecipeApiSource, /getRuntimeRecipePackService/);
+  assert.match(currentRuntimeRecipeApiSource, /function isExternalRuntimeRecipeAuthority/);
+  assert.match(currentRuntimeRecipeApiSource, /resolveAccelerationCompilerAuthority\(\) === 'external-runtime'/);
+  assert.match(currentRuntimeRecipeApiSource, /getRuntimeRecipePackService\(\)\.getItemProducedBy\(itemId\)/);
+  assert.match(currentRuntimeRecipeApiSource, /getRuntimeRecipePackService\(\)\.getItemUsedIn\(itemId\)/);
+  assert.match(currentRuntimeRecipeApiSource, /getRuntimeRecipePackService\(\)\.getRecipePage\(recipePageId\)/);
+  assert.doesNotMatch(routeSource, /resolveAccelerationCompilerAuthority/);
+  assert.doesNotMatch(routeSource, /getRuntimeRecipePackService/);
+  assert.doesNotMatch(routeSource, /function isExternalRuntimeAuthority/);
   assert.doesNotMatch(routeSource, /RUNTIME_PACK_QUERY_NOT_IMPLEMENTED/);
   assert.doesNotMatch(routeSource, /assertRecipeApiPackBackedOrAllowed/);
   const pageIndex = routeSource.indexOf('async function sendRecipePage');
   assert.notEqual(pageIndex, -1, 'sendRecipePage must exist');
   const pageBody = routeSource.slice(pageIndex, routeSource.indexOf('\n}', pageIndex) + 2);
-  assert.match(pageBody, /isExternalRuntimeAuthority\(\)/, 'sendRecipePage must use runtime pack under external runtime');
+  assert.match(pageBody, /getCurrentRecipePage\(recipePageIdParam\)/, 'sendRecipePage must delegate runtime recipe authority');
 });
 
 

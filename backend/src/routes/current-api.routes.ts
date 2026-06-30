@@ -1,7 +1,4 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
-import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
-import { getIndexedRecipesService } from '../services/recipes-indexed.service';
-import { getRuntimeRecipePackService } from '../services/runtime-recipe-pack.service';
 import {
   assertCurrentRuntimeId,
   createCurrentRuntimeApiContext,
@@ -13,8 +10,13 @@ import {
   getCurrentRuntimeOverview,
   type CurrentRuntimeApiContext,
 } from '../services/current-runtime-api.service';
+import {
+  getCurrentRecipeItemProducedBy,
+  getCurrentRecipeItemUsedIn,
+  getCurrentRecipePage,
+} from '../services/current-runtime-recipe-api.service';
 import { resolveCurrentRuntimeReport } from '../services/current-runtime-report-registry.service';
-import { asyncHandler, badRequest, notFound } from '../utils/http';
+import { asyncHandler } from '../utils/http';
 import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
 
 
@@ -28,16 +30,6 @@ function sendOk(res: Response, data: unknown, context = createCurrentRuntimeApiC
     data,
     meta: context.meta,
   });
-}
-
-function normalizeRequiredParam(value: string | undefined, name: string): string {
-  const normalized = `${value ?? ''}`.trim();
-  if (!normalized) throw badRequest(`${name} is required`);
-  return normalized;
-}
-
-function isExternalRuntimeAuthority(): boolean {
-  return resolveAccelerationCompilerAuthority() === 'external-runtime';
 }
 
 function sendRuntimeCurrent(res: Response): void {
@@ -100,59 +92,17 @@ function sendRuntimeReport(reportName: string | undefined, res: Response): void 
 
 async function sendRecipeItem(itemIdParam: string | undefined, res: Response): Promise<void> {
   setNoStoreHeaders(res);
-  const itemId = normalizeRequiredParam(itemIdParam, 'itemId');
-  if (isExternalRuntimeAuthority()) {
-    const payload = getRuntimeRecipePackService().getItemProducedBy(itemId);
-    if (!payload) throw notFound('Recipe item not found in runtime recipe pack');
-    sendOk(res, payload);
-    return;
-  }
-  const service = getIndexedRecipesService();
-  const summary = await service.getItemRecipeSummary(itemId);
-  const recipes = await service.getCraftingRecipesForItem(itemId);
-  sendOk(res, {
-    itemId,
-    summary,
-    recipes,
-  });
+  sendOk(res, await getCurrentRecipeItemProducedBy(itemIdParam));
 }
 
 async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): Promise<void> {
   setNoStoreHeaders(res);
-  const itemId = normalizeRequiredParam(itemIdParam, 'itemId');
-  if (isExternalRuntimeAuthority()) {
-    const payload = getRuntimeRecipePackService().getItemUsedIn(itemId);
-    if (!payload) throw notFound('Recipe item not found in runtime recipe pack');
-    sendOk(res, payload);
-    return;
-  }
-  const service = getIndexedRecipesService();
-  const summary = await service.getItemRecipeSummary(itemId);
-  const usages = await service.getUsageRecipesForItem(itemId);
-  sendOk(res, {
-    itemId,
-    summary,
-    usages,
-  });
+  sendOk(res, await getCurrentRecipeItemUsedIn(itemIdParam));
 }
 
 async function sendRecipePage(recipePageIdParam: string | undefined, res: Response): Promise<void> {
   setNoStoreHeaders(res);
-  const recipePageId = normalizeRequiredParam(recipePageIdParam, 'recipePageId');
-  if (isExternalRuntimeAuthority()) {
-    const page = getRuntimeRecipePackService().getRecipePage(recipePageId);
-    if (!page) {
-      throw notFound('Recipe page not found in runtime recipe pack');
-    }
-    sendOk(res, page);
-    return;
-  }
-  const service = getIndexedRecipesService();
-  const page = await service.getRecipePageById(recipePageId);
-  if (!page) {
-    throw notFound('Recipe page not found');
-  }
-  sendOk(res, page);
+  sendOk(res, await getCurrentRecipePage(recipePageIdParam));
 }
 
 function sendDiagnosticsHealth(res: Response): void {
