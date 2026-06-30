@@ -11,8 +11,8 @@ import { registerRuntimeAdminRoutes } from './routes/runtime-admin.routes';
 import { registerApiNamespaces } from './routes/api-namespaces.routes';
 import type { requireAdminToken, serverSettings } from './config/server-settings';
 import {
-  accelerationRuntime,
   createAccelerationRuntimeMiddleware,
+  getAccelerationRuntimeSnapshot,
   reconcileAccelerationRuntime,
   setAccelerationRuntimePhase,
 } from './services/acceleration-runtime.service';
@@ -52,7 +52,7 @@ export function createApp(options: CreateAppOptions): Express {
   app.use(createAccelerationRuntimeMiddleware());
 
   registerRuntimeAdminRoutes(app, {
-    accelerationRuntime,
+    getAccelerationRuntimeSnapshot,
     requireAdminToken: options.requireAdminToken,
     getRuntimeAccelerationDbManager: options.getRuntimeAccelerationDbManager,
     reconcileAccelerationRuntime: (manager) => reconcileAccelerationRuntime(manager, {

@@ -11,8 +11,8 @@ import {
 import { probeExternalRuntimeIdentityFreshness } from './external-runtime-identity.service';
 import { dispatchAccelerationReconcile } from './acceleration-runtime-reconcile-dispatcher.service';
 export {
-  accelerationRuntime,
   createAccelerationRuntimeMiddleware,
+  getAccelerationRuntimeSnapshot,
   setAccelerationRuntimePhase,
   type AccelerationRuntimePhase,
   type AccelerationRuntimeState,

@@ -53,33 +53,6 @@ export function getAccelerationRuntimeSnapshot(): AccelerationRuntimeState {
   return accelerationRuntimeSnapshot;
 }
 
-export const accelerationRuntime = Object.freeze({
-  get revision(): number {
-    return getAccelerationRuntimeSnapshot().revision;
-  },
-  get phase(): AccelerationRuntimePhase {
-    return getAccelerationRuntimeSnapshot().phase;
-  },
-  get message(): string {
-    return getAccelerationRuntimeSnapshot().message;
-  },
-  get activeApiRequests(): number {
-    return getAccelerationRuntimeSnapshot().activeApiRequests;
-  },
-  get blocking(): boolean {
-    return getAccelerationRuntimeSnapshot().blocking;
-  },
-  get stale(): boolean {
-    return getAccelerationRuntimeSnapshot().stale;
-  },
-  get lastCompiledSignature(): string | null {
-    return getAccelerationRuntimeSnapshot().lastCompiledSignature;
-  },
-  get lastError(): string | null {
-    return getAccelerationRuntimeSnapshot().lastError;
-  },
-}) satisfies AccelerationRuntimeState;
-
 export function setAccelerationRuntimePhase(
   phase: AccelerationRuntimePhase,
   message: string,

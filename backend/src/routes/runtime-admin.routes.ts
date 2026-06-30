@@ -1,39 +1,42 @@
 import fs from 'fs';
 import type { Application, Request, Response } from 'express';
 import { PUBLISH_OUTPUT_DIR } from '../config/runtime-paths';
+import type { AccelerationRuntimePhase, AccelerationRuntimeState } from '../services/acceleration-runtime.service';
 import { setPublicCacheHeaders } from '../utils/http-cache';
 import { sendErrorEnvelope } from '../utils/error-response';
 import { logger } from '../utils/logger';
 
-type AccelerationRuntimeState = {
-  revision: number;
-  phase: string;
-  message: string;
-  activeApiRequests: number;
-  blocking: boolean;
-  stale: boolean;
-  lastCompiledSignature: string | null;
-  lastError: string | null;
-};
-
 type RegisterRuntimeAdminRoutesOptions<TManager> = {
-  accelerationRuntime: AccelerationRuntimeState;
+  getAccelerationRuntimeSnapshot: () => AccelerationRuntimeState;
   requireAdminToken: (req: Request, res: Response) => boolean;
   getRuntimeAccelerationDbManager: () => TManager | null;
   reconcileAccelerationRuntime: (manager: TManager) => Promise<void>;
   setAccelerationRuntimePhase: (
-    phase: 'initializing' | 'ready' | 'stale' | 'compiling' | 'promoting' | 'materializing' | 'error',
+    phase: AccelerationRuntimePhase,
     message: string,
     extras?: Partial<Pick<AccelerationRuntimeState, 'stale' | 'lastCompiledSignature' | 'lastError'>>,
   ) => void;
 };
+
+function serializeAccelerationRuntime(snapshot: AccelerationRuntimeState): AccelerationRuntimeState {
+  return {
+    revision: snapshot.revision,
+    phase: snapshot.phase,
+    message: snapshot.message,
+    blocking: snapshot.blocking,
+    stale: snapshot.stale,
+    activeApiRequests: snapshot.activeApiRequests,
+    lastCompiledSignature: snapshot.lastCompiledSignature,
+    lastError: snapshot.lastError,
+  };
+}
 
 export function registerRuntimeAdminRoutes<TManager>(
   app: Application,
   options: RegisterRuntimeAdminRoutesOptions<TManager>,
 ): void {
   const {
-    accelerationRuntime,
+    getAccelerationRuntimeSnapshot,
     requireAdminToken,
     getRuntimeAccelerationDbManager,
     reconcileAccelerationRuntime,
@@ -41,19 +44,11 @@ export function registerRuntimeAdminRoutes<TManager>(
   } = options;
 
   app.get('/api/health', (_req, res) => {
+    const accelerationSnapshot = getAccelerationRuntimeSnapshot();
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      acceleration: {
-        revision: accelerationRuntime.revision,
-        phase: accelerationRuntime.phase,
-        message: accelerationRuntime.message,
-        blocking: accelerationRuntime.blocking,
-        stale: accelerationRuntime.stale,
-        activeApiRequests: accelerationRuntime.activeApiRequests,
-        lastCompiledSignature: accelerationRuntime.lastCompiledSignature,
-        lastError: accelerationRuntime.lastError,
-      },
+      acceleration: serializeAccelerationRuntime(accelerationSnapshot),
     });
   });
 
@@ -116,7 +111,7 @@ export function registerRuntimeAdminRoutes<TManager>(
     res.json({
       status: 'ok',
       timestamp: new Date().toISOString(),
-      acceleration: accelerationRuntime,
+      acceleration: serializeAccelerationRuntime(getAccelerationRuntimeSnapshot()),
       publish: {
         outputDir: PUBLISH_OUTPUT_DIR,
         exists: fs.existsSync(PUBLISH_OUTPUT_DIR),
@@ -136,10 +131,15 @@ export function registerRuntimeAdminRoutes<TManager>(
       sendErrorEnvelope(req, res, 503, 'ACCELERATION_MANAGER_NOT_READY', 'Acceleration manager is not ready');
       return;
     }
-    if (accelerationRuntime.phase === 'compiling' || accelerationRuntime.phase === 'promoting' || accelerationRuntime.blocking) {
+    const accelerationSnapshot = getAccelerationRuntimeSnapshot();
+    if (
+      accelerationSnapshot.phase === 'compiling'
+      || accelerationSnapshot.phase === 'promoting'
+      || accelerationSnapshot.blocking
+    ) {
       sendErrorEnvelope(req, res, 409, 'ACCELERATION_RECONCILE_IN_PROGRESS', 'Acceleration reconcile is already in progress', {
-        phase: accelerationRuntime.phase,
-        blocking: accelerationRuntime.blocking,
+        phase: accelerationSnapshot.phase,
+        blocking: accelerationSnapshot.blocking,
       });
       return;
     }
@@ -156,7 +156,7 @@ export function registerRuntimeAdminRoutes<TManager>(
 
     res.status(202).json({
       status: 'accepted',
-      phase: accelerationRuntime.phase,
+      phase: getAccelerationRuntimeSnapshot().phase,
       message: 'Acceleration reconciliation scheduled.',
     });
   };
