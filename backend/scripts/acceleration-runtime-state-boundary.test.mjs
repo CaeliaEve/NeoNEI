@@ -14,6 +14,7 @@ test('acceleration runtime state lives in a dedicated kernel-state module', () =
   assert.match(runtimeState, /export type AccelerationRuntimePhase/);
   assert.match(runtimeState, /export type AccelerationRuntimeState/);
   assert.match(runtimeState, /export const accelerationRuntime/);
+  assert.match(runtimeState, /export function getAccelerationRuntimeSnapshot/);
   assert.match(runtimeState, /export function setAccelerationRuntimePhase/);
   assert.match(runtimeState, /export function setAccelerationRuntimeBlocking/);
   assert.match(runtimeState, /export async function waitForAccelerationApiIdle/);
@@ -36,9 +37,14 @@ test('acceleration runtime middleware and idle gate stay with state ownership', 
   assert.match(runtimeState, /import type \{ Request, RequestHandler \} from 'express'/);
   assert.match(runtimeState, /sendErrorEnvelope/);
   assert.match(runtimeState, /function isTrackedAccelerationApiRequest/);
+  assert.match(runtimeState, /let accelerationRuntimeSnapshot: AccelerationRuntimeState/);
+  assert.match(runtimeState, /Object\.freeze\(\{/);
+  assert.match(runtimeState, /function publishAccelerationRuntimeSnapshot/);
   assert.match(runtimeState, /export function setAccelerationRuntimeBlocking\(blocking: boolean\)/);
   assert.match(runtimeState, /export function createAccelerationRuntimeMiddleware\(\): RequestHandler/);
-  assert.match(runtimeState, /accelerationRuntime\.activeApiRequests \+= 1/);
-  assert.match(runtimeState, /accelerationRuntime\.activeApiRequests = Math\.max/);
-  assert.match(runtimeState, /while \(accelerationRuntime\.activeApiRequests > 0/);
+  assert.match(runtimeState, /publishAccelerationRuntimeSnapshot\(\{ activeApiRequests: snapshot\.activeApiRequests \+ 1 \}\)/);
+  assert.match(runtimeState, /activeApiRequests: Math\.max\(0, getAccelerationRuntimeSnapshot\(\)\.activeApiRequests - 1\)/);
+  assert.match(runtimeState, /while \(getAccelerationRuntimeSnapshot\(\)\.activeApiRequests > 0/);
+  assert.doesNotMatch(runtimeState, /accelerationRuntime\.(phase|message|stale|lastCompiledSignature|lastError|blocking|activeApiRequests)\s*=/);
+  assert.doesNotMatch(runtimeState, /activeApiRequests \+= 1/);
 });

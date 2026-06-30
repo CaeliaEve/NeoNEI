@@ -404,7 +404,7 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
   }
 
   private async loadRuntimePacks(manifestUrl: string, profile: NativeRuntimePackProfile = "full"): Promise<void> {
-    beginNativeRuntimeLoad(this.nativeRuntime);
+    this.nativeRuntime = beginNativeRuntimeLoad(this.nativeRuntime);
     this.touch("runtimePacks:loading");
     try {
       const runtime = await loadNativeRuntimeBuffersForProfile(manifestUrl, profile);
@@ -426,10 +426,10 @@ export class CompatNativeSurfaceController implements NativeNeiSurfaceController
         manifestUrl: runtime.manifestUrl,
         packs,
       });
-      markNativeRuntimeReady(this.nativeRuntime, Boolean(response), packs.length);
+      this.nativeRuntime = markNativeRuntimeReady(this.nativeRuntime, Boolean(response), packs.length);
       this.touch(this.nativeRuntime.ready ? "runtimePacks:ready" : "runtimePacks:error");
     } catch (error) {
-      markNativeRuntimeError(this.nativeRuntime, error);
+      this.nativeRuntime = markNativeRuntimeError(this.nativeRuntime, error);
       this.touch("runtimePacks:error");
     }
   }

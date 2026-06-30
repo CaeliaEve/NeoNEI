@@ -10,7 +10,8 @@ export type AccelerationRuntimePhase =
   | 'materializing'
   | 'error';
 
-export type AccelerationRuntimeState = {
+export type AccelerationRuntimeState = Readonly<{
+  revision: number;
   phase: AccelerationRuntimePhase;
   message: string;
   activeApiRequests: number;
@@ -18,9 +19,16 @@ export type AccelerationRuntimeState = {
   stale: boolean;
   lastCompiledSignature: string | null;
   lastError: string | null;
+}>;
+
+type MutableAccelerationRuntimeState = {
+  -readonly [Key in keyof AccelerationRuntimeState]: AccelerationRuntimeState[Key];
 };
 
-export const accelerationRuntime: AccelerationRuntimeState = {
+type AccelerationRuntimePatch = Partial<Omit<MutableAccelerationRuntimeState, 'revision'>>;
+
+const INITIAL_ACCELERATION_RUNTIME_STATE: AccelerationRuntimeState = Object.freeze({
+  revision: 0,
   phase: 'initializing',
   message: 'starting',
   activeApiRequests: 0,
@@ -28,28 +36,73 @@ export const accelerationRuntime: AccelerationRuntimeState = {
   stale: false,
   lastCompiledSignature: null,
   lastError: null,
-};
+});
+
+let accelerationRuntimeSnapshot: AccelerationRuntimeState = INITIAL_ACCELERATION_RUNTIME_STATE;
+
+function publishAccelerationRuntimeSnapshot(patch: AccelerationRuntimePatch): AccelerationRuntimeState {
+  accelerationRuntimeSnapshot = Object.freeze({
+    ...accelerationRuntimeSnapshot,
+    ...patch,
+    revision: accelerationRuntimeSnapshot.revision + 1,
+  });
+  return accelerationRuntimeSnapshot;
+}
+
+export function getAccelerationRuntimeSnapshot(): AccelerationRuntimeState {
+  return accelerationRuntimeSnapshot;
+}
+
+export const accelerationRuntime = Object.freeze({
+  get revision(): number {
+    return getAccelerationRuntimeSnapshot().revision;
+  },
+  get phase(): AccelerationRuntimePhase {
+    return getAccelerationRuntimeSnapshot().phase;
+  },
+  get message(): string {
+    return getAccelerationRuntimeSnapshot().message;
+  },
+  get activeApiRequests(): number {
+    return getAccelerationRuntimeSnapshot().activeApiRequests;
+  },
+  get blocking(): boolean {
+    return getAccelerationRuntimeSnapshot().blocking;
+  },
+  get stale(): boolean {
+    return getAccelerationRuntimeSnapshot().stale;
+  },
+  get lastCompiledSignature(): string | null {
+    return getAccelerationRuntimeSnapshot().lastCompiledSignature;
+  },
+  get lastError(): string | null {
+    return getAccelerationRuntimeSnapshot().lastError;
+  },
+}) satisfies AccelerationRuntimeState;
 
 export function setAccelerationRuntimePhase(
   phase: AccelerationRuntimePhase,
   message: string,
   extras?: Partial<Pick<AccelerationRuntimeState, 'stale' | 'lastCompiledSignature' | 'lastError'>>,
 ): void {
-  accelerationRuntime.phase = phase;
-  accelerationRuntime.message = message;
+  const patch: AccelerationRuntimePatch = {
+    phase,
+    message,
+  };
   if (typeof extras?.stale === 'boolean') {
-    accelerationRuntime.stale = extras.stale;
+    patch.stale = extras.stale;
   }
   if (typeof extras?.lastCompiledSignature !== 'undefined') {
-    accelerationRuntime.lastCompiledSignature = extras.lastCompiledSignature;
+    patch.lastCompiledSignature = extras.lastCompiledSignature;
   }
   if (typeof extras?.lastError !== 'undefined') {
-    accelerationRuntime.lastError = extras.lastError;
+    patch.lastError = extras.lastError;
   }
+  publishAccelerationRuntimeSnapshot(patch);
 }
 
 export function setAccelerationRuntimeBlocking(blocking: boolean): void {
-  accelerationRuntime.blocking = blocking;
+  publishAccelerationRuntimeSnapshot({ blocking });
 }
 
 function isTrackedAccelerationApiRequest(req: Request): boolean {
@@ -63,7 +116,8 @@ export function createAccelerationRuntimeMiddleware(): RequestHandler {
       return next();
     }
 
-    if (accelerationRuntime.blocking) {
+    const snapshot = getAccelerationRuntimeSnapshot();
+    if (snapshot.blocking) {
       res.setHeader('Retry-After', '1');
       return sendErrorEnvelope(
         req,
@@ -73,19 +127,21 @@ export function createAccelerationRuntimeMiddleware(): RequestHandler {
         'Acceleration database is switching snapshots. Retry shortly.',
         {
           status: 'warming',
-          phase: accelerationRuntime.phase,
+          phase: snapshot.phase,
         },
       );
     }
 
-    accelerationRuntime.activeApiRequests += 1;
+    publishAccelerationRuntimeSnapshot({ activeApiRequests: snapshot.activeApiRequests + 1 });
     let released = false;
     const release = () => {
       if (released) {
         return;
       }
       released = true;
-      accelerationRuntime.activeApiRequests = Math.max(0, accelerationRuntime.activeApiRequests - 1);
+      publishAccelerationRuntimeSnapshot({
+        activeApiRequests: Math.max(0, getAccelerationRuntimeSnapshot().activeApiRequests - 1),
+      });
     };
 
     res.on('finish', release);
@@ -96,7 +152,7 @@ export function createAccelerationRuntimeMiddleware(): RequestHandler {
 
 export async function waitForAccelerationApiIdle(timeoutMs = 5000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
-  while (accelerationRuntime.activeApiRequests > 0 && Date.now() < deadline) {
+  while (getAccelerationRuntimeSnapshot().activeApiRequests > 0 && Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop
     await new Promise((resolve) => setTimeout(resolve, 25));
   }

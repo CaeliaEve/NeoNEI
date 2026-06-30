@@ -3,27 +3,39 @@ import type { NativeSurfaceMetrics } from "./contracts";
 export type NativeRuntimeControlStatus = "idle" | "loading" | "ready" | "error";
 
 export interface NativeRuntimeControlState {
-  status: NativeRuntimeControlStatus;
-  ready: boolean;
-  packCount: number;
-  error: string | null;
+  readonly revision: number;
+  readonly status: NativeRuntimeControlStatus;
+  readonly ready: boolean;
+  readonly packCount: number;
+  readonly error: string | null;
+}
+
+function freezeNativeRuntimeControlState(state: NativeRuntimeControlState): NativeRuntimeControlState {
+  return Object.freeze(state);
+}
+
+function nextNativeRuntimeRevision(state: NativeRuntimeControlState): number {
+  return state.revision + 1;
 }
 
 export function createNativeRuntimeControlState(): NativeRuntimeControlState {
-  return {
+  return freezeNativeRuntimeControlState({
+    revision: 0,
     status: "idle",
     ready: false,
     packCount: 0,
     error: null,
-  };
+  });
 }
 
 export function beginNativeRuntimeLoad(state: NativeRuntimeControlState): NativeRuntimeControlState {
-  state.status = "loading";
-  state.ready = false;
-  state.packCount = 0;
-  state.error = null;
-  return state;
+  return freezeNativeRuntimeControlState({
+    revision: nextNativeRuntimeRevision(state),
+    status: "loading",
+    ready: false,
+    packCount: 0,
+    error: null,
+  });
 }
 
 export function markNativeRuntimeReady(
@@ -32,27 +44,31 @@ export function markNativeRuntimeReady(
   packCount: number,
 ): NativeRuntimeControlState {
   const normalizedPackCount = Math.max(0, Math.floor(Number(packCount) || 0));
-  state.ready = Boolean(accepted) && normalizedPackCount > 0;
-  state.packCount = normalizedPackCount;
-  state.error = null;
-  state.status = state.ready ? "ready" : "error";
-  if (!state.ready) {
-    state.error = accepted
-      ? "Native runtime did not provide any usable packs."
-      : "Native runtime worker rejected runtime packs.";
-  }
-  return state;
+  const ready = Boolean(accepted) && normalizedPackCount > 0;
+  return freezeNativeRuntimeControlState({
+    revision: nextNativeRuntimeRevision(state),
+    status: ready ? "ready" : "error",
+    ready,
+    packCount: normalizedPackCount,
+    error: ready
+      ? null
+      : accepted
+        ? "Native runtime did not provide any usable packs."
+        : "Native runtime worker rejected runtime packs.",
+  });
 }
 
 export function markNativeRuntimeError(
   state: NativeRuntimeControlState,
   error: unknown,
 ): NativeRuntimeControlState {
-  state.status = "error";
-  state.ready = false;
-  state.packCount = 0;
-  state.error = error instanceof Error ? error.message : String(error);
-  return state;
+  return freezeNativeRuntimeControlState({
+    revision: nextNativeRuntimeRevision(state),
+    status: "error",
+    ready: false,
+    packCount: 0,
+    error: error instanceof Error ? error.message : String(error),
+  });
 }
 
 export function shouldSendCompatEntriesToWorker(state: NativeRuntimeControlState): boolean {

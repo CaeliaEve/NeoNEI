@@ -6,6 +6,7 @@ import { sendErrorEnvelope } from '../utils/error-response';
 import { logger } from '../utils/logger';
 
 type AccelerationRuntimeState = {
+  revision: number;
   phase: string;
   message: string;
   activeApiRequests: number;
@@ -44,6 +45,7 @@ export function registerRuntimeAdminRoutes<TManager>(
       status: 'ok',
       timestamp: new Date().toISOString(),
       acceleration: {
+        revision: accelerationRuntime.revision,
         phase: accelerationRuntime.phase,
         message: accelerationRuntime.message,
         blocking: accelerationRuntime.blocking,
