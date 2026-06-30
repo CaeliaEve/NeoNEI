@@ -74,7 +74,7 @@ export function isPortableRuntimePath(value: unknown): value is string {
     && !/^[A-Za-z]:[\\/]/.test(normalized);
 }
 
-function normalizeRuntimePath(value: string): string {
+export function normalizeRuntimePath(value: string): string {
   return value.trim().replace(/\\/g, '/').replace(/^\/+/, '');
 }
 

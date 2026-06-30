@@ -71,7 +71,10 @@ test('runtime file endpoint is path traversal safe and relative-rooted', () => {
   assert.match(currentRuntimeSnapshotSource, /startsWith\(`\$\{runtimeRoot\}\$\{path\.sep\}`\)/);
   assert.match(currentRuntimeSnapshotSource, /collectDeclaredRuntimeFilePaths/);
   assert.match(currentRuntimeSnapshotSource, /snapshot\.declaredFiles\.includes\(normalized\)/);
-  assert.match(routeSource, /getCurrentRuntimeArtifact\(normalizeRequiredParam\(fileName, 'fileName'\)\)/);
+  assert.match(routeSource, /function getRuntimeArtifactFromContext/);
+  assert.match(routeSource, /isPortableRuntimePath\(raw\)/);
+  assert.match(routeSource, /normalizeRuntimePath\(raw\)/);
+  assert.match(routeSource, /context\.snapshot\.artifactsByPath\[normalized\]/);
   assert.match(routeSource, /res\.sendFile\(artifact\.absolutePath\)/);
 });
 
@@ -83,8 +86,12 @@ test('current runtime snapshot service owns immutable manifest and artifact inve
   assert.match(currentRuntimeSnapshotSource, /function publishCurrentRuntimeSnapshot/);
   assert.match(currentRuntimeSnapshotSource, /export function getCurrentRuntimeSnapshot/);
   assert.match(currentRuntimeSnapshotSource, /export function getCurrentRuntimeArtifact/);
+  assert.match(currentRuntimeSnapshotSource, /export function normalizeRuntimePath/);
   assert.match(routeSource, /getCurrentRuntimeSnapshot/);
-  assert.match(routeSource, /getCurrentRuntimeArtifact/);
+  assert.match(routeSource, /function createCurrentRuntimeApiContext/);
+  assert.match(routeSource, /type CurrentRuntimeApiContext/);
+  assert.match(routeSource, /sendOk\(res: Response, data: unknown, context = createCurrentRuntimeApiContext\(\)\)/);
+  assert.doesNotMatch(routeSource, /function getCurrentMeta/);
   assert.doesNotMatch(routeSource, /function getDeclaredRuntimeFilePaths/);
   assert.doesNotMatch(routeSource, /function resolveRuntimeFile/);
 
