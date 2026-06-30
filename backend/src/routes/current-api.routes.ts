@@ -16,6 +16,7 @@ import {
   getCurrentRecipePage,
 } from '../services/current-runtime-recipe-api.service';
 import { resolveCurrentRuntimeReport } from '../services/current-runtime-report-registry.service';
+import { getCurrentRuntimeSettings } from '../services/current-runtime-settings.service';
 import { asyncHandler } from '../utils/http';
 import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
 
@@ -119,19 +120,7 @@ function sendDiagnosticsRuntimeSummary(res: Response): void {
 
 function sendRuntimeSettings(res: Response): void {
   setNoStoreHeaders(res);
-  sendOk(res, {
-    apiBaseUrl: '/api',
-    runtimeMode: 'native',
-    rendererPreference: 'webgpu-first',
-    allowDomGridFallback: false,
-    allowPerItemImageHotLoad: false,
-    debugPanels: process.env.NEONEI_DEBUG_PANELS === '1' || process.env.NEONEI_DEBUG_PANELS?.toLowerCase() === 'true',
-    runtime: {
-      currentUrl: '/api/runtime/current',
-      manifestUrl: '/api/runtime/current/manifest',
-      assetBaseUrl: '/api/runtime/current/asset/',
-    },
-  });
+  sendOk(res, getCurrentRuntimeSettings());
 }
 
 router.get('/runtime/current', (_req, res) => {

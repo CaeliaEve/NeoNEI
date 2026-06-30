@@ -8,6 +8,7 @@ const currentRuntimeSnapshotSource = fs.readFileSync('src/services/current-runti
 const currentRuntimeApiSource = fs.readFileSync('src/services/current-runtime-api.service.ts', 'utf8');
 const currentRuntimeRecipeApiSource = fs.readFileSync('src/services/current-runtime-recipe-api.service.ts', 'utf8');
 const currentRuntimeReportRegistrySource = fs.readFileSync('src/services/current-runtime-report-registry.service.ts', 'utf8');
+const currentRuntimeSettingsSource = fs.readFileSync('src/services/current-runtime-settings.service.ts', 'utf8');
 
 test('current API exposes semantic non-versioned runtime endpoints', () => {
   for (const route of [
@@ -46,8 +47,11 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(routeSource.includes('function sendDiagnosticsHealth'), true);
   assert.equal(routeSource.includes('function sendDiagnosticsRuntimeSummary'), true);
   assert.equal(routeSource.includes('function sendRuntimeSettings'), true);
-  assert.equal(routeSource.includes("allowDomGridFallback: false"), true);
-  assert.equal(routeSource.includes("allowPerItemImageHotLoad: false"), true);
+  assert.equal(routeSource.includes('getCurrentRuntimeSettings()'), true);
+  assert.equal(currentRuntimeSettingsSource.includes("allowDomGridFallback: false"), true);
+  assert.equal(currentRuntimeSettingsSource.includes("allowPerItemImageHotLoad: false"), true);
+  assert.equal(currentRuntimeSettingsSource.includes('NEONEI_DEBUG_PANELS'), true);
+  assert.doesNotMatch(routeSource, /process\.env\.NEONEI_DEBUG_PANELS/);
 });
 
 test('current API is mounted before legacy compatibility API', () => {
@@ -155,9 +159,13 @@ test('current API responses are path portable and do not advertise machine roots
   assert.doesNotMatch(routeSource, /E:\\\\codex/);
   assert.doesNotMatch(currentRuntimeApiSource, /[A-Za-z]:\\\\/);
   assert.doesNotMatch(currentRuntimeApiSource, /E:\\\\codex/);
+  assert.doesNotMatch(currentRuntimeSettingsSource, /[A-Za-z]:\\\\/);
+  assert.doesNotMatch(currentRuntimeSettingsSource, /E:\\\\codex/);
   assert.doesNotMatch(currentRuntimeApiSource, /assetBaseUrl:\s*['"](?:[A-Za-z]:|\\\\|\/runtime\/)/);
   assert.match(currentRuntimeApiSource, /assetBaseUrl:\s*'\/api\/runtime\/current\/asset\/'/);
   assert.match(currentRuntimeApiSource, /runtimeAssetBaseUrl:\s*`\/api\/runtime\/\$\{encodeURIComponent\(meta\.runtimeId\)\}\/asset\/`/);
+  assert.doesNotMatch(currentRuntimeSettingsSource, /assetBaseUrl:\s*['"](?:[A-Za-z]:|\\\\|\/runtime\/)/);
+  assert.match(currentRuntimeSettingsSource, /assetBaseUrl:\s*'\/api\/runtime\/current\/asset\/'/);
 });
 
 test('recipe page API exposes low-frequency page details without browser hot-path ownership', () => {
