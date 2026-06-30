@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import { Router } from 'express';
 import { getPublishManifestService } from '../services/publish-manifest.service';
 import { asyncHandler } from '../utils/http';
@@ -9,8 +7,7 @@ import {
   setNoStoreHeaders,
   setPublicCacheHeaders,
 } from '../utils/http-cache';
-import { DATA_DIR, PUBLISH_OUTPUT_DIR } from '../config/runtime-paths';
-import { getNativeRenderRuntimeDiagnostics } from '../services/native-render-runtime-diagnostics.service';
+import { getRuntimeDiagnosticsSummary } from '../services/runtime-diagnostics-summary.service';
 import { getRuntimeHealthSummary } from '../services/runtime-health-summary.service';
 
 const router = Router();
@@ -96,48 +93,8 @@ router.get('/contracts', (_req, res) => {
 });
 router.get('/diagnostics',
   asyncHandler(async (_req, res) => {
-    const manifest = getPublishManifestService().getRuntimeManifest();
-    const publishBundle = manifest.publishBundle;
-    const publishRoot = manifest.sourceSignature
-      ? path.join(PUBLISH_OUTPUT_DIR, manifest.sourceSignature)
-      : null;
-    const checks = {
-      dataDir: fs.existsSync(DATA_DIR),
-      publishDir: fs.existsSync(PUBLISH_OUTPUT_DIR),
-      activePublishRoot: publishRoot ? fs.existsSync(publishRoot) : false,
-      publishBundle: Boolean(publishBundle),
-      browserLayout: Boolean(manifest.browserLayoutKey),
-      runtimeCacheKey: Boolean(manifest.runtimeCacheKey),
-      sourceSignature: Boolean(manifest.sourceSignature),
-    };
-    const missing = Object.entries(checks)
-      .filter(([, ok]) => !ok)
-      .map(([key]) => key);
-
     setNoStoreHeaders(res);
-    res.json({
-      schemaVersion: 'neonei/runtime-diagnostics/current',
-      status: missing.length === 0 ? getRuntimeHealthSummary().status : 'degraded',
-      sourceSignature: manifest.sourceSignature,
-      runtimeCacheKey: manifest.runtimeCacheKey,
-      publishRevision: manifest.publishRevision,
-      publishCompiledAt: manifest.publishCompiledAt,
-      browserLayoutKey: manifest.browserLayoutKey,
-      readiness: checks,
-      mode: {
-        publicRuntimeOnly: process.env.NEONEI_PUBLIC_RUNTIME_ONLY === '1' || process.env.NEONEI_PUBLIC_RUNTIME_ONLY?.toLowerCase() === 'true',
-      },
-      missing,
-      assets: {
-        publishBundleFiles: publishBundle ? Object.keys(publishBundle.files ?? {}).length : 0,
-        hasBrowserWindows: Boolean(publishBundle?.files?.browserPageWindows?.length),
-        hasRecipeBootstrap: Boolean(publishBundle?.files?.recipeBootstrapBasePath),
-        hasRecipeSearch: Boolean(publishBundle?.files?.recipeSearchBasePath),
-      },
-      nativeRender: getNativeRenderRuntimeDiagnostics(),
-      health: getRuntimeHealthSummary(),
-      compiler: getRuntimeHealthSummary().compiler,
-    });
+    res.json(getRuntimeDiagnosticsSummary());
   }),
 );
 
