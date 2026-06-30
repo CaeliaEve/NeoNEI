@@ -2,57 +2,25 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
 import { getIndexedRecipesService } from '../services/recipes-indexed.service';
 import { getRuntimeRecipePackService } from '../services/runtime-recipe-pack.service';
-import { getRuntimeHealthSummary, type RuntimeHealthSummary } from '../services/runtime-health-summary.service';
-import { resolveCurrentRuntimeReport } from '../services/current-runtime-report-registry.service';
 import {
-  getCurrentRuntimeSnapshot,
-  isPortableRuntimePath,
-  normalizeRuntimePath,
-  type CurrentRuntimeArtifact,
-  type CurrentRuntimeSnapshot,
-} from '../services/current-runtime-snapshot.service';
+  assertCurrentRuntimeId,
+  createCurrentRuntimeApiContext,
+  getCurrentRuntimeAssetDelivery,
+  getCurrentRuntimeDiagnosticsHealth,
+  getCurrentRuntimeDiagnosticsSummary,
+  getCurrentRuntimeManifestDelivery,
+  getCurrentRuntimeNativeSurfaceMetrics,
+  getCurrentRuntimeOverview,
+  type CurrentRuntimeApiContext,
+} from '../services/current-runtime-api.service';
+import { resolveCurrentRuntimeReport } from '../services/current-runtime-report-registry.service';
 import { asyncHandler, badRequest, notFound } from '../utils/http';
-import { createWeakEtag, setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
+import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
 
 
 const router = Router();
-const API_SCHEMA = 'neonei/api/current';
-const API_SCHEMA_REVISION = 1;
 const CURRENT_RUNTIME_ASSET_ROUTE = '/runtime/current/asset/:fileName(*)';
 const PINNED_RUNTIME_ASSET_ROUTE = '/runtime/:runtimeId/asset/:fileName(*)';
-function asString(value: unknown): string | null {
-  const text = `${value ?? ''}`.trim();
-  return text || null;
-}
-
-type CurrentRuntimeApiMeta = {
-  schema: typeof API_SCHEMA;
-  schemaRevision: typeof API_SCHEMA_REVISION;
-  runtimeId: string;
-  capabilities: Record<string, unknown>;
-};
-
-type CurrentRuntimeApiContext = {
-  snapshot: CurrentRuntimeSnapshot | null;
-  health: RuntimeHealthSummary;
-  meta: CurrentRuntimeApiMeta;
-};
-
-function createCurrentRuntimeApiContext(): CurrentRuntimeApiContext {
-  const snapshot = getCurrentRuntimeSnapshot();
-  const capabilities = snapshot?.capabilities ?? {};
-  const health = getRuntimeHealthSummary();
-  return {
-    snapshot,
-    health,
-    meta: {
-      schema: API_SCHEMA,
-      schemaRevision: API_SCHEMA_REVISION,
-      runtimeId: snapshot?.runtimeId ?? asString(health.distData.runtime?.runtimeId) ?? health.distData.source ?? 'runtime-missing',
-      capabilities,
-    },
-  };
-}
 
 function sendOk(res: Response, data: unknown, context = createCurrentRuntimeApiContext()): void {
   res.json({
@@ -68,39 +36,14 @@ function normalizeRequiredParam(value: string | undefined, name: string): string
   return normalized;
 }
 
-function assertCurrentRuntimeId(runtimeId: string | undefined, context: CurrentRuntimeApiContext): void {
-  const requested = normalizeRequiredParam(runtimeId, 'runtimeId');
-  const current = context.meta.runtimeId;
-  if (requested !== current) {
-    throw notFound('Runtime id is not the current published runtime');
-  }
-}
-
 function isExternalRuntimeAuthority(): boolean {
   return resolveAccelerationCompilerAuthority() === 'external-runtime';
 }
 
 function sendRuntimeCurrent(res: Response): void {
   const context = createCurrentRuntimeApiContext();
-  const { meta, snapshot } = context;
-  const manifestPath = snapshot?.manifestPath ?? null;
-  const runtimeSchemaRevision = snapshot?.runtimeSchemaRevision ?? 'runtime.unknown';
   setNoStoreHeaders(res);
-  sendOk(res, {
-    runtimeId: meta.runtimeId,
-    schemaRevision: runtimeSchemaRevision,
-    manifestUrl: '/api/runtime/current/manifest',
-    runtimeManifestUrl: `/api/runtime/${encodeURIComponent(meta.runtimeId)}/manifest`,
-    assetBaseUrl: '/api/runtime/current/asset/',
-    runtimeAssetBaseUrl: `/api/runtime/${encodeURIComponent(meta.runtimeId)}/asset/`,
-    legacyManifestUrl: '/api/native-runtime/current/manifest',
-    capabilities: meta.capabilities,
-    manifestPath,
-    cache: {
-      immutable: true,
-      maxAgeSeconds: 31_536_000,
-    },
-  }, context);
+  sendOk(res, getCurrentRuntimeOverview(context), context);
 }
 
 function sendRuntimeManifest(
@@ -108,9 +51,8 @@ function sendRuntimeManifest(
   options: { immutable?: boolean } = {},
   context = createCurrentRuntimeApiContext(),
 ): void {
-  const { snapshot } = context;
-  if (!snapshot) throw notFound('Runtime manifest not found');
-  res.setHeader('ETag', createWeakEtag('runtime-manifest', snapshot.runtimeId, snapshot.manifestPath, snapshot.fingerprint));
+  const manifest = getCurrentRuntimeManifestDelivery(context);
+  res.setHeader('ETag', manifest.etag);
   if (options.immutable) {
     setStaticAssetCacheHeaders(res, {
       maxAge: '365d',
@@ -120,18 +62,7 @@ function sendRuntimeManifest(
   } else {
     setNoStoreHeaders(res);
   }
-  sendOk(res, snapshot.manifest, context);
-}
-
-function getRuntimeArtifactFromContext(
-  fileName: string | undefined,
-  context: CurrentRuntimeApiContext,
-): CurrentRuntimeArtifact | null {
-  const raw = normalizeRequiredParam(fileName, 'fileName');
-  if (!isPortableRuntimePath(raw)) throw badRequest('fileName must be a runtime-relative file path');
-  const normalized = normalizeRuntimePath(raw);
-  if (!context.snapshot?.declaredFiles.includes(normalized)) return null;
-  return context.snapshot.artifactsByPath[normalized] ?? null;
+  sendOk(res, manifest.payload, context);
 }
 
 function sendRuntimeAsset(
@@ -139,15 +70,14 @@ function sendRuntimeAsset(
   res: Response,
   context = createCurrentRuntimeApiContext(),
 ): void {
-  const artifact = getRuntimeArtifactFromContext(fileName, context);
-  if (!artifact) throw notFound('Runtime file is not declared by the current runtime manifest');
-  res.setHeader('ETag', createWeakEtag('runtime-asset', context.meta.runtimeId, artifact.relativePath, artifact.bytes, artifact.mtimeMs));
+  const asset = getCurrentRuntimeAssetDelivery(fileName, context);
+  res.setHeader('ETag', asset.etag);
   setStaticAssetCacheHeaders(res, {
     maxAge: '365d',
     immutable: true,
     varyAcceptEncoding: true,
   });
-  res.sendFile(artifact.absolutePath);
+  res.sendFile(asset.artifact.absolutePath);
 }
 
 function assetPathFromMountedRequest(req: Request): string {
@@ -228,45 +158,13 @@ async function sendRecipePage(recipePageIdParam: string | undefined, res: Respon
 function sendDiagnosticsHealth(res: Response): void {
   setNoStoreHeaders(res);
   const context = createCurrentRuntimeApiContext();
-  const { health, snapshot } = context;
-  const runtimeFiles = snapshot ? Object.keys(snapshot.artifactsByPath).length : health.files.declared;
-  sendOk(res, {
-    runtimeId: context.meta.runtimeId,
-    schema: asString(snapshot?.manifest.schema) ?? 'neonei/runtime/current',
-    schemaRevision: snapshot?.runtimeSchemaRevision,
-    integrityOk: health.status !== 'blocked' && health.files.missing.length === 0,
-    packCount: runtimeFiles,
-    atlasCount: health.counts.browserAtlasItems,
-    missingTextures: health.coverage.semanticAtlasMissing,
-    missingAnimations: health.coverage.staticWhenExpectedAnimated,
-    generatedAt: health.generatedAt,
-    sourceExportName: health.distData.source,
-    warnings: health.validation.warnings,
-    checks: {
-      manifest: snapshot ? 'ok' : 'missing',
-      assets: health.files.missing.length === 0 ? 'ok' : 'missing',
-      reports: 'ok',
-    },
-    health,
-  }, context);
+  sendOk(res, getCurrentRuntimeDiagnosticsHealth(context), context);
 }
 
 function sendDiagnosticsRuntimeSummary(res: Response): void {
   setNoStoreHeaders(res);
   const context = createCurrentRuntimeApiContext();
-  const { health } = context;
-  sendOk(res, {
-    runtimeId: context.meta.runtimeId,
-    counts: {
-      items: health.counts.items,
-      groups: health.counts.browserGroups,
-      recipes: health.counts.recipes,
-      atlasItems: health.counts.browserAtlasItems,
-      animatedTextures: health.counts.animatedBrowserAtlasItems ?? health.counts.animationTableItems,
-    },
-    warnings: health.validation.warnings,
-    coverage: health.coverage,
-  }, context);
+  sendOk(res, getCurrentRuntimeDiagnosticsSummary(context), context);
 }
 
 function sendRuntimeSettings(res: Response): void {
@@ -390,10 +288,7 @@ router.get('/health/current/runtime', (_req, res) => {
 router.get('/metrics/current/native-surface', (_req, res) => {
   setNoStoreHeaders(res);
   const context = createCurrentRuntimeApiContext();
-  sendOk(res, {
-    nativeRender: context.health.nativeRender,
-    runtimeHealth: context.health,
-  }, context);
+  sendOk(res, getCurrentRuntimeNativeSurfaceMetrics(context), context);
 });
 
 router.get('/settings/runtime', (_req, res) => {

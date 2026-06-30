@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 const routeSource = fs.readFileSync('src/routes/current-api.routes.ts', 'utf8');
 const namespaceSource = fs.readFileSync('src/routes/api-namespaces.routes.ts', 'utf8');
 const currentRuntimeSnapshotSource = fs.readFileSync('src/services/current-runtime-snapshot.service.ts', 'utf8');
+const currentRuntimeApiSource = fs.readFileSync('src/services/current-runtime-api.service.ts', 'utf8');
 const currentRuntimeReportRegistrySource = fs.readFileSync('src/services/current-runtime-report-registry.service.ts', 'utf8');
 
 test('current API exposes semantic non-versioned runtime endpoints', () => {
@@ -31,15 +32,15 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
     assert.equal(routeSource.includes(route), true, `missing ${route}`);
   }
   assert.doesNotMatch(routeSource, /\/api\/v\d/);
-  assert.equal(routeSource.includes("const API_SCHEMA = 'neonei/api/current'"), true);
-  assert.equal(routeSource.includes('schemaRevision: API_SCHEMA_REVISION'), true);
-  assert.equal(routeSource.includes('capabilities'), true);
-  assert.equal(routeSource.includes("manifestUrl: '/api/runtime/current/manifest'"), true);
-  assert.equal(routeSource.includes("assetBaseUrl: '/api/runtime/current/asset/'"), true);
-  assert.equal(routeSource.includes('runtimeSchemaRevision'), true);
-  assert.equal(routeSource.includes('runtimeManifestUrl'), true);
-  assert.equal(routeSource.includes('runtimeAssetBaseUrl'), true);
-  assert.equal(routeSource.includes('function assertCurrentRuntimeId'), true);
+  assert.equal(currentRuntimeApiSource.includes("const API_SCHEMA = 'neonei/api/current'"), true);
+  assert.equal(currentRuntimeApiSource.includes('schemaRevision: API_SCHEMA_REVISION'), true);
+  assert.equal(currentRuntimeApiSource.includes('capabilities'), true);
+  assert.equal(currentRuntimeApiSource.includes("manifestUrl: '/api/runtime/current/manifest'"), true);
+  assert.equal(currentRuntimeApiSource.includes("assetBaseUrl: '/api/runtime/current/asset/'"), true);
+  assert.equal(currentRuntimeApiSource.includes('runtimeSchemaRevision'), true);
+  assert.equal(currentRuntimeApiSource.includes('runtimeManifestUrl'), true);
+  assert.equal(currentRuntimeApiSource.includes('runtimeAssetBaseUrl'), true);
+  assert.equal(currentRuntimeApiSource.includes('function assertCurrentRuntimeId'), true);
   assert.equal(routeSource.includes('function sendRuntimeReport'), true);
   assert.equal(routeSource.includes('function sendDiagnosticsHealth'), true);
   assert.equal(routeSource.includes('function sendDiagnosticsRuntimeSummary'), true);
@@ -72,11 +73,12 @@ test('runtime file endpoint is path traversal safe and relative-rooted', () => {
   assert.match(currentRuntimeSnapshotSource, /startsWith\(`\$\{runtimeRoot\}\$\{path\.sep\}`\)/);
   assert.match(currentRuntimeSnapshotSource, /collectDeclaredRuntimeFilePaths/);
   assert.match(currentRuntimeSnapshotSource, /snapshot\.declaredFiles\.includes\(normalized\)/);
-  assert.match(routeSource, /function getRuntimeArtifactFromContext/);
-  assert.match(routeSource, /isPortableRuntimePath\(raw\)/);
-  assert.match(routeSource, /normalizeRuntimePath\(raw\)/);
-  assert.match(routeSource, /context\.snapshot\.artifactsByPath\[normalized\]/);
-  assert.match(routeSource, /res\.sendFile\(artifact\.absolutePath\)/);
+  assert.match(currentRuntimeApiSource, /function normalizeRequiredCurrentRuntimeParam/);
+  assert.match(currentRuntimeApiSource, /export function getCurrentRuntimeAssetDelivery/);
+  assert.match(currentRuntimeApiSource, /isPortableRuntimePath\(raw\)/);
+  assert.match(currentRuntimeApiSource, /normalizeRuntimePath\(raw\)/);
+  assert.match(currentRuntimeApiSource, /context\.snapshot\.artifactsByPath\[normalized\]/);
+  assert.match(routeSource, /res\.sendFile\(asset\.artifact\.absolutePath\)/);
 });
 
 test('current runtime snapshot service owns immutable manifest and artifact inventory', () => {
@@ -88,13 +90,20 @@ test('current runtime snapshot service owns immutable manifest and artifact inve
   assert.match(currentRuntimeSnapshotSource, /export function getCurrentRuntimeSnapshot/);
   assert.match(currentRuntimeSnapshotSource, /export function getCurrentRuntimeArtifact/);
   assert.match(currentRuntimeSnapshotSource, /export function normalizeRuntimePath/);
-  assert.match(routeSource, /getCurrentRuntimeSnapshot/);
-  assert.match(routeSource, /function createCurrentRuntimeApiContext/);
-  assert.match(routeSource, /type CurrentRuntimeApiContext/);
+  assert.match(currentRuntimeApiSource, /getCurrentRuntimeSnapshot/);
+  assert.match(currentRuntimeApiSource, /export function createCurrentRuntimeApiContext/);
+  assert.match(currentRuntimeApiSource, /export type CurrentRuntimeApiContext/);
+  assert.match(currentRuntimeApiSource, /export function getCurrentRuntimeOverview/);
+  assert.match(currentRuntimeApiSource, /export function getCurrentRuntimeManifestDelivery/);
+  assert.match(currentRuntimeApiSource, /export function getCurrentRuntimeDiagnosticsHealth/);
+  assert.match(currentRuntimeApiSource, /export function getCurrentRuntimeDiagnosticsSummary/);
+  assert.match(currentRuntimeApiSource, /export function getCurrentRuntimeNativeSurfaceMetrics/);
   assert.match(routeSource, /sendOk\(res: Response, data: unknown, context = createCurrentRuntimeApiContext\(\)\)/);
   assert.doesNotMatch(routeSource, /function getCurrentMeta/);
+  assert.doesNotMatch(routeSource, /getCurrentRuntimeSnapshot/);
   assert.doesNotMatch(routeSource, /function getDeclaredRuntimeFilePaths/);
   assert.doesNotMatch(routeSource, /function resolveRuntimeFile/);
+  assert.doesNotMatch(routeSource, /context\.snapshot\.artifactsByPath/);
 
   const assetIndex = routeSource.indexOf('function sendRuntimeAsset');
   assert.notEqual(assetIndex, -1, 'sendRuntimeAsset must exist');
@@ -104,11 +113,12 @@ test('current runtime snapshot service owns immutable manifest and artifact inve
 });
 
 test('runtime delivery API exposes immutable ETag asset contracts and report allowlist', () => {
-  assert.match(routeSource, /createWeakEtag/);
+  assert.match(currentRuntimeApiSource, /createWeakEtag/);
   assert.match(routeSource, /setStaticAssetCacheHeaders/);
   assert.match(routeSource, /immutable:\s*true/);
   assert.match(routeSource, /res\.setHeader\('ETag'/);
-  assert.match(routeSource, /setNoStoreHeaders\(res\);\s*\n\s*sendOk\(res, \{\s*\n\s*runtimeId:/, 'current runtime pointer must remain no-store');
+  assert.match(routeSource, /setNoStoreHeaders\(res\);\s*\n\s*sendOk\(res, getCurrentRuntimeOverview\(context\), context\)/, 'current runtime pointer must remain no-store');
+  assert.match(currentRuntimeApiSource, /runtimeId: meta\.runtimeId/);
   assert.match(routeSource, /resolveCurrentRuntimeReport\(reportName\)/);
   assert.match(routeSource, /res\.sendFile\(report\.absolutePath\)/);
   assert.doesNotMatch(routeSource, /const allowedReports/);
@@ -142,9 +152,11 @@ test('runtime delivery API exposes immutable ETag asset contracts and report all
 test('current API responses are path portable and do not advertise machine roots', () => {
   assert.doesNotMatch(routeSource, /[A-Za-z]:\\\\/);
   assert.doesNotMatch(routeSource, /E:\\\\codex/);
-  assert.doesNotMatch(routeSource, /assetBaseUrl:\s*['"](?:[A-Za-z]:|\\\\|\/runtime\/)/);
-  assert.match(routeSource, /assetBaseUrl:\s*'\/api\/runtime\/current\/asset\/'/);
-  assert.match(routeSource, /runtimeAssetBaseUrl:\s*`\/api\/runtime\/\$\{encodeURIComponent\(meta\.runtimeId\)\}\/asset\/`/);
+  assert.doesNotMatch(currentRuntimeApiSource, /[A-Za-z]:\\\\/);
+  assert.doesNotMatch(currentRuntimeApiSource, /E:\\\\codex/);
+  assert.doesNotMatch(currentRuntimeApiSource, /assetBaseUrl:\s*['"](?:[A-Za-z]:|\\\\|\/runtime\/)/);
+  assert.match(currentRuntimeApiSource, /assetBaseUrl:\s*'\/api\/runtime\/current\/asset\/'/);
+  assert.match(currentRuntimeApiSource, /runtimeAssetBaseUrl:\s*`\/api\/runtime\/\$\{encodeURIComponent\(meta\.runtimeId\)\}\/asset\/`/);
 });
 
 test('recipe page API exposes low-frequency page details without browser hot-path ownership', () => {
