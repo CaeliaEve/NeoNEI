@@ -11,13 +11,28 @@ test('runtime health exposes the stable public health contract', () => {
     true,
     'runtime health summary must keep a stable schemaVersion',
   );
-  for (const field of ['distData', 'counts', 'coverage', 'validation', 'files', 'compiler', 'nativeRender']) {
+  for (const field of ['distData', 'counts', 'coverage', 'validation', 'files', 'runtimeSnapshot', 'compiler', 'nativeRender']) {
     assert.equal(
       serviceSource.includes(`${field}:`),
       true,
       `runtime health summary should expose ${field}`,
     );
   }
+  assert.equal(
+    serviceSource.includes('getCurrentRuntimeSnapshot'),
+    true,
+    'runtime health should read current runtime identity and artifact inventory from the immutable snapshot service',
+  );
+  assert.equal(
+    serviceSource.includes('buildRuntimeSnapshotHealth'),
+    true,
+    'runtime health should derive file diagnostics from a snapshot-backed boundary',
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /function readDeclaredFileStats/,
+    'runtime health must not own a second declared-file filesystem scanner',
+  );
   assert.equal(
     serviceSource.includes('resolveAccelerationCompilerAuthority'),
     true,

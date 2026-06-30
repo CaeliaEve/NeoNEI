@@ -49,6 +49,18 @@ const validationRows = computed<Array<[string, string | number | null | undefine
   ];
 });
 
+const runtimeSnapshotRows = computed<Array<[string, string | number | null | undefined]>>(() => {
+  const snapshot = health.value?.runtimeSnapshot;
+  return [
+    ['可用', snapshot?.available ? 'yes' : 'no'],
+    ['Revision', snapshot?.revision],
+    ['Runtime ID', snapshot?.runtimeId],
+    ['Schema', snapshot?.runtimeSchemaRevision],
+    ['Manifest', snapshot?.manifestPath],
+    ['Fingerprint', snapshot?.fingerprint],
+  ];
+});
+
 function formatNumber(value: number | null | undefined): string {
   return typeof value === 'number' && Number.isFinite(value) ? numberFormat.format(value) : '—';
 }
@@ -165,6 +177,27 @@ onMounted(() => {
         <ul v-if="health.files?.missing?.length" class="issue-list">
           <li v-for="entry in health.files.missing.slice(0, 8)" :key="entry.key">
             {{ entry.key }} · {{ entry.path }}
+          </li>
+        </ul>
+      </article>
+
+      <article class="panel">
+        <h2>Runtime Snapshot</h2>
+        <dl class="validation-list single">
+          <div v-for="[label, value] in runtimeSnapshotRows" :key="label">
+            <dt>{{ label }}</dt>
+            <dd>{{ typeof value === 'number' ? formatNumber(value) : (value ?? '—') }}</dd>
+          </div>
+        </dl>
+        <div class="metric-grid compact">
+          <div class="metric"><span>Snapshot 声明</span><strong>{{ formatNumber(health.runtimeSnapshot?.declaredFiles) }}</strong></div>
+          <div class="metric"><span>Snapshot 存在</span><strong>{{ formatNumber(health.runtimeSnapshot?.presentArtifacts) }}</strong></div>
+          <div class="metric"><span>Snapshot 缺失</span><strong>{{ formatNumber(health.runtimeSnapshot?.missingArtifacts?.length) }}</strong></div>
+          <div class="metric"><span>Snapshot 大小</span><strong>{{ formatBytes(health.runtimeSnapshot?.totalBytes) }}</strong></div>
+        </div>
+        <ul v-if="health.runtimeSnapshot?.missingArtifacts?.length" class="issue-list">
+          <li v-for="artifact in health.runtimeSnapshot.missingArtifacts.slice(0, 8)" :key="artifact">
+            {{ artifact }}
           </li>
         </ul>
       </article>
@@ -312,6 +345,8 @@ h2 {
   gap: 12px;
   margin: 16px 0 0;
 }
+
+.validation-list.single { grid-template-columns: 1fr; }
 
 .identity-list div,
 .validation-list div,

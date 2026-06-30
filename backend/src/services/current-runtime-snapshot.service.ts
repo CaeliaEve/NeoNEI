@@ -101,25 +101,41 @@ function getRuntimeManifestRelativePath(distManifest: JsonRecord | null): string
   return isPortableRuntimePath(declared) ? normalizeRuntimePath(declared) : null;
 }
 
-function collectPortableRuntimePaths(value: unknown, output: Set<string>): void {
+function addPortableRuntimePath(value: unknown, output: Set<string>): void {
   if (isPortableRuntimePath(value)) {
     output.add(normalizeRuntimePath(value));
-    return;
   }
+}
+
+function collectEntrypointRuntimePaths(value: unknown, output: Set<string>): void {
+  const record = asRecord(value);
+  if (!record) return;
+  for (const item of Object.values(record)) addPortableRuntimePath(item, output);
+}
+
+function collectManifestRuntimeFiles(value: unknown, output: Set<string>): void {
+  addPortableRuntimePath(value, output);
   if (Array.isArray(value)) {
-    for (const item of value) collectPortableRuntimePaths(item, output);
+    for (const item of value) {
+      const record = asRecord(item);
+      if (record) {
+        addPortableRuntimePath(record.path, output);
+      } else {
+        addPortableRuntimePath(item, output);
+      }
+    }
     return;
   }
   const record = asRecord(value);
   if (!record) return;
-  for (const item of Object.values(record)) collectPortableRuntimePaths(item, output);
+  for (const item of Object.values(record)) addPortableRuntimePath(item, output);
 }
 
 function collectDeclaredRuntimeFilePaths(runtimeManifestPath: string, runtimeManifest: JsonRecord): readonly string[] {
   const declared = new Set<string>();
   declared.add(runtimeManifestPath);
-  collectPortableRuntimePaths(asRecord(runtimeManifest.entrypoints), declared);
-  collectPortableRuntimePaths(runtimeManifest.files, declared);
+  collectEntrypointRuntimePaths(runtimeManifest.entrypoints, declared);
+  collectManifestRuntimeFiles(runtimeManifest.files, declared);
   return Object.freeze(Array.from(declared).sort((left, right) => left.localeCompare(right)));
 }
 

@@ -39,6 +39,19 @@ export interface RuntimeHealthSummary {
     missing: Array<{ key: string; path: string }>;
     totalBytes: number;
   };
+  runtimeSnapshot?: {
+    available: boolean;
+    revision: number | null;
+    runtimeId: string | null;
+    runtimeSchemaRevision: string | null;
+    manifestPath: string | null;
+    fingerprint: string | null;
+    declaredFiles: number;
+    presentArtifacts: number;
+    missingArtifacts: string[];
+    totalBytes: number;
+  };
+  compiler?: unknown;
   nativeRender?: unknown;
 }
 

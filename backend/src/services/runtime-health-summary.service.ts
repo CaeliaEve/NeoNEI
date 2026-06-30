@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { PUBLIC_DIR } from '../config/runtime-paths';
 import { resolveAccelerationCompilerAuthority } from './acceleration-runtime-compiler-authority.service';
+import { getCurrentRuntimeSnapshot, type CurrentRuntimeSnapshot } from './current-runtime-snapshot.service';
 import { getNativeRenderRuntimeDiagnostics } from './native-render-runtime-diagnostics.service';
 
 type JsonRecord = Record<string, unknown>;
@@ -54,6 +55,18 @@ export interface RuntimeHealthSummary {
     missing: Array<{ key: string; path: string }>;
     totalBytes: number;
   };
+  runtimeSnapshot: {
+    available: boolean;
+    revision: number | null;
+    runtimeId: string | null;
+    runtimeSchemaRevision: string | null;
+    manifestPath: string | null;
+    fingerprint: string | null;
+    declaredFiles: number;
+    presentArtifacts: number;
+    missingArtifacts: string[];
+    totalBytes: number;
+  };
   compiler: {
     authority: ReturnType<typeof resolveAccelerationCompilerAuthority>;
     externalRuntimePromotion: {
@@ -98,34 +111,54 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((entry) => `${entry ?? ''}`.trim()).filter(Boolean) : [];
 }
 
-function readDeclaredFileStats(files: JsonRecord | null): RuntimeHealthSummary['files'] {
-  const entries = Object.entries(files ?? {})
-    .filter(([, value]) => typeof value === 'string' && value.trim().length > 0)
-    .map(([key, value]) => ({ key, relativePath: value as string }));
-
-  let present = 0;
-  let totalBytes = 0;
-  const missing: Array<{ key: string; path: string }> = [];
-
-  for (const entry of entries) {
-    const filePath = path.join(DIST_DATA_DIR, entry.relativePath);
-    if (!fs.existsSync(filePath)) {
-      missing.push({ key: entry.key, path: entry.relativePath });
-      continue;
-    }
-    present += 1;
-    try {
-      totalBytes += fs.statSync(filePath).size;
-    } catch {
-      missing.push({ key: entry.key, path: entry.relativePath });
-    }
+function buildRuntimeSnapshotHealth(snapshot: CurrentRuntimeSnapshot | null): Pick<RuntimeHealthSummary, 'files' | 'runtimeSnapshot'> {
+  if (!snapshot) {
+    return {
+      files: {
+        declared: 0,
+        present: 0,
+        missing: [],
+        totalBytes: 0,
+      },
+      runtimeSnapshot: {
+        available: false,
+        revision: null,
+        runtimeId: null,
+        runtimeSchemaRevision: null,
+        manifestPath: null,
+        fingerprint: null,
+        declaredFiles: 0,
+        presentArtifacts: 0,
+        missingArtifacts: [],
+        totalBytes: 0,
+      },
+    };
   }
 
+  const artifactPaths = new Set(Object.keys(snapshot.artifactsByPath));
+  const missingArtifacts = snapshot.declaredFiles.filter((relativePath) => !artifactPaths.has(relativePath));
+  const totalBytes = Object.values(snapshot.artifactsByPath)
+    .reduce((total, artifact) => total + artifact.bytes, 0);
+
   return {
-    declared: entries.length,
-    present,
-    missing,
-    totalBytes,
+    files: {
+      declared: snapshot.declaredFiles.length,
+      present: artifactPaths.size,
+      missing: missingArtifacts.map((relativePath) => ({ key: relativePath, path: relativePath })),
+      totalBytes,
+    },
+    runtimeSnapshot: {
+      available: true,
+      revision: snapshot.revision,
+      runtimeId: snapshot.runtimeId,
+      runtimeSchemaRevision: snapshot.runtimeSchemaRevision,
+      manifestPath: snapshot.manifestPath,
+      fingerprint: snapshot.fingerprint,
+      declaredFiles: snapshot.declaredFiles.length,
+      presentArtifacts: artifactPaths.size,
+      missingArtifacts,
+      totalBytes,
+    },
   };
 }
 
@@ -154,13 +187,19 @@ function readExternalRuntimePromotionSummary(manifest: JsonRecord | null): Runti
 
 function chooseStatus(args: {
   manifestExists: boolean;
+  runtimeSnapshotAvailable: boolean;
   missingFileCount: number;
   migrationReadinessStatus: string | null;
   browserContractStatus: string | null;
   recipeFragmentationStatus: string | null;
   compilerValidationBlocked: boolean;
 }): RuntimeHealthSummary['status'] {
-  if (!args.manifestExists || args.missingFileCount > 0 || args.compilerValidationBlocked) {
+  if (
+    !args.manifestExists
+    || !args.runtimeSnapshotAvailable
+    || args.missingFileCount > 0
+    || args.compilerValidationBlocked
+  ) {
     return 'blocked';
   }
   if (args.migrationReadinessStatus === 'blocked') {
@@ -194,7 +233,9 @@ export function getRuntimeHealthSummary(): RuntimeHealthSummary {
   const browserContract = readDistJsonByManifestKey(manifest, 'neiBrowserContract');
   const recipeFragmentation = readDistJsonByManifestKey(manifest, 'recipeFragmentation');
   const exportPathHygiene = readDistJsonByManifestKey(manifest, 'exportPathHygiene');
-  const files = readDeclaredFileStats(asRecord(manifest?.files));
+  const snapshot = getCurrentRuntimeSnapshot();
+  const runtimeSnapshotHealth = buildRuntimeSnapshotHealth(snapshot);
+  const files = runtimeSnapshotHealth.files;
   const compilerAuthority = resolveAccelerationCompilerAuthority();
   const externalRuntimePromotion = readExternalRuntimePromotionSummary(manifest);
 
@@ -209,6 +250,7 @@ export function getRuntimeHealthSummary(): RuntimeHealthSummary {
     schemaVersion: 'neonei/runtime-health-summary/current',
     status: chooseStatus({
       manifestExists: Boolean(manifest),
+      runtimeSnapshotAvailable: runtimeSnapshotHealth.runtimeSnapshot.available,
       missingFileCount: files.missing.length,
       migrationReadinessStatus,
       browserContractStatus: neiBrowserContractStatus,
@@ -262,6 +304,7 @@ export function getRuntimeHealthSummary(): RuntimeHealthSummary {
       ],
     },
     files,
+    runtimeSnapshot: runtimeSnapshotHealth.runtimeSnapshot,
     compiler: {
       authority: compilerAuthority,
       externalRuntimePromotion,

@@ -60,9 +60,12 @@ test('runtime file endpoint is path traversal safe and relative-rooted', () => {
   assert.match(currentRuntimeSnapshotSource, /files\?\.rustRuntimeManifest/);
   assert.match(currentRuntimeSnapshotSource, /nativeRuntime\?\.runtimeManifest/);
   assert.match(currentRuntimeSnapshotSource, /typeof value !== 'string'/);
-  assert.match(currentRuntimeSnapshotSource, /function collectPortableRuntimePaths/);
+  assert.match(currentRuntimeSnapshotSource, /function addPortableRuntimePath/);
+  assert.match(currentRuntimeSnapshotSource, /function collectEntrypointRuntimePaths/);
+  assert.match(currentRuntimeSnapshotSource, /function collectManifestRuntimeFiles/);
   assert.match(currentRuntimeSnapshotSource, /Array\.isArray\(value\)/);
-  assert.match(currentRuntimeSnapshotSource, /collectPortableRuntimePaths\(runtimeManifest\.files, declared\)/);
+  assert.match(currentRuntimeSnapshotSource, /addPortableRuntimePath\(record\.path, output\)/);
+  assert.match(currentRuntimeSnapshotSource, /collectManifestRuntimeFiles\(runtimeManifest\.files, declared\)/);
   assert.match(currentRuntimeSnapshotSource, /normalized\.includes\('\.\.'\)/);
   assert.match(currentRuntimeSnapshotSource, /path\.isAbsolute\(normalized\)/);
   assert.match(currentRuntimeSnapshotSource, /startsWith\(`\$\{runtimeRoot\}\$\{path\.sep\}`\)/);
