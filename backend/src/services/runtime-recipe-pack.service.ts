@@ -1,6 +1,9 @@
 import fs from 'fs';
-import path from 'path';
-import { DIST_DATA_DIR } from '../config/runtime-paths';
+import {
+  CURRENT_RUNTIME_DIST_MANIFEST_FILE,
+  readCurrentRuntimeJson,
+  resolveDistDataRuntimeFile,
+} from './current-runtime-artifact-index.service';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -80,17 +83,8 @@ const COMPACT_RECIPE_MAGIC = 'NEIRCP1\0';
 const NATIVE_BINARY_PACK_MAGIC = 'NNEIBIN\0';
 const RECIPE_PACK_SCHEMA = 'neonei/recipe-pack/current';
 
-function readJson(filePath: string): JsonRecord | null {
-  try {
-    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as unknown;
-    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as JsonRecord : null;
-  } catch {
-    return null;
-  }
-}
-
 function readJsonRequired(filePath: string, label: string): JsonRecord {
-  const parsed = readJson(filePath);
+  const parsed = readCurrentRuntimeJson(filePath);
   if (!parsed) {
     throw new Error(`Runtime recipe ${label} is missing or invalid JSON: ${filePath}`);
   }
@@ -104,28 +98,6 @@ function asRecord(value: unknown): JsonRecord | null {
 function asString(value: unknown): string | null {
   const text = `${value ?? ''}`.trim();
   return text || null;
-}
-
-function isPortableRuntimePath(value: string): boolean {
-  return Boolean(value)
-    && !value.startsWith('/')
-    && !value.includes('\\')
-    && !value.includes('..')
-    && !path.isAbsolute(value)
-    && !/^[A-Za-z]:[\\/]/.test(value);
-}
-
-function resolveDistDataFile(relativePath: string): string {
-  const normalized = relativePath.trim().replace(/^\/+/, '');
-  if (!isPortableRuntimePath(normalized)) {
-    throw new Error(`Runtime recipe pack path must be portable and relative: ${relativePath}`);
-  }
-  const root = path.resolve(DIST_DATA_DIR);
-  const resolved = path.resolve(root, ...normalized.split('/'));
-  if (resolved !== root && !resolved.startsWith(`${root}${path.sep}`)) {
-    throw new Error(`Runtime recipe pack path escapes dist-data root: ${relativePath}`);
-  }
-  return resolved;
 }
 
 function decodeUtf8(buffer: Buffer, offset: number, length: number): string {
@@ -295,14 +267,14 @@ export class RuntimeRecipePackService {
   private cache: RuntimeRecipePack | null = null;
 
   private getRuntimeRecipePackPath(): { path: string; signature: string } {
-    const distManifest = readJson(path.join(DIST_DATA_DIR, 'manifest.json'));
+    const distManifest = readCurrentRuntimeJson(CURRENT_RUNTIME_DIST_MANIFEST_FILE);
     const runtimeManifestPath = asString(asRecord(distManifest?.files)?.rustRuntimeManifest) ?? 'rust/runtime-manifest.json';
-    const runtimeManifest = readJson(resolveDistDataFile(runtimeManifestPath));
+    const runtimeManifest = readCurrentRuntimeJson(resolveDistDataRuntimeFile(runtimeManifestPath));
     const recipePath = asString(asRecord(runtimeManifest?.entrypoints)?.recipes)
       ?? asString(asRecord(distManifest?.files)?.rustRecipeBin)
       ?? 'rust/recipes.bin';
     return {
-      path: resolveDistDataFile(recipePath),
+      path: resolveDistDataRuntimeFile(recipePath),
       signature: [asString(distManifest?.runtimeCacheKey) ?? 'runtime-cache-missing', recipePath].join('::'),
     };
   }
@@ -340,7 +312,7 @@ export class RuntimeRecipePackService {
     const pack = this.loadPack();
     const entry = pack.uiPayloadByRecipeId.get(normalizedRecipePageId);
     if (!entry) return null;
-    const shard = readJsonRequired(resolveDistDataFile(entry.path), 'UI payload shard');
+    const shard = readJsonRequired(resolveDistDataRuntimeFile(entry.path), 'UI payload shard');
     const payloads = asRecord(shard.payloads);
     const uiPayload = asRecord(payloads?.[normalizedRecipePageId]);
     if (!uiPayload) return null;

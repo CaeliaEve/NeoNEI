@@ -1,6 +1,11 @@
 ﻿import fs from 'fs';
-import path from 'path';
-import { PUBLIC_DIR } from '../config/runtime-paths';
+import {
+  CURRENT_RUNTIME_DIST_DATA_DIR,
+  CURRENT_RUNTIME_DIST_MANIFEST_FILE,
+  isPortableRuntimePath,
+  normalizeRuntimePath,
+  resolveDistDataRuntimeFile,
+} from './current-runtime-artifact-index.service';
 
 export interface NativeRenderRuntimeDiagnostics {
   schemaVersion: 'neonei/native-render-runtime-diagnostics/current';
@@ -68,21 +73,22 @@ function stableNumber(value: unknown): number {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function safeDistDataFile(distDataRoot: string, relativePath?: string | null): string | null {
-  const normalized = `${relativePath ?? ''}`.trim().replace(/\\/g, '/').replace(/^\/+/, '');
-  if (!normalized || normalized.split('/').some((segment) => segment === '.' || segment === '..')) {
+function safeDistDataFile(relativePath?: string | null): string | null {
+  if (!isPortableRuntimePath(relativePath)) {
     return null;
   }
-  const resolvedRoot = path.resolve(distDataRoot);
-  const resolved = path.resolve(resolvedRoot, ...normalized.split('/').filter(Boolean));
-  return resolved.startsWith(resolvedRoot) ? resolved : null;
+  try {
+    return resolveDistDataRuntimeFile(normalizeRuntimePath(relativePath));
+  } catch {
+    return null;
+  }
 }
 
 export function getNativeRenderRuntimeDiagnostics(): NativeRenderRuntimeDiagnostics {
-  const distDataRoot = path.join(PUBLIC_DIR, 'dist-data');
-  const manifestPath = path.join(distDataRoot, 'manifest.json');
+  const distDataRoot = CURRENT_RUNTIME_DIST_DATA_DIR;
+  const manifestPath = CURRENT_RUNTIME_DIST_MANIFEST_FILE;
   const manifest = readJson<DistDataManifest>(manifestPath);
-  const nativeRenderIndexPath = safeDistDataFile(distDataRoot, manifest?.files?.nativeRenderIndex ?? null);
+  const nativeRenderIndexPath = safeDistDataFile(manifest?.files?.nativeRenderIndex ?? null);
   const nativeRenderIndex = nativeRenderIndexPath ? readJson<NativeRenderIndex>(nativeRenderIndexPath) : null;
   const validation = nativeRenderIndex?.validation ?? null;
   const counts = nativeRenderIndex?.counts ?? {};
