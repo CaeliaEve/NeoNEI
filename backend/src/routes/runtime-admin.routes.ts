@@ -3,20 +3,12 @@ import type { AccelerationRuntimePhase, AccelerationRuntimeState } from '../serv
 import {
   getPublicApiIndex,
   getRuntimeAdminDiagnostics,
+  getRuntimeAdminHealth,
   getRuntimeOpenApiDocument,
-  serializeAccelerationRuntime,
 } from '../services/runtime-admin-control.service';
-import {
-  getAccelerationManagerUnavailableError,
-  getAccelerationReconcileAccepted,
-  getAccelerationReconcileConflict,
-  getAccelerationReconcileFailureTransition,
-  type RuntimeAdminControlError,
-  type RuntimeAdminReconcileLabel,
-} from '../services/runtime-admin-reconcile-control.service';
-import { setPublicCacheHeaders } from '../utils/http-cache';
-import { sendErrorEnvelope } from '../utils/error-response';
-import { logger } from '../utils/logger';
+import { type RuntimeAdminReconcileLabel } from '../services/runtime-admin-reconcile-control.service';
+import { sendRuntimeAdminReconcile } from './runtime-admin-reconcile-executor';
+import { sendRuntimeAdminJson, sendRuntimeAdminOpenApi, withRuntimeAdminToken } from './runtime-admin-transport';
 
 type RegisterRuntimeAdminRoutesOptions<TManager> = {
   getAccelerationRuntimeSnapshot: () => AccelerationRuntimeState;
@@ -43,65 +35,37 @@ export function registerRuntimeAdminRoutes<TManager>(
   } = options;
 
   app.get('/api/health', (_req, res) => {
-    const accelerationSnapshot = getAccelerationRuntimeSnapshot();
-    res.json({
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      acceleration: serializeAccelerationRuntime(accelerationSnapshot),
-    });
+    sendRuntimeAdminJson(res, getRuntimeAdminHealth(getAccelerationRuntimeSnapshot()));
   });
 
   app.get('/api', (_req, res) => {
-    res.json(getPublicApiIndex());
+    sendRuntimeAdminJson(res, getPublicApiIndex());
   });
 
   app.get('/api/openapi.json', (_req, res) => {
-    setPublicCacheHeaders(res, {
-      maxAgeSeconds: 300,
-      staleWhileRevalidateSeconds: 3600,
-      staleIfErrorSeconds: 86400,
-    });
-    res.json(getRuntimeOpenApiDocument());
+    sendRuntimeAdminOpenApi(res, getRuntimeOpenApiDocument());
   });
 
   const sendRuntimeDiagnostics = (req: Request, res: Response): void => {
-    if (!requireAdminToken(req, res)) {
-      return;
-    }
-    res.json(getRuntimeAdminDiagnostics(getAccelerationRuntimeSnapshot()));
+    withRuntimeAdminToken(req, res, requireAdminToken, () => {
+      sendRuntimeAdminJson(res, getRuntimeAdminDiagnostics(getAccelerationRuntimeSnapshot()));
+    });
   };
 
   app.get('/ops/runtime', sendRuntimeDiagnostics);
   app.get('/api/admin/runtime', sendRuntimeDiagnostics);
 
-  const sendControlError = (req: Request, res: Response, error: RuntimeAdminControlError): void => {
-    sendErrorEnvelope(req, res, error.statusCode, error.code, error.message, error.details);
+  const reconcileRuntime = {
+    getAccelerationRuntimeSnapshot,
+    getRuntimeAccelerationDbManager,
+    reconcileAccelerationRuntime,
+    setAccelerationRuntimePhase,
   };
 
-  const scheduleReconcile = (label: RuntimeAdminReconcileLabel) => async (req: Request, res: Response): Promise<void> => {
-    if (!requireAdminToken(req, res)) {
-      return;
-    }
-    const runtimeAccelerationDbManager = getRuntimeAccelerationDbManager();
-    if (!runtimeAccelerationDbManager) {
-      sendControlError(req, res, getAccelerationManagerUnavailableError());
-      return;
-    }
-    const accelerationSnapshot = getAccelerationRuntimeSnapshot();
-    const conflict = getAccelerationReconcileConflict(accelerationSnapshot);
-    if (conflict) {
-      sendControlError(req, res, conflict);
-      return;
-    }
-
-    logger.info(`[${label}] acceleration reconcile requested`, { ip: req.ip });
-    void reconcileAccelerationRuntime(runtimeAccelerationDbManager).catch((error) => {
-      const transition = getAccelerationReconcileFailureTransition(label, error);
-      setAccelerationRuntimePhase(transition.phase, transition.message, transition.extras);
-      logger.error(`[${label}] acceleration reconcile failed`, error);
+  const scheduleReconcile = (label: RuntimeAdminReconcileLabel) => (req: Request, res: Response): void => {
+    withRuntimeAdminToken(req, res, requireAdminToken, () => {
+      sendRuntimeAdminReconcile(req, res, label, reconcileRuntime);
     });
-
-    res.status(202).json(getAccelerationReconcileAccepted(getAccelerationRuntimeSnapshot()));
   };
 
   app.post('/ops/acceleration/reconcile', scheduleReconcile('OPS'));

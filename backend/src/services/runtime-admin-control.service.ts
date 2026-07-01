@@ -12,6 +12,12 @@ export type RuntimeAdminDiagnostics = Readonly<{
   }>;
 }>;
 
+export type RuntimeAdminHealth = Readonly<{
+  status: 'ok';
+  timestamp: string;
+  acceleration: AccelerationRuntimeState;
+}>;
+
 export type PublicApiIndex = Readonly<{
   message: 'NeoNEI API';
   version: '1.0.0';
@@ -37,6 +43,14 @@ export function serializeAccelerationRuntime(snapshot: AccelerationRuntimeState)
     activeApiRequests: snapshot.activeApiRequests,
     lastCompiledSignature: snapshot.lastCompiledSignature,
     lastError: snapshot.lastError,
+  });
+}
+
+export function getRuntimeAdminHealth(snapshot: AccelerationRuntimeState): RuntimeAdminHealth {
+  return Object.freeze({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    acceleration: serializeAccelerationRuntime(snapshot),
   });
 }
 
