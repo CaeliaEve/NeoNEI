@@ -1,6 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import type { FluidStack, Recipe, RecipeItem, RecipeUiPayload } from '../services/api';
+import type { Recipe, RecipeUiPayload } from '../services/api';
 import { loadUiPackRuntime, type UiPackRuntime } from '../services/uiPackRuntime';
 import {
   buildNativeUiSlotCells,
@@ -48,21 +48,15 @@ import {
   configureNativeUiCanvasSize,
   NativeUiRendererSession,
 } from '../services/nativeUiRendererSession.ts';
+import {
+  projectNativeUiRecipeRenderables,
+  resolveNativeUiRenderablesForRole,
+  type NativeUiRecipeRenderable,
+} from '../services/nativeUiRecipeRenderableProjection.ts';
 import type { NativeRendererBackend } from '../renderers/native/NativeRendererBackend';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
-
-interface CanvasRenderable {
-  kind: 'item' | 'fluid';
-  itemId: string;
-  atlasLookupId: string;
-  count: number;
-  localizedName?: string | null;
-  renderAssetRef?: string | null;
-  imageFileName?: string | null;
-  extraLines?: string[];
-}
-
+type CanvasRenderable = NativeUiRecipeRenderable;
 type CanvasCell = NativeUiSlotCell<CanvasRenderable>;
 
 
@@ -173,42 +167,12 @@ const sourceSurfaceStyle = computed(() => ({
   transform: `translate(-50%, -50%) scale(${fitScale.value})`,
 }));
 
-const inputItems = computed<CanvasRenderable[]>(() => {
-  const out: CanvasRenderable[] = [];
-  for (const row of props.recipe.inputs ?? []) {
-    if (!Array.isArray(row)) continue;
-    for (const cell of row) {
-      const item = Array.isArray(cell) ? cell[0] : cell;
-      if (item?.itemId) out.push(toItemRenderable(item));
-    }
-  }
-  return out;
-});
-
-const outputItems = computed<CanvasRenderable[]>(() => (
-  (props.recipe.outputs ?? [])
-    .filter((item): item is RecipeItem => Boolean(item?.itemId))
-    .map(toItemRenderable)
-));
-
-const inputFluids = computed<CanvasRenderable[]>(() => {
-  const groups = [...(props.recipe.fluidInputs ?? [])].sort((left, right) => Number(left.slotIndex ?? 0) - Number(right.slotIndex ?? 0));
-  return groups
-    .map((group) => group.fluids?.[0] ?? null)
-    .filter((entry): entry is FluidStack => Boolean(entry?.fluid))
-    .map(toFluidRenderable);
-});
-
-const outputFluids = computed<CanvasRenderable[]>(() => (
-  (props.recipe.fluidOutputs ?? [])
-    .filter((entry): entry is FluidStack => Boolean(entry?.fluid))
-    .map(toFluidRenderable)
-));
+const recipeRenderables = computed(() => projectNativeUiRecipeRenderables(props.recipe));
 
 const slotCells = computed<CanvasCell[]>(() => buildNativeUiSlotCells({
   slots: slots.value,
   slotSize: NATIVE_SLOT_SIZE,
-  resolveRoleEntries: renderablesForRole,
+  resolveRoleEntries: (role) => resolveNativeUiRenderablesForRole(role, recipeRenderables.value),
 }));
 const hitCells = computed<NativeUiHitCell<CanvasRenderable>[]>(() => projectNativeUiHitCells(slotCells.value));
 
@@ -230,57 +194,6 @@ const renderSignature = computed(() => JSON.stringify({
   viewports: viewports.value,
   entries: slotCells.value.map((cell) => [cell.key, cell.entry?.atlasLookupId, cell.entry?.count]),
 }));
-
-function renderAssetLookupId(renderAssetRef?: string | null): string | null {
-  const normalized = `${renderAssetRef ?? ''}`.trim();
-  const match = normalized.match(/^nesqlpp:(?:item|fluid)\/(.+)$/);
-  return match?.[1]?.trim() || null;
-}
-
-function resolveAtlasLookupId(itemId?: string | null, renderAssetRef?: string | null): string {
-  const direct = `${itemId ?? ''}`.trim();
-  if (direct) return direct;
-  return renderAssetLookupId(renderAssetRef) ?? '';
-}
-
-function toItemRenderable(item: RecipeItem): CanvasRenderable {
-  const renderAssetRef = `${item.renderAssetRef ?? ''}`.trim() || null;
-  const atlasLookupId = resolveAtlasLookupId(item.itemId, renderAssetRef);
-  return {
-    kind: 'item',
-    itemId: item.itemId,
-    atlasLookupId: atlasLookupId || item.itemId,
-    count: Math.max(1, Number(item.count ?? 1) || 1),
-    localizedName: item.localizedName ?? null,
-    renderAssetRef,
-    imageFileName: item.imageFileName ?? null,
-  };
-}
-
-function toFluidRenderable(stack: FluidStack): CanvasRenderable {
-  const renderAssetRef = `${stack.fluid.renderAssetRef ?? ''}`.trim() || null;
-  const atlasLookupId = resolveAtlasLookupId('', renderAssetRef) || `${stack.fluid.fluidId ?? ''}`.trim();
-  const itemId = atlasLookupId || `${stack.fluid.fluidId ?? stack.fluid.internalName ?? ''}`.trim();
-  return {
-    kind: 'fluid',
-    itemId,
-    atlasLookupId: itemId,
-    count: Math.max(1, Number(stack.amount ?? 0) || 1),
-    localizedName: stack.fluid.localizedName ?? stack.fluid.internalName ?? itemId,
-    renderAssetRef,
-    imageFileName: null,
-    extraLines: [`${Math.max(0, Number(stack.amount ?? 0) || 0)} mB`],
-  };
-}
-
-function renderablesForRole(role?: string): CanvasRenderable[] {
-  const normalized = String(role ?? '').toLowerCase();
-  if (normalized.includes('fluid')) {
-    return normalized.includes('output') ? outputFluids.value : inputFluids.value;
-  }
-  if (normalized.includes('output')) return outputItems.value;
-  return inputItems.value;
-}
 
 function handleHotspotClick(rect: NativeUiRect) {
   const itemId = nativeUiHotspotItemId(rect);
