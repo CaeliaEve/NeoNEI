@@ -1,11 +1,15 @@
-﻿import { spawn } from 'child_process';
-import fs from 'fs';
-import path from 'path';
 import { logger } from '../utils/logger';
 import {
   assertCompilerNativeUiCapabilityGate,
   type ElysiumCompilerCapabilityContract,
 } from './elysium-compiler-capability-gate';
+import {
+  DEFAULT_ELYSIUM_COMPILER_LOCK_PATH,
+  ElysiumCompilerTransport,
+  type ElysiumCompilerCommandResult,
+} from './elysium-compiler-transport';
+
+export type { ElysiumCompilerCommandResult } from './elysium-compiler-transport';
 
 export type ElysiumCompilerMetadata = {
   name?: string;
@@ -33,12 +37,6 @@ type RawElysiumCompilerHandshake = Omit<ElysiumCompilerHandshake, 'capabilities'
 
 export type ElysiumCompilerScope = 'all' | 'native-ui' | 'search' | 'browser' | 'recipes' | 'ui' | 'textures';
 
-export type ElysiumCompilerCommandResult = {
-  compiler: string;
-  stdout: string;
-  stderr: string;
-};
-
 export type ElysiumCompilerValidateOptions = {
   input: string;
   report: string;
@@ -56,71 +54,6 @@ export type ElysiumCompilerCompileOptions = {
   threads?: number;
 };
 
-const backendRoot = path.resolve(__dirname, '..', '..');
-const repoRoot = path.resolve(backendRoot, '..');
-const defaultLockPath = path.join(repoRoot, 'tools', 'elysium-compiler', 'elysium-compiler.lock.json');
-const ensureScript = path.join(repoRoot, 'scripts', 'ensure-elysium-compiler.mjs');
-
-function runNodeJson<T>(args: string[], label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    let stdout = '';
-    let stderr = '';
-    const child = spawn(process.execPath, args, {
-      cwd: repoRoot,
-      env: process.env,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`${label} failed with code ${code ?? 'unknown'}${stderr ? `: ${stderr.trim()}` : ''}`));
-        return;
-      }
-      try {
-        resolve(JSON.parse(stdout) as T);
-      } catch (error) {
-        reject(new Error(`${label} returned invalid JSON: ${(error as Error).message}; stdout=${stdout.slice(0, 500)}`));
-      }
-    });
-  });
-}
-
-function runCompilerCommand(compiler: string, args: string[], label: string): Promise<ElysiumCompilerCommandResult> {
-  return new Promise<ElysiumCompilerCommandResult>((resolve, reject) => {
-    let stdout = '';
-    let stderr = '';
-    const child = spawn(compiler, args, {
-      cwd: repoRoot,
-      env: process.env,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-
-    child.stdout.on('data', (chunk: Buffer) => {
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString('utf8');
-    });
-    child.on('error', reject);
-    child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error(`${label} failed with code ${code ?? 'unknown'}${stderr ? `: ${stderr.trim()}` : ''}`));
-        return;
-      }
-      resolve({ compiler, stdout, stderr });
-    });
-  });
-}
-
 function pushOptionalNumberArg(args: string[], name: string, value?: number): void {
   if (typeof value !== 'number') return;
   if (!Number.isInteger(value) || value <= 0) {
@@ -129,17 +62,15 @@ function pushOptionalNumberArg(args: string[], name: string, value?: number): vo
   args.push(name, String(value));
 }
 
+/** Typed ABI client for the external elysium-compiler. */
 export class ElysiumCompilerClient {
-  constructor(private readonly lockPath: string = defaultLockPath) {}
+  constructor(
+    private readonly lockPath: string = DEFAULT_ELYSIUM_COMPILER_LOCK_PATH,
+    private readonly transport: ElysiumCompilerTransport = new ElysiumCompilerTransport(),
+  ) {}
 
   async handshake(): Promise<ElysiumCompilerHandshake> {
-    if (!fs.existsSync(this.lockPath)) {
-      throw new Error(`elysium-compiler lock file missing: ${this.lockPath}`);
-    }
-    const report = await runNodeJson<RawElysiumCompilerHandshake>(
-      [ensureScript, '--lock', this.lockPath, '--json'],
-      'elysium-compiler handshake',
-    );
+    const report = await this.transport.resolveCompilerHandshake<RawElysiumCompilerHandshake>(this.lockPath);
     const capabilities = assertCompilerNativeUiCapabilityGate(report as ElysiumCompilerHandshake);
     logger.info('[ELYSIUM_COMPILER] handshake ok', {
       compiler: report.compiler,
@@ -158,7 +89,7 @@ export class ElysiumCompilerClient {
     const args = ['validate', '--input', options.input, '--report', options.report];
     if (options.output) args.push('--output', options.output);
     pushOptionalNumberArg(args, '--threads', options.threads);
-    return runCompilerCommand(handshake.compiler, args, 'elysium-compiler validate');
+    return this.transport.runCompilerCommand(handshake.compiler, args, 'elysium-compiler validate');
   }
 
   async compile(options: ElysiumCompilerCompileOptions): Promise<ElysiumCompilerCommandResult> {
@@ -177,7 +108,7 @@ export class ElysiumCompilerClient {
     if (options.strict) args.push('--strict');
     if (options.debugJson) args.push('--debug-json');
     pushOptionalNumberArg(args, '--threads', options.threads);
-    return runCompilerCommand(handshake.compiler, args, 'elysium-compiler compile');
+    return this.transport.runCompilerCommand(handshake.compiler, args, 'elysium-compiler compile');
   }
 }
 
