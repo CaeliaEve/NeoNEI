@@ -6,10 +6,12 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '..');
 const runtimeServicePath = resolve(root, 'src/services/acceleration-runtime.service.ts');
 const runtimeStatePath = resolve(root, 'src/services/acceleration-runtime-state.service.ts');
+const runtimeAdminControlPath = resolve(root, 'src/services/runtime-admin-control.service.ts');
 const runtimeAdminRoutesPath = resolve(root, 'src/routes/runtime-admin.routes.ts');
 const appPath = resolve(root, 'src/app.ts');
 const runtimeService = readFileSync(runtimeServicePath, 'utf8');
 const runtimeState = readFileSync(runtimeStatePath, 'utf8');
+const runtimeAdminControl = readFileSync(runtimeAdminControlPath, 'utf8');
 const runtimeAdminRoutes = readFileSync(runtimeAdminRoutesPath, 'utf8');
 const appSource = readFileSync(appPath, 'utf8');
 
@@ -57,10 +59,21 @@ test('acceleration runtime middleware and idle gate stay with state ownership', 
 
 test('runtime admin routes consume acceleration snapshots explicitly', () => {
   assert.match(runtimeAdminRoutes, /getAccelerationRuntimeSnapshot: \(\) => AccelerationRuntimeState/);
-  assert.match(runtimeAdminRoutes, /function serializeAccelerationRuntime/);
+  assert.match(runtimeAdminRoutes, /getRuntimeAdminDiagnostics/);
+  assert.match(runtimeAdminRoutes, /getRuntimeOpenApiDocument/);
+  assert.match(runtimeAdminRoutes, /getPublicApiIndex/);
   assert.match(runtimeAdminRoutes, /const accelerationSnapshot = getAccelerationRuntimeSnapshot\(\)/);
-  assert.match(runtimeAdminRoutes, /serializeAccelerationRuntime\(getAccelerationRuntimeSnapshot\(\)\)/);
+  assert.match(runtimeAdminRoutes, /getRuntimeAdminDiagnostics\(getAccelerationRuntimeSnapshot\(\)\)/);
+  assert.doesNotMatch(runtimeAdminRoutes, /function serializeAccelerationRuntime/);
+  assert.doesNotMatch(runtimeAdminRoutes, /fs\.existsSync/);
+  assert.doesNotMatch(runtimeAdminRoutes, /PUBLISH_OUTPUT_DIR/);
   assert.doesNotMatch(runtimeAdminRoutes, /\baccelerationRuntime\b/);
+  assert.match(runtimeAdminControl, /export function serializeAccelerationRuntime/);
+  assert.match(runtimeAdminControl, /export function getRuntimeAdminDiagnostics/);
+  assert.match(runtimeAdminControl, /export function getRuntimeOpenApiDocument/);
+  assert.match(runtimeAdminControl, /export function getPublicApiIndex/);
+  assert.match(runtimeAdminControl, /fs\.existsSync\(PUBLISH_OUTPUT_DIR\)/);
+  assert.match(runtimeAdminControl, /Object\.freeze\(\{/);
   assert.match(appSource, /getAccelerationRuntimeSnapshot/);
   assert.match(appSource, /getAccelerationRuntimeSnapshot,/);
   assert.doesNotMatch(appSource, /\baccelerationRuntime,/);
