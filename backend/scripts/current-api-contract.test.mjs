@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 const routeSource = fs.readFileSync('src/routes/current-api.routes.ts', 'utf8');
 const namespaceSource = fs.readFileSync('src/routes/api-namespaces.routes.ts', 'utf8');
+const currentRuntimeTransportSource = fs.readFileSync('src/routes/current-runtime-transport.ts', 'utf8');
 const currentRuntimeSnapshotSource = fs.readFileSync('src/services/current-runtime-snapshot.service.ts', 'utf8');
 const currentRuntimeApiSource = fs.readFileSync('src/services/current-runtime-api.service.ts', 'utf8');
 const currentRuntimeObservabilitySource = fs.readFileSync('src/services/current-runtime-observability.service.ts', 'utf8');
@@ -44,7 +45,7 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(currentRuntimeApiSource.includes('runtimeManifestUrl'), true);
   assert.equal(currentRuntimeApiSource.includes('runtimeAssetBaseUrl'), true);
   assert.equal(currentRuntimeApiSource.includes('function assertCurrentRuntimeId'), true);
-  assert.equal(routeSource.includes('function sendRuntimeReport'), true);
+  assert.equal(currentRuntimeTransportSource.includes('function sendCurrentRuntimeReport'), true);
   assert.equal(routeSource.includes('function sendDiagnosticsHealth'), true);
   assert.equal(routeSource.includes('function sendDiagnosticsRuntimeSummary'), true);
   assert.equal(routeSource.includes('function sendRuntimeSettings'), true);
@@ -84,7 +85,11 @@ test('runtime file endpoint is path traversal safe and relative-rooted', () => {
   assert.match(currentRuntimeApiSource, /isPortableRuntimePath\(raw\)/);
   assert.match(currentRuntimeApiSource, /normalizeRuntimePath\(raw\)/);
   assert.match(currentRuntimeApiSource, /context\.snapshot\.artifactsByPath\[normalized\]/);
-  assert.match(routeSource, /res\.sendFile\(asset\.artifact\.absolutePath\)/);
+  assert.match(currentRuntimeTransportSource, /export function sendCurrentRuntimeAsset/);
+  assert.match(currentRuntimeTransportSource, /getCurrentRuntimeAssetDelivery\(fileName, context\)/);
+  assert.match(currentRuntimeTransportSource, /res\.sendFile\(asset\.artifact\.absolutePath\)/);
+  assert.match(currentRuntimeTransportSource, /export function assetPathFromMountedRuntimeRequest/);
+  assert.match(currentRuntimeTransportSource, /decodeURIComponent\(req\.path\.replace/);
 });
 
 test('current runtime snapshot service owns immutable manifest and artifact inventory', () => {
@@ -125,9 +130,28 @@ test('current runtime snapshot service owns immutable manifest and artifact inve
   assert.match(currentRuntimeObservabilitySource, /export function getCurrentRuntimeDiagnosticsSummary/);
   assert.match(currentRuntimeObservabilitySource, /export function getCurrentRuntimeNativeSurfaceMetrics/);
   assert.match(routeSource, /current-runtime-observability\.service/);
-  assert.match(routeSource, /sendOk\(res: Response, data: unknown, context: CurrentRuntimeApiContext\)/);
+  assert.match(currentRuntimeTransportSource, /export type CurrentRuntimeJsonEnvelope = Readonly/);
+  assert.match(currentRuntimeTransportSource, /export function createCurrentRuntimeEnvelope/);
+  assert.match(currentRuntimeTransportSource, /export function sendCurrentRuntimeJson/);
+  assert.match(currentRuntimeTransportSource, /export function sendCurrentRuntimeNoStoreJson/);
+  assert.match(currentRuntimeTransportSource, /export function sendCurrentRuntimeManifest/);
+  assert.match(currentRuntimeTransportSource, /export function sendCurrentRuntimeAsset/);
+  assert.match(currentRuntimeTransportSource, /export function sendCurrentRuntimeReport/);
+  assert.match(currentRuntimeTransportSource, /setNoStoreHeaders/);
+  assert.match(currentRuntimeTransportSource, /setStaticAssetCacheHeaders/);
+  assert.match(currentRuntimeTransportSource, /resolveCurrentRuntimeReport/);
+  assert.doesNotMatch(routeSource, /function sendOk/);
+  assert.doesNotMatch(routeSource, /getCurrentRuntimeAssetDelivery/);
+  assert.doesNotMatch(routeSource, /getCurrentRuntimeManifestDelivery/);
+  assert.doesNotMatch(routeSource, /resolveCurrentRuntimeReport/);
+  assert.doesNotMatch(routeSource, /setNoStoreHeaders/);
+  assert.doesNotMatch(routeSource, /setStaticAssetCacheHeaders/);
   assert.match(routeSource, /withCurrentRuntimeApiContext/);
   assert.match(routeSource, /withCurrentRuntimeApiContextAsync/);
+  assert.match(routeSource, /sendCurrentRuntimeNoStoreJson/);
+  assert.match(routeSource, /sendCurrentRuntimeManifest/);
+  assert.match(routeSource, /sendCurrentRuntimeAsset/);
+  assert.match(routeSource, /sendCurrentRuntimeReport/);
   assert.doesNotMatch(routeSource, /createCurrentRuntimeApiContext/);
   assert.doesNotMatch(routeSource, /function getCurrentMeta/);
   assert.doesNotMatch(routeSource, /getCurrentRuntimeSnapshot/);
@@ -135,26 +159,30 @@ test('current runtime snapshot service owns immutable manifest and artifact inve
   assert.doesNotMatch(routeSource, /function resolveRuntimeFile/);
   assert.doesNotMatch(routeSource, /context\.snapshot\.artifactsByPath/);
 
-  const assetIndex = routeSource.indexOf('function sendRuntimeAsset');
-  assert.notEqual(assetIndex, -1, 'sendRuntimeAsset must exist');
-  const assetBody = routeSource.slice(assetIndex, routeSource.indexOf('\n}', assetIndex) + 2);
+  const assetIndex = currentRuntimeTransportSource.indexOf('function sendCurrentRuntimeAsset');
+  assert.notEqual(assetIndex, -1, 'sendCurrentRuntimeAsset must exist');
+  const assetBody = currentRuntimeTransportSource.slice(assetIndex, currentRuntimeTransportSource.indexOf('\n}', assetIndex) + 2);
   assert.doesNotMatch(assetBody, /fs\.statSync/);
   assert.doesNotMatch(assetBody, /fs\.existsSync/);
 });
 
 test('runtime delivery API exposes immutable ETag asset contracts and report allowlist', () => {
   assert.match(currentRuntimeApiSource, /createWeakEtag/);
-  assert.match(routeSource, /setStaticAssetCacheHeaders/);
-  assert.match(routeSource, /immutable:\s*true/);
-  assert.match(routeSource, /res\.setHeader\('ETag'/);
-  assert.match(routeSource, /setNoStoreHeaders\(res\);\s*\n\s*sendOk\(res, getCurrentRuntimeOverview\(context\), context\)/, 'current runtime pointer must remain no-store');
+  assert.match(currentRuntimeTransportSource, /setStaticAssetCacheHeaders/);
+  assert.match(currentRuntimeTransportSource, /IMMUTABLE_RUNTIME_ASSET_CACHE/);
+  assert.match(currentRuntimeTransportSource, /immutable:\s*true/);
+  assert.match(currentRuntimeTransportSource, /res\.setHeader\('ETag'/);
+  assert.match(routeSource, /sendCurrentRuntimeNoStoreJson\(res, getCurrentRuntimeOverview\(context\), context\)/, 'current runtime pointer must remain no-store');
+  assert.match(currentRuntimeTransportSource, /setNoStoreHeaders\(res\);\s*\n\s*sendCurrentRuntimeJson\(res, data, context\)/, 'no-store envelope must be centralized in current runtime transport');
   assert.match(currentRuntimeApiSource, /runtimeId: meta\.runtimeId/);
-  assert.match(routeSource, /resolveCurrentRuntimeReport\(reportName\)/);
-  assert.match(routeSource, /res\.sendFile\(report\.absolutePath\)/);
+  assert.match(currentRuntimeTransportSource, /resolveCurrentRuntimeReport\(reportName\)/);
+  assert.match(currentRuntimeTransportSource, /res\.sendFile\(report\.absolutePath\)/);
   assert.doesNotMatch(routeSource, /const allowedReports/);
   assert.doesNotMatch(routeSource, /function resolveRuntimeReport/);
   assert.doesNotMatch(routeSource, /fs\.existsSync/);
   assert.doesNotMatch(routeSource, /fs\.statSync/);
+  assert.doesNotMatch(routeSource, /res\.sendFile/);
+  assert.doesNotMatch(routeSource, /res\.setHeader\('ETag'/);
   assert.match(currentRuntimeReportRegistrySource, /const CURRENT_RUNTIME_REPORTS = Object\.freeze/);
   assert.match(currentRuntimeReportRegistrySource, /export function resolveCurrentRuntimeReport/);
   assert.match(currentRuntimeReportRegistrySource, /resolveDistDataRuntimeFile\(relativePath\)/);
@@ -182,6 +210,8 @@ test('runtime delivery API exposes immutable ETag asset contracts and report all
 test('current API responses are path portable and do not advertise machine roots', () => {
   assert.doesNotMatch(routeSource, /[A-Za-z]:\\\\/);
   assert.doesNotMatch(routeSource, /E:\\\\codex/);
+  assert.doesNotMatch(currentRuntimeTransportSource, /[A-Za-z]:\\\\/);
+  assert.doesNotMatch(currentRuntimeTransportSource, /E:\\\\codex/);
   assert.doesNotMatch(currentRuntimeApiSource, /[A-Za-z]:\\\\/);
   assert.doesNotMatch(currentRuntimeApiSource, /E:\\\\codex/);
   assert.doesNotMatch(currentRuntimeObservabilitySource, /[A-Za-z]:\\\\/);
