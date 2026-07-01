@@ -10,8 +10,8 @@ import { registerStaticAssetRoutes } from './routes/static-assets.routes';
 import { registerRuntimeAdminRoutes } from './routes/runtime-admin.routes';
 import { registerApiNamespaces } from './routes/api-namespaces.routes';
 import type { requireAdminToken, serverSettings } from './config/server-settings';
+import { createAccelerationRuntimeMiddleware } from './middleware/acceleration-runtime-gate.middleware';
 import {
-  createAccelerationRuntimeMiddleware,
   getAccelerationRuntimeSnapshot,
   reconcileAccelerationRuntime,
   setAccelerationRuntimePhase,

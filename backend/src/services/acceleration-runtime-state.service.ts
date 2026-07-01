@@ -1,7 +1,4 @@
-import type { Request, RequestHandler } from 'express';
-import { sendErrorEnvelope } from '../utils/error-response';
-
-export type AccelerationRuntimePhase =
+﻿export type AccelerationRuntimePhase =
   | 'initializing'
   | 'ready'
   | 'stale'
@@ -20,6 +17,19 @@ export type AccelerationRuntimeState = Readonly<{
   lastCompiledSignature: string | null;
   lastError: string | null;
 }>;
+
+export type AccelerationRuntimeApiRequestLease = Readonly<{
+  status: 'acquired';
+  snapshot: AccelerationRuntimeState;
+  release: () => void;
+}>;
+
+export type AccelerationRuntimeApiRequestAcquireResult =
+  | AccelerationRuntimeApiRequestLease
+  | Readonly<{
+      status: 'blocked';
+      snapshot: AccelerationRuntimeState;
+    }>;
 
 type MutableAccelerationRuntimeState = {
   -readonly [Key in keyof AccelerationRuntimeState]: AccelerationRuntimeState[Key];
@@ -78,49 +88,35 @@ export function setAccelerationRuntimeBlocking(blocking: boolean): void {
   publishAccelerationRuntimeSnapshot({ blocking });
 }
 
-function isTrackedAccelerationApiRequest(req: Request): boolean {
-  const routePath = `${req.originalUrl ?? req.url ?? ''}`.split('?')[0] || '';
-  return routePath.startsWith('/api') && routePath !== '/api/health';
-}
+export function acquireAccelerationRuntimeApiRequest(): AccelerationRuntimeApiRequestAcquireResult {
+  const snapshot = getAccelerationRuntimeSnapshot();
+  if (snapshot.blocking) {
+    return Object.freeze({
+      status: 'blocked',
+      snapshot,
+    });
+  }
 
-export function createAccelerationRuntimeMiddleware(): RequestHandler {
-  return (req, res, next) => {
-    if (!isTrackedAccelerationApiRequest(req)) {
-      return next();
+  const acquiredSnapshot = publishAccelerationRuntimeSnapshot({
+    activeApiRequests: snapshot.activeApiRequests + 1,
+  });
+  let released = false;
+
+  const release = (): void => {
+    if (released) {
+      return;
     }
-
-    const snapshot = getAccelerationRuntimeSnapshot();
-    if (snapshot.blocking) {
-      res.setHeader('Retry-After', '1');
-      return sendErrorEnvelope(
-        req,
-        res,
-        503,
-        'ACCELERATION_RUNTIME_WARMING',
-        'Acceleration database is switching snapshots. Retry shortly.',
-        {
-          status: 'warming',
-          phase: snapshot.phase,
-        },
-      );
-    }
-
-    publishAccelerationRuntimeSnapshot({ activeApiRequests: snapshot.activeApiRequests + 1 });
-    let released = false;
-    const release = () => {
-      if (released) {
-        return;
-      }
-      released = true;
-      publishAccelerationRuntimeSnapshot({
-        activeApiRequests: Math.max(0, getAccelerationRuntimeSnapshot().activeApiRequests - 1),
-      });
-    };
-
-    res.on('finish', release);
-    res.on('close', release);
-    return next();
+    released = true;
+    publishAccelerationRuntimeSnapshot({
+      activeApiRequests: Math.max(0, getAccelerationRuntimeSnapshot().activeApiRequests - 1),
+    });
   };
+
+  return Object.freeze({
+    status: 'acquired',
+    snapshot: acquiredSnapshot,
+    release,
+  });
 }
 
 export async function waitForAccelerationApiIdle(timeoutMs = 5000): Promise<void> {
