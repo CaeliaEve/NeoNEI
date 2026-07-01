@@ -8,6 +8,7 @@ const namespaceRegistrySource = fs.readFileSync('src/routes/api-namespace-regist
 const currentRuntimeEndpointRegistrySource = fs.readFileSync('src/routes/current-runtime-endpoint-registry.ts', 'utf8');
 const currentRuntimeTransportSource = fs.readFileSync('src/routes/current-runtime-transport.ts', 'utf8');
 const currentRuntimeSnapshotSource = fs.readFileSync('src/services/current-runtime-snapshot.service.ts', 'utf8');
+const currentRuntimeArtifactIndexSource = fs.readFileSync('src/services/current-runtime-artifact-index.service.ts', 'utf8');
 const currentRuntimeApiSource = fs.readFileSync('src/services/current-runtime-api.service.ts', 'utf8');
 const currentRuntimeObservabilitySource = fs.readFileSync('src/services/current-runtime-observability.service.ts', 'utf8');
 const currentRuntimeRecipeApiSource = fs.readFileSync('src/services/current-runtime-recipe-api.service.ts', 'utf8');
@@ -79,20 +80,20 @@ test('current API is mounted before legacy compatibility API', () => {
 });
 
 test('runtime file endpoint is path traversal safe and relative-rooted', () => {
-  assert.match(currentRuntimeSnapshotSource, /DIST_DATA_MANIFEST_FILE/);
-  assert.match(currentRuntimeSnapshotSource, /files\?\.rustRuntimeManifest/);
-  assert.match(currentRuntimeSnapshotSource, /nativeRuntime\?\.runtimeManifest/);
-  assert.match(currentRuntimeSnapshotSource, /typeof value !== 'string'/);
-  assert.match(currentRuntimeSnapshotSource, /function addPortableRuntimePath/);
-  assert.match(currentRuntimeSnapshotSource, /function collectEntrypointRuntimePaths/);
-  assert.match(currentRuntimeSnapshotSource, /function collectManifestRuntimeFiles/);
-  assert.match(currentRuntimeSnapshotSource, /Array\.isArray\(value\)/);
-  assert.match(currentRuntimeSnapshotSource, /addPortableRuntimePath\(record\.path, output\)/);
-  assert.match(currentRuntimeSnapshotSource, /collectManifestRuntimeFiles\(runtimeManifest\.files, declared\)/);
-  assert.match(currentRuntimeSnapshotSource, /normalized\.includes\('\.\.'\)/);
-  assert.match(currentRuntimeSnapshotSource, /path\.isAbsolute\(normalized\)/);
-  assert.match(currentRuntimeSnapshotSource, /startsWith\(`\$\{runtimeRoot\}\$\{path\.sep\}`\)/);
-  assert.match(currentRuntimeSnapshotSource, /collectDeclaredRuntimeFilePaths/);
+  assert.match(currentRuntimeArtifactIndexSource, /CURRENT_RUNTIME_DIST_MANIFEST_FILE/);
+  assert.match(currentRuntimeArtifactIndexSource, /files\?\.rustRuntimeManifest/);
+  assert.match(currentRuntimeArtifactIndexSource, /nativeRuntime\?\.runtimeManifest/);
+  assert.match(currentRuntimeArtifactIndexSource, /typeof value !== 'string'/);
+  assert.match(currentRuntimeArtifactIndexSource, /function addPortableRuntimePath/);
+  assert.match(currentRuntimeArtifactIndexSource, /function collectEntrypointRuntimePaths/);
+  assert.match(currentRuntimeArtifactIndexSource, /function collectManifestRuntimeFiles/);
+  assert.match(currentRuntimeArtifactIndexSource, /Array\.isArray\(value\)/);
+  assert.match(currentRuntimeArtifactIndexSource, /addPortableRuntimePath\(record\.path, output\)/);
+  assert.match(currentRuntimeArtifactIndexSource, /collectManifestRuntimeFiles\(runtimeManifest\.files, declared\)/);
+  assert.match(currentRuntimeArtifactIndexSource, /normalized\.includes\('\.\.'\)/);
+  assert.match(currentRuntimeArtifactIndexSource, /path\.isAbsolute\(normalized\)/);
+  assert.match(currentRuntimeArtifactIndexSource, /startsWith\(`\$\{runtimeRoot\}\$\{path\.sep\}`\)/);
+  assert.match(currentRuntimeArtifactIndexSource, /collectDeclaredRuntimeFilePaths/);
   assert.match(currentRuntimeSnapshotSource, /snapshot\.declaredFiles\.includes\(normalized\)/);
   assert.match(currentRuntimeApiSource, /function normalizeRequiredCurrentRuntimeParam/);
   assert.match(currentRuntimeApiSource, /export function getCurrentRuntimeAssetDelivery/);
@@ -122,7 +123,11 @@ test('current runtime snapshot service owns immutable manifest and artifact inve
   assert.match(currentRuntimeSnapshotSource, /export function getCurrentRuntimeSnapshotReadStats/);
   assert.doesNotMatch(currentRuntimeSnapshotSource, /export function getCurrentRuntimeSnapshot\(/);
   assert.match(currentRuntimeSnapshotSource, /export function getCurrentRuntimeArtifact/);
-  assert.match(currentRuntimeSnapshotSource, /export function normalizeRuntimePath/);
+  assert.match(currentRuntimeArtifactIndexSource, /export function normalizeRuntimePath/);
+  assert.match(currentRuntimeArtifactIndexSource, /export function buildCurrentRuntimeArtifactInventory/);
+  assert.match(currentRuntimeArtifactIndexSource, /export function buildCurrentRuntimeSnapshotFingerprint/);
+  assert.doesNotMatch(currentRuntimeSnapshotSource, /export function normalizeRuntimePath/);
+  assert.doesNotMatch(currentRuntimeSnapshotSource, /function buildArtifactInventory/);
   assert.match(currentRuntimeApiSource, /acquireCurrentRuntimeSnapshot/);
   assert.match(currentRuntimeApiSource, /export type CurrentRuntimeApiContextHandle = Readonly/);
   assert.match(currentRuntimeApiSource, /function buildCurrentRuntimeApiContext/);

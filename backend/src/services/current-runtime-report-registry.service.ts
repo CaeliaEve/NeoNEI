@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { resolveDistDataRuntimeFile } from './current-runtime-snapshot.service';
+import { resolveDistDataRuntimeFile } from './current-runtime-artifact-index.service';
 import { badRequest, notFound } from '../utils/http';
 
 const CURRENT_RUNTIME_REPORTS = Object.freeze({

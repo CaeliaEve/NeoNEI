@@ -1,9 +1,11 @@
 import { type RuntimeHealthSummary, getRuntimeHealthSummary } from './runtime-health-summary.service';
 import {
-  acquireCurrentRuntimeSnapshot,
   isPortableRuntimePath,
   normalizeRuntimePath,
   type CurrentRuntimeArtifact,
+} from './current-runtime-artifact-index.service';
+import {
+  acquireCurrentRuntimeSnapshot,
   type CurrentRuntimeSnapshot,
   type CurrentRuntimeSnapshotHandle,
 } from './current-runtime-snapshot.service';
