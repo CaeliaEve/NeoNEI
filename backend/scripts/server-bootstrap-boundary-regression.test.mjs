@@ -8,6 +8,10 @@ const serverSource = readFileSync(resolve(root, 'src/server.ts'), 'utf8');
 const bootstrapSource = readFileSync(resolve(root, 'src/bootstrap-server.ts'), 'utf8');
 const appSource = readFileSync(resolve(root, 'src/app.ts'), 'utf8');
 const serverSettingsSource = readFileSync(resolve(root, 'src/config/server-settings.ts'), 'utf8');
+const runtimeServerLifecycleSource = readFileSync(
+  resolve(root, 'src/services/runtime-server-lifecycle.service.ts'),
+  'utf8',
+);
 const accelerationRuntimeJobRunnerSource = readFileSync(
   resolve(root, 'src/services/acceleration-runtime-job-runner.service.ts'),
   'utf8',
@@ -35,10 +39,31 @@ test('app boundary owns middleware and route construction', () => {
 test('bootstrap boundary owns startup lifecycle and delegates app construction', () => {
   assert.match(bootstrapSource, /export\s+const\s+app\s*=\s*createApp\(/);
   assert.match(bootstrapSource, /export\s+async\s+function\s+startServer\(\)/);
-  assert.match(bootstrapSource, /serverSettings\.publicRuntimeOnly/);
+  assert.match(bootstrapSource, /createRuntimeAccelerationManagerRegistry\(\)/);
+  assert.match(bootstrapSource, /initializeRuntimeDatabases\(runtimeAccelerationRegistry\)/);
+  assert.match(bootstrapSource, /startRuntimeServer\(\{/);
   assert.match(serverSettingsSource, /export const serverSettings/);
   assert.match(serverSettingsSource, /createAdminAccessGuard/);
-  assert.match(bootstrapSource, /reconcileAccelerationRuntime\(/);
+  assert.doesNotMatch(bootstrapSource, /getDatabaseManager\(/);
+  assert.doesNotMatch(bootstrapSource, /getAccelerationDatabaseManager\(/);
+  assert.doesNotMatch(bootstrapSource, /setAccelerationRuntimePhase\(/);
+  assert.doesNotMatch(bootstrapSource, /reconcileAccelerationRuntime\(/);
+  assert.doesNotMatch(bootstrapSource, /scheduleStartupAutowarm\(/);
+  assert.doesNotMatch(bootstrapSource, /getNativeRenderRuntimeDiagnostics\(/);
+  assert.doesNotMatch(bootstrapSource, /app\.listen\(/);
+  assert.match(runtimeServerLifecycleSource, /export function createRuntimeAccelerationManagerRegistry/);
+  assert.match(runtimeServerLifecycleSource, /export async function initializeRuntimeDatabases/);
+  assert.match(runtimeServerLifecycleSource, /export function startRuntimeServer/);
+  assert.match(runtimeServerLifecycleSource, /getDatabaseManager\(/);
+  assert.match(runtimeServerLifecycleSource, /getAccelerationDatabaseManager\(/);
+  assert.match(runtimeServerLifecycleSource, /setAccelerationRuntimePhase\('initializing'/);
+  assert.match(runtimeServerLifecycleSource, /setAccelerationRuntimePhase\('ready'/);
+  assert.match(runtimeServerLifecycleSource, /setAccelerationRuntimePhase\('error'/);
+  assert.match(runtimeServerLifecycleSource, /reconcileAccelerationRuntime\(accelerationDbManager/);
+  assert.match(runtimeServerLifecycleSource, /scheduleStartupAutowarm\(\)/);
+  assert.match(runtimeServerLifecycleSource, /getNativeRenderRuntimeDiagnostics\(\)/);
+  assert.match(runtimeServerLifecycleSource, /app\.listen\(serverSettings\.port, serverSettings\.host/);
+  assert.match(runtimeServerLifecycleSource, /settings\.publicRuntimeOnly/);
 });
 
 
@@ -48,7 +73,7 @@ test('background acceleration child jobs resolve modules from the active src or 
   assert.match(accelerationRuntimeJobRunnerSource, /function requireFromBackendRoot\(modulePath\)/);
   assert.match(accelerationRuntimeJobRunnerSource, /require\(path\.join\(moduleRoot, modulePath\)\)/);
   assert.match(accelerationRuntimeJobRunnerSource, /requireFromBackendRoot\('services\/acceleration-db-pipeline\.service'\)/);
-  assert.match(accelerationRuntimeJobRunnerSource, /requireFromBackendRoot\('config\/runtime-paths'\)/);
+  assert.match(accelerationRuntimeJobRunnerSource, /requireFromBackendRoot\('services\/acceleration-runtime-compiler-probe\.service'\)/);
   assert.doesNotMatch(accelerationRuntimeJobRunnerSource, /require\('\.\/src\//);
   assert.doesNotMatch(accelerationRuntimeJobRunnerSource, /require\('\.\/dist\//);
 });
