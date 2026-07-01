@@ -13,6 +13,18 @@ import {
 } from '../services/globalBrowserAtlas';
 import { getSharedAnimationNowMs, loadImageAsset, resolveTimelineFrameIndex } from '../services/animationBudget';
 import { loadUiPackRuntime, type UiPackRuntime } from '../services/uiPackRuntime';
+import {
+  buildNativeUiSlotCells,
+  createNativeUiFitMatrix,
+  normalizeNativeUiLayoutSurface,
+  resolveNativeUiRuntimeSurface,
+  type NativeUiDynamicPrimitive,
+  type NativeUiFitMatrix,
+  type NativeUiLayoutSurface,
+  type NativeUiRect,
+  type NativeUiSlotCell,
+  type NativeUiTextOverlay,
+} from '../services/nativeUiRuntimeRegistry';
 import { resolveManifestRelativeUrl } from '../native-surface/runtimeLoader.ts';
 import {
   WebGl2NativeRenderer,
@@ -21,14 +33,6 @@ import {
 import type { NativeRendererBackend } from '../renderers/native/NativeRendererBackend';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
-interface NativeSlotFact {
-  role?: string;
-  startIndex?: number;
-  columns?: number;
-  rows?: number;
-  x?: number;
-  y?: number;
-}
 
 interface CanvasRenderable {
   kind: 'item' | 'fluid';
@@ -41,71 +45,7 @@ interface CanvasRenderable {
   extraLines?: string[];
 }
 
-interface CanvasCell {
-  key: string;
-  role: string;
-  x: number;
-  y: number;
-  entry: CanvasRenderable | null;
-}
-
-interface NativeTextOverlayFact {
-  text?: string;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-}
-
-interface NativeDynamicPrimitiveFact {
-  kind?: string;
-  role?: string;
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-  fill?: number;
-  value?: number;
-  ratio?: number;
-  orientation?: 'horizontal' | 'vertical';
-  trackColor?: string;
-  fillColor?: string;
-  borderColor?: string;
-}
-
-interface NativeImageRegionFact {
-  x?: number;
-  y?: number;
-  width?: number;
-  height?: number;
-}
-
-interface NativeRectFact extends NativeImageRegionFact {
-  id?: string;
-  kind?: string;
-  role?: string;
-  label?: string;
-  tooltip?: string;
-  action?: string;
-  itemId?: string;
-  payloadKey?: string;
-}
-
-interface NativeLayoutSurface {
-  width?: number;
-  height?: number;
-  imageResource?: string;
-  imageRegion?: NativeImageRegionFact;
-  nativeBackground?: Record<string, unknown> | null;
-  slots?: NativeSlotFact[];
-  textOverlays?: NativeTextOverlayFact[];
-  dynamicPrimitives?: NativeDynamicPrimitiveFact[];
-  progressBars?: NativeDynamicPrimitiveFact[];
-  fluidBars?: NativeDynamicPrimitiveFact[];
-  energyBars?: NativeDynamicPrimitiveFact[];
-  hotspots?: NativeRectFact[];
-  viewports?: NativeRectFact[];
-}
+type CanvasCell = NativeUiSlotCell<CanvasRenderable>;
 
 type PreparedAtlasSource = {
   atlasFile: string;
@@ -169,80 +109,22 @@ let hasAnimatedSprites = false;
 const shellWidth = ref(0);
 const shellHeight = ref(0);
 
-const nativeLayout = computed<NativeLayoutSurface | null>(() => {
-  const layout = props.uiPayload?.nativeLayout;
-  return layout && typeof layout === 'object' ? layout as NativeLayoutSurface : null;
-});
+const nativeLayout = computed<NativeUiLayoutSurface | null>(() => (
+  normalizeNativeUiLayoutSurface(props.uiPayload?.nativeLayout)
+));
 
-const resolvedTemplate = computed(() => {
-  const binding = uiPackRuntime.value?.bindingsByRecipeId.get(props.recipe.recipeId);
-  return binding?.templateKey
-    ? uiPackRuntime.value?.templatesByKey.get(binding.templateKey) ?? null
-    : null;
-});
+const nativeUiSurface = computed(() => resolveNativeUiRuntimeSurface({
+  runtime: uiPackRuntime.value,
+  recipeId: props.recipe.recipeId,
+  inlineLayout: nativeLayout.value,
+}));
 
-const resolvedNativeLayout = computed<NativeLayoutSurface | null>(() => {
-  const template = resolvedTemplate.value;
-  if (template) {
-    const inlineLayout = nativeLayout.value;
-    return {
-      width: template.width,
-      height: template.height,
-      imageResource: template.imageResource,
-      imageRegion: inlineLayout?.imageRegion,
-      nativeBackground: inlineLayout?.nativeBackground ?? (template as unknown as NativeLayoutSurface).nativeBackground,
-      slots: template.slots,
-      textOverlays: template.textOverlays,
-      dynamicPrimitives: inlineLayout?.dynamicPrimitives,
-      progressBars: inlineLayout?.progressBars,
-      fluidBars: inlineLayout?.fluidBars,
-      energyBars: inlineLayout?.energyBars,
-      hotspots: inlineLayout?.hotspots ?? template.hotspots,
-      viewports: inlineLayout?.viewports ?? template.viewports,
-    };
-  }
-  return nativeLayout.value;
-});
-
-const slots = computed<NativeSlotFact[]>(() => {
-  const raw = resolvedNativeLayout.value?.slots;
-  return Array.isArray(raw) ? raw as NativeSlotFact[] : [];
-});
-
-const textOverlays = computed<NativeTextOverlayFact[]>(() => {
-  const raw = resolvedNativeLayout.value?.textOverlays;
-  return Array.isArray(raw) ? raw as NativeTextOverlayFact[] : [];
-});
-
-const hotspots = computed<NativeRectFact[]>(() => {
-  const raw = resolvedNativeLayout.value?.hotspots;
-  return Array.isArray(raw) ? raw as NativeRectFact[] : [];
-});
-
-const viewports = computed<NativeRectFact[]>(() => {
-  const raw = resolvedNativeLayout.value?.viewports;
-  return Array.isArray(raw) ? raw as NativeRectFact[] : [];
-});
-
-const dynamicPrimitives = computed<NativeDynamicPrimitiveFact[]>(() => {
-  const layout = resolvedNativeLayout.value;
-  const primitives: NativeDynamicPrimitiveFact[] = [];
-  const append = (raw: unknown, kind: string) => {
-    if (!Array.isArray(raw)) return;
-    for (const primitive of raw) {
-      if (!primitive || typeof primitive !== 'object') continue;
-      primitives.push({
-        kind,
-        ...(primitive as NativeDynamicPrimitiveFact),
-      });
-    }
-  };
-  append(layout?.dynamicPrimitives, '');
-  append(layout?.progressBars, 'progress-bar');
-  append(layout?.fluidBars, 'fluid-bar');
-  append(layout?.energyBars, 'energy-bar');
-  return primitives;
-});
+const resolvedNativeLayout = computed<NativeUiLayoutSurface | null>(() => nativeUiSurface.value.layout);
+const slots = computed(() => nativeUiSurface.value.slots);
+const textOverlays = computed(() => nativeUiSurface.value.textOverlays);
+const hotspots = computed(() => nativeUiSurface.value.hotspots);
+const viewports = computed(() => nativeUiSurface.value.viewports);
+const dynamicPrimitives = computed(() => nativeUiSurface.value.dynamicPrimitives);
 
 const backgroundAssetRef = computed(() => {
   const resource = `${resolvedNativeLayout.value?.imageResource ?? ''}`.trim();
@@ -346,17 +228,19 @@ const subtitle = computed(() => String(
     ?? 'native-nei',
 ));
 
-const layoutWidth = computed(() => Math.max(1, Number(resolvedNativeLayout.value?.width ?? 166)));
-const layoutHeight = computed(() => Math.max(1, Number(resolvedNativeLayout.value?.height ?? 65)));
+const layoutWidth = computed(() => nativeUiSurface.value.width);
+const layoutHeight = computed(() => nativeUiSurface.value.height);
 const displayWidth = computed(() => Math.ceil(layoutWidth.value));
 const displayHeight = computed(() => Math.ceil(layoutHeight.value));
-const fitScale = computed(() => {
-  const availableWidth = shellWidth.value > 0 ? shellWidth.value : displayWidth.value;
-  const availableHeight = shellHeight.value > 0 ? shellHeight.value : displayHeight.value;
-  return Math.max(0.05, Math.min(availableWidth / displayWidth.value, availableHeight / displayHeight.value));
-});
-const fittedWidth = computed(() => Math.max(1, Math.round(displayWidth.value * fitScale.value)));
-const fittedHeight = computed(() => Math.max(1, Math.round(displayHeight.value * fitScale.value)));
+const fitMatrix = computed<NativeUiFitMatrix>(() => createNativeUiFitMatrix({
+  sourceWidth: displayWidth.value,
+  sourceHeight: displayHeight.value,
+  availableWidth: shellWidth.value,
+  availableHeight: shellHeight.value,
+}));
+const fitScale = computed(() => fitMatrix.value.scale);
+const fittedWidth = computed(() => fitMatrix.value.fittedWidth);
+const fittedHeight = computed(() => fitMatrix.value.fittedHeight);
 const canvasStyle = computed(() => ({
   width: `${displayWidth.value}px`,
   height: `${displayHeight.value}px`,
@@ -405,38 +289,18 @@ const outputFluids = computed<CanvasRenderable[]>(() => (
     .map(toFluidRenderable)
 ));
 
-const slotCells = computed<CanvasCell[]>(() => {
-  const cells: CanvasCell[] = [];
-  slots.value.forEach((slot, groupIndex) => {
-    const role = String(slot.role ?? 'item-input');
-    const columns = Math.max(1, Number(slot.columns ?? 1));
-    const rows = Math.max(1, Number(slot.rows ?? 1));
-    const x0 = Math.max(0, Number(slot.x ?? 0));
-    const y0 = Math.max(0, Number(slot.y ?? 0));
-    const entries = renderablesForRole(role);
-    const rawStart = Math.max(0, Number(slot.startIndex ?? 0));
-    const start = rawStart >= entries.length ? 0 : rawStart;
-    const count = columns * rows;
-    for (let index = 0; index < count; index += 1) {
-      const col = index % columns;
-      const row = Math.floor(index / columns);
-      cells.push({
-        key: `${role}:${groupIndex}:${index}`,
-        role,
-        x: x0 + col * NATIVE_SLOT_SIZE,
-        y: y0 + row * NATIVE_SLOT_SIZE,
-        entry: entries[start + index] ?? null,
-      });
-    }
-  });
-  return cells;
-});
+const slotCells = computed<CanvasCell[]>(() => buildNativeUiSlotCells({
+  slots: slots.value,
+  slotSize: NATIVE_SLOT_SIZE,
+  resolveRoleEntries: renderablesForRole,
+}));
 
 const renderSignature = computed(() => JSON.stringify({
   recipeId: props.recipe.recipeId,
   familyKey: props.uiPayload?.familyKey ?? '',
   uiPackStatus: uiPackRuntime.value?.status ?? 'loading',
-  uiPackTemplateKey: uiPackRuntime.value?.bindingsByRecipeId.get(props.recipe.recipeId)?.templateKey ?? '',
+  uiPackTemplateKey: nativeUiSurface.value.binding?.templateKey ?? '',
+  nativeUiSurfaceSource: nativeUiSurface.value.source,
   layoutWidth: layoutWidth.value,
   layoutHeight: layoutHeight.value,
   backgroundAssetRef: backgroundAssetRef.value ?? '',
@@ -510,7 +374,7 @@ function cellStyle(cell: CanvasCell) {
   };
 }
 
-function textOverlayStyle(overlay: NativeTextOverlayFact) {
+function textOverlayStyle(overlay: NativeUiTextOverlay) {
   return {
     left: `${Math.max(0, Number(overlay.x ?? 0))}px`,
     top: `${Math.max(0, Number(overlay.y ?? 0))}px`,
@@ -519,7 +383,7 @@ function textOverlayStyle(overlay: NativeTextOverlayFact) {
   };
 }
 
-function rectFactStyle(rect: NativeRectFact) {
+function rectFactStyle(rect: NativeUiRect) {
   return {
     left: `${Math.max(0, Number(rect.x ?? 0))}px`,
     top: `${Math.max(0, Number(rect.y ?? 0))}px`,
@@ -528,19 +392,19 @@ function rectFactStyle(rect: NativeRectFact) {
   };
 }
 
-function rectFactLabel(rect: NativeRectFact, fallback: string): string {
+function rectFactLabel(rect: NativeUiRect, fallback: string): string {
   return `${rect.label ?? rect.tooltip ?? rect.role ?? rect.kind ?? rect.id ?? fallback}`.trim() || fallback;
 }
 
-function normalizedHotspotAction(rect: NativeRectFact): string {
+function normalizedHotspotAction(rect: NativeUiRect): string {
   return `${rect.action ?? rect.kind ?? rect.role ?? ''}`.trim().toLowerCase();
 }
 
-function hotspotIsInteractive(rect: NativeRectFact): boolean {
+function hotspotIsInteractive(rect: NativeUiRect): boolean {
   return normalizedHotspotAction(rect) === 'item-click' && `${rect.itemId ?? ''}`.trim().length > 0;
 }
 
-function handleHotspotClick(rect: NativeRectFact) {
+function handleHotspotClick(rect: NativeUiRect) {
   if (!hotspotIsInteractive(rect)) return;
   emit('item-click', `${rect.itemId}`.trim());
 }
@@ -680,7 +544,7 @@ function solidTextureKey(color: string): string {
   return `native-dynamic-solid:${color}`;
 }
 
-function normalizeDynamicPrimitiveKind(primitive: NativeDynamicPrimitiveFact): string {
+function normalizeDynamicPrimitiveKind(primitive: NativeUiDynamicPrimitive): string {
   const kind = `${primitive.kind ?? primitive.role ?? ''}`.trim().toLowerCase();
   if (kind.includes('fluid')) return 'fluid-bar';
   if (kind.includes('energy') || kind.includes('eu')) return 'energy-bar';
@@ -688,14 +552,14 @@ function normalizeDynamicPrimitiveKind(primitive: NativeDynamicPrimitiveFact): s
   return kind || 'indicator';
 }
 
-function defaultDynamicFillColor(primitive: NativeDynamicPrimitiveFact): string {
+function defaultDynamicFillColor(primitive: NativeUiDynamicPrimitive): string {
   const kind = normalizeDynamicPrimitiveKind(primitive);
   if (kind === 'fluid-bar') return DYNAMIC_FLUID_FILL_COLOR;
   if (kind === 'energy-bar') return DYNAMIC_ENERGY_FILL_COLOR;
   return DYNAMIC_PROGRESS_FILL_COLOR;
 }
 
-function dynamicPrimitiveColors(primitive: NativeDynamicPrimitiveFact): string[] {
+function dynamicPrimitiveColors(primitive: NativeUiDynamicPrimitive): string[] {
   return [
     `${primitive.trackColor ?? DYNAMIC_TRACK_COLOR}`,
     `${primitive.fillColor ?? defaultDynamicFillColor(primitive)}`,
@@ -901,7 +765,7 @@ function clamp01(value: unknown, fallback = 1): number {
   return Math.max(0, Math.min(1, parsed));
 }
 
-function primitiveFillRatio(primitive: NativeDynamicPrimitiveFact): number {
+function primitiveFillRatio(primitive: NativeUiDynamicPrimitive): number {
   return clamp01(primitive.fill ?? primitive.ratio ?? primitive.value, 1);
 }
 
@@ -1000,7 +864,7 @@ function pushBackgroundCommands(commands: NativeTextureSpriteCommand[], backgrou
   pushTextureSpriteRect(commands, key, sx + borderX, sy + borderY, srcMidW, srcMidH, x + borderX, y + borderY, dstMidW, dstMidH);
 }
 
-function pushDynamicPrimitiveCommands(commands: NativeTextureSpriteCommand[], primitive: NativeDynamicPrimitiveFact) {
+function pushDynamicPrimitiveCommands(commands: NativeTextureSpriteCommand[], primitive: NativeUiDynamicPrimitive) {
   const x = Math.max(0, Number(primitive.x ?? 0));
   const y = Math.max(0, Number(primitive.y ?? 0));
   const width = Math.max(0, Number(primitive.width ?? 0));
