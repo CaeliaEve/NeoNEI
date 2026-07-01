@@ -22,15 +22,28 @@ import {
   type NativeUiLayoutSurface,
   type NativeUiRect,
   type NativeUiSlotCell,
-  type NativeUiTextOverlay,
 } from '../services/nativeUiRuntimeRegistry';
 import {
   buildNativeUiSpriteCommands,
-  nativeUiDynamicPrimitiveColors,
-  nativeUiSolidTextureKey,
   type NativeUiAtlasSpriteSource,
   type NativeUiPreparedBackgroundSource,
 } from '../services/nativeUiRenderCommandBuilder.ts';
+import {
+  createNativeUiGtModularBackgroundTexture,
+  nativeUiSlotTextureKey,
+  NativeUiTextureRegistry,
+} from '../services/nativeUiTextureRegistry.ts';
+import {
+  isNativeUiHotspotInteractive,
+  nativeUiHitCellEntryLabel,
+  nativeUiHotspotItemId,
+  nativeUiRectLabel,
+  nativeUiRectStyle,
+  nativeUiSlotCellStyle,
+  nativeUiTextOverlayStyle,
+  projectNativeUiHitCells,
+  type NativeUiHitCell,
+} from '../services/nativeUiInteractionProjection.ts';
 import { resolveManifestRelativeUrl } from '../native-surface/runtimeLoader.ts';
 import { WebGl2NativeRenderer } from '../renderers/native/WebGl2NativeRenderer';
 import type { NativeRendererBackend } from '../renderers/native/NativeRendererBackend';
@@ -80,7 +93,7 @@ const missingTextureCount = ref(0);
 const currentDpr = ref(1);
 const uiPackRuntime = ref<UiPackRuntime | null>(null);
 const preparedSources = new Map<string, PreparedAtlasSource>();
-const registeredTextureKeys = new Set<string>();
+const textureRegistry = new NativeUiTextureRegistry();
 const backgroundSource = ref<NativeUiPreparedBackgroundSource | null>(null);
 const backgroundLoadError = ref<string | null>(null);
 let loadSequence = 0;
@@ -276,6 +289,7 @@ const slotCells = computed<CanvasCell[]>(() => buildNativeUiSlotCells({
   slotSize: NATIVE_SLOT_SIZE,
   resolveRoleEntries: renderablesForRole,
 }));
+const hitCells = computed<NativeUiHitCell<CanvasRenderable>[]>(() => projectNativeUiHitCells(slotCells.value));
 
 const renderSignature = computed(() => JSON.stringify({
   recipeId: props.recipe.recipeId,
@@ -347,195 +361,28 @@ function renderablesForRole(role?: string): CanvasRenderable[] {
   return inputItems.value;
 }
 
-function cellStyle(cell: CanvasCell) {
-  return {
-    left: `${cell.x}px`,
-    top: `${cell.y}px`,
-    width: `${NATIVE_SLOT_SIZE}px`,
-    height: `${NATIVE_SLOT_SIZE}px`,
-  };
-}
-
-function textOverlayStyle(overlay: NativeUiTextOverlay) {
-  return {
-    left: `${Math.max(0, Number(overlay.x ?? 0))}px`,
-    top: `${Math.max(0, Number(overlay.y ?? 0))}px`,
-    width: `${Math.max(0, Number(overlay.width ?? 0))}px`,
-    height: `${Math.max(0, Number(overlay.height ?? 0))}px`,
-  };
-}
-
-function rectFactStyle(rect: NativeUiRect) {
-  return {
-    left: `${Math.max(0, Number(rect.x ?? 0))}px`,
-    top: `${Math.max(0, Number(rect.y ?? 0))}px`,
-    width: `${Math.max(0, Number(rect.width ?? 0))}px`,
-    height: `${Math.max(0, Number(rect.height ?? 0))}px`,
-  };
-}
-
-function rectFactLabel(rect: NativeUiRect, fallback: string): string {
-  return `${rect.label ?? rect.tooltip ?? rect.role ?? rect.kind ?? rect.id ?? fallback}`.trim() || fallback;
-}
-
-function normalizedHotspotAction(rect: NativeUiRect): string {
-  return `${rect.action ?? rect.kind ?? rect.role ?? ''}`.trim().toLowerCase();
-}
-
-function hotspotIsInteractive(rect: NativeUiRect): boolean {
-  return normalizedHotspotAction(rect) === 'item-click' && `${rect.itemId ?? ''}`.trim().length > 0;
-}
-
 function handleHotspotClick(rect: NativeUiRect) {
-  if (!hotspotIsInteractive(rect)) return;
-  emit('item-click', `${rect.itemId}`.trim());
+  const itemId = nativeUiHotspotItemId(rect);
+  if (!itemId) return;
+  emit('item-click', itemId);
 }
 
-function labelForEntry(entry: CanvasRenderable): string {
-  const base = entry.localizedName || entry.itemId;
-  return entry.count > 1 ? `${base} x${entry.count}` : base;
+function handleHitCellClick(cell: NativeUiHitCell<CanvasRenderable>) {
+  emit('item-click', cell.entry.itemId);
 }
 
-function textureKindForRole(role: string): 'item-input' | 'item-output' | 'fluid-input' | 'fluid-output' {
-  const normalized = role.toLowerCase();
-  if (normalized.includes('fluid') && normalized.includes('output')) return 'fluid-output';
-  if (normalized.includes('fluid')) return 'fluid-input';
-  if (normalized.includes('output')) return 'item-output';
-  return 'item-input';
-}
 
 function slotTextureKey(role: string): string {
-  return `recipe-slot:${textureKindForRole(role)}:${currentDpr.value}`;
+  return nativeUiSlotTextureKey(role, currentDpr.value);
 }
 
-function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, r: number) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function createSlotTexture(kind: ReturnType<typeof textureKindForRole>, dpr: number): HTMLCanvasElement {
-  const size = Math.max(1, Math.round(NATIVE_SLOT_SIZE * dpr));
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return canvas;
-  ctx.scale(dpr, dpr);
-  const accent = kind.includes('fluid')
-    ? 'rgba(90, 203, 255, 0.62)'
-    : kind.includes('output')
-      ? 'rgba(248, 181, 92, 0.66)'
-      : 'rgba(160, 178, 198, 0.34)';
-  const fill = kind.includes('fluid')
-    ? 'rgba(10, 25, 38, 0.92)'
-    : 'rgba(13, 18, 25, 0.94)';
-  drawRoundedRect(ctx, 1, 1, NATIVE_SLOT_SIZE - 2, NATIVE_SLOT_SIZE - 2, 4);
-  ctx.fillStyle = fill;
-  ctx.fill();
-  const gradient = ctx.createLinearGradient(0, 0, NATIVE_SLOT_SIZE, NATIVE_SLOT_SIZE);
-  gradient.addColorStop(0, 'rgba(255, 255, 255, 0.09)');
-  gradient.addColorStop(0.52, 'rgba(255, 255, 255, 0.015)');
-  gradient.addColorStop(1, 'rgba(0, 0, 0, 0.26)');
-  ctx.fillStyle = gradient;
-  ctx.fill();
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = accent;
-  ctx.stroke();
-  if (kind.includes('fluid')) {
-    ctx.fillStyle = 'rgba(90, 203, 255, 0.18)';
-    drawRoundedRect(ctx, 4, 5, 3, NATIVE_SLOT_SIZE - 10, 1.5);
-    ctx.fill();
-  }
-  if (kind.includes('output')) {
-    ctx.fillStyle = 'rgba(248, 181, 92, 0.16)';
-    drawRoundedRect(ctx, NATIVE_SLOT_SIZE - 7, 5, 3, NATIVE_SLOT_SIZE - 10, 1.5);
-    ctx.fill();
-  }
-  return canvas;
-}
-
-function createGtModularUiBackgroundTexture(width: number, height: number, dpr: number): HTMLCanvasElement {
-  const logicalWidth = Math.max(1, Math.round(width));
-  const logicalHeight = Math.max(1, Math.round(height));
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(logicalWidth * dpr));
-  canvas.height = Math.max(1, Math.round(logicalHeight * dpr));
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return canvas;
-  ctx.scale(dpr, dpr);
-  ctx.imageSmoothingEnabled = false;
-
-  ctx.fillStyle = '#0f1115';
-  ctx.fillRect(0, 0, logicalWidth, logicalHeight);
-
-  const panelX = 3;
-  const panelY = 3;
-  const panelWidth = Math.max(1, logicalWidth - 6);
-  const panelHeight = Math.max(1, logicalHeight - 6);
-  const gradient = ctx.createLinearGradient(panelX, panelY, panelX, panelY + panelHeight);
-  gradient.addColorStop(0, '#4b4f55');
-  gradient.addColorStop(0.48, '#34383e');
-  gradient.addColorStop(1, '#24282e');
-  ctx.fillStyle = gradient;
-  ctx.fillRect(panelX, panelY, panelWidth, panelHeight);
-
-  ctx.strokeStyle = '#8f969f';
-  ctx.strokeRect(panelX + 0.5, panelY + 0.5, panelWidth - 1, panelHeight - 1);
-  ctx.strokeStyle = '#171a1f';
-  ctx.strokeRect(panelX + 1.5, panelY + 1.5, panelWidth - 3, panelHeight - 3);
-
-  ctx.fillStyle = 'rgba(255,255,255,0.08)';
-  ctx.fillRect(panelX + 2, panelY + 2, Math.max(0, panelWidth - 4), 1);
-  ctx.fillStyle = 'rgba(0,0,0,0.24)';
-  ctx.fillRect(panelX + 2, panelY + panelHeight - 3, Math.max(0, panelWidth - 4), 1);
-  return canvas;
-}
 
 function ensureSlotTextures(activeRenderer: NativeRendererBackend) {
-  const kinds: Array<ReturnType<typeof textureKindForRole>> = ['item-input', 'item-output', 'fluid-input', 'fluid-output'];
-  for (const kind of kinds) {
-    const key = `recipe-slot:${kind}:${currentDpr.value}`;
-    if (registeredTextureKeys.has(key)) continue;
-    if (activeRenderer.registerTexture(key, createSlotTexture(kind, currentDpr.value))) {
-      registeredTextureKeys.add(key);
-    }
-  }
-}
-
-function createSolidColorTexture(color: string): HTMLCanvasElement {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1;
-  canvas.height = 1;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return canvas;
-  ctx.fillStyle = color;
-  ctx.fillRect(0, 0, 1, 1);
-  return canvas;
-}
-
-function ensureSolidColorTexture(activeRenderer: NativeRendererBackend, color: string) {
-  const key = nativeUiSolidTextureKey(color);
-  if (registeredTextureKeys.has(key)) return;
-  if (activeRenderer.registerTexture(key, createSolidColorTexture(color))) {
-    registeredTextureKeys.add(key);
-  }
+  textureRegistry.registerSlotTextures(activeRenderer, currentDpr.value, NATIVE_SLOT_SIZE);
 }
 
 function ensureDynamicPrimitiveTextures(activeRenderer: NativeRendererBackend) {
-  for (const primitive of dynamicPrimitives.value) {
-    for (const color of nativeUiDynamicPrimitiveColors(primitive)) {
-      ensureSolidColorTexture(activeRenderer, color);
-    }
-  }
+  textureRegistry.registerDynamicPrimitiveTextures(activeRenderer, dynamicPrimitives.value);
 }
 
 function resolveBackgroundAssetUrl(): string | null {
@@ -573,9 +420,7 @@ async function ensureBackgroundTexture(activeRenderer: NativeRendererBackend) {
     try {
       const image = await loadImageAsset(nativeAssetUrl);
       if (!mounted) return;
-      if (activeRenderer.registerTexture(nativeAssetKey, image)) {
-        registeredTextureKeys.add(nativeAssetKey);
-      }
+      textureRegistry.register(activeRenderer, nativeAssetKey, image);
       const texture = nativeBackgroundTextureSpec();
       const target = nativeBackgroundTargetRect();
       backgroundSource.value = {
@@ -604,10 +449,8 @@ async function ensureBackgroundTexture(activeRenderer: NativeRendererBackend) {
   }
   const semanticKey = semanticBackgroundTextureKey.value;
   if (semanticGtBackground.value && semanticKey) {
-    const texture = createGtModularUiBackgroundTexture(layoutWidth.value, layoutHeight.value, currentDpr.value);
-    if (activeRenderer.registerTexture(semanticKey, texture)) {
-      registeredTextureKeys.add(semanticKey);
-    }
+    const texture = createNativeUiGtModularBackgroundTexture(layoutWidth.value, layoutHeight.value, currentDpr.value);
+    textureRegistry.register(activeRenderer, semanticKey, texture);
     backgroundSource.value = {
       textureKey: semanticKey,
       image: texture,
@@ -630,9 +473,7 @@ async function ensureBackgroundTexture(activeRenderer: NativeRendererBackend) {
   try {
     const image = await loadImageAsset(backgroundUrl);
     if (!mounted) return;
-    if (activeRenderer.registerTexture(textureKey, image)) {
-      registeredTextureKeys.add(textureKey);
-    }
+    textureRegistry.register(activeRenderer, textureKey, image);
     const region = backgroundImageRegion.value;
     const sourceX = region ? Math.min(region.x, Math.max(0, image.width - 1)) : 0;
     const sourceY = region ? Math.min(region.y, Math.max(0, image.height - 1)) : 0;
@@ -821,8 +662,7 @@ async function rebuildRenderer() {
       missing += 1;
       continue;
     }
-    if (activeRenderer.registerTexture(prepared.atlasFile, image)) {
-      registeredTextureKeys.add(prepared.atlasFile);
+    if (textureRegistry.register(activeRenderer, prepared.atlasFile, image)) {
       preparedSources.set(lookupId, prepared);
       hasAnimatedSprites = hasAnimatedSprites || prepared.frames.length > 0;
     } else {
@@ -868,7 +708,7 @@ onBeforeUnmount(() => {
   stopAnimationLoop();
   renderer.value?.dispose();
   renderer.value = null;
-  registeredTextureKeys.clear();
+  textureRegistry.clear();
   preparedSources.clear();
 });
 </script>
@@ -898,7 +738,7 @@ onBeforeUnmount(() => {
               v-for="(overlay, index) in textOverlays"
               :key="`${index}:${overlay.x ?? 0}:${overlay.y ?? 0}:${overlay.text ?? ''}`"
               class="native-nei-text-overlay"
-              :style="textOverlayStyle(overlay)"
+              :style="nativeUiTextOverlayStyle(overlay)"
             >
               {{ overlay.text }}
             </div>
@@ -908,9 +748,9 @@ onBeforeUnmount(() => {
               v-for="(viewport, index) in viewports"
               :key="`${viewport.id ?? index}:${viewport.x ?? 0}:${viewport.y ?? 0}`"
               class="native-nei-viewport-region"
-              :style="rectFactStyle(viewport)"
+              :style="nativeUiRectStyle(viewport)"
             >
-              <span>{{ rectFactLabel(viewport, 'Captured viewport') }}</span>
+              <span>{{ nativeUiRectLabel(viewport, 'Captured viewport') }}</span>
             </div>
           </div>
           <div class="native-nei-hit-layer" :style="canvasStyle">
@@ -918,37 +758,37 @@ onBeforeUnmount(() => {
               v-for="(hotspot, index) in hotspots"
               :key="`${hotspot.id ?? index}:${hotspot.x ?? 0}:${hotspot.y ?? 0}`"
               class="native-nei-hotspot-cell"
-              :style="rectFactStyle(hotspot)"
+              :style="nativeUiRectStyle(hotspot)"
             >
               <button
                 type="button"
-              class="native-nei-hotspot-target"
-              :aria-label="rectFactLabel(hotspot, 'Captured NEI hotspot')"
-              :title="rectFactLabel(hotspot, 'Captured NEI hotspot')"
-              :disabled="!hotspotIsInteractive(hotspot)"
-              @click="handleHotspotClick(hotspot)"
-            />
+                class="native-nei-hotspot-target"
+                :aria-label="nativeUiRectLabel(hotspot, 'Captured NEI hotspot')"
+                :title="nativeUiRectLabel(hotspot, 'Captured NEI hotspot')"
+                :disabled="!isNativeUiHotspotInteractive(hotspot)"
+                @click="handleHotspotClick(hotspot)"
+              />
             </div>
             <div
-              v-for="cell in slotCells.filter((candidate) => candidate.entry)"
+              v-for="cell in hitCells"
               :key="cell.key"
               class="native-nei-hit-cell"
-              :style="cellStyle(cell)"
+              :style="nativeUiSlotCellStyle(cell, NATIVE_SLOT_SIZE)"
             >
               <RecipeItemTooltip
-                :item-id="cell.entry!.itemId"
-                :count="cell.entry!.count"
-                :localized-name="cell.entry!.localizedName"
-                :render-asset-ref="cell.entry!.renderAssetRef"
-                :image-file-name="cell.entry!.imageFileName"
-                :extra-lines="cell.entry!.extraLines || []"
+                :item-id="cell.entry.itemId"
+                :count="cell.entry.count"
+                :localized-name="cell.entry.localizedName"
+                :render-asset-ref="cell.entry.renderAssetRef"
+                :image-file-name="cell.entry.imageFileName"
+                :extra-lines="cell.entry.extraLines || []"
                 size-mode="compact"
-                @click="emit('item-click', cell.entry!.itemId)"
+                @click="handleHitCellClick(cell)"
               >
                 <button
                   type="button"
                   class="native-nei-hit-target"
-                  :aria-label="labelForEntry(cell.entry!)"
+                  :aria-label="nativeUiHitCellEntryLabel(cell.entry)"
                 />
               </RecipeItemTooltip>
             </div>
