@@ -17,6 +17,7 @@ import {
 } from '../services/current-runtime-recipe-api.service';
 import { getCurrentRuntimeSettings } from '../services/current-runtime-settings.service';
 import { asyncHandler } from '../utils/http';
+import { mountCurrentRuntimeEndpoint } from './current-runtime-endpoint-registry';
 import {
   assetPathFromMountedRuntimeRequest,
   isRuntimeAssetRequestMethod,
@@ -28,8 +29,6 @@ import {
 
 
 const router = Router();
-const CURRENT_RUNTIME_ASSET_ROUTE = '/runtime/current/asset/:fileName(*)';
-const PINNED_RUNTIME_ASSET_ROUTE = '/runtime/:runtimeId/asset/:fileName(*)';
 
 function sendRuntimeCurrent(res: Response): void {
   withCurrentRuntimeApiContext((context) => {
@@ -83,43 +82,43 @@ function sendRuntimeSettings(res: Response): void {
   });
 }
 
-router.get('/runtime/current', (_req, res) => {
+mountCurrentRuntimeEndpoint(router, 'current', (_req, res) => {
   sendRuntimeCurrent(res);
 });
 
-router.get('/runtime/current/manifest', (_req, res) => {
+mountCurrentRuntimeEndpoint(router, 'currentManifest', (_req, res) => {
   withCurrentRuntimeApiContext((context) => {
     sendCurrentRuntimeManifest(res, context);
   });
 });
 
-router.get(CURRENT_RUNTIME_ASSET_ROUTE, (req, res) => {
+mountCurrentRuntimeEndpoint(router, 'currentAssetParam', (req, res) => {
   withCurrentRuntimeApiContext((context) => {
     sendCurrentRuntimeAsset(res, context, req.params.fileName);
   });
 });
 
-router.use('/runtime/current/asset', sendMountedRuntimeAsset);
+mountCurrentRuntimeEndpoint(router, 'currentAssetMounted', sendMountedRuntimeAsset);
 
-router.get('/runtime/current/reports/:reportName', (req, res) => {
+mountCurrentRuntimeEndpoint(router, 'currentReport', (req, res) => {
   sendCurrentRuntimeReport(res, req.params.reportName);
 });
 
-router.get('/runtime/:runtimeId/manifest', (req, res) => {
+mountCurrentRuntimeEndpoint(router, 'pinnedManifest', (req, res) => {
   withCurrentRuntimeApiContext((context) => {
     assertCurrentRuntimeId(req.params.runtimeId, context);
     sendCurrentRuntimeManifest(res, context, { immutable: true });
   });
 });
 
-router.get(PINNED_RUNTIME_ASSET_ROUTE, (req, res) => {
+mountCurrentRuntimeEndpoint(router, 'pinnedAssetParam', (req, res) => {
   withCurrentRuntimeApiContext((context) => {
     assertCurrentRuntimeId(req.params.runtimeId, context);
     sendCurrentRuntimeAsset(res, context, req.params.fileName);
   });
 });
 
-router.use('/runtime/:runtimeId/asset', (req, res, next) => {
+mountCurrentRuntimeEndpoint(router, 'pinnedAssetMounted', (req, res, next) => {
   if (!isRuntimeAssetRequestMethod(req.method)) {
     next();
     return;
@@ -130,79 +129,84 @@ router.use('/runtime/:runtimeId/asset', (req, res, next) => {
   });
 });
 
-router.get('/runtime/:runtimeId/reports/:reportName', (req, res) => {
+mountCurrentRuntimeEndpoint(router, 'pinnedReport', (req, res) => {
   withCurrentRuntimeApiContext((context) => {
     assertCurrentRuntimeId(req.params.runtimeId, context);
     sendCurrentRuntimeReport(res, req.params.reportName);
   });
 });
 
-router.get('/native-runtime/current/manifest', (_req, res) => {
+mountCurrentRuntimeEndpoint(router, 'nativeManifestCompat', (_req, res) => {
   withCurrentRuntimeApiContext((context) => {
     sendCurrentRuntimeManifest(res, context);
   });
 });
 
-router.get('/native-runtime/current/files/:fileName(*)', (req, res) => {
+mountCurrentRuntimeEndpoint(router, 'nativeFileCompat', (req, res) => {
   withCurrentRuntimeApiContext((context) => {
     sendCurrentRuntimeAsset(res, context, req.params.fileName);
   });
 });
 
-router.get(
-  '/recipes/item/:itemId',
+mountCurrentRuntimeEndpoint(
+  router,
+  'recipeItem',
   asyncHandler(async (req, res) => {
     await sendRecipeItem(req.params.itemId, res);
   }),
 );
 
-router.get(
-  '/recipes/current/item/:itemId',
+mountCurrentRuntimeEndpoint(
+  router,
+  'recipeCurrentItem',
   asyncHandler(async (req, res) => {
     await sendRecipeItem(req.params.itemId, res);
   }),
 );
 
-router.get(
-  '/recipes/usage/:itemId',
+mountCurrentRuntimeEndpoint(
+  router,
+  'recipeUsage',
   asyncHandler(async (req, res) => {
     await sendRecipeUsage(req.params.itemId, res);
   }),
 );
 
-router.get(
-  '/recipes/page/:recipePageId(*)',
+mountCurrentRuntimeEndpoint(
+  router,
+  'recipePage',
   asyncHandler(async (req, res) => {
     await sendRecipePage(req.params.recipePageId, res);
   }),
 );
 
-router.get(
-  '/recipes/current/usage/:itemId',
+mountCurrentRuntimeEndpoint(
+  router,
+  'recipeCurrentUsage',
   asyncHandler(async (req, res) => {
     await sendRecipeUsage(req.params.itemId, res);
   }),
 );
 
-router.get('/diagnostics/health', (_req, res) => {
+mountCurrentRuntimeEndpoint(router, 'diagnosticsHealth', (_req, res) => {
   sendDiagnosticsHealth(res);
 });
 
-router.get('/diagnostics/runtime-summary', (_req, res) => {
+mountCurrentRuntimeEndpoint(router, 'diagnosticsRuntimeSummary', (_req, res) => {
   sendDiagnosticsRuntimeSummary(res);
 });
 
-router.get('/health/current/runtime', (_req, res) => {
+mountCurrentRuntimeEndpoint(router, 'healthCurrentRuntime', (_req, res) => {
   sendDiagnosticsHealth(res);
 });
 
-router.get('/metrics/current/native-surface', (_req, res) => {
+mountCurrentRuntimeEndpoint(router, 'nativeSurfaceMetrics', (_req, res) => {
   withCurrentRuntimeApiContext((context) => {
     sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeNativeSurfaceMetrics(context), context);
   });
 });
 
-router.get('/settings/runtime', (_req, res) => {
+mountCurrentRuntimeEndpoint(router, 'runtimeSettings', (_req, res) => {
   sendRuntimeSettings(res);
 });
 
