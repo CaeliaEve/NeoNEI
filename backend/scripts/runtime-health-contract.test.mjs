@@ -20,9 +20,24 @@ test('runtime health exposes the stable public health contract', () => {
     );
   }
   assert.equal(
-    serviceSource.includes('getCurrentRuntimeSnapshot'),
+    serviceSource.includes('acquireCurrentRuntimeSnapshot'),
     true,
-    'runtime health should read current runtime identity and artifact inventory from the immutable snapshot service',
+    'runtime health should read current runtime identity and artifact inventory through the snapshot read-handle service',
+  );
+  assert.equal(
+    serviceSource.includes('RuntimeHealthSummaryOptions'),
+    true,
+    'runtime health should accept an explicit snapshot from higher-level request contexts',
+  );
+  assert.equal(
+    serviceSource.includes('cacheMatchesSnapshot'),
+    true,
+    'runtime health cache must be tied to the pinned snapshot identity when one is provided',
+  );
+  assert.doesNotMatch(
+    serviceSource,
+    /getCurrentRuntimeSnapshot/,
+    'runtime health must not bypass the snapshot read-handle boundary',
   );
   assert.equal(
     serviceSource.includes('buildRuntimeSnapshotHealth'),

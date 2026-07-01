@@ -24,12 +24,27 @@ export type CurrentRuntimeSnapshot = Readonly<{
   fingerprint: string;
 }>;
 
+export type CurrentRuntimeSnapshotHandle = Readonly<{
+  snapshot: CurrentRuntimeSnapshot | null;
+  acquiredAt: number;
+  release: () => void;
+}>;
+
+export type CurrentRuntimeSnapshotReadStats = Readonly<{
+  activeReaders: number;
+  totalAcquires: number;
+  currentRevision: number | null;
+  currentFingerprint: string | null;
+}>;
+
 const DIST_DATA_DIR = path.join(PUBLIC_DIR, 'dist-data');
 const DIST_DATA_MANIFEST_FILE = path.join(DIST_DATA_DIR, 'manifest.json');
 
 let currentSnapshot: CurrentRuntimeSnapshot | null = null;
 let currentFingerprint: string | null = null;
 let nextSnapshotRevision = 1;
+let activeSnapshotReaders = 0;
+let totalSnapshotAcquires = 0;
 
 function asRecord(value: unknown): JsonRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : null;
@@ -192,7 +207,7 @@ function publishCurrentRuntimeSnapshot(input: Omit<CurrentRuntimeSnapshot, 'revi
   return snapshot;
 }
 
-export function getCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
+function refreshCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
   const distManifest = readJson(DIST_DATA_MANIFEST_FILE);
   const runtimeManifestPath = getRuntimeManifestRelativePath(distManifest);
   if (!runtimeManifestPath) {
@@ -229,11 +244,51 @@ export function getCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
   });
 }
 
+export function acquireCurrentRuntimeSnapshot(): CurrentRuntimeSnapshotHandle {
+  activeSnapshotReaders += 1;
+  totalSnapshotAcquires += 1;
+  let released = false;
+  try {
+    const snapshot = refreshCurrentRuntimeSnapshot();
+    return Object.freeze({
+      snapshot,
+      acquiredAt: Date.now(),
+      release: () => {
+        if (released) return;
+        released = true;
+        activeSnapshotReaders = Math.max(0, activeSnapshotReaders - 1);
+      },
+    });
+  } catch (error) {
+    activeSnapshotReaders = Math.max(0, activeSnapshotReaders - 1);
+    throw error;
+  }
+}
+
+export function withCurrentRuntimeSnapshot<T>(reader: (snapshot: CurrentRuntimeSnapshot | null) => T): T {
+  const handle = acquireCurrentRuntimeSnapshot();
+  try {
+    return reader(handle.snapshot);
+  } finally {
+    handle.release();
+  }
+}
+
+export function getCurrentRuntimeSnapshotReadStats(): CurrentRuntimeSnapshotReadStats {
+  return Object.freeze({
+    activeReaders: activeSnapshotReaders,
+    totalAcquires: totalSnapshotAcquires,
+    currentRevision: currentSnapshot?.revision ?? null,
+    currentFingerprint,
+  });
+}
+
 export function getCurrentRuntimeArtifact(relativeFileName: string): CurrentRuntimeArtifact | null {
-  const snapshot = getCurrentRuntimeSnapshot();
-  if (!snapshot) return null;
-  if (!isPortableRuntimePath(relativeFileName)) return null;
-  const normalized = normalizeRuntimePath(relativeFileName);
-  if (!snapshot.declaredFiles.includes(normalized)) return null;
-  return snapshot.artifactsByPath[normalized] ?? null;
+  return withCurrentRuntimeSnapshot((snapshot) => {
+    if (!snapshot) return null;
+    if (!isPortableRuntimePath(relativeFileName)) return null;
+    const normalized = normalizeRuntimePath(relativeFileName);
+    if (!snapshot.declaredFiles.includes(normalized)) return null;
+    return snapshot.artifactsByPath[normalized] ?? null;
+  });
 }

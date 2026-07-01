@@ -2,7 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { PUBLIC_DIR } from '../config/runtime-paths';
 import { resolveAccelerationCompilerAuthority } from './acceleration-runtime-compiler-authority.service';
-import { getCurrentRuntimeSnapshot, type CurrentRuntimeSnapshot } from './current-runtime-snapshot.service';
+import { acquireCurrentRuntimeSnapshot, type CurrentRuntimeSnapshot, type CurrentRuntimeSnapshotHandle } from './current-runtime-snapshot.service';
 import { getNativeRenderRuntimeDiagnostics } from './native-render-runtime-diagnostics.service';
 
 type JsonRecord = Record<string, unknown>;
@@ -80,6 +80,10 @@ export interface RuntimeHealthSummary {
   };
   nativeRender: ReturnType<typeof getNativeRenderRuntimeDiagnostics>;
 }
+
+export type RuntimeHealthSummaryOptions = Readonly<{
+  snapshot?: CurrentRuntimeSnapshot | null;
+}>;
 
 const DIST_DATA_DIR = path.join(PUBLIC_DIR, 'dist-data');
 const CACHE_TTL_MS = Math.max(1_000, Number(process.env.RUNTIME_HEALTH_SUMMARY_TTL_MS || 10_000));
@@ -218,9 +222,21 @@ function chooseStatus(args: {
   return 'ok';
 }
 
-export function getRuntimeHealthSummary(): RuntimeHealthSummary {
+function hasPinnedSnapshotOption(options: RuntimeHealthSummaryOptions): boolean {
+  return Object.prototype.hasOwnProperty.call(options, 'snapshot');
+}
+
+function cacheMatchesSnapshot(summary: RuntimeHealthSummary, snapshot: CurrentRuntimeSnapshot | null): boolean {
+  const runtimeSnapshot = summary.runtimeSnapshot;
+  return runtimeSnapshot.revision === (snapshot?.revision ?? null)
+    && runtimeSnapshot.fingerprint === (snapshot?.fingerprint ?? null);
+}
+
+export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {}): RuntimeHealthSummary {
   const now = Date.now();
-  if (cache && cache.expiresAt > now) {
+  const pinnedSnapshot = hasPinnedSnapshotOption(options);
+  const optionSnapshot = options.snapshot ?? null;
+  if (cache && cache.expiresAt > now && (!pinnedSnapshot || cacheMatchesSnapshot(cache.summary, optionSnapshot))) {
     return cache.summary;
   }
 
@@ -233,88 +249,93 @@ export function getRuntimeHealthSummary(): RuntimeHealthSummary {
   const browserContract = readDistJsonByManifestKey(manifest, 'neiBrowserContract');
   const recipeFragmentation = readDistJsonByManifestKey(manifest, 'recipeFragmentation');
   const exportPathHygiene = readDistJsonByManifestKey(manifest, 'exportPathHygiene');
-  const snapshot = getCurrentRuntimeSnapshot();
-  const runtimeSnapshotHealth = buildRuntimeSnapshotHealth(snapshot);
-  const files = runtimeSnapshotHealth.files;
-  const compilerAuthority = resolveAccelerationCompilerAuthority();
-  const externalRuntimePromotion = readExternalRuntimePromotionSummary(manifest);
+  const snapshotHandle: CurrentRuntimeSnapshotHandle | null = pinnedSnapshot ? null : acquireCurrentRuntimeSnapshot();
+  try {
+    const snapshot = pinnedSnapshot ? optionSnapshot : snapshotHandle?.snapshot ?? null;
+    const runtimeSnapshotHealth = buildRuntimeSnapshotHealth(snapshot);
+    const files = runtimeSnapshotHealth.files;
+    const compilerAuthority = resolveAccelerationCompilerAuthority();
+    const externalRuntimePromotion = readExternalRuntimePromotionSummary(manifest);
 
-  const compilerValidationBlocked = (asNumber(validationCounts?.manifestBlocked) ?? 0) > 0
-    || (asNumber(validationCounts?.nativeRenderCaptureGateBlocked) ?? 0) > 0;
-  const migrationReadinessStatus = asString(migrationReadiness?.status);
-  const neiBrowserContractStatus = asString(browserContract?.status);
-  const recipeFragmentationStatus = asString(recipeFragmentation?.status ?? recipeFragmentation?.reportStatus);
-  const exportPathHygieneStatus = asString(exportPathHygiene?.status);
+    const compilerValidationBlocked = (asNumber(validationCounts?.manifestBlocked) ?? 0) > 0
+      || (asNumber(validationCounts?.nativeRenderCaptureGateBlocked) ?? 0) > 0;
+    const migrationReadinessStatus = asString(migrationReadiness?.status);
+    const neiBrowserContractStatus = asString(browserContract?.status);
+    const recipeFragmentationStatus = asString(recipeFragmentation?.status ?? recipeFragmentation?.reportStatus);
+    const exportPathHygieneStatus = asString(exportPathHygiene?.status);
 
-  const summary: RuntimeHealthSummary = {
-    schemaVersion: 'neonei/runtime-health-summary/current',
-    status: chooseStatus({
-      manifestExists: Boolean(manifest),
-      runtimeSnapshotAvailable: runtimeSnapshotHealth.runtimeSnapshot.available,
-      missingFileCount: files.missing.length,
-      migrationReadinessStatus,
-      browserContractStatus: neiBrowserContractStatus,
-      recipeFragmentationStatus,
-      compilerValidationBlocked,
-    }),
-    generatedAt: new Date().toISOString(),
-    distData: {
-      exists: fs.existsSync(DIST_DATA_DIR),
-      manifestExists: Boolean(manifest),
-      source: asString(manifest?.source),
-      sourceRepository: asString(manifest?.sourceRepository),
-      generatedAt: asString(manifest?.generatedAt),
-      runtime: asRecord(manifest?.runtime),
-    },
-    counts: {
-      items: asNumber(validationCounts?.items),
-      recipes: asNumber(validationCounts?.recipes),
-      browserItems: asNumber(validationCounts?.browserAtlasItems) ?? asNumber(validationCounts?.browserItems),
-      browserGroups: asNumber(validationCounts?.groups),
-      searchItems: asNumber(validationCounts?.items),
-      textures: asNumber(validationCounts?.textures),
-      browserAtlasItems: asNumber(validationCounts?.browserAtlasItems),
-      animatedBrowserAtlasItems: asNumber(validationCounts?.animatedBrowserAtlasItems),
-      animationTableItems: asNumber(validationCounts?.animationTableItems),
-      recipeHandlers: asNumber(validationCounts?.neiHandlers),
-      specialDomains: asNumber(validationCounts?.specialDomains),
-    },
-    coverage: {
-      atlasCoverageRatio: (() => {
-        const atlasItems = asNumber(validationCounts?.browserAtlasItems);
-        const items = asNumber(validationCounts?.items);
-        return atlasItems && items ? Number((atlasItems / items).toFixed(6)) : null;
-      })(),
-      semanticAtlasMissing: asNumber(validationCounts?.semanticMemberMissingAtlas) ?? asNumber(validationMissing?.browserAtlasItems),
-      expectedAnimatedItems: asNumber(validationCounts?.expectedAnimatedItems),
-      staticWhenExpectedAnimated: asNumber(validationCounts?.staticWhenExpectedAnimated),
-      recipeFragmentationDisplaySplits: asNumber(validationCounts?.recipeFragmentationDisplaySplits),
-      recipeFragmentationHandlerSplits: asNumber(validationCounts?.recipeFragmentationHandlerSplits),
-    },
-    validation: {
-      migrationReadinessStatus,
-      neiBrowserContractStatus,
-      recipeFragmentationStatus,
-      exportPathHygieneStatus,
-      compilerValidationBlocked,
-      blockedGates: asStringArray(migrationReadiness?.blockedGates),
-      warnings: [
-        ...asStringArray(validationReport?.warnings),
-        ...asStringArray(browserContract?.warnings),
-      ],
-    },
-    files,
-    runtimeSnapshot: runtimeSnapshotHealth.runtimeSnapshot,
-    compiler: {
-      authority: compilerAuthority,
-      externalRuntimePromotion,
-    },
-    nativeRender: getNativeRenderRuntimeDiagnostics(),
-  };
+    const summary: RuntimeHealthSummary = {
+      schemaVersion: 'neonei/runtime-health-summary/current',
+      status: chooseStatus({
+        manifestExists: Boolean(manifest),
+        runtimeSnapshotAvailable: runtimeSnapshotHealth.runtimeSnapshot.available,
+        missingFileCount: files.missing.length,
+        migrationReadinessStatus,
+        browserContractStatus: neiBrowserContractStatus,
+        recipeFragmentationStatus,
+        compilerValidationBlocked,
+      }),
+      generatedAt: new Date().toISOString(),
+      distData: {
+        exists: fs.existsSync(DIST_DATA_DIR),
+        manifestExists: Boolean(manifest),
+        source: asString(manifest?.source),
+        sourceRepository: asString(manifest?.sourceRepository),
+        generatedAt: asString(manifest?.generatedAt),
+        runtime: asRecord(manifest?.runtime),
+      },
+      counts: {
+        items: asNumber(validationCounts?.items),
+        recipes: asNumber(validationCounts?.recipes),
+        browserItems: asNumber(validationCounts?.browserAtlasItems) ?? asNumber(validationCounts?.browserItems),
+        browserGroups: asNumber(validationCounts?.groups),
+        searchItems: asNumber(validationCounts?.items),
+        textures: asNumber(validationCounts?.textures),
+        browserAtlasItems: asNumber(validationCounts?.browserAtlasItems),
+        animatedBrowserAtlasItems: asNumber(validationCounts?.animatedBrowserAtlasItems),
+        animationTableItems: asNumber(validationCounts?.animationTableItems),
+        recipeHandlers: asNumber(validationCounts?.neiHandlers),
+        specialDomains: asNumber(validationCounts?.specialDomains),
+      },
+      coverage: {
+        atlasCoverageRatio: (() => {
+          const atlasItems = asNumber(validationCounts?.browserAtlasItems);
+          const items = asNumber(validationCounts?.items);
+          return atlasItems && items ? Number((atlasItems / items).toFixed(6)) : null;
+        })(),
+        semanticAtlasMissing: asNumber(validationCounts?.semanticMemberMissingAtlas) ?? asNumber(validationMissing?.browserAtlasItems),
+        expectedAnimatedItems: asNumber(validationCounts?.expectedAnimatedItems),
+        staticWhenExpectedAnimated: asNumber(validationCounts?.staticWhenExpectedAnimated),
+        recipeFragmentationDisplaySplits: asNumber(validationCounts?.recipeFragmentationDisplaySplits),
+        recipeFragmentationHandlerSplits: asNumber(validationCounts?.recipeFragmentationHandlerSplits),
+      },
+      validation: {
+        migrationReadinessStatus,
+        neiBrowserContractStatus,
+        recipeFragmentationStatus,
+        exportPathHygieneStatus,
+        compilerValidationBlocked,
+        blockedGates: asStringArray(migrationReadiness?.blockedGates),
+        warnings: [
+          ...asStringArray(validationReport?.warnings),
+          ...asStringArray(browserContract?.warnings),
+        ],
+      },
+      files,
+      runtimeSnapshot: runtimeSnapshotHealth.runtimeSnapshot,
+      compiler: {
+        authority: compilerAuthority,
+        externalRuntimePromotion,
+      },
+      nativeRender: getNativeRenderRuntimeDiagnostics(),
+    };
 
-  cache = {
-    expiresAt: now + CACHE_TTL_MS,
-    summary,
-  };
-  return summary;
+    cache = {
+      expiresAt: now + CACHE_TTL_MS,
+      summary,
+    };
+    return summary;
+  } finally {
+    snapshotHandle?.release();
+  }
 }

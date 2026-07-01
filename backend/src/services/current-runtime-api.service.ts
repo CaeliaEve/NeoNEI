@@ -1,6 +1,6 @@
 import { type RuntimeHealthSummary, getRuntimeHealthSummary } from './runtime-health-summary.service';
 import {
-  getCurrentRuntimeSnapshot,
+  acquireCurrentRuntimeSnapshot,
   isPortableRuntimePath,
   normalizeRuntimePath,
   type CurrentRuntimeArtifact,
@@ -65,19 +65,24 @@ function normalizeRequiredCurrentRuntimeParam(value: string | undefined, name: s
 }
 
 export function createCurrentRuntimeApiContext(): CurrentRuntimeApiContext {
-  const snapshot = getCurrentRuntimeSnapshot();
-  const capabilities = snapshot?.capabilities ?? {};
-  const health = getRuntimeHealthSummary();
-  return Object.freeze({
-    snapshot,
-    health,
-    meta: Object.freeze({
-      schema: API_SCHEMA,
-      schemaRevision: API_SCHEMA_REVISION,
-      runtimeId: snapshot?.runtimeId ?? asString(health.distData.runtime?.runtimeId) ?? health.distData.source ?? 'runtime-missing',
-      capabilities,
-    }),
-  });
+  const handle = acquireCurrentRuntimeSnapshot();
+  try {
+    const snapshot = handle.snapshot;
+    const capabilities = snapshot?.capabilities ?? {};
+    const health = getRuntimeHealthSummary({ snapshot });
+    return Object.freeze({
+      snapshot,
+      health,
+      meta: Object.freeze({
+        schema: API_SCHEMA,
+        schemaRevision: API_SCHEMA_REVISION,
+        runtimeId: snapshot?.runtimeId ?? asString(health.distData.runtime?.runtimeId) ?? health.distData.source ?? 'runtime-missing',
+        capabilities,
+      }),
+    });
+  } finally {
+    handle.release();
+  }
 }
 
 export function assertCurrentRuntimeId(runtimeId: string | undefined, context: CurrentRuntimeApiContext): void {
