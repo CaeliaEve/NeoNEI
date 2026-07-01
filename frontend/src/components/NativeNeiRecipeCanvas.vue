@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Recipe, RecipeUiPayload } from '../services/api';
 import { loadUiPackRuntime, type UiPackRuntime } from '../services/uiPackRuntime';
@@ -12,12 +12,6 @@ import {
   type NativeUiRect,
   type NativeUiSlotCell,
 } from '../services/nativeUiRuntimeRegistry';
-import {
-  buildNativeUiSpriteCommands,
-  type NativeUiAtlasSpriteSource,
-  type NativeUiPreparedBackgroundSource,
-} from '../services/nativeUiRenderCommandBuilder.ts';
-import { nativeUiSlotTextureKey, NativeUiTextureRegistry } from '../services/nativeUiTextureRegistry.ts';
 import {
   isNativeUiHotspotInteractive,
   nativeUiHitCellEntryLabel,
@@ -37,23 +31,16 @@ import {
   nativeUiNativeBackground,
   nativeUiNativeBackgroundAssetRef,
   nativeUiNativeBackgroundTextureKey,
-  prepareNativeUiBackgroundSource,
 } from '../services/nativeUiBackgroundResourceLoader.ts';
 import {
-  registerNativeUiAtlasSources,
-  resolveNativeUiAtlasSpriteSource,
-  type NativeUiPreparedAtlasSource,
-} from '../services/nativeUiAtlasResourceRegistry.ts';
-import {
-  configureNativeUiCanvasSize,
-  NativeUiRendererSession,
-} from '../services/nativeUiRendererSession.ts';
+  NativeUiCanvasRenderPipeline,
+  type NativeUiCanvasRenderPipelineState,
+} from '../services/nativeUiCanvasRenderPipeline.ts';
 import {
   projectNativeUiRecipeRenderables,
   resolveNativeUiRenderablesForRole,
   type NativeUiRecipeRenderable,
 } from '../services/nativeUiRecipeRenderableProjection.ts';
-import type { NativeRendererBackend } from '../renderers/native/NativeRendererBackend';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
 type CanvasRenderable = NativeUiRecipeRenderable;
@@ -80,15 +67,14 @@ const renderReady = ref(false);
 const missingTextureCount = ref(0);
 const currentDpr = ref(1);
 const uiPackRuntime = ref<UiPackRuntime | null>(null);
-const preparedSources = new Map<string, NativeUiPreparedAtlasSource>();
-const textureRegistry = new NativeUiTextureRegistry();
-const renderSession = new NativeUiRendererSession();
-const backgroundSource = ref<NativeUiPreparedBackgroundSource | null>(null);
+const backgroundSource = ref<NativeUiCanvasRenderPipelineState['backgroundSource']>(null);
 const backgroundLoadError = ref<string | null>(null);
-let loadSequence = 0;
 let resizeObserver: ResizeObserver | null = null;
 let mounted = false;
-let hasAnimatedSprites = false;
+const renderPipeline = new NativeUiCanvasRenderPipeline<CanvasRenderable>({
+  nextTick,
+  onStateChange: syncRenderPipelineState,
+});
 const shellWidth = ref(0);
 const shellHeight = ref(0);
 
@@ -206,79 +192,13 @@ function handleHitCellClick(cell: NativeUiHitCell<CanvasRenderable>) {
 }
 
 
-function slotTextureKey(role: string): string {
-  return nativeUiSlotTextureKey(role, currentDpr.value);
-}
-
-
-function ensureSlotTextures(activeRenderer: NativeRendererBackend) {
-  textureRegistry.registerSlotTextures(activeRenderer, currentDpr.value, NATIVE_SLOT_SIZE);
-}
-
-function ensureDynamicPrimitiveTextures(activeRenderer: NativeRendererBackend) {
-  textureRegistry.registerDynamicPrimitiveTextures(activeRenderer, dynamicPrimitives.value);
-}
-
-async function ensureBackgroundTexture(activeRenderer: NativeRendererBackend) {
-  backgroundSource.value = null;
-  backgroundLoadError.value = null;
-  const result = await prepareNativeUiBackgroundSource({
-    renderer: activeRenderer,
-    textureRegistry,
-    layout: resolvedNativeLayout.value,
-    manifestUrl: uiPackRuntime.value?.manifestUrl ?? null,
-    layoutWidth: layoutWidth.value,
-    layoutHeight: layoutHeight.value,
-    dpr: currentDpr.value,
-    isActive: () => mounted,
-  });
-  if (result.aborted) return;
-  backgroundSource.value = result.source;
-  backgroundLoadError.value = result.error;
-}
-
-function resolveAtlasSource(entry: CanvasRenderable, nowMs: number): NativeUiAtlasSpriteSource | null {
-  return resolveNativeUiAtlasSpriteSource(preparedSources, entry, nowMs);
-}
-
-
-function buildSpriteCommands(nowMs: number) {
-  return buildNativeUiSpriteCommands({
-    dpr: currentDpr.value,
-    nowMs,
-    background: backgroundSource.value,
-    dynamicPrimitives: dynamicPrimitives.value,
-    slotCells: slotCells.value,
-    slotSize: NATIVE_SLOT_SIZE,
-    iconInset: NATIVE_ICON_INSET,
-    iconSize: NATIVE_ICON_SIZE,
-    slotTextureKey,
-    resolveAtlasSource,
-  });
-}
-
-function renderFrame(nowMs?: number) {
-  renderSession.renderFrame({
-    canvas: canvasRef.value,
-    spriteCommands: buildSpriteCommands,
-    nowMs,
-  });
-}
-
-function scheduleAnimationLoop() {
-  renderSession.scheduleAnimationLoop({
-    enabled: hasAnimatedSprites,
-    renderAt: renderFrame,
-  });
-}
-
-function resetRendererState() {
-  preparedSources.clear();
-  missingTextureCount.value = 0;
-  hasAnimatedSprites = false;
-  backgroundSource.value = null;
-  backgroundLoadError.value = null;
-  renderReady.value = false;
+function syncRenderPipelineState(state: NativeUiCanvasRenderPipelineState) {
+  currentDpr.value = state.currentDpr;
+  renderError.value = state.renderError;
+  renderReady.value = state.renderReady;
+  missingTextureCount.value = state.missingTextureCount;
+  backgroundSource.value = state.backgroundSource;
+  backgroundLoadError.value = state.backgroundLoadError;
 }
 
 function measureShell() {
@@ -298,50 +218,22 @@ async function hydrateUiPackRuntime() {
 }
 
 async function rebuildRenderer() {
-  if (!mounted) return;
-  const sequence = ++loadSequence;
-  renderSession.stopAnimationLoop();
-  resetRendererState();
-  await nextTick();
-  if (sequence !== loadSequence) return;
-
-  const canvas = canvasRef.value;
-  if (!canvas) return;
-  currentDpr.value = configureNativeUiCanvasSize(
-    canvas,
-    displayWidth.value,
-    displayHeight.value,
-    window.devicePixelRatio,
-  ).dpr;
-
-  const activeRenderer = renderSession.ensureRenderer(canvas);
-  if (!activeRenderer) {
-    renderError.value = 'WebGL2 native recipe renderer is unavailable.';
-    return;
-  }
-  renderError.value = null;
-  ensureSlotTextures(activeRenderer);
-  ensureDynamicPrimitiveTextures(activeRenderer);
-  const backgroundReady = ensureBackgroundTexture(activeRenderer);
-  const atlasReady = registerNativeUiAtlasSources({
-    renderer: activeRenderer,
-    textureRegistry,
+  await renderPipeline.rebuild({
+    mounted,
+    canvas: canvasRef.value,
+    displayWidth: displayWidth.value,
+    displayHeight: displayHeight.value,
+    devicePixelRatio: window.devicePixelRatio,
+    layout: resolvedNativeLayout.value,
+    manifestUrl: uiPackRuntime.value?.manifestUrl ?? null,
+    layoutWidth: layoutWidth.value,
+    layoutHeight: layoutHeight.value,
+    dynamicPrimitives: dynamicPrimitives.value,
     slotCells: slotCells.value,
+    slotSize: NATIVE_SLOT_SIZE,
+    iconInset: NATIVE_ICON_INSET,
+    iconSize: NATIVE_ICON_SIZE,
   });
-  const [atlasResult] = await Promise.all([
-    atlasReady,
-    backgroundReady,
-  ]);
-  if (sequence !== loadSequence) return;
-
-  atlasResult.preparedSources.forEach((source, lookupId) => {
-    preparedSources.set(lookupId, source);
-  });
-  hasAnimatedSprites = atlasResult.hasAnimatedSprites;
-  missingTextureCount.value = atlasResult.missingCount;
-  renderReady.value = true;
-  renderFrame();
-  scheduleAnimationLoop();
 }
 
 function handleResize() {
@@ -369,13 +261,10 @@ watch(renderSignature, () => {
 
 onBeforeUnmount(() => {
   mounted = false;
-  loadSequence += 1;
   window.removeEventListener('resize', handleResize);
   resizeObserver?.disconnect();
   resizeObserver = null;
-  renderSession.dispose();
-  textureRegistry.clear();
-  preparedSources.clear();
+  renderPipeline.dispose();
 });
 </script>
 

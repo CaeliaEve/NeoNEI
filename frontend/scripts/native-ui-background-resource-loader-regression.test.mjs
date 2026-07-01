@@ -246,10 +246,12 @@ test('native UI background resource loader prepares image-region backgrounds and
 
 test('native UI background resource loader owns component background resource boundary', () => {
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
+  const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
   const loaderSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiBackgroundResourceLoader.ts'), 'utf8').replace(/\r\n/g, '\n');
 
   assert.match(componentSource, /nativeUiBackgroundResourceLoader/);
-  assert.match(componentSource, /prepareNativeUiBackgroundSource/);
+  assert.doesNotMatch(componentSource, /prepareNativeUiBackgroundSource/);
+  assert.match(pipelineSource, /prepareNativeUiBackgroundSource/);
   assert.doesNotMatch(componentSource, /function resolveBackgroundAssetUrl/);
   assert.doesNotMatch(componentSource, /function resolveNativeBackgroundAssetUrl/);
   assert.doesNotMatch(componentSource, /function nativeBackgroundTextureSpec/);

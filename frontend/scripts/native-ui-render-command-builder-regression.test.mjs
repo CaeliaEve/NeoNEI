@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -174,10 +174,14 @@ test('native UI render command builder assembles background, slot, and atlas spr
 
 test('native UI render command builder owns component sprite assembly boundary', () => {
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
+  const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
   const builderSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRenderCommandBuilder.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /nativeUiRenderCommandBuilder/);
-  assert.match(componentSource, /buildNativeUiSpriteCommands/);
+  assert.match(componentSource, /nativeUiCanvasRenderPipeline/);
+  assert.doesNotMatch(componentSource, /nativeUiRenderCommandBuilder/);
+  assert.doesNotMatch(componentSource, /buildNativeUiSpriteCommands/);
+  assert.match(pipelineSource, /nativeUiRenderCommandBuilder/);
+  assert.match(pipelineSource, /buildNativeUiSpriteCommands/);
   assert.doesNotMatch(componentSource, /function pushTextureSpriteRect/);
   assert.doesNotMatch(componentSource, /function pushBackgroundCommands/);
   assert.doesNotMatch(componentSource, /function pushDynamicPrimitiveCommands/);

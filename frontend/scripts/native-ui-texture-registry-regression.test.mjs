@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -151,13 +151,18 @@ test('native UI texture registry deduplicates renderer registration', () => {
 
 test('native UI texture registry owns component texture construction boundary', () => {
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
+  const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
   const registrySource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiTextureRegistry.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /nativeUiTextureRegistry/);
-  assert.match(componentSource, /new NativeUiTextureRegistry\(\)/);
-  assert.match(componentSource, /textureRegistry\.registerSlotTextures/);
-  assert.match(componentSource, /textureRegistry\.registerDynamicPrimitiveTextures/);
-  assert.match(componentSource, /textureRegistry/);
+  assert.match(componentSource, /nativeUiCanvasRenderPipeline/);
+  assert.doesNotMatch(componentSource, /nativeUiTextureRegistry/);
+  assert.doesNotMatch(componentSource, /new NativeUiTextureRegistry\(\)/);
+  assert.doesNotMatch(componentSource, /textureRegistry\.registerSlotTextures/);
+  assert.doesNotMatch(componentSource, /textureRegistry\.registerDynamicPrimitiveTextures/);
+  assert.match(pipelineSource, /nativeUiTextureRegistry/);
+  assert.match(pipelineSource, /new NativeUiTextureRegistry\(\)/);
+  assert.match(pipelineSource, /textureRegistry\.registerSlotTextures/);
+  assert.match(pipelineSource, /textureRegistry\.registerDynamicPrimitiveTextures/);
   assert.doesNotMatch(componentSource, /function createSlotTexture/);
   assert.doesNotMatch(componentSource, /function createSolidColorTexture/);
   assert.doesNotMatch(componentSource, /function createGtModularUiBackgroundTexture/);

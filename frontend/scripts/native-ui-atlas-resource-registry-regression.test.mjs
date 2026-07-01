@@ -151,11 +151,16 @@ test('native UI atlas registry warms, prepares, and registers atlas textures', a
 
 test('native UI atlas registry owns component atlas resource boundary', () => {
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
+  const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
   const registrySource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiAtlasResourceRegistry.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /nativeUiAtlasResourceRegistry/);
-  assert.match(componentSource, /registerNativeUiAtlasSources/);
-  assert.match(componentSource, /resolveNativeUiAtlasSpriteSource/);
+  assert.match(componentSource, /nativeUiCanvasRenderPipeline/);
+  assert.doesNotMatch(componentSource, /nativeUiAtlasResourceRegistry/);
+  assert.doesNotMatch(componentSource, /registerNativeUiAtlasSources/);
+  assert.doesNotMatch(componentSource, /resolveNativeUiAtlasSpriteSource/);
+  assert.match(pipelineSource, /nativeUiAtlasResourceRegistry/);
+  assert.match(pipelineSource, /registerNativeUiAtlasSources/);
+  assert.match(pipelineSource, /resolveNativeUiAtlasSpriteSource/);
   assert.doesNotMatch(componentSource, /globalBrowserAtlas/);
   assert.doesNotMatch(componentSource, /function prepareAtlasSource/);
   assert.doesNotMatch(componentSource, /getGlobalBrowserAtlasEntry/);

@@ -121,21 +121,27 @@ test('native UI renderer session owns animation loop scheduling and cancellation
   assert.equal(scheduler.requested.length, 2);
 });
 
-test('native UI renderer session owns component renderer lifecycle boundary', () => {
+test('native UI renderer session owns render pipeline lifecycle boundary', () => {
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
+  const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
   const sessionSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRendererSession.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /nativeUiRendererSession/);
-  assert.match(componentSource, /new NativeUiRendererSession\(\)/);
-  assert.match(componentSource, /configureNativeUiCanvasSize/);
-  assert.match(componentSource, /renderSession\.ensureRenderer/);
-  assert.match(componentSource, /renderSession\.scheduleAnimationLoop/);
+  assert.match(componentSource, /nativeUiCanvasRenderPipeline/);
+  assert.match(componentSource, /new NativeUiCanvasRenderPipeline/);
+  assert.doesNotMatch(componentSource, /new NativeUiRendererSession\(\)/);
+  assert.doesNotMatch(componentSource, /configureNativeUiCanvasSize/);
+  assert.doesNotMatch(componentSource, /renderSession\.ensureRenderer/);
+  assert.doesNotMatch(componentSource, /renderSession\.scheduleAnimationLoop/);
   assert.doesNotMatch(componentSource, /WebGl2NativeRenderer/);
   assert.doesNotMatch(componentSource, /requestAnimationFrame/);
   assert.doesNotMatch(componentSource, /cancelAnimationFrame/);
   assert.doesNotMatch(componentSource, /renderer\.value/);
   assert.doesNotMatch(componentSource, /getSharedAnimationNowMs/);
 
+  assert.match(pipelineSource, /new NativeUiRendererSession\(\)/);
+  assert.match(pipelineSource, /configureNativeUiCanvasSize/);
+  assert.match(pipelineSource, /rendererSession\.ensureRenderer/);
+  assert.match(pipelineSource, /rendererSession\.scheduleAnimationLoop/);
   assert.match(sessionSource, /WebGl2NativeRenderer/);
   assert.match(sessionSource, /requestAnimationFrame/);
   assert.match(sessionSource, /cancelAnimationFrame/);
