@@ -1,17 +1,7 @@
 ﻿<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { FluidStack, Recipe, RecipeItem, RecipeUiPayload } from '../services/api';
-import {
-  getGlobalBrowserAtlasEntry,
-  getLoadedGlobalAtlasImage,
-  getStaticPlacement,
-  normalizeFrames,
-  normalizeTimeline,
-  selectAtlasFrameByTimelineIndex,
-  warmGlobalBrowserAtlasForItemsDetailed,
-  type BrowserAtlasItemEntry,
-} from '../services/globalBrowserAtlas';
-import { getSharedAnimationNowMs, resolveTimelineFrameIndex } from '../services/animationBudget';
+import { getSharedAnimationNowMs } from '../services/animationBudget';
 import { loadUiPackRuntime, type UiPackRuntime } from '../services/uiPackRuntime';
 import {
   buildNativeUiSlotCells,
@@ -50,6 +40,11 @@ import {
   nativeUiNativeBackgroundTextureKey,
   prepareNativeUiBackgroundSource,
 } from '../services/nativeUiBackgroundResourceLoader.ts';
+import {
+  registerNativeUiAtlasSources,
+  resolveNativeUiAtlasSpriteSource,
+  type NativeUiPreparedAtlasSource,
+} from '../services/nativeUiAtlasResourceRegistry.ts';
 import { WebGl2NativeRenderer } from '../renderers/native/WebGl2NativeRenderer';
 import type { NativeRendererBackend } from '../renderers/native/NativeRendererBackend';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
@@ -67,13 +62,6 @@ interface CanvasRenderable {
 }
 
 type CanvasCell = NativeUiSlotCell<CanvasRenderable>;
-
-type PreparedAtlasSource = {
-  atlasFile: string;
-  staticSource: { x: number; y: number; width: number; height: number } | null;
-  frames: Array<{ index: number; x: number; y: number; width: number; height: number }>;
-  timeline: Array<{ frameIndex: number; durationMs: number }>;
-};
 
 
 const props = defineProps<{
@@ -97,7 +85,7 @@ const renderReady = ref(false);
 const missingTextureCount = ref(0);
 const currentDpr = ref(1);
 const uiPackRuntime = ref<UiPackRuntime | null>(null);
-const preparedSources = new Map<string, PreparedAtlasSource>();
+const preparedSources = new Map<string, NativeUiPreparedAtlasSource>();
 const textureRegistry = new NativeUiTextureRegistry();
 const backgroundSource = ref<NativeUiPreparedBackgroundSource | null>(null);
 const backgroundLoadError = ref<string | null>(null);
@@ -335,61 +323,8 @@ async function ensureBackgroundTexture(activeRenderer: NativeRendererBackend) {
   backgroundLoadError.value = result.error;
 }
 
-function prepareAtlasSource(entry: BrowserAtlasItemEntry | null): PreparedAtlasSource | null {
-  if (!entry) return null;
-  const preparedAnimation = entry.animatedAtlas?.atlasFile
-    ? {
-      atlasFile: entry.animatedAtlas.atlasFile,
-      frames: normalizeFrames(entry.animatedAtlas.frames),
-      timeline: normalizeTimeline(entry.animatedAtlas.timeline, entry.animatedAtlas.frameDurationMs),
-    }
-    : null;
-  if (preparedAnimation && preparedAnimation.frames.length > 0 && preparedAnimation.timeline.length > 0) {
-    return {
-      atlasFile: preparedAnimation.atlasFile,
-      staticSource: null,
-      frames: preparedAnimation.frames,
-      timeline: preparedAnimation.timeline,
-    };
-  }
-  const staticPlacement = getStaticPlacement(entry);
-  if (!staticPlacement?.atlasFile || !staticPlacement.width || !staticPlacement.height) return null;
-  return {
-    atlasFile: staticPlacement.atlasFile,
-    staticSource: {
-      x: staticPlacement.x,
-      y: staticPlacement.y,
-      width: staticPlacement.width,
-      height: staticPlacement.height,
-    },
-    frames: [],
-    timeline: [],
-  };
-}
-
 function resolveAtlasSource(entry: CanvasRenderable, nowMs: number): NativeUiAtlasSpriteSource | null {
-  const prepared = preparedSources.get(entry.atlasLookupId);
-  if (!prepared) return null;
-  if (prepared.frames.length > 0 && prepared.timeline.length > 0) {
-    const frameIndex = resolveTimelineFrameIndex(prepared.timeline, nowMs);
-    const frame = selectAtlasFrameByTimelineIndex(prepared.frames, frameIndex);
-    if (!frame) return null;
-    return {
-      atlasFile: prepared.atlasFile,
-      x: frame.x,
-      y: frame.y,
-      width: frame.width,
-      height: frame.height,
-    };
-  }
-  if (!prepared.staticSource) return null;
-  return {
-    atlasFile: prepared.atlasFile,
-    x: prepared.staticSource.x,
-    y: prepared.staticSource.y,
-    width: prepared.staticSource.width,
-    height: prepared.staticSource.height,
-  };
+  return resolveNativeUiAtlasSpriteSource(preparedSources, entry, nowMs);
 }
 
 
@@ -481,33 +416,22 @@ async function rebuildRenderer() {
   ensureSlotTextures(activeRenderer);
   ensureDynamicPrimitiveTextures(activeRenderer);
   const backgroundReady = ensureBackgroundTexture(activeRenderer);
-
-  const lookupIds = Array.from(new Set(slotCells.value
-    .map((cell) => cell.entry?.atlasLookupId ?? '')
-    .filter(Boolean)));
-  await Promise.allSettled([
-    warmGlobalBrowserAtlasForItemsDetailed(lookupIds),
+  const atlasReady = registerNativeUiAtlasSources({
+    renderer: activeRenderer,
+    textureRegistry,
+    slotCells: slotCells.value,
+  });
+  const [atlasResult] = await Promise.all([
+    atlasReady,
     backgroundReady,
   ]);
   if (sequence !== loadSequence) return;
 
-  let missing = 0;
-  for (const lookupId of lookupIds) {
-    const prepared = prepareAtlasSource(getGlobalBrowserAtlasEntry(lookupId));
-    const image = prepared?.atlasFile ? getLoadedGlobalAtlasImage(prepared.atlasFile) : null;
-    if (!prepared || !image) {
-      missing += 1;
-      continue;
-    }
-    if (textureRegistry.register(activeRenderer, prepared.atlasFile, image)) {
-      preparedSources.set(lookupId, prepared);
-      hasAnimatedSprites = hasAnimatedSprites || prepared.frames.length > 0;
-    } else {
-      missing += 1;
-    }
-  }
-
-  missingTextureCount.value = missing;
+  atlasResult.preparedSources.forEach((source, lookupId) => {
+    preparedSources.set(lookupId, source);
+  });
+  hasAnimatedSprites = atlasResult.hasAnimatedSprites;
+  missingTextureCount.value = atlasResult.missingCount;
   renderReady.value = true;
   renderFrame();
   scheduleAnimationLoop();

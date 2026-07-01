@@ -157,12 +157,13 @@ test('native UI texture registry owns component texture construction boundary', 
   assert.match(componentSource, /new NativeUiTextureRegistry\(\)/);
   assert.match(componentSource, /textureRegistry\.registerSlotTextures/);
   assert.match(componentSource, /textureRegistry\.registerDynamicPrimitiveTextures/);
-  assert.match(componentSource, /textureRegistry\.register\(activeRenderer/);
+  assert.match(componentSource, /textureRegistry/);
   assert.doesNotMatch(componentSource, /function createSlotTexture/);
   assert.doesNotMatch(componentSource, /function createSolidColorTexture/);
   assert.doesNotMatch(componentSource, /function createGtModularUiBackgroundTexture/);
   assert.doesNotMatch(componentSource, /const registeredTextureKeys/);
   assert.doesNotMatch(componentSource, /activeRenderer\.registerTexture/);
+  assert.doesNotMatch(componentSource, /textureRegistry\.register\(activeRenderer/);
 
   assert.match(registrySource, /export class NativeUiTextureRegistry/);
   assert.match(registrySource, /export function createNativeUiSlotTexture/);
