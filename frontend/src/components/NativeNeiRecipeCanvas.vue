@@ -1,7 +1,6 @@
 ﻿<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { FluidStack, Recipe, RecipeItem, RecipeUiPayload } from '../services/api';
-import { getSharedAnimationNowMs } from '../services/animationBudget';
 import { loadUiPackRuntime, type UiPackRuntime } from '../services/uiPackRuntime';
 import {
   buildNativeUiSlotCells,
@@ -45,7 +44,10 @@ import {
   resolveNativeUiAtlasSpriteSource,
   type NativeUiPreparedAtlasSource,
 } from '../services/nativeUiAtlasResourceRegistry.ts';
-import { WebGl2NativeRenderer } from '../renderers/native/WebGl2NativeRenderer';
+import {
+  configureNativeUiCanvasSize,
+  NativeUiRendererSession,
+} from '../services/nativeUiRendererSession.ts';
 import type { NativeRendererBackend } from '../renderers/native/NativeRendererBackend';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
@@ -79,7 +81,6 @@ const NATIVE_ICON_INSET = Math.floor((NATIVE_SLOT_SIZE - NATIVE_ICON_SIZE) / 2);
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const shellRef = ref<HTMLElement | null>(null);
-const renderer = ref<NativeRendererBackend | null>(null);
 const renderError = ref<string | null>(null);
 const renderReady = ref(false);
 const missingTextureCount = ref(0);
@@ -87,10 +88,10 @@ const currentDpr = ref(1);
 const uiPackRuntime = ref<UiPackRuntime | null>(null);
 const preparedSources = new Map<string, NativeUiPreparedAtlasSource>();
 const textureRegistry = new NativeUiTextureRegistry();
+const renderSession = new NativeUiRendererSession();
 const backgroundSource = ref<NativeUiPreparedBackgroundSource | null>(null);
 const backgroundLoadError = ref<string | null>(null);
 let loadSequence = 0;
-let animationFrameId: number | null = null;
 let resizeObserver: ResizeObserver | null = null;
 let mounted = false;
 let hasAnimatedSprites = false;
@@ -343,28 +344,19 @@ function buildSpriteCommands(nowMs: number) {
   });
 }
 
-function renderFrame(nowMs: number = getSharedAnimationNowMs()) {
-  const activeRenderer = renderer.value;
-  const canvas = canvasRef.value;
-  if (!activeRenderer || !canvas) return;
-  activeRenderer.render(canvas.width, canvas.height, [], buildSpriteCommands(nowMs));
-}
-
-function stopAnimationLoop() {
-  if (animationFrameId !== null) {
-    cancelAnimationFrame(animationFrameId);
-    animationFrameId = null;
-  }
+function renderFrame(nowMs?: number) {
+  renderSession.renderFrame({
+    canvas: canvasRef.value,
+    spriteCommands: buildSpriteCommands,
+    nowMs,
+  });
 }
 
 function scheduleAnimationLoop() {
-  stopAnimationLoop();
-  if (!hasAnimatedSprites) return;
-  const tick = (timestamp: number) => {
-    renderFrame(timestamp);
-    animationFrameId = requestAnimationFrame(tick);
-  };
-  animationFrameId = requestAnimationFrame(tick);
+  renderSession.scheduleAnimationLoop({
+    enabled: hasAnimatedSprites,
+    renderAt: renderFrame,
+  });
 }
 
 function resetRendererState() {
@@ -395,23 +387,25 @@ async function hydrateUiPackRuntime() {
 async function rebuildRenderer() {
   if (!mounted) return;
   const sequence = ++loadSequence;
-  stopAnimationLoop();
+  renderSession.stopAnimationLoop();
   resetRendererState();
   await nextTick();
   if (sequence !== loadSequence) return;
 
   const canvas = canvasRef.value;
   if (!canvas) return;
-  currentDpr.value = Math.min(2, Math.max(1, Number(window.devicePixelRatio || 1)));
-  canvas.width = Math.max(1, Math.round(displayWidth.value * currentDpr.value));
-  canvas.height = Math.max(1, Math.round(displayHeight.value * currentDpr.value));
+  currentDpr.value = configureNativeUiCanvasSize(
+    canvas,
+    displayWidth.value,
+    displayHeight.value,
+    window.devicePixelRatio,
+  ).dpr;
 
-  const activeRenderer = renderer.value ?? WebGl2NativeRenderer.create(canvas);
+  const activeRenderer = renderSession.ensureRenderer(canvas);
   if (!activeRenderer) {
     renderError.value = 'WebGL2 native recipe renderer is unavailable.';
     return;
   }
-  renderer.value = activeRenderer;
   renderError.value = null;
   ensureSlotTextures(activeRenderer);
   ensureDynamicPrimitiveTextures(activeRenderer);
@@ -466,9 +460,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('resize', handleResize);
   resizeObserver?.disconnect();
   resizeObserver = null;
-  stopAnimationLoop();
-  renderer.value?.dispose();
-  renderer.value = null;
+  renderSession.dispose();
   textureRegistry.clear();
   preparedSources.clear();
 });
