@@ -8,6 +8,7 @@
 } from "./NativeRuntimeManifest.ts";
 import { parseNativeCompactBrowserPack } from "./NativeRuntimeBrowserPack.ts";
 import { assertNativeRuntimePackEntrypoints } from "./NativeRuntimeCapabilityGate.ts";
+import { getManifestRuntimeFileBytes } from "../services/runtimeManifestPath.ts";
 
 const NATIVE_PACK_MAGIC = "NNEIBIN\0";
 const NATIVE_PACK_HEADER_BYTES = 24;
@@ -69,13 +70,6 @@ export function resolveManifestRelativeUrl(manifestUrl: string, relativePath: st
   return new URL(relativePath, manifestUrl).toString();
 }
 
-function getManifestFileBytes(manifest: NativeRuntimeManifest, relativePath: string): number | null {
-  if (!Array.isArray(manifest.files)) return null;
-  const normalized = relativePath.replace(/\\/g, "/").replace(/^\/+/, "");
-  const row = manifest.files.find((file) => `${file?.path ?? ""}`.replace(/\\/g, "/").replace(/^\/+/, "") === normalized);
-  return Number.isFinite(Number(row?.bytes)) ? Number(row?.bytes) : null;
-}
-
 function buildNativeRuntimeRevision(manifest: NativeRuntimeManifest, relativePath: string): string {
   return [
     manifest.runtimeId,
@@ -83,7 +77,7 @@ function buildNativeRuntimeRevision(manifest: NativeRuntimeManifest, relativePat
     manifest.sourceSignature,
     manifest.schemaRevision,
     relativePath,
-    getManifestFileBytes(manifest, relativePath),
+    getManifestRuntimeFileBytes(manifest.files, relativePath),
   ]
     .map((value) => `${value ?? ""}`.trim())
     .filter(Boolean)

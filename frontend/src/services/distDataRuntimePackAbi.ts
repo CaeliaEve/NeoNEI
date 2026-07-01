@@ -1,4 +1,10 @@
 import type { DistDataManifest, DistDataRustRuntimeManifest } from "./distDataRuntimeManifest";
+import {
+  normalizeRuntimePath,
+  runtimeManifestDeclaresPath as manifestDeclaresRuntimePath,
+  runtimeManifestFileRecord,
+  runtimePathString,
+} from "./runtimeManifestPath.ts";
 
 export const PACK_ABI_VALIDATION_REPORT_PATH = "rust/pack-validation-report.json";
 export const PACK_ABI_VALIDATION_REPORT_SCHEMA = "elysium-compiler/pack-abi-validation/v1";
@@ -83,16 +89,9 @@ export type PackValidationResult = {
 
 type RuntimeFileRecord = Record<string, string | undefined>;
 
-function asString(value: unknown): string {
-  return `${value ?? ""}`.trim();
-}
-
-function normalizeRuntimePath(value: unknown): string {
-  return asString(value).replace(/\\/g, "/").replace(/^\/+/, "");
-}
-
 function runtimeManifestFilesRecord(runtimeManifest: DistDataRustRuntimeManifest | null): RuntimeFileRecord {
-  return runtimeManifest?.files && !Array.isArray(runtimeManifest.files) ? runtimeManifest.files : {};
+  const record = runtimeManifestFileRecord(runtimeManifest?.files);
+  return record ? record as RuntimeFileRecord : {};
 }
 
 export function runtimeManifestEntrypoints(runtimeManifest: DistDataRustRuntimeManifest | null): RuntimeFileRecord {
@@ -103,18 +102,12 @@ export function runtimeManifestDeclaresPath(
   runtimeManifest: DistDataRustRuntimeManifest | null,
   artifactPath: string,
 ): boolean {
-  const normalizedArtifactPath = normalizeRuntimePath(artifactPath);
-  if (!runtimeManifest || !normalizedArtifactPath) {
-    return false;
-  }
-  const files = runtimeManifest.files;
-  if (Array.isArray(files)) {
-    return files.some((entry) => normalizeRuntimePath(entry?.path) === normalizedArtifactPath);
-  }
-  if (files && typeof files === "object") {
-    return Object.values(files).some((entry) => normalizeRuntimePath(entry) === normalizedArtifactPath);
-  }
-  return false;
+  return runtimeManifest
+    ? manifestDeclaresRuntimePath({
+      entrypoints: runtimeManifestEntrypoints(runtimeManifest),
+      files: runtimeManifest.files,
+    }, artifactPath)
+    : false;
 }
 
 export function resolveNativePackPath(
@@ -207,7 +200,7 @@ export function validatePackAbiReport(
     if (artifact.required === false) {
       violations.push(`artifact ${contract.logicalName} must be required`);
     }
-    const reportedSchema = asString(artifact.envelopeSchema ?? artifact.schema);
+    const reportedSchema = runtimePathString(artifact.envelopeSchema ?? artifact.schema);
     if (reportedSchema && reportedSchema !== contract.schema) {
       violations.push(`artifact schema mismatch for ${contract.logicalName}: expected ${contract.schema}, got ${reportedSchema}`);
     }

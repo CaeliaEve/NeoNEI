@@ -7,10 +7,14 @@ import {
   assertNativeUiRuntimeManifest,
   getNativeRuntimeEntrypointSource,
 } from "../native-surface/NativeRuntimeCapabilityGate.ts";
-import type {
-  NativeRuntimeManifest,
-  NativeRuntimeManifestFiles,
-} from "../native-surface/NativeRuntimeManifest";
+import type { NativeRuntimeManifest } from "../native-surface/NativeRuntimeManifest";
+import {
+  getManifestRuntimeFileBytes,
+  normalizeRuntimePath,
+  runtimeManifestDeclaresPath,
+  runtimeManifestFileRecord,
+  runtimePathFromValue,
+} from "./runtimeManifestPath.ts";
 
 export interface UiPackSlot {
   role: string;
@@ -199,64 +203,24 @@ function asRecord(value: unknown): JsonRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
 }
 
-function asManifestFilesRecord(value: NativeRuntimeManifest["entrypoints"] | NativeRuntimeManifest["files"]): NativeRuntimeManifestFiles | null {
-  return value && typeof value === "object" && !Array.isArray(value) ? value as NativeRuntimeManifestFiles : null;
-}
-
-function normalizeRuntimePath(value: string): string {
-  return value.trim().replace(/\\/g, "/").replace(/^\/+/, "");
-}
-
-function asRuntimePath(value: unknown): string {
-  return normalizeRuntimePath(asString(value));
-}
-
-function pathsEqual(left: unknown, right: unknown): boolean {
-  const normalizedLeft = asRuntimePath(left);
-  const normalizedRight = asRuntimePath(right);
-  return Boolean(normalizedLeft) && normalizedLeft === normalizedRight;
-}
-
-function manifestDeclaresRuntimePath(manifest: NativeRuntimeManifest, relativePath: string): boolean {
-  const normalized = normalizeRuntimePath(relativePath);
-  const entrypoints = getNativeRuntimeEntrypointSource(manifest);
-  if (Object.values(entrypoints).some((value) => pathsEqual(value, normalized))) {
-    return true;
-  }
-  const files = manifest.files;
-  if (Array.isArray(files)) {
-    return files.some((file) => pathsEqual(file?.path, normalized));
-  }
-  const fileRecord = asManifestFilesRecord(files);
-  return fileRecord ? Object.values(fileRecord).some((value) => pathsEqual(value, normalized)) : false;
-}
-
-function getManifestFileBytes(manifest: NativeRuntimeManifest, relativePath: string): number | null {
-  const normalized = normalizeRuntimePath(relativePath);
-  if (!Array.isArray(manifest.files)) return null;
-  const row = manifest.files.find((file) => pathsEqual(file?.path, normalized));
-  const bytes = Number(row?.bytes);
-  return Number.isFinite(bytes) && bytes >= 0 ? bytes : null;
-}
-
 function resolveUiPackAbiReportPath(manifest: NativeRuntimeManifest): string {
   const entrypoints = getNativeRuntimeEntrypointSource(manifest);
-  const explicitEntrypoint = asRuntimePath(
+  const explicitEntrypoint = runtimePathFromValue(
     entrypoints.rustUiPackAbiValidationReport
       ?? entrypoints.uiPackAbiValidationReport
       ?? entrypoints.uiPackAbiReport,
   );
   if (explicitEntrypoint) return explicitEntrypoint;
 
-  const fileRecord = asManifestFilesRecord(manifest.files);
-  const explicitFile = asRuntimePath(
+  const fileRecord = runtimeManifestFileRecord(manifest.files);
+  const explicitFile = runtimePathFromValue(
     fileRecord?.rustUiPackAbiValidationReport
       ?? fileRecord?.uiPackAbiValidationReport
       ?? fileRecord?.uiPackAbiReport,
   );
   if (explicitFile) return explicitFile;
 
-  if (manifestDeclaresRuntimePath(manifest, UI_PACK_ABI_VALIDATION_REPORT_PATH)) {
+  if (runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, UI_PACK_ABI_VALIDATION_REPORT_PATH)) {
     return UI_PACK_ABI_VALIDATION_REPORT_PATH;
   }
 
@@ -552,7 +516,7 @@ function parseUiBindings(payloadBuffer: ArrayBuffer, strings: string[]): UiPackB
 function parseUiPackManifest(manifest: NativeRuntimeManifest): UiPackEntrypoints {
   const entrypoints = assertNativeUiRuntimeManifest(manifest);
   const abiReport = resolveUiPackAbiReportPath(manifest);
-  if (!manifestDeclaresRuntimePath(manifest, abiReport)) {
+  if (!runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, abiReport)) {
     throw new Error(`native UI ABI validation report is not declared by runtime manifest files: ${abiReport}`);
   }
   return {
@@ -652,7 +616,7 @@ function assertUiPackAbiValidationReport(
   const byPath = new Map<string, JsonRecord>();
   for (const artifact of artifacts) {
     const logicalName = asString(artifact.logicalName);
-    const path = asRuntimePath(artifact.path);
+    const path = runtimePathFromValue(artifact.path);
     if (logicalName) byLogicalName.set(logicalName, artifact);
     if (path) byPath.set(path, artifact);
   }
@@ -663,7 +627,7 @@ function assertUiPackAbiValidationReport(
     if (!artifact) {
       throw new Error(`native UI ABI validation report is missing artifact contract: ${contract.logicalName}`);
     }
-    const artifactPath = asRuntimePath(artifact.path);
+    const artifactPath = runtimePathFromValue(artifact.path);
     if (artifactPath !== normalizedPath) {
       throw new Error(`native UI ABI artifact path mismatch for ${contract.logicalName}: expected ${normalizedPath}, got ${artifactPath || "<missing>"}`);
     }
@@ -680,7 +644,7 @@ function assertUiPackAbiValidationReport(
       throw new Error(`native UI ABI payload version mismatch for ${contract.logicalName}`);
     }
     const reportBytes = asFiniteNumber(artifact.bytes);
-    const manifestBytes = getManifestFileBytes(manifest, normalizedPath);
+    const manifestBytes = getManifestRuntimeFileBytes(manifest.files, normalizedPath);
     if (reportBytes !== null && manifestBytes !== null && reportBytes !== manifestBytes) {
       throw new Error(`native UI ABI artifact byte mismatch for ${contract.logicalName}: report=${reportBytes}, manifest=${manifestBytes}`);
     }
