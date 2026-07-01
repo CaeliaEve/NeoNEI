@@ -5,6 +5,7 @@ import {
   normalizeRuntimePath,
   type CurrentRuntimeArtifact,
   type CurrentRuntimeSnapshot,
+  type CurrentRuntimeSnapshotHandle,
 } from './current-runtime-snapshot.service';
 import { badRequest, notFound } from '../utils/http';
 import { createWeakEtag } from '../utils/http-cache';
@@ -25,6 +26,12 @@ export type CurrentRuntimeApiContext = Readonly<{
   snapshot: CurrentRuntimeSnapshot | null;
   health: RuntimeHealthSummary;
   meta: CurrentRuntimeApiMeta;
+}>;
+
+export type CurrentRuntimeApiContextHandle = Readonly<{
+  context: CurrentRuntimeApiContext;
+  acquiredAt: number;
+  release: () => void;
 }>;
 
 export type CurrentRuntimeOverview = Readonly<{
@@ -64,22 +71,60 @@ function normalizeRequiredCurrentRuntimeParam(value: string | undefined, name: s
   return normalized;
 }
 
-export function createCurrentRuntimeApiContext(): CurrentRuntimeApiContext {
-  const handle = acquireCurrentRuntimeSnapshot();
+function buildCurrentRuntimeApiContext(snapshot: CurrentRuntimeSnapshot | null): CurrentRuntimeApiContext {
+  const capabilities = snapshot?.capabilities ?? {};
+  const health = getRuntimeHealthSummary({ snapshot });
+  return Object.freeze({
+    snapshot,
+    health,
+    meta: Object.freeze({
+      schema: API_SCHEMA,
+      schemaRevision: API_SCHEMA_REVISION,
+      runtimeId: snapshot?.runtimeId ?? asString(health.distData.runtime?.runtimeId) ?? health.distData.source ?? 'runtime-missing',
+      capabilities,
+    }),
+  });
+}
+
+function createApiContextHandle(snapshotHandle: CurrentRuntimeSnapshotHandle): CurrentRuntimeApiContextHandle {
+  const context = buildCurrentRuntimeApiContext(snapshotHandle.snapshot);
+  let released = false;
+  return Object.freeze({
+    context,
+    acquiredAt: snapshotHandle.acquiredAt,
+    release: () => {
+      if (released) return;
+      released = true;
+      snapshotHandle.release();
+    },
+  });
+}
+
+export function acquireCurrentRuntimeApiContext(): CurrentRuntimeApiContextHandle {
+  const snapshotHandle = acquireCurrentRuntimeSnapshot();
   try {
-    const snapshot = handle.snapshot;
-    const capabilities = snapshot?.capabilities ?? {};
-    const health = getRuntimeHealthSummary({ snapshot });
-    return Object.freeze({
-      snapshot,
-      health,
-      meta: Object.freeze({
-        schema: API_SCHEMA,
-        schemaRevision: API_SCHEMA_REVISION,
-        runtimeId: snapshot?.runtimeId ?? asString(health.distData.runtime?.runtimeId) ?? health.distData.source ?? 'runtime-missing',
-        capabilities,
-      }),
-    });
+    return createApiContextHandle(snapshotHandle);
+  } catch (error) {
+    snapshotHandle.release();
+    throw error;
+  }
+}
+
+export function withCurrentRuntimeApiContext<T>(reader: (context: CurrentRuntimeApiContext) => T): T {
+  const handle = acquireCurrentRuntimeApiContext();
+  try {
+    return reader(handle.context);
+  } finally {
+    handle.release();
+  }
+}
+
+export async function withCurrentRuntimeApiContextAsync<T>(
+  reader: (context: CurrentRuntimeApiContext) => Promise<T>,
+): Promise<T> {
+  const handle = acquireCurrentRuntimeApiContext();
+  try {
+    return await reader(handle.context);
   } finally {
     handle.release();
   }

@@ -1,7 +1,6 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import {
   assertCurrentRuntimeId,
-  createCurrentRuntimeApiContext,
   getCurrentRuntimeAssetDelivery,
   getCurrentRuntimeDiagnosticsHealth,
   getCurrentRuntimeDiagnosticsSummary,
@@ -9,6 +8,8 @@ import {
   getCurrentRuntimeNativeSurfaceMetrics,
   getCurrentRuntimeOverview,
   type CurrentRuntimeApiContext,
+  withCurrentRuntimeApiContext,
+  withCurrentRuntimeApiContextAsync,
 } from '../services/current-runtime-api.service';
 import {
   getCurrentRecipeItemProducedBy,
@@ -25,7 +26,7 @@ const router = Router();
 const CURRENT_RUNTIME_ASSET_ROUTE = '/runtime/current/asset/:fileName(*)';
 const PINNED_RUNTIME_ASSET_ROUTE = '/runtime/:runtimeId/asset/:fileName(*)';
 
-function sendOk(res: Response, data: unknown, context = createCurrentRuntimeApiContext()): void {
+function sendOk(res: Response, data: unknown, context: CurrentRuntimeApiContext): void {
   res.json({
     ok: true,
     data,
@@ -34,15 +35,16 @@ function sendOk(res: Response, data: unknown, context = createCurrentRuntimeApiC
 }
 
 function sendRuntimeCurrent(res: Response): void {
-  const context = createCurrentRuntimeApiContext();
-  setNoStoreHeaders(res);
-  sendOk(res, getCurrentRuntimeOverview(context), context);
+  withCurrentRuntimeApiContext((context) => {
+    setNoStoreHeaders(res);
+    sendOk(res, getCurrentRuntimeOverview(context), context);
+  });
 }
 
 function sendRuntimeManifest(
   res: Response,
+  context: CurrentRuntimeApiContext,
   options: { immutable?: boolean } = {},
-  context = createCurrentRuntimeApiContext(),
 ): void {
   const manifest = getCurrentRuntimeManifestDelivery(context);
   res.setHeader('ETag', manifest.etag);
@@ -61,7 +63,7 @@ function sendRuntimeManifest(
 function sendRuntimeAsset(
   fileName: string | undefined,
   res: Response,
-  context = createCurrentRuntimeApiContext(),
+  context: CurrentRuntimeApiContext,
 ): void {
   const asset = getCurrentRuntimeAssetDelivery(fileName, context);
   res.setHeader('ETag', asset.etag);
@@ -82,7 +84,9 @@ function sendMountedRuntimeAsset(req: Request, res: Response, next: NextFunction
     next();
     return;
   }
-  sendRuntimeAsset(assetPathFromMountedRequest(req), res);
+  withCurrentRuntimeApiContext((context) => {
+    sendRuntimeAsset(assetPathFromMountedRequest(req), res, context);
+  });
 }
 
 function sendRuntimeReport(reportName: string | undefined, res: Response): void {
@@ -93,34 +97,44 @@ function sendRuntimeReport(reportName: string | undefined, res: Response): void 
 
 async function sendRecipeItem(itemIdParam: string | undefined, res: Response): Promise<void> {
   setNoStoreHeaders(res);
-  sendOk(res, await getCurrentRecipeItemProducedBy(itemIdParam));
+  await withCurrentRuntimeApiContextAsync(async (context) => {
+    sendOk(res, await getCurrentRecipeItemProducedBy(itemIdParam), context);
+  });
 }
 
 async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): Promise<void> {
   setNoStoreHeaders(res);
-  sendOk(res, await getCurrentRecipeItemUsedIn(itemIdParam));
+  await withCurrentRuntimeApiContextAsync(async (context) => {
+    sendOk(res, await getCurrentRecipeItemUsedIn(itemIdParam), context);
+  });
 }
 
 async function sendRecipePage(recipePageIdParam: string | undefined, res: Response): Promise<void> {
   setNoStoreHeaders(res);
-  sendOk(res, await getCurrentRecipePage(recipePageIdParam));
+  await withCurrentRuntimeApiContextAsync(async (context) => {
+    sendOk(res, await getCurrentRecipePage(recipePageIdParam), context);
+  });
 }
 
 function sendDiagnosticsHealth(res: Response): void {
-  setNoStoreHeaders(res);
-  const context = createCurrentRuntimeApiContext();
-  sendOk(res, getCurrentRuntimeDiagnosticsHealth(context), context);
+  withCurrentRuntimeApiContext((context) => {
+    setNoStoreHeaders(res);
+    sendOk(res, getCurrentRuntimeDiagnosticsHealth(context), context);
+  });
 }
 
 function sendDiagnosticsRuntimeSummary(res: Response): void {
-  setNoStoreHeaders(res);
-  const context = createCurrentRuntimeApiContext();
-  sendOk(res, getCurrentRuntimeDiagnosticsSummary(context), context);
+  withCurrentRuntimeApiContext((context) => {
+    setNoStoreHeaders(res);
+    sendOk(res, getCurrentRuntimeDiagnosticsSummary(context), context);
+  });
 }
 
 function sendRuntimeSettings(res: Response): void {
-  setNoStoreHeaders(res);
-  sendOk(res, getCurrentRuntimeSettings());
+  withCurrentRuntimeApiContext((context) => {
+    setNoStoreHeaders(res);
+    sendOk(res, getCurrentRuntimeSettings(), context);
+  });
 }
 
 router.get('/runtime/current', (_req, res) => {
@@ -128,11 +142,15 @@ router.get('/runtime/current', (_req, res) => {
 });
 
 router.get('/runtime/current/manifest', (_req, res) => {
-  sendRuntimeManifest(res);
+  withCurrentRuntimeApiContext((context) => {
+    sendRuntimeManifest(res, context);
+  });
 });
 
 router.get(CURRENT_RUNTIME_ASSET_ROUTE, (req, res) => {
-  sendRuntimeAsset(req.params.fileName, res);
+  withCurrentRuntimeApiContext((context) => {
+    sendRuntimeAsset(req.params.fileName, res, context);
+  });
 });
 
 router.use('/runtime/current/asset', sendMountedRuntimeAsset);
@@ -142,15 +160,17 @@ router.get('/runtime/current/reports/:reportName', (req, res) => {
 });
 
 router.get('/runtime/:runtimeId/manifest', (req, res) => {
-  const context = createCurrentRuntimeApiContext();
-  assertCurrentRuntimeId(req.params.runtimeId, context);
-  sendRuntimeManifest(res, { immutable: true }, context);
+  withCurrentRuntimeApiContext((context) => {
+    assertCurrentRuntimeId(req.params.runtimeId, context);
+    sendRuntimeManifest(res, context, { immutable: true });
+  });
 });
 
 router.get(PINNED_RUNTIME_ASSET_ROUTE, (req, res) => {
-  const context = createCurrentRuntimeApiContext();
-  assertCurrentRuntimeId(req.params.runtimeId, context);
-  sendRuntimeAsset(req.params.fileName, res, context);
+  withCurrentRuntimeApiContext((context) => {
+    assertCurrentRuntimeId(req.params.runtimeId, context);
+    sendRuntimeAsset(req.params.fileName, res, context);
+  });
 });
 
 router.use('/runtime/:runtimeId/asset', (req, res, next) => {
@@ -158,23 +178,29 @@ router.use('/runtime/:runtimeId/asset', (req, res, next) => {
     next();
     return;
   }
-  const context = createCurrentRuntimeApiContext();
-  assertCurrentRuntimeId(req.params.runtimeId, context);
-  sendRuntimeAsset(assetPathFromMountedRequest(req), res, context);
+  withCurrentRuntimeApiContext((context) => {
+    assertCurrentRuntimeId(req.params.runtimeId, context);
+    sendRuntimeAsset(assetPathFromMountedRequest(req), res, context);
+  });
 });
 
 router.get('/runtime/:runtimeId/reports/:reportName', (req, res) => {
-  const context = createCurrentRuntimeApiContext();
-  assertCurrentRuntimeId(req.params.runtimeId, context);
-  sendRuntimeReport(req.params.reportName, res);
+  withCurrentRuntimeApiContext((context) => {
+    assertCurrentRuntimeId(req.params.runtimeId, context);
+    sendRuntimeReport(req.params.reportName, res);
+  });
 });
 
 router.get('/native-runtime/current/manifest', (_req, res) => {
-  sendRuntimeManifest(res);
+  withCurrentRuntimeApiContext((context) => {
+    sendRuntimeManifest(res, context);
+  });
 });
 
 router.get('/native-runtime/current/files/:fileName(*)', (req, res) => {
-  sendRuntimeAsset(req.params.fileName, res);
+  withCurrentRuntimeApiContext((context) => {
+    sendRuntimeAsset(req.params.fileName, res, context);
+  });
 });
 
 router.get(
@@ -225,9 +251,10 @@ router.get('/health/current/runtime', (_req, res) => {
 });
 
 router.get('/metrics/current/native-surface', (_req, res) => {
-  setNoStoreHeaders(res);
-  const context = createCurrentRuntimeApiContext();
-  sendOk(res, getCurrentRuntimeNativeSurfaceMetrics(context), context);
+  withCurrentRuntimeApiContext((context) => {
+    setNoStoreHeaders(res);
+    sendOk(res, getCurrentRuntimeNativeSurfaceMetrics(context), context);
+  });
 });
 
 router.get('/settings/runtime', (_req, res) => {
