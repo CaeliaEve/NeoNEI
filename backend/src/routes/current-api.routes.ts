@@ -2,15 +2,17 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import {
   assertCurrentRuntimeId,
   getCurrentRuntimeAssetDelivery,
-  getCurrentRuntimeDiagnosticsHealth,
-  getCurrentRuntimeDiagnosticsSummary,
   getCurrentRuntimeManifestDelivery,
-  getCurrentRuntimeNativeSurfaceMetrics,
   getCurrentRuntimeOverview,
   type CurrentRuntimeApiContext,
   withCurrentRuntimeApiContext,
   withCurrentRuntimeApiContextAsync,
 } from '../services/current-runtime-api.service';
+import {
+  getCurrentRuntimeDiagnosticsHealth,
+  getCurrentRuntimeDiagnosticsSummary,
+  getCurrentRuntimeNativeSurfaceMetrics,
+} from '../services/current-runtime-observability.service';
 import {
   getCurrentRecipeItemProducedBy,
   getCurrentRecipeItemUsedIn,
