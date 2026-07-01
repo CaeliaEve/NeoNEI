@@ -11,7 +11,7 @@ import {
   warmGlobalBrowserAtlasForItemsDetailed,
   type BrowserAtlasItemEntry,
 } from '../services/globalBrowserAtlas';
-import { getSharedAnimationNowMs, loadImageAsset, resolveTimelineFrameIndex } from '../services/animationBudget';
+import { getSharedAnimationNowMs, resolveTimelineFrameIndex } from '../services/animationBudget';
 import { loadUiPackRuntime, type UiPackRuntime } from '../services/uiPackRuntime';
 import {
   buildNativeUiSlotCells,
@@ -28,11 +28,7 @@ import {
   type NativeUiAtlasSpriteSource,
   type NativeUiPreparedBackgroundSource,
 } from '../services/nativeUiRenderCommandBuilder.ts';
-import {
-  createNativeUiGtModularBackgroundTexture,
-  nativeUiSlotTextureKey,
-  NativeUiTextureRegistry,
-} from '../services/nativeUiTextureRegistry.ts';
+import { nativeUiSlotTextureKey, NativeUiTextureRegistry } from '../services/nativeUiTextureRegistry.ts';
 import {
   isNativeUiHotspotInteractive,
   nativeUiHitCellEntryLabel,
@@ -44,7 +40,16 @@ import {
   projectNativeUiHitCells,
   type NativeUiHitCell,
 } from '../services/nativeUiInteractionProjection.ts';
-import { resolveManifestRelativeUrl } from '../native-surface/runtimeLoader.ts';
+import {
+  nativeUiBackgroundAssetRef,
+  nativeUiBackgroundImageRegion,
+  nativeUiBackgroundState,
+  nativeUiIsSemanticGtBackground,
+  nativeUiNativeBackground,
+  nativeUiNativeBackgroundAssetRef,
+  nativeUiNativeBackgroundTextureKey,
+  prepareNativeUiBackgroundSource,
+} from '../services/nativeUiBackgroundResourceLoader.ts';
 import { WebGl2NativeRenderer } from '../renderers/native/WebGl2NativeRenderer';
 import type { NativeRendererBackend } from '../renderers/native/NativeRendererBackend';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
@@ -121,93 +126,20 @@ const hotspots = computed(() => nativeUiSurface.value.hotspots);
 const viewports = computed(() => nativeUiSurface.value.viewports);
 const dynamicPrimitives = computed(() => nativeUiSurface.value.dynamicPrimitives);
 
-const backgroundAssetRef = computed(() => {
-  const resource = `${resolvedNativeLayout.value?.imageResource ?? ''}`.trim();
-  return resource.length > 0 ? resource : null;
-});
-
-const backgroundTextureKey = computed(() => {
-  const resource = backgroundAssetRef.value;
-  return resource ? `ui-background:${resource}` : null;
-});
-
-const backgroundImageRegion = computed(() => {
-  const region = resolvedNativeLayout.value?.imageRegion;
-  if (!region || typeof region !== 'object') return null;
-  const width = Number(region.width ?? 0);
-  const height = Number(region.height ?? 0);
-  if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return null;
-  const x = Number(region.x ?? 0);
-  const y = Number(region.y ?? 0);
-  return {
-    x: Number.isFinite(x) ? Math.max(0, x) : 0,
-    y: Number.isFinite(y) ? Math.max(0, y) : 0,
-    width,
-    height,
-  };
-});
-
-const nativeBackground = computed<Record<string, unknown> | null>(() => {
-  const background = resolvedNativeLayout.value?.nativeBackground;
-  return background && typeof background === 'object' ? background as Record<string, unknown> : null;
-});
-
-const semanticGtBackground = computed(() => (
-  `${nativeBackground.value?.kind ?? ''}` === 'gt-modular-ui'
-  && ['semantic', 'captured'].includes(`${nativeBackground.value?.status ?? ''}`)
-));
-
-const semanticBackgroundTextureKey = computed(() => (
-  semanticGtBackground.value ? `ui-background:gt-modular-ui:${layoutWidth.value}x${layoutHeight.value}:${currentDpr.value}` : null
-));
-
-const nativeBackgroundAssetRef = computed(() => {
-  const assetRef = `${nativeBackground.value?.assetRef ?? ''}`.trim();
-  return assetRef.length > 0 ? assetRef : null;
-});
-
-const nativeBackgroundTextureKey = computed(() => {
-  const assetRef = nativeBackgroundAssetRef.value;
-  return assetRef ? `ui-background:${assetRef}` : null;
-});
-
-function nativeBackgroundRect(name: 'recipeBackgroundOffset' | 'recipeBackgroundSize'): Record<string, unknown> | null {
-  const value = nativeBackground.value?.[name];
-  return value && typeof value === 'object' ? value as Record<string, unknown> : null;
-}
-
-function nativeBackgroundTextureSpec(): { width: number; height: number; borderU: number; borderV: number } {
-  const texture = nativeBackground.value?.texture;
-  const object = texture && typeof texture === 'object' ? texture as Record<string, unknown> : {};
-  const width = Math.max(1, Number(object.width ?? 64) || 64);
-  const height = Math.max(1, Number(object.height ?? 64) || 64);
-  const borderU = Math.max(0, Number(object.borderU ?? object.border ?? 0) || 0);
-  const borderV = Math.max(0, Number(object.borderV ?? object.border ?? borderU) || borderU);
-  return { width, height, borderU, borderV };
-}
-
-function nativeBackgroundTargetRect() {
-  const offset = nativeBackgroundRect('recipeBackgroundOffset');
-  const size = nativeBackgroundRect('recipeBackgroundSize');
-  const x = Math.max(0, Number(offset?.x ?? 0) || 0);
-  const y = Math.max(0, Number(offset?.y ?? 0) || 0);
-  const width = Math.max(1, Number(size?.width ?? layoutWidth.value) || layoutWidth.value);
-  const height = Math.max(1, Number(size?.height ?? layoutHeight.value) || layoutHeight.value);
-  return { x, y, width, height };
-}
-
-const backgroundState = computed(() => {
-  if (nativeBackgroundAssetRef.value) {
-    if (backgroundLoadError.value) return 'error';
-    if (!backgroundSource.value) return 'loading';
-    return backgroundSource.value.textureKey === nativeBackgroundTextureKey.value ? 'captured' : 'error';
-  }
-  if (semanticGtBackground.value) return backgroundSource.value ? 'semantic' : 'loading';
-  if (!backgroundAssetRef.value) return 'none';
-  if (backgroundSource.value) return 'ready';
-  if (backgroundLoadError.value) return 'error';
-  return 'loading';
-});
+const backgroundAssetRef = computed(() => nativeUiBackgroundAssetRef(resolvedNativeLayout.value));
+const backgroundImageRegion = computed(() => nativeUiBackgroundImageRegion(resolvedNativeLayout.value));
+const nativeBackground = computed(() => nativeUiNativeBackground(resolvedNativeLayout.value));
+const semanticGtBackground = computed(() => nativeUiIsSemanticGtBackground(nativeBackground.value));
+const nativeBackgroundAssetRef = computed(() => nativeUiNativeBackgroundAssetRef(nativeBackground.value));
+const nativeBackgroundTextureKey = computed(() => nativeUiNativeBackgroundTextureKey(nativeBackground.value));
+const backgroundState = computed(() => nativeUiBackgroundState({
+  nativeAssetRef: nativeBackgroundAssetRef.value,
+  nativeTextureKey: nativeBackgroundTextureKey.value,
+  semanticGtBackground: semanticGtBackground.value,
+  backgroundAssetRef: backgroundAssetRef.value,
+  source: backgroundSource.value,
+  error: backgroundLoadError.value,
+}));
 
 const title = computed(() => String(
   props.uiPayload?.machineType
@@ -385,117 +317,22 @@ function ensureDynamicPrimitiveTextures(activeRenderer: NativeRendererBackend) {
   textureRegistry.registerDynamicPrimitiveTextures(activeRenderer, dynamicPrimitives.value);
 }
 
-function resolveBackgroundAssetUrl(): string | null {
-  const assetRef = backgroundAssetRef.value;
-  const manifestUrl = uiPackRuntime.value?.manifestUrl;
-  if (!assetRef || !manifestUrl) {
-    return null;
-  }
-  try {
-    return resolveManifestRelativeUrl(manifestUrl, assetRef);
-  } catch {
-    return null;
-  }
-}
-
-function resolveNativeBackgroundAssetUrl(): string | null {
-  const assetRef = nativeBackgroundAssetRef.value;
-  const manifestUrl = uiPackRuntime.value?.manifestUrl;
-  if (!assetRef || !manifestUrl) {
-    return null;
-  }
-  try {
-    return resolveManifestRelativeUrl(manifestUrl, assetRef);
-  } catch {
-    return null;
-  }
-}
-
 async function ensureBackgroundTexture(activeRenderer: NativeRendererBackend) {
   backgroundSource.value = null;
   backgroundLoadError.value = null;
-  const nativeAssetKey = nativeBackgroundTextureKey.value;
-  const nativeAssetUrl = resolveNativeBackgroundAssetUrl();
-  if (nativeAssetKey && nativeAssetUrl) {
-    try {
-      const image = await loadImageAsset(nativeAssetUrl);
-      if (!mounted) return;
-      textureRegistry.register(activeRenderer, nativeAssetKey, image);
-      const texture = nativeBackgroundTextureSpec();
-      const target = nativeBackgroundTargetRect();
-      backgroundSource.value = {
-        textureKey: nativeAssetKey,
-        image,
-        sourceX: 0,
-        sourceY: 0,
-        sourceWidth: Math.max(1, Math.min(texture.width, image.width)),
-        sourceHeight: Math.max(1, Math.min(texture.height, image.height)),
-        destX: target.x,
-        destY: target.y,
-        width: target.width,
-        height: target.height,
-        nineSlice: `${nativeBackground.value?.scaling ?? ''}` === 'nine-slice'
-          ? { borderU: texture.borderU, borderV: texture.borderV }
-          : undefined,
-      };
-      return;
-    } catch (error) {
-      backgroundLoadError.value = error instanceof Error ? error.message : String(error);
-      if (`${nativeBackground.value?.status ?? ''}` === 'captured') {
-        return;
-      }
-      // Semantic GT backgrounds without a captured asset may use the procedural fallback.
-    }
-  }
-  const semanticKey = semanticBackgroundTextureKey.value;
-  if (semanticGtBackground.value && semanticKey) {
-    const texture = createNativeUiGtModularBackgroundTexture(layoutWidth.value, layoutHeight.value, currentDpr.value);
-    textureRegistry.register(activeRenderer, semanticKey, texture);
-    backgroundSource.value = {
-      textureKey: semanticKey,
-      image: texture,
-      sourceX: 0,
-      sourceY: 0,
-      sourceWidth: texture.width,
-      sourceHeight: texture.height,
-      destX: 0,
-      destY: 0,
-      width: layoutWidth.value,
-      height: layoutHeight.value,
-    };
-    return;
-  }
-  const textureKey = backgroundTextureKey.value;
-  const backgroundUrl = resolveBackgroundAssetUrl();
-  if (!textureKey || !backgroundUrl) {
-    return;
-  }
-  try {
-    const image = await loadImageAsset(backgroundUrl);
-    if (!mounted) return;
-    textureRegistry.register(activeRenderer, textureKey, image);
-    const region = backgroundImageRegion.value;
-    const sourceX = region ? Math.min(region.x, Math.max(0, image.width - 1)) : 0;
-    const sourceY = region ? Math.min(region.y, Math.max(0, image.height - 1)) : 0;
-    const sourceWidth = region
-      ? Math.max(1, Math.min(region.width, image.width - sourceX))
-      : Math.max(1, image.width || layoutWidth.value);
-    const sourceHeight = region
-      ? Math.max(1, Math.min(region.height, image.height - sourceY))
-      : Math.max(1, image.height || layoutHeight.value);
-    backgroundSource.value = {
-      textureKey,
-      image,
-      sourceX,
-      sourceY,
-      sourceWidth,
-      sourceHeight,
-      width: sourceWidth,
-      height: sourceHeight,
-    };
-  } catch (error) {
-    backgroundLoadError.value = error instanceof Error ? error.message : String(error);
-  }
+  const result = await prepareNativeUiBackgroundSource({
+    renderer: activeRenderer,
+    textureRegistry,
+    layout: resolvedNativeLayout.value,
+    manifestUrl: uiPackRuntime.value?.manifestUrl ?? null,
+    layoutWidth: layoutWidth.value,
+    layoutHeight: layoutHeight.value,
+    dpr: currentDpr.value,
+    isActive: () => mounted,
+  });
+  if (result.aborted) return;
+  backgroundSource.value = result.source;
+  backgroundLoadError.value = result.error;
 }
 
 function prepareAtlasSource(entry: BrowserAtlasItemEntry | null): PreparedAtlasSource | null {
