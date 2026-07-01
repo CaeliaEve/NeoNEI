@@ -18,18 +18,21 @@ import {
   createNativeUiFitMatrix,
   normalizeNativeUiLayoutSurface,
   resolveNativeUiRuntimeSurface,
-  type NativeUiDynamicPrimitive,
   type NativeUiFitMatrix,
   type NativeUiLayoutSurface,
   type NativeUiRect,
   type NativeUiSlotCell,
   type NativeUiTextOverlay,
 } from '../services/nativeUiRuntimeRegistry';
-import { resolveManifestRelativeUrl } from '../native-surface/runtimeLoader.ts';
 import {
-  WebGl2NativeRenderer,
-  type NativeTextureSpriteCommand,
-} from '../renderers/native/WebGl2NativeRenderer';
+  buildNativeUiSpriteCommands,
+  nativeUiDynamicPrimitiveColors,
+  nativeUiSolidTextureKey,
+  type NativeUiAtlasSpriteSource,
+  type NativeUiPreparedBackgroundSource,
+} from '../services/nativeUiRenderCommandBuilder.ts';
+import { resolveManifestRelativeUrl } from '../native-surface/runtimeLoader.ts';
+import { WebGl2NativeRenderer } from '../renderers/native/WebGl2NativeRenderer';
 import type { NativeRendererBackend } from '../renderers/native/NativeRendererBackend';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
@@ -54,22 +57,6 @@ type PreparedAtlasSource = {
   timeline: Array<{ frameIndex: number; durationMs: number }>;
 };
 
-type PreparedBackgroundSource = {
-  textureKey: string;
-  image: HTMLImageElement | HTMLCanvasElement;
-  sourceX: number;
-  sourceY: number;
-  sourceWidth: number;
-  sourceHeight: number;
-  destX?: number;
-  destY?: number;
-  width: number;
-  height: number;
-  nineSlice?: {
-    borderU: number;
-    borderV: number;
-  };
-};
 
 const props = defineProps<{
   recipe: Recipe;
@@ -83,11 +70,6 @@ const emit = defineEmits<{
 const NATIVE_SLOT_SIZE = 18;
 const NATIVE_ICON_SIZE = 16;
 const NATIVE_ICON_INSET = Math.floor((NATIVE_SLOT_SIZE - NATIVE_ICON_SIZE) / 2);
-const DYNAMIC_TRACK_COLOR = 'rgba(5, 9, 14, 0.72)';
-const DYNAMIC_PROGRESS_FILL_COLOR = 'rgba(247, 182, 72, 0.86)';
-const DYNAMIC_FLUID_FILL_COLOR = 'rgba(82, 189, 255, 0.78)';
-const DYNAMIC_ENERGY_FILL_COLOR = 'rgba(118, 232, 147, 0.78)';
-const DYNAMIC_BORDER_COLOR = 'rgba(238, 244, 252, 0.22)';
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const shellRef = ref<HTMLElement | null>(null);
@@ -99,7 +81,7 @@ const currentDpr = ref(1);
 const uiPackRuntime = ref<UiPackRuntime | null>(null);
 const preparedSources = new Map<string, PreparedAtlasSource>();
 const registeredTextureKeys = new Set<string>();
-const backgroundSource = ref<PreparedBackgroundSource | null>(null);
+const backgroundSource = ref<NativeUiPreparedBackgroundSource | null>(null);
 const backgroundLoadError = ref<string | null>(null);
 let loadSequence = 0;
 let animationFrameId: number | null = null;
@@ -540,35 +522,8 @@ function createSolidColorTexture(color: string): HTMLCanvasElement {
   return canvas;
 }
 
-function solidTextureKey(color: string): string {
-  return `native-dynamic-solid:${color}`;
-}
-
-function normalizeDynamicPrimitiveKind(primitive: NativeUiDynamicPrimitive): string {
-  const kind = `${primitive.kind ?? primitive.role ?? ''}`.trim().toLowerCase();
-  if (kind.includes('fluid')) return 'fluid-bar';
-  if (kind.includes('energy') || kind.includes('eu')) return 'energy-bar';
-  if (kind.includes('progress') || kind.includes('arrow')) return 'progress-bar';
-  return kind || 'indicator';
-}
-
-function defaultDynamicFillColor(primitive: NativeUiDynamicPrimitive): string {
-  const kind = normalizeDynamicPrimitiveKind(primitive);
-  if (kind === 'fluid-bar') return DYNAMIC_FLUID_FILL_COLOR;
-  if (kind === 'energy-bar') return DYNAMIC_ENERGY_FILL_COLOR;
-  return DYNAMIC_PROGRESS_FILL_COLOR;
-}
-
-function dynamicPrimitiveColors(primitive: NativeUiDynamicPrimitive): string[] {
-  return [
-    `${primitive.trackColor ?? DYNAMIC_TRACK_COLOR}`,
-    `${primitive.fillColor ?? defaultDynamicFillColor(primitive)}`,
-    `${primitive.borderColor ?? DYNAMIC_BORDER_COLOR}`,
-  ];
-}
-
 function ensureSolidColorTexture(activeRenderer: NativeRendererBackend, color: string) {
-  const key = solidTextureKey(color);
+  const key = nativeUiSolidTextureKey(color);
   if (registeredTextureKeys.has(key)) return;
   if (activeRenderer.registerTexture(key, createSolidColorTexture(color))) {
     registeredTextureKeys.add(key);
@@ -577,7 +532,7 @@ function ensureSolidColorTexture(activeRenderer: NativeRendererBackend, color: s
 
 function ensureDynamicPrimitiveTextures(activeRenderer: NativeRendererBackend) {
   for (const primitive of dynamicPrimitives.value) {
-    for (const color of dynamicPrimitiveColors(primitive)) {
+    for (const color of nativeUiDynamicPrimitiveColors(primitive)) {
       ensureSolidColorTexture(activeRenderer, color);
     }
   }
@@ -734,7 +689,7 @@ function prepareAtlasSource(entry: BrowserAtlasItemEntry | null): PreparedAtlasS
   };
 }
 
-function resolveAtlasSource(entry: CanvasRenderable, nowMs: number): { atlasFile: string; x: number; y: number; width: number; height: number } | null {
+function resolveAtlasSource(entry: CanvasRenderable, nowMs: number): NativeUiAtlasSpriteSource | null {
   const prepared = preparedSources.get(entry.atlasLookupId);
   if (!prepared) return null;
   if (prepared.frames.length > 0 && prepared.timeline.length > 0) {
@@ -759,188 +714,20 @@ function resolveAtlasSource(entry: CanvasRenderable, nowMs: number): { atlasFile
   };
 }
 
-function clamp01(value: unknown, fallback = 1): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Math.min(1, parsed));
-}
 
-function primitiveFillRatio(primitive: NativeUiDynamicPrimitive): number {
-  return clamp01(primitive.fill ?? primitive.ratio ?? primitive.value, 1);
-}
-
-function pushSolidSpriteRect(
-  commands: NativeTextureSpriteCommand[],
-  color: string,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-) {
-  if (width <= 0 || height <= 0) return;
-  const dpr = currentDpr.value;
-  commands.push({
-    textureKey: solidTextureKey(color),
-    sourceX: 0,
-    sourceY: 0,
-    sourceWidth: 1,
-    sourceHeight: 1,
-    destX: Math.round(x * dpr),
-    destY: Math.round(y * dpr),
-    destWidth: Math.max(1, Math.round(width * dpr)),
-    destHeight: Math.max(1, Math.round(height * dpr)),
+function buildSpriteCommands(nowMs: number) {
+  return buildNativeUiSpriteCommands({
+    dpr: currentDpr.value,
+    nowMs,
+    background: backgroundSource.value,
+    dynamicPrimitives: dynamicPrimitives.value,
+    slotCells: slotCells.value,
+    slotSize: NATIVE_SLOT_SIZE,
+    iconInset: NATIVE_ICON_INSET,
+    iconSize: NATIVE_ICON_SIZE,
+    slotTextureKey,
+    resolveAtlasSource,
   });
-}
-
-function pushTextureSpriteRect(
-  commands: NativeTextureSpriteCommand[],
-  textureKey: string,
-  sourceX: number,
-  sourceY: number,
-  sourceWidth: number,
-  sourceHeight: number,
-  destX: number,
-  destY: number,
-  destWidth: number,
-  destHeight: number,
-) {
-  if (sourceWidth <= 0 || sourceHeight <= 0 || destWidth <= 0 || destHeight <= 0) return;
-  const dpr = currentDpr.value;
-  commands.push({
-    textureKey,
-    sourceX,
-    sourceY,
-    sourceWidth,
-    sourceHeight,
-    destX: Math.round(destX * dpr),
-    destY: Math.round(destY * dpr),
-    destWidth: Math.max(1, Math.round(destWidth * dpr)),
-    destHeight: Math.max(1, Math.round(destHeight * dpr)),
-  });
-}
-
-function pushBackgroundCommands(commands: NativeTextureSpriteCommand[], background: PreparedBackgroundSource) {
-  const x = Math.max(0, Number(background.destX ?? 0));
-  const y = Math.max(0, Number(background.destY ?? 0));
-  const width = Math.max(1, Number(background.width ?? 0));
-  const height = Math.max(1, Number(background.height ?? 0));
-  const nineSlice = background.nineSlice;
-  if (!nineSlice) {
-    pushTextureSpriteRect(
-      commands,
-      background.textureKey,
-      background.sourceX,
-      background.sourceY,
-      background.sourceWidth,
-      background.sourceHeight,
-      x,
-      y,
-      width,
-      height,
-    );
-    return;
-  }
-
-  const srcW = Math.max(1, background.sourceWidth);
-  const srcH = Math.max(1, background.sourceHeight);
-  const borderX = Math.max(0, Math.min(nineSlice.borderU, Math.floor(srcW / 2), Math.floor(width / 2)));
-  const borderY = Math.max(0, Math.min(nineSlice.borderV, Math.floor(srcH / 2), Math.floor(height / 2)));
-  const srcMidW = Math.max(0, srcW - borderX * 2);
-  const srcMidH = Math.max(0, srcH - borderY * 2);
-  const dstMidW = Math.max(0, width - borderX * 2);
-  const dstMidH = Math.max(0, height - borderY * 2);
-  const sx = background.sourceX;
-  const sy = background.sourceY;
-  const key = background.textureKey;
-
-  pushTextureSpriteRect(commands, key, sx, sy, borderX, borderY, x, y, borderX, borderY);
-  pushTextureSpriteRect(commands, key, sx + borderX + srcMidW, sy, borderX, borderY, x + borderX + dstMidW, y, borderX, borderY);
-  pushTextureSpriteRect(commands, key, sx, sy + borderY + srcMidH, borderX, borderY, x, y + borderY + dstMidH, borderX, borderY);
-  pushTextureSpriteRect(commands, key, sx + borderX + srcMidW, sy + borderY + srcMidH, borderX, borderY, x + borderX + dstMidW, y + borderY + dstMidH, borderX, borderY);
-  pushTextureSpriteRect(commands, key, sx + borderX, sy, srcMidW, borderY, x + borderX, y, dstMidW, borderY);
-  pushTextureSpriteRect(commands, key, sx + borderX, sy + borderY + srcMidH, srcMidW, borderY, x + borderX, y + borderY + dstMidH, dstMidW, borderY);
-  pushTextureSpriteRect(commands, key, sx, sy + borderY, borderX, srcMidH, x, y + borderY, borderX, dstMidH);
-  pushTextureSpriteRect(commands, key, sx + borderX + srcMidW, sy + borderY, borderX, srcMidH, x + borderX + dstMidW, y + borderY, borderX, dstMidH);
-  pushTextureSpriteRect(commands, key, sx + borderX, sy + borderY, srcMidW, srcMidH, x + borderX, y + borderY, dstMidW, dstMidH);
-}
-
-function pushDynamicPrimitiveCommands(commands: NativeTextureSpriteCommand[], primitive: NativeUiDynamicPrimitive) {
-  const x = Math.max(0, Number(primitive.x ?? 0));
-  const y = Math.max(0, Number(primitive.y ?? 0));
-  const width = Math.max(0, Number(primitive.width ?? 0));
-  const height = Math.max(0, Number(primitive.height ?? 0));
-  if (width <= 0 || height <= 0) return;
-
-  const trackColor = `${primitive.trackColor ?? DYNAMIC_TRACK_COLOR}`;
-  const fillColor = `${primitive.fillColor ?? defaultDynamicFillColor(primitive)}`;
-  const borderColor = `${primitive.borderColor ?? DYNAMIC_BORDER_COLOR}`;
-  const borderSize = Math.min(1, Math.floor(Math.min(width, height) / 2));
-  const innerX = x + borderSize;
-  const innerY = y + borderSize;
-  const innerWidth = Math.max(0, width - borderSize * 2);
-  const innerHeight = Math.max(0, height - borderSize * 2);
-  const fillRatio = primitiveFillRatio(primitive);
-  const orientation = primitive.orientation ?? (height > width ? 'vertical' : 'horizontal');
-
-  pushSolidSpriteRect(commands, trackColor, innerX, innerY, innerWidth, innerHeight);
-  if (orientation === 'vertical') {
-    const fillHeight = innerHeight * fillRatio;
-    pushSolidSpriteRect(commands, fillColor, innerX, innerY + innerHeight - fillHeight, innerWidth, fillHeight);
-  } else {
-    pushSolidSpriteRect(commands, fillColor, innerX, innerY, innerWidth * fillRatio, innerHeight);
-  }
-
-  if (borderSize > 0) {
-    pushSolidSpriteRect(commands, borderColor, x, y, width, borderSize);
-    pushSolidSpriteRect(commands, borderColor, x, y + height - borderSize, width, borderSize);
-    pushSolidSpriteRect(commands, borderColor, x, y, borderSize, height);
-    pushSolidSpriteRect(commands, borderColor, x + width - borderSize, y, borderSize, height);
-  }
-}
-
-function buildSpriteCommands(nowMs: number): NativeTextureSpriteCommand[] {
-  const dpr = currentDpr.value;
-  const commands: NativeTextureSpriteCommand[] = [];
-  const background = backgroundSource.value;
-  if (background) {
-    pushBackgroundCommands(commands, background);
-  }
-  for (const primitive of dynamicPrimitives.value) {
-    pushDynamicPrimitiveCommands(commands, primitive);
-  }
-  for (const cell of slotCells.value) {
-    if (!background) {
-      const key = slotTextureKey(cell.role);
-      const slotPixels = Math.round(NATIVE_SLOT_SIZE * dpr);
-      commands.push({
-        textureKey: key,
-        sourceX: 0,
-        sourceY: 0,
-        sourceWidth: slotPixels,
-        sourceHeight: slotPixels,
-        destX: Math.round(cell.x * dpr),
-        destY: Math.round(cell.y * dpr),
-        destWidth: slotPixels,
-        destHeight: slotPixels,
-      });
-    }
-
-    if (!cell.entry) continue;
-    const source = resolveAtlasSource(cell.entry, nowMs);
-    if (!source) continue;
-    commands.push({
-      textureKey: source.atlasFile,
-      sourceX: source.x,
-      sourceY: source.y,
-      sourceWidth: source.width,
-      sourceHeight: source.height,
-      destX: Math.round((cell.x + NATIVE_ICON_INSET) * dpr),
-      destY: Math.round((cell.y + NATIVE_ICON_INSET) * dpr),
-      destWidth: Math.round(NATIVE_ICON_SIZE * dpr),
-      destHeight: Math.round(NATIVE_ICON_SIZE * dpr),
-    });
-  }
-  return commands;
 }
 
 function renderFrame(nowMs: number = getSharedAnimationNowMs()) {
