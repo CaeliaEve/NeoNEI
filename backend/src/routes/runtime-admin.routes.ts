@@ -6,6 +6,14 @@ import {
   getRuntimeOpenApiDocument,
   serializeAccelerationRuntime,
 } from '../services/runtime-admin-control.service';
+import {
+  getAccelerationManagerUnavailableError,
+  getAccelerationReconcileAccepted,
+  getAccelerationReconcileConflict,
+  getAccelerationReconcileFailureTransition,
+  type RuntimeAdminControlError,
+  type RuntimeAdminReconcileLabel,
+} from '../services/runtime-admin-reconcile-control.service';
 import { setPublicCacheHeaders } from '../utils/http-cache';
 import { sendErrorEnvelope } from '../utils/error-response';
 import { logger } from '../utils/logger';
@@ -66,43 +74,34 @@ export function registerRuntimeAdminRoutes<TManager>(
   app.get('/ops/runtime', sendRuntimeDiagnostics);
   app.get('/api/admin/runtime', sendRuntimeDiagnostics);
 
-  const scheduleReconcile = (label: 'OPS' | 'ADMIN') => async (req: Request, res: Response): Promise<void> => {
+  const sendControlError = (req: Request, res: Response, error: RuntimeAdminControlError): void => {
+    sendErrorEnvelope(req, res, error.statusCode, error.code, error.message, error.details);
+  };
+
+  const scheduleReconcile = (label: RuntimeAdminReconcileLabel) => async (req: Request, res: Response): Promise<void> => {
     if (!requireAdminToken(req, res)) {
       return;
     }
     const runtimeAccelerationDbManager = getRuntimeAccelerationDbManager();
     if (!runtimeAccelerationDbManager) {
-      sendErrorEnvelope(req, res, 503, 'ACCELERATION_MANAGER_NOT_READY', 'Acceleration manager is not ready');
+      sendControlError(req, res, getAccelerationManagerUnavailableError());
       return;
     }
     const accelerationSnapshot = getAccelerationRuntimeSnapshot();
-    if (
-      accelerationSnapshot.phase === 'compiling'
-      || accelerationSnapshot.phase === 'promoting'
-      || accelerationSnapshot.blocking
-    ) {
-      sendErrorEnvelope(req, res, 409, 'ACCELERATION_RECONCILE_IN_PROGRESS', 'Acceleration reconcile is already in progress', {
-        phase: accelerationSnapshot.phase,
-        blocking: accelerationSnapshot.blocking,
-      });
+    const conflict = getAccelerationReconcileConflict(accelerationSnapshot);
+    if (conflict) {
+      sendControlError(req, res, conflict);
       return;
     }
 
     logger.info(`[${label}] acceleration reconcile requested`, { ip: req.ip });
     void reconcileAccelerationRuntime(runtimeAccelerationDbManager).catch((error) => {
-      const message = error instanceof Error ? error.message : String(error);
-      setAccelerationRuntimePhase('error', `${label === 'OPS' ? 'Ops' : 'Admin'} acceleration reconciliation failed.`, {
-        stale: true,
-        lastError: message,
-      });
+      const transition = getAccelerationReconcileFailureTransition(label, error);
+      setAccelerationRuntimePhase(transition.phase, transition.message, transition.extras);
       logger.error(`[${label}] acceleration reconcile failed`, error);
     });
 
-    res.status(202).json({
-      status: 'accepted',
-      phase: getAccelerationRuntimeSnapshot().phase,
-      message: 'Acceleration reconciliation scheduled.',
-    });
+    res.status(202).json(getAccelerationReconcileAccepted(getAccelerationRuntimeSnapshot()));
   };
 
   app.post('/ops/acceleration/reconcile', scheduleReconcile('OPS'));
