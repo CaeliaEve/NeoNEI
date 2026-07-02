@@ -2,14 +2,19 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
   UI_TEMPLATE_PACK_MAGIC,
   UI_TEMPLATE_PACK_SCHEMA,
-  UI_PACK_ABI_VALIDATION_REPORT_PATH,
   validateNativeUiExportAbiReport,
   validateUiPackFormat,
   validateUiTemplateHeader,
 } from './native-ui-pack-abi.mjs';
+import {
+  buildRequiredRustFiles,
+  expectedRuntimeArtifacts,
+  expectedRuntimeEntrypoints,
+  productionCoreRuntimeFiles,
+  RUST_PRODUCTION_MANIFEST_VALIDATION_SCHEMA,
+} from './runtime-manifest-proof-abi.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -90,29 +95,8 @@ const files = manifest.files ?? {};
 const failures = [];
 const warnings = [];
 const compileScope = `${manifest.nativeRuntime?.compileScope ?? 'all'}`;
-const textureRuntimeRequired = compileScope === 'all' || compileScope === 'textures';
 
-const requiredRustFiles = {
-  rustRuntimeManifest: files.rustRuntimeManifest,
-  rustBrowserBin: files.rustBrowserBin,
-  rustGroupsBin: files.rustGroupsBin,
-  rustSearchBin: files.rustSearchBin,
-  rustRecipeBin: files.rustRecipeBin,
-  rustStringsZhCnBin: files.rustStringsZhCnBin,
-  rustUiTemplatesBin: files.rustUiTemplatesBin,
-  rustUiBindingsBin: files.rustUiBindingsBin,
-  rustUiStringsBin: files.rustUiStringsBin,
-  rustUiAssetsManifest: files.rustUiAssetsManifest,
-  rustUiPackReport: files.rustUiPackReport,
-  rustUiPackAbiValidationReport: files.rustUiPackAbiValidationReport ?? files.uiPackAbiValidationReport,
-  rustNativeUiExportAbiValidationReport: files.rustNativeUiExportAbiValidationReport ?? files.nativeUiExportAbiValidationReport,
-  rustNativeUiLayoutReport: files.rustNativeUiLayoutReport,
-};
-if (textureRuntimeRequired) {
-  requiredRustFiles.rustTextureBin = files.rustTextureBin;
-  requiredRustFiles.rustAtlasMetaBin = files.rustAtlasMetaBin;
-  requiredRustFiles.rustAnimationBin = files.rustAnimationBin;
-}
+const requiredRustFiles = buildRequiredRustFiles(files, compileScope);
 for (const [key, relativePath] of Object.entries(requiredRustFiles)) {
   if (!`${relativePath ?? ''}`.trim()) {
     fail(failures, 'RUST_RUNTIME_FILE_NOT_DECLARED', `manifest does not declare files.${key}`, { key });
@@ -126,42 +110,12 @@ const runtimeManifest = runtimeManifestPath && existsSync(runtimeManifestPath) ?
 const runtimeFiles = Array.isArray(runtimeManifest?.files) ? runtimeManifest.files : [];
 const runtimeEntrypoints = runtimeManifest?.entrypoints && typeof runtimeManifest.entrypoints === 'object' ? runtimeManifest.entrypoints : {};
 const runtimeCompileScope = `${runtimeManifest?.compileScope ?? compileScope}`;
-const expectedRuntimeArtifacts = [
-  'rust/browser.bin',
-  'rust/groups.bin',
-  'rust/search.bin',
-  'rust/recipes.bin',
-  'rust/strings.zh_cn.bin',
-  'rust/ui-pack/ui_templates.bin',
-  'rust/ui-pack/ui_bindings.bin',
-  'rust/ui-pack/ui_strings.bin',
-  UI_PACK_ABI_VALIDATION_REPORT_PATH,
-  NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
-  'rust/native-ui-layout-report.json',
-];
-if (textureRuntimeRequired) {
-  expectedRuntimeArtifacts.push('rust/textures.bin', 'rust/atlas.meta.bin', 'rust/animations.bin');
-}
-for (const expected of expectedRuntimeArtifacts) {
+for (const expected of expectedRuntimeArtifacts(runtimeCompileScope)) {
   if (!runtimeFiles.some((entry) => `${typeof entry === 'string' ? entry : entry?.path ?? ''}`.replaceAll('\\', '/') === expected)) {
     fail(failures, 'RUST_RUNTIME_MANIFEST_ARTIFACT_MISSING', `rust runtime manifest does not list ${expected}`, { expected });
   }
 }
-const expectedEntrypoints = {
-  browser: 'rust/browser.bin',
-  groups: 'rust/groups.bin',
-  search: 'rust/search.bin',
-  recipes: 'rust/recipes.bin',
-  stringsZhCn: 'rust/strings.zh_cn.bin',
-  uiTemplates: 'rust/ui-pack/ui_templates.bin',
-  uiBindings: 'rust/ui-pack/ui_bindings.bin',
-  uiStrings: 'rust/ui-pack/ui_strings.bin',
-};
-if (textureRuntimeRequired) {
-  expectedEntrypoints.textures = 'rust/textures.bin';
-  expectedEntrypoints.animations = 'rust/animations.bin';
-}
-for (const [entrypoint, expectedPath] of Object.entries(expectedEntrypoints)) {
+for (const [entrypoint, expectedPath] of Object.entries(expectedRuntimeEntrypoints(runtimeCompileScope))) {
   const actualPath = `${runtimeEntrypoints[entrypoint] ?? ''}`.replaceAll('\\', '/');
   if (actualPath !== expectedPath) {
     fail(failures, 'RUST_RUNTIME_BINARY_ENTRYPOINT_MISSING', `rust runtime manifest does not expose binary entrypoint ${entrypoint}`, {
@@ -177,18 +131,7 @@ for (const [entrypoint, expectedPath] of Object.entries(expectedEntrypoints)) {
   }
 }
 
-const productionCore = {
-  browser: files.rustBrowserBin,
-  search: files.rustSearchBin,
-  recipes: files.rustRecipeBin,
-  uiTemplates: files.rustUiTemplatesBin,
-  uiBindings: files.rustUiBindingsBin,
-};
-if (textureRuntimeRequired) {
-  productionCore.textures = files.rustTextureBin;
-  productionCore.atlasMeta = files.rustAtlasMetaBin;
-}
-for (const [domain, relativePath] of Object.entries(productionCore)) {
+for (const [domain, relativePath] of Object.entries(productionCoreRuntimeFiles(files, compileScope))) {
   const normalizedPath = `${relativePath ?? ''}`.replaceAll('\\', '/');
   if (!normalizedPath.startsWith('rust/') || !normalizedPath.endsWith('.bin')) {
     fail(failures, 'PRODUCTION_CORE_NOT_RUST_BINARY', `production ${domain} runtime is not Rust binary-backed`, { domain, path: relativePath ?? null });
@@ -259,7 +202,7 @@ for (const legacyKey of ['browserCatalog', 'hiddenBrowserCatalog', 'browserGroup
 }
 
 const report = {
-  schemaVersion: 'neonei/rust-production-manifest-validation/v1',
+  schemaVersion: RUST_PRODUCTION_MANIFEST_VALIDATION_SCHEMA,
   generatedAt: new Date().toISOString(),
   distDataDir,
   source: manifest.source ?? null,

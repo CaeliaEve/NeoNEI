@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   assertNativeRuntimeProfilePolicy,
   getNativeRuntimePackNamesForProfile,
@@ -11,8 +13,10 @@ import {
   loadNativeRuntimeBuffersForProfile,
 } from '../src/native-surface/runtimePackCache.ts';
 
+const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+
 function readSource(relativePath) {
-  return readFileSync(relativePath, 'utf8').replace(/\r\n/g, '\n');
+  return readFileSync(resolve(frontendRoot, relativePath), 'utf8').replace(/\r\n/g, '\n');
 }
 
 test('native runtime profile policies own profile pack lists and capabilities', () => {
@@ -73,10 +77,17 @@ test('native runtime profile policy rejects unknown profiles instead of falling 
 
 test('native runtime profile policy is the only owner of profile tables', () => {
   const policySource = readSource('src/native-surface/NativeRuntimeProfilePolicy.ts');
+  const abiSource = readSource('src/native-surface/NativeRuntimeAbi.ts');
+  const manifestSource = readSource('src/native-surface/NativeRuntimeManifest.ts');
+  const capabilityGateSource = readSource('src/native-surface/NativeRuntimeCapabilityGate.ts');
   const cacheSource = readSource('src/native-surface/runtimePackCache.ts');
   const controllerSource = readSource('src/native-surface/NativeSurfaceController.ts');
   const browserSurfaceSource = readSource('src/components/native-surface/NativeBrowserSurface.vue');
 
+  assert.match(abiSource, /NATIVE_RUNTIME_PACK_SCHEMAS/);
+  assert.match(abiSource, /NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS/);
+  assert.match(manifestSource, /from "\.\/NativeRuntimeAbi\.ts"/);
+  assert.match(capabilityGateSource, /from "\.\/NativeRuntimeAbi\.ts"/);
   assert.match(policySource, /const PROFILE_POLICIES: Record<NativeRuntimePackProfile, NativeRuntimeProfilePolicy>/);
   assert.doesNotMatch(cacheSource, /PROFILE_PACKS|Record<NativeRuntimePackProfile, readonly NativeRuntimePackName\[]>/);
   assert.doesNotMatch(cacheSource, /\?\? PROFILE_PACKS\.full/, 'runtime pack cache must not fallback to full profile');

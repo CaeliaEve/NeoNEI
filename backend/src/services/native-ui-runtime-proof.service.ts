@@ -9,33 +9,19 @@ import {
 import type { CurrentRuntimeSnapshot } from './current-runtime-snapshot.service';
 import {
   countNativeUiExportAbiReportViolations,
-  NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
-  NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
   NATIVE_UI_EXPORT_POLICY_LEGACY_FALLBACK,
-  UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
-  UI_BINDING_PACK_SCHEMA,
-  UI_BINDING_PAYLOAD_VERSION,
-  UI_PACK_ABI_VALIDATION_REPORT_PATH,
-  UI_PACK_ABI_VALIDATION_SCHEMA_VERSION,
-  UI_STRING_PACK_PAYLOAD_MAGIC_REPORT,
-  UI_STRING_PACK_SCHEMA,
-  UI_STRING_PAYLOAD_VERSION,
-  UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT,
-  UI_TEMPLATE_PACK_SCHEMA,
-  UI_TEMPLATE_PAYLOAD_VERSION,
   validateNativeUiExportAbiReport,
 } from './native-ui-pack-abi';
+import {
+  NATIVE_UI_EXPORT_ABI_PROOF_SPEC,
+  NATIVE_UI_RUNTIME_PROOF_SCHEMA_VERSION,
+  UI_PACK_ABI_PROOF_SPEC,
+  UI_PACK_REQUIRED_ARTIFACTS,
+  type NativeUiProofSpec,
+  type NativeUiProofStatus,
+} from './native-ui-runtime-proof-abi';
 
 type JsonRecord = CurrentRuntimeJsonRecord;
-type NativeUiProofStatus = 'ok' | 'blocked' | 'missing';
-
-type NativeUiProofSpec = Readonly<{
-  logicalName: 'nativeUiExportAbi' | 'uiPackAbi';
-  displayName: string;
-  defaultPath: string;
-  expectedSchemaVersion: string;
-  candidateKeys: readonly string[];
-}>;
 
 export type NativeUiProofReportSummary = Readonly<{
   logicalName: NativeUiProofSpec['logicalName'];
@@ -53,7 +39,7 @@ export type NativeUiProofReportSummary = Readonly<{
 }>;
 
 export type NativeUiRuntimeProofSummary = Readonly<{
-  schemaVersion: 'neonei/native-ui-runtime-proof/current';
+  schemaVersion: typeof NATIVE_UI_RUNTIME_PROOF_SCHEMA_VERSION;
   status: NativeUiProofStatus;
   policy: Readonly<{
     legacyFallback: typeof NATIVE_UI_EXPORT_POLICY_LEGACY_FALLBACK;
@@ -82,51 +68,6 @@ export type NativeUiRuntimeProofSummary = Readonly<{
   missing: readonly string[];
   blocked: readonly string[];
 }>;
-
-const NATIVE_UI_EXPORT_ABI_SPEC: NativeUiProofSpec = Object.freeze({
-  logicalName: 'nativeUiExportAbi',
-  displayName: 'Native UI export ABI validation report',
-  defaultPath: NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
-  expectedSchemaVersion: NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
-  candidateKeys: Object.freeze([
-    'rustNativeUiExportAbiValidationReport',
-    'nativeUiExportAbiValidationReport',
-    'nativeUiExportAbiReport',
-  ]),
-});
-
-const UI_PACK_ABI_SPEC: NativeUiProofSpec = Object.freeze({
-  logicalName: 'uiPackAbi',
-  displayName: 'Native UI pack ABI validation report',
-  defaultPath: UI_PACK_ABI_VALIDATION_REPORT_PATH,
-  expectedSchemaVersion: UI_PACK_ABI_VALIDATION_SCHEMA_VERSION,
-  candidateKeys: Object.freeze([
-    'rustUiPackAbiValidationReport',
-    'uiPackAbiValidationReport',
-    'uiPackAbiReport',
-  ]),
-});
-
-const UI_PACK_REQUIRED_ARTIFACTS = Object.freeze([
-  Object.freeze({
-    logicalName: 'rustUiTemplatesBin',
-    envelopeSchema: UI_TEMPLATE_PACK_SCHEMA,
-    payloadMagic: UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT,
-    version: UI_TEMPLATE_PAYLOAD_VERSION,
-  }),
-  Object.freeze({
-    logicalName: 'rustUiBindingsBin',
-    envelopeSchema: UI_BINDING_PACK_SCHEMA,
-    payloadMagic: UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
-    version: UI_BINDING_PAYLOAD_VERSION,
-  }),
-  Object.freeze({
-    logicalName: 'rustUiStringsBin',
-    envelopeSchema: UI_STRING_PACK_SCHEMA,
-    payloadMagic: UI_STRING_PACK_PAYLOAD_MAGIC_REPORT,
-    version: UI_STRING_PAYLOAD_VERSION,
-  }),
-]);
 
 function asRecord(value: unknown): JsonRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : null;
@@ -251,7 +192,7 @@ function validateUiPackAbiReport(report: JsonRecord | null): string[] {
   if (!report) return blocked;
 
   pushIf(
-    asString(report.schemaVersion) !== UI_PACK_ABI_VALIDATION_SCHEMA_VERSION,
+    asString(report.schemaVersion) !== UI_PACK_ABI_PROOF_SPEC.expectedSchemaVersion,
     blocked,
     'native UI pack ABI report schema mismatch',
   );
@@ -345,8 +286,8 @@ export function getNativeUiRuntimeProofSummary(
   distManifest: JsonRecord | null,
   snapshot: CurrentRuntimeSnapshot | null,
 ): NativeUiRuntimeProofSummary {
-  const nativeUiExportAbi = buildReportSummary(NATIVE_UI_EXPORT_ABI_SPEC, distManifest, snapshot);
-  const uiPackAbi = buildReportSummary(UI_PACK_ABI_SPEC, distManifest, snapshot);
+  const nativeUiExportAbi = buildReportSummary(NATIVE_UI_EXPORT_ABI_PROOF_SPEC, distManifest, snapshot);
+  const uiPackAbi = buildReportSummary(UI_PACK_ABI_PROOF_SPEC, distManifest, snapshot);
   const reports = Object.freeze({ nativeUiExportAbi, uiPackAbi });
   const reportList = [nativeUiExportAbi, uiPackAbi] as const;
   const missing = reportList
@@ -359,7 +300,7 @@ export function getNativeUiRuntimeProofSummary(
   const status = mergeStatus(reportList);
 
   return Object.freeze({
-    schemaVersion: 'neonei/native-ui-runtime-proof/current',
+    schemaVersion: NATIVE_UI_RUNTIME_PROOF_SCHEMA_VERSION,
     status,
     policy: Object.freeze({
       legacyFallback: NATIVE_UI_EXPORT_POLICY_LEGACY_FALLBACK,

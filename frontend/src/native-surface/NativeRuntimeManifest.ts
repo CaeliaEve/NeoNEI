@@ -1,26 +1,14 @@
-export type NativeRuntimePackName = "browser" | "groups" | "search" | "recipes" | "textures" | "animations" | "stringsZhCn";
+import {
+  NATIVE_RUNTIME_PACK_SCHEMAS,
+  type NativeRuntimePackName,
+  type NativeRuntimePackSchema,
+} from "./NativeRuntimeAbi.ts";
 
-export type NativeRuntimePackSchema =
-  | "neonei/browser-pack/current"
-  | "neonei/group-pack/current"
-  | "neonei/search-pack/current"
-  | "neonei/recipe-pack/current"
-  | "neonei/texture-pack/current"
-  | "neonei/animation-pack/current"
-  | "neonei/string-pack/current"
-  | "neonei/ui-template-pack/current"
-  | "neonei/ui-binding-pack/current"
-  | "neonei/ui-string-pack/current";
-
-export const NATIVE_RUNTIME_PACK_SCHEMAS: Record<NativeRuntimePackName, NativeRuntimePackSchema> = {
-  browser: "neonei/browser-pack/current",
-  groups: "neonei/group-pack/current",
-  search: "neonei/search-pack/current",
-  recipes: "neonei/recipe-pack/current",
-  textures: "neonei/texture-pack/current",
-  animations: "neonei/animation-pack/current",
-  stringsZhCn: "neonei/string-pack/current",
-};
+export {
+  NATIVE_RUNTIME_PACK_SCHEMAS,
+  type NativeRuntimePackName,
+  type NativeRuntimePackSchema,
+} from "./NativeRuntimeAbi.ts";
 
 export interface NativeRuntimeManifestFiles {
   browser?: string;

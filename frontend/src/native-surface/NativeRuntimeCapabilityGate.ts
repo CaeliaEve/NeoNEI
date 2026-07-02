@@ -4,18 +4,14 @@ import type {
   NativeRuntimePackName,
   NativeRuntimeCapability,
 } from "./NativeRuntimeManifest.ts";
+import {
+  NATIVE_RUNTIME_REQUIRED_CAPABILITIES,
+  NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS,
+} from "./NativeRuntimeAbi.ts";
 
-export const NATIVE_UI_RUNTIME_REQUIRED_CAPABILITIES = [
-  "recipes.native-ui-layout",
-  "recipes.ui-pack",
-  "native-render.webgl2",
-] as const satisfies readonly NativeRuntimeCapability[];
-
-export const NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS = [
-  "uiTemplates",
-  "uiBindings",
-  "uiStrings",
-] as const;
+export const NATIVE_UI_RUNTIME_REQUIRED_CAPABILITIES =
+  NATIVE_RUNTIME_REQUIRED_CAPABILITIES satisfies readonly NativeRuntimeCapability[];
+export { NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS };
 
 export type NativeUiRuntimeEntrypointName = typeof NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS[number];
 

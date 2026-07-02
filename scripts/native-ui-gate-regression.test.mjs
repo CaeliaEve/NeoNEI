@@ -22,6 +22,10 @@ import {
   UI_TEXT_ROW_STRIDE_U32,
   uiPackFormatCatalog,
 } from './native-ui-pack-abi.mjs';
+import {
+  RUST_PRODUCTION_MANIFEST_VALIDATION_SCHEMA,
+  RUST_RUNTIME_MANIFEST_SCHEMA_VERSION,
+} from './runtime-manifest-proof-abi.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -338,6 +342,7 @@ test('compiler extraction boundary uses pinned external elysium-compiler binary'
   const decouplingGate = readFileSync(join(repoRoot, 'scripts/compiler-decoupling-gate.mjs'), 'utf8');
   const extractionGate = readFileSync(join(repoRoot, 'scripts/compiler-extraction-readiness-gate.mjs'), 'utf8');
   const ensureCompiler = readFileSync(join(repoRoot, 'scripts/ensure-elysium-compiler.mjs'), 'utf8');
+  const runtimeManifestProofAbi = readFileSync(join(repoRoot, 'scripts/runtime-manifest-proof-abi.mjs'), 'utf8');
   const runtimePaths = readFileSync(join(repoRoot, 'backend/src/config/runtime-paths.ts'), 'utf8');
   const bindingService = readFileSync(join(repoRoot, 'backend/src/services/ui-template-binding-index.service.ts'), 'utf8');
   const lock = JSON.parse(readFileSync(join(repoRoot, 'tools/elysium-compiler/elysium-compiler.lock.json'), 'utf8'));
@@ -365,10 +370,15 @@ test('compiler extraction boundary uses pinned external elysium-compiler binary'
   assert.equal(finalizer.includes('compiler: compilerCommand'), true);
 
   assert.equal(ensureCompiler.includes('elysium-compiler.lock.json'), true);
+  assert.equal(ensureCompiler.includes('elysium-compiler-capability-abi.mjs'), true);
   assert.equal(ensureCompiler.includes('sha256'), true);
-  assert.equal(ensureCompiler.includes("['schemas']"), true);
+  assert.equal(ensureCompiler.includes('REQUIRED_COMPILER_COMMAND_INVOCATIONS'), true);
   assert.equal(ensureCompiler.includes('rawExportSchemaVersion'), true);
   assert.equal(ensureCompiler.includes('compiledDistSchemaVersion'), true);
+  assert.equal(runtimeManifestProofAbi.includes(RUST_PRODUCTION_MANIFEST_VALIDATION_SCHEMA), true);
+  assert.equal(runtimeManifestProofAbi.includes(RUST_RUNTIME_MANIFEST_SCHEMA_VERSION), true);
+  assert.equal(runtimeManifestProofAbi.includes('buildRequiredRustFiles'), true);
+  assert.equal(runtimeManifestProofAbi.includes('expectedRuntimeEntrypoints'), true);
 
   assert.equal(extractionGate.includes("schemaVersion: 'neonei/compiler-extraction-readiness-gate/v2'"), true);
   assert.equal(extractionGate.includes('tools\', \'elysium-compiler\', \'fixtures'), true);
