@@ -68,8 +68,9 @@ export function getPublicApiIndex(): PublicApiIndex {
       multiblocks: '/api/runtime/current/data/multiblocks/:controllerItemId',
       gtDiagrams: '/api/runtime/current/data/gt-diagrams/overview',
       forestryGenetics: '/api/runtime/current/data/forestry-genetics/overview',
-      patterns: '/lab/patterns',
+      patternControl: '/lab/patterns',
       publishManifest: '/api/publish/manifest',
+      publishControl: '/ops/publish/releases',
     }),
   });
 }
@@ -89,8 +90,10 @@ export function getRuntimeOpenApiDocument(): RuntimeOpenApiDocument {
       '/runtime/diagnostics': { get: { summary: 'Public runtime readiness diagnostics' } },
       '/ops/runtime': { get: { summary: 'Token-protected runtime diagnostics' } },
       '/ops/acceleration/reconcile': { post: { summary: 'Token-protected rebuild/materialize trigger' } },
+      '/ops/publish/releases': { get: { summary: 'Token-protected publish release inventory' } },
+      '/ops/publish/releases/{sourceSignature}/activate': { post: { summary: 'Token-protected publish release activation' } },
+      '/ops/render-contract': { get: { summary: 'Token-protected render contract diagnostics' }, post: { summary: 'Token-protected render contract queries' } },
       '/lab/patterns': { get: { summary: 'Development control pattern groups' }, post: { summary: 'Development control pattern mutation' } },
-      '/lab/render-contract': { get: { summary: 'Development render contract diagnostics' } },
       '/api/v1/health': { get: { summary: 'Stable v1 runtime health endpoint' } },
       '/api/v1/runtime/manifest': { get: { summary: 'Stable v1 active runtime manifest' } },
       '/api/v1/runtime/contracts': { get: { summary: 'Stable v1 runtime contract index' } },
@@ -98,6 +101,9 @@ export function getRuntimeOpenApiDocument(): RuntimeOpenApiDocument {
       '/api/publish/home-bootstrap': { get: { summary: 'Fallback home bootstrap payload' } },
       '/publish/{artifactPath}': { get: { summary: 'Immutable static publish artifacts except active manifests' } },
       '/api/admin/acceleration/reconcile': { post: { summary: 'Token-protected rebuild/materialize trigger' } },
+      '/api/admin/publish/releases': { get: { summary: 'Token-protected publish release inventory' } },
+      '/api/admin/publish/releases/{sourceSignature}/activate': { post: { summary: 'Token-protected publish release activation' } },
+      '/api/admin/render-contract': { get: { summary: 'Token-protected render contract diagnostics' }, post: { summary: 'Token-protected render contract queries' } },
       '/api/admin/runtime': { get: { summary: 'Token-protected runtime diagnostics' } },
     }),
   });

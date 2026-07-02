@@ -84,11 +84,17 @@ const requireRuntimeDiagnostics = !hasArg("--allow-missing-runtime-diagnostics")
 const requireApiTierHeaders = !hasArg("--allow-missing-api-tier-headers");
 
 const server = readText("backend/src/server.ts");
+const appSource = existsSync(join(repoRoot, "backend/src/app.ts"))
+  ? readText("backend/src/app.ts")
+  : "";
 const staticAssetRoutes = existsSync(join(repoRoot, "backend/src/routes/static-assets.routes.ts"))
   ? readText("backend/src/routes/static-assets.routes.ts")
   : "";
 const runtimeAdminRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime-admin.routes.ts"))
   ? readText("backend/src/routes/runtime-admin.routes.ts")
+  : "";
+const publishAdminRoutes = existsSync(join(repoRoot, "backend/src/routes/publish-admin.routes.ts"))
+  ? readText("backend/src/routes/publish-admin.routes.ts")
   : "";
 const apiNamespaceRoutes = existsSync(join(repoRoot, "backend/src/routes/api-namespaces.routes.ts"))
   ? readText("backend/src/routes/api-namespaces.routes.ts")
@@ -99,7 +105,7 @@ const apiNamespaceRegistry = existsSync(join(repoRoot, "backend/src/routes/api-n
 const currentRuntimeEndpointRegistry = existsSync(join(repoRoot, "backend/src/routes/current-runtime-endpoint-registry.ts"))
   ? readText("backend/src/routes/current-runtime-endpoint-registry.ts")
   : "";
-const routeSource = [server, staticAssetRoutes, runtimeAdminRoutes, apiNamespaceRoutes].join("\n");
+const routeSource = [server, appSource, staticAssetRoutes, runtimeAdminRoutes, publishAdminRoutes, apiNamespaceRoutes].join("\n");
 const apiService = readText("frontend/src/services/api.ts");
 const runtimeRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime.routes.ts"))
   ? readText("backend/src/routes/runtime.routes.ts")
@@ -119,6 +125,12 @@ const devOnlyLegacyDynamicRoutes = legacyDynamicRoutesWithContext
   .filter((route) => route.gatedByPublicRuntimeOnly)
   .map((route) => route.line);
 const adminRoutes = routeRegistrationsWithContext.filter((route) => /\/api\/admin/.test(route.line)).map((route) => route.line);
+const explicitAdminControlRoutes = [
+  publishAdminRoutes.includes("'/ops/publish'") ? "publish-admin:/ops/publish" : null,
+  publishAdminRoutes.includes("'/api/admin/publish'") ? "publish-admin:/api/admin/publish" : null,
+  appSource.includes("'/ops/render-contract'") ? "app:/ops/render-contract" : null,
+  appSource.includes("'/api/admin/render-contract'") ? "app:/api/admin/render-contract" : null,
+].filter(Boolean);
 const apiNamespaceMountPaths = matchCaptureAll(apiNamespaceRegistry, /mountPath:\s*['"`]([^'"`]+)['"`]/g);
 const currentRuntimeEndpointPaths = matchCaptureAll(currentRuntimeEndpointRegistry, /path:\s*['"`]([^'"`]+)['"`]/g);
 const registryProductRuntimeRoutes = apiNamespaceMountPaths
@@ -134,6 +146,7 @@ const productRuntimeRoutes = [
   ...routeRegistrationsWithContext.filter((route) => /['"`]\/(?:runtime|ops|lab)\b/.test(route.line)).map((route) => route.line),
   ...registryProductRuntimeRoutes,
   ...currentRuntimeRegistryRoutes,
+  ...explicitAdminControlRoutes,
 ];
 const publicRuntimeRoutes = [
   ...routeRegistrationsWithContext.filter((route) => /['"`]\/runtime\b|\/api\/publish|\/api\/v1|\/publish|\/dist-data|\/canonical/.test(route.line)).map((route) => route.line),
@@ -189,10 +202,16 @@ const dependencyMap = {
 const fallbackClassification = {
   keepForLabControl: [
     "/lab/patterns",
-    "/lab/publish",
-    "/lab/render-contract",
+  ],
+  keepForAdminControl: [
+    "/ops/publish",
+    "/ops/render-contract",
+    "/api/admin/publish",
+    "/api/admin/render-contract",
   ],
   retiredDynamicReadCompatibility: [
+    "/lab/publish",
+    "/lab/render-contract",
     "/lab/items",
     "/lab/recipes",
     "/lab/recipe-bootstrap",
@@ -280,7 +299,10 @@ const report = {
       publicRuntimeExposed: publicRuntimeExposedLegacyDynamicRoutes,
       devOnlyGatedByPublicRuntimeOnly: devOnlyLegacyDynamicRoutes,
     },
-    adminRoutes,
+    adminRoutes: [
+      ...adminRoutes,
+      ...explicitAdminControlRoutes.filter((route) => route.includes("/api/admin")),
+    ],
   },
   frontendRuntimeCalls,
   runtimeCapabilities,
@@ -295,7 +317,7 @@ const report = {
   recommendations: [
     "Use /runtime, /ops, and /lab as the product-semantic runtime namespace.",
     "Keep /api/v1 as the stable versioned runtime contract surface. Updated consumers should use /api/runtime/current directly.",
-    "Keep explicit control and diagnostic APIs lab-only under /lab; do not remount SQLite-backed dynamic read routes under production /api or dev /lab.",
+    "Keep pattern authoring lab-only under /lab and privileged publish/render diagnostics under /ops or /api/admin; do not remount SQLite-backed dynamic read routes under production /api or dev /lab.",
     "Validate raw-export compiled runtime packs through native runtime gates before activation.",
     "Continue moving production browser/search/recipe paths to immutable runtime artifacts.",
   ],

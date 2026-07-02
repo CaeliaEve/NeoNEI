@@ -1,18 +1,11 @@
 ﻿import { Router, type Router as ExpressRouter } from 'express';
 import { asyncHandler, serviceUnavailable } from '../utils/http';
 import { getPublishManifestService } from '../services/publish-manifest.service';
-import { getPublishReleaseService } from '../services/publish-release.service';
 import { derivePagePackFromWindow, getPublishPayloadService } from '../services/publish-payload.service';
 import { createWeakEtag, sendNotModifiedIfEtagMatches, setNoStoreHeaders, setPublicCacheHeaders } from '../utils/http-cache';
 import { ItemsService, type BrowserPageEntry, type Item } from '../services/items.service';
 import { attachRenderHintsToEntries, buildBrowserRichMediaManifest } from '../services/browser-render-hints.service';
 import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
-
-export type PublishRoutesMode = 'public-runtime' | 'lab-control';
-
-export type CreatePublishRoutesOptions = {
-  mode?: PublishRoutesMode;
-};
 
 const itemsService = new ItemsService({ splitExportFallback: false });
 
@@ -32,28 +25,6 @@ function collectDisplayItems(entries: BrowserPageEntry[]): Item[] {
   }
 
   return ordered;
-}
-
-function registerLabControlRoutes(router: ExpressRouter): void {
-  router.get(
-    '/releases',
-    asyncHandler(async (_req, res) => {
-      setNoStoreHeaders(res);
-      res.json({
-        releases: getPublishReleaseService().listReleases(),
-      });
-    }),
-  );
-
-  router.post(
-    '/releases/:sourceSignature/activate',
-    asyncHandler(async (req, res) => {
-      const sourceSignature = `${req.params.sourceSignature ?? ''}`.trim();
-      const result = getPublishReleaseService().activateRelease(sourceSignature);
-      getPublishManifestService().invalidate();
-      res.json(result);
-    }),
-  );
 }
 
 function registerPublicReadRoutes(router: ExpressRouter): void {
@@ -150,16 +121,12 @@ function registerPublicReadRoutes(router: ExpressRouter): void {
   );
 }
 
-export function createPublishRoutes(options: CreatePublishRoutesOptions = {}): ExpressRouter {
+export function createPublishRoutes(): ExpressRouter {
   const router = Router();
-  if ((options.mode ?? 'public-runtime') === 'lab-control') {
-    registerLabControlRoutes(router);
-  }
   registerPublicReadRoutes(router);
   return router;
 }
 
-export const publicPublishRoutes = createPublishRoutes({ mode: 'public-runtime' });
-export const labPublishRoutes = createPublishRoutes({ mode: 'lab-control' });
+export const publicPublishRoutes = createPublishRoutes();
 
 export default publicPublishRoutes;

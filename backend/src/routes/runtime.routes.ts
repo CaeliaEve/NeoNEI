@@ -43,8 +43,8 @@ const runtimeContracts = {
   },
   control: {
     patterns: '/lab/patterns',
-    publish: '/lab/publish',
-    renderContract: '/lab/render-contract',
+    publish: '/ops/publish',
+    renderContract: '/ops/render-contract',
   },
 };
 

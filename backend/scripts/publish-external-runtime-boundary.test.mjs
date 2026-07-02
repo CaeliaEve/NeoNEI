@@ -3,7 +3,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const publishRouteSource = fs.readFileSync('src/routes/publish.routes.ts', 'utf8').replace(/\r\n/g, '\n');
-const namespaceSource = fs.readFileSync('src/routes/api-namespaces.routes.ts', 'utf8').replace(/\r\n/g, '\n');
+const namespaceRegistrySource = fs.readFileSync('src/routes/api-namespace-registry.ts', 'utf8').replace(/\r\n/g, '\n');
+const appSource = fs.readFileSync('src/app.ts', 'utf8').replace(/\r\n/g, '\n');
+const publishAdminRouteSource = fs.readFileSync('src/routes/publish-admin.routes.ts', 'utf8').replace(/\r\n/g, '\n');
 const httpSource = fs.readFileSync('src/utils/http.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('external-runtime publish home bootstrap is materialized-bundle only', () => {
@@ -25,10 +27,14 @@ test('external-runtime publish home bootstrap is materialized-bundle only', () =
   assert.equal(gateIndex < dynamicIndex, true, 'external-runtime must fail before ItemsService dynamic fallback');
 });
 
-test('publish route namespace keeps lab diagnostics while public api is guarded', () => {
-  assert.match(namespaceSource, /import \{ labPublishRoutes, publicPublishRoutes \} from '\.\/publish\.routes'/);
-  assert.match(namespaceSource, /app\.use\('\/lab\/publish', labPublishRoutes\)/);
-  assert.match(namespaceSource, /app\.use\('\/api\/publish', tagApiTier\('public-runtime'\), publicPublishRoutes\)/);
+test('publish control is token-protected ops/admin plane while public api is read-only', () => {
+  assert.match(namespaceRegistrySource, /import \{ publicPublishRoutes \} from '\.\/publish\.routes'/);
+  assert.match(namespaceRegistrySource, /mountPath: '\/api\/publish'[\s\S]*handler: publicPublishRoutes/);
+  assert.doesNotMatch(namespaceRegistrySource, /labPublishRoutes|\/lab\/publish/);
+  assert.match(appSource, /registerPublishAdminRoutes\(app/);
+  assert.match(publishAdminRouteSource, /registerPublishAdminPrefix\(app, '\/ops\/publish'/);
+  assert.match(publishAdminRouteSource, /registerPublishAdminPrefix\(app, '\/api\/admin\/publish'/);
+  assert.match(publishAdminRouteSource, /withRuntimeAdminToken/);
 });
 
 test('http utilities expose explicit service unavailable error contracts', () => {
@@ -38,20 +44,16 @@ test('http utilities expose explicit service unavailable error contracts', () =>
 });
 
 
-test('publish route factory keeps release control out of public-runtime routes', () => {
-  assert.match(publishRouteSource, /export type PublishRoutesMode = 'public-runtime' \| 'lab-control'/);
-  assert.match(publishRouteSource, /function registerLabControlRoutes\(router: ExpressRouter\): void/);
-  assert.match(publishRouteSource, /if \(\(options\.mode \?\? 'public-runtime'\) === 'lab-control'\) \{/);
-  assert.match(publishRouteSource, /export const publicPublishRoutes = createPublishRoutes\(\{ mode: 'public-runtime' \}\)/);
-  assert.match(publishRouteSource, /export const labPublishRoutes = createPublishRoutes\(\{ mode: 'lab-control' \}\)/);
+test('publish route factory keeps release control out of public read routes', () => {
+  assert.doesNotMatch(publishRouteSource, /PublishRoutesMode|registerLabControlRoutes|labPublishRoutes/);
+  assert.match(publishRouteSource, /export const publicPublishRoutes = createPublishRoutes\(\)/);
+  assert.match(publishAdminRouteSource, /`\$\{prefix\}\/releases`/);
+  assert.match(publishAdminRouteSource, /`\$\{prefix\}\/releases\/:sourceSignature\/activate`/);
 
-  const labControlIndex = publishRouteSource.indexOf('function registerLabControlRoutes');
+  const labControlIndex = publishAdminRouteSource.indexOf('function registerPublishAdminPrefix');
   const publicReadIndex = publishRouteSource.indexOf('function registerPublicReadRoutes');
-  assert.notEqual(labControlIndex, -1, 'lab control route registrar must exist');
+  assert.notEqual(labControlIndex, -1, 'admin control route registrar must exist');
   assert.notEqual(publicReadIndex, -1, 'public read route registrar must exist');
-  const labControlBody = publishRouteSource.slice(labControlIndex, publicReadIndex);
-  assert.match(labControlBody, /'\/releases'/);
-  assert.match(labControlBody, /'\/releases\/:sourceSignature\/activate'/);
   const publicReadBody = publishRouteSource.slice(publicReadIndex);
   assert.doesNotMatch(publicReadBody, /'\/releases\/:sourceSignature\/activate'/);
 });

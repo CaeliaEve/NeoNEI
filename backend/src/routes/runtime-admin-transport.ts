@@ -1,4 +1,4 @@
-import type { Request, Response } from 'express';
+import type { Request, RequestHandler, Response } from 'express';
 import type { RuntimeAdminControlError } from '../services/runtime-admin-reconcile-control.service';
 import { sendErrorEnvelope } from '../utils/error-response';
 import { setPublicCacheHeaders } from '../utils/http-cache';
@@ -36,4 +36,12 @@ export function withRuntimeAdminToken(
     return;
   }
   handler();
+}
+
+export function createRuntimeAdminTokenMiddleware(
+  requireAdminToken: RuntimeAdminTokenGuard,
+): RequestHandler {
+  return (req, res, next) => {
+    withRuntimeAdminToken(req, res, requireAdminToken, next);
+  };
 }

@@ -1,7 +1,6 @@
 import type { Application, RequestHandler, Router } from 'express';
 import patternsRoutes from './patterns.routes';
-import renderContractRoutes from './render-contract.routes';
-import { labPublishRoutes, publicPublishRoutes } from './publish.routes';
+import { publicPublishRoutes } from './publish.routes';
 import runtimeRoutes from './runtime.routes';
 import v1Routes from './v1.routes';
 import currentApiRoutes from './current-api.routes';
@@ -44,8 +43,6 @@ export const PUBLIC_RUNTIME_TAIL_NAMESPACES: readonly ApiNamespaceDefinition[] =
 export const LAB_CONTROL_NAMESPACES: readonly ApiNamespaceDefinition[] = Object.freeze([
   Object.freeze({ key: 'labRoot', mountPath: '/lab', tier: 'lab-control' }),
   Object.freeze({ key: 'labPatterns', mountPath: '/lab/patterns', tier: 'lab-control', handler: patternsRoutes }),
-  Object.freeze({ key: 'labPublish', mountPath: '/lab/publish', tier: 'lab-control', handler: labPublishRoutes }),
-  Object.freeze({ key: 'labRenderContract', mountPath: '/lab/render-contract', tier: 'lab-control', handler: renderContractRoutes }),
 ]);
 
 export function getApiNamespacePlan(input: ApiNamespacePlanInput): readonly ApiNamespaceDefinition[] {

@@ -309,8 +309,10 @@ test('dynamic sqlite read namespaces are retired from lab and never mounted unde
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipes-indexed'/);
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipe-bootstrap'/);
   assert.match(namespaceRegistrySource, /mountPath: '\/lab\/patterns'/);
-  assert.match(namespaceRegistrySource, /mountPath: '\/lab\/publish'/);
-  assert.match(namespaceRegistrySource, /mountPath: '\/lab\/render-contract'/);
+  assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/lab\/publish'/);
+  assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/lab\/render-contract'/);
+  assert.match(fs.readFileSync('src/app.ts', 'utf8'), /app\.use\('\/ops\/render-contract'/);
+  assert.match(fs.readFileSync('src/routes/publish-admin.routes.ts', 'utf8'), /'\/ops\/publish'/);
 
   const labGateIndex = namespaceRegistrySource.indexOf('if (!input.publicRuntimeOnly) {');
   assert.notEqual(labGateIndex, -1, 'lab api gate must exist');
@@ -326,8 +328,9 @@ test('v1 runtime contracts advertise lab-only control diagnostics, not legacy sq
   assert.doesNotMatch(v1Source, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority|legacyApiBase/);
   assert.match(v1Source, /control: \{/);
   assert.match(v1Source, /patterns: '\/lab\/patterns'/);
-  assert.match(v1Source, /publish: '\/lab\/publish'/);
-  assert.match(v1Source, /renderContract: '\/lab\/render-contract'/);
+  assert.match(v1Source, /publish: '\/ops\/publish'/);
+  assert.match(v1Source, /renderContract: '\/ops\/render-contract'/);
+  assert.doesNotMatch(v1Source, /\/lab\/(?:publish|render-contract)/);
   assert.doesNotMatch(v1Source, /\/lab\/(?:items|recipes|recipe-bootstrap)/);
   assert.doesNotMatch(v1Source, /\/api\/recipes-indexed/);
   assert.doesNotMatch(v1Source, /\/api\/recipe-bootstrap/);

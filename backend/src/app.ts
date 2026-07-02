@@ -7,7 +7,10 @@ import { requestObservability } from './middleware/request-observability';
 import { errorHandler } from './middleware/error-handler';
 import { sendErrorEnvelope } from './utils/error-response';
 import { registerStaticAssetRoutes } from './routes/static-assets.routes';
+import renderContractRoutes from './routes/render-contract.routes';
+import { registerPublishAdminRoutes } from './routes/publish-admin.routes';
 import { registerRuntimeAdminRoutes } from './routes/runtime-admin.routes';
+import { createRuntimeAdminTokenMiddleware } from './routes/runtime-admin-transport';
 import { registerApiNamespaces } from './routes/api-namespaces.routes';
 import type { requireAdminToken, serverSettings } from './config/server-settings';
 import { createAccelerationRuntimeMiddleware } from './middleware/acceleration-runtime-gate.middleware';
@@ -60,6 +63,14 @@ export function createApp(options: CreateAppOptions): Express {
     }),
     setAccelerationRuntimePhase,
   });
+
+  registerPublishAdminRoutes(app, {
+    requireAdminToken: options.requireAdminToken,
+  });
+
+  const requireAdminTokenMiddleware = createRuntimeAdminTokenMiddleware(options.requireAdminToken);
+  app.use('/ops/render-contract', requireAdminTokenMiddleware, renderContractRoutes);
+  app.use('/api/admin/render-contract', requireAdminTokenMiddleware, renderContractRoutes);
 
   registerApiNamespaces(app, { publicRuntimeOnly: options.serverSettings.publicRuntimeOnly });
 
