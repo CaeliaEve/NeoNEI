@@ -53,7 +53,7 @@ test('external runtime identity is a first-class freshness boundary', () => {
 
 test('dispatcher maps external runtime to a separate worker action', () => {
   assert.match(dispatcher, /refreshExternalRuntimeArtifact/);
-  assert.match(dispatcher, /'compile-external-runtime': \(\) => refreshExternalRuntimeArtifact\(\)/);
+  assert.match(dispatcher, /reconcileHandlerDescriptor\('compile-external-runtime', \(\) => refreshExternalRuntimeArtifact\(\)\)/);
   assert.match(worker, /export async function refreshExternalRuntimeArtifact\(\)/);
   assert.match(worker, /compileExternalRuntimeArtifactInChild\(\)/);
   assert.doesNotMatch(worker, /refreshExternalRuntimeArtifact[\s\S]*activateCompiledAccelerationSnapshot/);

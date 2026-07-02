@@ -13,8 +13,11 @@ const reconcileWorker = readFileSync(reconcileWorkerPath, 'utf8');
 
 test('acceleration reconcile phase decisions live in a dedicated phase machine', () => {
   assert.equal(existsSync(phaseMachinePath), true, 'acceleration-runtime-phase-machine.service.ts must exist');
+  assert.match(phaseMachine, /export const ACCELERATION_RECONCILE_DECISIONS/);
   assert.match(phaseMachine, /export type AccelerationReconcileDecision/);
+  assert.match(phaseMachine, /export type AccelerationReconcileDecision = \(typeof ACCELERATION_RECONCILE_DECISIONS\)\[number\]/);
   assert.match(phaseMachine, /'compile-snapshot'/);
+  assert.match(phaseMachine, /'compile-external-runtime'/);
   assert.match(phaseMachine, /'materialize-publish-payloads'/);
   assert.match(phaseMachine, /'ready-noop'/);
   assert.match(phaseMachine, /export function decideAccelerationReconcilePhase/);

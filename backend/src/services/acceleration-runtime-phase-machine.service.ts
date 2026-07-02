@@ -1,10 +1,13 @@
 import { setAccelerationRuntimePhase } from './acceleration-runtime-state.service';
 
-export type AccelerationReconcileDecision =
-  | 'compile-snapshot'
-  | 'compile-external-runtime'
-  | 'materialize-publish-payloads'
-  | 'ready-noop';
+export const ACCELERATION_RECONCILE_DECISIONS = Object.freeze([
+  'compile-snapshot',
+  'compile-external-runtime',
+  'materialize-publish-payloads',
+  'ready-noop',
+] as const);
+
+export type AccelerationReconcileDecision = (typeof ACCELERATION_RECONCILE_DECISIONS)[number];
 
 export type AccelerationCompilePromotionSummary = {
   itemsImported?: number;
