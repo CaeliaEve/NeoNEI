@@ -26,6 +26,20 @@ test('current runtime API schema, URLs, ETags, cache, params, and errors are ABI
     assert.match(apiAbiSource, new RegExp(`export (?:const|function) ${symbol}`));
   }
   assert.match(apiAbiSource, /CURRENT_RUNTIME_SNAPSHOT_DEFAULTS/);
+  for (const descriptorSymbol of [
+    'CURRENT_RUNTIME_API_CACHE_DESCRIPTOR',
+    'CURRENT_RUNTIME_API_PARAM_DESCRIPTORS',
+    'CURRENT_RUNTIME_API_ERROR_DESCRIPTORS',
+    'CURRENT_RUNTIME_API_ETAG_KEY_DESCRIPTORS',
+    'CURRENT_RUNTIME_API_URL_DESCRIPTORS',
+  ]) {
+    assert.match(apiAbiSource, new RegExp(`export const ${descriptorSymbol}`));
+  }
+  assert.match(apiAbiSource, /validateAndFreezeCurrentRuntimeApiStringDescriptors/);
+  assert.match(apiAbiSource, /validateAndFreezeCurrentRuntimeApiCacheDescriptor/);
+  assert.match(apiAbiSource, /Missing \$\{label\} descriptor/);
+  assert.match(apiAbiSource, /Duplicate \$\{label\} descriptor/);
+  assert.match(apiAbiSource, /current runtime API cache descriptor must be immutable/);
 
   for (const ownedLiteral of [
     /'neonei\/api\/current'/,

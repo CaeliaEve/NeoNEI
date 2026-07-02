@@ -63,6 +63,12 @@ test('current runtime settings controlfs response uses a settings ABI catalog', 
   assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_STATIC/);
   assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_ENV/);
   assert.match(settingsAbiSource, /CURRENT_RUNTIME_ENABLED_FLAG_VALUES/);
+  assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_ENV_DESCRIPTORS/);
+  assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_RUNTIME_DESCRIPTORS/);
+  assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_STATIC_DESCRIPTORS/);
+  assert.match(settingsAbiSource, /validateAndFreezeRuntimeSettingsDescriptors/);
+  assert.match(settingsAbiSource, /Missing \$\{label\} descriptor/);
+  assert.match(settingsAbiSource, /Duplicate \$\{label\} descriptor/);
 
   for (const ownedLiteral of [
     /'NEONEI_DEBUG_PANELS'/,
@@ -83,16 +89,21 @@ test('current runtime snapshot manifest fields and default identities are ABI-ca
   assert.match(snapshotSource, /from '\.\/current-runtime-snapshot-abi'/);
   assert.match(snapshotAbiSource, /CURRENT_RUNTIME_SNAPSHOT_DEFAULTS/);
   assert.match(snapshotAbiSource, /CURRENT_RUNTIME_MANIFEST_FIELDS/);
-  assert.match(snapshotAbiSource, /missingRuntimeId: 'runtime-missing'/);
-  assert.match(snapshotAbiSource, /unknownSchemaRevision: 'runtime\.unknown'/);
+  assert.match(snapshotAbiSource, /CURRENT_RUNTIME_SNAPSHOT_DEFAULT_DESCRIPTORS/);
+  assert.match(snapshotAbiSource, /CURRENT_RUNTIME_MANIFEST_FIELD_DESCRIPTORS/);
+  assert.match(snapshotAbiSource, /validateAndFreezeStringDescriptors/);
+  assert.match(snapshotAbiSource, /Missing \$\{label\} descriptor/);
+  assert.match(snapshotAbiSource, /Duplicate \$\{label\} descriptor/);
+  assert.match(snapshotAbiSource, /stringDescriptor\('missingRuntimeId', 'runtime-missing'\)/);
+  assert.match(snapshotAbiSource, /stringDescriptor\('unknownSchemaRevision', 'runtime\.unknown'\)/);
   assert.match(apiAbiSource, /CURRENT_RUNTIME_SNAPSHOT_DEFAULTS/);
 
   for (const ownedLiteral of [
     /'runtime-missing'/,
     /'runtime\.unknown'/,
-    /schemaRevision: 'schemaRevision'/,
-    /runtimeId: 'runtimeId'/,
-    /capabilities: 'capabilities'/,
+    /stringDescriptor\('schemaRevision', 'schemaRevision'\)/,
+    /stringDescriptor\('runtimeId', 'runtimeId'\)/,
+    /stringDescriptor\('capabilities', 'capabilities'\)/,
   ]) {
     assert.match(snapshotAbiSource, ownedLiteral);
     assert.doesNotMatch(snapshotSource, ownedLiteral);

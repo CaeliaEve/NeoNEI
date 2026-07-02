@@ -101,8 +101,8 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(currentRuntimeSpecialDataSource.includes("from './forestry-genetics.service'"), true);
   assert.equal(currentRuntimeSpecialDataSource.includes("from './multiblocks.service'"), true);
   assert.equal(currentRuntimeSettingsSource.includes('CURRENT_RUNTIME_SETTINGS_STATIC'), true);
-  assert.equal(currentRuntimeSettingsAbiSource.includes("allowDomGridFallback: false"), true);
-  assert.equal(currentRuntimeSettingsAbiSource.includes("allowPerItemImageHotLoad: false"), true);
+  assert.equal(currentRuntimeSettingsAbiSource.includes("settingDescriptor('allowDomGridFallback', false)"), true);
+  assert.equal(currentRuntimeSettingsAbiSource.includes("settingDescriptor('allowPerItemImageHotLoad', false)"), true);
   assert.equal(currentRuntimeSettingsAbiSource.includes('NEONEI_DEBUG_PANELS'), true);
   assert.doesNotMatch(routeSource, /process\.env\.NEONEI_DEBUG_PANELS/);
 });
@@ -287,7 +287,7 @@ test('current API responses are path portable and do not advertise machine roots
   assert.match(currentRuntimeApiSource, /runtimeAssetBaseUrl:\s*buildPinnedRuntimeAssetBaseUrl\(meta\.runtimeId\)/);
   assert.doesNotMatch(currentRuntimeSettingsSource, /assetBaseUrl:\s*['"](?:[A-Za-z]:|\\\\|\/runtime\/)/);
   assert.match(currentRuntimeSettingsSource, /CURRENT_RUNTIME_SETTINGS_STATIC/);
-  assert.match(currentRuntimeSettingsAbiSource, /assetBaseUrl:\s*'\/api\/runtime\/current\/asset\/'/);
+  assert.match(currentRuntimeSettingsAbiSource, /settingDescriptor\('assetBaseUrl', '\/api\/runtime\/current\/asset\/'\)/);
 });
 
 test('recipe page API exposes low-frequency page details without browser hot-path ownership', () => {
