@@ -43,7 +43,7 @@ function readUiTemplatePayloadHeader(filePath) {
   if (pack.schema !== 'neonei/ui-template-pack/current') {
     throw new Error(`UI template binary pack schema mismatch: ${pack.schema}`);
   }
-  if (pack.bytes.length < offset + 48) {
+  if (pack.bytes.length < offset + 56) {
     throw new Error(`truncated UI template payload header: ${filePath}`);
   }
   const magic = pack.bytes.subarray(offset, offset + 8).toString('utf8');
@@ -54,12 +54,14 @@ function readUiTemplatePayloadHeader(filePath) {
     templateCount: pack.bytes.readUInt32LE(offset + 12),
     slotCount: pack.bytes.readUInt32LE(offset + 16),
     textOverlayCount: pack.bytes.readUInt32LE(offset + 20),
-    hotspotCount: pack.bytes.readUInt32LE(offset + 24),
-    viewportCount: pack.bytes.readUInt32LE(offset + 28),
-    templateStride: pack.bytes.readUInt32LE(offset + 32),
-    slotStride: pack.bytes.readUInt32LE(offset + 36),
-    textStride: pack.bytes.readUInt32LE(offset + 40),
-    rectStride: pack.bytes.readUInt32LE(offset + 44),
+    dynamicPrimitiveCount: pack.bytes.readUInt32LE(offset + 24),
+    hotspotCount: pack.bytes.readUInt32LE(offset + 28),
+    viewportCount: pack.bytes.readUInt32LE(offset + 32),
+    templateStride: pack.bytes.readUInt32LE(offset + 36),
+    slotStride: pack.bytes.readUInt32LE(offset + 40),
+    textStride: pack.bytes.readUInt32LE(offset + 44),
+    primitiveStride: pack.bytes.readUInt32LE(offset + 48),
+    rectStride: pack.bytes.readUInt32LE(offset + 52),
     payloadBytes: pack.payloadLength,
   };
 }
@@ -195,8 +197,8 @@ if (uiTemplateHeader) {
   if (uiTemplateHeader.magic !== 'NEIUIT1\0') {
     fail(failures, 'UI_TEMPLATE_PACK_MAGIC_MISMATCH', 'UI template pack has wrong native magic', { magic: uiTemplateHeader.magic });
   }
-  if (uiTemplateHeader.version !== 8 || uiTemplateHeader.templateStride !== 23 || uiTemplateHeader.slotStride !== 12 || uiTemplateHeader.textStride !== 7 || uiTemplateHeader.rectStride !== 15) {
-    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V8_TEMPLATE_BACKGROUND_ABI', 'UI template pack is not the v8 template-background ABI native format', uiTemplateHeader);
+  if (uiTemplateHeader.version !== 9 || uiTemplateHeader.templateStride !== 25 || uiTemplateHeader.slotStride !== 12 || uiTemplateHeader.textStride !== 7 || uiTemplateHeader.primitiveStride !== 13 || uiTemplateHeader.rectStride !== 15) {
+    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V9_TEMPLATE_PRIMITIVE_ABI', 'UI template pack is not the v9 template-primitive ABI native format', uiTemplateHeader);
   }
 }
 
@@ -210,11 +212,18 @@ if (uiPackReport) {
   const backgroundContractFields = Array.isArray(uiPackFormat.backgroundContractFields)
     ? uiPackFormat.backgroundContractFields
     : [];
+  const templateDynamicPrimitiveFields = Array.isArray(uiPackFormat.templateDynamicPrimitiveFields)
+    ? uiPackFormat.templateDynamicPrimitiveFields
+    : [];
+  const dynamicPrimitiveGeometryFields = Array.isArray(uiPackFormat.dynamicPrimitiveGeometryFields)
+    ? uiPackFormat.dynamicPrimitiveGeometryFields
+    : [];
   if (
-    uiPackFormat.templatePackVersion !== 8
-    || uiPackFormat.templateStride !== 23
+    uiPackFormat.templatePackVersion !== 9
+    || uiPackFormat.templateStride !== 25
     || uiPackFormat.slotStride !== 12
     || uiPackFormat.textStride !== 7
+    || uiPackFormat.primitiveStride !== 13
     || uiPackFormat.rectStride !== 15
     || uiPackFormat.legacyRectActionFields !== false
     || !surfaceContractFields.includes('coordinateSpace')
@@ -232,9 +241,14 @@ if (uiPackReport) {
     || !backgroundContractFields.includes('texture')
     || !backgroundContractFields.includes('recipeBackgroundOffset')
     || !backgroundContractFields.includes('recipeBackgroundSize')
+    || !templateDynamicPrimitiveFields.includes('dynamicPrimitives')
+    || !dynamicPrimitiveGeometryFields.includes('kind')
+    || !dynamicPrimitiveGeometryFields.includes('orientation')
+    || !dynamicPrimitiveGeometryFields.includes('coordinateSpace')
+    || !dynamicPrimitiveGeometryFields.includes('anchor')
     || uiPackFormat.templateBackgroundField !== 'nativeBackground'
   ) {
-    fail(failures, 'UI_PACK_REPORT_MISSING_V8_TEMPLATE_BACKGROUND_ABI', 'UI pack report does not declare v8 template-background ABI capability', { format: uiPackFormat });
+    fail(failures, 'UI_PACK_REPORT_MISSING_V9_TEMPLATE_PRIMITIVE_ABI', 'UI pack report does not declare v9 template-primitive ABI capability', { format: uiPackFormat });
   }
 }
 

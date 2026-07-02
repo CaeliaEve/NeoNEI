@@ -25,6 +25,22 @@ export interface UiTemplateCatalogTextOverlay {
   height: number;
 }
 
+export interface UiTemplateCatalogDynamicPrimitive {
+  kind: string;
+  role: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  coordinateSpace: string;
+  anchor: string;
+  orientation: string;
+  source: string;
+  trackColor: string;
+  fillColor: string;
+  borderColor: string;
+}
+
 export interface UiTemplateCatalogTemplate {
   templateKey: string;
   templateSignature: string;
@@ -42,6 +58,7 @@ export interface UiTemplateCatalogTemplate {
   handlerClasses: string[];
   modIds: string[];
   slots: UiTemplateCatalogSlot[];
+  dynamicPrimitives: UiTemplateCatalogDynamicPrimitive[];
   textOverlays: UiTemplateCatalogTextOverlay[];
 }
 
@@ -51,6 +68,7 @@ export interface UiTemplateCatalogSummary {
   familyCount: number;
   layoutKindCount: number;
   slotCount: number;
+  primitiveCount: number;
   overlayCount: number;
 }
 
@@ -136,6 +154,28 @@ function normalizeTextOverlay(value: unknown): UiTemplateCatalogTextOverlay | nu
   };
 }
 
+function normalizeDynamicPrimitive(value: unknown): UiTemplateCatalogDynamicPrimitive | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  return {
+    kind: asString(record.kind),
+    role: asString(record.role),
+    x: asNumber(record.x),
+    y: asNumber(record.y),
+    width: asNumber(record.width),
+    height: asNumber(record.height),
+    coordinateSpace: asString(record.coordinateSpace),
+    anchor: asString(record.anchor),
+    orientation: asString(record.orientation),
+    source: asString(record.source),
+    trackColor: asString(record.trackColor),
+    fillColor: asString(record.fillColor),
+    borderColor: asString(record.borderColor),
+  };
+}
+
 function normalizeTemplate(value: unknown): UiTemplateCatalogTemplate | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     return null;
@@ -146,6 +186,9 @@ function normalizeTemplate(value: unknown): UiTemplateCatalogTemplate | null {
     : [];
   const textOverlays = Array.isArray(record.textOverlays)
     ? record.textOverlays.map(normalizeTextOverlay).filter((entry): entry is UiTemplateCatalogTextOverlay => Boolean(entry))
+    : [];
+  const dynamicPrimitives = Array.isArray(record.dynamicPrimitives)
+    ? record.dynamicPrimitives.map(normalizeDynamicPrimitive).filter((entry): entry is UiTemplateCatalogDynamicPrimitive => Boolean(entry))
     : [];
 
   return {
@@ -165,6 +208,7 @@ function normalizeTemplate(value: unknown): UiTemplateCatalogTemplate | null {
     handlerClasses: normalizeStringList(record.handlerClasses),
     modIds: normalizeStringList(record.modIds),
     slots,
+    dynamicPrimitives,
     textOverlays,
   };
 }
@@ -200,6 +244,7 @@ function normalizeReport(value: unknown): UiTemplateCatalogReport {
       familyCount: asNumber(summaryRecord.familyCount),
       layoutKindCount: asNumber(summaryRecord.layoutKindCount),
       slotCount: asNumber(summaryRecord.slotCount),
+      primitiveCount: asNumber(summaryRecord.primitiveCount),
       overlayCount: asNumber(summaryRecord.overlayCount),
     },
     templates,

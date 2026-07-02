@@ -45,9 +45,11 @@ test('NativeNeiRecipeCanvas consumes explicit GT dynamic primitives as WebGL spr
   const builderSource = read('src/services/nativeUiRenderCommandBuilder.ts');
 
   assert.equal(canvasSource.includes('dynamicPrimitives'), true);
-  assert.equal(registrySource.includes('append(layout?.progressBars, "progress-bar")'), true);
-  assert.equal(registrySource.includes('append(layout?.fluidBars, "fluid-bar")'), true);
-  assert.equal(registrySource.includes('append(layout?.energyBars, "energy-bar")'), true);
+  assert.equal(registrySource.includes('append(layout?.dynamicPrimitives, "")'), true);
+  assert.equal(registrySource.includes('append(layout?.progressBars, "progress-bar")'), false);
+  assert.equal(registrySource.includes('append(layout?.fluidBars, "fluid-bar")'), false);
+  assert.equal(registrySource.includes('append(layout?.energyBars, "energy-bar")'), false);
+  assert.equal(registrySource.includes('dynamicPrimitives: template.dynamicPrimitives'), true);
   assert.equal(pipelineSource.includes('registerDynamicPrimitiveTextures'), true);
   assert.equal(builderSource.includes('pushNativeUiDynamicPrimitiveCommands'), true);
   assert.equal(builderSource.includes('pushSolidSpriteRect'), true);
@@ -71,7 +73,9 @@ test('NativeNeiRecipeCanvas preserves captured hotspots and viewport regions in 
   assert.equal(canvasSource.includes('nativeUiRectStyle'), true);
   assert.equal(canvasSource.includes('nativeUiRectLabel'), true);
   assert.equal(uiPackRuntimeSource.includes('export interface UiPackRect'), true);
-  assert.equal(uiPackRuntimeSource.includes('const UI_TEMPLATE_PAYLOAD_VERSION = 8'), true);
+  assert.equal(uiPackRuntimeSource.includes('const UI_TEMPLATE_PAYLOAD_VERSION = 9'), true);
+  assert.equal(uiPackRuntimeSource.includes('export interface UiPackDynamicPrimitive'), true);
+  assert.equal(uiPackRuntimeSource.includes('dynamicPrimitiveCount'), true);
   assert.equal(uiPackRuntimeSource.includes('hotspotCount'), true);
   assert.equal(uiPackRuntimeSource.includes('viewportCount'), true);
   assert.equal(uiPackRuntimeSource.includes('rectStride'), true);
@@ -83,10 +87,10 @@ test('NativeNeiRecipeCanvas preserves captured hotspots and viewport regions in 
   assert.equal(canvasSource.includes('function handleHotspotClick'), true);
   assert.equal(canvasSource.includes('nativeUiHotspotItemId(rect)'), true);
   assert.equal(canvasSource.includes('@click="handleHotspotClick(hotspot)"'), true);
-  assert.equal(productionManifestGateSource.includes('UI_TEMPLATE_PACK_FORMAT_NOT_V8_TEMPLATE_BACKGROUND_ABI'), true);
-  assert.equal(productionManifestGateSource.includes('UI_PACK_REPORT_MISSING_V8_TEMPLATE_BACKGROUND_ABI'), true);
-  assert.equal(nativeUiLayoutGateSource.includes('rust UI pack report does not declare v8 template-background ABI'), true);
-  assert.equal(nativeUiLayoutGateSource.includes('rust UI template binary pack is not v8 template-background ABI format'), true);
+  assert.equal(productionManifestGateSource.includes('UI_TEMPLATE_PACK_FORMAT_NOT_V9_TEMPLATE_PRIMITIVE_ABI'), true);
+  assert.equal(productionManifestGateSource.includes('UI_PACK_REPORT_MISSING_V9_TEMPLATE_PRIMITIVE_ABI'), true);
+  assert.equal(nativeUiLayoutGateSource.includes('rust UI pack report does not declare v9 template-primitive ABI'), true);
+  assert.equal(nativeUiLayoutGateSource.includes('rust UI template binary pack is not v9 template-primitive ABI format'), true);
 });
 
 test('NativeNeiRecipeCanvas consumes explicit Native UI background ABI before scaling', () => {

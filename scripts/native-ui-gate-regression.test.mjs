@@ -37,19 +37,23 @@ function wrapNativePack(schema, payload) {
   ]);
 }
 
-function writeUiTemplatePackV8(path) {
+function writeUiTemplatePackV9(path) {
+  const primitiveRow = Buffer.concat(Array.from({ length: 13 }, () => u32(0)));
   const payload = Buffer.concat([
     Buffer.from('NEIUIT1\0', 'utf8'),
-    u32(8), // template pack version with template-background ABI field
+    u32(9), // template pack version with template dynamic primitive ABI
     u32(0), // templateCount
     u32(0), // slotCount
     u32(0), // textCount
+    u32(1), // dynamicPrimitiveCount
     u32(0), // hotspotCount
     u32(0), // viewportCount
-    u32(23), // templateStride
+    u32(25), // templateStride
     u32(12), // slotStride
     u32(7), // textStride
+    u32(13), // primitiveStride
     u32(15), // rectStride
+    primitiveRow,
   ]);
   writeFileSync(path, wrapNativePack('neonei/ui-template-pack/current', payload));
 }
@@ -75,7 +79,7 @@ function createDistFixture() {
   for (const name of requiredBinaryFiles) {
     writeFileSync(join(rustDir, name), Buffer.from([0]));
   }
-  writeUiTemplatePackV8(join(uiPackDir, 'ui_templates.bin'));
+  writeUiTemplatePackV9(join(uiPackDir, 'ui_templates.bin'));
   writeFileSync(join(uiPackDir, 'ui_bindings.bin'), Buffer.from([0]));
   writeFileSync(join(uiPackDir, 'ui_strings.bin'), Buffer.from([0]));
   writeJson(join(uiPackDir, 'ui_assets.manifest.json'), { schemaVersion: 'neonei/ui-assets-manifest/current', assets: [] });
@@ -87,6 +91,7 @@ function createDistFixture() {
       bindingCount: 1,
       boundRecipeCount: 1,
       unboundRecipeCount: 0,
+      dynamicPrimitiveCount: 1,
       hotspotCount: 0,
       viewportCount: 0,
       hotspotInteractionCount: 0,
@@ -94,15 +99,18 @@ function createDistFixture() {
     },
     format: {
       templatePackMagic: 'NEIUIT1\\u0000',
-      templatePackVersion: 8,
-      templateStride: 23,
+      templatePackVersion: 9,
+      templateStride: 25,
       slotStride: 12,
       textStride: 7,
+      primitiveStride: 13,
       rectStride: 15,
       legacyRectActionFields: false,
       legacyRectActionFieldNames: [],
       surfaceContractFields: ['coordinateSpace', 'scaleMode', 'anchor'],
       slotGeometryFields: ['coordinateSpace', 'anchor', 'slotWidth', 'slotHeight', 'pitchX', 'pitchY'],
+      templateDynamicPrimitiveFields: ['dynamicPrimitives'],
+      dynamicPrimitiveGeometryFields: ['kind', 'role', 'x', 'y', 'width', 'height', 'coordinateSpace', 'anchor', 'orientation', 'source', 'trackColor', 'fillColor', 'borderColor'],
       rectGeometryFields: ['coordinateSpace', 'anchor'],
       interactionContractFields: ['interactionKind', 'interactionTargetKind', 'interactionTargetId', 'interactionPayloadSchema'],
       backgroundContractFields: ['coordinateSpace', 'scaleMode', 'anchor', 'status', 'kind', 'scaling', 'texture', 'recipeBackgroundOffset', 'recipeBackgroundSize'],
@@ -120,12 +128,10 @@ function createDistFixture() {
       handlerLayoutsWithHotspots: 0,
       handlerLayoutsWithViewports: 0,
       gregtechHandlerLayouts: 1,
-      gregtechHandlerLayoutsWithProgressBars: 1,
       recipeUiPayloads: 1,
       gregtechRecipeUiPayloads: 1,
       gregtechRecipeUiPayloadsWithBackgroundRegions: 1,
       gregtechRecipeUiPayloadsWithNativeBackgrounds: 1,
-      gregtechRecipeUiPayloadsWithProgressBars: 1,
       gregtechRecipeUiPayloadsWithHotspots: 0,
       gregtechRecipeUiPayloadsWithViewports: 0,
     },
@@ -156,7 +162,6 @@ function createDistFixture() {
         recipeBackgroundOffset: { x: 3, y: 3 },
         recipeBackgroundSize: { width: 170, height: 84 },
       },
-      progressBars: [{ x: 78, y: 24, width: 20, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
     }],
   });
   writeJson(join(recipeDir, 'ui-payload-index.json'), {
@@ -187,7 +192,6 @@ function createDistFixture() {
           recipeBackgroundOffset: { x: 3, y: 3 },
           recipeBackgroundSize: { width: 170, height: 84 },
         },
-        progressBars: [{ x: 78, y: 24, width: 20, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
       },
     }],
   });
@@ -256,16 +260,18 @@ function runGate(script, distDataDir) {
   return JSON.parse(result.stdout);
 }
 
-test('native UI production gates require UI template pack v8 template-background ABI', () => {
+test('native UI production gates require UI template pack v9 template-primitive ABI', () => {
   const distDataDir = createDistFixture();
   try {
     const manifestGate = runGate('scripts/validate-rust-production-manifest.mjs', distDataDir);
-    assert.equal(manifestGate.uiTemplatePack.version, 8);
+    assert.equal(manifestGate.uiTemplatePack.version, 9);
+    assert.equal(manifestGate.uiTemplatePack.primitiveStride, 13);
     assert.equal(manifestGate.uiTemplatePack.rectStride, 15);
     assert.equal(manifestGate.uiPackReport.format.legacyRectActionFields, false);
 
     const layoutGate = runGate('scripts/validate-native-ui-layouts.mjs', distDataDir);
-    assert.equal(layoutGate.uiPack.templateHeader.version, 8);
+    assert.equal(layoutGate.uiPack.templateHeader.version, 9);
+    assert.equal(layoutGate.uiPack.templateHeader.primitiveStride, 13);
     assert.equal(layoutGate.uiPack.templateHeader.rectStride, 15);
     assert.equal(layoutGate.report.backgroundStatus, 'captured');
     assert.equal(layoutGate.report.counts.gregtechRecipeUiPayloadsWithNativeBackgrounds, 1);

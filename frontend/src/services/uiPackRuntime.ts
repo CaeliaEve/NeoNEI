@@ -41,6 +41,22 @@ export interface UiPackTextOverlay {
   anchor: string;
 }
 
+export interface UiPackDynamicPrimitive {
+  kind: string;
+  role: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  coordinateSpace: string;
+  anchor: string;
+  orientation: "horizontal" | "vertical";
+  source: string;
+  trackColor: string;
+  fillColor: string;
+  borderColor: string;
+}
+
 export interface UiPackRect {
   id: string;
   kind: string;
@@ -77,6 +93,7 @@ export interface UiPackTemplate {
   slotCount: number;
   slots: UiPackSlot[];
   textOverlays: UiPackTextOverlay[];
+  dynamicPrimitives: UiPackDynamicPrimitive[];
   hotspots: UiPackRect[];
   viewports: UiPackRect[];
   nativeBackground: Record<string, unknown>;
@@ -104,6 +121,7 @@ export interface UiPackRuntimeSummary {
   stringCount: number;
   slotCount: number;
   textOverlayCount: number;
+  dynamicPrimitiveCount: number;
   hotspotCount: number;
   viewportCount: number;
   assetCount: number;
@@ -139,12 +157,13 @@ const UI_STRING_PACK_MAGIC = "NEIUIS1\0";
 const UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIT1_NUL";
 const UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIB1_NUL";
 const UI_STRING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIS1_NUL";
-const UI_TEMPLATE_PAYLOAD_VERSION = 8;
+const UI_TEMPLATE_PAYLOAD_VERSION = 9;
 const UI_BINDING_PAYLOAD_VERSION = 1;
 const UI_STRING_PAYLOAD_VERSION = 1;
-const UI_TEMPLATE_ROW_STRIDE_U32 = 23;
+const UI_TEMPLATE_ROW_STRIDE_U32 = 25;
 const UI_SLOT_ROW_STRIDE_U32 = 12;
 const UI_TEXT_ROW_STRIDE_U32 = 7;
+const UI_PRIMITIVE_ROW_STRIDE_U32 = 13;
 const UI_RECT_ROW_STRIDE_U32 = 15;
 const UI_BINDING_ROW_STRIDE_U32 = 11;
 
@@ -387,27 +406,31 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
   const templateCount = readU32(view, 12);
   const slotCount = readU32(view, 16);
   const textCount = readU32(view, 20);
-  const hotspotCount = readU32(view, 24);
-  const viewportCount = readU32(view, 28);
-  const templateStride = readU32(view, 32);
-  const slotStride = readU32(view, 36);
-  const textStride = readU32(view, 40);
-  const rectStride = readU32(view, 44);
+  const primitiveCount = readU32(view, 24);
+  const hotspotCount = readU32(view, 28);
+  const viewportCount = readU32(view, 32);
+  const templateStride = readU32(view, 36);
+  const slotStride = readU32(view, 40);
+  const textStride = readU32(view, 44);
+  const primitiveStride = readU32(view, 48);
+  const rectStride = readU32(view, 52);
   if (
     templateStride !== UI_TEMPLATE_ROW_STRIDE_U32
     || slotStride !== UI_SLOT_ROW_STRIDE_U32
     || textStride !== UI_TEXT_ROW_STRIDE_U32
+    || primitiveStride !== UI_PRIMITIVE_ROW_STRIDE_U32
     || rectStride !== UI_RECT_ROW_STRIDE_U32
   ) {
-    throw new Error(`UI template pack has unexpected strides: ${templateStride}/${slotStride}/${textStride}/${rectStride}`);
+    throw new Error(`UI template pack has unexpected strides: ${templateStride}/${slotStride}/${textStride}/${primitiveStride}/${rectStride}`);
   }
   const templateBytes = checkedTableBytes(templateCount, templateStride, "UI template");
   const slotBytes = checkedTableBytes(slotCount, slotStride, "UI slot");
   const textBytes = checkedTableBytes(textCount, textStride, "UI text");
+  const primitiveBytes = checkedTableBytes(primitiveCount, primitiveStride, "UI dynamic primitive");
   const hotspotBytes = checkedTableBytes(hotspotCount, rectStride, "UI hotspot");
   const viewportBytes = checkedTableBytes(viewportCount, rectStride, "UI viewport");
-  let cursor = 48;
-  assertPayloadLength(payloadBuffer, cursor + templateBytes + slotBytes + textBytes + hotspotBytes + viewportBytes, "UI template pack");
+  let cursor = 56;
+  assertPayloadLength(payloadBuffer, cursor + templateBytes + slotBytes + textBytes + primitiveBytes + hotspotBytes + viewportBytes, "UI template pack");
   const templateRows: Array<{
     templateKey: string;
     templateSignature: string;
@@ -432,6 +455,8 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     scaleMode: string;
     anchor: string;
     nativeBackground: JsonRecord;
+    primitiveStart: number;
+    primitiveCount: number;
   }> = [];
   for (let index = 0; index < templateCount; index += 1) {
     const rowOffset = cursor + index * templateStride * 4;
@@ -462,6 +487,8 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
         resolveString(strings, readU32(view, rowOffset + 88)),
         resolveString(strings, readU32(view, rowOffset + 0)),
       ),
+      primitiveStart: readU32(view, rowOffset + 92),
+      primitiveCount: readU32(view, rowOffset + 96),
     });
   }
   cursor += templateBytes;
@@ -498,6 +525,30 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     });
   }
   cursor += textBytes;
+  const primitives: UiPackDynamicPrimitive[] = [];
+  for (let index = 0; index < primitiveCount; index += 1) {
+    const rowOffset = cursor + index * primitiveStride * 4;
+    const orientation = resolveString(strings, readU32(view, rowOffset + 32));
+    if (orientation !== "horizontal" && orientation !== "vertical") {
+      throw new Error(`UI dynamic primitive has invalid orientation: ${orientation || "<missing>"}`);
+    }
+    primitives.push({
+      kind: resolveString(strings, readU32(view, rowOffset + 0)),
+      role: resolveString(strings, readU32(view, rowOffset + 4)),
+      x: readI32(view, rowOffset + 8),
+      y: readI32(view, rowOffset + 12),
+      width: readU32(view, rowOffset + 16),
+      height: readU32(view, rowOffset + 20),
+      coordinateSpace: resolveString(strings, readU32(view, rowOffset + 24)),
+      anchor: resolveString(strings, readU32(view, rowOffset + 28)),
+      orientation,
+      source: resolveString(strings, readU32(view, rowOffset + 36)),
+      trackColor: resolveString(strings, readU32(view, rowOffset + 40)),
+      fillColor: resolveString(strings, readU32(view, rowOffset + 44)),
+      borderColor: resolveString(strings, readU32(view, rowOffset + 48)),
+    });
+  }
+  cursor += primitiveBytes;
   const readRect = (rowOffset: number): UiPackRect => ({
     id: resolveString(strings, readU32(view, rowOffset + 0)),
     kind: resolveString(strings, readU32(view, rowOffset + 4)),
@@ -544,6 +595,7 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     slotCount: templateRow.slotCount,
     slots: sliceRows("UI template slots", slots, templateRow.slotStart, templateRow.slotCount),
     textOverlays: sliceRows("UI template text overlays", overlays, templateRow.textStart, templateRow.textCount),
+    dynamicPrimitives: sliceRows("UI template dynamic primitives", primitives, templateRow.primitiveStart, templateRow.primitiveCount),
     hotspots: sliceRows("UI template hotspots", hotspots, templateRow.hotspotStart, templateRow.hotspotCount),
     viewports: sliceRows("UI template viewports", viewports, templateRow.viewportStart, templateRow.viewportCount),
     nativeBackground: templateRow.nativeBackground,
@@ -849,6 +901,7 @@ async function loadUiPackRuntimeInternal(normalizedManifestUrl: string): Promise
       stringCount: strings.length,
       slotCount: templates.reduce((total, template) => total + template.slots.length, 0),
       textOverlayCount: templates.reduce((total, template) => total + template.textOverlays.length, 0),
+      dynamicPrimitiveCount: templates.reduce((total, template) => total + template.dynamicPrimitives.length, 0),
       hotspotCount: templates.reduce((total, template) => total + template.hotspots.length, 0),
       viewportCount: templates.reduce((total, template) => total + template.viewports.length, 0),
       assetCount: new Set(templates.map((template) => template.imageResource).filter(Boolean)).size,
@@ -874,6 +927,7 @@ function createErrorRuntime(manifestUrl: string, error: unknown): UiPackRuntime 
       stringCount: 0,
       slotCount: 0,
       textOverlayCount: 0,
+      dynamicPrimitiveCount: 0,
       hotspotCount: 0,
       viewportCount: 0,
       assetCount: 0,

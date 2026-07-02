@@ -73,6 +73,7 @@ function runtimeFixture(template, binding) {
       stringCount: 0,
       slotCount: template.slots.length,
       textOverlayCount: template.textOverlays.length,
+      dynamicPrimitiveCount: template.dynamicPrimitives?.length ?? 0,
       hotspotCount: template.hotspots.length,
       viewportCount: template.viewports.length,
       assetCount: 1,
@@ -80,7 +81,7 @@ function runtimeFixture(template, binding) {
   };
 }
 
-test('native UI registry resolves UI-pack template authority with inline dynamic overlays', () => {
+test('native UI registry resolves UI-pack template authority with template dynamic primitives', () => {
   const template = {
     templateKey: 'gt-furnace@default',
     templateSignature: 'sig-template',
@@ -113,6 +114,7 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
       pitchY: 18,
     }],
     textOverlays: [{ text: 'EU/t', x: 80, y: 10, width: 24, height: 8, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    dynamicPrimitives: [{ kind: 'progress-bar', role: 'template-progress', x: 78, y: 24, width: 20, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left', orientation: 'horizontal', source: 'template-pack-v9', trackColor: '', fillColor: '', borderColor: '' }],
     hotspots: [{ id: 'template-hotspot', kind: 'info', role: 'nei-info', label: 'Template', tooltip: '', ...noInteraction(), x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
     viewports: [{ id: 'template-viewport', kind: 'viewport', role: 'progress', label: 'Progress', tooltip: '', ...noInteraction(), x: 70, y: 30, width: 22, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
   };
@@ -135,7 +137,7 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
     anchor: 'top-left',
     imageRegion: { x: 8, y: 9, width: 176, height: 90 },
     nativeBackground: gtBackground({ assetRef: 'rust/ui-assets/inline_background_should_not_win.png' }),
-    progressBars: [{ role: 'progress', x: 72, y: 34, width: 24, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left', fill: 0.5 }],
+    dynamicPrimitives: [{ kind: 'progress-bar', role: 'inline-progress-should-not-win', x: 72, y: 34, width: 24, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left', fill: 0.5 }],
     hotspots: [{ id: 'inline-hotspot', kind: 'item-click', role: 'output', label: 'Output', tooltip: '', ...itemClickInteraction('minecraft:iron_ingot'), x: 115, y: 24, width: 18, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
   });
 
@@ -157,6 +159,7 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
   assert.equal(surface.viewports[0]?.id, 'template-viewport');
   assert.equal(surface.dynamicPrimitives.length, 1);
   assert.equal(surface.dynamicPrimitives[0]?.kind, 'progress-bar');
+  assert.equal(surface.dynamicPrimitives[0]?.role, 'template-progress');
   assert.equal(surface.dynamicPrimitives[0]?.coordinateSpace, 'nei_pixels');
   assert.equal(surface.hotspots[0]?.coordinateSpace, 'nei_pixels');
   assert.equal(surface.textOverlays[0]?.anchor, 'top-left');
@@ -220,6 +223,7 @@ test('native UI registry rejects incomplete background ABI on resolved surfaces'
     nativeBackground: { kind: 'gt-modular-ui', status: 'captured', assetRef: 'ui/captured.png' },
     slots: [],
     textOverlays: [],
+    dynamicPrimitives: [],
     hotspots: [],
     viewports: [],
   };
@@ -316,9 +320,11 @@ test('native UI registry owns component runtime layout contract', () => {
   assert.match(registrySource, /NativeUiSurfaceSource = "ui-pack-template" \| "missing"/);
 
   assert.deepEqual(collectNativeUiDynamicPrimitives({
-    progressBars: [{ x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
-    fluidBars: [{ x: 2, y: 3, width: 4, height: 5, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
-    energyBars: [{ x: 3, y: 4, width: 5, height: 6, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    dynamicPrimitives: [
+      { kind: 'progress-bar', x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' },
+      { kind: 'fluid-bar', x: 2, y: 3, width: 4, height: 5, coordinateSpace: 'nei_pixels', anchor: 'top-left' },
+      { kind: 'energy-bar', x: 3, y: 4, width: 5, height: 6, coordinateSpace: 'nei_pixels', anchor: 'top-left' },
+    ],
   }).map((row) => row.kind), [
     'progress-bar',
     'fluid-bar',
@@ -351,6 +357,7 @@ test('native UI registry fails closed on rect-like geometry ABI violations', () 
     }),
     slots: [],
     textOverlays: [],
+    dynamicPrimitives: [],
     hotspots: [{ id: 'bad-hotspot', kind: 'info', role: 'bad', label: 'Bad', tooltip: '', ...noInteraction(), x: 1, y: 2, width: 3, height: 4, anchor: 'top-left' }],
     viewports: [],
   };
@@ -374,6 +381,6 @@ test('native UI registry fails closed on rect-like geometry ABI violations', () 
   }), /missing required Native UI geometry field: coordinateSpace/);
 
   assert.throws(() => collectNativeUiDynamicPrimitives({
-    progressBars: [{ x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'screen_pixels', anchor: 'top-left' }],
+    dynamicPrimitives: [{ kind: 'progress-bar', x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'screen_pixels', anchor: 'top-left' }],
   }), /unsupported Native UI coordinateSpace/);
 });

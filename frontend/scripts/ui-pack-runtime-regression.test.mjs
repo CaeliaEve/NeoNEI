@@ -74,15 +74,17 @@ function encodeTemplatePack(strings) {
   const index = new Map(strings.map((value, idx) => [value, idx]));
   const bytes = [];
   bytes.push(...new TextEncoder().encode('NEIUIT1\0'));
-  pushU32(bytes, 8);
+  pushU32(bytes, 9);
   pushU32(bytes, 1);
   pushU32(bytes, 2);
   pushU32(bytes, 1);
+  pushU32(bytes, 1);
   pushU32(bytes, 0);
   pushU32(bytes, 0);
-  pushU32(bytes, 23);
+  pushU32(bytes, 25);
   pushU32(bytes, 12);
   pushU32(bytes, 7);
+  pushU32(bytes, 13);
   pushU32(bytes, 15);
   const row = [
     index.get('furnace@default') ?? 0,
@@ -108,6 +110,8 @@ function encodeTemplatePack(strings) {
     index.get('uniform-scale') ?? 0,
     index.get('top-left') ?? 0,
     index.get(nativeBackgroundJson()) ?? 0,
+    0,
+    1,
   ];
   row.forEach((value, idx) => {
     if (idx === 7) {
@@ -147,6 +151,19 @@ function encodeTemplatePack(strings) {
   pushU32(bytes, 8);
   pushU32(bytes, index.get('nei_pixels') ?? 0);
   pushU32(bytes, index.get('top-left') ?? 0);
+  pushU32(bytes, index.get('progress-bar') ?? 0);
+  pushU32(bytes, index.get('gt-progress') ?? 0);
+  pushI32(bytes, 78);
+  pushI32(bytes, 24);
+  pushU32(bytes, 20);
+  pushU32(bytes, 18);
+  pushU32(bytes, index.get('nei_pixels') ?? 0);
+  pushU32(bytes, index.get('top-left') ?? 0);
+  pushU32(bytes, index.get('horizontal') ?? 0);
+  pushU32(bytes, index.get('template-pack-v9') ?? 0);
+  pushU32(bytes, 0);
+  pushU32(bytes, 0);
+  pushU32(bytes, 0);
   return encodeBinaryPack('neonei/ui-template-pack/current', new Uint8Array(bytes).buffer);
 }
 
@@ -186,7 +203,7 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
       bytes: templatePack.byteLength,
       envelopeSchema: 'neonei/ui-template-pack/current',
       payloadMagic: 'NEIUIT1_NUL',
-      version: 8,
+      version: 9,
       sections: [],
     },
     {
@@ -311,6 +328,10 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
+    'progress-bar',
+    'gt-progress',
+    'horizontal',
+    'template-pack-v9',
   ];
   const templatePack = encodeTemplatePack(strings);
   const bindingPack = encodeBindingPack(strings);
@@ -356,6 +377,7 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     assert.equal(runtime.summary.bindingCount, 1);
     assert.equal(runtime.summary.boundRecipeCount, 1);
     assert.equal(runtime.summary.stringCount, strings.length);
+    assert.equal(runtime.summary.dynamicPrimitiveCount, 1);
     assert.equal(runtime.templatesByKey.get('furnace@default')?.layoutKind, 'furnace');
     assert.equal(runtime.templatesByKey.get('furnace@default')?.nativeBackground?.assetRef, 'assets/ui-backgrounds/gregtech/nei_single_recipe.png');
     assert.deepEqual(runtime.templatesByKey.get('furnace@default')?.slots[0], {
@@ -380,6 +402,21 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
       height: 8,
       coordinateSpace: 'nei_pixels',
       anchor: 'top-left',
+    });
+    assert.deepEqual(runtime.templatesByKey.get('furnace@default')?.dynamicPrimitives[0], {
+      kind: 'progress-bar',
+      role: 'gt-progress',
+      x: 78,
+      y: 24,
+      width: 20,
+      height: 18,
+      coordinateSpace: 'nei_pixels',
+      anchor: 'top-left',
+      orientation: 'horizontal',
+      source: 'template-pack-v9',
+      trackColor: '',
+      fillColor: '',
+      borderColor: '',
     });
     assert.equal(runtime.bindingsByRecipeId.get('r1')?.templateKey, 'furnace@default');
   } finally {

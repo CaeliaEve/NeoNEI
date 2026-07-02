@@ -1,5 +1,6 @@
 import type {
   UiPackBinding,
+  UiPackDynamicPrimitive,
   UiPackRect,
   UiPackRuntime,
   UiPackSlot,
@@ -34,7 +35,7 @@ export interface NativeUiImageRegion {
   height?: number;
 }
 
-export interface NativeUiDynamicPrimitive {
+export interface NativeUiDynamicPrimitive extends Partial<UiPackDynamicPrimitive> {
   kind?: string;
   role?: string;
   x?: number;
@@ -50,6 +51,7 @@ export interface NativeUiDynamicPrimitive {
   trackColor?: string;
   fillColor?: string;
   borderColor?: string;
+  source?: string;
 }
 
 export interface NativeUiLayoutSurface {
@@ -64,9 +66,6 @@ export interface NativeUiLayoutSurface {
   slots?: NativeUiSlot[];
   textOverlays?: NativeUiTextOverlay[];
   dynamicPrimitives?: NativeUiDynamicPrimitive[];
-  progressBars?: NativeUiDynamicPrimitive[];
-  fluidBars?: NativeUiDynamicPrimitive[];
-  energyBars?: NativeUiDynamicPrimitive[];
   hotspots?: NativeUiRect[];
   viewports?: NativeUiRect[];
 }
@@ -202,6 +201,7 @@ function normalizeNativeUiDynamicPrimitive(
     trackColor: `${record.trackColor ?? ""}`.trim() || undefined,
     fillColor: `${record.fillColor ?? ""}`.trim() || undefined,
     borderColor: `${record.borderColor ?? ""}`.trim() || undefined,
+    source: `${record.source ?? ""}`.trim() || undefined,
   };
   const geometry = resolveNativeUiRectGeometry(
     record,
@@ -224,9 +224,6 @@ export function collectNativeUiDynamicPrimitives(layout: NativeUiLayoutSurface |
     });
   };
   append(layout?.dynamicPrimitives, "");
-  append(layout?.progressBars, "progress-bar");
-  append(layout?.fluidBars, "fluid-bar");
-  append(layout?.energyBars, "energy-bar");
   return primitives;
 }
 
@@ -255,10 +252,7 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
       nativeBackground: template.nativeBackground,
       slots: template.slots,
       textOverlays: template.textOverlays,
-      dynamicPrimitives: inlineLayout?.dynamicPrimitives,
-      progressBars: inlineLayout?.progressBars,
-      fluidBars: inlineLayout?.fluidBars,
-      energyBars: inlineLayout?.energyBars,
+      dynamicPrimitives: template.dynamicPrimitives,
       hotspots: template.hotspots,
       viewports: template.viewports,
     } satisfies NativeUiLayoutSurface
