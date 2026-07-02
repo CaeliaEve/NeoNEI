@@ -1,0 +1,55 @@
+import type { RequestHandler } from 'express';
+import {
+  getPublicApiIndex,
+  getRuntimeAdminDiagnostics,
+  getRuntimeAdminHealth,
+  getRuntimeOpenApiDocument,
+} from '../services/runtime-admin-control.service';
+import type { RuntimeAdminReconcileLabel } from '../services/runtime-admin-reconcile-control.service';
+import type {
+  RuntimeAdminControlEndpointKey,
+  RuntimeAdminIndexEndpointKey,
+} from './runtime-admin-endpoint-registry';
+import type {
+  RuntimeAdminControlRouterOptions,
+  RuntimeAdminIndexRoutesOptions,
+} from './runtime-admin-endpoint-types';
+import { sendRuntimeAdminReconcile } from './runtime-admin-reconcile-executor';
+import { sendRuntimeAdminJson, sendRuntimeAdminOpenApi } from './runtime-admin-transport';
+
+export function createRuntimeAdminIndexEndpointHandlers(
+  options: RuntimeAdminIndexRoutesOptions,
+): Readonly<Record<RuntimeAdminIndexEndpointKey, RequestHandler>> {
+  return Object.freeze({
+    health: (_req, res) => {
+      sendRuntimeAdminJson(res, getRuntimeAdminHealth(options.getAccelerationRuntimeSnapshot()));
+    },
+    'api-index': (_req, res) => {
+      sendRuntimeAdminJson(res, getPublicApiIndex());
+    },
+    openapi: (_req, res) => {
+      sendRuntimeAdminOpenApi(res, getRuntimeOpenApiDocument());
+    },
+  });
+}
+
+export function createRuntimeAdminControlEndpointHandlers<TManager>(
+  label: RuntimeAdminReconcileLabel,
+  options: RuntimeAdminControlRouterOptions<TManager>,
+): Readonly<Record<RuntimeAdminControlEndpointKey, RequestHandler>> {
+  const reconcileRuntime = Object.freeze({
+    getAccelerationRuntimeSnapshot: options.getAccelerationRuntimeSnapshot,
+    getRuntimeAccelerationDbManager: options.getRuntimeAccelerationDbManager,
+    reconcileAccelerationRuntime: options.reconcileAccelerationRuntime,
+    setAccelerationRuntimePhase: options.setAccelerationRuntimePhase,
+  });
+
+  return Object.freeze({
+    'runtime-diagnostics': (_req, res) => {
+      sendRuntimeAdminJson(res, getRuntimeAdminDiagnostics(options.getAccelerationRuntimeSnapshot()));
+    },
+    'acceleration-reconcile': (req, res) => {
+      sendRuntimeAdminReconcile(req, res, label, reconcileRuntime);
+    },
+  });
+}

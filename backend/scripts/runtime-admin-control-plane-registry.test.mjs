@@ -10,6 +10,8 @@ const controlPlaneSource = readFileSync(
   'utf8',
 );
 const runtimeAdminSource = readFileSync(resolve(root, 'src/routes/runtime-admin.routes.ts'), 'utf8');
+const runtimeAdminRegistrySource = readFileSync(resolve(root, 'src/routes/runtime-admin-endpoint-registry.ts'), 'utf8');
+const runtimeAdminHandlersSource = readFileSync(resolve(root, 'src/routes/runtime-admin-endpoint-handlers.ts'), 'utf8');
 const publishAdminSource = readFileSync(resolve(root, 'src/routes/publish-admin.routes.ts'), 'utf8');
 const transportSource = readFileSync(resolve(root, 'src/routes/runtime-admin-transport.ts'), 'utf8');
 
@@ -44,8 +46,31 @@ test('admin token enforcement is middleware-owned, not repeated per route', () =
   assert.doesNotMatch(publishAdminSource, /RuntimeAdminTokenGuard/);
   assert.match(publishAdminSource, /export function createPublishAdminRouter\(\): Router/);
   assert.match(runtimeAdminSource, /export function createRuntimeAdminControlRouter/);
-  assert.match(runtimeAdminSource, /router\.get\('\/runtime'/);
-  assert.match(runtimeAdminSource, /router\.post\('\/acceleration\/reconcile'/);
   assert.match(runtimeAdminSource, /export function registerRuntimeAdminIndexRoutes/);
   assert.doesNotMatch(runtimeAdminSource, /export function registerRuntimeAdminRoutes/);
+});
+
+test('runtime admin index and control endpoints are table-driven', () => {
+  assert.match(runtimeAdminRegistrySource, /export const RUNTIME_ADMIN_INDEX_ENDPOINTS/);
+  assert.match(runtimeAdminRegistrySource, /export const RUNTIME_ADMIN_CONTROL_ENDPOINTS/);
+  assert.match(runtimeAdminRegistrySource, /path: '\/api\/health'/);
+  assert.match(runtimeAdminRegistrySource, /path: '\/api'/);
+  assert.match(runtimeAdminRegistrySource, /path: '\/api\/openapi\.json'/);
+  assert.match(runtimeAdminRegistrySource, /path: '\/runtime'/);
+  assert.match(runtimeAdminRegistrySource, /path: '\/acceleration\/reconcile'/);
+  assert.match(runtimeAdminSource, /for \(const endpoint of RUNTIME_ADMIN_INDEX_ENDPOINTS\)/);
+  assert.match(runtimeAdminSource, /for \(const endpoint of RUNTIME_ADMIN_CONTROL_ENDPOINTS\)/);
+  assert.match(runtimeAdminHandlersSource, /getRuntimeAdminDiagnostics/);
+  assert.match(runtimeAdminHandlersSource, /sendRuntimeAdminReconcile/);
+
+  for (const routeLocalPolicy of [
+    /getRuntimeAdminHealth/,
+    /getRuntimeAdminDiagnostics/,
+    /getRuntimeOpenApiDocument/,
+    /sendRuntimeAdminReconcile/,
+    /sendRuntimeAdminJson/,
+    /sendRuntimeAdminOpenApi/,
+  ]) {
+    assert.doesNotMatch(runtimeAdminSource, routeLocalPolicy);
+  }
 });
