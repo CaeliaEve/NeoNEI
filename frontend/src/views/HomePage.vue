@@ -84,7 +84,6 @@ const {
   pageSize,
   totalItems,
   totalPages,
-  currentPageAtlas,
   expandedGroupKeys,
   setExpandedGroups,
   expandedGroupFacetFilters,
@@ -184,7 +183,6 @@ watch(
     items.value.map((item) => item.itemId).join("|"),
     currentPage.value,
     pageSize.value,
-    currentPageAtlas.value === undefined,
   ].join("::"),
   async () => {
     if (currentView.value !== "items" || items.value.length === 0) {
@@ -321,7 +319,6 @@ const syncMeasuredPageSize = () => {
     currentView.value !== "items"
     || loading.value
     || items.value.length === 0
-    || currentPageAtlas.value === undefined
   ) return;
   const measured = measureVisibleGridCapacity(pageSize);
   if (!measured || measured === pageSize.value || Math.abs(measured - pageSize.value) < 8) return;

@@ -6,7 +6,6 @@ import {
   type HomeBootstrapResponse,
   type Item,
   type Mod,
-  type PageAtlasResult,
 } from '../services/api';
 import {
   getStoredRuntimeSignature,
@@ -80,7 +79,6 @@ export function useItemBrowser(
   const pageSize = ref(50);
   const totalItems = ref(0);
   const totalPages = ref(0);
-  const currentPageAtlas = ref<PageAtlasResult | null | undefined>(undefined);
 
   let loadItemsRequestId = 0;
   let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -307,7 +305,6 @@ export function useItemBrowser(
 
     browserEntries.value = response.data;
     items.value = response.items;
-    currentPageAtlas.value = null;
     totalItems.value = response.total;
     totalPages.value = response.totalPages;
     currentPage.value = response.page;
@@ -456,8 +453,7 @@ export function useItemBrowser(
       loading.value = false;
       transitioning.value = false;
       loadError.value = '';
-      currentPageAtlas.value = null;
-      markPerfEvent('browser-native-projection-owned', {
+        markPerfEvent('browser-native-projection-owned', {
         page: requestParams.page,
         search: requestParams.search?.trim() || '',
         modId: requestParams.modId ?? null,
@@ -530,7 +526,6 @@ export function useItemBrowser(
     } else {
       loading.value = true;
       transitioning.value = false;
-      currentPageAtlas.value = undefined;
     }
 
     try {
@@ -602,8 +597,7 @@ export function useItemBrowser(
       if (!hadVisibleEntries) {
         browserEntries.value = [];
         items.value = [];
-        currentPageAtlas.value = null;
-        totalItems.value = 0;
+            totalItems.value = 0;
         totalPages.value = 0;
       }
     } finally {
@@ -622,7 +616,6 @@ export function useItemBrowser(
     modsLoading.value = true;
     loadError.value = '';
     modsLoadError.value = '';
-    currentPageAtlas.value = undefined;
 
     try {
       const requestParams = buildRequestParams(currentPage.value);
@@ -739,8 +732,7 @@ export function useItemBrowser(
       modsLoadError.value = '\u52a0\u8f7d\u6a21\u7ec4\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u8fde\u63a5\u540e\u91cd\u8bd5';
       browserEntries.value = [];
       items.value = [];
-      currentPageAtlas.value = null;
-      totalItems.value = 0;
+        totalItems.value = 0;
       totalPages.value = 0;
       loadError.value = '\u52a0\u8f7d\u7269\u54c1\u5217\u8868\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u8fde\u63a5\u540e\u91cd\u8bd5';
     } finally {
@@ -975,7 +967,6 @@ export function useItemBrowser(
     pageSize,
     totalItems,
     totalPages,
-    currentPageAtlas,
     setExpandedGroups,
     setExpandedGroupFacetFilter,
     clearExpandedGroupFacetFilters,

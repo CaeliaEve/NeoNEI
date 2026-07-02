@@ -50,6 +50,8 @@ test("native surface runtime path removes compat entry projection input", () => 
   const homeColumn = readSource("src/components/home/HomeBrowserColumn.vue");
   const historyStrip = readSource("src/components/home/HomeHistoryStrip.vue");
   const homeHistory = readSource("src/composables/home/useHomeHistory.ts");
+  const homePage = readSource("src/views/HomePage.vue");
+  const itemBrowser = readSource("src/composables/useItemBrowser.ts");
 
   for (const source of [controller, controlPlane, protocol, worker, mutations]) {
     assert.doesNotMatch(source, /compatEntries/);
@@ -61,6 +63,8 @@ test("native surface runtime path removes compat entry projection input", () => 
   assert.doesNotMatch(homeColumn, /:entries=|:atlas=|:prefer-atlas=|browserGridEntries:|currentPageAtlas:/);
   assert.doesNotMatch(historyStrip, /:entries=|:atlas=|:prefer-atlas=|historyAtlas:/);
   assert.doesNotMatch(homeHistory, /historyAtlas|warmGlobalBrowserAtlasForItemsDetailed|PageAtlasResult/);
+  assert.doesNotMatch(homePage, /currentPageAtlas|:current-page-atlas=|:history-atlas=/);
+  assert.doesNotMatch(itemBrowser, /currentPageAtlas|PageAtlasResult/);
   assert.match(worker, /return \{ source: "empty", entries: \[\] \}/);
 });
 
