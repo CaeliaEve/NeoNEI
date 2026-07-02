@@ -30,9 +30,17 @@ test('native UI runtime proof is a dedicated artifact-index-backed health subsys
   assert.match(proofContractCatalog, /NATIVE_UI_PROOF_LOGICAL_NAMES = Object\.freeze/);
   assert.match(proofContractCatalog, /NATIVE_UI_PROOF_MANIFEST_KEYS = Object\.freeze/);
   assert.match(proofContractCatalog, /NATIVE_UI_RUNTIME_PROOF_POLICY = Object\.freeze/);
+  assert.match(proofContractCatalog, /NATIVE_UI_RUNTIME_PROOF_REPORT_DESCRIPTORS/);
   assert.match(proofContractCatalog, /NATIVE_UI_RUNTIME_PROOF_REPORTS = Object\.freeze/);
+  assert.match(proofContractCatalog, /validateAndFreezeNativeUiProofReports/);
+  assert.match(proofContractCatalog, /validateAndFreezeNativeUiProofSpecs/);
+  assert.match(proofContractCatalog, /validateAndFreezeUiPackRequiredArtifacts/);
+  assert.match(proofContractCatalog, /Missing Native UI proof report descriptor/);
+  assert.match(proofContractCatalog, /Missing Native UI proof spec/);
+  assert.match(proofContractCatalog, /Missing Native UI pack required artifact/);
   assert.match(proofContractCatalog, /NATIVE_UI_PROOF_REPORT_FIELDS = Object\.freeze/);
   assert.match(proofService, /schemaVersion: NATIVE_UI_RUNTIME_PROOF_SCHEMA_VERSION/);
+  assert.match(proofService, /NATIVE_UI_PROOF_SPECS\.map/);
   assert.match(proofService, /NATIVE_UI_PROOF_STATUS/);
   assert.match(proofService, /NATIVE_UI_PROOF_REPORT_FIELDS/);
   assert.match(proofService, /policy: NATIVE_UI_RUNTIME_PROOF_POLICY/);
@@ -43,6 +51,7 @@ test('native UI runtime proof is a dedicated artifact-index-backed health subsys
 
 test('native UI proof validates both producer ABI and UI pack ABI reports', () => {
   assert.match(proofContractCatalog, /NATIVE_UI_EXPORT_ABI_PROOF_SPEC/);
+  assert.match(proofContractCatalog, /NATIVE_UI_PROOF_SPECS = validateAndFreezeNativeUiProofSpecs/);
   assert.match(proofAbiCatalog, /rust\/native-ui-export-abi-validation-report\.json/);
   assert.match(proofAbiCatalog, /elysium-compiler\/native-ui-export-abi-validation\/v1/);
   assert.match(proofAbiCatalog, /nesqlpp\/raw-export\/alpha1\/native-ui-validation/);
@@ -76,8 +85,8 @@ test('runtime health and diagnostics expose proof state and report delivery slug
   assert.match(observabilityService, /nativeUi: health\.nativeUi/);
   assert.match(reportRegistry, /current-runtime-report-registry-abi/);
   assert.match(reportRegistryAbi, /NATIVE_UI_RUNTIME_PROOF_REPORTS/);
-  assert.match(reportRegistryAbi, /\[NATIVE_UI_RUNTIME_PROOF_REPORTS\.nativeUiExportAbi\.slug\]/);
-  assert.match(reportRegistryAbi, /\[NATIVE_UI_RUNTIME_PROOF_REPORTS\.uiPackAbi\.slug\]/);
+  assert.match(reportRegistryAbi, /NATIVE_UI_RUNTIME_PROOF_REPORTS\.nativeUiExportAbi\.slug/);
+  assert.match(reportRegistryAbi, /NATIVE_UI_RUNTIME_PROOF_REPORTS\.uiPackAbi\.slug/);
   assert.match(frontendTypes, /interface NativeUiRuntimeProofSummary/);
   assert.match(frontendTypes, /nativeUi\?: NativeUiRuntimeProofSummary/);
 });

@@ -12,14 +12,15 @@ import {
   validateNativeUiExportAbiReport,
 } from './native-ui-pack-abi';
 import {
-  NATIVE_UI_EXPORT_ABI_PROOF_SPEC,
   NATIVE_UI_PROOF_LOGICAL_NAMES,
   NATIVE_UI_PROOF_REPORT_FIELDS,
+  NATIVE_UI_PROOF_SPECS,
   NATIVE_UI_PROOF_STATUS,
   NATIVE_UI_RUNTIME_PROOF_POLICY,
   NATIVE_UI_RUNTIME_PROOF_SCHEMA_VERSION,
   UI_PACK_ABI_PROOF_SPEC,
   UI_PACK_REQUIRED_ARTIFACTS,
+  type NativeUiProofLogicalName,
   type NativeUiProofSpec,
   type NativeUiProofStatus,
 } from './native-ui-runtime-proof-abi';
@@ -330,10 +331,19 @@ export function getNativeUiRuntimeProofSummary(
   distManifest: JsonRecord | null,
   snapshot: CurrentRuntimeSnapshot | null,
 ): NativeUiRuntimeProofSummary {
-  const nativeUiExportAbi = buildReportSummary(NATIVE_UI_EXPORT_ABI_PROOF_SPEC, distManifest, snapshot);
-  const uiPackAbi = buildReportSummary(UI_PACK_ABI_PROOF_SPEC, distManifest, snapshot);
+  const reportList = NATIVE_UI_PROOF_SPECS.map((spec) => buildReportSummary(spec, distManifest, snapshot));
+  const reportByLogicalName = Object.freeze(
+    reportList.reduce(
+      (reports, report) => {
+        reports[report.logicalName] = report;
+        return reports;
+      },
+      {} as Record<NativeUiProofLogicalName, NativeUiProofReportSummary>,
+    ),
+  );
+  const nativeUiExportAbi = reportByLogicalName[NATIVE_UI_PROOF_LOGICAL_NAMES.nativeUiExportAbi];
+  const uiPackAbi = reportByLogicalName[NATIVE_UI_PROOF_LOGICAL_NAMES.uiPackAbi];
   const reports = Object.freeze({ nativeUiExportAbi, uiPackAbi });
-  const reportList = [nativeUiExportAbi, uiPackAbi] as const;
   const missing = reportList
     .filter((report) => report.status === NATIVE_UI_PROOF_STATUS.missing)
     .map((report) => report.logicalName);
