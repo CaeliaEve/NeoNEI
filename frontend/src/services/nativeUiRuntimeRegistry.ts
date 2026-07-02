@@ -13,9 +13,15 @@ import {
   resolveNativeUiSlotGeometry,
 } from "./nativeUiGeometryAbi.ts";
 import {
+  NATIVE_UI_SCALE_MODE,
   resolveNativeUiBackgroundContract,
   type NativeUiBackgroundContract,
 } from "./nativeUiBackgroundAbi.ts";
+import { resolveNativeUiInteractionPayload } from "./nativeUiInteractionAbi.ts";
+import {
+  resolveNativeUiSurfaceContract,
+  type NativeUiSurfaceContract,
+} from "./nativeUiSurfaceAbi.ts";
 
 export type NativeUiSlot = UiPackSlot;
 export type NativeUiTextOverlay = UiPackTextOverlay;
@@ -49,6 +55,9 @@ export interface NativeUiDynamicPrimitive {
 export interface NativeUiLayoutSurface {
   width?: number;
   height?: number;
+  coordinateSpace?: string;
+  scaleMode?: string;
+  anchor?: string;
   imageResource?: string;
   imageRegion?: NativeUiImageRegion;
   nativeBackground?: Record<string, unknown> | NativeUiBackgroundContract | null;
@@ -71,6 +80,9 @@ export interface NativeUiResolvedSurface {
   layout: NativeUiLayoutSurface | null;
   width: number;
   height: number;
+  coordinateSpace: NativeUiSurfaceContract["coordinateSpace"];
+  scaleMode: NativeUiSurfaceContract["scaleMode"];
+  anchor: NativeUiSurfaceContract["anchor"];
   slots: NativeUiSlot[];
   textOverlays: NativeUiTextOverlay[];
   dynamicPrimitives: NativeUiDynamicPrimitive[];
@@ -146,7 +158,7 @@ function normalizeNativeUiRect(value: unknown, label: string, index: number): Na
     throw new Error(`Native UI ${label} ${index} must be an object`);
   }
   const geometry = resolveNativeUiRectGeometry(record, `Native UI ${label} ${index}`);
-  return {
+  const rect = {
     id: `${record.id ?? ""}`,
     kind: `${record.kind ?? ""}`,
     role: `${record.role ?? ""}`,
@@ -155,10 +167,16 @@ function normalizeNativeUiRect(value: unknown, label: string, index: number): Na
     action: `${record.action ?? ""}`,
     itemId: `${record.itemId ?? ""}`,
     payloadKey: `${record.payloadKey ?? ""}`,
+    interactionKind: `${record.interactionKind ?? ""}`,
+    interactionTargetKind: `${record.interactionTargetKind ?? ""}`,
+    interactionTargetId: `${record.interactionTargetId ?? ""}`,
+    interactionPayloadSchema: `${record.interactionPayloadSchema ?? ""}`,
     ...geometry,
     coordinateSpace: NATIVE_UI_COORDINATE_SPACE,
     anchor: NATIVE_UI_ANCHOR,
-  };
+  } satisfies NativeUiRect;
+  resolveNativeUiInteractionPayload(rect, `Native UI ${label} ${index}`);
+  return rect;
 }
 
 function normalizeNativeUiRectList(value: unknown, label: string): NativeUiRect[] {
@@ -232,6 +250,9 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
     ? {
       width: template.width,
       height: template.height,
+      coordinateSpace: template.coordinateSpace,
+      scaleMode: template.scaleMode,
+      anchor: template.anchor,
       imageResource: template.imageResource,
       imageRegion: inlineLayout?.imageRegion,
       nativeBackground: inlineLayout?.nativeBackground ?? normalizeNativeUiLayoutSurface(template)?.nativeBackground,
@@ -252,8 +273,11 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
       ? "inline-native-layout"
       : "missing";
 
-  const width = positiveDimension(layout?.width, 166);
-  const height = positiveDimension(layout?.height, 65);
+  const surfaceContract = layout
+    ? resolveNativeUiSurfaceContract(layout, "Native UI runtime surface")
+    : null;
+  const width = positiveDimension(surfaceContract?.width, 166);
+  const height = positiveDimension(surfaceContract?.height, 65);
   const nativeBackground = layout
     ? resolveNativeUiBackgroundContract({ ...layout, width, height }, "Native UI runtime surface background")
     : null;
@@ -265,8 +289,11 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
   const normalizedLayout: NativeUiLayoutSurface | null = layout
     ? {
       ...layout,
-      width,
-      height,
+      width: surfaceContract?.width ?? width,
+      height: surfaceContract?.height ?? height,
+      coordinateSpace: surfaceContract?.coordinateSpace,
+      scaleMode: surfaceContract?.scaleMode,
+      anchor: surfaceContract?.anchor,
       nativeBackground,
       slots,
       textOverlays,
@@ -283,6 +310,9 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
     layout: normalizedLayout,
     width,
     height,
+    coordinateSpace: surfaceContract?.coordinateSpace ?? NATIVE_UI_COORDINATE_SPACE,
+    scaleMode: surfaceContract?.scaleMode ?? NATIVE_UI_SCALE_MODE,
+    anchor: surfaceContract?.anchor ?? NATIVE_UI_ANCHOR,
     slots,
     textOverlays,
     dynamicPrimitives,
@@ -337,7 +367,11 @@ export function createNativeUiFitMatrix(options: Readonly<{
   sourceHeight: number;
   availableWidth: number;
   availableHeight: number;
+  scaleMode: string;
 }>): NativeUiFitMatrix {
+  if (options.scaleMode !== NATIVE_UI_SCALE_MODE) {
+    throw new Error(`Native UI fit matrix uses unsupported scaleMode: ${options.scaleMode}`);
+  }
   const sourceWidth = Math.max(1, Math.ceil(options.sourceWidth));
   const sourceHeight = Math.max(1, Math.ceil(options.sourceHeight));
   const availableWidth = options.availableWidth > 0 ? options.availableWidth : sourceWidth;

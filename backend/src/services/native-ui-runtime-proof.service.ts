@@ -106,7 +106,7 @@ const UI_PACK_REQUIRED_ARTIFACTS = Object.freeze([
     logicalName: 'rustUiTemplatesBin',
     envelopeSchema: UI_TEMPLATE_PACK_SCHEMA,
     payloadMagic: UI_TEMPLATE_PACK_MAGIC,
-    version: 5,
+    version: 6,
   }),
   Object.freeze({
     logicalName: 'rustUiBindingsBin',
@@ -234,9 +234,11 @@ function countExportAbiViolations(report: JsonRecord | null): number {
     + asStringArray(report.contractViolations).length
     + (asNumber(report.missingSurfaceCount) ?? 0)
     + (asNumber(report.slotBoundsViolationCount) ?? 0)
+    + (asNumber(report.rectBoundsViolationCount) ?? 0)
     + (asNumber(report.primitiveBoundsViolationCount) ?? 0)
     + (asNumber(report.backgroundBoundsViolationCount) ?? 0)
-    + (asNumber(report.coordinateContractViolationCount) ?? 0);
+    + (asNumber(report.coordinateContractViolationCount) ?? 0)
+    + (asNumber(report.interactionContractViolationCount) ?? 0);
 }
 
 function artifactByLogicalName(report: JsonRecord): Map<string, JsonRecord> {
@@ -282,9 +284,11 @@ function validateExportAbiReport(report: JsonRecord | null): string[] {
   for (const key of [
     'missingSurfaceCount',
     'slotBoundsViolationCount',
+    'rectBoundsViolationCount',
     'primitiveBoundsViolationCount',
     'backgroundBoundsViolationCount',
     'coordinateContractViolationCount',
+    'interactionContractViolationCount',
   ]) {
     pushIf((asNumber(report[key]) ?? 0) !== 0, blocked, `native UI export ABI ${key} must be zero`);
   }
@@ -359,12 +363,15 @@ function buildReportSummary(
     counts: Object.freeze({
       layouts: asNumber(report?.layoutCount),
       slots: asNumber(report?.slotCount),
+      rects: asNumber(report?.rectCount),
       primitives: asNumber(report?.primitiveCount),
       missingSurfaces: asNumber(report?.missingSurfaceCount),
       slotBoundsViolations: asNumber(report?.slotBoundsViolationCount),
+      rectBoundsViolations: asNumber(report?.rectBoundsViolationCount),
       primitiveBoundsViolations: asNumber(report?.primitiveBoundsViolationCount),
       backgroundBoundsViolations: asNumber(report?.backgroundBoundsViolationCount),
       coordinateContractViolations: asNumber(report?.coordinateContractViolationCount),
+      interactionContractViolations: asNumber(report?.interactionContractViolationCount),
       artifacts: Array.isArray(report?.artifacts) ? report.artifacts.length : null,
       artifactBytes: countUiPackArtifactBytes(report),
       violations: spec.logicalName === 'nativeUiExportAbi'

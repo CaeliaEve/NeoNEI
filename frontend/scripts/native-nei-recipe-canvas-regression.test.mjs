@@ -71,21 +71,23 @@ test('NativeNeiRecipeCanvas preserves captured hotspots and viewport regions in 
   assert.equal(canvasSource.includes('nativeUiRectStyle'), true);
   assert.equal(canvasSource.includes('nativeUiRectLabel'), true);
   assert.equal(uiPackRuntimeSource.includes('export interface UiPackRect'), true);
-  assert.equal(uiPackRuntimeSource.includes('const UI_TEMPLATE_PAYLOAD_VERSION = 5'), true);
+  assert.equal(uiPackRuntimeSource.includes('const UI_TEMPLATE_PAYLOAD_VERSION = 6'), true);
   assert.equal(uiPackRuntimeSource.includes('hotspotCount'), true);
   assert.equal(uiPackRuntimeSource.includes('viewportCount'), true);
   assert.equal(uiPackRuntimeSource.includes('rectStride'), true);
   assert.equal(uiPackRuntimeSource.includes('action: string'), true);
   assert.equal(uiPackRuntimeSource.includes('itemId: string'), true);
   assert.equal(uiPackRuntimeSource.includes('payloadKey: string'), true);
+  assert.equal(uiPackRuntimeSource.includes('interactionKind: string'), true);
+  assert.equal(uiPackRuntimeSource.includes('interactionPayloadSchema: string'), true);
   assert.equal(uiPackRuntimeSource.includes('coordinateSpace: resolveString'), true);
   assert.equal(canvasSource.includes('function handleHotspotClick'), true);
   assert.equal(canvasSource.includes('nativeUiHotspotItemId(rect)'), true);
   assert.equal(canvasSource.includes('@click="handleHotspotClick(hotspot)"'), true);
-  assert.equal(productionManifestGateSource.includes('UI_TEMPLATE_PACK_FORMAT_NOT_V5_GEOMETRY_ABI'), true);
-  assert.equal(productionManifestGateSource.includes('UI_PACK_REPORT_MISSING_V5_BACKGROUND_GEOMETRY_ABI'), true);
-  assert.equal(nativeUiLayoutGateSource.includes('rust UI pack report does not declare v5 background geometry ABI'), true);
-  assert.equal(nativeUiLayoutGateSource.includes('rust UI template binary pack is not v5 geometry ABI format'), true);
+  assert.equal(productionManifestGateSource.includes('UI_TEMPLATE_PACK_FORMAT_NOT_V6_SURFACE_INTERACTION_ABI'), true);
+  assert.equal(productionManifestGateSource.includes('UI_PACK_REPORT_MISSING_V6_SURFACE_INTERACTION_ABI'), true);
+  assert.equal(nativeUiLayoutGateSource.includes('rust UI pack report does not declare v6 surface/interaction/background ABI'), true);
+  assert.equal(nativeUiLayoutGateSource.includes('rust UI template binary pack is not v6 surface/interaction ABI format'), true);
 });
 
 test('NativeNeiRecipeCanvas consumes explicit Native UI background ABI before scaling', () => {

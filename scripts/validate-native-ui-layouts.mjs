@@ -135,39 +135,49 @@ if (!nativeUiLayoutReport) failures.push('rust native UI layout report is missin
 if (nativeUiLayoutReport?.status === 'blocked') failures.push('rust native UI layout report is blocked');
 if (!uiPackReport) failures.push('rust UI pack report is missing');
 const uiPackFormat = uiPackReport?.format ?? {};
+const surfaceContractFields = Array.isArray(uiPackFormat.surfaceContractFields) ? uiPackFormat.surfaceContractFields : [];
 const rectGeometryFields = Array.isArray(uiPackFormat.rectGeometryFields) ? uiPackFormat.rectGeometryFields : [];
+const interactionContractFields = Array.isArray(uiPackFormat.interactionContractFields) ? uiPackFormat.interactionContractFields : [];
 const backgroundContractFields = Array.isArray(uiPackFormat.backgroundContractFields)
   ? uiPackFormat.backgroundContractFields
   : [];
 if (
-  uiPackFormat.templatePackVersion !== 5
+  uiPackFormat.templatePackVersion !== 6
+  || uiPackFormat.templateStride !== 22
   || uiPackFormat.slotStride !== 12
   || uiPackFormat.textStride !== 7
-  || uiPackFormat.rectStride !== 14
-  || uiPackFormat.hotspotActionFields !== true
-  || !rectGeometryFields.includes('coordinateSpace')
+  || uiPackFormat.rectStride !== 18
+  || uiPackFormat.hotspotActionFields !== false
+  || !surfaceContractFields.includes('coordinateSpace')
+    || !surfaceContractFields.includes('scaleMode')
+    || !surfaceContractFields.includes('anchor')
+    || !rectGeometryFields.includes('coordinateSpace')
   || !rectGeometryFields.includes('anchor')
-  || !backgroundContractFields.includes('coordinateSpace')
+  || !interactionContractFields.includes('interactionKind')
+    || !interactionContractFields.includes('interactionTargetKind')
+    || !interactionContractFields.includes('interactionTargetId')
+    || !interactionContractFields.includes('interactionPayloadSchema')
+    || !backgroundContractFields.includes('coordinateSpace')
   || !backgroundContractFields.includes('scaleMode')
   || !backgroundContractFields.includes('anchor')
   || !backgroundContractFields.includes('texture')
   || !backgroundContractFields.includes('recipeBackgroundOffset')
   || !backgroundContractFields.includes('recipeBackgroundSize')
 ) {
-  failures.push('rust UI pack report does not declare v5 background geometry ABI');
+  failures.push('rust UI pack report does not declare v6 surface/interaction/background ABI');
 }
 if (!uiTemplateHeader) failures.push('rust UI template binary pack is missing');
 if (uiTemplateHeader?.error) failures.push(`rust UI template binary pack is invalid: ${uiTemplateHeader.error}`);
 if (uiTemplateHeader && !uiTemplateHeader.error && (
   uiTemplateHeader.schema !== 'neonei/ui-template-pack/current'
   || uiTemplateHeader.magic !== 'NEIUIT1\0'
-  || uiTemplateHeader.version !== 5
-  || uiTemplateHeader.templateStride !== 19
+  || uiTemplateHeader.version !== 6
+  || uiTemplateHeader.templateStride !== 22
   || uiTemplateHeader.slotStride !== 12
   || uiTemplateHeader.textStride !== 7
-  || uiTemplateHeader.rectStride !== 14
+  || uiTemplateHeader.rectStride !== 18
 )) {
-  failures.push('rust UI template binary pack is not v5 geometry ABI format');
+  failures.push('rust UI template binary pack is not v6 surface/interaction ABI format');
 }
 if (layouts.length === 0) failures.push('handler layout index is empty or missing');
 if (gtLayouts.length === 0) failures.push('no gregtech-machine handler layouts found');

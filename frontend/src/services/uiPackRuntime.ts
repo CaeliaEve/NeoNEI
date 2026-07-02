@@ -56,6 +56,10 @@ export interface UiPackRect {
   height: number;
   coordinateSpace: string;
   anchor: string;
+  interactionKind: string;
+  interactionTargetKind: string;
+  interactionTargetId: string;
+  interactionPayloadSchema: string;
 }
 
 export interface UiPackTemplate {
@@ -67,6 +71,9 @@ export interface UiPackTemplate {
   width: number;
   height: number;
   yShift: number;
+  coordinateSpace: string;
+  scaleMode: string;
+  anchor: string;
   maxRecipesPerPage: number;
   imageResource: string;
   handlerCount: number;
@@ -134,13 +141,13 @@ const UI_STRING_PACK_MAGIC = "NEIUIS1\0";
 const UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIT1_NUL";
 const UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIB1_NUL";
 const UI_STRING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIS1_NUL";
-const UI_TEMPLATE_PAYLOAD_VERSION = 5;
+const UI_TEMPLATE_PAYLOAD_VERSION = 6;
 const UI_BINDING_PAYLOAD_VERSION = 1;
 const UI_STRING_PAYLOAD_VERSION = 1;
-const UI_TEMPLATE_ROW_STRIDE_U32 = 19;
+const UI_TEMPLATE_ROW_STRIDE_U32 = 22;
 const UI_SLOT_ROW_STRIDE_U32 = 12;
 const UI_TEXT_ROW_STRIDE_U32 = 7;
-const UI_RECT_ROW_STRIDE_U32 = 14;
+const UI_RECT_ROW_STRIDE_U32 = 18;
 const UI_BINDING_ROW_STRIDE_U32 = 11;
 
 type UiPackEntrypoints = {
@@ -407,6 +414,9 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     hotspotCount: number;
     viewportStart: number;
     viewportCount: number;
+    coordinateSpace: string;
+    scaleMode: string;
+    anchor: string;
   }> = [];
   for (let index = 0; index < templateCount; index += 1) {
     const rowOffset = cursor + index * templateStride * 4;
@@ -430,6 +440,9 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
       hotspotCount: readU32(view, rowOffset + 64),
       viewportStart: readU32(view, rowOffset + 68),
       viewportCount: readU32(view, rowOffset + 72),
+      coordinateSpace: resolveString(strings, readU32(view, rowOffset + 76)),
+      scaleMode: resolveString(strings, readU32(view, rowOffset + 80)),
+      anchor: resolveString(strings, readU32(view, rowOffset + 84)),
     });
   }
   cursor += templateBytes;
@@ -481,6 +494,10 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     height: readU32(view, rowOffset + 44),
     coordinateSpace: resolveString(strings, readU32(view, rowOffset + 48)),
     anchor: resolveString(strings, readU32(view, rowOffset + 52)),
+    interactionKind: resolveString(strings, readU32(view, rowOffset + 56)),
+    interactionTargetKind: resolveString(strings, readU32(view, rowOffset + 60)),
+    interactionTargetId: resolveString(strings, readU32(view, rowOffset + 64)),
+    interactionPayloadSchema: resolveString(strings, readU32(view, rowOffset + 68)),
   });
   const hotspots: UiPackRect[] = [];
   for (let index = 0; index < hotspotCount; index += 1) {
@@ -502,6 +519,9 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     width: templateRow.width,
     height: templateRow.height,
     yShift: templateRow.yShift,
+    coordinateSpace: templateRow.coordinateSpace,
+    scaleMode: templateRow.scaleMode,
+    anchor: templateRow.anchor,
     maxRecipesPerPage: templateRow.maxRecipesPerPage,
     imageResource: templateRow.imageResource,
     handlerCount: templateRow.handlerCount,
@@ -739,8 +759,11 @@ function assertNativeUiExportAbiValidationReport(report: JsonRecord): void {
   for (const key of [
     "missingSurfaceCount",
     "slotBoundsViolationCount",
+    "rectBoundsViolationCount",
+    "primitiveBoundsViolationCount",
     "backgroundBoundsViolationCount",
     "coordinateContractViolationCount",
+    "interactionContractViolationCount",
   ]) {
     if ((asFiniteNumber(report[key]) ?? 0) !== 0) {
       throw new Error(`native UI export ABI validation report ${key} must be zero`);

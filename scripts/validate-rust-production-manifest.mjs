@@ -195,8 +195,8 @@ if (uiTemplateHeader) {
   if (uiTemplateHeader.magic !== 'NEIUIT1\0') {
     fail(failures, 'UI_TEMPLATE_PACK_MAGIC_MISMATCH', 'UI template pack has wrong native magic', { magic: uiTemplateHeader.magic });
   }
-  if (uiTemplateHeader.version !== 5 || uiTemplateHeader.templateStride !== 19 || uiTemplateHeader.slotStride !== 12 || uiTemplateHeader.textStride !== 7 || uiTemplateHeader.rectStride !== 14) {
-    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V5_GEOMETRY_ABI', 'UI template pack is not the v5 geometry ABI native format', uiTemplateHeader);
+  if (uiTemplateHeader.version !== 6 || uiTemplateHeader.templateStride !== 22 || uiTemplateHeader.slotStride !== 12 || uiTemplateHeader.textStride !== 7 || uiTemplateHeader.rectStride !== 18) {
+    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V6_SURFACE_INTERACTION_ABI', 'UI template pack is not the v6 surface/interaction ABI native format', uiTemplateHeader);
   }
 }
 
@@ -204,18 +204,28 @@ const uiPackReportPath = files.rustUiPackReport ? join(distDataDir, files.rustUi
 const uiPackReport = uiPackReportPath && existsSync(uiPackReportPath) ? readJson(uiPackReportPath) : null;
 const uiPackFormat = uiPackReport?.format ?? {};
 if (uiPackReport) {
+  const surfaceContractFields = Array.isArray(uiPackFormat.surfaceContractFields) ? uiPackFormat.surfaceContractFields : [];
   const rectGeometryFields = Array.isArray(uiPackFormat.rectGeometryFields) ? uiPackFormat.rectGeometryFields : [];
+  const interactionContractFields = Array.isArray(uiPackFormat.interactionContractFields) ? uiPackFormat.interactionContractFields : [];
   const backgroundContractFields = Array.isArray(uiPackFormat.backgroundContractFields)
     ? uiPackFormat.backgroundContractFields
     : [];
   if (
-    uiPackFormat.templatePackVersion !== 5
+    uiPackFormat.templatePackVersion !== 6
+    || uiPackFormat.templateStride !== 22
     || uiPackFormat.slotStride !== 12
     || uiPackFormat.textStride !== 7
-    || uiPackFormat.rectStride !== 14
-    || uiPackFormat.hotspotActionFields !== true
+    || uiPackFormat.rectStride !== 18
+    || uiPackFormat.hotspotActionFields !== false
+    || !surfaceContractFields.includes('coordinateSpace')
+    || !surfaceContractFields.includes('scaleMode')
+    || !surfaceContractFields.includes('anchor')
     || !rectGeometryFields.includes('coordinateSpace')
     || !rectGeometryFields.includes('anchor')
+    || !interactionContractFields.includes('interactionKind')
+    || !interactionContractFields.includes('interactionTargetKind')
+    || !interactionContractFields.includes('interactionTargetId')
+    || !interactionContractFields.includes('interactionPayloadSchema')
     || !backgroundContractFields.includes('coordinateSpace')
     || !backgroundContractFields.includes('scaleMode')
     || !backgroundContractFields.includes('anchor')
@@ -223,7 +233,7 @@ if (uiPackReport) {
     || !backgroundContractFields.includes('recipeBackgroundOffset')
     || !backgroundContractFields.includes('recipeBackgroundSize')
   ) {
-    fail(failures, 'UI_PACK_REPORT_MISSING_V5_BACKGROUND_GEOMETRY_ABI', 'UI pack report does not declare v5 rect/background geometry ABI capability', { format: uiPackFormat });
+    fail(failures, 'UI_PACK_REPORT_MISSING_V6_SURFACE_INTERACTION_ABI', 'UI pack report does not declare v6 surface/interaction/background ABI capability', { format: uiPackFormat });
   }
 }
 

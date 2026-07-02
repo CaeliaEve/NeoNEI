@@ -36,6 +36,25 @@ function gtBackground(overrides = {}) {
   };
 }
 
+
+function noInteraction() {
+  return {
+    interactionKind: 'none',
+    interactionTargetKind: 'none',
+    interactionTargetId: '',
+    interactionPayloadSchema: 'neonei/native-ui-interaction/v1',
+  };
+}
+
+function itemClickInteraction(itemId) {
+  return {
+    interactionKind: 'item-click',
+    interactionTargetKind: 'item',
+    interactionTargetId: itemId,
+    interactionPayloadSchema: 'neonei/native-ui-interaction/v1',
+  };
+}
+
 function runtimeFixture(template, binding) {
   return {
     status: 'ready',
@@ -71,6 +90,9 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
     width: 176,
     height: 90,
     yShift: 0,
+    coordinateSpace: 'nei_pixels',
+    scaleMode: 'uniform-scale',
+    anchor: 'top-left',
     maxRecipesPerPage: 1,
     imageResource: 'rust/ui-assets/gt_furnace.png',
     handlerCount: 1,
@@ -90,8 +112,8 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
       pitchY: 18,
     }],
     textOverlays: [{ text: 'EU/t', x: 80, y: 10, width: 24, height: 8, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
-    hotspots: [{ id: 'template-hotspot', kind: 'info', role: 'nei-info', label: 'Template', tooltip: '', action: '', itemId: '', payloadKey: '', x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
-    viewports: [{ id: 'template-viewport', kind: 'viewport', role: 'progress', label: 'Progress', tooltip: '', action: '', itemId: '', payloadKey: '', x: 70, y: 30, width: 22, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    hotspots: [{ id: 'template-hotspot', kind: 'info', role: 'nei-info', label: 'Template', tooltip: '', action: '', itemId: '', payloadKey: '', ...noInteraction(), x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    viewports: [{ id: 'template-viewport', kind: 'viewport', role: 'progress', label: 'Progress', tooltip: '', action: '', itemId: '', payloadKey: '', ...noInteraction(), x: 70, y: 30, width: 22, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
   };
   const binding = {
     recipeId: 'recipe-1',
@@ -107,10 +129,13 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
     bound: true,
   };
   const inlineLayout = normalizeNativeUiLayoutSurface({
+    coordinateSpace: 'nei_pixels',
+    scaleMode: 'uniform-scale',
+    anchor: 'top-left',
     imageRegion: { x: 8, y: 9, width: 176, height: 90 },
     nativeBackground: gtBackground(),
     progressBars: [{ role: 'progress', x: 72, y: 34, width: 24, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left', fill: 0.5 }],
-    hotspots: [{ id: 'inline-hotspot', kind: 'item-click', role: 'output', label: 'Output', tooltip: '', action: 'item-click', itemId: 'minecraft:iron_ingot', payloadKey: '', x: 115, y: 24, width: 18, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    hotspots: [{ id: 'inline-hotspot', kind: 'item-click', role: 'output', label: 'Output', tooltip: '', action: 'item-click', itemId: 'minecraft:iron_ingot', payloadKey: '', ...itemClickInteraction('minecraft:iron_ingot'), x: 115, y: 24, width: 18, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
   });
 
   const surface = resolveNativeUiRuntimeSurface({
@@ -143,6 +168,9 @@ test('native UI registry keeps inline and missing layouts explicit', () => {
     inlineLayout: normalizeNativeUiLayoutSurface({
       width: 80,
       height: 40,
+      coordinateSpace: 'nei_pixels',
+      scaleMode: 'uniform-scale',
+      anchor: 'top-left',
       slots: [{
         role: 'item-output',
         startIndex: 0,
@@ -179,6 +207,9 @@ test('native UI registry rejects incomplete background ABI on resolved surfaces'
       inlineLayout: normalizeNativeUiLayoutSurface({
         width: 176,
         height: 90,
+        coordinateSpace: 'nei_pixels',
+        scaleMode: 'uniform-scale',
+        anchor: 'top-left',
         nativeBackground: { kind: 'gt-modular-ui', status: 'captured', assetRef: 'ui/captured.png' },
       }),
     }),
@@ -231,7 +262,7 @@ test('native UI registry builds exact design-space slot cells and fit matrix', (
     ['item-output:1:0', 115, 24, 18, 18, 116, 25, 'out'],
   ]);
 
-  const fit = createNativeUiFitMatrix({ sourceWidth: 176, sourceHeight: 90, availableWidth: 352, availableHeight: 120 });
+  const fit = createNativeUiFitMatrix({ sourceWidth: 176, sourceHeight: 90, availableWidth: 352, availableHeight: 120, scaleMode: 'uniform-scale' });
   assert.equal(fit.scale, 120 / 90);
   assert.equal(fit.fittedWidth, 235);
   assert.equal(fit.fittedHeight, 120);
@@ -273,6 +304,9 @@ test('native UI registry fails closed on rect-like geometry ABI violations', () 
     inlineLayout: normalizeNativeUiLayoutSurface({
       width: 80,
       height: 40,
+      coordinateSpace: 'nei_pixels',
+      scaleMode: 'uniform-scale',
+      anchor: 'top-left',
       hotspots: [{ x: 1, y: 2, width: 3, height: 4, anchor: 'top-left' }],
     }),
   }), /missing required Native UI geometry field: coordinateSpace/);

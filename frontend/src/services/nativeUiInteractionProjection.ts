@@ -1,5 +1,9 @@
 import type { NativeUiRect, NativeUiSlotCell, NativeUiTextOverlay } from "./nativeUiRuntimeRegistry.ts";
 import { resolveNativeUiRectGeometry } from "./nativeUiGeometryAbi.ts";
+import {
+  NATIVE_UI_INTERACTION_KIND_ITEM_CLICK,
+  resolveNativeUiInteractionPayload,
+} from "./nativeUiInteractionAbi.ts";
 
 export interface NativeUiBoxStyle {
   left: string;
@@ -14,7 +18,10 @@ export type NativeUiHitCell<TEntry> = Omit<NativeUiSlotCell<TEntry>, "entry"> & 
 };
 
 type NativeUiLabeledRect = Partial<Pick<NativeUiRect, "label" | "tooltip" | "role" | "kind" | "id">>;
-type NativeUiHotspotRect = Partial<Pick<NativeUiRect, "action" | "kind" | "role" | "itemId">>;
+type NativeUiHotspotRect = Partial<Pick<
+  NativeUiRect,
+  "interactionKind" | "interactionTargetKind" | "interactionTargetId" | "interactionPayloadSchema"
+>>;
 type NativeUiLabeledEntry = {
   localizedName?: string | null;
   itemId?: string | null;
@@ -70,13 +77,13 @@ export function nativeUiRectLabel(rect: NativeUiLabeledRect, fallback: string): 
 }
 
 export function nativeUiHotspotAction(rect: NativeUiHotspotRect): string {
-  return `${rect.action ?? rect.kind ?? rect.role ?? ""}`.trim().toLowerCase();
+  return resolveNativeUiInteractionPayload(rect, "Native UI hotspot").kind;
 }
 
 export function nativeUiHotspotItemId(rect: NativeUiHotspotRect): string | null {
-  const itemId = `${rect.itemId ?? ""}`.trim();
-  if (!itemId || nativeUiHotspotAction(rect) !== "item-click") return null;
-  return itemId;
+  const interaction = resolveNativeUiInteractionPayload(rect, "Native UI hotspot");
+  if (interaction.kind !== NATIVE_UI_INTERACTION_KIND_ITEM_CLICK) return null;
+  return interaction.targetId;
 }
 
 export function isNativeUiHotspotInteractive(rect: NativeUiHotspotRect): boolean {

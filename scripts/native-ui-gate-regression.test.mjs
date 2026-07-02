@@ -37,19 +37,19 @@ function wrapNativePack(schema, payload) {
   ]);
 }
 
-function writeUiTemplatePackV3(path) {
+function writeUiTemplatePackV6(path) {
   const payload = Buffer.concat([
     Buffer.from('NEIUIT1\0', 'utf8'),
-    u32(3), // template pack version with action/itemId/payloadKey rect fields
+    u32(6), // template pack version with surface/interaction ABI fields
     u32(0), // templateCount
     u32(0), // slotCount
     u32(0), // textCount
     u32(0), // hotspotCount
     u32(0), // viewportCount
-    u32(19), // templateStride
-    u32(6), // slotStride
-    u32(5), // textStride
-    u32(12), // rectStride
+    u32(22), // templateStride
+    u32(12), // slotStride
+    u32(7), // textStride
+    u32(18), // rectStride
   ]);
   writeFileSync(path, wrapNativePack('neonei/ui-template-pack/current', payload));
 }
@@ -75,7 +75,7 @@ function createDistFixture() {
   for (const name of requiredBinaryFiles) {
     writeFileSync(join(rustDir, name), Buffer.from([0]));
   }
-  writeUiTemplatePackV3(join(uiPackDir, 'ui_templates.bin'));
+  writeUiTemplatePackV6(join(uiPackDir, 'ui_templates.bin'));
   writeFileSync(join(uiPackDir, 'ui_bindings.bin'), Buffer.from([0]));
   writeFileSync(join(uiPackDir, 'ui_strings.bin'), Buffer.from([0]));
   writeJson(join(uiPackDir, 'ui_assets.manifest.json'), { schemaVersion: 'neonei/ui-assets-manifest/current', assets: [] });
@@ -94,13 +94,18 @@ function createDistFixture() {
     },
     format: {
       templatePackMagic: 'NEIUIT1\\u0000',
-      templatePackVersion: 3,
-      templateStride: 19,
-      slotStride: 6,
-      textStride: 5,
-      rectStride: 12,
-      hotspotActionFields: true,
-      hotspotActionFieldNames: ['action', 'itemId', 'payloadKey'],
+      templatePackVersion: 6,
+      templateStride: 22,
+      slotStride: 12,
+      textStride: 7,
+      rectStride: 18,
+      hotspotActionFields: false,
+      hotspotActionFieldNames: [],
+      surfaceContractFields: ['coordinateSpace', 'scaleMode', 'anchor'],
+      slotGeometryFields: ['coordinateSpace', 'anchor', 'slotWidth', 'slotHeight', 'pitchX', 'pitchY'],
+      rectGeometryFields: ['coordinateSpace', 'anchor'],
+      interactionContractFields: ['interactionKind', 'interactionTargetKind', 'interactionTargetId', 'interactionPayloadSchema'],
+      backgroundContractFields: ['coordinateSpace', 'scaleMode', 'anchor', 'status', 'kind', 'scaling', 'texture', 'recipeBackgroundOffset', 'recipeBackgroundSize'],
     },
   });
 
@@ -134,15 +139,23 @@ function createDistFixture() {
       width: 176,
       height: 90,
       maxRecipesPerPage: 1,
+      coordinateSpace: 'nei_pixels',
+      scaleMode: 'uniform-scale',
+      anchor: 'top-left',
       nativeBackground: {
+        coordinateSpace: 'nei_pixels',
+        scaleMode: 'uniform-scale',
+        anchor: 'top-left',
         status: 'captured',
         kind: 'gt-modular-ui',
         assetRef: 'assets/ui-backgrounds/gregtech/nei_single_recipe.png',
         resource: 'gregtech:textures/gui/background/nei_single_recipe.png',
         scaling: 'nine-slice',
         texture: { width: 64, height: 64, borderU: 2, borderV: 2 },
+        recipeBackgroundOffset: { x: 3, y: 3 },
+        recipeBackgroundSize: { width: 170, height: 84 },
       },
-      progressBars: [{ x: 78, y: 24, width: 20, height: 18 }],
+      progressBars: [{ x: 78, y: 24, width: 20, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
     }],
   });
   writeJson(join(recipeDir, 'ui-payload-index.json'), {
@@ -153,15 +166,27 @@ function createDistFixture() {
       handlerKey: 'gt.recipe.test',
       nativeLayout: {
         canonicalMachineFamily: 'gregtech-machine',
+        width: 176,
+        height: 90,
+        coordinateSpace: 'nei_pixels',
+        scaleMode: 'uniform-scale',
+        anchor: 'top-left',
         imageRegion: { x: 0, y: 0, width: 176, height: 90 },
         nativeBackground: {
+          coordinateSpace: 'nei_pixels',
+          scaleMode: 'uniform-scale',
+          anchor: 'top-left',
+          width: 176,
+          height: 90,
           status: 'captured',
           kind: 'gt-modular-ui',
           assetRef: 'assets/ui-backgrounds/gregtech/nei_single_recipe.png',
           scaling: 'nine-slice',
           texture: { width: 64, height: 64, borderU: 2, borderV: 2 },
+          recipeBackgroundOffset: { x: 3, y: 3 },
+          recipeBackgroundSize: { width: 170, height: 84 },
         },
-        progressBars: [{ x: 78, y: 24, width: 20, height: 18 }],
+        progressBars: [{ x: 78, y: 24, width: 20, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
       },
     }],
   });
@@ -230,17 +255,17 @@ function runGate(script, distDataDir) {
   return JSON.parse(result.stdout);
 }
 
-test('native UI production gates require UI template pack v3 action-rect IR', () => {
+test('native UI production gates require UI template pack v6 surface-interaction ABI', () => {
   const distDataDir = createDistFixture();
   try {
     const manifestGate = runGate('scripts/validate-rust-production-manifest.mjs', distDataDir);
-    assert.equal(manifestGate.uiTemplatePack.version, 3);
-    assert.equal(manifestGate.uiTemplatePack.rectStride, 12);
-    assert.equal(manifestGate.uiPackReport.format.hotspotActionFields, true);
+    assert.equal(manifestGate.uiTemplatePack.version, 6);
+    assert.equal(manifestGate.uiTemplatePack.rectStride, 18);
+    assert.equal(manifestGate.uiPackReport.format.hotspotActionFields, false);
 
     const layoutGate = runGate('scripts/validate-native-ui-layouts.mjs', distDataDir);
-    assert.equal(layoutGate.uiPack.templateHeader.version, 3);
-    assert.equal(layoutGate.uiPack.templateHeader.rectStride, 12);
+    assert.equal(layoutGate.uiPack.templateHeader.version, 6);
+    assert.equal(layoutGate.uiPack.templateHeader.rectStride, 18);
     assert.equal(layoutGate.report.backgroundStatus, 'captured');
     assert.equal(layoutGate.report.counts.gregtechRecipeUiPayloadsWithNativeBackgrounds, 1);
     assert.equal(layoutGate.failures.length, 0);
@@ -253,18 +278,21 @@ test('native UI background contract uses materialized nine-slice ModularUI asset
   const uiAssets = JSON.parse(readFileSync(join(repoRoot, 'tools/elysium-compiler/fixtures/expected/raw-export-native-ui-gt/rust/ui-pack/ui_assets.manifest.json'), 'utf8'));
   const layoutReport = JSON.parse(readFileSync(join(repoRoot, 'tools/elysium-compiler/fixtures/expected/raw-export-native-ui-gt/rust/native-ui-layout-report.json'), 'utf8'));
   const canvas = readFileSync(join(repoRoot, 'frontend/src/components/NativeNeiRecipeCanvas.vue'), 'utf8');
+  const backgroundLoader = readFileSync(join(repoRoot, 'frontend/src/services/nativeUiBackgroundResourceLoader.ts'), 'utf8');
+  const renderCommands = readFileSync(join(repoRoot, 'frontend/src/services/nativeUiRenderCommandBuilder.ts'), 'utf8');
   assert.equal(uiAssets.assets.some((asset) => asset.assetRef === 'assets/ui-backgrounds/gregtech/nei_single_recipe.png'), true);
   assert.equal(uiAssets.assets.some((asset) => asset.kind === 'template-background'), true);
   assert.equal(layoutReport.backgroundStatus, 'captured');
   assert.equal(layoutReport.counts.gregtechRecipeUiPayloadsWithNativeBackgrounds, 1);
   assert.equal(canvas.includes('nativeBackgroundAssetRef'), true);
-  assert.equal(canvas.includes('nativeBackgroundTextureSpec'), true);
-  assert.equal(canvas.includes('pushBackgroundCommands'), true);
-  assert.equal(canvas.includes('nineSlice'), true);
-  assert.equal(canvas.includes("backgroundSource.value.textureKey === nativeBackgroundTextureKey.value ? 'captured' : 'error'"), true);
-  assert.equal(canvas.includes("if (`${nativeBackground.value?.status ?? ''}` === 'captured')"), true);
-  assert.equal(canvas.includes('Semantic GT backgrounds without a captured asset may use the procedural fallback.'), true);
-  assert.equal(canvas.includes('Fall through to semantic GT fallback when the raw-export did not carry the asset.'), false);
+  assert.equal(backgroundLoader.includes('nativeUiNativeBackgroundTextureSpec'), true);
+  assert.equal(backgroundLoader.includes('source.textureKey === options.nativeTextureKey ? "captured" : "error"'), true);
+  assert.equal(backgroundLoader.includes('if (background?.status === "captured") return emptyBackgroundResult(visibleError);'), true);
+  assert.equal(backgroundLoader.includes('if (nativeUiIsSemanticGtBackground(background) && semanticTextureKey)'), true);
+  assert.equal(backgroundLoader.indexOf('if (background?.status === "captured") return emptyBackgroundResult(visibleError);')
+    < backgroundLoader.indexOf('if (nativeUiIsSemanticGtBackground(background) && semanticTextureKey)'), true);
+  assert.equal(renderCommands.includes('pushNativeUiBackgroundCommands'), true);
+  assert.equal(renderCommands.includes('nineSlice'), true);
 });
 test('compiler extraction boundary uses pinned external elysium-compiler binary', () => {
   const finalizer = readFileSync(join(repoRoot, 'scripts/finalize-native-ui-export.mjs'), 'utf8');

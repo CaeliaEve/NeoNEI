@@ -55,16 +55,16 @@ function encodeTemplatePack(strings) {
   const index = new Map(strings.map((value, idx) => [value, idx]));
   const bytes = [];
   bytes.push(...new TextEncoder().encode('NEIUIT1\0'));
-  pushU32(bytes, 5);
+  pushU32(bytes, 6);
   pushU32(bytes, 1);
   pushU32(bytes, 2);
   pushU32(bytes, 1);
   pushU32(bytes, 0);
   pushU32(bytes, 0);
-  pushU32(bytes, 19);
+  pushU32(bytes, 22);
   pushU32(bytes, 12);
   pushU32(bytes, 7);
-  pushU32(bytes, 14);
+  pushU32(bytes, 18);
   const row = [
     index.get('furnace@default') ?? 0,
     index.get('self-test-furnace') ?? 0,
@@ -85,6 +85,9 @@ function encodeTemplatePack(strings) {
     0,
     0,
     0,
+    index.get('nei_pixels') ?? 0,
+    index.get('uniform-scale') ?? 0,
+    index.get('top-left') ?? 0,
   ];
   row.forEach((value, idx) => {
     if (idx === 7) {
@@ -163,7 +166,7 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
       bytes: templatePack.byteLength,
       envelopeSchema: 'neonei/ui-template-pack/current',
       payloadMagic: 'NEIUIT1_NUL',
-      version: 5,
+      version: 6,
       sections: [],
     },
     {
@@ -223,12 +226,15 @@ function buildNativeUiExportAbiReport({ status = 'ok', overrides = {} } = {}) {
     rawReportStatus: status === 'ok' ? 'ok' : 'blocked',
     layoutCount: 1,
     slotCount: 2,
+    rectCount: 0,
     primitiveCount: 1,
     missingSurfaceCount: 0,
     slotBoundsViolationCount: 0,
+    rectBoundsViolationCount: 0,
     primitiveBoundsViolationCount: 0,
     backgroundBoundsViolationCount: 0,
     coordinateContractViolationCount: 0,
+    interactionContractViolationCount: 0,
     missingReport: false,
     schemaViolations: [],
     pathViolations: [],
@@ -236,9 +242,11 @@ function buildNativeUiExportAbiReport({ status = 'ok', overrides = {} } = {}) {
     samples: {
       missingSurface: [],
       slotBounds: [],
+      rectBounds: [],
       primitiveBounds: [],
       backgroundBounds: [],
       coordinateContract: [],
+      interactionContract: [],
     },
     policy: {
       missingReport: 'fail-closed',
@@ -278,6 +286,7 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     'EU/t',
     'nei_pixels',
     'top-left',
+    'uniform-scale',
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -371,6 +380,7 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
     'EU/t',
     'nei_pixels',
     'top-left',
+    'uniform-scale',
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -386,6 +396,7 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
     'EU/t',
     'nei_pixels',
     'top-left',
+    'uniform-scale',
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -440,6 +451,7 @@ test('loadUiPackRuntime fails closed before pack fetch when native UI export ABI
     'EU/t',
     'nei_pixels',
     'top-left',
+    'uniform-scale',
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -489,6 +501,67 @@ test('loadUiPackRuntime fails closed before pack fetch when native UI export ABI
   }
 });
 
+test('loadUiPackRuntime fails closed when native UI export primitive bounds counter is nonzero', async () => {
+  clearUiPackRuntimeCache();
+  const strings = [
+    '',
+    'furnace@default',
+    'self-test-furnace',
+    'furnace',
+    'textures/gui/container/furnace.png',
+    'item-input',
+    'item-output',
+    'EU/t',
+    'nei_pixels',
+    'top-left',
+    'uniform-scale',
+    'r1',
+    'recipes/ui-payload-shards/55.json',
+    'Furnace',
+  ];
+  const templatePack = encodeTemplatePack(strings);
+  const bindingPack = encodeBindingPack(strings);
+  const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const exportAbiReport = buildNativeUiExportAbiReport({
+    overrides: {
+      primitiveBoundsViolationCount: 1,
+    },
+  });
+  const abiReport = buildUiPackAbiReport({ templatePack, bindingPack, stringPack });
+  const manifest = withRuntimeFiles({
+    schema: 'neonei/runtime/current',
+    capabilities: ['recipes.native-ui-layout', 'recipes.ui-pack', 'native-render.webgl2'],
+    entrypoints: {
+      uiTemplates: 'rust/ui-pack/ui_templates.bin',
+      uiBindings: 'rust/ui-pack/ui_bindings.bin',
+      uiStrings: 'rust/ui-pack/ui_strings.bin',
+    },
+  }, { templatePack, bindingPack, stringPack, abiReport, exportAbiReport });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/api/runtime/current/manifest?case=primitive-bounds-export-abi')) {
+      return new Response(JSON.stringify(manifest), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.includes('/api/runtime/current/asset/rust/native-ui-export-abi-validation-report.json')) {
+      return new Response(JSON.stringify(exportAbiReport), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.includes('/api/runtime/current/asset/rust/ui-pack-abi-validation-report.json')) {
+      return new Response(JSON.stringify(abiReport), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`runtime export ABI gate should not fetch UI pack artifacts after primitive bounds failure: ${url}`);
+  };
+  try {
+    const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=primitive-bounds-export-abi');
+    assert.equal(runtime.status, 'error');
+    assert.match(runtime.error ?? '', /primitiveBoundsViolationCount must be zero/);
+    assert.equal(runtime.summary.templateCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearUiPackRuntimeCache();
+  }
+});
+
 test('loadUiPackRuntime rejects ABI reports that do not match manifest entrypoints', async () => {
   clearUiPackRuntimeCache();
   const strings = [
@@ -502,6 +575,7 @@ test('loadUiPackRuntime rejects ABI reports that do not match manifest entrypoin
     'EU/t',
     'nei_pixels',
     'top-left',
+    'uniform-scale',
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',

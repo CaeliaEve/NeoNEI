@@ -18,6 +18,24 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
 
+function noInteraction() {
+  return {
+    interactionKind: 'none',
+    interactionTargetKind: 'none',
+    interactionTargetId: '',
+    interactionPayloadSchema: 'neonei/native-ui-interaction/v1',
+  };
+}
+
+function itemClickInteraction(itemId) {
+  return {
+    interactionKind: 'item-click',
+    interactionTargetKind: 'item',
+    interactionTargetId: itemId,
+    interactionPayloadSchema: 'neonei/native-ui-interaction/v1',
+  };
+}
+
 test('native UI interaction projection enforces design-space geometry ABI', () => {
   assert.deepEqual(nativeUiSlotCellStyle({ x: 4, y: 8, width: 20, height: 18 }), {
     left: '4px',
@@ -33,7 +51,7 @@ test('native UI interaction projection enforces design-space geometry ABI', () =
     height: '8px',
   });
 
-  assert.deepEqual(nativeUiRectStyle({ id: 'r', kind: 'info', role: 'hint', label: '', tooltip: '', action: '', itemId: '', payloadKey: '', x: 10, y: 11, width: 12, height: 13, coordinateSpace: 'nei_pixels', anchor: 'top-left' }), {
+  assert.deepEqual(nativeUiRectStyle({ id: 'r', kind: 'info', role: 'hint', label: '', tooltip: '', action: '', itemId: '', payloadKey: '', ...noInteraction(), x: 10, y: 11, width: 12, height: 13, coordinateSpace: 'nei_pixels', anchor: 'top-left' }), {
     left: '10px',
     top: '11px',
     width: '12px',
@@ -50,15 +68,17 @@ test('native UI interaction projection owns hotspot labels and actions', () => {
     role: 'output',
     label: '',
     tooltip: 'Output slot',
-    action: ' item-click ',
-    itemId: ' minecraft:iron_ingot ',
+    action: 'legacy-string-is-ignored',
+    itemId: 'legacy:item_is_ignored',
+    ...itemClickInteraction('minecraft:iron_ingot'),
   };
 
   assert.equal(nativeUiRectLabel(hotspot, 'fallback'), 'Output slot');
   assert.equal(nativeUiHotspotAction(hotspot), 'item-click');
   assert.equal(nativeUiHotspotItemId(hotspot), 'minecraft:iron_ingot');
   assert.equal(isNativeUiHotspotInteractive(hotspot), true);
-  assert.equal(isNativeUiHotspotInteractive({ ...hotspot, action: 'inspect' }), false);
+  assert.equal(isNativeUiHotspotInteractive({ ...hotspot, ...noInteraction() }), false);
+  assert.throws(() => nativeUiHotspotItemId({ ...hotspot, interactionPayloadSchema: '' }), /interactionPayloadSchema/);
   assert.equal(nativeUiRectLabel({ label: '', tooltip: '', role: '', kind: '', id: '' }, 'fallback'), 'fallback');
 });
 

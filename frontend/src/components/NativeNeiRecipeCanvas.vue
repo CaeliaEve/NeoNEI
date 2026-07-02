@@ -124,6 +124,7 @@ const fitMatrix = computed<NativeUiFitMatrix>(() => createNativeUiFitMatrix({
   sourceHeight: displayHeight.value,
   availableWidth: shellWidth.value,
   availableHeight: shellHeight.value,
+  scaleMode: nativeUiSurface.value.scaleMode,
 }));
 const fitScale = computed(() => fitMatrix.value.scale);
 const fittedWidth = computed(() => fitMatrix.value.fittedWidth);
