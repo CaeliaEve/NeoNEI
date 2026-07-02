@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import patternsRoutesModule from '../dist/routes/patterns.routes.js';
+import patternControlModule from '../dist/services/pattern-control.service.js';
 
-const { normalizePatternOptions } = patternsRoutesModule;
+const { normalizePatternOptions } = patternControlModule;
 
 test('normalizePatternOptions accepts nested options payload', () => {
   const normalized = normalizePatternOptions({
