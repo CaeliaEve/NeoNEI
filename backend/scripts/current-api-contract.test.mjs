@@ -322,12 +322,16 @@ test('dynamic sqlite read namespaces and lab bucket are retired from production 
 
 test('v1 runtime contracts advertise ops/admin control diagnostics, not legacy sqlite read routes', () => {
   const v1Source = fs.readFileSync('src/routes/v1.routes.ts', 'utf8');
+  const runtimeContractIndexSource = fs.readFileSync('src/services/runtime-contract-index.service.ts', 'utf8');
   assert.doesNotMatch(v1Source, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority|legacyApiBase/);
-  assert.match(v1Source, /control: \{/);
-  assert.match(v1Source, /patterns: '\/ops\/patterns'/);
-  assert.match(v1Source, /publish: '\/ops\/publish'/);
-  assert.match(v1Source, /renderContract: '\/ops\/render-contract'/);
+  assert.match(v1Source, /getApiV1RuntimeContractIndex\(\)/);
+  assert.doesNotMatch(v1Source, /control: \{/);
+  assert.match(runtimeContractIndexSource, /const RUNTIME_CONTROL_ENDPOINTS = Object\.freeze/);
+  assert.match(runtimeContractIndexSource, /patterns: '\/ops\/patterns'/);
+  assert.match(runtimeContractIndexSource, /publish: '\/ops\/publish'/);
+  assert.match(runtimeContractIndexSource, /renderContract: '\/ops\/render-contract'/);
   assert.doesNotMatch(v1Source, /\/lab\//);
+  assert.doesNotMatch(runtimeContractIndexSource, /\/lab\//);
   assert.doesNotMatch(v1Source, /\/api\/recipes-indexed/);
   assert.doesNotMatch(v1Source, /\/api\/recipe-bootstrap/);
   assert.doesNotMatch(v1Source, /compatibility: \{/);

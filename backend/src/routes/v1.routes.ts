@@ -7,33 +7,9 @@ import {
   setNoStoreHeaders,
   setPublicCacheHeaders,
 } from '../utils/http-cache';
+import { getApiV1RuntimeContractIndex } from '../services/runtime-contract-index.service';
 
 const router = Router();
-
-function getRuntimeContracts() {
-  return {
-    version: 1,
-    contracts: {
-      manifest: '/contracts/runtime/manifest.schema.json',
-      browser: '/contracts/runtime/browser.schema.json',
-      search: '/contracts/runtime/search.schema.json',
-      recipe: '/contracts/runtime/recipe.schema.json',
-      texture: '/contracts/runtime/texture.schema.json',
-      error: '/contracts/runtime/error.schema.json',
-      api: '/contracts/runtime/api.schema.json',
-    },
-    runtime: {
-      manifest: '/api/v1/runtime/manifest',
-      distDataManifest: '/dist-data/manifest.json',
-      publishManifest: '/api/publish/manifest',
-    },
-    control: {
-      patterns: '/ops/patterns',
-      publish: '/ops/publish',
-      renderContract: '/ops/render-contract',
-    },
-  };
-}
 
 router.get('/health', (_req, res) => {
   setNoStoreHeaders(res);
@@ -76,7 +52,7 @@ router.get('/runtime/contracts', (_req, res) => {
     maxAgeSeconds: 300,
     staleWhileRevalidateSeconds: 3600,
   });
-  res.json(getRuntimeContracts());
+  res.json(getApiV1RuntimeContractIndex());
 });
 
 export default router;
