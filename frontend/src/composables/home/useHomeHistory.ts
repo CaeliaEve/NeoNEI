@@ -1,7 +1,5 @@
-﻿import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, type Ref } from "vue";
 import type { BrowserGridEntry, Item } from "../../services/api";
-import type { PageAtlasResult } from "../../services/pageAtlas";
-import { warmGlobalBrowserAtlasForItemsDetailed } from "../../services/globalBrowserAtlas";
 
 type ItemBasicInfo = Pick<Item, "itemId" | "localizedName" | "modId" | "internalName" | "damage" | "imageFileName" | "renderAssetRef" | "preferredImageUrl">;
 
@@ -33,11 +31,8 @@ const toHistoryItem = (item: Item): ItemBasicInfo => ({
 
 export function useHomeHistory(itemSize: Ref<number>) {
   const viewHistory = ref<ItemBasicInfo[]>(loadViewHistory());
-  const historyAtlas = ref<PageAtlasResult | null | undefined>(undefined);
-  const historyItems = ref<Item[]>([]);
   const historyPanelRef = ref<HTMLElement | null>(null);
   const historyPanelWidth = ref(0);
-  let historyAtlasRequestSeq = 0;
 
   const saveViewHistory = () => {
     try {
@@ -94,13 +89,8 @@ export function useHomeHistory(itemSize: Ref<number>) {
 
   const historyVisibleCount = computed(() => historyColumns.value * HISTORY_ROWS);
   const visibleHistorySeeds = computed(() => viewHistory.value.slice(0, historyVisibleCount.value));
-  const visibleHistoryItems = computed<Item[]>(() =>
-    historyItems.value.length > 0
-      ? historyItems.value
-      : (visibleHistorySeeds.value as Item[]),
-  );
   const historyBrowserEntries = computed<BrowserGridEntry[]>(() =>
-    visibleHistoryItems.value.map((item) => ({
+    (visibleHistorySeeds.value as Item[]).map((item) => ({
       key: item.itemId,
       kind: "item",
       item,
@@ -116,41 +106,8 @@ export function useHomeHistory(itemSize: Ref<number>) {
     window.removeEventListener("resize", updateHistoryPanelWidth);
   });
 
-  watch(
-    () => [
-      visibleHistorySeeds.value.map((item) => item.itemId).join("|"),
-      historyItemPixelSize.value,
-    ].join("::"),
-    async () => {
-      const seedItems = visibleHistorySeeds.value;
-      if (seedItems.length === 0) {
-        historyItems.value = [];
-        historyAtlas.value = null;
-        return;
-      }
-
-      const requestSeq = ++historyAtlasRequestSeq;
-      const itemIds = seedItems.map((item) => item.itemId);
-      historyItems.value = seedItems as Item[];
-      historyAtlas.value = undefined;
-
-      const globalCoverage = await warmGlobalBrowserAtlasForItemsDetailed(itemIds).catch(() => null);
-      if (requestSeq !== historyAtlasRequestSeq) return;
-      historyItems.value = seedItems as Item[];
-      historyAtlas.value = null;
-      if (globalCoverage && globalCoverage.total > 0 && globalCoverage.missingCount > 0) {
-        console.warn("[NeoNEI] History native surface atlas coverage gap", {
-          total: globalCoverage.total,
-          missingCount: globalCoverage.missingCount,
-        });
-      }
-    },
-    { immediate: true },
-  );
-
   return {
     viewHistory,
-    historyAtlas,
     historyRows: HISTORY_ROWS,
     historyGridGap: HISTORY_GRID_GAP,
     historyItemPixelSize,

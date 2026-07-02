@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
-import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../../services/api";
-import type { PageAtlasResult } from "../../services/pageAtlas";
+import type { BrowserVariantGroup, Item } from "../../services/api";
 import { createNativeSurfaceController } from "../../native-surface/NativeSurfaceController";
 import type {
   NativeRendererBackendKind,
+  NativeSurfaceEntryKind,
   NativeSurfaceId,
   NativeSurfaceFrameProjectionMetrics,
   NativeSurfacePointer,
@@ -21,26 +21,21 @@ import {
 const props = withDefaults(defineProps<{
   surfaceId: NativeSurfaceId;
   viewportRole?: NativeSurfaceViewportRole;
-  entries: BrowserGridEntry[];
   itemSize: number;
   page?: number;
   searchQuery?: string;
   modId?: string | null;
   expandedGroups?: string[];
-  atlas?: PageAtlasResult | null;
   manifestUrl?: string | null;
   enableAnimation?: boolean;
-  preferAtlas?: boolean;
   historyItemIds?: string[];
   selectedItemId?: string | null;
 }>(), {
   viewportRole: "browser",
   page: 1,
-  atlas: null,
   manifestUrl: null,
   expandedGroups: () => [],
   enableAnimation: true,
-  preferAtlas: true,
   historyItemIds: () => [],
   selectedItemId: null,
 });
@@ -73,7 +68,7 @@ let nativeHitScheduled = false;
 let nativePendingHitPointer: NativeSurfacePointer | null = null;
 const nativeRenderVisible = ref(false);
 const nativeHoveredHit = ref<{
-  kind: BrowserGridEntry["kind"];
+  kind: NativeSurfaceEntryKind;
   item: Item;
   group?: BrowserVariantGroup;
   nativeTooltip?: {
@@ -764,4 +759,3 @@ if (typeof document !== "undefined") {
   line-height: 1.4;
 }
 </style>
-

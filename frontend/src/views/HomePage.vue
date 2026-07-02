@@ -111,7 +111,6 @@ const showTransitionOverlay = ref(false);
 
 const {
   viewHistory,
-  historyAtlas,
   historyRows,
   historyGridGap,
   historyItemPixelSize,
@@ -412,8 +411,6 @@ setGridViewportSync(syncMeasuredPageSize);
           :items="items"
           :load-error="loadError"
           :item-grid-empty-subtitle="itemGridEmptySubtitle"
-          :browser-grid-entries="browserGridEntries"
-          :current-page-atlas="currentPageAtlas"
           :expanded-group-keys="expandedGroupKeys"
           :expanded-group-filter-panels="expandedGroupFilterPanels"
           :expanded-group-facet-filters="expandedGroupFacetFilters"
@@ -445,7 +442,6 @@ setGridViewportSync(syncMeasuredPageSize);
               :history-rows="historyRows"
               :history-grid-gap="historyGridGap"
               :history-browser-entries="historyBrowserEntries"
-              :history-atlas="historyAtlas"
               @panel-resize="setHistoryPanelRef"
               @item-click="openCraftingRecipes"
               @item-contextmenu="handleCardContextMenu"

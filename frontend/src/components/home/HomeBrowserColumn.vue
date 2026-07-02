@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { StyleValue } from "vue";
-import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../../services/api";
-import type { PageAtlasResult } from "../../services/pageAtlas";
+import type { BrowserVariantGroup, Item } from "../../services/api";
 import type { NativeSurfaceFrameProjectionMetrics } from "../../native-surface/contracts";
 import { resolveDistDataNativeRuntimeManifestPath } from "../../services/distDataRuntime";
 import NativeBrowserSurface from "../native-surface/NativeBrowserSurface.vue";
@@ -17,8 +16,6 @@ defineProps<{
   items: Item[];
   loadError: string;
   itemGridEmptySubtitle: string;
-  browserGridEntries: BrowserGridEntry[];
-  currentPageAtlas: PageAtlasResult | null | undefined;
   expandedGroupKeys: string[];
   expandedGroupFilterPanels: BrowserVariantGroup[];
   expandedGroupFacetFilters: Record<string, string>;
@@ -171,16 +168,13 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                 <NativeBrowserSurface
                   surface-id="browser"
                   viewport-role="browser"
-                  :entries="browserGridEntries"
                   :item-size="itemSize"
                   :page="currentPage"
                   :search-query="searchQuery"
                   :mod-id="selectedMod"
                   :expanded-groups="expandedGroupKeys"
-                  :atlas="currentPageAtlas"
                   :manifest-url="nativeRuntimeManifestUrl"
                   :enable-animation="true"
-                  :prefer-atlas="true"
                   :selected-item-id="selectedItemId"
                   @item-click="emit('itemClick', $event)"
                   @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"

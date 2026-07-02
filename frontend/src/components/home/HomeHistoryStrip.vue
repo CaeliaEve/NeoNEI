@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import type { BrowserGridEntry, Item } from "../../services/api";
-import type { PageAtlasResult } from "../../services/pageAtlas";
 import { resolveDistDataNativeRuntimeManifestPath } from "../../services/distDataRuntime";
 import NativeBrowserSurface from "../native-surface/NativeBrowserSurface.vue";
 
@@ -11,7 +10,6 @@ const props = defineProps<{
   historyRows: number;
   historyGridGap: number;
   historyBrowserEntries: BrowserGridEntry[];
-  historyAtlas: PageAtlasResult | null | undefined;
 }>();
 
 const emit = defineEmits<{
@@ -50,12 +48,9 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
       <NativeBrowserSurface
         surface-id="history"
         viewport-role="history"
-        :entries="historyBrowserEntries"
         :item-size="historyItemPixelSize"
-        :atlas="historyAtlas"
         :manifest-url="nativeRuntimeManifestUrl"
         :enable-animation="false"
-        :prefer-atlas="true"
         :history-item-ids="historyItemIds"
         @item-click="emit('itemClick', $event)"
         @item-contextmenu="(item, event) => emit('itemContextmenu', item, event)"

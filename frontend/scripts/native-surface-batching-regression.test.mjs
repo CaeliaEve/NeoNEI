@@ -46,6 +46,10 @@ test("native surface runtime path removes compat entry projection input", () => 
   const protocol = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");
   const worker = readSource("src/workers/nativeSurfaceEngine.worker.ts");
   const mutations = readSource("src/workers/nativeSurfaceWorkerMutations.ts");
+  const nativeSurface = readSource("src/components/native-surface/NativeBrowserSurface.vue");
+  const homeColumn = readSource("src/components/home/HomeBrowserColumn.vue");
+  const historyStrip = readSource("src/components/home/HomeHistoryStrip.vue");
+  const homeHistory = readSource("src/composables/home/useHomeHistory.ts");
 
   for (const source of [controller, controlPlane, protocol, worker, mutations]) {
     assert.doesNotMatch(source, /compatEntries/);
@@ -53,6 +57,10 @@ test("native surface runtime path removes compat entry projection input", () => 
     assert.doesNotMatch(source, /setCompatEntries/);
     assert.doesNotMatch(source, /shouldSendCompatEntriesToWorker/);
   }
+  assert.doesNotMatch(nativeSurface, /BrowserGridEntry|PageAtlasResult|preferAtlas|entries:\s*BrowserGridEntry|atlas:\s*PageAtlasResult/);
+  assert.doesNotMatch(homeColumn, /:entries=|:atlas=|:prefer-atlas=|browserGridEntries:|currentPageAtlas:/);
+  assert.doesNotMatch(historyStrip, /:entries=|:atlas=|:prefer-atlas=|historyAtlas:/);
+  assert.doesNotMatch(homeHistory, /historyAtlas|warmGlobalBrowserAtlasForItemsDetailed|PageAtlasResult/);
   assert.match(worker, /return \{ source: "empty", entries: \[\] \}/);
 });
 
