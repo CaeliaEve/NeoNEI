@@ -7,10 +7,7 @@ import {
   resolveDistDataRuntimeFile,
 } from './current-runtime-artifact-index.service';
 import {
-  RUST_SEARCH_PACK_DEFAULT_PATH,
-  RUST_SEARCH_PACK_DEFAULT_VERSION,
-  RUST_SEARCH_PACK_MANIFEST_KEYS,
-  RUST_SEARCH_PACK_SIGNATURE_FIELDS,
+  RUST_SEARCH_PACK_DESCRIPTOR,
   type RustSearchPackManifestKey,
   type RustSearchPackSignatureField,
 } from './rust-search-pack-abi';
@@ -42,7 +39,7 @@ function resolveSearchPackCandidate(relativePath?: string | null): string | null
 }
 
 function manifestSignature(manifest: DistDataManifest | null): string {
-  for (const field of RUST_SEARCH_PACK_SIGNATURE_FIELDS) {
+  for (const field of RUST_SEARCH_PACK_DESCRIPTOR.signatureFields) {
     const signature = `${manifest?.[field] ?? ''}`.trim();
     if (signature) return signature;
   }
@@ -51,8 +48,8 @@ function manifestSignature(manifest: DistDataManifest | null): string {
 
 function searchPackCandidatePaths(manifest: DistDataManifest | null): string[] {
   const relativePaths = [
-    manifest?.files?.[RUST_SEARCH_PACK_MANIFEST_KEYS.rustSearchPack],
-    RUST_SEARCH_PACK_DEFAULT_PATH,
+    manifest?.files?.[RUST_SEARCH_PACK_DESCRIPTOR.manifestKey],
+    RUST_SEARCH_PACK_DESCRIPTOR.defaultPath,
   ];
   return Array.from(new Set(
     relativePaths
@@ -67,7 +64,9 @@ function coercePack(payload: BrowserSearchPackPayload | null, signature?: string
     return null;
   }
   return {
-    version: Number.isFinite(Number(payload?.version)) ? Number(payload?.version) : RUST_SEARCH_PACK_DEFAULT_VERSION,
+    version: Number.isFinite(Number(payload?.version))
+      ? Number(payload?.version)
+      : RUST_SEARCH_PACK_DESCRIPTOR.defaultVersion,
     signature: payload?.signature ?? signature ?? undefined,
     total: Number.isFinite(Number(payload?.total)) ? Number(payload?.total) : items.length,
     items,

@@ -133,6 +133,14 @@ test('native render diagnostics and rust search pack runtime consumers use ABI c
 
   assert.equal(existsSync(rustSearchPackAbiPath), true, 'rust search pack ABI catalog must exist');
   assert.match(rustSearchPack, /from '\.\/rust-search-pack-abi'/);
+  assert.match(rustSearchPack, /RUST_SEARCH_PACK_DESCRIPTOR\.signatureFields/);
+  assert.match(rustSearchPack, /RUST_SEARCH_PACK_DESCRIPTOR\.manifestKey/);
+  assert.match(rustSearchPack, /RUST_SEARCH_PACK_DESCRIPTOR\.defaultPath/);
+  assert.match(rustSearchPack, /RUST_SEARCH_PACK_DESCRIPTOR\.defaultVersion/);
+  assert.match(rustSearchPackAbi, /RUST_SEARCH_PACK_DESCRIPTOR/);
+  assert.match(rustSearchPackAbi, /validateAndFreezeRustSearchPackDescriptor/);
+  assert.match(rustSearchPackAbi, /Rust search pack descriptor must not be null/);
+  assert.match(rustSearchPackAbi, /Missing Rust search pack signature field/);
   assert.match(rustSearchPackAbi, /RUST_SEARCH_PACK_MANIFEST_KEYS/);
   assert.match(rustSearchPackAbi, /RUST_SEARCH_PACK_DEFAULT_PATH/);
   assert.match(rustSearchPackAbi, /RUST_SEARCH_PACK_DEFAULT_VERSION/);
