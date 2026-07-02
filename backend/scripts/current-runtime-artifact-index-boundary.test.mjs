@@ -10,19 +10,25 @@ const apiPath = resolve(root, 'src/services/current-runtime-api.service.ts');
 const reportRegistryPath = resolve(root, 'src/services/current-runtime-report-registry.service.ts');
 const runtimeRecipePackPath = resolve(root, 'src/services/runtime-recipe-pack.service.ts');
 const nativeRenderDiagnosticsPath = resolve(root, 'src/services/native-render-runtime-diagnostics.service.ts');
+const runtimeHealthPath = resolve(root, 'src/services/runtime-health-summary.service.ts');
+const rustSearchPackPath = resolve(root, 'src/services/rust-search-pack.service.ts');
 const artifactIndex = readFileSync(artifactIndexPath, 'utf8');
 const snapshot = readFileSync(snapshotPath, 'utf8');
 const api = readFileSync(apiPath, 'utf8');
 const reportRegistry = readFileSync(reportRegistryPath, 'utf8');
 const runtimeRecipePack = readFileSync(runtimeRecipePackPath, 'utf8');
 const nativeRenderDiagnostics = readFileSync(nativeRenderDiagnosticsPath, 'utf8');
+const runtimeHealth = readFileSync(runtimeHealthPath, 'utf8');
+const rustSearchPack = readFileSync(rustSearchPackPath, 'utf8');
 
 test('current runtime artifact index owns dist-data paths and artifact inventory', () => {
   assert.equal(existsSync(artifactIndexPath), true, 'current-runtime-artifact-index.service.ts must exist');
   assert.match(artifactIndex, /import fs from 'fs'/);
   assert.match(artifactIndex, /import path from 'path'/);
+  assert.match(artifactIndex, /import \{ DIST_DATA_DIR \} from '\.\.\/config\/runtime-paths'/);
   assert.match(artifactIndex, /CURRENT_RUNTIME_DIST_DATA_DIR/);
   assert.match(artifactIndex, /CURRENT_RUNTIME_DIST_MANIFEST_FILE/);
+  assert.doesNotMatch(artifactIndex, /PUBLIC_DIR/);
   for (const symbol of [
     'readCurrentRuntimeJson',
     'readCurrentRuntimeText',
@@ -78,4 +84,12 @@ test('runtime recipe pack and native render diagnostics reuse artifact index pat
   assert.doesNotMatch(nativeRenderDiagnostics, /PUBLIC_DIR/);
   assert.doesNotMatch(nativeRenderDiagnostics, /path\.resolve/);
   assert.doesNotMatch(nativeRenderDiagnostics, /path\.join/);
+
+  assert.match(runtimeHealth, /import \{ DIST_DATA_DIR \} from '\.\.\/config\/runtime-paths'/);
+  assert.doesNotMatch(runtimeHealth, /PUBLIC_DIR/);
+  assert.doesNotMatch(runtimeHealth, /path\.join\(PUBLIC_DIR, 'dist-data'\)/);
+
+  assert.match(rustSearchPack, /import \{ DIST_DATA_DIR \} from '\.\.\/config\/runtime-paths'/);
+  assert.doesNotMatch(rustSearchPack, /PUBLIC_DIR/);
+  assert.doesNotMatch(rustSearchPack, /path\.resolve\(PUBLIC_DIR, 'dist-data'\)/);
 });

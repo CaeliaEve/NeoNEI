@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { PUBLIC_DIR } from '../config/runtime-paths';
+import { DIST_DATA_DIR } from '../config/runtime-paths';
 import { resolveAccelerationCompilerAuthority } from './acceleration-runtime-compiler-authority.service';
 import { acquireCurrentRuntimeSnapshot, type CurrentRuntimeSnapshot, type CurrentRuntimeSnapshotHandle } from './current-runtime-snapshot.service';
 import { getNativeUiRuntimeProofSummary } from './native-ui-runtime-proof.service';
@@ -89,7 +89,6 @@ export type RuntimeHealthSummaryOptions = Readonly<{
   snapshot?: CurrentRuntimeSnapshot | null;
 }>;
 
-const DIST_DATA_DIR = path.join(PUBLIC_DIR, 'dist-data');
 const CACHE_TTL_MS = Math.max(1_000, Number(process.env.RUNTIME_HEALTH_SUMMARY_TTL_MS || 10_000));
 
 let cache: { expiresAt: number; summary: RuntimeHealthSummary } | null = null;

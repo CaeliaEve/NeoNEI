@@ -1,5 +1,6 @@
 import fs from 'fs';
 import { resolveDistDataRuntimeFile } from './current-runtime-artifact-index.service';
+import { NATIVE_UI_RUNTIME_PROOF_REPORTS } from './native-ui-runtime-proof-abi';
 import { badRequest, notFound } from '../utils/http';
 
 const CURRENT_RUNTIME_REPORTS = Object.freeze({
@@ -11,8 +12,8 @@ const CURRENT_RUNTIME_REPORTS = Object.freeze({
   'api-contract-report': 'validation/report.json',
   'deployment-report': 'rust/deployment-report.json',
   'semantic-validation-report': 'rust/semantic-validation-report.json',
-  'native-ui-export-abi-validation-report': 'rust/native-ui-export-abi-validation-report.json',
-  'ui-pack-abi-validation-report': 'rust/ui-pack-abi-validation-report.json',
+  [NATIVE_UI_RUNTIME_PROOF_REPORTS.nativeUiExportAbi.slug]: NATIVE_UI_RUNTIME_PROOF_REPORTS.nativeUiExportAbi.path,
+  [NATIVE_UI_RUNTIME_PROOF_REPORTS.uiPackAbi.slug]: NATIVE_UI_RUNTIME_PROOF_REPORTS.uiPackAbi.path,
 } as const);
 
 export type CurrentRuntimeReportSlug = keyof typeof CURRENT_RUNTIME_REPORTS;

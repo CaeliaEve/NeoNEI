@@ -25,10 +25,19 @@ test('native UI runtime proof is a dedicated artifact-index-backed health subsys
   assert.doesNotMatch(proofService, /import fs from 'fs'/);
   assert.doesNotMatch(proofService, /import path from 'path'/);
   assert.match(proofContractCatalog, /NATIVE_UI_RUNTIME_PROOF_SCHEMA_VERSION = 'neonei\/native-ui-runtime-proof\/current'/);
+  assert.match(proofContractCatalog, /NATIVE_UI_PROOF_STATUS = Object\.freeze/);
+  assert.match(proofContractCatalog, /NATIVE_UI_PROOF_LOGICAL_NAMES = Object\.freeze/);
+  assert.match(proofContractCatalog, /NATIVE_UI_PROOF_MANIFEST_KEYS = Object\.freeze/);
+  assert.match(proofContractCatalog, /NATIVE_UI_RUNTIME_PROOF_POLICY = Object\.freeze/);
+  assert.match(proofContractCatalog, /NATIVE_UI_RUNTIME_PROOF_REPORTS = Object\.freeze/);
+  assert.match(proofContractCatalog, /NATIVE_UI_PROOF_REPORT_FIELDS = Object\.freeze/);
   assert.match(proofService, /schemaVersion: NATIVE_UI_RUNTIME_PROOF_SCHEMA_VERSION/);
+  assert.match(proofService, /NATIVE_UI_PROOF_STATUS/);
+  assert.match(proofService, /NATIVE_UI_PROOF_REPORT_FIELDS/);
+  assert.match(proofService, /policy: NATIVE_UI_RUNTIME_PROOF_POLICY/);
   assert.match(proofAbiCatalog, /NATIVE_UI_EXPORT_POLICY_LEGACY_FALLBACK = 'forbidden'/);
-  assert.match(proofService, /missingProof: 'fail-closed'/);
-  assert.match(proofService, /invalidProof: 'fail-closed'/);
+  assert.doesNotMatch(proofService, /missingProof: 'fail-closed'/);
+  assert.doesNotMatch(proofService, /invalidProof: 'fail-closed'/);
 });
 
 test('native UI proof validates both producer ABI and UI pack ABI reports', () => {
@@ -56,14 +65,17 @@ test('native UI proof validates both producer ABI and UI pack ABI reports', () =
 
 test('runtime health and diagnostics expose proof state and report delivery slugs', () => {
   assert.match(healthService, /getNativeUiRuntimeProofSummary/);
+  assert.match(healthService, /import \{ DIST_DATA_DIR \} from '\.\.\/config\/runtime-paths'/);
+  assert.doesNotMatch(healthService, /path\.join\(PUBLIC_DIR, 'dist-data'\)/);
   assert.match(healthService, /nativeUiProofBlocked/);
   assert.match(healthService, /nativeUi,/);
   assert.match(diagnosticsService, /nativeUi: RuntimeHealthSummary\['nativeUi'\]/);
   assert.match(diagnosticsService, /nativeUi: health\.nativeUi/);
   assert.match(observabilityService, /nativeUiProof: health\.nativeUi\.status/);
   assert.match(observabilityService, /nativeUi: health\.nativeUi/);
-  assert.match(reportRegistry, /'native-ui-export-abi-validation-report': 'rust\/native-ui-export-abi-validation-report\.json'/);
-  assert.match(reportRegistry, /'ui-pack-abi-validation-report': 'rust\/ui-pack-abi-validation-report\.json'/);
+  assert.match(reportRegistry, /NATIVE_UI_RUNTIME_PROOF_REPORTS/);
+  assert.match(reportRegistry, /\[NATIVE_UI_RUNTIME_PROOF_REPORTS\.nativeUiExportAbi\.slug\]/);
+  assert.match(reportRegistry, /\[NATIVE_UI_RUNTIME_PROOF_REPORTS\.uiPackAbi\.slug\]/);
   assert.match(frontendTypes, /interface NativeUiRuntimeProofSummary/);
   assert.match(frontendTypes, /nativeUi\?: NativeUiRuntimeProofSummary/);
 });

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { PUBLIC_DIR } from '../config/runtime-paths';
+import { DIST_DATA_DIR } from '../config/runtime-paths';
 import type { BrowserSearchPackPayload } from './publish-payload.service';
 
 type DistDataManifest = {
@@ -49,7 +49,7 @@ export class RustSearchPackService {
   private cachedPack: BrowserSearchPackPayload | null = null;
 
   readDistDataSearchPack(): BrowserSearchPackPayload | null {
-    const distDataRoot = path.resolve(PUBLIC_DIR, 'dist-data');
+    const distDataRoot = DIST_DATA_DIR;
     const manifestPath = path.join(distDataRoot, 'manifest.json');
     const manifest = readJsonFile<DistDataManifest>(manifestPath);
     const signature = `${manifest?.sourceSignature ?? manifest?.runtimeCacheKey ?? ''}`.trim() || manifestPath;
