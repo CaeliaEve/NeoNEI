@@ -8,9 +8,11 @@ import type {
   BrowserSearchCatalogResponse,
   BrowserSearchPackResponse,
   Item,
+  ItemSearchBasic,
   PageRichMediaManifest,
   PublicRuntimeManifest,
   PaginatedResponse,
+  SearchItemsFastOptions,
 } from './types';
 import { browserRuntimeClient, type BrowserByIdsParams, type BrowserPageParams } from './browserClient';
 import { searchRuntimeClient } from './searchClient';
@@ -25,6 +27,10 @@ import {
   getBrowserSearchCatalogCacheKey,
   resolvePublishedWindowPath,
 } from './browserProjection';
+import {
+  mergeBrowserSearchPackEntries,
+  searchBrowserSearchPackEntries,
+} from './browserSearchProjection';
 import { setCacheWithLimit } from './cacheUtils';
 
 type PersistentBrowserPageCacheRecord = {
@@ -347,6 +353,43 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     return request;
   }
 
+  async function searchItemsFast(
+    keyword: string,
+    limit: number = 60,
+    searchOptions?: SearchItemsFastOptions,
+  ): Promise<ItemSearchBasic[]> {
+    const normalizedKeyword = `${keyword ?? ''}`.trim();
+    if (!normalizedKeyword || normalizedKeyword.toLowerCase().startsWith('type:')) {
+      return [];
+    }
+
+    const ensureNotAborted = () => {
+      if (searchOptions?.signal?.aborted) {
+        throw new DOMException('The operation was aborted.', 'AbortError');
+      }
+    };
+
+    ensureNotAborted();
+    const hotShard = await getBrowserSearchPackShard('hot');
+    ensureNotAborted();
+    const hotMatches = searchBrowserSearchPackEntries(hotShard?.items ?? [], normalizedKeyword, limit);
+    if (hotMatches.length >= limit) {
+      return hotMatches;
+    }
+
+    const tailShard = await getBrowserSearchPackShard('tail');
+    ensureNotAborted();
+    const mergedEntries = mergeBrowserSearchPackEntries(hotShard?.items ?? [], tailShard?.items ?? []);
+    const mergedMatches = searchBrowserSearchPackEntries(mergedEntries, normalizedKeyword, limit);
+    if (mergedMatches.length > 0 || mergedEntries.length > 0) {
+      return mergedMatches;
+    }
+
+    const fullPack = await getBrowserSearchPack();
+    ensureNotAborted();
+    return searchBrowserSearchPackEntries(fullPack.items ?? [], normalizedKeyword, limit);
+  }
+
   async function getBrowserPagePackByIds(params: BrowserByIdsParams): Promise<BrowserByIdsPackResponse> {
     const normalizedParams = {
       itemIds: params.itemIds.map((itemId) => `${itemId ?? ''}`.trim()).filter(Boolean),
@@ -407,6 +450,7 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     primeDefaultBrowserPagePack,
     getBrowserSearchPack,
     getBrowserSearchPackShard,
+    searchItemsFast,
     getBrowserPagePackByIds,
     peekBrowserPagePackByIds,
   };

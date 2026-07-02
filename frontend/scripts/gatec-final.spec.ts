@@ -220,16 +220,6 @@ async function pickRecipeItemId(page: any, lines: string[]) {
 
   const candidates = [
     {
-      source: 'items-search-fast-afsu',
-      url: BACKEND_BASE_URL + '/api/items/search/fast?q=AFSU&limit=50',
-      extractor: (json: any) => (Array.isArray(json) ? json.map((x: any) => x?.itemId).filter(Boolean) : []),
-    },
-    {
-      source: 'items-search-fast-iron',
-      url: BACKEND_BASE_URL + '/api/items/search/fast?q=iron&limit=80',
-      extractor: (json: any) => (Array.isArray(json) ? json.map((x: any) => x?.itemId).filter(Boolean) : []),
-    },
-    {
       source: 'items-page-1',
       url: BACKEND_BASE_URL + '/api/items?page=1&limit=200',
       extractor: (json: any) => (Array.isArray(json?.data) ? json.data.map((x: any) => x?.itemId).filter(Boolean) : []),
@@ -288,7 +278,7 @@ test('Gate C final acceptance', async ({ page }) => {
   const backendUrls = {
     health: `${BACKEND_BASE_URL}/api/health`,
     items: `${BACKEND_BASE_URL}/api/items?page=1&limit=1`,
-    fast: `${BACKEND_BASE_URL}/api/items/search/fast?q=iron`,
+    runtime: `${BACKEND_BASE_URL}/api/runtime/current/manifest`,
   };
 
   for (const [k, u] of Object.entries(backendUrls)) {

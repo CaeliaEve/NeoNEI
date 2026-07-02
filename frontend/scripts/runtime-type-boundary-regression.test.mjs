@@ -18,6 +18,7 @@ const specialDataClientSource = fs.readFileSync('src/runtime/specialDataClient.t
 const indexedRecipeClientSource = fs.readFileSync('src/runtime/indexedRecipeClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const itemClientSource = fs.readFileSync('src/runtime/itemClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const animationBudgetSource = fs.readFileSync('src/services/animationBudget.ts', 'utf8').replace(/\r\n/g, '\n');
+const gatecFinalSource = fs.readFileSync('scripts/gatec-final.spec.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\\r\\n/g, '\\n');
 const runtimeSessionSource = fs.readFileSync('src/services/api/runtimeSession.ts', 'utf8').replace(/\\r\\n/g, '\\n');
 const runtimeFacadeSource = fs.readFileSync('src/services/api/runtimeFacade.ts', 'utf8').replace(/\\r\\n/g, '\\n');
@@ -359,7 +360,6 @@ test('item client keeps item HTTP and detail cache outside the legacy api facade
     'getItem(',
     'getItemsByIds(',
     'getItemMachines(',
-    'searchItemsFast(',
     'clearCaches()',
   ]) {
     assert.equal(itemClientSource.includes(token), true, `missing item client method: ${token}`);
@@ -383,6 +383,36 @@ test('item client keeps item HTTP and detail cache outside the legacy api facade
     apiSource.includes("getLabPayload<ItemSearchBasic[]>('/items/search/fast'"),
     false,
     'services/api.ts should not own fast item search HTTP calls',
+  );
+  assert.doesNotMatch(
+    itemClientSource,
+    /searchItemsFast|getLabPayload<ItemSearchBasic\[\]>\('\/items\/search\/fast'|\/items\/search\/fast/,
+    'fast item search must not live on the item lab client',
+  );
+  assert.equal(
+    apiCompatibilityFacadeSource.includes('browserCatalogClient.searchItemsFast(keyword, limit, options)'),
+    true,
+    'api compatibility facade should route fast item search to the compiled browser/search pack client',
+  );
+  assert.equal(
+    apiCompatibilityFacadeSource.includes('itemRuntimeClient.searchItemsFast(keyword, limit, options)'),
+    false,
+    'api compatibility facade should not route fast item search to the item lab client',
+  );
+  assert.match(
+    browserCatalogClientSource,
+    /searchItemsFast\([^)]*keyword[^)]*limit[^)]*SearchItemsFastOptions[^)]*\)[\s\S]*getBrowserSearchPackShard\('hot'\)[\s\S]*getBrowserSearchPackShard\('tail'\)[\s\S]*getBrowserSearchPack\(\)/,
+    'browser catalog client should own fast item search through compiled search shards/full pack',
+  );
+  assert.match(
+    browserCatalogClientSource,
+    /searchBrowserSearchPackEntries/,
+    'browser catalog client should rank fast search via browser search pack projection',
+  );
+  assert.doesNotMatch(
+    gatecFinalSource,
+    /\/api\/items\/search\/fast|items-search-fast/,
+    'release/e2e gates should not keep the retired dynamic item fast-search API as an accepted contract',
   );
   assert.doesNotMatch(
     itemClientSource,

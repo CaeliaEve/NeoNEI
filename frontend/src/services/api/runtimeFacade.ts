@@ -379,7 +379,7 @@ export const api = {
   },
 
   async searchItemsFast(keyword: string, limit: number = 60, options?: SearchItemsFastOptions): Promise<ItemSearchBasic[]> {
-    return itemRuntimeClient.searchItemsFast(keyword, limit, options);
+    return browserCatalogClient.searchItemsFast(keyword, limit, options);
   },
 
   // Get all available machines for item

@@ -1,9 +1,7 @@
 import type {
   Item,
-  ItemSearchBasic,
   PaginatedResponse,
   Recipe,
-  SearchItemsFastOptions,
 } from './types';
 import { getLabPayload, postLabPayload } from './devCompatClient';
 import { setCacheWithLimit } from './cacheUtils';
@@ -87,18 +85,6 @@ export function createItemRuntimeClient() {
       return getLabPayload<ItemMachinesResponse>(`/recipes/${itemId}/machines`);
     },
 
-    searchItemsFast(keyword: string, limit: number = 60, options?: SearchItemsFastOptions): Promise<ItemSearchBasic[]> {
-      if (!keyword || !keyword.trim()) {
-        return Promise.resolve([]);
-      }
-      return getLabPayload<ItemSearchBasic[]>('/items/search/fast', {
-        params: {
-          q: keyword.trim(),
-          limit,
-        },
-        signal: options?.signal,
-      });
-    },
   };
 }
 
