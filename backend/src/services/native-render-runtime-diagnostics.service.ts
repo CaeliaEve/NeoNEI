@@ -9,17 +9,21 @@ import {
 import {
   NATIVE_RENDER_RUNTIME_BLOCKED_STATUS,
   NATIVE_RENDER_RUNTIME_CHECKS,
-  NATIVE_RENDER_RUNTIME_COUNT_FIELDS,
+  NATIVE_RENDER_RUNTIME_CHECK_DESCRIPTORS,
+  NATIVE_RENDER_RUNTIME_COUNT_FIELD_DESCRIPTORS,
   NATIVE_RENDER_RUNTIME_DIAGNOSTIC_STATUS,
   NATIVE_RENDER_RUNTIME_DIAGNOSTICS_SCHEMA,
   NATIVE_RENDER_RUNTIME_MANIFEST_KEYS,
   NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS,
+  NATIVE_RENDER_RUNTIME_VALIDATION_FIELD_DESCRIPTORS,
   type NativeRenderRuntimeChecks,
   type NativeRenderRuntimeCountField,
   type NativeRenderRuntimeCounts,
   type NativeRenderRuntimeDiagnosticStatus,
   type NativeRenderRuntimeManifestKey,
   type NativeRenderRuntimeValidation,
+  type NativeRenderRuntimeValidationField,
+  type NativeRenderRuntimeValidationFieldDescriptor,
 } from './native-render-runtime-diagnostics-abi';
 
 export interface NativeRenderRuntimeDiagnostics {
@@ -82,6 +86,111 @@ function readCount(counts: NativeRenderIndex['counts'], field: NativeRenderRunti
   return stableNumber(counts?.[field]);
 }
 
+function evaluateNativeRenderRuntimeCheck(
+  check: keyof NativeRenderRuntimeChecks,
+  input: Readonly<{
+    manifest: DistDataManifest | null;
+    nativeRenderIndex: NativeRenderIndex | null;
+    validationStatus: unknown;
+  }>,
+): boolean {
+  switch (check) {
+    case NATIVE_RENDER_RUNTIME_CHECKS.manifestPresent:
+      return Boolean(input.manifest);
+    case NATIVE_RENDER_RUNTIME_CHECKS.manifestDeclaresNativeRenderIndex:
+      return Boolean(input.manifest?.files?.[NATIVE_RENDER_RUNTIME_MANIFEST_KEYS.nativeRenderIndex]);
+    case NATIVE_RENDER_RUNTIME_CHECKS.nativeRenderIndexPresent:
+      return Boolean(input.nativeRenderIndex);
+    case NATIVE_RENDER_RUNTIME_CHECKS.rendererIndexPresent:
+      return Boolean(
+        input.nativeRenderIndex?.itemRendererByItemId
+          && typeof input.nativeRenderIndex.itemRendererByItemId === 'object',
+      );
+    case NATIVE_RENDER_RUNTIME_CHECKS.captureGateReady:
+      return input.validationStatus !== NATIVE_RENDER_RUNTIME_BLOCKED_STATUS;
+    default:
+      throw new Error(`Unknown native render runtime check: ${check}`);
+  }
+}
+
+function buildNativeRenderRuntimeChecks(
+  manifest: DistDataManifest | null,
+  nativeRenderIndex: NativeRenderIndex | null,
+  validationStatus: unknown,
+): NativeRenderRuntimeChecks {
+  return Object.freeze(
+    NATIVE_RENDER_RUNTIME_CHECK_DESCRIPTORS.reduce(
+      (checks, descriptor) => {
+        checks[descriptor.name] = evaluateNativeRenderRuntimeCheck(descriptor.name, {
+          manifest,
+          nativeRenderIndex,
+          validationStatus,
+        });
+        return checks;
+      },
+      {} as Record<keyof NativeRenderRuntimeChecks, boolean>,
+    ),
+  );
+}
+
+function determineNativeRenderRuntimeStatus(checks: NativeRenderRuntimeChecks): NativeRenderRuntimeDiagnosticStatus {
+  if (NATIVE_RENDER_RUNTIME_CHECK_DESCRIPTORS.some((descriptor) => (
+    descriptor.requiredForStatus === 'missing' && !checks[descriptor.name]
+  ))) {
+    return NATIVE_RENDER_RUNTIME_DIAGNOSTIC_STATUS.missing;
+  }
+  if (NATIVE_RENDER_RUNTIME_CHECK_DESCRIPTORS.some((descriptor) => !checks[descriptor.name])) {
+    return NATIVE_RENDER_RUNTIME_DIAGNOSTIC_STATUS.degraded;
+  }
+  return NATIVE_RENDER_RUNTIME_DIAGNOSTIC_STATUS.ok;
+}
+
+function buildNativeRenderRuntimeCounts(counts: NativeRenderIndex['counts']): NativeRenderRuntimeCounts {
+  return Object.freeze(
+    NATIVE_RENDER_RUNTIME_COUNT_FIELD_DESCRIPTORS.reduce(
+      (output, descriptor) => {
+        output[descriptor.field] = readCount(counts, descriptor.field);
+        return output;
+      },
+      {} as Record<NativeRenderRuntimeCountField, number>,
+    ),
+  );
+}
+
+function readValidationField(
+  validation: NativeRenderIndexValidation | null,
+  descriptor: NativeRenderRuntimeValidationFieldDescriptor,
+): number | string | null {
+  switch (descriptor.valueKind) {
+    case 'status': {
+      const value = validation?.[descriptor.field];
+      return typeof value === 'string' ? value : null;
+    }
+    case 'count':
+      return stableNumber(validation?.[descriptor.field]);
+    case 'summary': {
+      const value = validation?.[descriptor.field];
+      return typeof value === 'string' ? value : null;
+    }
+    default:
+      throw new Error(`Unknown native render runtime validation field kind: ${descriptor.valueKind}`);
+  }
+}
+
+function buildNativeRenderRuntimeValidation(
+  validation: NativeRenderIndexValidation | null,
+): NativeRenderRuntimeValidation {
+  return Object.freeze(
+    NATIVE_RENDER_RUNTIME_VALIDATION_FIELD_DESCRIPTORS.reduce(
+      (output, descriptor) => {
+        output[descriptor.field] = readValidationField(validation, descriptor) as never;
+        return output;
+      },
+      {} as Record<NativeRenderRuntimeValidationField, number | string | null>,
+    ),
+  ) as NativeRenderRuntimeValidation;
+}
+
 export function getNativeRenderRuntimeDiagnostics(): NativeRenderRuntimeDiagnostics {
   const distDataRoot = CURRENT_RUNTIME_DIST_DATA_DIR;
   const manifestPath = CURRENT_RUNTIME_DIST_MANIFEST_FILE;
@@ -91,51 +200,20 @@ export function getNativeRenderRuntimeDiagnostics(): NativeRenderRuntimeDiagnost
   const validation = nativeRenderIndex?.validation ?? null;
   const validationStatus = validation?.[NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.status] ?? null;
   const counts = nativeRenderIndex?.counts ?? {};
-  const checks = Object.freeze({
-    [NATIVE_RENDER_RUNTIME_CHECKS.manifestPresent]: Boolean(manifest),
-    [NATIVE_RENDER_RUNTIME_CHECKS.manifestDeclaresNativeRenderIndex]: Boolean(
-      manifest?.files?.[NATIVE_RENDER_RUNTIME_MANIFEST_KEYS.nativeRenderIndex],
-    ),
-    [NATIVE_RENDER_RUNTIME_CHECKS.nativeRenderIndexPresent]: Boolean(nativeRenderIndex),
-    [NATIVE_RENDER_RUNTIME_CHECKS.rendererIndexPresent]: Boolean(
-      nativeRenderIndex?.itemRendererByItemId && typeof nativeRenderIndex.itemRendererByItemId === 'object',
-    ),
-    [NATIVE_RENDER_RUNTIME_CHECKS.captureGateReady]: validationStatus !== NATIVE_RENDER_RUNTIME_BLOCKED_STATUS,
-  }) satisfies NativeRenderRuntimeChecks;
+  const checks = buildNativeRenderRuntimeChecks(manifest, nativeRenderIndex, validationStatus);
   const missing = Object.entries(checks)
     .filter(([, ok]) => !ok)
     .map(([key]) => key);
 
   return {
     schemaVersion: NATIVE_RENDER_RUNTIME_DIAGNOSTICS_SCHEMA,
-    status: !checks[NATIVE_RENDER_RUNTIME_CHECKS.manifestPresent]
-      || !checks[NATIVE_RENDER_RUNTIME_CHECKS.manifestDeclaresNativeRenderIndex]
-      || !checks[NATIVE_RENDER_RUNTIME_CHECKS.nativeRenderIndexPresent]
-      ? NATIVE_RENDER_RUNTIME_DIAGNOSTIC_STATUS.missing
-      : missing.length === 0 ? NATIVE_RENDER_RUNTIME_DIAGNOSTIC_STATUS.ok : NATIVE_RENDER_RUNTIME_DIAGNOSTIC_STATUS.degraded,
+    status: determineNativeRenderRuntimeStatus(checks),
     distDataRoot,
     manifestPath,
     nativeRenderIndexPath,
     checks,
-    counts: Object.freeze({
-      [NATIVE_RENDER_RUNTIME_COUNT_FIELDS.textureSprites]: readCount(counts, NATIVE_RENDER_RUNTIME_COUNT_FIELDS.textureSprites),
-      [NATIVE_RENDER_RUNTIME_COUNT_FIELDS.itemRenderers]: readCount(counts, NATIVE_RENDER_RUNTIME_COUNT_FIELDS.itemRenderers),
-      [NATIVE_RENDER_RUNTIME_COUNT_FIELDS.shaderItems]: readCount(counts, NATIVE_RENDER_RUNTIME_COUNT_FIELDS.shaderItems),
-      [NATIVE_RENDER_RUNTIME_COUNT_FIELDS.framebufferCaptures]: readCount(counts, NATIVE_RENDER_RUNTIME_COUNT_FIELDS.framebufferCaptures),
-      [NATIVE_RENDER_RUNTIME_COUNT_FIELDS.itemRendererByItemId]: readCount(counts, NATIVE_RENDER_RUNTIME_COUNT_FIELDS.itemRendererByItemId),
-      [NATIVE_RENDER_RUNTIME_COUNT_FIELDS.shaderByItemId]: readCount(counts, NATIVE_RENDER_RUNTIME_COUNT_FIELDS.shaderByItemId),
-      [NATIVE_RENDER_RUNTIME_COUNT_FIELDS.spriteByIconName]: readCount(counts, NATIVE_RENDER_RUNTIME_COUNT_FIELDS.spriteByIconName),
-    }) satisfies NativeRenderRuntimeCounts,
-    validation: Object.freeze({
-      [NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.status]: validationStatus,
-      [NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.shaderItemsNeedingCapture]: stableNumber(
-        validation?.[NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.shaderItemsNeedingCapture],
-      ),
-      [NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.framebufferCaptures]: stableNumber(
-        validation?.[NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.framebufferCaptures],
-      ),
-      [NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.summary]: validation?.[NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.summary] ?? null,
-    }) satisfies NativeRenderRuntimeValidation,
+    counts: buildNativeRenderRuntimeCounts(counts),
+    validation: buildNativeRenderRuntimeValidation(validation),
     missing,
   };
 }

@@ -24,40 +24,217 @@ export const NATIVE_RENDER_RUNTIME_MANIFEST_KEYS = Object.freeze({
 export type NativeRenderRuntimeManifestKey =
   typeof NATIVE_RENDER_RUNTIME_MANIFEST_KEYS[keyof typeof NATIVE_RENDER_RUNTIME_MANIFEST_KEYS];
 
-export const NATIVE_RENDER_RUNTIME_CHECKS = Object.freeze({
-  manifestPresent: 'manifestPresent',
-  manifestDeclaresNativeRenderIndex: 'manifestDeclaresNativeRenderIndex',
-  nativeRenderIndexPresent: 'nativeRenderIndexPresent',
-  rendererIndexPresent: 'rendererIndexPresent',
-  captureGateReady: 'captureGateReady',
-} as const);
+const NATIVE_RENDER_RUNTIME_CHECK_NAMES = Object.freeze([
+  'manifestPresent',
+  'manifestDeclaresNativeRenderIndex',
+  'nativeRenderIndexPresent',
+  'rendererIndexPresent',
+  'captureGateReady',
+] as const);
 
-export type NativeRenderRuntimeCheckName =
-  typeof NATIVE_RENDER_RUNTIME_CHECKS[keyof typeof NATIVE_RENDER_RUNTIME_CHECKS];
+export type NativeRenderRuntimeCheckName = typeof NATIVE_RENDER_RUNTIME_CHECK_NAMES[number];
+
+export const NATIVE_RENDER_RUNTIME_CHECKS = Object.freeze(
+  NATIVE_RENDER_RUNTIME_CHECK_NAMES.reduce(
+    (checks, name) => {
+      checks[name] = name;
+      return checks;
+    },
+    {} as Record<NativeRenderRuntimeCheckName, NativeRenderRuntimeCheckName>,
+  ),
+);
 
 export type NativeRenderRuntimeChecks = Readonly<Record<NativeRenderRuntimeCheckName, boolean>>;
 
-export const NATIVE_RENDER_RUNTIME_COUNT_FIELDS = Object.freeze({
-  textureSprites: 'textureSprites',
-  itemRenderers: 'itemRenderers',
-  shaderItems: 'shaderItems',
-  framebufferCaptures: 'framebufferCaptures',
-  itemRendererByItemId: 'itemRendererByItemId',
-  shaderByItemId: 'shaderByItemId',
-  spriteByIconName: 'spriteByIconName',
-} as const);
+export type NativeRenderRuntimeCheckDescriptor = Readonly<{
+  name: NativeRenderRuntimeCheckName;
+  requiredForStatus: 'missing' | 'degraded';
+  description: string;
+}>;
 
-export type NativeRenderRuntimeCountField =
-  typeof NATIVE_RENDER_RUNTIME_COUNT_FIELDS[keyof typeof NATIVE_RENDER_RUNTIME_COUNT_FIELDS];
+function nativeRenderRuntimeCheckDescriptor(
+  name: NativeRenderRuntimeCheckName,
+  requiredForStatus: NativeRenderRuntimeCheckDescriptor['requiredForStatus'],
+  description: string,
+): NativeRenderRuntimeCheckDescriptor {
+  return Object.freeze({ name, requiredForStatus, description });
+}
+
+function validateAndFreezeNativeRenderRuntimeCheckDescriptors(
+  descriptors: readonly NativeRenderRuntimeCheckDescriptor[],
+): readonly NativeRenderRuntimeCheckDescriptor[] {
+  const expectedNames = new Set<NativeRenderRuntimeCheckName>(NATIVE_RENDER_RUNTIME_CHECK_NAMES);
+  const seenNames = new Set<NativeRenderRuntimeCheckName>();
+
+  for (const descriptor of descriptors) {
+    if (!descriptor) {
+      throw new Error('Native render runtime check descriptor must not be null');
+    }
+    if (!expectedNames.has(descriptor.name)) {
+      throw new Error(`Unknown native render runtime check: ${descriptor.name}`);
+    }
+    if (!seenNames.add(descriptor.name)) {
+      throw new Error(`Duplicate native render runtime check: ${descriptor.name}`);
+    }
+    if (!descriptor.description.trim()) {
+      throw new Error(`Native render runtime check description must be non-empty: ${descriptor.name}`);
+    }
+  }
+
+  for (const name of NATIVE_RENDER_RUNTIME_CHECK_NAMES) {
+    if (!seenNames.has(name)) {
+      throw new Error(`Missing native render runtime check: ${name}`);
+    }
+  }
+
+  return Object.freeze(descriptors.map((descriptor) => Object.freeze({ ...descriptor })));
+}
+
+export const NATIVE_RENDER_RUNTIME_CHECK_DESCRIPTORS = validateAndFreezeNativeRenderRuntimeCheckDescriptors([
+  nativeRenderRuntimeCheckDescriptor(
+    NATIVE_RENDER_RUNTIME_CHECKS.manifestPresent,
+    'missing',
+    'Current dist-data manifest is readable.',
+  ),
+  nativeRenderRuntimeCheckDescriptor(
+    NATIVE_RENDER_RUNTIME_CHECKS.manifestDeclaresNativeRenderIndex,
+    'missing',
+    'Current manifest declares the native render index file.',
+  ),
+  nativeRenderRuntimeCheckDescriptor(
+    NATIVE_RENDER_RUNTIME_CHECKS.nativeRenderIndexPresent,
+    'missing',
+    'Native render index file is readable.',
+  ),
+  nativeRenderRuntimeCheckDescriptor(
+    NATIVE_RENDER_RUNTIME_CHECKS.rendererIndexPresent,
+    'degraded',
+    'Native render index exposes item renderer lookup data.',
+  ),
+  nativeRenderRuntimeCheckDescriptor(
+    NATIVE_RENDER_RUNTIME_CHECKS.captureGateReady,
+    'degraded',
+    'Native render validation gate is not blocked.',
+  ),
+] as const);
+
+const NATIVE_RENDER_RUNTIME_COUNT_FIELD_NAMES = Object.freeze([
+  'textureSprites',
+  'itemRenderers',
+  'shaderItems',
+  'framebufferCaptures',
+  'itemRendererByItemId',
+  'shaderByItemId',
+  'spriteByIconName',
+] as const);
+
+export type NativeRenderRuntimeCountField = typeof NATIVE_RENDER_RUNTIME_COUNT_FIELD_NAMES[number];
+
+export const NATIVE_RENDER_RUNTIME_COUNT_FIELDS = Object.freeze(
+  NATIVE_RENDER_RUNTIME_COUNT_FIELD_NAMES.reduce(
+    (fields, name) => {
+      fields[name] = name;
+      return fields;
+    },
+    {} as Record<NativeRenderRuntimeCountField, NativeRenderRuntimeCountField>,
+  ),
+);
 
 export type NativeRenderRuntimeCounts = Readonly<Record<NativeRenderRuntimeCountField, number>>;
 
-export const NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS = Object.freeze({
-  status: 'status',
-  shaderItemsNeedingCapture: 'shaderItemsNeedingCapture',
-  framebufferCaptures: 'framebufferCaptures',
-  summary: 'summary',
-} as const);
+export type NativeRenderRuntimeCountFieldDescriptor = Readonly<{
+  field: NativeRenderRuntimeCountField;
+  description: string;
+}>;
+
+function nativeRenderRuntimeCountFieldDescriptor(
+  field: NativeRenderRuntimeCountField,
+  description: string,
+): NativeRenderRuntimeCountFieldDescriptor {
+  return Object.freeze({ field, description });
+}
+
+function validateAndFreezeNativeRenderRuntimeCountFieldDescriptors(
+  descriptors: readonly NativeRenderRuntimeCountFieldDescriptor[],
+): readonly NativeRenderRuntimeCountFieldDescriptor[] {
+  const expectedFields = new Set<NativeRenderRuntimeCountField>(NATIVE_RENDER_RUNTIME_COUNT_FIELD_NAMES);
+  const seenFields = new Set<NativeRenderRuntimeCountField>();
+
+  for (const descriptor of descriptors) {
+    if (!descriptor) {
+      throw new Error('Native render runtime count field descriptor must not be null');
+    }
+    if (!expectedFields.has(descriptor.field)) {
+      throw new Error(`Unknown native render runtime count field: ${descriptor.field}`);
+    }
+    if (!seenFields.add(descriptor.field)) {
+      throw new Error(`Duplicate native render runtime count field: ${descriptor.field}`);
+    }
+    if (!descriptor.description.trim()) {
+      throw new Error(`Native render runtime count field description must be non-empty: ${descriptor.field}`);
+    }
+  }
+
+  for (const field of NATIVE_RENDER_RUNTIME_COUNT_FIELD_NAMES) {
+    if (!seenFields.has(field)) {
+      throw new Error(`Missing native render runtime count field: ${field}`);
+    }
+  }
+
+  return Object.freeze(descriptors.map((descriptor) => Object.freeze({ ...descriptor })));
+}
+
+export const NATIVE_RENDER_RUNTIME_COUNT_FIELD_DESCRIPTORS =
+  validateAndFreezeNativeRenderRuntimeCountFieldDescriptors([
+    nativeRenderRuntimeCountFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_COUNT_FIELDS.textureSprites,
+      'Texture sprite count emitted by native render analysis.',
+    ),
+    nativeRenderRuntimeCountFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_COUNT_FIELDS.itemRenderers,
+      'Known item renderer family count.',
+    ),
+    nativeRenderRuntimeCountFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_COUNT_FIELDS.shaderItems,
+      'Items requiring shader-aware rendering.',
+    ),
+    nativeRenderRuntimeCountFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_COUNT_FIELDS.framebufferCaptures,
+      'Framebuffer capture count.',
+    ),
+    nativeRenderRuntimeCountFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_COUNT_FIELDS.itemRendererByItemId,
+      'Item-id to renderer index entry count.',
+    ),
+    nativeRenderRuntimeCountFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_COUNT_FIELDS.shaderByItemId,
+      'Item-id to shader index entry count.',
+    ),
+    nativeRenderRuntimeCountFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_COUNT_FIELDS.spriteByIconName,
+      'Icon-name to sprite index entry count.',
+    ),
+  ] as const);
+
+const NATIVE_RENDER_RUNTIME_VALIDATION_FIELD_NAMES = Object.freeze([
+  'status',
+  'shaderItemsNeedingCapture',
+  'framebufferCaptures',
+  'summary',
+] as const);
+
+export type NativeRenderRuntimeValidationField =
+  typeof NATIVE_RENDER_RUNTIME_VALIDATION_FIELD_NAMES[number];
+
+export const NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS = Object.freeze(
+  NATIVE_RENDER_RUNTIME_VALIDATION_FIELD_NAMES.reduce(
+    (fields, name) => {
+      fields[name] = name;
+      return fields;
+    },
+    {} as Record<NativeRenderRuntimeValidationField, NativeRenderRuntimeValidationField>,
+  ),
+);
 
 export type NativeRenderRuntimeValidation = Readonly<{
   [NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.status]: string | null;
@@ -65,5 +242,73 @@ export type NativeRenderRuntimeValidation = Readonly<{
   [NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.framebufferCaptures]: number;
   [NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.summary]: string | null;
 }>;
+
+export type NativeRenderRuntimeValidationFieldDescriptor = Readonly<{
+  field: NativeRenderRuntimeValidationField;
+  valueKind: 'status' | 'count' | 'summary';
+  description: string;
+}>;
+
+function nativeRenderRuntimeValidationFieldDescriptor(
+  field: NativeRenderRuntimeValidationField,
+  valueKind: NativeRenderRuntimeValidationFieldDescriptor['valueKind'],
+  description: string,
+): NativeRenderRuntimeValidationFieldDescriptor {
+  return Object.freeze({ field, valueKind, description });
+}
+
+function validateAndFreezeNativeRenderRuntimeValidationFieldDescriptors(
+  descriptors: readonly NativeRenderRuntimeValidationFieldDescriptor[],
+): readonly NativeRenderRuntimeValidationFieldDescriptor[] {
+  const expectedFields = new Set<NativeRenderRuntimeValidationField>(NATIVE_RENDER_RUNTIME_VALIDATION_FIELD_NAMES);
+  const seenFields = new Set<NativeRenderRuntimeValidationField>();
+
+  for (const descriptor of descriptors) {
+    if (!descriptor) {
+      throw new Error('Native render runtime validation field descriptor must not be null');
+    }
+    if (!expectedFields.has(descriptor.field)) {
+      throw new Error(`Unknown native render runtime validation field: ${descriptor.field}`);
+    }
+    if (!seenFields.add(descriptor.field)) {
+      throw new Error(`Duplicate native render runtime validation field: ${descriptor.field}`);
+    }
+    if (!descriptor.description.trim()) {
+      throw new Error(`Native render runtime validation field description must be non-empty: ${descriptor.field}`);
+    }
+  }
+
+  for (const field of NATIVE_RENDER_RUNTIME_VALIDATION_FIELD_NAMES) {
+    if (!seenFields.has(field)) {
+      throw new Error(`Missing native render runtime validation field: ${field}`);
+    }
+  }
+
+  return Object.freeze(descriptors.map((descriptor) => Object.freeze({ ...descriptor })));
+}
+
+export const NATIVE_RENDER_RUNTIME_VALIDATION_FIELD_DESCRIPTORS =
+  validateAndFreezeNativeRenderRuntimeValidationFieldDescriptors([
+    nativeRenderRuntimeValidationFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.status,
+      'status',
+      'Native render validation gate status.',
+    ),
+    nativeRenderRuntimeValidationFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.shaderItemsNeedingCapture,
+      'count',
+      'Shader items still requiring framebuffer capture.',
+    ),
+    nativeRenderRuntimeValidationFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.framebufferCaptures,
+      'count',
+      'Framebuffer captures recorded by validation.',
+    ),
+    nativeRenderRuntimeValidationFieldDescriptor(
+      NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.summary,
+      'summary',
+      'Human-readable native render validation summary.',
+    ),
+  ] as const);
 
 export const NATIVE_RENDER_RUNTIME_BLOCKED_STATUS = 'blocked';
