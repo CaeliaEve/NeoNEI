@@ -32,6 +32,8 @@ export interface RuntimeHealthSummary {
     compilerValidationBlocked: boolean;
     blockedGates: string[];
     warnings: string[];
+    nativeUiProofStatus?: 'ok' | 'blocked' | 'missing';
+    nativeUiProofBlocked?: boolean;
   };
   files: {
     declared: number;
@@ -52,7 +54,36 @@ export interface RuntimeHealthSummary {
     totalBytes: number;
   };
   compiler?: unknown;
+  nativeUi?: NativeUiRuntimeProofSummary;
   nativeRender?: unknown;
+}
+
+export interface NativeUiRuntimeProofSummary {
+  schemaVersion: 'neonei/native-ui-runtime-proof/current';
+  status: 'ok' | 'blocked' | 'missing';
+  reports: {
+    nativeUiExportAbi: NativeUiProofReportSummary;
+    uiPackAbi: NativeUiProofReportSummary;
+  };
+  checks: Record<string, boolean>;
+  counts: Record<string, number | null>;
+  missing: string[];
+  blocked: string[];
+}
+
+export interface NativeUiProofReportSummary {
+  logicalName: string;
+  displayName: string;
+  path: string;
+  declared: boolean;
+  present: boolean;
+  bytes: number | null;
+  mtimeMs: number | null;
+  schemaVersion: string | null;
+  status: 'ok' | 'blocked' | 'missing';
+  reportStatus: string | null;
+  blocked: string[];
+  counts: Record<string, number | null>;
 }
 
 export interface PublishBundleWindowPathEntry {

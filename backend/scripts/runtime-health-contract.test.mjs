@@ -14,7 +14,7 @@ test('runtime health exposes the stable public health contract', () => {
     true,
     'runtime health summary must keep a stable schemaVersion',
   );
-  for (const field of ['distData', 'counts', 'coverage', 'validation', 'files', 'runtimeSnapshot', 'compiler', 'nativeRender']) {
+  for (const field of ['distData', 'counts', 'coverage', 'validation', 'files', 'runtimeSnapshot', 'compiler', 'nativeUi', 'nativeRender']) {
     assert.equal(
       serviceSource.includes(`${field}:`),
       true,
@@ -60,6 +60,16 @@ test('runtime health exposes the stable public health contract', () => {
     serviceSource.includes('externalRuntimePromotion'),
     true,
     'runtime health should expose external runtime promotion status',
+  );
+  assert.equal(
+    serviceSource.includes('getNativeUiRuntimeProofSummary'),
+    true,
+    'runtime health should expose the Native UI producer/compiler proof chain',
+  );
+  assert.equal(
+    serviceSource.includes('nativeUiProofBlocked'),
+    true,
+    'runtime health should fail closed when Native UI proof reports are missing or blocked',
   );
   assert.equal(
     runtimeEndpointRegistrySource.includes("path: '/health'"),
@@ -118,5 +128,10 @@ test('runtime diagnostics route is a read-only service boundary', () => {
     diagnosticsSource.includes('nativeRender: health.nativeRender'),
     true,
     'runtime diagnostics should not re-read native render diagnostics outside runtime health',
+  );
+  assert.equal(
+    diagnosticsSource.includes('nativeUi: health.nativeUi'),
+    true,
+    'runtime diagnostics should expose Native UI proof state from runtime health',
   );
 });

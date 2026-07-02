@@ -61,6 +61,20 @@ const runtimeSnapshotRows = computed<Array<[string, string | number | null | und
   ];
 });
 
+const nativeUiRows = computed<Array<[string, string | number | null | undefined]>>(() => {
+  const nativeUi = health.value?.nativeUi;
+  return [
+    ['证明状态', nativeUi?.status],
+    ['布局数', nativeUi?.counts.layouts],
+    ['槽位数', nativeUi?.counts.slots],
+    ['UI Pack artifacts', nativeUi?.counts.uiPackArtifacts],
+    ['UI Pack bytes', nativeUi?.counts.uiPackArtifactBytes],
+    ['违规数', nativeUi?.counts.violationCount],
+    ['Export ABI report', nativeUi?.reports.nativeUiExportAbi.path],
+    ['UI Pack ABI report', nativeUi?.reports.uiPackAbi.path],
+  ];
+});
+
 function formatNumber(value: number | null | undefined): string {
   return typeof value === 'number' && Number.isFinite(value) ? numberFormat.format(value) : '—';
 }
@@ -206,9 +220,32 @@ onMounted(() => {
         <h2>阻塞项</h2>
         <ul class="issue-list">
           <li v-for="gate in health.validation?.blockedGates ?? []" :key="gate">{{ gate }}</li>
+          <li v-for="reason in health.nativeUi?.blocked ?? []" :key="reason">{{ reason }}</li>
           <li v-if="health.validation?.compilerValidationBlocked">compiler validation blocked</li>
-          <li v-if="!(health.validation?.blockedGates ?? []).length && !health.validation?.compilerValidationBlocked">暂无阻塞</li>
+          <li
+            v-if="!(health.validation?.blockedGates ?? []).length
+              && !(health.nativeUi?.blocked ?? []).length
+              && !health.validation?.compilerValidationBlocked"
+          >
+            暂无阻塞
+          </li>
         </ul>
+      </article>
+
+      <article class="panel wide">
+        <h2>Native UI 证明链</h2>
+        <dl class="validation-list">
+          <div v-for="[label, value] in nativeUiRows" :key="label">
+            <dt>{{ label }}</dt>
+            <dd>
+              {{
+                label.toLowerCase().includes('bytes')
+                  ? formatBytes(typeof value === 'number' ? value : null)
+                  : typeof value === 'number' ? formatNumber(value) : (value ?? '—')
+              }}
+            </dd>
+          </div>
+        </dl>
       </article>
     </section>
   </main>

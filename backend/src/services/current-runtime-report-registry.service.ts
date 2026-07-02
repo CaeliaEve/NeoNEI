@@ -11,6 +11,8 @@ const CURRENT_RUNTIME_REPORTS = Object.freeze({
   'api-contract-report': 'validation/report.json',
   'deployment-report': 'rust/deployment-report.json',
   'semantic-validation-report': 'rust/semantic-validation-report.json',
+  'native-ui-export-abi-validation-report': 'rust/native-ui-export-abi-validation-report.json',
+  'ui-pack-abi-validation-report': 'rust/ui-pack-abi-validation-report.json',
 } as const);
 
 export type CurrentRuntimeReportSlug = keyof typeof CURRENT_RUNTIME_REPORTS;

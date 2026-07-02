@@ -25,8 +25,10 @@ export function getCurrentRuntimeDiagnosticsHealth(context: CurrentRuntimeApiCon
     checks: Object.freeze({
       manifest: snapshot ? 'ok' : 'missing',
       assets: health.files.missing.length === 0 ? 'ok' : 'missing',
-      reports: 'ok',
+      reports: health.nativeUi.status === 'ok' ? 'ok' : health.nativeUi.status,
+      nativeUiProof: health.nativeUi.status,
     }),
+    nativeUi: health.nativeUi,
     health,
   });
 }
@@ -44,11 +46,13 @@ export function getCurrentRuntimeDiagnosticsSummary(context: CurrentRuntimeApiCo
     }),
     warnings: health.validation.warnings,
     coverage: health.coverage,
+    nativeUi: health.nativeUi,
   });
 }
 
 export function getCurrentRuntimeNativeSurfaceMetrics(context: CurrentRuntimeApiContext): JsonRecord {
   return Object.freeze({
+    nativeUi: context.health.nativeUi,
     nativeRender: context.health.nativeRender,
     runtimeHealth: context.health,
   });

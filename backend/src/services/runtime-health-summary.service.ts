@@ -3,6 +3,7 @@ import path from 'path';
 import { PUBLIC_DIR } from '../config/runtime-paths';
 import { resolveAccelerationCompilerAuthority } from './acceleration-runtime-compiler-authority.service';
 import { acquireCurrentRuntimeSnapshot, type CurrentRuntimeSnapshot, type CurrentRuntimeSnapshotHandle } from './current-runtime-snapshot.service';
+import { getNativeUiRuntimeProofSummary } from './native-ui-runtime-proof.service';
 import { getNativeRenderRuntimeDiagnostics } from './native-render-runtime-diagnostics.service';
 
 type JsonRecord = Record<string, unknown>;
@@ -48,6 +49,8 @@ export interface RuntimeHealthSummary {
     compilerValidationBlocked: boolean;
     blockedGates: string[];
     warnings: string[];
+    nativeUiProofStatus: ReturnType<typeof getNativeUiRuntimeProofSummary>['status'];
+    nativeUiProofBlocked: boolean;
   };
   files: {
     declared: number;
@@ -78,6 +81,7 @@ export interface RuntimeHealthSummary {
       copiedFiles: number | null;
     };
   };
+  nativeUi: ReturnType<typeof getNativeUiRuntimeProofSummary>;
   nativeRender: ReturnType<typeof getNativeRenderRuntimeDiagnostics>;
 }
 
@@ -197,12 +201,14 @@ function chooseStatus(args: {
   browserContractStatus: string | null;
   recipeFragmentationStatus: string | null;
   compilerValidationBlocked: boolean;
+  nativeUiProofBlocked: boolean;
 }): RuntimeHealthSummary['status'] {
   if (
     !args.manifestExists
     || !args.runtimeSnapshotAvailable
     || args.missingFileCount > 0
     || args.compilerValidationBlocked
+    || args.nativeUiProofBlocked
   ) {
     return 'blocked';
   }
@@ -256,9 +262,11 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
     const files = runtimeSnapshotHealth.files;
     const compilerAuthority = resolveAccelerationCompilerAuthority();
     const externalRuntimePromotion = readExternalRuntimePromotionSummary(manifest);
+    const nativeUi = getNativeUiRuntimeProofSummary(manifest, snapshot);
 
-    const compilerValidationBlocked = (asNumber(validationCounts?.manifestBlocked) ?? 0) > 0
+    const rawCompilerValidationBlocked = (asNumber(validationCounts?.manifestBlocked) ?? 0) > 0
       || (asNumber(validationCounts?.nativeRenderCaptureGateBlocked) ?? 0) > 0;
+    const nativeUiProofBlocked = nativeUi.status !== 'ok';
     const migrationReadinessStatus = asString(migrationReadiness?.status);
     const neiBrowserContractStatus = asString(browserContract?.status);
     const recipeFragmentationStatus = asString(recipeFragmentation?.status ?? recipeFragmentation?.reportStatus);
@@ -273,7 +281,8 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
         migrationReadinessStatus,
         browserContractStatus: neiBrowserContractStatus,
         recipeFragmentationStatus,
-        compilerValidationBlocked,
+        compilerValidationBlocked: rawCompilerValidationBlocked,
+        nativeUiProofBlocked,
       }),
       generatedAt: new Date().toISOString(),
       distData: {
@@ -314,12 +323,14 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
         neiBrowserContractStatus,
         recipeFragmentationStatus,
         exportPathHygieneStatus,
-        compilerValidationBlocked,
+        compilerValidationBlocked: rawCompilerValidationBlocked || nativeUiProofBlocked,
         blockedGates: asStringArray(migrationReadiness?.blockedGates),
         warnings: [
           ...asStringArray(validationReport?.warnings),
           ...asStringArray(browserContract?.warnings),
         ],
+        nativeUiProofStatus: nativeUi.status,
+        nativeUiProofBlocked,
       },
       files,
       runtimeSnapshot: runtimeSnapshotHealth.runtimeSnapshot,
@@ -327,6 +338,7 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
         authority: compilerAuthority,
         externalRuntimePromotion,
       },
+      nativeUi,
       nativeRender: getNativeRenderRuntimeDiagnostics(),
     };
 

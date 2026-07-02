@@ -32,6 +32,7 @@ export interface RuntimeDiagnosticsSummary {
     hasRecipeSearch: boolean;
   };
   nativeRender: RuntimeHealthSummary['nativeRender'];
+  nativeUi: RuntimeHealthSummary['nativeUi'];
   health: RuntimeHealthSummary;
   compiler: RuntimeHealthSummary['compiler'];
 }
@@ -90,6 +91,7 @@ export function getRuntimeDiagnosticsSummary(): RuntimeDiagnosticsSummary {
       hasRecipeSearch: Boolean(publishBundle?.files?.recipeSearchBasePath),
     },
     nativeRender: health.nativeRender,
+    nativeUi: health.nativeUi,
     health,
     compiler: health.compiler,
   };
