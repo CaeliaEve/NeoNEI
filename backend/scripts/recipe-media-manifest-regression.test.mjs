@@ -7,12 +7,12 @@ const serviceSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-const routeSource = fs.readFileSync(
-  'src/routes/recipe-bootstrap.routes.ts',
-  'utf8',
-).replace(/\r\n/g, '\n');
-
 test('recipe bootstrap payloads include rich-media manifests for atlas-first animation warmup', () => {
+  assert.equal(
+    fs.existsSync('src/routes/recipe-bootstrap.routes.ts'),
+    false,
+    'recipe bootstrap must remain an internal publish/runtime service, not an externally mounted lab route',
+  );
   assert.equal(
     serviceSource.includes('payload.mediaManifest = buildRichMediaManifestFromUnknown(payload, {'),
     true,
@@ -24,19 +24,18 @@ test('recipe bootstrap payloads include rich-media manifests for atlas-first ani
     'recipe group payloads should attach a page-level rich-media manifest',
   );
   assert.equal(
-    routeSource.includes('getRecipeBootstrapService().getProducedByGroup('),
+    serviceSource.includes('async getProducedByGroup('),
     true,
-    'produced-by-group route should use the bootstrap service so render hints/media manifest stay attached',
+    'produced-by-group payloads should stay in the bootstrap service so render hints/media manifest stay attached',
   );
   assert.equal(
-    routeSource.includes('getRecipeBootstrapService().getUsedInGroup('),
+    serviceSource.includes('async getUsedInGroup('),
     true,
-    'used-in-group route should use the bootstrap service so render hints/media manifest stay attached',
+    'used-in-group payloads should stay in the bootstrap service so render hints/media manifest stay attached',
   );
   assert.equal(
-    routeSource.includes('getRecipeBootstrapService().getCategoryGroup('),
+    serviceSource.includes('async getCategoryGroup('),
     true,
-    'category-group route should use the bootstrap service so render hints/media manifest stay attached',
+    'category-group payloads should stay in the bootstrap service so render hints/media manifest stay attached',
   );
 });
-

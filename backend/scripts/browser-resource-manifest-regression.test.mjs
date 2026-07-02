@@ -12,11 +12,6 @@ const materializerSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-const itemRoutesSource = fs.readFileSync(
-  'src/routes/items.routes.ts',
-  'utf8',
-).replace(/\r\n/g, '\n');
-
 test('browser page payloads carry precomputed resource manifests', () => {
   assert.equal(
     payloadSource.includes('export interface BrowserPageResourceManifest'),
@@ -34,7 +29,7 @@ test('browser page payloads carry precomputed resource manifests', () => {
     'browser page resource manifest should be built centrally',
   );
   assert.equal(
-    payloadSource.includes('resourceManifest: buildBrowserPageResourceManifest(data, atlas, mediaManifest),'),
+    payloadSource.includes('resourceManifest: buildBrowserPageResourceManifest(data, mediaManifest),'),
     true,
     'derived page slices should trim resource manifests to the active page',
   );
@@ -42,19 +37,18 @@ test('browser page payloads carry precomputed resource manifests', () => {
 
 test('publish materializer and live route write resource manifests', () => {
   assert.equal(
-    materializerSource.includes('buildBrowserPageResourceManifest(firstPageWindow.data, atlas, firstPageMediaManifest)'),
+    materializerSource.includes('buildBrowserPageResourceManifest(firstPageWindow.data, firstPageMediaManifest)'),
     true,
     'first publish browser window should carry resource dependencies',
   );
   assert.equal(
-    materializerSource.includes('buildBrowserPageResourceManifest(extraWindow.data, extraAtlas, extraMediaManifest)'),
+    materializerSource.includes('buildBrowserPageResourceManifest(extraWindow.data, extraMediaManifest)'),
     true,
     'extra publish browser windows should carry resource dependencies',
   );
   assert.equal(
-    itemRoutesSource.includes('resourceManifest: buildBrowserPageResourceManifest(result.data, atlas, mediaManifest),'),
-    true,
-    'live browser page pack route should include resource dependencies',
+    fs.existsSync('src/routes/items.routes.ts'),
+    false,
+    'resource manifests must be owned by publish/runtime services, not a retired lab item route',
   );
 });
-

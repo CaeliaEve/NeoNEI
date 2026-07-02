@@ -27,10 +27,10 @@ function getRuntimeContracts() {
       distDataManifest: '/dist-data/manifest.json',
       publishManifest: '/api/publish/manifest',
     },
-    dev: {
-      items: '/lab/items',
-      recipes: '/lab/recipes',
-      recipeBootstrap: '/lab/recipe-bootstrap',
+    control: {
+      patterns: '/lab/patterns',
+      publish: '/lab/publish',
+      renderContract: '/lab/render-contract',
     },
   };
 }

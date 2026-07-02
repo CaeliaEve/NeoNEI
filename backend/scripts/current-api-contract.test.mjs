@@ -296,16 +296,19 @@ test('external-runtime authority uses runtime recipe pack for item usage and pag
 });
 
 
-test('dynamic sqlite recipe namespaces are lab-only and never mounted under production /api', () => {
+test('dynamic sqlite read namespaces are retired from lab and never mounted under production /api', () => {
   assert.doesNotMatch(namespaceSource, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority/);
   assert.match(namespaceSource, /publicRuntimeOnly: options\.publicRuntimeOnly/);
   assert.match(namespaceRegistrySource, /export const DEV_COMPAT_NAMESPACES/);
   assert.doesNotMatch(namespaceRegistrySource, /export const LEGACY_COMPAT_NAMESPACES/);
   assert.doesNotMatch(namespaceRegistrySource, /legacy-compat/);
-  assert.match(namespaceRegistrySource, /mountPath: '\/lab\/recipes'/);
-  assert.match(namespaceRegistrySource, /mountPath: '\/lab\/recipe-bootstrap'/);
+  assert.doesNotMatch(namespaceRegistrySource, /labItems|labRecipes|labRecipeBootstrap/);
+  assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/lab\/(?:items|recipes|recipe-bootstrap)'/);
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipes-indexed'/);
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipe-bootstrap'/);
+  assert.match(namespaceRegistrySource, /mountPath: '\/lab\/patterns'/);
+  assert.match(namespaceRegistrySource, /mountPath: '\/lab\/publish'/);
+  assert.match(namespaceRegistrySource, /mountPath: '\/lab\/render-contract'/);
 
   const labGateIndex = namespaceRegistrySource.indexOf('if (!input.publicRuntimeOnly) {');
   assert.notEqual(labGateIndex, -1, 'lab api gate must exist');
@@ -316,13 +319,14 @@ test('dynamic sqlite recipe namespaces are lab-only and never mounted under prod
   assert.match(labGateBody, /namespaces\.push\(\.\.\.DEV_COMPAT_NAMESPACES\)/);
 });
 
-test('v1 runtime contracts advertise lab-only dev diagnostics, not legacy /api sqlite routes', () => {
+test('v1 runtime contracts advertise lab-only control diagnostics, not legacy sqlite read routes', () => {
   const v1Source = fs.readFileSync('src/routes/v1.routes.ts', 'utf8');
   assert.doesNotMatch(v1Source, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority|legacyApiBase/);
-  assert.match(v1Source, /dev: \{/);
-  assert.match(v1Source, /items: '\/lab\/items'/);
-  assert.match(v1Source, /recipes: '\/lab\/recipes'/);
-  assert.match(v1Source, /recipeBootstrap: '\/lab\/recipe-bootstrap'/);
+  assert.match(v1Source, /control: \{/);
+  assert.match(v1Source, /patterns: '\/lab\/patterns'/);
+  assert.match(v1Source, /publish: '\/lab\/publish'/);
+  assert.match(v1Source, /renderContract: '\/lab\/render-contract'/);
+  assert.doesNotMatch(v1Source, /\/lab\/(?:items|recipes|recipe-bootstrap)/);
   assert.doesNotMatch(v1Source, /\/api\/recipes-indexed/);
   assert.doesNotMatch(v1Source, /\/api\/recipe-bootstrap/);
   assert.doesNotMatch(v1Source, /compatibility: \{/);

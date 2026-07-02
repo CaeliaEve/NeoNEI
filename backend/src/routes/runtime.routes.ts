@@ -26,7 +26,7 @@ const runtimeContracts = {
   namespaces: {
     runtime: 'public read-only runtime API',
     ops: 'authenticated operations API',
-    lab: 'development compatibility API',
+    lab: 'development control and diagnostics API',
   },
   runtime: {
     manifest: '/runtime/manifest',
@@ -41,10 +41,10 @@ const runtimeContracts = {
     publish: '/publish/**',
     contracts: '/contracts/runtime/**',
   },
-  dev: {
-    items: '/lab/items',
-    recipes: '/lab/recipes',
-    recipeBootstrap: '/lab/recipe-bootstrap',
+  control: {
+    patterns: '/lab/patterns',
+    publish: '/lab/publish',
+    renderContract: '/lab/render-contract',
   },
 };
 

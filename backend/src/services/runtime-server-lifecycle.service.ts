@@ -84,7 +84,8 @@ export function logRuntimeServerReady(settings: RuntimeServerSettings): void {
   logger.info(`Server listening on ${settings.host}:${settings.port}`);
   logger.info(`Public URL: ${settings.publicBaseUrl}`);
   logger.info(`API endpoint: ${settings.publicBaseUrl}/api`);
-  logger.info(`Items API: ${settings.publicBaseUrl}/api/items`);
+  logger.info(`Current runtime API: ${settings.publicBaseUrl}/api/runtime/current`);
+  logger.info(`Publish home bootstrap: ${settings.publicBaseUrl}/api/publish/home-bootstrap`);
   logger.info(`Images path: ${IMAGES_PATH}`);
   logger.info(`Public runtime only: ${settings.publicRuntimeOnly}`);
   logNativeRenderRuntimeStatus();

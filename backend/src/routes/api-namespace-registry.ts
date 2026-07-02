@@ -1,9 +1,6 @@
 import type { Application, RequestHandler, Router } from 'express';
-import itemsRoutes from './items.routes';
 import patternsRoutes from './patterns.routes';
-import indexedRecipesRoutes from './recipes-indexed.routes';
 import renderContractRoutes from './render-contract.routes';
-import recipeBootstrapRoutes from './recipe-bootstrap.routes';
 import { labPublishRoutes, publicPublishRoutes } from './publish.routes';
 import runtimeRoutes from './runtime.routes';
 import v1Routes from './v1.routes';
@@ -46,10 +43,7 @@ export const PUBLIC_RUNTIME_TAIL_NAMESPACES: readonly ApiNamespaceDefinition[] =
 
 export const DEV_COMPAT_NAMESPACES: readonly ApiNamespaceDefinition[] = Object.freeze([
   Object.freeze({ key: 'labRoot', mountPath: '/lab', tier: 'dev-compat' }),
-  Object.freeze({ key: 'labItems', mountPath: '/lab/items', tier: 'dev-compat', handler: itemsRoutes }),
   Object.freeze({ key: 'labPatterns', mountPath: '/lab/patterns', tier: 'dev-compat', handler: patternsRoutes }),
-  Object.freeze({ key: 'labRecipes', mountPath: '/lab/recipes', tier: 'dev-compat', handler: indexedRecipesRoutes }),
-  Object.freeze({ key: 'labRecipeBootstrap', mountPath: '/lab/recipe-bootstrap', tier: 'dev-compat', handler: recipeBootstrapRoutes }),
   Object.freeze({ key: 'labPublish', mountPath: '/lab/publish', tier: 'dev-compat', handler: labPublishRoutes }),
   Object.freeze({ key: 'labRenderContract', mountPath: '/lab/render-contract', tier: 'dev-compat', handler: renderContractRoutes }),
 ]);

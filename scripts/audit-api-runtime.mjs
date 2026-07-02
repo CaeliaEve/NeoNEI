@@ -187,16 +187,15 @@ const dependencyMap = {
 };
 
 const fallbackClassification = {
-  keepForDevCompatibility: [
+  keepForLabControl: [
+    "/lab/patterns",
+    "/lab/publish",
+    "/lab/render-contract",
+  ],
+  retiredDynamicReadCompatibility: [
     "/lab/items",
     "/lab/recipes",
     "/lab/recipe-bootstrap",
-    "/lab/render-contract",
-  ],
-  migrateToRuntimeContracts: [
-    "recipe bootstrap dynamic lookups",
-    "search fallback paths",
-    "direct image fallback probes",
   ],
   removeFromProductionHotPath: [
     "single item texture probing in browser grid",
@@ -296,7 +295,7 @@ const report = {
   recommendations: [
     "Use /runtime, /ops, and /lab as the product-semantic runtime namespace.",
     "Keep /api/v1 as the stable versioned runtime contract surface. Updated consumers should use /api/runtime/current directly.",
-    "Keep dynamic diagnostic APIs lab-only under /lab; do not remount SQLite-backed dev routes under production /api.",
+    "Keep explicit control and diagnostic APIs lab-only under /lab; do not remount SQLite-backed dynamic read routes under production /api or dev /lab.",
     "Validate raw-export compiled runtime packs through native runtime gates before activation.",
     "Continue moving production browser/search/recipe paths to immutable runtime artifacts.",
   ],

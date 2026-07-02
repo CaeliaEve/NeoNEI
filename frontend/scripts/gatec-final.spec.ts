@@ -180,6 +180,17 @@ function relationCount(entry: { producedBy?: unknown[]; usedIn?: unknown[] }): n
   return producedBy + usedIn;
 }
 
+function unwrapCurrentApiEnvelope(payload: any): any {
+  return payload && typeof payload === 'object' && Object.prototype.hasOwnProperty.call(payload, 'data')
+    ? payload.data
+    : payload;
+}
+
+function itemFromBrowserEntry(entry: any): any | null {
+  if (entry?.kind === 'item') return entry.item || null;
+  return entry?.group?.representative || null;
+}
+
 async function pickRecipeItemId(page: any, lines: string[]) {
   const manifest = await fetchDistDataJson<DistDataManifest>(page, 'manifest.json', lines);
   const recipeItemIndexPath = String(manifest?.files?.recipeItemIndex ?? '').trim();
@@ -218,36 +229,45 @@ async function pickRecipeItemId(page: any, lines: string[]) {
     }
   }
 
-  const candidates = [
-    {
-      source: 'items-page-1',
-      url: BACKEND_BASE_URL + '/api/items?page=1&limit=200',
-      extractor: (json: any) => (Array.isArray(json?.data) ? json.data.map((x: any) => x?.itemId).filter(Boolean) : []),
-    },
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      const res = await page.request.get(candidate.url);
-      if (res.status() < 200 || res.status() >= 300) {
-        lines.push('[recipe-fixture] source=' + candidate.source + ' status=' + res.status() + ' skip');
-        continue;
-      }
-
-      const json = await res.json();
-      const itemIds: string[] = candidate.extractor(json);
-      lines.push('[recipe-fixture] source=' + candidate.source + ' status=' + res.status() + ' candidates=' + itemIds.length);
+  try {
+    const homeUrl = BACKEND_BASE_URL + '/api/publish/home-bootstrap?page=1&pageSize=96&slotSize=48';
+    const homeRes = await page.request.get(homeUrl);
+    if (homeRes.status() >= 200 && homeRes.status() < 300) {
+      const homeJson = await homeRes.json();
+      const itemIds = (homeJson?.pagePack?.data ?? [])
+        .map(itemFromBrowserEntry)
+        .map((item: any) => String(item?.itemId ?? '').trim())
+        .filter(Boolean);
+      lines.push('[recipe-fixture] source=publish-home-bootstrap status=' + homeRes.status() + ' candidates=' + itemIds.length);
 
       for (const itemId of itemIds.slice(0, 24)) {
-        const itemRes = await page.request.get(BACKEND_BASE_URL + '/api/items/' + encodeURIComponent(itemId));
-        if (itemRes.status() >= 200 && itemRes.status() < 300) {
-          lines.push('[recipe-fixture] selected itemId=' + itemId + ' source=' + candidate.source + ' machines=1 recipeCount=1 strategy=item-api-smoke-fallback');
-          return { itemId, source: candidate.source, machinesCount: 1, recipeCount: 1 };
+        const [producedRes, usedRes] = await Promise.all([
+          page.request.get(BACKEND_BASE_URL + '/api/recipes/current/item/' + encodeURIComponent(itemId)),
+          page.request.get(BACKEND_BASE_URL + '/api/recipes/current/usage/' + encodeURIComponent(itemId)),
+        ]);
+        const producedJson = producedRes.status() >= 200 && producedRes.status() < 300
+          ? unwrapCurrentApiEnvelope(await producedRes.json())
+          : null;
+        const usedJson = usedRes.status() >= 200 && usedRes.status() < 300
+          ? unwrapCurrentApiEnvelope(await usedRes.json())
+          : null;
+        const producedByCount = Array.isArray(producedJson?.recipes) ? producedJson.recipes.length : 0;
+        const usedInCount = Array.isArray(usedJson?.recipes) ? usedJson.recipes.length : 0;
+        const recipeCount = producedByCount + usedInCount;
+        if (recipeCount > 0) {
+          const machinesCount = new Set([
+            ...(producedJson?.recipes ?? []).map((relation: any) => String(relation?.categoryId ?? '').trim()).filter(Boolean),
+            ...(usedJson?.recipes ?? []).map((relation: any) => String(relation?.categoryId ?? '').trim()).filter(Boolean),
+          ]).size;
+          lines.push('[recipe-fixture] selected itemId=' + itemId + ' source=publish-home-bootstrap machines=' + machinesCount + ' recipeCount=' + recipeCount + ' producedBy=' + producedByCount + ' usedIn=' + usedInCount + ' strategy=current-recipe-api');
+          return { itemId, source: 'publish-home-bootstrap', machinesCount, recipeCount };
         }
       }
-    } catch (error: any) {
-      lines.push('[recipe-fixture] source=' + candidate.source + ' error=' + (error?.message || String(error)));
+    } else {
+      lines.push('[recipe-fixture] source=publish-home-bootstrap status=' + homeRes.status() + ' skip');
     }
+  } catch (error: any) {
+    lines.push('[recipe-fixture] source=publish-home-bootstrap error=' + (error?.message || String(error)));
   }
 
   return null;
@@ -277,7 +297,7 @@ test('Gate C final acceptance', async ({ page }) => {
 
   const backendUrls = {
     health: `${BACKEND_BASE_URL}/api/health`,
-    items: `${BACKEND_BASE_URL}/api/items?page=1&limit=1`,
+    homeBootstrap: `${BACKEND_BASE_URL}/api/publish/home-bootstrap?page=1&pageSize=1&slotSize=48`,
     runtime: `${BACKEND_BASE_URL}/api/runtime/current/manifest`,
   };
 

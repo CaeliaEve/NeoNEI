@@ -2,11 +2,6 @@
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
-const itemsRouteSource = fs.readFileSync(
-  'src/routes/items.routes.ts',
-  'utf8',
-).replace(/\r\n/g, '\n');
-
 const publishRouteSource = fs.readFileSync(
   'src/routes/publish.routes.ts',
   'utf8',
@@ -19,14 +14,9 @@ const materializerSource = fs.readFileSync(
 
 test('browser page payloads include a rich-media manifest for animated atlas fast paths', () => {
   assert.equal(
-    itemsRouteSource.includes('mediaManifest: buildBrowserRichMediaManifest(displayItems)'),
-    true,
-    'runtime browser page-pack route should include a page-level rich-media manifest',
-  );
-  assert.equal(
-    itemsRouteSource.includes('mediaManifest: buildBrowserRichMediaManifest(orderedItems)'),
-    true,
-    'browser by-ids pack should include a page-level rich-media manifest for search hydration',
+    fs.existsSync('src/routes/items.routes.ts'),
+    false,
+    'retired lab item route must not remain as a hidden browser page-pack compatibility path',
   );
   assert.equal(
     publishRouteSource.includes('mediaManifest: buildBrowserRichMediaManifest(displayItems)'),
@@ -43,5 +33,9 @@ test('browser page payloads include a rich-media manifest for animated atlas fas
     true,
     'materialized follow-up windows should serialize their rich-media manifest',
   );
+  assert.equal(
+    materializerSource.includes('buildBrowserRichMediaManifest(displayItems)'),
+    true,
+    'browser publish payloads should keep rich-media manifest generation in services, not lab routes',
+  );
 });
-

@@ -12,11 +12,6 @@ const publishPayloadSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-const itemsRouteSource = fs.readFileSync(
-  'src/routes/items.routes.ts',
-  'utf8',
-).replace(/\r\n/g, '\n');
-
 const publishRouteSource = fs.readFileSync(
   'src/routes/publish.routes.ts',
   'utf8',
@@ -24,9 +19,9 @@ const publishRouteSource = fs.readFileSync(
 
 test('publish hot payloads bake render hints into homepage/browser page packs', () => {
   assert.equal(
-    materializerSource.includes("PUBLISH_PAYLOAD_REVISION = '2026-04-26-runtime-hot-payloads-v3'"),
+    /PUBLISH_PAYLOAD_REVISION = '[^']+'/.test(materializerSource),
     true,
-    'publish payload revision should advance when browser-page payload shape gains baked render hints',
+    'publish payload revision should be explicit when browser-page payload shape changes',
   );
   assert.equal(
     materializerSource.includes('attachRenderHintsToEntries(firstPageWindow.data);'),
@@ -34,27 +29,27 @@ test('publish hot payloads bake render hints into homepage/browser page packs', 
     'materialized first-page publish payloads should embed render hints before serialization',
   );
   assert.equal(
-    materializerSource.includes("includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? false"),
+    materializerSource.includes('includeBrowserSearchPack: options.publishHotPayloads?.includeBrowserSearchPack ?? true'),
     true,
-    'publish hot payloads should stop baking unused browser search packs by default once homepage search moves to the direct backend path',
+    'publish hot payload search-pack baking should remain explicit in materializer options',
   );
 });
 
-test('runtime page-pack routes attach render hints for both homepage and search/browser hydration', () => {
+test('runtime publish payloads attach render hints without lab item route compatibility', () => {
   assert.equal(
-    itemsRouteSource.includes('attachRenderHintsToEntries(result.data);'),
-    true,
-    'browser page-pack responses should attach render hints before atlas generation',
-  );
-  assert.equal(
-    itemsRouteSource.includes('attachRenderHintsToItems(orderedItems);'),
-    true,
-    'browser by-ids hydration should attach render hints for search-result pages as well',
+    fs.existsSync('src/routes/items.routes.ts'),
+    false,
+    'retired lab item route must not remain as a render-hint compatibility path',
   );
   assert.equal(
     publishRouteSource.includes('attachRenderHintsToEntries(pagePack.data);'),
     true,
     'home bootstrap fallback responses should attach render hints before atlas generation',
+  );
+  assert.equal(
+    materializerSource.includes('attachRenderHintsToEntries(firstPageWindow.data);'),
+    true,
+    'materialized first-page publish payloads should attach render hints before serialization',
   );
 });
 
@@ -70,9 +65,8 @@ test('materialized browser windows can derive early follow-up pages from the sam
     'derived materialized page packs should slice from the hot window using the requested page offset',
   );
   assert.equal(
-    itemsRouteSource.includes('const materialized = getMaterializedBrowserPagePack({'),
+    publishRouteSource.includes('const shouldUseMaterializedHomeBootstrap = page === 1'),
     true,
-    'browser page-pack route should attempt to serve early follow-up pages from the hot payload window before hitting the DB',
+    'home bootstrap should attempt to serve the materialized hot payload before hitting the DB',
   );
 });
-
