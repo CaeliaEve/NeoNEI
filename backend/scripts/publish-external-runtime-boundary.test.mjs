@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const publishRouteSource = fs.readFileSync('src/routes/publish.routes.ts', 'utf8').replace(/\r\n/g, '\n');
+const publishDeliverySource = fs.readFileSync('src/services/publish-runtime-delivery.service.ts', 'utf8').replace(/\r\n/g, '\n');
 const namespaceRegistrySource = fs.readFileSync('src/routes/api-namespace-registry.ts', 'utf8').replace(/\r\n/g, '\n');
 const appSource = fs.readFileSync('src/app.ts', 'utf8').replace(/\r\n/g, '\n');
 const adminControlPlaneSource = fs.readFileSync('src/routes/runtime-admin-control-plane.routes.ts', 'utf8').replace(/\r\n/g, '\n');
@@ -10,22 +11,24 @@ const publishAdminRouteSource = fs.readFileSync('src/routes/publish-admin.routes
 const httpSource = fs.readFileSync('src/utils/http.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('external-runtime publish home bootstrap is materialized-bundle only', () => {
-  assert.match(publishRouteSource, /resolveAccelerationCompilerAuthority/);
-  assert.match(publishRouteSource, /function isExternalRuntimeAuthority\(\)/);
-  assert.match(publishRouteSource, /shouldUseMaterializedHomeBootstrap = page === 1/);
-  assert.match(publishRouteSource, /getPublishPayloadService\(\)\.getHomeBootstrapWindow/);
-  assert.match(publishRouteSource, /if \(isExternalRuntimeAuthority\(\)\) \{/);
-  assert.match(publishRouteSource, /EXTERNAL_RUNTIME_PUBLISH_BUNDLE_REQUIRED/);
-  assert.match(publishRouteSource, /dynamic SQLite fallback is disabled/);
+  assert.match(publishDeliverySource, /resolveAccelerationCompilerAuthority/);
+  assert.match(publishDeliverySource, /function isExternalRuntimeAuthority\(\)/);
+  assert.match(publishDeliverySource, /shouldUseMaterializedHomeBootstrap = query\.page === 1/);
+  assert.match(publishDeliverySource, /getPublishPayloadService\(\)\.getHomeBootstrapWindow/);
+  assert.match(publishDeliverySource, /if \(isExternalRuntimeAuthority\(\)\) \{/);
+  assert.match(publishDeliverySource, /EXTERNAL_RUNTIME_PUBLISH_BUNDLE_REQUIRED/);
+  assert.match(publishDeliverySource, /dynamic SQLite fallback is disabled/);
 
-  const materializedIndex = publishRouteSource.indexOf('const shouldUseMaterializedHomeBootstrap');
-  const gateIndex = publishRouteSource.indexOf('if (isExternalRuntimeAuthority()) {');
-  const dynamicIndex = publishRouteSource.indexOf('const [mods, pagePack] = await Promise.all');
+  const materializedIndex = publishDeliverySource.indexOf('const materialized = readMaterializedHomeBootstrap');
+  const gateIndex = publishDeliverySource.indexOf('if (isExternalRuntimeAuthority()) {');
+  const dynamicIndex = publishDeliverySource.indexOf('return buildDynamicHomeBootstrap(manifest, query)');
   assert.notEqual(materializedIndex, -1, 'materialized home bootstrap path must exist');
   assert.notEqual(gateIndex, -1, 'external-runtime gate must exist');
-  assert.notEqual(dynamicIndex, -1, 'lab/internal dynamic path may remain after the gate');
+  assert.notEqual(dynamicIndex, -1, 'internal dynamic path may remain after the gate');
   assert.equal(materializedIndex < gateIndex, true, 'materialized bundle must be attempted before fail-closed gate');
   assert.equal(gateIndex < dynamicIndex, true, 'external-runtime must fail before ItemsService dynamic fallback');
+
+  assert.doesNotMatch(publishRouteSource, /resolveAccelerationCompilerAuthority|EXTERNAL_RUNTIME_PUBLISH_BUNDLE_REQUIRED/);
 });
 
 test('publish control is token-protected ops/admin plane while public api is read-only', () => {
