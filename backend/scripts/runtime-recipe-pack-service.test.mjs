@@ -36,6 +36,7 @@ test('runtime recipe pack service reads produced-by and used-in refs from compil
     assert.equal(existsSync(join(distDataDir, 'rust', 'recipes.bin')), true, 'fixture compile should produce recipes.bin');
 
     process.env.DIST_DATA_DIR = distDataDir;
+    process.env.TS_NODE_PROJECT = resolve(backendRoot, 'tsconfig.json');
     require('ts-node/register');
     const { RuntimeRecipePackService, RUNTIME_RECIPE_PACK_SCHEMA } = require(resolve(
       backendRoot,
@@ -66,6 +67,7 @@ test('runtime recipe pack service reads produced-by and used-in refs from compil
     assert.equal(page?.uiPayload?.schemaVersion, 'neonei/recipe-ui-payload/v1');
   } finally {
     delete process.env.DIST_DATA_DIR;
+    delete process.env.TS_NODE_PROJECT;
     rmSync(workDir, { recursive: true, force: true });
   }
 });
@@ -73,6 +75,15 @@ test('runtime recipe pack service reads produced-by and used-in refs from compil
 
 test('runtime recipe pack service builds map-backed query indexes', () => {
   const source = readFileSync(join(backendRoot, 'src/services/runtime-recipe-pack.service.ts'), 'utf8').replace(/\r\n/g, '\n');
+  const abiSource = readFileSync(join(backendRoot, 'src/services/native-runtime-pack-abi.ts'), 'utf8').replace(/\r\n/g, '\n');
+  assert.match(abiSource, /NATIVE_RUNTIME_PACK_MAGIC = 'NNEIBIN\\0'/);
+  assert.match(abiSource, /NATIVE_RUNTIME_PACK_HEADER_BYTES = 24/);
+  assert.match(abiSource, /RUNTIME_RECIPE_PACK_SCHEMA = 'neonei\/recipe-pack\/current'/);
+  assert.match(abiSource, /RUNTIME_RECIPE_PACK_PAYLOAD_MAGIC = 'NEIRCP1\\0'/);
+  assert.match(source, /from '\.\/native-runtime-pack-abi'/);
+  assert.match(source, /unwrapNativeRuntimePackEnvelope/);
+  assert.doesNotMatch(source, /const NATIVE_BINARY_PACK_MAGIC|const COMPACT_RECIPE_MAGIC|const RECIPE_PACK_SCHEMA/);
+  assert.doesNotMatch(source, /magic !== NATIVE_BINARY_PACK_MAGIC[\s\S]*return buffer/);
   assert.match(source, /itemById: Map<string, RuntimeRecipeItemIndexEntry>/);
   assert.match(source, /uiPayloadByRecipeId: Map<string, RuntimeRecipeUiPayloadIndexEntry>/);
   assert.match(source, /categoriesById: Map<string, RuntimeRecipeCategory>/);

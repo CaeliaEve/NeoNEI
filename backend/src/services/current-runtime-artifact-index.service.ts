@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { PUBLIC_DIR } from '../config/runtime-paths';
+import { DIST_DATA_DIR } from '../config/runtime-paths';
 
 export type CurrentRuntimeJsonRecord = Record<string, unknown>;
 
@@ -11,7 +11,7 @@ export type CurrentRuntimeArtifact = Readonly<{
   mtimeMs: number;
 }>;
 
-export const CURRENT_RUNTIME_DIST_DATA_DIR = path.join(PUBLIC_DIR, 'dist-data');
+export const CURRENT_RUNTIME_DIST_DATA_DIR = DIST_DATA_DIR;
 export const CURRENT_RUNTIME_DIST_MANIFEST_FILE = path.join(CURRENT_RUNTIME_DIST_DATA_DIR, 'manifest.json');
 
 function asRecord(value: unknown): CurrentRuntimeJsonRecord | null {

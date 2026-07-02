@@ -4,6 +4,13 @@ import {
   readCurrentRuntimeJson,
   resolveDistDataRuntimeFile,
 } from './current-runtime-artifact-index.service';
+import {
+  RUNTIME_RECIPE_PACK_PAYLOAD_MAGIC,
+  RUNTIME_RECIPE_PACK_PAYLOAD_VERSION,
+  RUNTIME_RECIPE_PACK_SCHEMA,
+  decodeNativeRuntimePackUtf8,
+  unwrapNativeRuntimePackEnvelope,
+} from './native-runtime-pack-abi';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -79,10 +86,6 @@ type RuntimeRecipePack = ParsedRuntimeRecipePack & {
   categoriesById: Map<string, RuntimeRecipeCategory>;
 };
 
-const COMPACT_RECIPE_MAGIC = 'NEIRCP1\0';
-const NATIVE_BINARY_PACK_MAGIC = 'NNEIBIN\0';
-const RECIPE_PACK_SCHEMA = 'neonei/recipe-pack/current';
-
 function readJsonRequired(filePath: string, label: string): JsonRecord {
   const parsed = readCurrentRuntimeJson(filePath);
   if (!parsed) {
@@ -100,52 +103,25 @@ function asString(value: unknown): string | null {
   return text || null;
 }
 
-function decodeUtf8(buffer: Buffer, offset: number, length: number): string {
-  return buffer.subarray(offset, offset + length).toString('utf8');
-}
-
-function unwrapNativeBinaryPackEnvelope(buffer: Buffer, expectedSchema: string): Buffer {
-  const magic = decodeUtf8(buffer, 0, 8);
-  if (magic !== NATIVE_BINARY_PACK_MAGIC) {
-    return buffer;
-  }
-  if (buffer.byteLength < 24) {
-    throw new Error(`Native binary recipe envelope is too small: ${buffer.byteLength}`);
-  }
-  const version = buffer.readUInt32LE(8);
-  const schemaLength = buffer.readUInt32LE(12);
-  const payloadLength = Number(buffer.readBigUInt64LE(16));
-  const schemaStart = 24;
-  const schemaEnd = schemaStart + schemaLength;
-  const payloadEnd = schemaEnd + payloadLength;
-  if (version !== 1) {
-    throw new Error(`Native binary recipe envelope version mismatch: ${version}`);
-  }
-  if (schemaEnd > buffer.byteLength || payloadEnd !== buffer.byteLength) {
-    throw new Error(`Native binary recipe envelope length mismatch: schema=${schemaLength}, payload=${payloadLength}, bytes=${buffer.byteLength}`);
-  }
-  const schema = decodeUtf8(buffer, schemaStart, schemaLength);
-  if (schema !== expectedSchema) {
-    throw new Error(`Native binary recipe envelope schema mismatch: expected ${expectedSchema}, got ${schema}`);
-  }
-  return buffer.subarray(schemaEnd, payloadEnd);
-}
-
 function compactString(strings: string[], index: number): string {
   return strings[index] ?? '';
 }
 
 function parseCompactRecipePack(buffer: Buffer): ParsedRuntimeRecipePack {
-  buffer = unwrapNativeBinaryPackEnvelope(buffer, RECIPE_PACK_SCHEMA);
+  buffer = unwrapNativeRuntimePackEnvelope(
+    buffer,
+    RUNTIME_RECIPE_PACK_SCHEMA,
+    'Native binary recipe envelope',
+  ).payload;
   if (buffer.byteLength < 52) {
     throw new Error(`Runtime recipe pack is too small: ${buffer.byteLength}`);
   }
-  const magic = decodeUtf8(buffer, 0, 8);
-  if (magic !== COMPACT_RECIPE_MAGIC) {
+  const magic = decodeNativeRuntimePackUtf8(buffer, 0, 8);
+  if (magic !== RUNTIME_RECIPE_PACK_PAYLOAD_MAGIC) {
     throw new Error(`Runtime recipe pack magic mismatch: ${magic}`);
   }
   const version = buffer.readUInt32LE(8);
-  if (version !== 1) {
+  if (version !== RUNTIME_RECIPE_PACK_PAYLOAD_VERSION) {
     throw new Error(`Runtime recipe pack version mismatch: ${version}`);
   }
   const stringCount = buffer.readUInt32LE(12);
@@ -191,7 +167,7 @@ function parseCompactRecipePack(buffer: Buffer): ParsedRuntimeRecipePack {
     }
     let end = start;
     while (end < buffer.byteLength && buffer[end] !== 0) end += 1;
-    strings.push(decodeUtf8(buffer, start, end - start));
+    strings.push(decodeNativeRuntimePackUtf8(buffer, start, end - start));
   }
 
   const readRowValue = (start: number, row: number, stride: number, column: number): number => (
@@ -378,4 +354,4 @@ export function getRuntimeRecipePackService(): RuntimeRecipePackService {
   return runtimeRecipePackService;
 }
 
-export const RUNTIME_RECIPE_PACK_SCHEMA = RECIPE_PACK_SCHEMA;
+export { RUNTIME_RECIPE_PACK_SCHEMA };

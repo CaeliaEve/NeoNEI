@@ -1,12 +1,12 @@
 import type {
   NativeRuntimeManifest,
   NativeRuntimeManifestFiles,
-  NativeRuntimePackName,
-  NativeRuntimeCapability,
 } from "./NativeRuntimeManifest.ts";
 import {
   NATIVE_RUNTIME_REQUIRED_CAPABILITIES,
   NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS,
+  type NativeRuntimeCapability,
+  type NativeRuntimePackName,
 } from "./NativeRuntimeAbi.ts";
 
 export const NATIVE_UI_RUNTIME_REQUIRED_CAPABILITIES =

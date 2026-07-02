@@ -1,17 +1,21 @@
 import {
+  NATIVE_RUNTIME_PACK_HEADER_BYTES,
+  NATIVE_RUNTIME_PACK_MAGIC,
   NATIVE_RUNTIME_PACK_SCHEMAS,
-  type NativeRuntimeBuffers,
-  type NativeRuntimeManifest,
-  type NativeRuntimePack,
+  NATIVE_RUNTIME_PACK_VERSION,
+  NATIVE_RUNTIME_PAYLOAD_ENCODINGS,
   type NativeRuntimePackName,
   type NativeRuntimePackSchema,
+} from "./NativeRuntimeAbi.ts";
+import type {
+  NativeRuntimeBuffers,
+  NativeRuntimeManifest,
+  NativeRuntimePack,
 } from "./NativeRuntimeManifest.ts";
 import { parseNativeCompactBrowserPack } from "./NativeRuntimeBrowserPack.ts";
 import { assertNativeRuntimePackEntrypoints } from "./NativeRuntimeCapabilityGate.ts";
 import { getManifestRuntimeFileBytes } from "../services/runtimeManifestPath.ts";
 
-const NATIVE_PACK_MAGIC = "NNEIBIN\0";
-const NATIVE_PACK_HEADER_BYTES = 24;
 const manifestRequestCache = new Map<string, Promise<NativeRuntimeManifest>>();
 const packRequestCache = new Map<string, Promise<NativeRuntimePack>>();
 
@@ -97,7 +101,7 @@ export function parseNativeRuntimePackHeader(
   buffer: ArrayBuffer,
   expectedSchema: NativeRuntimePackSchema,
 ): NativeRuntimePack["header"] {
-  if (buffer.byteLength < NATIVE_PACK_HEADER_BYTES) {
+  if (buffer.byteLength < NATIVE_RUNTIME_PACK_HEADER_BYTES) {
     throw new Error(`Native runtime pack is too small: ${buffer.byteLength} bytes`);
   }
   const view = new DataView(buffer);
@@ -105,14 +109,14 @@ export function parseNativeRuntimePackHeader(
   const version = view.getUint32(8, true);
   const schemaLength = view.getUint32(12, true);
   const payloadLength = Number(view.getBigUint64(16, true));
-  const schemaStart = NATIVE_PACK_HEADER_BYTES;
+  const schemaStart = NATIVE_RUNTIME_PACK_HEADER_BYTES;
   const schemaEnd = schemaStart + schemaLength;
   const payloadEnd = schemaEnd + payloadLength;
 
-  if (magic !== NATIVE_PACK_MAGIC) {
+  if (magic !== NATIVE_RUNTIME_PACK_MAGIC) {
     throw new Error(`Native runtime pack has invalid magic: ${magic}`);
   }
-  if (version !== 1) {
+  if (version !== NATIVE_RUNTIME_PACK_VERSION) {
     throw new Error(`Native runtime pack has invalid version: ${version}`);
   }
   if (schemaEnd > buffer.byteLength || payloadEnd !== buffer.byteLength) {
@@ -123,8 +127,8 @@ export function parseNativeRuntimePackHeader(
     throw new Error(`Native runtime pack schema mismatch: expected ${expectedSchema}, got ${schema}`);
   }
   return {
-    magic: NATIVE_PACK_MAGIC,
-    version: 1,
+    magic: NATIVE_RUNTIME_PACK_MAGIC,
+    version: NATIVE_RUNTIME_PACK_VERSION,
     schema,
     schemaLength,
     payloadLength,
@@ -133,22 +137,22 @@ export function parseNativeRuntimePackHeader(
 }
 
 export function getNativeRuntimePackPayloadBuffer(buffer: ArrayBuffer, header: NativeRuntimePack["header"]): ArrayBuffer {
-  const payloadStart = NATIVE_PACK_HEADER_BYTES + header.schemaLength;
+  const payloadStart = NATIVE_RUNTIME_PACK_HEADER_BYTES + header.schemaLength;
   return buffer.slice(payloadStart, payloadStart + header.payloadLength);
 }
 
 function detectPayloadEncoding(name: NativeRuntimePackName, payloadBuffer: ArrayBuffer): NativeRuntimePack["payloadEncoding"] {
   if (name === "browser") {
     parseNativeCompactBrowserPack(payloadBuffer);
-    return "compact-browser-table";
+    return NATIVE_RUNTIME_PAYLOAD_ENCODINGS.compactBrowserTable;
   }
   try {
     const firstByte = new Uint8Array(payloadBuffer, 0, Math.min(payloadBuffer.byteLength, 1))[0];
-    if (firstByte === 123 || firstByte === 91) return "json";
+    if (firstByte === 123 || firstByte === 91) return NATIVE_RUNTIME_PAYLOAD_ENCODINGS.json;
   } catch {
     // Pack-level validation already verified the envelope; unknown payloads stay binary.
   }
-  return "binary";
+  return NATIVE_RUNTIME_PAYLOAD_ENCODINGS.binary;
 }
 
 export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<NativeRuntimeManifest> {

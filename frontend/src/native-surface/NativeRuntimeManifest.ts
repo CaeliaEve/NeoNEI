@@ -1,13 +1,23 @@
 import {
+  NATIVE_RUNTIME_MANIFEST_SCHEMA,
+  NATIVE_RUNTIME_PACK_MAGIC,
   NATIVE_RUNTIME_PACK_SCHEMAS,
+  NATIVE_RUNTIME_PACK_VERSION,
+  type NativeRuntimeCapability,
   type NativeRuntimePackName,
   type NativeRuntimePackSchema,
+  type NativeRuntimePayloadEncoding,
 } from "./NativeRuntimeAbi.ts";
 
 export {
+  NATIVE_RUNTIME_MANIFEST_SCHEMA,
+  NATIVE_RUNTIME_PACK_MAGIC,
   NATIVE_RUNTIME_PACK_SCHEMAS,
+  NATIVE_RUNTIME_PACK_VERSION,
+  type NativeRuntimeCapability,
   type NativeRuntimePackName,
   type NativeRuntimePackSchema,
+  type NativeRuntimePayloadEncoding,
 } from "./NativeRuntimeAbi.ts";
 
 export interface NativeRuntimeManifestFiles {
@@ -28,7 +38,7 @@ export interface NativeRuntimeManifestFiles {
 }
 
 export interface NativeRuntimeManifest {
-  schema?: "neonei/runtime/current";
+  schema?: typeof NATIVE_RUNTIME_MANIFEST_SCHEMA;
   schemaVersion?: string;
   schemaRevision?: number;
   runtimeId?: string;
@@ -41,25 +51,9 @@ export interface NativeRuntimeManifest {
   capabilities?: NativeRuntimeCapability[] | Record<string, boolean | string | number | null>;
 }
 
-export type NativeRuntimeCapability =
-  | "atlas.static"
-  | "atlas.animated"
-  | "groups.collapse"
-  | "groups.semantic-nbt"
-  | "recipes.native-ui-layout"
-  | "recipes.lookup"
-  | "recipes.ui-pack"
-  | "search.zh-cn"
-  | "strings.zh-cn"
-  | "native_ui.surface"
-  | "native_ui.design_space_coordinates"
-  | "native_ui.background_asset"
-  | "native-render.webgl2"
-  | "native-render.webgpu";
-
 export interface NativeRuntimePackHeader {
-  magic: "NNEIBIN\0";
-  version: 1;
+  magic: typeof NATIVE_RUNTIME_PACK_MAGIC;
+  version: typeof NATIVE_RUNTIME_PACK_VERSION;
   schema: NativeRuntimePackSchema;
   schemaLength: number;
   payloadLength: number;
@@ -73,7 +67,7 @@ export interface NativeRuntimePack {
   header: NativeRuntimePackHeader;
   buffer: ArrayBuffer;
   payloadBuffer: ArrayBuffer;
-  payloadEncoding?: "json" | "compact-browser-table" | "binary";
+  payloadEncoding?: NativeRuntimePayloadEncoding;
 }
 
 export interface NativeRuntimeBuffers {

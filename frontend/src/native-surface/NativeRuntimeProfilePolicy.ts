@@ -1,8 +1,8 @@
+import type { NativeRuntimeManifest } from "./NativeRuntimeManifest.ts";
 import type {
   NativeRuntimeCapability,
-  NativeRuntimeManifest,
   NativeRuntimePackName,
-} from "./NativeRuntimeManifest.ts";
+} from "./NativeRuntimeAbi.ts";
 import { assertNativeRuntimeCapabilities } from "./NativeRuntimeCapabilityGate.ts";
 
 export type NativeRuntimePackProfile =
