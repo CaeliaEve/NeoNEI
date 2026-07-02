@@ -1,9 +1,14 @@
 import {
+  NATIVE_RUNTIME_CURRENT_ASSET_BASE_PATH,
+  NATIVE_RUNTIME_CURRENT_MANIFEST_PATH,
+  NATIVE_RUNTIME_DEFAULT_BASE_URL,
+  NATIVE_RUNTIME_FETCH_CACHE,
   NATIVE_RUNTIME_PACK_HEADER_BYTES,
   NATIVE_RUNTIME_PACK_MAGIC,
   NATIVE_RUNTIME_PACK_SCHEMAS,
   NATIVE_RUNTIME_PACK_VERSION,
   NATIVE_RUNTIME_PAYLOAD_ENCODINGS,
+  NATIVE_RUNTIME_REVISION,
   type NativeRuntimePackName,
   type NativeRuntimePackSchema,
 } from "./NativeRuntimeAbi.ts";
@@ -40,19 +45,22 @@ function encodeRuntimeFilePath(relativePath: string): string {
 
 function isCurrentRuntimeManifestUrl(manifestUrl: string): boolean {
   try {
-    const pathname = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").pathname;
-    return pathname.endsWith("/api/runtime/current/manifest");
+    const pathname = new URL(manifestUrl, globalThis.location?.href ?? NATIVE_RUNTIME_DEFAULT_BASE_URL).pathname;
+    return pathname.endsWith(NATIVE_RUNTIME_CURRENT_MANIFEST_PATH);
   } catch {
-    return manifestUrl.includes("/api/runtime/current/manifest");
+    return manifestUrl.includes(NATIVE_RUNTIME_CURRENT_MANIFEST_PATH);
   }
 }
 
 function resolveCurrentRuntimeAssetUrl(manifestUrl: string, relativePath: string): string {
   const encodedPath = encodeRuntimeFilePath(relativePath);
   try {
-    return new URL(`/api/runtime/current/asset/${encodedPath}`, new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/")).toString();
+    return new URL(
+      `${NATIVE_RUNTIME_CURRENT_ASSET_BASE_PATH}${encodedPath}`,
+      new URL(manifestUrl, globalThis.location?.href ?? NATIVE_RUNTIME_DEFAULT_BASE_URL),
+    ).toString();
   } catch {
-    return `/api/runtime/current/asset/${encodedPath}`;
+    return `${NATIVE_RUNTIME_CURRENT_ASSET_BASE_PATH}${encodedPath}`;
   }
 }
 
@@ -77,18 +85,19 @@ function buildNativeRuntimeRevision(manifest: NativeRuntimeManifest, relativePat
   ]
     .map((value) => `${value ?? ""}`.trim())
     .filter(Boolean)
-    .join("|") || `${relativePath}|current`;
+    .join(NATIVE_RUNTIME_REVISION.separator)
+    || `${relativePath}${NATIVE_RUNTIME_REVISION.separator}${NATIVE_RUNTIME_REVISION.currentFallback}`;
 }
 
 function appendNativeRuntimeRevision(url: string, revision: string): string {
   const encoded = encodeURIComponent(revision);
   try {
-    const next = new URL(url, globalThis.location?.href ?? "http://localhost/");
-    next.searchParams.set("neoneiRuntime", encoded);
+    const next = new URL(url, globalThis.location?.href ?? NATIVE_RUNTIME_DEFAULT_BASE_URL);
+    next.searchParams.set(NATIVE_RUNTIME_REVISION.queryParam, encoded);
     return next.toString();
   } catch {
     const separator = url.includes("?") ? "&" : "?";
-    return `${url}${separator}neoneiRuntime=${encoded}`;
+    return `${url}${separator}${NATIVE_RUNTIME_REVISION.queryParam}=${encoded}`;
   }
 }
 
@@ -156,11 +165,11 @@ function detectPayloadEncoding(name: NativeRuntimePackName, payloadBuffer: Array
 }
 
 export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<NativeRuntimeManifest> {
-  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
+  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? NATIVE_RUNTIME_DEFAULT_BASE_URL).toString();
   const existing = manifestRequestCache.get(normalizedManifestUrl);
   if (existing) return existing;
   const request = (async () => {
-  const response = await fetch(normalizedManifestUrl, { cache: "no-cache" });
+  const response = await fetch(normalizedManifestUrl, { cache: NATIVE_RUNTIME_FETCH_CACHE.manifest });
   if (!response.ok) {
     throw new Error(`Failed to load native runtime manifest: ${response.status} ${response.statusText}`);
   }
@@ -190,7 +199,7 @@ async function loadNativeRuntimePack(
   const existing = packRequestCache.get(cacheKey);
   if (existing) return existing;
   const request = (async () => {
-    const response = await fetch(url, { cache: "force-cache" });
+    const response = await fetch(url, { cache: NATIVE_RUNTIME_FETCH_CACHE.pack });
     if (!response.ok) {
       throw new Error(`Failed to load native runtime pack ${name}: ${response.status} ${response.statusText}`);
     }
@@ -219,7 +228,7 @@ export async function loadNativeRuntimeBuffers(
   packNames?: readonly NativeRuntimePackName[],
   manifestGate?: NativeRuntimeManifestGate,
 ): Promise<NativeRuntimeBuffers> {
-  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
+  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? NATIVE_RUNTIME_DEFAULT_BASE_URL).toString();
   const manifest = await loadNativeRuntimeManifest(normalizedManifestUrl);
   const packs: Partial<Record<NativeRuntimePackName, NativeRuntimePack>> = {};
   const requestedPackNames = packNames?.length
