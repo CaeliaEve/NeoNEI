@@ -1,9 +1,9 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
-const publishRouteSource = fs.readFileSync(
-  'src/routes/publish.routes.ts',
+const publishDeliverySource = fs.readFileSync(
+  'src/services/publish-runtime-delivery.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -19,7 +19,7 @@ test('browser page payloads include a rich-media manifest for animated atlas fas
     'retired lab item route must not remain as a hidden browser page-pack compatibility path',
   );
   assert.equal(
-    publishRouteSource.includes('mediaManifest: buildBrowserRichMediaManifest(displayItems)'),
+    publishDeliverySource.includes('mediaManifest: buildBrowserRichMediaManifest(displayItems)'),
     true,
     'home bootstrap fallback should include a page-level rich-media manifest',
   );

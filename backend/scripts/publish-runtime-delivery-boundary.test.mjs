@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
 const publishRouteSource = readFileSync(resolve(root, 'src/routes/publish.routes.ts'), 'utf8');
+const publishHandlerSource = readFileSync(resolve(root, 'src/routes/publish-public-endpoint-handlers.ts'), 'utf8');
 const deliverySource = readFileSync(resolve(root, 'src/services/publish-runtime-delivery.service.ts'), 'utf8');
 
 test('publish manifest and home-bootstrap delivery policy are service-owned', () => {
@@ -19,11 +20,11 @@ test('publish manifest and home-bootstrap delivery policy are service-owned', ()
   assert.match(deliverySource, /export function getPublishManifestDelivery/);
   assert.match(deliverySource, /export function createPublishHomeBootstrapDelivery/);
 
-  assert.match(publishRouteSource, /getPublishManifestDelivery\(\)/);
-  assert.match(publishRouteSource, /createPublishHomeBootstrapDelivery\(req\.query\)/);
-  assert.match(publishRouteSource, /sendNotModifiedIfEtagMatches\(req, res, delivery\.etag\)/);
-  assert.match(publishRouteSource, /res\.json\(delivery\.payload\)/);
-  assert.match(publishRouteSource, /res\.json\(await delivery\.loadPayload\(\)\)/);
+  assert.match(publishHandlerSource, /getPublishManifestDelivery\(\)/);
+  assert.match(publishHandlerSource, /createPublishHomeBootstrapDelivery\(req\.query\)/);
+  assert.match(publishHandlerSource, /sendNotModifiedIfEtagMatches\(req, res, delivery\.etag\)/);
+  assert.match(publishHandlerSource, /res\.json\(delivery\.payload\)/);
+  assert.match(publishHandlerSource, /res\.json\(await delivery\.loadPayload\(\)\)/);
 
   for (const routeLocalPolicy of [
     /getPublishManifestService/,

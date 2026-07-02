@@ -108,6 +108,15 @@ const apiNamespaceRegistry = existsSync(join(repoRoot, "backend/src/routes/api-n
 const currentRuntimeEndpointRegistry = existsSync(join(repoRoot, "backend/src/routes/current-runtime-endpoint-registry.ts"))
   ? readText("backend/src/routes/current-runtime-endpoint-registry.ts")
   : "";
+const runtimePublicEndpointRegistry = existsSync(join(repoRoot, "backend/src/routes/runtime-public-endpoint-registry.ts"))
+  ? readText("backend/src/routes/runtime-public-endpoint-registry.ts")
+  : "";
+const apiV1EndpointRegistry = existsSync(join(repoRoot, "backend/src/routes/v1-endpoint-registry.ts"))
+  ? readText("backend/src/routes/v1-endpoint-registry.ts")
+  : "";
+const publishPublicEndpointRegistry = existsSync(join(repoRoot, "backend/src/routes/publish-public-endpoint-registry.ts"))
+  ? readText("backend/src/routes/publish-public-endpoint-registry.ts")
+  : "";
 const routeSource = [
   server,
   appSource,
@@ -158,6 +167,9 @@ const explicitAdminControlRoutes = [
 ].filter(Boolean);
 const apiNamespaceMountPaths = matchCaptureAll(apiNamespaceRegistry, /mountPath:\s*['"`]([^'"`]+)['"`]/g);
 const currentRuntimeEndpointPaths = matchCaptureAll(currentRuntimeEndpointRegistry, /path:\s*['"`]([^'"`]+)['"`]/g);
+const runtimePublicEndpointPaths = matchCaptureAll(runtimePublicEndpointRegistry, /path:\s*['"`]([^'"`]+)['"`]/g);
+const apiV1EndpointPaths = matchCaptureAll(apiV1EndpointRegistry, /path:\s*['"`]([^'"`]+)['"`]/g);
+const publishPublicEndpointPaths = matchCaptureAll(publishPublicEndpointRegistry, /path:\s*['"`]([^'"`]+)['"`]/g);
 const registryProductRuntimeRoutes = apiNamespaceMountPaths
   .filter((path) => /^\/runtime\b/.test(path))
   .map((path) => `api-namespace-registry:${path}`);
@@ -167,16 +179,29 @@ const registryPublicRuntimeRoutes = apiNamespaceMountPaths
 const currentRuntimeRegistryRoutes = currentRuntimeEndpointPaths
   .filter((path) => /^\/runtime\b|^\/diagnostics\b|^\/health\b/.test(path))
   .map((path) => `current-runtime-endpoint-registry:/api${path}`);
+const runtimePublicRegistryRoutes = runtimePublicEndpointPaths
+  .filter((path) => /^\/(?:health|manifest|contracts|diagnostics)\b/.test(path))
+  .map((path) => `runtime-public-endpoint-registry:/runtime${path}`);
+const apiV1RegistryRoutes = apiV1EndpointPaths
+  .filter((path) => /^\/(?:health|runtime)\b/.test(path))
+  .map((path) => `v1-endpoint-registry:/api/v1${path}`);
+const publishPublicRegistryRoutes = publishPublicEndpointPaths
+  .filter((path) => /^\/(?:manifest|home-bootstrap)\b/.test(path))
+  .map((path) => `publish-public-endpoint-registry:/api/publish${path}`);
 const productRuntimeRoutes = [
   ...routeRegistrationsWithContext.filter((route) => /['"`]\/(?:runtime|ops|lab)\b/.test(route.line)).map((route) => route.line),
   ...registryProductRuntimeRoutes,
   ...currentRuntimeRegistryRoutes,
+  ...runtimePublicRegistryRoutes,
   ...explicitAdminControlRoutes,
 ];
 const publicRuntimeRoutes = [
   ...routeRegistrationsWithContext.filter((route) => /['"`]\/runtime\b|\/api\/publish|\/api\/v1|\/publish|\/dist-data|\/canonical/.test(route.line)).map((route) => route.line),
   ...registryPublicRuntimeRoutes,
   ...currentRuntimeRegistryRoutes,
+  ...runtimePublicRegistryRoutes,
+  ...apiV1RegistryRoutes,
+  ...publishPublicRegistryRoutes,
 ];
 
 const frontendRuntimeCalls = {
@@ -191,8 +216,8 @@ const runtimeCapabilities = {
   hasRuntimeNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/runtime\b|:\/api\/runtime\b/.test(line)),
   hasOpsNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/ops\b/.test(line)),
   hasRetiredLabNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/lab\b/.test(line)),
-  hasRuntimeDiagnostics: /\/diagnostics/.test(runtimeRoutes) || /\/runtime\/diagnostics/.test(server),
-  hasRuntimeContracts: /\/contracts/.test(runtimeRoutes) || /\/runtime\/contracts/.test(server),
+  hasRuntimeDiagnostics: publicRuntimeRoutes.some((line) => /\/runtime\/diagnostics\b/.test(line)) || /\/diagnostics/.test(runtimeRoutes) || /\/runtime\/diagnostics/.test(server),
+  hasRuntimeContracts: publicRuntimeRoutes.some((line) => /\/runtime\/contracts\b/.test(line)) || /\/contracts/.test(runtimeRoutes) || /\/runtime\/contracts/.test(server),
   hasApiTierHeaders: /x-neonei-api-tier/.test(routeSource),
 };
 

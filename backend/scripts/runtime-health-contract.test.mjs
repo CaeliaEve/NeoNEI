@@ -3,7 +3,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const serviceSource = fs.readFileSync('src/services/runtime-health-summary.service.ts', 'utf8');
-const routeSource = fs.readFileSync('src/routes/runtime.routes.ts', 'utf8');
+const deliverySource = fs.readFileSync('src/services/runtime-observability-delivery.service.ts', 'utf8');
+const runtimeEndpointRegistrySource = fs.readFileSync('src/routes/runtime-public-endpoint-registry.ts', 'utf8');
+const runtimeEndpointHandlerSource = fs.readFileSync('src/routes/runtime-public-endpoint-handlers.ts', 'utf8');
 const diagnosticsSource = fs.readFileSync('src/services/runtime-diagnostics-summary.service.ts', 'utf8');
 
 test('runtime health exposes the stable public health contract', () => {
@@ -60,37 +62,42 @@ test('runtime health exposes the stable public health contract', () => {
     'runtime health should expose external runtime promotion status',
   );
   assert.equal(
-    routeSource.includes("router.get('/health'"),
+    runtimeEndpointRegistrySource.includes("path: '/health'"),
     true,
-    'runtime routes should expose /runtime/health',
+    'runtime endpoint registry should expose /runtime/health',
   );
   assert.equal(
-    routeSource.includes('contractVersion'),
+    deliverySource.includes('contractVersion'),
     true,
-    'runtime health response should include the runtime contract version',
+    'runtime health delivery should include the runtime contract version',
+  );
+  assert.equal(
+    runtimeEndpointHandlerSource.includes('getCurrentRuntimeHealthDelivery()'),
+    true,
+    'runtime health handler should expose the delivery boundary',
   );
 });
 
 test('runtime diagnostics route is a read-only service boundary', () => {
   assert.equal(
-    routeSource.includes('getRuntimeDiagnosticsSummary'),
+    deliverySource.includes('getRuntimeDiagnosticsSummary()'),
     true,
-    'runtime diagnostics route should delegate diagnostic assembly to a service boundary',
+    'runtime diagnostics delivery should delegate diagnostic assembly to a service boundary',
   );
   assert.equal(
-    routeSource.includes('res.json(getRuntimeDiagnosticsSummary())'),
+    runtimeEndpointHandlerSource.includes('res.json(getCurrentRuntimeDiagnosticsDelivery())'),
     true,
-    'runtime diagnostics route should only expose the service summary',
+    'runtime diagnostics handler should only expose the delivery summary',
   );
   assert.doesNotMatch(
-    routeSource,
+    runtimeEndpointHandlerSource,
     /fs\.existsSync/,
-    'runtime diagnostics route must not own direct filesystem readiness checks',
+    'runtime diagnostics handler must not own direct filesystem readiness checks',
   );
   assert.doesNotMatch(
-    routeSource,
+    runtimeEndpointHandlerSource,
     /getNativeRenderRuntimeDiagnostics/,
-    'runtime diagnostics route must consume native render diagnostics through runtime health',
+    'runtime diagnostics handler must consume native render diagnostics through runtime health',
   );
   assert.equal(
     diagnosticsSource.includes("schemaVersion: 'neonei/runtime-diagnostics/current'"),

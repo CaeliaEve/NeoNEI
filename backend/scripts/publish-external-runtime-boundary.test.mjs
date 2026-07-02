@@ -3,11 +3,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const publishRouteSource = fs.readFileSync('src/routes/publish.routes.ts', 'utf8').replace(/\r\n/g, '\n');
+const publishEndpointRegistrySource = fs.readFileSync('src/routes/publish-public-endpoint-registry.ts', 'utf8').replace(/\r\n/g, '\n');
 const publishDeliverySource = fs.readFileSync('src/services/publish-runtime-delivery.service.ts', 'utf8').replace(/\r\n/g, '\n');
 const namespaceRegistrySource = fs.readFileSync('src/routes/api-namespace-registry.ts', 'utf8').replace(/\r\n/g, '\n');
 const appSource = fs.readFileSync('src/app.ts', 'utf8').replace(/\r\n/g, '\n');
 const adminControlPlaneSource = fs.readFileSync('src/routes/runtime-admin-control-plane.routes.ts', 'utf8').replace(/\r\n/g, '\n');
 const publishAdminRouteSource = fs.readFileSync('src/routes/publish-admin.routes.ts', 'utf8').replace(/\r\n/g, '\n');
+const publishAdminEndpointRegistrySource = fs.readFileSync('src/routes/publish-admin-endpoint-registry.ts', 'utf8').replace(/\r\n/g, '\n');
 const httpSource = fs.readFileSync('src/utils/http.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('external-runtime publish home bootstrap is materialized-bundle only', () => {
@@ -54,12 +56,12 @@ test('publish route factory keeps release control out of public read routes', ()
   assert.doesNotMatch(publishRouteSource, /PublishRoutesMode|registerLabControlRoutes|labPublishRoutes/);
   assert.match(publishRouteSource, /export const publicPublishRoutes = createPublishRoutes\(\)/);
   assert.match(publishAdminRouteSource, /export function createPublishAdminRouter\(\): Router/);
-  assert.match(publishAdminRouteSource, /router\.get\(\s*'\/releases'/);
-  assert.match(publishAdminRouteSource, /router\.post\(\s*'\/releases\/:sourceSignature\/activate'/);
+  assert.match(publishAdminEndpointRegistrySource, /path: '\/releases'/);
+  assert.match(publishAdminEndpointRegistrySource, /path: '\/releases\/:sourceSignature\/activate'/);
+  assert.match(publishEndpointRegistrySource, /path: '\/manifest'/);
+  assert.match(publishEndpointRegistrySource, /path: '\/home-bootstrap'/);
 
-  const labControlIndex = publishAdminRouteSource.indexOf('function createPublishAdminRouter');
   const publicReadIndex = publishRouteSource.indexOf('function registerPublicReadRoutes');
-  assert.notEqual(labControlIndex, -1, 'admin control router factory must exist');
   assert.notEqual(publicReadIndex, -1, 'public read route registrar must exist');
   const publicReadBody = publishRouteSource.slice(publicReadIndex);
   assert.doesNotMatch(publicReadBody, /'\/releases\/:sourceSignature\/activate'/);

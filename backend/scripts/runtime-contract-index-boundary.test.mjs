@@ -6,6 +6,8 @@ import test from 'node:test';
 const root = resolve(import.meta.dirname, '..');
 const runtimeRouteSource = readFileSync(resolve(root, 'src/routes/runtime.routes.ts'), 'utf8');
 const v1RouteSource = readFileSync(resolve(root, 'src/routes/v1.routes.ts'), 'utf8');
+const runtimeHandlerSource = readFileSync(resolve(root, 'src/routes/runtime-public-endpoint-handlers.ts'), 'utf8');
+const v1HandlerSource = readFileSync(resolve(root, 'src/routes/v1-endpoint-handlers.ts'), 'utf8');
 const contractIndexSource = readFileSync(resolve(root, 'src/services/runtime-contract-index.service.ts'), 'utf8');
 
 test('runtime contract indexes are service-owned, not route-owned DTOs', () => {
@@ -24,8 +26,10 @@ test('runtime contract indexes are service-owned, not route-owned DTOs', () => {
   assert.doesNotMatch(contractIndexSource, /\/lab\//);
   assert.doesNotMatch(contractIndexSource, /compat/i);
 
-  assert.match(runtimeRouteSource, /getCurrentRuntimeContractIndex\(\)/);
-  assert.match(v1RouteSource, /getApiV1RuntimeContractIndex\(\)/);
+  assert.match(runtimeHandlerSource, /getCurrentRuntimeContractIndex\(\)/);
+  assert.match(v1HandlerSource, /getApiV1RuntimeContractIndex\(\)/);
+  assert.doesNotMatch(runtimeRouteSource, /getCurrentRuntimeContractIndex/);
+  assert.doesNotMatch(v1RouteSource, /getApiV1RuntimeContractIndex/);
   assert.doesNotMatch(runtimeRouteSource, /const runtimeContracts/);
   assert.doesNotMatch(v1RouteSource, /function getRuntimeContracts/);
   assert.doesNotMatch(runtimeRouteSource, /control: \{/);

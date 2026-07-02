@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
@@ -12,8 +12,8 @@ const publishPayloadSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-const publishRouteSource = fs.readFileSync(
-  'src/routes/publish.routes.ts',
+const publishDeliverySource = fs.readFileSync(
+  'src/services/publish-runtime-delivery.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -42,7 +42,7 @@ test('runtime publish payloads attach render hints without lab item route compat
     'retired lab item route must not remain as a render-hint compatibility path',
   );
   assert.equal(
-    publishRouteSource.includes('attachRenderHintsToEntries(pagePack.data);'),
+    publishDeliverySource.includes('attachRenderHintsToEntries(pagePack.data);'),
     true,
     'home bootstrap fallback responses should attach render hints before atlas generation',
   );
@@ -65,7 +65,7 @@ test('materialized browser windows can derive early follow-up pages from the sam
     'derived materialized page packs should slice from the hot window using the requested page offset',
   );
   assert.equal(
-    publishRouteSource.includes('const shouldUseMaterializedHomeBootstrap = page === 1'),
+    publishDeliverySource.includes('const shouldUseMaterializedHomeBootstrap = query.page === 1'),
     true,
     'home bootstrap should attempt to serve the materialized hot payload before hitting the DB',
   );

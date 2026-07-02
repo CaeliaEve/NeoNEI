@@ -1,39 +1,20 @@
-﻿import { Router, type Router as ExpressRouter } from 'express';
+import { Router, type RequestHandler, type Router as ExpressRouter } from 'express';
 import { asyncHandler } from '../utils/http';
-import { sendNotModifiedIfEtagMatches, setNoStoreHeaders, setPublicCacheHeaders } from '../utils/http-cache';
 import {
-  createPublishHomeBootstrapDelivery,
-  getPublishManifestDelivery,
-} from '../services/publish-runtime-delivery.service';
+  PUBLISH_PUBLIC_ENDPOINTS,
+  type PublishPublicEndpoint,
+} from './publish-public-endpoint-registry';
+import { PUBLISH_PUBLIC_ENDPOINT_HANDLERS } from './publish-public-endpoint-handlers';
+
+function registerPublishPublicEndpoint(router: ExpressRouter, endpoint: PublishPublicEndpoint): void {
+  const handler: RequestHandler = asyncHandler(PUBLISH_PUBLIC_ENDPOINT_HANDLERS[endpoint.key]);
+  router.get(endpoint.path, handler);
+}
 
 function registerPublicReadRoutes(router: ExpressRouter): void {
-  router.get(
-    '/manifest',
-    asyncHandler(async (req, res) => {
-      const delivery = getPublishManifestDelivery();
-      setNoStoreHeaders(res);
-      if (sendNotModifiedIfEtagMatches(req, res, delivery.etag)) {
-        return;
-      }
-      res.json(delivery.payload);
-    }),
-  );
-
-  router.get(
-    '/home-bootstrap',
-    asyncHandler(async (req, res) => {
-      const delivery = createPublishHomeBootstrapDelivery(req.query);
-      setPublicCacheHeaders(res, {
-        maxAgeSeconds: 120,
-        staleWhileRevalidateSeconds: 900,
-        staleIfErrorSeconds: 3600,
-      });
-      if (sendNotModifiedIfEtagMatches(req, res, delivery.etag)) {
-        return;
-      }
-      res.json(await delivery.loadPayload());
-    }),
-  );
+  for (const endpoint of PUBLISH_PUBLIC_ENDPOINTS) {
+    registerPublishPublicEndpoint(router, endpoint);
+  }
 }
 
 export function createPublishRoutes(): ExpressRouter {

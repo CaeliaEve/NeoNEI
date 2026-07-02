@@ -326,17 +326,26 @@ test('dynamic sqlite read namespaces and lab bucket are retired from production 
 
 test('v1 runtime contracts advertise ops/admin control diagnostics, not legacy sqlite read routes', () => {
   const v1Source = fs.readFileSync('src/routes/v1.routes.ts', 'utf8');
+  const v1RegistrySource = fs.readFileSync('src/routes/v1-endpoint-registry.ts', 'utf8');
+  const v1HandlerSource = fs.readFileSync('src/routes/v1-endpoint-handlers.ts', 'utf8');
   const runtimeContractIndexSource = fs.readFileSync('src/services/runtime-contract-index.service.ts', 'utf8');
   assert.doesNotMatch(v1Source, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority|legacyApiBase/);
-  assert.match(v1Source, /getApiV1RuntimeContractIndex\(\)/);
-  assert.doesNotMatch(v1Source, /control: \{/);
+  assert.match(v1Source, /API_V1_ENDPOINTS/);
+  assert.match(v1Source, /API_V1_ENDPOINT_HANDLERS/);
+  assert.match(v1RegistrySource, /path: '\/runtime\/contracts'/);
+  assert.match(v1HandlerSource, /getApiV1RuntimeContractIndex\(\)/);
+  assert.doesNotMatch(v1HandlerSource, /control: \{/);
   assert.match(runtimeContractIndexSource, /const RUNTIME_CONTROL_ENDPOINTS = Object\.freeze/);
   assert.match(runtimeContractIndexSource, /patterns: '\/ops\/patterns'/);
   assert.match(runtimeContractIndexSource, /publish: '\/ops\/publish'/);
   assert.match(runtimeContractIndexSource, /renderContract: '\/ops\/render-contract'/);
   assert.doesNotMatch(v1Source, /\/lab\//);
+  assert.doesNotMatch(v1RegistrySource, /\/lab\//);
+  assert.doesNotMatch(v1HandlerSource, /\/lab\//);
   assert.doesNotMatch(runtimeContractIndexSource, /\/lab\//);
   assert.doesNotMatch(v1Source, /\/api\/recipes-indexed/);
   assert.doesNotMatch(v1Source, /\/api\/recipe-bootstrap/);
-  assert.doesNotMatch(v1Source, /compatibility: \{/);
+  assert.doesNotMatch(v1RegistrySource, /\/api\/recipes-indexed/);
+  assert.doesNotMatch(v1RegistrySource, /\/api\/recipe-bootstrap/);
+  assert.doesNotMatch(v1HandlerSource, /compatibility: \{/);
 });
