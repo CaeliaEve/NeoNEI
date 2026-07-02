@@ -12,6 +12,7 @@ const serverSettingsSource = readFileSync(join(repoRoot, 'backend/src/config/ser
 const apiNamespacesRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/api-namespaces.routes.ts'), 'utf8');
 const apiNamespaceRegistrySource = readFileSync(join(repoRoot, 'backend/src/routes/api-namespace-registry.ts'), 'utf8');
 const adminControlPlaneSource = readFileSync(join(repoRoot, 'backend/src/routes/runtime-admin-control-plane.routes.ts'), 'utf8');
+const adminControlPlaneRegistrySource = readFileSync(join(repoRoot, 'backend/src/routes/runtime-admin-control-plane-registry.ts'), 'utf8');
 const staticAssetRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/static-assets.routes.ts'), 'utf8');
 const errorResponseSource = readFileSync(join(repoRoot, 'backend/src/utils/error-response.ts'), 'utf8');
 const patternsRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/patterns.routes.ts'), 'utf8');
@@ -39,11 +40,13 @@ test('public runtime profile is explicit and keeps control on ops/admin mounts',
   assert.doesNotMatch(apiNamespaceRegistrySource, /\/lab\/(?:multiblocks|ecosystem|gt-diagrams|forestry-genetics)/);
   assert.match(apiNamespaceRegistrySource, /function mountApiNamespaces[\s\S]*for \(const namespace of namespaces\)[\s\S]*mountApiNamespace\(app, namespace, tagApiTier\);/);
   assert.match(appSource, /registerRuntimeAdminControlPlaneRoutes\(/);
-  assert.match(adminControlPlaneSource, /prefix:\s*'\/ops'/);
-  assert.match(adminControlPlaneSource, /prefix:\s*'\/api\/admin'/);
-  assert.match(adminControlPlaneSource, /router\.use\('\/patterns', patternsRoutes\)/);
-  assert.match(adminControlPlaneSource, /router\.use\('\/publish', createPublishAdminRouter\(\)\)/);
-  assert.match(adminControlPlaneSource, /router\.use\('\/render-contract', renderContractRoutes\)/);
+  assert.match(adminControlPlaneSource, /RUNTIME_ADMIN_CONTROL_PLANES/);
+  assert.match(adminControlPlaneSource, /RUNTIME_ADMIN_CONTROL_PLANE_SUBSYSTEMS/);
+  assert.match(adminControlPlaneRegistrySource, /prefix:\s*'\/ops'/);
+  assert.match(adminControlPlaneRegistrySource, /prefix:\s*'\/api\/admin'/);
+  assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/patterns'/);
+  assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/publish'/);
+  assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/render-contract'/);
   assert.match(staticAssetRoutesSource, /app\.use\(\s*'\/publish'/);
 });
 

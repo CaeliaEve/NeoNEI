@@ -9,6 +9,14 @@ const controlPlaneSource = readFileSync(
   resolve(root, 'src/routes/runtime-admin-control-plane.routes.ts'),
   'utf8',
 );
+const controlPlaneRegistrySource = readFileSync(
+  resolve(root, 'src/routes/runtime-admin-control-plane-registry.ts'),
+  'utf8',
+);
+const controlPlaneSubsystemsSource = readFileSync(
+  resolve(root, 'src/routes/runtime-admin-control-plane-subsystems.ts'),
+  'utf8',
+);
 const runtimeAdminSource = readFileSync(resolve(root, 'src/routes/runtime-admin.routes.ts'), 'utf8');
 const runtimeAdminRegistrySource = readFileSync(resolve(root, 'src/routes/runtime-admin-endpoint-registry.ts'), 'utf8');
 const runtimeAdminHandlersSource = readFileSync(resolve(root, 'src/routes/runtime-admin-endpoint-handlers.ts'), 'utf8');
@@ -16,18 +24,36 @@ const publishAdminSource = readFileSync(resolve(root, 'src/routes/publish-admin.
 const transportSource = readFileSync(resolve(root, 'src/routes/runtime-admin-transport.ts'), 'utf8');
 
 test('runtime admin control plane is mounted from one explicit registry', () => {
-  assert.match(controlPlaneSource, /export const RUNTIME_ADMIN_CONTROL_PLANES/);
-  assert.match(controlPlaneSource, /prefix:\s*'\/ops'/);
-  assert.match(controlPlaneSource, /prefix:\s*'\/api\/admin'/);
-  assert.match(controlPlaneSource, /reconcileLabel:\s*'OPS'/);
-  assert.match(controlPlaneSource, /reconcileLabel:\s*'ADMIN'/);
+  assert.match(controlPlaneRegistrySource, /export const RUNTIME_ADMIN_CONTROL_PLANES/);
+  assert.match(controlPlaneRegistrySource, /export const RUNTIME_ADMIN_CONTROL_PLANE_SUBSYSTEMS/);
+  assert.match(controlPlaneRegistrySource, /prefix:\s*'\/ops'/);
+  assert.match(controlPlaneRegistrySource, /prefix:\s*'\/api\/admin'/);
+  assert.match(controlPlaneRegistrySource, /reconcileLabel:\s*'OPS'/);
+  assert.match(controlPlaneRegistrySource, /reconcileLabel:\s*'ADMIN'/);
+  assert.match(controlPlaneRegistrySource, /key: 'runtime-control', mountPath: null/);
+  assert.match(controlPlaneRegistrySource, /key: 'publish', mountPath: '\/publish'/);
+  assert.match(controlPlaneRegistrySource, /key: 'patterns', mountPath: '\/patterns'/);
+  assert.match(controlPlaneRegistrySource, /key: 'render-contract', mountPath: '\/render-contract'/);
   assert.match(controlPlaneSource, /createRuntimeAdminTokenMiddleware\(requireAdminToken\)/);
   assert.match(controlPlaneSource, /for \(const plane of RUNTIME_ADMIN_CONTROL_PLANES\)/);
+  assert.match(controlPlaneSource, /for \(const subsystem of RUNTIME_ADMIN_CONTROL_PLANE_SUBSYSTEMS\)/);
   assert.match(controlPlaneSource, /app\.use\(\s*plane\.prefix/);
-  assert.match(controlPlaneSource, /router\.use\(createRuntimeAdminControlRouter\(plane\.reconcileLabel/);
-  assert.match(controlPlaneSource, /router\.use\('\/publish', createPublishAdminRouter\(\)\)/);
-  assert.match(controlPlaneSource, /router\.use\('\/patterns', patternsRoutes\)/);
-  assert.match(controlPlaneSource, /router\.use\('\/render-contract', renderContractRoutes\)/);
+  assert.match(controlPlaneSource, /mountRuntimeAdminControlPlaneSubsystem\(router, plane, subsystem, options\)/);
+  assert.match(controlPlaneSubsystemsSource, /createRuntimeAdminControlRouter\(plane\.reconcileLabel, options\)/);
+  assert.match(controlPlaneSubsystemsSource, /createPublishAdminRouter\(\)/);
+  assert.match(controlPlaneSubsystemsSource, /patternsRoutes/);
+  assert.match(controlPlaneSubsystemsSource, /renderContractRoutes/);
+
+  for (const routeLocalSubsystem of [
+    /router\.use\('\/publish'/,
+    /router\.use\('\/patterns'/,
+    /router\.use\('\/render-contract'/,
+    /createPublishAdminRouter/,
+    /patternsRoutes/,
+    /renderContractRoutes/,
+  ]) {
+    assert.doesNotMatch(controlPlaneSource, routeLocalSubsystem);
+  }
 
   assert.match(appSource, /registerRuntimeAdminControlPlaneRoutes\(/);
   assert.doesNotMatch(appSource, /patternsRoutes/);

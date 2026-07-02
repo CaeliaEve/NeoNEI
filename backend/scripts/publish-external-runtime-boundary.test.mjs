@@ -8,6 +8,7 @@ const publishDeliverySource = fs.readFileSync('src/services/publish-runtime-deli
 const namespaceRegistrySource = fs.readFileSync('src/routes/api-namespace-registry.ts', 'utf8').replace(/\r\n/g, '\n');
 const appSource = fs.readFileSync('src/app.ts', 'utf8').replace(/\r\n/g, '\n');
 const adminControlPlaneSource = fs.readFileSync('src/routes/runtime-admin-control-plane.routes.ts', 'utf8').replace(/\r\n/g, '\n');
+const adminControlPlaneRegistrySource = fs.readFileSync('src/routes/runtime-admin-control-plane-registry.ts', 'utf8').replace(/\r\n/g, '\n');
 const publishAdminRouteSource = fs.readFileSync('src/routes/publish-admin.routes.ts', 'utf8').replace(/\r\n/g, '\n');
 const publishAdminEndpointRegistrySource = fs.readFileSync('src/routes/publish-admin-endpoint-registry.ts', 'utf8').replace(/\r\n/g, '\n');
 const httpSource = fs.readFileSync('src/utils/http.ts', 'utf8').replace(/\r\n/g, '\n');
@@ -38,9 +39,10 @@ test('publish control is token-protected ops/admin plane while public api is rea
   assert.match(namespaceRegistrySource, /mountPath: '\/api\/publish'[\s\S]*handler: publicPublishRoutes/);
   assert.doesNotMatch(namespaceRegistrySource, /labPublishRoutes|\/lab\/publish/);
   assert.match(appSource, /registerRuntimeAdminControlPlaneRoutes\(app/);
-  assert.match(adminControlPlaneSource, /prefix:\s*'\/ops'/);
-  assert.match(adminControlPlaneSource, /prefix:\s*'\/api\/admin'/);
-  assert.match(adminControlPlaneSource, /router\.use\('\/publish', createPublishAdminRouter\(\)\)/);
+  assert.match(adminControlPlaneSource, /RUNTIME_ADMIN_CONTROL_PLANES/);
+  assert.match(adminControlPlaneRegistrySource, /prefix:\s*'\/ops'/);
+  assert.match(adminControlPlaneRegistrySource, /prefix:\s*'\/api\/admin'/);
+  assert.match(adminControlPlaneRegistrySource, /key: 'publish', mountPath: '\/publish'/);
   assert.match(adminControlPlaneSource, /createRuntimeAdminTokenMiddleware\(requireAdminToken\)/);
   assert.doesNotMatch(publishAdminRouteSource, /withRuntimeAdminToken|RuntimeAdminTokenGuard/);
 });

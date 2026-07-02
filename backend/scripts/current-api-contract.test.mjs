@@ -304,6 +304,7 @@ test('dynamic sqlite read namespaces and lab bucket are retired from production 
   const appSource = fs.readFileSync('src/app.ts', 'utf8');
   const publishAdminRoutesSource = fs.readFileSync('src/routes/publish-admin.routes.ts', 'utf8');
   const adminControlPlaneSource = fs.readFileSync('src/routes/runtime-admin-control-plane.routes.ts', 'utf8');
+  const adminControlPlaneRegistrySource = fs.readFileSync('src/routes/runtime-admin-control-plane-registry.ts', 'utf8');
   assert.doesNotMatch(namespaceSource, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority/);
   assert.match(namespaceSource, /publicRuntimeOnly: options\.publicRuntimeOnly/);
   assert.doesNotMatch(namespaceRegistrySource, /export const LAB_CONTROL_NAMESPACES/);
@@ -316,11 +317,13 @@ test('dynamic sqlite read namespaces and lab bucket are retired from production 
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipes-indexed'/);
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipe-bootstrap'/);
   assert.match(appSource, /registerRuntimeAdminControlPlaneRoutes\(/);
-  assert.match(adminControlPlaneSource, /prefix:\s*'\/ops'/);
-  assert.match(adminControlPlaneSource, /prefix:\s*'\/api\/admin'/);
-  assert.match(adminControlPlaneSource, /router\.use\('\/patterns', patternsRoutes\)/);
-  assert.match(adminControlPlaneSource, /router\.use\('\/render-contract', renderContractRoutes\)/);
-  assert.match(adminControlPlaneSource, /router\.use\('\/publish', createPublishAdminRouter\(\)\)/);
+  assert.match(adminControlPlaneSource, /RUNTIME_ADMIN_CONTROL_PLANES/);
+  assert.match(adminControlPlaneSource, /RUNTIME_ADMIN_CONTROL_PLANE_SUBSYSTEMS/);
+  assert.match(adminControlPlaneRegistrySource, /prefix:\s*'\/ops'/);
+  assert.match(adminControlPlaneRegistrySource, /prefix:\s*'\/api\/admin'/);
+  assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/patterns'/);
+  assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/render-contract'/);
+  assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/publish'/);
   assert.match(publishAdminRoutesSource, /createPublishAdminRouter/);
 });
 

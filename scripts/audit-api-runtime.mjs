@@ -96,6 +96,9 @@ const runtimeAdminRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime
 const runtimeAdminControlPlaneRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime-admin-control-plane.routes.ts"))
   ? readText("backend/src/routes/runtime-admin-control-plane.routes.ts")
   : "";
+const runtimeAdminControlPlaneRegistry = existsSync(join(repoRoot, "backend/src/routes/runtime-admin-control-plane-registry.ts"))
+  ? readText("backend/src/routes/runtime-admin-control-plane-registry.ts")
+  : "";
 const publishAdminRoutes = existsSync(join(repoRoot, "backend/src/routes/publish-admin.routes.ts"))
   ? readText("backend/src/routes/publish-admin.routes.ts")
   : "";
@@ -145,23 +148,25 @@ const devOnlyLegacyDynamicRoutes = legacyDynamicRoutesWithContext
   .filter((route) => route.gatedByPublicRuntimeOnly)
   .map((route) => route.line);
 const adminRoutes = routeRegistrationsWithContext.filter((route) => /\/api\/admin/.test(route.line)).map((route) => route.line);
+const hasAdminControlPlanePrefix = (prefix) => runtimeAdminControlPlaneRegistry.includes(`prefix: '${prefix}'`);
+const hasAdminControlPlaneSubsystem = (mountPath) => runtimeAdminControlPlaneRegistry.includes(`mountPath: '${mountPath}'`);
 const explicitAdminControlRoutes = [
-  runtimeAdminControlPlaneRoutes.includes("prefix: '/ops'") && runtimeAdminControlPlaneRoutes.includes("'/patterns'")
+  hasAdminControlPlanePrefix("/ops") && hasAdminControlPlaneSubsystem("/patterns")
     ? "control-plane:/ops/patterns"
     : null,
-  runtimeAdminControlPlaneRoutes.includes("prefix: '/api/admin'") && runtimeAdminControlPlaneRoutes.includes("'/patterns'")
+  hasAdminControlPlanePrefix("/api/admin") && hasAdminControlPlaneSubsystem("/patterns")
     ? "control-plane:/api/admin/patterns"
     : null,
-  runtimeAdminControlPlaneRoutes.includes("prefix: '/ops'") && runtimeAdminControlPlaneRoutes.includes("'/publish'")
+  hasAdminControlPlanePrefix("/ops") && hasAdminControlPlaneSubsystem("/publish")
     ? "control-plane:/ops/publish"
     : null,
-  runtimeAdminControlPlaneRoutes.includes("prefix: '/api/admin'") && runtimeAdminControlPlaneRoutes.includes("'/publish'")
+  hasAdminControlPlanePrefix("/api/admin") && hasAdminControlPlaneSubsystem("/publish")
     ? "control-plane:/api/admin/publish"
     : null,
-  runtimeAdminControlPlaneRoutes.includes("prefix: '/ops'") && runtimeAdminControlPlaneRoutes.includes("'/render-contract'")
+  hasAdminControlPlanePrefix("/ops") && hasAdminControlPlaneSubsystem("/render-contract")
     ? "control-plane:/ops/render-contract"
     : null,
-  runtimeAdminControlPlaneRoutes.includes("prefix: '/api/admin'") && runtimeAdminControlPlaneRoutes.includes("'/render-contract'")
+  hasAdminControlPlanePrefix("/api/admin") && hasAdminControlPlaneSubsystem("/render-contract")
     ? "control-plane:/api/admin/render-contract"
     : null,
 ].filter(Boolean);
