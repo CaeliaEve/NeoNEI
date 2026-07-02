@@ -1,5 +1,4 @@
-﻿import type {
-  NativeSurfaceEngineEntry,
+import type {
   NativeSurfaceEngineHit,
   NativeSurfaceEngineLayoutCommand,
 } from '../native-surface/NativeSurfaceEngineProtocol';
@@ -31,7 +30,6 @@ export type SurfaceState = {
   modId: string | null;
   expandedGroups: string[];
   historyItems: string[];
-  entries: NativeSurfaceEngineEntry[];
   layoutCommands: NativeSurfaceEngineLayoutCommand[];
   layoutRebuilds: number;
   frameRequests: number;
@@ -86,7 +84,7 @@ export type SurfaceState = {
 export function createSurfaceState(): SurfaceState {
   return {
     initialized: false,
-    renderer: 'compat-canvas',
+    renderer: 'webgl2',
     viewport: null,
     enableAnimations: false,
     enableHistoryViewport: false,
@@ -96,7 +94,6 @@ export function createSurfaceState(): SurfaceState {
     modId: null,
     expandedGroups: [],
     historyItems: [],
-    entries: [],
     layoutCommands: [],
     layoutRebuilds: 0,
     frameRequests: 0,
@@ -148,4 +145,3 @@ export function createSurfaceState(): SurfaceState {
     nextFrameDelayMs: null,
   };
 }
-

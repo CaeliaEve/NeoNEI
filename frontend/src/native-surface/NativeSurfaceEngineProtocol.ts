@@ -106,12 +106,6 @@ export type NativeSurfaceEngineRequest =
     itemIds: string[];
   }
   | {
-    type: "compatEntries";
-    id: number;
-    surfaceId: NativeSurfaceId;
-    entries: NativeSurfaceEngineEntry[];
-  }
-  | {
     type: "itemSize";
     id: number;
     surfaceId: NativeSurfaceId;
@@ -158,7 +152,6 @@ export type NativeSurfaceEngineMutation =
   | { type: "modFilter"; modId: string | null }
   | { type: "expandedGroups"; groupKeys: string[] }
   | { type: "historyItems"; itemIds: string[] }
-  | { type: "compatEntries"; entries: NativeSurfaceEngineEntry[] }
   | { type: "itemSize"; itemSize: number }
   | { type: "selectedItem"; itemId: string | null };
 
@@ -206,7 +199,7 @@ export type NativeSurfaceEngineWorkerMetrics = {
   runtimeReady: boolean;
   runtimePacks: number;
   runtimeError: string | null;
-  projectionSource: "runtime-browser-pack" | "runtime-history-pack" | "compat-entries" | "empty";
+  projectionSource: "runtime-browser-pack" | "runtime-history-pack" | "empty";
   nativeBrowserEntries: number;
   nativeBrowserProjectedEntries: number;
   nativeBrowserWasmEntries: number;
@@ -233,9 +226,3 @@ export type NativeSurfaceEngineWorkerMetrics = {
   nextFrameDelayMs: number | null;
   updatedAt: number;
 };
-
-
-
-
-
-

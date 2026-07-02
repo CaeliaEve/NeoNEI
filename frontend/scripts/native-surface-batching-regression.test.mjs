@@ -19,7 +19,7 @@ test("NativeSurfaceController batches high-frequency surface mutations", () => {
   assert.match(source, /await this\.flushMutationsNow\(\);\s*[\s\S]*type:\s*"frame"/);
   assert.match(source, /await this\.flushMutationsNow\(\);\s*[\s\S]*type:\s*"hitTest"/);
 
-  for (const eventName of ["viewport", "page", "search", "modFilter", "expandedGroups", "historyItems", "compatEntries", "itemSize"]) {
+  for (const eventName of ["viewport", "page", "search", "modFilter", "expandedGroups", "historyItems", "itemSize"]) {
     assert.match(source, new RegExp(`this\\.queueMutation\\(\\{ type: "${eventName}"`));
   }
 });
@@ -40,23 +40,20 @@ test("native surface protocol exposes explicit mutation batch contract", () => {
   assert.match(source, /mutations:\s*NativeSurfaceEngineMutation\[\]/);
 });
 
-test("native surface controller stops sending compat entries once native runtime is ready", () => {
-  const source = readSource("src/native-surface/NativeSurfaceController.ts");
+test("native surface runtime path removes compat entry projection input", () => {
+  const controller = readSource("src/native-surface/NativeSurfaceController.ts");
   const controlPlane = readSource("src/native-surface/NativeRuntimeControlPlane.ts");
+  const protocol = readSource("src/native-surface/NativeSurfaceEngineProtocol.ts");
+  const worker = readSource("src/workers/nativeSurfaceEngine.worker.ts");
+  const mutations = readSource("src/workers/nativeSurfaceWorkerMutations.ts");
 
-  assert.match(source, /shouldSendCompatEntriesToWorker\(\)/);
-  assert.match(source, /return shouldSendCompatEntriesToWorker\(this\.nativeRuntime\)/);
-  assert.match(controlPlane, /return !state\.ready \|\| state\.packCount <= 0/);
-  assert.match(
-    source,
-    /if \(this\.shouldSendCompatEntriesToWorker\(\)\) \{\s*this\.queueMutation\(\{ type: "compatEntries"/,
-    "compat entries should only be sent while native packs are unavailable",
-  );
-  assert.match(
-    source,
-    /setCompatEntries:native-runtime-suppressed/,
-    "native runtime path should make compat entry suppression visible in metrics",
-  );
+  for (const source of [controller, controlPlane, protocol, worker, mutations]) {
+    assert.doesNotMatch(source, /compatEntries/);
+    assert.doesNotMatch(source, /compat-entries/);
+    assert.doesNotMatch(source, /setCompatEntries/);
+    assert.doesNotMatch(source, /shouldSendCompatEntriesToWorker/);
+  }
+  assert.match(worker, /return \{ source: "empty", entries: \[\] \}/);
 });
 
 

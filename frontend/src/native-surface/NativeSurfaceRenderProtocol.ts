@@ -1,4 +1,4 @@
-﻿import type { NativeRuntimeManifest } from "./NativeRuntimeManifest";
+import type { NativeRuntimeManifest } from "./NativeRuntimeManifest";
 import type { NativeRendererBackendKind, NativeSurfaceViewport } from "./contracts";
 
 export type NativeRenderBackendKind = "webgpu" | "webgl2";
@@ -7,7 +7,7 @@ export type NativeRenderInitializeRequest = {
   type: "initialize";
   id: number;
   canvas: OffscreenCanvas;
-  renderer: Exclude<NativeRendererBackendKind, "compat-canvas">;
+  renderer: NativeRendererBackendKind;
   manifest?: NativeRuntimeManifest | null;
 };
 
@@ -70,7 +70,7 @@ export type NativeRendererLimits = {
 };
 
 export type NativeRendererFrameMetrics = {
-  requestedBackend: Exclude<NativeRendererBackendKind, "compat-canvas"> | null;
+  requestedBackend: NativeRendererBackendKind | null;
   backend: NativeRenderBackendKind | null;
   webgpuAvailable: boolean;
   webgpuUsable: boolean;

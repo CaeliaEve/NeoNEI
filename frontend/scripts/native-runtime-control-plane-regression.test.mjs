@@ -6,7 +6,6 @@ import {
   createNativeRuntimeControlState,
   markNativeRuntimeError,
   markNativeRuntimeReady,
-  shouldSendCompatEntriesToWorker,
   toNativeRuntimeMetricsPatch,
 } from '../src/native-surface/NativeRuntimeControlPlane.ts';
 
@@ -18,20 +17,17 @@ test('native runtime control plane owns runtime status transitions', () => {
   const state = createNativeRuntimeControlState();
   assert.deepEqual(state, { revision: 0, status: 'idle', ready: false, packCount: 0, error: null });
   assert.equal(Object.isFrozen(state), true);
-  assert.equal(shouldSendCompatEntriesToWorker(state), true);
 
   const loading = beginNativeRuntimeLoad(state);
   assert.notEqual(loading, state);
   assert.deepEqual(state, { revision: 0, status: 'idle', ready: false, packCount: 0, error: null });
   assert.deepEqual(loading, { revision: 1, status: 'loading', ready: false, packCount: 0, error: null });
   assert.equal(Object.isFrozen(loading), true);
-  assert.equal(shouldSendCompatEntriesToWorker(loading), true);
 
   const ready = markNativeRuntimeReady(loading, true, 3);
   assert.notEqual(ready, loading);
   assert.deepEqual(ready, { revision: 2, status: 'ready', ready: true, packCount: 3, error: null });
   assert.equal(Object.isFrozen(ready), true);
-  assert.equal(shouldSendCompatEntriesToWorker(ready), false);
   assert.deepEqual(toNativeRuntimeMetricsPatch(ready), {
     nativeRuntimeReady: true,
     nativeRuntimePacks: 3,
@@ -42,7 +38,6 @@ test('native runtime control plane owns runtime status transitions', () => {
   assert.notEqual(error, ready);
   assert.deepEqual(error, { revision: 3, status: 'error', ready: false, packCount: 0, error: 'manifest rejected' });
   assert.equal(Object.isFrozen(error), true);
-  assert.equal(shouldSendCompatEntriesToWorker(error), true);
 });
 
 test('native runtime control plane rejects zero-pack and worker-rejected ready transitions', () => {
@@ -77,7 +72,6 @@ test('native runtime control plane is the controller and metrics boundary', () =
   assert.match(controllerSource, /this\.nativeRuntime = beginNativeRuntimeLoad\(this\.nativeRuntime\)/);
   assert.match(controllerSource, /this\.nativeRuntime = markNativeRuntimeReady\(this\.nativeRuntime, Boolean\(response\), packs\.length\)/);
   assert.match(controllerSource, /this\.nativeRuntime = markNativeRuntimeError\(this\.nativeRuntime, error\)/);
-  assert.match(controllerSource, /return shouldSendCompatEntriesToWorker\(this\.nativeRuntime\)/);
   assert.match(controllerSource, /\.\.\.toNativeRuntimeMetricsPatch\(this\.nativeRuntime\)/);
   assert.match(metricsSource, /\.\.\.toNativeRuntimeMetricsPatch\(nativeRuntime\)/);
 
@@ -88,5 +82,7 @@ test('native runtime control plane is the controller and metrics boundary', () =
   assert.doesNotMatch(controllerSource, /private nativeRuntimeReady = false/);
   assert.doesNotMatch(controllerSource, /private nativeRuntimePacks = 0/);
   assert.doesNotMatch(controllerSource, /private nativeRuntimeError: string \| null = null/);
-  assert.doesNotMatch(controllerSource, /return !this\.nativeRuntimeReady \|\| this\.nativeRuntimePacks <= 0/);
+  assert.doesNotMatch(controllerSource, /shouldSendCompatEntriesToWorker/);
+  assert.doesNotMatch(controllerSource, /setCompatEntries/);
+  assert.doesNotMatch(controlSource, /shouldSendCompatEntriesToWorker/);
 });

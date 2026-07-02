@@ -48,3 +48,18 @@ test('native surface worker writes layout positions through WASM', () => {
   assert.doesNotMatch(layoutSource, /const col = index % columns/, 'worker must not hand-roll grid columns in TypeScript');
   assert.doesNotMatch(layoutSource, /const row = Math\.floor\(index \/ columns\)/, 'worker must not hand-roll grid rows in TypeScript');
 });
+
+
+test('native surface worker does not accept Vue compat entry projection input', () => {
+  const workerSource = readFileSync(workerPath, 'utf8');
+  const protocolSource = readFileSync(resolve('src/native-surface/NativeSurfaceEngineProtocol.ts'), 'utf8');
+  const controllerSource = readFileSync(resolve('src/native-surface/NativeSurfaceController.ts'), 'utf8');
+  const stateSource = readFileSync(resolve('src/workers/nativeSurfaceWorkerState.ts'), 'utf8');
+
+  for (const source of [workerSource, protocolSource, controllerSource, stateSource]) {
+    assert.doesNotMatch(source, /compatEntries/);
+    assert.doesNotMatch(source, /compat-entries/);
+    assert.doesNotMatch(source, /compat-canvas/);
+    assert.doesNotMatch(source, /setCompatEntries/);
+  }
+});

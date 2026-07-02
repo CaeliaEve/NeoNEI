@@ -1,4 +1,4 @@
-﻿import type { NativeSurfaceEngineMutation } from '../native-surface/NativeSurfaceEngineProtocol';
+import type { NativeSurfaceEngineMutation } from '../native-surface/NativeSurfaceEngineProtocol';
 import type { SurfaceState } from './nativeSurfaceWorkerState';
 
 export function applyNativeSurfaceMutation(surface: SurfaceState, mutation: NativeSurfaceEngineMutation): boolean {
@@ -30,9 +30,6 @@ export function applyNativeSurfaceMutation(surface: SurfaceState, mutation: Nati
       return true;
     case 'historyItems':
       surface.historyItems = Array.from(new Set(mutation.itemIds));
-      return true;
-    case 'compatEntries':
-      surface.entries = mutation.entries;
       return true;
     case 'itemSize':
       surface.itemSize = Math.max(1, Math.floor(Number(mutation.itemSize) || 1));

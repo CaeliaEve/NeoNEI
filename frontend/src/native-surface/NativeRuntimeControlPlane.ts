@@ -71,9 +71,6 @@ export function markNativeRuntimeError(
   });
 }
 
-export function shouldSendCompatEntriesToWorker(state: NativeRuntimeControlState): boolean {
-  return !state.ready || state.packCount <= 0;
-}
 
 export function toNativeRuntimeMetricsPatch(
   state: NativeRuntimeControlState,

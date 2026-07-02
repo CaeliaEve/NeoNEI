@@ -7,7 +7,6 @@ import type { NativeSurfaceId } from "../native-surface/contracts";
 export type NativeSurfaceMetricsSurface = {
   initialized: boolean;
   enableHistoryViewport: boolean;
-  entries: unknown[];
   layoutCommands: unknown[];
   layoutRebuilds: number;
   frameRequests: number;
@@ -45,7 +44,6 @@ export function getProjectionSourceForMetrics(
 ): NativeSurfaceEngineWorkerMetrics["projectionSource"] {
   if (!surface) return "empty";
   if (surface.browserPack) return surface.enableHistoryViewport ? "runtime-history-pack" : "runtime-browser-pack";
-  if (surface.entries.length > 0) return "compat-entries";
   return "empty";
 }
 

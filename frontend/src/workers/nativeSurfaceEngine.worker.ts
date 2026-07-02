@@ -161,9 +161,6 @@ function getActiveEntries(surface: SurfaceState): {
     }
     return { source: "runtime-browser-pack", entries: buildRuntimeEntries(surface) };
   }
-  if (surface.entries.length > 0) {
-    return { source: "compat-entries", entries: surface.entries };
-  }
   return { source: "empty", entries: [] };
 }
 
@@ -285,9 +282,6 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
     case "historyItems":
       if (applyNativeSurfaceMutation(surface, { type: "historyItems", itemIds: message.itemIds })) rebuildLayout(surface);
       break;
-    case "compatEntries":
-      if (applyNativeSurfaceMutation(surface, { type: "compatEntries", entries: message.entries })) rebuildLayout(surface);
-      break;
     case "itemSize":
       if (applyNativeSurfaceMutation(surface, { type: "itemSize", itemSize: message.itemSize })) rebuildLayout(surface);
       break;
@@ -350,5 +344,4 @@ self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
   if (!message?.type || !message.surfaceId) return;
   void handleRequest(message).then((response) => self.postMessage(response));
 };
-
 

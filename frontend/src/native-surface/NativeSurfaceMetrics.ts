@@ -10,7 +10,7 @@ export function createNativeSurfaceMetrics(surfaceId: NativeSurfaceId): NativeSu
   return {
     surfaceId,
     initialized: false,
-    renderer: "compat-canvas",
+    renderer: "webgl2",
     entries: 0,
     itemSize: 0,
     viewportWidth: 0,

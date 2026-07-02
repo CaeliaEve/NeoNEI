@@ -103,7 +103,7 @@ let residentAtlasBackgroundUploadStarted = false;
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
 
-function normalizeNativeRenderBackend(value: unknown): Exclude<NativeRendererBackendKind, "compat-canvas"> {
+function normalizeNativeRenderBackend(value: unknown): NativeRendererBackendKind {
   const normalized = `${value ?? ""}`.trim().toLowerCase();
   if (normalized === "webgpu" || normalized === "auto") return normalized;
   if (normalized === "webgl2") return "webgl2";
@@ -150,7 +150,7 @@ function scheduleNextAnimatedNativeFrame(delayMs: number | null | undefined) {
   }, normalizedDelay);
 }
 
-function resolveNativeRenderBackend(): Exclude<NativeRendererBackendKind, "compat-canvas"> {
+function resolveNativeRenderBackend(): NativeRendererBackendKind {
   const envBackend = normalizeNativeRenderBackend(import.meta.env.VITE_NATIVE_RENDER_BACKEND);
   if (envBackend === "webgpu") return "webgpu";
   if (typeof window === "undefined") return envBackend;
@@ -219,21 +219,6 @@ const nativeTooltipStyle = computed<Record<string, string> | null>(() => {
     transform: `translate(${Math.round(x)}px, ${Math.round(y)}px)`,
   };
 });
-
-function getEntryItem(entry: BrowserGridEntry): Item {
-  return entry.kind === "item" ? entry.item : entry.group.representative;
-}
-
-function findEntryByNativeHit(hit: Awaited<ReturnType<typeof controller.hitTest>>): BrowserGridEntry | null {
-  if (!hit) return null;
-  if (hit.key.startsWith("native-")) return null;
-  return props.entries.find((entry) => {
-    if (hit.groupKey) {
-      return entry.kind !== "item" && entry.group.key === hit.groupKey;
-    }
-    return getEntryItem(entry).itemId === hit.item.itemId;
-  }) ?? null;
-}
 
 function emitViewportResize() {
   emit("viewportResize", hostRef.value);
@@ -363,35 +348,23 @@ async function handleNativeClick(event: MouseEvent) {
   if (!nativeRenderVisible.value) return;
   const hit = await controller.hitTest(toLocalPointer(event));
   if (!hit) return;
-  const entry = findEntryByNativeHit(hit);
-  if (!entry) {
-    if (hit.kind === "item") emit("itemClick", hit.item);
-    else if (hit.group) emit("groupClick", hit.group);
-    return;
-  }
-  if (entry.kind === "item") {
+  if (hit.kind === "item") {
     emit("itemClick", hit.item);
     return;
   }
-  emit("groupClick", entry.group);
+  if (hit.group) emit("groupClick", hit.group);
 }
 
 async function handleNativeContextMenu(event: MouseEvent) {
   if (!nativeRenderVisible.value) return;
   const hit = await controller.hitTest(toLocalPointer(event));
   if (!hit) return;
-  const entry = findEntryByNativeHit(hit);
   event.preventDefault();
-  if (!entry) {
-    if (hit.kind === "item") emit("itemContextmenu", hit.item, event);
-    else if (hit.group) emit("groupContextmenu", hit.group, event);
-    return;
-  }
-  if (entry.kind === "item") {
+  if (hit.kind === "item") {
     emit("itemContextmenu", hit.item, event);
     return;
   }
-  emit("groupContextmenu", entry.group, event);
+  if (hit.group) emit("groupContextmenu", hit.group, event);
 }
 
 async function syncNativeFrame() {
@@ -530,7 +503,7 @@ onMounted(async () => {
     surfaceId: props.surfaceId,
     manifestUrl: props.manifestUrl ?? undefined,
     runtimePackProfile: resolveRuntimePackProfile(),
-    preferredRenderer: "compat-canvas",
+    preferredRenderer: "webgl2",
     enableAnimations: props.enableAnimation,
     enableHistoryViewport: props.viewportRole === "history",
   });
@@ -540,7 +513,6 @@ onMounted(async () => {
   controller.setModFilter(props.modId === "all" ? null : props.modId ?? null);
   controller.setExpandedGroups(props.expandedGroups);
   controller.setSelectedItemId(props.selectedItemId);
-  controller.setCompatEntries({ entries: props.entries, atlas: props.atlas ?? null });
   controller.setHistoryItems(props.historyItemIds);
   syncViewport();
   requestNativeFrame();
@@ -585,15 +557,6 @@ onBeforeUnmount(() => {
   controller.destroy();
   emit("viewportResize", null);
 });
-
-watch(
-  () => [props.entries, props.atlas] as const,
-  () => {
-    controller.setCompatEntries({ entries: props.entries, atlas: props.atlas ?? null });
-    requestNativeFrame();
-  },
-  { deep: false },
-);
 
 watch(
   () => props.page,
@@ -653,7 +616,7 @@ watch(
       surfaceId: props.surfaceId,
       manifestUrl: props.manifestUrl ?? undefined,
       runtimePackProfile: resolveRuntimePackProfile(),
-      preferredRenderer: "compat-canvas",
+      preferredRenderer: "webgl2",
       enableAnimations: enabled,
       enableHistoryViewport: props.viewportRole === "history",
     });
@@ -801,7 +764,4 @@ if (typeof document !== "undefined") {
   line-height: 1.4;
 }
 </style>
-
-
-
 

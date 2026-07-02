@@ -1,9 +1,8 @@
-import type { BrowserGridEntry, BrowserVariantGroup, Item } from "../services/api";
-import type { PageAtlasResult } from "../services/pageAtlas";
+import type { BrowserVariantGroup, Item } from "../services/api";
 import type { NativeRenderSpriteCommand } from "./NativeSurfaceRenderProtocol";
 import type { NativeRuntimePackProfile } from "./NativeRuntimeProfilePolicy";
 
-export type NativeRendererBackendKind = "auto" | "webgpu" | "webgl2" | "compat-canvas";
+export type NativeRendererBackendKind = "auto" | "webgpu" | "webgl2";
 
 export type NativeSurfaceId = "browser" | "history" | (string & {});
 
@@ -43,15 +42,12 @@ export interface NativeSurfaceInitializeOptions {
   runtimePackProfile?: NativeRuntimePackProfile;
 }
 
-export interface NativeSurfaceCompatEntries {
-  entries: BrowserGridEntry[];
-  atlas?: PageAtlasResult | null;
-}
+export type NativeSurfaceEntryKind = "item" | "group-collapsed" | "group-header";
 
 export interface NativeHitResult {
   viewport: NativeSurfaceViewportRole;
   key: string;
-  kind: BrowserGridEntry["kind"];
+  kind: NativeSurfaceEntryKind;
   item: Item;
   group?: BrowserVariantGroup;
   groupKey?: string | null;
@@ -91,7 +87,7 @@ export interface NativeDrawCommand {
 
 export interface NativeSurfaceLayoutCommand {
   key: string;
-  kind: BrowserGridEntry["kind"];
+  kind: NativeSurfaceEntryKind;
   entryIndex: number;
   itemId: string;
   groupKey?: string | null;
@@ -116,7 +112,7 @@ export interface NativeSurfaceFrameResult {
 }
 
 export interface NativeSurfaceFrameProjectionMetrics {
-  source: "runtime-browser-pack" | "runtime-history-pack" | "compat-entries" | "empty";
+  source: "runtime-browser-pack" | "runtime-history-pack" | "empty";
   projectionSource: "browser" | "search" | "empty";
   totalEntries: number;
   pageSize: number;
@@ -159,13 +155,6 @@ export interface NativeNeiSurfaceController {
   setHover(pointer: NativeSurfacePointer | null): void;
   setHistoryItems(itemIds: string[]): void;
 
-  /**
-   * Phase-1 compatibility input. The final WASM engine should derive visible
-   * entries from binary browser/group/search packs instead of accepting Vue
-   * entry arrays directly.
-   */
-  setCompatEntries(entries: NativeSurfaceCompatEntries): void;
-
   requestFrame(nowMs: number): Promise<NativeSurfaceFrameResult | null>;
   hitTest(pointer: NativeSurfacePointer): Promise<NativeHitResult | null>;
   getMetrics(): Promise<NativeSurfaceMetrics>;
@@ -207,5 +196,3 @@ export interface NativeRuntimeManifest {
     perItemImageFallback: false;
   };
 }
-
-
