@@ -62,8 +62,8 @@ test('NativeNeiRecipeCanvas preserves captured hotspots and viewport regions in 
   const nativeUiLayoutGateSource = fs.readFileSync(path.resolve(frontendRoot, '..', 'scripts/validate-native-ui-layouts.mjs'), 'utf8');
 
   assert.equal(canvasSource.includes('type NativeUiRect'), true);
-  assert.equal(registrySource.includes('hotspots: inlineLayout?.hotspots ?? template.hotspots'), true);
-  assert.equal(registrySource.includes('viewports: inlineLayout?.viewports ?? template.viewports'), true);
+  assert.equal(registrySource.includes('hotspots: template.hotspots'), true);
+  assert.equal(registrySource.includes('viewports: template.viewports'), true);
   assert.equal(canvasSource.includes('const hotspots = computed'), true);
   assert.equal(canvasSource.includes('const viewports = computed'), true);
   assert.equal(canvasSource.includes('native-nei-hotspot-cell'), true);
@@ -71,7 +71,7 @@ test('NativeNeiRecipeCanvas preserves captured hotspots and viewport regions in 
   assert.equal(canvasSource.includes('nativeUiRectStyle'), true);
   assert.equal(canvasSource.includes('nativeUiRectLabel'), true);
   assert.equal(uiPackRuntimeSource.includes('export interface UiPackRect'), true);
-  assert.equal(uiPackRuntimeSource.includes('const UI_TEMPLATE_PAYLOAD_VERSION = 7'), true);
+  assert.equal(uiPackRuntimeSource.includes('const UI_TEMPLATE_PAYLOAD_VERSION = 8'), true);
   assert.equal(uiPackRuntimeSource.includes('hotspotCount'), true);
   assert.equal(uiPackRuntimeSource.includes('viewportCount'), true);
   assert.equal(uiPackRuntimeSource.includes('rectStride'), true);
@@ -83,10 +83,10 @@ test('NativeNeiRecipeCanvas preserves captured hotspots and viewport regions in 
   assert.equal(canvasSource.includes('function handleHotspotClick'), true);
   assert.equal(canvasSource.includes('nativeUiHotspotItemId(rect)'), true);
   assert.equal(canvasSource.includes('@click="handleHotspotClick(hotspot)"'), true);
-  assert.equal(productionManifestGateSource.includes('UI_TEMPLATE_PACK_FORMAT_NOT_V7_INTERACTION_ONLY_RECT_ABI'), true);
-  assert.equal(productionManifestGateSource.includes('UI_PACK_REPORT_MISSING_V7_INTERACTION_ONLY_RECT_ABI'), true);
-  assert.equal(nativeUiLayoutGateSource.includes('rust UI pack report does not declare v7 interaction-only rect/background ABI'), true);
-  assert.equal(nativeUiLayoutGateSource.includes('rust UI template binary pack is not v7 interaction-only rect ABI format'), true);
+  assert.equal(productionManifestGateSource.includes('UI_TEMPLATE_PACK_FORMAT_NOT_V8_TEMPLATE_BACKGROUND_ABI'), true);
+  assert.equal(productionManifestGateSource.includes('UI_PACK_REPORT_MISSING_V8_TEMPLATE_BACKGROUND_ABI'), true);
+  assert.equal(nativeUiLayoutGateSource.includes('rust UI pack report does not declare v8 template-background ABI'), true);
+  assert.equal(nativeUiLayoutGateSource.includes('rust UI template binary pack is not v8 template-background ABI format'), true);
 });
 
 test('NativeNeiRecipeCanvas consumes explicit Native UI background ABI before scaling', () => {

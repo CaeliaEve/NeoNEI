@@ -195,8 +195,8 @@ if (uiTemplateHeader) {
   if (uiTemplateHeader.magic !== 'NEIUIT1\0') {
     fail(failures, 'UI_TEMPLATE_PACK_MAGIC_MISMATCH', 'UI template pack has wrong native magic', { magic: uiTemplateHeader.magic });
   }
-  if (uiTemplateHeader.version !== 7 || uiTemplateHeader.templateStride !== 22 || uiTemplateHeader.slotStride !== 12 || uiTemplateHeader.textStride !== 7 || uiTemplateHeader.rectStride !== 15) {
-    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V7_INTERACTION_ONLY_RECT_ABI', 'UI template pack is not the v7 interaction-only rect ABI native format', uiTemplateHeader);
+  if (uiTemplateHeader.version !== 8 || uiTemplateHeader.templateStride !== 23 || uiTemplateHeader.slotStride !== 12 || uiTemplateHeader.textStride !== 7 || uiTemplateHeader.rectStride !== 15) {
+    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V8_TEMPLATE_BACKGROUND_ABI', 'UI template pack is not the v8 template-background ABI native format', uiTemplateHeader);
   }
 }
 
@@ -211,8 +211,8 @@ if (uiPackReport) {
     ? uiPackFormat.backgroundContractFields
     : [];
   if (
-    uiPackFormat.templatePackVersion !== 7
-    || uiPackFormat.templateStride !== 22
+    uiPackFormat.templatePackVersion !== 8
+    || uiPackFormat.templateStride !== 23
     || uiPackFormat.slotStride !== 12
     || uiPackFormat.textStride !== 7
     || uiPackFormat.rectStride !== 15
@@ -232,8 +232,9 @@ if (uiPackReport) {
     || !backgroundContractFields.includes('texture')
     || !backgroundContractFields.includes('recipeBackgroundOffset')
     || !backgroundContractFields.includes('recipeBackgroundSize')
+    || uiPackFormat.templateBackgroundField !== 'nativeBackground'
   ) {
-    fail(failures, 'UI_PACK_REPORT_MISSING_V7_INTERACTION_ONLY_RECT_ABI', 'UI pack report does not declare v7 interaction-only rect/background ABI capability', { format: uiPackFormat });
+    fail(failures, 'UI_PACK_REPORT_MISSING_V8_TEMPLATE_BACKGROUND_ABI', 'UI pack report does not declare v8 template-background ABI capability', { format: uiPackFormat });
   }
 }
 

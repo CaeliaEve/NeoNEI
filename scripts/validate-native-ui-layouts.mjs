@@ -142,8 +142,8 @@ const backgroundContractFields = Array.isArray(uiPackFormat.backgroundContractFi
   ? uiPackFormat.backgroundContractFields
   : [];
 if (
-  uiPackFormat.templatePackVersion !== 7
-  || uiPackFormat.templateStride !== 22
+  uiPackFormat.templatePackVersion !== 8
+  || uiPackFormat.templateStride !== 23
   || uiPackFormat.slotStride !== 12
   || uiPackFormat.textStride !== 7
   || uiPackFormat.rectStride !== 15
@@ -163,21 +163,22 @@ if (
   || !backgroundContractFields.includes('texture')
   || !backgroundContractFields.includes('recipeBackgroundOffset')
   || !backgroundContractFields.includes('recipeBackgroundSize')
+  || uiPackFormat.templateBackgroundField !== 'nativeBackground'
 ) {
-  failures.push('rust UI pack report does not declare v7 interaction-only rect/background ABI');
+  failures.push('rust UI pack report does not declare v8 template-background ABI');
 }
 if (!uiTemplateHeader) failures.push('rust UI template binary pack is missing');
 if (uiTemplateHeader?.error) failures.push(`rust UI template binary pack is invalid: ${uiTemplateHeader.error}`);
 if (uiTemplateHeader && !uiTemplateHeader.error && (
   uiTemplateHeader.schema !== 'neonei/ui-template-pack/current'
   || uiTemplateHeader.magic !== 'NEIUIT1\0'
-  || uiTemplateHeader.version !== 7
-  || uiTemplateHeader.templateStride !== 22
+  || uiTemplateHeader.version !== 8
+  || uiTemplateHeader.templateStride !== 23
   || uiTemplateHeader.slotStride !== 12
   || uiTemplateHeader.textStride !== 7
   || uiTemplateHeader.rectStride !== 15
 )) {
-  failures.push('rust UI template binary pack is not v7 interaction-only rect ABI format');
+  failures.push('rust UI template binary pack is not v8 template-background ABI format');
 }
 if (layouts.length === 0) failures.push('handler layout index is empty or missing');
 if (gtLayouts.length === 0) failures.push('no gregtech-machine handler layouts found');

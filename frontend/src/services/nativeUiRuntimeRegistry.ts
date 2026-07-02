@@ -71,7 +71,7 @@ export interface NativeUiLayoutSurface {
   viewports?: NativeUiRect[];
 }
 
-export type NativeUiSurfaceSource = "ui-pack-template" | "inline-native-layout" | "missing";
+export type NativeUiSurfaceSource = "ui-pack-template" | "missing";
 
 export interface NativeUiResolvedSurface {
   source: NativeUiSurfaceSource;
@@ -124,9 +124,9 @@ function asArray<T>(value: unknown): T[] {
   return Array.isArray(value) ? value as T[] : [];
 }
 
-function positiveDimension(value: unknown, fallback: number): number {
+function positiveDimension(value: unknown): number {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
 export function normalizeNativeUiLayoutSurface(value: unknown): NativeUiLayoutSurface | null {
@@ -252,29 +252,25 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
       anchor: template.anchor,
       imageResource: template.imageResource,
       imageRegion: inlineLayout?.imageRegion,
-      nativeBackground: inlineLayout?.nativeBackground ?? normalizeNativeUiLayoutSurface(template)?.nativeBackground,
+      nativeBackground: template.nativeBackground,
       slots: template.slots,
       textOverlays: template.textOverlays,
       dynamicPrimitives: inlineLayout?.dynamicPrimitives,
       progressBars: inlineLayout?.progressBars,
       fluidBars: inlineLayout?.fluidBars,
       energyBars: inlineLayout?.energyBars,
-      hotspots: inlineLayout?.hotspots ?? template.hotspots,
-      viewports: inlineLayout?.viewports ?? template.viewports,
+      hotspots: template.hotspots,
+      viewports: template.viewports,
     } satisfies NativeUiLayoutSurface
-    : inlineLayout;
+    : null;
 
-  const source: NativeUiSurfaceSource = template
-    ? "ui-pack-template"
-    : layout
-      ? "inline-native-layout"
-      : "missing";
+  const source: NativeUiSurfaceSource = template ? "ui-pack-template" : "missing";
 
   const surfaceContract = layout
     ? resolveNativeUiSurfaceContract(layout, "Native UI runtime surface")
     : null;
-  const width = positiveDimension(surfaceContract?.width, 166);
-  const height = positiveDimension(surfaceContract?.height, 65);
+  const width = positiveDimension(surfaceContract?.width);
+  const height = positiveDimension(surfaceContract?.height);
   const nativeBackground = layout
     ? resolveNativeUiBackgroundContract({ ...layout, width, height }, "Native UI runtime surface background")
     : null;

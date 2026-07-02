@@ -51,17 +51,36 @@ function encodeStringPack(strings) {
   return new Uint8Array(bytes).buffer;
 }
 
+function nativeBackgroundJson() {
+  return JSON.stringify({
+    status: 'captured',
+    kind: 'gt-modular-ui',
+    coordinateSpace: 'nei_pixels',
+    scaleMode: 'uniform-scale',
+    anchor: 'top-left',
+    width: 166,
+    height: 65,
+    assetRef: 'assets/ui-backgrounds/gregtech/nei_single_recipe.png',
+    resource: 'gregtech:textures/gui/background/nei_single_recipe.png',
+    drawable: 'GT_UI_TEXTURE_NEI_SINGLE_RECIPE',
+    scaling: 'nine-slice',
+    texture: { width: 18, height: 18, borderU: 4, borderV: 4 },
+    recipeBackgroundOffset: { x: 0, y: 0 },
+    recipeBackgroundSize: { width: 166, height: 65 },
+  });
+}
+
 function encodeTemplatePack(strings) {
   const index = new Map(strings.map((value, idx) => [value, idx]));
   const bytes = [];
   bytes.push(...new TextEncoder().encode('NEIUIT1\0'));
-  pushU32(bytes, 7);
+  pushU32(bytes, 8);
   pushU32(bytes, 1);
   pushU32(bytes, 2);
   pushU32(bytes, 1);
   pushU32(bytes, 0);
   pushU32(bytes, 0);
-  pushU32(bytes, 22);
+  pushU32(bytes, 23);
   pushU32(bytes, 12);
   pushU32(bytes, 7);
   pushU32(bytes, 15);
@@ -88,6 +107,7 @@ function encodeTemplatePack(strings) {
     index.get('nei_pixels') ?? 0,
     index.get('uniform-scale') ?? 0,
     index.get('top-left') ?? 0,
+    index.get(nativeBackgroundJson()) ?? 0,
   ];
   row.forEach((value, idx) => {
     if (idx === 7) {
@@ -166,7 +186,7 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
       bytes: templatePack.byteLength,
       envelopeSchema: 'neonei/ui-template-pack/current',
       payloadMagic: 'NEIUIT1_NUL',
-      version: 7,
+      version: 8,
       sections: [],
     },
     {
@@ -287,6 +307,7 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     'nei_pixels',
     'top-left',
     'uniform-scale',
+    nativeBackgroundJson(),
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -336,6 +357,7 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     assert.equal(runtime.summary.boundRecipeCount, 1);
     assert.equal(runtime.summary.stringCount, strings.length);
     assert.equal(runtime.templatesByKey.get('furnace@default')?.layoutKind, 'furnace');
+    assert.equal(runtime.templatesByKey.get('furnace@default')?.nativeBackground?.assetRef, 'assets/ui-backgrounds/gregtech/nei_single_recipe.png');
     assert.deepEqual(runtime.templatesByKey.get('furnace@default')?.slots[0], {
       role: 'item-input',
       startIndex: 0,
@@ -381,6 +403,7 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
     'nei_pixels',
     'top-left',
     'uniform-scale',
+    nativeBackgroundJson(),
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -397,6 +420,7 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
     'nei_pixels',
     'top-left',
     'uniform-scale',
+    nativeBackgroundJson(),
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -452,6 +476,7 @@ test('loadUiPackRuntime fails closed before pack fetch when native UI export ABI
     'nei_pixels',
     'top-left',
     'uniform-scale',
+    nativeBackgroundJson(),
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -515,6 +540,7 @@ test('loadUiPackRuntime fails closed when native UI export primitive bounds coun
     'nei_pixels',
     'top-left',
     'uniform-scale',
+    nativeBackgroundJson(),
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -576,6 +602,7 @@ test('loadUiPackRuntime rejects ABI reports that do not match manifest entrypoin
     'nei_pixels',
     'top-left',
     'uniform-scale',
+    nativeBackgroundJson(),
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',

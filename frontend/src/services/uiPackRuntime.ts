@@ -79,6 +79,7 @@ export interface UiPackTemplate {
   textOverlays: UiPackTextOverlay[];
   hotspots: UiPackRect[];
   viewports: UiPackRect[];
+  nativeBackground: Record<string, unknown>;
 }
 
 export interface UiPackBinding {
@@ -138,10 +139,10 @@ const UI_STRING_PACK_MAGIC = "NEIUIS1\0";
 const UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIT1_NUL";
 const UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIB1_NUL";
 const UI_STRING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIS1_NUL";
-const UI_TEMPLATE_PAYLOAD_VERSION = 7;
+const UI_TEMPLATE_PAYLOAD_VERSION = 8;
 const UI_BINDING_PAYLOAD_VERSION = 1;
 const UI_STRING_PAYLOAD_VERSION = 1;
-const UI_TEMPLATE_ROW_STRIDE_U32 = 22;
+const UI_TEMPLATE_ROW_STRIDE_U32 = 23;
 const UI_SLOT_ROW_STRIDE_U32 = 12;
 const UI_TEXT_ROW_STRIDE_U32 = 7;
 const UI_RECT_ROW_STRIDE_U32 = 15;
@@ -211,6 +212,22 @@ function asString(value: unknown): string {
 
 function asRecord(value: unknown): JsonRecord | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as JsonRecord : null;
+}
+
+function parseNativeBackgroundJson(value: string, templateKey: string): JsonRecord {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch (error) {
+    throw new Error(
+      `UI template ${templateKey} nativeBackground JSON is invalid: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const record = asRecord(parsed);
+  if (!record) {
+    throw new Error(`UI template ${templateKey} nativeBackground must be a JSON object`);
+  }
+  return record;
 }
 
 function resolveUiPackAbiReportPath(manifest: NativeRuntimeManifest): string {
@@ -414,6 +431,7 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     coordinateSpace: string;
     scaleMode: string;
     anchor: string;
+    nativeBackground: JsonRecord;
   }> = [];
   for (let index = 0; index < templateCount; index += 1) {
     const rowOffset = cursor + index * templateStride * 4;
@@ -440,6 +458,10 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
       coordinateSpace: resolveString(strings, readU32(view, rowOffset + 76)),
       scaleMode: resolveString(strings, readU32(view, rowOffset + 80)),
       anchor: resolveString(strings, readU32(view, rowOffset + 84)),
+      nativeBackground: parseNativeBackgroundJson(
+        resolveString(strings, readU32(view, rowOffset + 88)),
+        resolveString(strings, readU32(view, rowOffset + 0)),
+      ),
     });
   }
   cursor += templateBytes;
@@ -524,6 +546,7 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     textOverlays: sliceRows("UI template text overlays", overlays, templateRow.textStart, templateRow.textCount),
     hotspots: sliceRows("UI template hotspots", hotspots, templateRow.hotspotStart, templateRow.hotspotCount),
     viewports: sliceRows("UI template viewports", viewports, templateRow.viewportStart, templateRow.viewportCount),
+    nativeBackground: templateRow.nativeBackground,
   }));
 }
 

@@ -97,6 +97,7 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
     imageResource: 'rust/ui-assets/gt_furnace.png',
     handlerCount: 1,
     slotCount: 1,
+    nativeBackground: gtBackground({ assetRef: 'rust/ui-assets/template_background.png' }),
     slots: [{
       role: 'item-input',
       startIndex: 0,
@@ -133,7 +134,7 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
     scaleMode: 'uniform-scale',
     anchor: 'top-left',
     imageRegion: { x: 8, y: 9, width: 176, height: 90 },
-    nativeBackground: gtBackground(),
+    nativeBackground: gtBackground({ assetRef: 'rust/ui-assets/inline_background_should_not_win.png' }),
     progressBars: [{ role: 'progress', x: 72, y: 34, width: 24, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left', fill: 0.5 }],
     hotspots: [{ id: 'inline-hotspot', kind: 'item-click', role: 'output', label: 'Output', tooltip: '', ...itemClickInteraction('minecraft:iron_ingot'), x: 115, y: 24, width: 18, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
   });
@@ -149,10 +150,10 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
   assert.equal(surface.height, 90);
   assert.equal(surface.layout?.imageResource, 'rust/ui-assets/gt_furnace.png');
   assert.deepEqual(surface.layout?.imageRegion, { x: 8, y: 9, width: 176, height: 90 });
-  assert.equal(surface.layout?.nativeBackground?.assetRef, 'rust/ui-assets/gt_furnace_captured.png');
+  assert.equal(surface.layout?.nativeBackground?.assetRef, 'rust/ui-assets/template_background.png');
   assert.equal(surface.slots.length, 1);
   assert.equal(surface.textOverlays[0]?.text, 'EU/t');
-  assert.equal(surface.hotspots[0]?.id, 'inline-hotspot');
+  assert.equal(surface.hotspots[0]?.id, 'template-hotspot');
   assert.equal(surface.viewports[0]?.id, 'template-viewport');
   assert.equal(surface.dynamicPrimitives.length, 1);
   assert.equal(surface.dynamicPrimitives[0]?.kind, 'progress-bar');
@@ -161,7 +162,7 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
   assert.equal(surface.textOverlays[0]?.anchor, 'top-left');
 });
 
-test('native UI registry keeps inline and missing layouts explicit', () => {
+test('native UI registry requires UI-pack template authority and keeps missing layouts explicit', () => {
   const inline = resolveNativeUiRuntimeSurface({
     runtime: null,
     recipeId: 'recipe-inline',
@@ -187,31 +188,59 @@ test('native UI registry keeps inline and missing layouts explicit', () => {
       }],
     }),
   });
-  assert.equal(inline.source, 'inline-native-layout');
-  assert.equal(inline.width, 80);
-  assert.equal(inline.height, 40);
-  assert.equal(inline.slots[0]?.role, 'item-output');
+  assert.equal(inline.source, 'missing');
+  assert.equal(inline.width, 0);
+  assert.equal(inline.height, 0);
+  assert.deepEqual(inline.slots, []);
 
   const missing = resolveNativeUiRuntimeSurface({ runtime: null, recipeId: 'missing', inlineLayout: null });
   assert.equal(missing.source, 'missing');
-  assert.equal(missing.width, 166);
-  assert.equal(missing.height, 65);
+  assert.equal(missing.width, 0);
+  assert.equal(missing.height, 0);
   assert.deepEqual(missing.slots, []);
 });
 
 test('native UI registry rejects incomplete background ABI on resolved surfaces', () => {
+  const template = {
+    templateKey: 'bad-background-template',
+    templateSignature: 'sig-bad-background',
+    familyKey: 'bad-background-family',
+    canonicalMachineFamily: 'bad-background-family',
+    layoutKind: 'gt-modular-ui',
+    width: 176,
+    height: 90,
+    yShift: 0,
+    coordinateSpace: 'nei_pixels',
+    scaleMode: 'uniform-scale',
+    anchor: 'top-left',
+    maxRecipesPerPage: 1,
+    imageResource: 'rust/ui-assets/gt_furnace.png',
+    handlerCount: 1,
+    slotCount: 0,
+    nativeBackground: { kind: 'gt-modular-ui', status: 'captured', assetRef: 'ui/captured.png' },
+    slots: [],
+    textOverlays: [],
+    hotspots: [],
+    viewports: [],
+  };
+  const binding = {
+    recipeId: 'bad-background',
+    path: 'recipes/ui-payload-shards/bad.json',
+    payloadKey: 'bad-background',
+    familyKey: 'bad-background-family',
+    recipeType: 'gt.recipe',
+    machineType: 'Furnace',
+    templateKey: 'bad-background-template',
+    templateSignature: 'sig-bad-background',
+    canonicalMachineFamily: 'bad-background-family',
+    layoutKind: 'gt-modular-ui',
+    bound: true,
+  };
   assert.throws(
     () => resolveNativeUiRuntimeSurface({
-      runtime: null,
+      runtime: runtimeFixture(template, binding),
       recipeId: 'bad-background',
-      inlineLayout: normalizeNativeUiLayoutSurface({
-        width: 176,
-        height: 90,
-        coordinateSpace: 'nei_pixels',
-        scaleMode: 'uniform-scale',
-        anchor: 'top-left',
-        nativeBackground: { kind: 'gt-modular-ui', status: 'captured', assetRef: 'ui/captured.png' },
-      }),
+      inlineLayout: null,
     }),
     /coordinateSpace/,
   );
@@ -284,7 +313,7 @@ test('native UI registry owns component runtime layout contract', () => {
   assert.match(registrySource, /export function resolveNativeUiRuntimeSurface/);
   assert.match(registrySource, /export function buildNativeUiSlotCells/);
   assert.match(registrySource, /export function createNativeUiFitMatrix/);
-  assert.match(registrySource, /NativeUiSurfaceSource = "ui-pack-template" \| "inline-native-layout" \| "missing"/);
+  assert.match(registrySource, /NativeUiSurfaceSource = "ui-pack-template" \| "missing"/);
 
   assert.deepEqual(collectNativeUiDynamicPrimitives({
     progressBars: [{ x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
@@ -298,17 +327,50 @@ test('native UI registry owns component runtime layout contract', () => {
 });
 
 test('native UI registry fails closed on rect-like geometry ABI violations', () => {
-  assert.throws(() => resolveNativeUiRuntimeSurface({
-    runtime: null,
-    recipeId: 'bad-hotspot',
-    inlineLayout: normalizeNativeUiLayoutSurface({
+  const template = {
+    templateKey: 'bad-hotspot-template',
+    templateSignature: 'sig-bad-hotspot',
+    familyKey: 'bad-hotspot-family',
+    canonicalMachineFamily: 'bad-hotspot-family',
+    layoutKind: 'gt-modular-ui',
+    width: 80,
+    height: 40,
+    yShift: 0,
+    coordinateSpace: 'nei_pixels',
+    scaleMode: 'uniform-scale',
+    anchor: 'top-left',
+    maxRecipesPerPage: 1,
+    imageResource: 'rust/ui-assets/gt_furnace.png',
+    handlerCount: 1,
+    slotCount: 0,
+    nativeBackground: gtBackground({
       width: 80,
       height: 40,
-      coordinateSpace: 'nei_pixels',
-      scaleMode: 'uniform-scale',
-      anchor: 'top-left',
-      hotspots: [{ x: 1, y: 2, width: 3, height: 4, anchor: 'top-left' }],
+      recipeBackgroundOffset: { x: 0, y: 0 },
+      recipeBackgroundSize: { width: 80, height: 40 },
     }),
+    slots: [],
+    textOverlays: [],
+    hotspots: [{ id: 'bad-hotspot', kind: 'info', role: 'bad', label: 'Bad', tooltip: '', ...noInteraction(), x: 1, y: 2, width: 3, height: 4, anchor: 'top-left' }],
+    viewports: [],
+  };
+  const binding = {
+    recipeId: 'bad-hotspot',
+    path: 'recipes/ui-payload-shards/bad-hotspot.json',
+    payloadKey: 'bad-hotspot',
+    familyKey: 'bad-hotspot-family',
+    recipeType: 'gt.recipe',
+    machineType: 'Furnace',
+    templateKey: 'bad-hotspot-template',
+    templateSignature: 'sig-bad-hotspot',
+    canonicalMachineFamily: 'bad-hotspot-family',
+    layoutKind: 'gt-modular-ui',
+    bound: true,
+  };
+  assert.throws(() => resolveNativeUiRuntimeSurface({
+    runtime: runtimeFixture(template, binding),
+    recipeId: 'bad-hotspot',
+    inlineLayout: null,
   }), /missing required Native UI geometry field: coordinateSpace/);
 
   assert.throws(() => collectNativeUiDynamicPrimitives({
