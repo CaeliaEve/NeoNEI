@@ -1,6 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  parseNativeBrowserBin,
+  parseNativeGroupsBin,
+  parseNativeSearchBin,
+  parseNativeTexturesBin,
+} from "./native-runtime-pack-reader.mjs";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const args = process.argv.slice(2);
@@ -24,140 +30,6 @@ function readJson(relativePath, required = true) {
     throw new Error(`Missing dist-data file: ${filePath}`);
   }
   return JSON.parse(readFileSync(filePath, "utf8"));
-}
-
-function readRuntimeBin(relativePath) {
-  const filePath = join(distDataDir, relativePath);
-  if (!existsSync(filePath)) throw new Error(`Missing native runtime pack: ${filePath}`);
-  const bytes = readFileSync(filePath);
-  if (bytes.subarray(0, 8).toString("utf8") !== "NNEIBIN\0") {
-    throw new Error(`Invalid native runtime binary magic: ${filePath}`);
-  }
-  const schemaLength = bytes.readUInt32LE(12);
-  const payloadLength = Number(bytes.readBigUInt64LE(16));
-  const payloadOffset = 24 + schemaLength;
-  return bytes.subarray(payloadOffset, payloadOffset + payloadLength);
-}
-
-function readCompactString(bytes, baseOffset, relativeOffset) {
-  if (relativeOffset <= 0 && bytes[baseOffset] === 0) return "";
-  let end = baseOffset + relativeOffset;
-  while (end < bytes.length && bytes[end] !== 0) end += 1;
-  return bytes.subarray(baseOffset + relativeOffset, end).toString("utf8");
-}
-
-function parseCompactStrings(bytes, offset, stringCount) {
-  const offsets = [];
-  for (let index = 0; index < stringCount; index += 1) offsets.push(bytes.readUInt32LE(offset + index * 4));
-  return { offsets };
-}
-
-function parseBrowserBin(relativePath) {
-  const bytes = readRuntimeBin(relativePath);
-  if (bytes.subarray(0, 8).toString("utf8") !== "NEIBRW1\0") throw new Error(`Invalid browser.bin payload: ${relativePath}`);
-  const rowCount = bytes.readUInt32LE(12);
-  const stringCount = bytes.readUInt32LE(16);
-  const rowStride = bytes.readUInt32LE(20);
-  const { offsets } = parseCompactStrings(bytes, 24, stringCount);
-  const rowOffset = 24 + stringCount * 4;
-  const stringsDataBase = rowOffset + rowCount * rowStride * 4;
-  const stringAt = (ref) => readCompactString(bytes, stringsDataBase, offsets[ref] ?? 0);
-  const items = [];
-  for (let row = 0; row < rowCount; row += 1) {
-    const base = rowOffset + row * rowStride * 4;
-    items.push({
-      itemId: stringAt(bytes.readUInt32LE(base)),
-      localizedName: stringAt(bytes.readUInt32LE(base + 4)),
-      modId: stringAt(bytes.readUInt32LE(base + 8)),
-      groupKey: stringAt(bytes.readUInt32LE(base + 12)),
-      browserOrder: bytes.readUInt32LE(base + 16),
-      flags: bytes.readUInt32LE(base + 20),
-    });
-  }
-  return { items };
-}
-
-function parseGroupsBin(relativePath) {
-  const bytes = readRuntimeBin(relativePath);
-  if (bytes.subarray(0, 8).toString("utf8") !== "NEIGRP1\0") throw new Error(`Invalid groups.bin payload: ${relativePath}`);
-  const rowCount = bytes.readUInt32LE(12);
-  const stringCount = bytes.readUInt32LE(16);
-  const memberCount = bytes.readUInt32LE(20);
-  const rowStride = bytes.readUInt32LE(24);
-  const { offsets } = parseCompactStrings(bytes, 28, stringCount);
-  const rowOffset = 28 + stringCount * 4;
-  const memberOffset = rowOffset + rowCount * rowStride * 4;
-  const stringsDataBase = memberOffset + memberCount * 4;
-  const stringAt = (ref) => readCompactString(bytes, stringsDataBase, offsets[ref] ?? 0);
-  const groups = [];
-  for (let row = 0; row < rowCount; row += 1) {
-    const base = rowOffset + row * rowStride * 4;
-    groups.push({
-      groupKey: stringAt(bytes.readUInt32LE(base)),
-      groupLabel: stringAt(bytes.readUInt32LE(base + 4)),
-      representativeItemId: stringAt(bytes.readUInt32LE(base + 8)),
-      groupSize: bytes.readUInt32LE(base + 20),
-      groupSource: "native/groups.bin",
-    });
-  }
-  return { groups };
-}
-
-function parseSearchBin(relativePath) {
-  const bytes = readRuntimeBin(relativePath);
-  if (bytes.subarray(0, 8).toString("utf8") !== "NEISRC2\0") throw new Error(`Invalid search.bin payload: ${relativePath}`);
-  const rowCount = bytes.readUInt32LE(12);
-  const stringCount = bytes.readUInt32LE(16);
-  const rowStride = bytes.readUInt32LE(20);
-  const { offsets } = parseCompactStrings(bytes, 24, stringCount);
-  const rowOffset = 24 + stringCount * 4;
-  const stringsDataBase = rowOffset + rowCount * rowStride * 4;
-  const stringAt = (ref) => readCompactString(bytes, stringsDataBase, offsets[ref] ?? 0);
-  const items = [];
-  for (let row = 0; row < rowCount; row += 1) {
-    const base = rowOffset + row * rowStride * 4;
-    items.push({
-      itemId: stringAt(bytes.readUInt32LE(base)),
-      publicItemId: stringAt(bytes.readUInt32LE(base + 4)),
-      localizedName: stringAt(bytes.readUInt32LE(base + 8)),
-      modId: stringAt(bytes.readUInt32LE(base + 12)),
-      normalizedLocalizedName: stringAt(bytes.readUInt32LE(base + 16)),
-      normalizedInternalName: stringAt(bytes.readUInt32LE(base + 20)),
-      normalizedItemId: stringAt(bytes.readUInt32LE(base + 24)),
-      normalizedSearchTerms: stringAt(bytes.readUInt32LE(base + 28)),
-      pinyinFull: stringAt(bytes.readUInt32LE(base + 32)),
-      pinyinAcronym: stringAt(bytes.readUInt32LE(base + 36)),
-      browserIndex: bytes.readUInt32LE(base + 48),
-    });
-  }
-  return { items };
-}
-
-function parseTexturesBin(relativePath) {
-  const bytes = readRuntimeBin(relativePath);
-  if (bytes.subarray(0, 8).toString("utf8") !== "NEITEX1\0") throw new Error(`Invalid textures.bin payload: ${relativePath}`);
-  const rowCount = bytes.readUInt32LE(12);
-  const stringCount = bytes.readUInt32LE(16);
-  const frameCount = bytes.readUInt32LE(20);
-  const rowStride = bytes.readUInt32LE(24);
-  const frameStride = bytes.readUInt32LE(28);
-  const { offsets } = parseCompactStrings(bytes, 32, stringCount);
-  const rowOffset = 32 + stringCount * 4;
-  const frameOffset = rowOffset + rowCount * rowStride * 4;
-  const stringsDataBase = frameOffset + frameCount * frameStride * 4;
-  const stringAt = (ref) => readCompactString(bytes, stringsDataBase, offsets[ref] ?? 0);
-  const items = [];
-  for (let row = 0; row < rowCount; row += 1) {
-    const base = rowOffset + row * rowStride * 4;
-    const staticAtlasFile = stringAt(bytes.readUInt32LE(base + 4));
-    const animatedAtlasFile = stringAt(bytes.readUInt32LE(base + 24));
-    items.push({
-      itemId: stringAt(bytes.readUInt32LE(base)),
-      staticAtlas: staticAtlasFile ? { atlasFile: staticAtlasFile } : null,
-      animatedAtlas: animatedAtlasFile ? { atlasFile: animatedAtlasFile, frameCount: bytes.readUInt32LE(base + 32) } : null,
-    });
-  }
-  return { items };
 }
 
 function text(value) { return `${value ?? ""}`.trim(); }
@@ -193,10 +65,23 @@ function sample(entries, limit = 20) { return entries.slice(0, limit).map((entry
 
 const manifest = readJson("rust/runtime-manifest.json");
 const entrypoints = manifest.entrypoints ?? {};
-const browserPack = parseBrowserBin(entrypoints.browser ?? "rust/browser.bin");
-const groupsPack = parseGroupsBin(entrypoints.groups ?? "rust/groups.bin");
-const searchPack = parseSearchBin(entrypoints.search ?? "rust/search.bin");
-const texturesPack = parseTexturesBin(entrypoints.textures ?? "rust/textures.bin");
+const packLoadFailures = [];
+function requireNativePack(name, pack, member, expectedPath) {
+  if (Array.isArray(pack?.[member]) && pack[member].length > 0) return pack;
+  packLoadFailures.push({
+    message: `native runtime pack is missing or empty: ${name}`,
+    details: { name, path: expectedPath },
+  });
+  return member === "groups" ? { groups: [] } : { items: [] };
+}
+const browserPath = entrypoints.browser ?? "rust/browser.bin";
+const groupsPath = entrypoints.groups ?? "rust/groups.bin";
+const searchPath = entrypoints.search ?? "rust/search.bin";
+const texturesPath = entrypoints.textures ?? "rust/textures.bin";
+const browserPack = requireNativePack("browser", parseNativeBrowserBin(distDataDir, browserPath, { optional: true }), "items", browserPath);
+const groupsPack = requireNativePack("groups", parseNativeGroupsBin(distDataDir, groupsPath, { optional: true }), "groups", groupsPath);
+const searchPack = requireNativePack("search", parseNativeSearchBin(distDataDir, searchPath, { optional: true }), "items", searchPath);
+const texturesPack = requireNativePack("textures", parseNativeTexturesBin(distDataDir, texturesPath, { optional: true }), "items", texturesPath);
 const missingTextureReport = readJson("rust/missing-texture-report.json", false);
 const semanticReport = readJson("rust/semantic-validation-report.json", false);
 const handlerReport = readJson("rust/recipe-handler-metadata-report.json", false);
@@ -207,7 +92,7 @@ const searchItems = Array.isArray(searchPack.items) ? searchPack.items : [];
 const textureByItemId = new Map((texturesPack.items ?? []).filter((entry) => text(entry?.itemId)).map((entry) => [entry.itemId, entry]));
 const groups = Array.isArray(groupsPack.groups) ? groupsPack.groups : [];
 
-const failures = [];
+const failures = [...packLoadFailures];
 const warnings = [];
 const checks = {};
 function addFailure(message, details = {}) { failures.push({ message, details }); }
