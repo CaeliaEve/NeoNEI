@@ -10,6 +10,11 @@ import {
   UI_PRIMITIVE_ROW_STRIDE_U32,
   UI_RECT_ROW_STRIDE_U32,
   UI_SLOT_ROW_STRIDE_U32,
+  NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
+  NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
+  NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION,
+  UI_PACK_ABI_VALIDATION_REPORT_PATH,
+  UI_PACK_ABI_VALIDATION_SCHEMA_VERSION,
   UI_TEMPLATE_PACK_MAGIC,
   UI_TEMPLATE_PACK_SCHEMA,
   UI_TEMPLATE_PAYLOAD_VERSION,
@@ -157,6 +162,36 @@ function createDistFixture() {
       },
     }],
   });
+  writeJson(join(rustDir, 'native-ui-export-abi-validation-report.json'), {
+    schemaVersion: NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
+    status: 'ok',
+    rawReportSchemaVersion: NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION,
+    rawReportStatus: 'ok',
+    missingReport: false,
+    layoutCount: 1,
+    slotCount: 1,
+    rectCount: 0,
+    primitiveCount: 1,
+    missingSurfaceCount: 0,
+    slotBoundsViolationCount: 0,
+    rectBoundsViolationCount: 0,
+    primitiveBoundsViolationCount: 0,
+    backgroundBoundsViolationCount: 0,
+    coordinateContractViolationCount: 0,
+    interactionContractViolationCount: 0,
+    schemaViolations: [],
+    pathViolations: [],
+    contractViolations: [],
+    policy: { legacyFallback: 'forbidden' },
+  });
+  writeJson(join(rustDir, 'ui-pack-abi-validation-report.json'), {
+    schemaVersion: UI_PACK_ABI_VALIDATION_SCHEMA_VERSION,
+    status: 'ok',
+    policy: { legacyFallback: 'forbidden' },
+    missingRequiredArtifacts: [],
+    sectionViolations: [],
+    artifacts: [],
+  });
   writeJson(join(recipeDir, 'ui-payload-index.json'), {
     schemaVersion: 'neonei/recipe-ui-payload-index/v1',
     recipes: [{
@@ -201,6 +236,8 @@ function createDistFixture() {
     'rust/ui-pack/ui_templates.bin',
     'rust/ui-pack/ui_bindings.bin',
     'rust/ui-pack/ui_strings.bin',
+    UI_PACK_ABI_VALIDATION_REPORT_PATH,
+    NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
     'rust/native-ui-layout-report.json',
   ];
   writeJson(join(rustDir, 'runtime-manifest.json'), {
@@ -237,6 +274,8 @@ function createDistFixture() {
       rustUiStringsBin: 'rust/ui-pack/ui_strings.bin',
       rustUiAssetsManifest: 'rust/ui-pack/ui_assets.manifest.json',
       rustUiPackReport: 'rust/ui-pack/ui_pack_report.json',
+      rustUiPackAbiValidationReport: UI_PACK_ABI_VALIDATION_REPORT_PATH,
+      rustNativeUiExportAbiValidationReport: NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
       rustNativeUiLayoutReport: 'rust/native-ui-layout-report.json',
     },
   });

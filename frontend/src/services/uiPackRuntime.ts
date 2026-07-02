@@ -9,9 +9,8 @@ import {
 } from "../native-surface/NativeRuntimeCapabilityGate.ts";
 import type { NativeRuntimeManifest } from "../native-surface/NativeRuntimeManifest";
 import {
+  collectNativeUiExportAbiReportViolations,
   NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
-  NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
-  NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION,
   UI_BINDING_PACK_MAGIC,
   UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
   UI_BINDING_PACK_SCHEMA,
@@ -790,56 +789,8 @@ function assertUiPackAbiValidationReport(
 }
 
 function assertNativeUiExportAbiValidationReport(report: JsonRecord): void {
-  const schemaVersion = asString(report.schemaVersion);
-  if (schemaVersion !== NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION) {
-    throw new Error(`native UI export ABI validation report schema mismatch: expected ${NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION}, got ${schemaVersion || "<missing>"}`);
-  }
-  const status = asString(report.status);
-  if (status !== "ok") {
-    throw new Error(`native UI export ABI validation report is not ok: ${status || "<missing>"}`);
-  }
-  if (asString(report.rawReportSchemaVersion) !== NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION) {
-    throw new Error("native UI export ABI validation report rawReportSchemaVersion mismatch");
-  }
-  if (asString(report.rawReportStatus) !== "ok") {
-    throw new Error("native UI export ABI validation report rawReportStatus must be ok");
-  }
-  if (report.missingReport === true) {
-    throw new Error("native UI export ABI validation report declares missingReport");
-  }
-  const policy = asRecord(report.policy);
-  if (asString(policy?.legacyFallback) !== "forbidden") {
-    throw new Error("native UI export ABI validation report must forbid legacyFallback");
-  }
-  const schemaViolations = asStringArray(report.schemaViolations);
-  const pathViolations = asStringArray(report.pathViolations);
-  const contractViolations = asStringArray(report.contractViolations);
-  if (schemaViolations.length > 0 || pathViolations.length > 0 || contractViolations.length > 0) {
-    throw new Error(
-      `native UI export ABI validation report has violations: ${
-        [...schemaViolations, ...pathViolations, ...contractViolations].join("; ")
-      }`,
-    );
-  }
-  if ((asFiniteNumber(report.layoutCount) ?? 0) <= 0) {
-    throw new Error("native UI export ABI validation report layoutCount must be greater than zero");
-  }
-  if ((asFiniteNumber(report.slotCount) ?? 0) <= 0) {
-    throw new Error("native UI export ABI validation report slotCount must be greater than zero");
-  }
-  for (const key of [
-    "missingSurfaceCount",
-    "slotBoundsViolationCount",
-    "rectBoundsViolationCount",
-    "primitiveBoundsViolationCount",
-    "backgroundBoundsViolationCount",
-    "coordinateContractViolationCount",
-    "interactionContractViolationCount",
-  ]) {
-    if ((asFiniteNumber(report[key]) ?? 0) !== 0) {
-      throw new Error(`native UI export ABI validation report ${key} must be zero`);
-    }
-  }
+  const violations = collectNativeUiExportAbiReportViolations(report);
+  if (violations.length > 0) throw new Error(violations[0]);
 }
 
 function unwrapUiPackPayload(buffer: ArrayBuffer, expectedSchema: typeof UI_TEMPLATE_PACK_SCHEMA | typeof UI_BINDING_PACK_SCHEMA | typeof UI_STRING_PACK_SCHEMA): ArrayBuffer {

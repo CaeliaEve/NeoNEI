@@ -11,6 +11,32 @@ export const UI_BINDING_PACK_SCHEMA = 'neonei/ui-binding-pack/current';
 export const UI_STRING_PACK_SCHEMA = 'neonei/ui-string-pack/current';
 export const UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT = 'NEIUIT1_NUL';
 
+export const UI_PACK_ABI_VALIDATION_REPORT_PATH = 'rust/ui-pack-abi-validation-report.json';
+export const UI_PACK_ABI_VALIDATION_SCHEMA_VERSION = 'elysium-compiler/ui-pack-abi-validation/v1';
+export const NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH = 'rust/native-ui-export-abi-validation-report.json';
+export const NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION = 'elysium-compiler/native-ui-export-abi-validation/v1';
+export const NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION = 'nesqlpp/raw-export/alpha1/native-ui-validation';
+export const NATIVE_UI_EXPORT_STATUS_OK = 'ok';
+export const NATIVE_UI_EXPORT_POLICY_LEGACY_FALLBACK = 'forbidden';
+export const NATIVE_UI_EXPORT_REQUIRED_POSITIVE_COUNTERS = Object.freeze([
+  'layoutCount',
+  'slotCount',
+]);
+export const NATIVE_UI_EXPORT_ZERO_VIOLATION_COUNTERS = Object.freeze([
+  'missingSurfaceCount',
+  'slotBoundsViolationCount',
+  'rectBoundsViolationCount',
+  'primitiveBoundsViolationCount',
+  'backgroundBoundsViolationCount',
+  'coordinateContractViolationCount',
+  'interactionContractViolationCount',
+]);
+export const NATIVE_UI_EXPORT_VIOLATION_ARRAY_FIELDS = Object.freeze([
+  'schemaViolations',
+  'pathViolations',
+  'contractViolations',
+]);
+
 export const UI_TEMPLATE_PAYLOAD_VERSION = 9;
 export const UI_BINDING_PAYLOAD_VERSION = 1;
 export const UI_STRING_PAYLOAD_VERSION = 1;
@@ -134,6 +160,60 @@ export function validateUiPackFormat(format) {
       }
     } else if (actual !== value) {
       failures.push(`${key}: expected ${JSON.stringify(value)}, got ${JSON.stringify(actual)}`);
+    }
+  }
+  return failures;
+}
+
+function stringValue(value) {
+  return `${value ?? ''}`.trim();
+}
+
+function stringArray(value) {
+  return Array.isArray(value) ? value.map((entry) => `${entry ?? ''}`.trim()).filter(Boolean) : [];
+}
+
+function nonNegativeNumber(value) {
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
+export function validateNativeUiExportAbiReport(report) {
+  const failures = [];
+  if (!report || typeof report !== 'object' || Array.isArray(report)) {
+    return ['native UI export ABI report is missing or unreadable'];
+  }
+  if (stringValue(report.schemaVersion) !== NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION) {
+    failures.push('native UI export ABI report schema mismatch');
+  }
+  if (stringValue(report.status) !== NATIVE_UI_EXPORT_STATUS_OK) {
+    failures.push('native UI export ABI report status is not ok');
+  }
+  if (stringValue(report.rawReportSchemaVersion) !== NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION) {
+    failures.push('native UI export ABI raw report schema mismatch');
+  }
+  if (stringValue(report.rawReportStatus) !== NATIVE_UI_EXPORT_STATUS_OK) {
+    failures.push('native UI export ABI raw report status is not ok');
+  }
+  if (report.missingReport === true) {
+    failures.push('native UI export ABI report declares missing raw report');
+  }
+  if (stringValue(report.policy?.legacyFallback) !== NATIVE_UI_EXPORT_POLICY_LEGACY_FALLBACK) {
+    failures.push('native UI export ABI report must forbid legacy fallback');
+  }
+  for (const key of NATIVE_UI_EXPORT_VIOLATION_ARRAY_FIELDS) {
+    if (stringArray(report[key]).length > 0) {
+      failures.push(`native UI export ABI ${key} must be empty`);
+    }
+  }
+  for (const key of NATIVE_UI_EXPORT_REQUIRED_POSITIVE_COUNTERS) {
+    if ((nonNegativeNumber(report[key]) ?? 0) <= 0) {
+      failures.push(`native UI export ABI ${key} must be greater than zero`);
+    }
+  }
+  for (const key of NATIVE_UI_EXPORT_ZERO_VIOLATION_COUNTERS) {
+    if ((nonNegativeNumber(report[key]) ?? 0) !== 0) {
+      failures.push(`native UI export ABI ${key} must be zero`);
     }
   }
   return failures;

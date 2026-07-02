@@ -2,8 +2,11 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
   UI_TEMPLATE_PACK_MAGIC,
   UI_TEMPLATE_PACK_SCHEMA,
+  UI_PACK_ABI_VALIDATION_REPORT_PATH,
+  validateNativeUiExportAbiReport,
   validateUiPackFormat,
   validateUiTemplateHeader,
 } from './native-ui-pack-abi.mjs';
@@ -101,6 +104,8 @@ const requiredRustFiles = {
   rustUiStringsBin: files.rustUiStringsBin,
   rustUiAssetsManifest: files.rustUiAssetsManifest,
   rustUiPackReport: files.rustUiPackReport,
+  rustUiPackAbiValidationReport: files.rustUiPackAbiValidationReport ?? files.uiPackAbiValidationReport,
+  rustNativeUiExportAbiValidationReport: files.rustNativeUiExportAbiValidationReport ?? files.nativeUiExportAbiValidationReport,
   rustNativeUiLayoutReport: files.rustNativeUiLayoutReport,
 };
 if (textureRuntimeRequired) {
@@ -130,6 +135,8 @@ const expectedRuntimeArtifacts = [
   'rust/ui-pack/ui_templates.bin',
   'rust/ui-pack/ui_bindings.bin',
   'rust/ui-pack/ui_strings.bin',
+  UI_PACK_ABI_VALIDATION_REPORT_PATH,
+  NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
   'rust/native-ui-layout-report.json',
 ];
 if (textureRuntimeRequired) {
@@ -222,6 +229,20 @@ if (uiPackReport) {
   }
 }
 
+const nativeUiExportAbiReportPath = requiredRustFiles.rustNativeUiExportAbiValidationReport
+  ? join(distDataDir, requiredRustFiles.rustNativeUiExportAbiValidationReport)
+  : null;
+const nativeUiExportAbiReport = nativeUiExportAbiReportPath && existsSync(nativeUiExportAbiReportPath)
+  ? readJson(nativeUiExportAbiReportPath)
+  : null;
+const nativeUiExportAbiFailures = validateNativeUiExportAbiReport(nativeUiExportAbiReport);
+if (nativeUiExportAbiFailures.length > 0) {
+  fail(failures, 'NATIVE_UI_EXPORT_ABI_REPORT_INVALID', 'native UI export ABI validation report is not fail-closed clean', {
+    path: requiredRustFiles.rustNativeUiExportAbiValidationReport ?? null,
+    violations: nativeUiExportAbiFailures,
+  });
+}
+
 for (const debugKey of ['rustBrowserPack', 'rustSearchPack', 'rustRecipePack', 'rustTexturePack']) {
   if (`${files[debugKey] ?? ''}`.trim()) {
     fail(failures, 'DEBUG_JSON_PACK_DECLARED_IN_PRODUCTION', `production manifest must not declare debug JSON pack ${debugKey}`, {
@@ -251,6 +272,14 @@ const report = {
         status: uiPackReport.status ?? null,
         summary: uiPackReport.summary ?? null,
         format: uiPackFormat,
+      }
+    : null,
+  nativeUiExportAbiReport: nativeUiExportAbiReport
+    ? {
+        status: nativeUiExportAbiReport.status ?? null,
+        layoutCount: nativeUiExportAbiReport.layoutCount ?? null,
+        slotCount: nativeUiExportAbiReport.slotCount ?? null,
+        violationCount: nativeUiExportAbiFailures.length,
       }
     : null,
   failures,

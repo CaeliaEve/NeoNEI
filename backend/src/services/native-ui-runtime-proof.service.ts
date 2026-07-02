@@ -8,9 +8,10 @@ import {
 } from './current-runtime-artifact-index.service';
 import type { CurrentRuntimeSnapshot } from './current-runtime-snapshot.service';
 import {
+  countNativeUiExportAbiReportViolations,
   NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
   NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
-  NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION,
+  NATIVE_UI_EXPORT_POLICY_LEGACY_FALLBACK,
   UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
   UI_BINDING_PACK_SCHEMA,
   UI_BINDING_PAYLOAD_VERSION,
@@ -22,6 +23,7 @@ import {
   UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT,
   UI_TEMPLATE_PACK_SCHEMA,
   UI_TEMPLATE_PAYLOAD_VERSION,
+  validateNativeUiExportAbiReport,
 } from './native-ui-pack-abi';
 
 type JsonRecord = CurrentRuntimeJsonRecord;
@@ -54,7 +56,7 @@ export type NativeUiRuntimeProofSummary = Readonly<{
   schemaVersion: 'neonei/native-ui-runtime-proof/current';
   status: NativeUiProofStatus;
   policy: Readonly<{
-    legacyFallback: 'forbidden';
+    legacyFallback: typeof NATIVE_UI_EXPORT_POLICY_LEGACY_FALLBACK;
     missingProof: 'fail-closed';
     invalidProof: 'fail-closed';
     reportPlane: 'debugfs';
@@ -227,24 +229,6 @@ function pushIf(condition: boolean, output: string[], message: string): void {
   if (condition) output.push(message);
 }
 
-function getPolicyLegacyFallback(report: JsonRecord | null): string | null {
-  return asString(asRecord(report?.policy)?.legacyFallback);
-}
-
-function countExportAbiViolations(report: JsonRecord | null): number {
-  if (!report) return 0;
-  return asStringArray(report.schemaViolations).length
-    + asStringArray(report.pathViolations).length
-    + asStringArray(report.contractViolations).length
-    + (asNumber(report.missingSurfaceCount) ?? 0)
-    + (asNumber(report.slotBoundsViolationCount) ?? 0)
-    + (asNumber(report.rectBoundsViolationCount) ?? 0)
-    + (asNumber(report.primitiveBoundsViolationCount) ?? 0)
-    + (asNumber(report.backgroundBoundsViolationCount) ?? 0)
-    + (asNumber(report.coordinateContractViolationCount) ?? 0)
-    + (asNumber(report.interactionContractViolationCount) ?? 0);
-}
-
 function artifactByLogicalName(report: JsonRecord): Map<string, JsonRecord> {
   const artifacts = Array.isArray(report.artifacts)
     ? report.artifacts.map(asRecord).filter((entry): entry is JsonRecord => Boolean(entry))
@@ -261,44 +245,6 @@ function countUiPackArtifactBytes(report: JsonRecord | null): number | null {
   return total;
 }
 
-function validateExportAbiReport(report: JsonRecord | null): string[] {
-  const blocked: string[] = [];
-  pushIf(!report, blocked, 'native UI export ABI report is missing or unreadable');
-  if (!report) return blocked;
-
-  pushIf(
-    asString(report.schemaVersion) !== NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
-    blocked,
-    'native UI export ABI report schema mismatch',
-  );
-  pushIf(asString(report.status) !== 'ok', blocked, 'native UI export ABI report status is not ok');
-  pushIf(
-    asString(report.rawReportSchemaVersion) !== NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION,
-    blocked,
-    'native UI export ABI raw report schema mismatch',
-  );
-  pushIf(asString(report.rawReportStatus) !== 'ok', blocked, 'native UI export ABI raw report status is not ok');
-  pushIf(report.missingReport === true, blocked, 'native UI export ABI report declares missing raw report');
-  pushIf(getPolicyLegacyFallback(report) !== 'forbidden', blocked, 'native UI export ABI report must forbid legacy fallback');
-  pushIf(asStringArray(report.schemaViolations).length > 0, blocked, 'native UI export ABI schema violations are present');
-  pushIf(asStringArray(report.pathViolations).length > 0, blocked, 'native UI export ABI path violations are present');
-  pushIf(asStringArray(report.contractViolations).length > 0, blocked, 'native UI export ABI contract violations are present');
-  pushIf((asNumber(report.layoutCount) ?? 0) <= 0, blocked, 'native UI export ABI layout count must be greater than zero');
-  pushIf((asNumber(report.slotCount) ?? 0) <= 0, blocked, 'native UI export ABI slot count must be greater than zero');
-  for (const key of [
-    'missingSurfaceCount',
-    'slotBoundsViolationCount',
-    'rectBoundsViolationCount',
-    'primitiveBoundsViolationCount',
-    'backgroundBoundsViolationCount',
-    'coordinateContractViolationCount',
-    'interactionContractViolationCount',
-  ]) {
-    pushIf((asNumber(report[key]) ?? 0) !== 0, blocked, `native UI export ABI ${key} must be zero`);
-  }
-  return blocked;
-}
-
 function validateUiPackAbiReport(report: JsonRecord | null): string[] {
   const blocked: string[] = [];
   pushIf(!report, blocked, 'native UI pack ABI report is missing or unreadable');
@@ -310,7 +256,11 @@ function validateUiPackAbiReport(report: JsonRecord | null): string[] {
     'native UI pack ABI report schema mismatch',
   );
   pushIf(asString(report.status) !== 'ok', blocked, 'native UI pack ABI report status is not ok');
-  pushIf(getPolicyLegacyFallback(report) !== 'forbidden', blocked, 'native UI pack ABI report must forbid legacy fallback');
+  pushIf(
+    asString(asRecord(report.policy)?.legacyFallback) !== NATIVE_UI_EXPORT_POLICY_LEGACY_FALLBACK,
+    blocked,
+    'native UI pack ABI report must forbid legacy fallback',
+  );
   pushIf(asStringArray(report.missingRequiredArtifacts).length > 0, blocked, 'native UI pack ABI missing required artifacts');
   pushIf(asStringArray(report.sectionViolations).length > 0, blocked, 'native UI pack ABI section violations are present');
 
@@ -345,7 +295,7 @@ function buildReportSummary(
   pushIf(!declared, baseBlocked, `${spec.displayName} is not declared by the runtime manifest`);
   pushIf(!artifact, baseBlocked, `${spec.displayName} artifact is missing`);
   const reportBlocked = spec.logicalName === 'nativeUiExportAbi'
-    ? validateExportAbiReport(report)
+    ? validateNativeUiExportAbiReport(report)
     : validateUiPackAbiReport(report);
   const blocked = Object.freeze([...baseBlocked, ...reportBlocked]);
   const status: NativeUiProofStatus = !artifact || !declared
@@ -379,7 +329,7 @@ function buildReportSummary(
       artifacts: Array.isArray(report?.artifacts) ? report.artifacts.length : null,
       artifactBytes: countUiPackArtifactBytes(report),
       violations: spec.logicalName === 'nativeUiExportAbi'
-        ? countExportAbiViolations(report)
+        ? countNativeUiExportAbiReportViolations(report)
         : asStringArray(report?.missingRequiredArtifacts).length + asStringArray(report?.sectionViolations).length,
     }),
   });
@@ -412,7 +362,7 @@ export function getNativeUiRuntimeProofSummary(
     schemaVersion: 'neonei/native-ui-runtime-proof/current',
     status,
     policy: Object.freeze({
-      legacyFallback: 'forbidden',
+      legacyFallback: NATIVE_UI_EXPORT_POLICY_LEGACY_FALLBACK,
       missingProof: 'fail-closed',
       invalidProof: 'fail-closed',
       reportPlane: 'debugfs',
