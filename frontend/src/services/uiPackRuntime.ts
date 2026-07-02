@@ -10,13 +10,11 @@ import {
 import type { NativeRuntimeManifest } from "../native-surface/NativeRuntimeManifest";
 import {
   collectNativeUiExportAbiReportViolations,
-  NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
   UI_BINDING_PACK_MAGIC,
   UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
   UI_BINDING_PACK_SCHEMA,
   UI_BINDING_PAYLOAD_VERSION,
   UI_BINDING_ROW_STRIDE_U32,
-  UI_PACK_ABI_VALIDATION_REPORT_PATH,
   UI_PACK_ABI_VALIDATION_SCHEMA_VERSION,
   UI_PRIMITIVE_ROW_STRIDE_U32,
   UI_RECT_ROW_STRIDE_U32,
@@ -32,6 +30,16 @@ import {
   UI_TEMPLATE_ROW_STRIDE_U32,
   UI_TEXT_ROW_STRIDE_U32,
 } from "./nativeUiPackAbi.ts";
+import {
+  createEmptyUiPackRuntimeSummary,
+  UI_PACK_RUNTIME_ENTRYPOINTS,
+  UI_PACK_RUNTIME_REPORT_BY_ID,
+  UI_PACK_RUNTIME_STATUS,
+  type UiPackRuntimeEntrypoints,
+  type UiPackRuntimeReportDescriptor,
+  type UiPackRuntimeStatus,
+  type UiPackRuntimeSummary,
+} from "./uiPackRuntimeAbi.ts";
 import {
   getManifestRuntimeFileBytes,
   normalizeRuntimePath,
@@ -137,21 +145,7 @@ export interface UiPackBinding {
   bound: boolean;
 }
 
-export interface UiPackRuntimeSummary {
-  templateCount: number;
-  bindingCount: number;
-  boundRecipeCount: number;
-  unboundRecipeCount: number;
-  stringCount: number;
-  slotCount: number;
-  textOverlayCount: number;
-  dynamicPrimitiveCount: number;
-  hotspotCount: number;
-  viewportCount: number;
-  assetCount: number;
-}
-
-export type UiPackRuntimeStatus = "ready" | "error";
+export type { UiPackRuntimeEntrypoints, UiPackRuntimeStatus, UiPackRuntimeSummary } from "./uiPackRuntimeAbi.ts";
 
 export interface UiPackRuntime {
   status: UiPackRuntimeStatus;
@@ -167,14 +161,6 @@ export interface UiPackRuntime {
 }
 
 const UI_PACK_REQUEST_CACHE = new Map<string, Promise<UiPackRuntime>>();
-
-type UiPackEntrypoints = {
-  templates: string;
-  bindings: string;
-  strings: string;
-  exportAbiReport: string;
-  abiReport: string;
-};
 
 type JsonRecord = Record<string, unknown>;
 
@@ -250,56 +236,37 @@ function parseNativeBackgroundJson(value: string, templateKey: string): JsonReco
   return record;
 }
 
-function resolveUiPackAbiReportPath(manifest: NativeRuntimeManifest): string {
+function resolveUiPackRuntimeReportPath(
+  manifest: NativeRuntimeManifest,
+  descriptor: UiPackRuntimeReportDescriptor,
+): string {
   const entrypoints = getNativeRuntimeEntrypointSource(manifest);
-  const explicitEntrypoint = runtimePathFromValue(
-    entrypoints.rustUiPackAbiValidationReport
-      ?? entrypoints.uiPackAbiValidationReport
-      ?? entrypoints.uiPackAbiReport,
-  );
-  if (explicitEntrypoint) return explicitEntrypoint;
+  for (const manifestKey of descriptor.manifestKeys) {
+    const explicitEntrypoint = runtimePathFromValue((entrypoints as JsonRecord)[manifestKey]);
+    if (explicitEntrypoint) return explicitEntrypoint;
+  }
 
   const fileRecord = runtimeManifestFileRecord(manifest.files);
-  const explicitFile = runtimePathFromValue(
-    fileRecord?.rustUiPackAbiValidationReport
-      ?? fileRecord?.uiPackAbiValidationReport
-      ?? fileRecord?.uiPackAbiReport,
-  );
-  if (explicitFile) return explicitFile;
+  for (const manifestKey of descriptor.manifestKeys) {
+    const explicitFile = runtimePathFromValue(fileRecord?.[manifestKey]);
+    if (explicitFile) return explicitFile;
+  }
 
-  if (runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, UI_PACK_ABI_VALIDATION_REPORT_PATH)) {
-    return UI_PACK_ABI_VALIDATION_REPORT_PATH;
+  if (runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, descriptor.requiredPath)) {
+    return descriptor.requiredPath;
   }
 
   throw new Error(
-    `native UI runtime manifest does not declare required ABI validation report: ${UI_PACK_ABI_VALIDATION_REPORT_PATH}`,
+    `native UI runtime manifest does not declare required ${descriptor.label}: ${descriptor.requiredPath}`,
   );
 }
 
+function resolveUiPackAbiReportPath(manifest: NativeRuntimeManifest): string {
+  return resolveUiPackRuntimeReportPath(manifest, UI_PACK_RUNTIME_REPORT_BY_ID.abiReport);
+}
+
 function resolveNativeUiExportAbiReportPath(manifest: NativeRuntimeManifest): string {
-  const entrypoints = getNativeRuntimeEntrypointSource(manifest);
-  const explicitEntrypoint = runtimePathFromValue(
-    entrypoints.rustNativeUiExportAbiValidationReport
-      ?? entrypoints.nativeUiExportAbiValidationReport
-      ?? entrypoints.nativeUiExportAbiReport,
-  );
-  if (explicitEntrypoint) return explicitEntrypoint;
-
-  const fileRecord = runtimeManifestFileRecord(manifest.files);
-  const explicitFile = runtimePathFromValue(
-    fileRecord?.rustNativeUiExportAbiValidationReport
-      ?? fileRecord?.nativeUiExportAbiValidationReport
-      ?? fileRecord?.nativeUiExportAbiReport,
-  );
-  if (explicitFile) return explicitFile;
-
-  if (runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH)) {
-    return NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH;
-  }
-
-  throw new Error(
-    `native UI runtime manifest does not declare required export ABI validation report: ${NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH}`,
-  );
+  return resolveUiPackRuntimeReportPath(manifest, UI_PACK_RUNTIME_REPORT_BY_ID.exportAbiReport);
 }
 
 function readU32(view: DataView, offset: number): number {
@@ -645,7 +612,7 @@ function parseUiBindings(payloadBuffer: ArrayBuffer, strings: string[]): UiPackB
   return bindings;
 }
 
-function parseUiPackManifest(manifest: NativeRuntimeManifest): UiPackEntrypoints {
+function parseUiPackManifest(manifest: NativeRuntimeManifest): UiPackRuntimeEntrypoints {
   const entrypoints = assertNativeUiRuntimeManifest(manifest);
   const exportAbiReport = resolveNativeUiExportAbiReportPath(manifest);
   const abiReport = resolveUiPackAbiReportPath(manifest);
@@ -656,9 +623,9 @@ function parseUiPackManifest(manifest: NativeRuntimeManifest): UiPackEntrypoints
     throw new Error(`native UI ABI validation report is not declared by runtime manifest files: ${abiReport}`);
   }
   return {
-    templates: asString(entrypoints.uiTemplates),
-    bindings: asString(entrypoints.uiBindings),
-    strings: asString(entrypoints.uiStrings),
+    templates: asString(entrypoints[UI_PACK_RUNTIME_ENTRYPOINTS.templates]),
+    bindings: asString(entrypoints[UI_PACK_RUNTIME_ENTRYPOINTS.bindings]),
+    strings: asString(entrypoints[UI_PACK_RUNTIME_ENTRYPOINTS.strings]),
     exportAbiReport,
     abiReport,
   };
@@ -694,7 +661,7 @@ function asFiniteNumber(value: unknown): number | null {
   return Number.isFinite(number) && number >= 0 ? number : null;
 }
 
-function buildUiPackArtifactContracts(entrypoints: UiPackEntrypoints): UiPackArtifactContract[] {
+function buildUiPackArtifactContracts(entrypoints: UiPackRuntimeEntrypoints): UiPackArtifactContract[] {
   return [
     {
       logicalName: "rustUiTemplatesBin",
@@ -723,7 +690,7 @@ function buildUiPackArtifactContracts(entrypoints: UiPackEntrypoints): UiPackArt
 function assertUiPackAbiValidationReport(
   report: JsonRecord,
   manifest: NativeRuntimeManifest,
-  entrypoints: UiPackEntrypoints,
+  entrypoints: UiPackRuntimeEntrypoints,
 ): void {
   const schemaVersion = asString(report.schemaVersion);
   if (schemaVersion !== UI_PACK_ABI_VALIDATION_SCHEMA_VERSION) {
@@ -838,7 +805,7 @@ async function loadUiPackRuntimeInternal(normalizedManifestUrl: string): Promise
     if (binding.bound) boundRecipeCount += 1;
   }
   return {
-    status: "ready",
+    status: UI_PACK_RUNTIME_STATUS.ready,
     manifestUrl: normalizedManifestUrl,
     templates,
     bindings,
@@ -864,7 +831,7 @@ async function loadUiPackRuntimeInternal(normalizedManifestUrl: string): Promise
 
 function createErrorRuntime(manifestUrl: string, error: unknown): UiPackRuntime {
   return {
-    status: "error",
+    status: UI_PACK_RUNTIME_STATUS.error,
     manifestUrl,
     templates: [],
     bindings: [],
@@ -872,19 +839,7 @@ function createErrorRuntime(manifestUrl: string, error: unknown): UiPackRuntime 
     templatesByKey: new Map(),
     templatesByFamilyKey: new Map(),
     bindingsByRecipeId: new Map(),
-    summary: {
-      templateCount: 0,
-      bindingCount: 0,
-      boundRecipeCount: 0,
-      unboundRecipeCount: 0,
-      stringCount: 0,
-      slotCount: 0,
-      textOverlayCount: 0,
-      dynamicPrimitiveCount: 0,
-      hotspotCount: 0,
-      viewportCount: 0,
-      assetCount: 0,
-    },
+    summary: createEmptyUiPackRuntimeSummary(),
     error: error instanceof Error ? error.message : String(error),
   };
 }

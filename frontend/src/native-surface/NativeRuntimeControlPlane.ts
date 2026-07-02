@@ -1,6 +1,11 @@
 import type { NativeSurfaceMetrics } from "./contracts";
+import {
+  NATIVE_RUNTIME_CONTROL_ERRORS,
+  NATIVE_RUNTIME_CONTROL_STATUS,
+  type NativeRuntimeControlStatus,
+} from "./NativeRuntimeControlAbi.ts";
 
-export type NativeRuntimeControlStatus = "idle" | "loading" | "ready" | "error";
+export type { NativeRuntimeControlStatus } from "./NativeRuntimeControlAbi.ts";
 
 export interface NativeRuntimeControlState {
   readonly revision: number;
@@ -21,7 +26,7 @@ function nextNativeRuntimeRevision(state: NativeRuntimeControlState): number {
 export function createNativeRuntimeControlState(): NativeRuntimeControlState {
   return freezeNativeRuntimeControlState({
     revision: 0,
-    status: "idle",
+    status: NATIVE_RUNTIME_CONTROL_STATUS.idle,
     ready: false,
     packCount: 0,
     error: null,
@@ -31,7 +36,7 @@ export function createNativeRuntimeControlState(): NativeRuntimeControlState {
 export function beginNativeRuntimeLoad(state: NativeRuntimeControlState): NativeRuntimeControlState {
   return freezeNativeRuntimeControlState({
     revision: nextNativeRuntimeRevision(state),
-    status: "loading",
+    status: NATIVE_RUNTIME_CONTROL_STATUS.loading,
     ready: false,
     packCount: 0,
     error: null,
@@ -47,14 +52,14 @@ export function markNativeRuntimeReady(
   const ready = Boolean(accepted) && normalizedPackCount > 0;
   return freezeNativeRuntimeControlState({
     revision: nextNativeRuntimeRevision(state),
-    status: ready ? "ready" : "error",
+    status: ready ? NATIVE_RUNTIME_CONTROL_STATUS.ready : NATIVE_RUNTIME_CONTROL_STATUS.error,
     ready,
     packCount: normalizedPackCount,
     error: ready
       ? null
       : accepted
-        ? "Native runtime did not provide any usable packs."
-        : "Native runtime worker rejected runtime packs.",
+        ? NATIVE_RUNTIME_CONTROL_ERRORS.emptyAcceptedPackSet
+        : NATIVE_RUNTIME_CONTROL_ERRORS.rejectedPackSet,
   });
 }
 
@@ -64,7 +69,7 @@ export function markNativeRuntimeError(
 ): NativeRuntimeControlState {
   return freezeNativeRuntimeControlState({
     revision: nextNativeRuntimeRevision(state),
-    status: "error",
+    status: NATIVE_RUNTIME_CONTROL_STATUS.error,
     ready: false,
     packCount: 0,
     error: error instanceof Error ? error.message : String(error),

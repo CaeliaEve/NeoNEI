@@ -3,6 +3,7 @@ import {
   NATIVE_RUNTIME_PACK_MAGIC,
   NATIVE_RUNTIME_PACK_SCHEMAS,
   NATIVE_RUNTIME_PACK_VERSION,
+  NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS,
   type NativeRuntimeCapability,
   type NativeRuntimePackName,
   type NativeRuntimePackSchema,
@@ -14,28 +15,23 @@ export {
   NATIVE_RUNTIME_PACK_MAGIC,
   NATIVE_RUNTIME_PACK_SCHEMAS,
   NATIVE_RUNTIME_PACK_VERSION,
+  NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS,
   type NativeRuntimeCapability,
   type NativeRuntimePackName,
   type NativeRuntimePackSchema,
   type NativeRuntimePayloadEncoding,
 } from "./NativeRuntimeAbi.ts";
 
-export interface NativeRuntimeManifestFiles {
-  browser?: string;
-  groups?: string;
-  search?: string;
-  recipes?: string;
-  textures?: string;
-  animations?: string;
-  stringsZhCn?: string;
-  uiTemplates?: string;
-  uiBindings?: string;
-  uiStrings?: string;
-  integrity?: string;
-  sizeReport?: string;
-  missingDataReport?: string;
-  [key: string]: string | undefined;
-}
+export type NativeUiRuntimeEntrypointName = typeof NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS[number];
+export type NativeRuntimeManifestEntrypointName = NativeRuntimePackName | NativeUiRuntimeEntrypointName;
+
+export type NativeRuntimeManifestFiles =
+  Partial<Record<NativeRuntimeManifestEntrypointName, string>> & {
+    integrity?: string;
+    sizeReport?: string;
+    missingDataReport?: string;
+    [key: string]: string | undefined;
+  };
 
 export interface NativeRuntimeManifest {
   schema?: typeof NATIVE_RUNTIME_MANIFEST_SCHEMA;

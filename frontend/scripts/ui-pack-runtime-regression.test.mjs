@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { clearUiPackRuntimeCache, loadUiPackRuntime } from '../src/services/uiPackRuntime.ts';
 import {
   NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
@@ -24,6 +25,19 @@ import {
   UI_TEMPLATE_ROW_STRIDE_U32,
   UI_TEXT_ROW_STRIDE_U32,
 } from '../src/services/nativeUiPackAbi.ts';
+import {
+  UI_PACK_RUNTIME_ENTRYPOINTS,
+  UI_PACK_RUNTIME_MODULE,
+  UI_PACK_RUNTIME_REPORT_BY_ID,
+  UI_PACK_RUNTIME_REPORT_DESCRIPTORS,
+  UI_PACK_RUNTIME_STATUS,
+  UI_PACK_RUNTIME_STATUS_DESCRIPTORS,
+  createEmptyUiPackRuntimeSummary,
+} from '../src/services/uiPackRuntimeAbi.ts';
+
+function readSource(relativePath) {
+  return readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8').replace(/\r\n/g, '\n');
+}
 
 function pushU32(bytes, value) {
   const buffer = new ArrayBuffer(4);
@@ -395,7 +409,7 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
   };
   try {
     const runtime = await loadUiPackRuntime('/api/runtime/current/manifest');
-    assert.equal(runtime.status, 'ready');
+    assert.equal(runtime.status, UI_PACK_RUNTIME_STATUS.ready);
     assert.equal(runtime.summary.templateCount, 1);
     assert.equal(runtime.summary.bindingCount, 1);
     assert.equal(runtime.summary.boundRecipeCount, 1);
@@ -513,7 +527,7 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
   };
   try {
     const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=blocked-abi');
-    assert.equal(runtime.status, 'error');
+    assert.equal(runtime.status, UI_PACK_RUNTIME_STATUS.error);
     assert.match(runtime.error ?? '', /ABI validation report is not ok: blocked/);
     assert.equal(runtime.summary.templateCount, 0);
   } finally {
@@ -577,7 +591,7 @@ test('loadUiPackRuntime fails closed before pack fetch when native UI export ABI
   };
   try {
     const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=blocked-export-abi');
-    assert.equal(runtime.status, 'error');
+    assert.equal(runtime.status, UI_PACK_RUNTIME_STATUS.error);
     assert.match(runtime.error ?? '', /export ABI validation report is not ok: blocked/);
     assert.equal(runtime.summary.templateCount, 0);
   } finally {
@@ -639,7 +653,7 @@ test('loadUiPackRuntime fails closed when native UI export primitive bounds coun
   };
   try {
     const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=primitive-bounds-export-abi');
-    assert.equal(runtime.status, 'error');
+    assert.equal(runtime.status, UI_PACK_RUNTIME_STATUS.error);
     assert.match(runtime.error ?? '', /primitiveBoundsViolationCount must be zero/);
     assert.equal(runtime.summary.templateCount, 0);
   } finally {
@@ -706,7 +720,7 @@ test('loadUiPackRuntime rejects ABI reports that do not match manifest entrypoin
   };
   try {
     const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=abi-path-mismatch');
-    assert.equal(runtime.status, 'error');
+    assert.equal(runtime.status, UI_PACK_RUNTIME_STATUS.error);
     assert.match(runtime.error ?? '', /artifact path mismatch for rustUiTemplatesBin/);
     assert.equal(runtime.summary.templateCount, 0);
   } finally {
@@ -736,7 +750,7 @@ test('loadUiPackRuntime fails explicitly when native UI runtime capabilities are
   };
   try {
     const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=missing-capability');
-    assert.equal(runtime.status, 'error');
+    assert.equal(runtime.status, UI_PACK_RUNTIME_STATUS.error);
     assert.match(runtime.error ?? '', /missing required capabilities: recipes\.native-ui-layout, recipes\.ui-pack, native-render\.webgl2/);
     assert.equal(runtime.summary.templateCount, 0);
   } finally {
@@ -769,11 +783,71 @@ test('loadUiPackRuntime fails explicitly when native UI runtime entrypoints are 
   };
   try {
     const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=missing-entrypoint');
-    assert.equal(runtime.status, 'error');
+    assert.equal(runtime.status, UI_PACK_RUNTIME_STATUS.error);
     assert.match(runtime.error ?? '', /missing required entrypoints: uiBindings/);
     assert.equal(runtime.summary.bindingCount, 0);
   } finally {
     globalThis.fetch = originalFetch;
     clearUiPackRuntimeCache();
   }
+});
+
+test('UI pack runtime ABI catalog owns statuses, entrypoints, and report paths', () => {
+  assert.deepEqual(
+    UI_PACK_RUNTIME_STATUS_DESCRIPTORS.map((descriptor) => descriptor.status),
+    [UI_PACK_RUNTIME_STATUS.ready, UI_PACK_RUNTIME_STATUS.error],
+  );
+  assert.deepEqual(UI_PACK_RUNTIME_ENTRYPOINTS, {
+    templates: 'uiTemplates',
+    bindings: 'uiBindings',
+    strings: 'uiStrings',
+  });
+  assert.equal(UI_PACK_RUNTIME_MODULE.schema, 'neonei/ui-pack-runtime/current');
+  assert.equal(UI_PACK_RUNTIME_MODULE.statusCount, 2);
+  assert.equal(UI_PACK_RUNTIME_REPORT_DESCRIPTORS.length, 2);
+  assert.equal(
+    UI_PACK_RUNTIME_REPORT_BY_ID.exportAbiReport.requiredPath,
+    'rust/native-ui-export-abi-validation-report.json',
+  );
+  assert.deepEqual([...UI_PACK_RUNTIME_REPORT_BY_ID.exportAbiReport.manifestKeys], [
+    'rustNativeUiExportAbiValidationReport',
+  ]);
+  assert.equal(
+    UI_PACK_RUNTIME_REPORT_BY_ID.abiReport.requiredPath,
+    'rust/ui-pack-abi-validation-report.json',
+  );
+  assert.deepEqual([...UI_PACK_RUNTIME_REPORT_BY_ID.abiReport.manifestKeys], [
+    'rustUiPackAbiValidationReport',
+  ]);
+  assert.deepEqual(createEmptyUiPackRuntimeSummary(), {
+    templateCount: 0,
+    bindingCount: 0,
+    boundRecipeCount: 0,
+    unboundRecipeCount: 0,
+    stringCount: 0,
+    slotCount: 0,
+    textOverlayCount: 0,
+    dynamicPrimitiveCount: 0,
+    hotspotCount: 0,
+    viewportCount: 0,
+    assetCount: 0,
+  });
+});
+
+test('UI pack loader consumes catalog descriptors instead of re-owning ABI literals', () => {
+  const runtimeSource = readSource('src/services/uiPackRuntime.ts');
+
+  assert.match(runtimeSource, /UI_PACK_RUNTIME_STATUS/);
+  assert.match(runtimeSource, /UI_PACK_RUNTIME_ENTRYPOINTS/);
+  assert.match(runtimeSource, /UI_PACK_RUNTIME_REPORT_BY_ID/);
+  assert.match(runtimeSource, /createEmptyUiPackRuntimeSummary/);
+
+  assert.doesNotMatch(runtimeSource, /status: "ready"/);
+  assert.doesNotMatch(runtimeSource, /status: "error"/);
+  assert.doesNotMatch(runtimeSource, /rustNativeUiExportAbiValidationReport/);
+  assert.doesNotMatch(runtimeSource, /nativeUiExportAbiValidationReport/);
+  assert.doesNotMatch(runtimeSource, /nativeUiExportAbiReport/);
+  assert.doesNotMatch(runtimeSource, /rustUiPackAbiValidationReport/);
+  assert.doesNotMatch(runtimeSource, /uiPackAbiValidationReport/);
+  assert.doesNotMatch(runtimeSource, /uiPackAbiReport/);
 });
