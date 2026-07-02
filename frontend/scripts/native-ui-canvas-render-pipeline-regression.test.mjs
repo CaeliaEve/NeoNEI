@@ -146,11 +146,20 @@ test('native UI canvas render pipeline owns rebuild sequencing and GPU resource 
         { kind: 'progress-bar', x: 2, y: 3, width: 20, height: 6, fill: 0.5, trackColor: 'track', fillColor: 'fill', borderColor: 'border' },
       ],
       slotCells: [
-        { key: 'item-input:0:0', role: 'item-input', x: 45, y: 24, entry: { atlasLookupId: 'minecraft:iron_ingot' } },
+        {
+          key: 'item-input:0:0',
+          role: 'item-input',
+          x: 45,
+          y: 24,
+          width: 20,
+          height: 18,
+          iconX: 47,
+          iconY: 25,
+          iconWidth: 16,
+          iconHeight: 16,
+          entry: { atlasLookupId: 'minecraft:iron_ingot' },
+        },
       ],
-      slotSize: 18,
-      iconInset: 1,
-      iconSize: 16,
     });
 
     assert.equal(flushed, true);
@@ -172,7 +181,7 @@ test('native UI canvas render pipeline owns rebuild sequencing and GPU resource 
       'native-dynamic-solid:border',
       'items.png',
     ]);
-    assert.ok(renderer.textures.some((entry) => entry.key === 'recipe-slot:item-input:2'));
+    assert.ok(renderer.textures.some((entry) => entry.key === 'recipe-slot:item-input:2:20x18'));
     assert.ok(renderer.textures.some((entry) => entry.key === 'background'));
     assert.ok(renderer.textures.some((entry) => entry.key === 'items.png'));
     assert.equal(states.at(-1).renderReady, true);

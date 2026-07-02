@@ -1,5 +1,5 @@
 ﻿import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend.ts";
-import type { NativeUiDynamicPrimitive } from "./nativeUiRuntimeRegistry.ts";
+import type { NativeUiDynamicPrimitive, NativeUiSlotCell } from "./nativeUiRuntimeRegistry.ts";
 import {
   nativeUiDynamicPrimitiveColors,
   nativeUiSolidTextureKey,
@@ -17,8 +17,8 @@ export function nativeUiTextureKindForRole(role: string): NativeUiSlotTextureKin
   return "item-input";
 }
 
-export function nativeUiSlotTextureKey(role: string, dpr: number): string {
-  return `recipe-slot:${nativeUiTextureKindForRole(role)}:${dpr}`;
+export function nativeUiSlotTextureKey(role: string, dpr: number, width: number, height: number): string {
+  return `recipe-slot:${nativeUiTextureKindForRole(role)}:${dpr}:${Math.max(1, Math.round(width))}x${Math.max(1, Math.round(height))}`;
 }
 
 function normalizedDpr(value: number): number {
@@ -46,9 +46,16 @@ function drawRoundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w:
   ctx.closePath();
 }
 
-export function createNativeUiSlotTexture(kind: NativeUiSlotTextureKind, dprValue: number, slotSize = 18): HTMLCanvasElement {
+export function createNativeUiSlotTexture(
+  kind: NativeUiSlotTextureKind,
+  dprValue: number,
+  slotWidth: number,
+  slotHeight: number,
+): HTMLCanvasElement {
   const dpr = normalizedDpr(dprValue);
-  const canvas = createCanvas(slotSize * dpr, slotSize * dpr);
+  const width = Math.max(1, Math.round(slotWidth));
+  const height = Math.max(1, Math.round(slotHeight));
+  const canvas = createCanvas(width * dpr, height * dpr);
   const ctx = canvas.getContext("2d");
   if (!ctx) return canvas;
   ctx.scale(dpr, dpr);
@@ -60,10 +67,10 @@ export function createNativeUiSlotTexture(kind: NativeUiSlotTextureKind, dprValu
   const fill = kind.includes("fluid")
     ? "rgba(10, 25, 38, 0.92)"
     : "rgba(13, 18, 25, 0.94)";
-  drawRoundedRect(ctx, 1, 1, slotSize - 2, slotSize - 2, 4);
+  drawRoundedRect(ctx, 1, 1, width - 2, height - 2, Math.min(4, width / 2, height / 2));
   ctx.fillStyle = fill;
   ctx.fill();
-  const gradient = ctx.createLinearGradient(0, 0, slotSize, slotSize);
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
   gradient.addColorStop(0, "rgba(255, 255, 255, 0.09)");
   gradient.addColorStop(0.52, "rgba(255, 255, 255, 0.015)");
   gradient.addColorStop(1, "rgba(0, 0, 0, 0.26)");
@@ -74,12 +81,12 @@ export function createNativeUiSlotTexture(kind: NativeUiSlotTextureKind, dprValu
   ctx.stroke();
   if (kind.includes("fluid")) {
     ctx.fillStyle = "rgba(90, 203, 255, 0.18)";
-    drawRoundedRect(ctx, 4, 5, 3, slotSize - 10, 1.5);
+    drawRoundedRect(ctx, Math.min(4, width - 3), 5, 3, Math.max(1, height - 10), 1.5);
     ctx.fill();
   }
   if (kind.includes("output")) {
     ctx.fillStyle = "rgba(248, 181, 92, 0.16)";
-    drawRoundedRect(ctx, slotSize - 7, 5, 3, slotSize - 10, 1.5);
+    drawRoundedRect(ctx, Math.max(1, width - 7), 5, 3, Math.max(1, height - 10), 1.5);
     ctx.fill();
   }
   return canvas;
@@ -151,11 +158,21 @@ export class NativeUiTextureRegistry {
     return false;
   }
 
-  registerSlotTextures(renderer: NativeRendererBackend, dprValue: number, slotSize = 18): void {
+  registerSlotTextures<TEntry>(
+    renderer: NativeRendererBackend,
+    dprValue: number,
+    slotCells: readonly Pick<NativeUiSlotCell<TEntry>, "role" | "width" | "height">[],
+  ): void {
     const dpr = normalizedDpr(dprValue);
-    const kinds: NativeUiSlotTextureKind[] = ["item-input", "item-output", "fluid-input", "fluid-output"];
-    for (const kind of kinds) {
-      this.register(renderer, `recipe-slot:${kind}:${dpr}`, createNativeUiSlotTexture(kind, dpr, slotSize));
+    const slotsByKey = new Map<string, { kind: NativeUiSlotTextureKind; width: number; height: number }>();
+    for (const cell of slotCells) {
+      const width = Math.max(1, Number(cell.width));
+      const height = Math.max(1, Number(cell.height));
+      const kind = nativeUiTextureKindForRole(cell.role);
+      slotsByKey.set(nativeUiSlotTextureKey(cell.role, dpr, width, height), { kind, width, height });
+    }
+    for (const [key, slot] of slotsByKey) {
+      this.register(renderer, key, createNativeUiSlotTexture(slot.kind, dpr, slot.width, slot.height));
     }
   }
 

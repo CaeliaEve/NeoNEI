@@ -6,6 +6,7 @@
   UiPackTemplate,
   UiPackTextOverlay,
 } from "./uiPackRuntime.ts";
+import { resolveNativeUiSlotGeometry } from "./nativeUiGeometryAbi.ts";
 
 export type NativeUiSlot = UiPackSlot;
 export type NativeUiTextOverlay = UiPackTextOverlay;
@@ -71,6 +72,12 @@ export interface NativeUiSlotCell<TEntry> {
   role: string;
   x: number;
   y: number;
+  width: number;
+  height: number;
+  iconX: number;
+  iconY: number;
+  iconWidth: number;
+  iconHeight: number;
   entry: TEntry | null;
 }
 
@@ -173,17 +180,20 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
 
 export function buildNativeUiSlotCells<TEntry>(options: Readonly<{
   slots: readonly NativeUiSlot[];
-  slotSize: number;
   resolveRoleEntries: (role: string) => readonly TEntry[];
 }>): NativeUiSlotCell<TEntry>[] {
-  const slotSize = positiveDimension(options.slotSize, 18);
   const cells: NativeUiSlotCell<TEntry>[] = [];
   options.slots.forEach((slot, groupIndex) => {
-    const role = `${slot.role ?? "item-input"}`;
-    const columns = Math.max(1, Number(slot.columns ?? 1) || 1);
-    const rows = Math.max(1, Number(slot.rows ?? 1) || 1);
-    const x0 = Math.max(0, Number(slot.x ?? 0) || 0);
-    const y0 = Math.max(0, Number(slot.y ?? 0) || 0);
+    const role = `${slot.role ?? ""}`.trim();
+    if (!role) {
+      throw new Error(`Native UI slot ${groupIndex} missing required role`);
+    }
+    const columns = Math.trunc(Number(slot.columns));
+    const rows = Math.trunc(Number(slot.rows));
+    if (!Number.isFinite(columns) || columns <= 0 || !Number.isFinite(rows) || rows <= 0) {
+      throw new Error(`Native UI slot ${role}:${groupIndex} has invalid grid dimensions`);
+    }
+    const geometry = resolveNativeUiSlotGeometry(slot, `Native UI slot ${role}:${groupIndex}`);
     const entries = options.resolveRoleEntries(role);
     const rawStart = Math.max(0, Number(slot.startIndex ?? 0) || 0);
     const start = rawStart >= entries.length ? 0 : rawStart;
@@ -194,8 +204,14 @@ export function buildNativeUiSlotCells<TEntry>(options: Readonly<{
       cells.push({
         key: `${role}:${groupIndex}:${index}`,
         role,
-        x: x0 + col * slotSize,
-        y: y0 + row * slotSize,
+        x: geometry.x + col * geometry.pitchX,
+        y: geometry.y + row * geometry.pitchY,
+        width: geometry.width,
+        height: geometry.height,
+        iconX: geometry.iconX + col * geometry.pitchX,
+        iconY: geometry.iconY + row * geometry.pitchY,
+        iconWidth: geometry.iconWidth,
+        iconHeight: geometry.iconHeight,
         entry: entries[start + index] ?? null,
       });
     }

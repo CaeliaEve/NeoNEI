@@ -90,14 +90,14 @@ test('native UI texture registry classifies slot roles and keys deterministicall
   assert.equal(nativeUiTextureKindForRole('fluid-input'), 'fluid-input');
   assert.equal(nativeUiTextureKindForRole('fluid-output'), 'fluid-output');
   assert.equal(nativeUiTextureKindForRole('steam-fluid-output'), 'fluid-output');
-  assert.equal(nativeUiSlotTextureKey('fluid-output', 2), 'recipe-slot:fluid-output:2');
+  assert.equal(nativeUiSlotTextureKey('fluid-output', 2, 20, 18), 'recipe-slot:fluid-output:2:20x18');
 });
 
 test('native UI texture registry creates slot, solid, and GT background canvases', () => {
   const dom = installCanvasDocument();
   try {
-    const slot = createNativeUiSlotTexture('fluid-output', 2, 18);
-    assert.equal(slot.width, 36);
+    const slot = createNativeUiSlotTexture('fluid-output', 2, 20, 18);
+    assert.equal(slot.width, 40);
     assert.equal(slot.height, 36);
     assert.deepEqual(slot.operations[0], ['scale', 2, 2]);
     assert.ok(slot.operations.some((op) => op[0] === 'createLinearGradient'));
@@ -132,8 +132,15 @@ test('native UI texture registry deduplicates renderer registration', () => {
     assert.equal(registry.register(renderer, 'reject', texture), false);
     assert.equal(registry.has('reject'), false);
 
-    registry.registerSlotTextures(renderer, 2, 18);
-    assert.equal(renderer.calls.filter((call) => call.key.startsWith('recipe-slot:')).length, 4);
+    registry.registerSlotTextures(renderer, 2, [
+      { role: 'item-input', width: 18, height: 18 },
+      { role: 'item-input', width: 18, height: 18 },
+      { role: 'fluid-output', width: 20, height: 18 },
+    ]);
+    assert.deepEqual(renderer.calls.filter((call) => call.key.startsWith('recipe-slot:')).map((call) => call.key), [
+      'recipe-slot:item-input:2:18x18',
+      'recipe-slot:fluid-output:2:20x18',
+    ]);
 
     registry.registerDynamicPrimitiveTextures(renderer, [{ kind: 'progress-bar', trackColor: 'track', fillColor: 'fill', borderColor: 'border' }]);
     assert.deepEqual(renderer.calls.slice(-3).map((call) => call.key), [

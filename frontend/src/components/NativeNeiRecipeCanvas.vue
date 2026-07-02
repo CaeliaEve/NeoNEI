@@ -56,10 +56,6 @@ const emit = defineEmits<{
   (e: 'item-click', itemId: string): void;
 }>();
 
-const NATIVE_SLOT_SIZE = 18;
-const NATIVE_ICON_SIZE = 16;
-const NATIVE_ICON_INSET = Math.floor((NATIVE_SLOT_SIZE - NATIVE_ICON_SIZE) / 2);
-
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const shellRef = ref<HTMLElement | null>(null);
 const renderError = ref<string | null>(null);
@@ -157,7 +153,6 @@ const recipeRenderables = computed(() => projectNativeUiRecipeRenderables(props.
 
 const slotCells = computed<CanvasCell[]>(() => buildNativeUiSlotCells({
   slots: slots.value,
-  slotSize: NATIVE_SLOT_SIZE,
   resolveRoleEntries: (role) => resolveNativeUiRenderablesForRole(role, recipeRenderables.value),
 }));
 const hitCells = computed<NativeUiHitCell<CanvasRenderable>[]>(() => projectNativeUiHitCells(slotCells.value));
@@ -230,9 +225,6 @@ async function rebuildRenderer() {
     layoutHeight: layoutHeight.value,
     dynamicPrimitives: dynamicPrimitives.value,
     slotCells: slotCells.value,
-    slotSize: NATIVE_SLOT_SIZE,
-    iconInset: NATIVE_ICON_INSET,
-    iconSize: NATIVE_ICON_SIZE,
   });
 }
 
@@ -328,7 +320,7 @@ onBeforeUnmount(() => {
               v-for="cell in hitCells"
               :key="cell.key"
               class="native-nei-hit-cell"
-              :style="nativeUiSlotCellStyle(cell, NATIVE_SLOT_SIZE)"
+              :style="nativeUiSlotCellStyle(cell)"
             >
               <RecipeItemTooltip
                 :item-id="cell.entry.itemId"

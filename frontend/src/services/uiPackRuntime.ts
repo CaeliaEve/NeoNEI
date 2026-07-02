@@ -23,6 +23,12 @@ export interface UiPackSlot {
   rows: number;
   x: number;
   y: number;
+  coordinateSpace: string;
+  anchor: string;
+  slotWidth: number;
+  slotHeight: number;
+  pitchX: number;
+  pitchY: number;
 }
 
 export interface UiPackTextOverlay {
@@ -124,11 +130,11 @@ const UI_STRING_PACK_MAGIC = "NEIUIS1\0";
 const UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIT1_NUL";
 const UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIB1_NUL";
 const UI_STRING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIS1_NUL";
-const UI_TEMPLATE_PAYLOAD_VERSION = 3;
+const UI_TEMPLATE_PAYLOAD_VERSION = 4;
 const UI_BINDING_PAYLOAD_VERSION = 1;
 const UI_STRING_PAYLOAD_VERSION = 1;
 const UI_TEMPLATE_ROW_STRIDE_U32 = 19;
-const UI_SLOT_ROW_STRIDE_U32 = 6;
+const UI_SLOT_ROW_STRIDE_U32 = 12;
 const UI_TEXT_ROW_STRIDE_U32 = 5;
 const UI_RECT_ROW_STRIDE_U32 = 12;
 const UI_BINDING_ROW_STRIDE_U32 = 11;
@@ -433,6 +439,12 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
       rows: readU32(view, rowOffset + 12),
       x: readI32(view, rowOffset + 16),
       y: readI32(view, rowOffset + 20),
+      coordinateSpace: resolveString(strings, readU32(view, rowOffset + 24)),
+      anchor: resolveString(strings, readU32(view, rowOffset + 28)),
+      slotWidth: readU32(view, rowOffset + 32),
+      slotHeight: readU32(view, rowOffset + 36),
+      pitchX: readU32(view, rowOffset + 40),
+      pitchY: readU32(view, rowOffset + 44),
     });
   }
   cursor += slotBytes;

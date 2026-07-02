@@ -19,10 +19,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
 
 test('native UI interaction projection builds clamped design-space styles', () => {
-  assert.deepEqual(nativeUiSlotCellStyle({ x: 4, y: 8 }, 18), {
+  assert.deepEqual(nativeUiSlotCellStyle({ x: 4, y: 8, width: 20, height: 18 }), {
     left: '4px',
     top: '8px',
-    width: '18px',
+    width: '20px',
     height: '18px',
   });
 
@@ -62,13 +62,14 @@ test('native UI interaction projection owns hotspot labels and actions', () => {
 
 test('native UI interaction projection filters slot hit cells and labels entries', () => {
   const cells = projectNativeUiHitCells([
-    { key: 'input:0', role: 'item-input', x: 1, y: 2, entry: { itemId: 'minecraft:iron_ore', localizedName: 'Iron Ore', count: 2 } },
-    { key: 'input:1', role: 'item-input', x: 19, y: 2, entry: null },
-    { key: 'output:0', role: 'item-output', x: 80, y: 2, entry: { itemId: 'minecraft:iron_ingot', localizedName: '', count: 1 } },
+    { key: 'input:0', role: 'item-input', x: 1, y: 2, width: 20, height: 18, iconX: 3, iconY: 3, iconWidth: 16, iconHeight: 16, entry: { itemId: 'minecraft:iron_ore', localizedName: 'Iron Ore', count: 2 } },
+    { key: 'input:1', role: 'item-input', x: 19, y: 2, width: 20, height: 18, iconX: 21, iconY: 3, iconWidth: 16, iconHeight: 16, entry: null },
+    { key: 'output:0', role: 'item-output', x: 80, y: 2, width: 18, height: 18, iconX: 81, iconY: 3, iconWidth: 16, iconHeight: 16, entry: { itemId: 'minecraft:iron_ingot', localizedName: '', count: 1 } },
   ]);
 
   assert.deepEqual(cells.map((cell) => cell.key), ['input:0', 'output:0']);
   assert.equal(cells[0].entry.itemId, 'minecraft:iron_ore');
+  assert.equal(cells[0].width, 20);
   assert.equal(nativeUiHitCellEntryLabel(cells[0].entry), 'Iron Ore x2');
   assert.equal(nativeUiHitCellEntryLabel(cells[1].entry), 'minecraft:iron_ingot');
 });

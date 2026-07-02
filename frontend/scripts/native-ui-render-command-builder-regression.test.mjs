@@ -116,31 +116,40 @@ test('native UI render command builder emits dynamic primitive track fill and bo
 });
 
 test('native UI render command builder assembles background, slot, and atlas sprites', () => {
-  const slotCells = [{ key: 'item-input:0:0', role: 'item-input', x: 45, y: 24, entry: { atlasLookupId: 'minecraft:iron_ingot' } }];
+  const slotCells = [{
+    key: 'item-input:0:0',
+    role: 'item-input',
+    x: 45,
+    y: 24,
+    width: 20,
+    height: 18,
+    iconX: 47,
+    iconY: 25,
+    iconWidth: 16,
+    iconHeight: 16,
+    entry: { atlasLookupId: 'minecraft:iron_ingot' },
+  }];
   const baseOptions = {
     dpr: 2,
     nowMs: 1000,
     background: null,
     dynamicPrimitives: [],
     slotCells,
-    slotSize: 18,
-    iconInset: 1,
-    iconSize: 16,
-    slotTextureKey: (role) => `slot:${role}`,
+    slotTextureKey: (cell) => `slot:${cell.role}:${cell.width}x${cell.height}`,
     resolveAtlasSource: () => ({ atlasFile: 'items.png', x: 4, y: 8, width: 16, height: 16 }),
   };
 
   const withoutBackground = buildNativeUiSpriteCommands(baseOptions);
   assert.equal(withoutBackground.length, 2);
   assert.deepEqual(withoutBackground[0], {
-    textureKey: 'slot:item-input',
+    textureKey: 'slot:item-input:20x18',
     sourceX: 0,
     sourceY: 0,
-    sourceWidth: 36,
+    sourceWidth: 40,
     sourceHeight: 36,
     destX: 90,
     destY: 48,
-    destWidth: 36,
+    destWidth: 40,
     destHeight: 36,
   });
   assert.deepEqual(withoutBackground[1], {
@@ -149,7 +158,7 @@ test('native UI render command builder assembles background, slot, and atlas spr
     sourceY: 8,
     sourceWidth: 16,
     sourceHeight: 16,
-    destX: 92,
+    destX: 94,
     destY: 50,
     destWidth: 32,
     destHeight: 32,

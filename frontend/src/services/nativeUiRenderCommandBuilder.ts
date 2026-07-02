@@ -32,10 +32,7 @@ export interface NativeUiSpriteCommandBuildOptions<TEntry> {
   background: NativeUiPreparedBackgroundSource | null;
   dynamicPrimitives: readonly NativeUiDynamicPrimitive[];
   slotCells: readonly NativeUiSlotCell<TEntry>[];
-  slotSize: number;
-  iconInset: number;
-  iconSize: number;
-  slotTextureKey: (role: string) => string;
+  slotTextureKey: (cell: NativeUiSlotCell<TEntry>) => string;
   resolveAtlasSource: (entry: TEntry, nowMs: number) => NativeUiAtlasSpriteSource | null;
 }
 
@@ -238,20 +235,22 @@ export function buildNativeUiSpriteCommands<TEntry>(
     pushNativeUiDynamicPrimitiveCommands(commands, dpr, primitive);
   }
 
-  const slotPixels = Math.max(1, Math.round(options.slotSize * dpr));
-  const iconPixels = Math.max(1, Math.round(options.iconSize * dpr));
   for (const cell of options.slotCells) {
+    const slotWidth = Math.max(1, Number(cell.width));
+    const slotHeight = Math.max(1, Number(cell.height));
+    const slotSourceWidth = Math.max(1, Math.round(slotWidth * dpr));
+    const slotSourceHeight = Math.max(1, Math.round(slotHeight * dpr));
     if (!background) {
       commands.push({
-        textureKey: options.slotTextureKey(cell.role),
+        textureKey: options.slotTextureKey(cell),
         sourceX: 0,
         sourceY: 0,
-        sourceWidth: slotPixels,
-        sourceHeight: slotPixels,
+        sourceWidth: slotSourceWidth,
+        sourceHeight: slotSourceHeight,
         destX: Math.round(cell.x * dpr),
         destY: Math.round(cell.y * dpr),
-        destWidth: slotPixels,
-        destHeight: slotPixels,
+        destWidth: slotSourceWidth,
+        destHeight: slotSourceHeight,
       });
     }
 
@@ -264,10 +263,10 @@ export function buildNativeUiSpriteCommands<TEntry>(
       sourceY: source.y,
       sourceWidth: source.width,
       sourceHeight: source.height,
-      destX: Math.round((cell.x + options.iconInset) * dpr),
-      destY: Math.round((cell.y + options.iconInset) * dpr),
-      destWidth: iconPixels,
-      destHeight: iconPixels,
+      destX: Math.round(cell.iconX * dpr),
+      destY: Math.round(cell.iconY * dpr),
+      destWidth: Math.max(1, Math.round(cell.iconWidth * dpr)),
+      destHeight: Math.max(1, Math.round(cell.iconHeight * dpr)),
     });
   }
   return commands;

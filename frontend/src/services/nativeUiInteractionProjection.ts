@@ -30,15 +30,13 @@ function px(value: unknown): string {
 }
 
 export function nativeUiSlotCellStyle<TEntry>(
-  cell: Pick<NativeUiSlotCell<TEntry>, "x" | "y">,
-  slotSize: number,
+  cell: Pick<NativeUiSlotCell<TEntry>, "x" | "y" | "width" | "height">,
 ): NativeUiBoxStyle {
-  const size = nonNegativeNumber(slotSize) || 1;
   return {
     left: px(cell.x),
     top: px(cell.y),
-    width: `${size}px`,
-    height: `${size}px`,
+    width: px(cell.width),
+    height: px(cell.height),
   };
 }
 
@@ -95,6 +93,7 @@ export function projectNativeUiHitCells<TEntry>(
   for (const cell of cells) {
     if (cell.entry == null) continue;
     hitCells.push({
+      ...cell,
       key: cell.key,
       role: cell.role,
       x: cell.x,

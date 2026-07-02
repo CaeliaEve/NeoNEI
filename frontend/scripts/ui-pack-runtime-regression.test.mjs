@@ -55,14 +55,14 @@ function encodeTemplatePack(strings) {
   const index = new Map(strings.map((value, idx) => [value, idx]));
   const bytes = [];
   bytes.push(...new TextEncoder().encode('NEIUIT1\0'));
-  pushU32(bytes, 3);
+  pushU32(bytes, 4);
   pushU32(bytes, 1);
   pushU32(bytes, 2);
   pushU32(bytes, 1);
   pushU32(bytes, 0);
   pushU32(bytes, 0);
   pushU32(bytes, 19);
-  pushU32(bytes, 6);
+  pushU32(bytes, 12);
   pushU32(bytes, 5);
   pushU32(bytes, 12);
   const row = [
@@ -99,12 +99,24 @@ function encodeTemplatePack(strings) {
   pushU32(bytes, 1);
   pushI32(bytes, 45);
   pushI32(bytes, 24);
+  pushU32(bytes, index.get('nei_pixels') ?? 0);
+  pushU32(bytes, index.get('top-left') ?? 0);
+  pushU32(bytes, 18);
+  pushU32(bytes, 18);
+  pushU32(bytes, 18);
+  pushU32(bytes, 18);
   pushU32(bytes, index.get('item-output') ?? 0);
   pushU32(bytes, 1);
   pushU32(bytes, 1);
   pushU32(bytes, 1);
   pushI32(bytes, 115);
   pushI32(bytes, 24);
+  pushU32(bytes, index.get('nei_pixels') ?? 0);
+  pushU32(bytes, index.get('top-left') ?? 0);
+  pushU32(bytes, 18);
+  pushU32(bytes, 18);
+  pushU32(bytes, 18);
+  pushU32(bytes, 18);
   pushU32(bytes, index.get('EU/t') ?? 0);
   pushI32(bytes, 80);
   pushI32(bytes, 10);
@@ -149,7 +161,7 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
       bytes: templatePack.byteLength,
       envelopeSchema: 'neonei/ui-template-pack/current',
       payloadMagic: 'NEIUIT1_NUL',
-      version: 3,
+      version: 4,
       sections: [],
     },
     {
@@ -259,6 +271,8 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     'item-input',
     'item-output',
     'EU/t',
+    'nei_pixels',
+    'top-left',
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -308,6 +322,20 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     assert.equal(runtime.summary.boundRecipeCount, 1);
     assert.equal(runtime.summary.stringCount, strings.length);
     assert.equal(runtime.templatesByKey.get('furnace@default')?.layoutKind, 'furnace');
+    assert.deepEqual(runtime.templatesByKey.get('furnace@default')?.slots[0], {
+      role: 'item-input',
+      startIndex: 0,
+      columns: 1,
+      rows: 1,
+      x: 45,
+      y: 24,
+      coordinateSpace: 'nei_pixels',
+      anchor: 'top-left',
+      slotWidth: 18,
+      slotHeight: 18,
+      pitchX: 18,
+      pitchY: 18,
+    });
     assert.equal(runtime.bindingsByRecipeId.get('r1')?.templateKey, 'furnace@default');
   } finally {
     globalThis.fetch = originalFetch;
@@ -327,6 +355,8 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
     'item-input',
     'item-output',
     'EU/t',
+    'nei_pixels',
+    'top-left',
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -340,6 +370,8 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
     'item-input',
     'item-output',
     'EU/t',
+    'nei_pixels',
+    'top-left',
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -392,6 +424,8 @@ test('loadUiPackRuntime fails closed before pack fetch when native UI export ABI
     'item-input',
     'item-output',
     'EU/t',
+    'nei_pixels',
+    'top-left',
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',
@@ -452,6 +486,8 @@ test('loadUiPackRuntime rejects ABI reports that do not match manifest entrypoin
     'item-input',
     'item-output',
     'EU/t',
+    'nei_pixels',
+    'top-left',
     'r1',
     'recipes/ui-payload-shards/55.json',
     'Furnace',

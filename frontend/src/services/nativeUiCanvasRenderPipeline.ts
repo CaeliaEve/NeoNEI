@@ -54,9 +54,6 @@ export interface NativeUiCanvasRenderPipelineSnapshot<TEntry extends { atlasLook
   layoutHeight: number;
   dynamicPrimitives: readonly NativeUiDynamicPrimitive[];
   slotCells: readonly NativeUiSlotCell<TEntry>[];
-  slotSize: number;
-  iconInset: number;
-  iconSize: number;
 }
 
 export interface NativeUiCanvasRenderPipelineDeps<TEntry extends { atlasLookupId?: string | null }> {
@@ -112,8 +109,8 @@ export class NativeUiCanvasRenderPipeline<TEntry extends { atlasLookupId?: strin
     return this.preparedSources;
   }
 
-  slotTextureKey(role: string): string {
-    return nativeUiSlotTextureKey(role, this.state.currentDpr);
+  slotTextureKey(cell: NativeUiSlotCell<TEntry>): string {
+    return nativeUiSlotTextureKey(cell.role, this.state.currentDpr, cell.width, cell.height);
   }
 
   resolveAtlasSource(entry: TEntry, nowMs: number): NativeUiAtlasSpriteSource | null {
@@ -130,10 +127,7 @@ export class NativeUiCanvasRenderPipeline<TEntry extends { atlasLookupId?: strin
       background: this.state.backgroundSource,
       dynamicPrimitives: snapshot.dynamicPrimitives,
       slotCells: snapshot.slotCells,
-      slotSize: snapshot.slotSize,
-      iconInset: snapshot.iconInset,
-      iconSize: snapshot.iconSize,
-      slotTextureKey: (role) => this.slotTextureKey(role),
+      slotTextureKey: (cell) => this.slotTextureKey(cell),
       resolveAtlasSource: (entry, timestamp) => this.resolveAtlasSource(entry, timestamp),
     });
   }
@@ -169,7 +163,7 @@ export class NativeUiCanvasRenderPipeline<TEntry extends { atlasLookupId?: strin
     }
     this.commitState({ renderError: null });
 
-    this.textureRegistry.registerSlotTextures(renderer, this.state.currentDpr, snapshot.slotSize);
+    this.textureRegistry.registerSlotTextures(renderer, this.state.currentDpr, snapshot.slotCells);
     this.textureRegistry.registerDynamicPrimitiveTextures(renderer, snapshot.dynamicPrimitives);
 
     const backgroundReady = this.prepareBackground(renderer, snapshot, sequence);

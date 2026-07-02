@@ -9,6 +9,12 @@ export interface UiTemplateCatalogSlot {
   rows: number;
   x: number;
   y: number;
+  coordinateSpace: string;
+  anchor: string;
+  slotWidth: number;
+  slotHeight: number;
+  pitchX: number;
+  pitchY: number;
 }
 
 export interface UiTemplateCatalogTextOverlay {
@@ -107,6 +113,12 @@ function normalizeSlot(value: unknown): UiTemplateCatalogSlot | null {
     rows: asNumber(record.rows),
     x: asNumber(record.x),
     y: asNumber(record.y),
+    coordinateSpace: asString(record.coordinateSpace),
+    anchor: asString(record.anchor),
+    slotWidth: asNumber(record.slotWidth),
+    slotHeight: asNumber(record.slotHeight),
+    pitchX: asNumber(record.pitchX),
+    pitchY: asNumber(record.pitchY),
   };
 }
 
