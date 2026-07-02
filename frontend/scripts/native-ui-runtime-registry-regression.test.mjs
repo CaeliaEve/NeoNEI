@@ -14,6 +14,28 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
 
+function gtBackground(overrides = {}) {
+  return {
+    kind: 'gt-modular-ui',
+    status: 'captured',
+    coordinateSpace: 'nei_pixels',
+    scaleMode: 'uniform-scale',
+    anchor: 'top-left',
+    width: 176,
+    height: 90,
+    yShift: 0,
+    assetRef: 'rust/ui-assets/gt_furnace_captured.png',
+    resource: 'gregtech:textures/gui/background/nei_single_recipe.png',
+    source: 'GTNEIDefaultHandler.drawUI(ModularWindow.getBackground)',
+    drawable: 'GTUITextures.BACKGROUND_NEI_SINGLE_RECIPE',
+    scaling: 'nine-slice',
+    texture: { width: 64, height: 64, borderU: 2, borderV: 2 },
+    recipeBackgroundOffset: { x: 3, y: 3 },
+    recipeBackgroundSize: { width: 170, height: 84 },
+    ...overrides,
+  };
+}
+
 function runtimeFixture(template, binding) {
   return {
     status: 'ready',
@@ -86,7 +108,7 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
   };
   const inlineLayout = normalizeNativeUiLayoutSurface({
     imageRegion: { x: 8, y: 9, width: 176, height: 90 },
-    nativeBackground: { kind: 'gt-modular-ui', status: 'captured', assetRef: 'rust/ui-assets/gt_furnace_captured.png' },
+    nativeBackground: gtBackground(),
     progressBars: [{ role: 'progress', x: 72, y: 34, width: 24, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left', fill: 0.5 }],
     hotspots: [{ id: 'inline-hotspot', kind: 'item-click', role: 'output', label: 'Output', tooltip: '', action: 'item-click', itemId: 'minecraft:iron_ingot', payloadKey: '', x: 115, y: 24, width: 18, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
   });
@@ -147,6 +169,21 @@ test('native UI registry keeps inline and missing layouts explicit', () => {
   assert.equal(missing.width, 166);
   assert.equal(missing.height, 65);
   assert.deepEqual(missing.slots, []);
+});
+
+test('native UI registry rejects incomplete background ABI on resolved surfaces', () => {
+  assert.throws(
+    () => resolveNativeUiRuntimeSurface({
+      runtime: null,
+      recipeId: 'bad-background',
+      inlineLayout: normalizeNativeUiLayoutSurface({
+        width: 176,
+        height: 90,
+        nativeBackground: { kind: 'gt-modular-ui', status: 'captured', assetRef: 'ui/captured.png' },
+      }),
+    }),
+    /coordinateSpace/,
+  );
 });
 
 test('native UI registry builds exact design-space slot cells and fit matrix', () => {

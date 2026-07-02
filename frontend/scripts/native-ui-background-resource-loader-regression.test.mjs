@@ -4,8 +4,6 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  nativeUiBackgroundAssetRef,
-  nativeUiBackgroundImageRegion,
   nativeUiBackgroundState,
   nativeUiBackgroundTextureKey,
   nativeUiIsSemanticGtBackground,
@@ -21,6 +19,28 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
+
+function gtBackground(overrides = {}) {
+  return {
+    kind: 'gt-modular-ui',
+    status: 'captured',
+    coordinateSpace: 'nei_pixels',
+    scaleMode: 'uniform-scale',
+    anchor: 'top-left',
+    width: 176,
+    height: 90,
+    yShift: 0,
+    assetRef: 'ui/captured.png',
+    resource: 'gregtech:textures/gui/background/nei_single_recipe.png',
+    source: 'GTNEIDefaultHandler.drawUI(ModularWindow.getBackground)',
+    drawable: 'GTUITextures.BACKGROUND_NEI_SINGLE_RECIPE',
+    scaling: 'nine-slice',
+    texture: { width: 64, height: 32, borderU: 4, borderV: 4 },
+    recipeBackgroundOffset: { x: 7, y: 8 },
+    recipeBackgroundSize: { width: 80, height: 36 },
+    ...overrides,
+  };
+}
 
 function fakeRenderer() {
   return {
@@ -94,25 +114,17 @@ function installCanvasDocument() {
 test('native UI background resource loader normalizes layout facts and state', () => {
   const layout = {
     imageResource: ' ui/background.png ',
-    imageRegion: { x: -5, y: 3, width: 120, height: 40 },
-    nativeBackground: {
-      kind: 'gt-modular-ui',
-      status: 'captured',
+    nativeBackground: gtBackground({
       assetRef: ' ui/captured.png ',
-      texture: { width: 64, height: 32, border: 4 },
-      recipeBackgroundOffset: { x: 7, y: 8 },
-      recipeBackgroundSize: { width: 80, height: 36 },
-    },
+    }),
   };
   const background = nativeUiNativeBackground(layout);
 
-  assert.equal(nativeUiBackgroundAssetRef(layout), 'ui/background.png');
   assert.equal(nativeUiBackgroundTextureKey('ui/background.png'), 'ui-background:ui/background.png');
-  assert.deepEqual(nativeUiBackgroundImageRegion(layout), { x: 0, y: 3, width: 120, height: 40 });
-  assert.equal(nativeUiIsSemanticGtBackground(background), true);
+  assert.equal(nativeUiIsSemanticGtBackground(background), false);
   assert.equal(nativeUiNativeBackgroundAssetRef(background), 'ui/captured.png');
   assert.equal(nativeUiNativeBackgroundTextureKey(background), 'ui-background:ui/captured.png');
-  assert.equal(nativeUiSemanticBackgroundTextureKey(background, 176, 90, 2), 'ui-background:gt-modular-ui:176x90:2');
+  assert.equal(nativeUiSemanticBackgroundTextureKey(background, 176, 90, 2), null);
   assert.deepEqual(nativeUiNativeBackgroundTextureSpec(background), { width: 64, height: 32, borderU: 4, borderV: 4 });
   assert.deepEqual(nativeUiNativeBackgroundTargetRect(background, 176, 90), { x: 7, y: 8, width: 80, height: 36 });
   assert.equal(resolveNativeUiBackgroundAssetUrl('manifest.json', 'ui/background.png', (_manifest, path) => `asset://${path}`), 'asset://ui/background.png');
@@ -120,8 +132,7 @@ test('native UI background resource loader normalizes layout facts and state', (
   assert.equal(nativeUiBackgroundState({
     nativeAssetRef: 'ui/captured.png',
     nativeTextureKey: 'ui-background:ui/captured.png',
-    semanticGtBackground: true,
-    backgroundAssetRef: 'ui/background.png',
+    semanticGtBackground: false,
     source: { textureKey: 'ui-background:ui/captured.png', sourceX: 0, sourceY: 0, sourceWidth: 1, sourceHeight: 1, width: 1, height: 1 },
     error: null,
   }), 'captured');
@@ -130,15 +141,11 @@ test('native UI background resource loader normalizes layout facts and state', (
 test('native UI background resource loader prepares captured background texture sources', async () => {
   const registry = fakeTextureRegistry();
   const layout = {
-    nativeBackground: {
-      kind: 'gt-modular-ui',
-      status: 'captured',
-      assetRef: 'ui/captured.png',
+    nativeBackground: gtBackground({
       texture: { width: 64, height: 32, borderU: 5, borderV: 6 },
       recipeBackgroundOffset: { x: 2, y: 3 },
       recipeBackgroundSize: { width: 80, height: 40 },
-      scaling: 'nine-slice',
-    },
+    }),
   };
 
   const result = await prepareNativeUiBackgroundSource({
@@ -171,7 +178,7 @@ test('native UI background resource loader fails captured assets visibly and sup
   const captured = await prepareNativeUiBackgroundSource({
     renderer: fakeRenderer(),
     textureRegistry: fakeTextureRegistry(),
-    layout: { nativeBackground: { kind: 'gt-modular-ui', status: 'captured', assetRef: 'ui/missing.png' } },
+    layout: { nativeBackground: gtBackground({ assetRef: 'ui/missing.png' }) },
     manifestUrl: 'manifest.json',
     layoutWidth: 176,
     layoutHeight: 90,
@@ -188,7 +195,15 @@ test('native UI background resource loader fails captured assets visibly and sup
     const semantic = await prepareNativeUiBackgroundSource({
       renderer: fakeRenderer(),
       textureRegistry: registry,
-      layout: { nativeBackground: { kind: 'gt-modular-ui', status: 'semantic' } },
+      layout: {
+        nativeBackground: gtBackground({
+          status: 'semantic',
+          assetRef: undefined,
+          texture: { width: 64, height: 64, borderU: 2, borderV: 2 },
+          recipeBackgroundOffset: { x: 3, y: 3 },
+          recipeBackgroundSize: { width: 170, height: 84 },
+        }),
+      },
       manifestUrl: 'manifest.json',
       layoutWidth: 176,
       layoutHeight: 90,
@@ -207,11 +222,10 @@ test('native UI background resource loader fails captured assets visibly and sup
   }
 });
 
-test('native UI background resource loader prepares image-region backgrounds and aborts stale loads', async () => {
-  const registry = fakeTextureRegistry();
+test('native UI background resource loader fails closed without background ABI and aborts stale captured loads', async () => {
   const result = await prepareNativeUiBackgroundSource({
     renderer: fakeRenderer(),
-    textureRegistry: registry,
+    textureRegistry: fakeTextureRegistry(),
     layout: { imageResource: 'ui/background.png', imageRegion: { x: 4, y: 6, width: 32, height: 16 } },
     manifestUrl: 'manifest.json',
     layoutWidth: 176,
@@ -222,16 +236,12 @@ test('native UI background resource loader prepares image-region backgrounds and
   });
 
   assert.equal(result.error, null);
-  assert.equal(result.source.textureKey, 'ui-background:ui/background.png');
-  assert.equal(result.source.sourceX, 4);
-  assert.equal(result.source.sourceY, 6);
-  assert.equal(result.source.sourceWidth, 32);
-  assert.equal(result.source.sourceHeight, 16);
+  assert.equal(result.source, null);
 
   const aborted = await prepareNativeUiBackgroundSource({
     renderer: fakeRenderer(),
     textureRegistry: fakeTextureRegistry(),
-    layout: { imageResource: 'ui/background.png' },
+    layout: { nativeBackground: gtBackground() },
     manifestUrl: 'manifest.json',
     layoutWidth: 176,
     layoutHeight: 90,
@@ -242,6 +252,27 @@ test('native UI background resource loader prepares image-region backgrounds and
   });
   assert.equal(aborted.aborted, true);
   assert.equal(aborted.source, null);
+});
+
+test('native UI background resource loader rejects missing background contract fields', async () => {
+  const result = await prepareNativeUiBackgroundSource({
+    renderer: fakeRenderer(),
+    textureRegistry: fakeTextureRegistry(),
+    layout: {
+      nativeBackground: {
+        kind: 'gt-modular-ui',
+        status: 'captured',
+        assetRef: 'ui/captured.png',
+      },
+    },
+    manifestUrl: 'manifest.json',
+    layoutWidth: 176,
+    layoutHeight: 90,
+    dpr: 1,
+  });
+
+  assert.equal(result.source, null);
+  assert.match(result.error, /coordinateSpace/);
 });
 
 test('native UI background resource loader owns component background resource boundary', () => {

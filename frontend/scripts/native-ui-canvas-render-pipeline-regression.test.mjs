@@ -143,7 +143,19 @@ test('native UI canvas render pipeline owns rebuild sequencing and GPU resource 
       layoutWidth: 176,
       layoutHeight: 90,
       dynamicPrimitives: [
-        { kind: 'progress-bar', x: 2, y: 3, width: 20, height: 6, fill: 0.5, trackColor: 'track', fillColor: 'fill', borderColor: 'border' },
+        {
+          kind: 'progress-bar',
+          x: 2,
+          y: 3,
+          width: 20,
+          height: 6,
+          coordinateSpace: 'nei_pixels',
+          anchor: 'top-left',
+          fill: 0.5,
+          trackColor: 'track',
+          fillColor: 'fill',
+          borderColor: 'border',
+        },
       ],
       slotCells: [
         {

@@ -27,68 +27,75 @@ test('NativeNeiRecipeCanvas is not double-scaled by the outer recipe router', ()
 
 test('NativeNeiRecipeCanvas stays on the single WebGL atlas render path', () => {
   const canvasSource = read('src/components/NativeNeiRecipeCanvas.vue');
+  const pipelineSource = read('src/services/nativeUiCanvasRenderPipeline.ts');
+  const sessionSource = read('src/services/nativeUiRendererSession.ts');
 
-  assert.equal(canvasSource.includes('WebGl2NativeRenderer.create(canvas)'), true);
-  assert.equal(canvasSource.includes('warmGlobalBrowserAtlasForItemsDetailed'), true);
-  assert.equal(canvasSource.includes('getLoadedGlobalAtlasImage'), true);
+  assert.equal(canvasSource.includes('NativeUiCanvasRenderPipeline'), true);
+  assert.equal(sessionSource.includes('WebGl2NativeRenderer.create(canvas)'), true);
+  assert.equal(pipelineSource.includes('registerNativeUiAtlasSources'), true);
+  assert.equal(pipelineSource.includes('buildNativeUiSpriteCommands'), true);
   assert.equal(canvasSource.includes('RecipeItemTooltip'), true, 'tooltips may remain in the interaction overlay');
   assert.equal(canvasSource.includes('<AnimatedItemIcon'), false, 'recipe canvas must not rebuild item visuals as DOM icon components');
 });
 
 test('NativeNeiRecipeCanvas consumes explicit GT dynamic primitives as WebGL sprite commands', () => {
   const canvasSource = read('src/components/NativeNeiRecipeCanvas.vue');
+  const registrySource = read('src/services/nativeUiRuntimeRegistry.ts');
+  const pipelineSource = read('src/services/nativeUiCanvasRenderPipeline.ts');
+  const builderSource = read('src/services/nativeUiRenderCommandBuilder.ts');
 
   assert.equal(canvasSource.includes('dynamicPrimitives'), true);
-  assert.equal(canvasSource.includes('progressBars'), true);
-  assert.equal(canvasSource.includes('fluidBars'), true);
-  assert.equal(canvasSource.includes('energyBars'), true);
-  assert.equal(canvasSource.includes('pushDynamicPrimitiveCommands'), true);
-  assert.equal(canvasSource.includes('pushSolidSpriteRect'), true);
-  assert.equal(canvasSource.includes('NativeTextureSpriteCommand[]'), true);
+  assert.equal(registrySource.includes('append(layout?.progressBars, "progress-bar")'), true);
+  assert.equal(registrySource.includes('append(layout?.fluidBars, "fluid-bar")'), true);
+  assert.equal(registrySource.includes('append(layout?.energyBars, "energy-bar")'), true);
+  assert.equal(pipelineSource.includes('registerDynamicPrimitiveTextures'), true);
+  assert.equal(builderSource.includes('pushNativeUiDynamicPrimitiveCommands'), true);
+  assert.equal(builderSource.includes('pushSolidSpriteRect'), true);
+  assert.equal(pipelineSource.includes('NativeTextureSpriteCommand[]'), true);
 });
 
 test('NativeNeiRecipeCanvas preserves captured hotspots and viewport regions in source-space overlays', () => {
   const canvasSource = read('src/components/NativeNeiRecipeCanvas.vue');
+  const registrySource = read('src/services/nativeUiRuntimeRegistry.ts');
   const uiPackRuntimeSource = read('src/services/uiPackRuntime.ts');
   const productionManifestGateSource = fs.readFileSync(path.resolve(frontendRoot, '..', 'scripts/validate-rust-production-manifest.mjs'), 'utf8');
   const nativeUiLayoutGateSource = fs.readFileSync(path.resolve(frontendRoot, '..', 'scripts/validate-native-ui-layouts.mjs'), 'utf8');
 
-  assert.equal(canvasSource.includes('hotspots?: NativeRectFact[]'), true);
-  assert.equal(canvasSource.includes('viewports?: NativeRectFact[]'), true);
-  assert.equal(canvasSource.includes('hotspots: inlineLayout?.hotspots ?? template.hotspots'), true);
-  assert.equal(canvasSource.includes('viewports: inlineLayout?.viewports ?? template.viewports'), true);
+  assert.equal(canvasSource.includes('type NativeUiRect'), true);
+  assert.equal(registrySource.includes('hotspots: inlineLayout?.hotspots ?? template.hotspots'), true);
+  assert.equal(registrySource.includes('viewports: inlineLayout?.viewports ?? template.viewports'), true);
   assert.equal(canvasSource.includes('const hotspots = computed'), true);
   assert.equal(canvasSource.includes('const viewports = computed'), true);
   assert.equal(canvasSource.includes('native-nei-hotspot-cell'), true);
   assert.equal(canvasSource.includes('native-nei-viewport-region'), true);
-  assert.equal(canvasSource.includes('rectFactStyle'), true);
-  assert.equal(canvasSource.includes('rectFactLabel'), true);
+  assert.equal(canvasSource.includes('nativeUiRectStyle'), true);
+  assert.equal(canvasSource.includes('nativeUiRectLabel'), true);
   assert.equal(uiPackRuntimeSource.includes('export interface UiPackRect'), true);
-  assert.equal(uiPackRuntimeSource.includes('version !== 2 && version !== 3'), true);
+  assert.equal(uiPackRuntimeSource.includes('const UI_TEMPLATE_PAYLOAD_VERSION = 5'), true);
   assert.equal(uiPackRuntimeSource.includes('hotspotCount'), true);
   assert.equal(uiPackRuntimeSource.includes('viewportCount'), true);
   assert.equal(uiPackRuntimeSource.includes('rectStride'), true);
   assert.equal(uiPackRuntimeSource.includes('action: string'), true);
   assert.equal(uiPackRuntimeSource.includes('itemId: string'), true);
   assert.equal(uiPackRuntimeSource.includes('payloadKey: string'), true);
-  assert.equal(uiPackRuntimeSource.includes('version >= 3 ? resolveString'), true);
+  assert.equal(uiPackRuntimeSource.includes('coordinateSpace: resolveString'), true);
   assert.equal(canvasSource.includes('function handleHotspotClick'), true);
-  assert.equal(canvasSource.includes("normalizedHotspotAction(rect) === 'item-click'"), true);
+  assert.equal(canvasSource.includes('nativeUiHotspotItemId(rect)'), true);
   assert.equal(canvasSource.includes('@click="handleHotspotClick(hotspot)"'), true);
-  assert.equal(productionManifestGateSource.includes('UI_TEMPLATE_PACK_FORMAT_NOT_V3_ACTION_IR'), true);
-  assert.equal(productionManifestGateSource.includes('UI_PACK_REPORT_MISSING_V3_ACTION_IR'), true);
-  assert.equal(nativeUiLayoutGateSource.includes('rust UI pack report does not declare v3 hotspot action IR'), true);
-  assert.equal(nativeUiLayoutGateSource.includes('rust UI template binary pack is not v3 action-rect format'), true);
+  assert.equal(productionManifestGateSource.includes('UI_TEMPLATE_PACK_FORMAT_NOT_V5_GEOMETRY_ABI'), true);
+  assert.equal(productionManifestGateSource.includes('UI_PACK_REPORT_MISSING_V5_BACKGROUND_GEOMETRY_ABI'), true);
+  assert.equal(nativeUiLayoutGateSource.includes('rust UI pack report does not declare v5 background geometry ABI'), true);
+  assert.equal(nativeUiLayoutGateSource.includes('rust UI template binary pack is not v5 geometry ABI format'), true);
 });
 
-test('NativeNeiRecipeCanvas crops captured NEI background image regions before scaling', () => {
+test('NativeNeiRecipeCanvas consumes explicit Native UI background ABI before scaling', () => {
   const canvasSource = read('src/components/NativeNeiRecipeCanvas.vue');
 
-  assert.equal(canvasSource.includes('imageRegion'), true);
-  assert.equal(canvasSource.includes('backgroundImageRegion'), true);
-  assert.equal(canvasSource.includes('sourceX: background.sourceX'), true);
-  assert.equal(canvasSource.includes('sourceWidth: background.sourceWidth'), true);
-  assert.equal(canvasSource.includes('backgroundImageRegion: backgroundImageRegion.value'), true);
+  assert.equal(canvasSource.includes('nativeUiNativeBackground(resolvedNativeLayout.value)'), true);
+  assert.equal(canvasSource.includes('nativeBackground: nativeBackground.value'), true);
+  assert.equal(canvasSource.includes('backgroundImageRegion'), false);
+  assert.equal(read('src/services/nativeUiBackgroundAbi.ts').includes('recipeBackgroundOffset'), true);
+  assert.equal(read('src/services/nativeUiBackgroundResourceLoader.ts').includes('resolveNativeUiBackgroundContract'), true);
 });
 
 test('NativeNeiRecipeCanvas owns uniform source-space scale-fit and letterbox transform', () => {
@@ -97,7 +104,7 @@ test('NativeNeiRecipeCanvas owns uniform source-space scale-fit and letterbox tr
   assert.equal(canvasSource.includes('const shellRef = ref<HTMLElement | null>(null)'), true);
   assert.equal(canvasSource.includes('ResizeObserver'), true);
   assert.equal(canvasSource.includes('const fitScale = computed'), true);
-  assert.equal(canvasSource.includes('Math.min(availableWidth / displayWidth.value, availableHeight / displayHeight.value)'), true);
+  assert.equal(canvasSource.includes('createNativeUiFitMatrix'), true);
   assert.equal(canvasSource.includes('const sourceSurfaceStyle = computed'), true);
   assert.equal(canvasSource.includes('transform: `translate(-50%, -50%) scale(${fitScale.value})`'), true);
   assert.equal(canvasSource.includes('class="native-nei-source-surface"'), true);

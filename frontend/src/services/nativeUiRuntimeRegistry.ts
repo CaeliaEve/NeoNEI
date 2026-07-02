@@ -12,6 +12,10 @@ import {
   resolveNativeUiRectGeometry,
   resolveNativeUiSlotGeometry,
 } from "./nativeUiGeometryAbi.ts";
+import {
+  resolveNativeUiBackgroundContract,
+  type NativeUiBackgroundContract,
+} from "./nativeUiBackgroundAbi.ts";
 
 export type NativeUiSlot = UiPackSlot;
 export type NativeUiTextOverlay = UiPackTextOverlay;
@@ -47,7 +51,7 @@ export interface NativeUiLayoutSurface {
   height?: number;
   imageResource?: string;
   imageRegion?: NativeUiImageRegion;
-  nativeBackground?: Record<string, unknown> | null;
+  nativeBackground?: Record<string, unknown> | NativeUiBackgroundContract | null;
   slots?: NativeUiSlot[];
   textOverlays?: NativeUiTextOverlay[];
   dynamicPrimitives?: NativeUiDynamicPrimitive[];
@@ -250,6 +254,9 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
 
   const width = positiveDimension(layout?.width, 166);
   const height = positiveDimension(layout?.height, 65);
+  const nativeBackground = layout
+    ? resolveNativeUiBackgroundContract({ ...layout, width, height }, "Native UI runtime surface background")
+    : null;
   const slots = asArray<NativeUiSlot>(layout?.slots);
   const textOverlays = normalizeNativeUiTextOverlayList(layout?.textOverlays);
   const dynamicPrimitives = collectNativeUiDynamicPrimitives(layout);
@@ -260,6 +267,7 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
       ...layout,
       width,
       height,
+      nativeBackground,
       slots,
       textOverlays,
       dynamicPrimitives,

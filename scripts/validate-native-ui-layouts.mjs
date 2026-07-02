@@ -136,6 +136,9 @@ if (nativeUiLayoutReport?.status === 'blocked') failures.push('rust native UI la
 if (!uiPackReport) failures.push('rust UI pack report is missing');
 const uiPackFormat = uiPackReport?.format ?? {};
 const rectGeometryFields = Array.isArray(uiPackFormat.rectGeometryFields) ? uiPackFormat.rectGeometryFields : [];
+const backgroundContractFields = Array.isArray(uiPackFormat.backgroundContractFields)
+  ? uiPackFormat.backgroundContractFields
+  : [];
 if (
   uiPackFormat.templatePackVersion !== 5
   || uiPackFormat.slotStride !== 12
@@ -144,8 +147,14 @@ if (
   || uiPackFormat.hotspotActionFields !== true
   || !rectGeometryFields.includes('coordinateSpace')
   || !rectGeometryFields.includes('anchor')
+  || !backgroundContractFields.includes('coordinateSpace')
+  || !backgroundContractFields.includes('scaleMode')
+  || !backgroundContractFields.includes('anchor')
+  || !backgroundContractFields.includes('texture')
+  || !backgroundContractFields.includes('recipeBackgroundOffset')
+  || !backgroundContractFields.includes('recipeBackgroundSize')
 ) {
-  failures.push('rust UI pack report does not declare v5 geometry ABI');
+  failures.push('rust UI pack report does not declare v5 background geometry ABI');
 }
 if (!uiTemplateHeader) failures.push('rust UI template binary pack is missing');
 if (uiTemplateHeader?.error) failures.push(`rust UI template binary pack is invalid: ${uiTemplateHeader.error}`);

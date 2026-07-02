@@ -205,6 +205,9 @@ const uiPackReport = uiPackReportPath && existsSync(uiPackReportPath) ? readJson
 const uiPackFormat = uiPackReport?.format ?? {};
 if (uiPackReport) {
   const rectGeometryFields = Array.isArray(uiPackFormat.rectGeometryFields) ? uiPackFormat.rectGeometryFields : [];
+  const backgroundContractFields = Array.isArray(uiPackFormat.backgroundContractFields)
+    ? uiPackFormat.backgroundContractFields
+    : [];
   if (
     uiPackFormat.templatePackVersion !== 5
     || uiPackFormat.slotStride !== 12
@@ -213,8 +216,14 @@ if (uiPackReport) {
     || uiPackFormat.hotspotActionFields !== true
     || !rectGeometryFields.includes('coordinateSpace')
     || !rectGeometryFields.includes('anchor')
+    || !backgroundContractFields.includes('coordinateSpace')
+    || !backgroundContractFields.includes('scaleMode')
+    || !backgroundContractFields.includes('anchor')
+    || !backgroundContractFields.includes('texture')
+    || !backgroundContractFields.includes('recipeBackgroundOffset')
+    || !backgroundContractFields.includes('recipeBackgroundSize')
   ) {
-    fail(failures, 'UI_PACK_REPORT_MISSING_V5_GEOMETRY_ABI', 'UI pack report does not declare v5 rect geometry ABI capability', { format: uiPackFormat });
+    fail(failures, 'UI_PACK_REPORT_MISSING_V5_BACKGROUND_GEOMETRY_ABI', 'UI pack report does not declare v5 rect/background geometry ABI capability', { format: uiPackFormat });
   }
 }
 

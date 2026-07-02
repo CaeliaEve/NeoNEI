@@ -86,6 +86,8 @@ test('native UI render command builder emits dynamic primitive track fill and bo
     y: 5,
     width: 20,
     height: 6,
+    coordinateSpace: 'nei_pixels',
+    anchor: 'top-left',
     fill: 0.5,
     orientation: 'horizontal',
     trackColor: 'track',

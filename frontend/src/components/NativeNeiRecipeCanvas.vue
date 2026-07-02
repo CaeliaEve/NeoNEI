@@ -24,8 +24,6 @@ import {
   type NativeUiHitCell,
 } from '../services/nativeUiInteractionProjection.ts';
 import {
-  nativeUiBackgroundAssetRef,
-  nativeUiBackgroundImageRegion,
   nativeUiBackgroundState,
   nativeUiIsSemanticGtBackground,
   nativeUiNativeBackground,
@@ -91,8 +89,6 @@ const hotspots = computed(() => nativeUiSurface.value.hotspots);
 const viewports = computed(() => nativeUiSurface.value.viewports);
 const dynamicPrimitives = computed(() => nativeUiSurface.value.dynamicPrimitives);
 
-const backgroundAssetRef = computed(() => nativeUiBackgroundAssetRef(resolvedNativeLayout.value));
-const backgroundImageRegion = computed(() => nativeUiBackgroundImageRegion(resolvedNativeLayout.value));
 const nativeBackground = computed(() => nativeUiNativeBackground(resolvedNativeLayout.value));
 const semanticGtBackground = computed(() => nativeUiIsSemanticGtBackground(nativeBackground.value));
 const nativeBackgroundAssetRef = computed(() => nativeUiNativeBackgroundAssetRef(nativeBackground.value));
@@ -101,7 +97,6 @@ const backgroundState = computed(() => nativeUiBackgroundState({
   nativeAssetRef: nativeBackgroundAssetRef.value,
   nativeTextureKey: nativeBackgroundTextureKey.value,
   semanticGtBackground: semanticGtBackground.value,
-  backgroundAssetRef: backgroundAssetRef.value,
   source: backgroundSource.value,
   error: backgroundLoadError.value,
 }));
@@ -165,8 +160,6 @@ const renderSignature = computed(() => JSON.stringify({
   nativeUiSurfaceSource: nativeUiSurface.value.source,
   layoutWidth: layoutWidth.value,
   layoutHeight: layoutHeight.value,
-  backgroundAssetRef: backgroundAssetRef.value ?? '',
-  backgroundImageRegion: backgroundImageRegion.value,
   nativeBackground: nativeBackground.value,
   slots: slots.value,
   textOverlays: textOverlays.value,
