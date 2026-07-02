@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 const publishRouteSource = fs.readFileSync('src/routes/publish.routes.ts', 'utf8').replace(/\r\n/g, '\n');
 const namespaceRegistrySource = fs.readFileSync('src/routes/api-namespace-registry.ts', 'utf8').replace(/\r\n/g, '\n');
 const appSource = fs.readFileSync('src/app.ts', 'utf8').replace(/\r\n/g, '\n');
+const adminControlPlaneSource = fs.readFileSync('src/routes/runtime-admin-control-plane.routes.ts', 'utf8').replace(/\r\n/g, '\n');
 const publishAdminRouteSource = fs.readFileSync('src/routes/publish-admin.routes.ts', 'utf8').replace(/\r\n/g, '\n');
 const httpSource = fs.readFileSync('src/utils/http.ts', 'utf8').replace(/\r\n/g, '\n');
 
@@ -31,10 +32,12 @@ test('publish control is token-protected ops/admin plane while public api is rea
   assert.match(namespaceRegistrySource, /import \{ publicPublishRoutes \} from '\.\/publish\.routes'/);
   assert.match(namespaceRegistrySource, /mountPath: '\/api\/publish'[\s\S]*handler: publicPublishRoutes/);
   assert.doesNotMatch(namespaceRegistrySource, /labPublishRoutes|\/lab\/publish/);
-  assert.match(appSource, /registerPublishAdminRoutes\(app/);
-  assert.match(publishAdminRouteSource, /registerPublishAdminPrefix\(app, '\/ops\/publish'/);
-  assert.match(publishAdminRouteSource, /registerPublishAdminPrefix\(app, '\/api\/admin\/publish'/);
-  assert.match(publishAdminRouteSource, /withRuntimeAdminToken/);
+  assert.match(appSource, /registerRuntimeAdminControlPlaneRoutes\(app/);
+  assert.match(adminControlPlaneSource, /prefix:\s*'\/ops'/);
+  assert.match(adminControlPlaneSource, /prefix:\s*'\/api\/admin'/);
+  assert.match(adminControlPlaneSource, /router\.use\('\/publish', createPublishAdminRouter\(\)\)/);
+  assert.match(adminControlPlaneSource, /createRuntimeAdminTokenMiddleware\(requireAdminToken\)/);
+  assert.doesNotMatch(publishAdminRouteSource, /withRuntimeAdminToken|RuntimeAdminTokenGuard/);
 });
 
 test('http utilities expose explicit service unavailable error contracts', () => {
@@ -47,12 +50,13 @@ test('http utilities expose explicit service unavailable error contracts', () =>
 test('publish route factory keeps release control out of public read routes', () => {
   assert.doesNotMatch(publishRouteSource, /PublishRoutesMode|registerLabControlRoutes|labPublishRoutes/);
   assert.match(publishRouteSource, /export const publicPublishRoutes = createPublishRoutes\(\)/);
-  assert.match(publishAdminRouteSource, /`\$\{prefix\}\/releases`/);
-  assert.match(publishAdminRouteSource, /`\$\{prefix\}\/releases\/:sourceSignature\/activate`/);
+  assert.match(publishAdminRouteSource, /export function createPublishAdminRouter\(\): Router/);
+  assert.match(publishAdminRouteSource, /router\.get\(\s*'\/releases'/);
+  assert.match(publishAdminRouteSource, /router\.post\(\s*'\/releases\/:sourceSignature\/activate'/);
 
-  const labControlIndex = publishAdminRouteSource.indexOf('function registerPublishAdminPrefix');
+  const labControlIndex = publishAdminRouteSource.indexOf('function createPublishAdminRouter');
   const publicReadIndex = publishRouteSource.indexOf('function registerPublicReadRoutes');
-  assert.notEqual(labControlIndex, -1, 'admin control route registrar must exist');
+  assert.notEqual(labControlIndex, -1, 'admin control router factory must exist');
   assert.notEqual(publicReadIndex, -1, 'public read route registrar must exist');
   const publicReadBody = publishRouteSource.slice(publicReadIndex);
   assert.doesNotMatch(publicReadBody, /'\/releases\/:sourceSignature\/activate'/);

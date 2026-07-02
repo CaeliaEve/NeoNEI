@@ -1,4 +1,4 @@
-import type { Application, Request, Response } from 'express';
+import { Router, type Application, type Request, type Response } from 'express';
 import type { AccelerationRuntimePhase, AccelerationRuntimeState } from '../services/acceleration-runtime.service';
 import {
   getPublicApiIndex,
@@ -8,11 +8,14 @@ import {
 } from '../services/runtime-admin-control.service';
 import { type RuntimeAdminReconcileLabel } from '../services/runtime-admin-reconcile-control.service';
 import { sendRuntimeAdminReconcile } from './runtime-admin-reconcile-executor';
-import { sendRuntimeAdminJson, sendRuntimeAdminOpenApi, withRuntimeAdminToken } from './runtime-admin-transport';
+import { sendRuntimeAdminJson, sendRuntimeAdminOpenApi } from './runtime-admin-transport';
 
-type RegisterRuntimeAdminRoutesOptions<TManager> = {
+export type RuntimeAdminIndexRoutesOptions = {
   getAccelerationRuntimeSnapshot: () => AccelerationRuntimeState;
-  requireAdminToken: (req: Request, res: Response) => boolean;
+};
+
+export type RuntimeAdminControlRouterOptions<TManager> = {
+  getAccelerationRuntimeSnapshot: () => AccelerationRuntimeState;
   getRuntimeAccelerationDbManager: () => TManager | null;
   reconcileAccelerationRuntime: (manager: TManager) => Promise<void>;
   setAccelerationRuntimePhase: (
@@ -22,20 +25,12 @@ type RegisterRuntimeAdminRoutesOptions<TManager> = {
   ) => void;
 };
 
-export function registerRuntimeAdminRoutes<TManager>(
+export function registerRuntimeAdminIndexRoutes(
   app: Application,
-  options: RegisterRuntimeAdminRoutesOptions<TManager>,
+  options: RuntimeAdminIndexRoutesOptions,
 ): void {
-  const {
-    getAccelerationRuntimeSnapshot,
-    requireAdminToken,
-    getRuntimeAccelerationDbManager,
-    reconcileAccelerationRuntime,
-    setAccelerationRuntimePhase,
-  } = options;
-
   app.get('/api/health', (_req, res) => {
-    sendRuntimeAdminJson(res, getRuntimeAdminHealth(getAccelerationRuntimeSnapshot()));
+    sendRuntimeAdminJson(res, getRuntimeAdminHealth(options.getAccelerationRuntimeSnapshot()));
   });
 
   app.get('/api', (_req, res) => {
@@ -45,15 +40,25 @@ export function registerRuntimeAdminRoutes<TManager>(
   app.get('/api/openapi.json', (_req, res) => {
     sendRuntimeAdminOpenApi(res, getRuntimeOpenApiDocument());
   });
+}
 
-  const sendRuntimeDiagnostics = (req: Request, res: Response): void => {
-    withRuntimeAdminToken(req, res, requireAdminToken, () => {
-      sendRuntimeAdminJson(res, getRuntimeAdminDiagnostics(getAccelerationRuntimeSnapshot()));
-    });
+export function createRuntimeAdminControlRouter<TManager>(
+  label: RuntimeAdminReconcileLabel,
+  options: RuntimeAdminControlRouterOptions<TManager>,
+): Router {
+  const router = Router();
+  const {
+    getAccelerationRuntimeSnapshot,
+    getRuntimeAccelerationDbManager,
+    reconcileAccelerationRuntime,
+    setAccelerationRuntimePhase,
+  } = options;
+
+  const sendRuntimeDiagnostics = (_req: Request, res: Response): void => {
+    sendRuntimeAdminJson(res, getRuntimeAdminDiagnostics(getAccelerationRuntimeSnapshot()));
   };
 
-  app.get('/ops/runtime', sendRuntimeDiagnostics);
-  app.get('/api/admin/runtime', sendRuntimeDiagnostics);
+  router.get('/runtime', sendRuntimeDiagnostics);
 
   const reconcileRuntime = {
     getAccelerationRuntimeSnapshot,
@@ -62,12 +67,11 @@ export function registerRuntimeAdminRoutes<TManager>(
     setAccelerationRuntimePhase,
   };
 
-  const scheduleReconcile = (label: RuntimeAdminReconcileLabel) => (req: Request, res: Response): void => {
-    withRuntimeAdminToken(req, res, requireAdminToken, () => {
-      sendRuntimeAdminReconcile(req, res, label, reconcileRuntime);
-    });
+  const scheduleReconcile = (req: Request, res: Response): void => {
+    sendRuntimeAdminReconcile(req, res, label, reconcileRuntime);
   };
 
-  app.post('/ops/acceleration/reconcile', scheduleReconcile('OPS'));
-  app.post('/api/admin/acceleration/reconcile', scheduleReconcile('ADMIN'));
+  router.post('/acceleration/reconcile', scheduleReconcile);
+
+  return router;
 }

@@ -26,22 +26,13 @@ export function sendRuntimeAdminControlError(req: Request, res: Response, error:
   sendErrorEnvelope(req, res, error.statusCode, error.code, error.message, error.details);
 }
 
-export function withRuntimeAdminToken(
-  req: Request,
-  res: Response,
-  requireAdminToken: RuntimeAdminTokenGuard,
-  handler: () => void,
-): void {
-  if (!requireAdminToken(req, res)) {
-    return;
-  }
-  handler();
-}
-
 export function createRuntimeAdminTokenMiddleware(
   requireAdminToken: RuntimeAdminTokenGuard,
 ): RequestHandler {
   return (req, res, next) => {
-    withRuntimeAdminToken(req, res, requireAdminToken, next);
+    if (!requireAdminToken(req, res)) {
+      return;
+    }
+    next();
   };
 }

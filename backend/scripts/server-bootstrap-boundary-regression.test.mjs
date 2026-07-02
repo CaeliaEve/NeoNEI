@@ -29,7 +29,8 @@ test('app boundary owns middleware and route construction', () => {
   assert.match(appSource, /export\s+function\s+createApp\(/);
   assert.match(appSource, /const\s+app\s*=\s*express\(\)/);
   assert.match(appSource, /registerApiNamespaces\(/);
-  assert.match(appSource, /registerRuntimeAdminRoutes\(/);
+  assert.match(appSource, /registerRuntimeAdminIndexRoutes\(/);
+  assert.match(appSource, /registerRuntimeAdminControlPlaneRoutes\(/);
   assert.match(appSource, /registerStaticAssetRoutes\(/);
   assert.doesNotMatch(bootstrapSource, /express\(\)/);
   assert.doesNotMatch(bootstrapSource, /app\.use\(/);

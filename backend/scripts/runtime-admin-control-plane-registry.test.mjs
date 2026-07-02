@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import test from 'node:test';
+
+const root = resolve(import.meta.dirname, '..');
+const appSource = readFileSync(resolve(root, 'src/app.ts'), 'utf8');
+const controlPlaneSource = readFileSync(
+  resolve(root, 'src/routes/runtime-admin-control-plane.routes.ts'),
+  'utf8',
+);
+const runtimeAdminSource = readFileSync(resolve(root, 'src/routes/runtime-admin.routes.ts'), 'utf8');
+const publishAdminSource = readFileSync(resolve(root, 'src/routes/publish-admin.routes.ts'), 'utf8');
+const transportSource = readFileSync(resolve(root, 'src/routes/runtime-admin-transport.ts'), 'utf8');
+
+test('runtime admin control plane is mounted from one explicit registry', () => {
+  assert.match(controlPlaneSource, /export const RUNTIME_ADMIN_CONTROL_PLANES/);
+  assert.match(controlPlaneSource, /prefix:\s*'\/ops'/);
+  assert.match(controlPlaneSource, /prefix:\s*'\/api\/admin'/);
+  assert.match(controlPlaneSource, /reconcileLabel:\s*'OPS'/);
+  assert.match(controlPlaneSource, /reconcileLabel:\s*'ADMIN'/);
+  assert.match(controlPlaneSource, /createRuntimeAdminTokenMiddleware\(requireAdminToken\)/);
+  assert.match(controlPlaneSource, /for \(const plane of RUNTIME_ADMIN_CONTROL_PLANES\)/);
+  assert.match(controlPlaneSource, /app\.use\(\s*plane\.prefix/);
+  assert.match(controlPlaneSource, /router\.use\(createRuntimeAdminControlRouter\(plane\.reconcileLabel/);
+  assert.match(controlPlaneSource, /router\.use\('\/publish', createPublishAdminRouter\(\)\)/);
+  assert.match(controlPlaneSource, /router\.use\('\/patterns', patternsRoutes\)/);
+  assert.match(controlPlaneSource, /router\.use\('\/render-contract', renderContractRoutes\)/);
+
+  assert.match(appSource, /registerRuntimeAdminControlPlaneRoutes\(/);
+  assert.doesNotMatch(appSource, /patternsRoutes/);
+  assert.doesNotMatch(appSource, /renderContractRoutes/);
+  assert.doesNotMatch(appSource, /registerPublishAdminRoutes/);
+  assert.doesNotMatch(appSource, /createRuntimeAdminTokenMiddleware/);
+  assert.doesNotMatch(appSource, /app\.use\('\/ops\/(?:patterns|publish|render-contract)'/);
+  assert.doesNotMatch(appSource, /app\.use\('\/api\/admin\/(?:patterns|publish|render-contract)'/);
+});
+
+test('admin token enforcement is middleware-owned, not repeated per route', () => {
+  assert.match(transportSource, /export function createRuntimeAdminTokenMiddleware/);
+  assert.doesNotMatch(transportSource, /export function withRuntimeAdminToken/);
+  assert.doesNotMatch(runtimeAdminSource, /withRuntimeAdminToken/);
+  assert.doesNotMatch(publishAdminSource, /withRuntimeAdminToken/);
+  assert.doesNotMatch(publishAdminSource, /RuntimeAdminTokenGuard/);
+  assert.match(publishAdminSource, /export function createPublishAdminRouter\(\): Router/);
+  assert.match(runtimeAdminSource, /export function createRuntimeAdminControlRouter/);
+  assert.match(runtimeAdminSource, /router\.get\('\/runtime'/);
+  assert.match(runtimeAdminSource, /router\.post\('\/acceleration\/reconcile'/);
+  assert.match(runtimeAdminSource, /export function registerRuntimeAdminIndexRoutes/);
+  assert.doesNotMatch(runtimeAdminSource, /export function registerRuntimeAdminRoutes/);
+});

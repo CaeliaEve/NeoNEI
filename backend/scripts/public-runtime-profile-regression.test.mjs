@@ -11,6 +11,7 @@ const appSource = readFileSync(join(repoRoot, 'backend/src/app.ts'), 'utf8');
 const serverSettingsSource = readFileSync(join(repoRoot, 'backend/src/config/server-settings.ts'), 'utf8');
 const apiNamespacesRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/api-namespaces.routes.ts'), 'utf8');
 const apiNamespaceRegistrySource = readFileSync(join(repoRoot, 'backend/src/routes/api-namespace-registry.ts'), 'utf8');
+const adminControlPlaneSource = readFileSync(join(repoRoot, 'backend/src/routes/runtime-admin-control-plane.routes.ts'), 'utf8');
 const staticAssetRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/static-assets.routes.ts'), 'utf8');
 const errorResponseSource = readFileSync(join(repoRoot, 'backend/src/utils/error-response.ts'), 'utf8');
 const patternsRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/patterns.routes.ts'), 'utf8');
@@ -37,8 +38,12 @@ test('public runtime profile is explicit and keeps control on ops/admin mounts',
   assert.doesNotMatch(apiNamespaceRegistrySource, /labMultiblocks|labEcosystem|labGtDiagrams|labForestryGenetics/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /\/lab\/(?:multiblocks|ecosystem|gt-diagrams|forestry-genetics)/);
   assert.match(apiNamespaceRegistrySource, /function mountApiNamespaces[\s\S]*for \(const namespace of namespaces\)[\s\S]*mountApiNamespace\(app, namespace, tagApiTier\);/);
-  assert.match(appSource, /app\.use\('\/ops\/patterns'/);
-  assert.match(appSource, /app\.use\('\/api\/admin\/patterns'/);
+  assert.match(appSource, /registerRuntimeAdminControlPlaneRoutes\(/);
+  assert.match(adminControlPlaneSource, /prefix:\s*'\/ops'/);
+  assert.match(adminControlPlaneSource, /prefix:\s*'\/api\/admin'/);
+  assert.match(adminControlPlaneSource, /router\.use\('\/patterns', patternsRoutes\)/);
+  assert.match(adminControlPlaneSource, /router\.use\('\/publish', createPublishAdminRouter\(\)\)/);
+  assert.match(adminControlPlaneSource, /router\.use\('\/render-contract', renderContractRoutes\)/);
   assert.match(staticAssetRoutesSource, /app\.use\(\s*'\/publish'/);
 });
 

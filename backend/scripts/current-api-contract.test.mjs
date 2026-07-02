@@ -299,6 +299,7 @@ test('external-runtime authority uses runtime recipe pack for item usage and pag
 test('dynamic sqlite read namespaces and lab bucket are retired from production /api', () => {
   const appSource = fs.readFileSync('src/app.ts', 'utf8');
   const publishAdminRoutesSource = fs.readFileSync('src/routes/publish-admin.routes.ts', 'utf8');
+  const adminControlPlaneSource = fs.readFileSync('src/routes/runtime-admin-control-plane.routes.ts', 'utf8');
   assert.doesNotMatch(namespaceSource, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority/);
   assert.match(namespaceSource, /publicRuntimeOnly: options\.publicRuntimeOnly/);
   assert.doesNotMatch(namespaceRegistrySource, /export const LAB_CONTROL_NAMESPACES/);
@@ -310,10 +311,13 @@ test('dynamic sqlite read namespaces and lab bucket are retired from production 
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/lab(?:\/|')/);
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipes-indexed'/);
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipe-bootstrap'/);
-  assert.match(appSource, /app\.use\('\/ops\/patterns'/);
-  assert.match(appSource, /app\.use\('\/api\/admin\/patterns'/);
-  assert.match(appSource, /app\.use\('\/ops\/render-contract'/);
-  assert.match(publishAdminRoutesSource, /'\/ops\/publish'/);
+  assert.match(appSource, /registerRuntimeAdminControlPlaneRoutes\(/);
+  assert.match(adminControlPlaneSource, /prefix:\s*'\/ops'/);
+  assert.match(adminControlPlaneSource, /prefix:\s*'\/api\/admin'/);
+  assert.match(adminControlPlaneSource, /router\.use\('\/patterns', patternsRoutes\)/);
+  assert.match(adminControlPlaneSource, /router\.use\('\/render-contract', renderContractRoutes\)/);
+  assert.match(adminControlPlaneSource, /router\.use\('\/publish', createPublishAdminRouter\(\)\)/);
+  assert.match(publishAdminRoutesSource, /createPublishAdminRouter/);
 });
 
 test('v1 runtime contracts advertise ops/admin control diagnostics, not legacy sqlite read routes', () => {

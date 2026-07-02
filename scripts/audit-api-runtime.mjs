@@ -93,6 +93,9 @@ const staticAssetRoutes = existsSync(join(repoRoot, "backend/src/routes/static-a
 const runtimeAdminRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime-admin.routes.ts"))
   ? readText("backend/src/routes/runtime-admin.routes.ts")
   : "";
+const runtimeAdminControlPlaneRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime-admin-control-plane.routes.ts"))
+  ? readText("backend/src/routes/runtime-admin-control-plane.routes.ts")
+  : "";
 const publishAdminRoutes = existsSync(join(repoRoot, "backend/src/routes/publish-admin.routes.ts"))
   ? readText("backend/src/routes/publish-admin.routes.ts")
   : "";
@@ -105,7 +108,15 @@ const apiNamespaceRegistry = existsSync(join(repoRoot, "backend/src/routes/api-n
 const currentRuntimeEndpointRegistry = existsSync(join(repoRoot, "backend/src/routes/current-runtime-endpoint-registry.ts"))
   ? readText("backend/src/routes/current-runtime-endpoint-registry.ts")
   : "";
-const routeSource = [server, appSource, staticAssetRoutes, runtimeAdminRoutes, publishAdminRoutes, apiNamespaceRoutes].join("\n");
+const routeSource = [
+  server,
+  appSource,
+  staticAssetRoutes,
+  runtimeAdminRoutes,
+  runtimeAdminControlPlaneRoutes,
+  publishAdminRoutes,
+  apiNamespaceRoutes,
+].join("\n");
 const apiService = readText("frontend/src/services/api.ts");
 const runtimeRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime.routes.ts"))
   ? readText("backend/src/routes/runtime.routes.ts")
@@ -126,12 +137,24 @@ const devOnlyLegacyDynamicRoutes = legacyDynamicRoutesWithContext
   .map((route) => route.line);
 const adminRoutes = routeRegistrationsWithContext.filter((route) => /\/api\/admin/.test(route.line)).map((route) => route.line);
 const explicitAdminControlRoutes = [
-  appSource.includes("'/ops/patterns'") ? "app:/ops/patterns" : null,
-  appSource.includes("'/api/admin/patterns'") ? "app:/api/admin/patterns" : null,
-  publishAdminRoutes.includes("'/ops/publish'") ? "publish-admin:/ops/publish" : null,
-  publishAdminRoutes.includes("'/api/admin/publish'") ? "publish-admin:/api/admin/publish" : null,
-  appSource.includes("'/ops/render-contract'") ? "app:/ops/render-contract" : null,
-  appSource.includes("'/api/admin/render-contract'") ? "app:/api/admin/render-contract" : null,
+  runtimeAdminControlPlaneRoutes.includes("prefix: '/ops'") && runtimeAdminControlPlaneRoutes.includes("'/patterns'")
+    ? "control-plane:/ops/patterns"
+    : null,
+  runtimeAdminControlPlaneRoutes.includes("prefix: '/api/admin'") && runtimeAdminControlPlaneRoutes.includes("'/patterns'")
+    ? "control-plane:/api/admin/patterns"
+    : null,
+  runtimeAdminControlPlaneRoutes.includes("prefix: '/ops'") && runtimeAdminControlPlaneRoutes.includes("'/publish'")
+    ? "control-plane:/ops/publish"
+    : null,
+  runtimeAdminControlPlaneRoutes.includes("prefix: '/api/admin'") && runtimeAdminControlPlaneRoutes.includes("'/publish'")
+    ? "control-plane:/api/admin/publish"
+    : null,
+  runtimeAdminControlPlaneRoutes.includes("prefix: '/ops'") && runtimeAdminControlPlaneRoutes.includes("'/render-contract'")
+    ? "control-plane:/ops/render-contract"
+    : null,
+  runtimeAdminControlPlaneRoutes.includes("prefix: '/api/admin'") && runtimeAdminControlPlaneRoutes.includes("'/render-contract'")
+    ? "control-plane:/api/admin/render-contract"
+    : null,
 ].filter(Boolean);
 const apiNamespaceMountPaths = matchCaptureAll(apiNamespaceRegistry, /mountPath:\s*['"`]([^'"`]+)['"`]/g);
 const currentRuntimeEndpointPaths = matchCaptureAll(currentRuntimeEndpointRegistry, /path:\s*['"`]([^'"`]+)['"`]/g);
@@ -166,7 +189,7 @@ const frontendRuntimeCalls = {
 
 const runtimeCapabilities = {
   hasRuntimeNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/runtime\b|:\/api\/runtime\b/.test(line)),
-  hasOpsNamespace: productRuntimeRoutes.some((line) => /['"`]\/ops\b/.test(line)),
+  hasOpsNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/ops\b/.test(line)),
   hasRetiredLabNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/lab\b/.test(line)),
   hasRuntimeDiagnostics: /\/diagnostics/.test(runtimeRoutes) || /\/runtime\/diagnostics/.test(server),
   hasRuntimeContracts: /\/contracts/.test(runtimeRoutes) || /\/runtime\/contracts/.test(server),
