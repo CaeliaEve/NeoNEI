@@ -26,6 +26,14 @@ const transportSource = readFileSync(resolve(root, 'src/routes/runtime-admin-tra
 test('runtime admin control plane is mounted from one explicit registry', () => {
   assert.match(controlPlaneRegistrySource, /export const RUNTIME_ADMIN_CONTROL_PLANES/);
   assert.match(controlPlaneRegistrySource, /export const RUNTIME_ADMIN_CONTROL_PLANE_SUBSYSTEMS/);
+  assert.match(controlPlaneRegistrySource, /RUNTIME_ADMIN_CONTROL_PLANE_NAMES/);
+  assert.match(controlPlaneRegistrySource, /RUNTIME_ADMIN_CONTROL_PLANE_SUBSYSTEM_KEYS/);
+  assert.match(controlPlaneRegistrySource, /validateAndFreezeControlPlanes/);
+  assert.match(controlPlaneRegistrySource, /validateAndFreezeControlPlaneSubsystems/);
+  assert.match(controlPlaneRegistrySource, /Duplicate runtime admin control plane descriptor/);
+  assert.match(controlPlaneRegistrySource, /Missing runtime admin control plane descriptor/);
+  assert.match(controlPlaneRegistrySource, /Duplicate runtime admin control plane subsystem descriptor/);
+  assert.match(controlPlaneRegistrySource, /Missing runtime admin control plane subsystem descriptor/);
   assert.match(controlPlaneRegistrySource, /prefix:\s*'\/ops'/);
   assert.match(controlPlaneRegistrySource, /prefix:\s*'\/api\/admin'/);
   assert.match(controlPlaneRegistrySource, /reconcileLabel:\s*'OPS'/);
@@ -79,6 +87,12 @@ test('admin token enforcement is middleware-owned, not repeated per route', () =
 test('runtime admin index and control endpoints are table-driven', () => {
   assert.match(runtimeAdminRegistrySource, /export const RUNTIME_ADMIN_INDEX_ENDPOINTS/);
   assert.match(runtimeAdminRegistrySource, /export const RUNTIME_ADMIN_CONTROL_ENDPOINTS/);
+  assert.match(runtimeAdminRegistrySource, /RUNTIME_ADMIN_INDEX_ENDPOINT_KEYS/);
+  assert.match(runtimeAdminRegistrySource, /RUNTIME_ADMIN_CONTROL_ENDPOINT_KEYS/);
+  assert.match(runtimeAdminRegistrySource, /validateAndFreezeEndpoints/);
+  assert.match(runtimeAdminRegistrySource, /Duplicate \$\{label\} endpoint descriptor/);
+  assert.match(runtimeAdminRegistrySource, /Missing \$\{label\} endpoint descriptor/);
+  assert.match(runtimeAdminRegistrySource, /\$\{label\} endpoint path must be absolute/);
   assert.match(runtimeAdminRegistrySource, /path: '\/api\/health'/);
   assert.match(runtimeAdminRegistrySource, /path: '\/api'/);
   assert.match(runtimeAdminRegistrySource, /path: '\/api\/openapi\.json'/);
