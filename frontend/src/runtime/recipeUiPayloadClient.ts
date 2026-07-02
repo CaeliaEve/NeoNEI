@@ -1,11 +1,8 @@
 import type { RecipeUiPayload } from './types';
 import { getRuntimeRecipeUiPayload } from './recipeClient';
-import { renderContractRuntimeClient } from './renderContractClient';
 import { setCacheWithLimit } from './cacheUtils';
 
 type RecipeUiPayloadClientOptions = {
-  readPersistent: <T>(kind: string, identity: Record<string, unknown>) => Promise<T | null>;
-  persist: (kind: string, identity: Record<string, unknown>, payload: unknown) => void;
   resolveRuntimeSignature: () => Promise<string | null>;
   reportMissing: (payload: {
     recipeId: string;
@@ -13,7 +10,6 @@ type RecipeUiPayloadClientOptions = {
     message: string;
     details?: Record<string, unknown>;
   }) => void;
-  isHttpNotFoundError: (error: unknown) => boolean;
 };
 
 export function createRecipeUiPayloadClient(options: RecipeUiPayloadClientOptions) {
@@ -48,33 +44,16 @@ export function createRecipeUiPayloadClient(options: RecipeUiPayloadClientOption
         return distDataPayload;
       }
       const runtimeSignature = await options.resolveRuntimeSignature();
-
-      const persistent = await options.readPersistent<RecipeUiPayload>('recipe-ui-payload', { recipeId });
-      if (persistent) {
-        setCacheWithLimit(uiPayloadCache, recipeId, persistent, 256);
-        return persistent;
-      }
-      try {
-        const payload = await renderContractRuntimeClient.getRecipeUiPayload(recipeId);
-        missingUiPayloadCache.delete(recipeId);
-        setCacheWithLimit(uiPayloadCache, recipeId, payload, 256);
-        options.persist('recipe-ui-payload', { recipeId }, payload);
-        return payload;
-      } catch (error) {
-        if (options.isHttpNotFoundError(error)) {
-          missingUiPayloadCache.add(recipeId);
-          options.reportMissing({
-            recipeId,
-            runtimeCacheKey: runtimeSignature,
-            message: 'Recipe UI payload is missing from dist-data, persistent cache, and lab compatibility API',
-            details: {
-              labRoute: '/render-contract/ui-payload',
-            },
-          });
-          return null;
-        }
-        throw error;
-      }
+      missingUiPayloadCache.add(recipeId);
+      options.reportMissing({
+        recipeId,
+        runtimeCacheKey: runtimeSignature,
+        message: 'Recipe UI payload is missing from compiled runtime artifacts',
+        details: {
+          authority: 'dist-data recipe UI payload index',
+        },
+      });
+      return null;
     })().finally(() => {
       uiPayloadInFlight.delete(recipeId);
     });

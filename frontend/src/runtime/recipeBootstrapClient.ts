@@ -15,12 +15,6 @@ import {
   canUsePublishedRecipeGroupIndex,
   canUsePublishedRecipeGroupWindow,
   canUsePublishedRecipeSearchPack,
-  getRecipeBootstrapCategoryGroupCompat,
-  getRecipeBootstrapCompat,
-  getRecipeBootstrapProducedByGroupCompat,
-  getRecipeBootstrapSearchCompat,
-  getRecipeBootstrapShardCompat,
-  getRecipeBootstrapUsedInGroupCompat,
   getRuntimeRecipeBootstrapCategoryGroup,
   getRuntimeRecipeBootstrapProducedByGroup,
   getRuntimeRecipeBootstrapUsedInGroup,
@@ -38,11 +32,8 @@ import { setCacheWithLimit } from './cacheUtils';
 import { markPerfEvent } from '../services/perfMarks';
 
 type RecipeBootstrapClientOptions = {
-  preferLive: boolean;
   getManifest: () => Promise<PublicRuntimeManifest>;
   fetchPublishedJson: <T>(assetPath: string) => Promise<T>;
-  readPersistent: <T>(kind: string, identity: Record<string, unknown>) => Promise<T | null>;
-  persist: (kind: string, identity: Record<string, unknown>, payload: unknown) => void;
   getBrowserSearchPackShard: (shardId: string) => Promise<BrowserSearchPackResponse | null>;
   getBrowserSearchPack: () => Promise<BrowserSearchPackResponse>;
 };
@@ -51,10 +42,8 @@ type RecipeBootstrapLoadSource =
   | 'dist-data-v3'
   | 'memory-cache'
   | 'in-flight'
-  | 'persistent-cache'
   | 'item-recipe-bundle'
-  | 'legacy-static-bootstrap'
-  | 'dev-compat-api';
+  | 'published-bootstrap';
 
 const CACHE_LIMITS = {
   recipeBootstrap: 512,
@@ -62,19 +51,10 @@ const CACHE_LIMITS = {
   recipeBootstrapSearchPack: 96,
 } as const;
 
-const RECIPE_BOOTSTRAP_CACHE_SCHEMA = 'v3';
-
 function getNow(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
     : Date.now();
-}
-
-function withRecipeBootstrapCacheSchema<T extends Record<string, unknown>>(identity: T): T & { schema: string } {
-  return {
-    ...identity,
-    schema: RECIPE_BOOTSTRAP_CACHE_SCHEMA,
-  };
 }
 
 function resolvePublishedRecipeBootstrapPath(
@@ -285,10 +265,6 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
     itemId: string,
     tab: 'usedIn' | 'producedBy',
   ): Promise<PublishedRecipeBootstrapSearchPack | null> {
-    if (options.preferLive) {
-      return null;
-    }
-
     const normalizedItemId = `${itemId ?? ''}`.trim();
     if (!normalizedItemId) {
       return null;
@@ -306,15 +282,6 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
     }
 
     const request = (async () => {
-      const persistent = await options.readPersistent<PublishedRecipeBootstrapSearchPack>(
-        'recipe-bootstrap-search-pack',
-        { itemId: normalizedItemId, tab },
-      );
-      if (persistent) {
-        setCacheWithLimit(recipeBootstrapSearchPackCache, cacheKey, persistent, CACHE_LIMITS.recipeBootstrapSearchPack);
-        return persistent;
-      }
-
       const manifest = await options.getManifest();
       if (!canUsePublishedRecipeSearchPack(manifest, normalizedItemId)) {
         return null;
@@ -328,7 +295,6 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
       try {
         const published = await options.fetchPublishedJson<PublishedRecipeBootstrapSearchPack>(staticPath);
         setCacheWithLimit(recipeBootstrapSearchPackCache, cacheKey, published, CACHE_LIMITS.recipeBootstrapSearchPack);
-        options.persist('recipe-bootstrap-search-pack', { itemId: normalizedItemId, tab }, published);
         return published;
       } catch {
         return null;
@@ -363,52 +329,35 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
         return distDataBootstrap;
       }
 
-      if (!options.preferLive) {
-        const persistent = await options.readPersistent<RecipeBootstrapPayload>(
-          'recipe-bootstrap',
-          withRecipeBootstrapCacheSchema({ itemId }),
-        );
-        if (persistent) {
-          setCacheWithLimit(recipeBootstrapCache, itemId, persistent, CACHE_LIMITS.recipeBootstrap);
-          markRecipeBootstrapResolved(itemId, 'persistent-cache', startedAt, persistent);
-          return persistent;
-        }
-
-        const manifest = await options.getManifest();
-        const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap');
-        if (staticPath) {
-          try {
-            const published = await options.fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
-            setCacheWithLimit(recipeBootstrapCache, itemId, published, CACHE_LIMITS.recipeBootstrap);
-            options.persist('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), published);
-            markRecipeBootstrapResolved(itemId, 'legacy-static-bootstrap', startedAt, published);
-            return published;
-          } catch {
-            // Dev compatibility API handles missing publish bundle artifacts.
+      const manifest = await options.getManifest();
+      const itemRecipeBundlePath = resolvePublishedItemRecipeBundlePath(manifest, itemId);
+      if (itemRecipeBundlePath) {
+        try {
+          const publishedBundle = await options.fetchPublishedJson<unknown>(itemRecipeBundlePath);
+          const bundledBootstrap = unwrapPublishedItemRecipeBundle(publishedBundle);
+          if (bundledBootstrap) {
+            setCacheWithLimit(recipeBootstrapCache, itemId, bundledBootstrap, CACHE_LIMITS.recipeBootstrap);
+            markRecipeBootstrapResolved(itemId, 'item-recipe-bundle', startedAt, bundledBootstrap);
+            return bundledBootstrap;
           }
-        }
-        const itemRecipeBundlePath = resolvePublishedItemRecipeBundlePath(manifest, itemId);
-        if (itemRecipeBundlePath) {
-          try {
-            const publishedBundle = await options.fetchPublishedJson<unknown>(itemRecipeBundlePath);
-            const bundledBootstrap = unwrapPublishedItemRecipeBundle(publishedBundle);
-            if (bundledBootstrap) {
-              setCacheWithLimit(recipeBootstrapCache, itemId, bundledBootstrap, CACHE_LIMITS.recipeBootstrap);
-              options.persist('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), bundledBootstrap);
-              markRecipeBootstrapResolved(itemId, 'item-recipe-bundle', startedAt, bundledBootstrap);
-              return bundledBootstrap;
-            }
-          } catch {
-            // Dev compatibility API handles missing item-centric bundle artifacts.
-          }
+        } catch {
+          // Try the older immutable bootstrap bundle next; do not fall back to lab.
         }
       }
 
-      const payload = await getRecipeBootstrapCompat(itemId);
-      setCacheWithLimit(recipeBootstrapCache, itemId, payload, CACHE_LIMITS.recipeBootstrap);
-      options.persist('recipe-bootstrap', withRecipeBootstrapCacheSchema({ itemId }), payload);
-      markRecipeBootstrapResolved(itemId, 'dev-compat-api', startedAt, payload);
-      return payload;
+      const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap');
+      if (staticPath) {
+        try {
+          const published = await options.fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
+          setCacheWithLimit(recipeBootstrapCache, itemId, published, CACHE_LIMITS.recipeBootstrap);
+          markRecipeBootstrapResolved(itemId, 'published-bootstrap', startedAt, published);
+          return published;
+        } catch {
+          // Missing immutable artifacts are surfaced below instead of masked by lab.
+        }
+      }
+
+      throw new Error(`Runtime recipe bootstrap unavailable for ${itemId}: compiled runtime artifacts are missing`);
     })().finally(() => {
       recipeBootstrapInFlight.delete(itemId);
     });
@@ -435,34 +384,19 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
         return distDataBootstrap;
       }
 
-      if (!options.preferLive) {
-        const persistent = await options.readPersistent<RecipeBootstrapPayload>(
-          'recipe-bootstrap-shard',
-          withRecipeBootstrapCacheSchema({ itemId }),
-        );
-        if (persistent) {
-          setCacheWithLimit(recipeBootstrapShardCache, itemId, persistent, CACHE_LIMITS.recipeBootstrapShard);
-          return persistent;
-        }
-
-        const manifest = await options.getManifest();
-        const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'shard');
-        if (staticPath) {
-          try {
-            const published = await options.fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
-            setCacheWithLimit(recipeBootstrapShardCache, itemId, published, CACHE_LIMITS.recipeBootstrapShard);
-            options.persist('recipe-bootstrap-shard', withRecipeBootstrapCacheSchema({ itemId }), published);
-            return published;
-          } catch {
-            // Dev compatibility API handles missing publish bundle artifacts.
-          }
+      const manifest = await options.getManifest();
+      const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'shard');
+      if (staticPath) {
+        try {
+          const published = await options.fetchPublishedJson<RecipeBootstrapPayload>(staticPath);
+          setCacheWithLimit(recipeBootstrapShardCache, itemId, published, CACHE_LIMITS.recipeBootstrapShard);
+          return published;
+        } catch {
+          // Missing immutable artifacts are surfaced below instead of masked by lab.
         }
       }
 
-      const payload = await getRecipeBootstrapShardCompat(itemId);
-      setCacheWithLimit(recipeBootstrapShardCache, itemId, payload, CACHE_LIMITS.recipeBootstrapShard);
-      options.persist('recipe-bootstrap-shard', withRecipeBootstrapCacheSchema({ itemId }), payload);
-      return payload;
+      throw new Error(`Runtime recipe bootstrap shard unavailable for ${itemId}: compiled runtime artifacts are missing`);
     })().finally(() => {
       recipeBootstrapShardInFlight.delete(itemId);
     });
@@ -483,33 +417,13 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
 
     const normalizedMachineKey = `${groupOptions?.machineKey ?? ''}`.trim();
     const machineKey = normalizedMachineKey || (`${machineType ?? ''}`.trim() ? `${machineType}::${voltageTier ?? ''}` : '');
-    const identity = withRecipeBootstrapCacheSchema({
-      itemId,
-      machineType,
-      machineKey: machineKey || null,
-      voltageTier: voltageTier ?? null,
-      offset: groupOptions?.offset ?? 0,
-      limit: groupOptions?.limit ?? null,
-      includeRecipeIds: groupOptions?.includeRecipeIds === true,
-    });
-
-    if (!options.preferLive) {
-      const persistent = await options.readPersistent<RecipeBootstrapMachineGroupPayload>('recipe-bootstrap-produced-by-group', identity);
-      if (persistent) {
-        return persistent;
-      }
-
-      const manifest = await options.getManifest();
-      const published = await tryLoadPublishedMachineGroup(manifest, itemId, 'producedBy', machineKey, groupOptions);
-      if (published) {
-        options.persist('recipe-bootstrap-produced-by-group', identity, published);
-        return published;
-      }
+    const manifest = await options.getManifest();
+    const published = await tryLoadPublishedMachineGroup(manifest, itemId, 'producedBy', machineKey, groupOptions);
+    if (published) {
+      return published;
     }
 
-    const payload = await getRecipeBootstrapProducedByGroupCompat(itemId, machineType, voltageTier, groupOptions);
-    options.persist('recipe-bootstrap-produced-by-group', identity, payload);
-    return payload;
+    throw new Error(`Runtime produced-by group unavailable for ${itemId}/${machineKey || machineType}: compiled runtime artifacts are missing`);
   }
 
   async function getRecipeBootstrapUsedInGroup(
@@ -525,33 +439,13 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
 
     const normalizedMachineKey = `${groupOptions?.machineKey ?? ''}`.trim();
     const machineKey = normalizedMachineKey || (`${machineType ?? ''}`.trim() ? `${machineType}::${voltageTier ?? ''}` : '');
-    const identity = withRecipeBootstrapCacheSchema({
-      itemId,
-      machineType,
-      machineKey: machineKey || null,
-      voltageTier: voltageTier ?? null,
-      offset: groupOptions?.offset ?? 0,
-      limit: groupOptions?.limit ?? null,
-      includeRecipeIds: groupOptions?.includeRecipeIds === true,
-    });
-
-    if (!options.preferLive) {
-      const persistent = await options.readPersistent<RecipeBootstrapMachineGroupPayload>('recipe-bootstrap-used-in-group', identity);
-      if (persistent) {
-        return persistent;
-      }
-
-      const manifest = await options.getManifest();
-      const published = await tryLoadPublishedMachineGroup(manifest, itemId, 'usedIn', machineKey, groupOptions);
-      if (published) {
-        options.persist('recipe-bootstrap-used-in-group', identity, published);
-        return published;
-      }
+    const manifest = await options.getManifest();
+    const published = await tryLoadPublishedMachineGroup(manifest, itemId, 'usedIn', machineKey, groupOptions);
+    if (published) {
+      return published;
     }
 
-    const payload = await getRecipeBootstrapUsedInGroupCompat(itemId, machineType, voltageTier, groupOptions);
-    options.persist('recipe-bootstrap-used-in-group', identity, payload);
-    return payload;
+    throw new Error(`Runtime used-in group unavailable for ${itemId}/${machineKey || machineType}: compiled runtime artifacts are missing`);
   }
 
   async function tryLoadPublishedMachineGroup(
@@ -609,31 +503,13 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
       return runtimePayload;
     }
 
-    const identity = withRecipeBootstrapCacheSchema({
-      itemId,
-      tab,
-      categoryKey,
-      offset: groupOptions?.offset ?? 0,
-      limit: groupOptions?.limit ?? null,
-      includeRecipeIds: groupOptions?.includeRecipeIds === true,
-    });
-    if (!options.preferLive) {
-      const persistent = await options.readPersistent<RecipeBootstrapCategoryGroupPayload>('recipe-bootstrap-category-group', identity);
-      if (persistent) {
-        return persistent;
-      }
-
-      const manifest = await options.getManifest();
-      const published = await tryLoadPublishedCategoryGroup(manifest, itemId, tab, categoryKey, groupOptions);
-      if (published) {
-        options.persist('recipe-bootstrap-category-group', identity, published);
-        return published;
-      }
+    const manifest = await options.getManifest();
+    const published = await tryLoadPublishedCategoryGroup(manifest, itemId, tab, categoryKey, groupOptions);
+    if (published) {
+      return published;
     }
 
-    const payload = await getRecipeBootstrapCategoryGroupCompat(itemId, tab, categoryKey, groupOptions);
-    options.persist('recipe-bootstrap-category-group', identity, payload);
-    return payload;
+    throw new Error(`Runtime category group unavailable for ${itemId}/${tab}/${categoryKey}: compiled runtime artifacts are missing`);
   }
 
   async function tryLoadPublishedCategoryGroup(
@@ -691,25 +567,13 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
       return { itemId, tab, query: normalizedQuery, recipeIds: [], itemMatches: [] };
     }
 
-    if (!options.preferLive) {
-      const identity = { itemId, tab, query: normalizedQuery };
-      const persistent = await options.readPersistent<RecipeBootstrapSearchPayload>('recipe-bootstrap-search', identity);
-      if (persistent) {
-        return persistent;
-      }
-
-      const publishedPack = await getPublishedRecipeBootstrapSearchPack(itemId, tab);
-      if (publishedPack) {
-        const itemMatches = await searchPublishedItemMatches(normalizedQuery, 80, { signal: searchOptions?.signal }).catch(() => []);
-        const result = searchPublishedRecipeBootstrapPack(publishedPack, normalizedQuery, itemMatches);
-        options.persist('recipe-bootstrap-search', identity, result);
-        return result;
-      }
+    const publishedPack = await getPublishedRecipeBootstrapSearchPack(itemId, tab);
+    if (publishedPack) {
+      const itemMatches = await searchPublishedItemMatches(normalizedQuery, 80, { signal: searchOptions?.signal }).catch(() => []);
+      return searchPublishedRecipeBootstrapPack(publishedPack, normalizedQuery, itemMatches);
     }
 
-    const payload = await getRecipeBootstrapSearchCompat(itemId, tab, normalizedQuery, searchOptions);
-    options.persist('recipe-bootstrap-search', { itemId, tab, query: normalizedQuery }, payload);
-    return payload;
+    throw new Error(`Runtime recipe bootstrap search unavailable for ${itemId}/${tab}: compiled search pack is missing`);
   }
 
   async function prefetchRecipeBootstrapSearchPack(itemId: string, tab: 'usedIn' | 'producedBy'): Promise<void> {

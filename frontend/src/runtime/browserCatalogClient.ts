@@ -42,8 +42,6 @@ type BrowserCatalogClientOptions = {
   fetchPublishedJson: <T>(assetPath: string) => Promise<T>;
   isPublishedJsonWarm: (assetPath: string | null | undefined) => boolean;
   reportGap: (scope: string, route: string, reason: string, context?: { details?: Record<string, unknown> }) => void;
-  readPersistent: <T>(kind: string, identity: Record<string, unknown>) => Promise<T | null>;
-  persist: (kind: string, identity: Record<string, unknown>, payload: unknown) => void;
   resolveRuntimeSignature: () => Promise<string | null>;
   primeRuntimeSignature: (signature: string | null | undefined) => void;
   writePersistentRuntimeCache: (key: string, payload: unknown) => Promise<void>;
@@ -57,7 +55,6 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
   const browserSearchCatalogCache = new Map<string, BrowserSearchCatalogResponse>();
   const browserSearchCatalogInFlight = new Map<string, Promise<BrowserSearchCatalogResponse>>();
   const browserGroupItemsCache = new Map<string, BrowserGroupItemsResponse>();
-  const browserGroupItemsInFlight = new Map<string, Promise<BrowserGroupItemsResponse>>();
   const browserByIdsPackCache = new Map<string, BrowserByIdsPackResponse>();
   const browserByIdsPackInFlight = new Map<string, Promise<BrowserByIdsPackResponse>>();
 
@@ -73,7 +70,6 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     browserDefaultCatalogCache.clear();
     browserDefaultCatalogInFlight.clear();
     browserGroupItemsCache.clear();
-    browserGroupItemsInFlight.clear();
     browserByIdsPackCache.clear();
     browserByIdsPackInFlight.clear();
   }
@@ -89,8 +85,8 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
         totalPages: distDataPage.totalPages,
       };
     }
-    options.reportGap('browser-items', '/items/browser', 'dist-data browser page missing', { details: params });
-    return browserRuntimeClient.getItemsPageCompat(params);
+    options.reportGap('browser-items', 'dist-data browser page pack', 'dist-data browser page missing', { details: params });
+    throw new Error('Runtime browser items unavailable: compiled browser page pack is missing');
   }
 
   async function getBrowserDefaultCatalog(params?: { modId?: string; includeHidden?: boolean }): Promise<BrowserDefaultCatalogResponse> {
@@ -111,23 +107,10 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
         browserDefaultCatalogCache.set(cacheKey, distDataCatalog);
         return distDataCatalog;
       }
-      options.reportGap('browser-default-catalog', '/items/browser/default-catalog', 'dist-data default catalog missing', {
+      options.reportGap('browser-default-catalog', 'dist-data default catalog', 'dist-data default catalog missing', {
         details: params,
       });
-
-      const persistent = await options.readPersistent<BrowserDefaultCatalogResponse>(
-        'browser-default-catalog',
-        { scope: cacheKey },
-      );
-      if (persistent?.data?.length) {
-        browserDefaultCatalogCache.set(cacheKey, persistent);
-        return persistent;
-      }
-
-      const payload = await browserRuntimeClient.getDefaultCatalogCompat(params);
-      browserDefaultCatalogCache.set(cacheKey, payload);
-      options.persist('browser-default-catalog', { scope: cacheKey }, payload);
-      return payload;
+      throw new Error(`Runtime browser default catalog unavailable for ${cacheKey}: compiled catalog is missing`);
     })().finally(() => {
       browserDefaultCatalogInFlight.delete(cacheKey);
     });
@@ -211,33 +194,10 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
       browserGroupItemsCache.set(cacheKey, distDataGroupItems);
       return distDataGroupItems;
     }
-    options.reportGap('browser-group-items', `/items/browser/group/${normalizedGroupKey}`, 'dist-data group items missing', {
+    options.reportGap('browser-group-items', `dist-data group ${normalizedGroupKey}`, 'dist-data group items missing', {
       details: { groupKey: normalizedGroupKey, modId },
     });
-
-    const inflight = browserGroupItemsInFlight.get(cacheKey);
-    if (inflight) {
-      return inflight;
-    }
-
-    const request = (async () => {
-      const identity = { groupKey: normalizedGroupKey, scope: getBrowserDefaultCatalogCacheKey(modId, includeHidden) };
-      const persistent = await options.readPersistent<BrowserGroupItemsResponse>('browser-group-items', identity);
-      if (persistent?.items?.length) {
-        browserGroupItemsCache.set(cacheKey, persistent);
-        return persistent;
-      }
-
-      const payload = await browserRuntimeClient.getGroupItemsCompat(normalizedGroupKey, modId);
-      browserGroupItemsCache.set(cacheKey, payload);
-      options.persist('browser-group-items', identity, payload);
-      return payload;
-    })().finally(() => {
-      browserGroupItemsInFlight.delete(cacheKey);
-    });
-
-    browserGroupItemsInFlight.set(cacheKey, request);
-    return request;
+    throw new Error(`Runtime browser group unavailable for ${normalizedGroupKey}: compiled group pack is missing`);
   }
 
   function peekBrowserGroupItems(groupKey: string, modId?: string, includeHidden = false): BrowserGroupItemsResponse | null {
@@ -285,14 +245,14 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
       }
     }
 
-    options.reportGap('browser-page-pack', '/items/browser/page-pack', 'runtime browser page pack unavailable', {
+    options.reportGap('browser-page-pack', 'published browser page window', 'runtime browser page pack unavailable', {
       details: {
         ...params,
         staticBundleFailure,
         canUseStaticBundle,
       },
     });
-    return browserRuntimeClient.getPagePackCompat(params);
+    throw new Error(`Runtime browser page pack unavailable: ${staticBundleFailure ?? 'compiled page pack is missing'}`);
   }
 
   async function primeDefaultBrowserPagePack(params: { page: number; pageSize: number; slotSize?: number }): Promise<BrowserPagePackResponse> {
@@ -330,12 +290,12 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
       try {
         return await options.fetchPublishedJson<BrowserSearchPackResponse>(staticPath);
       } catch {
-        options.reportGap('browser-search-pack', '/items/search/pack', 'published search pack unreadable');
-        return browserRuntimeClient.getSearchPackCompat();
+        options.reportGap('browser-search-pack', 'published browser search pack', 'published search pack unreadable');
+        throw new Error(`Runtime browser search pack unavailable: published search pack could not be read (${staticPath})`);
       }
     }
-    options.reportGap('browser-search-pack', '/items/search/pack', 'runtime search pack missing');
-    return browserRuntimeClient.getSearchPackCompat();
+    options.reportGap('browser-search-pack', 'published browser search pack', 'runtime search pack missing');
+    throw new Error('Runtime browser search pack unavailable: compiled search pack is missing');
   }
 
   async function getBrowserSearchPackShard(shardId: string): Promise<BrowserSearchPackResponse | null> {
@@ -408,10 +368,10 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
       if (distDataPack) {
         return distDataPack;
       }
-      options.reportGap('browser-by-ids-pack', '/items/browser/by-ids-pack', 'dist-data by-id pack missing', {
+      options.reportGap('browser-by-ids-pack', 'dist-data by-id pack', 'dist-data by-id pack missing', {
         details: { itemIds: normalizedParams.itemIds, slotSize: normalizedParams.slotSize },
       });
-      return browserRuntimeClient.getByIdsPackCompat(normalizedParams);
+      throw new Error('Runtime browser by-id pack unavailable: compiled by-id pack is missing');
     })()
       .then((data) => {
         setCacheWithLimit(browserByIdsPackCache, cacheKey, data, 96);

@@ -8,6 +8,7 @@ const manifestClientSource = fs.readFileSync('src/runtime/manifestClient.ts', 'u
 const publishClientSource = fs.readFileSync('src/runtime/publishClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const recipeClientSource = fs.readFileSync('src/runtime/recipeClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const browserClientSource = fs.readFileSync('src/runtime/browserClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const browserCatalogClientSource = fs.readFileSync('src/runtime/browserCatalogClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const searchClientSource = fs.readFileSync('src/runtime/searchClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const browserProjectionSource = fs.readFileSync('src/runtime/browserProjection.ts', 'utf8').replace(/\r\n/g, '\n');
@@ -71,51 +72,33 @@ test('runtime clients consume runtime manifest types directly', () => {
     /import type \{[^}]*RecipeBootstrapPayload[^}]*RecipeUiPayload[^}]*\} from '\.\/types';/s,
     'recipe runtime client should import recipe payload types from runtime/types',
   );
-  assert.equal(
-    recipeClientSource.includes("from './devCompatClient';"),
-    true,
-    'recipe runtime client should keep lab compatibility access behind the runtime dev client',
+  assert.doesNotMatch(
+    recipeClientSource,
+    /from '\.\/devCompatClient'|getRecipeBootstrap[A-Za-z]*Compat|getLabPayload<RecipeBootstrap|\/recipe-bootstrap\//,
+    'recipe runtime client should expose compiled runtime path helpers only',
   );
-  for (const token of [
-    'getRecipeBootstrapCompat(',
-    'getRecipeBootstrapShardCompat(',
-    'getRecipeBootstrapProducedByGroupCompat(',
-    'getRecipeBootstrapUsedInGroupCompat(',
-    'getRecipeBootstrapCategoryGroupCompat(',
-    'getRecipeBootstrapSearchCompat(',
-  ]) {
-    assert.equal(recipeClientSource.includes(token), true, `missing recipe compat method: ${token}`);
-  }
-  for (const token of [
-    "getLabPayload<RecipeBootstrapPayload>(`/recipe-bootstrap",
-    "getLabPayload<RecipeBootstrapMachineGroupPayload>(`/recipe-bootstrap",
-    "getLabPayload<RecipeBootstrapCategoryGroupPayload>(`/recipe-bootstrap",
-    "getLabPayload<RecipeBootstrapSearchPayload>(`/recipe-bootstrap",
-  ]) {
-    assert.equal(apiSource.includes(token), false, `services/api.ts should not own recipe lab call: ${token}`);
-  }
+  assert.doesNotMatch(
+    runtimeSessionSource,
+    /preferLive|shouldPreferLiveRecipeBootstrap|VITE_PREFER_LIVE_RECIPE_BOOTSTRAP/,
+    'runtime session should not keep a live lab bootstrap preference switch',
+  );
 });
 
-test('publish runtime client owns home bootstrap lab compatibility read', () => {
+test('publish runtime client is static-asset only for public runtime bootstrap', () => {
   assert.equal(
-    publishClientSource.includes("from './types';"),
+    publishClientSource.includes('createPublishedJsonClient'),
     true,
-    'publish client should consume contracts from runtime/types',
+    'publish client should own static published JSON reads',
   );
-  assert.equal(
-    publishClientSource.includes("from './devCompatClient';"),
-    true,
-    'publish client should keep lab compatibility access behind the runtime dev client',
+  assert.doesNotMatch(
+    publishClientSource,
+    /from '\.\/devCompatClient'|getHomeBootstrapCompat|\/publish\/home-bootstrap/,
+    'publish client should not expose a home-bootstrap lab fallback',
   );
-  assert.equal(
-    publishClientSource.includes('getHomeBootstrapCompat('),
-    true,
-    'publish client should expose home bootstrap compatibility read',
-  );
-  assert.equal(
-    apiSource.includes("getLabPayload<HomeBootstrapResponse>('/publish/home-bootstrap'"),
-    false,
-    'services/api.ts should not own home bootstrap HTTP calls',
+  assert.doesNotMatch(
+    runtimeSessionSource,
+    /getHomeBootstrapCompat|\/publish\/home-bootstrap/,
+    'runtime session should not route home bootstrap misses to lab compatibility',
   );
 });
 
@@ -147,7 +130,7 @@ test('browser/search/texture runtime clients consume browser contracts from runt
   assert.doesNotMatch(textureClientSource, /from '\.\.\/services\/api'/);
 });
 
-test('browser runtime client owns browser lab compatibility reads', () => {
+test('browser runtime hot path has no lab compatibility reads', () => {
   for (const token of [
     'getItemsPageCompat(',
     'getDefaultCatalogCompat(',
@@ -155,18 +138,17 @@ test('browser runtime client owns browser lab compatibility reads', () => {
     'getPagePackCompat(',
     'getSearchPackCompat(',
     'getByIdsPackCompat(',
+    "from './devCompatClient';",
+    '/items/browser',
+    '/items/search/pack',
   ]) {
-    assert.equal(browserClientSource.includes(token), true, `missing browser compat method: ${token}`);
+    assert.equal(browserClientSource.includes(token), false, `browser client should not expose lab compat token: ${token}`);
   }
-  for (const token of [
-    "getLabPayload<PaginatedResponse<BrowserGridEntry>>('/items/browser'",
-    "getLabPayload<BrowserDefaultCatalogResponse>('/items/browser/default-catalog'",
-    "getLabPayload<BrowserPagePackResponse>('/items/browser/page-pack'",
-    "getLabPayload<BrowserSearchPackResponse>('/items/search/pack'",
-    "postLabPayload<BrowserByIdsPackResponse",
-  ]) {
-    assert.equal(apiSource.includes(token), false, `services/api.ts should not own browser lab call: ${token}`);
-  }
+  assert.doesNotMatch(
+    browserCatalogClientSource,
+    /get[A-Za-z]*Compat\(|\/items\/browser|\/items\/search\/pack|readPersistent|options\.persist/,
+    'browser catalog client should fail closed on missing compiled packs instead of calling lab or stale persistent caches',
+  );
   assert.equal(
     runtimeSessionSource.includes('createBrowserCatalogClient({') && apiCompatibilityFacadeSource.includes('browserCatalogClient.getBrowserPagePack(params)'),
     true,
@@ -314,7 +296,6 @@ test('render contract client lives outside the legacy api facade', () => {
   for (const token of [
     'getAnimatedAtlasEntry',
     'getAsset',
-    'getRecipeUiPayload',
   ]) {
     assert.equal(renderContractClientSource.includes(token), true, `missing render contract client method: ${token}`);
   }
@@ -323,10 +304,10 @@ test('render contract client lives outside the legacy api facade', () => {
     true,
     'api compatibility facade should delegate animated atlas reads to the runtime render contract client',
   );
-  assert.equal(
-    apiSource.includes("getLabPayload<RecipeUiPayload>('/render-contract/ui-payload'"),
-    false,
-    'services/api.ts should not own recipe UI payload HTTP calls',
+  assert.doesNotMatch(
+    renderContractClientSource,
+    /getRecipeUiPayload|RecipeUiPayload|\/render-contract\/ui-payload/,
+    'recipe UI payload must be served from compiled runtime artifacts, not render-contract lab fallback',
   );
 });
 test('indexed recipe client lives outside the legacy api facade', () => {
@@ -390,7 +371,6 @@ test('item client keeps item HTTP and detail cache outside the legacy api facade
     'getItem(',
     'getItemsByIds(',
     'getItemMachines(',
-    'getModsCompat(',
     'searchItemsFast(',
     'clearCaches()',
   ]) {
@@ -416,10 +396,10 @@ test('item client keeps item HTTP and detail cache outside the legacy api facade
     false,
     'services/api.ts should not own fast item search HTTP calls',
   );
-  assert.equal(
-    apiSource.includes("getLabPayload<Mod[]>('/items/mods'"),
-    false,
-    'services/api.ts should not own mods-list HTTP calls',
+  assert.doesNotMatch(
+    itemClientSource,
+    /getModsCompat|Mod\[\]|\/items\/mods/,
+    'mods list must come from compiled publish/runtime artifacts, not the item lab client',
   );
 });
 test('browser page projection logic lives outside the legacy api facade', () => {

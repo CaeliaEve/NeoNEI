@@ -178,7 +178,7 @@ export function reportRuntimeContractGap(
   const diagnostic = recordRuntimeDiagnostic({
     code: 'RUNTIME_CONTRACT_GAP',
     kind: 'contract-gap',
-    message: `${scope} required legacy route ${route}: ${reason}`,
+    message: `${scope} required runtime source ${route}: ${reason}`,
     scope,
     route,
     reason,
@@ -187,7 +187,7 @@ export function reportRuntimeContractGap(
   });
 
   if (strict) {
-    throw new Error(`Runtime contract unavailable for ${scope}; blocked legacy route ${route} (${reason})`);
+    throw new Error(`Runtime contract unavailable for ${scope}; missing runtime source ${route} (${reason})`);
   }
 
   const logger = options.logger ?? (typeof console !== 'undefined' ? console : undefined);

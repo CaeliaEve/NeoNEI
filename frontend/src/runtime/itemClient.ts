@@ -1,7 +1,6 @@
 import type {
   Item,
   ItemSearchBasic,
-  Mod,
   PaginatedResponse,
   Recipe,
   SearchItemsFastOptions,
@@ -86,10 +85,6 @@ export function createItemRuntimeClient() {
 
     getItemMachines(itemId: string): Promise<ItemMachinesResponse> {
       return getLabPayload<ItemMachinesResponse>(`/recipes/${itemId}/machines`);
-    },
-
-    getModsCompat(): Promise<Mod[]> {
-      return getLabPayload<Mod[]>('/items/mods');
     },
 
     searchItemsFast(keyword: string, limit: number = 60, options?: SearchItemsFastOptions): Promise<ItemSearchBasic[]> {

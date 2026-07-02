@@ -1,4 +1,4 @@
-﻿import { createPublishedJsonClient, getHomeBootstrapCompat } from '../../runtime/publishClient';
+import { createPublishedJsonClient } from '../../runtime/publishClient';
 import { createRuntimeManifestClient, getRuntimeCacheSignature, getRuntimeHealthSummary } from '../../runtime/manifestClient';
 import type {
   BrowserAtlasIndexResponse,
@@ -23,14 +23,12 @@ import { createTextureRuntimeClient } from '../../runtime/textureClient';
 import { createBrowserCatalogClient } from '../../runtime/browserCatalogClient';
 import { createRecipeUiPayloadClient } from '../../runtime/recipeUiPayloadClient';
 import { createRecipeBootstrapClient } from '../../runtime/recipeBootstrapClient';
-import { shouldPreferLiveRecipeBootstrap } from '../../runtime/recipeBootstrapPreference';
 import { buildRuntimePayloadCacheKey, setCacheWithLimit } from '../../runtime/cacheUtils';
 import { getDistDataHomeBootstrap } from '../distDataRuntime';
 import {
   deriveBrowserPagePackFromWindow,
   resolvePublishedWindowPath,
 } from '../../runtime/browserProjection';
-import { itemRuntimeClient } from '../../runtime/itemClient';
 
 const publishedJsonValueCache = new Map<string, unknown>();
 const publishedJsonInFlight = new Map<string, Promise<unknown>>();
@@ -44,7 +42,6 @@ const CACHE_LIMITS = {
 } as const;
 
 const STRICT_RUNTIME_V3 = isStrictRuntimeContractsEnabled();
-const PREFER_LIVE_RECIPE_BOOTSTRAP = shouldPreferLiveRecipeBootstrap();
 
 export const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>({
   onManifest: (manifest) => {
@@ -62,9 +59,9 @@ export async function getRuntimeHealth(): Promise<import('../../runtime/types').
   return getRuntimeHealthSummary();
 }
 
-export function reportRuntimeDevCompatGap(
+export function reportRuntimePayloadGap(
   scope: string,
-  route: string,
+  authority: string,
   reason: string,
   context?: {
     itemId?: string | null;
@@ -76,7 +73,7 @@ export function reportRuntimeDevCompatGap(
     details?: Record<string, unknown>;
   },
 ): void {
-  reportRuntimeContractGap(scope, route, reason, {
+  reportRuntimeContractGap(scope, authority, reason, {
     strict: STRICT_RUNTIME_V3,
     context,
   });
@@ -90,15 +87,6 @@ export function getRuntimeDiagnosticIdentity(): {
     sourceSignature: publishManifestCache?.sourceSignature ?? null,
     runtimeCacheKey: getRuntimeCacheSignature(publishManifestCache) || getStoredRuntimeSignature(),
   };
-}
-
-export function isHttpNotFoundError(error: unknown): boolean {
-  if (!error || typeof error !== 'object') {
-    return false;
-  }
-
-  const response = (error as { response?: { status?: number } }).response;
-  return Number(response?.status ?? 0) === 404;
 }
 
 export function isPublishedJsonWarm(assetPath: string | null | undefined): boolean {
@@ -188,31 +176,23 @@ export const browserCatalogClient = createBrowserCatalogClient({
   getManifest: () => runtimeManifestClient.getPublishManifest(),
   fetchPublishedJson,
   isPublishedJsonWarm,
-  reportGap: (scope, route, reason, context) => reportRuntimeDevCompatGap(scope, route, reason, {
+  reportGap: (scope, route, reason, context) => reportRuntimePayloadGap(scope, route, reason, {
     ...getRuntimeDiagnosticIdentity(),
     details: context?.details,
   }),
-  readPersistent: readPersistentRuntimePayload,
-  persist: persistRuntimePayload,
   resolveRuntimeSignature,
   primeRuntimeSignature: primeRuntimeCacheSignature,
   writePersistentRuntimeCache,
 });
 
 export const recipeUiPayloadClient = createRecipeUiPayloadClient({
-  readPersistent: readPersistentRuntimePayload,
-  persist: persistRuntimePayload,
   resolveRuntimeSignature,
   reportMissing: reportMissingRuntimePayload,
-  isHttpNotFoundError,
 });
 
 export const recipeBootstrapClient = createRecipeBootstrapClient({
-  preferLive: PREFER_LIVE_RECIPE_BOOTSTRAP,
   getManifest: () => runtimeManifestClient.getPublishManifest(),
   fetchPublishedJson,
-  readPersistent: readPersistentRuntimePayload,
-  persist: persistRuntimePayload,
   getBrowserSearchPackShard: (shardId) => browserCatalogClient.getBrowserSearchPackShard(shardId),
   getBrowserSearchPack: () => browserCatalogClient.getBrowserSearchPack(),
 });
@@ -292,16 +272,11 @@ export async function getRuntimeHomeBootstrap(params: {
       : 'published home bootstrap window missing';
   }
 
-  reportRuntimeDevCompatGap('home-bootstrap', '/publish/home-bootstrap', 'runtime home bootstrap unavailable', {
+  reportRuntimePayloadGap('home-bootstrap', 'published home bootstrap window', 'runtime home bootstrap unavailable', {
     ...getRuntimeDiagnosticIdentity(),
     details: { ...params, staticBundleFailure },
   });
-  const data = await getHomeBootstrapCompat(params);
-  updateCachedPublishManifest(data.manifest);
-  if (Array.isArray(data.mods)) {
-    persistRuntimePayload('mods-list', { scope: 'all' }, data.mods);
-  }
-  return data;
+  throw new Error(`Runtime home bootstrap unavailable: ${staticBundleFailure ?? 'missing compiled payload'}`);
 }
 
 export async function getRuntimeMods(): Promise<Mod[]> {
@@ -321,20 +296,16 @@ export async function getRuntimeMods(): Promise<Mod[]> {
       persistRuntimePayload('mods-list', { scope: 'all' }, published);
       return published;
     } catch {
-      reportRuntimeDevCompatGap('mods-list', '/items/mods', 'published mods list could not be read', {
+      reportRuntimePayloadGap('mods-list', 'published mods list', 'published mods list could not be read', {
         ...getRuntimeDiagnosticIdentity(),
         details: { staticPath },
       });
-      const payload = await itemRuntimeClient.getModsCompat();
-      persistRuntimePayload('mods-list', { scope: 'all' }, payload);
-      return payload;
+      throw new Error(`Runtime mods list unavailable: published mods list could not be read (${staticPath})`);
     }
   }
 
-  reportRuntimeDevCompatGap('mods-list', '/items/mods', 'runtime mods list missing', {
+  reportRuntimePayloadGap('mods-list', 'published mods list', 'runtime mods list missing', {
     ...getRuntimeDiagnosticIdentity(),
   });
-  const payload = await itemRuntimeClient.getModsCompat();
-  persistRuntimePayload('mods-list', { scope: 'all' }, payload);
-  return payload;
+  throw new Error('Runtime mods list unavailable: publish manifest does not declare a mods list');
 }

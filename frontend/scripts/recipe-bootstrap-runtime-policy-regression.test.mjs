@@ -5,34 +5,33 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const preferenceSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeBootstrapPreference.ts'), 'utf8').replace(/\r\n/g, '\n');
+const runtimeSessionSource = fs.readFileSync(path.join(frontendRoot, 'src/services/api/runtimeSession.ts'), 'utf8').replace(/\r\n/g, '\n');
 const clientSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeBootstrapClient.ts'), 'utf8').replace(/\r\n/g, '\n');
+const recipeClientSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeClient.ts'), 'utf8').replace(/\r\n/g, '\n');
 const devCompatSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/devCompatClient.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-test('live recipe bootstrap preference is disabled by public runtime policy', () => {
-  assert.match(preferenceSource, /import \{ isRuntimeDevCompatDisabled \} from '\.\/runtimeMode';/);
-  assert.match(preferenceSource, /if \(isRuntimeDevCompatDisabled\(\)\) \{\n\s*return false;\n\s*\}/);
-  assert.match(preferenceSource, /VITE_PREFER_LIVE_RECIPE_BOOTSTRAP === '1'/);
-  assert.match(preferenceSource, /neonei:prefer-live-recipe-bootstrap/);
+test('live recipe bootstrap preference module is retired from runtime hot paths', () => {
+  assert.equal(fs.existsSync(path.join(frontendRoot, 'src/runtime/recipeBootstrapPreference.ts')), false);
+  assert.doesNotMatch(runtimeSessionSource, /shouldPreferLiveRecipeBootstrap|VITE_PREFER_LIVE_RECIPE_BOOTSTRAP|prefer-live-recipe-bootstrap/);
+  assert.doesNotMatch(clientSource, /preferLive|dev-compat-api/);
 });
 
-test('recipe bootstrap production path tries compiled artifacts before lab compatibility', () => {
+test('recipe bootstrap runtime path uses compiled artifacts only', () => {
   const distDataIndex = clientSource.indexOf('const distDataBootstrap = await getRuntimeRecipeBootstrap(itemId)');
-  const publishedIndex = clientSource.indexOf('const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, \'bootstrap\')');
   const bundleIndex = clientSource.indexOf('const itemRecipeBundlePath = resolvePublishedItemRecipeBundlePath(manifest, itemId)');
-  const compatIndex = clientSource.indexOf('const payload = await getRecipeBootstrapCompat(itemId)');
+  const publishedIndex = clientSource.indexOf("const staticPath = resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap')");
+  const failClosedIndex = clientSource.indexOf('Runtime recipe bootstrap unavailable for');
   assert.notEqual(distDataIndex, -1, 'runtime dist-data bootstrap path must exist');
-  assert.notEqual(publishedIndex, -1, 'published bootstrap path must exist');
   assert.notEqual(bundleIndex, -1, 'item recipe bundle path must exist');
-  assert.notEqual(compatIndex, -1, 'lab compatibility path must remain explicit for dev diagnostics');
-  assert.equal(distDataIndex < publishedIndex, true, 'dist-data runtime path must be first');
-  assert.equal(publishedIndex < bundleIndex, true, 'published bootstrap should precede item bundle');
-  assert.equal(bundleIndex < compatIndex, true, 'lab compatibility must be the last resort');
+  assert.notEqual(publishedIndex, -1, 'published immutable bootstrap path must exist');
+  assert.notEqual(failClosedIndex, -1, 'missing compiled payloads must fail closed');
+  assert.equal(distDataIndex < bundleIndex, true, 'dist-data runtime path must be first');
+  assert.equal(bundleIndex < publishedIndex, true, 'item bundle should precede older immutable bootstrap files');
+  assert.equal(publishedIndex < failClosedIndex, true, 'compiled artifact attempts must precede fail-closed error');
 });
 
-test('lab recipe bootstrap fallback fails closed when runtime dev compatibility is disabled', () => {
-  assert.match(devCompatSource, /isRuntimeDevCompatDisabled\(\)/);
+test('recipe bootstrap lab compatibility fallback is not reachable from runtime clients', () => {
   assert.match(devCompatSource, /LAB_DEV_COMPAT_BLOCKED/);
-  assert.match(devCompatSource, /throw new Error\(`Lab compatibility API is disabled/);
-  assert.match(clientSource, /getRecipeBootstrapCompat\(itemId\)/);
+  assert.doesNotMatch(clientSource, /getRecipeBootstrap[A-Za-z]*Compat|devCompatClient|getLabPayload|\/recipe-bootstrap\//);
+  assert.doesNotMatch(recipeClientSource, /getRecipeBootstrap[A-Za-z]*Compat|getLabPayload|\/recipe-bootstrap\//);
 });
