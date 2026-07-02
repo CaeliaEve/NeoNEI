@@ -296,42 +296,34 @@ test('external-runtime authority uses runtime recipe pack for item usage and pag
 });
 
 
-test('dynamic sqlite read namespaces are retired from lab and never mounted under production /api', () => {
+test('dynamic sqlite read namespaces and lab bucket are retired from production /api', () => {
+  const appSource = fs.readFileSync('src/app.ts', 'utf8');
+  const publishAdminRoutesSource = fs.readFileSync('src/routes/publish-admin.routes.ts', 'utf8');
   assert.doesNotMatch(namespaceSource, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority/);
   assert.match(namespaceSource, /publicRuntimeOnly: options\.publicRuntimeOnly/);
-  assert.match(namespaceRegistrySource, /export const LAB_CONTROL_NAMESPACES/);
-  assert.match(namespaceRegistrySource, /tier: 'lab-control'/);
+  assert.doesNotMatch(namespaceRegistrySource, /export const LAB_CONTROL_NAMESPACES/);
+  assert.doesNotMatch(namespaceRegistrySource, /tier: 'lab-control'/);
   assert.doesNotMatch(namespaceRegistrySource, /dev-compat|DEV_COMPAT_NAMESPACES/);
   assert.doesNotMatch(namespaceRegistrySource, /export const LEGACY_COMPAT_NAMESPACES/);
   assert.doesNotMatch(namespaceRegistrySource, /legacy-compat/);
   assert.doesNotMatch(namespaceRegistrySource, /labItems|labRecipes|labRecipeBootstrap/);
-  assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/lab\/(?:items|recipes|recipe-bootstrap)'/);
+  assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/lab(?:\/|')/);
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipes-indexed'/);
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipe-bootstrap'/);
-  assert.match(namespaceRegistrySource, /mountPath: '\/lab\/patterns'/);
-  assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/lab\/publish'/);
-  assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/lab\/render-contract'/);
-  assert.match(fs.readFileSync('src/app.ts', 'utf8'), /app\.use\('\/ops\/render-contract'/);
-  assert.match(fs.readFileSync('src/routes/publish-admin.routes.ts', 'utf8'), /'\/ops\/publish'/);
-
-  const labGateIndex = namespaceRegistrySource.indexOf('if (!input.publicRuntimeOnly) {');
-  assert.notEqual(labGateIndex, -1, 'lab api gate must exist');
-  const labGateBody = namespaceRegistrySource.slice(
-    labGateIndex,
-    namespaceRegistrySource.indexOf('  namespaces.push(CURRENT_API_NAMESPACE)', labGateIndex),
-  );
-  assert.match(labGateBody, /namespaces\.push\(\.\.\.LAB_CONTROL_NAMESPACES\)/);
+  assert.match(appSource, /app\.use\('\/ops\/patterns'/);
+  assert.match(appSource, /app\.use\('\/api\/admin\/patterns'/);
+  assert.match(appSource, /app\.use\('\/ops\/render-contract'/);
+  assert.match(publishAdminRoutesSource, /'\/ops\/publish'/);
 });
 
-test('v1 runtime contracts advertise lab-only control diagnostics, not legacy sqlite read routes', () => {
+test('v1 runtime contracts advertise ops/admin control diagnostics, not legacy sqlite read routes', () => {
   const v1Source = fs.readFileSync('src/routes/v1.routes.ts', 'utf8');
   assert.doesNotMatch(v1Source, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority|legacyApiBase/);
   assert.match(v1Source, /control: \{/);
-  assert.match(v1Source, /patterns: '\/lab\/patterns'/);
+  assert.match(v1Source, /patterns: '\/ops\/patterns'/);
   assert.match(v1Source, /publish: '\/ops\/publish'/);
   assert.match(v1Source, /renderContract: '\/ops\/render-contract'/);
-  assert.doesNotMatch(v1Source, /\/lab\/(?:publish|render-contract)/);
-  assert.doesNotMatch(v1Source, /\/lab\/(?:items|recipes|recipe-bootstrap)/);
+  assert.doesNotMatch(v1Source, /\/lab\//);
   assert.doesNotMatch(v1Source, /\/api\/recipes-indexed/);
   assert.doesNotMatch(v1Source, /\/api\/recipe-bootstrap/);
   assert.doesNotMatch(v1Source, /compatibility: \{/);

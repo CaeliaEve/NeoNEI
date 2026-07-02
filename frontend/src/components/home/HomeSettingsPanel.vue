@@ -261,7 +261,7 @@ watch(
                     <button
                       type="button"
                       :disabled="!patternControlEnabled"
-                      :title="patternControlEnabled ? '样板管理' : '样板管理属于 lab control，只在开发/控制模式启用'"
+                      :title="patternControlEnabled ? '样板管理' : '样板管理属于 ops/admin control，只在开发/控制模式启用'"
                       @click="
                         selectView('patterns');
                       "

@@ -126,6 +126,8 @@ const devOnlyLegacyDynamicRoutes = legacyDynamicRoutesWithContext
   .map((route) => route.line);
 const adminRoutes = routeRegistrationsWithContext.filter((route) => /\/api\/admin/.test(route.line)).map((route) => route.line);
 const explicitAdminControlRoutes = [
+  appSource.includes("'/ops/patterns'") ? "app:/ops/patterns" : null,
+  appSource.includes("'/api/admin/patterns'") ? "app:/api/admin/patterns" : null,
   publishAdminRoutes.includes("'/ops/publish'") ? "publish-admin:/ops/publish" : null,
   publishAdminRoutes.includes("'/api/admin/publish'") ? "publish-admin:/api/admin/publish" : null,
   appSource.includes("'/ops/render-contract'") ? "app:/ops/render-contract" : null,
@@ -134,7 +136,7 @@ const explicitAdminControlRoutes = [
 const apiNamespaceMountPaths = matchCaptureAll(apiNamespaceRegistry, /mountPath:\s*['"`]([^'"`]+)['"`]/g);
 const currentRuntimeEndpointPaths = matchCaptureAll(currentRuntimeEndpointRegistry, /path:\s*['"`]([^'"`]+)['"`]/g);
 const registryProductRuntimeRoutes = apiNamespaceMountPaths
-  .filter((path) => /^\/(?:runtime|lab)\b/.test(path))
+  .filter((path) => /^\/runtime\b/.test(path))
   .map((path) => `api-namespace-registry:${path}`);
 const registryPublicRuntimeRoutes = apiNamespaceMountPaths
   .filter((path) => /^\/runtime\b|^\/api\/publish\b|^\/api\/v1\b/.test(path))
@@ -165,7 +167,7 @@ const frontendRuntimeCalls = {
 const runtimeCapabilities = {
   hasRuntimeNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/runtime\b|:\/api\/runtime\b/.test(line)),
   hasOpsNamespace: productRuntimeRoutes.some((line) => /['"`]\/ops\b/.test(line)),
-  hasLabNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/lab\b/.test(line)),
+  hasRetiredLabNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/lab\b/.test(line)),
   hasRuntimeDiagnostics: /\/diagnostics/.test(runtimeRoutes) || /\/runtime\/diagnostics/.test(server),
   hasRuntimeContracts: /\/contracts/.test(runtimeRoutes) || /\/runtime\/contracts/.test(server),
   hasApiTierHeaders: /x-neonei-api-tier/.test(routeSource),
@@ -200,16 +202,16 @@ const dependencyMap = {
 };
 
 const fallbackClassification = {
-  keepForLabControl: [
-    "/lab/patterns",
-  ],
   keepForAdminControl: [
+    "/ops/patterns",
     "/ops/publish",
     "/ops/render-contract",
+    "/api/admin/patterns",
     "/api/admin/publish",
     "/api/admin/render-contract",
   ],
   retiredDynamicReadCompatibility: [
+    "/lab/patterns",
     "/lab/publish",
     "/lab/render-contract",
     "/lab/items",
@@ -257,10 +259,10 @@ const gateChecks = [
     expected: true,
   },
   {
-    id: "lab-namespace-present",
-    ok: runtimeCapabilities.hasLabNamespace,
-    actual: runtimeCapabilities.hasLabNamespace,
-    expected: true,
+    id: "lab-namespace-retired",
+    ok: !runtimeCapabilities.hasRetiredLabNamespace,
+    actual: runtimeCapabilities.hasRetiredLabNamespace,
+    expected: false,
   },
   {
     id: "runtime-contracts-present",
@@ -315,9 +317,9 @@ const report = {
   dependencyMap,
   fallbackClassification,
   recommendations: [
-    "Use /runtime, /ops, and /lab as the product-semantic runtime namespace.",
+    "Use /runtime for public reads and /ops or /api/admin for token-protected control operations.",
     "Keep /api/v1 as the stable versioned runtime contract surface. Updated consumers should use /api/runtime/current directly.",
-    "Keep pattern authoring lab-only under /lab and privileged publish/render diagnostics under /ops or /api/admin; do not remount SQLite-backed dynamic read routes under production /api or dev /lab.",
+    "Keep mutable pattern/publish/render control under /ops or /api/admin; do not remount SQLite-backed dynamic read routes under production /api or dev /lab.",
     "Validate raw-export compiled runtime packs through native runtime gates before activation.",
     "Continue moving production browser/search/recipe paths to immutable runtime artifacts.",
   ],

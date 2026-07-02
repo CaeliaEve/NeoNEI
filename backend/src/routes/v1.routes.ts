@@ -28,7 +28,7 @@ function getRuntimeContracts() {
       publishManifest: '/api/publish/manifest',
     },
     control: {
-      patterns: '/lab/patterns',
+      patterns: '/ops/patterns',
       publish: '/ops/publish',
       renderContract: '/ops/render-contract',
     },

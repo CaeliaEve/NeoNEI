@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => {
   const apiBaseUrl = normalizeBaseUrl(env.VITE_API_BASE_URL || '/api')
   const productionRuntimeDefault = mode === 'development' ? '0' : '1'
   const publicRuntimeOnly = env.VITE_PUBLIC_RUNTIME_ONLY || productionRuntimeDefault
-  const disableLabControl = env.VITE_RUNTIME_DISABLE_LAB_CONTROL || productionRuntimeDefault
+  const disableControlPlane = env.VITE_RUNTIME_DISABLE_CONTROL_PLANE || productionRuntimeDefault
   const strictRuntimeContracts = env.VITE_STRICT_RUNTIME_CONTRACTS || productionRuntimeDefault
 
   const forbidLegacyImports = {
@@ -37,7 +37,8 @@ export default defineConfig(({ mode }) => {
       __BACKEND_BASE_URL__: JSON.stringify(backendBaseUrl),
       __API_BASE_URL__: JSON.stringify(apiBaseUrl),
       'import.meta.env.VITE_PUBLIC_RUNTIME_ONLY': JSON.stringify(publicRuntimeOnly),
-      'import.meta.env.VITE_RUNTIME_DISABLE_LAB_CONTROL': JSON.stringify(disableLabControl),
+      'import.meta.env.VITE_RUNTIME_DISABLE_CONTROL_PLANE': JSON.stringify(disableControlPlane),
+      'import.meta.env.VITE_NEONEI_ADMIN_TOKEN': JSON.stringify(env.VITE_NEONEI_ADMIN_TOKEN || ''),
       'import.meta.env.VITE_STRICT_RUNTIME_CONTRACTS': JSON.stringify(strictRuntimeContracts),
     },
     server: {
@@ -53,6 +54,10 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
         },
         '^/runtime(?:/|$)': {
+          target: devProxyTarget,
+          changeOrigin: true,
+        },
+        '^/ops(?:/|$)': {
           target: devProxyTarget,
           changeOrigin: true,
         },

@@ -11,43 +11,46 @@ const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts',
 const distDataRuntimeRenderSource = fs.readFileSync('src/services/distDataRuntimeRender.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataDiagnosticSource = `${distDataRuntimeSource}
 ${distDataRuntimeRenderSource}`;
-const labControlClientSource = fs.readFileSync('src/control/labControlClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const adminControlClientSource = fs.readFileSync('src/control/adminControlClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const runtimeModeSource = fs.readFileSync('src/runtime/runtimeMode.ts', 'utf8').replace(/\r\n/g, '\n');
 const viteConfigSource = fs.readFileSync('vite.config.ts', 'utf8').replace(/\r\n/g, '\n');
 
-test('public runtime profile blocks lab control calls before network IO', () => {
-  const labControlGuardSource = `${labControlClientSource}
+test('public runtime profile blocks ops control calls before network IO and token injection', () => {
+  const adminControlGuardSource = `${adminControlClientSource}
 ${runtimeModeSource}`;
   for (const token of [
     'VITE_PUBLIC_RUNTIME_ONLY',
-    'VITE_RUNTIME_DISABLE_LAB_CONTROL',
-    'isLabControlDisabled',
-    'LAB_CONTROL_DISABLED',
-    'assertLabControlEnabled',
+    'VITE_RUNTIME_DISABLE_CONTROL_PLANE',
+    'VITE_NEONEI_ADMIN_TOKEN',
+    'isControlPlaneDisabled',
+    'CONTROL_PLANE_DISABLED',
+    'CONTROL_PLANE_ADMIN_TOKEN_MISSING',
+    'assertControlPlaneEnabled',
+    'x-neonei-admin-token',
     'public runtime profile must use compiled runtime artifacts',
   ]) {
-    assert.equal(labControlGuardSource.includes(token), true, `missing lab-control guard token: ${token}`);
+    assert.equal(adminControlGuardSource.includes(token), true, `missing control-plane guard token: ${token}`);
   }
 
   assert.match(
-    labControlClientSource,
-    /assertLabControlEnabled\('get', path\);\n\s*const response = await labHttp\.get/s,
-    'GET lab calls should be blocked before HTTP execution',
+    adminControlClientSource,
+    /assertControlPlaneEnabled\('get', path\);\n\s*const response = await adminHttp\.get/s,
+    'GET control calls should be blocked before HTTP execution',
   );
   assert.match(
-    labControlClientSource,
-    /assertLabControlEnabled\('post', path\);\n\s*const response = await labHttp\.post/s,
-    'POST lab calls should be blocked before HTTP execution',
+    adminControlClientSource,
+    /assertControlPlaneEnabled\('post', path\);\n\s*const response = await adminHttp\.post/s,
+    'POST control calls should be blocked before HTTP execution',
   );
   assert.match(
-    labControlClientSource,
-    /assertLabControlEnabled\('put', path\);\n\s*const response = await labHttp\.put/s,
-    'PUT lab calls should be blocked before HTTP execution',
+    adminControlClientSource,
+    /assertControlPlaneEnabled\('put', path\);\n\s*const response = await adminHttp\.put/s,
+    'PUT control calls should be blocked before HTTP execution',
   );
   assert.match(
-    labControlClientSource,
-    /assertLabControlEnabled\('delete', path\);\n\s*const response = await labHttp\.delete/s,
-    'DELETE lab calls should be blocked before HTTP execution',
+    adminControlClientSource,
+    /assertControlPlaneEnabled\('delete', path\);\n\s*const response = await adminHttp\.delete/s,
+    'DELETE control calls should be blocked before HTTP execution',
   );
 });
 
@@ -157,18 +160,18 @@ test('manifest updates prime the runtime diagnostic identity', () => {
 test('production builds default to strict public runtime mode', () => {
   for (const token of [
     'VITE_PUBLIC_RUNTIME_ONLY',
-    'VITE_RUNTIME_DISABLE_LAB_CONTROL',
+    'VITE_RUNTIME_DISABLE_CONTROL_PLANE',
     'VITE_STRICT_RUNTIME_CONTRACTS',
     "mode === 'development' ? '0' : '1'",
     "'import.meta.env.VITE_PUBLIC_RUNTIME_ONLY'",
-    "'import.meta.env.VITE_RUNTIME_DISABLE_LAB_CONTROL'",
+    "'import.meta.env.VITE_RUNTIME_DISABLE_CONTROL_PLANE'",
     "'import.meta.env.VITE_STRICT_RUNTIME_CONTRACTS'",
   ]) {
     assert.equal(viteConfigSource.includes(token), true, `missing production runtime default token: ${token}`);
   }
   for (const token of [
     'isPublicRuntimeOnly',
-    'isLabControlDisabled',
+    'isControlPlaneDisabled',
     'isStrictRuntimeContractsEnabledByEnv',
     'import.meta.env.PROD === true',
   ]) {

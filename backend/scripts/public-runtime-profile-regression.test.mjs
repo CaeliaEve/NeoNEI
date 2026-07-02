@@ -18,7 +18,7 @@ const currentRuntimeSpecialDataSource = readFileSync(join(repoRoot, 'backend/src
 const backendEnvExample = readFileSync(join(repoRoot, 'backend/.env.example'), 'utf8');
 const rootEnvExample = readFileSync(join(repoRoot, '.env.example'), 'utf8');
 
-test('public runtime profile is explicit and disables lab/dev dynamic mounts', () => {
+test('public runtime profile is explicit and keeps control on ops/admin mounts', () => {
   assert.match(serverSettingsSource, /function resolvePublicRuntimeOnly/);
   assert.match(serverSettingsSource, /process\.env\.NODE_ENV === 'production'/);
   assert.match(serverSettingsSource, /publicRuntimeOnly: resolvePublicRuntimeOnly\(\)/);
@@ -30,13 +30,15 @@ test('public runtime profile is explicit and disables lab/dev dynamic mounts', (
   assert.doesNotMatch(apiNamespacesRoutesSource, /app\.use\('\/lab'/);
   assert.doesNotMatch(apiNamespacesRoutesSource, /app\.use\('\/api\/items'/);
   assert.match(apiNamespaceRegistrySource, /PUBLIC_RUNTIME_ROOT_NAMESPACE[\s\S]*mountPath:\s*'\/runtime'[\s\S]*handler:\s*runtimeRoutes/);
-  assert.match(apiNamespaceRegistrySource, /if \(!input\.publicRuntimeOnly\) \{\s*namespaces\.push\(\.\.\.LAB_CONTROL_NAMESPACES\);/s);
+  assert.doesNotMatch(apiNamespaceRegistrySource, /LAB_CONTROL_NAMESPACES|lab-control|mountPath:\s*'\/lab/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /LEGACY_COMPAT_NAMESPACES|legacy-compat|\/api\/(?:items|patterns|recipes-indexed|recipe-bootstrap)/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /labItems|labRecipes|labRecipeBootstrap/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /\/lab\/(?:items|recipes|recipe-bootstrap)/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /labMultiblocks|labEcosystem|labGtDiagrams|labForestryGenetics/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /\/lab\/(?:multiblocks|ecosystem|gt-diagrams|forestry-genetics)/);
   assert.match(apiNamespaceRegistrySource, /function mountApiNamespaces[\s\S]*for \(const namespace of namespaces\)[\s\S]*mountApiNamespace\(app, namespace, tagApiTier\);/);
+  assert.match(appSource, /app\.use\('\/ops\/patterns'/);
+  assert.match(appSource, /app\.use\('\/api\/admin\/patterns'/);
   assert.match(staticAssetRoutesSource, /app\.use\(\s*'\/publish'/);
 });
 

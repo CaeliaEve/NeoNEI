@@ -1,18 +1,18 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { PatternsService } from '../services/patterns.service';
 import { sendErrorEnvelope } from '../utils/error-response';
-import { setPublicCacheHeaders } from '../utils/http-cache';
+import { setNoStoreHeaders } from '../utils/http-cache';
 
 const router = Router();
 
-function addCacheHeaders(req: Request, res: Response, next: NextFunction) {
+function addControlHeaders(req: Request, res: Response, next: NextFunction) {
   if (req.method === 'GET') {
-    setPublicCacheHeaders(res, { maxAgeSeconds: 300 });
+    setNoStoreHeaders(res);
   }
   next();
 }
 
-router.use(addCacheHeaders);
+router.use(addControlHeaders);
 
 function getService() {
   return new PatternsService();

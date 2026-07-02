@@ -1,11 +1,10 @@
 import type { Application, RequestHandler, Router } from 'express';
-import patternsRoutes from './patterns.routes';
 import { publicPublishRoutes } from './publish.routes';
 import runtimeRoutes from './runtime.routes';
 import v1Routes from './v1.routes';
 import currentApiRoutes from './current-api.routes';
 
-export type ApiNamespaceTier = 'public-runtime' | 'lab-control';
+export type ApiNamespaceTier = 'public-runtime';
 export type ApiNamespaceHandler = RequestHandler | Router;
 
 export type ApiNamespaceDefinition = Readonly<{
@@ -40,16 +39,8 @@ export const PUBLIC_RUNTIME_TAIL_NAMESPACES: readonly ApiNamespaceDefinition[] =
   Object.freeze({ key: 'v1Runtime', mountPath: '/api/v1', tier: 'public-runtime', handler: v1Routes }),
 ]);
 
-export const LAB_CONTROL_NAMESPACES: readonly ApiNamespaceDefinition[] = Object.freeze([
-  Object.freeze({ key: 'labRoot', mountPath: '/lab', tier: 'lab-control' }),
-  Object.freeze({ key: 'labPatterns', mountPath: '/lab/patterns', tier: 'lab-control', handler: patternsRoutes }),
-]);
-
-export function getApiNamespacePlan(input: ApiNamespacePlanInput): readonly ApiNamespaceDefinition[] {
+export function getApiNamespacePlan(_input: ApiNamespacePlanInput): readonly ApiNamespaceDefinition[] {
   const namespaces: ApiNamespaceDefinition[] = [PUBLIC_RUNTIME_ROOT_NAMESPACE];
-  if (!input.publicRuntimeOnly) {
-    namespaces.push(...LAB_CONTROL_NAMESPACES);
-  }
 
   namespaces.push(CURRENT_API_NAMESPACE);
 

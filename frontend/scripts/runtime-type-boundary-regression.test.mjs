@@ -15,7 +15,8 @@ const browserProjectionSource = fs.readFileSync('src/runtime/browserProjection.t
 const browserSearchProjectionSource = fs.readFileSync('src/runtime/browserSearchProjection.ts', 'utf8').replace(/\r\n/g, '\n');
 const patternRuntimeClientExists = fs.existsSync('src/runtime/patternClient.ts');
 const devCompatRuntimeClientExists = fs.existsSync('src/runtime/devCompatClient.ts');
-const labControlClientSource = fs.readFileSync('src/control/labControlClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const adminControlClientSource = fs.readFileSync('src/control/adminControlClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const labControlClientExists = fs.existsSync('src/control/labControlClient.ts');
 const patternControlClientSource = fs.readFileSync('src/control/patternControlClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const specialDataClientSource = fs.readFileSync('src/runtime/specialDataClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const indexedRecipeClientSource = fs.readFileSync('src/runtime/indexedRecipeClient.ts', 'utf8').replace(/\r\n/g, '\n');
@@ -210,11 +211,11 @@ test('pattern management contracts live outside the legacy api facade', () => {
   }
 });
 
-test('pattern management is isolated as an explicit lab control surface', () => {
+test('pattern management is isolated as an explicit admin control surface', () => {
   assert.equal(
     patternRuntimeClientExists,
     false,
-    'frontend runtime should not keep a pattern lab client after pattern management is isolated to control/',
+    'frontend runtime should not keep a pattern lab client after pattern management is isolated to admin control/',
   );
   assert.equal(
     devCompatRuntimeClientExists,
@@ -238,8 +239,15 @@ test('pattern management is isolated as an explicit lab control surface', () => 
   ]) {
     assert.equal(patternControlClientSource.includes(token), true, `missing pattern control client token: ${token}`);
   }
-  assert.match(labControlClientSource, /LAB_CONTROL_DISABLED/);
-  assert.match(labControlClientSource, /assertLabControlEnabled\('post', path\)/);
+  assert.equal(
+    labControlClientExists,
+    false,
+    'frontend control should not keep the retired lab HTTP client',
+  );
+  assert.match(adminControlClientSource, /CONTROL_PLANE_DISABLED/);
+  assert.match(adminControlClientSource, /CONTROL_PLANE_ADMIN_TOKEN_MISSING/);
+  assert.match(adminControlClientSource, /assertControlPlaneEnabled\('post', path\)/);
+  assert.match(adminControlClientSource, /x-neonei-admin-token/);
   assert.match(patternGroupSource, /patternControlClient\.(getGroups|getGroupWithPatterns|createGroup|updateGroup|deleteGroup|exportGroup|updatePattern|deletePattern)/);
   assert.equal(
     apiCompatibilityFacadeSource.includes('patternRuntimeClient'),
@@ -253,8 +261,8 @@ test('pattern management is isolated as an explicit lab control surface', () => 
   );
   assert.match(
     homePageSource,
-    /patternControlEnabled = computed\(\(\) => !isLabControlDisabled\(\)\)/,
-    'HomePage should gate the pattern control view outside public runtime mode',
+    /patternControlEnabled = computed\(\(\) => !isControlPlaneDisabled\(\)\)/,
+    'HomePage should gate the pattern control view outside public runtime/control-plane mode',
   );
   assert.match(
     homeSettingsPanelSource,

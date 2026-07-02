@@ -1,9 +1,9 @@
 import {
-  deleteLabControlPayload,
-  getLabControlPayload,
-  postLabControlPayload,
-  putLabControlPayload,
-} from './labControlClient';
+  deleteControlPayload,
+  getControlPayload,
+  postControlPayload,
+  putControlPayload,
+} from './adminControlClient';
 import type {
   Pattern,
   PatternExportData,
@@ -33,48 +33,48 @@ export interface UpdatePatternPayload {
 
 export const patternControlClient = {
   getGroups(): Promise<PatternGroup[]> {
-    return getLabControlPayload<PatternGroup[]>('/patterns/groups');
+    return getControlPayload<PatternGroup[]>('/patterns/groups');
   },
 
   getGroup(groupId: string): Promise<PatternGroup> {
-    return getLabControlPayload<PatternGroup>(`/patterns/groups/${groupId}`);
+    return getControlPayload<PatternGroup>(`/patterns/groups/${groupId}`);
   },
 
   getGroupWithPatterns(groupId: string): Promise<PatternGroupWithPatterns> {
-    return getLabControlPayload<PatternGroupWithPatterns>(`/patterns/groups/${groupId}/detail`);
+    return getControlPayload<PatternGroupWithPatterns>(`/patterns/groups/${groupId}/detail`);
   },
 
   createGroup(groupName: string, description?: string): Promise<PatternGroup> {
-    return postLabControlPayload<PatternGroup>('/patterns/groups', {
+    return postControlPayload<PatternGroup>('/patterns/groups', {
       groupName,
       description,
     });
   },
 
   async updateGroup(groupId: string, groupName: string, description?: string): Promise<void> {
-    await putLabControlPayload(`/patterns/groups/${groupId}`, {
+    await putControlPayload(`/patterns/groups/${groupId}`, {
       groupName,
       description,
     });
   },
 
   async deleteGroup(groupId: string): Promise<void> {
-    await deleteLabControlPayload(`/patterns/groups/${groupId}`);
+    await deleteControlPayload(`/patterns/groups/${groupId}`);
   },
 
   createPattern(data: CreatePatternPayload): Promise<Pattern> {
-    return postLabControlPayload<Pattern>('/patterns', data);
+    return postControlPayload<Pattern>('/patterns', data);
   },
 
   async deletePattern(patternId: string): Promise<void> {
-    await deleteLabControlPayload(`/patterns/${patternId}`);
+    await deleteControlPayload(`/patterns/${patternId}`);
   },
 
   async updatePattern(patternId: string, updates: UpdatePatternPayload): Promise<void> {
-    await putLabControlPayload(`/patterns/${patternId}`, updates);
+    await putControlPayload(`/patterns/${patternId}`, updates);
   },
 
   exportGroup(groupId: string): Promise<PatternExportData> {
-    return getLabControlPayload<PatternExportData>(`/patterns/groups/${groupId}/export`);
+    return getControlPayload<PatternExportData>(`/patterns/groups/${groupId}/export`);
   },
 };
