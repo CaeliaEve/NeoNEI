@@ -1,4 +1,4 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -14,12 +14,11 @@ function readSource(relativePath) {
 test("native runtime loader consumes current API envelope and file endpoint", () => {
   const loader = readSource("src/native-surface/runtimeLoader.ts");
 
-  assert.match(loader, /CurrentNativeRuntimeManifestEnvelope/);
+  assert.match(loader, /CurrentRuntimeManifestEnvelope/);
   assert.match(loader, /"ok" in payload && "data" in payload/);
   assert.match(loader, /api\/runtime\/current\/manifest/);
   assert.match(loader, /api\/runtime\/current\/asset/);
-  assert.match(loader, /api\/native-runtime\/current\/manifest/);
-  assert.match(loader, /api\/native-runtime\/current\/files/);
+  assert.doesNotMatch(loader, /api\/native-runtime\/current/);
   assert.match(loader, /encodeRuntimeFilePath/);
   assert.match(loader, /buildNativeRuntimeRevision/);
   assert.match(loader, /appendNativeRuntimeRevision/);

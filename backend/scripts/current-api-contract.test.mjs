@@ -24,8 +24,6 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
     '/runtime/:runtimeId/manifest',
     '/runtime/:runtimeId/asset/:fileName(*)',
     '/runtime/:runtimeId/reports/:reportName',
-    '/native-runtime/current/manifest',
-    '/native-runtime/current/files/:fileName(*)',
     '/recipes/item/:itemId',
     '/recipes/usage/:itemId',
     '/recipes/current/item/:itemId',
@@ -42,7 +40,10 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.match(currentRuntimeEndpointRegistrySource, /plane: 'controlfs'/);
   assert.match(currentRuntimeEndpointRegistrySource, /plane: 'debugfs'/);
   assert.match(currentRuntimeEndpointRegistrySource, /plane: 'recipefs'/);
-  assert.match(currentRuntimeEndpointRegistrySource, /plane: 'compatfs'/);
+  assert.doesNotMatch(currentRuntimeEndpointRegistrySource, /plane: 'compatfs'/);
+  assert.doesNotMatch(currentRuntimeEndpointRegistrySource, /nativeManifestCompat|nativeFileCompat/);
+  assert.doesNotMatch(currentRuntimeEndpointRegistrySource, /\/native-runtime\/current/);
+  assert.doesNotMatch(routeSource, /nativeManifestCompat|nativeFileCompat/);
   assert.match(currentRuntimeEndpointRegistrySource, /export function mountCurrentRuntimeEndpoint/);
   assert.match(routeSource, /mountCurrentRuntimeEndpoint/);
   assert.doesNotMatch(routeSource, /router\.get\('/);
@@ -56,6 +57,8 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(currentRuntimeApiSource.includes('runtimeSchemaRevision'), true);
   assert.equal(currentRuntimeApiSource.includes('runtimeManifestUrl'), true);
   assert.equal(currentRuntimeApiSource.includes('runtimeAssetBaseUrl'), true);
+  assert.equal(currentRuntimeApiSource.includes('legacyManifestUrl'), false);
+  assert.doesNotMatch(currentRuntimeApiSource, /\/api\/native-runtime\/current/);
   assert.equal(currentRuntimeApiSource.includes('function assertCurrentRuntimeId'), true);
   assert.equal(currentRuntimeTransportSource.includes('function sendCurrentRuntimeReport'), true);
   assert.equal(routeSource.includes('function sendDiagnosticsHealth'), true);

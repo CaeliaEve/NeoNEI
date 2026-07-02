@@ -43,7 +43,6 @@ export type CurrentRuntimeOverview = Readonly<{
   runtimeManifestUrl: string;
   assetBaseUrl: string;
   runtimeAssetBaseUrl: string;
-  legacyManifestUrl: string;
   capabilities: JsonRecord;
   manifestPath: string | null;
   cache: Readonly<{
@@ -149,7 +148,6 @@ export function getCurrentRuntimeOverview(context: CurrentRuntimeApiContext): Cu
     runtimeManifestUrl: `/api/runtime/${encodeURIComponent(meta.runtimeId)}/manifest`,
     assetBaseUrl: '/api/runtime/current/asset/',
     runtimeAssetBaseUrl: `/api/runtime/${encodeURIComponent(meta.runtimeId)}/asset/`,
-    legacyManifestUrl: '/api/native-runtime/current/manifest',
     capabilities: meta.capabilities,
     manifestPath: snapshot?.manifestPath ?? null,
     cache: Object.freeze({

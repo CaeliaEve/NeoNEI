@@ -1,4 +1,4 @@
-﻿import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, normalize, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -480,7 +480,7 @@ function normalizeCapabilities(value) {
 
 function validateRuntimeManifestContract(manifest, failures) {
   const schema = manifest.schema ?? manifest.schemaVersion;
-  if (schema !== 'neonei/runtime/current' && schema !== 'neonei/native-runtime/current' && schema !== 'neonei/rust-runtime-manifest/current') {
+  if (schema !== 'neonei/runtime/current' && schema !== 'neonei/rust-runtime-manifest/current') {
     fail(failures, 'NATIVE_RUNTIME_SCHEMA_UNSUPPORTED', 'runtime manifest has an unsupported schema', { schema: schema ?? null });
   }
   if (!Number.isInteger(manifest.schemaRevision) || manifest.schemaRevision < 1) {

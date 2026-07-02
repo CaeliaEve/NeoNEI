@@ -155,14 +155,12 @@ function isPortableRelativePath(path: string): boolean {
     && !path.split("/").includes("..");
 }
 
-function isCurrentNativeRuntimeManifestUrl(manifestUrl: string): boolean {
+function isCurrentRuntimeManifestUrl(manifestUrl: string): boolean {
   try {
     const pathname = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").pathname;
-    return pathname.endsWith("/api/runtime/current/manifest")
-      || pathname.endsWith("/api/native-runtime/current/manifest");
+    return pathname.endsWith("/api/runtime/current/manifest");
   } catch {
-    return manifestUrl.includes("/api/runtime/current/manifest")
-      || manifestUrl.includes("/api/native-runtime/current/manifest");
+    return manifestUrl.includes("/api/runtime/current/manifest");
   }
 }
 
@@ -173,15 +171,9 @@ function encodeRuntimeFilePath(relativePath: string): string {
 function resolveCurrentRuntimeAssetUrl(manifestUrl: string, relativePath: string): string {
   const encodedPath = encodeRuntimeFilePath(relativePath);
   try {
-    const url = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/");
-    if (url.pathname.endsWith("/api/runtime/current/manifest")) {
-      return new URL(`/api/runtime/current/asset/${encodedPath}`, url).toString();
-    }
-    return new URL(`/api/native-runtime/current/files/${encodedPath}`, url).toString();
+    return new URL(`/api/runtime/current/asset/${encodedPath}`, new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/")).toString();
   } catch {
-    return manifestUrl.includes("/api/runtime/current/manifest")
-      ? `/api/runtime/current/asset/${encodedPath}`
-      : `/api/native-runtime/current/files/${encodedPath}`;
+    return `/api/runtime/current/asset/${encodedPath}`;
   }
 }
 
@@ -189,7 +181,7 @@ function resolveManifestRelativeUrl(manifestUrl: string, relativePath: string): 
   if (!isPortableRelativePath(relativePath)) {
     throw new Error(`UI pack path is not portable: ${relativePath}`);
   }
-  if (isCurrentNativeRuntimeManifestUrl(manifestUrl)) {
+  if (isCurrentRuntimeManifestUrl(manifestUrl)) {
     return resolveCurrentRuntimeAssetUrl(manifestUrl, relativePath);
   }
   return new URL(relativePath, manifestUrl).toString();

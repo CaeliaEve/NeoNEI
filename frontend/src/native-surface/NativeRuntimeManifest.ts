@@ -1,4 +1,4 @@
-﻿export type NativeRuntimePackName = "browser" | "groups" | "search" | "recipes" | "textures" | "animations" | "stringsZhCn";
+export type NativeRuntimePackName = "browser" | "groups" | "search" | "recipes" | "textures" | "animations" | "stringsZhCn";
 
 export type NativeRuntimePackSchema =
   | "neonei/browser-pack/current"
@@ -40,7 +40,7 @@ export interface NativeRuntimeManifestFiles {
 }
 
 export interface NativeRuntimeManifest {
-  schema?: "neonei/runtime/current" | "neonei/native-runtime/current";
+  schema?: "neonei/runtime/current";
   schemaVersion?: string;
   schemaRevision?: number;
   runtimeId?: string;

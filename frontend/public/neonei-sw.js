@@ -1,12 +1,11 @@
-﻿const CACHE_PREFIX = "neonei-runtime-assets-";
+const CACHE_PREFIX = "neonei-runtime-assets-";
 const LEGACY_CACHE_NAME = "neonei-runtime-current";
 const META_CACHE_NAME = "neonei-runtime-meta";
 const META_REQUEST_URL = "/__neonei_runtime_cache_meta__";
 const DEFAULT_RUNTIME_ID = "current";
 const RUNTIME_ASSET_PATTERN = /\/(?:dist-data\/(?:runtime\/|rust\/|textures\/atlas-assets\/)|textures\/atlas\/|native\/engine\/).+\.(?:bin|json|png|webp|wasm)$/i;
-const CURRENT_RUNTIME_FILE_API_PATTERN = /\/api\/native-runtime\/current\/files\/.+/i;
 const RUNTIME_ASSET_API_PATTERN = /\/api\/runtime\/(?:current|[^/]+)\/asset\/.+/i;
-const RUNTIME_MANIFEST_PATTERN = /\/(?:dist-data\/manifest\.json|dist-data\/runtime\/runtime-manifest\.json|dist-data\/rust\/runtime-manifest\.json|api\/runtime\/(?:current|[^/]+)\/manifest|api\/native-runtime\/current\/manifest)$/i;
+const RUNTIME_MANIFEST_PATTERN = /\/(?:dist-data\/manifest\.json|dist-data\/runtime\/runtime-manifest\.json|dist-data\/rust\/runtime-manifest\.json|api\/runtime\/(?:current|[^/]+)\/manifest)$/i;
 
 self.addEventListener("install", (event) => {
   event.waitUntil(self.skipWaiting());
@@ -145,7 +144,7 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(runtimeManifestNetworkFirst(request));
     return;
   }
-  if (RUNTIME_ASSET_PATTERN.test(url.pathname) || RUNTIME_ASSET_API_PATTERN.test(url.pathname) || CURRENT_RUNTIME_FILE_API_PATTERN.test(url.pathname)) {
+  if (RUNTIME_ASSET_PATTERN.test(url.pathname) || RUNTIME_ASSET_API_PATTERN.test(url.pathname)) {
     event.respondWith(cacheFirst(request));
   }
 });

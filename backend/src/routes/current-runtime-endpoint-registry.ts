@@ -1,6 +1,6 @@
-﻿import type { RequestHandler, Router } from 'express';
+import type { RequestHandler, Router } from 'express';
 
-export type CurrentRuntimeEndpointPlane = 'controlfs' | 'debugfs' | 'recipefs' | 'compatfs';
+export type CurrentRuntimeEndpointPlane = 'controlfs' | 'debugfs' | 'recipefs';
 export type CurrentRuntimeEndpointMethod = 'get' | 'use';
 
 export const CURRENT_RUNTIME_ENDPOINTS = Object.freeze([
@@ -13,8 +13,6 @@ export const CURRENT_RUNTIME_ENDPOINTS = Object.freeze([
   Object.freeze({ key: 'pinnedAssetParam', method: 'get', path: '/runtime/:runtimeId/asset/:fileName(*)', plane: 'controlfs' }),
   Object.freeze({ key: 'pinnedAssetMounted', method: 'use', path: '/runtime/:runtimeId/asset', plane: 'controlfs' }),
   Object.freeze({ key: 'pinnedReport', method: 'get', path: '/runtime/:runtimeId/reports/:reportName', plane: 'debugfs' }),
-  Object.freeze({ key: 'nativeManifestCompat', method: 'get', path: '/native-runtime/current/manifest', plane: 'compatfs' }),
-  Object.freeze({ key: 'nativeFileCompat', method: 'get', path: '/native-runtime/current/files/:fileName(*)', plane: 'compatfs' }),
   Object.freeze({ key: 'recipeItem', method: 'get', path: '/recipes/item/:itemId', plane: 'recipefs' }),
   Object.freeze({ key: 'recipeCurrentItem', method: 'get', path: '/recipes/current/item/:itemId', plane: 'recipefs' }),
   Object.freeze({ key: 'recipeUsage', method: 'get', path: '/recipes/usage/:itemId', plane: 'recipefs' }),

@@ -1,4 +1,4 @@
-﻿import {
+import {
   NATIVE_RUNTIME_PACK_SCHEMAS,
   type NativeRuntimeBuffers,
   type NativeRuntimeManifest,
@@ -25,7 +25,7 @@ function isPortableRelativePath(path: string): boolean {
     && !path.split("/").includes("..");
 }
 
-type CurrentNativeRuntimeManifestEnvelope = {
+type CurrentRuntimeManifestEnvelope = {
   ok?: boolean;
   data?: NativeRuntimeManifest;
 };
@@ -34,29 +34,21 @@ function encodeRuntimeFilePath(relativePath: string): string {
   return relativePath.split("/").map((part) => encodeURIComponent(part)).join("/");
 }
 
-function isCurrentNativeRuntimeManifestUrl(manifestUrl: string): boolean {
+function isCurrentRuntimeManifestUrl(manifestUrl: string): boolean {
   try {
     const pathname = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").pathname;
-    return pathname.endsWith("/api/runtime/current/manifest")
-      || pathname.endsWith("/api/native-runtime/current/manifest");
+    return pathname.endsWith("/api/runtime/current/manifest");
   } catch {
-    return manifestUrl.includes("/api/runtime/current/manifest")
-      || manifestUrl.includes("/api/native-runtime/current/manifest");
+    return manifestUrl.includes("/api/runtime/current/manifest");
   }
 }
 
 function resolveCurrentRuntimeAssetUrl(manifestUrl: string, relativePath: string): string {
   const encodedPath = encodeRuntimeFilePath(relativePath);
   try {
-    const url = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/");
-    if (url.pathname.endsWith("/api/runtime/current/manifest")) {
-      return new URL(`/api/runtime/current/asset/${encodedPath}`, url).toString();
-    }
-    return new URL(`/api/native-runtime/current/files/${encodedPath}`, url).toString();
+    return new URL(`/api/runtime/current/asset/${encodedPath}`, new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/")).toString();
   } catch {
-    return manifestUrl.includes("/api/runtime/current/manifest")
-      ? `/api/runtime/current/asset/${encodedPath}`
-      : `/api/native-runtime/current/files/${encodedPath}`;
+    return `/api/runtime/current/asset/${encodedPath}`;
   }
 }
 
@@ -64,7 +56,7 @@ export function resolveManifestRelativeUrl(manifestUrl: string, relativePath: st
   if (!isPortableRelativePath(relativePath)) {
     throw new Error(`Native runtime path is not portable: ${relativePath}`);
   }
-  if (isCurrentNativeRuntimeManifestUrl(manifestUrl)) {
+  if (isCurrentRuntimeManifestUrl(manifestUrl)) {
     return resolveCurrentRuntimeAssetUrl(manifestUrl, relativePath);
   }
   return new URL(relativePath, manifestUrl).toString();
@@ -168,9 +160,9 @@ export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<Na
   if (!response.ok) {
     throw new Error(`Failed to load native runtime manifest: ${response.status} ${response.statusText}`);
   }
-  const payload = await response.json() as NativeRuntimeManifest | CurrentNativeRuntimeManifestEnvelope;
+  const payload = await response.json() as NativeRuntimeManifest | CurrentRuntimeManifestEnvelope;
   if (payload && typeof payload === "object" && "ok" in payload && "data" in payload) {
-    return (payload as CurrentNativeRuntimeManifestEnvelope).data ?? {};
+    return (payload as CurrentRuntimeManifestEnvelope).data ?? {};
   }
   return payload as NativeRuntimeManifest;
   })().catch((error) => {

@@ -135,19 +135,6 @@ mountCurrentRuntimeEndpoint(router, 'pinnedReport', (req, res) => {
     sendCurrentRuntimeReport(res, req.params.reportName);
   });
 });
-
-mountCurrentRuntimeEndpoint(router, 'nativeManifestCompat', (_req, res) => {
-  withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeManifest(res, context);
-  });
-});
-
-mountCurrentRuntimeEndpoint(router, 'nativeFileCompat', (req, res) => {
-  withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeAsset(res, context, req.params.fileName);
-  });
-});
-
 mountCurrentRuntimeEndpoint(
   router,
   'recipeItem',
