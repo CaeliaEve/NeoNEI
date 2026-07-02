@@ -11,6 +11,10 @@ const serviceSource = readFileSync(resolve(root, 'src/services/pattern-control.s
 
 test('pattern control routes are mounted from an explicit endpoint registry', () => {
   assert.match(registrySource, /export const PATTERN_CONTROL_ENDPOINTS/);
+  assert.match(registrySource, /PATTERN_CONTROL_ENDPOINT_KEYS/);
+  assert.match(registrySource, /PATTERN_CONTROL_METHODS/);
+  assert.match(registrySource, /validateAndFreezeRouteDescriptors/);
+  assert.match(registrySource, /label: 'pattern control endpoint'/);
   for (const endpointKey of [
     'list-groups',
     'get-group',

@@ -22,6 +22,10 @@ const runtimeAdminRegistrySource = readFileSync(resolve(root, 'src/routes/runtim
 const runtimeAdminHandlersSource = readFileSync(resolve(root, 'src/routes/runtime-admin-endpoint-handlers.ts'), 'utf8');
 const publishAdminSource = readFileSync(resolve(root, 'src/routes/publish-admin.routes.ts'), 'utf8');
 const transportSource = readFileSync(resolve(root, 'src/routes/runtime-admin-transport.ts'), 'utf8');
+const routeDescriptorRegistrySource = readFileSync(
+  resolve(root, 'src/routes/route-descriptor-registry.ts'),
+  'utf8',
+);
 
 test('runtime admin control plane is mounted from one explicit registry', () => {
   assert.match(controlPlaneRegistrySource, /export const RUNTIME_ADMIN_CONTROL_PLANES/);
@@ -89,10 +93,12 @@ test('runtime admin index and control endpoints are table-driven', () => {
   assert.match(runtimeAdminRegistrySource, /export const RUNTIME_ADMIN_CONTROL_ENDPOINTS/);
   assert.match(runtimeAdminRegistrySource, /RUNTIME_ADMIN_INDEX_ENDPOINT_KEYS/);
   assert.match(runtimeAdminRegistrySource, /RUNTIME_ADMIN_CONTROL_ENDPOINT_KEYS/);
-  assert.match(runtimeAdminRegistrySource, /validateAndFreezeEndpoints/);
-  assert.match(runtimeAdminRegistrySource, /Duplicate \$\{label\} endpoint descriptor/);
-  assert.match(runtimeAdminRegistrySource, /Missing \$\{label\} endpoint descriptor/);
-  assert.match(runtimeAdminRegistrySource, /\$\{label\} endpoint path must be absolute/);
+  assert.match(runtimeAdminRegistrySource, /validateAndFreezeRouteDescriptors/);
+  assert.match(runtimeAdminRegistrySource, /label: 'runtime admin index endpoint'/);
+  assert.match(runtimeAdminRegistrySource, /label: 'runtime admin control endpoint'/);
+  assert.match(routeDescriptorRegistrySource, /Duplicate \$\{options\.label\} route descriptor/);
+  assert.match(routeDescriptorRegistrySource, /Missing \$\{options\.label\} route descriptor/);
+  assert.match(routeDescriptorRegistrySource, /\$\{options\.label\} route path must be absolute/);
   assert.match(runtimeAdminRegistrySource, /path: '\/api\/health'/);
   assert.match(runtimeAdminRegistrySource, /path: '\/api'/);
   assert.match(runtimeAdminRegistrySource, /path: '\/api\/openapi\.json'/);

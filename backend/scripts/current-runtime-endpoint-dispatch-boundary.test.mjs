@@ -52,11 +52,9 @@ test('current runtime endpoint handlers are explicitly keyed and exhaustive', ()
   assert.match(endpointRegistrySource, /CURRENT_RUNTIME_ENDPOINT_KEYS/);
   assert.match(endpointRegistrySource, /CURRENT_RUNTIME_ENDPOINT_METHODS/);
   assert.match(endpointRegistrySource, /CURRENT_RUNTIME_ENDPOINT_PLANES/);
-  assert.match(endpointRegistrySource, /validateAndFreezeCurrentRuntimeEndpoints/);
-  assert.match(endpointRegistrySource, /Duplicate current runtime endpoint descriptor/);
-  assert.match(endpointRegistrySource, /Missing current runtime endpoint descriptor/);
-  assert.match(endpointRegistrySource, /Invalid current runtime endpoint plane/);
-  assert.match(endpointRegistrySource, /Current runtime endpoint path must be absolute/);
+  assert.match(endpointRegistrySource, /validateAndFreezeRouteDescriptors/);
+  assert.match(endpointRegistrySource, /label: 'current runtime endpoint'/);
+  assert.match(endpointRegistrySource, /allowedPlanes: CURRENT_RUNTIME_ENDPOINT_PLANES/);
 
   const endpointKeys = Array.from(endpointRegistrySource.matchAll(/key: '([^']+)'/g), (match) => match[1]);
   assert.ok(endpointKeys.length > 0, 'endpoint registry must expose endpoint keys');

@@ -11,6 +11,10 @@ const serviceSource = readFileSync(resolve(root, 'src/services/render-contract-c
 
 test('render contract routes are mounted from an explicit endpoint registry', () => {
   assert.match(registrySource, /export const RENDER_CONTRACT_ENDPOINTS/);
+  assert.match(registrySource, /RENDER_CONTRACT_ENDPOINT_KEYS/);
+  assert.match(registrySource, /RENDER_CONTRACT_METHODS/);
+  assert.match(registrySource, /validateAndFreezeRouteDescriptors/);
+  assert.match(registrySource, /label: 'render contract endpoint'/);
   for (const endpointKey of [
     'overview',
     'browser-atlas-index',
