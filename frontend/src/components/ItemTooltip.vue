@@ -73,22 +73,33 @@ const handleMouseMove = (event: MouseEvent) => {
   updatePosition(event, tooltipRef.value);
 };
 
-const showTooltip = () => {
+const readItemFromBrowserRuntime = async (): Promise<Item | null> => {
+  const cached = api.peekBrowserPagePackByIds?.({ itemIds: [props.item.itemId], slotSize: 32 });
+  const cachedItem = cached?.data?.find((entry) => entry.item.itemId === props.item.itemId)?.item;
+  if (cachedItem) {
+    return cachedItem;
+  }
+
+  const pack = await api.getBrowserPagePackByIds({ itemIds: [props.item.itemId], slotSize: 32 });
+  return pack.data.find((entry) => entry.item.itemId === props.item.itemId)?.item ?? null;
+};
+
+const showTooltip = async () => {
   isHovered.value = true;
 
   if (!fullItem.value && !loadingFullItem.value) {
     loadingFullItem.value = true;
-    api
-      .getItem(props.item.itemId)
-      .then((item) => {
+    try {
+      const item = await readItemFromBrowserRuntime();
+      if (item) {
         fullItem.value = item;
-      })
-      .catch(() => {
-        // keep lightweight item as fallback
-      })
-      .finally(() => {
-        loadingFullItem.value = false;
-      });
+      }
+    } catch {
+      // Keep the already supplied runtime item visible; missing by-id packs are
+      // handled by the runtime diagnostics path instead of a lab fallback.
+    } finally {
+      loadingFullItem.value = false;
+    }
   }
 
   nextTick(() => {

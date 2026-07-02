@@ -16,7 +16,9 @@ const browserSearchProjectionSource = fs.readFileSync('src/runtime/browserSearch
 const patternClientSource = fs.readFileSync('src/runtime/patternClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const specialDataClientSource = fs.readFileSync('src/runtime/specialDataClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const indexedRecipeClientSource = fs.readFileSync('src/runtime/indexedRecipeClient.ts', 'utf8').replace(/\r\n/g, '\n');
-const itemClientSource = fs.readFileSync('src/runtime/itemClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const itemClientExists = fs.existsSync('src/runtime/itemClient.ts');
+const itemClientSource = itemClientExists ? fs.readFileSync('src/runtime/itemClient.ts', 'utf8').replace(/\r\n/g, '\n') : '';
+const itemTooltipSource = fs.readFileSync('src/components/ItemTooltip.vue', 'utf8').replace(/\r\n/g, '\n');
 const animationBudgetSource = fs.readFileSync('src/services/animationBudget.ts', 'utf8').replace(/\r\n/g, '\n');
 const gatecFinalSource = fs.readFileSync('scripts/gatec-final.spec.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\\r\\n/g, '\\n');
@@ -339,35 +341,26 @@ test('indexed recipe client lives outside the legacy api facade', () => {
   );
 });
 
-test('item client keeps item HTTP and detail cache outside the legacy api facade', () => {
+test('item lab client is retired from frontend runtime hot paths', () => {
   assert.equal(
-    itemClientSource.includes("from './types';"),
-    true,
-    'item client should consume contracts from runtime/types',
-  );
-  assert.equal(
-    itemClientSource.includes("from './devCompatClient';"),
-    true,
-    'item client should keep lab compatibility access behind the runtime dev client',
+    itemClientExists,
+    false,
+    'frontend runtime should not keep an item lab client after browser/runtime packs own item reads',
   );
   assert.doesNotMatch(
-    itemClientSource,
-    /from '\.\.\/services\/api'/,
-    'item client should not import the legacy api facade',
+    apiCompatibilityFacadeSource,
+    /itemRuntimeClient|getItemsByIds\(|getItemMachines\(|async getItem\(|async getItems\(/,
+    'api compatibility facade should not expose item lab reads',
   );
-  for (const token of [
-    'getItems(',
-    'getItem(',
-    'getItemsByIds(',
-    'getItemMachines(',
-    'clearCaches()',
-  ]) {
-    assert.equal(itemClientSource.includes(token), true, `missing item client method: ${token}`);
-  }
-  assert.equal(
-    apiCompatibilityFacadeSource.includes('itemRuntimeClient.getItem(itemId)'),
-    true,
-    'api compatibility facade should delegate item detail reads to the runtime item client',
+  assert.doesNotMatch(
+    itemTooltipSource,
+    /api\s*\.\s*getItem\(|\/items\/\$\{itemId\}|getLabPayload<Item>/,
+    'item tooltip should resolve details through compiled browser by-id packs, not item lab HTTP',
+  );
+  assert.match(
+    itemTooltipSource,
+    /getBrowserPagePackByIds\(\{ itemIds: \[props\.item\.itemId\], slotSize: 32 \}\)/,
+    'item tooltip should read optional details from compiled browser by-id packs',
   );
   assert.equal(
     apiSource.includes("getLabPayload<Item>(`/items/${itemId}`)"),

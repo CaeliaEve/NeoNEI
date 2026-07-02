@@ -59,7 +59,6 @@
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../../runtime/patternClient';
 import { specialDataRuntimeClient } from '../../runtime/specialDataClient';
 import { indexedRecipeRuntimeClient, type CurrentRecipePageResponse, type IndexedMachineRecipesResponse } from '../../runtime/indexedRecipeClient';
-import { itemRuntimeClient, type ItemMachinesResponse } from '../../runtime/itemClient';
 import {
   browserCatalogClient,
   clearPublishedRuntimeCaches,
@@ -75,7 +74,6 @@ import {
 
 export const api = {
   trimPreheatRuntimeCaches(): void {
-    itemRuntimeClient.clearCaches();
     recipeBootstrapClient.clearCaches();
     browserCatalogClient.clearSearchCaches();
     recipeUiPayloadClient.clearCaches();
@@ -83,7 +81,6 @@ export const api = {
   },
 
   resetRuntimeCaches(): void {
-    itemRuntimeClient.clearCaches();
     indexedRecipeRuntimeClient.clearCaches();
     recipeBootstrapClient.clearCaches();
     browserCatalogClient.clearAllCaches();
@@ -107,16 +104,6 @@ export const api = {
     modId?: string;
   }): Promise<HomeBootstrapResponse> {
     return getRuntimeHomeBootstrap(params);
-  },
-
-  // Get items with pagination
-  async getItems(params: {
-    page?: number;
-    pageSize?: number;
-    search?: string;
-    modId?: string;
-  }): Promise<PaginatedResponse<Item>> {
-    return itemRuntimeClient.getItems(params);
   },
 
   async getBrowserItems(params: {
@@ -202,25 +189,9 @@ export const api = {
   }): BrowserByIdsPackResponse | null {
     return browserCatalogClient.peekBrowserPagePackByIds(params);
   },
-  // Get item by ID
-  async getItem(itemId: string): Promise<Item> {
-    return itemRuntimeClient.getItem(itemId);
-  },
-
   // Get all mods
   async getMods(): Promise<Mod[]> {
     return getRuntimeMods();
-  },
-
-  async getItemsByIds(itemIds: string[]): Promise<Item[]> {
-    return itemRuntimeClient.getItemsByIds(itemIds);
-  },
-
-  // === indexed Recipe API (with machine icons) ===
-
-  // Get machines for an item (indexed recipe API with machineIcon support)
-  async getItemMachines(itemId: string): Promise<ItemMachinesResponse> {
-    return itemRuntimeClient.getItemMachines(itemId);
   },
 
   // === Pattern Management ===
