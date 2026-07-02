@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, '..');
 const routeSource = readFileSync(resolve(root, 'src/routes/current-api.routes.ts'), 'utf8');
 const handlerSource = readFileSync(resolve(root, 'src/routes/current-runtime-endpoint-handlers.ts'), 'utf8');
 const endpointRegistrySource = readFileSync(resolve(root, 'src/routes/current-runtime-endpoint-registry.ts'), 'utf8');
+const readServiceSource = readFileSync(resolve(root, 'src/services/current-runtime-read.service.ts'), 'utf8');
 
 test('current runtime API route is only an endpoint mount table consumer', () => {
   assert.match(routeSource, /for \(const endpoint of CURRENT_RUNTIME_ENDPOINTS\)/);
@@ -39,8 +40,15 @@ test('current runtime endpoint handlers are explicitly keyed and exhaustive', ()
   assert.match(handlerSource, /sendCurrentRuntimeManifest/);
   assert.match(handlerSource, /sendCurrentRuntimeAsset/);
   assert.match(handlerSource, /sendCurrentRuntimeReport/);
-  assert.match(handlerSource, /getCurrentRecipeItemProducedBy/);
-  assert.match(handlerSource, /getCurrentRuntimeMultiblockBlueprint/);
+  assert.match(handlerSource, /current-runtime-read\.service/);
+  assert.match(handlerSource, /getCurrentRuntimeRecipeProducedByPayload/);
+  assert.match(handlerSource, /getCurrentRuntimeMultiblockBlueprintPayload/);
+  assert.doesNotMatch(handlerSource, /current-runtime-recipe-api\.service/);
+  assert.doesNotMatch(handlerSource, /current-runtime-special-data\.service/);
+  assert.doesNotMatch(handlerSource, /current-runtime-settings\.service/);
+  assert.doesNotMatch(handlerSource, /current-runtime-observability\.service/);
+  assert.match(readServiceSource, /getCurrentRecipeItemProducedBy/);
+  assert.match(readServiceSource, /getCurrentRuntimeMultiblockBlueprint/);
 
   const endpointKeys = Array.from(endpointRegistrySource.matchAll(/key: '([^']+)'/g), (match) => match[1]);
   assert.ok(endpointKeys.length > 0, 'endpoint registry must expose endpoint keys');

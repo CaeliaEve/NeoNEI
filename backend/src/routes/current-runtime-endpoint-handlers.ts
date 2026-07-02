@@ -1,26 +1,22 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import {
   assertCurrentRuntimeId,
-  getCurrentRuntimeOverview,
   withCurrentRuntimeApiContext,
   withCurrentRuntimeApiContextAsync,
 } from '../services/current-runtime-api.service';
 import {
-  getCurrentRuntimeDiagnosticsHealth,
-  getCurrentRuntimeDiagnosticsSummary,
-  getCurrentRuntimeNativeSurfaceMetrics,
-} from '../services/current-runtime-observability.service';
-import {
-  getCurrentRecipeItemProducedBy,
-  getCurrentRecipeItemUsedIn,
-  getCurrentRecipePage,
-} from '../services/current-runtime-recipe-api.service';
-import { getCurrentRuntimeSettings } from '../services/current-runtime-settings.service';
-import {
-  getCurrentRuntimeForestryGeneticsOverview,
-  getCurrentRuntimeGTDiagramsOverview,
-  getCurrentRuntimeMultiblockBlueprint,
-} from '../services/current-runtime-special-data.service';
+  getCurrentRuntimeDiagnosticsHealthPayload,
+  getCurrentRuntimeDiagnosticsSummaryPayload,
+  getCurrentRuntimeForestryGeneticsOverviewPayload,
+  getCurrentRuntimeGTDiagramsOverviewPayload,
+  getCurrentRuntimeMultiblockBlueprintPayload,
+  getCurrentRuntimeNativeSurfaceMetricsPayload,
+  getCurrentRuntimeOverviewPayload,
+  getCurrentRuntimeRecipePagePayload,
+  getCurrentRuntimeRecipeProducedByPayload,
+  getCurrentRuntimeRecipeUsedInPayload,
+  getCurrentRuntimeSettingsPayload,
+} from '../services/current-runtime-read.service';
 import { asyncHandler } from '../utils/http';
 import type { CurrentRuntimeEndpointKey } from './current-runtime-endpoint-registry';
 import {
@@ -34,7 +30,7 @@ import {
 
 function sendRuntimeCurrent(res: Response): void {
   withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeOverview(context), context);
+    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeOverviewPayload(context), context);
   });
 }
 
@@ -50,49 +46,49 @@ function sendMountedRuntimeAsset(req: Request, res: Response, next: NextFunction
 
 async function sendRecipeItem(itemIdParam: string | undefined, res: Response): Promise<void> {
   await withCurrentRuntimeApiContextAsync(async (context) => {
-    sendCurrentRuntimeNoStoreJson(res, await getCurrentRecipeItemProducedBy(itemIdParam), context);
+    sendCurrentRuntimeNoStoreJson(res, await getCurrentRuntimeRecipeProducedByPayload(itemIdParam), context);
   });
 }
 
 async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): Promise<void> {
   await withCurrentRuntimeApiContextAsync(async (context) => {
-    sendCurrentRuntimeNoStoreJson(res, await getCurrentRecipeItemUsedIn(itemIdParam), context);
+    sendCurrentRuntimeNoStoreJson(res, await getCurrentRuntimeRecipeUsedInPayload(itemIdParam), context);
   });
 }
 
 async function sendRecipePage(recipePageIdParam: string | undefined, res: Response): Promise<void> {
   await withCurrentRuntimeApiContextAsync(async (context) => {
-    sendCurrentRuntimeNoStoreJson(res, await getCurrentRecipePage(recipePageIdParam), context);
+    sendCurrentRuntimeNoStoreJson(res, await getCurrentRuntimeRecipePagePayload(recipePageIdParam), context);
   });
 }
 
 function sendDiagnosticsHealth(res: Response): void {
   withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeDiagnosticsHealth(context), context);
+    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeDiagnosticsHealthPayload(context), context);
   });
 }
 
 function sendDiagnosticsRuntimeSummary(res: Response): void {
   withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeDiagnosticsSummary(context), context);
+    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeDiagnosticsSummaryPayload(context), context);
   });
 }
 
 function sendRuntimeSettings(res: Response): void {
   withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeSettings(), context);
+    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeSettingsPayload(), context);
   });
 }
 
 function sendGTDiagramsOverview(res: Response): void {
   withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeGTDiagramsOverview(), context);
+    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeGTDiagramsOverviewPayload(), context);
   });
 }
 
 function sendForestryGeneticsOverview(res: Response): void {
   withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeForestryGeneticsOverview(), context);
+    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeForestryGeneticsOverviewPayload(), context);
   });
 }
 
@@ -100,7 +96,7 @@ function sendMultiblockBlueprint(controllerItemIdParam: string | undefined, res:
   withCurrentRuntimeApiContext((context) => {
     sendCurrentRuntimeNoStoreJson(
       res,
-      getCurrentRuntimeMultiblockBlueprint(controllerItemIdParam),
+      getCurrentRuntimeMultiblockBlueprintPayload(controllerItemIdParam),
       context,
     );
   });
@@ -178,7 +174,7 @@ export const CURRENT_RUNTIME_ENDPOINT_HANDLERS: Readonly<Record<CurrentRuntimeEn
   },
   nativeSurfaceMetrics: (_req, res) => {
     withCurrentRuntimeApiContext((context) => {
-      sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeNativeSurfaceMetrics(context), context);
+      sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeNativeSurfaceMetricsPayload(context), context);
     });
   },
   runtimeSettings: (_req, res) => {
