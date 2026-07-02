@@ -13,32 +13,72 @@ function readSource(relativePath) {
 
 test("native runtime loader consumes current API envelope and file endpoint", () => {
   const loader = readSource("src/native-surface/runtimeLoader.ts");
+  const requestPolicy = readSource("src/native-surface/NativeRuntimeRequestPolicy.ts");
+  const abi = readSource("src/native-surface/NativeRuntimeAbi.ts");
 
   assert.match(loader, /CurrentRuntimeManifestEnvelope/);
   assert.match(loader, /"ok" in payload && "data" in payload/);
-  assert.match(loader, /api\/runtime\/current\/manifest/);
-  assert.match(loader, /api\/runtime\/current\/asset/);
+  assert.match(requestPolicy, /NATIVE_RUNTIME_REQUEST_POLICY_MODULE/);
+  assert.match(requestPolicy, /NATIVE_RUNTIME_CURRENT_MANIFEST_PATH/);
+  assert.match(requestPolicy, /NATIVE_RUNTIME_CURRENT_ASSET_BASE_PATH/);
+  assert.match(abi, /api\/runtime\/current\/manifest/);
+  assert.match(abi, /api\/runtime\/current\/asset/);
   assert.doesNotMatch(loader, /api\/native-runtime\/current/);
-  assert.match(loader, /encodeRuntimeFilePath/);
-  assert.match(loader, /buildNativeRuntimeRevision/);
-  assert.match(loader, /appendNativeRuntimeRevision/);
-  assert.match(loader, /neoneiRuntime/);
+  assert.match(requestPolicy, /encodeRuntimeFilePath/);
+  assert.match(requestPolicy, /buildNativeRuntimeRevision/);
+  assert.match(requestPolicy, /appendNativeRuntimeRevision/);
+  assert.match(requestPolicy, /NATIVE_RUNTIME_REVISION\.queryParam/);
+  assert.match(abi, /neoneiRuntime/);
+  assert.match(loader, /resolveManifestRelativeUrl/);
   assert.doesNotMatch(loader, /new URL\(`rust\//, "runtime packs must not hardcode static rust URLs in the loader");
 });
 
 test("native runtime pack fetches are versioned before using browser cache", () => {
   const loader = readSource("src/native-surface/runtimeLoader.ts");
+  const requestPolicy = readSource("src/native-surface/NativeRuntimeRequestPolicy.ts");
+  const abi = readSource("src/native-surface/NativeRuntimeAbi.ts");
 
-  assert.match(loader, /getManifestRuntimeFileBytes/);
-  assert.match(loader, /manifest\.runtimeId/);
-  assert.match(loader, /manifest\.generatedAt/);
-  assert.match(loader, /manifest\.sourceSignature/);
-  assert.match(loader, /fetch\(url,\s*\{\s*cache:\s*"force-cache"/s);
+  assert.match(requestPolicy, /getManifestRuntimeFileBytes/);
+  assert.match(requestPolicy, /manifest\.runtimeId/);
+  assert.match(requestPolicy, /manifest\.generatedAt/);
+  assert.match(requestPolicy, /manifest\.sourceSignature/);
+  assert.match(requestPolicy, /createNativeRuntimePackCacheKey/);
+  assert.match(loader, /getNativeRuntimeFetchCache\("pack"\)/);
+  assert.match(abi, /pack:\s*"force-cache"/);
   assert.doesNotMatch(
     loader,
     /const cacheKey = `\$\{normalizedManifestUrl\}::\$\{name\}::\$\{url\}`/,
     "native runtime pack cache key must include manifest revision, not only the static URL",
   );
+});
+
+test("native runtime request policy is the shared URL and cache boundary", () => {
+  const requestPolicy = readSource("src/native-surface/NativeRuntimeRequestPolicy.ts");
+  const uiPackRuntime = readSource("src/services/uiPackRuntime.ts");
+  const backgroundLoader = readSource("src/services/nativeUiBackgroundResourceLoader.ts");
+  const loader = readSource("src/native-surface/runtimeLoader.ts");
+
+  assert.match(requestPolicy, /NATIVE_RUNTIME_REQUEST_POLICY_MODULE/);
+  assert.match(requestPolicy, /isPortableRuntimePath/);
+  assert.match(requestPolicy, /resolveManifestRelativeUrl/);
+  assert.match(requestPolicy, /getNativeRuntimeFetchCache/);
+  assert.match(requestPolicy, /NATIVE_RUNTIME_REVISION_FIELDS/);
+  assert.match(requestPolicy, /NATIVE_RUNTIME_PACK_CACHE_KEY_FIELDS/);
+
+  assert.match(loader, /from "\.\/NativeRuntimeRequestPolicy\.ts"/);
+  assert.match(uiPackRuntime, /from "\.\.\/native-surface\/NativeRuntimeRequestPolicy\.ts"/);
+  assert.match(backgroundLoader, /from "\.\.\/native-surface\/NativeRuntimeRequestPolicy\.ts"/);
+  assert.match(uiPackRuntime, /getNativeRuntimeFetchCache\("report"\)/);
+  assert.match(uiPackRuntime, /getNativeRuntimeFetchCache\("pack"\)/);
+  assert.match(uiPackRuntime, /normalizeNativeRuntimeManifestUrl/);
+
+  assert.doesNotMatch(uiPackRuntime, /function isPortableRelativePath/);
+  assert.doesNotMatch(uiPackRuntime, /function isCurrentRuntimeManifestUrl/);
+  assert.doesNotMatch(uiPackRuntime, /function encodeRuntimeFilePath/);
+  assert.doesNotMatch(uiPackRuntime, /function resolveCurrentRuntimeAssetUrl/);
+  assert.doesNotMatch(uiPackRuntime, /function resolveManifestRelativeUrl/);
+  assert.doesNotMatch(uiPackRuntime, /cache:\s*"force-cache"/);
+  assert.doesNotMatch(uiPackRuntime, /cache:\s*"no-cache"/);
 });
 
 test("homepage native runtime manifest defaults to current API", () => {

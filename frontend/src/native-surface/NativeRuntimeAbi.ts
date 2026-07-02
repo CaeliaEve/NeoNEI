@@ -14,6 +14,7 @@ export const NATIVE_RUNTIME_CURRENT_ASSET_BASE_PATH = "/api/runtime/current/asse
 export const NATIVE_RUNTIME_FETCH_CACHE = {
   manifest: "no-cache",
   pack: "force-cache",
+  report: "no-cache",
 } as const;
 
 export const NATIVE_RUNTIME_REVISION = {

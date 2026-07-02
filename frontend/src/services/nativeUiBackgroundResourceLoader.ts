@@ -1,4 +1,4 @@
-import { resolveManifestRelativeUrl } from "../native-surface/runtimeLoader.ts";
+import { resolveManifestRelativeUrl } from "../native-surface/NativeRuntimeRequestPolicy.ts";
 import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend.ts";
 import type { NativeUiLayoutSurface } from "./nativeUiRuntimeRegistry.ts";
 import type { NativeUiPreparedBackgroundSource } from "./nativeUiRenderCommandBuilder.ts";

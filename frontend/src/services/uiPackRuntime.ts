@@ -4,6 +4,11 @@ import {
   parseNativeRuntimePackHeader,
 } from "../native-surface/runtimeLoader.ts";
 import {
+  getNativeRuntimeFetchCache,
+  normalizeNativeRuntimeManifestUrl,
+  resolveManifestRelativeUrl,
+} from "../native-surface/NativeRuntimeRequestPolicy.ts";
+import {
   assertNativeUiRuntimeManifest,
   getNativeRuntimeEntrypointSource,
 } from "../native-surface/NativeRuntimeCapabilityGate.ts";
@@ -171,46 +176,6 @@ type UiPackArtifactContract = {
   payloadMagic: string;
   version: number;
 };
-
-function isPortableRelativePath(path: string): boolean {
-  return Boolean(path)
-    && !path.startsWith("/")
-    && !path.includes("\\")
-    && !/^[A-Za-z]:[\\/]/.test(path)
-    && !path.split("/").includes("..");
-}
-
-function isCurrentRuntimeManifestUrl(manifestUrl: string): boolean {
-  try {
-    const pathname = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").pathname;
-    return pathname.endsWith("/api/runtime/current/manifest");
-  } catch {
-    return manifestUrl.includes("/api/runtime/current/manifest");
-  }
-}
-
-function encodeRuntimeFilePath(relativePath: string): string {
-  return relativePath.split("/").map((part) => encodeURIComponent(part)).join("/");
-}
-
-function resolveCurrentRuntimeAssetUrl(manifestUrl: string, relativePath: string): string {
-  const encodedPath = encodeRuntimeFilePath(relativePath);
-  try {
-    return new URL(`/api/runtime/current/asset/${encodedPath}`, new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/")).toString();
-  } catch {
-    return `/api/runtime/current/asset/${encodedPath}`;
-  }
-}
-
-function resolveManifestRelativeUrl(manifestUrl: string, relativePath: string): string {
-  if (!isPortableRelativePath(relativePath)) {
-    throw new Error(`UI pack path is not portable: ${relativePath}`);
-  }
-  if (isCurrentRuntimeManifestUrl(manifestUrl)) {
-    return resolveCurrentRuntimeAssetUrl(manifestUrl, relativePath);
-  }
-  return new URL(relativePath, manifestUrl).toString();
-}
 
 function asString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -632,7 +597,7 @@ function parseUiPackManifest(manifest: NativeRuntimeManifest): UiPackRuntimeEntr
 }
 
 async function fetchPackBuffer(url: string): Promise<ArrayBuffer> {
-  const response = await fetch(url, { cache: "force-cache" });
+  const response = await fetch(url, { cache: getNativeRuntimeFetchCache("pack") });
   if (!response.ok) {
     throw new Error(`Failed to load UI pack artifact: ${response.status} ${response.statusText}`);
   }
@@ -640,7 +605,7 @@ async function fetchPackBuffer(url: string): Promise<ArrayBuffer> {
 }
 
 async function fetchJsonRecord(url: string, label: string): Promise<JsonRecord> {
-  const response = await fetch(url, { cache: "no-cache" });
+  const response = await fetch(url, { cache: getNativeRuntimeFetchCache("report") });
   if (!response.ok) {
     throw new Error(`Failed to load ${label}: ${response.status} ${response.statusText}`);
   }
@@ -845,7 +810,7 @@ function createErrorRuntime(manifestUrl: string, error: unknown): UiPackRuntime 
 }
 
 export function loadUiPackRuntime(manifestUrl = "/api/runtime/current/manifest"): Promise<UiPackRuntime> {
-  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? "http://localhost/").toString();
+  const normalizedManifestUrl = normalizeNativeRuntimeManifestUrl(manifestUrl);
   const existing = UI_PACK_REQUEST_CACHE.get(normalizedManifestUrl);
   if (existing) return existing;
   const request = loadUiPackRuntimeInternal(normalizedManifestUrl)

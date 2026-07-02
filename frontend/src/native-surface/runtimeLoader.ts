@@ -1,14 +1,9 @@
 import {
-  NATIVE_RUNTIME_CURRENT_ASSET_BASE_PATH,
-  NATIVE_RUNTIME_CURRENT_MANIFEST_PATH,
-  NATIVE_RUNTIME_DEFAULT_BASE_URL,
-  NATIVE_RUNTIME_FETCH_CACHE,
   NATIVE_RUNTIME_PACK_HEADER_BYTES,
   NATIVE_RUNTIME_PACK_MAGIC,
   NATIVE_RUNTIME_PACK_SCHEMAS,
   NATIVE_RUNTIME_PACK_VERSION,
   NATIVE_RUNTIME_PAYLOAD_ENCODINGS,
-  NATIVE_RUNTIME_REVISION,
   type NativeRuntimePackName,
   type NativeRuntimePackSchema,
 } from "./NativeRuntimeAbi.ts";
@@ -19,87 +14,26 @@ import type {
 } from "./NativeRuntimeManifest.ts";
 import { parseNativeCompactBrowserPack } from "./NativeRuntimeBrowserPack.ts";
 import { assertNativeRuntimePackEntrypoints } from "./NativeRuntimeCapabilityGate.ts";
-import { getManifestRuntimeFileBytes } from "../services/runtimeManifestPath.ts";
+import {
+  appendNativeRuntimeRevision,
+  buildNativeRuntimeRevision,
+  createNativeRuntimePackCacheKey,
+  getNativeRuntimeFetchCache,
+  normalizeNativeRuntimeManifestUrl,
+  resolveManifestRelativeUrl,
+} from "./NativeRuntimeRequestPolicy.ts";
+
+export { resolveManifestRelativeUrl } from "./NativeRuntimeRequestPolicy.ts";
 
 const manifestRequestCache = new Map<string, Promise<NativeRuntimeManifest>>();
 const packRequestCache = new Map<string, Promise<NativeRuntimePack>>();
 
 export type NativeRuntimeManifestGate = (manifest: NativeRuntimeManifest) => void;
 
-function isPortableRelativePath(path: string): boolean {
-  return Boolean(path)
-    && !path.startsWith("/")
-    && !path.includes("\\")
-    && !/^[A-Za-z]:[\\/]/.test(path)
-    && !path.split("/").includes("..");
-}
-
 type CurrentRuntimeManifestEnvelope = {
   ok?: boolean;
   data?: NativeRuntimeManifest;
 };
-
-function encodeRuntimeFilePath(relativePath: string): string {
-  return relativePath.split("/").map((part) => encodeURIComponent(part)).join("/");
-}
-
-function isCurrentRuntimeManifestUrl(manifestUrl: string): boolean {
-  try {
-    const pathname = new URL(manifestUrl, globalThis.location?.href ?? NATIVE_RUNTIME_DEFAULT_BASE_URL).pathname;
-    return pathname.endsWith(NATIVE_RUNTIME_CURRENT_MANIFEST_PATH);
-  } catch {
-    return manifestUrl.includes(NATIVE_RUNTIME_CURRENT_MANIFEST_PATH);
-  }
-}
-
-function resolveCurrentRuntimeAssetUrl(manifestUrl: string, relativePath: string): string {
-  const encodedPath = encodeRuntimeFilePath(relativePath);
-  try {
-    return new URL(
-      `${NATIVE_RUNTIME_CURRENT_ASSET_BASE_PATH}${encodedPath}`,
-      new URL(manifestUrl, globalThis.location?.href ?? NATIVE_RUNTIME_DEFAULT_BASE_URL),
-    ).toString();
-  } catch {
-    return `${NATIVE_RUNTIME_CURRENT_ASSET_BASE_PATH}${encodedPath}`;
-  }
-}
-
-export function resolveManifestRelativeUrl(manifestUrl: string, relativePath: string): string {
-  if (!isPortableRelativePath(relativePath)) {
-    throw new Error(`Native runtime path is not portable: ${relativePath}`);
-  }
-  if (isCurrentRuntimeManifestUrl(manifestUrl)) {
-    return resolveCurrentRuntimeAssetUrl(manifestUrl, relativePath);
-  }
-  return new URL(relativePath, manifestUrl).toString();
-}
-
-function buildNativeRuntimeRevision(manifest: NativeRuntimeManifest, relativePath: string): string {
-  return [
-    manifest.runtimeId,
-    manifest.generatedAt,
-    manifest.sourceSignature,
-    manifest.schemaRevision,
-    relativePath,
-    getManifestRuntimeFileBytes(manifest.files, relativePath),
-  ]
-    .map((value) => `${value ?? ""}`.trim())
-    .filter(Boolean)
-    .join(NATIVE_RUNTIME_REVISION.separator)
-    || `${relativePath}${NATIVE_RUNTIME_REVISION.separator}${NATIVE_RUNTIME_REVISION.currentFallback}`;
-}
-
-function appendNativeRuntimeRevision(url: string, revision: string): string {
-  const encoded = encodeURIComponent(revision);
-  try {
-    const next = new URL(url, globalThis.location?.href ?? NATIVE_RUNTIME_DEFAULT_BASE_URL);
-    next.searchParams.set(NATIVE_RUNTIME_REVISION.queryParam, encoded);
-    return next.toString();
-  } catch {
-    const separator = url.includes("?") ? "&" : "?";
-    return `${url}${separator}${NATIVE_RUNTIME_REVISION.queryParam}=${encoded}`;
-  }
-}
 
 function decodeAscii(view: DataView, offset: number, length: number): string {
   const bytes = new Uint8Array(view.buffer, view.byteOffset + offset, length);
@@ -165,19 +99,19 @@ function detectPayloadEncoding(name: NativeRuntimePackName, payloadBuffer: Array
 }
 
 export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<NativeRuntimeManifest> {
-  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? NATIVE_RUNTIME_DEFAULT_BASE_URL).toString();
+  const normalizedManifestUrl = normalizeNativeRuntimeManifestUrl(manifestUrl);
   const existing = manifestRequestCache.get(normalizedManifestUrl);
   if (existing) return existing;
   const request = (async () => {
-  const response = await fetch(normalizedManifestUrl, { cache: NATIVE_RUNTIME_FETCH_CACHE.manifest });
-  if (!response.ok) {
-    throw new Error(`Failed to load native runtime manifest: ${response.status} ${response.statusText}`);
-  }
-  const payload = await response.json() as NativeRuntimeManifest | CurrentRuntimeManifestEnvelope;
-  if (payload && typeof payload === "object" && "ok" in payload && "data" in payload) {
-    return (payload as CurrentRuntimeManifestEnvelope).data ?? {};
-  }
-  return payload as NativeRuntimeManifest;
+    const response = await fetch(normalizedManifestUrl, { cache: getNativeRuntimeFetchCache("manifest") });
+    if (!response.ok) {
+      throw new Error(`Failed to load native runtime manifest: ${response.status} ${response.statusText}`);
+    }
+    const payload = await response.json() as NativeRuntimeManifest | CurrentRuntimeManifestEnvelope;
+    if (payload && typeof payload === "object" && "ok" in payload && "data" in payload) {
+      return (payload as CurrentRuntimeManifestEnvelope).data ?? {};
+    }
+    return payload as NativeRuntimeManifest;
   })().catch((error) => {
     manifestRequestCache.delete(normalizedManifestUrl);
     throw error;
@@ -195,11 +129,11 @@ async function loadNativeRuntimePack(
   const path = entrypoints[name];
   const revision = buildNativeRuntimeRevision(manifest, path);
   const url = appendNativeRuntimeRevision(resolveManifestRelativeUrl(normalizedManifestUrl, path), revision);
-  const cacheKey = `${normalizedManifestUrl}::${name}::${path}::${revision}`;
+  const cacheKey = createNativeRuntimePackCacheKey(normalizedManifestUrl, name, path, revision);
   const existing = packRequestCache.get(cacheKey);
   if (existing) return existing;
   const request = (async () => {
-    const response = await fetch(url, { cache: NATIVE_RUNTIME_FETCH_CACHE.pack });
+    const response = await fetch(url, { cache: getNativeRuntimeFetchCache("pack") });
     if (!response.ok) {
       throw new Error(`Failed to load native runtime pack ${name}: ${response.status} ${response.statusText}`);
     }
@@ -228,7 +162,7 @@ export async function loadNativeRuntimeBuffers(
   packNames?: readonly NativeRuntimePackName[],
   manifestGate?: NativeRuntimeManifestGate,
 ): Promise<NativeRuntimeBuffers> {
-  const normalizedManifestUrl = new URL(manifestUrl, globalThis.location?.href ?? NATIVE_RUNTIME_DEFAULT_BASE_URL).toString();
+  const normalizedManifestUrl = normalizeNativeRuntimeManifestUrl(manifestUrl);
   const manifest = await loadNativeRuntimeManifest(normalizedManifestUrl);
   const packs: Partial<Record<NativeRuntimePackName, NativeRuntimePack>> = {};
   const requestedPackNames = packNames?.length

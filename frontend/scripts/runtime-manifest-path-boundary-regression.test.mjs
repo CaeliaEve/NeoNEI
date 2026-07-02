@@ -55,18 +55,20 @@ test('frontend runtime consumers use the shared manifest path boundary', () => {
   const uiPackSource = source('src/services/uiPackRuntime.ts');
   const distPackSource = source('src/services/distDataRuntimePackAbi.ts');
   const runtimeLoaderSource = source('src/native-surface/runtimeLoader.ts');
+  const requestPolicySource = source('src/native-surface/NativeRuntimeRequestPolicy.ts');
 
   assert.match(sharedSource, /export function normalizeRuntimePath/);
   assert.match(sharedSource, /export function runtimeManifestDeclaresPath/);
   assert.match(sharedSource, /export function getManifestRuntimeFileBytes/);
 
-  for (const consumerSource of [uiPackSource, distPackSource, runtimeLoaderSource]) {
+  for (const consumerSource of [uiPackSource, distPackSource, requestPolicySource]) {
     assert.match(consumerSource, /runtimeManifestPath/);
     assert.doesNotMatch(consumerSource, /function normalizeRuntimePath\(/);
     assert.doesNotMatch(consumerSource, /function pathsEqual\(/);
     assert.doesNotMatch(consumerSource, /function getManifestFileBytes\(/);
   }
 
+  assert.match(runtimeLoaderSource, /NativeRuntimeRequestPolicy/);
   assert.doesNotMatch(uiPackSource, /function manifestDeclaresRuntimePath\(/);
   assert.doesNotMatch(uiPackSource, /function runtimePathFromValue\(/);
   assert.doesNotMatch(uiPackSource, /function runtimeManifestFileRecord\(/);
