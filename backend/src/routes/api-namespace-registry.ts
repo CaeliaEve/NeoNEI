@@ -1,4 +1,4 @@
-﻿import type { Application, RequestHandler, Router } from 'express';
+import type { Application, RequestHandler, Router } from 'express';
 import itemsRoutes from './items.routes';
 import patternsRoutes from './patterns.routes';
 import indexedRecipesRoutes from './recipes-indexed.routes';
@@ -13,7 +13,7 @@ import runtimeRoutes from './runtime.routes';
 import v1Routes from './v1.routes';
 import currentApiRoutes from './current-api.routes';
 
-export type ApiNamespaceTier = 'public-runtime' | 'dev-compat' | 'legacy-compat';
+export type ApiNamespaceTier = 'public-runtime' | 'dev-compat';
 export type ApiNamespaceHandler = RequestHandler | Router;
 
 export type ApiNamespaceDefinition = Readonly<{
@@ -25,7 +25,6 @@ export type ApiNamespaceDefinition = Readonly<{
 
 export type ApiNamespacePlanInput = Readonly<{
   publicRuntimeOnly: boolean;
-  externalRuntimeAuthority: boolean;
 }>;
 
 export type ApiTierTagger = (tier: ApiNamespaceTier) => RequestHandler;
@@ -63,18 +62,6 @@ export const DEV_COMPAT_NAMESPACES: readonly ApiNamespaceDefinition[] = Object.f
   Object.freeze({ key: 'labForestryGenetics', mountPath: '/lab/forestry-genetics', tier: 'dev-compat', handler: forestryGeneticsRoutes }),
 ]);
 
-export const LEGACY_COMPAT_NAMESPACES: readonly ApiNamespaceDefinition[] = Object.freeze([
-  Object.freeze({ key: 'legacyItems', mountPath: '/api/items', tier: 'legacy-compat', handler: itemsRoutes }),
-  Object.freeze({ key: 'legacyPatterns', mountPath: '/api/patterns', tier: 'legacy-compat', handler: patternsRoutes }),
-  Object.freeze({ key: 'legacyRecipesIndexed', mountPath: '/api/recipes-indexed', tier: 'legacy-compat', handler: indexedRecipesRoutes }),
-  Object.freeze({ key: 'legacyMultiblocks', mountPath: '/api/multiblocks', tier: 'legacy-compat', handler: multiblocksRoutes }),
-  Object.freeze({ key: 'legacyEcosystem', mountPath: '/api/ecosystem', tier: 'legacy-compat', handler: ecosystemRoutes }),
-  Object.freeze({ key: 'legacyGtDiagrams', mountPath: '/api/gt-diagrams', tier: 'legacy-compat', handler: gtDiagramsRoutes }),
-  Object.freeze({ key: 'legacyForestryGenetics', mountPath: '/api/forestry-genetics', tier: 'legacy-compat', handler: forestryGeneticsRoutes }),
-  Object.freeze({ key: 'legacyRenderContract', mountPath: '/api/render-contract', tier: 'legacy-compat', handler: renderContractRoutes }),
-  Object.freeze({ key: 'legacyRecipeBootstrap', mountPath: '/api/recipe-bootstrap', tier: 'legacy-compat', handler: recipeBootstrapRoutes }),
-]);
-
 export function getApiNamespacePlan(input: ApiNamespacePlanInput): readonly ApiNamespaceDefinition[] {
   const namespaces: ApiNamespaceDefinition[] = [PUBLIC_RUNTIME_ROOT_NAMESPACE];
   if (!input.publicRuntimeOnly) {
@@ -82,10 +69,6 @@ export function getApiNamespacePlan(input: ApiNamespacePlanInput): readonly ApiN
   }
 
   namespaces.push(CURRENT_API_NAMESPACE);
-
-  if (!input.publicRuntimeOnly && !input.externalRuntimeAuthority) {
-    namespaces.push(...LEGACY_COMPAT_NAMESPACES);
-  }
 
   namespaces.push(...PUBLIC_RUNTIME_TAIL_NAMESPACES);
   return Object.freeze(namespaces);

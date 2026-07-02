@@ -1,5 +1,4 @@
-﻿import type { Application, RequestHandler } from 'express';
-import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
+import type { Application, RequestHandler } from 'express';
 import { getApiNamespacePlan, mountApiNamespaces, type ApiNamespaceTier } from './api-namespace-registry';
 
 type RegisterApiNamespacesOptions = {
@@ -16,12 +15,10 @@ const tagApiTier = (tier: ApiNamespaceTier): RequestHandler => (
 };
 
 export function registerApiNamespaces(app: Application, options: RegisterApiNamespacesOptions): void {
-  const externalRuntimeAuthority = resolveAccelerationCompilerAuthority() === 'external-runtime';
   mountApiNamespaces(
     app,
     getApiNamespacePlan({
       publicRuntimeOnly: options.publicRuntimeOnly,
-      externalRuntimeAuthority,
     }),
     tagApiTier,
   );

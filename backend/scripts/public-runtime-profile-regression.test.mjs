@@ -1,4 +1,4 @@
-﻿import assert from 'node:assert/strict';
+import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { dirname, join, resolve } from 'node:path';
@@ -25,12 +25,13 @@ test('public runtime profile is explicit and disables lab/dev dynamic mounts', (
   assert.equal(appSource.includes('registerApiNamespaces(app, { publicRuntimeOnly: options.serverSettings.publicRuntimeOnly })'), true);
   assert.match(apiNamespacesRoutesSource, /mountApiNamespaces\(\s*app,\s*getApiNamespacePlan/s);
   assert.match(apiNamespacesRoutesSource, /publicRuntimeOnly:\s*options\.publicRuntimeOnly/);
-  assert.match(apiNamespacesRoutesSource, /externalRuntimeAuthority/);
+  assert.doesNotMatch(apiNamespacesRoutesSource, /externalRuntimeAuthority/);
+  assert.doesNotMatch(apiNamespacesRoutesSource, /resolveAccelerationCompilerAuthority/);
   assert.doesNotMatch(apiNamespacesRoutesSource, /app\.use\('\/lab'/);
   assert.doesNotMatch(apiNamespacesRoutesSource, /app\.use\('\/api\/items'/);
   assert.match(apiNamespaceRegistrySource, /PUBLIC_RUNTIME_ROOT_NAMESPACE[\s\S]*mountPath:\s*'\/runtime'[\s\S]*handler:\s*runtimeRoutes/);
   assert.match(apiNamespaceRegistrySource, /if \(!input\.publicRuntimeOnly\) \{\s*namespaces\.push\(\.\.\.DEV_COMPAT_NAMESPACES\);/s);
-  assert.match(apiNamespaceRegistrySource, /if \(!input\.publicRuntimeOnly && !input\.externalRuntimeAuthority\) \{\s*namespaces\.push\(\.\.\.LEGACY_COMPAT_NAMESPACES\);/s);
+  assert.doesNotMatch(apiNamespaceRegistrySource, /LEGACY_COMPAT_NAMESPACES|legacy-compat|\/api\/(?:items|patterns|recipes-indexed|recipe-bootstrap)/);
   assert.match(apiNamespaceRegistrySource, /function mountApiNamespaces[\s\S]*for \(const namespace of namespaces\)[\s\S]*mountApiNamespace\(app, namespace, tagApiTier\);/);
   assert.match(staticAssetRoutesSource, /app\.use\(\s*'\/publish'/);
 });

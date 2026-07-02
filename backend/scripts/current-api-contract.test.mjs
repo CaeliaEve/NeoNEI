@@ -71,15 +71,15 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.doesNotMatch(routeSource, /process\.env\.NEONEI_DEBUG_PANELS/);
 });
 
-test('current API is mounted before legacy compatibility API', () => {
+test('current API owns /api without legacy dynamic namespace shadow mounts', () => {
   const currentIndex = namespaceRegistrySource.indexOf('namespaces.push(CURRENT_API_NAMESPACE)');
-  const legacyIndex = namespaceRegistrySource.indexOf('namespaces.push(...LEGACY_COMPAT_NAMESPACES)');
   assert.notEqual(currentIndex, -1);
-  assert.notEqual(legacyIndex, -1);
-  assert.equal(currentIndex < legacyIndex, true, 'current API must be routed before legacy compatibility API');
   assert.match(namespaceSource, /mountApiNamespaces/);
   assert.match(namespaceSource, /getApiNamespacePlan/);
   assert.doesNotMatch(namespaceSource, /app\.use\('\/api'/);
+  assert.doesNotMatch(namespaceRegistrySource, /LEGACY_COMPAT_NAMESPACES/);
+  assert.doesNotMatch(namespaceRegistrySource, /legacy-compat/);
+  assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/(?:items|patterns|recipes-indexed|recipe-bootstrap|multiblocks|ecosystem|gt-diagrams|forestry-genetics|render-contract)'/);
 });
 
 test('runtime file endpoint is path traversal safe and relative-rooted', () => {
@@ -282,38 +282,34 @@ test('external-runtime authority uses runtime recipe pack for item usage and pag
 });
 
 
-test('external-runtime authority keeps legacy sqlite recipe namespaces out of production /api', () => {
-  assert.match(namespaceSource, /resolveAccelerationCompilerAuthority/);
-  assert.match(namespaceSource, /externalRuntimeAuthority = resolveAccelerationCompilerAuthority\(\) === 'external-runtime'/);
-  assert.match(namespaceSource, /externalRuntimeAuthority,/);
+test('dynamic sqlite recipe namespaces are lab-only and never mounted under production /api', () => {
+  assert.doesNotMatch(namespaceSource, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority/);
   assert.match(namespaceSource, /publicRuntimeOnly: options\.publicRuntimeOnly/);
   assert.match(namespaceRegistrySource, /export const DEV_COMPAT_NAMESPACES/);
-  assert.match(namespaceRegistrySource, /export const LEGACY_COMPAT_NAMESPACES/);
-  assert.match(namespaceRegistrySource, /if \(!input\.publicRuntimeOnly && !input\.externalRuntimeAuthority\) \{/);
+  assert.doesNotMatch(namespaceRegistrySource, /export const LEGACY_COMPAT_NAMESPACES/);
+  assert.doesNotMatch(namespaceRegistrySource, /legacy-compat/);
   assert.match(namespaceRegistrySource, /mountPath: '\/lab\/recipes'/);
   assert.match(namespaceRegistrySource, /mountPath: '\/lab\/recipe-bootstrap'/);
-  assert.match(namespaceRegistrySource, /mountPath: '\/api\/recipes-indexed'/);
-  assert.match(namespaceRegistrySource, /mountPath: '\/api\/recipe-bootstrap'/);
-
-  const legacyApiGateIndex = namespaceRegistrySource.indexOf('if (!input.publicRuntimeOnly && !input.externalRuntimeAuthority) {');
-  assert.notEqual(legacyApiGateIndex, -1, 'legacy api gate must exist');
-  const legacyApiGateBody = namespaceRegistrySource.slice(legacyApiGateIndex, namespaceRegistrySource.indexOf('  namespaces.push(...PUBLIC_RUNTIME_TAIL_NAMESPACES)', legacyApiGateIndex));
-  assert.match(legacyApiGateBody, /namespaces\.push\(\.\.\.LEGACY_COMPAT_NAMESPACES\)/);
+  assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipes-indexed'/);
+  assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/recipe-bootstrap'/);
 
   const labGateIndex = namespaceRegistrySource.indexOf('if (!input.publicRuntimeOnly) {');
   assert.notEqual(labGateIndex, -1, 'lab api gate must exist');
-  const labGateBody = namespaceRegistrySource.slice(labGateIndex, namespaceRegistrySource.indexOf('\n\n  namespaces.push(CURRENT_API_NAMESPACE)', labGateIndex));
+  const labGateBody = namespaceRegistrySource.slice(
+    labGateIndex,
+    namespaceRegistrySource.indexOf('  namespaces.push(CURRENT_API_NAMESPACE)', labGateIndex),
+  );
   assert.match(labGateBody, /namespaces\.push\(\.\.\.DEV_COMPAT_NAMESPACES\)/);
 });
 
-test('v1 runtime contracts point dev compatibility recipe APIs to lab under external runtime authority', () => {
+test('v1 runtime contracts advertise lab-only dev diagnostics, not legacy /api sqlite routes', () => {
   const v1Source = fs.readFileSync('src/routes/v1.routes.ts', 'utf8');
-  assert.match(v1Source, /resolveAccelerationCompilerAuthority/);
-  assert.match(v1Source, /externalRuntimeAuthority = resolveAccelerationCompilerAuthority\(\) === 'external-runtime'/);
-  assert.match(v1Source, /legacyApiBase = externalRuntimeAuthority \? '\/lab' : '\/api'/);
-  assert.match(v1Source, /devRecipesIndexed: externalRuntimeAuthority \? '\/lab\/recipes' : '\/api\/recipes-indexed'/);
-  assert.match(v1Source, /devRecipeBootstrap: `\$\{legacyApiBase\}\/recipe-bootstrap`/);
-  assert.doesNotMatch(v1Source, /devRecipesIndexed: '\/api\/recipes-indexed'/);
-  assert.doesNotMatch(v1Source, /externalRuntimeAuthority \? '\/lab\/recipes-indexed'/);
-  assert.doesNotMatch(v1Source, /devRecipeBootstrap: '\/api\/recipe-bootstrap'/);
+  assert.doesNotMatch(v1Source, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority|legacyApiBase/);
+  assert.match(v1Source, /dev: \{/);
+  assert.match(v1Source, /items: '\/lab\/items'/);
+  assert.match(v1Source, /recipes: '\/lab\/recipes'/);
+  assert.match(v1Source, /recipeBootstrap: '\/lab\/recipe-bootstrap'/);
+  assert.doesNotMatch(v1Source, /\/api\/recipes-indexed/);
+  assert.doesNotMatch(v1Source, /\/api\/recipe-bootstrap/);
+  assert.doesNotMatch(v1Source, /compatibility: \{/);
 });

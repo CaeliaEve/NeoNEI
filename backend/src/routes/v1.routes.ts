@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { getPublishManifestService } from '../services/publish-manifest.service';
 import { asyncHandler } from '../utils/http';
-import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
 import {
   createWeakEtag,
   sendNotModifiedIfEtagMatches,
@@ -12,8 +11,6 @@ import {
 const router = Router();
 
 function getRuntimeContracts() {
-  const externalRuntimeAuthority = resolveAccelerationCompilerAuthority() === 'external-runtime';
-  const legacyApiBase = externalRuntimeAuthority ? '/lab' : '/api';
   return {
     version: 1,
     contracts: {
@@ -30,10 +27,10 @@ function getRuntimeContracts() {
       distDataManifest: '/dist-data/manifest.json',
       publishManifest: '/api/publish/manifest',
     },
-    compatibility: {
-      devItems: `${legacyApiBase}/items`,
-      devRecipesIndexed: externalRuntimeAuthority ? '/lab/recipes' : '/api/recipes-indexed',
-      devRecipeBootstrap: `${legacyApiBase}/recipe-bootstrap`,
+    dev: {
+      items: '/lab/items',
+      recipes: '/lab/recipes',
+      recipeBootstrap: '/lab/recipe-bootstrap',
     },
   };
 }

@@ -41,11 +41,10 @@ const runtimeContracts = {
     publish: '/publish/**',
     contracts: '/contracts/runtime/**',
   },
-  compatibility: {
-    legacyApi: 'compatibility only; not a production hot path',
-    devItems: '/lab/items',
-    devRecipesIndexed: '/lab/recipes',
-    devRecipeBootstrap: '/lab/recipe-bootstrap',
+  dev: {
+    items: '/lab/items',
+    recipes: '/lab/recipes',
+    recipeBootstrap: '/lab/recipe-bootstrap',
   },
 };
 
