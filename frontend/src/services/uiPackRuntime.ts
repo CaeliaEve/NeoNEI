@@ -112,6 +112,9 @@ export interface UiPackRuntime {
 const UI_PACK_REQUEST_CACHE = new Map<string, Promise<UiPackRuntime>>();
 const UI_PACK_ABI_VALIDATION_REPORT_PATH = "rust/ui-pack-abi-validation-report.json";
 const UI_PACK_ABI_VALIDATION_SCHEMA_VERSION = "elysium-compiler/ui-pack-abi-validation/v1";
+const NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH = "rust/native-ui-export-abi-validation-report.json";
+const NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION = "elysium-compiler/native-ui-export-abi-validation/v1";
+const NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION = "nesqlpp/raw-export/alpha1/native-ui-validation";
 const UI_TEMPLATE_PACK_SCHEMA = "neonei/ui-template-pack/current";
 const UI_BINDING_PACK_SCHEMA = "neonei/ui-binding-pack/current";
 const UI_STRING_PACK_SCHEMA = "neonei/ui-string-pack/current";
@@ -134,6 +137,7 @@ type UiPackEntrypoints = {
   templates: string;
   bindings: string;
   strings: string;
+  exportAbiReport: string;
   abiReport: string;
 };
 
@@ -218,6 +222,32 @@ function resolveUiPackAbiReportPath(manifest: NativeRuntimeManifest): string {
 
   throw new Error(
     `native UI runtime manifest does not declare required ABI validation report: ${UI_PACK_ABI_VALIDATION_REPORT_PATH}`,
+  );
+}
+
+function resolveNativeUiExportAbiReportPath(manifest: NativeRuntimeManifest): string {
+  const entrypoints = getNativeRuntimeEntrypointSource(manifest);
+  const explicitEntrypoint = runtimePathFromValue(
+    entrypoints.rustNativeUiExportAbiValidationReport
+      ?? entrypoints.nativeUiExportAbiValidationReport
+      ?? entrypoints.nativeUiExportAbiReport,
+  );
+  if (explicitEntrypoint) return explicitEntrypoint;
+
+  const fileRecord = runtimeManifestFileRecord(manifest.files);
+  const explicitFile = runtimePathFromValue(
+    fileRecord?.rustNativeUiExportAbiValidationReport
+      ?? fileRecord?.nativeUiExportAbiValidationReport
+      ?? fileRecord?.nativeUiExportAbiReport,
+  );
+  if (explicitFile) return explicitFile;
+
+  if (runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH)) {
+    return NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH;
+  }
+
+  throw new Error(
+    `native UI runtime manifest does not declare required export ABI validation report: ${NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH}`,
   );
 }
 
@@ -507,7 +537,11 @@ function parseUiBindings(payloadBuffer: ArrayBuffer, strings: string[]): UiPackB
 
 function parseUiPackManifest(manifest: NativeRuntimeManifest): UiPackEntrypoints {
   const entrypoints = assertNativeUiRuntimeManifest(manifest);
+  const exportAbiReport = resolveNativeUiExportAbiReportPath(manifest);
   const abiReport = resolveUiPackAbiReportPath(manifest);
+  if (!runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, exportAbiReport)) {
+    throw new Error(`native UI export ABI validation report is not declared by runtime manifest files: ${exportAbiReport}`);
+  }
   if (!runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, abiReport)) {
     throw new Error(`native UI ABI validation report is not declared by runtime manifest files: ${abiReport}`);
   }
@@ -515,6 +549,7 @@ function parseUiPackManifest(manifest: NativeRuntimeManifest): UiPackEntrypoints
     templates: asString(entrypoints.uiTemplates),
     bindings: asString(entrypoints.uiBindings),
     strings: asString(entrypoints.uiStrings),
+    exportAbiReport,
     abiReport,
   };
 }
@@ -643,6 +678,56 @@ function assertUiPackAbiValidationReport(
   }
 }
 
+function assertNativeUiExportAbiValidationReport(report: JsonRecord): void {
+  const schemaVersion = asString(report.schemaVersion);
+  if (schemaVersion !== NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION) {
+    throw new Error(`native UI export ABI validation report schema mismatch: expected ${NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION}, got ${schemaVersion || "<missing>"}`);
+  }
+  const status = asString(report.status);
+  if (status !== "ok") {
+    throw new Error(`native UI export ABI validation report is not ok: ${status || "<missing>"}`);
+  }
+  if (asString(report.rawReportSchemaVersion) !== NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION) {
+    throw new Error("native UI export ABI validation report rawReportSchemaVersion mismatch");
+  }
+  if (asString(report.rawReportStatus) !== "ok") {
+    throw new Error("native UI export ABI validation report rawReportStatus must be ok");
+  }
+  if (report.missingReport === true) {
+    throw new Error("native UI export ABI validation report declares missingReport");
+  }
+  const policy = asRecord(report.policy);
+  if (asString(policy?.legacyFallback) !== "forbidden") {
+    throw new Error("native UI export ABI validation report must forbid legacyFallback");
+  }
+  const schemaViolations = asStringArray(report.schemaViolations);
+  const pathViolations = asStringArray(report.pathViolations);
+  const contractViolations = asStringArray(report.contractViolations);
+  if (schemaViolations.length > 0 || pathViolations.length > 0 || contractViolations.length > 0) {
+    throw new Error(
+      `native UI export ABI validation report has violations: ${
+        [...schemaViolations, ...pathViolations, ...contractViolations].join("; ")
+      }`,
+    );
+  }
+  if ((asFiniteNumber(report.layoutCount) ?? 0) <= 0) {
+    throw new Error("native UI export ABI validation report layoutCount must be greater than zero");
+  }
+  if ((asFiniteNumber(report.slotCount) ?? 0) <= 0) {
+    throw new Error("native UI export ABI validation report slotCount must be greater than zero");
+  }
+  for (const key of [
+    "missingSurfaceCount",
+    "slotBoundsViolationCount",
+    "backgroundBoundsViolationCount",
+    "coordinateContractViolationCount",
+  ]) {
+    if ((asFiniteNumber(report[key]) ?? 0) !== 0) {
+      throw new Error(`native UI export ABI validation report ${key} must be zero`);
+    }
+  }
+}
+
 function unwrapUiPackPayload(buffer: ArrayBuffer, expectedSchema: typeof UI_TEMPLATE_PACK_SCHEMA | typeof UI_BINDING_PACK_SCHEMA | typeof UI_STRING_PACK_SCHEMA): ArrayBuffer {
   const header = parseNativeRuntimePackHeader(buffer, expectedSchema);
   return getNativeRuntimePackPayloadBuffer(buffer, header);
@@ -652,8 +737,13 @@ async function loadUiPackRuntimeInternal(normalizedManifestUrl: string): Promise
   const manifest = await loadNativeRuntimeManifest(normalizedManifestUrl);
   const entrypoints = parseUiPackManifest(manifest);
 
+  const exportAbiReportUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.exportAbiReport);
   const abiReportUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.abiReport);
-  const abiReport = await fetchJsonRecord(abiReportUrl, "native UI ABI validation report");
+  const [exportAbiReport, abiReport] = await Promise.all([
+    fetchJsonRecord(exportAbiReportUrl, "native UI export ABI validation report"),
+    fetchJsonRecord(abiReportUrl, "native UI ABI validation report"),
+  ]);
+  assertNativeUiExportAbiValidationReport(exportAbiReport);
   assertUiPackAbiValidationReport(abiReport, manifest, entrypoints);
 
   const templateUrl = resolveManifestRelativeUrl(normalizedManifestUrl, entrypoints.templates);

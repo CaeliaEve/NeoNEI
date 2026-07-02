@@ -196,13 +196,53 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
   };
 }
 
-function withRuntimeFiles(manifest, { templatePack, bindingPack, stringPack, abiReport }) {
+function buildNativeUiExportAbiReport({ status = 'ok', overrides = {} } = {}) {
+  return {
+    schemaVersion: 'elysium-compiler/native-ui-export-abi-validation/v1',
+    exportAbiVersion: 'elysium.export.v2',
+    generatedAt: 'deterministic-rust-compiler',
+    status,
+    manifestLogicalName: 'nativeUiValidation',
+    manifestPath: 'validation/native-ui-abi.json',
+    reportPath: 'validation/native-ui-abi.json',
+    rawReportSchemaVersion: 'nesqlpp/raw-export/alpha1/native-ui-validation',
+    rawReportStatus: status === 'ok' ? 'ok' : 'blocked',
+    layoutCount: 1,
+    slotCount: 2,
+    missingSurfaceCount: 0,
+    slotBoundsViolationCount: 0,
+    backgroundBoundsViolationCount: 0,
+    coordinateContractViolationCount: 0,
+    missingReport: false,
+    schemaViolations: [],
+    pathViolations: [],
+    contractViolations: [],
+    samples: {
+      missingSurface: [],
+      slotBounds: [],
+      backgroundBounds: [],
+      coordinateContract: [],
+    },
+    policy: {
+      missingReport: 'fail-closed',
+      schemaMismatch: 'fail-closed',
+      blockedRawReport: 'fail-closed',
+      geometryContract: 'layouts and slots must be bounded, surface-complete, and use NEI pixel coordinates with uniform scaling',
+      pathPortability: 'portable-relative raw-export path only; expected validation/native-ui-abi.json',
+      legacyFallback: 'forbidden',
+    },
+    ...overrides,
+  };
+}
+
+function withRuntimeFiles(manifest, { templatePack, bindingPack, stringPack, abiReport, exportAbiReport }) {
   return {
     ...manifest,
     files: [
       { path: 'rust/ui-pack/ui_templates.bin', bytes: templatePack.byteLength },
       { path: 'rust/ui-pack/ui_bindings.bin', bytes: bindingPack.byteLength },
       { path: 'rust/ui-pack/ui_strings.bin', bytes: stringPack.byteLength },
+      { path: 'rust/native-ui-export-abi-validation-report.json', bytes: JSON.stringify(exportAbiReport).length },
       { path: 'rust/ui-pack-abi-validation-report.json', bytes: JSON.stringify(abiReport).length },
     ],
   };
@@ -226,6 +266,7 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
   const templatePack = encodeTemplatePack(strings);
   const bindingPack = encodeBindingPack(strings);
   const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const exportAbiReport = buildNativeUiExportAbiReport();
   const abiReport = buildUiPackAbiReport({ templatePack, bindingPack, stringPack });
   const manifest = withRuntimeFiles({
     schema: 'neonei/runtime/current',
@@ -235,7 +276,7 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
       uiBindings: 'rust/ui-pack/ui_bindings.bin',
       uiStrings: 'rust/ui-pack/ui_strings.bin',
     },
-  }, { templatePack, bindingPack, stringPack, abiReport });
+  }, { templatePack, bindingPack, stringPack, abiReport, exportAbiReport });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input);
@@ -244,6 +285,9 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     }
     if (url.includes('/api/runtime/current/asset/rust/ui-pack-abi-validation-report.json')) {
       return new Response(JSON.stringify(abiReport), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.includes('/api/runtime/current/asset/rust/native-ui-export-abi-validation-report.json')) {
+      return new Response(JSON.stringify(exportAbiReport), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     if (url.includes('/api/runtime/current/asset/rust/ui-pack/ui_templates.bin')) {
       return new Response(templatePack, { status: 200 });
@@ -301,6 +345,7 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
     'Furnace',
   ]);
   const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const exportAbiReport = buildNativeUiExportAbiReport();
   const abiReport = buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status: 'blocked' });
   const manifest = withRuntimeFiles({
     schema: 'neonei/runtime/current',
@@ -310,7 +355,7 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
       uiBindings: 'rust/ui-pack/ui_bindings.bin',
       uiStrings: 'rust/ui-pack/ui_strings.bin',
     },
-  }, { templatePack, bindingPack, stringPack, abiReport });
+  }, { templatePack, bindingPack, stringPack, abiReport, exportAbiReport });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input);
@@ -320,12 +365,75 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
     if (url.includes('/api/runtime/current/asset/rust/ui-pack-abi-validation-report.json')) {
       return new Response(JSON.stringify(abiReport), { status: 200, headers: { 'content-type': 'application/json' } });
     }
+    if (url.includes('/api/runtime/current/asset/rust/native-ui-export-abi-validation-report.json')) {
+      return new Response(JSON.stringify(exportAbiReport), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
     throw new Error(`runtime ABI gate should not fetch UI pack artifacts: ${url}`);
   };
   try {
     const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=blocked-abi');
     assert.equal(runtime.status, 'error');
     assert.match(runtime.error ?? '', /ABI validation report is not ok: blocked/);
+    assert.equal(runtime.summary.templateCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearUiPackRuntimeCache();
+  }
+});
+
+test('loadUiPackRuntime fails closed before pack fetch when native UI export ABI report is blocked', async () => {
+  clearUiPackRuntimeCache();
+  const strings = [
+    '',
+    'furnace@default',
+    'self-test-furnace',
+    'furnace',
+    'textures/gui/container/furnace.png',
+    'item-input',
+    'item-output',
+    'EU/t',
+    'r1',
+    'recipes/ui-payload-shards/55.json',
+    'Furnace',
+  ];
+  const templatePack = encodeTemplatePack(strings);
+  const bindingPack = encodeBindingPack(strings);
+  const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const exportAbiReport = buildNativeUiExportAbiReport({
+    status: 'blocked',
+    overrides: {
+      coordinateContractViolationCount: 1,
+      contractViolations: ['coordinateContractViolationCount must be zero but was 1'],
+    },
+  });
+  const abiReport = buildUiPackAbiReport({ templatePack, bindingPack, stringPack });
+  const manifest = withRuntimeFiles({
+    schema: 'neonei/runtime/current',
+    capabilities: ['recipes.native-ui-layout', 'recipes.ui-pack', 'native-render.webgl2'],
+    entrypoints: {
+      uiTemplates: 'rust/ui-pack/ui_templates.bin',
+      uiBindings: 'rust/ui-pack/ui_bindings.bin',
+      uiStrings: 'rust/ui-pack/ui_strings.bin',
+    },
+  }, { templatePack, bindingPack, stringPack, abiReport, exportAbiReport });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/api/runtime/current/manifest?case=blocked-export-abi')) {
+      return new Response(JSON.stringify(manifest), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.includes('/api/runtime/current/asset/rust/native-ui-export-abi-validation-report.json')) {
+      return new Response(JSON.stringify(exportAbiReport), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.includes('/api/runtime/current/asset/rust/ui-pack-abi-validation-report.json')) {
+      return new Response(JSON.stringify(abiReport), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`runtime export ABI gate should not fetch UI pack artifacts: ${url}`);
+  };
+  try {
+    const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=blocked-export-abi');
+    assert.equal(runtime.status, 'error');
+    assert.match(runtime.error ?? '', /export ABI validation report is not ok: blocked/);
     assert.equal(runtime.summary.templateCount, 0);
   } finally {
     globalThis.fetch = originalFetch;
@@ -351,6 +459,7 @@ test('loadUiPackRuntime rejects ABI reports that do not match manifest entrypoin
   const templatePack = encodeTemplatePack(strings);
   const bindingPack = encodeBindingPack(strings);
   const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const exportAbiReport = buildNativeUiExportAbiReport();
   const abiReport = buildUiPackAbiReport({
     templatePack,
     bindingPack,
@@ -369,7 +478,7 @@ test('loadUiPackRuntime rejects ABI reports that do not match manifest entrypoin
       uiBindings: 'rust/ui-pack/ui_bindings.bin',
       uiStrings: 'rust/ui-pack/ui_strings.bin',
     },
-  }, { templatePack, bindingPack, stringPack, abiReport });
+  }, { templatePack, bindingPack, stringPack, abiReport, exportAbiReport });
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async (input) => {
     const url = String(input);
@@ -378,6 +487,9 @@ test('loadUiPackRuntime rejects ABI reports that do not match manifest entrypoin
     }
     if (url.includes('/api/runtime/current/asset/rust/ui-pack-abi-validation-report.json')) {
       return new Response(JSON.stringify(abiReport), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (url.includes('/api/runtime/current/asset/rust/native-ui-export-abi-validation-report.json')) {
+      return new Response(JSON.stringify(exportAbiReport), { status: 200, headers: { 'content-type': 'application/json' } });
     }
     throw new Error(`runtime ABI gate should not fetch UI pack artifacts: ${url}`);
   };
