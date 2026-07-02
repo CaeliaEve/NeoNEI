@@ -309,35 +309,30 @@ test('indexed recipe client lives outside the legacy api facade', () => {
   );
   assert.equal(
     indexedRecipeClientSource.includes("from './devCompatClient';"),
-    true,
-    'indexed recipe client should keep lab compatibility access behind the runtime dev client',
+    false,
+    'indexed recipe client should not use lab compatibility access after current recipe API migration',
   );
   assert.doesNotMatch(
     indexedRecipeClientSource,
     /from '\.\.\/services\/api'/,
     'indexed recipe client should not import the legacy api facade',
   );
-  for (const token of [
-    'getItemSummary',
-    'getRecipe',
-    'getRecipesByIds',
-    'getCraftingRecipes',
-    'getUsageRecipes',
-    'getMachinesForItem',
-    'getMachineTypes',
-    'getRecipesByMachine',
-  ]) {
-    assert.equal(indexedRecipeClientSource.includes(token), true, `missing indexed recipe client method: ${token}`);
-  }
+  assert.equal(indexedRecipeClientSource.includes('getCurrentRecipePage'), true, 'indexed recipe client should expose current recipe page reads');
+  assert.equal(indexedRecipeClientSource.includes('getRecipesByIds'), true, 'indexed recipe client should expose batch hydration through current recipe pages');
   assert.equal(
-    apiCompatibilityFacadeSource.includes('indexedRecipeRuntimeClient.getCraftingRecipes(itemId)'),
+    apiCompatibilityFacadeSource.includes('indexedRecipeRuntimeClient.getRecipesByIds(uniqueIds, options)'),
     true,
-    'api compatibility facade should delegate crafting recipe reads to the runtime indexed recipe client',
+    'api compatibility facade should delegate recipe batch hydration to the current recipe client',
   );
-  assert.equal(
-    apiSource.includes('getLabPayload<indexedRecipe'),
-    false,
-    'services/api.ts should not own indexed recipe HTTP calls',
+  assert.doesNotMatch(
+    indexedRecipeClientSource,
+    /getLabPayload|postLabPayload|\/recipes\/batch|\/recipes\/item\/|\/recipes\/\$\{itemId\}\/(?:crafting|usage|machines)|\/recipes\/machines\//,
+    'indexed recipe client should not call lab recipe endpoints',
+  );
+  assert.doesNotMatch(
+    apiCompatibilityFacadeSource,
+    /getIndexedItemRecipeSummary|getIndexedRecipe\(|getIndexedCraftingRecipes|getIndexedUsageRecipes|getIndexedMachinesForItem|getIndexedMachineTypes|getIndexedRecipesByMachine/,
+    'api compatibility facade should not expose unused indexed recipe lab helpers',
   );
 });
 

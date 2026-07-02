@@ -46,8 +46,6 @@
   MultiblockBlueprint,
   indexedItem,
   indexedItemGroup,
-  indexedItemMachinesResponse,
-  indexedItemRecipeSummaryResponse,
   indexedItemStack,
   indexedMachineGroupSummary,
   indexedMachineInfo,
@@ -58,7 +56,7 @@
 } from '../../runtime/types';
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../../runtime/patternClient';
 import { specialDataRuntimeClient } from '../../runtime/specialDataClient';
-import { indexedRecipeRuntimeClient, type CurrentRecipePageResponse, type IndexedMachineRecipesResponse } from '../../runtime/indexedRecipeClient';
+import { indexedRecipeRuntimeClient, type CurrentRecipePageResponse } from '../../runtime/indexedRecipeClient';
 import {
   browserCatalogClient,
   clearPublishedRuntimeCaches,
@@ -318,15 +316,6 @@ export const api = {
   },
   // === indexed Recipes API ===
 
-  async getIndexedItemRecipeSummary(itemId: string): Promise<indexedItemRecipeSummaryResponse> {
-    return indexedRecipeRuntimeClient.getItemSummary(itemId);
-  },
-
-  // Get recipe by ID
-  async getIndexedRecipe(recipeId: string): Promise<indexedRecipe> {
-    return indexedRecipeRuntimeClient.getRecipe(recipeId);
-  },
-
   async getCurrentRecipePage(recipePageId: string, options?: SearchItemsFastOptions): Promise<CurrentRecipePageResponse> {
     return indexedRecipeRuntimeClient.getCurrentRecipePage(recipePageId, options);
   },
@@ -339,33 +328,8 @@ export const api = {
     return indexedRecipeRuntimeClient.getRecipesByIds(uniqueIds, options);
   },
 
-  // Get crafting recipes for item
-  async getIndexedCraftingRecipes(itemId: string): Promise<indexedRecipe[]> {
-    return indexedRecipeRuntimeClient.getCraftingRecipes(itemId);
-  },
-
-  // Get usage recipes for item
-  async getIndexedUsageRecipes(itemId: string): Promise<indexedRecipe[]> {
-    return indexedRecipeRuntimeClient.getUsageRecipes(itemId);
-  },
-
   async searchItemsFast(keyword: string, limit: number = 60, options?: SearchItemsFastOptions): Promise<ItemSearchBasic[]> {
     return browserCatalogClient.searchItemsFast(keyword, limit, options);
-  },
-
-  // Get all available machines for item
-  async getIndexedMachinesForItem(itemId: string): Promise<indexedItemMachinesResponse> {
-    return indexedRecipeRuntimeClient.getMachinesForItem(itemId);
-  },
-
-  // Get all machine types
-  async getIndexedMachineTypes(): Promise<string[]> {
-    return indexedRecipeRuntimeClient.getMachineTypes();
-  },
-
-  // Get recipes by machine type
-  async getIndexedRecipesByMachine(machineType: string, voltageTier?: string): Promise<IndexedMachineRecipesResponse> {
-    return indexedRecipeRuntimeClient.getRecipesByMachine(machineType, voltageTier);
   },
 
   // Get multiblock blueprint by controller item ID

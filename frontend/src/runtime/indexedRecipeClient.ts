@@ -1,20 +1,10 @@
-import { getLabPayload, postLabPayload } from './devCompatClient';
 import type {
   SearchItemsFastOptions,
   RecipeUiPayload,
-  indexedItemMachinesResponse,
-  indexedItemRecipeSummaryResponse,
   indexedRecipe,
 } from './types';
 import { setCacheWithLimit } from './cacheUtils';
 import { http } from '../services/api/core/http';
-
-export type IndexedMachineRecipesResponse = {
-  machineType: string;
-  voltageTier: string;
-  recipeCount: number;
-  recipes: indexedRecipe[];
-};
 
 export type CurrentRecipePageResponse = {
   recipePageId: string;
@@ -28,19 +18,10 @@ type CurrentApiEnvelope<T> = {
 };
 
 const CACHE_LIMITS = {
-  crafting: 3000,
-  usage: 3000,
-  summary: 3000,
   page: 3000,
 };
 
-const craftingCache = new Map<string, indexedRecipe[]>();
-const usageCache = new Map<string, indexedRecipe[]>();
-const summaryCache = new Map<string, indexedItemRecipeSummaryResponse>();
 const pageCache = new Map<string, CurrentRecipePageResponse>();
-const craftingInFlight = new Map<string, Promise<indexedRecipe[]>>();
-const usageInFlight = new Map<string, Promise<indexedRecipe[]>>();
-const summaryInFlight = new Map<string, Promise<indexedItemRecipeSummaryResponse>>();
 const pageInFlight = new Map<string, Promise<CurrentRecipePageResponse>>();
 
 function cachedRequest<T>(
@@ -72,30 +53,8 @@ function cachedRequest<T>(
 
 export const indexedRecipeRuntimeClient = {
   clearCaches(): void {
-    craftingCache.clear();
-    usageCache.clear();
-    summaryCache.clear();
     pageCache.clear();
-    craftingInFlight.clear();
-    usageInFlight.clear();
-    summaryInFlight.clear();
     pageInFlight.clear();
-  },
-
-  getItemSummary(itemId: string): Promise<indexedItemRecipeSummaryResponse> {
-    return cachedRequest(
-      summaryCache,
-      summaryInFlight,
-      itemId,
-      CACHE_LIMITS.summary,
-      () => getLabPayload<indexedItemRecipeSummaryResponse>(
-        `/recipes/item/${encodeURIComponent(itemId)}/summary`,
-      ),
-    );
-  },
-
-  getRecipe(recipeId: string): Promise<indexedRecipe> {
-    return getLabPayload<indexedRecipe>(`/recipes/${recipeId}`);
   },
 
   getCurrentRecipePage(recipePageId: string, options?: SearchItemsFastOptions): Promise<CurrentRecipePageResponse> {
@@ -119,45 +78,15 @@ export const indexedRecipeRuntimeClient = {
     );
   },
 
-  getRecipesByIds(recipeIds: string[], options?: SearchItemsFastOptions): Promise<indexedRecipe[]> {
-    return postLabPayload<indexedRecipe[], { recipeIds: string[] }>('/recipes/batch', { recipeIds }, {
-      signal: options?.signal,
-    });
-  },
-
-  getCraftingRecipes(itemId: string): Promise<indexedRecipe[]> {
-    return cachedRequest(
-      craftingCache,
-      craftingInFlight,
-      itemId,
-      CACHE_LIMITS.crafting,
-      () => getLabPayload<indexedRecipe[]>(`/recipes/${itemId}/crafting`),
-    );
-  },
-
-  getUsageRecipes(itemId: string): Promise<indexedRecipe[]> {
-    return cachedRequest(
-      usageCache,
-      usageInFlight,
-      itemId,
-      CACHE_LIMITS.usage,
-      () => getLabPayload<indexedRecipe[]>(`/recipes/${itemId}/usage`),
-    );
-  },
-
-  getMachinesForItem(itemId: string): Promise<indexedItemMachinesResponse> {
-    return getLabPayload<indexedItemMachinesResponse>(`/recipes/${itemId}/machines`);
-  },
-
-  getMachineTypes(): Promise<string[]> {
-    return getLabPayload<string[]>('/recipes/machines/list');
-  },
-
-  getRecipesByMachine(machineType: string, voltageTier?: string): Promise<IndexedMachineRecipesResponse> {
-    const params = voltageTier ? { voltageTier } : {};
-    return getLabPayload<IndexedMachineRecipesResponse>(
-      `/recipes/machines/${encodeURIComponent(machineType)}/recipes`,
-      { params },
-    );
+  async getRecipesByIds(recipeIds: string[], options?: SearchItemsFastOptions): Promise<indexedRecipe[]> {
+    const uniqueIds = Array.from(new Set(recipeIds.map((id) => `${id ?? ''}`.trim()).filter(Boolean)));
+    if (uniqueIds.length === 0) {
+      return [];
+    }
+    const pages = await Promise.all(uniqueIds.map((recipeId) => this.getCurrentRecipePage(recipeId, options)));
+    const byId = new Map(pages.map((page) => [page.recipe.id, page.recipe]));
+    return recipeIds
+      .map((recipeId) => byId.get(`${recipeId ?? ''}`.trim()))
+      .filter((recipe): recipe is indexedRecipe => Boolean(recipe));
   },
 };
