@@ -14,16 +14,38 @@ const apiAbiSource = readFileSync(resolve(root, 'src/services/current-runtime-ap
 
 test('current runtime report registry exposes debugfs reports through an ABI catalog', () => {
   assert.match(reportRegistrySource, /from '\.\/current-runtime-report-registry-abi'/);
-  assert.match(reportRegistryAbiSource, /export const CURRENT_RUNTIME_REPORTS/);
-  assert.match(reportRegistryAbiSource, /'compile-report': 'rust\/integrity\.json'/);
-  assert.match(reportRegistryAbiSource, /'semantic-validation-report': 'rust\/semantic-validation-report\.json'/);
+  for (const symbol of [
+    'CURRENT_RUNTIME_REPORT_REGISTRY_SCHEMA',
+    'CURRENT_RUNTIME_REPORT_REGISTRY_SCHEMA_REVISION',
+    'CURRENT_RUNTIME_REPORT_REGISTRY_MODULE',
+    'CURRENT_RUNTIME_REPORT_DESCRIPTORS',
+    'CURRENT_RUNTIME_REPORTS_BY_SLUG',
+    'CURRENT_RUNTIME_REPORT_JSON_SUFFIX_PATTERN',
+    'CURRENT_RUNTIME_REPORT_SLUG_PATTERN',
+    'CURRENT_RUNTIME_REPORT_ERRORS',
+  ]) {
+    assert.match(reportRegistryAbiSource, new RegExp(`export const ${symbol}`));
+  }
   assert.match(reportRegistryAbiSource, /NATIVE_UI_RUNTIME_PROOF_REPORTS/);
-  assert.match(reportRegistryAbiSource, /CURRENT_RUNTIME_REPORT_JSON_SUFFIX_PATTERN/);
-  assert.match(reportRegistryAbiSource, /CURRENT_RUNTIME_REPORT_SLUG_PATTERN/);
-  assert.match(reportRegistryAbiSource, /CURRENT_RUNTIME_REPORT_ERRORS/);
+  assert.match(reportRegistryAbiSource, /'neonei\/debugfs\/current-runtime-report-registry'/);
+  assert.match(reportRegistryAbiSource, /plane: CURRENT_RUNTIME_REPORT_PLANE/);
+  assert.match(reportRegistryAbiSource, /contentType: CURRENT_RUNTIME_REPORT_CONTENT_TYPE/);
+  assert.match(reportRegistryAbiSource, /cachePolicy: CURRENT_RUNTIME_REPORT_CACHE_POLICY/);
+  assert.match(reportRegistrySource, /CURRENT_RUNTIME_REPORTS_BY_SLUG/);
+  assert.match(reportRegistrySource, /report: descriptor/);
+  assert.match(reportRegistrySource, /cachePolicy: descriptor\.cachePolicy/);
+  assert.match(reportRegistrySource, /contentType: descriptor\.contentType/);
+  assert.doesNotMatch(reportRegistryAbiSource, /export const CURRENT_RUNTIME_REPORTS =/);
+  assert.doesNotMatch(reportRegistrySource, /CURRENT_RUNTIME_REPORTS\[/);
 
   for (const ownedLiteral of [
-    /'compile-report': 'rust\/integrity\.json'/,
+    /'compile-report'/,
+    /'rust\/integrity\.json'/,
+    /'semantic-validation-report'/,
+    /'rust\/semantic-validation-report\.json'/,
+    /'debugfs'/,
+    /'application\/json'/,
+    /'no-store'/,
     /'Runtime report is not allowed'/,
     /'Runtime report not found'/,
     /'reportName is required'/,

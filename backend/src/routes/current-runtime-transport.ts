@@ -4,7 +4,11 @@ import {
   getCurrentRuntimeManifestDelivery,
   type CurrentRuntimeApiContext,
 } from '../services/current-runtime-api.service';
-import { resolveCurrentRuntimeReport } from '../services/current-runtime-report-registry.service';
+import { CURRENT_RUNTIME_REPORT_CACHE_POLICY } from '../services/current-runtime-report-registry-abi';
+import {
+  resolveCurrentRuntimeReport,
+  type CurrentRuntimeReportDescriptor,
+} from '../services/current-runtime-report-registry.service';
 import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
 import {
   CURRENT_RUNTIME_ASSET_REQUEST_METHODS,
@@ -75,9 +79,22 @@ export function sendCurrentRuntimeAsset(
   res.sendFile(asset.artifact.absolutePath);
 }
 
+function setCurrentRuntimeReportCacheHeaders(res: Response, report: CurrentRuntimeReportDescriptor): void {
+  switch (report.cachePolicy) {
+    case CURRENT_RUNTIME_REPORT_CACHE_POLICY:
+      setNoStoreHeaders(res);
+      return;
+    default: {
+      const exhaustive: never = report.cachePolicy;
+      throw new Error(`Unsupported current runtime report cache policy: ${exhaustive}`);
+    }
+  }
+}
+
 export function sendCurrentRuntimeReport(res: Response, reportName: string | undefined): void {
   const report = resolveCurrentRuntimeReport(reportName);
-  setNoStoreHeaders(res);
+  setCurrentRuntimeReportCacheHeaders(res, report);
+  res.type(report.contentType);
   res.sendFile(report.absolutePath);
 }
 

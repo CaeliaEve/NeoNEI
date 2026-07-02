@@ -8,6 +8,7 @@ const apiSource = readFileSync(resolve(root, 'src/services/current-runtime-api.s
 const apiAbiSource = readFileSync(resolve(root, 'src/services/current-runtime-api-abi.ts'), 'utf8');
 const transportSource = readFileSync(resolve(root, 'src/routes/current-runtime-transport.ts'), 'utf8');
 const transportAbiSource = readFileSync(resolve(root, 'src/routes/current-runtime-transport-abi.ts'), 'utf8');
+const reportRegistryAbiSource = readFileSync(resolve(root, 'src/services/current-runtime-report-registry-abi.ts'), 'utf8');
 
 test('current runtime API schema, URLs, ETags, cache, params, and errors are ABI-catalog owned', () => {
   assert.match(apiSource, /from '\.\/current-runtime-api-abi'/);
@@ -41,8 +42,10 @@ test('current runtime API schema, URLs, ETags, cache, params, and errors are ABI
   }
 });
 
-test('current runtime express transport consumes transport ABI policy', () => {
+test('current runtime express transport consumes transport and report ABI policy', () => {
   assert.match(transportSource, /from '\.\/current-runtime-transport-abi'/);
+  assert.match(transportSource, /from '\.\.\/services\/current-runtime-report-registry-abi'/);
+  assert.match(transportSource, /from '\.\.\/services\/current-runtime-report-registry\.service'/);
   for (const symbol of [
     'CURRENT_RUNTIME_JSON_ENVELOPE_OK',
     'CURRENT_RUNTIME_IMMUTABLE_ASSET_CACHE',
@@ -51,6 +54,16 @@ test('current runtime express transport consumes transport ABI policy', () => {
   ]) {
     assert.match(transportAbiSource, new RegExp(`export const ${symbol}`));
   }
+  for (const symbol of [
+    'CURRENT_RUNTIME_REPORT_CONTENT_TYPE',
+    'CURRENT_RUNTIME_REPORT_CACHE_POLICY',
+  ]) {
+    assert.match(reportRegistryAbiSource, new RegExp(`export const ${symbol}`));
+  }
+
+  assert.match(transportSource, /report\.cachePolicy/);
+  assert.match(transportSource, /report\.contentType/);
+  assert.match(transportSource, /res\.type\(report\.contentType\)/);
 
   for (const ownedLiteral of [
     /maxAge: '365d'/,
@@ -59,6 +72,10 @@ test('current runtime express transport consumes transport ABI policy', () => {
   ]) {
     assert.match(transportAbiSource, ownedLiteral);
     assert.doesNotMatch(transportSource, ownedLiteral);
+  }
+  for (const reportPolicyLiteral of [/'application\/json'/, /'no-store'/]) {
+    assert.match(reportRegistryAbiSource, reportPolicyLiteral);
+    assert.doesNotMatch(transportSource, reportPolicyLiteral);
   }
   assert.doesNotMatch(transportSource, /ok: true/);
 });
