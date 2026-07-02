@@ -12,6 +12,10 @@ import {
   type CurrentRuntimeArtifact,
   type CurrentRuntimeJsonRecord,
 } from './current-runtime-artifact-index.service';
+import {
+  CURRENT_RUNTIME_MANIFEST_FIELDS,
+  CURRENT_RUNTIME_SNAPSHOT_DEFAULTS,
+} from './current-runtime-snapshot-abi';
 
 export type { CurrentRuntimeArtifact } from './current-runtime-artifact-index.service';
 
@@ -59,13 +63,14 @@ function asString(value: unknown): string | null {
 }
 
 function getRuntimeSchemaRevision(manifest: JsonRecord): string {
-  return asString(manifest.schemaRevision)
-    ?? asString(manifest.schema)
-    ?? 'runtime.unknown';
+  return asString(manifest[CURRENT_RUNTIME_MANIFEST_FIELDS.schemaRevision])
+    ?? asString(manifest[CURRENT_RUNTIME_MANIFEST_FIELDS.schema])
+    ?? CURRENT_RUNTIME_SNAPSHOT_DEFAULTS.unknownSchemaRevision;
 }
 
 function getRuntimeId(manifest: JsonRecord): string {
-  return asString(manifest.runtimeId) ?? 'runtime-missing';
+  return asString(manifest[CURRENT_RUNTIME_MANIFEST_FIELDS.runtimeId])
+    ?? CURRENT_RUNTIME_SNAPSHOT_DEFAULTS.missingRuntimeId;
 }
 
 function publishCurrentRuntimeSnapshot(input: Omit<CurrentRuntimeSnapshot, 'revision'>): CurrentRuntimeSnapshot {
@@ -111,7 +116,7 @@ function refreshCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
     manifestPath: runtimeManifestPath,
     manifest: Object.freeze(runtimeManifest),
     manifestJson: runtimeManifestJson,
-    capabilities: Object.freeze(asRecord(runtimeManifest.capabilities) ?? {}),
+    capabilities: Object.freeze(asRecord(runtimeManifest[CURRENT_RUNTIME_MANIFEST_FIELDS.capabilities]) ?? {}),
     declaredFiles,
     artifactsByPath: buildCurrentRuntimeArtifactInventory(declaredFiles),
     fingerprint,

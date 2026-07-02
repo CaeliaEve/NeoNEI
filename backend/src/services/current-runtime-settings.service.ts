@@ -1,36 +1,23 @@
+import {
+  CURRENT_RUNTIME_ENABLED_FLAG_VALUES,
+  CURRENT_RUNTIME_SETTINGS_ENV,
+  CURRENT_RUNTIME_SETTINGS_STATIC,
+} from './current-runtime-settings-abi';
+
 type RuntimeSettingsEnvironment = NodeJS.ProcessEnv;
 
-export type CurrentRuntimeSettings = Readonly<{
-  apiBaseUrl: '/api';
-  runtimeMode: 'native';
-  rendererPreference: 'webgpu-first';
-  allowDomGridFallback: false;
-  allowPerItemImageHotLoad: false;
+export type CurrentRuntimeSettings = typeof CURRENT_RUNTIME_SETTINGS_STATIC & Readonly<{
   debugPanels: boolean;
-  runtime: Readonly<{
-    currentUrl: '/api/runtime/current';
-    manifestUrl: '/api/runtime/current/manifest';
-    assetBaseUrl: '/api/runtime/current/asset/';
-  }>;
 }>;
 
 function isEnabledFlag(value: string | undefined): boolean {
   const normalized = `${value ?? ''}`.trim().toLowerCase();
-  return normalized === '1' || normalized === 'true';
+  return CURRENT_RUNTIME_ENABLED_FLAG_VALUES.some((candidate) => candidate === normalized);
 }
 
 export function getCurrentRuntimeSettings(env: RuntimeSettingsEnvironment = process.env): CurrentRuntimeSettings {
   return Object.freeze({
-    apiBaseUrl: '/api',
-    runtimeMode: 'native',
-    rendererPreference: 'webgpu-first',
-    allowDomGridFallback: false,
-    allowPerItemImageHotLoad: false,
-    debugPanels: isEnabledFlag(env.NEONEI_DEBUG_PANELS),
-    runtime: Object.freeze({
-      currentUrl: '/api/runtime/current',
-      manifestUrl: '/api/runtime/current/manifest',
-      assetBaseUrl: '/api/runtime/current/asset/',
-    }),
+    ...CURRENT_RUNTIME_SETTINGS_STATIC,
+    debugPanels: isEnabledFlag(env[CURRENT_RUNTIME_SETTINGS_ENV.debugPanels]),
   });
 }

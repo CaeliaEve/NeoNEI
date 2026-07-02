@@ -19,18 +19,15 @@ test('current runtime API schema, URLs, ETags, cache, params, and errors are ABI
     'CURRENT_RUNTIME_API_ERRORS',
     'CURRENT_RUNTIME_API_ETAG_KEYS',
     'CURRENT_RUNTIME_API_URLS',
-    'CURRENT_RUNTIME_MISSING_ID',
-    'CURRENT_RUNTIME_UNKNOWN_SCHEMA_REVISION',
     'buildPinnedRuntimeManifestUrl',
     'buildPinnedRuntimeAssetBaseUrl',
   ]) {
     assert.match(apiAbiSource, new RegExp(`export (?:const|function) ${symbol}`));
   }
+  assert.match(apiAbiSource, /CURRENT_RUNTIME_SNAPSHOT_DEFAULTS/);
 
   for (const ownedLiteral of [
     /'neonei\/api\/current'/,
-    /'runtime-missing'/,
-    /'runtime\.unknown'/,
     /'runtime-manifest'/,
     /'runtime-asset'/,
     /'\/api\/runtime\/current\/manifest'/,

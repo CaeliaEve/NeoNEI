@@ -12,6 +12,7 @@ const healthService = readFileSync(resolve(root, 'src/services/runtime-health-su
 const diagnosticsService = readFileSync(resolve(root, 'src/services/runtime-diagnostics-summary.service.ts'), 'utf8');
 const observabilityService = readFileSync(resolve(root, 'src/services/current-runtime-observability.service.ts'), 'utf8');
 const reportRegistry = readFileSync(resolve(root, 'src/services/current-runtime-report-registry.service.ts'), 'utf8');
+const reportRegistryAbi = readFileSync(resolve(root, 'src/services/current-runtime-report-registry-abi.ts'), 'utf8');
 const frontendTypes = readFileSync(resolve(root, '../frontend/src/runtime/types.ts'), 'utf8');
 
 test('native UI runtime proof is a dedicated artifact-index-backed health subsystem', () => {
@@ -73,9 +74,10 @@ test('runtime health and diagnostics expose proof state and report delivery slug
   assert.match(diagnosticsService, /nativeUi: health\.nativeUi/);
   assert.match(observabilityService, /nativeUiProof: health\.nativeUi\.status/);
   assert.match(observabilityService, /nativeUi: health\.nativeUi/);
-  assert.match(reportRegistry, /NATIVE_UI_RUNTIME_PROOF_REPORTS/);
-  assert.match(reportRegistry, /\[NATIVE_UI_RUNTIME_PROOF_REPORTS\.nativeUiExportAbi\.slug\]/);
-  assert.match(reportRegistry, /\[NATIVE_UI_RUNTIME_PROOF_REPORTS\.uiPackAbi\.slug\]/);
+  assert.match(reportRegistry, /current-runtime-report-registry-abi/);
+  assert.match(reportRegistryAbi, /NATIVE_UI_RUNTIME_PROOF_REPORTS/);
+  assert.match(reportRegistryAbi, /\[NATIVE_UI_RUNTIME_PROOF_REPORTS\.nativeUiExportAbi\.slug\]/);
+  assert.match(reportRegistryAbi, /\[NATIVE_UI_RUNTIME_PROOF_REPORTS\.uiPackAbi\.slug\]/);
   assert.match(frontendTypes, /interface NativeUiRuntimeProofSummary/);
   assert.match(frontendTypes, /nativeUi\?: NativeUiRuntimeProofSummary/);
 });

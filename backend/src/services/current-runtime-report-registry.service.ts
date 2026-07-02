@@ -1,22 +1,15 @@
 import fs from 'fs';
 import { resolveDistDataRuntimeFile } from './current-runtime-artifact-index.service';
-import { NATIVE_UI_RUNTIME_PROOF_REPORTS } from './native-ui-runtime-proof-abi';
+import {
+  CURRENT_RUNTIME_REPORT_ERRORS,
+  CURRENT_RUNTIME_REPORT_JSON_SUFFIX_PATTERN,
+  CURRENT_RUNTIME_REPORT_SLUG_PATTERN,
+  CURRENT_RUNTIME_REPORTS,
+  type CurrentRuntimeReportSlug,
+} from './current-runtime-report-registry-abi';
 import { badRequest, notFound } from '../utils/http';
 
-const CURRENT_RUNTIME_REPORTS = Object.freeze({
-  'compile-report': 'rust/integrity.json',
-  'missing-texture-report': 'rust/missing-texture-report.json',
-  'suspicious-texture-report': 'rust/suspicious-texture-report.json',
-  'atlas-report': 'textures/atlas-manifest.json',
-  'performance-budget-report': 'rust/size-report.json',
-  'api-contract-report': 'validation/report.json',
-  'deployment-report': 'rust/deployment-report.json',
-  'semantic-validation-report': 'rust/semantic-validation-report.json',
-  [NATIVE_UI_RUNTIME_PROOF_REPORTS.nativeUiExportAbi.slug]: NATIVE_UI_RUNTIME_PROOF_REPORTS.nativeUiExportAbi.path,
-  [NATIVE_UI_RUNTIME_PROOF_REPORTS.uiPackAbi.slug]: NATIVE_UI_RUNTIME_PROOF_REPORTS.uiPackAbi.path,
-} as const);
-
-export type CurrentRuntimeReportSlug = keyof typeof CURRENT_RUNTIME_REPORTS;
+export type { CurrentRuntimeReportSlug } from './current-runtime-report-registry-abi';
 
 export type CurrentRuntimeReportDescriptor = Readonly<{
   slug: CurrentRuntimeReportSlug;
@@ -33,14 +26,14 @@ function hasCurrentRuntimeReport(slug: string): slug is CurrentRuntimeReportSlug
 function normalizeCurrentRuntimeReportSlug(reportName: string | undefined): CurrentRuntimeReportSlug {
   const normalized = `${reportName ?? ''}`
     .trim()
-    .replace(/\.json$/i, '')
+    .replace(CURRENT_RUNTIME_REPORT_JSON_SUFFIX_PATTERN, '')
     .trim();
-  if (!normalized) throw badRequest('reportName is required');
-  if (!/^[a-z0-9-]+$/i.test(normalized)) {
-    throw badRequest('reportName must be a simple report slug');
+  if (!normalized) throw badRequest(CURRENT_RUNTIME_REPORT_ERRORS.reportNameRequired);
+  if (!CURRENT_RUNTIME_REPORT_SLUG_PATTERN.test(normalized)) {
+    throw badRequest(CURRENT_RUNTIME_REPORT_ERRORS.invalidReportSlug);
   }
   if (!hasCurrentRuntimeReport(normalized)) {
-    throw notFound('Runtime report is not allowed');
+    throw notFound(CURRENT_RUNTIME_REPORT_ERRORS.reportNotAllowed);
   }
   return normalized;
 }
@@ -60,7 +53,7 @@ export function resolveCurrentRuntimeReport(reportName: string | undefined): Cur
   const absolutePath = resolveDistDataRuntimeFile(relativePath);
   const stat = statReportFile(absolutePath);
   if (!stat) {
-    throw notFound('Runtime report not found');
+    throw notFound(CURRENT_RUNTIME_REPORT_ERRORS.reportNotFound);
   }
   return Object.freeze({
     slug,

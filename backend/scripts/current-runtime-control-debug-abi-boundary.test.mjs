@@ -1,0 +1,78 @@
+﻿import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import test from 'node:test';
+
+const root = resolve(import.meta.dirname, '..');
+const reportRegistrySource = readFileSync(resolve(root, 'src/services/current-runtime-report-registry.service.ts'), 'utf8');
+const reportRegistryAbiSource = readFileSync(resolve(root, 'src/services/current-runtime-report-registry-abi.ts'), 'utf8');
+const settingsSource = readFileSync(resolve(root, 'src/services/current-runtime-settings.service.ts'), 'utf8');
+const settingsAbiSource = readFileSync(resolve(root, 'src/services/current-runtime-settings-abi.ts'), 'utf8');
+const snapshotSource = readFileSync(resolve(root, 'src/services/current-runtime-snapshot.service.ts'), 'utf8');
+const snapshotAbiSource = readFileSync(resolve(root, 'src/services/current-runtime-snapshot-abi.ts'), 'utf8');
+const apiAbiSource = readFileSync(resolve(root, 'src/services/current-runtime-api-abi.ts'), 'utf8');
+
+test('current runtime report registry exposes debugfs reports through an ABI catalog', () => {
+  assert.match(reportRegistrySource, /from '\.\/current-runtime-report-registry-abi'/);
+  assert.match(reportRegistryAbiSource, /export const CURRENT_RUNTIME_REPORTS/);
+  assert.match(reportRegistryAbiSource, /'compile-report': 'rust\/integrity\.json'/);
+  assert.match(reportRegistryAbiSource, /'semantic-validation-report': 'rust\/semantic-validation-report\.json'/);
+  assert.match(reportRegistryAbiSource, /NATIVE_UI_RUNTIME_PROOF_REPORTS/);
+  assert.match(reportRegistryAbiSource, /CURRENT_RUNTIME_REPORT_JSON_SUFFIX_PATTERN/);
+  assert.match(reportRegistryAbiSource, /CURRENT_RUNTIME_REPORT_SLUG_PATTERN/);
+  assert.match(reportRegistryAbiSource, /CURRENT_RUNTIME_REPORT_ERRORS/);
+
+  for (const ownedLiteral of [
+    /'compile-report': 'rust\/integrity\.json'/,
+    /'Runtime report is not allowed'/,
+    /'Runtime report not found'/,
+    /'reportName is required'/,
+    /'reportName must be a simple report slug'/,
+    /\/\^\[a-z0-9-\]\+\$\/i/,
+    /\/\\\.json\$\/i/,
+  ]) {
+    assert.match(reportRegistryAbiSource, ownedLiteral);
+    assert.doesNotMatch(reportRegistrySource, ownedLiteral);
+  }
+});
+
+test('current runtime settings controlfs response uses a settings ABI catalog', () => {
+  assert.match(settingsSource, /from '\.\/current-runtime-settings-abi'/);
+  assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_STATIC/);
+  assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_ENV/);
+  assert.match(settingsAbiSource, /CURRENT_RUNTIME_ENABLED_FLAG_VALUES/);
+
+  for (const ownedLiteral of [
+    /'NEONEI_DEBUG_PANELS'/,
+    /'webgpu-first'/,
+    /'\/api\/runtime\/current'/,
+    /'\/api\/runtime\/current\/manifest'/,
+    /'\/api\/runtime\/current\/asset\/'/,
+    /'1'/,
+    /'true'/,
+  ]) {
+    assert.match(settingsAbiSource, ownedLiteral);
+    assert.doesNotMatch(settingsSource, ownedLiteral);
+  }
+  assert.match(settingsSource, /CURRENT_RUNTIME_SETTINGS_STATIC/);
+});
+
+test('current runtime snapshot manifest fields and default identities are ABI-catalog owned', () => {
+  assert.match(snapshotSource, /from '\.\/current-runtime-snapshot-abi'/);
+  assert.match(snapshotAbiSource, /CURRENT_RUNTIME_SNAPSHOT_DEFAULTS/);
+  assert.match(snapshotAbiSource, /CURRENT_RUNTIME_MANIFEST_FIELDS/);
+  assert.match(snapshotAbiSource, /missingRuntimeId: 'runtime-missing'/);
+  assert.match(snapshotAbiSource, /unknownSchemaRevision: 'runtime\.unknown'/);
+  assert.match(apiAbiSource, /CURRENT_RUNTIME_SNAPSHOT_DEFAULTS/);
+
+  for (const ownedLiteral of [
+    /'runtime-missing'/,
+    /'runtime\.unknown'/,
+    /schemaRevision: 'schemaRevision'/,
+    /runtimeId: 'runtimeId'/,
+    /capabilities: 'capabilities'/,
+  ]) {
+    assert.match(snapshotAbiSource, ownedLiteral);
+    assert.doesNotMatch(snapshotSource, ownedLiteral);
+  }
+});

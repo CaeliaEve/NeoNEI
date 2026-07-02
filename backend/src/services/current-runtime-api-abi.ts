@@ -1,4 +1,6 @@
-﻿/**
+import { CURRENT_RUNTIME_SNAPSHOT_DEFAULTS } from './current-runtime-snapshot-abi';
+
+/**
  * Current runtime API ABI catalog.
  *
  * Runtime API services must consume schema, URL, ETag, cache, parameter, and
@@ -8,8 +10,9 @@
 
 export const CURRENT_RUNTIME_API_SCHEMA = 'neonei/api/current';
 export const CURRENT_RUNTIME_API_SCHEMA_REVISION = 1;
-export const CURRENT_RUNTIME_MISSING_ID = 'runtime-missing';
-export const CURRENT_RUNTIME_UNKNOWN_SCHEMA_REVISION = 'runtime.unknown';
+export { CURRENT_RUNTIME_SNAPSHOT_DEFAULTS } from './current-runtime-snapshot-abi';
+export const CURRENT_RUNTIME_MISSING_ID = CURRENT_RUNTIME_SNAPSHOT_DEFAULTS.missingRuntimeId;
+export const CURRENT_RUNTIME_UNKNOWN_SCHEMA_REVISION = CURRENT_RUNTIME_SNAPSHOT_DEFAULTS.unknownSchemaRevision;
 
 export const CURRENT_RUNTIME_API_CACHE = Object.freeze({
   immutable: true,
