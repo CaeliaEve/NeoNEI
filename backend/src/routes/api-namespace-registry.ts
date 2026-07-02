@@ -2,10 +2,6 @@ import type { Application, RequestHandler, Router } from 'express';
 import itemsRoutes from './items.routes';
 import patternsRoutes from './patterns.routes';
 import indexedRecipesRoutes from './recipes-indexed.routes';
-import multiblocksRoutes from './multiblocks.routes';
-import ecosystemRoutes from './ecosystem.routes';
-import gtDiagramsRoutes from './gt-diagrams.routes';
-import forestryGeneticsRoutes from './forestry-genetics.routes';
 import renderContractRoutes from './render-contract.routes';
 import recipeBootstrapRoutes from './recipe-bootstrap.routes';
 import { labPublishRoutes, publicPublishRoutes } from './publish.routes';
@@ -56,10 +52,6 @@ export const DEV_COMPAT_NAMESPACES: readonly ApiNamespaceDefinition[] = Object.f
   Object.freeze({ key: 'labRecipeBootstrap', mountPath: '/lab/recipe-bootstrap', tier: 'dev-compat', handler: recipeBootstrapRoutes }),
   Object.freeze({ key: 'labPublish', mountPath: '/lab/publish', tier: 'dev-compat', handler: labPublishRoutes }),
   Object.freeze({ key: 'labRenderContract', mountPath: '/lab/render-contract', tier: 'dev-compat', handler: renderContractRoutes }),
-  Object.freeze({ key: 'labMultiblocks', mountPath: '/lab/multiblocks', tier: 'dev-compat', handler: multiblocksRoutes }),
-  Object.freeze({ key: 'labEcosystem', mountPath: '/lab/ecosystem', tier: 'dev-compat', handler: ecosystemRoutes }),
-  Object.freeze({ key: 'labGtDiagrams', mountPath: '/lab/gt-diagrams', tier: 'dev-compat', handler: gtDiagramsRoutes }),
-  Object.freeze({ key: 'labForestryGenetics', mountPath: '/lab/forestry-genetics', tier: 'dev-compat', handler: forestryGeneticsRoutes }),
 ]);
 
 export function getApiNamespacePlan(input: ApiNamespacePlanInput): readonly ApiNamespaceDefinition[] {

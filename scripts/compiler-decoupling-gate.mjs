@@ -9,9 +9,7 @@ const gate = args.includes('--gate');
 const runtimeRoots = ['frontend/src', 'backend/src'].map((entry) => join(repoRoot, entry));
 const retiredCompilerSource = join(repoRoot, 'tools', 'neonei-compiler-rs');
 
-const allowedRuntimeRawExportFiles = new Set([
-  'backend/src/services/ecosystem.service.ts',
-]);
+const allowedRuntimeRawExportFiles = new Set();
 
 const requiredFiles = [
   'scripts/finalize-native-ui-export.mjs',

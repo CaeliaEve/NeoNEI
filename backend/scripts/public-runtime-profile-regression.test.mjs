@@ -14,7 +14,7 @@ const apiNamespaceRegistrySource = readFileSync(join(repoRoot, 'backend/src/rout
 const staticAssetRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/static-assets.routes.ts'), 'utf8');
 const errorResponseSource = readFileSync(join(repoRoot, 'backend/src/utils/error-response.ts'), 'utf8');
 const patternsRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/patterns.routes.ts'), 'utf8');
-const multiblocksRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/multiblocks.routes.ts'), 'utf8');
+const currentRuntimeSpecialDataSource = readFileSync(join(repoRoot, 'backend/src/services/current-runtime-special-data.service.ts'), 'utf8');
 const backendEnvExample = readFileSync(join(repoRoot, 'backend/.env.example'), 'utf8');
 const rootEnvExample = readFileSync(join(repoRoot, '.env.example'), 'utf8');
 
@@ -32,6 +32,8 @@ test('public runtime profile is explicit and disables lab/dev dynamic mounts', (
   assert.match(apiNamespaceRegistrySource, /PUBLIC_RUNTIME_ROOT_NAMESPACE[\s\S]*mountPath:\s*'\/runtime'[\s\S]*handler:\s*runtimeRoutes/);
   assert.match(apiNamespaceRegistrySource, /if \(!input\.publicRuntimeOnly\) \{\s*namespaces\.push\(\.\.\.DEV_COMPAT_NAMESPACES\);/s);
   assert.doesNotMatch(apiNamespaceRegistrySource, /LEGACY_COMPAT_NAMESPACES|legacy-compat|\/api\/(?:items|patterns|recipes-indexed|recipe-bootstrap)/);
+  assert.doesNotMatch(apiNamespaceRegistrySource, /labMultiblocks|labEcosystem|labGtDiagrams|labForestryGenetics/);
+  assert.doesNotMatch(apiNamespaceRegistrySource, /\/lab\/(?:multiblocks|ecosystem|gt-diagrams|forestry-genetics)/);
   assert.match(apiNamespaceRegistrySource, /function mountApiNamespaces[\s\S]*for \(const namespace of namespaces\)[\s\S]*mountApiNamespace\(app, namespace, tagApiTier\);/);
   assert.match(staticAssetRoutesSource, /app\.use\(\s*'\/publish'/);
 });
@@ -48,7 +50,8 @@ test('backend route errors use the uniform error envelope helper', () => {
   assert.match(errorResponseSource, /requestId/);
   assert.doesNotMatch(bootstrapSource, /json\(\{\s*error:\s*'[^']+'/);
   assert.doesNotMatch(patternsRoutesSource, /json\(\{\s*error:\s*'[^']+'/);
-  assert.doesNotMatch(multiblocksRoutesSource, /json\(\{\s*error:\s*'[^']+'/);
+  assert.match(currentRuntimeSpecialDataSource, /throw notFound\('Multiblock blueprint not found'\)/);
+  assert.doesNotMatch(currentRuntimeSpecialDataSource, /json\(\{\s*error:\s*'[^']+'/);
 });
 
 test('portable env examples document public runtime only deployment', () => {

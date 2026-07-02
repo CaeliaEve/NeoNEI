@@ -60,8 +60,8 @@ async function findSummaryCapableItem(items) {
 async function main() {
   console.log(`[ACCEL_BENCH] base=${baseUrl}`);
 
-  const acceleration = await sample('acceleration-overview', '/api/ecosystem/acceleration', 3);
-  console.log(`[OK] acceleration db exists=${acceleration.exists}`);
+  const runtimeSummary = await sample('runtime-summary', '/api/diagnostics/runtime-summary', 3);
+  console.log(`[OK] runtime status=${runtimeSummary?.data?.status ?? runtimeSummary?.status ?? 'unknown'}`);
 
   const itemsPage = await sample('items-page', '/api/items?page=1&pageSize=50', 5);
   const sampleItemId = await findSummaryCapableItem(itemsPage);
