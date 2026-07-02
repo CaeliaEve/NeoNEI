@@ -7,6 +7,22 @@ import {
   type CurrentRuntimeJsonRecord,
 } from './current-runtime-artifact-index.service';
 import type { CurrentRuntimeSnapshot } from './current-runtime-snapshot.service';
+import {
+  NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
+  NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
+  NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION,
+  UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
+  UI_BINDING_PACK_SCHEMA,
+  UI_BINDING_PAYLOAD_VERSION,
+  UI_PACK_ABI_VALIDATION_REPORT_PATH,
+  UI_PACK_ABI_VALIDATION_SCHEMA_VERSION,
+  UI_STRING_PACK_PAYLOAD_MAGIC_REPORT,
+  UI_STRING_PACK_SCHEMA,
+  UI_STRING_PAYLOAD_VERSION,
+  UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT,
+  UI_TEMPLATE_PACK_SCHEMA,
+  UI_TEMPLATE_PAYLOAD_VERSION,
+} from './native-ui-pack-abi';
 
 type JsonRecord = CurrentRuntimeJsonRecord;
 type NativeUiProofStatus = 'ok' | 'blocked' | 'missing';
@@ -65,18 +81,6 @@ export type NativeUiRuntimeProofSummary = Readonly<{
   blocked: readonly string[];
 }>;
 
-const UI_PACK_ABI_VALIDATION_REPORT_PATH = 'rust/ui-pack-abi-validation-report.json';
-const UI_PACK_ABI_VALIDATION_SCHEMA_VERSION = 'elysium-compiler/ui-pack-abi-validation/v1';
-const NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH = 'rust/native-ui-export-abi-validation-report.json';
-const NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION = 'elysium-compiler/native-ui-export-abi-validation/v1';
-const NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION = 'nesqlpp/raw-export/alpha1/native-ui-validation';
-const UI_TEMPLATE_PACK_SCHEMA = 'neonei/ui-template-pack/current';
-const UI_BINDING_PACK_SCHEMA = 'neonei/ui-binding-pack/current';
-const UI_STRING_PACK_SCHEMA = 'neonei/ui-string-pack/current';
-const UI_TEMPLATE_PACK_MAGIC = 'NEIUIT1_NUL';
-const UI_BINDING_PACK_MAGIC = 'NEIUIB1_NUL';
-const UI_STRING_PACK_MAGIC = 'NEIUIS1_NUL';
-
 const NATIVE_UI_EXPORT_ABI_SPEC: NativeUiProofSpec = Object.freeze({
   logicalName: 'nativeUiExportAbi',
   displayName: 'Native UI export ABI validation report',
@@ -105,20 +109,20 @@ const UI_PACK_REQUIRED_ARTIFACTS = Object.freeze([
   Object.freeze({
     logicalName: 'rustUiTemplatesBin',
     envelopeSchema: UI_TEMPLATE_PACK_SCHEMA,
-    payloadMagic: UI_TEMPLATE_PACK_MAGIC,
-    version: 7,
+    payloadMagic: UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT,
+    version: UI_TEMPLATE_PAYLOAD_VERSION,
   }),
   Object.freeze({
     logicalName: 'rustUiBindingsBin',
     envelopeSchema: UI_BINDING_PACK_SCHEMA,
-    payloadMagic: UI_BINDING_PACK_MAGIC,
-    version: 1,
+    payloadMagic: UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
+    version: UI_BINDING_PAYLOAD_VERSION,
   }),
   Object.freeze({
     logicalName: 'rustUiStringsBin',
     envelopeSchema: UI_STRING_PACK_SCHEMA,
-    payloadMagic: UI_STRING_PACK_MAGIC,
-    version: 1,
+    payloadMagic: UI_STRING_PACK_PAYLOAD_MAGIC_REPORT,
+    version: UI_STRING_PAYLOAD_VERSION,
   }),
 ]);
 

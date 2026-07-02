@@ -1,6 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  UI_TEMPLATE_PACK_MAGIC,
+  UI_TEMPLATE_PACK_SCHEMA,
+  validateUiPackFormat,
+  validateUiTemplateHeader,
+} from './native-ui-pack-abi.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -40,7 +46,7 @@ function readBinaryPackHeader(filePath) {
 function readUiTemplatePayloadHeader(filePath) {
   const pack = readBinaryPackHeader(filePath);
   const offset = pack.payloadOffset;
-  if (pack.schema !== 'neonei/ui-template-pack/current') {
+  if (pack.schema !== UI_TEMPLATE_PACK_SCHEMA) {
     throw new Error(`UI template binary pack schema mismatch: ${pack.schema}`);
   }
   if (pack.bytes.length < offset + 56) {
@@ -194,10 +200,11 @@ if (files.rustUiTemplatesBin && existsSync(join(distDataDir, files.rustUiTemplat
   }
 }
 if (uiTemplateHeader) {
-  if (uiTemplateHeader.magic !== 'NEIUIT1\0') {
+  if (uiTemplateHeader.magic !== UI_TEMPLATE_PACK_MAGIC) {
     fail(failures, 'UI_TEMPLATE_PACK_MAGIC_MISMATCH', 'UI template pack has wrong native magic', { magic: uiTemplateHeader.magic });
   }
-  if (uiTemplateHeader.version !== 9 || uiTemplateHeader.templateStride !== 25 || uiTemplateHeader.slotStride !== 12 || uiTemplateHeader.textStride !== 7 || uiTemplateHeader.primitiveStride !== 13 || uiTemplateHeader.rectStride !== 15) {
+  const headerFailures = validateUiTemplateHeader(uiTemplateHeader);
+  if (headerFailures.length > 0) {
     fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V9_TEMPLATE_PRIMITIVE_ABI', 'UI template pack is not the v9 template-primitive ABI native format', uiTemplateHeader);
   }
 }
@@ -206,49 +213,12 @@ const uiPackReportPath = files.rustUiPackReport ? join(distDataDir, files.rustUi
 const uiPackReport = uiPackReportPath && existsSync(uiPackReportPath) ? readJson(uiPackReportPath) : null;
 const uiPackFormat = uiPackReport?.format ?? {};
 if (uiPackReport) {
-  const surfaceContractFields = Array.isArray(uiPackFormat.surfaceContractFields) ? uiPackFormat.surfaceContractFields : [];
-  const rectGeometryFields = Array.isArray(uiPackFormat.rectGeometryFields) ? uiPackFormat.rectGeometryFields : [];
-  const interactionContractFields = Array.isArray(uiPackFormat.interactionContractFields) ? uiPackFormat.interactionContractFields : [];
-  const backgroundContractFields = Array.isArray(uiPackFormat.backgroundContractFields)
-    ? uiPackFormat.backgroundContractFields
-    : [];
-  const templateDynamicPrimitiveFields = Array.isArray(uiPackFormat.templateDynamicPrimitiveFields)
-    ? uiPackFormat.templateDynamicPrimitiveFields
-    : [];
-  const dynamicPrimitiveGeometryFields = Array.isArray(uiPackFormat.dynamicPrimitiveGeometryFields)
-    ? uiPackFormat.dynamicPrimitiveGeometryFields
-    : [];
-  if (
-    uiPackFormat.templatePackVersion !== 9
-    || uiPackFormat.templateStride !== 25
-    || uiPackFormat.slotStride !== 12
-    || uiPackFormat.textStride !== 7
-    || uiPackFormat.primitiveStride !== 13
-    || uiPackFormat.rectStride !== 15
-    || uiPackFormat.legacyRectActionFields !== false
-    || !surfaceContractFields.includes('coordinateSpace')
-    || !surfaceContractFields.includes('scaleMode')
-    || !surfaceContractFields.includes('anchor')
-    || !rectGeometryFields.includes('coordinateSpace')
-    || !rectGeometryFields.includes('anchor')
-    || !interactionContractFields.includes('interactionKind')
-    || !interactionContractFields.includes('interactionTargetKind')
-    || !interactionContractFields.includes('interactionTargetId')
-    || !interactionContractFields.includes('interactionPayloadSchema')
-    || !backgroundContractFields.includes('coordinateSpace')
-    || !backgroundContractFields.includes('scaleMode')
-    || !backgroundContractFields.includes('anchor')
-    || !backgroundContractFields.includes('texture')
-    || !backgroundContractFields.includes('recipeBackgroundOffset')
-    || !backgroundContractFields.includes('recipeBackgroundSize')
-    || !templateDynamicPrimitiveFields.includes('dynamicPrimitives')
-    || !dynamicPrimitiveGeometryFields.includes('kind')
-    || !dynamicPrimitiveGeometryFields.includes('orientation')
-    || !dynamicPrimitiveGeometryFields.includes('coordinateSpace')
-    || !dynamicPrimitiveGeometryFields.includes('anchor')
-    || uiPackFormat.templateBackgroundField !== 'nativeBackground'
-  ) {
-    fail(failures, 'UI_PACK_REPORT_MISSING_V9_TEMPLATE_PRIMITIVE_ABI', 'UI pack report does not declare v9 template-primitive ABI capability', { format: uiPackFormat });
+  const formatFailures = validateUiPackFormat(uiPackFormat);
+  if (formatFailures.length > 0) {
+    fail(failures, 'UI_PACK_REPORT_MISSING_V9_TEMPLATE_PRIMITIVE_ABI', 'UI pack report does not declare v9 template-primitive ABI capability', {
+      format: uiPackFormat,
+      violations: formatFailures,
+    });
   }
 }
 

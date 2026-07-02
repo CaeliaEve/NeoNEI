@@ -1,6 +1,12 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  UI_TEMPLATE_PACK_MAGIC,
+  UI_TEMPLATE_PACK_SCHEMA,
+  validateUiPackFormat,
+  validateUiTemplateHeader,
+} from './native-ui-pack-abi.mjs';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 function readArg(name) {
@@ -133,63 +139,25 @@ if (!nativeUiLayoutReport) failures.push('rust native UI layout report is missin
 if (nativeUiLayoutReport?.status === 'blocked') failures.push('rust native UI layout report is blocked');
 if (!uiPackReport) failures.push('rust UI pack report is missing');
 const uiPackFormat = uiPackReport?.format ?? {};
-const surfaceContractFields = Array.isArray(uiPackFormat.surfaceContractFields) ? uiPackFormat.surfaceContractFields : [];
-const rectGeometryFields = Array.isArray(uiPackFormat.rectGeometryFields) ? uiPackFormat.rectGeometryFields : [];
-const interactionContractFields = Array.isArray(uiPackFormat.interactionContractFields) ? uiPackFormat.interactionContractFields : [];
-const backgroundContractFields = Array.isArray(uiPackFormat.backgroundContractFields)
-  ? uiPackFormat.backgroundContractFields
-  : [];
-const templateDynamicPrimitiveFields = Array.isArray(uiPackFormat.templateDynamicPrimitiveFields)
-  ? uiPackFormat.templateDynamicPrimitiveFields
-  : [];
-const dynamicPrimitiveGeometryFields = Array.isArray(uiPackFormat.dynamicPrimitiveGeometryFields)
-  ? uiPackFormat.dynamicPrimitiveGeometryFields
-  : [];
-if (
-  uiPackFormat.templatePackVersion !== 9
-  || uiPackFormat.templateStride !== 25
-  || uiPackFormat.slotStride !== 12
-  || uiPackFormat.textStride !== 7
-  || uiPackFormat.primitiveStride !== 13
-  || uiPackFormat.rectStride !== 15
-  || uiPackFormat.legacyRectActionFields !== false
-  || !surfaceContractFields.includes('coordinateSpace')
-    || !surfaceContractFields.includes('scaleMode')
-    || !surfaceContractFields.includes('anchor')
-    || !rectGeometryFields.includes('coordinateSpace')
-  || !rectGeometryFields.includes('anchor')
-  || !interactionContractFields.includes('interactionKind')
-    || !interactionContractFields.includes('interactionTargetKind')
-    || !interactionContractFields.includes('interactionTargetId')
-    || !interactionContractFields.includes('interactionPayloadSchema')
-    || !backgroundContractFields.includes('coordinateSpace')
-  || !backgroundContractFields.includes('scaleMode')
-  || !backgroundContractFields.includes('anchor')
-  || !backgroundContractFields.includes('texture')
-  || !backgroundContractFields.includes('recipeBackgroundOffset')
-  || !backgroundContractFields.includes('recipeBackgroundSize')
-  || !templateDynamicPrimitiveFields.includes('dynamicPrimitives')
-  || !dynamicPrimitiveGeometryFields.includes('kind')
-  || !dynamicPrimitiveGeometryFields.includes('orientation')
-  || !dynamicPrimitiveGeometryFields.includes('coordinateSpace')
-  || !dynamicPrimitiveGeometryFields.includes('anchor')
-  || uiPackFormat.templateBackgroundField !== 'nativeBackground'
-) {
-  failures.push('rust UI pack report does not declare v9 template-primitive ABI');
+const formatFailures = validateUiPackFormat(uiPackFormat);
+if (formatFailures.length > 0) {
+  failures.push(`rust UI pack report does not declare v9 template-primitive ABI: ${formatFailures.join('; ')}`);
 }
 if (!uiTemplateHeader) failures.push('rust UI template binary pack is missing');
 if (uiTemplateHeader?.error) failures.push(`rust UI template binary pack is invalid: ${uiTemplateHeader.error}`);
-if (uiTemplateHeader && !uiTemplateHeader.error && (
-  uiTemplateHeader.schema !== 'neonei/ui-template-pack/current'
-  || uiTemplateHeader.magic !== 'NEIUIT1\0'
-  || uiTemplateHeader.version !== 9
-  || uiTemplateHeader.templateStride !== 25
-  || uiTemplateHeader.slotStride !== 12
-  || uiTemplateHeader.textStride !== 7
-  || uiTemplateHeader.primitiveStride !== 13
-  || uiTemplateHeader.rectStride !== 15
-)) {
-  failures.push('rust UI template binary pack is not v9 template-primitive ABI format');
+if (uiTemplateHeader && !uiTemplateHeader.error) {
+  const headerFailures = [
+    ...(uiTemplateHeader.schema === UI_TEMPLATE_PACK_SCHEMA
+      ? []
+      : [`schema: expected ${UI_TEMPLATE_PACK_SCHEMA}, got ${uiTemplateHeader.schema ?? '<missing>'}`]),
+    ...(uiTemplateHeader.magic === UI_TEMPLATE_PACK_MAGIC
+      ? []
+      : [`magic: expected ${JSON.stringify(UI_TEMPLATE_PACK_MAGIC)}, got ${JSON.stringify(uiTemplateHeader.magic)}`]),
+    ...validateUiTemplateHeader(uiTemplateHeader),
+  ];
+  if (headerFailures.length > 0) {
+    failures.push(`rust UI template binary pack is not v9 template-primitive ABI format: ${headerFailures.join('; ')}`);
+  }
 }
 if (layouts.length === 0) failures.push('handler layout index is empty or missing');
 if (gtLayouts.length === 0) failures.push('no gregtech-machine handler layouts found');

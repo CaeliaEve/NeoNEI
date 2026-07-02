@@ -1,6 +1,29 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { clearUiPackRuntimeCache, loadUiPackRuntime } from '../src/services/uiPackRuntime.ts';
+import {
+  NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
+  NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION,
+  UI_BINDING_PACK_MAGIC,
+  UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
+  UI_BINDING_PACK_SCHEMA,
+  UI_BINDING_PAYLOAD_VERSION,
+  UI_BINDING_ROW_STRIDE_U32,
+  UI_PACK_ABI_VALIDATION_SCHEMA_VERSION,
+  UI_PRIMITIVE_ROW_STRIDE_U32,
+  UI_RECT_ROW_STRIDE_U32,
+  UI_SLOT_ROW_STRIDE_U32,
+  UI_STRING_PACK_MAGIC,
+  UI_STRING_PACK_PAYLOAD_MAGIC_REPORT,
+  UI_STRING_PACK_SCHEMA,
+  UI_STRING_PAYLOAD_VERSION,
+  UI_TEMPLATE_PACK_MAGIC,
+  UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT,
+  UI_TEMPLATE_PACK_SCHEMA,
+  UI_TEMPLATE_PAYLOAD_VERSION,
+  UI_TEMPLATE_ROW_STRIDE_U32,
+  UI_TEXT_ROW_STRIDE_U32,
+} from '../src/services/nativeUiPackAbi.ts';
 
 function pushU32(bytes, value) {
   const buffer = new ArrayBuffer(4);
@@ -40,8 +63,8 @@ function encodeStringPack(strings) {
     stringBytes.push(0);
   }
   const bytes = [];
-  bytes.push(...encoder.encode('NEIUIS1\0'));
-  pushU32(bytes, 1);
+  bytes.push(...encoder.encode(UI_STRING_PACK_MAGIC));
+  pushU32(bytes, UI_STRING_PAYLOAD_VERSION);
   pushU32(bytes, strings.length);
   pushU32(bytes, stringBytes.length);
   for (const offset of offsets) {
@@ -73,19 +96,19 @@ function nativeBackgroundJson() {
 function encodeTemplatePack(strings) {
   const index = new Map(strings.map((value, idx) => [value, idx]));
   const bytes = [];
-  bytes.push(...new TextEncoder().encode('NEIUIT1\0'));
-  pushU32(bytes, 9);
+  bytes.push(...new TextEncoder().encode(UI_TEMPLATE_PACK_MAGIC));
+  pushU32(bytes, UI_TEMPLATE_PAYLOAD_VERSION);
   pushU32(bytes, 1);
   pushU32(bytes, 2);
   pushU32(bytes, 1);
   pushU32(bytes, 1);
   pushU32(bytes, 0);
   pushU32(bytes, 0);
-  pushU32(bytes, 25);
-  pushU32(bytes, 12);
-  pushU32(bytes, 7);
-  pushU32(bytes, 13);
-  pushU32(bytes, 15);
+  pushU32(bytes, UI_TEMPLATE_ROW_STRIDE_U32);
+  pushU32(bytes, UI_SLOT_ROW_STRIDE_U32);
+  pushU32(bytes, UI_TEXT_ROW_STRIDE_U32);
+  pushU32(bytes, UI_PRIMITIVE_ROW_STRIDE_U32);
+  pushU32(bytes, UI_RECT_ROW_STRIDE_U32);
   const row = [
     index.get('furnace@default') ?? 0,
     index.get('self-test-furnace') ?? 0,
@@ -164,16 +187,16 @@ function encodeTemplatePack(strings) {
   pushU32(bytes, 0);
   pushU32(bytes, 0);
   pushU32(bytes, 0);
-  return encodeBinaryPack('neonei/ui-template-pack/current', new Uint8Array(bytes).buffer);
+  return encodeBinaryPack(UI_TEMPLATE_PACK_SCHEMA, new Uint8Array(bytes).buffer);
 }
 
 function encodeBindingPack(strings) {
   const index = new Map(strings.map((value, idx) => [value, idx]));
   const bytes = [];
-  bytes.push(...new TextEncoder().encode('NEIUIB1\0'));
+  bytes.push(...new TextEncoder().encode(UI_BINDING_PACK_MAGIC));
+  pushU32(bytes, UI_BINDING_PAYLOAD_VERSION);
   pushU32(bytes, 1);
-  pushU32(bytes, 1);
-  pushU32(bytes, 11);
+  pushU32(bytes, UI_BINDING_ROW_STRIDE_U32);
   const row = [
     index.get('r1') ?? 0,
     index.get('recipes/ui-payload-shards/55.json') ?? 0,
@@ -190,7 +213,7 @@ function encodeBindingPack(strings) {
   for (const value of row) {
     pushU32(bytes, value);
   }
-  return encodeBinaryPack('neonei/ui-binding-pack/current', new Uint8Array(bytes).buffer);
+  return encodeBinaryPack(UI_BINDING_PACK_SCHEMA, new Uint8Array(bytes).buffer);
 }
 
 function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 'ok', artifacts = {} }) {
@@ -201,9 +224,9 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
       kind: 'binary-pack',
       status: 'present',
       bytes: templatePack.byteLength,
-      envelopeSchema: 'neonei/ui-template-pack/current',
-      payloadMagic: 'NEIUIT1_NUL',
-      version: 9,
+      envelopeSchema: UI_TEMPLATE_PACK_SCHEMA,
+      payloadMagic: UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT,
+      version: UI_TEMPLATE_PAYLOAD_VERSION,
       sections: [],
     },
     {
@@ -212,9 +235,9 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
       kind: 'binary-pack',
       status: 'present',
       bytes: bindingPack.byteLength,
-      envelopeSchema: 'neonei/ui-binding-pack/current',
-      payloadMagic: 'NEIUIB1_NUL',
-      version: 1,
+      envelopeSchema: UI_BINDING_PACK_SCHEMA,
+      payloadMagic: UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
+      version: UI_BINDING_PAYLOAD_VERSION,
       sections: [],
     },
     {
@@ -223,14 +246,14 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
       kind: 'binary-pack',
       status: 'present',
       bytes: stringPack.byteLength,
-      envelopeSchema: 'neonei/ui-string-pack/current',
-      payloadMagic: 'NEIUIS1_NUL',
-      version: 1,
+      envelopeSchema: UI_STRING_PACK_SCHEMA,
+      payloadMagic: UI_STRING_PACK_PAYLOAD_MAGIC_REPORT,
+      version: UI_STRING_PAYLOAD_VERSION,
       sections: [],
     },
   ].map((artifact) => ({ ...artifact, ...(artifacts[artifact.logicalName] ?? {}) }));
   return {
-    schemaVersion: 'elysium-compiler/ui-pack-abi-validation/v1',
+    schemaVersion: UI_PACK_ABI_VALIDATION_SCHEMA_VERSION,
     packAbiVersion: 'elysium.pack.v1',
     generatedAt: 'deterministic-rust-compiler',
     status,
@@ -252,14 +275,14 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
 
 function buildNativeUiExportAbiReport({ status = 'ok', overrides = {} } = {}) {
   return {
-    schemaVersion: 'elysium-compiler/native-ui-export-abi-validation/v1',
+    schemaVersion: NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
     exportAbiVersion: 'elysium.export.v2',
     generatedAt: 'deterministic-rust-compiler',
     status,
     manifestLogicalName: 'nativeUiValidation',
     manifestPath: 'validation/native-ui-abi.json',
     reportPath: 'validation/native-ui-abi.json',
-    rawReportSchemaVersion: 'nesqlpp/raw-export/alpha1/native-ui-validation',
+    rawReportSchemaVersion: NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION,
     rawReportStatus: status === 'ok' ? 'ok' : 'blocked',
     layoutCount: 1,
     slotCount: 2,
@@ -335,7 +358,7 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
   ];
   const templatePack = encodeTemplatePack(strings);
   const bindingPack = encodeBindingPack(strings);
-  const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const stringPack = encodeBinaryPack(UI_STRING_PACK_SCHEMA, encodeStringPack(strings));
   const exportAbiReport = buildNativeUiExportAbiReport();
   const abiReport = buildUiPackAbiReport({ templatePack, bindingPack, stringPack });
   const manifest = withRuntimeFiles({
@@ -462,7 +485,7 @@ test('loadUiPackRuntime fails closed before pack fetch when ABI validation repor
     'recipes/ui-payload-shards/55.json',
     'Furnace',
   ]);
-  const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const stringPack = encodeBinaryPack(UI_STRING_PACK_SCHEMA, encodeStringPack(strings));
   const exportAbiReport = buildNativeUiExportAbiReport();
   const abiReport = buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status: 'blocked' });
   const manifest = withRuntimeFiles({
@@ -520,7 +543,7 @@ test('loadUiPackRuntime fails closed before pack fetch when native UI export ABI
   ];
   const templatePack = encodeTemplatePack(strings);
   const bindingPack = encodeBindingPack(strings);
-  const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const stringPack = encodeBinaryPack(UI_STRING_PACK_SCHEMA, encodeStringPack(strings));
   const exportAbiReport = buildNativeUiExportAbiReport({
     status: 'blocked',
     overrides: {
@@ -584,7 +607,7 @@ test('loadUiPackRuntime fails closed when native UI export primitive bounds coun
   ];
   const templatePack = encodeTemplatePack(strings);
   const bindingPack = encodeBindingPack(strings);
-  const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const stringPack = encodeBinaryPack(UI_STRING_PACK_SCHEMA, encodeStringPack(strings));
   const exportAbiReport = buildNativeUiExportAbiReport({
     overrides: {
       primitiveBoundsViolationCount: 1,
@@ -646,7 +669,7 @@ test('loadUiPackRuntime rejects ABI reports that do not match manifest entrypoin
   ];
   const templatePack = encodeTemplatePack(strings);
   const bindingPack = encodeBindingPack(strings);
-  const stringPack = encodeBinaryPack('neonei/ui-string-pack/current', encodeStringPack(strings));
+  const stringPack = encodeBinaryPack(UI_STRING_PACK_SCHEMA, encodeStringPack(strings));
   const exportAbiReport = buildNativeUiExportAbiReport();
   const abiReport = buildUiPackAbiReport({
     templatePack,

@@ -9,6 +9,31 @@ import {
 } from "../native-surface/NativeRuntimeCapabilityGate.ts";
 import type { NativeRuntimeManifest } from "../native-surface/NativeRuntimeManifest";
 import {
+  NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
+  NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION,
+  NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION,
+  UI_BINDING_PACK_MAGIC,
+  UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT,
+  UI_BINDING_PACK_SCHEMA,
+  UI_BINDING_PAYLOAD_VERSION,
+  UI_BINDING_ROW_STRIDE_U32,
+  UI_PACK_ABI_VALIDATION_REPORT_PATH,
+  UI_PACK_ABI_VALIDATION_SCHEMA_VERSION,
+  UI_PRIMITIVE_ROW_STRIDE_U32,
+  UI_RECT_ROW_STRIDE_U32,
+  UI_SLOT_ROW_STRIDE_U32,
+  UI_STRING_PACK_MAGIC,
+  UI_STRING_PACK_PAYLOAD_MAGIC_REPORT,
+  UI_STRING_PACK_SCHEMA,
+  UI_STRING_PAYLOAD_VERSION,
+  UI_TEMPLATE_PACK_MAGIC,
+  UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT,
+  UI_TEMPLATE_PACK_SCHEMA,
+  UI_TEMPLATE_PAYLOAD_VERSION,
+  UI_TEMPLATE_ROW_STRIDE_U32,
+  UI_TEXT_ROW_STRIDE_U32,
+} from "./nativeUiPackAbi.ts";
+import {
   getManifestRuntimeFileBytes,
   normalizeRuntimePath,
   runtimeManifestDeclaresPath,
@@ -143,29 +168,6 @@ export interface UiPackRuntime {
 }
 
 const UI_PACK_REQUEST_CACHE = new Map<string, Promise<UiPackRuntime>>();
-const UI_PACK_ABI_VALIDATION_REPORT_PATH = "rust/ui-pack-abi-validation-report.json";
-const UI_PACK_ABI_VALIDATION_SCHEMA_VERSION = "elysium-compiler/ui-pack-abi-validation/v1";
-const NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH = "rust/native-ui-export-abi-validation-report.json";
-const NATIVE_UI_EXPORT_ABI_VALIDATION_SCHEMA_VERSION = "elysium-compiler/native-ui-export-abi-validation/v1";
-const NATIVE_UI_EXPORT_RAW_REPORT_SCHEMA_VERSION = "nesqlpp/raw-export/alpha1/native-ui-validation";
-const UI_TEMPLATE_PACK_SCHEMA = "neonei/ui-template-pack/current";
-const UI_BINDING_PACK_SCHEMA = "neonei/ui-binding-pack/current";
-const UI_STRING_PACK_SCHEMA = "neonei/ui-string-pack/current";
-const UI_TEMPLATE_PACK_MAGIC = "NEIUIT1\0";
-const UI_BINDING_PACK_MAGIC = "NEIUIB1\0";
-const UI_STRING_PACK_MAGIC = "NEIUIS1\0";
-const UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIT1_NUL";
-const UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIB1_NUL";
-const UI_STRING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIS1_NUL";
-const UI_TEMPLATE_PAYLOAD_VERSION = 9;
-const UI_BINDING_PAYLOAD_VERSION = 1;
-const UI_STRING_PAYLOAD_VERSION = 1;
-const UI_TEMPLATE_ROW_STRIDE_U32 = 25;
-const UI_SLOT_ROW_STRIDE_U32 = 12;
-const UI_TEXT_ROW_STRIDE_U32 = 7;
-const UI_PRIMITIVE_ROW_STRIDE_U32 = 13;
-const UI_RECT_ROW_STRIDE_U32 = 15;
-const UI_BINDING_ROW_STRIDE_U32 = 11;
 
 type UiPackEntrypoints = {
   templates: string;

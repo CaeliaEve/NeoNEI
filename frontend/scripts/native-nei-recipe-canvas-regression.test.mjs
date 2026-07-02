@@ -60,6 +60,7 @@ test('NativeNeiRecipeCanvas preserves captured hotspots and viewport regions in 
   const canvasSource = read('src/components/NativeNeiRecipeCanvas.vue');
   const registrySource = read('src/services/nativeUiRuntimeRegistry.ts');
   const uiPackRuntimeSource = read('src/services/uiPackRuntime.ts');
+  const uiPackAbiSource = read('src/services/nativeUiPackAbi.ts');
   const productionManifestGateSource = fs.readFileSync(path.resolve(frontendRoot, '..', 'scripts/validate-rust-production-manifest.mjs'), 'utf8');
   const nativeUiLayoutGateSource = fs.readFileSync(path.resolve(frontendRoot, '..', 'scripts/validate-native-ui-layouts.mjs'), 'utf8');
 
@@ -73,7 +74,8 @@ test('NativeNeiRecipeCanvas preserves captured hotspots and viewport regions in 
   assert.equal(canvasSource.includes('nativeUiRectStyle'), true);
   assert.equal(canvasSource.includes('nativeUiRectLabel'), true);
   assert.equal(uiPackRuntimeSource.includes('export interface UiPackRect'), true);
-  assert.equal(uiPackRuntimeSource.includes('const UI_TEMPLATE_PAYLOAD_VERSION = 9'), true);
+  assert.equal(uiPackRuntimeSource.includes('nativeUiPackAbi.ts'), true);
+  assert.equal(uiPackAbiSource.includes('UI_TEMPLATE_PAYLOAD_VERSION = 9'), true);
   assert.equal(uiPackRuntimeSource.includes('export interface UiPackDynamicPrimitive'), true);
   assert.equal(uiPackRuntimeSource.includes('dynamicPrimitiveCount'), true);
   assert.equal(uiPackRuntimeSource.includes('hotspotCount'), true);

@@ -6,6 +6,17 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
+import {
+  UI_PRIMITIVE_ROW_STRIDE_U32,
+  UI_RECT_ROW_STRIDE_U32,
+  UI_SLOT_ROW_STRIDE_U32,
+  UI_TEMPLATE_PACK_MAGIC,
+  UI_TEMPLATE_PACK_SCHEMA,
+  UI_TEMPLATE_PAYLOAD_VERSION,
+  UI_TEMPLATE_ROW_STRIDE_U32,
+  UI_TEXT_ROW_STRIDE_U32,
+  uiPackFormatCatalog,
+} from './native-ui-pack-abi.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -38,24 +49,24 @@ function wrapNativePack(schema, payload) {
 }
 
 function writeUiTemplatePackV9(path) {
-  const primitiveRow = Buffer.concat(Array.from({ length: 13 }, () => u32(0)));
+  const primitiveRow = Buffer.concat(Array.from({ length: UI_PRIMITIVE_ROW_STRIDE_U32 }, () => u32(0)));
   const payload = Buffer.concat([
-    Buffer.from('NEIUIT1\0', 'utf8'),
-    u32(9), // template pack version with template dynamic primitive ABI
+    Buffer.from(UI_TEMPLATE_PACK_MAGIC, 'utf8'),
+    u32(UI_TEMPLATE_PAYLOAD_VERSION), // template pack version with template dynamic primitive ABI
     u32(0), // templateCount
     u32(0), // slotCount
     u32(0), // textCount
     u32(1), // dynamicPrimitiveCount
     u32(0), // hotspotCount
     u32(0), // viewportCount
-    u32(25), // templateStride
-    u32(12), // slotStride
-    u32(7), // textStride
-    u32(13), // primitiveStride
-    u32(15), // rectStride
+    u32(UI_TEMPLATE_ROW_STRIDE_U32), // templateStride
+    u32(UI_SLOT_ROW_STRIDE_U32), // slotStride
+    u32(UI_TEXT_ROW_STRIDE_U32), // textStride
+    u32(UI_PRIMITIVE_ROW_STRIDE_U32), // primitiveStride
+    u32(UI_RECT_ROW_STRIDE_U32), // rectStride
     primitiveRow,
   ]);
-  writeFileSync(path, wrapNativePack('neonei/ui-template-pack/current', payload));
+  writeFileSync(path, wrapNativePack(UI_TEMPLATE_PACK_SCHEMA, payload));
 }
 
 function createDistFixture() {
@@ -97,25 +108,7 @@ function createDistFixture() {
       hotspotInteractionCount: 0,
       viewportInteractionCount: 0,
     },
-    format: {
-      templatePackMagic: 'NEIUIT1\\u0000',
-      templatePackVersion: 9,
-      templateStride: 25,
-      slotStride: 12,
-      textStride: 7,
-      primitiveStride: 13,
-      rectStride: 15,
-      legacyRectActionFields: false,
-      legacyRectActionFieldNames: [],
-      surfaceContractFields: ['coordinateSpace', 'scaleMode', 'anchor'],
-      slotGeometryFields: ['coordinateSpace', 'anchor', 'slotWidth', 'slotHeight', 'pitchX', 'pitchY'],
-      templateDynamicPrimitiveFields: ['dynamicPrimitives'],
-      dynamicPrimitiveGeometryFields: ['kind', 'role', 'x', 'y', 'width', 'height', 'coordinateSpace', 'anchor', 'orientation', 'source', 'trackColor', 'fillColor', 'borderColor'],
-      rectGeometryFields: ['coordinateSpace', 'anchor'],
-      interactionContractFields: ['interactionKind', 'interactionTargetKind', 'interactionTargetId', 'interactionPayloadSchema'],
-      backgroundContractFields: ['coordinateSpace', 'scaleMode', 'anchor', 'status', 'kind', 'scaling', 'texture', 'recipeBackgroundOffset', 'recipeBackgroundSize'],
-      templateBackgroundField: 'nativeBackground',
-    },
+    format: uiPackFormatCatalog(),
   });
 
   writeJson(join(rustDir, 'native-ui-layout-report.json'), {
@@ -264,15 +257,15 @@ test('native UI production gates require UI template pack v9 template-primitive 
   const distDataDir = createDistFixture();
   try {
     const manifestGate = runGate('scripts/validate-rust-production-manifest.mjs', distDataDir);
-    assert.equal(manifestGate.uiTemplatePack.version, 9);
-    assert.equal(manifestGate.uiTemplatePack.primitiveStride, 13);
-    assert.equal(manifestGate.uiTemplatePack.rectStride, 15);
+    assert.equal(manifestGate.uiTemplatePack.version, UI_TEMPLATE_PAYLOAD_VERSION);
+    assert.equal(manifestGate.uiTemplatePack.primitiveStride, UI_PRIMITIVE_ROW_STRIDE_U32);
+    assert.equal(manifestGate.uiTemplatePack.rectStride, UI_RECT_ROW_STRIDE_U32);
     assert.equal(manifestGate.uiPackReport.format.legacyRectActionFields, false);
 
     const layoutGate = runGate('scripts/validate-native-ui-layouts.mjs', distDataDir);
-    assert.equal(layoutGate.uiPack.templateHeader.version, 9);
-    assert.equal(layoutGate.uiPack.templateHeader.primitiveStride, 13);
-    assert.equal(layoutGate.uiPack.templateHeader.rectStride, 15);
+    assert.equal(layoutGate.uiPack.templateHeader.version, UI_TEMPLATE_PAYLOAD_VERSION);
+    assert.equal(layoutGate.uiPack.templateHeader.primitiveStride, UI_PRIMITIVE_ROW_STRIDE_U32);
+    assert.equal(layoutGate.uiPack.templateHeader.rectStride, UI_RECT_ROW_STRIDE_U32);
     assert.equal(layoutGate.report.backgroundStatus, 'captured');
     assert.equal(layoutGate.report.counts.gregtechRecipeUiPayloadsWithNativeBackgrounds, 1);
     assert.equal(layoutGate.failures.length, 0);
