@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -52,6 +53,8 @@ test("native surface runtime path removes compat entry projection input", () => 
   const homeHistory = readSource("src/composables/home/useHomeHistory.ts");
   const homePage = readSource("src/views/HomePage.vue");
   const itemBrowser = readSource("src/composables/useItemBrowser.ts");
+  const pageProjectionLoader = readSource("src/composables/browser/browserPageProjectionLoader.ts");
+  const pageCache = readSource("src/composables/browser/browserPageCache.ts");
 
   for (const source of [controller, controlPlane, protocol, worker, mutations]) {
     assert.doesNotMatch(source, /compatEntries/);
@@ -65,6 +68,9 @@ test("native surface runtime path removes compat entry projection input", () => 
   assert.doesNotMatch(homeHistory, /historyAtlas|warmGlobalBrowserAtlasForItemsDetailed|PageAtlasResult/);
   assert.doesNotMatch(homePage, /currentPageAtlas|:current-page-atlas=|:history-atlas=/);
   assert.doesNotMatch(itemBrowser, /currentPageAtlas|PageAtlasResult/);
+  assert.doesNotMatch(pageProjectionLoader, /peekPageAtlas|pageAtlas|getItemSize/);
+  assert.doesNotMatch(pageCache, /PageAtlasResult|atlas:\s*PageAtlasResult/);
+  assert.equal(existsSync(resolve(frontendRoot, "src/services/pageAtlas.ts")), false);
   assert.match(worker, /return \{ source: "empty", entries: \[\] \}/);
 });
 

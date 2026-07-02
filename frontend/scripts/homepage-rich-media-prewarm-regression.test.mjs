@@ -12,6 +12,11 @@ const browserPresentationWarmSource = fs.readFileSync(
   'utf8',
 );
 
+const sitePreheaterSource = fs.readFileSync(
+  'src/composables/useSitePreheater.ts',
+  'utf8',
+);
+
 const animationBudgetSource = fs.readFileSync(
   'src/services/animationBudget.ts',
   'utf8',
@@ -47,6 +52,16 @@ test('homepage browser pages warm only the resident global atlas without revivin
     browserSource.includes('animatedOnly: true'),
     false,
     'homepage should not keep animated-only per-item media prewarm fallback',
+  );
+  assert.equal(
+    sitePreheaterSource.includes('pagePack.atlas?.atlasUrl'),
+    false,
+    'site preheater should not revive page-scoped static atlas image warming',
+  );
+  assert.equal(
+    sitePreheaterSource.includes('\\u5206\\u9875 Atlas fallback') || sitePreheaterSource.includes('分页 Atlas fallback'),
+    false,
+    'site preheater status should not advertise a retired page atlas fallback',
   );
   assert.equal(
     animationBudgetSource.includes('prewarmItemViaGlobalBrowserAtlas'),

@@ -8,7 +8,6 @@ import type {
   BrowserSearchCatalogResponse,
   BrowserSearchPackResponse,
   Item,
-  PageAtlasResult,
   PageRichMediaManifest,
   PublicRuntimeManifest,
   PaginatedResponse,
@@ -31,7 +30,6 @@ import { setCacheWithLimit } from './cacheUtils';
 type PersistentBrowserPageCacheRecord = {
   data: BrowserGridEntry[];
   items: Item[];
-  atlas: PageAtlasResult | null;
   mediaManifest?: PageRichMediaManifest | null;
   resourceManifest?: BrowserPageResourceManifest;
   total: number;
@@ -310,7 +308,6 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
       const payload: PersistentBrowserPageCacheRecord = {
         data: response.data,
         items: collectDisplayItemsFromBrowserEntries(response.data),
-        atlas: response.atlas ?? null,
         mediaManifest: response.mediaManifest ?? null,
         resourceManifest: response.resourceManifest,
         total: response.total,

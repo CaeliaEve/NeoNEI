@@ -166,7 +166,7 @@ export function buildPersistentBrowserPageKey(
 ): string {
   return JSON.stringify({
     type: 'browser-page-pack',
-    version: 3,
+    version: 4,
     signature,
     page: params.page,
     pageSize: params.pageSize,

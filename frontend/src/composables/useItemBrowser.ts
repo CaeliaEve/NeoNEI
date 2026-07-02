@@ -108,7 +108,6 @@ export function useItemBrowser(
     getItemSize: () => itemSize.value,
   });
   const browserPageProjection = createBrowserPageProjectionLoader({
-    getItemSize: () => itemSize.value,
     isSearchLocalProjectionEligible,
   });
 
@@ -339,7 +338,6 @@ export function useItemBrowser(
   const toCachedBrowserPage = (response: BrowserPagePackResponse): CachedBrowserPage => ({
     data: response.data,
     items: collectDisplayItems(response.data),
-    atlas: response.atlas ?? null,
     mediaManifest: response.mediaManifest ?? null,
     resourceManifest: response.resourceManifest,
     total: response.total,

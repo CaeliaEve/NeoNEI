@@ -2,75 +2,120 @@
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
-const apiSource = fs.readFileSync(
-  'src/services/api.ts',
+const runtimeTypesSource = fs.readFileSync(
+  'src/runtime/types.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-const itemBrowserSource = fs.readFileSync(
-  'src/composables/useItemBrowser.ts',
+const browserProjectionSource = fs.readFileSync(
+  'src/runtime/browserProjection.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-test('frontend preserves browser page resource manifests', () => {
+const browserPageCacheSource = fs.readFileSync(
+  'src/composables/browser/browserPageCache.ts',
+  'utf8',
+).replace(/\r\n/g, '\n');
+
+const browserProjectionLoaderSource = fs.readFileSync(
+  'src/composables/browser/browserPageProjectionLoader.ts',
+  'utf8',
+).replace(/\r\n/g, '\n');
+
+const browserProjectionUtilsSource = fs.readFileSync(
+  'src/composables/browser/browserProjectionUtils.ts',
+  'utf8',
+).replace(/\r\n/g, '\n');
+
+const browserPresentationWarmSource = fs.readFileSync(
+  'src/composables/browser/browserPagePresentationWarm.ts',
+  'utf8',
+).replace(/\r\n/g, '\n');
+
+test('frontend preserves browser page resource manifests without page-scoped atlas dependency', () => {
   assert.equal(
-    apiSource.includes('export interface BrowserPageResourceManifest'),
+    runtimeTypesSource.includes('export interface BrowserPageResourceManifest'),
     true,
     'API types should expose browser resource manifests',
   );
   assert.equal(
-    apiSource.includes('function buildBrowserPageResourceManifest('),
+    browserProjectionSource.includes('function buildBrowserPageResourceManifest('),
     true,
-    'published browser window slices should rebuild trimmed resource manifests',
+    'published browser window slices should rebuild active-page resource manifests',
   );
   assert.equal(
-    apiSource.includes('mediaManifest = trimRichMediaManifest(window.mediaManifest, data)'),
+    browserProjectionSource.includes('mediaManifest = trimRichMediaManifest(window.mediaManifest, data)'),
     true,
     'published browser window slices should preserve trimmed animated atlas manifests',
   );
   assert.equal(
-    apiSource.includes('resourceManifest: buildBrowserPageResourceManifest(data, atlas, mediaManifest),'),
+    browserProjectionSource.includes('resourceManifest: buildBrowserPageResourceManifest(data, mediaManifest),'),
     true,
-    'published browser window slices should expose active-page resource manifests',
+    'resource manifests should be built from visible entries and rich-media metadata only',
+  );
+  assert.equal(
+    browserProjectionSource.includes('trimAtlasEntries'),
+    false,
+    'page-window derivation must not trim or rehydrate page-scoped static atlases',
+  );
+  assert.equal(
+    browserProjectionSource.includes('atlasUrls: []'),
+    true,
+    'static texture ownership should remain in the resident global/native atlas registry',
+  );
+  assert.equal(
+    browserProjectionSource.includes('atlasEntryCount: 0'),
+    true,
+    'page manifests should no longer report page-scoped static atlas entries',
   );
 });
 
 test('browser prewarm uses precomputed resource manifests', () => {
   assert.equal(
-    itemBrowserSource.includes('resourceManifest?: BrowserPagePackResponse[\'resourceManifest\'];'),
+    browserPageCacheSource.includes('resourceManifest?: BrowserPagePackResponse[\'resourceManifest\'];'),
     true,
     'cached browser pages should retain resource manifests',
   );
   assert.equal(
-    itemBrowserSource.includes('function collectBrowserPageResourceItemIds(page: CachedBrowserPage): string[]'),
+    browserProjectionUtilsSource.includes('function collectBrowserPageResourceItemIds(page: CachedBrowserPage): string[]'),
     true,
     'browser prewarm should read item ids from resource manifests',
   );
   assert.equal(
-    itemBrowserSource.includes('...(response.resourceManifest?.atlasUrls ?? [])'),
-    true,
-    'browser prewarm should read static atlas urls from resource manifests',
+    browserProjectionLoaderSource.includes("from '../../services/pageAtlas'"),
+    false,
+    'runtime catalog projection should not import the deleted page atlas service',
   );
   assert.equal(
-    itemBrowserSource.includes('...(page.resourceManifest?.animatedAtlasFiles ?? [])'),
+    browserProjectionUtilsSource.includes('...(page.resourceManifest?.animatedAtlasFiles ?? [])'),
     true,
     'browser prewarm should read animated atlas files from resource manifests',
+  );
+  assert.equal(
+    browserPageCacheSource.includes('PageAtlasResult'),
+    false,
+    'frontend visible-page cache should not carry retired page atlas payloads',
+  );
+  assert.equal(
+    browserProjectionUtilsSource.includes('version: 4'),
+    true,
+    'persistent browser page cache should cut a new key version after removing page atlas payloads',
   );
 });
 
 test('stale browser page prewarm is gated by the active page token', () => {
   assert.equal(
-    itemBrowserSource.includes('let activeResourceWarmToken = 0;'),
+    browserPresentationWarmSource.includes('let activeResourceWarmToken = 0;'),
     true,
     'item browser should track the active resource warm generation',
   );
   assert.equal(
-    itemBrowserSource.includes('activeResourceWarmToken += 1;'),
+    browserPresentationWarmSource.includes('activeResourceWarmToken += 1;'),
     true,
     'item browser should advance the warm generation for new visible page loads',
   );
   assert.equal(
-    itemBrowserSource.includes('if (warmToken !== activeResourceWarmToken)'),
+    browserPresentationWarmSource.includes('warmToken !== activeResourceWarmToken'),
     true,
     'item browser should ignore stale prewarm continuations',
   );
@@ -78,14 +123,13 @@ test('stale browser page prewarm is gated by the active page token', () => {
 
 test('global atlas misses do not block page presentation', () => {
   assert.equal(
-    itemBrowserSource.includes('if (hasGlobalBrowserAtlas() && globalCoverage?.total && globalCoverage.total > 0)'),
+    browserPresentationWarmSource.includes("source: 'native-runtime-render-worker'"),
     true,
-    'page presentation should fast-path once the global atlas index can serve the page',
+    'page presentation should be owned by the native render worker instead of page image decode',
   );
   assert.equal(
-    itemBrowserSource.includes('if (globalCoverage.missingCount > 0)'),
+    browserPresentationWarmSource.includes('Do not decode DOM\n        // atlas images during page transitions'),
     true,
-    'missing atlas entries should be warmed asynchronously instead of blocking visible navigation',
+    'page presentation should not block navigation on legacy page atlas image warming',
   );
 });
-

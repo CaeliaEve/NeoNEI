@@ -1,9 +1,8 @@
-import type { BrowserGridEntry, BrowserPagePackResponse, Item, PageAtlasResult } from '../../services/api';
+import type { BrowserGridEntry, BrowserPagePackResponse, Item } from '../../services/api';
 
 export type CachedBrowserPage = {
   data: BrowserGridEntry[];
   items: Item[];
-  atlas: PageAtlasResult | null;
   mediaManifest?: BrowserPagePackResponse['mediaManifest'];
   resourceManifest?: BrowserPagePackResponse['resourceManifest'];
   total: number;

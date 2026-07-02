@@ -5,7 +5,6 @@ import {
   type BrowserSearchCatalogResponse,
   type Item,
 } from '../../services/api';
-import { peekPageAtlas } from '../../services/pageAtlas';
 import {
   projectBrowserEntriesFromDefaultCatalog,
   type BrowserDefaultCatalogEntry,
@@ -41,7 +40,6 @@ export type BrowserPageProjectionLoader = {
 };
 
 export function createBrowserPageProjectionLoader(options: {
-  getItemSize: () => number;
   isSearchLocalProjectionEligible: (params?: { search?: string; total?: number }) => boolean;
 }): BrowserPageProjectionLoader {
   const buildExpandedProjectionCacheKey = (
@@ -86,7 +84,6 @@ export function createBrowserPageProjectionLoader(options: {
     return {
       data: projected.data,
       items: displayItems,
-      atlas: peekPageAtlas(displayItems, options.getItemSize()) ?? null,
       mediaManifest: null,
       total: projected.total,
       totalPages: projected.totalPages,

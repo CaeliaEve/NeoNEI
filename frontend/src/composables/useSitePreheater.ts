@@ -341,9 +341,6 @@ export function useSitePreheater(options: {
 
     primeAnimatedAtlasManifest(pagePack.mediaManifest);
     const assetTasks: Array<Promise<unknown>> = [];
-    if (pagePack.atlas?.atlasUrl) {
-      assetTasks.push(loadImageAsset(pagePack.atlas.atlasUrl));
-    }
     const animatedAtlasUrls = collectAnimatedAtlasUrlsFromPagePack(pagePack).slice(0, 10);
     for (const atlasUrl of animatedAtlasUrls) {
       assetTasks.push(loadImageAsset(atlasUrl).catch(() => undefined));
@@ -502,7 +499,7 @@ export function useSitePreheater(options: {
       if (warmedGlobalAtlas) {
         statusText.value = "\u5168\u5c40\u7269\u54c1 Atlas / \u52a8\u753b Atlas \u5df2\u9a7b\u7559\uff0c\u540e\u7eed\u7ffb\u9875\u4f18\u5148\u8d70 Canvas \u5feb\u8def\u5f84";
       } else {
-        statusText.value = "\u5f53\u524d\u5bfc\u51fa\u672a\u5305\u542b\u5168\u5c40 Atlas \u7d22\u5f15\uff0c\u7ee7\u7eed\u4f7f\u7528\u5206\u9875 Atlas fallback";
+        statusText.value = "\u5f53\u524d\u5bfc\u51fa\u672a\u5305\u542b\u5168\u5c40 Atlas \u7d22\u5f15\uff1b\u7ee7\u7eed\u9884\u70ed\u6d4f\u89c8\u6570\u636e\u4e0e\u52a8\u753b\u56fe\u96c6\uff0c\u7f3a\u5931\u8d34\u56fe\u7531 native runtime \u8bca\u65ad\u66b4\u9732";
       }
 
       currentPhase.value = "\u6d4f\u89c8\u533a\u5206\u9875\u9884\u70ed";
@@ -658,5 +655,4 @@ export function useSitePreheater(options: {
     clearPreheatCaches,
   };
 }
-
 
