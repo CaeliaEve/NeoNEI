@@ -17,6 +17,11 @@ const staticAssetsRouteSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
+const staticAssetDeliverySource = fs.readFileSync(
+  'src/services/static-asset-delivery.service.ts',
+  'utf8',
+).replace(/\r\n/g, '\n');
+
 test('publish static bundle advertises sidecar compression metadata', () => {
   assert.equal(
     publishPayloadSource.includes("export type PublishBundleSidecarEncoding = 'br' | 'gzip';"),
@@ -93,27 +98,28 @@ test('publish build report verifies source contract and bundle matching', () => 
 
 test('publish static route prefers precompressed sidecars when clients accept them', () => {
   assert.equal(
-    staticAssetsRouteSource.includes("const PUBLISH_STATIC_SIDECAR_VARIANTS = ["),
+    staticAssetDeliverySource.includes('const PUBLISH_STATIC_SIDECAR_VARIANTS = Object.freeze(['),
     true,
     'publish server should declare the available precompressed variants',
   );
   assert.match(
-    staticAssetsRouteSource,
-    /const PUBLISH_STATIC_SIDECAR_VARIANTS = \[\s*\{\s*encoding: 'br'/,
+    staticAssetDeliverySource,
+    /const PUBLISH_STATIC_SIDECAR_VARIANTS = Object\.freeze\(\[\s*Object\.freeze\(\{\s*encoding: 'br'/,
     'publish server should prefer brotli before gzip when both sidecars are available',
   );
   assert.equal(
-    staticAssetsRouteSource.includes("if (!req.headers['x-no-compression'] && canServePrecompressedPublishAsset(normalizedRelativePath))"),
+    staticAssetsRouteSource.includes("bypassCompression: Boolean(req.headers['x-no-compression'])"),
     true,
     'publish server should allow smoke tests and diagnostics to bypass sidecar compression explicitly',
   );
   assert.equal(
-    staticAssetsRouteSource.includes("res.setHeader('Content-Encoding', contentEncoding);"),
+    staticAssetsRouteSource.includes("res.setHeader('Content-Encoding', delivery.contentEncoding);"),
     true,
     'publish server should send the selected content encoding header',
   );
   assert.equal(
-    staticAssetsRouteSource.includes("res.setHeader('Vary', 'Accept-Encoding');"),
+    staticAssetsRouteSource.includes("res.setHeader('Vary', 'Accept-Encoding');")
+      && staticAssetDeliverySource.includes('varyAcceptEncoding = canServePrecompressedPublishAsset'),
     true,
     'publish server should vary publish assets on Accept-Encoding',
   );
