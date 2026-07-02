@@ -10,32 +10,38 @@ import {
   setNoStoreHeaders,
   setPublicCacheHeaders,
 } from '../utils/http-cache';
-import type { RuntimePublicEndpointKey } from './runtime-public-endpoint-registry';
+import { RUNTIME_PUBLIC_ENDPOINTS, type RuntimePublicEndpointKey } from './runtime-public-endpoint-registry';
+import { validateAndFreezeRouteHandlers } from './route-descriptor-registry';
 
 export type RuntimePublicEndpointHandler = (req: Request, res: Response) => Promise<void>;
 
-export const RUNTIME_PUBLIC_ENDPOINT_HANDLERS: Readonly<Record<RuntimePublicEndpointKey, RuntimePublicEndpointHandler>> = Object.freeze({
-  health: async (_req, res) => {
-    setNoStoreHeaders(res);
-    res.json(getCurrentRuntimeHealthDelivery());
-  },
-  manifest: async (req, res) => {
-    const delivery = getCurrentRuntimeManifestDelivery();
-    setNoStoreHeaders(res);
-    if (sendNotModifiedIfEtagMatches(req, res, delivery.etag)) {
-      return;
-    }
-    res.json(delivery.payload);
-  },
-  contracts: async (_req, res) => {
-    setPublicCacheHeaders(res, {
-      maxAgeSeconds: 300,
-      staleWhileRevalidateSeconds: 3600,
-    });
-    res.json(getCurrentRuntimeContractIndex());
-  },
-  diagnostics: async (_req, res) => {
-    setNoStoreHeaders(res);
-    res.json(getCurrentRuntimeDiagnosticsDelivery());
-  },
-});
+export const RUNTIME_PUBLIC_ENDPOINT_HANDLERS: Readonly<Record<RuntimePublicEndpointKey, RuntimePublicEndpointHandler>> =
+  validateAndFreezeRouteHandlers({
+    label: 'runtime public endpoint',
+    descriptors: RUNTIME_PUBLIC_ENDPOINTS,
+    handlers: {
+      health: async (_req, res) => {
+        setNoStoreHeaders(res);
+        res.json(getCurrentRuntimeHealthDelivery());
+      },
+      manifest: async (req, res) => {
+        const delivery = getCurrentRuntimeManifestDelivery();
+        setNoStoreHeaders(res);
+        if (sendNotModifiedIfEtagMatches(req, res, delivery.etag)) {
+          return;
+        }
+        res.json(delivery.payload);
+      },
+      contracts: async (_req, res) => {
+        setPublicCacheHeaders(res, {
+          maxAgeSeconds: 300,
+          staleWhileRevalidateSeconds: 3600,
+        });
+        res.json(getCurrentRuntimeContractIndex());
+      },
+      diagnostics: async (_req, res) => {
+        setNoStoreHeaders(res);
+        res.json(getCurrentRuntimeDiagnosticsDelivery());
+      },
+    },
+  });

@@ -7,6 +7,7 @@ const root = resolve(import.meta.dirname, '..');
 const routeSource = readFileSync(resolve(root, 'src/routes/current-api.routes.ts'), 'utf8');
 const handlerSource = readFileSync(resolve(root, 'src/routes/current-runtime-endpoint-handlers.ts'), 'utf8');
 const endpointRegistrySource = readFileSync(resolve(root, 'src/routes/current-runtime-endpoint-registry.ts'), 'utf8');
+const routeDescriptorRegistrySource = readFileSync(resolve(root, 'src/routes/route-descriptor-registry.ts'), 'utf8');
 const readServiceSource = readFileSync(resolve(root, 'src/services/current-runtime-read.service.ts'), 'utf8');
 
 test('current runtime API route is only an endpoint mount table consumer', () => {
@@ -33,6 +34,9 @@ test('current runtime API route is only an endpoint mount table consumer', () =>
 test('current runtime endpoint handlers are explicitly keyed and exhaustive', () => {
   assert.match(handlerSource, /Readonly<Record<CurrentRuntimeEndpointKey, RequestHandler>>/);
   assert.match(handlerSource, /export const CURRENT_RUNTIME_ENDPOINT_HANDLERS/);
+  assert.match(handlerSource, /validateAndFreezeRouteHandlers/);
+  assert.match(handlerSource, /descriptors: CURRENT_RUNTIME_ENDPOINTS/);
+  assert.match(handlerSource, /label: 'current runtime endpoint'/);
   assert.match(handlerSource, /export function getCurrentRuntimeEndpointHandler/);
   assert.match(handlerSource, /withCurrentRuntimeApiContext/);
   assert.match(handlerSource, /withCurrentRuntimeApiContextAsync/);
@@ -55,6 +59,9 @@ test('current runtime endpoint handlers are explicitly keyed and exhaustive', ()
   assert.match(endpointRegistrySource, /validateAndFreezeRouteDescriptors/);
   assert.match(endpointRegistrySource, /label: 'current runtime endpoint'/);
   assert.match(endpointRegistrySource, /allowedPlanes: CURRENT_RUNTIME_ENDPOINT_PLANES/);
+  assert.match(routeDescriptorRegistrySource, /export function validateAndFreezeRouteHandlers/);
+  assert.match(routeDescriptorRegistrySource, /Unknown \$\{options\.label\} route handler/);
+  assert.match(routeDescriptorRegistrySource, /Missing \$\{options\.label\} route handler/);
 
   const endpointKeys = Array.from(endpointRegistrySource.matchAll(/key: '([^']+)'/g), (match) => match[1]);
   assert.ok(endpointKeys.length > 0, 'endpoint registry must expose endpoint keys');

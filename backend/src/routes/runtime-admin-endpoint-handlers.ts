@@ -10,25 +10,34 @@ import type {
   RuntimeAdminControlEndpointKey,
   RuntimeAdminIndexEndpointKey,
 } from './runtime-admin-endpoint-registry';
+import {
+  RUNTIME_ADMIN_CONTROL_ENDPOINTS,
+  RUNTIME_ADMIN_INDEX_ENDPOINTS,
+} from './runtime-admin-endpoint-registry';
 import type {
   RuntimeAdminControlRouterOptions,
   RuntimeAdminIndexRoutesOptions,
 } from './runtime-admin-endpoint-types';
+import { validateAndFreezeRouteHandlers } from './route-descriptor-registry';
 import { sendRuntimeAdminReconcile } from './runtime-admin-reconcile-executor';
 import { sendRuntimeAdminJson, sendRuntimeAdminOpenApi } from './runtime-admin-transport';
 
 export function createRuntimeAdminIndexEndpointHandlers(
   options: RuntimeAdminIndexRoutesOptions,
 ): Readonly<Record<RuntimeAdminIndexEndpointKey, RequestHandler>> {
-  return Object.freeze({
-    health: (_req, res) => {
-      sendRuntimeAdminJson(res, getRuntimeAdminHealth(options.getAccelerationRuntimeSnapshot()));
-    },
-    'api-index': (_req, res) => {
-      sendRuntimeAdminJson(res, getPublicApiIndex());
-    },
-    openapi: (_req, res) => {
-      sendRuntimeAdminOpenApi(res, getRuntimeOpenApiDocument());
+  return validateAndFreezeRouteHandlers({
+    label: 'runtime admin index endpoint',
+    descriptors: RUNTIME_ADMIN_INDEX_ENDPOINTS,
+    handlers: {
+      health: (_req, res) => {
+        sendRuntimeAdminJson(res, getRuntimeAdminHealth(options.getAccelerationRuntimeSnapshot()));
+      },
+      'api-index': (_req, res) => {
+        sendRuntimeAdminJson(res, getPublicApiIndex());
+      },
+      openapi: (_req, res) => {
+        sendRuntimeAdminOpenApi(res, getRuntimeOpenApiDocument());
+      },
     },
   });
 }
@@ -44,12 +53,16 @@ export function createRuntimeAdminControlEndpointHandlers<TManager>(
     setAccelerationRuntimePhase: options.setAccelerationRuntimePhase,
   });
 
-  return Object.freeze({
-    'runtime-diagnostics': (_req, res) => {
-      sendRuntimeAdminJson(res, getRuntimeAdminDiagnostics(options.getAccelerationRuntimeSnapshot()));
-    },
-    'acceleration-reconcile': (req, res) => {
-      sendRuntimeAdminReconcile(req, res, label, reconcileRuntime);
+  return validateAndFreezeRouteHandlers({
+    label: 'runtime admin control endpoint',
+    descriptors: RUNTIME_ADMIN_CONTROL_ENDPOINTS,
+    handlers: {
+      'runtime-diagnostics': (_req, res) => {
+        sendRuntimeAdminJson(res, getRuntimeAdminDiagnostics(options.getAccelerationRuntimeSnapshot()));
+      },
+      'acceleration-reconcile': (req, res) => {
+        sendRuntimeAdminReconcile(req, res, label, reconcileRuntime);
+      },
     },
   });
 }

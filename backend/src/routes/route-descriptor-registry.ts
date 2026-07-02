@@ -13,6 +13,12 @@ export type RouteDescriptorValidationOptions<TDescriptor extends RouteDescriptor
   allowedPlanes?: readonly string[];
 }>;
 
+export type RouteHandlerValidationOptions<TDescriptor extends RouteDescriptor, THandler> = Readonly<{
+  label: string;
+  descriptors: readonly TDescriptor[];
+  handlers: Readonly<Record<string, THandler>>;
+}>;
+
 export function validateAndFreezeRouteDescriptors<TDescriptor extends RouteDescriptor>(
   options: RouteDescriptorValidationOptions<TDescriptor>,
 ): readonly TDescriptor[] {
@@ -56,4 +62,30 @@ export function validateAndFreezeRouteDescriptors<TDescriptor extends RouteDescr
   }
 
   return Object.freeze(options.descriptors.map((descriptor) => Object.freeze({ ...descriptor }) as TDescriptor));
+}
+
+export function validateAndFreezeRouteHandlers<TDescriptor extends RouteDescriptor, THandler>(
+  options: RouteHandlerValidationOptions<TDescriptor, THandler>,
+): Readonly<Record<TDescriptor['key'], THandler>> {
+  const expectedKeys = new Set(options.descriptors.map((descriptor) => descriptor.key));
+  const projectedHandlers: Record<string, THandler> = {};
+
+  for (const [key, handler] of Object.entries(options.handlers)) {
+    if (!expectedKeys.has(key)) {
+      throw new Error(`Unknown ${options.label} route handler: ${key}`);
+    }
+    if (typeof handler !== 'function') {
+      throw new Error(`${options.label} route handler must be a function: ${key}`);
+    }
+  }
+
+  for (const descriptor of options.descriptors) {
+    const handler = options.handlers[descriptor.key];
+    if (typeof handler !== 'function') {
+      throw new Error(`Missing ${options.label} route handler: ${descriptor.key}`);
+    }
+    projectedHandlers[descriptor.key] = handler;
+  }
+
+  return Object.freeze(projectedHandlers) as Readonly<Record<TDescriptor['key'], THandler>>;
 }

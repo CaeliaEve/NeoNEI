@@ -25,6 +25,9 @@ test('public runtime read routes are table-driven and route files are mount-only
   assert.match(runtimeRegistrySource, /path: '\/contracts'/);
   assert.match(runtimeRegistrySource, /path: '\/diagnostics'/);
   assert.match(runtimeRouteSource, /for \(const endpoint of RUNTIME_PUBLIC_ENDPOINTS\)/);
+  assert.match(runtimeHandlersSource, /validateAndFreezeRouteHandlers/);
+  assert.match(runtimeHandlersSource, /descriptors: RUNTIME_PUBLIC_ENDPOINTS/);
+  assert.match(runtimeHandlersSource, /label: 'runtime public endpoint'/);
   assert.match(runtimeHandlersSource, /getCurrentRuntimeManifestDelivery\(\)/);
 
   assert.match(v1RegistrySource, /export const API_V1_ENDPOINTS/);
@@ -36,6 +39,9 @@ test('public runtime read routes are table-driven and route files are mount-only
   assert.match(v1RegistrySource, /path: '\/runtime\/manifest'/);
   assert.match(v1RegistrySource, /path: '\/runtime\/contracts'/);
   assert.match(v1RouteSource, /for \(const endpoint of API_V1_ENDPOINTS\)/);
+  assert.match(v1HandlersSource, /validateAndFreezeRouteHandlers/);
+  assert.match(v1HandlersSource, /descriptors: API_V1_ENDPOINTS/);
+  assert.match(v1HandlersSource, /label: 'api v1 endpoint'/);
   assert.match(v1HandlersSource, /getApiV1RuntimeManifestDelivery\(\)/);
 
   assert.match(publishRegistrySource, /export const PUBLISH_PUBLIC_ENDPOINTS/);
@@ -46,6 +52,9 @@ test('public runtime read routes are table-driven and route files are mount-only
   assert.match(publishRegistrySource, /path: '\/manifest'/);
   assert.match(publishRegistrySource, /path: '\/home-bootstrap'/);
   assert.match(publishRouteSource, /for \(const endpoint of PUBLISH_PUBLIC_ENDPOINTS\)/);
+  assert.match(publishHandlersSource, /validateAndFreezeRouteHandlers/);
+  assert.match(publishHandlersSource, /descriptors: PUBLISH_PUBLIC_ENDPOINTS/);
+  assert.match(publishHandlersSource, /label: 'publish public endpoint'/);
   assert.match(publishHandlersSource, /createPublishHomeBootstrapDelivery\(req\.query\)/);
 
   for (const routeSource of [runtimeRouteSource, v1RouteSource, publishRouteSource]) {

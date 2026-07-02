@@ -15,6 +15,9 @@ test('pattern control routes are mounted from an explicit endpoint registry', ()
   assert.match(registrySource, /PATTERN_CONTROL_METHODS/);
   assert.match(registrySource, /validateAndFreezeRouteDescriptors/);
   assert.match(registrySource, /label: 'pattern control endpoint'/);
+  assert.match(handlersSource, /validateAndFreezeRouteHandlers/);
+  assert.match(handlersSource, /descriptors: PATTERN_CONTROL_ENDPOINTS/);
+  assert.match(handlersSource, /label: 'pattern control endpoint'/);
   for (const endpointKey of [
     'list-groups',
     'get-group',

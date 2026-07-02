@@ -99,6 +99,9 @@ test('runtime admin index and control endpoints are table-driven', () => {
   assert.match(routeDescriptorRegistrySource, /Duplicate \$\{options\.label\} route descriptor/);
   assert.match(routeDescriptorRegistrySource, /Missing \$\{options\.label\} route descriptor/);
   assert.match(routeDescriptorRegistrySource, /\$\{options\.label\} route path must be absolute/);
+  assert.match(routeDescriptorRegistrySource, /export function validateAndFreezeRouteHandlers/);
+  assert.match(routeDescriptorRegistrySource, /Unknown \$\{options\.label\} route handler/);
+  assert.match(routeDescriptorRegistrySource, /Missing \$\{options\.label\} route handler/);
   assert.match(runtimeAdminRegistrySource, /path: '\/api\/health'/);
   assert.match(runtimeAdminRegistrySource, /path: '\/api'/);
   assert.match(runtimeAdminRegistrySource, /path: '\/api\/openapi\.json'/);
@@ -106,6 +109,11 @@ test('runtime admin index and control endpoints are table-driven', () => {
   assert.match(runtimeAdminRegistrySource, /path: '\/acceleration\/reconcile'/);
   assert.match(runtimeAdminSource, /for \(const endpoint of RUNTIME_ADMIN_INDEX_ENDPOINTS\)/);
   assert.match(runtimeAdminSource, /for \(const endpoint of RUNTIME_ADMIN_CONTROL_ENDPOINTS\)/);
+  assert.match(runtimeAdminHandlersSource, /validateAndFreezeRouteHandlers/);
+  assert.match(runtimeAdminHandlersSource, /descriptors: RUNTIME_ADMIN_INDEX_ENDPOINTS/);
+  assert.match(runtimeAdminHandlersSource, /descriptors: RUNTIME_ADMIN_CONTROL_ENDPOINTS/);
+  assert.match(runtimeAdminHandlersSource, /label: 'runtime admin index endpoint'/);
+  assert.match(runtimeAdminHandlersSource, /label: 'runtime admin control endpoint'/);
   assert.match(runtimeAdminHandlersSource, /getRuntimeAdminDiagnostics/);
   assert.match(runtimeAdminHandlersSource, /sendRuntimeAdminReconcile/);
 

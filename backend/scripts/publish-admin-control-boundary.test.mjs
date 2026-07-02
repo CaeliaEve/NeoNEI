@@ -21,6 +21,9 @@ test('publish admin routes are mounted from an explicit endpoint registry', () =
   assert.match(registrySource, /path: '\/releases\/:sourceSignature\/activate'/);
   assert.match(routeSource, /for \(const endpoint of PUBLISH_ADMIN_ENDPOINTS\)/);
   assert.match(routeSource, /registerPublishAdminEndpoint\(router, endpoint\)/);
+  assert.match(handlersSource, /validateAndFreezeRouteHandlers/);
+  assert.match(handlersSource, /descriptors: PUBLISH_ADMIN_ENDPOINTS/);
+  assert.match(handlersSource, /label: 'publish admin endpoint'/);
   assert.doesNotMatch(routeSource, /getPublishReleaseService/);
   assert.doesNotMatch(routeSource, /getPublishManifestService/);
   assert.doesNotMatch(routeSource, /setNoStoreHeaders/);
