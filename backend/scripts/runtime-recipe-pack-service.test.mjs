@@ -76,12 +76,18 @@ test('runtime recipe pack service reads produced-by and used-in refs from compil
 test('runtime recipe pack service builds map-backed query indexes', () => {
   const source = readFileSync(join(backendRoot, 'src/services/runtime-recipe-pack.service.ts'), 'utf8').replace(/\r\n/g, '\n');
   const abiSource = readFileSync(join(backendRoot, 'src/services/native-runtime-pack-abi.ts'), 'utf8').replace(/\r\n/g, '\n');
+  const readerSource = readFileSync(join(backendRoot, 'src/services/runtime-recipe-pack-reader.service.ts'), 'utf8').replace(/\r\n/g, '\n');
   assert.match(abiSource, /NATIVE_RUNTIME_PACK_MAGIC = 'NNEIBIN\\0'/);
   assert.match(abiSource, /NATIVE_RUNTIME_PACK_HEADER_BYTES = 24/);
   assert.match(abiSource, /RUNTIME_RECIPE_PACK_SCHEMA = 'neonei\/recipe-pack\/current'/);
   assert.match(abiSource, /RUNTIME_RECIPE_PACK_PAYLOAD_MAGIC = 'NEIRCP1\\0'/);
-  assert.match(source, /from '\.\/native-runtime-pack-abi'/);
-  assert.match(source, /unwrapNativeRuntimePackEnvelope/);
+  assert.match(source, /from '\.\/runtime-recipe-pack-reader\.service'/);
+  assert.match(source, /parseRuntimeRecipePack\(fs\.readFileSync\(packPath\)\)/);
+  assert.match(readerSource, /parseRuntimeRecipePack\(buffer: Buffer\): ParsedRuntimeRecipePack/);
+  assert.match(readerSource, /unwrapNativeRuntimePackEnvelope/);
+  assert.match(readerSource, /RUNTIME_RECIPE_PACK_PAYLOAD_MAGIC/);
+  assert.doesNotMatch(source, /unwrapNativeRuntimePackEnvelope/);
+  assert.doesNotMatch(source, /RUNTIME_RECIPE_PACK_PAYLOAD_MAGIC|RUNTIME_RECIPE_PACK_PAYLOAD_VERSION/);
   assert.doesNotMatch(source, /const NATIVE_BINARY_PACK_MAGIC|const COMPACT_RECIPE_MAGIC|const RECIPE_PACK_SCHEMA/);
   assert.doesNotMatch(source, /magic !== NATIVE_BINARY_PACK_MAGIC[\s\S]*return buffer/);
   assert.match(source, /itemById: Map<string, RuntimeRecipeItemIndexEntry>/);
