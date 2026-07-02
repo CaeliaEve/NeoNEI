@@ -735,33 +735,6 @@ export interface EcosystemOverview {
   lanes: EcosystemLaneStatus[];
 }
 
-export interface RenderContractAssetEntry {
-  assetId: string;
-  variantKey: string;
-  sourceType: string | null;
-  family: string | null;
-  mode: string | null;
-  renderMode: string | null;
-  animationMode: string | null;
-  captureMethod: string | null;
-  captureSource: string | null;
-  rendererFamily: string | null;
-  playbackHint: string | null;
-  staticFile: string | null;
-  primaryArtifact: string | null;
-  spriteMetadataFile: string | null;
-  nativeSpriteAtlasFile: string | null;
-  contractFile: string | null;
-  atlasGroup: string | null;
-  frameCount: number | null;
-  frameDurationMs: number | null;
-  layers: Array<Record<string, unknown>>;
-  rendererContract: Record<string, unknown> | null;
-  shaderContract: Record<string, unknown> | null;
-  captureContract: Record<string, unknown> | null;
-}
-
-
 export interface NativeRenderBackendInfo {
   schemaVersion?: string;
   backend?: string | null;

@@ -8,7 +8,7 @@ import {
   type AnimatedAtlasAssetEntry,
   type NativeSpriteMetadata,
 } from './api/images';
-import { api, type Item, type PageRichMediaManifest } from './api';
+import type { Item, PageRichMediaManifest } from './api';
 import { getNativeCaptureByAssetId, getNativeRenderFactsForItem } from './distDataRuntime';
 import type { NativeFramebufferCaptureEntry } from '../runtime/types';
 import { resolveOpfsCachedAssetUrl } from './opfsAssetCache';
@@ -62,10 +62,7 @@ const animationProbeInFlight = new Map<string, Promise<boolean>>();
 const spriteMetadataCache = new Map<string, NativeSpriteMetadata | null>();
 const spriteMetadataInFlight = new Map<string, Promise<NativeSpriteMetadata | null>>();
 const animatedAtlasCache = new Map<string, AnimatedAtlasAssetEntry | null>();
-const animatedAtlasInFlight = new Map<string, Promise<AnimatedAtlasAssetEntry | null>>();
 const primedRenderHintCache = new Map<string, NonNullable<Item['renderHint']> | null>();
-const renderContractCache = new Map<string, Awaited<ReturnType<typeof api.getRenderContractAsset>> | null>();
-const renderContractInFlight = new Map<string, Promise<Awaited<ReturnType<typeof api.getRenderContractAsset>> | null>>();
 const imageAssetCache = new Map<string, HTMLImageElement>();
 const imageAssetInFlight = new Map<string, Promise<HTMLImageElement>>();
 const warmImageAssetHistory = new Map<string, true>();
@@ -658,56 +655,8 @@ export const fetchAnimatedAtlasEntry = async (
     return animatedAtlasCache.get(renderAssetRef) ?? null;
   }
 
-  const inFlight = animatedAtlasInFlight.get(renderAssetRef);
-  if (inFlight) {
-    return inFlight;
-  }
-
-  const request = runAnimationWork(async () => {
-    try {
-      const entry = await api.getAnimatedAtlasEntry(renderAssetRef);
-      animatedAtlasCache.set(renderAssetRef, entry);
-      return entry;
-    } catch {
-      animatedAtlasCache.set(renderAssetRef, null);
-      return null;
-    } finally {
-      animatedAtlasInFlight.delete(renderAssetRef);
-    }
-  });
-
-  animatedAtlasInFlight.set(renderAssetRef, request);
-  return request;
-};
-
-export const fetchRenderContractAsset = async (
-  renderAssetRef?: string | null,
-): Promise<Awaited<ReturnType<typeof api.getRenderContractAsset>> | null> => {
-  if (!renderAssetRef) return null;
-  if (renderContractCache.has(renderAssetRef)) {
-    return renderContractCache.get(renderAssetRef) ?? null;
-  }
-
-  const inFlight = renderContractInFlight.get(renderAssetRef);
-  if (inFlight) {
-    return inFlight;
-  }
-
-  const request = runAnimationWork(async () => {
-    try {
-      const entry = await api.getRenderContractAsset(renderAssetRef);
-      renderContractCache.set(renderAssetRef, entry);
-      return entry;
-    } catch {
-      renderContractCache.set(renderAssetRef, null);
-      return null;
-    } finally {
-      renderContractInFlight.delete(renderAssetRef);
-    }
-  });
-
-  renderContractInFlight.set(renderAssetRef, request);
-  return request;
+  animatedAtlasCache.set(renderAssetRef, null);
+  return null;
 };
 
 export const primeAnimatedAtlasManifest = (
@@ -809,65 +758,7 @@ export const probeAnimationSupport = async (baseUrl: string, renderAssetRef?: st
       }
     }
 
-    const renderContract = renderAssetRef ? await fetchRenderContractAsset(renderAssetRef) : null;
-    if (renderContract) {
-      const captureContract = renderContract.captureContract as { multiFrame?: unknown; frameCount?: unknown } | null;
-      const rendererContract = renderContract.rendererContract as {
-        needsMultipleFrames?: unknown;
-        shouldPreferNativeSpriteAnimation?: unknown;
-        nativeFrameCount?: unknown;
-      } | null;
-      const hasAuxNativeSprite =
-        renderContract.animationMode === 'native_sprite_aux'
-        || (
-          typeof renderContract.spriteMetadataFile === 'string'
-          && renderContract.spriteMetadataFile.length > 0
-          && typeof renderContract.nativeSpriteAtlasFile === 'string'
-          && renderContract.nativeSpriteAtlasFile.length > 0
-          && Number(rendererContract?.nativeFrameCount ?? renderContract.frameCount ?? 0) > 1
-        );
 
-      if (
-        renderContract.renderMode === 'native_sprite'
-        && typeof renderContract.frameCount === 'number'
-        && renderContract.frameCount > 1
-      ) {
-        animationProbeCache.set(baseUrl, true);
-        return true;
-      }
-
-      if (
-        renderContract.renderMode === 'captured_final_atlas'
-        && (
-          renderContract.mode === 'rendered_frames'
-          || (typeof renderContract.frameCount === 'number' && renderContract.frameCount > 1)
-        )
-      ) {
-        animationProbeCache.set(baseUrl, true);
-        return true;
-      }
-
-      const explicitStatic =
-        (renderContract.animationMode === 'none' && !hasAuxNativeSprite)
-        || renderContract.playbackHint === 'static'
-        || (
-          typeof renderContract.frameCount === 'number'
-          && renderContract.frameCount <= 1
-          && renderContract.animationMode !== 'native_sprite'
-          && renderContract.animationMode !== 'native_sprite_aux'
-        )
-        || (captureContract?.multiFrame === false && rendererContract?.needsMultipleFrames === false && !hasAuxNativeSprite)
-        || (
-          rendererContract?.shouldPreferNativeSpriteAnimation === false
-          && !hasAuxNativeSprite
-          && Number(rendererContract?.nativeFrameCount ?? 0) <= 1
-        );
-
-      if (explicitStatic) {
-        animationProbeCache.set(baseUrl, false);
-        return false;
-      }
-    }
 
     const hasAnimation = false;
     animationProbeCache.set(baseUrl, hasAnimation);

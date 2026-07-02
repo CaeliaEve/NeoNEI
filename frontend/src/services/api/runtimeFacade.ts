@@ -1,5 +1,4 @@
 ﻿import type {
-  AnimatedAtlasAssetEntry,
   BrowserAtlasIndexResponse,
   BrowserByIdsPackResponse,
   BrowserDefaultCatalogResponse,
@@ -43,7 +42,6 @@
   RecipeTypeDTO,
   RecipeUiPayload,
   RecipeVariantGroup,
-  RenderContractAssetEntry,
   SearchItemsFastOptions,
   MultiblockBlueprint,
   indexedItem,
@@ -60,7 +58,6 @@
 } from '../../runtime/types';
 import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../../runtime/patternClient';
 import { specialDataRuntimeClient } from '../../runtime/specialDataClient';
-import { renderContractRuntimeClient } from '../../runtime/renderContractClient';
 import { indexedRecipeRuntimeClient, type CurrentRecipePageResponse, type IndexedMachineRecipesResponse } from '../../runtime/indexedRecipeClient';
 import { itemRuntimeClient, type ItemMachinesResponse } from '../../runtime/itemClient';
 import {
@@ -282,13 +279,6 @@ export const api = {
     return specialDataRuntimeClient.getEcosystemOverview();
   },
 
-  async getAnimatedAtlasEntry(assetId: string): Promise<AnimatedAtlasAssetEntry> {
-    return renderContractRuntimeClient.getAnimatedAtlasEntry(assetId);
-  },
-
-  async getRenderContractAsset(assetId: string): Promise<RenderContractAssetEntry> {
-    return renderContractRuntimeClient.getAsset(assetId);
-  },
 
   async getBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
     return textureRuntimeClient.getBrowserAtlasIndex();

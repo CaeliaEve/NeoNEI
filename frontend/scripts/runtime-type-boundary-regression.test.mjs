@@ -15,9 +15,9 @@ const browserProjectionSource = fs.readFileSync('src/runtime/browserProjection.t
 const browserSearchProjectionSource = fs.readFileSync('src/runtime/browserSearchProjection.ts', 'utf8').replace(/\r\n/g, '\n');
 const patternClientSource = fs.readFileSync('src/runtime/patternClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const specialDataClientSource = fs.readFileSync('src/runtime/specialDataClient.ts', 'utf8').replace(/\r\n/g, '\n');
-const renderContractClientSource = fs.readFileSync('src/runtime/renderContractClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const indexedRecipeClientSource = fs.readFileSync('src/runtime/indexedRecipeClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const itemClientSource = fs.readFileSync('src/runtime/itemClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const animationBudgetSource = fs.readFileSync('src/services/animationBudget.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\\r\\n/g, '\\n');
 const runtimeSessionSource = fs.readFileSync('src/services/api/runtimeSession.ts', 'utf8').replace(/\\r\\n/g, '\\n');
 const runtimeFacadeSource = fs.readFileSync('src/services/api/runtimeFacade.ts', 'utf8').replace(/\\r\\n/g, '\\n');
@@ -175,14 +175,13 @@ test('core recipe and item runtime contracts live outside the legacy api facade'
   );
 });
 
-test('special data and render contracts live outside the legacy api facade', () => {
+test('special data contracts live outside the legacy api facade', () => {
   for (const token of [
     'export interface GTDiagramsOverview {',
     'export interface ForestryGeneticsOverview {',
     'export interface MultiblockBlueprint {',
     'export interface PatternExportData {',
     'export interface EcosystemOverview {',
-    'export interface RenderContractAssetEntry {',
   ]) {
     assert.equal(runtimeTypesSource.includes(token), true, `missing special runtime contract: ${token}`);
     assert.equal(apiSource.includes(token), false, `services/api.ts should not re-own ${token}`);
@@ -277,37 +276,26 @@ test('special data client lives outside the legacy api facade', () => {
     'services/api.ts should not own forestry genetics overview HTTP calls',
   );
 });
-test('render contract client lives outside the legacy api facade', () => {
+test('render contract lab client is retired from frontend runtime', () => {
   assert.equal(
-    renderContractClientSource.includes("from './types';"),
-    true,
-    'render contract client should consume contracts from runtime/types',
-  );
-  assert.equal(
-    renderContractClientSource.includes("from './devCompatClient';"),
-    true,
-    'render contract client should keep lab compatibility access behind the runtime dev client',
+    fs.existsSync('src/runtime/renderContractClient.ts'),
+    false,
+    'frontend runtime should not keep a render-contract lab client',
   );
   assert.doesNotMatch(
-    renderContractClientSource,
-    /from '\.\.\/services\/api'/,
-    'render contract client should not import the legacy api facade',
-  );
-  for (const token of [
-    'getAnimatedAtlasEntry',
-    'getAsset',
-  ]) {
-    assert.equal(renderContractClientSource.includes(token), true, `missing render contract client method: ${token}`);
-  }
-  assert.equal(
-    apiCompatibilityFacadeSource.includes('renderContractRuntimeClient.getAnimatedAtlasEntry(assetId)'),
-    true,
-    'api compatibility facade should delegate animated atlas reads to the runtime render contract client',
+    runtimeTypesSource,
+    /RenderContractAssetEntry/,
+    'render-contract asset DTO should not remain in public runtime types after the lab client is retired',
   );
   assert.doesNotMatch(
-    renderContractClientSource,
-    /getRecipeUiPayload|RecipeUiPayload|\/render-contract\/ui-payload/,
-    'recipe UI payload must be served from compiled runtime artifacts, not render-contract lab fallback',
+    apiCompatibilityFacadeSource,
+    /renderContractRuntimeClient|getAnimatedAtlasEntry|getRenderContractAsset|\/render-contract\/(asset|animated-atlas|ui-payload)/,
+    'api facade should not expose render-contract lab asset reads',
+  );
+  assert.doesNotMatch(
+    animationBudgetSource,
+    /api\.getAnimatedAtlasEntry|api\.getRenderContractAsset|fetchRenderContractAsset|renderContractCache|renderContractInFlight/,
+    'animation probing should use native runtime facts, captures, sprite metadata, or primed manifests only',
   );
 });
 test('indexed recipe client lives outside the legacy api facade', () => {

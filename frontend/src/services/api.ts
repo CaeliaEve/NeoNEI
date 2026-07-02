@@ -69,7 +69,6 @@ export type {
   RecipeTypeDTO,
   RecipeUiPayload,
   RecipeVariantGroup,
-  RenderContractAssetEntry,
   RuntimeHealthSummary,
   SearchItemsFastOptions,
   MultiblockBlueprint,
