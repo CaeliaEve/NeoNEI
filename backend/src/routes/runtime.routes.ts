@@ -5,20 +5,18 @@ import {
   setNoStoreHeaders,
   setPublicCacheHeaders,
 } from '../utils/http-cache';
-import { getRuntimeDiagnosticsSummary } from '../services/runtime-diagnostics-summary.service';
-import { getRuntimeHealthSummary } from '../services/runtime-health-summary.service';
 import { getCurrentRuntimeContractIndex } from '../services/runtime-contract-index.service';
 import { getCurrentRuntimeManifestDelivery } from '../services/runtime-manifest-delivery.service';
+import {
+  getCurrentRuntimeDiagnosticsDelivery,
+  getCurrentRuntimeHealthDelivery,
+} from '../services/runtime-observability-delivery.service';
 
 const router = Router();
 
 router.get('/health', (_req, res) => {
   setNoStoreHeaders(res);
-  const summary = getRuntimeHealthSummary();
-  res.json({
-    ...summary,
-    contractVersion: 'runtime-contracts/current',
-  });
+  res.json(getCurrentRuntimeHealthDelivery());
 });
 
 router.get('/manifest',
@@ -42,7 +40,7 @@ router.get('/contracts', (_req, res) => {
 router.get('/diagnostics',
   asyncHandler(async (_req, res) => {
     setNoStoreHeaders(res);
-    res.json(getRuntimeDiagnosticsSummary());
+    res.json(getCurrentRuntimeDiagnosticsDelivery());
   }),
 );
 

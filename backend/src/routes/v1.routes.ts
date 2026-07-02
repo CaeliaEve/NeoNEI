@@ -7,16 +7,13 @@ import {
 } from '../utils/http-cache';
 import { getApiV1RuntimeContractIndex } from '../services/runtime-contract-index.service';
 import { getApiV1RuntimeManifestDelivery } from '../services/runtime-manifest-delivery.service';
+import { getApiV1RuntimeHealthDelivery } from '../services/runtime-observability-delivery.service';
 
 const router = Router();
 
 router.get('/health', (_req, res) => {
   setNoStoreHeaders(res);
-  res.json({
-    status: 'ok',
-    version: 1,
-    timestamp: new Date().toISOString(),
-  });
+  res.json(getApiV1RuntimeHealthDelivery());
 });
 
 router.get(
