@@ -26,7 +26,7 @@ test('dist-data recipe runtime uses binary recipes.bin as the production index p
     'recipe runtime must recognize the compact recipe payload magic');
 });
 
-test('dist-data recipe runtime routes binary UI shard entries to canonical recipe shards', () => {
+test('dist-data recipe runtime routes binary UI shard entries through canonical declared paths only', () => {
   assert.match(
     runtimeSource,
     /function normalizeRecipeUiPayloadPath\(path: string\): string/,
@@ -34,13 +34,13 @@ test('dist-data recipe runtime routes binary UI shard entries to canonical recip
   );
   assert.match(
     runtimeSource,
-    /LEGACY_RUST_RECIPE_UI_SHARD_PREFIX = "rust\/recipe-ui-payload-shards\/"/,
-    'runtime should recognize stale rust shard prefixes emitted by older binary packs',
+    /const payloadPath = entry \? normalizeRecipeUiPayloadPath\(entry\.path\) : ""/,
+    'runtime must use the recipe-pack declared shard path directly',
   );
-  assert.match(
+  assert.doesNotMatch(
     runtimeSource,
-    /CURRENT_RECIPE_UI_SHARD_PREFIX = "recipes\/ui-payload-shards\/"/,
-    'runtime should resolve stale shard prefixes to the canonical dist-data recipe shard tree',
+    /LEGACY_RUST_RECIPE_UI_SHARD_PREFIX|CURRENT_RECIPE_UI_SHARD_PREFIX|resolveRecipeUiPayloadPath|sha1Hex|leftRotate/,
+    'runtime must not rewrite stale recipe UI shard prefixes through legacy compatibility logic',
   );
 });
 

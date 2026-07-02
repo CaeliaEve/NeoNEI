@@ -283,7 +283,6 @@ if (existsSync(manifestPath)) {
 
 const requiredManifestFields = ["schemaVersion", "generatedAt", "source", "sourceRepository", "runtime", "files"];
 const requiredFiles = [
-  "searchAll",
   "searchAliasIndex",
   "semanticItems",
   "semanticFacets",
@@ -380,9 +379,15 @@ function validateBrowserCatalog() {
 }
 
 function validateSearchPack() {
-  const relativePath = manifest?.files?.searchAll;
+  const binaryRelativePath = manifest?.files?.rustSearchBin;
+  const relativePath = manifest?.files?.rustSearchPack;
   const aliasRelativePath = manifest?.files?.searchAliasIndex;
   const result = {};
+  if (hasString(binaryRelativePath)) {
+    result.source = "rustSearchBin";
+    result.path = binaryRelativePath;
+    return result;
+  }
   if (!hasString(relativePath)) return null;
   const payload = readJson(join(distDataDir, relativePath));
   if (!hasString(payload.schemaVersion)) {

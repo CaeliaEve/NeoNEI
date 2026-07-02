@@ -15,7 +15,6 @@
     "files": {
       "type": "object",
       "required": [
-        "searchAll",
         "browserCatalog",
         "browserGroups",
         "recipeCategories",

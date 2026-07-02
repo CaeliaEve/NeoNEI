@@ -589,19 +589,22 @@ const rustBrowserPack = parseBrowserBin(files.rustBrowserBin);
 const rustGroupPack = parseGroupsBin(files.rustGroupsBin);
 const rustTexturePack = parseTexturesBin(files.rustTextureBin);
 const rustSearchPack = parseSearchBin(files.rustSearchBin);
-const catalogPayload = rustBrowserPack?.items ? rustBrowserPack : readJson(files.browserCatalog ?? "browser/item-catalog.json");
-const groupsPayload = rustGroupPack?.groups ? rustGroupPack : readJson(files.browserGroups ?? "browser/group-index.json");
-const atlasPayload = rustTexturePack?.items ? rustTexturePack : readJson(files.browserAtlasIndex ?? "textures/browser-atlas-index.json");
-const searchPayload = rustSearchPack?.items ? rustSearchPack : readJson(files.searchAll ?? "search/all.json");
+const nativeRuntimeSourceFailures = [];
+function requireNativePayload(name, pack, member, expectedPath) {
+  if (Array.isArray(pack?.[member]) && pack[member].length > 0) return pack;
+  nativeRuntimeSourceFailures.push(`${name} missing ${expectedPath}`);
+  return member === "groups" ? { groups: [] } : { items: [] };
+}
+const catalogPayload = requireNativePayload("browser", rustBrowserPack, "items", files.rustBrowserBin ?? "rust/browser.bin");
+const groupsPayload = requireNativePayload("groups", rustGroupPack, "groups", files.rustGroupsBin ?? "rust/groups.bin");
+const atlasPayload = requireNativePayload("atlas", rustTexturePack, "items", files.rustTextureBin ?? "rust/textures.bin");
+const searchPayload = requireNativePayload("search", rustSearchPack, "items", files.rustSearchBin ?? "rust/search.bin");
 const runtimeSources = {
-  browser: rustBrowserPack?.items ? "rust/browser.bin" : "legacy/browser-catalog",
-  groups: rustGroupPack?.groups ? "rust/groups.bin" : "legacy/browser-groups",
-  atlas: rustTexturePack?.items ? "rust/textures.bin" : "legacy/browser-atlas-index",
-  search: rustSearchPack?.items ? "rust/search.bin" : "legacy/search-all",
+  browser: files.rustBrowserBin ?? "rust/browser.bin",
+  groups: files.rustGroupsBin ?? "rust/groups.bin",
+  atlas: files.rustTextureBin ?? "rust/textures.bin",
+  search: files.rustSearchBin ?? "rust/search.bin",
 };
-const nativeRuntimeSourceFailures = Object.entries(runtimeSources)
-  .filter(([, source]) => source.startsWith("legacy/"))
-  .map(([name, source]) => `${name} uses ${source}`);
 
 const catalogItems = Array.isArray(catalogPayload.items) ? catalogPayload.items : [];
 const groups = Array.isArray(groupsPayload.groups) ? groupsPayload.groups : [];

@@ -25,7 +25,6 @@ export type DistDataManifest = {
     rustUiStringsBin?: string;
     rustUiAssetsManifest?: string;
     rustUiPackReport?: string;
-    searchAll?: string;
     browserCatalog?: string;
     hiddenBrowserCatalog?: string;
     browserGroups?: string;

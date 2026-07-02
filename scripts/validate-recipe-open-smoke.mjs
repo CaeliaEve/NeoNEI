@@ -29,6 +29,156 @@ function firstArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function readRuntimeBin(distDataDir, relativePath, label) {
+  if (!hasText(relativePath)) {
+    throw new Error(`dist-data manifest must declare ${label}`);
+  }
+  const filePath = join(distDataDir, relativePath);
+  if (!existsSync(filePath)) {
+    throw new Error(`Missing native runtime pack ${label}: ${filePath}`);
+  }
+  const bytes = readFileSync(filePath);
+  if (bytes.subarray(0, 8).toString("utf8") !== "NNEIBIN\0") {
+    throw new Error(`Invalid native runtime binary magic for ${label}: ${filePath}`);
+  }
+  const schemaLength = bytes.readUInt32LE(12);
+  const payloadLength = Number(bytes.readBigUInt64LE(16));
+  const payloadOffset = 24 + schemaLength;
+  return bytes.subarray(payloadOffset, payloadOffset + payloadLength);
+}
+
+function readCompactString(bytes, baseOffset, relativeOffset) {
+  let end = baseOffset + relativeOffset;
+  while (end < bytes.length && bytes[end] !== 0) end += 1;
+  return bytes.subarray(baseOffset + relativeOffset, end).toString("utf8");
+}
+
+function parseCompactStrings(bytes, offset, stringCount) {
+  const offsets = [];
+  for (let index = 0; index < stringCount; index += 1) {
+    offsets.push(bytes.readUInt32LE(offset + index * 4));
+  }
+  return offsets;
+}
+
+function parseSearchBin(distDataDir, relativePath) {
+  const bytes = readRuntimeBin(distDataDir, relativePath, "rustSearchBin");
+  if (bytes.subarray(0, 8).toString("utf8") !== "NEISRC2\0") {
+    throw new Error(`Invalid search.bin payload: ${relativePath}`);
+  }
+  const rowCount = bytes.readUInt32LE(12);
+  const stringCount = bytes.readUInt32LE(16);
+  const rowStride = bytes.readUInt32LE(20);
+  const offsets = parseCompactStrings(bytes, 24, stringCount);
+  const rowOffset = 24 + stringCount * 4;
+  const stringsDataBase = rowOffset + rowCount * rowStride * 4;
+  const stringAt = (ref) => readCompactString(bytes, stringsDataBase, offsets[ref] ?? 0);
+  const items = [];
+  for (let row = 0; row < rowCount; row += 1) {
+    const base = rowOffset + row * rowStride * 4;
+    items.push({
+      itemId: stringAt(bytes.readUInt32LE(base)),
+      publicItemId: stringAt(bytes.readUInt32LE(base + 4)),
+      localizedName: stringAt(bytes.readUInt32LE(base + 8)),
+      modId: stringAt(bytes.readUInt32LE(base + 12)),
+      family: rowStride > 13 ? stringAt(bytes.readUInt32LE(base + 52)) : "",
+      groupKey: rowStride > 14 ? stringAt(bytes.readUInt32LE(base + 56)) : "",
+      representativeItemId: rowStride > 15 ? stringAt(bytes.readUInt32LE(base + 60)) : "",
+    });
+  }
+  return { items };
+}
+
+function recipeString(strings, index) {
+  return strings[index] ?? "";
+}
+
+function parseRecipeBin(distDataDir, relativePath) {
+  const bytes = readRuntimeBin(distDataDir, relativePath, "rustRecipeBin");
+  if (bytes.subarray(0, 8).toString("utf8") !== "NEIRCP1\0") {
+    throw new Error(`Invalid recipes.bin payload: ${relativePath}`);
+  }
+  const version = bytes.readUInt32LE(8);
+  if (version !== 1) {
+    throw new Error(`Unsupported recipes.bin version: ${version}`);
+  }
+  const stringCount = bytes.readUInt32LE(12);
+  const itemCount = bytes.readUInt32LE(16);
+  const refCount = bytes.readUInt32LE(20);
+  const uiCount = bytes.readUInt32LE(24);
+  const categoryCount = bytes.readUInt32LE(28);
+  const categorySourceCount = bytes.readUInt32LE(32);
+  const itemStride = bytes.readUInt32LE(36);
+  const refStride = bytes.readUInt32LE(40);
+  const uiStride = bytes.readUInt32LE(44);
+  const categoryStride = bytes.readUInt32LE(48);
+  if (itemStride < 5 || refStride < 3 || uiStride < 7 || categoryStride < 5) {
+    throw new Error(`Invalid recipes.bin strides: item=${itemStride}, ref=${refStride}, ui=${uiStride}, category=${categoryStride}`);
+  }
+
+  let cursor = 52;
+  const stringOffsetsStart = cursor;
+  cursor += stringCount * 4;
+  const itemRowsStart = cursor;
+  cursor += itemCount * itemStride * 4;
+  const refRowsStart = cursor;
+  cursor += refCount * refStride * 4;
+  const uiRowsStart = cursor;
+  cursor += uiCount * uiStride * 4;
+  cursor += categoryCount * categoryStride * 4;
+  cursor += categorySourceCount * 4;
+  const stringsStart = cursor;
+  if (stringsStart > bytes.length) {
+    throw new Error(`recipes.bin table exceeds payload length: ${stringsStart}/${bytes.length}`);
+  }
+
+  const stringOffsets = parseCompactStrings(bytes, stringOffsetsStart, stringCount);
+  const strings = stringOffsets.map((offset) => readCompactString(bytes, stringsStart, offset));
+  const readRowValue = (start, row, stride, column) => bytes.readUInt32LE(start + (row * stride + column) * 4);
+  const readRef = (row) => {
+    if (row < 0 || row >= refCount) {
+      return { recipeId: "", categoryId: "", displayName: "" };
+    }
+    return {
+      recipeId: recipeString(strings, readRowValue(refRowsStart, row, refStride, 0)),
+      categoryId: recipeString(strings, readRowValue(refRowsStart, row, refStride, 1)),
+      displayName: recipeString(strings, readRowValue(refRowsStart, row, refStride, 2)),
+    };
+  };
+
+  const itemIndex = [];
+  for (let row = 0; row < itemCount; row += 1) {
+    const itemId = recipeString(strings, readRowValue(itemRowsStart, row, itemStride, 0));
+    if (!itemId) continue;
+    const producedStart = readRowValue(itemRowsStart, row, itemStride, 1);
+    const producedCount = readRowValue(itemRowsStart, row, itemStride, 2);
+    const usedStart = readRowValue(itemRowsStart, row, itemStride, 3);
+    const usedCount = readRowValue(itemRowsStart, row, itemStride, 4);
+    itemIndex.push({
+      itemId,
+      producedBy: Array.from({ length: producedCount }, (_, offset) => readRef(producedStart + offset)).filter((entry) => entry.recipeId),
+      usedIn: Array.from({ length: usedCount }, (_, offset) => readRef(usedStart + offset)).filter((entry) => entry.recipeId),
+    });
+  }
+
+  const uiPayloadIndex = [];
+  for (let row = 0; row < uiCount; row += 1) {
+    const recipeId = recipeString(strings, readRowValue(uiRowsStart, row, uiStride, 0));
+    const path = recipeString(strings, readRowValue(uiRowsStart, row, uiStride, 1));
+    if (!recipeId || !path) continue;
+    uiPayloadIndex.push({
+      recipeId,
+      path,
+      payloadKey: recipeString(strings, readRowValue(uiRowsStart, row, uiStride, 2)) || undefined,
+      familyKey: recipeString(strings, readRowValue(uiRowsStart, row, uiStride, 3)) || undefined,
+      recipeType: recipeString(strings, readRowValue(uiRowsStart, row, uiStride, 4)) || undefined,
+      machineType: recipeString(strings, readRowValue(uiRowsStart, row, uiStride, 5)) || undefined,
+    });
+  }
+
+  return { itemIndex, uiPayloadIndex };
+}
+
 function fail(failures, code, message, details = {}) {
   failures.push({ code, message, details });
 }
@@ -81,19 +231,10 @@ function main() {
     throw new Error(`dist-data manifest not found: ${manifestPath}`);
   }
   const manifest = readJson(manifestPath);
-  const rustRecipePackPath = join(distDataDir, manifest.files?.rustRecipePack ?? "rust/recipe-pack.json");
-  const rustSearchPackPath = join(distDataDir, manifest.files?.rustSearchPack ?? "rust/search-pack.json");
-  const hasRustRecipePack = existsSync(rustRecipePackPath);
-  const recipePack = hasRustRecipePack ? readJson(rustRecipePackPath) : null;
-  const searchPack = existsSync(rustSearchPackPath)
-    ? readJson(rustSearchPackPath)
-    : readJson(join(distDataDir, manifest.files?.searchAll ?? "search/all.json"));
-  const itemIndexItems = hasRustRecipePack
-    ? firstArray(recipePack.itemIndex)
-    : firstArray(readJson(join(distDataDir, manifest.files?.recipeItemIndex ?? "recipes/item-index.json")).items);
-  const recipes = hasRustRecipePack
-    ? firstArray(recipePack.uiPayloadIndex)
-    : firstArray(readJson(join(distDataDir, manifest.files?.recipeUiPayloadIndex ?? "recipes/ui-payload-index.json")).recipes);
+  const recipePack = parseRecipeBin(distDataDir, manifest.files?.rustRecipeBin);
+  const searchPack = parseSearchBin(distDataDir, manifest.files?.rustSearchBin);
+  const itemIndexItems = firstArray(recipePack.itemIndex);
+  const recipes = firstArray(recipePack.uiPayloadIndex);
   const searchItems = firstArray(searchPack.items);
   const payloadEntryByRecipeId = new Map(recipes.map((entry) => [entry.recipeId, entry]));
   const shardCache = new Map();
@@ -164,7 +305,7 @@ function main() {
     distDataDir,
     source: manifest.source ?? null,
     sourceRepository: manifest.sourceRepository ?? null,
-    runtimeSource: hasRustRecipePack ? "rust/recipe-pack" : "legacy/recipe-index",
+    runtimeSource: "rust/native-binary",
     sampleLimit,
     checkedCount: checked.length,
     shardCount: shardCache.size,

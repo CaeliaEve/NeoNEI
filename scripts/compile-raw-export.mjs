@@ -3440,7 +3440,6 @@ function compileRawExport(inputDir, outputDir) {
       rustSearchPack: "rust/search-pack.json",
       rustRecipePack: "rust/recipe-pack.json",
       rustTexturePack: "rust/texture-pack.json",
-      searchAll: "search/all.json",
       searchAliasIndex: "search/alias-index.json",
       semanticItems: "items/semantic-items.json",
       semanticFacets: "items/semantic-facets.json",
@@ -3474,7 +3473,6 @@ function compileRawExport(inputDir, outputDir) {
       recipeHandlerFamilies: "validation/recipe-handler-families.json",
     },
   });
-  writeJsonCompact(join(outputDir, "search", "all.json"), { schemaVersion: "neonei/search-v3-json/v1", items: searchItems });
   writeJsonCompact(join(outputDir, "search", "alias-index.json"), searchAliasIndex);
   writeJsonCompact(join(outputDir, "items", "semantic-items.json"), { schemaVersion: "neonei/semantic-items/v1", items: semanticItems });
   writeJsonCompact(join(outputDir, "items", "semantic-facets.json"), { schemaVersion: "neonei/semantic-facets/v1", facets: semanticFacets });
