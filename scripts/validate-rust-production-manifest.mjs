@@ -195,8 +195,8 @@ if (uiTemplateHeader) {
   if (uiTemplateHeader.magic !== 'NEIUIT1\0') {
     fail(failures, 'UI_TEMPLATE_PACK_MAGIC_MISMATCH', 'UI template pack has wrong native magic', { magic: uiTemplateHeader.magic });
   }
-  if (uiTemplateHeader.version !== 3 || uiTemplateHeader.templateStride !== 19 || uiTemplateHeader.slotStride !== 6 || uiTemplateHeader.textStride !== 5 || uiTemplateHeader.rectStride !== 12) {
-    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V3_ACTION_IR', 'UI template pack is not the v3 action-rect native format', uiTemplateHeader);
+  if (uiTemplateHeader.version !== 5 || uiTemplateHeader.templateStride !== 19 || uiTemplateHeader.slotStride !== 12 || uiTemplateHeader.textStride !== 7 || uiTemplateHeader.rectStride !== 14) {
+    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V5_GEOMETRY_ABI', 'UI template pack is not the v5 geometry ABI native format', uiTemplateHeader);
   }
 }
 
@@ -204,8 +204,17 @@ const uiPackReportPath = files.rustUiPackReport ? join(distDataDir, files.rustUi
 const uiPackReport = uiPackReportPath && existsSync(uiPackReportPath) ? readJson(uiPackReportPath) : null;
 const uiPackFormat = uiPackReport?.format ?? {};
 if (uiPackReport) {
-  if (uiPackFormat.templatePackVersion !== 3 || uiPackFormat.rectStride !== 12 || uiPackFormat.hotspotActionFields !== true) {
-    fail(failures, 'UI_PACK_REPORT_MISSING_V3_ACTION_IR', 'UI pack report does not declare v3 hotspot action IR capability', { format: uiPackFormat });
+  const rectGeometryFields = Array.isArray(uiPackFormat.rectGeometryFields) ? uiPackFormat.rectGeometryFields : [];
+  if (
+    uiPackFormat.templatePackVersion !== 5
+    || uiPackFormat.slotStride !== 12
+    || uiPackFormat.textStride !== 7
+    || uiPackFormat.rectStride !== 14
+    || uiPackFormat.hotspotActionFields !== true
+    || !rectGeometryFields.includes('coordinateSpace')
+    || !rectGeometryFields.includes('anchor')
+  ) {
+    fail(failures, 'UI_PACK_REPORT_MISSING_V5_GEOMETRY_ABI', 'UI pack report does not declare v5 rect geometry ABI capability', { format: uiPackFormat });
   }
 }
 

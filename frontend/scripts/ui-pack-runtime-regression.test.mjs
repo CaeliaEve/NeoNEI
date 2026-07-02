@@ -55,7 +55,7 @@ function encodeTemplatePack(strings) {
   const index = new Map(strings.map((value, idx) => [value, idx]));
   const bytes = [];
   bytes.push(...new TextEncoder().encode('NEIUIT1\0'));
-  pushU32(bytes, 4);
+  pushU32(bytes, 5);
   pushU32(bytes, 1);
   pushU32(bytes, 2);
   pushU32(bytes, 1);
@@ -63,8 +63,8 @@ function encodeTemplatePack(strings) {
   pushU32(bytes, 0);
   pushU32(bytes, 19);
   pushU32(bytes, 12);
-  pushU32(bytes, 5);
-  pushU32(bytes, 12);
+  pushU32(bytes, 7);
+  pushU32(bytes, 14);
   const row = [
     index.get('furnace@default') ?? 0,
     index.get('self-test-furnace') ?? 0,
@@ -122,6 +122,8 @@ function encodeTemplatePack(strings) {
   pushI32(bytes, 10);
   pushU32(bytes, 24);
   pushU32(bytes, 8);
+  pushU32(bytes, index.get('nei_pixels') ?? 0);
+  pushU32(bytes, index.get('top-left') ?? 0);
   return encodeBinaryPack('neonei/ui-template-pack/current', new Uint8Array(bytes).buffer);
 }
 
@@ -161,7 +163,7 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
       bytes: templatePack.byteLength,
       envelopeSchema: 'neonei/ui-template-pack/current',
       payloadMagic: 'NEIUIT1_NUL',
-      version: 4,
+      version: 5,
       sections: [],
     },
     {
@@ -221,8 +223,10 @@ function buildNativeUiExportAbiReport({ status = 'ok', overrides = {} } = {}) {
     rawReportStatus: status === 'ok' ? 'ok' : 'blocked',
     layoutCount: 1,
     slotCount: 2,
+    primitiveCount: 1,
     missingSurfaceCount: 0,
     slotBoundsViolationCount: 0,
+    primitiveBoundsViolationCount: 0,
     backgroundBoundsViolationCount: 0,
     coordinateContractViolationCount: 0,
     missingReport: false,
@@ -232,6 +236,7 @@ function buildNativeUiExportAbiReport({ status = 'ok', overrides = {} } = {}) {
     samples: {
       missingSurface: [],
       slotBounds: [],
+      primitiveBounds: [],
       backgroundBounds: [],
       coordinateContract: [],
     },
@@ -335,6 +340,15 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
       slotHeight: 18,
       pitchX: 18,
       pitchY: 18,
+    });
+    assert.deepEqual(runtime.templatesByKey.get('furnace@default')?.textOverlays[0], {
+      text: 'EU/t',
+      x: 80,
+      y: 10,
+      width: 24,
+      height: 8,
+      coordinateSpace: 'nei_pixels',
+      anchor: 'top-left',
     });
     assert.equal(runtime.bindingsByRecipeId.get('r1')?.templateKey, 'furnace@default');
   } finally {

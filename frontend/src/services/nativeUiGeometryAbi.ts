@@ -15,6 +15,13 @@ export interface NativeUiSlotGeometry {
   iconHeight: number;
 }
 
+export interface NativeUiRectGeometry {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 type NativeUiSlotGeometrySource = {
   coordinateSpace?: unknown;
   anchor?: unknown;
@@ -24,6 +31,15 @@ type NativeUiSlotGeometrySource = {
   slotHeight?: unknown;
   pitchX?: unknown;
   pitchY?: unknown;
+};
+
+type NativeUiRectGeometrySource = {
+  coordinateSpace?: unknown;
+  anchor?: unknown;
+  x?: unknown;
+  y?: unknown;
+  width?: unknown;
+  height?: unknown;
 };
 
 function requiredString(value: unknown, field: string, label: string): string {
@@ -81,5 +97,25 @@ export function resolveNativeUiSlotGeometry(
     iconY: y + Math.floor((height - iconHeight) / 2),
     iconWidth,
     iconHeight,
+  };
+}
+
+export function resolveNativeUiRectGeometry(
+  rect: NativeUiRectGeometrySource,
+  label = "Native UI rect",
+): NativeUiRectGeometry {
+  const coordinateSpace = requiredString(rect.coordinateSpace, "coordinateSpace", label);
+  if (coordinateSpace !== NATIVE_UI_COORDINATE_SPACE) {
+    throw new Error(`${label} uses unsupported Native UI coordinateSpace: ${coordinateSpace}`);
+  }
+  const anchor = requiredString(rect.anchor, "anchor", label);
+  if (anchor !== NATIVE_UI_ANCHOR) {
+    throw new Error(`${label} uses unsupported Native UI anchor: ${anchor}`);
+  }
+  return {
+    x: requiredNonNegativeNumber(rect.x, "x", label),
+    y: requiredNonNegativeNumber(rect.y, "y", label),
+    width: requiredPositiveNumber(rect.width, "width", label),
+    height: requiredPositiveNumber(rect.height, "height", label),
   };
 }

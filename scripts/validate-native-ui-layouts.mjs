@@ -134,13 +134,31 @@ const failures = [];
 if (!nativeUiLayoutReport) failures.push('rust native UI layout report is missing');
 if (nativeUiLayoutReport?.status === 'blocked') failures.push('rust native UI layout report is blocked');
 if (!uiPackReport) failures.push('rust UI pack report is missing');
-if (uiPackReport?.format?.templatePackVersion !== 3 || uiPackReport?.format?.rectStride !== 12 || uiPackReport?.format?.hotspotActionFields !== true) {
-  failures.push('rust UI pack report does not declare v3 hotspot action IR');
+const uiPackFormat = uiPackReport?.format ?? {};
+const rectGeometryFields = Array.isArray(uiPackFormat.rectGeometryFields) ? uiPackFormat.rectGeometryFields : [];
+if (
+  uiPackFormat.templatePackVersion !== 5
+  || uiPackFormat.slotStride !== 12
+  || uiPackFormat.textStride !== 7
+  || uiPackFormat.rectStride !== 14
+  || uiPackFormat.hotspotActionFields !== true
+  || !rectGeometryFields.includes('coordinateSpace')
+  || !rectGeometryFields.includes('anchor')
+) {
+  failures.push('rust UI pack report does not declare v5 geometry ABI');
 }
 if (!uiTemplateHeader) failures.push('rust UI template binary pack is missing');
 if (uiTemplateHeader?.error) failures.push(`rust UI template binary pack is invalid: ${uiTemplateHeader.error}`);
-if (uiTemplateHeader && !uiTemplateHeader.error && (uiTemplateHeader.schema !== 'neonei/ui-template-pack/current' || uiTemplateHeader.magic !== 'NEIUIT1\0' || uiTemplateHeader.version !== 3 || uiTemplateHeader.rectStride !== 12)) {
-  failures.push('rust UI template binary pack is not v3 action-rect format');
+if (uiTemplateHeader && !uiTemplateHeader.error && (
+  uiTemplateHeader.schema !== 'neonei/ui-template-pack/current'
+  || uiTemplateHeader.magic !== 'NEIUIT1\0'
+  || uiTemplateHeader.version !== 5
+  || uiTemplateHeader.templateStride !== 19
+  || uiTemplateHeader.slotStride !== 12
+  || uiTemplateHeader.textStride !== 7
+  || uiTemplateHeader.rectStride !== 14
+)) {
+  failures.push('rust UI template binary pack is not v5 geometry ABI format');
 }
 if (layouts.length === 0) failures.push('handler layout index is empty or missing');
 if (gtLayouts.length === 0) failures.push('no gregtech-machine handler layouts found');

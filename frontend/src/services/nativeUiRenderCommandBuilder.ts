@@ -1,5 +1,6 @@
-﻿import type { NativeTextureSpriteCommand } from "../renderers/native/WebGl2NativeRenderer.ts";
+import type { NativeTextureSpriteCommand } from "../renderers/native/WebGl2NativeRenderer.ts";
 import type { NativeUiDynamicPrimitive, NativeUiSlotCell } from "./nativeUiRuntimeRegistry.ts";
+import { resolveNativeUiRectGeometry } from "./nativeUiGeometryAbi.ts";
 
 export interface NativeUiPreparedBackgroundSource {
   textureKey: string;
@@ -190,11 +191,11 @@ export function pushNativeUiDynamicPrimitiveCommands(
   dpr: number,
   primitive: NativeUiDynamicPrimitive,
 ): void {
-  const x = Math.max(0, Number(primitive.x ?? 0));
-  const y = Math.max(0, Number(primitive.y ?? 0));
-  const width = Math.max(0, Number(primitive.width ?? 0));
-  const height = Math.max(0, Number(primitive.height ?? 0));
-  if (width <= 0 || height <= 0) return;
+  const geometry = resolveNativeUiRectGeometry(
+    primitive,
+    `Native UI dynamic primitive ${primitive.kind ?? primitive.role ?? "indicator"}`,
+  );
+  const { x, y, width, height } = geometry;
 
   const [trackColor, fillColor, borderColor] = nativeUiDynamicPrimitiveColors(primitive);
   const borderSize = Math.min(1, Math.floor(Math.min(width, height) / 2));

@@ -1,4 +1,5 @@
 import type { NativeUiRect, NativeUiSlotCell, NativeUiTextOverlay } from "./nativeUiRuntimeRegistry.ts";
+import { resolveNativeUiRectGeometry } from "./nativeUiGeometryAbi.ts";
 
 export interface NativeUiBoxStyle {
   left: string;
@@ -40,21 +41,23 @@ export function nativeUiSlotCellStyle<TEntry>(
   };
 }
 
-export function nativeUiTextOverlayStyle(overlay: Partial<NativeUiTextOverlay>): NativeUiBoxStyle {
+export function nativeUiTextOverlayStyle(overlay: NativeUiTextOverlay): NativeUiBoxStyle {
+  const geometry = resolveNativeUiRectGeometry(overlay, "Native UI text overlay style");
   return {
-    left: px(overlay.x),
-    top: px(overlay.y),
-    width: px(overlay.width),
-    height: px(overlay.height),
+    left: px(geometry.x),
+    top: px(geometry.y),
+    width: px(geometry.width),
+    height: px(geometry.height),
   };
 }
 
-export function nativeUiRectStyle(rect: Partial<NativeUiRect>): NativeUiBoxStyle {
+export function nativeUiRectStyle(rect: NativeUiRect): NativeUiBoxStyle {
+  const geometry = resolveNativeUiRectGeometry(rect, "Native UI rect style");
   return {
-    left: px(rect.x),
-    top: px(rect.y),
-    width: px(rect.width),
-    height: px(rect.height),
+    left: px(geometry.x),
+    top: px(geometry.y),
+    width: px(geometry.width),
+    height: px(geometry.height),
   };
 }
 

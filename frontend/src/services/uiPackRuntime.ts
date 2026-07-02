@@ -37,6 +37,8 @@ export interface UiPackTextOverlay {
   y: number;
   width: number;
   height: number;
+  coordinateSpace: string;
+  anchor: string;
 }
 
 export interface UiPackRect {
@@ -52,6 +54,8 @@ export interface UiPackRect {
   y: number;
   width: number;
   height: number;
+  coordinateSpace: string;
+  anchor: string;
 }
 
 export interface UiPackTemplate {
@@ -130,13 +134,13 @@ const UI_STRING_PACK_MAGIC = "NEIUIS1\0";
 const UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIT1_NUL";
 const UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIB1_NUL";
 const UI_STRING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIS1_NUL";
-const UI_TEMPLATE_PAYLOAD_VERSION = 4;
+const UI_TEMPLATE_PAYLOAD_VERSION = 5;
 const UI_BINDING_PAYLOAD_VERSION = 1;
 const UI_STRING_PAYLOAD_VERSION = 1;
 const UI_TEMPLATE_ROW_STRIDE_U32 = 19;
 const UI_SLOT_ROW_STRIDE_U32 = 12;
-const UI_TEXT_ROW_STRIDE_U32 = 5;
-const UI_RECT_ROW_STRIDE_U32 = 12;
+const UI_TEXT_ROW_STRIDE_U32 = 7;
+const UI_RECT_ROW_STRIDE_U32 = 14;
 const UI_BINDING_ROW_STRIDE_U32 = 11;
 
 type UiPackEntrypoints = {
@@ -457,6 +461,8 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
       y: readI32(view, rowOffset + 8),
       width: readU32(view, rowOffset + 12),
       height: readU32(view, rowOffset + 16),
+      coordinateSpace: resolveString(strings, readU32(view, rowOffset + 20)),
+      anchor: resolveString(strings, readU32(view, rowOffset + 24)),
     });
   }
   cursor += textBytes;
@@ -473,6 +479,8 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     y: readI32(view, rowOffset + 36),
     width: readU32(view, rowOffset + 40),
     height: readU32(view, rowOffset + 44),
+    coordinateSpace: resolveString(strings, readU32(view, rowOffset + 48)),
+    anchor: resolveString(strings, readU32(view, rowOffset + 52)),
   });
   const hotspots: UiPackRect[] = [];
   for (let index = 0; index < hotspotCount; index += 1) {

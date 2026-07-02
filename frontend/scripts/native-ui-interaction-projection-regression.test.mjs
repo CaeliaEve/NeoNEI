@@ -18,7 +18,7 @@ import {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
 
-test('native UI interaction projection builds clamped design-space styles', () => {
+test('native UI interaction projection enforces design-space geometry ABI', () => {
   assert.deepEqual(nativeUiSlotCellStyle({ x: 4, y: 8, width: 20, height: 18 }), {
     left: '4px',
     top: '8px',
@@ -26,19 +26,21 @@ test('native UI interaction projection builds clamped design-space styles', () =
     height: '18px',
   });
 
-  assert.deepEqual(nativeUiTextOverlayStyle({ x: -4, y: 'bad', width: 24, height: -1 }), {
-    left: '0px',
-    top: '0px',
+  assert.deepEqual(nativeUiTextOverlayStyle({ text: 'EU/t', x: 4, y: 5, width: 24, height: 8, coordinateSpace: 'nei_pixels', anchor: 'top-left' }), {
+    left: '4px',
+    top: '5px',
     width: '24px',
-    height: '0px',
+    height: '8px',
   });
 
-  assert.deepEqual(nativeUiRectStyle({ x: 10, y: 11, width: 12, height: 13 }), {
+  assert.deepEqual(nativeUiRectStyle({ id: 'r', kind: 'info', role: 'hint', label: '', tooltip: '', action: '', itemId: '', payloadKey: '', x: 10, y: 11, width: 12, height: 13, coordinateSpace: 'nei_pixels', anchor: 'top-left' }), {
     left: '10px',
     top: '11px',
     width: '12px',
     height: '13px',
   });
+
+  assert.throws(() => nativeUiTextOverlayStyle({ text: 'bad', x: -4, y: 'bad', width: 24, height: -1 }), /missing required Native UI geometry field: coordinateSpace/);
 });
 
 test('native UI interaction projection owns hotspot labels and actions', () => {

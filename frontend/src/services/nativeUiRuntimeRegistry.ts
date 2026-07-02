@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   UiPackBinding,
   UiPackRect,
   UiPackRuntime,
@@ -6,7 +6,12 @@
   UiPackTemplate,
   UiPackTextOverlay,
 } from "./uiPackRuntime.ts";
-import { resolveNativeUiSlotGeometry } from "./nativeUiGeometryAbi.ts";
+import {
+  NATIVE_UI_ANCHOR,
+  NATIVE_UI_COORDINATE_SPACE,
+  resolveNativeUiRectGeometry,
+  resolveNativeUiSlotGeometry,
+} from "./nativeUiGeometryAbi.ts";
 
 export type NativeUiSlot = UiPackSlot;
 export type NativeUiTextOverlay = UiPackTextOverlay;
@@ -26,6 +31,8 @@ export interface NativeUiDynamicPrimitive {
   y?: number;
   width?: number;
   height?: number;
+  coordinateSpace?: string;
+  anchor?: string;
   fill?: number;
   value?: number;
   ratio?: number;
@@ -111,13 +118,91 @@ export function normalizeNativeUiLayoutSurface(value: unknown): NativeUiLayoutSu
   return record ? record as NativeUiLayoutSurface : null;
 }
 
+function normalizeNativeUiTextOverlay(value: unknown, index: number): NativeUiTextOverlay {
+  const record = asRecord(value);
+  if (!record) {
+    throw new Error(`Native UI text overlay ${index} must be an object`);
+  }
+  const geometry = resolveNativeUiRectGeometry(record, `Native UI text overlay ${index}`);
+  return {
+    text: `${record.text ?? ""}`,
+    ...geometry,
+    coordinateSpace: NATIVE_UI_COORDINATE_SPACE,
+    anchor: NATIVE_UI_ANCHOR,
+  };
+}
+
+function normalizeNativeUiTextOverlayList(value: unknown): NativeUiTextOverlay[] {
+  return asArray<unknown>(value).map((entry, index) => normalizeNativeUiTextOverlay(entry, index));
+}
+
+function normalizeNativeUiRect(value: unknown, label: string, index: number): NativeUiRect {
+  const record = asRecord(value);
+  if (!record) {
+    throw new Error(`Native UI ${label} ${index} must be an object`);
+  }
+  const geometry = resolveNativeUiRectGeometry(record, `Native UI ${label} ${index}`);
+  return {
+    id: `${record.id ?? ""}`,
+    kind: `${record.kind ?? ""}`,
+    role: `${record.role ?? ""}`,
+    label: `${record.label ?? ""}`,
+    tooltip: `${record.tooltip ?? ""}`,
+    action: `${record.action ?? ""}`,
+    itemId: `${record.itemId ?? ""}`,
+    payloadKey: `${record.payloadKey ?? ""}`,
+    ...geometry,
+    coordinateSpace: NATIVE_UI_COORDINATE_SPACE,
+    anchor: NATIVE_UI_ANCHOR,
+  };
+}
+
+function normalizeNativeUiRectList(value: unknown, label: string): NativeUiRect[] {
+  return asArray<unknown>(value).map((entry, index) => normalizeNativeUiRect(entry, label, index));
+}
+
+function normalizeNativeUiDynamicPrimitive(
+  value: unknown,
+  defaultKind: string,
+  index: number,
+): NativeUiDynamicPrimitive {
+  const record = asRecord(value);
+  if (!record) {
+    throw new Error(`Native UI dynamic primitive ${index} must be an object`);
+  }
+  const primitiveKind = `${record.kind ?? defaultKind}`.trim();
+  const primitive: NativeUiDynamicPrimitive = {
+    kind: primitiveKind || undefined,
+    role: `${record.role ?? ""}`.trim() || undefined,
+    fill: Number.isFinite(Number(record.fill)) ? Number(record.fill) : undefined,
+    value: Number.isFinite(Number(record.value)) ? Number(record.value) : undefined,
+    ratio: Number.isFinite(Number(record.ratio)) ? Number(record.ratio) : undefined,
+    orientation: record.orientation === "horizontal" || record.orientation === "vertical"
+      ? record.orientation
+      : undefined,
+    trackColor: `${record.trackColor ?? ""}`.trim() || undefined,
+    fillColor: `${record.fillColor ?? ""}`.trim() || undefined,
+    borderColor: `${record.borderColor ?? ""}`.trim() || undefined,
+  };
+  const geometry = resolveNativeUiRectGeometry(
+    record,
+    `Native UI dynamic primitive ${primitive.kind ?? primitive.role ?? index}`,
+  );
+  return {
+    ...primitive,
+    ...geometry,
+    coordinateSpace: NATIVE_UI_COORDINATE_SPACE,
+    anchor: NATIVE_UI_ANCHOR,
+  };
+}
+
 export function collectNativeUiDynamicPrimitives(layout: NativeUiLayoutSurface | null): NativeUiDynamicPrimitive[] {
   const primitives: NativeUiDynamicPrimitive[] = [];
   const append = (raw: unknown, kind: string) => {
-    for (const primitive of asArray<NativeUiDynamicPrimitive>(raw)) {
-      if (!asRecord(primitive)) continue;
-      primitives.push({ kind, ...primitive });
-    }
+    const baseIndex = primitives.length;
+    asArray<unknown>(raw).forEach((primitive, index) => {
+      primitives.push(normalizeNativeUiDynamicPrimitive(primitive, kind, baseIndex + index));
+    });
   };
   append(layout?.dynamicPrimitives, "");
   append(layout?.progressBars, "progress-bar");
@@ -163,18 +248,38 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
       ? "inline-native-layout"
       : "missing";
 
+  const width = positiveDimension(layout?.width, 166);
+  const height = positiveDimension(layout?.height, 65);
+  const slots = asArray<NativeUiSlot>(layout?.slots);
+  const textOverlays = normalizeNativeUiTextOverlayList(layout?.textOverlays);
+  const dynamicPrimitives = collectNativeUiDynamicPrimitives(layout);
+  const hotspots = normalizeNativeUiRectList(layout?.hotspots, "hotspot");
+  const viewports = normalizeNativeUiRectList(layout?.viewports, "viewport");
+  const normalizedLayout: NativeUiLayoutSurface | null = layout
+    ? {
+      ...layout,
+      width,
+      height,
+      slots,
+      textOverlays,
+      dynamicPrimitives,
+      hotspots,
+      viewports,
+    }
+    : null;
+
   return {
     source,
     binding,
     template,
-    layout,
-    width: positiveDimension(layout?.width, 166),
-    height: positiveDimension(layout?.height, 65),
-    slots: asArray<NativeUiSlot>(layout?.slots),
-    textOverlays: asArray<NativeUiTextOverlay>(layout?.textOverlays),
-    dynamicPrimitives: collectNativeUiDynamicPrimitives(layout),
-    hotspots: asArray<NativeUiRect>(layout?.hotspots),
-    viewports: asArray<NativeUiRect>(layout?.viewports),
+    layout: normalizedLayout,
+    width,
+    height,
+    slots,
+    textOverlays,
+    dynamicPrimitives,
+    hotspots,
+    viewports,
   };
 }
 

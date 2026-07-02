@@ -67,9 +67,9 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
       pitchX: 24,
       pitchY: 18,
     }],
-    textOverlays: [{ text: 'EU/t', x: 80, y: 10, width: 24, height: 8 }],
-    hotspots: [{ id: 'template-hotspot', kind: 'info', role: 'nei-info', label: 'Template', tooltip: '', action: '', itemId: '', payloadKey: '', x: 1, y: 2, width: 3, height: 4 }],
-    viewports: [{ id: 'template-viewport', kind: 'viewport', role: 'progress', label: 'Progress', tooltip: '', action: '', itemId: '', payloadKey: '', x: 70, y: 30, width: 22, height: 16 }],
+    textOverlays: [{ text: 'EU/t', x: 80, y: 10, width: 24, height: 8, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    hotspots: [{ id: 'template-hotspot', kind: 'info', role: 'nei-info', label: 'Template', tooltip: '', action: '', itemId: '', payloadKey: '', x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    viewports: [{ id: 'template-viewport', kind: 'viewport', role: 'progress', label: 'Progress', tooltip: '', action: '', itemId: '', payloadKey: '', x: 70, y: 30, width: 22, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
   };
   const binding = {
     recipeId: 'recipe-1',
@@ -87,8 +87,8 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
   const inlineLayout = normalizeNativeUiLayoutSurface({
     imageRegion: { x: 8, y: 9, width: 176, height: 90 },
     nativeBackground: { kind: 'gt-modular-ui', status: 'captured', assetRef: 'rust/ui-assets/gt_furnace_captured.png' },
-    progressBars: [{ role: 'progress', x: 72, y: 34, width: 24, height: 16, fill: 0.5 }],
-    hotspots: [{ id: 'inline-hotspot', kind: 'item-click', role: 'output', label: 'Output', tooltip: '', action: 'item-click', itemId: 'minecraft:iron_ingot', payloadKey: '', x: 115, y: 24, width: 18, height: 18 }],
+    progressBars: [{ role: 'progress', x: 72, y: 34, width: 24, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left', fill: 0.5 }],
+    hotspots: [{ id: 'inline-hotspot', kind: 'item-click', role: 'output', label: 'Output', tooltip: '', action: 'item-click', itemId: 'minecraft:iron_ingot', payloadKey: '', x: 115, y: 24, width: 18, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
   });
 
   const surface = resolveNativeUiRuntimeSurface({
@@ -109,6 +109,9 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
   assert.equal(surface.viewports[0]?.id, 'template-viewport');
   assert.equal(surface.dynamicPrimitives.length, 1);
   assert.equal(surface.dynamicPrimitives[0]?.kind, 'progress-bar');
+  assert.equal(surface.dynamicPrimitives[0]?.coordinateSpace, 'nei_pixels');
+  assert.equal(surface.hotspots[0]?.coordinateSpace, 'nei_pixels');
+  assert.equal(surface.textOverlays[0]?.anchor, 'top-left');
 });
 
 test('native UI registry keeps inline and missing layouts explicit', () => {
@@ -215,9 +218,29 @@ test('native UI registry owns component runtime layout contract', () => {
   assert.match(registrySource, /export function createNativeUiFitMatrix/);
   assert.match(registrySource, /NativeUiSurfaceSource = "ui-pack-template" \| "inline-native-layout" \| "missing"/);
 
-  assert.deepEqual(collectNativeUiDynamicPrimitives({ progressBars: [{ x: 1 }], fluidBars: [{ x: 2 }], energyBars: [{ x: 3 }] }).map((row) => row.kind), [
+  assert.deepEqual(collectNativeUiDynamicPrimitives({
+    progressBars: [{ x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    fluidBars: [{ x: 2, y: 3, width: 4, height: 5, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    energyBars: [{ x: 3, y: 4, width: 5, height: 6, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+  }).map((row) => row.kind), [
     'progress-bar',
     'fluid-bar',
     'energy-bar',
   ]);
+});
+
+test('native UI registry fails closed on rect-like geometry ABI violations', () => {
+  assert.throws(() => resolveNativeUiRuntimeSurface({
+    runtime: null,
+    recipeId: 'bad-hotspot',
+    inlineLayout: normalizeNativeUiLayoutSurface({
+      width: 80,
+      height: 40,
+      hotspots: [{ x: 1, y: 2, width: 3, height: 4, anchor: 'top-left' }],
+    }),
+  }), /missing required Native UI geometry field: coordinateSpace/);
+
+  assert.throws(() => collectNativeUiDynamicPrimitives({
+    progressBars: [{ x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'screen_pixels', anchor: 'top-left' }],
+  }), /unsupported Native UI coordinateSpace/);
 });

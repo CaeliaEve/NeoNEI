@@ -106,7 +106,7 @@ const UI_PACK_REQUIRED_ARTIFACTS = Object.freeze([
     logicalName: 'rustUiTemplatesBin',
     envelopeSchema: UI_TEMPLATE_PACK_SCHEMA,
     payloadMagic: UI_TEMPLATE_PACK_MAGIC,
-    version: 3,
+    version: 5,
   }),
   Object.freeze({
     logicalName: 'rustUiBindingsBin',
@@ -234,6 +234,7 @@ function countExportAbiViolations(report: JsonRecord | null): number {
     + asStringArray(report.contractViolations).length
     + (asNumber(report.missingSurfaceCount) ?? 0)
     + (asNumber(report.slotBoundsViolationCount) ?? 0)
+    + (asNumber(report.primitiveBoundsViolationCount) ?? 0)
     + (asNumber(report.backgroundBoundsViolationCount) ?? 0)
     + (asNumber(report.coordinateContractViolationCount) ?? 0);
 }
@@ -281,6 +282,7 @@ function validateExportAbiReport(report: JsonRecord | null): string[] {
   for (const key of [
     'missingSurfaceCount',
     'slotBoundsViolationCount',
+    'primitiveBoundsViolationCount',
     'backgroundBoundsViolationCount',
     'coordinateContractViolationCount',
   ]) {
@@ -357,8 +359,10 @@ function buildReportSummary(
     counts: Object.freeze({
       layouts: asNumber(report?.layoutCount),
       slots: asNumber(report?.slotCount),
+      primitives: asNumber(report?.primitiveCount),
       missingSurfaces: asNumber(report?.missingSurfaceCount),
       slotBoundsViolations: asNumber(report?.slotBoundsViolationCount),
+      primitiveBoundsViolations: asNumber(report?.primitiveBoundsViolationCount),
       backgroundBoundsViolations: asNumber(report?.backgroundBoundsViolationCount),
       coordinateContractViolations: asNumber(report?.coordinateContractViolationCount),
       artifacts: Array.isArray(report?.artifacts) ? report.artifacts.length : null,
