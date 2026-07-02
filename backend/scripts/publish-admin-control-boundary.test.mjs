@@ -11,6 +11,10 @@ const serviceSource = readFileSync(resolve(root, 'src/services/publish-admin-con
 
 test('publish admin routes are mounted from an explicit endpoint registry', () => {
   assert.match(registrySource, /export const PUBLISH_ADMIN_ENDPOINTS/);
+  assert.match(registrySource, /PUBLISH_ADMIN_ENDPOINT_KEYS/);
+  assert.match(registrySource, /PUBLISH_ADMIN_METHODS/);
+  assert.match(registrySource, /validateAndFreezeRouteDescriptors/);
+  assert.match(registrySource, /label: 'publish admin endpoint'/);
   assert.match(registrySource, /key: 'list-releases'/);
   assert.match(registrySource, /path: '\/releases'/);
   assert.match(registrySource, /key: 'activate-release'/);

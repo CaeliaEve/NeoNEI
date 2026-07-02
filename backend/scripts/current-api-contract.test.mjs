@@ -1,22 +1,31 @@
 import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const routeSource = fs.readFileSync('src/routes/current-api.routes.ts', 'utf8');
-const namespaceSource = fs.readFileSync('src/routes/api-namespaces.routes.ts', 'utf8');
-const namespaceRegistrySource = fs.readFileSync('src/routes/api-namespace-registry.ts', 'utf8');
-const currentRuntimeEndpointRegistrySource = fs.readFileSync('src/routes/current-runtime-endpoint-registry.ts', 'utf8');
-const currentRuntimeEndpointHandlersSource = fs.readFileSync('src/routes/current-runtime-endpoint-handlers.ts', 'utf8');
-const currentRuntimeTransportSource = fs.readFileSync('src/routes/current-runtime-transport.ts', 'utf8');
-const currentRuntimeSnapshotSource = fs.readFileSync('src/services/current-runtime-snapshot.service.ts', 'utf8');
-const currentRuntimeArtifactIndexSource = fs.readFileSync('src/services/current-runtime-artifact-index.service.ts', 'utf8');
-const currentRuntimeApiSource = fs.readFileSync('src/services/current-runtime-api.service.ts', 'utf8');
-const currentRuntimeObservabilitySource = fs.readFileSync('src/services/current-runtime-observability.service.ts', 'utf8');
-const currentRuntimeRecipeApiSource = fs.readFileSync('src/services/current-runtime-recipe-api.service.ts', 'utf8');
-const currentRuntimeReportRegistrySource = fs.readFileSync('src/services/current-runtime-report-registry.service.ts', 'utf8');
-const currentRuntimeReadSource = fs.readFileSync('src/services/current-runtime-read.service.ts', 'utf8');
-const currentRuntimeSettingsSource = fs.readFileSync('src/services/current-runtime-settings.service.ts', 'utf8');
-const currentRuntimeSpecialDataSource = fs.readFileSync('src/services/current-runtime-special-data.service.ts', 'utf8');
+const backendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const readBackendSource = (relativePath) => fs.readFileSync(path.join(backendRoot, relativePath), 'utf8');
+
+const routeSource = readBackendSource('src/routes/current-api.routes.ts');
+const namespaceSource = readBackendSource('src/routes/api-namespaces.routes.ts');
+const namespaceRegistrySource = readBackendSource('src/routes/api-namespace-registry.ts');
+const currentRuntimeEndpointRegistrySource = readBackendSource('src/routes/current-runtime-endpoint-registry.ts');
+const currentRuntimeEndpointHandlersSource = readBackendSource('src/routes/current-runtime-endpoint-handlers.ts');
+const currentRuntimeTransportSource = readBackendSource('src/routes/current-runtime-transport.ts');
+const currentRuntimeTransportAbiSource = readBackendSource('src/routes/current-runtime-transport-abi.ts');
+const currentRuntimeSnapshotSource = readBackendSource('src/services/current-runtime-snapshot.service.ts');
+const currentRuntimeArtifactIndexSource = readBackendSource('src/services/current-runtime-artifact-index.service.ts');
+const currentRuntimeApiSource = readBackendSource('src/services/current-runtime-api.service.ts');
+const currentRuntimeApiAbiSource = readBackendSource('src/services/current-runtime-api-abi.ts');
+const currentRuntimeObservabilitySource = readBackendSource('src/services/current-runtime-observability.service.ts');
+const currentRuntimeRecipeApiSource = readBackendSource('src/services/current-runtime-recipe-api.service.ts');
+const currentRuntimeReportRegistryAbiSource = readBackendSource('src/services/current-runtime-report-registry-abi.ts');
+const currentRuntimeReportRegistrySource = readBackendSource('src/services/current-runtime-report-registry.service.ts');
+const currentRuntimeReadSource = readBackendSource('src/services/current-runtime-read.service.ts');
+const currentRuntimeSettingsSource = readBackendSource('src/services/current-runtime-settings.service.ts');
+const currentRuntimeSettingsAbiSource = readBackendSource('src/services/current-runtime-settings-abi.ts');
+const currentRuntimeSpecialDataSource = readBackendSource('src/services/current-runtime-special-data.service.ts');
 
 test('current API exposes semantic non-versioned runtime endpoints', () => {
   for (const route of [
@@ -42,7 +51,9 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   ]) {
     assert.equal(currentRuntimeEndpointRegistrySource.includes(route), true, `missing ${route}`);
   }
-  assert.match(currentRuntimeEndpointRegistrySource, /export const CURRENT_RUNTIME_ENDPOINTS = Object\.freeze/);
+  assert.match(currentRuntimeEndpointRegistrySource, /export const CURRENT_RUNTIME_ENDPOINTS/);
+  assert.match(currentRuntimeEndpointRegistrySource, /CURRENT_RUNTIME_ENDPOINT_KEYS/);
+  assert.match(currentRuntimeEndpointRegistrySource, /validateAndFreezeRouteDescriptors/);
   assert.match(currentRuntimeEndpointRegistrySource, /plane: 'controlfs'/);
   assert.match(currentRuntimeEndpointRegistrySource, /plane: 'datafs'/);
   assert.match(currentRuntimeEndpointRegistrySource, /plane: 'debugfs'/);
@@ -56,11 +67,12 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.doesNotMatch(routeSource, /router\.get\('/);
   assert.doesNotMatch(routeSource, /router\.use\('/);
   assert.doesNotMatch(routeSource, /\/api\/v\d/);
-  assert.equal(currentRuntimeApiSource.includes("const API_SCHEMA = 'neonei/api/current'"), true);
-  assert.equal(currentRuntimeApiSource.includes('schemaRevision: API_SCHEMA_REVISION'), true);
+  assert.equal(currentRuntimeApiSource.includes("CURRENT_RUNTIME_API_SCHEMA"), true);
+  assert.equal(currentRuntimeApiSource.includes('schemaRevision: CURRENT_RUNTIME_API_SCHEMA_REVISION'), true);
+  assert.equal(currentRuntimeApiAbiSource.includes("CURRENT_RUNTIME_API_SCHEMA = 'neonei/api/current'"), true);
   assert.equal(currentRuntimeApiSource.includes('capabilities'), true);
-  assert.equal(currentRuntimeApiSource.includes("manifestUrl: '/api/runtime/current/manifest'"), true);
-  assert.equal(currentRuntimeApiSource.includes("assetBaseUrl: '/api/runtime/current/asset/'"), true);
+  assert.equal(currentRuntimeApiSource.includes('manifestUrl: CURRENT_RUNTIME_API_URLS.currentManifest'), true);
+  assert.equal(currentRuntimeApiSource.includes('assetBaseUrl: CURRENT_RUNTIME_API_URLS.currentAssetBase'), true);
   assert.equal(currentRuntimeApiSource.includes('runtimeSchemaRevision'), true);
   assert.equal(currentRuntimeApiSource.includes('runtimeManifestUrl'), true);
   assert.equal(currentRuntimeApiSource.includes('runtimeAssetBaseUrl'), true);
@@ -88,9 +100,10 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(currentRuntimeSpecialDataSource.includes("from './gt-diagrams.service'"), true);
   assert.equal(currentRuntimeSpecialDataSource.includes("from './forestry-genetics.service'"), true);
   assert.equal(currentRuntimeSpecialDataSource.includes("from './multiblocks.service'"), true);
-  assert.equal(currentRuntimeSettingsSource.includes("allowDomGridFallback: false"), true);
-  assert.equal(currentRuntimeSettingsSource.includes("allowPerItemImageHotLoad: false"), true);
-  assert.equal(currentRuntimeSettingsSource.includes('NEONEI_DEBUG_PANELS'), true);
+  assert.equal(currentRuntimeSettingsSource.includes('CURRENT_RUNTIME_SETTINGS_STATIC'), true);
+  assert.equal(currentRuntimeSettingsAbiSource.includes("allowDomGridFallback: false"), true);
+  assert.equal(currentRuntimeSettingsAbiSource.includes("allowPerItemImageHotLoad: false"), true);
+  assert.equal(currentRuntimeSettingsAbiSource.includes('NEONEI_DEBUG_PANELS'), true);
   assert.doesNotMatch(routeSource, /process\.env\.NEONEI_DEBUG_PANELS/);
 });
 
@@ -215,8 +228,8 @@ test('current runtime snapshot service owns immutable manifest and artifact inve
 test('runtime delivery API exposes immutable ETag asset contracts and report allowlist', () => {
   assert.match(currentRuntimeApiSource, /createWeakEtag/);
   assert.match(currentRuntimeTransportSource, /setStaticAssetCacheHeaders/);
-  assert.match(currentRuntimeTransportSource, /IMMUTABLE_RUNTIME_ASSET_CACHE/);
-  assert.match(currentRuntimeTransportSource, /immutable:\s*true/);
+  assert.match(currentRuntimeTransportSource, /CURRENT_RUNTIME_IMMUTABLE_ASSET_CACHE/);
+  assert.match(currentRuntimeTransportAbiSource, /immutable:\s*true/);
   assert.match(currentRuntimeTransportSource, /res\.setHeader\('ETag'/);
   assert.match(currentRuntimeEndpointHandlersSource, /sendCurrentRuntimeNoStoreJson\(res, getCurrentRuntimeOverviewPayload\(context\), context\)/, 'current runtime pointer must remain no-store');
   assert.match(currentRuntimeReadSource, /getCurrentRuntimeOverview\(context\)/, 'read service must own current runtime overview payload selection');
@@ -230,9 +243,11 @@ test('runtime delivery API exposes immutable ETag asset contracts and report all
   assert.doesNotMatch(routeSource, /fs\.statSync/);
   assert.doesNotMatch(routeSource, /res\.sendFile/);
   assert.doesNotMatch(routeSource, /res\.setHeader\('ETag'/);
-  assert.match(currentRuntimeReportRegistrySource, /const CURRENT_RUNTIME_REPORTS = Object\.freeze/);
+  assert.match(currentRuntimeReportRegistryAbiSource, /CURRENT_RUNTIME_REPORT_DESCRIPTORS/);
+  assert.match(currentRuntimeReportRegistrySource, /CURRENT_RUNTIME_REPORTS_BY_SLUG/);
   assert.match(currentRuntimeReportRegistrySource, /export function resolveCurrentRuntimeReport/);
-  assert.match(currentRuntimeReportRegistrySource, /resolveDistDataRuntimeFile\(relativePath\)/);
+  assert.match(currentRuntimeReportRegistrySource, /resolveDistDataRuntimeFile\(descriptor\.path\)/);
+  assert.match(currentRuntimeReportRegistrySource, /relativePath: descriptor\.path/);
   assert.match(currentRuntimeReportRegistrySource, /fs\.statSync\(absolutePath\)/);
   assert.match(currentRuntimeReportRegistrySource, /stat\.isFile\(\)/);
   assert.match(currentRuntimeReportRegistrySource, /bytes: stat\.size/);
@@ -248,10 +263,10 @@ test('runtime delivery API exposes immutable ETag asset contracts and report all
     'deployment-report',
     'semantic-validation-report',
   ]) {
-    assert.equal(currentRuntimeReportRegistrySource.includes(`'${report}'`), true, `missing report allowlist entry ${report}`);
+    assert.equal(currentRuntimeReportRegistryAbiSource.includes(`'${report}'`), true, `missing report allowlist entry ${report}`);
   }
-  assert.match(currentRuntimeReportRegistrySource, /!\/\^\[a-z0-9-\]\+\$\/i\.test\(normalized\)/, 'report names must be simple slugs');
-  assert.match(currentRuntimeReportRegistrySource, /throw notFound\('Runtime report is not allowed'\)/);
+  assert.match(currentRuntimeReportRegistrySource, /!CURRENT_RUNTIME_REPORT_SLUG_PATTERN\.test\(normalized\)/, 'report names must be simple slugs');
+  assert.match(currentRuntimeReportRegistrySource, /throw notFound\(CURRENT_RUNTIME_REPORT_ERRORS\.reportNotAllowed\)/);
 });
 
 test('current API responses are path portable and do not advertise machine roots', () => {
@@ -268,10 +283,11 @@ test('current API responses are path portable and do not advertise machine roots
   assert.doesNotMatch(currentRuntimeSettingsSource, /[A-Za-z]:\\\\/);
   assert.doesNotMatch(currentRuntimeSettingsSource, /E:\\\\codex/);
   assert.doesNotMatch(currentRuntimeApiSource, /assetBaseUrl:\s*['"](?:[A-Za-z]:|\\\\|\/runtime\/)/);
-  assert.match(currentRuntimeApiSource, /assetBaseUrl:\s*'\/api\/runtime\/current\/asset\/'/);
-  assert.match(currentRuntimeApiSource, /runtimeAssetBaseUrl:\s*`\/api\/runtime\/\$\{encodeURIComponent\(meta\.runtimeId\)\}\/asset\/`/);
+  assert.match(currentRuntimeApiSource, /assetBaseUrl:\s*CURRENT_RUNTIME_API_URLS\.currentAssetBase/);
+  assert.match(currentRuntimeApiSource, /runtimeAssetBaseUrl:\s*buildPinnedRuntimeAssetBaseUrl\(meta\.runtimeId\)/);
   assert.doesNotMatch(currentRuntimeSettingsSource, /assetBaseUrl:\s*['"](?:[A-Za-z]:|\\\\|\/runtime\/)/);
-  assert.match(currentRuntimeSettingsSource, /assetBaseUrl:\s*'\/api\/runtime\/current\/asset\/'/);
+  assert.match(currentRuntimeSettingsSource, /CURRENT_RUNTIME_SETTINGS_STATIC/);
+  assert.match(currentRuntimeSettingsAbiSource, /assetBaseUrl:\s*'\/api\/runtime\/current\/asset\/'/);
 });
 
 test('recipe page API exposes low-frequency page details without browser hot-path ownership', () => {
@@ -282,7 +298,7 @@ test('recipe page API exposes low-frequency page details without browser hot-pat
   assert.equal(currentRuntimeRecipeApiSource.includes("throw notFound('Recipe page not found')"), true);
   assert.match(currentRuntimeEndpointRegistrySource, /path: '\/recipes\/page\/:recipePageId\(\*\)'/);
 
-  const serviceSource = fs.readFileSync('src/services/recipes-indexed.service.ts', 'utf8');
+  const serviceSource = readBackendSource('src/services/recipes-indexed.service.ts');
   assert.match(serviceSource, /async getRecipePageById\(recipePageId: string\)/);
   assert.match(serviceSource, /const recipe = await this\.getRecipeById\(normalizedRecipePageId\)/);
   assert.match(serviceSource, /uiPayload/);
@@ -312,10 +328,10 @@ test('external-runtime authority uses runtime recipe pack for item usage and pag
 
 
 test('dynamic sqlite read namespaces and lab bucket are retired from production /api', () => {
-  const appSource = fs.readFileSync('src/app.ts', 'utf8');
-  const publishAdminRoutesSource = fs.readFileSync('src/routes/publish-admin.routes.ts', 'utf8');
-  const adminControlPlaneSource = fs.readFileSync('src/routes/runtime-admin-control-plane.routes.ts', 'utf8');
-  const adminControlPlaneRegistrySource = fs.readFileSync('src/routes/runtime-admin-control-plane-registry.ts', 'utf8');
+  const appSource = readBackendSource('src/app.ts');
+  const publishAdminRoutesSource = readBackendSource('src/routes/publish-admin.routes.ts');
+  const adminControlPlaneSource = readBackendSource('src/routes/runtime-admin-control-plane.routes.ts');
+  const adminControlPlaneRegistrySource = readBackendSource('src/routes/runtime-admin-control-plane-registry.ts');
   assert.doesNotMatch(namespaceSource, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority/);
   assert.match(namespaceSource, /publicRuntimeOnly: options\.publicRuntimeOnly/);
   assert.doesNotMatch(namespaceRegistrySource, /export const LAB_CONTROL_NAMESPACES/);
@@ -339,20 +355,21 @@ test('dynamic sqlite read namespaces and lab bucket are retired from production 
 });
 
 test('v1 runtime contracts advertise ops/admin control diagnostics, not legacy sqlite read routes', () => {
-  const v1Source = fs.readFileSync('src/routes/v1.routes.ts', 'utf8');
-  const v1RegistrySource = fs.readFileSync('src/routes/v1-endpoint-registry.ts', 'utf8');
-  const v1HandlerSource = fs.readFileSync('src/routes/v1-endpoint-handlers.ts', 'utf8');
-  const runtimeContractIndexSource = fs.readFileSync('src/services/runtime-contract-index.service.ts', 'utf8');
+  const v1Source = readBackendSource('src/routes/v1.routes.ts');
+  const v1RegistrySource = readBackendSource('src/routes/v1-endpoint-registry.ts');
+  const v1HandlerSource = readBackendSource('src/routes/v1-endpoint-handlers.ts');
+  const runtimeContractIndexSource = readBackendSource('src/services/runtime-contract-index.service.ts');
   assert.doesNotMatch(v1Source, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority|legacyApiBase/);
   assert.match(v1Source, /API_V1_ENDPOINTS/);
   assert.match(v1Source, /API_V1_ENDPOINT_HANDLERS/);
   assert.match(v1RegistrySource, /path: '\/runtime\/contracts'/);
   assert.match(v1HandlerSource, /getApiV1RuntimeContractIndex\(\)/);
   assert.doesNotMatch(v1HandlerSource, /control: \{/);
-  assert.match(runtimeContractIndexSource, /const RUNTIME_CONTROL_ENDPOINTS = Object\.freeze/);
-  assert.match(runtimeContractIndexSource, /patterns: '\/ops\/patterns'/);
-  assert.match(runtimeContractIndexSource, /publish: '\/ops\/publish'/);
-  assert.match(runtimeContractIndexSource, /renderContract: '\/ops\/render-contract'/);
+  assert.match(runtimeContractIndexSource, /RUNTIME_CONTROL_ENDPOINT_KEYS/);
+  assert.match(runtimeContractIndexSource, /validateAndProjectContractMap/);
+  assert.match(runtimeContractIndexSource, /contractMapDescriptor\('patterns', '\/ops\/patterns'\)/);
+  assert.match(runtimeContractIndexSource, /contractMapDescriptor\('publish', '\/ops\/publish'\)/);
+  assert.match(runtimeContractIndexSource, /contractMapDescriptor\('renderContract', '\/ops\/render-contract'\)/);
   assert.doesNotMatch(v1Source, /\/lab\//);
   assert.doesNotMatch(v1RegistrySource, /\/lab\//);
   assert.doesNotMatch(v1HandlerSource, /\/lab\//);

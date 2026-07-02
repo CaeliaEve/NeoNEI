@@ -16,6 +16,10 @@ const publishHandlersSource = readFileSync(resolve(root, 'src/routes/publish-pub
 
 test('public runtime read routes are table-driven and route files are mount-only', () => {
   assert.match(runtimeRegistrySource, /export const RUNTIME_PUBLIC_ENDPOINTS/);
+  assert.match(runtimeRegistrySource, /RUNTIME_PUBLIC_ENDPOINT_KEYS/);
+  assert.match(runtimeRegistrySource, /RUNTIME_PUBLIC_ENDPOINT_METHODS/);
+  assert.match(runtimeRegistrySource, /validateAndFreezeRouteDescriptors/);
+  assert.match(runtimeRegistrySource, /label: 'runtime public endpoint'/);
   assert.match(runtimeRegistrySource, /path: '\/health'/);
   assert.match(runtimeRegistrySource, /path: '\/manifest'/);
   assert.match(runtimeRegistrySource, /path: '\/contracts'/);
@@ -24,6 +28,10 @@ test('public runtime read routes are table-driven and route files are mount-only
   assert.match(runtimeHandlersSource, /getCurrentRuntimeManifestDelivery\(\)/);
 
   assert.match(v1RegistrySource, /export const API_V1_ENDPOINTS/);
+  assert.match(v1RegistrySource, /API_V1_ENDPOINT_KEYS/);
+  assert.match(v1RegistrySource, /API_V1_ENDPOINT_METHODS/);
+  assert.match(v1RegistrySource, /validateAndFreezeRouteDescriptors/);
+  assert.match(v1RegistrySource, /label: 'api v1 endpoint'/);
   assert.match(v1RegistrySource, /path: '\/health'/);
   assert.match(v1RegistrySource, /path: '\/runtime\/manifest'/);
   assert.match(v1RegistrySource, /path: '\/runtime\/contracts'/);
@@ -31,6 +39,10 @@ test('public runtime read routes are table-driven and route files are mount-only
   assert.match(v1HandlersSource, /getApiV1RuntimeManifestDelivery\(\)/);
 
   assert.match(publishRegistrySource, /export const PUBLISH_PUBLIC_ENDPOINTS/);
+  assert.match(publishRegistrySource, /PUBLISH_PUBLIC_ENDPOINT_KEYS/);
+  assert.match(publishRegistrySource, /PUBLISH_PUBLIC_ENDPOINT_METHODS/);
+  assert.match(publishRegistrySource, /validateAndFreezeRouteDescriptors/);
+  assert.match(publishRegistrySource, /label: 'publish public endpoint'/);
   assert.match(publishRegistrySource, /path: '\/manifest'/);
   assert.match(publishRegistrySource, /path: '\/home-bootstrap'/);
   assert.match(publishRouteSource, /for \(const endpoint of PUBLISH_PUBLIC_ENDPOINTS\)/);
