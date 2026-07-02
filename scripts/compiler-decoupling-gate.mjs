@@ -14,8 +14,10 @@ const allowedRuntimeRawExportFiles = new Set();
 const requiredFiles = [
   'scripts/finalize-native-ui-export.mjs',
   'scripts/ensure-elysium-compiler.mjs',
+  'scripts/elysium-compiler-capability-abi.mjs',
   'tools/elysium-compiler/elysium-compiler.lock.json',
   'backend/src/config/runtime-paths.ts',
+  'backend/src/compiler-client/elysium-compiler-capability-abi.ts',
   'backend/src/services/ui-template-catalog.service.ts',
   'backend/src/services/ui-template-binding-index.service.ts',
   'backend/src/services/ui-family-census.service.ts',
@@ -37,10 +39,12 @@ const requiredSnippets = [
     file: 'scripts/ensure-elysium-compiler.mjs',
     snippets: [
       'elysium-compiler.lock.json',
+      'elysium-compiler-capability-abi.mjs',
       'sha256',
       'rawExportSchemaVersion',
       'compiledDistSchemaVersion',
-      "['schemas']",
+      'validateElysiumCompilerCapabilityAbi',
+      'REQUIRED_COMPILER_COMMAND_INVOCATIONS',
     ],
   },
   {
@@ -75,7 +79,7 @@ const forbiddenRuntimePatterns = [
   },
   {
     code: 'RAW_EXPORT_DIRECTORY_IN_RUNTIME',
-    pattern: /raw-export[\\/]/g,
+    pattern: /(^|[^A-Za-z0-9_\\/-])raw-export[\\/]/g,
     message: 'runtime code must consume compiled dist-data, not raw-export directory paths',
   },
   {

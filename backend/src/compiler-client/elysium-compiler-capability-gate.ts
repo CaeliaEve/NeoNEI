@@ -1,16 +1,12 @@
 import type { ElysiumCompilerHandshake } from './elysium-compiler-client';
-
-export const REQUIRED_NATIVE_UI_CAPABILITIES = Object.freeze([
-  'native_ui.surface',
-  'native_ui.design_space_coordinates',
-  'native_ui.background_asset',
-]);
-
-export const REQUIRED_COMPILER_COMMANDS = Object.freeze([
-  'schemas',
-  'validate',
-  'compile',
-]);
+import {
+  NATIVE_UI_COORDINATE_SPACE,
+  NATIVE_UI_FALLBACK_POLICY,
+  NATIVE_UI_REQUIRED_CAPABILITIES,
+  NATIVE_UI_REQUIRED_FILES,
+  NATIVE_UI_RUNTIME_TRANSFORM,
+  REQUIRED_COMPILER_COMMANDS,
+} from './elysium-compiler-capability-abi';
 
 export type ElysiumNativeUiAbi = {
   coordinateSpace: string;
@@ -48,6 +44,20 @@ function requireStringArray(value: unknown, path: string): string[] {
   return value as string[];
 }
 
+function assertExactString(actual: string, expected: string, path: string): void {
+  if (actual !== expected) {
+    throw new Error(`elysium-compiler ABI gate failed: ${path} must be ${expected}, got ${actual}`);
+  }
+}
+
+function assertIncludesAll(actual: readonly string[], expected: readonly string[], label: string): void {
+  const available = new Set(actual);
+  const missing = expected.filter((entry) => !available.has(entry));
+  if (missing.length > 0) {
+    throw new Error(`elysium-compiler ABI gate failed: missing required ${label}: ${missing.join(', ')}`);
+  }
+}
+
 export function extractCompilerCapabilityContract(
   handshake: ElysiumCompilerHandshake,
 ): ElysiumCompilerAbiContract {
@@ -76,18 +86,27 @@ export function assertCompilerNativeUiCapabilityGate(handshake: ElysiumCompilerH
   const contract = extractCompilerCapabilityContract(handshake);
   const commandReport = asRecord(handshake.commands);
   const availableCommands = Object.keys(commandReport ?? {}).filter((command) => asRecord(commandReport?.[command])?.ok === true);
-  const missingCommands = REQUIRED_COMPILER_COMMANDS.filter((command) => !availableCommands.includes(command));
-  if (missingCommands.length > 0) {
-    throw new Error(
-      `elysium-compiler ABI gate failed: missing required compiler commands: ${missingCommands.join(', ')}`,
-    );
-  }
-  const available = new Set(contract.nativeUi.requiredCapabilities);
-  const missing = REQUIRED_NATIVE_UI_CAPABILITIES.filter((capability) => !available.has(capability));
-  if (missing.length > 0) {
-    throw new Error(
-      `elysium-compiler ABI gate failed: missing required native UI capabilities: ${missing.join(', ')}`,
-    );
-  }
+  assertIncludesAll(availableCommands, REQUIRED_COMPILER_COMMANDS, 'compiler commands');
+  assertIncludesAll(
+    contract.nativeUi.requiredCapabilities,
+    NATIVE_UI_REQUIRED_CAPABILITIES,
+    'native UI capabilities',
+  );
+  assertIncludesAll(contract.nativeUi.requiredFiles, NATIVE_UI_REQUIRED_FILES, 'native UI files');
+  assertExactString(
+    contract.nativeUi.coordinateSpace,
+    NATIVE_UI_COORDINATE_SPACE,
+    'abi.exportAbi.nativeUi.coordinateSpace',
+  );
+  assertExactString(
+    contract.nativeUi.runtimeTransform,
+    NATIVE_UI_RUNTIME_TRANSFORM,
+    'abi.exportAbi.nativeUi.runtimeTransform',
+  );
+  assertExactString(
+    contract.nativeUi.fallbackPolicy,
+    NATIVE_UI_FALLBACK_POLICY,
+    'abi.exportAbi.nativeUi.fallbackPolicy',
+  );
   return { ...contract, commands: availableCommands };
 }

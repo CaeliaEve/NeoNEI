@@ -8,6 +8,7 @@ import {
   ElysiumCompilerTransport,
   type ElysiumCompilerCommandResult,
 } from './elysium-compiler-transport';
+import type { ElysiumCompilerScope } from './elysium-compiler-capability-abi';
 
 export type { ElysiumCompilerCommandResult } from './elysium-compiler-transport';
 
@@ -34,8 +35,6 @@ export type ElysiumCompilerHandshake = {
 type RawElysiumCompilerHandshake = Omit<ElysiumCompilerHandshake, 'capabilities'> & {
   capabilities?: unknown;
 };
-
-export type ElysiumCompilerScope = 'all' | 'native-ui' | 'search' | 'browser' | 'recipes' | 'ui' | 'textures';
 
 export type ElysiumCompilerValidateOptions = {
   input: string;

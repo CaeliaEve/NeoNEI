@@ -3,6 +3,10 @@ import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import {
+  REQUIRED_COMPILER_COMMAND_INVOCATIONS,
+  validateElysiumCompilerCapabilityAbi,
+} from './elysium-compiler-capability-abi.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -31,14 +35,9 @@ function sha256(file) {
 }
 
 function verifyCommandSurface(candidate) {
-  const requiredCommands = {
-    schemas: ['schemas', '--help'],
-    validate: ['validate', '--help'],
-    compile: ['compile', '--help'],
-  };
   const commands = {};
   const failures = [];
-  for (const [name, commandArgs] of Object.entries(requiredCommands)) {
+  for (const [name, commandArgs] of Object.entries(REQUIRED_COMPILER_COMMAND_INVOCATIONS)) {
     const result = spawnSync(candidate, commandArgs, { encoding: 'utf8', stdio: 'pipe', shell: false });
     const ok = (result.status ?? 1) === 0;
     commands[name] = {
@@ -129,6 +128,12 @@ for (const candidate of availableCandidates) {
 
   if (failures.length > 0) {
     mismatches.push(`${candidate}: ${failures.join('; ')}`);
+    continue;
+  }
+
+  const capabilityAbiFailures = validateElysiumCompilerCapabilityAbi(catalog.abi);
+  if (capabilityAbiFailures.length > 0) {
+    mismatches.push(`${candidate}: compiler capability ABI mismatch: ${capabilityAbiFailures.join('; ')}`);
     continue;
   }
 
