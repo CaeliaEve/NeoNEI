@@ -9,17 +9,28 @@ import {
   type CurrentRuntimeSnapshot,
   type CurrentRuntimeSnapshotHandle,
 } from './current-runtime-snapshot.service';
+import {
+  buildPinnedRuntimeAssetBaseUrl,
+  buildPinnedRuntimeManifestUrl,
+  CURRENT_RUNTIME_API_CACHE,
+  CURRENT_RUNTIME_API_ERRORS,
+  CURRENT_RUNTIME_API_ETAG_KEYS,
+  CURRENT_RUNTIME_API_PARAMS,
+  CURRENT_RUNTIME_API_SCHEMA,
+  CURRENT_RUNTIME_API_SCHEMA_REVISION,
+  CURRENT_RUNTIME_API_URLS,
+  CURRENT_RUNTIME_MISSING_ID,
+  CURRENT_RUNTIME_UNKNOWN_SCHEMA_REVISION,
+  type CurrentRuntimeApiParamName,
+} from './current-runtime-api-abi';
 import { badRequest, notFound } from '../utils/http';
 import { createWeakEtag } from '../utils/http-cache';
-
-const API_SCHEMA = 'neonei/api/current';
-const API_SCHEMA_REVISION = 1;
 
 type JsonRecord = Record<string, unknown>;
 
 export type CurrentRuntimeApiMeta = Readonly<{
-  schema: typeof API_SCHEMA;
-  schemaRevision: typeof API_SCHEMA_REVISION;
+  schema: typeof CURRENT_RUNTIME_API_SCHEMA;
+  schemaRevision: typeof CURRENT_RUNTIME_API_SCHEMA_REVISION;
   runtimeId: string;
   capabilities: JsonRecord;
 }>;
@@ -66,9 +77,15 @@ function asString(value: unknown): string | null {
   return text || null;
 }
 
-function normalizeRequiredCurrentRuntimeParam(value: string | undefined, name: string): string {
+function requiredParamError(name: CurrentRuntimeApiParamName): string {
+  return name === CURRENT_RUNTIME_API_PARAMS.runtimeId
+    ? CURRENT_RUNTIME_API_ERRORS.runtimeIdRequired
+    : CURRENT_RUNTIME_API_ERRORS.fileNameRequired;
+}
+
+function normalizeRequiredCurrentRuntimeParam(value: string | undefined, name: CurrentRuntimeApiParamName): string {
   const normalized = `${value ?? ''}`.trim();
-  if (!normalized) throw badRequest(`${name} is required`);
+  if (!normalized) throw badRequest(requiredParamError(name));
   return normalized;
 }
 
@@ -79,9 +96,12 @@ function buildCurrentRuntimeApiContext(snapshot: CurrentRuntimeSnapshot | null):
     snapshot,
     health,
     meta: Object.freeze({
-      schema: API_SCHEMA,
-      schemaRevision: API_SCHEMA_REVISION,
-      runtimeId: snapshot?.runtimeId ?? asString(health.distData.runtime?.runtimeId) ?? health.distData.source ?? 'runtime-missing',
+      schema: CURRENT_RUNTIME_API_SCHEMA,
+      schemaRevision: CURRENT_RUNTIME_API_SCHEMA_REVISION,
+      runtimeId: snapshot?.runtimeId
+        ?? asString(health.distData.runtime?.runtimeId)
+        ?? health.distData.source
+        ?? CURRENT_RUNTIME_MISSING_ID,
       capabilities,
     }),
   });
@@ -132,10 +152,10 @@ export async function withCurrentRuntimeApiContextAsync<T>(
 }
 
 export function assertCurrentRuntimeId(runtimeId: string | undefined, context: CurrentRuntimeApiContext): void {
-  const requested = normalizeRequiredCurrentRuntimeParam(runtimeId, 'runtimeId');
+  const requested = normalizeRequiredCurrentRuntimeParam(runtimeId, CURRENT_RUNTIME_API_PARAMS.runtimeId);
   const current = context.meta.runtimeId;
   if (requested !== current) {
-    throw notFound('Runtime id is not the current published runtime');
+    throw notFound(CURRENT_RUNTIME_API_ERRORS.runtimeNotCurrent);
   }
 }
 
@@ -143,17 +163,14 @@ export function getCurrentRuntimeOverview(context: CurrentRuntimeApiContext): Cu
   const { meta, snapshot } = context;
   return Object.freeze({
     runtimeId: meta.runtimeId,
-    schemaRevision: snapshot?.runtimeSchemaRevision ?? 'runtime.unknown',
-    manifestUrl: '/api/runtime/current/manifest',
-    runtimeManifestUrl: `/api/runtime/${encodeURIComponent(meta.runtimeId)}/manifest`,
-    assetBaseUrl: '/api/runtime/current/asset/',
-    runtimeAssetBaseUrl: `/api/runtime/${encodeURIComponent(meta.runtimeId)}/asset/`,
+    schemaRevision: snapshot?.runtimeSchemaRevision ?? CURRENT_RUNTIME_UNKNOWN_SCHEMA_REVISION,
+    manifestUrl: CURRENT_RUNTIME_API_URLS.currentManifest,
+    runtimeManifestUrl: buildPinnedRuntimeManifestUrl(meta.runtimeId),
+    assetBaseUrl: CURRENT_RUNTIME_API_URLS.currentAssetBase,
+    runtimeAssetBaseUrl: buildPinnedRuntimeAssetBaseUrl(meta.runtimeId),
     capabilities: meta.capabilities,
     manifestPath: snapshot?.manifestPath ?? null,
-    cache: Object.freeze({
-      immutable: true,
-      maxAgeSeconds: 31_536_000,
-    }),
+    cache: CURRENT_RUNTIME_API_CACHE,
   });
 }
 
@@ -161,10 +178,15 @@ export function getCurrentRuntimeManifestDelivery(
   context: CurrentRuntimeApiContext,
 ): CurrentRuntimeManifestDelivery {
   const { snapshot } = context;
-  if (!snapshot) throw notFound('Runtime manifest not found');
+  if (!snapshot) throw notFound(CURRENT_RUNTIME_API_ERRORS.manifestMissing);
   return Object.freeze({
     payload: snapshot.manifest,
-    etag: createWeakEtag('runtime-manifest', snapshot.runtimeId, snapshot.manifestPath, snapshot.fingerprint),
+    etag: createWeakEtag(
+      CURRENT_RUNTIME_API_ETAG_KEYS.manifest,
+      snapshot.runtimeId,
+      snapshot.manifestPath,
+      snapshot.fingerprint,
+    ),
   });
 }
 
@@ -172,15 +194,21 @@ export function getCurrentRuntimeAssetDelivery(
   fileName: string | undefined,
   context: CurrentRuntimeApiContext,
 ): CurrentRuntimeAssetDelivery {
-  const raw = normalizeRequiredCurrentRuntimeParam(fileName, 'fileName');
-  if (!isPortableRuntimePath(raw)) throw badRequest('fileName must be a runtime-relative file path');
+  const raw = normalizeRequiredCurrentRuntimeParam(fileName, CURRENT_RUNTIME_API_PARAMS.fileName);
+  if (!isPortableRuntimePath(raw)) throw badRequest(CURRENT_RUNTIME_API_ERRORS.filePathInvalid);
   const normalized = normalizeRuntimePath(raw);
   const artifact = context.snapshot?.declaredFiles.includes(normalized)
     ? context.snapshot.artifactsByPath[normalized] ?? null
     : null;
-  if (!artifact) throw notFound('Runtime file is not declared by the current runtime manifest');
+  if (!artifact) throw notFound(CURRENT_RUNTIME_API_ERRORS.fileNotDeclared);
   return Object.freeze({
     artifact,
-    etag: createWeakEtag('runtime-asset', context.meta.runtimeId, artifact.relativePath, artifact.bytes, artifact.mtimeMs),
+    etag: createWeakEtag(
+      CURRENT_RUNTIME_API_ETAG_KEYS.asset,
+      context.meta.runtimeId,
+      artifact.relativePath,
+      artifact.bytes,
+      artifact.mtimeMs,
+    ),
   });
 }

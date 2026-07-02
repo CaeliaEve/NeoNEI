@@ -6,27 +6,27 @@ import {
 } from '../services/current-runtime-api.service';
 import { resolveCurrentRuntimeReport } from '../services/current-runtime-report-registry.service';
 import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
+import {
+  CURRENT_RUNTIME_ASSET_REQUEST_METHODS,
+  CURRENT_RUNTIME_IMMUTABLE_ASSET_CACHE,
+  CURRENT_RUNTIME_JSON_ENVELOPE_OK,
+  CURRENT_RUNTIME_MOUNTED_ASSET_PATH_PREFIX,
+} from './current-runtime-transport-abi';
 
 type CurrentRuntimeResponseMeta = CurrentRuntimeApiContext['meta'];
 
 export type CurrentRuntimeJsonEnvelope = Readonly<{
-  ok: true;
+  ok: typeof CURRENT_RUNTIME_JSON_ENVELOPE_OK;
   data: unknown;
   meta: CurrentRuntimeResponseMeta;
 }>;
-
-const IMMUTABLE_RUNTIME_ASSET_CACHE = Object.freeze({
-  maxAge: '365d',
-  immutable: true,
-  varyAcceptEncoding: true,
-});
 
 export function createCurrentRuntimeEnvelope(
   data: unknown,
   context: CurrentRuntimeApiContext,
 ): CurrentRuntimeJsonEnvelope {
   return Object.freeze({
-    ok: true,
+    ok: CURRENT_RUNTIME_JSON_ENVELOPE_OK,
     data,
     meta: context.meta,
   });
@@ -57,7 +57,7 @@ export function sendCurrentRuntimeManifest(
   const manifest = getCurrentRuntimeManifestDelivery(context);
   res.setHeader('ETag', manifest.etag);
   if (options.immutable) {
-    setStaticAssetCacheHeaders(res, IMMUTABLE_RUNTIME_ASSET_CACHE);
+    setStaticAssetCacheHeaders(res, CURRENT_RUNTIME_IMMUTABLE_ASSET_CACHE);
   } else {
     setNoStoreHeaders(res);
   }
@@ -71,7 +71,7 @@ export function sendCurrentRuntimeAsset(
 ): void {
   const asset = getCurrentRuntimeAssetDelivery(fileName, context);
   res.setHeader('ETag', asset.etag);
-  setStaticAssetCacheHeaders(res, IMMUTABLE_RUNTIME_ASSET_CACHE);
+  setStaticAssetCacheHeaders(res, CURRENT_RUNTIME_IMMUTABLE_ASSET_CACHE);
   res.sendFile(asset.artifact.absolutePath);
 }
 
@@ -82,9 +82,9 @@ export function sendCurrentRuntimeReport(res: Response, reportName: string | und
 }
 
 export function isRuntimeAssetRequestMethod(method: string): boolean {
-  return method === 'GET' || method === 'HEAD';
+  return CURRENT_RUNTIME_ASSET_REQUEST_METHODS.some((candidate) => candidate === method);
 }
 
 export function assetPathFromMountedRuntimeRequest(req: Request): string {
-  return decodeURIComponent(req.path.replace(/^\/+/, ''));
+  return decodeURIComponent(req.path.replace(CURRENT_RUNTIME_MOUNTED_ASSET_PATH_PREFIX, ''));
 }

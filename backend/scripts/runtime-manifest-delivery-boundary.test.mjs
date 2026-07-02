@@ -9,18 +9,26 @@ const v1RouteSource = readFileSync(resolve(root, 'src/routes/v1.routes.ts'), 'ut
 const runtimeHandlerSource = readFileSync(resolve(root, 'src/routes/runtime-public-endpoint-handlers.ts'), 'utf8');
 const v1HandlerSource = readFileSync(resolve(root, 'src/routes/v1-endpoint-handlers.ts'), 'utf8');
 const deliverySource = readFileSync(resolve(root, 'src/services/runtime-manifest-delivery.service.ts'), 'utf8');
+const deliveryAbiSource = readFileSync(resolve(root, 'src/services/runtime-manifest-delivery-abi.ts'), 'utf8');
 
 test('runtime manifest ETag and contract envelope are delivery-service owned', () => {
   assert.match(deliverySource, /import \{ createWeakEtag \} from '\.\.\/utils\/http-cache'/);
+  assert.match(deliverySource, /from '\.\/runtime-manifest-delivery-abi'/);
   assert.match(deliverySource, /getPublishManifestService\(\)\.getRuntimeManifest\(\)/);
-  assert.match(deliverySource, /const RUNTIME_MANIFEST_DELIVERY_CONTRACTS/);
-  assert.match(deliverySource, /schemaVersion: 'neonei\/runtime-manifest\/current'/);
-  assert.match(deliverySource, /contractIndex: '\/runtime\/contracts'/);
-  assert.match(deliverySource, /schemaVersion: 'neonei\/api-v1\/runtime-manifest\/v1'/);
-  assert.match(deliverySource, /contractIndex: '\/api\/v1\/runtime\/contracts'/);
-  assert.match(deliverySource, /const RUNTIME_MANIFEST_ETAG_KEYS/);
-  assert.match(deliverySource, /current: 'runtime-manifest'/);
-  assert.match(deliverySource, /'api-v1': 'v1-runtime-manifest'/);
+  assert.match(deliveryAbiSource, /const RUNTIME_MANIFEST_DELIVERY_CONTRACTS/);
+  assert.match(deliveryAbiSource, /schemaVersion: 'neonei\/runtime-manifest\/current'/);
+  assert.match(deliveryAbiSource, /contractIndex: '\/runtime\/contracts'/);
+  assert.match(deliveryAbiSource, /schemaVersion: 'neonei\/api-v1\/runtime-manifest\/v1'/);
+  assert.match(deliveryAbiSource, /contractIndex: '\/api\/v1\/runtime\/contracts'/);
+  assert.match(deliveryAbiSource, /const RUNTIME_MANIFEST_ETAG_KEYS/);
+  assert.match(deliveryAbiSource, /'runtime-manifest'/);
+  assert.match(deliveryAbiSource, /'v1-runtime-manifest'/);
+  assert.doesNotMatch(deliverySource, /schemaVersion: 'neonei\/runtime-manifest\/current'/);
+  assert.doesNotMatch(deliverySource, /contractIndex: '\/runtime\/contracts'/);
+  assert.doesNotMatch(deliverySource, /schemaVersion: 'neonei\/api-v1\/runtime-manifest\/v1'/);
+  assert.doesNotMatch(deliverySource, /contractIndex: '\/api\/v1\/runtime\/contracts'/);
+  assert.doesNotMatch(deliverySource, /'runtime-manifest'/);
+  assert.doesNotMatch(deliverySource, /'v1-runtime-manifest'/);
   assert.match(deliverySource, /function createRuntimeManifestEtag/);
   assert.match(deliverySource, /manifest\.runtimeCacheKey/);
   assert.match(deliverySource, /export function getCurrentRuntimeManifestDelivery/);

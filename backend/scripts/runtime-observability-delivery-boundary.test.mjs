@@ -9,16 +9,21 @@ const v1RouteSource = readFileSync(resolve(root, 'src/routes/v1.routes.ts'), 'ut
 const runtimeHandlerSource = readFileSync(resolve(root, 'src/routes/runtime-public-endpoint-handlers.ts'), 'utf8');
 const v1HandlerSource = readFileSync(resolve(root, 'src/routes/v1-endpoint-handlers.ts'), 'utf8');
 const deliverySource = readFileSync(resolve(root, 'src/services/runtime-observability-delivery.service.ts'), 'utf8');
+const deliveryAbiSource = readFileSync(resolve(root, 'src/services/runtime-observability-delivery-abi.ts'), 'utf8');
 
 test('runtime observability payloads are delivery-service owned, not route-owned DTOs', () => {
   assert.match(deliverySource, /getRuntimeHealthSummary\(\)/);
   assert.match(deliverySource, /getRuntimeDiagnosticsSummary\(\)/);
-  assert.match(deliverySource, /contractVersion: 'runtime-contracts\/current'/);
+  assert.match(deliverySource, /from '\.\/runtime-observability-delivery-abi'/);
+  assert.match(deliveryAbiSource, /RUNTIME_OBSERVABILITY_CONTRACT_VERSION = 'runtime-contracts\/current'/);
+  assert.match(deliveryAbiSource, /API_V1_RUNTIME_HEALTH_STATUS = 'ok'/);
+  assert.match(deliveryAbiSource, /API_V1_RUNTIME_HEALTH_VERSION = 1/);
   assert.match(deliverySource, /export function getCurrentRuntimeHealthDelivery/);
   assert.match(deliverySource, /export function getCurrentRuntimeDiagnosticsDelivery/);
   assert.match(deliverySource, /export function getApiV1RuntimeHealthDelivery/);
-  assert.match(deliverySource, /status: 'ok'/);
-  assert.match(deliverySource, /version: 1/);
+  assert.doesNotMatch(deliverySource, /contractVersion: 'runtime-contracts\/current'/);
+  assert.doesNotMatch(deliverySource, /status: 'ok'/);
+  assert.doesNotMatch(deliverySource, /version: 1/);
   assert.match(deliverySource, /new Date\(\)\.toISOString\(\)/);
 
   assert.match(runtimeHandlerSource, /getCurrentRuntimeHealthDelivery\(\)/);

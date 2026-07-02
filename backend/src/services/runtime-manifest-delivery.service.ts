@@ -1,11 +1,15 @@
 import { createWeakEtag } from '../utils/http-cache';
 import { getPublishManifestService, type PublicRuntimeManifest } from './publish-manifest.service';
-
-type RuntimeManifestDeliveryProfile = 'current' | 'api-v1';
+import {
+  RUNTIME_MANIFEST_DELIVERY_CONTRACTS,
+  RUNTIME_MANIFEST_DELIVERY_PROFILES,
+  RUNTIME_MANIFEST_ETAG_KEYS,
+  type RuntimeManifestDeliveryProfile,
+} from './runtime-manifest-delivery-abi';
 
 type RuntimeManifestContract = Readonly<{
-  schemaVersion: 'neonei/runtime-manifest/current' | 'neonei/api-v1/runtime-manifest/v1';
-  contractIndex: '/runtime/contracts' | '/api/v1/runtime/contracts';
+  schemaVersion: typeof RUNTIME_MANIFEST_DELIVERY_CONTRACTS[RuntimeManifestDeliveryProfile]['schemaVersion'];
+  contractIndex: typeof RUNTIME_MANIFEST_DELIVERY_CONTRACTS[RuntimeManifestDeliveryProfile]['contractIndex'];
 }>;
 
 export type RuntimeManifestPayload = PublicRuntimeManifest & Readonly<{
@@ -16,22 +20,6 @@ export type RuntimeManifestDelivery = Readonly<{
   payload: RuntimeManifestPayload;
   etag: string;
 }>;
-
-const RUNTIME_MANIFEST_DELIVERY_CONTRACTS: Record<RuntimeManifestDeliveryProfile, RuntimeManifestContract> = Object.freeze({
-  current: Object.freeze({
-    schemaVersion: 'neonei/runtime-manifest/current',
-    contractIndex: '/runtime/contracts',
-  }),
-  'api-v1': Object.freeze({
-    schemaVersion: 'neonei/api-v1/runtime-manifest/v1',
-    contractIndex: '/api/v1/runtime/contracts',
-  }),
-});
-
-const RUNTIME_MANIFEST_ETAG_KEYS: Record<RuntimeManifestDeliveryProfile, string> = Object.freeze({
-  current: 'runtime-manifest',
-  'api-v1': 'v1-runtime-manifest',
-});
 
 function createRuntimeManifestEtag(profile: RuntimeManifestDeliveryProfile, manifest: PublicRuntimeManifest): string {
   return createWeakEtag(
@@ -57,9 +45,9 @@ function createRuntimeManifestDelivery(profile: RuntimeManifestDeliveryProfile):
 }
 
 export function getCurrentRuntimeManifestDelivery(): RuntimeManifestDelivery {
-  return createRuntimeManifestDelivery('current');
+  return createRuntimeManifestDelivery(RUNTIME_MANIFEST_DELIVERY_PROFILES.current);
 }
 
 export function getApiV1RuntimeManifestDelivery(): RuntimeManifestDelivery {
-  return createRuntimeManifestDelivery('api-v1');
+  return createRuntimeManifestDelivery(RUNTIME_MANIFEST_DELIVERY_PROFILES.apiV1);
 }
