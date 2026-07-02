@@ -299,7 +299,9 @@ test('external-runtime authority uses runtime recipe pack for item usage and pag
 test('dynamic sqlite read namespaces are retired from lab and never mounted under production /api', () => {
   assert.doesNotMatch(namespaceSource, /resolveAccelerationCompilerAuthority|externalRuntimeAuthority/);
   assert.match(namespaceSource, /publicRuntimeOnly: options\.publicRuntimeOnly/);
-  assert.match(namespaceRegistrySource, /export const DEV_COMPAT_NAMESPACES/);
+  assert.match(namespaceRegistrySource, /export const LAB_CONTROL_NAMESPACES/);
+  assert.match(namespaceRegistrySource, /tier: 'lab-control'/);
+  assert.doesNotMatch(namespaceRegistrySource, /dev-compat|DEV_COMPAT_NAMESPACES/);
   assert.doesNotMatch(namespaceRegistrySource, /export const LEGACY_COMPAT_NAMESPACES/);
   assert.doesNotMatch(namespaceRegistrySource, /legacy-compat/);
   assert.doesNotMatch(namespaceRegistrySource, /labItems|labRecipes|labRecipeBootstrap/);
@@ -316,7 +318,7 @@ test('dynamic sqlite read namespaces are retired from lab and never mounted unde
     labGateIndex,
     namespaceRegistrySource.indexOf('  namespaces.push(CURRENT_API_NAMESPACE)', labGateIndex),
   );
-  assert.match(labGateBody, /namespaces\.push\(\.\.\.DEV_COMPAT_NAMESPACES\)/);
+  assert.match(labGateBody, /namespaces\.push\(\.\.\.LAB_CONTROL_NAMESPACES\)/);
 });
 
 test('v1 runtime contracts advertise lab-only control diagnostics, not legacy sqlite read routes', () => {

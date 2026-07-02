@@ -15,18 +15,18 @@ const labControlClientSource = fs.readFileSync('src/control/labControlClient.ts'
 const runtimeModeSource = fs.readFileSync('src/runtime/runtimeMode.ts', 'utf8').replace(/\r\n/g, '\n');
 const viteConfigSource = fs.readFileSync('vite.config.ts', 'utf8').replace(/\r\n/g, '\n');
 
-test('public runtime profile blocks lab dev compatibility calls before network IO', () => {
-  const devCompatGuardSource = `${labControlClientSource}
+test('public runtime profile blocks lab control calls before network IO', () => {
+  const labControlGuardSource = `${labControlClientSource}
 ${runtimeModeSource}`;
   for (const token of [
     'VITE_PUBLIC_RUNTIME_ONLY',
-    'VITE_RUNTIME_DISABLE_DEV_COMPAT',
-    'isRuntimeDevCompatDisabled',
-    'LAB_DEV_COMPAT_BLOCKED',
+    'VITE_RUNTIME_DISABLE_LAB_CONTROL',
+    'isLabControlDisabled',
+    'LAB_CONTROL_DISABLED',
     'assertLabControlEnabled',
     'public runtime profile must use compiled runtime artifacts',
   ]) {
-    assert.equal(devCompatGuardSource.includes(token), true, `missing lab compatibility guard token: ${token}`);
+    assert.equal(labControlGuardSource.includes(token), true, `missing lab-control guard token: ${token}`);
   }
 
   assert.match(
@@ -87,7 +87,7 @@ test('runtime contract gaps and missing payloads use the structured diagnostics 
   assert.equal(
     apiRuntimeSource.includes('getRuntimeDiagnosticIdentity()'),
     true,
-    'dev compatibility gaps should include runtime identity where available',
+    'runtime contract gaps should include runtime identity where available',
   );
 });
 
@@ -157,18 +157,18 @@ test('manifest updates prime the runtime diagnostic identity', () => {
 test('production builds default to strict public runtime mode', () => {
   for (const token of [
     'VITE_PUBLIC_RUNTIME_ONLY',
-    'VITE_RUNTIME_DISABLE_DEV_COMPAT',
+    'VITE_RUNTIME_DISABLE_LAB_CONTROL',
     'VITE_STRICT_RUNTIME_CONTRACTS',
     "mode === 'development' ? '0' : '1'",
     "'import.meta.env.VITE_PUBLIC_RUNTIME_ONLY'",
-    "'import.meta.env.VITE_RUNTIME_DISABLE_DEV_COMPAT'",
+    "'import.meta.env.VITE_RUNTIME_DISABLE_LAB_CONTROL'",
     "'import.meta.env.VITE_STRICT_RUNTIME_CONTRACTS'",
   ]) {
     assert.equal(viteConfigSource.includes(token), true, `missing production runtime default token: ${token}`);
   }
   for (const token of [
     'isPublicRuntimeOnly',
-    'isRuntimeDevCompatDisabled',
+    'isLabControlDisabled',
     'isStrictRuntimeContractsEnabledByEnv',
     'import.meta.env.PROD === true',
   ]) {

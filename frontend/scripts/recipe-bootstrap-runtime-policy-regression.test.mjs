@@ -31,7 +31,7 @@ test('recipe bootstrap runtime path uses compiled artifacts only', () => {
 });
 
 test('recipe bootstrap lab compatibility fallback is not reachable from runtime clients', () => {
-  assert.match(labControlSource, /LAB_DEV_COMPAT_BLOCKED/);
+  assert.match(labControlSource, /LAB_CONTROL_DISABLED/);
   assert.doesNotMatch(clientSource, /getRecipeBootstrap[A-Za-z]*Compat|devCompatClient|getLabPayload|\/recipe-bootstrap\//);
   assert.doesNotMatch(recipeClientSource, /getRecipeBootstrap[A-Za-z]*Compat|getLabPayload|\/recipe-bootstrap\//);
 });

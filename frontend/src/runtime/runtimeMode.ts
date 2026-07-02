@@ -17,8 +17,8 @@ export function isPublicRuntimeOnly(): boolean {
   return isEnvFlagEnabled(import.meta.env.VITE_PUBLIC_RUNTIME_ONLY) || isProductionRuntimeBuild();
 }
 
-export function isRuntimeDevCompatDisabled(): boolean {
-  return isPublicRuntimeOnly() || isEnvFlagEnabled(import.meta.env.VITE_RUNTIME_DISABLE_DEV_COMPAT);
+export function isLabControlDisabled(): boolean {
+  return isPublicRuntimeOnly() || isEnvFlagEnabled(import.meta.env.VITE_RUNTIME_DISABLE_LAB_CONTROL);
 }
 
 export function isStrictRuntimeContractsEnabledByEnv(): boolean {

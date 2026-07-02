@@ -219,7 +219,7 @@ test('pattern management is isolated as an explicit lab control surface', () => 
   assert.equal(
     devCompatRuntimeClientExists,
     false,
-    'frontend runtime should not keep a generic dev compatibility HTTP client',
+    'frontend runtime should not keep the retired generic devCompat HTTP client',
   );
   assert.equal(
     patternControlClientSource.includes("from '../runtime/types';"),
@@ -238,7 +238,7 @@ test('pattern management is isolated as an explicit lab control surface', () => 
   ]) {
     assert.equal(patternControlClientSource.includes(token), true, `missing pattern control client token: ${token}`);
   }
-  assert.match(labControlClientSource, /LAB_DEV_COMPAT_BLOCKED/);
+  assert.match(labControlClientSource, /LAB_CONTROL_DISABLED/);
   assert.match(labControlClientSource, /assertLabControlEnabled\('post', path\)/);
   assert.match(patternGroupSource, /patternControlClient\.(getGroups|getGroupWithPatterns|createGroup|updateGroup|deleteGroup|exportGroup|updatePattern|deletePattern)/);
   assert.equal(
@@ -253,7 +253,7 @@ test('pattern management is isolated as an explicit lab control surface', () => 
   );
   assert.match(
     homePageSource,
-    /patternControlEnabled = computed\(\(\) => !isRuntimeDevCompatDisabled\(\)\)/,
+    /patternControlEnabled = computed\(\(\) => !isLabControlDisabled\(\)\)/,
     'HomePage should gate the pattern control view outside public runtime mode',
   );
   assert.match(

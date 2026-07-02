@@ -6,7 +6,7 @@ import runtimeRoutes from './runtime.routes';
 import v1Routes from './v1.routes';
 import currentApiRoutes from './current-api.routes';
 
-export type ApiNamespaceTier = 'public-runtime' | 'dev-compat';
+export type ApiNamespaceTier = 'public-runtime' | 'lab-control';
 export type ApiNamespaceHandler = RequestHandler | Router;
 
 export type ApiNamespaceDefinition = Readonly<{
@@ -41,17 +41,17 @@ export const PUBLIC_RUNTIME_TAIL_NAMESPACES: readonly ApiNamespaceDefinition[] =
   Object.freeze({ key: 'v1Runtime', mountPath: '/api/v1', tier: 'public-runtime', handler: v1Routes }),
 ]);
 
-export const DEV_COMPAT_NAMESPACES: readonly ApiNamespaceDefinition[] = Object.freeze([
-  Object.freeze({ key: 'labRoot', mountPath: '/lab', tier: 'dev-compat' }),
-  Object.freeze({ key: 'labPatterns', mountPath: '/lab/patterns', tier: 'dev-compat', handler: patternsRoutes }),
-  Object.freeze({ key: 'labPublish', mountPath: '/lab/publish', tier: 'dev-compat', handler: labPublishRoutes }),
-  Object.freeze({ key: 'labRenderContract', mountPath: '/lab/render-contract', tier: 'dev-compat', handler: renderContractRoutes }),
+export const LAB_CONTROL_NAMESPACES: readonly ApiNamespaceDefinition[] = Object.freeze([
+  Object.freeze({ key: 'labRoot', mountPath: '/lab', tier: 'lab-control' }),
+  Object.freeze({ key: 'labPatterns', mountPath: '/lab/patterns', tier: 'lab-control', handler: patternsRoutes }),
+  Object.freeze({ key: 'labPublish', mountPath: '/lab/publish', tier: 'lab-control', handler: labPublishRoutes }),
+  Object.freeze({ key: 'labRenderContract', mountPath: '/lab/render-contract', tier: 'lab-control', handler: renderContractRoutes }),
 ]);
 
 export function getApiNamespacePlan(input: ApiNamespacePlanInput): readonly ApiNamespaceDefinition[] {
   const namespaces: ApiNamespaceDefinition[] = [PUBLIC_RUNTIME_ROOT_NAMESPACE];
   if (!input.publicRuntimeOnly) {
-    namespaces.push(...DEV_COMPAT_NAMESPACES);
+    namespaces.push(...LAB_CONTROL_NAMESPACES);
   }
 
   namespaces.push(CURRENT_API_NAMESPACE);

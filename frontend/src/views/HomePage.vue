@@ -24,7 +24,7 @@ import { useHomeRecipeModal } from "../composables/home/useHomeRecipeModal";
 import { useHomeSearchContextMenu } from "../composables/home/useHomeSearchContextMenu";
 import { useHomeSettingsState } from "../composables/home/useHomeSettingsState";
 import { useSound } from "../services/sound.service";
-import { isRuntimeDevCompatDisabled } from "../runtime/runtimeMode";
+import { isLabControlDisabled } from "../runtime/runtimeMode";
 import "../styles/homePage.css";
 
 const router = useRouter();
@@ -35,7 +35,7 @@ const PatternGroup = defineAsyncComponent(
 
 // View mode
 const currentView = ref<"items" | "patterns">("items");
-const patternControlEnabled = computed(() => !isRuntimeDevCompatDisabled());
+const patternControlEnabled = computed(() => !isLabControlDisabled());
 
 // Item size settings with localStorage
 const loadSavedItemSize = () => {

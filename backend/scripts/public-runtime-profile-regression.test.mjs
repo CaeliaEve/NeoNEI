@@ -30,7 +30,7 @@ test('public runtime profile is explicit and disables lab/dev dynamic mounts', (
   assert.doesNotMatch(apiNamespacesRoutesSource, /app\.use\('\/lab'/);
   assert.doesNotMatch(apiNamespacesRoutesSource, /app\.use\('\/api\/items'/);
   assert.match(apiNamespaceRegistrySource, /PUBLIC_RUNTIME_ROOT_NAMESPACE[\s\S]*mountPath:\s*'\/runtime'[\s\S]*handler:\s*runtimeRoutes/);
-  assert.match(apiNamespaceRegistrySource, /if \(!input\.publicRuntimeOnly\) \{\s*namespaces\.push\(\.\.\.DEV_COMPAT_NAMESPACES\);/s);
+  assert.match(apiNamespaceRegistrySource, /if \(!input\.publicRuntimeOnly\) \{\s*namespaces\.push\(\.\.\.LAB_CONTROL_NAMESPACES\);/s);
   assert.doesNotMatch(apiNamespaceRegistrySource, /LEGACY_COMPAT_NAMESPACES|legacy-compat|\/api\/(?:items|patterns|recipes-indexed|recipe-bootstrap)/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /labItems|labRecipes|labRecipeBootstrap/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /\/lab\/(?:items|recipes|recipe-bootstrap)/);

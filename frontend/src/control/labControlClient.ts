@@ -1,7 +1,7 @@
 import axios, { type AxiosRequestConfig } from 'axios';
 import { BACKEND_BASE_URL } from '../services/api/core/http';
 import { recordRuntimeDiagnostic } from '../runtime/diagnostics';
-import { isRuntimeDevCompatDisabled } from '../runtime/runtimeMode';
+import { isLabControlDisabled } from '../runtime/runtimeMode';
 
 const labHttp = axios.create({
   baseURL: `${BACKEND_BASE_URL.replace(/\/+$/g, '')}/lab`,
@@ -9,12 +9,12 @@ const labHttp = axios.create({
 });
 
 function assertLabControlEnabled(method: string, path: string): void {
-  if (!isRuntimeDevCompatDisabled()) {
+  if (!isLabControlDisabled()) {
     return;
   }
 
   recordRuntimeDiagnostic({
-    code: 'LAB_DEV_COMPAT_BLOCKED',
+    code: 'LAB_CONTROL_DISABLED',
     kind: 'contract-gap',
     message: `Lab control API is disabled for ${method.toUpperCase()} /lab${path}`,
     scope: 'lab-control',
