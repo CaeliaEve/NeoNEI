@@ -10,16 +10,20 @@ const apiPath = resolve(root, 'src/services/current-runtime-api.service.ts');
 const reportRegistryPath = resolve(root, 'src/services/current-runtime-report-registry.service.ts');
 const runtimeRecipePackPath = resolve(root, 'src/services/runtime-recipe-pack.service.ts');
 const nativeRenderDiagnosticsPath = resolve(root, 'src/services/native-render-runtime-diagnostics.service.ts');
+const nativeRenderDiagnosticsAbiPath = resolve(root, 'src/services/native-render-runtime-diagnostics-abi.ts');
 const runtimeHealthPath = resolve(root, 'src/services/runtime-health-summary.service.ts');
 const rustSearchPackPath = resolve(root, 'src/services/rust-search-pack.service.ts');
+const rustSearchPackAbiPath = resolve(root, 'src/services/rust-search-pack-abi.ts');
 const artifactIndex = readFileSync(artifactIndexPath, 'utf8');
 const snapshot = readFileSync(snapshotPath, 'utf8');
 const api = readFileSync(apiPath, 'utf8');
 const reportRegistry = readFileSync(reportRegistryPath, 'utf8');
 const runtimeRecipePack = readFileSync(runtimeRecipePackPath, 'utf8');
 const nativeRenderDiagnostics = readFileSync(nativeRenderDiagnosticsPath, 'utf8');
+const nativeRenderDiagnosticsAbi = readFileSync(nativeRenderDiagnosticsAbiPath, 'utf8');
 const runtimeHealth = readFileSync(runtimeHealthPath, 'utf8');
 const rustSearchPack = readFileSync(rustSearchPackPath, 'utf8');
+const rustSearchPackAbi = readFileSync(rustSearchPackAbiPath, 'utf8');
 
 test('current runtime artifact index owns dist-data paths and artifact inventory', () => {
   assert.equal(existsSync(artifactIndexPath), true, 'current-runtime-artifact-index.service.ts must exist');
@@ -89,7 +93,37 @@ test('runtime recipe pack and native render diagnostics reuse artifact index pat
   assert.doesNotMatch(runtimeHealth, /PUBLIC_DIR/);
   assert.doesNotMatch(runtimeHealth, /path\.join\(PUBLIC_DIR, 'dist-data'\)/);
 
-  assert.match(rustSearchPack, /import \{ DIST_DATA_DIR \} from '\.\.\/config\/runtime-paths'/);
+  assert.match(rustSearchPack, /from '\.\/current-runtime-artifact-index\.service'/);
+  assert.match(rustSearchPack, /CURRENT_RUNTIME_DIST_MANIFEST_FILE/);
+  assert.match(rustSearchPack, /resolveDistDataRuntimeFile/);
+  assert.doesNotMatch(rustSearchPack, /DIST_DATA_DIR/);
   assert.doesNotMatch(rustSearchPack, /PUBLIC_DIR/);
+  assert.doesNotMatch(rustSearchPack, /normalizeRelativePath/);
+  assert.doesNotMatch(rustSearchPack, /searchAll/);
+  assert.doesNotMatch(rustSearchPack, /path\.resolve/);
   assert.doesNotMatch(rustSearchPack, /path\.resolve\(PUBLIC_DIR, 'dist-data'\)/);
+});
+
+test('native render diagnostics and rust search pack runtime consumers use ABI catalogs', () => {
+  assert.equal(existsSync(nativeRenderDiagnosticsAbiPath), true, 'native render diagnostics ABI catalog must exist');
+  assert.match(nativeRenderDiagnostics, /from '\.\/native-render-runtime-diagnostics-abi'/);
+  assert.match(nativeRenderDiagnosticsAbi, /NATIVE_RENDER_RUNTIME_DIAGNOSTICS_SCHEMA/);
+  assert.match(nativeRenderDiagnosticsAbi, /NATIVE_RENDER_RUNTIME_DIAGNOSTIC_STATUS/);
+  assert.match(nativeRenderDiagnosticsAbi, /NATIVE_RENDER_RUNTIME_MANIFEST_KEYS/);
+  assert.match(nativeRenderDiagnosticsAbi, /NATIVE_RENDER_RUNTIME_CHECKS/);
+  assert.match(nativeRenderDiagnosticsAbi, /NATIVE_RENDER_RUNTIME_COUNT_FIELDS/);
+  assert.match(nativeRenderDiagnosticsAbi, /NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS/);
+  assert.match(nativeRenderDiagnosticsAbi, /NATIVE_RENDER_RUNTIME_BLOCKED_STATUS/);
+  assert.doesNotMatch(nativeRenderDiagnostics, /neonei\/native-render-runtime-diagnostics\/current/);
+  assert.doesNotMatch(nativeRenderDiagnostics, /'ok' \| 'degraded' \| 'missing'/);
+  assert.doesNotMatch(nativeRenderDiagnostics, /'blocked'/);
+  assert.doesNotMatch(nativeRenderDiagnostics, /'nativeRenderIndex'/);
+
+  assert.equal(existsSync(rustSearchPackAbiPath), true, 'rust search pack ABI catalog must exist');
+  assert.match(rustSearchPack, /from '\.\/rust-search-pack-abi'/);
+  assert.match(rustSearchPackAbi, /RUST_SEARCH_PACK_MANIFEST_KEYS/);
+  assert.match(rustSearchPackAbi, /RUST_SEARCH_PACK_DEFAULT_PATH/);
+  assert.match(rustSearchPackAbi, /RUST_SEARCH_PACK_DEFAULT_VERSION/);
+  assert.match(rustSearchPackAbi, /RUST_SEARCH_PACK_SIGNATURE_FIELDS/);
+  assert.doesNotMatch(rustSearchPackAbi, /searchAll/);
 });

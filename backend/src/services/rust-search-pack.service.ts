@@ -1,24 +1,23 @@
 import fs from 'fs';
-import path from 'path';
-import { DIST_DATA_DIR } from '../config/runtime-paths';
 import type { BrowserSearchPackPayload } from './publish-payload.service';
+import {
+  CURRENT_RUNTIME_DIST_MANIFEST_FILE,
+  isPortableRuntimePath,
+  normalizeRuntimePath,
+  resolveDistDataRuntimeFile,
+} from './current-runtime-artifact-index.service';
+import {
+  RUST_SEARCH_PACK_DEFAULT_PATH,
+  RUST_SEARCH_PACK_DEFAULT_VERSION,
+  RUST_SEARCH_PACK_MANIFEST_KEYS,
+  RUST_SEARCH_PACK_SIGNATURE_FIELDS,
+  type RustSearchPackManifestKey,
+  type RustSearchPackSignatureField,
+} from './rust-search-pack-abi';
 
-type DistDataManifest = {
-  sourceSignature?: string | null;
-  runtimeCacheKey?: string | null;
-  files?: {
-    rustSearchPack?: string | null;
-    searchAll?: string | null;
-  };
+type DistDataManifest = Partial<Record<RustSearchPackSignatureField, string | null>> & {
+  files?: Partial<Record<RustSearchPackManifestKey, string | null>>;
 };
-
-function normalizeRelativePath(value?: string | null): string | null {
-  const normalized = `${value ?? ''}`.trim().replace(/\\/g, '/').replace(/^\/+/, '');
-  if (!normalized || normalized.split('/').some((segment) => segment === '..')) {
-    return null;
-  }
-  return normalized;
-}
 
 function readJsonFile<T>(filePath: string): T | null {
   try {
@@ -31,13 +30,44 @@ function readJsonFile<T>(filePath: string): T | null {
   }
 }
 
+function resolveSearchPackCandidate(relativePath?: string | null): string | null {
+  if (!isPortableRuntimePath(relativePath)) {
+    return null;
+  }
+  try {
+    return resolveDistDataRuntimeFile(normalizeRuntimePath(relativePath));
+  } catch {
+    return null;
+  }
+}
+
+function manifestSignature(manifest: DistDataManifest | null): string {
+  for (const field of RUST_SEARCH_PACK_SIGNATURE_FIELDS) {
+    const signature = `${manifest?.[field] ?? ''}`.trim();
+    if (signature) return signature;
+  }
+  return CURRENT_RUNTIME_DIST_MANIFEST_FILE;
+}
+
+function searchPackCandidatePaths(manifest: DistDataManifest | null): string[] {
+  const relativePaths = [
+    manifest?.files?.[RUST_SEARCH_PACK_MANIFEST_KEYS.rustSearchPack],
+    RUST_SEARCH_PACK_DEFAULT_PATH,
+  ];
+  return Array.from(new Set(
+    relativePaths
+      .map((relativePath) => resolveSearchPackCandidate(relativePath))
+      .filter((entry): entry is string => Boolean(entry)),
+  ));
+}
+
 function coercePack(payload: BrowserSearchPackPayload | null, signature?: string | null): BrowserSearchPackPayload | null {
   const items = Array.isArray(payload?.items) ? payload!.items.filter((entry) => entry?.itemId) : [];
   if (items.length <= 0) {
     return null;
   }
   return {
-    version: Number.isFinite(Number(payload?.version)) ? Number(payload?.version) : 3,
+    version: Number.isFinite(Number(payload?.version)) ? Number(payload?.version) : RUST_SEARCH_PACK_DEFAULT_VERSION,
     signature: payload?.signature ?? signature ?? undefined,
     total: Number.isFinite(Number(payload?.total)) ? Number(payload?.total) : items.length,
     items,
@@ -49,25 +79,13 @@ export class RustSearchPackService {
   private cachedPack: BrowserSearchPackPayload | null = null;
 
   readDistDataSearchPack(): BrowserSearchPackPayload | null {
-    const distDataRoot = DIST_DATA_DIR;
-    const manifestPath = path.join(distDataRoot, 'manifest.json');
-    const manifest = readJsonFile<DistDataManifest>(manifestPath);
-    const signature = `${manifest?.sourceSignature ?? manifest?.runtimeCacheKey ?? ''}`.trim() || manifestPath;
+    const manifest = readJsonFile<DistDataManifest>(CURRENT_RUNTIME_DIST_MANIFEST_FILE);
+    const signature = manifestSignature(manifest);
     if (this.cachedSignature === signature && this.cachedPack) {
       return this.cachedPack;
     }
 
-    const relativePaths = Array.from(new Set([
-      normalizeRelativePath(manifest?.files?.rustSearchPack),
-      normalizeRelativePath(manifest?.files?.searchAll),
-      'rust/search-pack.json',
-    ].filter((entry): entry is string => Boolean(entry))));
-
-    for (const relativePath of relativePaths) {
-      const candidate = path.resolve(distDataRoot, ...relativePath.split('/'));
-      if (!candidate.startsWith(distDataRoot)) {
-        continue;
-      }
+    for (const candidate of searchPackCandidatePaths(manifest)) {
       const pack = coercePack(readJsonFile<BrowserSearchPackPayload>(candidate), signature);
       if (pack) {
         this.cachedSignature = signature;
