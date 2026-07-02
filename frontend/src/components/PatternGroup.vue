@@ -1,6 +1,7 @@
 ﻿<script setup lang="ts">
 import { nextTick, ref, onMounted, watch, type ComponentPublicInstance } from 'vue';
-import { api, type PatternGroup, type PatternGroupWithPatterns, type PatternWithDetails } from '../services/api';
+import { patternControlClient } from '../control/patternControlClient';
+import type { PatternGroup, PatternGroupWithPatterns, PatternWithDetails } from '../services/api';
 
 const props = defineProps<{
   currentGroupId?: string;
@@ -55,13 +56,13 @@ const registerPatternRow = (
 
 const refreshSelectedGroup = async () => {
   if (!selectedGroup.value) return;
-  selectedGroup.value = await api.getPatternGroupWithPatterns(selectedGroup.value.groupId);
+  selectedGroup.value = await patternControlClient.getGroupWithPatterns(selectedGroup.value.groupId);
 };
 
 const loadPatternGroups = async () => {
   loading.value = true;
   try {
-    patternGroups.value = await api.getPatternGroups();
+    patternGroups.value = await patternControlClient.getGroups();
   } catch (error) {
     console.error('Failed to load pattern groups:', error);
   } finally {
@@ -71,7 +72,7 @@ const loadPatternGroups = async () => {
 
 const selectGroup = async (groupId: string) => {
   try {
-    selectedGroup.value = await api.getPatternGroupWithPatterns(groupId);
+    selectedGroup.value = await patternControlClient.getGroupWithPatterns(groupId);
     copyLuaStatus.value = 'idle';
     editingPatternId.value = null;
     editingPatternDraft.value = null;
@@ -85,7 +86,7 @@ const createPatternGroup = async () => {
   if (!newGroupName.value.trim()) return;
 
   try {
-    await api.createPatternGroup(newGroupName.value, newGroupDescription.value || undefined);
+    await patternControlClient.createGroup(newGroupName.value, newGroupDescription.value || undefined);
     newGroupName.value = '';
     newGroupDescription.value = '';
     showCreateDialog.value = false;
@@ -99,7 +100,7 @@ const updatePatternGroup = async () => {
   if (!editingGroup.value || !editingGroup.value.groupName.trim()) return;
 
   try {
-    await api.updatePatternGroup(
+    await patternControlClient.updateGroup(
       editingGroup.value.groupId,
       editingGroup.value.groupName,
       editingGroup.value.description || undefined,
@@ -116,7 +117,7 @@ const deletePatternGroup = async (groupId: string) => {
   if (!confirm('Delete this pattern group? All patterns in this group will also be deleted.')) return;
 
   try {
-    await api.deletePatternGroup(groupId);
+    await patternControlClient.deleteGroup(groupId);
     if (selectedGroup.value?.groupId === groupId) {
       selectedGroup.value = null;
     }
@@ -210,7 +211,7 @@ const copyExportLuaScript = async () => {
 
 const exportPatternGroup = async (groupId: string) => {
   try {
-    const exportData = await api.exportPatternGroup(groupId);
+    const exportData = await patternControlClient.exportGroup(groupId);
     const groupName = selectedGroup.value?.groupId === groupId
       ? selectedGroup.value.groupName
       : patternGroups.value.find((group) => group.groupId === groupId)?.groupName || 'pattern-group';
@@ -272,7 +273,7 @@ const savePatternEdit = async (patternId: string) => {
   if (!editingPatternDraft.value) return;
 
   try {
-    await api.updatePattern(patternId, {
+    await patternControlClient.updatePattern(patternId, {
       patternName: editingPatternDraft.value.patternName.trim(),
       priority: editingPatternDraft.value.priority,
       enabled: editingPatternDraft.value.enabled,
@@ -291,7 +292,7 @@ const deletePattern = async (patternId: string) => {
   if (!confirm('Delete this pattern?')) return;
 
   try {
-    await api.deletePattern(patternId);
+    await patternControlClient.deletePattern(patternId);
     await refreshSelectedGroup();
   } catch (error) {
     console.error('Failed to delete pattern:', error);
@@ -300,7 +301,7 @@ const deletePattern = async (patternId: string) => {
 
 const togglePatternBeSubstitute = async (patternId: string, currentValue: number) => {
   try {
-    await api.updatePattern(patternId, {
+    await patternControlClient.updatePattern(patternId, {
       beSubstitute: currentValue === 1 ? 0 : 1,
     });
     await refreshSelectedGroup();
@@ -311,7 +312,7 @@ const togglePatternBeSubstitute = async (patternId: string, currentValue: number
 
 const togglePatternEnabled = async (patternId: string, currentValue: number) => {
   try {
-    await api.updatePattern(patternId, {
+    await patternControlClient.updatePattern(patternId, {
       enabled: currentValue === 1 ? 0 : 1,
     });
     await refreshSelectedGroup();

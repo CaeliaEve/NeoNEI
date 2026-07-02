@@ -24,6 +24,7 @@ import { useHomeRecipeModal } from "../composables/home/useHomeRecipeModal";
 import { useHomeSearchContextMenu } from "../composables/home/useHomeSearchContextMenu";
 import { useHomeSettingsState } from "../composables/home/useHomeSettingsState";
 import { useSound } from "../services/sound.service";
+import { isRuntimeDevCompatDisabled } from "../runtime/runtimeMode";
 import "../styles/homePage.css";
 
 const router = useRouter();
@@ -34,6 +35,7 @@ const PatternGroup = defineAsyncComponent(
 
 // View mode
 const currentView = ref<"items" | "patterns">("items");
+const patternControlEnabled = computed(() => !isRuntimeDevCompatDisabled());
 
 // Item size settings with localStorage
 const loadSavedItemSize = () => {
@@ -167,6 +169,10 @@ watch(
 );
 
 watch(currentView, async (view) => {
+  if (view === "patterns" && !patternControlEnabled.value) {
+    currentView.value = "items";
+    return;
+  }
   if (view === "items") {
     await nextTick();
     updateHistoryPanelWidth();
@@ -449,7 +455,7 @@ setGridViewportSync(syncMeasuredPageSize);
 
       <!-- Patterns View -->
       <div
-        v-if="currentView === 'patterns'"
+        v-if="currentView === 'patterns' && patternControlEnabled"
         class="flex-1 overflow-y-auto p-6 no-scrollbar"
       >
         <PatternGroup
@@ -505,6 +511,7 @@ setGridViewportSync(syncMeasuredPageSize);
       :atlas-resident-item-count="atlasResidentItemCount"
       :total-items="totalItems"
       :history-count="viewHistory.length"
+      :pattern-control-enabled="patternControlEnabled"
       @save-settings="saveSettings"
       @warm-resident-atlas="warmResidentAtlas"
       @refresh-atlas-resident-state="refreshAtlasResidentState"

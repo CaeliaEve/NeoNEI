@@ -16,7 +16,7 @@ import { resolveRecipePresentationProfile } from '../services/uiTypeMapping';
 import { normalizeThaumcraftAspectItemIdForRecipeLookup } from '../services/thaumcraftAspects';
 import { useRecipeViewer } from '../composables/useRecipeViewer';
 import { useRecipeRouteSync } from '../composables/useRecipeRouteSync';
-import { api, type EcosystemOverview, type MultiblockBlueprint } from '../services/api';
+import { api, type MultiblockBlueprint } from '../services/api';
 import { useRecipeHistory } from '../services/recipeHistory.service';
 import type { RecipeDisplayHandle, RecipeOverlayUiState } from '../domain/recipeDisplayContract';
 
@@ -43,7 +43,6 @@ const showMultiblockDialog = ref(false);
 const multiblockLoading = ref(false);
 const multiblockError = ref<string | null>(null);
 const multiblockBlueprint = ref<MultiblockBlueprint | null>(null);
-const ecosystemOverview = ref<EcosystemOverview | null>(null);
 let multiblockRequestToken = 0;
 
 const defaultOverlayState = (): RecipeOverlayUiState => ({
@@ -202,13 +201,7 @@ const ecosystemStats = computed(() => {
   ];
 });
 
-const ecosystemLaneStatus = computed(() =>
-  ecosystemOverview.value?.lanes.map((lane) => ({
-    id: lane.id,
-    label: lane.label,
-    ok: lane.detected && lane.details.every((entry) => entry.ok),
-  })) ?? []
-);
+const ecosystemLaneStatus = computed<Array<{ id: string; label: string; ok: boolean }>>(() => []);
 
 const showRecipePreviewGrid = computed(() => {
   if (!featureRecipeBrowserV2.value || currentCategoryPages.value.length <= 6) {
@@ -591,20 +584,6 @@ const handleRecipeWheel = (event: WheelEvent) => {
 
 onMounted(() => {
   window.addEventListener('keydown', handleKeydown);
-  const loadOverview = () => {
-    void api.getEcosystemOverview()
-      .then((overview) => {
-        ecosystemOverview.value = overview;
-      })
-      .catch((error) => {
-        console.error('Failed to load ecosystem overview:', error);
-      });
-  };
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(() => loadOverview(), { timeout: 1500 });
-  } else {
-    window.setTimeout(loadOverview, 300);
-  }
 });
 
 onBeforeUnmount(() => {

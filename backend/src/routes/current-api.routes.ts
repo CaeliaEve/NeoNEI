@@ -16,6 +16,11 @@ import {
   getCurrentRecipePage,
 } from '../services/current-runtime-recipe-api.service';
 import { getCurrentRuntimeSettings } from '../services/current-runtime-settings.service';
+import {
+  getCurrentRuntimeForestryGeneticsOverview,
+  getCurrentRuntimeGTDiagramsOverview,
+  getCurrentRuntimeMultiblockBlueprint,
+} from '../services/current-runtime-special-data.service';
 import { asyncHandler } from '../utils/http';
 import { mountCurrentRuntimeEndpoint } from './current-runtime-endpoint-registry';
 import {
@@ -79,6 +84,28 @@ function sendDiagnosticsRuntimeSummary(res: Response): void {
 function sendRuntimeSettings(res: Response): void {
   withCurrentRuntimeApiContext((context) => {
     sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeSettings(), context);
+  });
+}
+
+function sendGTDiagramsOverview(res: Response): void {
+  withCurrentRuntimeApiContext((context) => {
+    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeGTDiagramsOverview(), context);
+  });
+}
+
+function sendForestryGeneticsOverview(res: Response): void {
+  withCurrentRuntimeApiContext((context) => {
+    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeForestryGeneticsOverview(), context);
+  });
+}
+
+function sendMultiblockBlueprint(controllerItemIdParam: string | undefined, res: Response): void {
+  withCurrentRuntimeApiContext((context) => {
+    sendCurrentRuntimeNoStoreJson(
+      res,
+      getCurrentRuntimeMultiblockBlueprint(controllerItemIdParam),
+      context,
+    );
   });
 }
 
@@ -196,5 +223,21 @@ mountCurrentRuntimeEndpoint(router, 'nativeSurfaceMetrics', (_req, res) => {
 mountCurrentRuntimeEndpoint(router, 'runtimeSettings', (_req, res) => {
   sendRuntimeSettings(res);
 });
+
+mountCurrentRuntimeEndpoint(router, 'runtimeDataGTDiagramsOverview', (_req, res) => {
+  sendGTDiagramsOverview(res);
+});
+
+mountCurrentRuntimeEndpoint(router, 'runtimeDataForestryGeneticsOverview', (_req, res) => {
+  sendForestryGeneticsOverview(res);
+});
+
+mountCurrentRuntimeEndpoint(
+  router,
+  'runtimeDataMultiblockBlueprint',
+  asyncHandler(async (req, res) => {
+    sendMultiblockBlueprint(req.params.controllerItemId, res);
+  }),
+);
 
 export default router;

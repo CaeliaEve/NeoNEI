@@ -10,7 +10,6 @@
   BrowserSearchPackEntry,
   BrowserSearchPackResponse,
   DimensionDTO,
-  EcosystemOverview,
   Fluid,
   FluidGroup,
   FluidStack,
@@ -23,11 +22,6 @@
   Mod,
   PageRichMediaManifest,
   PaginatedResponse,
-  Pattern,
-  PatternExportData,
-  PatternGroup,
-  PatternGroupWithPatterns,
-  PatternWithDetails,
   PublicRuntimeManifest,
   RuntimeHealthSummary,
   PublishedRecipeBootstrapSearchPack,
@@ -54,7 +48,6 @@
   indexedRecipeCategorySummary,
   indexedRecipeMetadata,
 } from '../../runtime/types';
-import { patternRuntimeClient, type CreatePatternPayload, type UpdatePatternPayload } from '../../runtime/patternClient';
 import { specialDataRuntimeClient } from '../../runtime/specialDataClient';
 import { indexedRecipeRuntimeClient, type CurrentRecipePageResponse } from '../../runtime/indexedRecipeClient';
 import {
@@ -191,63 +184,6 @@ export const api = {
   async getMods(): Promise<Mod[]> {
     return getRuntimeMods();
   },
-
-  // === Pattern Management ===
-
-  // Get all pattern groups
-  async getPatternGroups(): Promise<PatternGroup[]> {
-    return patternRuntimeClient.getGroups();
-  },
-
-  // Get single pattern group
-  async getPatternGroup(groupId: string): Promise<PatternGroup> {
-    return patternRuntimeClient.getGroup(groupId);
-  },
-
-  // Get pattern group with patterns
-  async getPatternGroupWithPatterns(groupId: string): Promise<PatternGroupWithPatterns> {
-    return patternRuntimeClient.getGroupWithPatterns(groupId);
-  },
-
-  // Create pattern group
-  async createPatternGroup(groupName: string, description?: string): Promise<PatternGroup> {
-    return patternRuntimeClient.createGroup(groupName, description);
-  },
-
-  // Update pattern group
-  async updatePatternGroup(groupId: string, groupName: string, description?: string): Promise<void> {
-    await patternRuntimeClient.updateGroup(groupId, groupName, description);
-  },
-
-  // Delete pattern group
-  async deletePatternGroup(groupId: string): Promise<void> {
-    await patternRuntimeClient.deleteGroup(groupId);
-  },
-
-  // Create pattern
-  async createPattern(data: CreatePatternPayload): Promise<Pattern> {
-    return patternRuntimeClient.createPattern(data);
-  },
-
-  // Delete pattern
-  async deletePattern(patternId: string): Promise<void> {
-    await patternRuntimeClient.deletePattern(patternId);
-  },
-
-  // Update pattern
-  async updatePattern(patternId: string, updates: UpdatePatternPayload): Promise<void> {
-    await patternRuntimeClient.updatePattern(patternId, updates);
-  },
-
-  // Export pattern group to OC-AE JSON
-  async exportPatternGroup(groupId: string): Promise<PatternExportData> {
-    return patternRuntimeClient.exportGroup(groupId);
-  },
-
-  async getEcosystemOverview(): Promise<EcosystemOverview> {
-    return specialDataRuntimeClient.getEcosystemOverview();
-  },
-
 
   async getBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
     return textureRuntimeClient.getBrowserAtlasIndex();

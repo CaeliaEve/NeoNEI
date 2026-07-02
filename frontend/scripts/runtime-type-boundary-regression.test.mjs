@@ -13,12 +13,19 @@ const searchClientSource = fs.readFileSync('src/runtime/searchClient.ts', 'utf8'
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const browserProjectionSource = fs.readFileSync('src/runtime/browserProjection.ts', 'utf8').replace(/\r\n/g, '\n');
 const browserSearchProjectionSource = fs.readFileSync('src/runtime/browserSearchProjection.ts', 'utf8').replace(/\r\n/g, '\n');
-const patternClientSource = fs.readFileSync('src/runtime/patternClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const patternRuntimeClientExists = fs.existsSync('src/runtime/patternClient.ts');
+const devCompatRuntimeClientExists = fs.existsSync('src/runtime/devCompatClient.ts');
+const labControlClientSource = fs.readFileSync('src/control/labControlClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const patternControlClientSource = fs.readFileSync('src/control/patternControlClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const specialDataClientSource = fs.readFileSync('src/runtime/specialDataClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const indexedRecipeClientSource = fs.readFileSync('src/runtime/indexedRecipeClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const itemClientExists = fs.existsSync('src/runtime/itemClient.ts');
 const itemClientSource = itemClientExists ? fs.readFileSync('src/runtime/itemClient.ts', 'utf8').replace(/\r\n/g, '\n') : '';
 const itemTooltipSource = fs.readFileSync('src/components/ItemTooltip.vue', 'utf8').replace(/\r\n/g, '\n');
+const recipeViewSource = fs.readFileSync('src/views/RecipeView.vue', 'utf8').replace(/\r\n/g, '\n');
+const homePageSource = fs.readFileSync('src/views/HomePage.vue', 'utf8').replace(/\r\n/g, '\n');
+const homeSettingsPanelSource = fs.readFileSync('src/components/home/HomeSettingsPanel.vue', 'utf8').replace(/\r\n/g, '\n');
+const patternGroupSource = fs.readFileSync('src/components/PatternGroup.vue', 'utf8').replace(/\r\n/g, '\n');
 const animationBudgetSource = fs.readFileSync('src/services/animationBudget.ts', 'utf8').replace(/\r\n/g, '\n');
 const gatecFinalSource = fs.readFileSync('scripts/gatec-final.spec.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\\r\\n/g, '\\n');
@@ -203,38 +210,56 @@ test('pattern management contracts live outside the legacy api facade', () => {
   }
 });
 
-test('pattern management client lives outside the legacy api facade', () => {
+test('pattern management is isolated as an explicit lab control surface', () => {
   assert.equal(
-    patternClientSource.includes("from './types';"),
-    true,
-    'pattern client should consume contracts from runtime/types',
+    patternRuntimeClientExists,
+    false,
+    'frontend runtime should not keep a pattern lab client after pattern management is isolated to control/',
   );
   assert.equal(
-    patternClientSource.includes("from './devCompatClient';"),
+    devCompatRuntimeClientExists,
+    false,
+    'frontend runtime should not keep a generic dev compatibility HTTP client',
+  );
+  assert.equal(
+    patternControlClientSource.includes("from '../runtime/types';"),
     true,
-    'pattern client should keep lab compatibility access behind the runtime dev client',
+    'pattern control client should consume contracts from runtime/types without re-owning DTOs',
   );
   assert.doesNotMatch(
-    patternClientSource,
+    patternControlClientSource,
     /from '\.\.\/services\/api'/,
-    'pattern client should not import the legacy api facade',
+    'pattern control client should not import the legacy api facade',
   );
   for (const token of [
-    'patternRuntimeClient',
+    'patternControlClient',
     'CreatePatternPayload',
     'UpdatePatternPayload',
   ]) {
-    assert.equal(patternClientSource.includes(token), true, `missing pattern client token: ${token}`);
+    assert.equal(patternControlClientSource.includes(token), true, `missing pattern control client token: ${token}`);
   }
+  assert.match(labControlClientSource, /LAB_DEV_COMPAT_BLOCKED/);
+  assert.match(labControlClientSource, /assertLabControlEnabled\('post', path\)/);
+  assert.match(patternGroupSource, /patternControlClient\.(getGroups|getGroupWithPatterns|createGroup|updateGroup|deleteGroup|exportGroup|updatePattern|deletePattern)/);
   assert.equal(
-    apiCompatibilityFacadeSource.includes('patternRuntimeClient.getGroups()'),
-    true,
-    'api compatibility facade should delegate pattern group reads to the runtime pattern client',
-  );
-  assert.equal(
-    apiSource.includes("postLabPayload<Pattern>('/patterns'"),
+    apiCompatibilityFacadeSource.includes('patternRuntimeClient'),
     false,
-    'services/api.ts should not own pattern mutation HTTP calls',
+    'runtime facade should not expose pattern lab control through the production runtime API facade',
+  );
+  assert.doesNotMatch(
+    apiCompatibilityFacadeSource,
+    /getPatternGroups|getPatternGroupWithPatterns|createPatternGroup|updatePatternGroup|deletePatternGroup|exportPatternGroup|createPattern\(|updatePattern\(|deletePattern\(/,
+    'api facade should not expose pattern control methods',
+  );
+  assert.match(
+    homePageSource,
+    /patternControlEnabled = computed\(\(\) => !isRuntimeDevCompatDisabled\(\)\)/,
+    'HomePage should gate the pattern control view outside public runtime mode',
+  );
+  assert.match(
+    homeSettingsPanelSource,
+    /patternControlEnabled/,
+    'settings panel should disable the pattern control switch when lab control is unavailable',
   );
 });
 
@@ -247,8 +272,8 @@ test('special data client lives outside the legacy api facade', () => {
   );
   assert.equal(
     specialDataClientSource.includes("from './devCompatClient';"),
-    true,
-    'special data client should keep lab compatibility access behind the runtime dev client',
+    false,
+    'special data client should read production special data from current runtime datafs, not lab compatibility',
   );
   assert.doesNotMatch(
     specialDataClientSource,
@@ -256,7 +281,6 @@ test('special data client lives outside the legacy api facade', () => {
     'special data client should not import the legacy api facade',
   );
   for (const token of [
-    'getEcosystemOverview',
     'getMultiblockBlueprint',
     'getGTDiagramsOverview',
     'getForestryGeneticsOverview',
@@ -264,9 +288,19 @@ test('special data client lives outside the legacy api facade', () => {
     assert.equal(specialDataClientSource.includes(token), true, `missing special data client method: ${token}`);
   }
   assert.equal(
-    apiCompatibilityFacadeSource.includes('specialDataRuntimeClient.getEcosystemOverview()'),
+    specialDataClientSource.includes('/runtime/current/data/'),
     true,
-    'api compatibility facade should delegate ecosystem overview reads to the runtime special data client',
+    'special data client should use the current runtime datafs namespace',
+  );
+  assert.doesNotMatch(
+    apiCompatibilityFacadeSource,
+    /getEcosystemOverview|specialDataRuntimeClient\.getEcosystemOverview/,
+    'ecosystem overview is a dev-local machine-path diagnostic and should not remain in the production runtime facade',
+  );
+  assert.doesNotMatch(
+    recipeViewSource,
+    /api\.getEcosystemOverview|getLabPayload<EcosystemOverview>|ecosystemOverview/,
+    'RecipeView should not idle-prefetch dev-local ecosystem diagnostics from lab',
   );
   assert.equal(
     apiSource.includes("getLabPayload<GTDiagramsOverview>('/gt-diagrams/overview')"),

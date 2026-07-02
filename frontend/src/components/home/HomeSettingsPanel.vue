@@ -21,6 +21,7 @@ const props = defineProps<{
   atlasResidentItemCount: number;
   totalItems: number;
   historyCount: number;
+  patternControlEnabled: boolean;
 }>();
 
 const emit = defineEmits<{
@@ -80,6 +81,9 @@ const runtimeCacheHashText = computed(() => runtimeCacheStatus.value.manifestHas
 const toggleOpen = () => emit("update:modelValue", !props.modelValue);
 const close = () => emit("update:modelValue", false);
 const selectView = (view: HomeView) => {
+  if (view === "patterns" && !props.patternControlEnabled) {
+    return;
+  }
   emit("update:currentView", view);
   close();
 };
@@ -256,10 +260,12 @@ watch(
                     </button>
                     <button
                       type="button"
+                      :disabled="!patternControlEnabled"
+                      :title="patternControlEnabled ? '样板管理' : '样板管理属于 lab control，只在开发/控制模式启用'"
                       @click="
                         selectView('patterns');
                       "
-                      :class="['settings-segment__btn flex-1 py-1.5 px-3 text-xs rounded transition-all duration-300 flex items-center justify-center gap-1.5', currentViewModel === 'patterns' ? 'settings-segment__btn--active settings-segment__btn--violet' : 'settings-segment__btn--inactive']"
+                      :class="['settings-segment__btn flex-1 py-1.5 px-3 text-xs rounded transition-all duration-300 flex items-center justify-center gap-1.5', currentViewModel === 'patterns' ? 'settings-segment__btn--active settings-segment__btn--violet' : 'settings-segment__btn--inactive', !patternControlEnabled ? 'opacity-40 cursor-not-allowed' : '']"
                     >
                       <span class="btn-indicator w-1 h-1 rounded-full" />
                       样板管理

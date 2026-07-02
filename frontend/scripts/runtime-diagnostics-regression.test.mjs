@@ -11,42 +11,42 @@ const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts',
 const distDataRuntimeRenderSource = fs.readFileSync('src/services/distDataRuntimeRender.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataDiagnosticSource = `${distDataRuntimeSource}
 ${distDataRuntimeRenderSource}`;
-const devCompatClientSource = fs.readFileSync('src/runtime/devCompatClient.ts', 'utf8').replace(/\r\n/g, '\n');
+const labControlClientSource = fs.readFileSync('src/control/labControlClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const runtimeModeSource = fs.readFileSync('src/runtime/runtimeMode.ts', 'utf8').replace(/\r\n/g, '\n');
 const viteConfigSource = fs.readFileSync('vite.config.ts', 'utf8').replace(/\r\n/g, '\n');
 
 test('public runtime profile blocks lab dev compatibility calls before network IO', () => {
-  const devCompatGuardSource = `${devCompatClientSource}
+  const devCompatGuardSource = `${labControlClientSource}
 ${runtimeModeSource}`;
   for (const token of [
     'VITE_PUBLIC_RUNTIME_ONLY',
     'VITE_RUNTIME_DISABLE_DEV_COMPAT',
     'isRuntimeDevCompatDisabled',
     'LAB_DEV_COMPAT_BLOCKED',
-    'assertLabDevCompatibilityEnabled',
+    'assertLabControlEnabled',
     'public runtime profile must use compiled runtime artifacts',
   ]) {
     assert.equal(devCompatGuardSource.includes(token), true, `missing lab compatibility guard token: ${token}`);
   }
 
   assert.match(
-    devCompatClientSource,
-    /assertLabDevCompatibilityEnabled\('get', path\);\n\s*const response = await labHttp\.get/s,
+    labControlClientSource,
+    /assertLabControlEnabled\('get', path\);\n\s*const response = await labHttp\.get/s,
     'GET lab calls should be blocked before HTTP execution',
   );
   assert.match(
-    devCompatClientSource,
-    /assertLabDevCompatibilityEnabled\('post', path\);\n\s*const response = await labHttp\.post/s,
+    labControlClientSource,
+    /assertLabControlEnabled\('post', path\);\n\s*const response = await labHttp\.post/s,
     'POST lab calls should be blocked before HTTP execution',
   );
   assert.match(
-    devCompatClientSource,
-    /assertLabDevCompatibilityEnabled\('put', path\);\n\s*const response = await labHttp\.put/s,
+    labControlClientSource,
+    /assertLabControlEnabled\('put', path\);\n\s*const response = await labHttp\.put/s,
     'PUT lab calls should be blocked before HTTP execution',
   );
   assert.match(
-    devCompatClientSource,
-    /assertLabDevCompatibilityEnabled\('delete', path\);\n\s*const response = await labHttp\.delete/s,
+    labControlClientSource,
+    /assertLabControlEnabled\('delete', path\);\n\s*const response = await labHttp\.delete/s,
     'DELETE lab calls should be blocked before HTTP execution',
   );
 });

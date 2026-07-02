@@ -14,6 +14,7 @@ const currentRuntimeObservabilitySource = fs.readFileSync('src/services/current-
 const currentRuntimeRecipeApiSource = fs.readFileSync('src/services/current-runtime-recipe-api.service.ts', 'utf8');
 const currentRuntimeReportRegistrySource = fs.readFileSync('src/services/current-runtime-report-registry.service.ts', 'utf8');
 const currentRuntimeSettingsSource = fs.readFileSync('src/services/current-runtime-settings.service.ts', 'utf8');
+const currentRuntimeSpecialDataSource = fs.readFileSync('src/services/current-runtime-special-data.service.ts', 'utf8');
 
 test('current API exposes semantic non-versioned runtime endpoints', () => {
   for (const route of [
@@ -33,11 +34,15 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
     '/health/current/runtime',
     '/metrics/current/native-surface',
     '/settings/runtime',
+    '/runtime/current/data/gt-diagrams/overview',
+    '/runtime/current/data/forestry-genetics/overview',
+    '/runtime/current/data/multiblocks/:controllerItemId',
   ]) {
     assert.equal(currentRuntimeEndpointRegistrySource.includes(route), true, `missing ${route}`);
   }
   assert.match(currentRuntimeEndpointRegistrySource, /export const CURRENT_RUNTIME_ENDPOINTS = Object\.freeze/);
   assert.match(currentRuntimeEndpointRegistrySource, /plane: 'controlfs'/);
+  assert.match(currentRuntimeEndpointRegistrySource, /plane: 'datafs'/);
   assert.match(currentRuntimeEndpointRegistrySource, /plane: 'debugfs'/);
   assert.match(currentRuntimeEndpointRegistrySource, /plane: 'recipefs'/);
   assert.doesNotMatch(currentRuntimeEndpointRegistrySource, /plane: 'compatfs'/);
@@ -64,7 +69,16 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(routeSource.includes('function sendDiagnosticsHealth'), true);
   assert.equal(routeSource.includes('function sendDiagnosticsRuntimeSummary'), true);
   assert.equal(routeSource.includes('function sendRuntimeSettings'), true);
+  assert.equal(routeSource.includes('function sendGTDiagramsOverview'), true);
+  assert.equal(routeSource.includes('function sendForestryGeneticsOverview'), true);
+  assert.equal(routeSource.includes('function sendMultiblockBlueprint'), true);
   assert.equal(routeSource.includes('getCurrentRuntimeSettings()'), true);
+  assert.equal(routeSource.includes('getCurrentRuntimeGTDiagramsOverview()'), true);
+  assert.equal(routeSource.includes('getCurrentRuntimeForestryGeneticsOverview()'), true);
+  assert.equal(routeSource.includes('getCurrentRuntimeMultiblockBlueprint(controllerItemIdParam)'), true);
+  assert.equal(currentRuntimeSpecialDataSource.includes("from './gt-diagrams.service'"), true);
+  assert.equal(currentRuntimeSpecialDataSource.includes("from './forestry-genetics.service'"), true);
+  assert.equal(currentRuntimeSpecialDataSource.includes("from './multiblocks.service'"), true);
   assert.equal(currentRuntimeSettingsSource.includes("allowDomGridFallback: false"), true);
   assert.equal(currentRuntimeSettingsSource.includes("allowPerItemImageHotLoad: false"), true);
   assert.equal(currentRuntimeSettingsSource.includes('NEONEI_DEBUG_PANELS'), true);

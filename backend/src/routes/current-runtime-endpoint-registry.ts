@@ -1,6 +1,6 @@
 import type { RequestHandler, Router } from 'express';
 
-export type CurrentRuntimeEndpointPlane = 'controlfs' | 'debugfs' | 'recipefs';
+export type CurrentRuntimeEndpointPlane = 'controlfs' | 'datafs' | 'debugfs' | 'recipefs';
 export type CurrentRuntimeEndpointMethod = 'get' | 'use';
 
 export const CURRENT_RUNTIME_ENDPOINTS = Object.freeze([
@@ -23,6 +23,9 @@ export const CURRENT_RUNTIME_ENDPOINTS = Object.freeze([
   Object.freeze({ key: 'healthCurrentRuntime', method: 'get', path: '/health/current/runtime', plane: 'debugfs' }),
   Object.freeze({ key: 'nativeSurfaceMetrics', method: 'get', path: '/metrics/current/native-surface', plane: 'debugfs' }),
   Object.freeze({ key: 'runtimeSettings', method: 'get', path: '/settings/runtime', plane: 'controlfs' }),
+  Object.freeze({ key: 'runtimeDataGTDiagramsOverview', method: 'get', path: '/runtime/current/data/gt-diagrams/overview', plane: 'datafs' }),
+  Object.freeze({ key: 'runtimeDataForestryGeneticsOverview', method: 'get', path: '/runtime/current/data/forestry-genetics/overview', plane: 'datafs' }),
+  Object.freeze({ key: 'runtimeDataMultiblockBlueprint', method: 'get', path: '/runtime/current/data/multiblocks/:controllerItemId', plane: 'datafs' }),
 ] as const);
 
 export type CurrentRuntimeEndpoint = (typeof CURRENT_RUNTIME_ENDPOINTS)[number];

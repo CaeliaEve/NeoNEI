@@ -8,7 +8,7 @@ const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const runtimeSessionSource = fs.readFileSync(path.join(frontendRoot, 'src/services/api/runtimeSession.ts'), 'utf8').replace(/\r\n/g, '\n');
 const clientSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeBootstrapClient.ts'), 'utf8').replace(/\r\n/g, '\n');
 const recipeClientSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeClient.ts'), 'utf8').replace(/\r\n/g, '\n');
-const devCompatSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/devCompatClient.ts'), 'utf8').replace(/\r\n/g, '\n');
+const labControlSource = fs.readFileSync(path.join(frontendRoot, 'src/control/labControlClient.ts'), 'utf8').replace(/\r\n/g, '\n');
 
 test('live recipe bootstrap preference module is retired from runtime hot paths', () => {
   assert.equal(fs.existsSync(path.join(frontendRoot, 'src/runtime/recipeBootstrapPreference.ts')), false);
@@ -31,7 +31,7 @@ test('recipe bootstrap runtime path uses compiled artifacts only', () => {
 });
 
 test('recipe bootstrap lab compatibility fallback is not reachable from runtime clients', () => {
-  assert.match(devCompatSource, /LAB_DEV_COMPAT_BLOCKED/);
+  assert.match(labControlSource, /LAB_DEV_COMPAT_BLOCKED/);
   assert.doesNotMatch(clientSource, /getRecipeBootstrap[A-Za-z]*Compat|devCompatClient|getLabPayload|\/recipe-bootstrap\//);
   assert.doesNotMatch(recipeClientSource, /getRecipeBootstrap[A-Za-z]*Compat|getLabPayload|\/recipe-bootstrap\//);
 });
