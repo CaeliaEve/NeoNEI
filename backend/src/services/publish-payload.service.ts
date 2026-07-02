@@ -2,7 +2,6 @@
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import type { BrowserSearchPackEntry } from './items-search.service';
 import type { BrowserPageEntry } from './items.service';
-import type { PageAtlasResponse } from './page-atlas.service';
 import type { BrowserPageRichMediaManifest } from './browser-render-hints.service';
 
 export interface PublishModSummary {
@@ -17,7 +16,6 @@ export interface BrowserPageWindowPayload {
   page: number;
   pageSize: number;
   totalPages: number;
-  atlas: PageAtlasResponse | null;
   mediaManifest?: BrowserPageRichMediaManifest | null;
   resourceManifest?: BrowserPageResourceManifest;
   windowOffset?: number;
@@ -363,39 +361,6 @@ export function buildHomeBootstrapWindowPayloadKey(params: {
   });
 }
 
-function collectDisplayItemIds(entries: BrowserPageEntry[]): string[] {
-  const ordered: string[] = [];
-  const seen = new Set<string>();
-
-  for (const entry of entries) {
-    const itemId = entry.kind === 'item' ? entry.item?.itemId : entry.group.representative?.itemId;
-    if (!itemId || seen.has(itemId)) continue;
-    seen.add(itemId);
-    ordered.push(itemId);
-  }
-
-  return ordered;
-}
-
-function trimAtlasEntries(
-  atlas: PageAtlasResponse | null,
-  entries: BrowserPageEntry[],
-): PageAtlasResponse | null {
-  if (!atlas) {
-    return null;
-  }
-
-  const itemIds = new Set(collectDisplayItemIds(entries));
-  const trimmedEntries = Object.fromEntries(
-    Object.entries(atlas.entries).filter(([itemId]) => itemIds.has(itemId)),
-  );
-
-  return {
-    ...atlas,
-    entries: trimmedEntries,
-  };
-}
-
 function trimRichMediaManifest(
   mediaManifest: BrowserPageRichMediaManifest | null | undefined,
   entries: BrowserPageEntry[],
@@ -428,7 +393,6 @@ function trimRichMediaManifest(
 
 export function buildBrowserPageResourceManifest(
   entries: BrowserPageEntry[],
-  atlas: PageAtlasResponse | null | undefined,
   mediaManifest: BrowserPageRichMediaManifest | null | undefined,
 ): BrowserPageResourceManifest {
   const displayItems = entries
@@ -439,13 +403,6 @@ export function buildBrowserPageResourceManifest(
   );
   const renderAssetRefs = Array.from(
     new Set(displayItems.map((item) => `${item.renderAssetRef ?? ''}`.trim()).filter(Boolean)),
-  );
-  const atlasUrls = Array.from(
-    new Set(
-      [atlas?.atlasUrl]
-        .map((entry) => `${entry ?? ''}`.trim())
-        .filter(Boolean),
-    ),
   );
   const animatedAtlasFiles = Array.from(
     new Set(
@@ -458,9 +415,9 @@ export function buildBrowserPageResourceManifest(
   return {
     itemIds,
     renderAssetRefs,
-    atlasUrls,
+    atlasUrls: [],
     animatedAtlasFiles,
-    atlasEntryCount: atlas ? Object.keys(atlas.entries ?? {}).length : 0,
+    atlasEntryCount: 0,
     animatedAtlasCount: Object.keys(mediaManifest?.animatedAtlases ?? {}).length,
   };
 }
@@ -490,7 +447,6 @@ export function derivePagePackFromWindow(
   const relativeStartIndex = startIndex - windowOffset;
   const relativeEndIndex = relativeStartIndex + normalizedPageSize;
   const data = window.data.slice(relativeStartIndex, relativeEndIndex);
-  const atlas = trimAtlasEntries(window.atlas, data);
   const mediaManifest = trimRichMediaManifest(window.mediaManifest, data);
   return {
     data,
@@ -498,9 +454,8 @@ export function derivePagePackFromWindow(
     page: normalizedPage,
     pageSize: normalizedPageSize,
     totalPages: Math.max(1, Math.ceil(window.total / normalizedPageSize)),
-    atlas,
     mediaManifest,
-    resourceManifest: buildBrowserPageResourceManifest(data, atlas, mediaManifest),
+    resourceManifest: buildBrowserPageResourceManifest(data, mediaManifest),
     windowOffset,
     windowLength: data.length,
   };

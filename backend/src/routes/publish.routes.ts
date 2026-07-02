@@ -5,7 +5,6 @@ import { getPublishReleaseService } from '../services/publish-release.service';
 import { derivePagePackFromWindow, getPublishPayloadService } from '../services/publish-payload.service';
 import { createWeakEtag, sendNotModifiedIfEtagMatches, setNoStoreHeaders, setPublicCacheHeaders } from '../utils/http-cache';
 import { ItemsService, type BrowserPageEntry, type Item } from '../services/items.service';
-import { getPageAtlasService } from '../services/page-atlas.service';
 import { attachRenderHintsToEntries, buildBrowserRichMediaManifest } from '../services/browser-render-hints.service';
 import { resolveAccelerationCompilerAuthority } from '../services/acceleration-runtime-compiler-authority.service';
 
@@ -139,17 +138,11 @@ function registerPublicReadRoutes(router: ExpressRouter): void {
       attachRenderHintsToEntries(pagePack.data);
       const displayItems = collectDisplayItems(pagePack.data);
 
-      const atlas = await getPageAtlasService().buildAtlas(
-        displayItems,
-        Math.max(24, Math.min(128, Number(slotSize))),
-      );
-
       res.json({
         manifest,
         mods,
         pagePack: {
           ...pagePack,
-          atlas,
           mediaManifest: buildBrowserRichMediaManifest(displayItems),
         },
       });

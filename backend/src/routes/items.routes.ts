@@ -1,7 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import { ItemsService, type BrowserPageEntry, type Item } from '../services/items.service';
 import { getItemsSearchService } from '../services/items-search.service';
-import { getPageAtlasService } from '../services/page-atlas.service';
 import { getPublishManifestService } from '../services/publish-manifest.service';
 import {
   buildBrowserPageResourceManifest,
@@ -219,17 +218,11 @@ router.get(
     attachRenderHintsToEntries(result.data);
     const displayItems = collectDisplayItems(result.data);
 
-    const atlas = await getPageAtlasService().buildAtlas(
-      displayItems,
-      Math.max(24, Math.min(128, Number(slotSize))),
-    );
-
     const mediaManifest = buildBrowserRichMediaManifest(displayItems);
     res.json({
       ...result,
-      atlas,
       mediaManifest,
-      resourceManifest: buildBrowserPageResourceManifest(result.data, atlas, mediaManifest),
+      resourceManifest: buildBrowserPageResourceManifest(result.data, mediaManifest),
     });
   })
 );
@@ -358,26 +351,9 @@ router.post(
 );
 
 router.post(
-  '/page-atlas',
-  asyncHandler(async (req, res) => {
-    const { itemIds, slotSize } = req.body as { itemIds?: string[]; slotSize?: number };
-    if (!Array.isArray(itemIds)) {
-      throw badRequest('itemIds must be an array');
-    }
-
-    const limitedIds = Array.from(new Set(itemIds.filter(Boolean))).slice(0, 500);
-    const itemsService = getItemsService();
-    const items = await itemsService.getItemsByIds(limitedIds);
-    const normalizedSlotSize = Number.isFinite(slotSize) ? Math.max(24, Math.min(128, Number(slotSize))) : 48;
-    const atlas = await getPageAtlasService().buildAtlas(items, normalizedSlotSize);
-    res.json(atlas);
-  })
-);
-
-router.post(
   '/browser/by-ids-pack',
   asyncHandler(async (req, res) => {
-    const { itemIds, slotSize } = req.body as { itemIds?: string[]; slotSize?: number };
+    const { itemIds } = req.body as { itemIds?: string[]; slotSize?: number };
     if (!Array.isArray(itemIds)) {
       throw badRequest('itemIds must be an array');
     }
@@ -395,11 +371,6 @@ router.post(
       .filter((item): item is Item => Boolean(item));
     attachRenderHintsToItems(orderedItems);
 
-    const atlas = await getPageAtlasService().buildAtlas(
-      orderedItems,
-      Number.isFinite(slotSize) ? Math.max(24, Math.min(128, Number(slotSize))) : 48,
-    );
-
     const mediaManifest = buildBrowserRichMediaManifest(orderedItems);
     const data = orderedItems.map((item) => ({
       key: item.itemId,
@@ -408,40 +379,9 @@ router.post(
     }));
     res.json({
       data,
-      atlas,
       mediaManifest,
-      resourceManifest: buildBrowserPageResourceManifest(data, atlas, mediaManifest),
+      resourceManifest: buildBrowserPageResourceManifest(data, mediaManifest),
     });
-  })
-);
-
-router.get(
-  '/page-atlas/precomputed',
-  asyncHandler(async (req, res) => {
-    const page = parseInt(req.query.page as string) || 1;
-    const pageSize = parseInt(req.query.pageSize as string) || 50;
-    const slotSize = parseInt(req.query.slotSize as string) || 48;
-    const modIdRaw = typeof req.query.modId === 'string' ? req.query.modId.trim() : '';
-    const modId = modIdRaw && modIdRaw !== 'all' ? modIdRaw : undefined;
-    const manifest = getPublishManifestService().getRuntimeManifest();
-    const sourceSignature = manifest.sourceSignature;
-    const etag = createWeakEtag('page-atlas-precomputed', sourceSignature, page, pageSize, slotSize, modId);
-    setPublicCacheHeaders(res, {
-      maxAgeSeconds: 300,
-      staleWhileRevalidateSeconds: 3600,
-      staleIfErrorSeconds: 86400,
-    });
-    if (sendNotModifiedIfEtagMatches(req, res, etag)) {
-      return;
-    }
-
-    const atlas = await getPageAtlasService().buildAtlasForPage({
-      page,
-      pageSize,
-      slotSize: Math.max(24, Math.min(128, Number(slotSize))),
-      modId,
-    });
-    res.json(atlas);
   })
 );
 

@@ -511,7 +511,7 @@ export function useSitePreheater(options: {
       extendPlannedWork(pageTargets.length);
       if (warmedGlobalAtlas) {
         // Global atlas + browser layout catalog is the NEI-style fast path. Once both are warm,
-        // preheating every page pack only reintroduces thousands of page-atlas/single-image tasks.
+        // preheating every page pack only reintroduces thousands of retired per-page image tasks.
         bumpProgress(1, "\u6d4f\u89c8\u533a\u5df2\u5207\u5230\u5168\u5c40 Atlas + \u672c\u5730\u76ee\u5f55\u5feb\u8def\u5f84\uff0c\u8df3\u8fc7\u5168\u91cf\u5206\u9875\u56fe\u96c6\u9884\u70ed");
       } else {
         await runConcurrentBatched(
@@ -655,4 +655,3 @@ export function useSitePreheater(options: {
     clearPreheatCaches,
   };
 }
-

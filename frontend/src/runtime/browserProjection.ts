@@ -97,7 +97,6 @@ export function deriveBrowserPagePackFromWindow(
     page: normalizedPage,
     pageSize: normalizedPageSize,
     totalPages: Math.max(1, Math.ceil(window.total / normalizedPageSize)),
-    atlas: null,
     mediaManifest,
     resourceManifest: buildBrowserPageResourceManifest(data, mediaManifest),
     windowOffset,

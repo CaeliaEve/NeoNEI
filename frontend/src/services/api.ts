@@ -45,8 +45,6 @@ export type {
   ItemRenderHint,
   ItemSearchBasic,
   Mod,
-  PageAtlasResult,
-  PageAtlasSpriteEntry,
   PageRichMediaManifest,
   PaginatedResponse,
   Pattern,

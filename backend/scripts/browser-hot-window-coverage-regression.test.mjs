@@ -12,24 +12,24 @@ const materializerSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-test('compiler defaults expand browser hot-window and search hot-shard coverage', () => {
+test('compiler defaults expand browser hot-window and search hot-shard coverage without page atlas warmup', () => {
   assert.equal(
-    compilerSource.includes('pages: options.hotPageAtlas?.pages ?? 12,'),
-    true,
-    'compiler should prebuild more hot atlas pages for the browser surface',
+    compilerSource.includes('hotPageAtlas'),
+    false,
+    'compiler should not retain page-atlas warmup options after native/global atlas takeover',
   );
   assert.equal(
-    compilerSource.includes('windowCount: options.publishHotPayloads?.windowCount ?? 48,'),
+    compilerSource.includes("windowCount: options.publishHotPayloads?.windowCount ?? numberFromEnv('NEONEI_PUBLISH_WINDOW_COUNT', 48),"),
     true,
     'compiler should materialize a much wider hot-page window ring by default',
   );
   assert.equal(
-    compilerSource.includes('windowStride: options.publishHotPayloads?.windowStride ?? 64,'),
+    compilerSource.includes("windowStride: options.publishHotPayloads?.windowStride ?? numberFromEnv('NEONEI_PUBLISH_WINDOW_STRIDE', 64),"),
     true,
     'compiler should overlap hot-page windows more aggressively to reduce uncached flip misses',
   );
   assert.equal(
-    compilerSource.includes('searchHotShardSize: options.publishHotPayloads?.searchHotShardSize ?? 8192,'),
+    compilerSource.includes("searchHotShardSize: options.publishHotPayloads?.searchHotShardSize ?? numberFromEnv('NEONEI_PUBLISH_SEARCH_HOT_SHARD_SIZE', 8192),"),
     true,
     'compiler should widen the hot search shard so more browser searches stay on the small fast path',
   );
@@ -37,9 +37,14 @@ test('compiler defaults expand browser hot-window and search hot-shard coverage'
 
 test('publish payload materializer keeps standalone defaults aligned with the expanded hot ring', () => {
   assert.equal(
-    materializerSource.includes("export const PUBLISH_PAYLOAD_REVISION = '2026-04-28-publish-static-bundle-v9';"),
+    materializerSource.includes("export const PUBLISH_PAYLOAD_REVISION = '2026-05-23-publish-static-bundle-v12-recipe-group-windows';"),
     true,
-    'publish payload revision should advance when the bundle hot-window layout changes',
+    'publish payload revision should identify the current materialized bundle layout',
+  );
+  assert.equal(
+    materializerSource.includes('PageAtlasService'),
+    false,
+    'publish payload materializer should not build retired page-scoped atlas payloads',
   );
   assert.equal(
     materializerSource.includes('windowCount: Math.max(1, Math.floor(options.publishHotPayloads?.windowCount ?? 48)),'),
@@ -57,4 +62,3 @@ test('publish payload materializer keeps standalone defaults aligned with the ex
     'materializer should match the expanded hot search shard default',
   );
 });
-

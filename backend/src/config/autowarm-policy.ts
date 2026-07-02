@@ -28,12 +28,6 @@ export interface AutowarmPolicy {
     enabled: boolean;
     limit: number;
   };
-  pageAtlas: {
-    enabled: boolean;
-    pages: number;
-    pageSize: number;
-    itemSize: number;
-  };
 }
 export function getAutowarmPolicy(env: Env = process.env): AutowarmPolicy {
   return {
@@ -44,12 +38,6 @@ export function getAutowarmPolicy(env: Env = process.env): AutowarmPolicy {
     recipeShard: {
       enabled: readEnabledWithDefault(env.RECIPE_SHARD_AUTOWARM, false),
       limit: readPositiveNumber(env.RECIPE_SHARD_AUTOWARM_LIMIT, 16),
-    },
-    pageAtlas: {
-      enabled: readEnabledWithDefault(env.PAGE_ATLAS_AUTOWARM, true),
-      pages: readPositiveNumber(env.PAGE_ATLAS_AUTOWARM_PAGES, 8),
-      pageSize: readPositiveNumber(env.PAGE_ATLAS_AUTOWARM_PAGE_SIZE, 55),
-      itemSize: readPositiveNumber(env.PAGE_ATLAS_AUTOWARM_ITEM_SIZE, 50),
     },
   };
 }

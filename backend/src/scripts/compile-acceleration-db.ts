@@ -23,7 +23,6 @@ async function run(): Promise<void> {
       stage: 'stage-4',
       itemsImported: result.itemsImported,
       recipesImported: result.recipesImported,
-      hotAtlasesGenerated: result.hotAtlasesGenerated,
       signature: result.signature,
     })}`,
   );

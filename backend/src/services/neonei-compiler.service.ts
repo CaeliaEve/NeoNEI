@@ -8,9 +8,8 @@ import { chain } from 'stream-chain';
 import { parser } from 'stream-json';
 import { streamArray } from 'stream-json/streamers/StreamArray';
 import { DatabaseManager } from '../models/database';
-import { DATA_DIR, NESQL_BROWSER_LAYOUT_INDEX_FILE } from '../config/runtime-paths';
+import { NESQL_BROWSER_LAYOUT_INDEX_FILE } from '../config/runtime-paths';
 import { ItemsService, type Item } from './items.service';
-import { PageAtlasService } from './page-atlas.service';
 import { PublishPayloadMaterializerService } from './publish-payload-materializer.service';
 import { buildCollapsibleItemAssignments, type CollapsibleItemCandidate } from './gtnh-collapsible-items.service';
 import { buildSyntheticBrowserVariantAssignments, mergeBrowserGroupAssignments } from './browser-variant-grouping.service';
@@ -35,17 +34,9 @@ export interface CompilerRunResult {
   signature: string;
   itemsImported: number;
   recipesImported: number;
-  hotAtlasesGenerated: number;
 }
 
 export interface CompilerOptions {
-  hotPageAtlas?: {
-    enabled?: boolean;
-    pages?: number;
-    pageSize?: number;
-    slotSizes?: number[];
-    atlasOutputDir?: string;
-  };
   publishHotPayloads?: {
     enabled?: boolean;
     firstPageSize?: number;
@@ -60,13 +51,6 @@ export interface CompilerOptions {
 }
 
 type NormalizedCompilerOptions = {
-  hotPageAtlas: {
-    enabled: boolean;
-    pages: number;
-    pageSize: number;
-    slotSizes: number[];
-    atlasOutputDir: string;
-  };
   publishHotPayloads: {
     enabled: boolean;
     firstPageSize: number;
@@ -1354,13 +1338,6 @@ export class NeoNeiCompilerService {
     options: CompilerOptions = {},
   ) {
     this.options = {
-      hotPageAtlas: {
-        enabled: options.hotPageAtlas?.enabled ?? true,
-        pages: options.hotPageAtlas?.pages ?? 12,
-        pageSize: options.hotPageAtlas?.pageSize ?? 55,
-        slotSizes: options.hotPageAtlas?.slotSizes ?? [45],
-        atlasOutputDir: options.hotPageAtlas?.atlasOutputDir ?? path.join(DATA_DIR, 'page-atlas-cache'),
-      },
       publishHotPayloads: {
         enabled: options.publishHotPayloads?.enabled ?? booleanFromEnv('NEONEI_COMPILE_PUBLISH_HOT_PAYLOADS', true),
         firstPageSize: options.publishHotPayloads?.firstPageSize ?? numberFromEnv('NEONEI_PUBLISH_FIRST_PAGE_SIZE', 256),
@@ -1704,7 +1681,6 @@ export class NeoNeiCompilerService {
       db.exec('DELETE FROM mods_summary');
       db.exec('DELETE FROM browser_default_entries');
       db.exec('DELETE FROM publish_payloads');
-      db.exec("DELETE FROM assets_manifest WHERE asset_type = 'page_atlas'");
     });
 
     const materializeEntityRecord = (record: SplitItemRecord, sourceOrder?: number): void => {
@@ -2437,45 +2413,11 @@ export class NeoNeiCompilerService {
       this.logStage('state-done');
       db.pragma('wal_checkpoint(PASSIVE)');
 
-      let hotAtlasesGenerated = 0;
-      const hotPageAtlas = this.options.hotPageAtlas;
       const publishHotPayloads = this.options.publishHotPayloads;
-      const runtimeItemsService = new ItemsService({
-        databaseManager: this.databaseManager,
-        splitExportFallback: false,
-      });
-      const runtimePageAtlasService = new PageAtlasService({
-        databaseManager: this.databaseManager,
-        itemsService: runtimeItemsService,
-        imageRoot: this.sourceRoots.imageRoot,
-        atlasDir: hotPageAtlas.atlasOutputDir,
-      });
-
-      if (hotPageAtlas.enabled) {
-        for (const slotSize of hotPageAtlas.slotSizes) {
-          for (let page = 1; page <= hotPageAtlas.pages; page += 1) {
-            // eslint-disable-next-line no-await-in-loop
-            const pageItems = await runtimeItemsService.getBrowserDisplayItemsForPage({
-              page,
-              pageSize: hotPageAtlas.pageSize,
-            });
-            if (!pageItems.length) break;
-            // eslint-disable-next-line no-await-in-loop
-            const atlas = await runtimePageAtlasService.buildAtlas(pageItems, slotSize);
-            if (atlas) {
-              hotAtlasesGenerated += 1;
-            }
-          }
-        }
-      }
-
-      this.logStage('hot-atlas-done', { hotAtlasesGenerated });
 
       if (publishHotPayloads.enabled) {
         const publishPayloadMaterializer = new PublishPayloadMaterializerService({
           databaseManager: this.databaseManager,
-          imageRoot: this.sourceRoots.imageRoot,
-          atlasOutputDir: hotPageAtlas.atlasOutputDir,
           publishHotPayloads,
         });
         const publishPayloadResult = await publishPayloadMaterializer.materialize(signature);
@@ -2488,7 +2430,6 @@ export class NeoNeiCompilerService {
         publishPayloadBytes,
       });
       const finalStateTransaction = db.transaction(() => {
-        upsertState.run({ state_key: 'page_atlas_assets_count', state_value: String(hotAtlasesGenerated) });
         upsertState.run({ state_key: 'publish_payloads_count', state_value: String(publishPayloadCount) });
         upsertState.run({ state_key: 'publish_payload_bytes', state_value: String(publishPayloadBytes) });
       });
@@ -2499,7 +2440,6 @@ export class NeoNeiCompilerService {
         signature,
         itemsImported,
         recipesImported,
-        hotAtlasesGenerated,
       };
     } finally {
       preparedRecipeFiles.cleanup();

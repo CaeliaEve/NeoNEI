@@ -4,7 +4,6 @@ import fs from 'fs';
 import path from 'path';
 import {
   CONTRACTS_DIR,
-  DATA_DIR,
   IMAGES_PATH,
   PUBLIC_DIR,
   PUBLISH_OUTPUT_DIR,
@@ -287,22 +286,6 @@ export function registerStaticAssetRoutes(app: Express): void {
   app.use(
     '/api/images',
     express.static(IMAGES_PATH, {
-      maxAge: '7d',
-      etag: true,
-    }),
-  );
-
-  app.use(
-    '/generated/page-atlas',
-    express.static(path.join(DATA_DIR, 'page-atlas-cache'), {
-      maxAge: '7d',
-      etag: true,
-    }),
-  );
-
-  app.use(
-    '/api/generated/page-atlas',
-    express.static(path.join(DATA_DIR, 'page-atlas-cache'), {
       maxAge: '7d',
       etag: true,
     }),

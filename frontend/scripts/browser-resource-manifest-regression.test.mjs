@@ -39,6 +39,11 @@ test('frontend preserves browser page resource manifests without page-scoped atl
     'API types should expose browser resource manifests',
   );
   assert.equal(
+    runtimeTypesSource.includes('PageAtlasResult') || runtimeTypesSource.includes('PageAtlasSpriteEntry'),
+    false,
+    'runtime API types should not expose retired page-scoped atlas payload contracts',
+  );
+  assert.equal(
     browserProjectionSource.includes('function buildBrowserPageResourceManifest('),
     true,
     'published browser window slices should rebuild active-page resource manifests',

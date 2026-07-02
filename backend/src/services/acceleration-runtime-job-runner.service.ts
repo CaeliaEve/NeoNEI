@@ -7,7 +7,6 @@ export type BackgroundCompileSummary = {
   stage: string;
   itemsImported: number;
   recipesImported: number;
-  hotAtlasesGenerated: number;
   signature: string;
 };
 
@@ -113,7 +112,6 @@ compileAccelerationDatabase({
     stage: 'stage-4',
     itemsImported: result.itemsImported,
     recipesImported: result.recipesImported,
-    hotAtlasesGenerated: result.hotAtlasesGenerated,
     signature: result.signature,
   }));
   process.exit(0);

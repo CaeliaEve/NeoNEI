@@ -136,8 +136,6 @@ export async function ensurePublishPayloadsReady(
   const sourceSignature = compiler.getCurrentSourceSignature();
   const materializer = new PublishPayloadMaterializerService({
     databaseManager: manager,
-    imageRoot: sourceRoots.imageRoot,
-    atlasOutputDir: compilerOptions?.hotPageAtlas?.atlasOutputDir,
     publishHotPayloads: compilerOptions?.publishHotPayloads,
   });
 

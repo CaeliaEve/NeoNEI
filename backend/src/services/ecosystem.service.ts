@@ -34,7 +34,6 @@ export interface AccelerationOverview {
   dbFile: string;
   exists: boolean;
   sizeBytes: number;
-  generatedAtlasCount: number;
   tableCounts: Record<string, number>;
 }
 
@@ -180,7 +179,6 @@ export class EcosystemService {
       dbFile: ACCELERATION_DB_FILE,
       exists,
       sizeBytes,
-      generatedAtlasCount: 0,
       tableCounts: {},
     };
 
@@ -200,8 +198,7 @@ export class EcosystemService {
           'recipe_bootstrap_count',
           'recipe_summary_compact_count',
           'recipe_machine_groups_count',
-          'hot_items_count',
-          'page_atlas_assets_count'
+          'hot_items_count'
         )
       `).all() as Array<{ state_key: string; state_value: string }>;
 
@@ -213,7 +210,6 @@ export class EcosystemService {
       result.tableCounts.recipe_summary_compact = counts.recipe_summary_compact_count ?? 0;
       result.tableCounts.recipe_machine_groups = counts.recipe_machine_groups_count ?? 0;
       result.tableCounts.hot_items = counts.hot_items_count ?? 0;
-      result.generatedAtlasCount = counts.page_atlas_assets_count ?? 0;
     } catch {
       // keep best-effort overview only
     }

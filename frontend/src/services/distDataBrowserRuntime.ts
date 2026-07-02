@@ -506,7 +506,6 @@ export function buildBrowserByIdsPack(
     .map((item) => ({ key: item.itemId, kind: "item" as const, item }));
   const byIdsPack: BrowserByIdsPackResponse = {
     data,
-    atlas: null,
     mediaManifest: null,
     resourceManifest: buildResourceManifest(data),
   };
@@ -532,7 +531,6 @@ export function buildBrowserPagePack(
   const page = paginateBrowserEntries(expandedEntries, params.page, params.pageSize);
   const pagePack: BrowserPagePackResponse = {
     ...page,
-    atlas: null,
     mediaManifest: null,
     resourceManifest: buildResourceManifest(page.data),
   };

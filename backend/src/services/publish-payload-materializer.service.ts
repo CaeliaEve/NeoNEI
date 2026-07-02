@@ -3,11 +3,10 @@ import path from 'path';
 import zlib from 'zlib';
 import crypto from 'crypto';
 import type Database from 'better-sqlite3';
-import { DATA_DIR, PUBLISH_OUTPUT_DIR, PUBLISH_PUBLIC_PATH, PUBLISH_RETAIN_RELEASES } from '../config/runtime-paths';
+import { PUBLISH_OUTPUT_DIR, PUBLISH_PUBLIC_PATH, PUBLISH_RETAIN_RELEASES } from '../config/runtime-paths';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import { ItemsSearchService } from './items-search.service';
 import { ItemsService, type BrowserPageEntry, type Item } from './items.service';
-import { PageAtlasService } from './page-atlas.service';
 import { attachRenderHintsToEntries, buildBrowserRichMediaManifest } from './browser-render-hints.service';
 import { RecipeBootstrapService } from './recipe-bootstrap.service';
 import { getRustSearchPackService } from './rust-search-pack.service';
@@ -67,8 +66,6 @@ export interface PublishPayloadHotOptions {
 
 export interface PublishPayloadMaterializerOptions {
   databaseManager?: DatabaseManager;
-  imageRoot: string;
-  atlasOutputDir?: string;
   publishOutputDir?: string;
   publishPublicPath?: string;
   publishHotPayloads?: PublishPayloadHotOptions;
@@ -653,16 +650,12 @@ function prunePublishOutputReleases(
 
 export class PublishPayloadMaterializerService {
   private readonly databaseManager: DatabaseManager;
-  private readonly imageRoot: string;
-  private readonly atlasOutputDir: string;
   private readonly publishOutputDir: string;
   private readonly publishPublicPath: string;
   private readonly options: NormalizedPublishPayloadHotOptions;
 
   constructor(options: PublishPayloadMaterializerOptions) {
     this.databaseManager = options.databaseManager ?? getAccelerationDatabaseManager();
-    this.imageRoot = options.imageRoot;
-    this.atlasOutputDir = options.atlasOutputDir ?? path.join(DATA_DIR, 'page-atlas-cache');
     this.publishOutputDir = options.publishOutputDir ?? PUBLISH_OUTPUT_DIR;
     this.publishPublicPath = options.publishPublicPath ?? PUBLISH_PUBLIC_PATH;
     this.options = {
@@ -1315,12 +1308,6 @@ export class PublishPayloadMaterializerService {
         databaseManager: this.databaseManager,
         splitExportFallback: false,
       });
-      const pageAtlasService = new PageAtlasService({
-        databaseManager: this.databaseManager,
-        itemsService,
-        imageRoot: this.imageRoot,
-        atlasDir: this.atlasOutputDir,
-      });
       const recipeBootstrapService = new RecipeBootstrapService({
         databaseManager: this.databaseManager,
         splitExportFallback: false,
@@ -1716,16 +1703,13 @@ export class PublishPayloadMaterializerService {
       const displayItems = collectDisplayItems(firstPageWindow.data);
       const firstPageMediaManifest = buildBrowserRichMediaManifest(displayItems);
       for (const slotSize of this.options.slotSizes) {
-        // eslint-disable-next-line no-await-in-loop
-        const atlas = await pageAtlasService.buildAtlas(displayItems, slotSize);
         const pagePackPayload = {
           ...firstPageWindow,
           page: 1,
           pageSize: this.options.firstPageSize,
           totalPages: Math.max(1, Math.ceil(firstPageWindow.total / this.options.firstPageSize)),
-          atlas,
           mediaManifest: firstPageMediaManifest,
-          resourceManifest: buildBrowserPageResourceManifest(firstPageWindow.data, atlas, firstPageMediaManifest),
+          resourceManifest: buildBrowserPageResourceManifest(firstPageWindow.data, firstPageMediaManifest),
           windowOffset: firstPageWindow.offset,
           windowLength: firstPageWindow.data.length,
         };
@@ -1759,8 +1743,6 @@ export class PublishPayloadMaterializerService {
           attachRenderHintsToEntries(extraWindow.data);
           const extraDisplayItems = collectDisplayItems(extraWindow.data);
           const extraMediaManifest = buildBrowserRichMediaManifest(extraDisplayItems);
-          // eslint-disable-next-line no-await-in-loop
-          const extraAtlas = await pageAtlasService.buildAtlas(extraDisplayItems, slotSize);
           registerPayloadRow(
             `bundle-only:${buildBrowserPageWindowPayloadKey({ slotSize })}:offset=${offset}`,
             'browser-page-window',
@@ -1769,9 +1751,8 @@ export class PublishPayloadMaterializerService {
               page: Math.floor(offset / this.options.firstPageSize) + 1,
               pageSize: this.options.firstPageSize,
               totalPages: Math.max(1, Math.ceil(extraWindow.total / this.options.firstPageSize)),
-              atlas: extraAtlas,
               mediaManifest: extraMediaManifest,
-              resourceManifest: buildBrowserPageResourceManifest(extraWindow.data, extraAtlas, extraMediaManifest),
+              resourceManifest: buildBrowserPageResourceManifest(extraWindow.data, extraMediaManifest),
               windowOffset: extraWindow.offset,
               windowLength: extraWindow.data.length,
             }),

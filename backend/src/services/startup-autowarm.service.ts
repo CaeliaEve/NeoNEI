@@ -1,5 +1,4 @@
 import { getAutowarmPolicy } from '../config/autowarm-policy';
-import { getPageAtlasService } from './page-atlas.service';
 import { getRecipeBootstrapService } from './recipe-bootstrap.service';
 import { logger } from '../utils/logger';
 
@@ -37,27 +36,5 @@ export function scheduleStartupAutowarm(): void {
           logger.warn('[RECIPE_SHARD_AUTOWARM] failed', error);
         });
     }, 1800);
-  }
-
-  if (autowarmPolicy.pageAtlas.enabled) {
-    setTimeout(() => {
-      void getPageAtlasService()
-        .prewarmPages({
-          pages: autowarmPolicy.pageAtlas.pages,
-          pageSize: autowarmPolicy.pageAtlas.pageSize,
-          itemSize: autowarmPolicy.pageAtlas.itemSize,
-        })
-        .then((result) => {
-          logger.info('[PAGE_ATLAS_AUTOWARM] completed', {
-            warmed: result.warmed,
-            pages: autowarmPolicy.pageAtlas.pages,
-            pageSize: autowarmPolicy.pageAtlas.pageSize,
-            itemSize: autowarmPolicy.pageAtlas.itemSize,
-          });
-        })
-        .catch((error) => {
-          logger.warn('[PAGE_ATLAS_AUTOWARM] failed', error);
-        });
-    }, 1200);
   }
 }

@@ -878,23 +878,6 @@ export type BrowserGridEntry =
   | { key: string; kind: 'item'; item: Item }
   | { key: string; kind: 'group-collapsed' | 'group-header'; group: BrowserVariantGroup };
 
-export interface PageAtlasSpriteEntry {
-  atlasUrl: string;
-  atlasWidth: number;
-  atlasHeight: number;
-  slotSize: number;
-  x: number;
-  y: number;
-}
-
-export interface PageAtlasResult {
-  atlasUrl: string;
-  atlasWidth: number;
-  atlasHeight: number;
-  slotSize: number;
-  entries: Record<string, PageAtlasSpriteEntry>;
-}
-
 export interface PageRichMediaManifest {
   animatedAtlases: Record<string, AnimatedAtlasAssetEntry>;
 }
@@ -909,7 +892,6 @@ export interface BrowserPageResourceManifest {
 }
 
 export interface BrowserPagePackResponse extends PaginatedResponse<BrowserGridEntry> {
-  atlas: PageAtlasResult | null;
   mediaManifest?: PageRichMediaManifest | null;
   resourceManifest?: BrowserPageResourceManifest;
   windowOffset?: number;
@@ -933,7 +915,6 @@ export interface BrowserGroupItemsResponse {
 
 export interface BrowserByIdsPackResponse {
   data: Array<{ key: string; kind: 'item'; item: Item }>;
-  atlas: PageAtlasResult | null;
   mediaManifest?: PageRichMediaManifest | null;
   resourceManifest?: BrowserPageResourceManifest;
 }

@@ -6,7 +6,7 @@ import zlib from 'zlib';
 import test from 'node:test';
 import { DatabaseManager } from '../src/models/database';
 import { NeoNeiCompilerService } from '../src/services/neonei-compiler.service';
-import { PublishPayloadService, deriveFirstPagePackFromWindow } from '../src/services/publish-payload.service';
+import { PublishPayloadService, derivePagePackFromWindow } from '../src/services/publish-payload.service';
 
 function writeGzipJson(filePath: string, payload: unknown): void {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -413,14 +413,13 @@ test('compiler stores compact indexed recipe payloads instead of raw split recip
   fs.rmSync(tempDir, { recursive: true, force: true });
 });
 
-test('compiler pre-generates hot page atlases into assets manifest', async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-compiler-atlas-'));
+test('compiler does not generate retired page atlas assets', async () => {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-compiler-no-page-atlas-'));
   const dbPath = path.join(tempDir, 'acceleration.db');
   const itemsDir = path.join(tempDir, 'items');
   const recipesDir = path.join(tempDir, 'recipes');
   const canonicalDir = path.join(tempDir, 'canonical');
   const imageRoot = path.join(tempDir, 'image');
-  const atlasDir = path.join(tempDir, 'page-atlas-cache');
 
   writeGzipJson(path.join(itemsDir, 'Botania', 'items.json.gz'), [
     {
@@ -457,29 +456,13 @@ test('compiler pre-generates hot page atlases into assets manifest', async () =>
       canonicalDir,
       imageRoot,
     },
-    {
-      hotPageAtlas: {
-        enabled: true,
-        pages: 1,
-        pageSize: 2,
-        slotSizes: [32],
-        atlasOutputDir: atlasDir,
-      },
-    },
   );
 
   await compiler.compile();
 
   const db = manager.getDatabase();
   const atlasCount = (db.prepare("SELECT COUNT(*) AS c FROM assets_manifest WHERE asset_type = 'page_atlas'").get() as { c: number }).c;
-  assert.equal(atlasCount >= 1, true);
-
-  const atlasRow = db.prepare("SELECT path, metadata_json FROM assets_manifest WHERE asset_type = 'page_atlas' LIMIT 1").get() as {
-    path: string;
-    metadata_json: string;
-  };
-  assert.equal(Boolean(atlasRow.metadata_json), true);
-  assert.equal(fs.existsSync(path.join(atlasDir, atlasRow.path)), true);
+  assert.equal(atlasCount, 0);
 
   manager.close();
   fs.rmSync(tempDir, { recursive: true, force: true });
@@ -492,7 +475,6 @@ test('compiler materializes publish payload windows for homepage cold starts', a
   const recipesDir = path.join(tempDir, 'recipes');
   const canonicalDir = path.join(tempDir, 'canonical');
   const imageRoot = path.join(tempDir, 'image');
-  const atlasDir = path.join(tempDir, 'page-atlas-cache');
 
   writeGzipJson(path.join(itemsDir, 'Botania', 'items.json.gz'), [
     {
@@ -539,10 +521,6 @@ test('compiler materializes publish payload windows for homepage cold starts', a
       imageRoot,
     },
     {
-      hotPageAtlas: {
-        enabled: false,
-        atlasOutputDir: atlasDir,
-      },
       publishHotPayloads: {
         enabled: true,
         firstPageSize: 3,
@@ -571,10 +549,11 @@ test('compiler materializes publish payload windows for homepage cold starts', a
   assert.equal(windowPayload?.pageSize, 3);
   assert.equal(windowPayload?.data.length, 3);
 
-  const trimmed = windowPayload ? deriveFirstPagePackFromWindow(windowPayload, 2) : null;
+  const trimmed = windowPayload ? derivePagePackFromWindow(windowPayload, 1, 2) : null;
   assert.equal(trimmed?.pageSize, 2);
   assert.equal(trimmed?.data.length, 2);
-  assert.equal(Object.keys(trimmed?.atlas?.entries ?? {}).length, 2);
+  assert.equal(Object.prototype.hasOwnProperty.call(trimmed ?? {}, 'atlas'), false);
+  assert.equal(trimmed?.resourceManifest?.atlasEntryCount, 0);
 
   const homeBootstrap = service.getHomeBootstrapWindow({
     slotSize: 32,

@@ -315,7 +315,7 @@ export function createBrowserPageProjectionLoader(options: {
     }
 
     void requestId;
-    markPerfEvent('browser-projected-page-atlas-warm', {
+    markPerfEvent('browser-projected-page-resource-warm', {
       page: params.page,
       pageSize: params.pageSize,
       items: itemIds.length,

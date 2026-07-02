@@ -61,7 +61,7 @@ async function main() {
   console.log(`[ACCEL_BENCH] base=${baseUrl}`);
 
   const acceleration = await sample('acceleration-overview', '/api/ecosystem/acceleration', 3);
-  console.log(`[OK] acceleration db exists=${acceleration.exists} atlas=${acceleration.generatedAtlasCount}`);
+  console.log(`[OK] acceleration db exists=${acceleration.exists}`);
 
   const itemsPage = await sample('items-page', '/api/items?page=1&pageSize=50', 5);
   const sampleItemId = await findSummaryCapableItem(itemsPage);
@@ -76,7 +76,6 @@ async function main() {
   await sample('search-terrasteel', '/api/items/search/fast?q=terrasteel&limit=10', 5);
   await sample('browser-search-pack', '/api/items/search/pack', 3);
   await sample('recipe-summary', `/api/recipes-indexed/item/${encodeURIComponent(sampleItemId)}/summary`, 5);
-  await sample('page-atlas-precomputed', '/api/items/page-atlas/precomputed?page=1&pageSize=108&slotSize=45', 5);
 
   console.log('[ACCEL_BENCH] PASS');
 }

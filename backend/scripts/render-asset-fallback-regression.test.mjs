@@ -7,7 +7,7 @@ const read = (relativePath) =>
   fs.readFileSync(path.resolve('..', relativePath), 'utf8');
 
 test('backend item image fallback resolves hashed variant siblings and sidecars', () => {
-  const source = read('backend/src/server.ts');
+  const source = read('backend/src/routes/static-assets.routes.ts');
 
   assert.equal(
     source.includes('parseRequestedArtifact'),
@@ -28,14 +28,13 @@ test('backend item image fallback resolves hashed variant siblings and sidecars'
   );
 });
 
-test('page atlas and item service can resolve hashed sibling variants when base pngs are missing', () => {
-  const atlasSource = read('backend/src/services/page-atlas.service.ts');
+test('item service resolves hashed sibling variants without reviving page atlas generation', () => {
   const itemsSource = read('backend/src/services/items.service.ts');
 
   assert.equal(
-    atlasSource.includes('variantPattern'),
-    true,
-    'page atlas generation should search hashed sibling image variants before declaring an item missing',
+    fs.existsSync(path.resolve('..', 'backend/src/services/page-atlas.service.ts')),
+    false,
+    'page atlas generation service should stay retired',
   );
 
   assert.equal(
@@ -66,5 +65,3 @@ test('render contract animated atlas service preserves per-frame timeline metada
     'render contract hints should recognize auxiliary native sprite timelines exported alongside custom renderer assets',
   );
 });
-
-
