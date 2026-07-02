@@ -30,7 +30,7 @@ test("native runtime loader consumes current API envelope and file endpoint", ()
 test("native runtime pack fetches are versioned before using browser cache", () => {
   const loader = readSource("src/native-surface/runtimeLoader.ts");
 
-  assert.match(loader, /getManifestFileBytes/);
+  assert.match(loader, /getManifestRuntimeFileBytes/);
   assert.match(loader, /manifest\.runtimeId/);
   assert.match(loader, /manifest\.generatedAt/);
   assert.match(loader, /manifest\.sourceSignature/);

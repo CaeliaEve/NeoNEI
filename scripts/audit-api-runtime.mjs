@@ -13,6 +13,10 @@ function matchAll(text, regex) {
   return Array.from(text.matchAll(regex)).map((match) => match[0]);
 }
 
+function matchCaptureAll(text, regex, group = 1) {
+  return Array.from(text.matchAll(regex)).map((match) => match[group]).filter(Boolean);
+}
+
 
 function collectRouteRegistrationsWithContext(text) {
   const lines = text.split(/\r?\n/);
@@ -89,6 +93,12 @@ const runtimeAdminRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime
 const apiNamespaceRoutes = existsSync(join(repoRoot, "backend/src/routes/api-namespaces.routes.ts"))
   ? readText("backend/src/routes/api-namespaces.routes.ts")
   : "";
+const apiNamespaceRegistry = existsSync(join(repoRoot, "backend/src/routes/api-namespace-registry.ts"))
+  ? readText("backend/src/routes/api-namespace-registry.ts")
+  : "";
+const currentRuntimeEndpointRegistry = existsSync(join(repoRoot, "backend/src/routes/current-runtime-endpoint-registry.ts"))
+  ? readText("backend/src/routes/current-runtime-endpoint-registry.ts")
+  : "";
 const routeSource = [server, staticAssetRoutes, runtimeAdminRoutes, apiNamespaceRoutes].join("\n");
 const apiService = readText("frontend/src/services/api.ts");
 const runtimeRoutes = existsSync(join(repoRoot, "backend/src/routes/runtime.routes.ts"))
@@ -109,8 +119,27 @@ const devOnlyLegacyDynamicRoutes = legacyDynamicRoutesWithContext
   .filter((route) => route.gatedByPublicRuntimeOnly)
   .map((route) => route.line);
 const adminRoutes = routeRegistrationsWithContext.filter((route) => /\/api\/admin/.test(route.line)).map((route) => route.line);
-const productRuntimeRoutes = routeRegistrationsWithContext.filter((route) => /['"`]\/(?:runtime|ops|lab)\b/.test(route.line)).map((route) => route.line);
-const publicRuntimeRoutes = routeRegistrationsWithContext.filter((route) => /['"`]\/runtime\b|\/api\/publish|\/api\/v1|\/publish|\/dist-data|\/canonical/.test(route.line)).map((route) => route.line);
+const apiNamespaceMountPaths = matchCaptureAll(apiNamespaceRegistry, /mountPath:\s*['"`]([^'"`]+)['"`]/g);
+const currentRuntimeEndpointPaths = matchCaptureAll(currentRuntimeEndpointRegistry, /path:\s*['"`]([^'"`]+)['"`]/g);
+const registryProductRuntimeRoutes = apiNamespaceMountPaths
+  .filter((path) => /^\/(?:runtime|lab)\b/.test(path))
+  .map((path) => `api-namespace-registry:${path}`);
+const registryPublicRuntimeRoutes = apiNamespaceMountPaths
+  .filter((path) => /^\/runtime\b|^\/api\/publish\b|^\/api\/v1\b/.test(path))
+  .map((path) => `api-namespace-registry:${path}`);
+const currentRuntimeRegistryRoutes = currentRuntimeEndpointPaths
+  .filter((path) => /^\/runtime\b|^\/diagnostics\b|^\/health\b/.test(path))
+  .map((path) => `current-runtime-endpoint-registry:/api${path}`);
+const productRuntimeRoutes = [
+  ...routeRegistrationsWithContext.filter((route) => /['"`]\/(?:runtime|ops|lab)\b/.test(route.line)).map((route) => route.line),
+  ...registryProductRuntimeRoutes,
+  ...currentRuntimeRegistryRoutes,
+];
+const publicRuntimeRoutes = [
+  ...routeRegistrationsWithContext.filter((route) => /['"`]\/runtime\b|\/api\/publish|\/api\/v1|\/publish|\/dist-data|\/canonical/.test(route.line)).map((route) => route.line),
+  ...registryPublicRuntimeRoutes,
+  ...currentRuntimeRegistryRoutes,
+];
 
 const frontendRuntimeCalls = {
   distDataReferences: (apiService.match(/dist-data/g) ?? []).length,
@@ -121,9 +150,9 @@ const frontendRuntimeCalls = {
 };
 
 const runtimeCapabilities = {
-  hasRuntimeNamespace: productRuntimeRoutes.some((line) => /['"`]\/runtime\b/.test(line)),
+  hasRuntimeNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/runtime\b|:\/api\/runtime\b/.test(line)),
   hasOpsNamespace: productRuntimeRoutes.some((line) => /['"`]\/ops\b/.test(line)),
-  hasLabNamespace: productRuntimeRoutes.some((line) => /['"`]\/lab\b/.test(line)),
+  hasLabNamespace: productRuntimeRoutes.some((line) => /(?:['"`]|:)\/lab\b/.test(line)),
   hasRuntimeDiagnostics: /\/diagnostics/.test(runtimeRoutes) || /\/runtime\/diagnostics/.test(server),
   hasRuntimeContracts: /\/contracts/.test(runtimeRoutes) || /\/runtime\/contracts/.test(server),
   hasApiTierHeaders: /x-neonei-api-tier/.test(routeSource),
@@ -282,4 +311,3 @@ console.log(JSON.stringify({ outputPath, ...report }, null, 2));
 if (gateEnabled && gateFailures.length > 0) {
   process.exitCode = 1;
 }
-

@@ -2684,11 +2684,31 @@ function expectedAnimationReason(item) {
     item?.facetSummary,
   ].filter(Boolean).join(" "));
   if (!haystack) return null;
-  if (/(singularity|濂囩偣|cosmic|瀵板畤|crystal matrix|姘存櫠鐭╅樀|infinity (armor|tool|sword|pickaxe|axe|shovel|hoe|bow)|鏃犲敖(鑳哥敳|澶寸洈|鎶よ吙|闈村瓙|宸ュ叿|鍓憒闀恷鏂閾瞸閿剕寮?)/i.test(haystack)) return "avaritia-cosmic-or-singularity";
-  if (/(nasa.*rocket|galacticraft.*rocket|鐏.*galacticraft|nasa.*鐏)/i.test(haystack)) return "galacticraft-dynamic-item";
+
+  const containsAny = (tokens) => tokens.some((token) => {
+    const normalized = normalizeLoose(token);
+    return normalized && haystack.includes(normalized);
+  });
+
+  if (
+    containsAny([
+      "singularity",
+      "cosmic",
+      "crystal matrix",
+      "infinity",
+      "avaritia",
+    ]) ||
+    /\binfinity\s+(?:armor|tool|sword|pickaxe|axe|shovel|hoe|bow)\b/i.test(haystack)
+  ) return "avaritia-cosmic-or-singularity";
+
+  if (
+    /\b(?:nasa|galacticraft)\b.*\brocket\b/i.test(haystack) ||
+    /\brocket\b.*\bgalacticraft\b/i.test(haystack)
+  ) return "galacticraft-dynamic-item";
+
   if (
     (modId === "thaumcraftneiplugin" && internalName === "aspect") ||
-    /^瑕佺礌\s*[:锛歖/u.test(localizedName) ||
+    /^aspect\s*[:：]/i.test(localizedName) ||
     /\bthaumcraftneiplugin\b.*\baspect\b/i.test(haystack) ||
     /\bthaumic(?:tinkerer|bases|horizons)?\b.*\bmobaspect\b/i.test(haystack)
   ) return "thaumcraft-aspect";

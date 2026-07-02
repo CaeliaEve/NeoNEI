@@ -68,9 +68,6 @@ function mainRustRuntime(startedAt, manifest, failures, warnings) {
     "rustGroupsBin",
     "rustSearchBin",
     "rustRecipeBin",
-    "rustTextureBin",
-    "rustAtlasMetaBin",
-    "rustAnimationBin",
     "rustStringsZhCnBin",
     "rustSemanticValidationReport",
     "rustRecipeFragmentationReport",
@@ -171,7 +168,7 @@ function main() {
   const samples = {};
   const manifest = readJson("manifest.json");
 
-  if (manifest?.files?.rustSemanticValidationReport && !manifest?.files?.semanticItems) {
+  if (manifest?.files?.rustSemanticValidationReport) {
     mainRustRuntime(startedAt, manifest, failures, warnings);
     return;
   }

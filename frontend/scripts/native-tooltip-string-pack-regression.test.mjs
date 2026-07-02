@@ -127,13 +127,18 @@ test('native runtime group hits remain expandable groups when compat entries can
   );
   assert.match(
     controllerSource,
-    /const isNativeRuntimeHit = response\.hit\.key\.startsWith\("native-"\)/,
-    'native runtime hits must bypass stale compat-entry index lookup',
+    /const syntheticItem = buildSyntheticItem\(response\.hit\.itemId, nativeTooltip\);/,
+    'native runtime hits must be materialized directly from worker hit metadata',
   );
   assert.match(
     controllerSource,
-    /if \(isNativeRuntimeHit\) \{[\s\S]*buildSyntheticItem\(response\.hit\.itemId, nativeTooltip\)[\s\S]*buildSyntheticGroup\(syntheticItem, nativeTooltip\)/,
-    'native runtime hits should be materialized from native hit metadata, not old Vue entries',
+    /const syntheticGroup = response\.hit\.kind !== "item" \|\| response\.hit\.groupKey\s*\?\s*buildSyntheticGroup\(syntheticItem, nativeTooltip\)\s*:\s*null;/,
+    'native runtime group hits should be synthesized from native hit metadata without a key-prefix branch',
+  );
+  assert.doesNotMatch(
+    controllerSource,
+    /response\.hit\.key\.startsWith\("native-"\)|compat/i,
+    'controller must not reintroduce stale compat-entry/native-key lookup gates',
   );
   assert.match(
     controllerSource,
@@ -142,21 +147,20 @@ test('native runtime group hits remain expandable groups when compat entries can
   );
   assert.match(
     surfaceSource,
-    /else if \(hit\.group\) emit\("groupClick", hit\.group\)/,
+    /if \(hit\.group\) emit\("groupClick", hit\.group\)/,
     'Vue native surface should emit group clicks even when no compat entry exists',
   );
-  assert.match(
+  assert.doesNotMatch(
     surfaceSource,
-    /if \(hit\.key\.startsWith\("native-"\)\) return null/,
+    /props\.entries|entries\.find|hit\.key\.startsWith\("native-"\)/,
     'Native runtime hits should not be rematched against stale Vue entries in the surface component',
   );
   assert.match(
     surfaceSource,
-    /else if \(hit\.group\) emit\("groupContextmenu", hit\.group, event\)/,
+    /if \(hit\.group\) emit\("groupContextmenu", hit\.group, event\)/,
     'Vue native surface should emit group context menus from native runtime hits',
   );
 });
-
 
 
 

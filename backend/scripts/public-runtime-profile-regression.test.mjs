@@ -10,6 +10,7 @@ const bootstrapSource = readFileSync(join(repoRoot, 'backend/src/bootstrap-serve
 const appSource = readFileSync(join(repoRoot, 'backend/src/app.ts'), 'utf8');
 const serverSettingsSource = readFileSync(join(repoRoot, 'backend/src/config/server-settings.ts'), 'utf8');
 const apiNamespacesRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/api-namespaces.routes.ts'), 'utf8');
+const apiNamespaceRegistrySource = readFileSync(join(repoRoot, 'backend/src/routes/api-namespace-registry.ts'), 'utf8');
 const staticAssetRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/static-assets.routes.ts'), 'utf8');
 const errorResponseSource = readFileSync(join(repoRoot, 'backend/src/utils/error-response.ts'), 'utf8');
 const patternsRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/patterns.routes.ts'), 'utf8');
@@ -22,9 +23,15 @@ test('public runtime profile is explicit and disables lab/dev dynamic mounts', (
   assert.match(serverSettingsSource, /process\.env\.NODE_ENV === 'production'/);
   assert.match(serverSettingsSource, /publicRuntimeOnly: resolvePublicRuntimeOnly\(\)/);
   assert.equal(appSource.includes('registerApiNamespaces(app, { publicRuntimeOnly: options.serverSettings.publicRuntimeOnly })'), true);
-  assert.match(apiNamespacesRoutesSource, /if \(!PUBLIC_RUNTIME_ONLY\) \{\s*app\.use\('\/lab'/s);
-  assert.match(apiNamespacesRoutesSource, /if \(!PUBLIC_RUNTIME_ONLY\) \{[\s\S]*app\.use\('\/api\/items'/s);
-  assert.match(apiNamespacesRoutesSource, /app\.use\('\/runtime'[\s\S]*runtimeRoutes\)/);
+  assert.match(apiNamespacesRoutesSource, /mountApiNamespaces\(\s*app,\s*getApiNamespacePlan/s);
+  assert.match(apiNamespacesRoutesSource, /publicRuntimeOnly:\s*options\.publicRuntimeOnly/);
+  assert.match(apiNamespacesRoutesSource, /externalRuntimeAuthority/);
+  assert.doesNotMatch(apiNamespacesRoutesSource, /app\.use\('\/lab'/);
+  assert.doesNotMatch(apiNamespacesRoutesSource, /app\.use\('\/api\/items'/);
+  assert.match(apiNamespaceRegistrySource, /PUBLIC_RUNTIME_ROOT_NAMESPACE[\s\S]*mountPath:\s*'\/runtime'[\s\S]*handler:\s*runtimeRoutes/);
+  assert.match(apiNamespaceRegistrySource, /if \(!input\.publicRuntimeOnly\) \{\s*namespaces\.push\(\.\.\.DEV_COMPAT_NAMESPACES\);/s);
+  assert.match(apiNamespaceRegistrySource, /if \(!input\.publicRuntimeOnly && !input\.externalRuntimeAuthority\) \{\s*namespaces\.push\(\.\.\.LEGACY_COMPAT_NAMESPACES\);/s);
+  assert.match(apiNamespaceRegistrySource, /function mountApiNamespaces[\s\S]*for \(const namespace of namespaces\)[\s\S]*mountApiNamespace\(app, namespace, tagApiTier\);/);
   assert.match(staticAssetRoutesSource, /app\.use\(\s*'\/publish'/);
 });
 
@@ -48,7 +55,6 @@ test('portable env examples document public runtime only deployment', () => {
   assert.match(rootEnvExample, /NEONEI_PUBLIC_RUNTIME_ONLY=1/);
   assert.doesNotMatch(backendEnvExample, /E:\\|E:\//, 'backend production example must not require a Windows path');
 });
-
 
 
 

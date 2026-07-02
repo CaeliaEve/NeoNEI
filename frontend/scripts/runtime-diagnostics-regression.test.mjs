@@ -8,6 +8,9 @@ const runtimeSessionSource = fs.readFileSync('src/services/api/runtimeSession.ts
 const apiRuntimeSource = apiSource + '\n' + runtimeSessionSource;
 const textureClientSource = fs.readFileSync('src/runtime/textureClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const distDataRuntimeSource = fs.readFileSync('src/services/distDataRuntime.ts', 'utf8').replace(/\r\n/g, '\n');
+const distDataRuntimeRenderSource = fs.readFileSync('src/services/distDataRuntimeRender.ts', 'utf8').replace(/\r\n/g, '\n');
+const distDataDiagnosticSource = `${distDataRuntimeSource}
+${distDataRuntimeRenderSource}`;
 const devCompatClientSource = fs.readFileSync('src/runtime/devCompatClient.ts', 'utf8').replace(/\r\n/g, '\n');
 const runtimeModeSource = fs.readFileSync('src/runtime/runtimeMode.ts', 'utf8').replace(/\r\n/g, '\n');
 const viteConfigSource = fs.readFileSync('vite.config.ts', 'utf8').replace(/\r\n/g, '\n');
@@ -102,7 +105,7 @@ test('dist-data schema mismatches include reproducible runtime identity', () => 
     'Dist-data recipe UI payload is missing recipeId',
     'Dist-data browser atlas index is missing items[]',
   ]) {
-    assert.equal(distDataRuntimeSource.includes(token), true, `missing dist-data diagnostic token: ${token}`);
+    assert.equal(distDataDiagnosticSource.includes(token), true, `missing dist-data diagnostic token: ${token}`);
   }
 });
 

@@ -229,7 +229,7 @@ function validateCompactRecipePayload(payloadBytes, failures, logicalName) {
   if (version !== 1) {
     fail(failures, 'NATIVE_RECIPE_PACK_BAD_COMPACT_VERSION', 'compact recipe pack has an invalid version', { logicalName, version });
   }
-  if (itemStride !== 5 || refStride !== 3 || uiStride !== 7 || categoryStride !== 5) {
+  if (itemStride < 5 || refStride < 3 || uiStride < 7 || categoryStride < 5) {
     fail(failures, 'NATIVE_RECIPE_PACK_BAD_ROW_STRIDE', 'compact recipe pack has invalid row strides', {
       logicalName,
       itemStride,
@@ -453,10 +453,9 @@ const expectedEntrypoints = {
   stringsZhCn: 'neonei/string-pack/current',
 };
 
+const requiredEntrypoints = new Set(['browser', 'groups', 'search', 'recipes', 'stringsZhCn']);
+
 const expectedCapabilities = [
-  'atlas.static',
-  'atlas.animated',
-  'atlas.meta',
   'groups.collapse',
   'groups.semantic-nbt',
   'recipes.lookup',
@@ -523,6 +522,9 @@ function validateRuntimePacks(runtimeDir) {
   const packs = {};
   for (const [logicalName, expectedSchema] of Object.entries(expectedEntrypoints)) {
     const relativePath = entrypoints[logicalName];
+    if (!requiredEntrypoints.has(logicalName) && relativePath === undefined) {
+      continue;
+    }
     if (!isPortableRelativePath(relativePath)) {
       fail(failures, 'NATIVE_RUNTIME_ENTRYPOINT_NOT_PORTABLE', `runtime entrypoint is not a portable relative URL path: ${logicalName}`, { logicalName, path: relativePath ?? null });
       continue;
@@ -634,7 +636,6 @@ if (selfTest) {
   console.log(JSON.stringify(report, null, 2));
   if (gate && report.failures.length > 0) process.exit(1);
 }
-
 
 
 

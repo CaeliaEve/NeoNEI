@@ -17,7 +17,7 @@ const distDataDir = process.env.RUST_GATE_DIST_DATA
 const rustReport = join(repoRoot, '.tmp-runtime', 'rust-retirement-gate', 'rust-compile-report.json');
 const quick = process.argv.includes('--quick');
 const compileScopeArg = process.argv.find((arg) => arg.startsWith('--scope='));
-const compileScope = compileScopeArg?.split('=')[1] || process.env.RUST_GATE_SCOPE || 'native-ui';
+const compileScope = compileScopeArg?.split('=')[1] || process.env.RUST_GATE_SCOPE || 'all';
 const steps = [];
 
 function fail(message) {
