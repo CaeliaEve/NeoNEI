@@ -76,7 +76,7 @@ export function nativeUiRectLabel(rect: NativeUiLabeledRect, fallback: string): 
   return fallback;
 }
 
-export function nativeUiHotspotAction(rect: NativeUiHotspotRect): string {
+export function nativeUiHotspotInteractionKind(rect: NativeUiHotspotRect): string {
   return resolveNativeUiInteractionPayload(rect, "Native UI hotspot").kind;
 }
 

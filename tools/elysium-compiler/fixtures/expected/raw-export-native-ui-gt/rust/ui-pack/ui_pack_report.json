@@ -18,18 +18,48 @@
     }
   },
   "format": {
-    "hotspotActionFieldNames": [
-      "action",
-      "itemId",
-      "payloadKey"
+    "backgroundContractFields": [
+      "coordinateSpace",
+      "scaleMode",
+      "anchor",
+      "status",
+      "kind",
+      "scaling",
+      "texture",
+      "recipeBackgroundOffset",
+      "recipeBackgroundSize"
     ],
-    "hotspotActionFields": true,
-    "rectStride": 12,
-    "slotStride": 6,
+    "interactionContractFields": [
+      "interactionKind",
+      "interactionTargetKind",
+      "interactionTargetId",
+      "interactionPayloadSchema"
+    ],
+    "legacyRectActionFieldNames": [],
+    "legacyRectActionFields": false,
+    "rectGeometryFields": [
+      "coordinateSpace",
+      "anchor"
+    ],
+    "rectStride": 15,
+    "slotGeometryFields": [
+      "coordinateSpace",
+      "anchor",
+      "slotWidth",
+      "slotHeight",
+      "pitchX",
+      "pitchY"
+    ],
+    "slotStride": 12,
+    "surfaceContractFields": [
+      "coordinateSpace",
+      "scaleMode",
+      "anchor"
+    ],
     "templatePackMagic": "NEIUIT1_NUL",
-    "templatePackVersion": 3,
-    "templateStride": 19,
-    "textStride": 5
+    "templatePackVersion": 7,
+    "templateStride": 22,
+    "textStride": 7
   },
   "generatedAt": "deterministic-rust-compiler",
   "schemaVersion": "neonei/ui-pack-report/current",
@@ -42,15 +72,15 @@
     "assetCount": 1,
     "bindingCount": 1,
     "boundRecipeCount": 1,
-    "hotspotActionCount": 0,
     "hotspotCount": 0,
+    "hotspotInteractionCount": 0,
     "slotCount": 1,
-    "stringCount": 11,
+    "stringCount": 14,
     "templateCount": 1,
     "textOverlayCount": 0,
     "unboundRecipeCount": 0,
-    "viewportActionCount": 0,
-    "viewportCount": 0
+    "viewportCount": 0,
+    "viewportInteractionCount": 0
   },
   "unboundRecipes": []
 }

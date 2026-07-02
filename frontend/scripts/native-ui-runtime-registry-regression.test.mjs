@@ -112,8 +112,8 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
       pitchY: 18,
     }],
     textOverlays: [{ text: 'EU/t', x: 80, y: 10, width: 24, height: 8, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
-    hotspots: [{ id: 'template-hotspot', kind: 'info', role: 'nei-info', label: 'Template', tooltip: '', action: '', itemId: '', payloadKey: '', ...noInteraction(), x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
-    viewports: [{ id: 'template-viewport', kind: 'viewport', role: 'progress', label: 'Progress', tooltip: '', action: '', itemId: '', payloadKey: '', ...noInteraction(), x: 70, y: 30, width: 22, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    hotspots: [{ id: 'template-hotspot', kind: 'info', role: 'nei-info', label: 'Template', tooltip: '', ...noInteraction(), x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    viewports: [{ id: 'template-viewport', kind: 'viewport', role: 'progress', label: 'Progress', tooltip: '', ...noInteraction(), x: 70, y: 30, width: 22, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
   };
   const binding = {
     recipeId: 'recipe-1',
@@ -135,7 +135,7 @@ test('native UI registry resolves UI-pack template authority with inline dynamic
     imageRegion: { x: 8, y: 9, width: 176, height: 90 },
     nativeBackground: gtBackground(),
     progressBars: [{ role: 'progress', x: 72, y: 34, width: 24, height: 16, coordinateSpace: 'nei_pixels', anchor: 'top-left', fill: 0.5 }],
-    hotspots: [{ id: 'inline-hotspot', kind: 'item-click', role: 'output', label: 'Output', tooltip: '', action: 'item-click', itemId: 'minecraft:iron_ingot', payloadKey: '', ...itemClickInteraction('minecraft:iron_ingot'), x: 115, y: 24, width: 18, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
+    hotspots: [{ id: 'inline-hotspot', kind: 'item-click', role: 'output', label: 'Output', tooltip: '', ...itemClickInteraction('minecraft:iron_ingot'), x: 115, y: 24, width: 18, height: 18, coordinateSpace: 'nei_pixels', anchor: 'top-left' }],
   });
 
   const surface = resolveNativeUiRuntimeSurface({

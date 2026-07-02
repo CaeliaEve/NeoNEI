@@ -142,12 +142,12 @@ const backgroundContractFields = Array.isArray(uiPackFormat.backgroundContractFi
   ? uiPackFormat.backgroundContractFields
   : [];
 if (
-  uiPackFormat.templatePackVersion !== 6
+  uiPackFormat.templatePackVersion !== 7
   || uiPackFormat.templateStride !== 22
   || uiPackFormat.slotStride !== 12
   || uiPackFormat.textStride !== 7
-  || uiPackFormat.rectStride !== 18
-  || uiPackFormat.hotspotActionFields !== false
+  || uiPackFormat.rectStride !== 15
+  || uiPackFormat.legacyRectActionFields !== false
   || !surfaceContractFields.includes('coordinateSpace')
     || !surfaceContractFields.includes('scaleMode')
     || !surfaceContractFields.includes('anchor')
@@ -164,20 +164,20 @@ if (
   || !backgroundContractFields.includes('recipeBackgroundOffset')
   || !backgroundContractFields.includes('recipeBackgroundSize')
 ) {
-  failures.push('rust UI pack report does not declare v6 surface/interaction/background ABI');
+  failures.push('rust UI pack report does not declare v7 interaction-only rect/background ABI');
 }
 if (!uiTemplateHeader) failures.push('rust UI template binary pack is missing');
 if (uiTemplateHeader?.error) failures.push(`rust UI template binary pack is invalid: ${uiTemplateHeader.error}`);
 if (uiTemplateHeader && !uiTemplateHeader.error && (
   uiTemplateHeader.schema !== 'neonei/ui-template-pack/current'
   || uiTemplateHeader.magic !== 'NEIUIT1\0'
-  || uiTemplateHeader.version !== 6
+  || uiTemplateHeader.version !== 7
   || uiTemplateHeader.templateStride !== 22
   || uiTemplateHeader.slotStride !== 12
   || uiTemplateHeader.textStride !== 7
-  || uiTemplateHeader.rectStride !== 18
+  || uiTemplateHeader.rectStride !== 15
 )) {
-  failures.push('rust UI template binary pack is not v6 surface/interaction ABI format');
+  failures.push('rust UI template binary pack is not v7 interaction-only rect ABI format');
 }
 if (layouts.length === 0) failures.push('handler layout index is empty or missing');
 if (gtLayouts.length === 0) failures.push('no gregtech-machine handler layouts found');

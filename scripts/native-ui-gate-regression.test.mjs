@@ -37,10 +37,10 @@ function wrapNativePack(schema, payload) {
   ]);
 }
 
-function writeUiTemplatePackV6(path) {
+function writeUiTemplatePackV7(path) {
   const payload = Buffer.concat([
     Buffer.from('NEIUIT1\0', 'utf8'),
-    u32(6), // template pack version with surface/interaction ABI fields
+    u32(7), // template pack version with interaction-only rect ABI fields
     u32(0), // templateCount
     u32(0), // slotCount
     u32(0), // textCount
@@ -49,7 +49,7 @@ function writeUiTemplatePackV6(path) {
     u32(22), // templateStride
     u32(12), // slotStride
     u32(7), // textStride
-    u32(18), // rectStride
+    u32(15), // rectStride
   ]);
   writeFileSync(path, wrapNativePack('neonei/ui-template-pack/current', payload));
 }
@@ -75,7 +75,7 @@ function createDistFixture() {
   for (const name of requiredBinaryFiles) {
     writeFileSync(join(rustDir, name), Buffer.from([0]));
   }
-  writeUiTemplatePackV6(join(uiPackDir, 'ui_templates.bin'));
+  writeUiTemplatePackV7(join(uiPackDir, 'ui_templates.bin'));
   writeFileSync(join(uiPackDir, 'ui_bindings.bin'), Buffer.from([0]));
   writeFileSync(join(uiPackDir, 'ui_strings.bin'), Buffer.from([0]));
   writeJson(join(uiPackDir, 'ui_assets.manifest.json'), { schemaVersion: 'neonei/ui-assets-manifest/current', assets: [] });
@@ -89,18 +89,18 @@ function createDistFixture() {
       unboundRecipeCount: 0,
       hotspotCount: 0,
       viewportCount: 0,
-      hotspotActionCount: 0,
-      viewportActionCount: 0,
+      hotspotInteractionCount: 0,
+      viewportInteractionCount: 0,
     },
     format: {
       templatePackMagic: 'NEIUIT1\\u0000',
-      templatePackVersion: 6,
+      templatePackVersion: 7,
       templateStride: 22,
       slotStride: 12,
       textStride: 7,
-      rectStride: 18,
-      hotspotActionFields: false,
-      hotspotActionFieldNames: [],
+      rectStride: 15,
+      legacyRectActionFields: false,
+      legacyRectActionFieldNames: [],
       surfaceContractFields: ['coordinateSpace', 'scaleMode', 'anchor'],
       slotGeometryFields: ['coordinateSpace', 'anchor', 'slotWidth', 'slotHeight', 'pitchX', 'pitchY'],
       rectGeometryFields: ['coordinateSpace', 'anchor'],
@@ -255,17 +255,17 @@ function runGate(script, distDataDir) {
   return JSON.parse(result.stdout);
 }
 
-test('native UI production gates require UI template pack v6 surface-interaction ABI', () => {
+test('native UI production gates require UI template pack v7 interaction-only rect ABI', () => {
   const distDataDir = createDistFixture();
   try {
     const manifestGate = runGate('scripts/validate-rust-production-manifest.mjs', distDataDir);
-    assert.equal(manifestGate.uiTemplatePack.version, 6);
-    assert.equal(manifestGate.uiTemplatePack.rectStride, 18);
-    assert.equal(manifestGate.uiPackReport.format.hotspotActionFields, false);
+    assert.equal(manifestGate.uiTemplatePack.version, 7);
+    assert.equal(manifestGate.uiTemplatePack.rectStride, 15);
+    assert.equal(manifestGate.uiPackReport.format.legacyRectActionFields, false);
 
     const layoutGate = runGate('scripts/validate-native-ui-layouts.mjs', distDataDir);
-    assert.equal(layoutGate.uiPack.templateHeader.version, 6);
-    assert.equal(layoutGate.uiPack.templateHeader.rectStride, 18);
+    assert.equal(layoutGate.uiPack.templateHeader.version, 7);
+    assert.equal(layoutGate.uiPack.templateHeader.rectStride, 15);
     assert.equal(layoutGate.report.backgroundStatus, 'captured');
     assert.equal(layoutGate.report.counts.gregtechRecipeUiPayloadsWithNativeBackgrounds, 1);
     assert.equal(layoutGate.failures.length, 0);

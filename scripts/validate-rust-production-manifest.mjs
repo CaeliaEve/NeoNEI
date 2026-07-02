@@ -195,8 +195,8 @@ if (uiTemplateHeader) {
   if (uiTemplateHeader.magic !== 'NEIUIT1\0') {
     fail(failures, 'UI_TEMPLATE_PACK_MAGIC_MISMATCH', 'UI template pack has wrong native magic', { magic: uiTemplateHeader.magic });
   }
-  if (uiTemplateHeader.version !== 6 || uiTemplateHeader.templateStride !== 22 || uiTemplateHeader.slotStride !== 12 || uiTemplateHeader.textStride !== 7 || uiTemplateHeader.rectStride !== 18) {
-    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V6_SURFACE_INTERACTION_ABI', 'UI template pack is not the v6 surface/interaction ABI native format', uiTemplateHeader);
+  if (uiTemplateHeader.version !== 7 || uiTemplateHeader.templateStride !== 22 || uiTemplateHeader.slotStride !== 12 || uiTemplateHeader.textStride !== 7 || uiTemplateHeader.rectStride !== 15) {
+    fail(failures, 'UI_TEMPLATE_PACK_FORMAT_NOT_V7_INTERACTION_ONLY_RECT_ABI', 'UI template pack is not the v7 interaction-only rect ABI native format', uiTemplateHeader);
   }
 }
 
@@ -211,12 +211,12 @@ if (uiPackReport) {
     ? uiPackFormat.backgroundContractFields
     : [];
   if (
-    uiPackFormat.templatePackVersion !== 6
+    uiPackFormat.templatePackVersion !== 7
     || uiPackFormat.templateStride !== 22
     || uiPackFormat.slotStride !== 12
     || uiPackFormat.textStride !== 7
-    || uiPackFormat.rectStride !== 18
-    || uiPackFormat.hotspotActionFields !== false
+    || uiPackFormat.rectStride !== 15
+    || uiPackFormat.legacyRectActionFields !== false
     || !surfaceContractFields.includes('coordinateSpace')
     || !surfaceContractFields.includes('scaleMode')
     || !surfaceContractFields.includes('anchor')
@@ -233,7 +233,7 @@ if (uiPackReport) {
     || !backgroundContractFields.includes('recipeBackgroundOffset')
     || !backgroundContractFields.includes('recipeBackgroundSize')
   ) {
-    fail(failures, 'UI_PACK_REPORT_MISSING_V6_SURFACE_INTERACTION_ABI', 'UI pack report does not declare v6 surface/interaction/background ABI capability', { format: uiPackFormat });
+    fail(failures, 'UI_PACK_REPORT_MISSING_V7_INTERACTION_ONLY_RECT_ABI', 'UI pack report does not declare v7 interaction-only rect/background ABI capability', { format: uiPackFormat });
   }
 }
 

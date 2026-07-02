@@ -47,9 +47,6 @@ export interface UiPackRect {
   role: string;
   label: string;
   tooltip: string;
-  action: string;
-  itemId: string;
-  payloadKey: string;
   x: number;
   y: number;
   width: number;
@@ -141,13 +138,13 @@ const UI_STRING_PACK_MAGIC = "NEIUIS1\0";
 const UI_TEMPLATE_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIT1_NUL";
 const UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIB1_NUL";
 const UI_STRING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIS1_NUL";
-const UI_TEMPLATE_PAYLOAD_VERSION = 6;
+const UI_TEMPLATE_PAYLOAD_VERSION = 7;
 const UI_BINDING_PAYLOAD_VERSION = 1;
 const UI_STRING_PAYLOAD_VERSION = 1;
 const UI_TEMPLATE_ROW_STRIDE_U32 = 22;
 const UI_SLOT_ROW_STRIDE_U32 = 12;
 const UI_TEXT_ROW_STRIDE_U32 = 7;
-const UI_RECT_ROW_STRIDE_U32 = 18;
+const UI_RECT_ROW_STRIDE_U32 = 15;
 const UI_BINDING_ROW_STRIDE_U32 = 11;
 
 type UiPackEntrypoints = {
@@ -485,19 +482,16 @@ function parseUiTemplates(payloadBuffer: ArrayBuffer, strings: string[]): UiPack
     role: resolveString(strings, readU32(view, rowOffset + 8)),
     label: resolveString(strings, readU32(view, rowOffset + 12)),
     tooltip: resolveString(strings, readU32(view, rowOffset + 16)),
-    action: resolveString(strings, readU32(view, rowOffset + 20)),
-    itemId: resolveString(strings, readU32(view, rowOffset + 24)),
-    payloadKey: resolveString(strings, readU32(view, rowOffset + 28)),
-    x: readI32(view, rowOffset + 32),
-    y: readI32(view, rowOffset + 36),
-    width: readU32(view, rowOffset + 40),
-    height: readU32(view, rowOffset + 44),
-    coordinateSpace: resolveString(strings, readU32(view, rowOffset + 48)),
-    anchor: resolveString(strings, readU32(view, rowOffset + 52)),
-    interactionKind: resolveString(strings, readU32(view, rowOffset + 56)),
-    interactionTargetKind: resolveString(strings, readU32(view, rowOffset + 60)),
-    interactionTargetId: resolveString(strings, readU32(view, rowOffset + 64)),
-    interactionPayloadSchema: resolveString(strings, readU32(view, rowOffset + 68)),
+    x: readI32(view, rowOffset + 20),
+    y: readI32(view, rowOffset + 24),
+    width: readU32(view, rowOffset + 28),
+    height: readU32(view, rowOffset + 32),
+    coordinateSpace: resolveString(strings, readU32(view, rowOffset + 36)),
+    anchor: resolveString(strings, readU32(view, rowOffset + 40)),
+    interactionKind: resolveString(strings, readU32(view, rowOffset + 44)),
+    interactionTargetKind: resolveString(strings, readU32(view, rowOffset + 48)),
+    interactionTargetId: resolveString(strings, readU32(view, rowOffset + 52)),
+    interactionPayloadSchema: resolveString(strings, readU32(view, rowOffset + 56)),
   });
   const hotspots: UiPackRect[] = [];
   for (let index = 0; index < hotspotCount; index += 1) {

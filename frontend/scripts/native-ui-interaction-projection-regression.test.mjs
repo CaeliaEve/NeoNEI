@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   isNativeUiHotspotInteractive,
   nativeUiHitCellEntryLabel,
-  nativeUiHotspotAction,
+  nativeUiHotspotInteractionKind,
   nativeUiHotspotItemId,
   nativeUiRectLabel,
   nativeUiRectStyle,
@@ -51,7 +51,7 @@ test('native UI interaction projection enforces design-space geometry ABI', () =
     height: '8px',
   });
 
-  assert.deepEqual(nativeUiRectStyle({ id: 'r', kind: 'info', role: 'hint', label: '', tooltip: '', action: '', itemId: '', payloadKey: '', ...noInteraction(), x: 10, y: 11, width: 12, height: 13, coordinateSpace: 'nei_pixels', anchor: 'top-left' }), {
+  assert.deepEqual(nativeUiRectStyle({ id: 'r', kind: 'info', role: 'hint', label: '', tooltip: '', ...noInteraction(), x: 10, y: 11, width: 12, height: 13, coordinateSpace: 'nei_pixels', anchor: 'top-left' }), {
     left: '10px',
     top: '11px',
     width: '12px',
@@ -61,20 +61,18 @@ test('native UI interaction projection enforces design-space geometry ABI', () =
   assert.throws(() => nativeUiTextOverlayStyle({ text: 'bad', x: -4, y: 'bad', width: 24, height: -1 }), /missing required Native UI geometry field: coordinateSpace/);
 });
 
-test('native UI interaction projection owns hotspot labels and actions', () => {
+test('native UI interaction projection owns hotspot labels and interaction payloads', () => {
   const hotspot = {
     id: 'hotspot-1',
     kind: 'ignored-kind',
     role: 'output',
     label: '',
     tooltip: 'Output slot',
-    action: 'legacy-string-is-ignored',
-    itemId: 'legacy:item_is_ignored',
     ...itemClickInteraction('minecraft:iron_ingot'),
   };
 
   assert.equal(nativeUiRectLabel(hotspot, 'fallback'), 'Output slot');
-  assert.equal(nativeUiHotspotAction(hotspot), 'item-click');
+  assert.equal(nativeUiHotspotInteractionKind(hotspot), 'item-click');
   assert.equal(nativeUiHotspotItemId(hotspot), 'minecraft:iron_ingot');
   assert.equal(isNativeUiHotspotInteractive(hotspot), true);
   assert.equal(isNativeUiHotspotInteractive({ ...hotspot, ...noInteraction() }), false);

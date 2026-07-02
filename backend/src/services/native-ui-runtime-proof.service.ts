@@ -106,7 +106,7 @@ const UI_PACK_REQUIRED_ARTIFACTS = Object.freeze([
     logicalName: 'rustUiTemplatesBin',
     envelopeSchema: UI_TEMPLATE_PACK_SCHEMA,
     payloadMagic: UI_TEMPLATE_PACK_MAGIC,
-    version: 6,
+    version: 7,
   }),
   Object.freeze({
     logicalName: 'rustUiBindingsBin',

@@ -10,6 +10,16 @@
     "native-render.webgl2"
   ],
   "compileScope": "native-ui",
+  "compiler": {
+    "compiledDistSchemaVersion": "1.0",
+    "exportAbiVersion": "elysium.export.v2",
+    "name": "elysium-compiler",
+    "packAbiVersion": "elysium.pack.v1",
+    "rawExportSchemaVersion": "1.0",
+    "runtimeAbiVersion": "elysium.runtime.v1",
+    "schemaHash": "sha256:d6685579638840fdb1b768e67506433da9f0948efa083bdc6421ab97ba1e3301",
+    "version": "0.1.0"
+  },
   "entrypoints": {
     "browser": "rust/browser.bin",
     "groups": "rust/groups.bin",
@@ -42,6 +52,50 @@
       "path": "rust/strings.zh_cn.bin"
     },
     {
+      "bytes": 239,
+      "path": "rust/ui-pack/ui_templates.bin"
+    },
+    {
+      "bytes": 118,
+      "path": "rust/ui-pack/ui_bindings.bin"
+    },
+    {
+      "bytes": 352,
+      "path": "rust/ui-pack/ui_strings.bin"
+    },
+    {
+      "bytes": 310,
+      "path": "rust/ui-pack/ui_assets.manifest.json"
+    },
+    {
+      "bytes": 2797,
+      "path": "rust/ui-pack/ui_template_catalog.json"
+    },
+    {
+      "bytes": 1082,
+      "path": "rust/ui-pack/ui_template_binding_index.json"
+    },
+    {
+      "bytes": 1225,
+      "path": "rust/ui-pack/ui_family_census.json"
+    },
+    {
+      "bytes": 2138,
+      "path": "rust/ui-pack/ui_pack_report.json"
+    },
+    {
+      "bytes": 4344,
+      "path": "rust/raw-export-abi-validation-report.json"
+    },
+    {
+      "bytes": 1607,
+      "path": "rust/native-ui-export-abi-validation-report.json"
+    },
+    {
+      "bytes": 4799,
+      "path": "rust/ui-pack-abi-validation-report.json"
+    },
+    {
       "bytes": 1249,
       "path": "rust/semantic-validation-report.json"
     },
@@ -58,36 +112,8 @@
       "path": "rust/native-ui-layout-report.json"
     },
     {
-      "bytes": 203,
-      "path": "rust/ui-pack/ui_templates.bin"
-    },
-    {
-      "bytes": 118,
-      "path": "rust/ui-pack/ui_bindings.bin"
-    },
-    {
-      "bytes": 306,
-      "path": "rust/ui-pack/ui_strings.bin"
-    },
-    {
-      "bytes": 310,
-      "path": "rust/ui-pack/ui_assets.manifest.json"
-    },
-    {
-      "bytes": 1569,
-      "path": "rust/ui-pack/ui_template_catalog.json"
-    },
-    {
-      "bytes": 1082,
-      "path": "rust/ui-pack/ui_template_binding_index.json"
-    },
-    {
-      "bytes": 1225,
-      "path": "rust/ui-pack/ui_family_census.json"
-    },
-    {
-      "bytes": 1472,
-      "path": "rust/ui-pack/ui_pack_report.json"
+      "bytes": 6881,
+      "path": "rust/pack-validation-report.json"
     }
   ],
   "generatedAt": "deterministic-rust-compiler",
@@ -96,7 +122,7 @@
     "portableRelativePathsOnly": true,
     "windowsPathsAllowed": false
   },
-  "runtimeId": "rust-dc4c5794b26e8d10",
+  "runtimeId": "rust-944a6b5e57f71cad",
   "schema": "neonei/runtime/current",
   "schemaRevision": 1,
   "schemaVersion": "neonei/rust-runtime-manifest/current"

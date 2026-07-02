@@ -55,7 +55,7 @@ function encodeTemplatePack(strings) {
   const index = new Map(strings.map((value, idx) => [value, idx]));
   const bytes = [];
   bytes.push(...new TextEncoder().encode('NEIUIT1\0'));
-  pushU32(bytes, 6);
+  pushU32(bytes, 7);
   pushU32(bytes, 1);
   pushU32(bytes, 2);
   pushU32(bytes, 1);
@@ -64,7 +64,7 @@ function encodeTemplatePack(strings) {
   pushU32(bytes, 22);
   pushU32(bytes, 12);
   pushU32(bytes, 7);
-  pushU32(bytes, 18);
+  pushU32(bytes, 15);
   const row = [
     index.get('furnace@default') ?? 0,
     index.get('self-test-furnace') ?? 0,
@@ -166,7 +166,7 @@ function buildUiPackAbiReport({ templatePack, bindingPack, stringPack, status = 
       bytes: templatePack.byteLength,
       envelopeSchema: 'neonei/ui-template-pack/current',
       payloadMagic: 'NEIUIT1_NUL',
-      version: 6,
+      version: 7,
       sections: [],
     },
     {
