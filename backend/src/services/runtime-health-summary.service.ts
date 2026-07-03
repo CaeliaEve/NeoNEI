@@ -8,67 +8,31 @@ import {
   type CurrentRuntimeSnapshotDiagnostics,
   type CurrentRuntimeSnapshotHandle,
 } from './current-runtime-snapshot.service';
+import { CURRENT_RUNTIME_SNAPSHOT_STATUS } from './current-runtime-snapshot-abi';
 import { getNativeUiRuntimeProofSummary } from './native-ui-runtime-proof.service';
 import { getNativeRenderRuntimeDiagnostics } from './native-render-runtime-diagnostics.service';
+import {
+  RUNTIME_HEALTH_ARTIFACT_ERRORS,
+  RUNTIME_HEALTH_ARTIFACT_STATUS,
+  RUNTIME_HEALTH_DIST_MANIFEST_RELATIVE_PATH,
+  RUNTIME_HEALTH_SCHEMA_VERSION,
+  chooseRuntimeHealthSummaryStatus,
+  createMissingRuntimeHealthArtifactProbe,
+  createRuntimeHealthArtifactProbe,
+  resolveRuntimeHealthCacheTtlMs,
+  summarizeRuntimeHealthArtifacts,
+  type RuntimeHealthArtifactProbe,
+  type RuntimeHealthArtifactProbeName,
+  type RuntimeHealthArtifactRead,
+  type RuntimeHealthArtifactSummaryStatus,
+  type RuntimeHealthSummaryStatus,
+} from './runtime-health-summary-abi';
 
 type JsonRecord = Record<string, unknown>;
 
-export const RUNTIME_HEALTH_ARTIFACT_STATUS = Object.freeze({
-  present: 'present',
-  missing: 'missing',
-  invalid: 'invalid',
-} as const);
-
-export type RuntimeHealthArtifactProbeStatus =
-  typeof RUNTIME_HEALTH_ARTIFACT_STATUS[keyof typeof RUNTIME_HEALTH_ARTIFACT_STATUS];
-
-export type RuntimeHealthArtifactProbeName =
-  | 'manifest'
-  | 'validationReport'
-  | 'migrationReadiness'
-  | 'neiBrowserContract'
-  | 'recipeFragmentation'
-  | 'exportPathHygiene'
-  | 'externalRuntimePromotionReport';
-
-export interface RuntimeHealthArtifactProbe {
-  name: RuntimeHealthArtifactProbeName;
-  key: string;
-  status: RuntimeHealthArtifactProbeStatus;
-  path: string | null;
-  relativePath: string | null;
-  bytes: number | null;
-  mtimeMs: number | null;
-  error: string | null;
-}
-
-type RuntimeHealthArtifactRead = Readonly<{
-  probe: RuntimeHealthArtifactProbe;
-  value: JsonRecord | null;
-}>;
-
-const RUNTIME_HEALTH_REQUIRED_ARTIFACTS = Object.freeze([
-  'manifest',
-  'validationReport',
-  'migrationReadiness',
-  'neiBrowserContract',
-  'recipeFragmentation',
-  'exportPathHygiene',
-] as const satisfies readonly RuntimeHealthArtifactProbeName[]);
-
-const RUNTIME_HEALTH_MANIFEST_FILE_ARTIFACTS = Object.freeze([
-  'validationReport',
-  'migrationReadiness',
-  'neiBrowserContract',
-  'recipeFragmentation',
-  'exportPathHygiene',
-  'externalRuntimePromotionReport',
-] as const satisfies readonly RuntimeHealthArtifactProbeName[]);
-
-
 export interface RuntimeHealthSummary {
-  schemaVersion: 'neonei/runtime-health-summary/current';
-  status: 'ok' | 'warning' | 'blocked' | 'degraded';
+  schemaVersion: typeof RUNTIME_HEALTH_SCHEMA_VERSION;
+  status: RuntimeHealthSummaryStatus;
   generatedAt: string;
   distData: {
     exists: boolean;
@@ -79,7 +43,7 @@ export interface RuntimeHealthSummary {
     runtime: JsonRecord | null;
   };
   artifacts: {
-    status: 'ok' | 'missing' | 'invalid';
+    status: RuntimeHealthArtifactSummaryStatus;
     probes: Record<RuntimeHealthArtifactProbeName, RuntimeHealthArtifactProbe>;
     errors: string[];
   };
@@ -154,31 +118,9 @@ export type RuntimeHealthSummaryOptions = Readonly<{
   snapshot?: CurrentRuntimeSnapshot | null;
 }>;
 
-const CACHE_TTL_MS = Math.max(1_000, Number(process.env.RUNTIME_HEALTH_SUMMARY_TTL_MS || 10_000));
+const CACHE_TTL_MS = resolveRuntimeHealthCacheTtlMs();
 
 let cache: { expiresAt: number; summary: RuntimeHealthSummary } | null = null;
-
-function createRuntimeHealthArtifactProbe(args: {
-  name: RuntimeHealthArtifactProbeName;
-  key: string;
-  status: RuntimeHealthArtifactProbeStatus;
-  path: string | null;
-  relativePath: string | null;
-  bytes?: number | null;
-  mtimeMs?: number | null;
-  error?: string | null;
-}): RuntimeHealthArtifactProbe {
-  return Object.freeze({
-    name: args.name,
-    key: args.key,
-    status: args.status,
-    path: args.path,
-    relativePath: args.relativePath,
-    bytes: args.bytes ?? null,
-    mtimeMs: args.mtimeMs ?? null,
-    error: args.error ?? null,
-  });
-}
 
 function missingRuntimeHealthArtifact(
   name: RuntimeHealthArtifactProbeName,
@@ -186,15 +128,11 @@ function missingRuntimeHealthArtifact(
   relativePath: string | null = null,
 ): RuntimeHealthArtifactRead {
   return Object.freeze({
-    probe: createRuntimeHealthArtifactProbe({
+    probe: createMissingRuntimeHealthArtifactProbe({
       name,
       key,
-      status: RUNTIME_HEALTH_ARTIFACT_STATUS.missing,
       path: relativePath ? path.join(DIST_DATA_DIR, relativePath) : null,
       relativePath,
-      error: relativePath
-        ? `runtime health artifact is missing: ${relativePath}`
-        : `runtime health artifact is not declared: ${key}`,
     }),
     value: null,
   });
@@ -239,7 +177,7 @@ function readRuntimeHealthJsonArtifact(args: {
           relativePath: args.relativePath,
           bytes: stats.size,
           mtimeMs: stats.mtimeMs,
-          error: 'runtime health artifact JSON payload must be an object',
+          error: RUNTIME_HEALTH_ARTIFACT_ERRORS.jsonObjectRequired,
         }),
         value: null,
       });
@@ -303,7 +241,7 @@ function buildRuntimeSnapshotHealth(
         totalBytes: 0,
       },
       runtimeSnapshot: {
-        status: diagnostics?.status ?? 'missing',
+        status: diagnostics?.status ?? CURRENT_RUNTIME_SNAPSHOT_STATUS.missing,
         available: false,
         revision: null,
         runtimeId: null,
@@ -332,7 +270,7 @@ function buildRuntimeSnapshotHealth(
       totalBytes,
     },
     runtimeSnapshot: {
-      status: diagnostics?.status ?? 'ready',
+      status: diagnostics?.status ?? CURRENT_RUNTIME_SNAPSHOT_STATUS.ready,
       available: true,
       revision: snapshot.revision,
       runtimeId: snapshot.runtimeId,
@@ -367,29 +305,6 @@ function readDistJsonByManifestKey(
   return read.value;
 }
 
-function summarizeRuntimeHealthArtifacts(
-  artifactReads: Map<RuntimeHealthArtifactProbeName, RuntimeHealthArtifactRead>,
-): RuntimeHealthSummary['artifacts'] {
-  const probes = Object.fromEntries(
-    (['manifest', ...RUNTIME_HEALTH_MANIFEST_FILE_ARTIFACTS] as RuntimeHealthArtifactProbeName[])
-      .map((name) => [name, artifactReads.get(name)?.probe ?? missingRuntimeHealthArtifact(name).probe]),
-  ) as Record<RuntimeHealthArtifactProbeName, RuntimeHealthArtifactProbe>;
-  const required = new Set<RuntimeHealthArtifactProbeName>(RUNTIME_HEALTH_REQUIRED_ARTIFACTS);
-  const requiredProbes = Object.values(probes).filter((probe) => required.has(probe.name));
-  const status = requiredProbes.some((probe) => probe.status === RUNTIME_HEALTH_ARTIFACT_STATUS.invalid)
-    ? 'invalid'
-    : requiredProbes.some((probe) => probe.status === RUNTIME_HEALTH_ARTIFACT_STATUS.missing)
-      ? 'missing'
-      : 'ok';
-  return Object.freeze({
-    status,
-    probes,
-    errors: Object.values(probes)
-      .filter((probe) => probe.error)
-      .map((probe) => `${probe.name}: ${probe.error}`),
-  });
-}
-
 function readExternalRuntimePromotionSummary(
   manifest: JsonRecord | null,
   report: JsonRecord | null,
@@ -406,43 +321,6 @@ function readExternalRuntimePromotionSummary(
     sourceIdentity: asString(sourceIdentity?.identity),
     copiedFiles,
   };
-}
-
-function chooseStatus(args: {
-  manifestExists: boolean;
-  runtimeSnapshotAvailable: boolean;
-  missingFileCount: number;
-  migrationReadinessStatus: string | null;
-  browserContractStatus: string | null;
-  recipeFragmentationStatus: string | null;
-  compilerValidationBlocked: boolean;
-  nativeUiProofBlocked: boolean;
-  artifactStatus: RuntimeHealthSummary['artifacts']['status'];
-}): RuntimeHealthSummary['status'] {
-  if (
-    args.artifactStatus !== 'ok'
-    || !args.manifestExists
-    || !args.runtimeSnapshotAvailable
-    || args.missingFileCount > 0
-    || args.compilerValidationBlocked
-    || args.nativeUiProofBlocked
-  ) {
-    return 'blocked';
-  }
-  if (args.migrationReadinessStatus === 'blocked') {
-    return 'blocked';
-  }
-  if (
-    args.browserContractStatus === 'warning'
-    || args.recipeFragmentationStatus === 'warning'
-    || args.migrationReadinessStatus === 'warning'
-  ) {
-    return 'warning';
-  }
-  if (!fs.existsSync(DIST_DATA_DIR)) {
-    return 'degraded';
-  }
-  return 'ok';
 }
 
 function hasPinnedSnapshotOption(options: RuntimeHealthSummaryOptions): boolean {
@@ -463,13 +341,13 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
     return cache.summary;
   }
 
-  const manifestPath = path.join(DIST_DATA_DIR, 'manifest.json');
+  const manifestPath = path.join(DIST_DATA_DIR, RUNTIME_HEALTH_DIST_MANIFEST_RELATIVE_PATH);
   const artifactReads = new Map<RuntimeHealthArtifactProbeName, RuntimeHealthArtifactRead>();
   const manifestRead = readRuntimeHealthJsonArtifact({
     name: 'manifest',
     key: 'manifest',
     filePath: manifestPath,
-    relativePath: 'manifest.json',
+    relativePath: RUNTIME_HEALTH_DIST_MANIFEST_RELATIVE_PATH,
   });
   artifactReads.set('manifest', manifestRead);
   const manifest = manifestRead.value;
@@ -503,8 +381,9 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
     const exportPathHygieneStatus = asString(exportPathHygiene?.status);
 
     const summary: RuntimeHealthSummary = {
-      schemaVersion: 'neonei/runtime-health-summary/current',
-      status: chooseStatus({
+      schemaVersion: RUNTIME_HEALTH_SCHEMA_VERSION,
+      status: chooseRuntimeHealthSummaryStatus({
+        distDataExists: fs.existsSync(DIST_DATA_DIR),
         manifestExists: Boolean(manifest),
         runtimeSnapshotAvailable: runtimeSnapshotHealth.runtimeSnapshot.available,
         missingFileCount: files.missing.length,
