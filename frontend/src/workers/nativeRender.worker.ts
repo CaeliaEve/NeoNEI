@@ -11,6 +11,11 @@ import {
   WebGl2NativeRenderer,
 } from "../renderers/native/WebGl2NativeRenderer";
 import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend";
+import {
+  assertNativeRendererProbeSupported,
+  NativeRendererProbeError,
+  type NativeRendererProbeResult,
+} from "../renderers/native/NativeRendererProbe";
 import { WebGpuNativeRenderer } from "../renderers/native/WebGpuNativeRenderer";
 
 let canvas: OffscreenCanvas | null = null;
@@ -139,11 +144,36 @@ function detectWebglLimits(activeCanvas: OffscreenCanvas): NativeRendererLimits 
   };
 }
 
-function chooseBackend(requested: "auto" | "webgpu" | "webgl2", activeCanvas: OffscreenCanvas): NativeRenderBackendKind {
-  if (requested === "webgl2") return "webgl2";
-  if (requested === "auto") return "webgl2";
-  void activeCanvas;
-  return "gpu" in navigator ? "webgpu" : "webgl2";
+function nativeRendererProbePlan(requested: "auto" | "webgpu" | "webgl2"): readonly NativeRenderBackendKind[] {
+  if (requested === "webgpu") return ["webgpu"];
+  return ["webgl2"];
+}
+
+async function probeNativeRendererBackend(
+  candidate: NativeRenderBackendKind,
+  activeCanvas: OffscreenCanvas,
+): Promise<NativeRendererProbeResult> {
+  return candidate === "webgpu"
+    ? await WebGpuNativeRenderer.probe(activeCanvas)
+    : WebGl2NativeRenderer.probe(activeCanvas);
+}
+
+async function probeRequestedNativeRenderer(
+  requested: "auto" | "webgpu" | "webgl2",
+  activeCanvas: OffscreenCanvas,
+): Promise<NativeRendererProbeResult> {
+  const failures: NativeRendererProbeResult[] = [];
+  for (const candidate of nativeRendererProbePlan(requested)) {
+    const result = await probeNativeRendererBackend(candidate, activeCanvas);
+    if (result.status === "supported") return result;
+    failures.push(result);
+  }
+  throw new NativeRendererProbeError(failures[0] ?? {
+    backend: requested === "webgpu" ? "webgpu" : "webgl2",
+    status: "failed",
+    renderer: null,
+    reason: "native renderer probe plan was empty",
+  });
 }
 
 function normalizeSpriteCommands(commands: NativeRenderSpriteCommand[]) {
@@ -280,22 +310,19 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       backendFallbackReason = null;
       width = canvas.width;
       height = canvas.height;
-      backend = chooseBackend(message.renderer, canvas);
       nativeRenderer?.dispose();
+      nativeRenderer = null;
       uploadedTextureKeys.clear();
       virtualTextureTiles.clear();
       textureLoaded = 0;
-      nativeRenderer = backend === "webgpu"
-        ? await WebGpuNativeRenderer.create(canvas)
-        : WebGl2NativeRenderer.create(canvas);
-      if (!nativeRenderer && backend === "webgpu") {
-        backendFallbackReason = WebGpuNativeRenderer.lastInitializationError
-          ? `webgpu renderer initialization failed: ${WebGpuNativeRenderer.lastInitializationError}`
-          : "webgpu renderer initialization failed";
-        backend = "webgl2";
-        nativeRenderer = WebGl2NativeRenderer.create(canvas);
-      } else if (message.renderer === "webgpu" && backend !== "webgpu") {
-        backendFallbackReason = "webgpu unavailable in render worker";
+      try {
+        const rendererProbe = await probeRequestedNativeRenderer(message.renderer, canvas);
+        nativeRenderer = assertNativeRendererProbeSupported(rendererProbe);
+        backend = nativeRenderer.backend;
+      } catch (error) {
+        backend = null;
+        backendFallbackReason = error instanceof Error ? error.message : String(error);
+        throw error;
       }
       const limits = backend === "webgpu" ? { maxTextureSize: 0, maxTextureUnits: 0 } : detectWebglLimits(canvas);
       rendererMaxTextureSize = limits.maxTextureSize;

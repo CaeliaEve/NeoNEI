@@ -15,21 +15,34 @@ function readRepoSource(relativePath) {
   return readFileSync(resolve(frontendRoot, "..", relativePath), "utf8");
 }
 
-test("native render auto stays on pixel-validated WebGL2 unless WebGPU is explicit", () => {
+test("native render backend selection uses an explicit probe plan", () => {
   const source = readSource("src/workers/nativeRender.worker.ts");
+  const probeSource = readSource("src/renderers/native/NativeRendererProbe.ts");
+  const sessionSource = readSource("src/services/nativeUiRendererSession.ts");
 
-  assert.match(source, /function chooseBackend\(requested: "auto" \| "webgpu" \| "webgl2", activeCanvas: OffscreenCanvas\)/);
-  assert.match(source, /if \(requested === "webgl2"\) return "webgl2"/);
-  assert.match(source, /if \(requested === "auto"\) return "webgl2"/);
-  assert.match(source, /return "gpu" in navigator \? "webgpu" : "webgl2"/);
+  assert.match(source, /function nativeRendererProbePlan\(requested: "auto" \| "webgpu" \| "webgl2"\)/);
+  assert.match(source, /if \(requested === "webgpu"\) return \["webgpu"\]/);
+  assert.match(source, /return \["webgl2"\]/);
+  assert.match(source, /function probeRequestedNativeRenderer/);
+  assert.match(source, /assertNativeRendererProbeSupported/);
+  assert.match(source, /NativeRendererProbeError/);
+  assert.doesNotMatch(source, /function chooseBackend/);
+  assert.doesNotMatch(source, /WebGl2NativeRenderer\.create/);
+  assert.doesNotMatch(source, /WebGpuNativeRenderer\.create/);
+  assert.match(probeSource, /NATIVE_RENDERER_PROBE_POLICY/);
+  assert.match(probeSource, /requestedBackendPolicy:\s*"exact-probe-no-fallback"/);
+  assert.match(sessionSource, /NATIVE_UI_RENDERER_SESSION_POLICY/);
+  assert.match(sessionSource, /WebGl2NativeRenderer\.probe/);
 });
 
-test("webgpu readiness does not probe a second WebGL context on the same canvas", () => {
+test("requested WebGPU readiness does not silently fall back to WebGL2", () => {
   const source = readSource("src/workers/nativeRender.worker.ts");
 
   assert.match(source, /backend === "webgpu" \? \{ maxTextureSize: 0, maxTextureUnits: 0 \} : detectWebglLimits\(canvas\)/);
-  assert.match(source, /if \(!nativeRenderer && backend === "webgpu"\)/);
-  assert.match(source, /backend = "webgl2"/);
+  assert.match(source, /backend = null/);
+  assert.match(source, /backendFallbackReason = error instanceof Error \? error\.message : String\(error\)/);
+  assert.doesNotMatch(source, /backend = "webgl2"/);
+  assert.doesNotMatch(source, /webgpu renderer initialization failed/);
 });
 
 test("native browser surface defaults to WebGL2 and retires stale browser WebGPU overrides", () => {

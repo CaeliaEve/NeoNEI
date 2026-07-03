@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { NativeUiCanvasRenderPipeline } from '../src/services/nativeUiCanvasRenderPipeline.ts';
+import { nativeRendererProbeSupported } from '../src/renderers/native/NativeRendererProbe.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
@@ -87,7 +88,7 @@ test('native UI canvas render pipeline owns rebuild sequencing and GPU resource 
     let flushed = false;
     const pipeline = new NativeUiCanvasRenderPipeline({
       nextTick: async () => { flushed = true; },
-      rendererFactory: () => renderer,
+      rendererProbe: () => nativeRendererProbeSupported(renderer),
       prepareBackground: async (options) => {
         assert.equal(options.renderer, renderer);
         assert.equal(options.layoutWidth, 176);
@@ -207,7 +208,7 @@ test('native UI canvas render pipeline fails closed on resource boundary errors'
   const states = [];
   const pipeline = new NativeUiCanvasRenderPipeline({
     nextTick: async () => {},
-    rendererFactory: () => renderer,
+    rendererProbe: () => nativeRendererProbeSupported(renderer),
     prepareBackground: async () => ({
       source: null,
       error: 'captured background missing',
@@ -246,7 +247,7 @@ test('native UI canvas render pipeline fails closed on resource boundary errors'
 
   const atlasFailure = new NativeUiCanvasRenderPipeline({
     nextTick: async () => {},
-    rendererFactory: () => renderer,
+    rendererProbe: () => nativeRendererProbeSupported(renderer),
     prepareBackground: async () => ({
       source: null,
       error: null,
@@ -290,6 +291,7 @@ test('native UI canvas render pipeline is the component rebuild boundary', () =>
   assert.match(pipelineSource, /class NativeUiCanvasRenderPipeline/);
   assert.match(pipelineSource, /beginRebuild/);
   assert.match(pipelineSource, /buildSpriteCommands/);
+  assert.match(pipelineSource, /rendererProbe/);
   assert.match(pipelineSource, /registerSlotTextures/);
   assert.match(pipelineSource, /registerDynamicPrimitiveTextures/);
   assert.match(pipelineSource, /prepareNativeUiBackgroundSource/);

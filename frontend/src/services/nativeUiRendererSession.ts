@@ -1,13 +1,25 @@
 import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend.ts";
 import {
+  assertNativeRendererProbeSupported,
+  NATIVE_RENDERER_PROBE_POLICY,
+  type NativeRendererProbeResult,
+} from "../renderers/native/NativeRendererProbe.ts";
+import {
   WebGl2NativeRenderer,
   type NativeTextureSpriteCommand,
 } from "../renderers/native/WebGl2NativeRenderer.ts";
 
 export type NativeUiRendererCanvas = HTMLCanvasElement | OffscreenCanvas;
-export type NativeUiRendererFactory = (canvas: NativeUiRendererCanvas) => NativeRendererBackend | null;
+export type NativeUiRendererProbe = (canvas: NativeUiRendererCanvas) => NativeRendererProbeResult;
 export type NativeUiSpriteCommandFactory = (nowMs: number) => NativeTextureSpriteCommand[];
 export type NativeUiAnimationFrameCallback = (timestamp: number) => void;
+
+export const NATIVE_UI_RENDERER_SESSION_POLICY = Object.freeze({
+  id: "nativeUi.rendererSession",
+  rendererProbePolicy: NATIVE_RENDERER_PROBE_POLICY.id,
+  defaultBackend: NATIVE_RENDERER_PROBE_POLICY.defaultBrowserCanvasBackend,
+  failurePolicy: "fail-closed",
+} as const);
 
 export interface NativeUiAnimationScheduler {
   request(callback: NativeUiAnimationFrameCallback): number;
@@ -32,8 +44,8 @@ export interface NativeUiRenderFrameOptions {
   nowMs?: number;
 }
 
-function defaultRendererFactory(canvas: NativeUiRendererCanvas): NativeRendererBackend | null {
-  return WebGl2NativeRenderer.create(canvas);
+function defaultRendererProbe(canvas: NativeUiRendererCanvas): NativeRendererProbeResult {
+  return WebGl2NativeRenderer.probe(canvas);
 }
 
 function defaultScheduler(): NativeUiAnimationScheduler {
@@ -85,10 +97,10 @@ export class NativeUiRendererSession {
 
   ensureRenderer(
     canvas: NativeUiRendererCanvas,
-    factory: NativeUiRendererFactory = defaultRendererFactory,
-  ): NativeRendererBackend | null {
+    probe: NativeUiRendererProbe = defaultRendererProbe,
+  ): NativeRendererBackend {
     if (!this.renderer) {
-      this.renderer = factory(canvas);
+      this.renderer = assertNativeRendererProbeSupported(probe(canvas));
     }
     return this.renderer;
   }

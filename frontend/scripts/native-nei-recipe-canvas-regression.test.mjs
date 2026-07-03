@@ -31,7 +31,8 @@ test('NativeNeiRecipeCanvas stays on the single WebGL atlas render path', () => 
   const sessionSource = read('src/services/nativeUiRendererSession.ts');
 
   assert.equal(canvasSource.includes('NativeUiCanvasRenderPipeline'), true);
-  assert.equal(sessionSource.includes('WebGl2NativeRenderer.create(canvas)'), true);
+  assert.equal(sessionSource.includes('WebGl2NativeRenderer.probe(canvas)'), true);
+  assert.equal(sessionSource.includes('assertNativeRendererProbeSupported'), true);
   assert.equal(pipelineSource.includes('registerNativeUiAtlasSources'), true);
   assert.equal(pipelineSource.includes('buildNativeUiSpriteCommands'), true);
   assert.equal(canvasSource.includes('RecipeItemTooltip'), true, 'tooltips may remain in the interaction overlay');

@@ -1,4 +1,10 @@
 import type { NativeRendererBackend } from "./NativeRendererBackend";
+import {
+  nativeRendererProbeFailed,
+  nativeRendererProbeSupported,
+  nativeRendererProbeUnsupported,
+  type NativeRendererProbeResult,
+} from "./NativeRendererProbe";
 import type { NativeRenderCommand, NativeRendererStats, NativeTextureSpriteCommand } from "./WebGl2NativeRenderer";
 
 type AnyRecord = Record<string, any>;
@@ -381,9 +387,9 @@ export class WebGpuNativeRenderer implements NativeRendererBackend {
   private textureCache = new Map<string, WebGpuTextureState>();
   private readonly handles: WebGpuHandles;
 
-  static async create(activeCanvas: OffscreenCanvas): Promise<WebGpuNativeRenderer | null> {
+  static async probe(activeCanvas: OffscreenCanvas): Promise<NativeRendererProbeResult> {
     WebGpuNativeRenderer.lastInitializationError = null;
-    if (!hasWebGpu()) return null;
+    if (!hasWebGpu()) return nativeRendererProbeUnsupported("webgpu", "webgpu navigator API unavailable");
     const handles = await requestWebGpuHandles(activeCanvas).catch((error) => {
       WebGpuNativeRenderer.lastInitializationError = error instanceof Error ? error.message : String(error);
       return null;
@@ -391,8 +397,13 @@ export class WebGpuNativeRenderer implements NativeRendererBackend {
     if (!handles && !WebGpuNativeRenderer.lastInitializationError) {
       WebGpuNativeRenderer.lastInitializationError = "webgpu adapter/device/context unavailable";
     }
-    if (!handles) return null;
-    return new WebGpuNativeRenderer(handles);
+    if (!handles) {
+      return nativeRendererProbeFailed(
+        "webgpu",
+        WebGpuNativeRenderer.lastInitializationError ?? "webgpu renderer initialization failed",
+      );
+    }
+    return nativeRendererProbeSupported(new WebGpuNativeRenderer(handles));
   }
 
   private constructor(handles: WebGpuHandles) {

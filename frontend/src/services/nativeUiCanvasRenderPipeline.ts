@@ -22,7 +22,7 @@ import {
   configureNativeUiCanvasSize,
   NativeUiRendererSession,
   type NativeUiRendererCanvas,
-  type NativeUiRendererFactory,
+  type NativeUiRendererProbe,
 } from "./nativeUiRendererSession.ts";
 import type {
   NativeUiDynamicPrimitive,
@@ -59,7 +59,7 @@ export interface NativeUiCanvasRenderPipelineSnapshot<TEntry extends { atlasLook
 
 export interface NativeUiCanvasRenderPipelineDeps<TEntry extends { atlasLookupId?: string | null }> {
   nextTick?: () => Promise<unknown>;
-  rendererFactory?: NativeUiRendererFactory;
+  rendererProbe?: NativeUiRendererProbe;
   prepareBackground?: (options: NativeUiBackgroundPrepareOptions) => Promise<NativeUiBackgroundPrepareResult>;
   registerAtlasSources?: (options: NativeUiAtlasRegistrationOptions<TEntry>) => Promise<NativeUiAtlasRegistrationResult>;
   onStateChange?: (state: NativeUiCanvasRenderPipelineState) => void;
@@ -165,9 +165,11 @@ export class NativeUiCanvasRenderPipeline<TEntry extends { atlasLookupId?: strin
     );
     this.commitState({ currentDpr: sizing.dpr });
 
-    const renderer = this.rendererSession.ensureRenderer(canvas, this.deps.rendererFactory);
-    if (!renderer) {
-      this.commitState({ renderError: "WebGL2 native recipe renderer is unavailable." });
+    let renderer: NativeRendererBackend;
+    try {
+      renderer = this.rendererSession.ensureRenderer(canvas, this.deps.rendererProbe);
+    } catch (error) {
+      this.commitState({ renderError: nativeUiRenderErrorMessage(error) });
       return this.currentState;
     }
     this.commitState({ renderError: null });

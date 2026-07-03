@@ -1,3 +1,10 @@
+import {
+  nativeRendererProbeFailed,
+  nativeRendererProbeSupported,
+  nativeRendererProbeUnsupported,
+  type NativeRendererProbeResult,
+} from "./NativeRendererProbe.ts";
+
 export type NativeRenderCommand = {
   x: number;
   y: number;
@@ -167,7 +174,7 @@ export class WebGl2NativeRenderer {
   private readonly textureCache = new Map<string, TextureState>();
   private readonly maxTextureSize: number;
 
-  static create(activeCanvas: HTMLCanvasElement | OffscreenCanvas): WebGl2NativeRenderer | null {
+  static probe(activeCanvas: HTMLCanvasElement | OffscreenCanvas): NativeRendererProbeResult {
     const gl = activeCanvas.getContext("webgl2", {
       alpha: true,
       antialias: false,
@@ -178,7 +185,7 @@ export class WebGl2NativeRenderer {
       preserveDrawingBuffer: false,
       stencil: false,
     });
-    if (!gl) return null;
+    if (!gl) return nativeRendererProbeUnsupported("webgl2", "webgl2 context unavailable");
     const chromeProgram = createProgram(gl, CHROME_VERTEX_SHADER, CHROME_FRAGMENT_SHADER);
     const spriteProgram = createProgram(gl, SPRITE_VERTEX_SHADER, SPRITE_FRAGMENT_SHADER);
     const chromePositionBuffer = gl.createBuffer();
@@ -186,16 +193,24 @@ export class WebGl2NativeRenderer {
     const spritePositionBuffer = gl.createBuffer();
     const spriteTexcoordBuffer = gl.createBuffer();
     if (!chromeProgram || !spriteProgram || !chromePositionBuffer || !chromeColorBuffer || !spritePositionBuffer || !spriteTexcoordBuffer) {
-      return null;
+      if (chromeProgram) gl.deleteProgram(chromeProgram);
+      if (spriteProgram) gl.deleteProgram(spriteProgram);
+      if (chromePositionBuffer) gl.deleteBuffer(chromePositionBuffer);
+      if (chromeColorBuffer) gl.deleteBuffer(chromeColorBuffer);
+      if (spritePositionBuffer) gl.deleteBuffer(spritePositionBuffer);
+      if (spriteTexcoordBuffer) gl.deleteBuffer(spriteTexcoordBuffer);
+      return nativeRendererProbeFailed("webgl2", "webgl2 shader program or buffer allocation failed");
     }
-    return new WebGl2NativeRenderer(
-      gl,
-      chromeProgram,
-      spriteProgram,
-      chromePositionBuffer,
-      chromeColorBuffer,
-      spritePositionBuffer,
-      spriteTexcoordBuffer,
+    return nativeRendererProbeSupported(
+      new WebGl2NativeRenderer(
+        gl,
+        chromeProgram,
+        spriteProgram,
+        chromePositionBuffer,
+        chromeColorBuffer,
+        spritePositionBuffer,
+        spriteTexcoordBuffer,
+      ),
     );
   }
 

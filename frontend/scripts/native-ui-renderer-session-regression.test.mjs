@@ -5,9 +5,14 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   configureNativeUiCanvasSize,
+  NATIVE_UI_RENDERER_SESSION_POLICY,
   NativeUiRendererSession,
   normalizeNativeUiDpr,
 } from '../src/services/nativeUiRendererSession.ts';
+import {
+  nativeRendererProbeSupported,
+  nativeRendererProbeUnsupported,
+} from '../src/renderers/native/NativeRendererProbe.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
@@ -76,7 +81,7 @@ test('native UI renderer session creates one renderer, renders frames, and dispo
 
   assert.equal(session.ensureRenderer(canvas, () => {
     factoryCalls += 1;
-    return renderer;
+    return nativeRendererProbeSupported(renderer);
   }), renderer);
   assert.equal(session.ensureRenderer(canvas, () => {
     throw new Error('must not create twice');
@@ -96,6 +101,20 @@ test('native UI renderer session creates one renderer, renders frames, and dispo
   session.dispose();
   assert.equal(renderer.disposed, true);
   assert.equal(session.activeRenderer, null);
+});
+
+test('native UI renderer session fails closed on renderer probe rejection', () => {
+  const session = new NativeUiRendererSession();
+
+  assert.throws(
+    () => session.ensureRenderer(
+      { width: 352, height: 180 },
+      () => nativeRendererProbeUnsupported('webgl2', 'webgl2 context unavailable'),
+    ),
+    /Native renderer webgl2 probe unsupported: webgl2 context unavailable/,
+  );
+  assert.equal(session.activeRenderer, null);
+  assert.equal(NATIVE_UI_RENDERER_SESSION_POLICY.failurePolicy, 'fail-closed');
 });
 
 test('native UI renderer session owns animation loop scheduling and cancellation', () => {
@@ -143,6 +162,11 @@ test('native UI renderer session owns render pipeline lifecycle boundary', () =>
   assert.match(pipelineSource, /rendererSession\.ensureRenderer/);
   assert.match(pipelineSource, /rendererSession\.scheduleAnimationLoop/);
   assert.match(sessionSource, /WebGl2NativeRenderer/);
+  assert.match(sessionSource, /NATIVE_UI_RENDERER_SESSION_POLICY/);
+  assert.match(sessionSource, /NativeRendererProbeResult/);
+  assert.match(sessionSource, /assertNativeRendererProbeSupported/);
+  assert.match(sessionSource, /WebGl2NativeRenderer\.probe/);
+  assert.doesNotMatch(sessionSource, /WebGl2NativeRenderer\.create/);
   assert.match(sessionSource, /requestAnimationFrame/);
   assert.match(sessionSource, /cancelAnimationFrame/);
   assert.match(sessionSource, /nativeUiRendererNowMs/);
