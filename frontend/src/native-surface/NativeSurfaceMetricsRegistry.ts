@@ -11,6 +11,20 @@ import {
   type NativeSurfaceFaultControlState,
 } from "./NativeSurfaceFaultControlPlane";
 
+export const NATIVE_SURFACE_METRICS_REGISTRY_MODULE = Object.freeze({
+  id: "nativeSurface.metricsRegistry",
+  schema: "neonei/native-surface-metrics-registry/current",
+  statePolicy: "single-owner-map-registry",
+  snapshotPolicy: "copy-on-write-metrics-snapshot",
+  faultBridgePolicy: "fault-control-state-to-metrics-patch",
+  debugSurfacePolicy: "explicit-debugfs-window-exports",
+  debugGlobals: Object.freeze([
+    "__NEONEI_NATIVE_SURFACE_METRICS__",
+    "__NEONEI_NATIVE_SURFACE_ENGINE_METRICS__",
+    "__NEONEI_NATIVE_RENDER_METRICS__",
+  ] as const),
+} as const);
+
 const metricsBySurface = new Map<NativeSurfaceId, NativeSurfaceMetrics>();
 const faultBySurface = new Map<NativeSurfaceId, NativeSurfaceFaultControlState>();
 
@@ -75,7 +89,11 @@ export function recordNativeSurfaceFault(
 ): NativeSurfaceMetrics {
   const state = markNativeSurfaceFault(getNativeSurfaceFaultState(surfaceId), fault);
   faultBySurface.set(surfaceId, state);
-  return updateNativeSurfaceMetrics(surfaceId, toNativeSurfaceFaultMetricsPatch(state), `${fault.domain}:${fault.phase}:fault`);
+  return updateNativeSurfaceMetrics(
+    surfaceId,
+    toNativeSurfaceFaultMetricsPatch(state),
+    `${fault.domain}:${fault.phase}:fault`,
+  );
 }
 
 export function clearNativeSurfaceFault(

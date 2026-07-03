@@ -94,7 +94,7 @@ test('native runtime control plane rejects zero-pack and worker-rejected ready t
 test('native runtime control plane is the controller and metrics boundary', () => {
   const controlSource = readSource('src/native-surface/NativeRuntimeControlPlane.ts');
   const controllerSource = readSource('src/native-surface/NativeSurfaceController.ts');
-  const metricsSource = readSource('src/native-surface/NativeSurfaceMetrics.ts');
+  const metricsSource = readSource('src/native-surface/NativeSurfaceMetricsRegistry.ts');
 
   assert.match(controlSource, /export interface NativeRuntimeControlState/);
   assert.match(controlSource, /NATIVE_RUNTIME_CONTROL_STATUS/);
@@ -108,6 +108,7 @@ test('native runtime control plane is the controller and metrics boundary', () =
   assert.match(controllerSource, /this\.nativeRuntime = markNativeRuntimeError\(this\.nativeRuntime, error\)/);
   assert.match(controllerSource, /\.\.\.toNativeRuntimeMetricsPatch\(this\.nativeRuntime\)/);
   assert.match(metricsSource, /\.\.\.toNativeRuntimeMetricsPatch\(nativeRuntime\)/);
+  assert.match(metricsSource, /NATIVE_SURFACE_METRICS_REGISTRY_MODULE/);
 
   assert.doesNotMatch(controlSource, /state\.status =/);
   assert.doesNotMatch(controlSource, /state\.ready =/);

@@ -86,12 +86,13 @@ test('native surface fault ABI catalog is the metrics source of truth', () => {
 });
 
 test('native surface faults are published through metrics instead of console-only state', () => {
-  const metricsSource = readSource('src/native-surface/NativeSurfaceMetrics.ts');
+  const metricsSource = readSource('src/native-surface/NativeSurfaceMetricsRegistry.ts');
   const controllerSource = readSource('src/native-surface/NativeSurfaceController.ts');
   const browserSurfaceSource = readSource('src/components/native-surface/NativeBrowserSurface.vue');
   const contractsSource = readSource('src/native-surface/contracts.ts');
 
   assert.match(metricsSource, /const faultBySurface = new Map/);
+  assert.match(metricsSource, /NATIVE_SURFACE_METRICS_REGISTRY_MODULE/);
   assert.match(metricsSource, /export function recordNativeSurfaceFault/);
   assert.match(metricsSource, /markNativeSurfaceFault\(getNativeSurfaceFaultState\(surfaceId\), fault\)/);
   assert.match(metricsSource, /toNativeSurfaceFaultMetricsPatch\(state\)/);

@@ -14,7 +14,7 @@ import {
   getNativeSurfaceMetrics,
   recordNativeSurfaceFault,
   updateNativeSurfaceMetrics,
-} from "./NativeSurfaceMetrics";
+} from "./NativeSurfaceMetricsRegistry";
 import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
 import type { NativeSurfaceEngineMutation, NativeSurfaceEngineResponse } from "./NativeSurfaceEngineProtocol";
 import {

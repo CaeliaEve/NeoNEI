@@ -14,7 +14,7 @@ import type { NativeRuntimePackProfile } from "../../native-surface/NativeRuntim
 import {
   exposeNativeSurfaceMetricsForDebug,
   recordNativeSurfaceFault,
-} from "../../native-surface/NativeSurfaceMetrics";
+} from "../../native-surface/NativeSurfaceMetricsRegistry";
 import type { NativeSurfaceFaultDomain } from "../../native-surface/NativeSurfaceFaultControlPlane";
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 import {
