@@ -7,7 +7,7 @@ import {
 import type { ImageArtifactFamily } from '../services/static-asset-delivery.service';
 import { validateAndFreezeRouteDescriptors } from './route-descriptor-registry';
 
-export type StaticAssetFallbackRouteKey =
+export type StaticAssetImageArtifactRouteKey =
   | 'imageItem'
   | 'imageFluid'
   | 'imageEntity'
@@ -15,27 +15,27 @@ export type StaticAssetFallbackRouteKey =
   | 'apiImageFluid'
   | 'apiImageEntity';
 
-const STATIC_ASSET_FALLBACK_ROUTE_KEYS = Object.freeze([
+const STATIC_ASSET_IMAGE_ARTIFACT_ROUTE_KEYS = Object.freeze([
   'imageItem',
   'imageFluid',
   'imageEntity',
   'apiImageItem',
   'apiImageFluid',
   'apiImageEntity',
-] as const satisfies readonly StaticAssetFallbackRouteKey[]);
+] as const satisfies readonly StaticAssetImageArtifactRouteKey[]);
 
-const STATIC_ASSET_FALLBACK_ROUTE_METHODS = Object.freeze(['get'] as const);
+const STATIC_ASSET_IMAGE_ARTIFACT_ROUTE_METHODS = Object.freeze(['get'] as const);
 const STATIC_ASSET_IMAGE_FAMILIES = Object.freeze(['item', 'fluid', 'entity'] as const);
 
-export type StaticAssetFallbackRoute = Readonly<{
-  key: StaticAssetFallbackRouteKey;
+export type StaticAssetImageArtifactRoute = Readonly<{
+  key: StaticAssetImageArtifactRouteKey;
   method: 'get';
   path: string;
   family: ImageArtifactFamily;
 }>;
 
-export const STATIC_ASSET_FALLBACK_ROUTES: readonly StaticAssetFallbackRoute[] =
-  validateAndFreezeStaticAssetFallbackRoutes([
+export const STATIC_ASSET_IMAGE_ARTIFACT_ROUTES: readonly StaticAssetImageArtifactRoute[] =
+  validateAndFreezeStaticAssetImageArtifactRoutes([
     { key: 'imageItem', method: 'get', path: '/images/item/:modId/:fileName', family: 'item' },
     { key: 'imageFluid', method: 'get', path: '/images/fluid/:modId/:fileName', family: 'fluid' },
     { key: 'imageEntity', method: 'get', path: '/images/entity/:modId/:fileName', family: 'entity' },
@@ -80,10 +80,10 @@ export type StaticAssetCachePolicy = Readonly<{
   etag?: boolean;
 }>;
 
-export type StaticAssetMountPhase = 'before-fallback' | 'after-fallback';
+export type StaticAssetMountPhase = 'before-image-artifacts' | 'after-image-artifacts';
 const STATIC_ASSET_MOUNT_PHASES = Object.freeze([
-  'before-fallback',
-  'after-fallback',
+  'before-image-artifacts',
+  'after-image-artifacts',
 ] as const satisfies readonly StaticAssetMountPhase[]);
 
 export type StaticAssetMountDescriptor = Readonly<{
@@ -101,7 +101,7 @@ export const STATIC_ASSET_MOUNTS: readonly StaticAssetMountDescriptor[] =
     {
       key: 'publicRoot',
       kind: 'public-root',
-      phase: 'before-fallback',
+      phase: 'before-image-artifacts',
       mountPath: null,
       rootDir: PUBLIC_DIR,
       cache: Object.freeze({}),
@@ -109,7 +109,7 @@ export const STATIC_ASSET_MOUNTS: readonly StaticAssetMountDescriptor[] =
     {
       key: 'contracts',
       kind: 'static',
-      phase: 'before-fallback',
+      phase: 'before-image-artifacts',
       mountPath: '/contracts',
       rootDir: CONTRACTS_DIR,
       requireExistingDirectory: true,
@@ -118,7 +118,7 @@ export const STATIC_ASSET_MOUNTS: readonly StaticAssetMountDescriptor[] =
     {
       key: 'images',
       kind: 'static',
-      phase: 'after-fallback',
+      phase: 'after-image-artifacts',
       mountPath: '/images',
       rootDir: IMAGES_PATH,
       cache: Object.freeze({ maxAge: '7d', etag: true }),
@@ -126,7 +126,7 @@ export const STATIC_ASSET_MOUNTS: readonly StaticAssetMountDescriptor[] =
     {
       key: 'apiImages',
       kind: 'static',
-      phase: 'after-fallback',
+      phase: 'after-image-artifacts',
       mountPath: '/api/images',
       rootDir: IMAGES_PATH,
       cache: Object.freeze({ maxAge: '7d', etag: true }),
@@ -134,7 +134,7 @@ export const STATIC_ASSET_MOUNTS: readonly StaticAssetMountDescriptor[] =
     {
       key: 'publishPrecompressed',
       kind: 'publish-precompressed',
-      phase: 'after-fallback',
+      phase: 'after-image-artifacts',
       mountPath: '/publish',
       rootDir: PUBLISH_OUTPUT_DIR,
       cache: Object.freeze({ maxAge: '365d', immutable: true }),
@@ -142,36 +142,36 @@ export const STATIC_ASSET_MOUNTS: readonly StaticAssetMountDescriptor[] =
     {
       key: 'publishStatic',
       kind: 'publish-static',
-      phase: 'after-fallback',
+      phase: 'after-image-artifacts',
       mountPath: '/publish',
       rootDir: PUBLISH_OUTPUT_DIR,
       cache: Object.freeze({ maxAge: '365d', immutable: true, etag: true }),
     },
   ]);
 
-export const STATIC_ASSET_PRE_FALLBACK_MOUNTS = projectStaticAssetMountPhase(
+export const STATIC_ASSET_PRE_IMAGE_ARTIFACT_MOUNTS = projectStaticAssetMountPhase(
   STATIC_ASSET_MOUNTS,
-  'before-fallback',
+  'before-image-artifacts',
 );
-export const STATIC_ASSET_POST_FALLBACK_MOUNTS = projectStaticAssetMountPhase(
+export const STATIC_ASSET_POST_IMAGE_ARTIFACT_MOUNTS = projectStaticAssetMountPhase(
   STATIC_ASSET_MOUNTS,
-  'after-fallback',
+  'after-image-artifacts',
 );
 
-function validateAndFreezeStaticAssetFallbackRoutes(
-  descriptors: readonly StaticAssetFallbackRoute[],
-): readonly StaticAssetFallbackRoute[] {
+function validateAndFreezeStaticAssetImageArtifactRoutes(
+  descriptors: readonly StaticAssetImageArtifactRoute[],
+): readonly StaticAssetImageArtifactRoute[] {
   const familySet = new Set<string>(STATIC_ASSET_IMAGE_FAMILIES);
   const routeDescriptors = validateAndFreezeRouteDescriptors({
-    label: 'static asset fallback route',
-    expectedKeys: STATIC_ASSET_FALLBACK_ROUTE_KEYS,
-    allowedMethods: STATIC_ASSET_FALLBACK_ROUTE_METHODS,
+    label: 'static asset image artifact route',
+    expectedKeys: STATIC_ASSET_IMAGE_ARTIFACT_ROUTE_KEYS,
+    allowedMethods: STATIC_ASSET_IMAGE_ARTIFACT_ROUTE_METHODS,
     descriptors,
   });
 
   for (const descriptor of routeDescriptors) {
     if (!familySet.has(descriptor.family)) {
-      throw new Error(`Invalid static asset fallback family for ${descriptor.key}: ${descriptor.family}`);
+      throw new Error(`Invalid static asset image artifact family for ${descriptor.key}: ${descriptor.family}`);
     }
   }
 

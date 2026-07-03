@@ -193,7 +193,6 @@ export interface RecipeGroupPackResponse {
   hasMore: boolean;
 }
 
-const BOTANIA_TERRASTEEL_ITEM_ID = 'i~Botania~manaResource~4';
 type RecipeIndexColumn = 'produced_by_recipes' | 'used_in_recipes';
 
 type MaterializedBootstrapRow = {
@@ -1557,13 +1556,13 @@ export class IndexedRecipesService {
         ? JSON.parse(materialized.produced_by_ids) as string[]
         : this.getCachedIndexRecipeIds(itemId, 'produced_by_recipes');
       const recipes = await this.hydrateMaterializedRecipeCollection(recipeIds, materialized.produced_by_payload);
-      return this.setCachedRecipeCollection(cacheKey, this.injectBotaniaFallbacks(itemId, recipes));
+      return this.setCachedRecipeCollection(cacheKey, recipes);
     }
 
     const recipeIds = this.getCachedIndexRecipeIds(itemId, 'produced_by_recipes');
     if (recipeIds.length === 0) return [];
     const parsed = await this.getRecipesByIds(recipeIds);
-    return this.setCachedRecipeCollection(cacheKey, this.injectBotaniaFallbacks(itemId, parsed));
+    return this.setCachedRecipeCollection(cacheKey, parsed);
   }
 
   async getUsageRecipesForItem(itemId: string): Promise<IndexedRecipe[]> {
@@ -1793,10 +1792,10 @@ export class IndexedRecipesService {
     };
   }
 
-  private searchMaterializedRecipeIdsByType(recipeIds: string[], typeQuery: string): string[] | null {
+  private searchMaterializedRecipeIdsByType(recipeIds: string[], typeQuery: string): string[] {
     const db = this.getAccelerationDatabase();
     if (!this.canUseMaterializedRecipesCore(db)) {
-      return null;
+      return [];
     }
 
     const orderedRecipeIds = Array.from(new Set(recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean)));
@@ -1827,10 +1826,10 @@ export class IndexedRecipesService {
     return orderedRecipeIds.filter((recipeId) => matchedRecipeIds.has(recipeId));
   }
 
-  private searchMaterializedRecipeIdsByText(recipeIds: string[], query: string): string[] | null {
+  private searchMaterializedRecipeIdsByText(recipeIds: string[], query: string): string[] {
     const db = this.getAccelerationDatabase();
     if (!this.canUseMaterializedRecipesCore(db)) {
-      return null;
+      return [];
     }
 
     const orderedRecipeIds = Array.from(new Set(recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean)));
@@ -1866,10 +1865,10 @@ export class IndexedRecipesService {
     return orderedRecipeIds.filter((recipeId) => matchedRecipeIds.has(recipeId));
   }
 
-  private searchMaterializedRecipeIdsByItems(recipeIds: string[], candidateItemIds: string[]): string[] | null {
+  private searchMaterializedRecipeIdsByItems(recipeIds: string[], candidateItemIds: string[]): string[] {
     const db = this.getAccelerationDatabase();
     if (!this.canUseMaterializedRecipeEdges(db)) {
-      return null;
+      return [];
     }
 
     const orderedRecipeIds = Array.from(new Set(recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean)));
@@ -1897,81 +1896,6 @@ export class IndexedRecipesService {
     return orderedRecipeIds.filter((recipeId) => matchedRecipeIds.has(recipeId));
   }
 
-  private async searchRecipeIdsByTypeFallback(recipeIds: string[], typeQuery: string): Promise<string[]> {
-    const orderedRecipeIds = Array.from(new Set(recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean)));
-    const normalizedTypeQuery = typeQuery.trim().toLowerCase();
-    if (!normalizedTypeQuery) {
-      return orderedRecipeIds;
-    }
-
-    const recipes = await this.getRecipesByIds(orderedRecipeIds);
-    const matchedRecipeIds = new Set(
-      recipes
-        .filter((recipe) => `${recipe.recipeType ?? ''}`.toLowerCase().includes(normalizedTypeQuery))
-        .map((recipe) => recipe.id),
-    );
-    return orderedRecipeIds.filter((recipeId) => matchedRecipeIds.has(recipeId));
-  }
-
-  private async searchRecipeIdsByTextFallback(recipeIds: string[], query: string): Promise<string[]> {
-    const orderedRecipeIds = Array.from(new Set(recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean)));
-    const normalizedQuery = query.trim().toLowerCase();
-    if (!normalizedQuery) {
-      return [];
-    }
-
-    const recipes = await this.getRecipesByIds(orderedRecipeIds);
-    const matchedRecipeIds = new Set<string>();
-    for (const recipe of recipes) {
-      if (
-        `${recipe.recipeType ?? ''}`.toLowerCase().includes(normalizedQuery)
-        || `${recipe.machineInfo?.machineType ?? ''}`.toLowerCase().includes(normalizedQuery)
-        || `${recipe.id ?? ''}`.toLowerCase().includes(normalizedQuery)
-      ) {
-        matchedRecipeIds.add(recipe.id);
-      }
-    }
-    return orderedRecipeIds.filter((recipeId) => matchedRecipeIds.has(recipeId));
-  }
-
-  private getRecipeReferencedItemIds(recipe: IndexedRecipe): Set<string> {
-    const itemIds = new Set<string>();
-    for (const output of recipe.outputs ?? []) {
-      if (output.item?.itemId) {
-        itemIds.add(output.item.itemId);
-      }
-    }
-    for (const entry of recipe.inputs ?? []) {
-      const groups = Array.isArray(entry) ? entry : [entry];
-      for (const group of groups) {
-        for (const stack of group?.items ?? []) {
-          if (stack.item?.itemId) {
-            itemIds.add(stack.item.itemId);
-          }
-        }
-      }
-    }
-    return itemIds;
-  }
-
-  private async searchRecipeIdsByItemsFallback(recipeIds: string[], candidateItemIds: string[]): Promise<string[]> {
-    const orderedRecipeIds = Array.from(new Set(recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean)));
-    const candidateItemIdSet = new Set(candidateItemIds.map((itemId) => itemId.trim()).filter(Boolean));
-    if (orderedRecipeIds.length === 0 || candidateItemIdSet.size === 0) {
-      return [];
-    }
-
-    const recipes = await this.getRecipesByIds(orderedRecipeIds);
-    const matchedRecipeIds = new Set<string>();
-    for (const recipe of recipes) {
-      const referencedItemIds = this.getRecipeReferencedItemIds(recipe);
-      if (Array.from(referencedItemIds).some((itemId) => candidateItemIdSet.has(itemId))) {
-        matchedRecipeIds.add(recipe.id);
-      }
-    }
-    return orderedRecipeIds.filter((recipeId) => matchedRecipeIds.has(recipeId));
-  }
-
   async searchRecipesForItem(
     itemId: string,
     relationType: RecipeRelationType,
@@ -1993,8 +1917,7 @@ export class IndexedRecipesService {
     const lowerQuery = normalizedQuery.toLowerCase();
     if (lowerQuery.startsWith('type:')) {
       const typeQuery = lowerQuery.slice('type:'.length).trim();
-      const matchedRecipeIds = this.searchMaterializedRecipeIdsByType(recipeIds, typeQuery)
-        ?? await this.searchRecipeIdsByTypeFallback(recipeIds, typeQuery);
+      const matchedRecipeIds = this.searchMaterializedRecipeIdsByType(recipeIds, typeQuery);
       return { recipeIds: matchedRecipeIds, itemMatches: [] };
     }
 
@@ -2005,12 +1928,10 @@ export class IndexedRecipesService {
     ]));
 
     const matchedRecipeIds = new Set<string>();
-    for (const recipeId of this.searchMaterializedRecipeIdsByText(recipeIds, lowerQuery)
-      ?? await this.searchRecipeIdsByTextFallback(recipeIds, lowerQuery)) {
+    for (const recipeId of this.searchMaterializedRecipeIdsByText(recipeIds, lowerQuery)) {
       matchedRecipeIds.add(recipeId);
     }
-    for (const recipeId of this.searchMaterializedRecipeIdsByItems(recipeIds, candidateItemIds)
-      ?? await this.searchRecipeIdsByItemsFallback(recipeIds, candidateItemIds)) {
+    for (const recipeId of this.searchMaterializedRecipeIdsByItems(recipeIds, candidateItemIds)) {
       matchedRecipeIds.add(recipeId);
     }
 
@@ -2359,109 +2280,6 @@ export class IndexedRecipesService {
       value: [],
     };
     return this.machineTypesCache.value;
-  }
-
-  private injectBotaniaFallbacks(itemId: string, recipes: IndexedRecipe[]): IndexedRecipe[] {
-    if (itemId !== BOTANIA_TERRASTEEL_ITEM_ID) {
-      return recipes;
-    }
-
-    const hasTerraPlateRecipe = recipes.some((recipe) => {
-      const machineType = recipe.machineInfo?.machineType?.toLowerCase() || '';
-      const type = recipe.recipeType?.toLowerCase() || '';
-      return machineType.includes('娉版媺鍑濊仛') || machineType.includes('terra plate') || type.includes('terra plate');
-    });
-
-    if (hasTerraPlateRecipe) {
-      return recipes;
-    }
-
-    return [...recipes, this.buildTerrasteelFallbackRecipe()];
-  }
-
-  private buildTerrasteelFallbackRecipe(): IndexedRecipe {
-    const mkItem = (itemId: string, localizedName: string): IndexedItem => {
-      const parts = itemId.split('~');
-      const modId = parts[1] || '';
-      const internalName = parts[2] || '';
-      const damage = Number(parts[3] || 0) || 0;
-      return {
-      itemId,
-      modId,
-      internalName,
-      localizedName,
-      renderAssetRef: null,
-      damage,
-        stackSize: 0,
-        maxStackSize: 64,
-        maxDamage: 0,
-        nbt: null,
-        imageFileName: null,
-        tooltip: null,
-      };
-    };
-
-    const toSlot = (slotIndex: number, itemId: string, localizedName: string): IndexedItemGroup => ({
-      slotIndex,
-      isOreDictionary: false,
-      oreDictName: null,
-      items: [
-        {
-          item: mkItem(itemId, localizedName),
-          stackSize: 1,
-          probability: 1,
-        },
-      ],
-    });
-
-    return {
-      id: 'fallback~botania~terra_plate~terrasteel',
-      recipeType: 'botania - terra plate',
-      inputs: [[
-        toSlot(0, 'i~Botania~manaResource~0', '榄斿姏閽㈤敪'),
-        toSlot(1, 'i~Botania~manaResource~1', '榄斿姏鐝嶇彔'),
-        toSlot(2, 'i~Botania~manaResource~2', '榄斿姏閽荤煶'),
-      ]],
-      outputs: [
-        {
-          item: mkItem(BOTANIA_TERRASTEEL_ITEM_ID, '娉版媺閽㈤敪'),
-          stackSize: 1,
-          probability: 1,
-        },
-      ],
-      fluidInputs: [],
-      fluidOutputs: [],
-      machineInfo: {
-        machineId: 'm~botania~terra_plate',
-        category: 'botania',
-        machineType: '娉版媺鍑濊仛鏉?',
-        iconInfo: 'botania',
-        shapeless: true,
-        parsedVoltageTier: null,
-        parsedVoltage: null,
-        machineIcon: {
-          itemId: 'i~Botania~terraPlate~0',
-          modId: 'Botania',
-          internalName: 'terraPlate',
-          localizedName: '娉版媺鍑濊仛鏉?',
-          renderAssetRef: null,
-          imageFileName: 'Botania/terraPlate~0.png',
-        },
-      },
-      metadata: {
-        voltageTier: null,
-        voltage: null,
-        amperage: null,
-        duration: null,
-        totalEU: null,
-        requiresCleanroom: null,
-        requiresLowGravity: null,
-        additionalInfo: 'Fallback: synthetic Botania terra plate recipe',
-      },
-      recipeTypeData: {
-        itemInputDimension: { width: 3, height: 1 },
-      },
-    };
   }
 
 }

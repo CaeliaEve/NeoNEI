@@ -9,13 +9,13 @@ import {
 } from '../services/static-asset-delivery.service';
 import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
 import {
-  STATIC_ASSET_FALLBACK_ROUTES,
-  STATIC_ASSET_POST_FALLBACK_MOUNTS,
-  STATIC_ASSET_PRE_FALLBACK_MOUNTS,
+  STATIC_ASSET_IMAGE_ARTIFACT_ROUTES,
+  STATIC_ASSET_POST_IMAGE_ARTIFACT_MOUNTS,
+  STATIC_ASSET_PRE_IMAGE_ARTIFACT_MOUNTS,
   type StaticAssetMountDescriptor,
 } from './static-asset-route-registry';
 
-function createArtifactFallbackRoute(family: ImageArtifactFamily) {
+function createImageArtifactRoute(family: ImageArtifactFamily) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
       const resolved = resolveImageFamilyArtifact(family, req.params.modId, req.params.fileName);
@@ -95,15 +95,15 @@ function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string |
 }
 
 export function registerStaticAssetRoutes(app: Express): void {
-  for (const mount of STATIC_ASSET_PRE_FALLBACK_MOUNTS) {
+  for (const mount of STATIC_ASSET_PRE_IMAGE_ARTIFACT_MOUNTS) {
     mountStaticAssetSurface(app, mount);
   }
 
-  for (const route of STATIC_ASSET_FALLBACK_ROUTES) {
-    app.get(route.path, createArtifactFallbackRoute(route.family));
+  for (const route of STATIC_ASSET_IMAGE_ARTIFACT_ROUTES) {
+    app.get(route.path, createImageArtifactRoute(route.family));
   }
 
-  for (const mount of STATIC_ASSET_POST_FALLBACK_MOUNTS) {
+  for (const mount of STATIC_ASSET_POST_IMAGE_ARTIFACT_MOUNTS) {
     mountStaticAssetSurface(app, mount);
   }
 }

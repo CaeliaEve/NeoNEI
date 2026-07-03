@@ -180,9 +180,9 @@ export function resolveImageFamilyArtifact(
 
   const baseNbtMatch = fileName.match(/^(.+~\d+)~.+(\.png|\.gif)$/i);
   if (baseNbtMatch) {
-    const fallback = path.resolve(familyDir, `${baseNbtMatch[1]}${baseNbtMatch[2]}`);
-    if (isSafeUnderRoot(familyRoot, fallback) && isExistingFile(fallback)) {
-      return fallback;
+    const baseVariant = path.resolve(familyDir, `${baseNbtMatch[1]}${baseNbtMatch[2]}`);
+    if (isSafeUnderRoot(familyRoot, baseVariant) && isExistingFile(baseVariant)) {
+      return baseVariant;
     }
   }
 

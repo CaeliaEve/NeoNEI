@@ -20,11 +20,11 @@ test('static asset filesystem and sidecar policy are delivery-service owned', ()
   assert.match(deliverySource, /function isSafeUnderRoot/);
   assert.match(deliverySource, /path\.sep/);
 
-  assert.match(routeRegistrySource, /export const STATIC_ASSET_FALLBACK_ROUTES/);
+  assert.match(routeRegistrySource, /export const STATIC_ASSET_IMAGE_ARTIFACT_ROUTES/);
   assert.match(routeRegistrySource, /export const STATIC_ASSET_MOUNTS/);
-  assert.match(routeRegistrySource, /export const STATIC_ASSET_PRE_FALLBACK_MOUNTS/);
-  assert.match(routeRegistrySource, /export const STATIC_ASSET_POST_FALLBACK_MOUNTS/);
-  assert.match(routeRegistrySource, /validateAndFreezeStaticAssetFallbackRoutes/);
+  assert.match(routeRegistrySource, /export const STATIC_ASSET_PRE_IMAGE_ARTIFACT_MOUNTS/);
+  assert.match(routeRegistrySource, /export const STATIC_ASSET_POST_IMAGE_ARTIFACT_MOUNTS/);
+  assert.match(routeRegistrySource, /validateAndFreezeStaticAssetImageArtifactRoutes/);
   assert.match(routeRegistrySource, /validateAndFreezeStaticAssetMounts/);
   assert.match(routeRegistrySource, /validateAndFreezeRouteDescriptors/);
   assert.match(routeRegistrySource, /Duplicate static asset mount descriptor/);
@@ -34,8 +34,8 @@ test('static asset filesystem and sidecar policy are delivery-service owned', ()
   assert.match(routeRegistrySource, /path: '\/api\/images\/entity\/:modId\/:fileName'/);
   assert.match(routeRegistrySource, /mountPath: '\/contracts'/);
   assert.match(routeRegistrySource, /mountPath: '\/publish'/);
-  assert.match(routeRegistrySource, /phase: 'before-fallback'/);
-  assert.match(routeRegistrySource, /phase: 'after-fallback'/);
+  assert.match(routeRegistrySource, /phase: 'before-image-artifacts'/);
+  assert.match(routeRegistrySource, /phase: 'after-image-artifacts'/);
 
   for (const routeLocalPolicy of [
     /from 'fs'/,
@@ -58,10 +58,10 @@ test('static asset filesystem and sidecar policy are delivery-service owned', ()
   assert.match(routeSource, /resolveImageFamilyArtifact\(family, req\.params\.modId, req\.params\.fileName\)/);
   assert.match(routeSource, /resolveRawStaticAsset\(rootDir, req\.url\)/);
   assert.match(routeSource, /resolvePublishStaticAsset\(\{/);
-  assert.match(routeSource, /for \(const mount of STATIC_ASSET_PRE_FALLBACK_MOUNTS\)/);
-  assert.match(routeSource, /for \(const route of STATIC_ASSET_FALLBACK_ROUTES\)/);
-  assert.match(routeSource, /for \(const mount of STATIC_ASSET_POST_FALLBACK_MOUNTS\)/);
-  assert.match(routeSource, /app\.get\(route\.path, createArtifactFallbackRoute\(route\.family\)\)/);
+  assert.match(routeSource, /for \(const mount of STATIC_ASSET_PRE_IMAGE_ARTIFACT_MOUNTS\)/);
+  assert.match(routeSource, /for \(const route of STATIC_ASSET_IMAGE_ARTIFACT_ROUTES\)/);
+  assert.match(routeSource, /for \(const mount of STATIC_ASSET_POST_IMAGE_ARTIFACT_MOUNTS\)/);
+  assert.match(routeSource, /app\.get\(route\.path, createImageArtifactRoute\(route\.family\)\)/);
   assert.match(routeSource, /staticDirectoryExists\(mount\.rootDir\)/);
   assert.match(routeSource, /setNoStoreHeaders\(res\)/);
   assert.match(routeSource, /setStaticAssetCacheHeaders\(res, \{/);

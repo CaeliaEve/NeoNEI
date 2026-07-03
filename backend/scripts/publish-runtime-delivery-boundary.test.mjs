@@ -26,11 +26,11 @@ test('publish manifest and home-bootstrap delivery policy are ABI-owned', () => 
   assert.match(deliveryAbiSource, /'publish-manifest'/);
   assert.match(deliveryAbiSource, /'publish-home-bootstrap'/);
   assert.match(deliveryAbiSource, /manifest\.runtimeCacheKey/);
-  assert.match(deliveryAbiSource, /fallback: 1/);
+  assert.match(deliveryAbiSource, /defaultValue: 1/);
   assert.match(deliveryAbiSource, /max: 1_000_000/);
-  assert.match(deliveryAbiSource, /fallback: 50/);
+  assert.match(deliveryAbiSource, /defaultValue: 50/);
   assert.match(deliveryAbiSource, /max: 500/);
-  assert.match(deliveryAbiSource, /fallback: 48/);
+  assert.match(deliveryAbiSource, /defaultValue: 48/);
   assert.match(deliveryAbiSource, /min: 24/);
   assert.match(deliveryAbiSource, /max: 128/);
   assert.match(deliveryAbiSource, /allModsSentinel: 'all'/);

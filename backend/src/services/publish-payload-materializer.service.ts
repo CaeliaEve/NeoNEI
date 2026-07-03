@@ -785,7 +785,7 @@ export class PublishPayloadMaterializerService {
       return normalizedPrimary;
     }
 
-    const fallbackRows = db.prepare(`
+    const secondaryRows = db.prepare(`
       SELECT item_id
       FROM hot_items
       ORDER BY
@@ -799,7 +799,7 @@ export class PublishPayloadMaterializerService {
 
     return Array.from(
       new Set(
-        [...normalizedPrimary, ...fallbackRows.map((row) => `${row.item_id ?? ''}`.trim())]
+        [...normalizedPrimary, ...secondaryRows.map((row) => `${row.item_id ?? ''}`.trim())]
           .filter(Boolean),
       ),
     ).slice(0, this.options.recipeBootstrapHotItemLimit);

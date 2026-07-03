@@ -1,4 +1,4 @@
-import assert from 'node:assert/strict';
+﻿import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { dirname, join, resolve } from 'node:path';
@@ -65,7 +65,7 @@ test('public runtime profile is explicit and keeps control on ops/admin mounts',
   assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/patterns'/);
   assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/publish'/);
   assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/render-contract'/);
-  assert.match(staticAssetRoutesSource, /STATIC_ASSET_POST_FALLBACK_MOUNTS/);
+  assert.match(staticAssetRoutesSource, /STATIC_ASSET_POST_IMAGE_ARTIFACT_MOUNTS/);
   assert.match(staticAssetRouteRegistrySource, /key:\s*'publishPrecompressed'[\s\S]*mountPath:\s*'\/publish'/);
   assert.match(staticAssetRouteRegistrySource, /key:\s*'publishStatic'[\s\S]*mountPath:\s*'\/publish'/);
 });

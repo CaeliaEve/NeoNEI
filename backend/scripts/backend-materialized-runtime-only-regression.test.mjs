@@ -23,6 +23,14 @@ const forbiddenRuntimeFallbackTokens = [
   'transformSplitItem',
   'transformAndCacheSplitRecipe',
   'transformSplitRecipe',
+  'injectBotaniaFallbacks',
+  'buildTerrasteelFallbackRecipe',
+  'BOTANIA_TERRASTEEL_ITEM_ID',
+  'fallback~botania',
+  'Fallback: synthetic',
+  'searchRecipeIdsByTypeFallback',
+  'searchRecipeIdsByTextFallback',
+  'searchRecipeIdsByItemsFallback',
 ];
 
 function readRuntimeService(relativePath) {

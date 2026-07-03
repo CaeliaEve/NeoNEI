@@ -31,7 +31,7 @@ type GtTier =
 type TieredGtFamily = {
   patterns: RegExp[];
   metas: Partial<Record<GtTier, number>>;
-  fallback: number;
+  defaultMetaId: number;
 };
 
 interface RecipeWithMachineInfo {
@@ -785,152 +785,152 @@ const GT_FAMILY_MAP: TieredGtFamily[] = [
   {
     patterns: [/\u88c5\u914d\u7ebf\u52a0\u5de5/, /\bassembly line\b/i],
     metas: { ULV: 145, LV: 145, MV: 146, HV: 147, EV: 147, IV: 147, LuV: 147, ZPM: 147, UV: 147, UHV: 147, UEV: 147, UIV: 147, UMV: 147, UXV: 147, MAX: 147 },
-    fallback: 145,
+    defaultMetaId: 145,
   },
   {
     patterns: [/\u7814\u7a76\u7ad9/, /\bresearch station\b/i],
     metas: { ULV: 341, LV: 342, MV: 343, HV: 344, EV: 345, IV: 345, LuV: 345, ZPM: 345, UV: 345, UHV: 345, UEV: 345, UIV: 345, UMV: 345, UXV: 345, MAX: 345 },
-    fallback: 345,
+    defaultMetaId: 345,
   },
   {
     patterns: [/\u592a\u7a7a\u7ec4\u88c5\u673a/, /\bspace assembler\b/i],
     metas: { ZPM: 215, UV: 215, UHV: 215, UEV: 215, UIV: 215 },
-    fallback: 215,
+    defaultMetaId: 215,
   },
   {
     patterns: [/\u7ec4\u88c5\u673a/, /\bassembler\b/i, /\bcircuit assembler\b/i],
     metas: { ULV: 211, LV: 212, MV: 213, HV: 214, EV: 215, IV: 215, LuV: 215, ZPM: 215, UV: 215, UHV: 215, UEV: 215, UIV: 215, UMV: 215, UXV: 215, MAX: 215 },
-    fallback: 211,
+    defaultMetaId: 211,
   },
   {
     patterns: [/\u538b\u7f29\u673a/, /\bcompressor\b/i],
     metas: { ULV: 241, LV: 242, MV: 243, HV: 244, EV: 245, IV: 245, LuV: 245, ZPM: 245, UV: 245, UHV: 245, UEV: 245, UIV: 245, UMV: 245, UXV: 245, MAX: 245 },
-    fallback: 241,
+    defaultMetaId: 241,
   },
   {
     patterns: [/\u7535\u89e3\u673a/, /\belectrolyzer\b/i],
     metas: { ULV: 371, LV: 372, MV: 373, HV: 374, EV: 375, IV: 375, LuV: 375, ZPM: 375, UV: 375, UHV: 375, UEV: 375, UIV: 375, UMV: 375, UXV: 375, MAX: 375 },
-    fallback: 371,
+    defaultMetaId: 371,
   },
   {
     patterns: [/\u79bb\u5fc3\u673a/, /\bcentrifuge\b/i],
     metas: { ULV: 361, LV: 362, MV: 363, HV: 364, EV: 365, IV: 365, LuV: 365, ZPM: 365, UV: 365, UHV: 365, UEV: 365, UIV: 365, UMV: 365, UXV: 365, MAX: 365 },
-    fallback: 361,
+    defaultMetaId: 361,
   },
   {
     patterns: [/\u5de5\u4e1a\u7535\u89e3\u673a/, /\bindustrial electrolyzer\b/i],
     metas: { ULV: 371, LV: 372, MV: 373, HV: 374, EV: 375, IV: 375, LuV: 375, ZPM: 375, UV: 375, UHV: 375, UEV: 375, UIV: 375, UMV: 375, UXV: 375, MAX: 375 },
-    fallback: 373,
+    defaultMetaId: 373,
   },
   {
     patterns: [/\u5de5\u4e1a\u79bb\u5fc3\u673a/, /\bindustrial centrifuge\b/i],
     metas: { ULV: 361, LV: 362, MV: 363, HV: 364, EV: 365, IV: 365, LuV: 365, ZPM: 365, UV: 365, UHV: 365, UEV: 365, UIV: 365, UMV: 365, UXV: 365, MAX: 365 },
-    fallback: 363,
+    defaultMetaId: 363,
   },
   {
     patterns: [/\u677f\u6750\u5207\u5272\u673a/, /\bcutting machine\b/i, /\bcutter\b/i],
     metas: { ULV: 251, LV: 252, MV: 253, HV: 254, EV: 255, IV: 255, LuV: 255, ZPM: 255, UV: 255, UHV: 255, UEV: 255, UIV: 255, UMV: 255, UXV: 255, MAX: 255 },
-    fallback: 251,
+    defaultMetaId: 251,
   },
   {
     patterns: [/\u8f66\u5e8a/, /\blathe\b/i],
     metas: { ULV: 291, LV: 292, MV: 293, HV: 294, EV: 295, IV: 295, LuV: 295, ZPM: 295, UV: 295, UHV: 295, UEV: 295, UIV: 295, UMV: 295, UXV: 295, MAX: 295 },
-    fallback: 291,
+    defaultMetaId: 291,
   },
   {
     patterns: [/\u5377\u677f\u673a/, /\bbender\b/i],
     metas: { ULV: 221, LV: 222, MV: 223, HV: 224, EV: 225, IV: 225, LuV: 225, ZPM: 225, UV: 225, UHV: 225, UEV: 225, UIV: 225, UMV: 225, UXV: 225, MAX: 225 },
-    fallback: 221,
+    defaultMetaId: 221,
   },
   {
     patterns: [/\u538b\u6a21\u673a/, /\bforming press\b/i, /\bextruder\b/i],
     metas: { ULV: 281, LV: 282, MV: 283, HV: 284, EV: 285, IV: 285, LuV: 285, ZPM: 285, UV: 285, UHV: 285, UEV: 285, UIV: 285, UMV: 285, UXV: 285, MAX: 285 },
-    fallback: 281,
+    defaultMetaId: 281,
   },
   {
     patterns: [/\u51b2\u538b\u673a\u5e8a/, /\bstamp/i],
     metas: { ULV: 281, LV: 282, MV: 283, HV: 284, EV: 285, IV: 285, LuV: 285, ZPM: 285, UV: 285, UHV: 285, UEV: 285, UIV: 285, UMV: 285, UXV: 285, MAX: 285 },
-    fallback: 283,
+    defaultMetaId: 283,
   },
   {
     patterns: [/\u5316\u5b66\u53cd\u5e94\u91dc/, /\bchemical reactor\b/i],
     metas: { ULV: 421, LV: 422, MV: 423, HV: 424, EV: 425, IV: 425, LuV: 425, ZPM: 425, UV: 425, UHV: 425, UEV: 425, UIV: 425, UMV: 425, UXV: 425, MAX: 425 },
-    fallback: 421,
+    defaultMetaId: 421,
   },
   {
     patterns: [/\u6d41\u4f53\u704c\u88c5\u673a/, /\u88c5\u74f6\u673a/, /\bcanner\b/i, /\bcanning machine\b/i, /\bfluid canning machine\b/i, /\bfilling\b/i],
     metas: { ULV: 431, LV: 432, MV: 433, HV: 434, EV: 435, IV: 435, LuV: 435, ZPM: 435, UV: 435, UHV: 435, UEV: 435, UIV: 435, UMV: 435, UXV: 435, MAX: 435 },
-    fallback: 431,
+    defaultMetaId: 431,
   },
   {
     patterns: [/\u6d41\u4f53\u56fa\u5316\u5668/, /\bfluid solidifier\b/i],
     metas: { ULV: 521, LV: 522, MV: 523, HV: 524, EV: 525, IV: 525, LuV: 525, ZPM: 525, UV: 525, UHV: 525, UEV: 525, UIV: 525, UMV: 525, UXV: 525, MAX: 525 },
-    fallback: 521,
+    defaultMetaId: 521,
   },
   {
     patterns: [/\u6d41\u4f53\u63d0\u53d6\u673a/, /\u63d0\u53d6\u673a/, /\bextractor\b/i],
     metas: { ULV: 511, LV: 512, MV: 513, HV: 514, EV: 515, IV: 515, LuV: 515, ZPM: 515, UV: 515, UHV: 515, UEV: 515, UIV: 515, UMV: 515, UXV: 515, MAX: 515 },
-    fallback: 511,
+    defaultMetaId: 511,
   },
   {
     patterns: [/\u6253\u5305\u673a/, /\bpackager\b/i],
     metas: { ULV: 401, LV: 402, MV: 403, HV: 404, EV: 405, IV: 406, LuV: 407, ZPM: 408, UV: 408, UHV: 408, UEV: 408, UIV: 408, UMV: 408, UXV: 408, MAX: 408 },
-    fallback: 401,
+    defaultMetaId: 401,
   },
   {
     patterns: [/\u89e3\u5305\u5668/, /\bunpackager\b/i],
     metas: { ULV: 411, LV: 412, MV: 413, HV: 414, EV: 415, IV: 416, LuV: 417, ZPM: 418, UV: 418, UHV: 418, UEV: 418, UIV: 418, UMV: 418, UXV: 418, MAX: 418 },
-    fallback: 411,
+    defaultMetaId: 411,
   },
   {
     patterns: [/\u5408\u91d1\u7089/, /\balloy smelter\b/i],
     metas: { ULV: 201, LV: 202, MV: 203, HV: 204, EV: 205, IV: 205, LuV: 205, ZPM: 205, UV: 205, UHV: 205, UEV: 205, UIV: 205, UMV: 205, UXV: 205, MAX: 205 },
-    fallback: 201,
+    defaultMetaId: 201,
   },
   {
     patterns: [/\u7535\u5f27\u7089/, /\barc furnace\b/i],
     metas: { ULV: 261, LV: 262, MV: 263, HV: 264, EV: 265, IV: 265, LuV: 265, ZPM: 265, UV: 265, UHV: 265, UEV: 265, UIV: 265, UMV: 265, UXV: 265, MAX: 265 },
-    fallback: 261,
+    defaultMetaId: 261,
   },
   {
     patterns: [/\u9ad8\u7089/, /\u5de5\u4e1a\u9ad8\u7089/, /\bblast furnace\b/i],
     metas: { ULV: 140, LV: 140, MV: 140, HV: 140, EV: 140, IV: 140, LuV: 140, ZPM: 140, UV: 140, UHV: 140, UEV: 140, UIV: 140, UMV: 140, UXV: 140, MAX: 140 },
-    fallback: 140,
+    defaultMetaId: 140,
   },
   {
     patterns: [/\u771f\u7a7a\u51b7\u51bb\u673a/, /\bvacuum freezer\b/i, /\u51db\u51b0\u51b7\u51bb\u673a/],
     metas: { ULV: 261, LV: 262, MV: 263, HV: 264, EV: 265, IV: 265, LuV: 265, ZPM: 265, UV: 265, UHV: 265, UEV: 265, UIV: 265, UMV: 265, UXV: 265, MAX: 265 },
-    fallback: 263,
+    defaultMetaId: 263,
   },
   {
     patterns: [/\u6405\u62cc\u673a/, /\u5de5\u4e1a\u6405\u62cc\u673a/, /\bmixer\b/i],
     metas: { ULV: 421, LV: 422, MV: 423, HV: 424, EV: 425, IV: 425, LuV: 425, ZPM: 425, UV: 425, UHV: 425, UEV: 425, UIV: 425, UMV: 425, UXV: 425, MAX: 425 },
-    fallback: 423,
+    defaultMetaId: 423,
   },
   {
     patterns: [/\u6d17\u77ff\u673a/, /\u7b80\u6613\u6d17\u77ff\u6c60/, /\bore washer\b/i],
     metas: { ULV: 391, LV: 392, MV: 393, HV: 394, EV: 395, IV: 395, LuV: 395, ZPM: 395, UV: 395, UHV: 395, UEV: 395, UIV: 395, UMV: 395, UXV: 395, MAX: 395 },
-    fallback: 391,
+    defaultMetaId: 391,
   },
   {
     patterns: [/\u6fc0\u5149\u8680\u523b\u673a/, /\blaser engraver\b/i],
     metas: { ULV: 321, LV: 322, MV: 323, HV: 324, EV: 325, IV: 326, LuV: 327, ZPM: 328, UV: 328, UHV: 328, UEV: 328, UIV: 328, UMV: 328, UXV: 328, MAX: 328 },
-    fallback: 321,
+    defaultMetaId: 321,
   },
   {
     patterns: [/\u9ad8\u538b\u91dc/, /\bautoclave\b/i],
     metas: { ULV: 431, LV: 432, MV: 433, HV: 434, EV: 435, IV: 435, LuV: 435, ZPM: 435, UV: 435, UHV: 435, UEV: 435, UIV: 435, UMV: 435, UXV: 435, MAX: 435 },
-    fallback: 432,
+    defaultMetaId: 432,
   },
   {
     patterns: [/\u592a\u9633\u80fd\u677f\u5236\u9020\u5382/, /\bsolar panel\b/i],
     metas: { LV: 367, MV: 367, HV: 367, EV: 367, IV: 367, LuV: 367, ZPM: 367, UV: 367, UHV: 367, UEV: 367, UIV: 367, UMV: 367, UXV: 367, MAX: 367 },
-    fallback: 367,
+    defaultMetaId: 367,
   },
   {
     patterns: [/\bpcb\b/i, /\u0050\u0043\u0042\u5de5\u5382/],
     metas: { LV: 356, MV: 356, HV: 356, EV: 356, IV: 356, LuV: 356, ZPM: 356, UV: 356, UHV: 356, UEV: 356, UIV: 356, UMV: 356, UXV: 356, MAX: 356 },
-    fallback: 356,
+    defaultMetaId: 356,
   },
 ];
 
@@ -995,7 +995,7 @@ function resolveGtMeta(machineType: string): number | null {
     }
 
     if (!tier) {
-      return family.fallback;
+      return family.defaultMetaId;
     }
 
     const exact = family.metas[tier];
@@ -1011,7 +1011,7 @@ function resolveGtMeta(machineType: string): number | null {
       }
     }
 
-    return family.fallback;
+    return family.defaultMetaId;
   }
 
   return null;

@@ -1159,13 +1159,13 @@ export class ItemsService {
       return fastPage.data.map((entry) => (entry.kind === 'item' ? entry.item : entry.group.representative));
     }
 
-    const fallback = await this.getBrowserItems({
+    const dynamicPage = await this.getBrowserItems({
       page: params.page,
       pageSize: params.pageSize,
       modId: params.modId,
       expandedGroups: [],
     });
-    return fallback.data.map((entry) => (entry.kind === 'item' ? entry.item : entry.group.representative));
+    return dynamicPage.data.map((entry) => (entry.kind === 'item' ? entry.item : entry.group.representative));
   }
 
   private projectBrowserEntries(

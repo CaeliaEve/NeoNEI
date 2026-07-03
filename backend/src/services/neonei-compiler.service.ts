@@ -250,14 +250,14 @@ type EntityPreviewManifestEntry = {
   renderMode?: string | null;
 };
 
-function numberFromEnv(name: string, fallback: number): number {
+function numberFromEnv(name: string, defaultValue: number): number {
   const parsed = Number(process.env[name]);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
-function booleanFromEnv(name: string, fallback: boolean): boolean {
+function booleanFromEnv(name: string, defaultValue: boolean): boolean {
   const raw = `${process.env[name] ?? ''}`.trim().toLowerCase();
-  if (!raw) return fallback;
+  if (!raw) return defaultValue;
   return ['1', 'true', 'yes', 'on'].includes(raw);
 }
 
@@ -1201,22 +1201,22 @@ function buildMaterializedItem(
   itemRecords: Map<string, MaterializedItemRecord>,
 ): Record<string, unknown> {
   const itemId = `${entry?.itemId ?? ''}`.trim();
-  const fallback = itemId ? itemRecords.get(itemId) : null;
+  const baseRecord = itemId ? itemRecords.get(itemId) : null;
   return {
     itemId,
-    modId: `${entry?.modId ?? fallback?.modId ?? ''}`.trim(),
-    internalName: `${entry?.internalName ?? fallback?.internalName ?? ''}`.trim(),
-    localizedName: `${entry?.localizedName ?? fallback?.localizedName ?? ''}`.trim(),
+    modId: `${entry?.modId ?? baseRecord?.modId ?? ''}`.trim(),
+    internalName: `${entry?.internalName ?? baseRecord?.internalName ?? ''}`.trim(),
+    localizedName: `${entry?.localizedName ?? baseRecord?.localizedName ?? ''}`.trim(),
     renderAssetRef:
-      typeof entry?.renderAssetRef === 'string' ? entry.renderAssetRef : fallback?.renderAssetRef ?? null,
-    damage: Number(entry?.damage ?? fallback?.damage ?? 0),
+      typeof entry?.renderAssetRef === 'string' ? entry.renderAssetRef : baseRecord?.renderAssetRef ?? null,
+    damage: Number(entry?.damage ?? baseRecord?.damage ?? 0),
     stackSize: 1,
     maxStackSize: 64,
     maxDamage: 0,
     nbt: null,
     imageFileName:
-      typeof entry?.imageFileName === 'string' ? entry.imageFileName : fallback?.imageFileName ?? null,
-    tooltip: typeof entry?.tooltip === 'string' ? entry.tooltip : fallback?.tooltip ?? null,
+      typeof entry?.imageFileName === 'string' ? entry.imageFileName : baseRecord?.imageFileName ?? null,
+    tooltip: typeof entry?.tooltip === 'string' ? entry.tooltip : baseRecord?.tooltip ?? null,
   };
 }
 

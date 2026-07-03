@@ -298,12 +298,12 @@ export class PublishManifestService {
     probeDraft.database = databaseRead.probe;
     const db = databaseRead.db;
     if (!db) {
-      const fallback = this.createBlockedRuntimeManifest(probeDraft);
+      const blockedManifest = this.createBlockedRuntimeManifest(probeDraft);
       this.cache = {
-        value: fallback,
+        value: blockedManifest,
         expiresAt: now + this.cacheTtlMs,
       };
-      return fallback;
+      return blockedManifest;
     }
 
     const rows = db.prepare(`

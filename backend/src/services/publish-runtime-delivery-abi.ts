@@ -25,7 +25,7 @@ export type PublishHomeBootstrapIntegerParamKey =
 
 export type PublishHomeBootstrapIntegerParamDescriptor = Readonly<{
   key: PublishHomeBootstrapIntegerParamKey;
-  fallback: number;
+  defaultValue: number;
   min: number;
   max: number;
 }>;
@@ -58,19 +58,19 @@ export type PublishRuntimeExternalBundleRequiredError = Readonly<{
 export const PUBLISH_HOME_BOOTSTRAP_INTEGER_PARAM_DESCRIPTORS = validateAndFreezeIntegerParamDescriptors([
   {
     key: 'page',
-    fallback: 1,
+    defaultValue: 1,
     min: 1,
     max: 1_000_000,
   },
   {
     key: 'pageSize',
-    fallback: 50,
+    defaultValue: 50,
     min: 1,
     max: 500,
   },
   {
     key: 'slotSize',
-    fallback: 48,
+    defaultValue: 48,
     min: 24,
     max: 128,
   },
@@ -180,7 +180,7 @@ function parseBoundedInteger(
   descriptor: PublishHomeBootstrapIntegerParamDescriptor,
 ): number {
   const parsed = Number.parseInt(`${value ?? ''}`, 10);
-  if (!Number.isFinite(parsed)) return descriptor.fallback;
+  if (!Number.isFinite(parsed)) return descriptor.defaultValue;
   return Math.max(descriptor.min, Math.min(descriptor.max, Math.floor(parsed)));
 }
 
@@ -196,8 +196,8 @@ function validateAndFreezeIntegerParamDescriptors(
     if (!seen.add(descriptor.key)) {
       throw new Error(`Duplicate publish home-bootstrap integer parameter: ${descriptor.key}`);
     }
-    if (!Number.isInteger(descriptor.fallback)) {
-      throw new Error(`Publish home-bootstrap fallback must be an integer: ${descriptor.key}`);
+    if (!Number.isInteger(descriptor.defaultValue)) {
+      throw new Error(`Publish home-bootstrap default value must be an integer: ${descriptor.key}`);
     }
     if (!Number.isInteger(descriptor.min) || descriptor.min <= 0) {
       throw new Error(`Publish home-bootstrap minimum must be positive: ${descriptor.key}`);
@@ -205,8 +205,8 @@ function validateAndFreezeIntegerParamDescriptors(
     if (!Number.isInteger(descriptor.max) || descriptor.max < descriptor.min) {
       throw new Error(`Publish home-bootstrap maximum must be >= minimum: ${descriptor.key}`);
     }
-    if (descriptor.fallback < descriptor.min || descriptor.fallback > descriptor.max) {
-      throw new Error(`Publish home-bootstrap fallback must be within bounds: ${descriptor.key}`);
+    if (descriptor.defaultValue < descriptor.min || descriptor.defaultValue > descriptor.max) {
+      throw new Error(`Publish home-bootstrap default value must be within bounds: ${descriptor.key}`);
     }
   }
   for (const key of expected) {

@@ -32,19 +32,19 @@ export function setPublicCacheHeaders(
   res.setHeader('Vary', 'Accept-Encoding');
 }
 
-export function parseCacheMaxAgeSeconds(value: string | number | undefined, fallbackSeconds = 0): number {
+export function parseCacheMaxAgeSeconds(value: string | number | undefined, defaultSeconds = 0): number {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return Math.max(0, Math.floor(value / 1000));
   }
 
   const raw = `${value ?? ''}`.trim().toLowerCase();
   if (!raw) {
-    return Math.max(0, Math.floor(fallbackSeconds));
+    return Math.max(0, Math.floor(defaultSeconds));
   }
 
   const match = raw.match(/^(\d+(?:\.\d+)?)(ms|s|m|h|d)?$/);
   if (!match) {
-    return Math.max(0, Math.floor(fallbackSeconds));
+    return Math.max(0, Math.floor(defaultSeconds));
   }
 
   const amount = Number(match[1]);
@@ -66,11 +66,11 @@ export function setStaticAssetCacheHeaders(
   options: {
     maxAge?: string | number;
     immutable?: boolean;
-    fallbackSeconds?: number;
+    defaultSeconds?: number;
     varyAcceptEncoding?: boolean;
   } = {},
 ): void {
-  const maxAgeSeconds = parseCacheMaxAgeSeconds(options.maxAge, options.fallbackSeconds ?? 0);
+  const maxAgeSeconds = parseCacheMaxAgeSeconds(options.maxAge, options.defaultSeconds ?? 0);
   const directives = ['public', `max-age=${maxAgeSeconds}`];
   if (options.immutable) {
     directives.push('immutable');

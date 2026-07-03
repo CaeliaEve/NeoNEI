@@ -95,9 +95,9 @@ export function projectEnabledAutowarmStartupTasks(
   );
 }
 
-function readPositiveNumber(value: string | undefined, fallback: number): number {
+function readPositiveNumber(value: string | undefined, defaultValue: number): number {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
 }
 
 function isExplicitlyEnabled(value: string | undefined): boolean {
@@ -110,10 +110,10 @@ function isExplicitlyDisabled(value: string | undefined): boolean {
   return Boolean(normalized && AUTOWARM_BOOLEAN_ENV_VALUES.disabled.includes(normalized));
 }
 
-function readEnabledWithDefault(value: string | undefined, fallback: boolean): boolean {
+function readEnabledWithDefault(value: string | undefined, defaultValue: boolean): boolean {
   if (isExplicitlyEnabled(value)) return true;
   if (isExplicitlyDisabled(value)) return false;
-  return fallback;
+  return defaultValue;
 }
 
 function validateAndFreezeBooleanEnvValues(values: Readonly<{

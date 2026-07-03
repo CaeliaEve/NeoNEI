@@ -307,18 +307,18 @@ export class BrowserAtlasIndexService {
       .filter((frame) => Number.isFinite(frame[0]) && Number(frame[1]) > 0);
   }
 
-  private toNumber(value: unknown, fallback: number): number {
+  private toNumber(value: unknown, defaultValue: number): number {
     if (typeof value === 'number') {
-      return Number.isFinite(value) ? value : fallback;
+      return Number.isFinite(value) ? value : defaultValue;
     }
     if (typeof value === 'string') {
       const parsed = Number(value);
-      return Number.isFinite(parsed) ? parsed : fallback;
+      return Number.isFinite(parsed) ? parsed : defaultValue;
     }
     if (value && typeof value === 'object' && 'value' in value) {
-      return this.toNumber((value as { value?: unknown }).value, fallback);
+      return this.toNumber((value as { value?: unknown }).value, defaultValue);
     }
-    return fallback;
+    return defaultValue;
   }
 
   private getAuxiliaryAnimatedEntries(): Map<string, BrowserAtlasItemEntry> {

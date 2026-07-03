@@ -70,7 +70,7 @@ type ExportPayload = {
 };
 
 class MultiblocksService {
-  private static readonly MAX_FALLBACK_VOXEL_VOLUME = 250_000;
+  private static readonly MAX_DIMENSION_ONLY_VOXEL_VOLUME = 250_000;
   private static readonly MAX_AXIS_X = 48;
   private static readonly MAX_AXIS_Y = 32;
   private static readonly MAX_AXIS_Z = 48;
@@ -109,12 +109,12 @@ class MultiblocksService {
     };
   }
 
-  private buildFallbackVoxelBlueprint(dimensions?: Dimensions | null): VoxelBlueprint | undefined {
+  private buildDimensionOnlyVoxelBlueprint(dimensions?: Dimensions | null): VoxelBlueprint | undefined {
     if (!dimensions) return undefined;
     const { x, y, z } = dimensions;
     if (!x || !y || !z || x <= 0 || y <= 0 || z <= 0) return undefined;
     const volume = x * y * z;
-    if (volume > MultiblocksService.MAX_FALLBACK_VOXEL_VOLUME) {
+    if (volume > MultiblocksService.MAX_DIMENSION_ONLY_VOXEL_VOLUME) {
       return this.buildCoarseShellVoxelBlueprint(dimensions);
     }
 
@@ -244,7 +244,7 @@ class MultiblocksService {
     if (parts.length >= 4) {
       const base4 = parts.slice(0, 4).join('~');
       candidates.add(base4);
-      // Some exports may vary in damage; also provide mod+internal fallback.
+      // Some exports may vary in damage; also provide a mod+internal identity candidate.
       if (parts.length >= 3) {
         candidates.add(`i~${parts[1]}~${parts[2]}~0`);
       }
@@ -301,10 +301,10 @@ class MultiblocksService {
 
     const merged = this.mergeOverride(base, override);
     const normalized = this.normalizeVoxelBlueprint(merged.voxelBlueprint);
-    const fallback = this.buildFallbackVoxelBlueprint(merged.dimensions);
+    const dimensionOnlyBlueprint = this.buildDimensionOnlyVoxelBlueprint(merged.dimensions);
     return {
       ...merged,
-      voxelBlueprint: this.enrichLegendWithBlockFaces(normalized ?? fallback),
+      voxelBlueprint: this.enrichLegendWithBlockFaces(normalized ?? dimensionOnlyBlueprint),
     };
   }
 }

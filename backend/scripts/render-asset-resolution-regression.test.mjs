@@ -6,20 +6,20 @@ import path from 'node:path';
 const read = (relativePath) =>
   fs.readFileSync(path.resolve('..', relativePath), 'utf8');
 
-test('backend item image fallback resolves hashed variant siblings and sidecars', () => {
+test('backend item image resolution resolves hashed variant siblings and sidecars', () => {
   const source = read('backend/src/routes/static-assets.routes.ts');
   const registrySource = read('backend/src/routes/static-asset-route-registry.ts');
 
   assert.equal(
     source.includes('resolveImageFamilyArtifact'),
     true,
-    'server fallback should delegate requested base artifacts and sidecars to the shared delivery resolver',
+    'server resolution should delegate requested base artifacts and sidecars to the shared delivery resolver',
   );
 
   assert.equal(
-    source.includes('createArtifactFallbackRoute(route.family)'),
+    source.includes('createImageArtifactRoute(route.family)'),
     true,
-    'server fallback should mount image fallbacks from the static asset descriptor catalog',
+    'server resolution should mount image resolutions from the static asset descriptor catalog',
   );
 
   assert.equal(

@@ -210,7 +210,7 @@ export function queryAccelerationSearch(
         }));
       }
     } catch {
-      // FTS5 is an acceleration path only. Keep the LIKE fallback authoritative.
+      // FTS5 is an acceleration path only. Keep the LIKE acceleration scan authoritative.
     }
   }
 
