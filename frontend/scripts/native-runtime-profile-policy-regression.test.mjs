@@ -4,10 +4,25 @@ import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  NATIVE_RUNTIME_CAPABILITIES,
+  NATIVE_RUNTIME_PACK_NAMES,
+  NATIVE_RUNTIME_PACK_SCHEMAS,
+  NATIVE_RUNTIME_REQUIRED_CAPABILITIES,
+  NATIVE_RUNTIME_UI_PACK_SCHEMAS,
+  NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS,
+} from '../src/native-surface/NativeRuntimeAbi.ts';
+import {
   assertNativeRuntimeProfilePolicy,
   getNativeRuntimePackNamesForProfile,
   resolveNativeRuntimeProfilePolicy,
 } from '../src/native-surface/NativeRuntimeProfilePolicy.ts';
+import {
+  NATIVE_RUNTIME_CATALOG_ABI,
+  NATIVE_RUNTIME_CAPABILITY_DESCRIPTOR_LIST,
+  NATIVE_RUNTIME_PACK_DESCRIPTOR_LIST,
+  NATIVE_RUNTIME_PROFILE_POLICY_DESCRIPTOR_LIST,
+  NATIVE_RUNTIME_UI_PACK_DESCRIPTOR_LIST,
+} from '../src/native-surface/NativeRuntimeCatalog.ts';
 import {
   clearNativeRuntimePackCache,
   loadNativeRuntimeBuffersForProfile,
@@ -19,7 +34,41 @@ function readSource(relativePath) {
   return readFileSync(resolve(frontendRoot, relativePath), 'utf8').replace(/\r\n/g, '\n');
 }
 
-test('native runtime profile policies own profile pack lists and capabilities', () => {
+test('native runtime catalog owns ABI pack, UI entrypoint, capability, and profile descriptors', () => {
+  assert.equal(NATIVE_RUNTIME_CATALOG_ABI.schema, 'neonei/native-runtime-catalog/current');
+  assert.equal(NATIVE_RUNTIME_CATALOG_ABI.buildPolicy, 'descriptor-table-runtime-abi-projection');
+  assert.equal(NATIVE_RUNTIME_CATALOG_ABI.failurePolicy, 'fail-closed-native-runtime-abi');
+  assert.equal(NATIVE_RUNTIME_CATALOG_ABI.snapshotPolicy, 'rcu-immutable-catalog-snapshot');
+
+  assert.deepEqual(
+    NATIVE_RUNTIME_PACK_NAMES,
+    NATIVE_RUNTIME_PACK_DESCRIPTOR_LIST.map((descriptor) => descriptor.name),
+  );
+  assert.deepEqual(
+    NATIVE_RUNTIME_PACK_SCHEMAS,
+    Object.fromEntries(NATIVE_RUNTIME_PACK_DESCRIPTOR_LIST.map((descriptor) => [descriptor.name, descriptor.schema])),
+  );
+  assert.deepEqual(
+    NATIVE_RUNTIME_UI_PACK_SCHEMAS,
+    Object.fromEntries(NATIVE_RUNTIME_UI_PACK_DESCRIPTOR_LIST.map((descriptor) => [descriptor.name, descriptor.schema])),
+  );
+  assert.deepEqual(NATIVE_UI_RUNTIME_REQUIRED_ENTRYPOINTS, ['uiTemplates', 'uiBindings', 'uiStrings']);
+  assert.deepEqual(
+    NATIVE_RUNTIME_CAPABILITIES,
+    NATIVE_RUNTIME_CAPABILITY_DESCRIPTOR_LIST.map((descriptor) => descriptor.name),
+  );
+  assert.deepEqual(NATIVE_RUNTIME_REQUIRED_CAPABILITIES, [
+    'recipes.native-ui-layout',
+    'recipes.ui-pack',
+    'native-render.webgl2',
+  ]);
+  assert.deepEqual(
+    NATIVE_RUNTIME_PROFILE_POLICY_DESCRIPTOR_LIST.map((descriptor) => descriptor.profile),
+    ['browser-surface', 'history-surface', 'search', 'recipe', 'full'],
+  );
+});
+
+test('native runtime profile policies expose profile pack lists and capabilities from the catalog', () => {
   assert.deepEqual(getNativeRuntimePackNamesForProfile('browser-surface'), [
     'browser',
     'groups',
@@ -75,7 +124,8 @@ test('native runtime profile policy rejects unknown profiles instead of falling 
   );
 });
 
-test('native runtime profile policy is the only owner of profile tables', () => {
+test('native runtime catalog is the only owner of runtime ABI/profile tables', () => {
+  const catalogSource = readSource('src/native-surface/NativeRuntimeCatalog.ts');
   const policySource = readSource('src/native-surface/NativeRuntimeProfilePolicy.ts');
   const abiSource = readSource('src/native-surface/NativeRuntimeAbi.ts');
   const manifestSource = readSource('src/native-surface/NativeRuntimeManifest.ts');
@@ -85,6 +135,28 @@ test('native runtime profile policy is the only owner of profile tables', () => 
   const cacheSource = readSource('src/native-surface/runtimePackCache.ts');
   const controllerSource = readSource('src/native-surface/NativeSurfaceController.ts');
   const browserSurfaceSource = readSource('src/components/native-surface/NativeBrowserSurface.vue');
+
+  assert.match(catalogSource, /NATIVE_RUNTIME_CATALOG_ABI/);
+  assert.match(catalogSource, /schema: "neonei\/native-runtime-catalog\/current"/);
+  assert.match(catalogSource, /buildPolicy: "descriptor-table-runtime-abi-projection"/);
+  assert.match(catalogSource, /failurePolicy: "fail-closed-native-runtime-abi"/);
+  assert.match(catalogSource, /snapshotPolicy: "rcu-immutable-catalog-snapshot"/);
+  assert.match(catalogSource, /NATIVE_RUNTIME_PACK_DESCRIPTOR_LIST/);
+  assert.match(catalogSource, /NATIVE_RUNTIME_UI_PACK_DESCRIPTOR_LIST/);
+  assert.match(catalogSource, /NATIVE_RUNTIME_CAPABILITY_DESCRIPTOR_LIST/);
+  assert.match(catalogSource, /NATIVE_RUNTIME_PROFILE_POLICY_DESCRIPTOR_LIST/);
+  assert.match(catalogSource, /validateRuntimeProfileDescriptors/);
+  assert.match(catalogSource, /projectProfileMap/);
+
+  assert.match(abiSource, /from "\.\/NativeRuntimeCatalog\.ts"/);
+  assert.match(abiSource, /NATIVE_RUNTIME_CATALOG_PACK_NAMES/);
+  assert.match(abiSource, /NATIVE_RUNTIME_CATALOG_PACK_SCHEMAS/);
+  assert.match(abiSource, /NATIVE_RUNTIME_CATALOG_UI_PACK_SCHEMAS/);
+  assert.match(abiSource, /NATIVE_RUNTIME_CATALOG_REQUIRED_CAPABILITIES/);
+  assert.match(abiSource, /NATIVE_RUNTIME_CATALOG_REQUIRED_ENTRYPOINTS/);
+  assert.doesNotMatch(abiSource, /browser: "neonei\/browser-pack\/current"/);
+  assert.doesNotMatch(abiSource, /uiTemplates: "neonei\/ui-template-pack\/current"/);
+  assert.doesNotMatch(abiSource, /"groups\.semantic-nbt"/);
 
   assert.match(abiSource, /NATIVE_RUNTIME_MANIFEST_SCHEMA = "neonei\/runtime\/current"/);
   assert.match(abiSource, /NATIVE_RUNTIME_PACK_MAGIC = "NNEIBIN\\0"/);
@@ -99,6 +171,11 @@ test('native runtime profile policy is the only owner of profile tables', () => 
   assert.match(abiSource, /NATIVE_RUNTIME_DEFAULT_BASE_URL = "http:\/\/localhost\/"/);
   assert.match(abiSource, /NATIVE_RUNTIME_FETCH_CACHE/);
   assert.match(abiSource, /NATIVE_RUNTIME_REVISION/);
+
+  assert.match(policySource, /NATIVE_RUNTIME_PROFILE_POLICY_MAP/);
+  assert.match(policySource, /from "\.\/NativeRuntimeCatalog\.ts"/);
+  assert.doesNotMatch(policySource, /"browser-surface": \{/);
+  assert.doesNotMatch(policySource, /packs: \["browser", "groups", "search"/);
   assert.match(manifestSource, /from "\.\/NativeRuntimeAbi\.ts"/);
   assert.match(manifestSource, /schema\?: typeof NATIVE_RUNTIME_MANIFEST_SCHEMA/);
   assert.doesNotMatch(manifestSource, /export type NativeRuntimeCapability =/);
@@ -117,8 +194,6 @@ test('native runtime profile policy is the only owner of profile tables', () => 
   assert.doesNotMatch(nativeBinaryPackSource, /const NATIVE_BINARY_PACK_MAGIC|const NATIVE_BINARY_PACK_HEADER_BYTES/);
   assert.doesNotMatch(nativeBinaryPackSource, /version !== 1/);
   assert.match(capabilityGateSource, /from "\.\/NativeRuntimeAbi\.ts"/);
-  assert.match(policySource, /const PROFILE_POLICIES: Record<NativeRuntimePackProfile, NativeRuntimeProfilePolicy>/);
-  assert.match(policySource, /from "\.\/NativeRuntimeAbi\.ts"/);
   assert.doesNotMatch(cacheSource, /PROFILE_PACKS|Record<NativeRuntimePackProfile, readonly NativeRuntimePackName\[]>/);
   assert.doesNotMatch(cacheSource, /\?\? PROFILE_PACKS\.full/, 'runtime pack cache must not fallback to full profile');
   assert.match(cacheSource, /assertNativeRuntimeProfilePolicy\(manifest, profile\)/);

@@ -3,14 +3,13 @@ import type {
   NativeRuntimeCapability,
   NativeRuntimePackName,
 } from "./NativeRuntimeAbi.ts";
+import {
+  NATIVE_RUNTIME_PROFILE_POLICY_MAP,
+  type NativeRuntimePackProfileName,
+} from "./NativeRuntimeCatalog.ts";
 import { assertNativeRuntimeCapabilities } from "./NativeRuntimeCapabilityGate.ts";
 
-export type NativeRuntimePackProfile =
-  | "browser-surface"
-  | "history-surface"
-  | "search"
-  | "recipe"
-  | "full";
+export type NativeRuntimePackProfile = NativeRuntimePackProfileName;
 
 export interface NativeRuntimeProfilePolicy {
   profile: NativeRuntimePackProfile;
@@ -18,35 +17,9 @@ export interface NativeRuntimeProfilePolicy {
   capabilities: readonly NativeRuntimeCapability[];
 }
 
-const PROFILE_POLICIES: Record<NativeRuntimePackProfile, NativeRuntimeProfilePolicy> = {
-  "browser-surface": {
-    profile: "browser-surface",
-    // Browser search is part of the right-side NEI interaction, so search stays in
-    // this profile for now; recipes are intentionally excluded from first paint.
-    packs: ["browser", "groups", "search", "textures", "animations", "stringsZhCn"],
-    capabilities: ["groups.collapse", "search.zh-cn", "strings.zh-cn", "native-render.webgl2"],
-  },
-  "history-surface": {
-    profile: "history-surface",
-    packs: ["browser", "textures", "animations", "stringsZhCn"],
-    capabilities: ["strings.zh-cn", "native-render.webgl2"],
-  },
-  search: {
-    profile: "search",
-    packs: ["browser", "groups", "search", "stringsZhCn"],
-    capabilities: ["groups.collapse", "search.zh-cn", "strings.zh-cn"],
-  },
-  recipe: {
-    profile: "recipe",
-    packs: ["recipes", "textures", "animations", "stringsZhCn"],
-    capabilities: ["recipes.lookup", "strings.zh-cn"],
-  },
-  full: {
-    profile: "full",
-    packs: ["browser", "groups", "search", "recipes", "textures", "animations", "stringsZhCn"],
-    capabilities: ["groups.collapse", "recipes.lookup", "search.zh-cn", "strings.zh-cn", "native-render.webgl2"],
-  },
-};
+const PROFILE_POLICIES = NATIVE_RUNTIME_PROFILE_POLICY_MAP satisfies Readonly<
+  Record<NativeRuntimePackProfile, NativeRuntimeProfilePolicy>
+>;
 
 export function resolveNativeRuntimeProfilePolicy(
   profile: NativeRuntimePackProfile = "full",

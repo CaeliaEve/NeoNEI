@@ -71,7 +71,7 @@ test('native surface tooltip uses strings.zh_cn runtime pack as primary payload'
   );
   assert.match(
     controllerSource,
-    /nativeTooltip\s*=\s*response\.hit\.tooltip/,
+    /nativeTooltip\s*=\s*hitTest\.hit\.tooltip/,
     'controller must convert worker string metadata into native tooltip payload',
   );
   assert.match(
@@ -127,17 +127,17 @@ test('native runtime group hits remain expandable groups when compat entries can
   );
   assert.match(
     controllerSource,
-    /const syntheticItem = buildSyntheticItem\(response\.hit\.itemId, nativeTooltip\);/,
+    /const syntheticItem = buildSyntheticItem\(hitTest\.hit\.itemId, nativeTooltip\);/,
     'native runtime hits must be materialized directly from worker hit metadata',
   );
   assert.match(
     controllerSource,
-    /const syntheticGroup = response\.hit\.kind !== "item" \|\| response\.hit\.groupKey\s*\?\s*buildSyntheticGroup\(syntheticItem, nativeTooltip\)\s*:\s*null;/,
+    /const syntheticGroup = hitTest\.hit\.kind !== "item" \|\| hitTest\.hit\.groupKey\s*\?\s*buildSyntheticGroup\(syntheticItem, nativeTooltip\)\s*:\s*null;/,
     'native runtime group hits should be synthesized from native hit metadata without a key-prefix branch',
   );
   assert.doesNotMatch(
     controllerSource,
-    /response\.hit\.key\.startsWith\("native-"\)|compat/i,
+    /hitTest\.hit\.key\.startsWith\("native-"\)|compat/i,
     'controller must not reintroduce stale compat-entry/native-key lookup gates',
   );
   assert.match(
@@ -161,6 +161,5 @@ test('native runtime group hits remain expandable groups when compat entries can
     'Vue native surface should emit group context menus from native runtime hits',
   );
 });
-
 
 
