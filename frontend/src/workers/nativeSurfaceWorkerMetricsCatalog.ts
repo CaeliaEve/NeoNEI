@@ -113,7 +113,7 @@ export const NATIVE_SURFACE_WORKER_PROJECTION_SOURCE_POLICY = Object.freeze({
   owner: "native-surface-engine-worker",
   schema: "neonei/native-surface-worker-projection-source/current",
   selectionPolicy: "first-matching-descriptor",
-  fallbackPolicy: "descriptor-empty-terminal",
+  terminalPolicy: "empty-descriptor-terminal",
   rules: NATIVE_SURFACE_WORKER_PROJECTION_SOURCE_RULES.map((rule) => rule.id),
 } as const);
 

@@ -72,9 +72,9 @@ export type DistDataBrowserRuntime = {
   mods: Mod[];
 };
 
-export function stableNumber(value: unknown, fallback = 0): number {
+export function stableNumber(value: unknown, defaultValue = 0): number {
   const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
+  return Number.isFinite(parsed) ? parsed : defaultValue;
 }
 
 function normalizeNeedle(value: string): string {

@@ -283,8 +283,8 @@ const normalizeRecipeInputs = (
   };
 
   const inferredWorkbench = inferWorkbenchGrid(totalSlots);
-  const fallbackWidth = Math.min(8, Math.max(1, Math.ceil(Math.sqrt(totalSlots))));
-  const derivedWidth = isExtreme ? 9 : isAssemblyLineLike ? 4 : isWorkbenchLike ? inferredWorkbench.width : fallbackWidth;
+  const defaultWidth = Math.min(8, Math.max(1, Math.ceil(Math.sqrt(totalSlots))));
+  const derivedWidth = isExtreme ? 9 : isAssemblyLineLike ? 4 : isWorkbenchLike ? inferredWorkbench.width : defaultWidth;
   const derivedHeight = isExtreme
     ? 9
     : isAssemblyLineLike

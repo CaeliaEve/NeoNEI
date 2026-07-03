@@ -150,7 +150,7 @@ export const NATIVE_SURFACE_ENGINE_CLIENT_POLICY = Object.freeze({
   owner: "native-surface",
   schema: "neonei/native-surface-engine-client/current",
   failurePolicy: "fail-closed",
-  legacyNullFallback: false,
+  requiresResponsePayload: true,
   errorDescriptors: NATIVE_SURFACE_ENGINE_CLIENT_ERROR_DESCRIPTORS,
   transferDescriptors: NATIVE_SURFACE_ENGINE_TRANSFER_DESCRIPTOR_MAP,
   transferPolicy: "descriptor-owned-transfer-list",

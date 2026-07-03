@@ -264,13 +264,13 @@ const fluidOutputs = computed<DisplayFluid[]>(() => {
     .filter((entry): entry is DisplayFluid => entry !== null);
   if (direct.length > 0) return direct;
 
-  const fallbackXp = pickNumber(mergedMeta.value.xpJuiceMb);
-  if (fallbackXp === null || fallbackXp <= 0) return [];
+  const metadataXp = pickNumber(mergedMeta.value.xpJuiceMb);
+  if (metadataXp === null || metadataXp <= 0) return [];
 
   return [{
     fluidId: 'f~OpenBlocks~xpjuice',
     localizedName: '液态经验',
-    amount: fallbackXp,
+    amount: metadataXp,
     temperature: null,
     renderAssetRef: 'nesqlpp:fluid/f~OpenBlocks~xpjuice',
   }];
@@ -611,8 +611,8 @@ function handleEntityPreviewError(): void {
             </div>
           </div>
 
-          <div v-else-if="entityPreviewError" class="entity-preview-card entity-preview-card--fallback">
-            <div class="entity-preview-card__fallback-icon">?</div>
+          <div v-else-if="entityPreviewError" class="entity-preview-card entity-preview-card--placeholder">
+            <div class="entity-preview-card__placeholder-icon">?</div>
             <div class="entity-preview-card__error-copy">
               <strong>{{ mobLocalizedName }}</strong>
               <small>{{ entityPreviewError }}</small>
@@ -1106,7 +1106,7 @@ function handleEntityPreviewError(): void {
   place-items: center;
 }
 
-.entity-preview-card--fallback {
+.entity-preview-card--placeholder {
   min-height: 0;
   align-content: center;
   justify-items: center;
@@ -1122,7 +1122,7 @@ function handleEntityPreviewError(): void {
     0 24px 48px rgba(0, 0, 0, 0.28);
 }
 
-.entity-preview-card__fallback-icon {
+.entity-preview-card__placeholder-icon {
   width: 72px;
   height: 72px;
   display: grid;

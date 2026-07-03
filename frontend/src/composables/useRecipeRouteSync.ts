@@ -200,9 +200,9 @@ export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
         return;
       }
 
-      const fallbackIndex = pendingMachineIndexFromQuery.value;
-      const safeMachineIndex = Number.isFinite(fallbackIndex)
-        ? Math.min(Math.max(0, fallbackIndex ?? 0), names.length - 1)
+      const pendingIndex = pendingMachineIndexFromQuery.value;
+      const safeMachineIndex = Number.isFinite(pendingIndex)
+        ? Math.min(Math.max(0, pendingIndex ?? 0), names.length - 1)
         : 0;
       options.selectedMachineIndex.value = safeMachineIndex;
       pendingMachineIndexFromQuery.value = null;

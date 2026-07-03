@@ -7,15 +7,15 @@ import {
 } from '../thaumcraftAspects';
 import { resolveDistDataAssetPath } from '../distDataRuntime';
 
-const FALLBACK_ITEM_IMAGE_PATH = 'minecraft/barrier~0.png';
+const PLACEHOLDER_ITEM_IMAGE_PATH = 'minecraft/barrier~0.png';
 const THAUMCRAFT_ASPECT_PLACEHOLDER_URL = '/placeholder.png';
 
 function buildItemImageUrl(path: string): string {
   return `${BACKEND_BASE_URL}/images/item/${path}`;
 }
 
-function getFallbackItemImageUrl(): string {
-  return buildItemImageUrl(FALLBACK_ITEM_IMAGE_PATH);
+function getPlaceholderItemImageUrl(): string {
+  return buildItemImageUrl(PLACEHOLDER_ITEM_IMAGE_PATH);
 }
 
 function getBackendOrigin(): string {
@@ -159,7 +159,7 @@ export function getItemImageUrlFromEntity(item: {
   if (item?.itemId) {
     return getImageUrl(item.itemId);
   }
-  return getFallbackItemImageUrl();
+  return getPlaceholderItemImageUrl();
 }
 
 export function getPreferredStaticImageUrlFromEntity(item: {
@@ -203,7 +203,7 @@ export function getPreferredStaticImageUrlFromEntity(item: {
   if (item?.itemId) {
     return getImageUrl(item.itemId);
   }
-  return getFallbackItemImageUrl();
+  return getPlaceholderItemImageUrl();
 }
 
 export function getImageUrlFromRenderAssetRef(renderAssetRef: string): string | null {
@@ -223,7 +223,7 @@ export function getImageUrlFromRenderAssetRef(renderAssetRef: string): string | 
 
 export function getImageUrlFromFileName(imageFileName: string): string {
   if (!imageFileName) {
-    return getFallbackItemImageUrl();
+    return getPlaceholderItemImageUrl();
   }
 
   if (/^https?:\/\//i.test(imageFileName) || imageFileName.startsWith('/api/images/')) {
@@ -237,7 +237,7 @@ export function getImageUrlFromFileName(imageFileName: string): string {
     .join('/');
 
   if (!normalizedSafePath) {
-    return getFallbackItemImageUrl();
+    return getPlaceholderItemImageUrl();
   }
 
   return buildItemImageUrl(normalizedSafePath);

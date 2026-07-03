@@ -821,9 +821,9 @@ function toIndexedMachineIconFromRaw(raw: unknown, runtime: DistDataBrowserRunti
   return buildIndexedMachineIcon(itemId, runtime, { renderAssetRef, imageFileName });
 }
 
-function stableSlotDimension(value: unknown, fallback: number): number {
+function stableSlotDimension(value: unknown, defaultValue: number): number {
   const parsed = Math.floor(Number(value));
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
 }
 
 function buildIndexedRecipeFromUiPayload(

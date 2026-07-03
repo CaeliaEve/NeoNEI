@@ -68,12 +68,12 @@ export function nativeUiRectStyle(rect: NativeUiRect): NativeUiBoxStyle {
   };
 }
 
-export function nativeUiRectLabel(rect: NativeUiLabeledRect, fallback: string): string {
+export function nativeUiRectLabel(rect: NativeUiLabeledRect, defaultLabel: string): string {
   for (const value of [rect.label, rect.tooltip, rect.role, rect.kind, rect.id]) {
     const normalized = `${value ?? ""}`.trim();
     if (normalized) return normalized;
   }
-  return fallback;
+  return defaultLabel;
 }
 
 export function nativeUiHotspotInteractionKind(rect: NativeUiHotspotRect): string {

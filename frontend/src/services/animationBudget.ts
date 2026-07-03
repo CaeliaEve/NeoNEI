@@ -116,9 +116,9 @@ const getSharedAnimationElapsedMs = (nowMs: number): number => {
   return Math.max(0, nowMs - SHARED_ANIMATION_EPOCH_MS);
 };
 
-const resolveTimelineFrameSlotIndex = (frame: TimelineFrameLike | undefined, fallbackIndex: number): number => {
+const resolveTimelineFrameSlotIndex = (frame: TimelineFrameLike | undefined, defaultIndex: number): number => {
   if (!frame) {
-    return fallbackIndex;
+    return defaultIndex;
   }
   if (typeof frame.frameIndex === 'number') {
     return frame.frameIndex;
@@ -126,7 +126,7 @@ const resolveTimelineFrameSlotIndex = (frame: TimelineFrameLike | undefined, fal
   if (typeof frame.index === 'number') {
     return frame.index;
   }
-  return fallbackIndex;
+  return defaultIndex;
 };
 
 export const resolveTimelineFrameIndex = (
@@ -194,7 +194,7 @@ export const resolvePreparedAnimationFrameIndex = (
 
 const getSpriteSheetPhysicalFrameCount = (
   timeline: Array<{ frameIndex?: number; index?: number }> | undefined,
-  fallback?: number | null,
+  declaredFrameCount?: number | null,
 ): number => {
   const timelineMax =
     timeline?.reduce((max, frame, idx) => {
@@ -207,7 +207,7 @@ const getSpriteSheetPhysicalFrameCount = (
       return Math.max(max, frameIndex + 1);
     }, 0) ?? 0;
 
-  return Math.max(Number(fallback ?? 0), timelineMax, 1);
+  return Math.max(Number(declaredFrameCount ?? 0), timelineMax, 1);
 };
 
 const touchBoundedCache = <T>(cache: Map<string, T>, key: string, value: T, maxSize: number): void => {

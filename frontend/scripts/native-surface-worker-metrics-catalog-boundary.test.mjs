@@ -44,7 +44,7 @@ test("native surface worker projection source policy is catalog-owned", () => {
   assert.match(catalog, /NATIVE_SURFACE_WORKER_PROJECTION_SOURCE_POLICY/);
   assert.match(catalog, /schema: "neonei\/native-surface-worker-projection-source\/current"/);
   assert.match(catalog, /selectionPolicy: "first-matching-descriptor"/);
-  assert.match(catalog, /fallbackPolicy: "descriptor-empty-terminal"/);
+  assert.match(catalog, /terminalPolicy: "empty-descriptor-terminal"/);
   assert.match(catalog, /id: "runtime-history-pack"/);
   assert.match(catalog, /id: "runtime-browser-pack"/);
   assert.match(catalog, /id: "empty"/);

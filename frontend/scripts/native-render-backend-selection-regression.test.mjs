@@ -54,7 +54,7 @@ test("requested WebGPU readiness does not silently fall back to WebGL2", () => {
 
   assert.match(source, /backend === "webgpu" \? \{ maxTextureSize: 0, maxTextureUnits: 0 \} : detectWebglLimits\(canvas\)/);
   assert.match(source, /backend = null/);
-  assert.match(source, /backendFallbackReason = error instanceof Error \? error\.message : String\(error\)/);
+  assert.match(source, /backendSelectionFailureReason = error instanceof Error \? error\.message : String\(error\)/);
   assert.doesNotMatch(source, /backend = "webgl2"/);
   assert.doesNotMatch(source, /webgpu renderer initialization failed/);
 });

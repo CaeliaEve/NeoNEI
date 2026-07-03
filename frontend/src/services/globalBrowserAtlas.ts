@@ -401,19 +401,6 @@ export function getGlobalBrowserAtlasCoverageForItems(itemIds: string[]): {
   };
 }
 
-export function shouldUseLegacyBrowserAnimationProbe(itemId: string): boolean {
-  const normalizedItemId = `${itemId ?? ""}`.trim();
-  if (!normalizedItemId) {
-    return false;
-  }
-
-  // The browser item grid is now a native-NEI style atlas surface. Legacy probing
-  // fans out into per-item render-contract/sprite requests and is exactly the
-  // slow path that makes fast page flips show missing textures. Missing entries
-  // must be fixed in the NESQL++ browser-atlas export instead of hidden by an
-  // expensive frontend fallback.
-  return false;
-}
 export function getGlobalBrowserAtlasEntry(itemId: string): BrowserAtlasItemEntry | null {
   return getAtlasEntryForItemId(itemId);
 }
@@ -640,29 +627,29 @@ export function normalizeFrames(frames?: BrowserAtlasAnimatedFrame[] | null): Ar
 
 export function normalizeTimeline(
   timeline?: BrowserAtlasAnimatedFrame[] | null,
-  fallbackDurationMs?: number | null,
+  defaultDurationMs?: number | null,
 ): Array<{ frameIndex: number; durationMs: number }> {
   return (timeline ?? [])
     .map((frame, index) => {
       const compact = Array.isArray(frame) ? frame as unknown[] : null;
       return {
         frameIndex: toAtlasNumber(compact?.[0] ?? frame.frameIndex ?? frame.index, index),
-        durationMs: Math.max(16, Math.round(toAtlasNumber(compact?.[1] ?? frame.durationMs ?? fallbackDurationMs, 50))),
+        durationMs: Math.max(16, Math.round(toAtlasNumber(compact?.[1] ?? frame.durationMs ?? defaultDurationMs, 50))),
       };
     })
     .filter((frame) => Number.isFinite(frame.frameIndex));
 }
 
-function toAtlasNumber(value: unknown, fallback: number): number {
+function toAtlasNumber(value: unknown, defaultValue: number): number {
   if (typeof value === "number") {
-    return Number.isFinite(value) ? value : fallback;
+    return Number.isFinite(value) ? value : defaultValue;
   }
   if (typeof value === "string") {
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
+    return Number.isFinite(parsed) ? parsed : defaultValue;
   }
   if (value && typeof value === "object" && "value" in value) {
-    return toAtlasNumber((value as { value?: unknown }).value, fallback);
+    return toAtlasNumber((value as { value?: unknown }).value, defaultValue);
   }
-  return fallback;
+  return defaultValue;
 }

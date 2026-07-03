@@ -75,7 +75,7 @@ const parsedItemId = computed(() => {
   return { modId: 'unknown', internalName: props.itemId };
 });
 
-const fallbackItemData = computed<Item>(() => ({
+const projectedItemData = computed<Item>(() => ({
   itemId: props.itemId,
   modId: props.modId || parsedItemId.value.modId,
   internalName: props.internalName || parsedItemId.value.internalName,
@@ -91,24 +91,24 @@ const resolvedItemData = computed<Item | null>(() => {
   if (!itemData.value) {
     return null;
   }
-  const fallback = fallbackItemData.value;
+  const baseItem = projectedItemData.value;
   return {
-    ...fallback,
+    ...baseItem,
     ...itemData.value,
-    itemId: itemData.value.itemId || fallback.itemId,
-    modId: itemData.value.modId || fallback.modId,
-    internalName: itemData.value.internalName || fallback.internalName,
-    localizedName: itemData.value.localizedName || fallback.localizedName,
-    renderAssetRef: itemData.value.renderAssetRef ?? fallback.renderAssetRef ?? null,
-    imageFileName: itemData.value.imageFileName ?? fallback.imageFileName ?? null,
+    itemId: itemData.value.itemId || baseItem.itemId,
+    modId: itemData.value.modId || baseItem.modId,
+    internalName: itemData.value.internalName || baseItem.internalName,
+    localizedName: itemData.value.localizedName || baseItem.localizedName,
+    renderAssetRef: itemData.value.renderAssetRef ?? baseItem.renderAssetRef ?? null,
+    imageFileName: itemData.value.imageFileName ?? baseItem.imageFileName ?? null,
     maxStackSize:
       typeof itemData.value.maxStackSize === 'number' && Number.isFinite(itemData.value.maxStackSize)
         ? itemData.value.maxStackSize
-        : fallback.maxStackSize,
+        : baseItem.maxStackSize,
     maxDamage:
       typeof itemData.value.maxDamage === 'number' && Number.isFinite(itemData.value.maxDamage)
         ? itemData.value.maxDamage
-        : fallback.maxDamage,
+        : baseItem.maxDamage,
   };
 });
 
@@ -138,10 +138,10 @@ const showTooltip = async () => {
   if (!itemData.value && !loading.value) {
     loading.value = true;
     try {
-      itemData.value = await readItemFromBrowserRuntime() ?? fallbackItemData.value;
+      itemData.value = await readItemFromBrowserRuntime() ?? projectedItemData.value;
     } catch (error) {
       console.error('Failed to load item data:', error);
-      itemData.value = fallbackItemData.value;
+      itemData.value = projectedItemData.value;
     } finally {
       loading.value = false;
     }
@@ -244,16 +244,16 @@ onBeforeUnmount(() => {
           </div>
         </template>
 
-        <div v-else class="tooltip-fallback">
+        <div v-else class="tooltip-projection">
           <AnimatedItemIcon
             :item-id="itemId"
             :size="28"
             class="tooltip-icon"
           />
-          <div class="fallback-info">
-            <p class="fallback-id">{{ fallbackItemData.localizedName }}</p>
-            <p class="fallback-subtitle">{{ fallbackItemData.modId }} / {{ fallbackItemData.internalName }}</p>
-            <p v-if="count && count > 1" class="fallback-count">数量：{{ count }}</p>
+          <div class="projection-info">
+            <p class="projection-id">{{ projectedItemData.localizedName }}</p>
+            <p class="projection-subtitle">{{ projectedItemData.modId }} / {{ projectedItemData.internalName }}</p>
+            <p v-if="count && count > 1" class="projection-count">数量：{{ count }}</p>
           </div>
         </div>
       </div>
@@ -492,7 +492,7 @@ onBeforeUnmount(() => {
   line-height: 1.42;
 }
 
-.tooltip-fallback {
+.tooltip-projection {
   position: relative;
   z-index: 1;
   display: flex;
@@ -501,11 +501,11 @@ onBeforeUnmount(() => {
   padding: var(--tt-padding);
 }
 
-.fallback-info {
+.projection-info {
   min-width: 0;
 }
 
-.fallback-id {
+.projection-id {
   margin: 0;
   font-size: var(--tt-text);
   color: rgba(225, 236, 255, 0.92);
@@ -513,7 +513,7 @@ onBeforeUnmount(() => {
   word-break: break-word;
 }
 
-.fallback-count {
+.projection-count {
   margin: 2px 0 0;
   font-size: var(--tt-subtitle);
   color: rgba(189, 209, 255, 0.8);
@@ -646,4 +646,3 @@ onBeforeUnmount(() => {
   }
 }
 </style>
-

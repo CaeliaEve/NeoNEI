@@ -84,11 +84,11 @@ function resolveRecipeUiPayloadAuthorityError(
 
   const nativeLayout = payloadRecord.nativeLayout;
   if (!nativeLayout || typeof nativeLayout !== 'object') {
-    return `Native recipe UI payload for family "${uiPayload?.familyKey ?? 'unknown'}" has no valid nativeLayout; refusing legacy component fallback.`;
+    return `Native recipe UI payload for family "${uiPayload?.familyKey ?? 'unknown'}" has no valid nativeLayout; refusing retired component path.`;
   }
 
   if (!payloadProfile) {
-    return `Native recipe UI payload family "${uiPayload?.familyKey ?? 'unknown'}" is not registered in the recipe presentation catalog; refusing heuristic UI fallback.`;
+    return `Native recipe UI payload family "${uiPayload?.familyKey ?? 'unknown'}" is not registered in the recipe presentation catalog; refusing heuristic UI path.`;
   }
 
   return null;
@@ -168,7 +168,7 @@ function nativeLayoutRoutingError({ profile, uiPayload }: RecipePresentationRout
     return null;
   }
   if (!isNativeLayoutRendererEligible(profile.component, nativeLayout)) {
-    return `Native recipe UI payload for component "${profile.component}" is not eligible for the native layout renderer; refusing legacy component fallback.`;
+    return `Native recipe UI payload for component "${profile.component}" is not eligible for the native layout renderer; refusing retired component path.`;
   }
   return null;
 }
@@ -223,5 +223,5 @@ export function resolveRecipePresentationRoute(input: RecipePresentationRouteInp
 export const RECIPE_PRESENTATION_POLICY_CATALOG = Object.freeze({
   abi: 'neonei.recipe-presentation-policy.v1',
   routeKinds: Object.freeze(RECIPE_PRESENTATION_ROUTE_DESCRIPTORS.map((descriptor) => descriptor.kind)),
-  nativePayloadAuthority: 'fail-closed-no-legacy-component-fallback',
+  nativePayloadAuthority: 'fail-closed-native-layout-authority',
 });

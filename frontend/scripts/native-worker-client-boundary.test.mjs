@@ -25,7 +25,7 @@ test('native render worker client exposes a fail-closed client ABI boundary', ()
   assert.match(renderClientPolicySource, /NATIVE_RENDER_WORKER_CLIENT_POLICY = Object\.freeze/);
   assert.match(renderClientPolicySource, /schema: "neonei\/native-render-worker-client\/current"/);
   assert.match(renderClientPolicySource, /failurePolicy: "fail-closed"/);
-  assert.match(renderClientPolicySource, /legacyNullFallback: false/);
+  assert.match(renderClientPolicySource, /requiresResponsePayload: true/);
   assert.match(renderClientPolicySource, /transferPolicy: "descriptor-owned-transfer-list"/);
   assert.match(renderClientPolicySource, /class NativeRenderWorkerClientError extends Error/);
   assert.match(renderClientPolicySource, /NATIVE_RENDER_WORKER_CLIENT_ERROR_DESCRIPTORS/);
@@ -66,7 +66,7 @@ test('native surface engine worker client exposes the same fail-closed no-null b
   assert.match(engineClientPolicySource, /NATIVE_SURFACE_ENGINE_CLIENT_POLICY = Object\.freeze/);
   assert.match(engineClientPolicySource, /schema: "neonei\/native-surface-engine-client\/current"/);
   assert.match(engineClientPolicySource, /failurePolicy: "fail-closed"/);
-  assert.match(engineClientPolicySource, /legacyNullFallback: false/);
+  assert.match(engineClientPolicySource, /requiresResponsePayload: true/);
   assert.match(engineClientPolicySource, /transferPolicy: "descriptor-owned-transfer-list"/);
   assert.match(engineClientPolicySource, /class NativeSurfaceEngineClientError extends Error/);
   assert.match(engineClientPolicySource, /NATIVE_SURFACE_ENGINE_CLIENT_ERROR_DESCRIPTORS/);

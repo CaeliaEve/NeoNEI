@@ -19,11 +19,11 @@ test('recipe presentation policy catalog is descriptor-driven and validates dupl
   assert.match(policySource, /kind: 'registered-component'/);
 });
 
-test('native UI payload authority fails closed instead of using detected component fallback', () => {
+test('native UI payload authority fails closed instead of using detected component paths', () => {
   assert.match(policySource, /hasOwnRecordProperty\(payloadRecord, 'nativeLayout'\)/);
-  assert.match(policySource, /has no valid nativeLayout; refusing legacy component fallback/);
-  assert.match(policySource, /is not registered in the recipe presentation catalog; refusing heuristic UI fallback/);
-  assert.match(policySource, /is not eligible for the native layout renderer; refusing legacy component fallback/);
+  assert.match(policySource, /has no valid nativeLayout; refusing retired component path/);
+  assert.match(policySource, /is not registered in the recipe presentation catalog; refusing heuristic UI path/);
+  assert.match(policySource, /is not eligible for the native layout renderer; refusing retired component path/);
 });
 
 test('machine-present generic routing is named as a policy, not a legacy fallback', () => {

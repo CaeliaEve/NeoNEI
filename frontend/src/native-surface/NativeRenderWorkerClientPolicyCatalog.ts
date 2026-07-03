@@ -114,7 +114,7 @@ export const NATIVE_RENDER_WORKER_CLIENT_POLICY = Object.freeze({
   owner: "native-surface",
   schema: "neonei/native-render-worker-client/current",
   failurePolicy: "fail-closed",
-  legacyNullFallback: false,
+  requiresResponsePayload: true,
   errorDescriptors: NATIVE_RENDER_WORKER_CLIENT_ERROR_DESCRIPTORS,
   transferDescriptors: NATIVE_RENDER_WORKER_TRANSFER_DESCRIPTOR_MAP,
   transferPolicy: "descriptor-owned-transfer-list",

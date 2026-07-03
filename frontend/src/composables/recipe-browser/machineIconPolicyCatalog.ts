@@ -164,6 +164,6 @@ export const resolveMachineIconByName = (
 
 export const MACHINE_ICON_POLICY_CATALOG = Object.freeze({
   abi: 'neonei.machine-icon-policy.v1',
-  authority: 'descriptor-owned-machine-icons-no-legacy-fallback',
+  authority: 'descriptor-owned-machine-icons',
   gtMachineIconDescriptors: GT_MACHINE_ICON_POLICY_DESCRIPTORS,
 });

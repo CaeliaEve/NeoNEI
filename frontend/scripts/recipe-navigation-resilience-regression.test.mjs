@@ -52,9 +52,9 @@ test('recipe navigation uses named routes instead of raw /recipe path strings', 
 
 test('recipe route sync clears unresolved machine and recipe pending state', () => {
   assert.equal(
-    routeSyncSource.includes('const fallbackIndex = pendingMachineIndexFromQuery.value;'),
+    routeSyncSource.includes('const pendingIndex = pendingMachineIndexFromQuery.value;'),
     true,
-    'route sync should fall back to machine index when machineName cannot be resolved',
+    'route sync should use the pending machine index when machineName cannot be resolved',
   );
   assert.equal(
     routeSyncSource.includes('pendingRecipeIdFromQuery.value = null;'),
@@ -75,4 +75,3 @@ test('frontend bootstraps chunk-load recovery for stale lazy imports', () => {
     'frontend should recover from router-level lazy chunk failures',
   );
 });
-

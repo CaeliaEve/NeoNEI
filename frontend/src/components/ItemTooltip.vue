@@ -96,7 +96,7 @@ const showTooltip = async () => {
       }
     } catch {
       // Keep the already supplied runtime item visible; missing by-id packs are
-      // handled by the runtime diagnostics path instead of a lab fallback.
+      // handled by the runtime diagnostics path instead of a lab-only recovery path.
     } finally {
       loadingFullItem.value = false;
     }

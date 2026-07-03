@@ -46,7 +46,7 @@ type NativeUiRendererBackendDescriptor = Readonly<{
 type NativeUiCanvasDprPolicy = Readonly<{
   min: number;
   max: number;
-  fallback: number;
+  defaultValue: number;
 }>;
 
 type NativeUiAnimationLoopHandle = Readonly<{
@@ -71,7 +71,7 @@ export const NATIVE_UI_RENDERER_SESSION_POLICY = Object.freeze({
 export const NATIVE_UI_CANVAS_DPR_POLICY: NativeUiCanvasDprPolicy = Object.freeze({
   min: 1,
   max: 2,
-  fallback: 1,
+  defaultValue: 1,
 } as const);
 
 function defineNativeUiRendererBackend<const Descriptor extends NativeUiRendererBackendDescriptor>(
@@ -171,7 +171,7 @@ export function nativeUiRendererNowMs(): number {
 
 export function normalizeNativeUiDpr(devicePixelRatio: unknown): number {
   const parsed = Number(devicePixelRatio);
-  if (!Number.isFinite(parsed) || parsed <= 0) return NATIVE_UI_CANVAS_DPR_POLICY.fallback;
+  if (!Number.isFinite(parsed) || parsed <= 0) return NATIVE_UI_CANVAS_DPR_POLICY.defaultValue;
   return Math.min(NATIVE_UI_CANVAS_DPR_POLICY.max, Math.max(NATIVE_UI_CANVAS_DPR_POLICY.min, parsed));
 }
 

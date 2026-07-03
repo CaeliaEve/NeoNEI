@@ -45,9 +45,9 @@ export const parseRecipeQuery = (query: LocationQuery): RecipeQuerySnapshot => {
 export const serializeRecipeQuery = (snapshot: RecipeQuerySnapshot): string =>
   `${snapshot.tab ?? ''}|${snapshot.mode ?? ''}|${snapshot.machine}|${snapshot.machineName ?? ''}|${snapshot.page}|${snapshot.q ?? ''}|${snapshot.recipeId ?? ''}`;
 
-export const parseNonNegativeInt = (value: string | undefined, fallback: number): number => {
+export const parseNonNegativeInt = (value: string | undefined, defaultValue: number): number => {
   const parsed = Number(value);
-  return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : defaultValue;
 };
 
 export const resolveRecipeTab = (snapshot: RecipeQuerySnapshot): RecipeTab | undefined => {

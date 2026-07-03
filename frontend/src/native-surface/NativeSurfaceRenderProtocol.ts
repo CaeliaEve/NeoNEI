@@ -74,7 +74,7 @@ export type NativeRendererFrameMetrics = {
   backend: NativeRenderBackendKind | null;
   webgpuAvailable: boolean;
   webgpuUsable: boolean;
-  backendFallbackReason: string | null;
+  backendSelectionFailureReason: string | null;
   initialized: boolean;
   frames: number;
   commandCount: number;

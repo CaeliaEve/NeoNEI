@@ -4,7 +4,7 @@ export type NativeRenderFrameMetricsInput = Readonly<{
   requestedBackend: NativeRendererFrameMetrics["requestedBackend"];
   backend: NativeRendererFrameMetrics["backend"];
   webgpuAvailable: boolean;
-  backendFallbackReason: string | null;
+  backendSelectionFailureReason: string | null;
   hasCanvas: boolean;
   frames: number;
   commandCount: number;
@@ -136,14 +136,14 @@ export const NATIVE_RENDER_FRAME_METRIC_DESCRIPTOR_MAP =
     webgpuUsable: defineNativeRenderFrameMetric({
       key: "webgpuUsable",
       domain: "backend",
-      source: "backend|navigator.gpu|backendFallbackReason",
+      source: "backend|navigator.gpu|backendSelectionFailureReason",
       read: (context) => context.backend === "webgpu" || (context.webgpuAvailable && !context.adapterUnavailable),
     }),
-    backendFallbackReason: defineNativeRenderFrameMetric({
-      key: "backendFallbackReason",
+    backendSelectionFailureReason: defineNativeRenderFrameMetric({
+      key: "backendSelectionFailureReason",
       domain: "backend",
-      source: "worker.backendFallbackReason",
-      read: (context) => context.backendFallbackReason,
+      source: "worker.backendSelectionFailureReason",
+      read: (context) => context.backendSelectionFailureReason,
     }),
     initialized: defineNativeRenderFrameMetric({
       key: "initialized",
@@ -360,7 +360,7 @@ function createNativeRenderFrameMetricsContext(
   return Object.freeze({
     ...input,
     frameSamples,
-    adapterUnavailable: Boolean(input.backendFallbackReason?.includes("adapter/device/context unavailable")),
+    adapterUnavailable: Boolean(input.backendSelectionFailureReason?.includes("adapter/device/context unavailable")),
     frameAvgMs: frameAverage(frameSamples),
     frameP95Ms: percentile(frameSamples, 95),
     frameMaxMs: frameMaximum(frameSamples),

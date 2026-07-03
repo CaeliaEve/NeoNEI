@@ -349,7 +349,7 @@ const ASPECT_TEXTURE_NAME_ALIASES: Record<string, string> = {
 
 // Keep this list in sync with frontend/public/textures/thaumcraft-aspects-exported.
 // Aspect icons are a tiny fixed native resource pack: resolve them locally instead of
-// issuing per-aspect backend image fallbacks, so recipe pages keep NEI-like instant flips.
+// issuing per-aspect backend image probes, so recipe pages keep NEI-like instant flips.
 const NATIVE_ASPECT_TEXTURE_NAMES = new Set([
   'aer',
   'alienis',

@@ -21,7 +21,7 @@ export type NativeUiDynamicPrimitiveDescriptor = Readonly<{
   kind: "fluid-bar" | "energy-bar" | "progress-bar" | "indicator";
   matchTokens: readonly string[];
   defaultFillColor: string;
-  fallback?: boolean;
+  defaultForUnknownKind?: boolean;
 }>;
 
 type NativeUiDynamicPrimitiveColorSource = Readonly<{
@@ -79,15 +79,15 @@ function validateDynamicPrimitiveDescriptors<const Descriptors extends readonly 
 ): Descriptors {
   requireNonEmptyCatalog("native UI dynamic primitive", descriptors);
   const kinds = new Set<string>();
-  let fallbacks = 0;
+  let unknownKindDefaults = 0;
   for (const descriptor of descriptors) {
     requireNonEmptyString("native UI dynamic primitive kind", descriptor.kind);
     requireNonEmptyString("native UI dynamic primitive fill color", descriptor.defaultFillColor);
     requireUnique(kinds, descriptor.kind, "native UI dynamic primitive kind");
-    if (descriptor.fallback) fallbacks += 1;
+    if (descriptor.defaultForUnknownKind) unknownKindDefaults += 1;
   }
-  if (fallbacks !== 1) {
-    throw new Error("native UI dynamic primitive catalog must declare exactly one fallback descriptor");
+  if (unknownKindDefaults !== 1) {
+    throw new Error("native UI dynamic primitive catalog must declare exactly one unknown-kind default descriptor");
   }
   return Object.freeze([...descriptors]) as unknown as Descriptors;
 }
@@ -163,7 +163,7 @@ export const NATIVE_UI_DYNAMIC_PRIMITIVE_DESCRIPTOR_LIST = validateDynamicPrimit
     kind: "indicator",
     matchTokens: [],
     defaultFillColor: "rgba(247, 182, 72, 0.86)",
-    fallback: true,
+    defaultForUnknownKind: true,
   }),
 ] as const);
 
@@ -224,16 +224,18 @@ export function normalizeNativeUiDpr(value: number): number {
   return Number.isFinite(value) && value > 0 ? value : 1;
 }
 
-export function clampNativeUiRatio(value: unknown, fallback = 1): number {
+export function clampNativeUiRatio(value: unknown, defaultValue = 1): number {
   const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
+  if (!Number.isFinite(parsed)) return defaultValue;
   return Math.max(0, Math.min(1, parsed));
 }
 
 export function normalizeNativeUiDynamicPrimitiveKind(primitive: NativeUiDynamicPrimitiveColorSource): string {
   const kind = `${primitive.kind ?? primitive.role ?? ""}`.trim().toLowerCase();
   const descriptor = resolveNativeUiDynamicPrimitiveDescriptor(primitive);
-  return "fallback" in descriptor && descriptor.fallback === true ? kind || descriptor.kind : descriptor.kind;
+  return "defaultForUnknownKind" in descriptor && descriptor.defaultForUnknownKind === true
+    ? kind || descriptor.kind
+    : descriptor.kind;
 }
 
 export function resolveNativeUiDynamicPrimitiveDescriptor(
@@ -243,15 +245,15 @@ export function resolveNativeUiDynamicPrimitiveDescriptor(
   return NATIVE_UI_DYNAMIC_PRIMITIVE_DESCRIPTOR_LIST.find((descriptor) => (
     descriptor.matchTokens.length > 0
       && descriptor.matchTokens.some((token) => kind.includes(token))
-  )) ?? fallbackDynamicPrimitiveDescriptor();
+  )) ?? unknownKindDefaultDynamicPrimitiveDescriptor();
 }
 
-function fallbackDynamicPrimitiveDescriptor(): NativeUiDynamicPrimitiveDescriptor {
+function unknownKindDefaultDynamicPrimitiveDescriptor(): NativeUiDynamicPrimitiveDescriptor {
   const descriptor = NATIVE_UI_DYNAMIC_PRIMITIVE_DESCRIPTOR_LIST.find((entry) => (
-    "fallback" in entry && entry.fallback === true
+    "defaultForUnknownKind" in entry && entry.defaultForUnknownKind === true
   ));
   if (!descriptor) {
-    throw new Error("native UI dynamic primitive catalog fallback descriptor is missing");
+    throw new Error("native UI dynamic primitive catalog unknown-kind default descriptor is missing");
   }
   return descriptor;
 }

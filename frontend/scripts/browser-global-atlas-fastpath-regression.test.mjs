@@ -13,7 +13,7 @@ const itemBrowserSource = read('src/composables/useItemBrowser.ts');
 const browserPageProjectionLoaderSource = read('src/composables/browser/browserPageProjectionLoader.ts');
 const browserHotPathSource = `${itemBrowserSource}
 ${browserPageProjectionLoaderSource}`;
-test('global browser atlas resolves safe itemId aliases before falling back to raw images', () => {
+test('global browser atlas resolves safe itemId aliases before raw image projection', () => {
   assert.match(
     globalAtlasSource,
     /const itemEntryAliases = new Map<string, BrowserAtlasItemEntry>\(\);/,
@@ -32,7 +32,7 @@ test('global browser atlas resolves safe itemId aliases before falling back to r
   assert.match(
     globalAtlasSource,
     /aliases\.push\(\[parts\[0\], parts\[1\], parts\[2\], "0"\]\.join\("~"\)\);/,
-    'aliasing should include a safe meta-0 fallback for damaged/tool variants',
+    'aliasing should include a safe meta-0 default for damaged/tool variants',
   );
   assert.match(
     globalAtlasSource,
@@ -55,10 +55,10 @@ test('homepage browser fast path does not rehydrate page packs once global atlas
 });
 
 test('global atlas is the homepage animation source of truth for indexed entries', () => {
-  assert.match(
+  assert.doesNotMatch(
     globalAtlasSource,
-    /export function shouldUseLegacyBrowserAnimationProbe\(itemId: string\): boolean \{[\s\S]*return false;[\s\S]*\}/,
-    'indexed browser atlas entries should not trigger legacy sprite/render-contract probes during page flips',
+    /shouldUseLegacyBrowserAnimationProbe/,
+    'indexed browser atlas entries must not expose legacy sprite/render-contract probe hooks during page flips',
   );
 });
 
@@ -118,7 +118,7 @@ test('worker search projection does not hydrate per-item page packs on the homep
   );
 });
 
-test('homepage item browser does not fetch page packs on production paging or search fallback', () => {
+test('homepage item browser does not fetch page packs on production paging or search defaults', () => {
   assert.doesNotMatch(
     browserHotPathSource,
     /getBrowserPagePack\(|getBrowserPagePackByIds|peekBrowserPagePackByIds/,

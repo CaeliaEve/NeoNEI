@@ -73,10 +73,10 @@ export function useHomeHistory(itemSize: Ref<number>) {
   };
 
   const historyColumns = computed(() => {
-    const fallbackWidth =
+    const defaultWidth =
       typeof window !== "undefined" ? Math.floor(window.innerWidth * 0.38) : 0;
     const effectiveWidth =
-      historyPanelWidth.value > 0 ? historyPanelWidth.value : fallbackWidth;
+      historyPanelWidth.value > 0 ? historyPanelWidth.value : defaultWidth;
     const contentWidth = Math.max(0, effectiveWidth - HISTORY_HORIZONTAL_PADDING);
     return Math.max(
       1,

@@ -126,21 +126,20 @@ const getCategoryCount = (category: MachineCategory): number =>
 
 const getDisplayName = (name: string): string => {
   const normalized = `${name ?? ''}`.trim();
-  if (/mana\s*pool/i.test(normalized)) return '魔力池';
-  if (/crucible/i.test(normalized)) return '坩埚';
-  if (/crafting\s*\(shaped\)|codechicken.*shaped|crafting~shaped/i.test(normalized)) return '有序合成';
-  if (/crafting\s*\(shapeless\)|codechicken.*shapeless|crafting~shapeless/i.test(normalized)) return '无序合成';
-  if (/^rt~gregtech~gt\.recipe\.laserengraver/i.test(normalized)) return '激光蚀刻机';
-  if (/^rt~gregtech~gt\.recipe\.implosioncompressor/i.test(normalized)) return '聚爆压缩机';
-  if (/^rt~gregtech~gt\.recipe\.electricimplosioncompressor/i.test(normalized)) return '电动聚爆压缩机';
-  if (/^rt~gregtech~gt\.recipe\.compressor/i.test(normalized)) return '压缩机';
-  if (/^rt~gregtech~gt\.recipe\.bender/i.test(normalized)) return '压模机';
+  if (/mana\s*pool/i.test(normalized)) return '\u9b54\u529b\u6c60';
+  if (/crucible/i.test(normalized)) return '\u5769\u57da';
+  if (/crafting\s*\(shaped\)|codechicken.*shaped|crafting~shaped/i.test(normalized)) return '\u6709\u5e8f\u5408\u6210';
+  if (/crafting\s*\(shapeless\)|codechicken.*shapeless|crafting~shapeless/i.test(normalized)) return '\u65e0\u5e8f\u5408\u6210';
+  if (/^rt~gregtech~gt\.recipe\.laserengraver/i.test(normalized)) return '\u6fc0\u5149\u8680\u523b\u673a';
+  if (/^rt~gregtech~gt\.recipe\.implosioncompressor/i.test(normalized)) return '\u805a\u7206\u538b\u7f29\u673a';
+  if (/^rt~gregtech~gt\.recipe\.electricimplosioncompressor/i.test(normalized)) return '\u7535\u52a8\u805a\u7206\u538b\u7f29\u673a';
+  if (/^rt~gregtech~gt\.recipe\.compressor/i.test(normalized)) return '\u538b\u7f29\u673a';
+  if (/^rt~gregtech~gt\.recipe\.bender/i.test(normalized)) return '\u538b\u6a21\u673a';
   return normalized
     .replace(/^\s*[A-Za-z0-9_ -]+\s+-\s+/, '')
     .replace(/\s*\((ULV|LV|MV|HV|EV|IV|LuV|ZPM|UV|UHV|UEV|UIV|UMV|UXV|MAX)\)\s*$/i, '')
     .trim() || normalized;
 };
-
 const focusOption = (index: number) => {
   syncCategoryPageForIndex(index);
   void nextTick(() => {
@@ -213,8 +212,8 @@ onBeforeUnmount(() => {
       type="button"
       class="category-page-btn category-page-btn--prev"
       :disabled="normalizedCategoryPage <= 0"
-      title="上一组配方类别"
-      aria-label="上一组配方类别"
+      title="上一组配方类�?
+      aria-label="上一组配方类�?
       @click="goToCategoryPage(-1)"
     >
       <svg class="category-page-btn__icon" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -235,7 +234,7 @@ onBeforeUnmount(() => {
           role="option"
           :aria-selected="modelValue === index"
           :tabindex="modelValue === index ? 0 : -1"
-          :aria-label="`${getDisplayName(category.name)} (${getCategoryCount(category)} 个)`"
+          :aria-label="`${getDisplayName(category.name)} (${getCategoryCount(category)} �?`"
           @click="handleSelect(index)"
           @keydown="handleOptionKeydown($event, index)"
         >
@@ -269,11 +268,11 @@ onBeforeUnmount(() => {
               </svg>
             </span>
 
-            <span v-else class="fallback-icon">?</span>
+            <span v-else class="placeholder-icon">?</span>
           </span>
 
           <span class="recipe-count-badge" aria-hidden="true">{{ getCategoryCount(category) }}</span>
-          <span class="icon-tooltip" role="tooltip">{{ getDisplayName(category.name) }} ({{ getCategoryCount(category) }} 个)</span>
+          <span class="icon-tooltip" role="tooltip">{{ getDisplayName(category.name) }} ({{ getCategoryCount(category) }} �?</span>
         </button>
       </div>
     </div>
@@ -287,8 +286,8 @@ onBeforeUnmount(() => {
       type="button"
       class="category-page-btn category-page-btn--next"
       :disabled="normalizedCategoryPage >= totalCategoryPages - 1"
-      title="下一组配方类别"
-      aria-label="下一组配方类别"
+      title="下一组配方类�?
+      aria-label="下一组配方类�?
       @click="goToCategoryPage(1)"
     >
       <svg class="category-page-btn__icon" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -466,7 +465,7 @@ onBeforeUnmount(() => {
 
 .crafting-icon,
 .machine-icon,
-.fallback-icon {
+.placeholder-icon {
   color: rgba(222, 233, 246, 0.95);
   filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.28));
   transition: filter 160ms ease, color 160ms ease;
@@ -484,17 +483,17 @@ onBeforeUnmount(() => {
   image-rendering: crisp-edges;
 }
 
-.fallback-icon {
+.placeholder-icon {
   font-size: 28px;
   font-weight: bold;
 }
 
 .icon-wrapper:hover .crafting-icon,
 .icon-wrapper:hover .machine-icon,
-.icon-wrapper:hover .fallback-icon,
+.icon-wrapper:hover .placeholder-icon,
 .icon-active .crafting-icon,
 .icon-active .machine-icon,
-.icon-active .fallback-icon {
+.icon-active .placeholder-icon {
   color: rgba(238, 245, 252, 0.98);
   filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.34)) brightness(1.06);
 }
@@ -596,7 +595,7 @@ onBeforeUnmount(() => {
     height: 32px;
   }
 
-  .fallback-icon {
+  .placeholder-icon {
     font-size: 24px;
   }
 

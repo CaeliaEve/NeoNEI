@@ -25,12 +25,12 @@ export function getStoredCategoryOrderedRecipeIds(
   categoryRecipeIdsByKey: Ref<Record<string, string[]>>,
   tab: RecipeTab,
   category: MachineCategory | null | undefined,
-  fallbackRecipeIds: string[],
+  defaultRecipeIds: string[],
 ): string[] {
   const key = getRecipeCategoryLookupKey(tab, category);
-  if (!key) return fallbackRecipeIds;
+  if (!key) return defaultRecipeIds;
   const stored = categoryRecipeIdsByKey.value[key];
-  return Array.isArray(stored) && stored.length > 0 ? stored : fallbackRecipeIds;
+  return Array.isArray(stored) && stored.length > 0 ? stored : defaultRecipeIds;
 }
 
 export function setStoredCategoryOrderedRecipeIds(

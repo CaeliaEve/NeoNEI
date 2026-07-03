@@ -23,11 +23,10 @@ test('preferred static image resolves hashed gif variants to base gif file', () 
   );
 });
 
-test('canonical assets resolve through api proxy when backend base is relative', () => {
+test('canonical assets resolve through the dist-data asset resolver', () => {
   assert.equal(
-    source.includes("return `${proxyBase}/canonical/${canonicalPath}`;"),
+    source.includes('return resolveDistDataAssetPath(distPath);'),
     true,
-    'canonical animation assets should resolve through the /api proxy in preview deployments',
+    'canonical animation assets should resolve through the portable dist-data asset resolver',
   );
 });
-

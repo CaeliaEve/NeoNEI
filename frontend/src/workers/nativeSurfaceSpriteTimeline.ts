@@ -186,14 +186,14 @@ function pickTimelineFrame(
   return selectAtlasFrameByTimelineIndex(frames, selectedFrameIndex);
 }
 
-function resolveNextTimelineDelayMs(timeline: NativeRuntimeTimelineFrame[], fallback: number | null): number | null {
+function resolveNextTimelineDelayMs(timeline: NativeRuntimeTimelineFrame[], defaultDurationMs: number | null): number | null {
   const timelineDelay = timeline
     .map((frame) => toU32(frame.durationMs))
     .filter((duration) => duration > 0)
     .reduce((min, duration) => Math.min(min, duration), Number.POSITIVE_INFINITY);
   if (Number.isFinite(timelineDelay) && timelineDelay > 0) return timelineDelay;
-  const fallbackDelay = toU32(fallback ?? 0);
-  return fallbackDelay > 0 ? fallbackDelay : 50;
+  const defaultDelay = toU32(defaultDurationMs ?? 0);
+  return defaultDelay > 0 ? defaultDelay : 50;
 }
 
 export function buildSpriteFrame(

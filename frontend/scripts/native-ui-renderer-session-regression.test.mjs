@@ -66,7 +66,7 @@ test('native UI renderer session normalizes DPR and owns canvas device sizing', 
   assert.equal(NATIVE_UI_RENDERER_SESSION_CATALOG_ABI.schema, 'neonei/native-ui-renderer-session-catalog/current');
   assert.equal(NATIVE_UI_RENDERER_SESSION_CATALOG_ABI.buildPolicy, 'descriptor-table-renderer-session-projection');
   assert.equal(NATIVE_UI_RENDERER_SESSION_CATALOG_ABI.failurePolicy, 'fail-closed-native-ui-renderer-session');
-  assert.deepEqual(NATIVE_UI_CANVAS_DPR_POLICY, { min: 1, max: 2, fallback: 1 });
+  assert.deepEqual(NATIVE_UI_CANVAS_DPR_POLICY, { min: 1, max: 2, defaultValue: 1 });
   assert.deepEqual(
     NATIVE_UI_RENDERER_BACKEND_DESCRIPTOR_LIST.map((descriptor) => descriptor.backend),
     ['webgl2'],

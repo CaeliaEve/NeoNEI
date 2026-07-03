@@ -758,7 +758,7 @@ if (typeof document !== "undefined") {
       <div class="native-browser-surface__status-orb" />
       <div class="native-browser-surface__status-text">
         <span>{{ nativeSurfaceFaultMessage || 'Native GPU runtime is preparing the resident atlas' }}</span>
-        <small>{{ nativeSurfaceFaultMessage ? 'Native surface fault is recorded in the control plane.' : 'Browser grid DOM fallback is retired on this path.' }}</small>
+        <small>{{ nativeSurfaceFaultMessage ? 'Native surface fault is recorded in the control plane.' : 'Browser grid DOM renderer is retired on this path.' }}</small>
       </div>
     </div>
     <div

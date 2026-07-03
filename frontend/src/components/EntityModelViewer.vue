@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import {
   AmbientLight,
@@ -132,11 +132,11 @@ function getTexture(texturePath: string | null | undefined): Texture | null {
   }
 }
 
-function toVec3(values: number[] | undefined, fallback = 0): [number, number, number] {
+function toVec3(values: number[] | undefined, defaultValue = 0): [number, number, number] {
   return [
-    Number.isFinite(values?.[0]) ? Number(values?.[0]) : fallback,
-    Number.isFinite(values?.[1]) ? Number(values?.[1]) : fallback,
-    Number.isFinite(values?.[2]) ? Number(values?.[2]) : fallback,
+    Number.isFinite(values?.[0]) ? Number(values?.[0]) : defaultValue,
+    Number.isFinite(values?.[1]) ? Number(values?.[1]) : defaultValue,
+    Number.isFinite(values?.[2]) ? Number(values?.[2]) : defaultValue,
   ];
 }
 
@@ -146,7 +146,7 @@ function normalizeTextureUv(rawValue: number, textureAxisSize: number): number {
   // NESQL++ entity model contracts from the current exporter store UVs one extra
   // texture-axis normalization deep (normalized UV / textureAxisSize). Recover the
   // actual normalized UV when the value is in that tiny range. Keep already-normalized
-  // UVs as-is, and only divide when a legacy contract emits pixel-space coordinates.
+  // UVs as-is, and only divide when an older export emits pixel-space coordinates.
   const exporterDoubleNormalizedUpperBound = 1.0005 / axisSize;
   if (rawValue >= -0.0005 && rawValue <= exporterDoubleNormalizedUpperBound) {
     return rawValue * axisSize;
@@ -202,7 +202,7 @@ function isNearZeroTriple(values: number[] | undefined, tolerance = 0.0001): boo
   return Math.abs(x) <= tolerance && Math.abs(y) <= tolerance && Math.abs(z) <= tolerance;
 }
 
-function shouldSuppressLegacyRootPlane(node: EntityModelNode, siblingCount: number): boolean {
+function shouldSuppressRootPlane(node: EntityModelNode, siblingCount: number): boolean {
   if (siblingCount < 8) return false;
   if ((Array.isArray(node.children) ? node.children.length : 0) > 0) return false;
   if (!isNearZeroTriple(node.pivot) || !isNearZeroTriple(node.rotation) || !isNearZeroTriple(node.offset)) {
@@ -370,7 +370,7 @@ async function loadModel(): Promise<void> {
     const unitScale = Number(contract.unitScale ?? 16) || 16;
     const sceneUnit = 1 / Math.max(1, unitScale);
     // Minecraft 1.7 entity ModelRenderer space is rendered under the living-entity
-    // renderer's legacy GL transform that flips X/Y before the model boxes hit the
+    // renderer's root GL transform that flips X/Y before the model boxes hit the
     // world. Reapply that root-space conversion here so exported quads land in the
     // same upright orientation as in-game NEI/entity renders.
     group.scale.set(-sceneUnit, -sceneUnit, sceneUnit);
@@ -387,7 +387,7 @@ async function loadModel(): Promise<void> {
       const texture = getTexture(component.texturePath ?? null);
 
       const rootNodes = (Array.isArray(component.nodes) ? component.nodes : [])
-        .filter((node) => !shouldSuppressLegacyRootPlane(node, Array.isArray(component.nodes) ? component.nodes.length : 0));
+        .filter((node) => !shouldSuppressRootPlane(node, Array.isArray(component.nodes) ? component.nodes.length : 0));
 
       for (const node of rootNodes) {
         componentGroup.add(buildNode(node, texture, textureWidth, textureHeight));

@@ -66,16 +66,16 @@ export interface NativeUiAtlasRegistrationResult {
   warmError: string | null;
 }
 
-function toAtlasNumber(value: unknown, fallback: number): number {
-  if (typeof value === "number") return Number.isFinite(value) ? value : fallback;
+function toAtlasNumber(value: unknown, defaultValue: number): number {
+  if (typeof value === "number") return Number.isFinite(value) ? value : defaultValue;
   if (typeof value === "string") {
     const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : fallback;
+    return Number.isFinite(parsed) ? parsed : defaultValue;
   }
   if (value && typeof value === "object" && "value" in value) {
-    return toAtlasNumber((value as { value?: unknown }).value, fallback);
+    return toAtlasNumber((value as { value?: unknown }).value, defaultValue);
   }
-  return fallback;
+  return defaultValue;
 }
 
 function normalizeDuration(value: unknown): number {
@@ -105,7 +105,7 @@ function normalizeNativeUiAtlasFrames(frames: unknown): NativeUiPreparedAtlasSou
 
 function normalizeNativeUiAtlasTimeline(
   timeline: unknown,
-  fallbackDurationMs?: unknown,
+  defaultDurationMs?: unknown,
 ): NativeUiPreparedAtlasSource["timeline"] {
   return (Array.isArray(timeline) ? timeline : [])
     .map((frame, index) => {
@@ -113,7 +113,7 @@ function normalizeNativeUiAtlasTimeline(
       const object = frame && typeof frame === "object" ? frame as NativeUiAtlasEntryRecord : {};
       return {
         frameIndex: toAtlasNumber(compact?.[0] ?? object.frameIndex ?? object.index, index),
-        durationMs: normalizeDuration(compact?.[1] ?? object.durationMs ?? fallbackDurationMs),
+        durationMs: normalizeDuration(compact?.[1] ?? object.durationMs ?? defaultDurationMs),
       };
     })
     .filter((frame) => Number.isFinite(frame.frameIndex));

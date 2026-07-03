@@ -22,7 +22,7 @@ import {
 let canvas: OffscreenCanvas | null = null;
 let requestedBackend: "auto" | NativeRenderBackendKind | null = null;
 let backend: NativeRenderBackendKind | null = null;
-let backendFallbackReason: string | null = null;
+let backendSelectionFailureReason: string | null = null;
 let animationEnabled = true;
 let frames = 0;
 let commandCount = 0;
@@ -88,7 +88,7 @@ function buildMetrics(): NativeRendererFrameMetrics {
     requestedBackend,
     backend,
     webgpuAvailable,
-    backendFallbackReason,
+    backendSelectionFailureReason,
     hasCanvas: Boolean(canvas),
     frames,
     commandCount,
@@ -307,7 +307,7 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
     case "initialize": {
       canvas = message.canvas;
       requestedBackend = message.renderer;
-      backendFallbackReason = null;
+      backendSelectionFailureReason = null;
       width = canvas.width;
       height = canvas.height;
       nativeRenderer?.dispose();
@@ -324,7 +324,7 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
         backend = nativeRenderer.backend;
       } catch (error) {
         backend = null;
-        backendFallbackReason = error instanceof Error ? error.message : String(error);
+        backendSelectionFailureReason = error instanceof Error ? error.message : String(error);
         throw error;
       }
       const limits = backend === "webgpu" ? { maxTextureSize: 0, maxTextureUnits: 0 } : detectWebglLimits(canvas);
@@ -403,7 +403,7 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       canvas = null;
       requestedBackend = null;
       backend = null;
-      backendFallbackReason = null;
+      backendSelectionFailureReason = null;
       commandCount = 0;
       drawCalls = 0;
       vertexCount = 0;

@@ -15,7 +15,7 @@ test('recipe machine icon matching is descriptor-owned', () => {
   assert.match(policySource, /validateGtMachineIconPolicyDescriptors/);
   assert.match(policySource, /GT_MACHINE_ICON_POLICY_DESCRIPTORS/);
   assert.match(policySource, /MACHINE_ICON_POLICY_CATALOG/);
-  assert.match(policySource, /descriptor-owned-machine-icons-no-legacy-fallback/);
+  assert.match(policySource, /descriptor-owned-machine-icons/);
   assert.match(policySource, /defaultMetaId/);
 });
 

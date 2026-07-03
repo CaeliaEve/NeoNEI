@@ -2,7 +2,6 @@
 import {
   computed,
   nextTick,
-  onBeforeUnmount,
   ref,
 } from 'vue';
 import type { Recipe } from '../services/api';
@@ -433,42 +432,6 @@ const getFluidColor = (fluidName: string | undefined): string => {
   return '#00fff7'; // default cyan
 };
 
-// WebSocket connection state
-const ws = ref<WebSocket | null>(null);
-const wsConnected = ref(false);
-
-// Initialize WebSocket connection
-const initWebSocket = () => {
-  if (ws.value && ws.value.readyState === WebSocket.OPEN) {
-    return;
-  }
-
-  try {
-    // Connect to game client via WebSocket
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${protocol}//${window.location.host}/api/ws/overlay`;
-    ws.value = new WebSocket(wsUrl);
-
-    ws.value.onopen = () => {
-      debugLog('WebSocket connected for recipe overlay');
-      wsConnected.value = true;
-    };
-
-    ws.value.onclose = () => {
-      debugLog('WebSocket disconnected');
-      wsConnected.value = false;
-    };
-
-    ws.value.onerror = (error) => {
-      debugWarn('WebSocket error:', error);
-      wsConnected.value = false;
-    };
-  } catch (error) {
-    console.error('Failed to initialize WebSocket:', error);
-    wsConnected.value = false;
-  }
-};
-
 // Handle item click
 const handleItemClick = (itemId: string) => {
   playClick();
@@ -481,18 +444,7 @@ const handleItemContextMenu = (itemId: string, event: MouseEvent) => {
   emit('item-contextmenu', itemId);
 };
 
-// Handle recipe overlay - via overlayService (schema validation + ACK + timeout logs)
-const waitForOverlaySocketReady = async (timeoutMs: number): Promise<boolean> => {
-  const started = Date.now();
-  while (Date.now() - started <= timeoutMs) {
-    if (ws.value && ws.value.readyState === WebSocket.OPEN) {
-      return true;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 50));
-  }
-  return false;
-};
-
+// Handle recipe overlay - via overlayService (schema validation + ACK + timeout logs).
 const handleRecipeOverlay = async () => {
   if (!props.recipe || !props.recipe.recipeId) {
     debugWarn('Invalid recipe data for overlay');
@@ -544,54 +496,16 @@ const handleRecipeOverlay = async () => {
     return;
   }
 
-  if (!ws.value || ws.value.readyState !== WebSocket.OPEN) {
-    initWebSocket();
-  }
-
-  const ready = await waitForOverlaySocketReady(500);
-  if (!ready) {
-    debugWarn('[overlay] timeout > 500ms without ACK on fallback channel');
-    commitOverlayState(
-      {
-        status: 'error',
-        message: `Overlay \u53d1\u9001\u5931\u8d25\uff1a${ipcResult.error || 'IPC \u4e0d\u53ef\u7528\u4e14 WebSocket \u672a\u5c31\u7eea'}\u3002`,
-        canRetry: true,
-      },
-      requestSeq,
-    );
-    return;
-  }
-
-  try {
-    ws.value?.send(JSON.stringify(overlayMessage));
-    debugWarn(`[overlay] IPC fallback to WebSocket, reason=${ipcResult.error}`);
-    commitOverlayState(
-      {
-        status: 'success',
-        message: 'Overlay \u5df2\u901a\u8fc7 WebSocket \u515c\u5e95\u53d1\u9001\u3002',
-        canRetry: false,
-      },
-      requestSeq,
-    );
-  } catch (error) {
-    console.error('[overlay] websocket fallback send failed', error);
-    commitOverlayState(
-      {
-        status: 'error',
-        message: 'Overlay \u515c\u5e95\u53d1\u9001\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002',
-        canRetry: true,
-      },
-      requestSeq,
-    );
-  }
+  debugWarn(`[overlay] IPC send failed, reason=${ipcResult.error}`);
+  commitOverlayState(
+    {
+      status: 'error',
+      message: `Overlay \u53d1\u9001\u5931\u8d25\uff1a${ipcResult.error || 'IPC \u4e0d\u53ef\u7528'}\u3002`,
+      canRetry: true,
+    },
+    requestSeq,
+  );
 };
-
-// Cleanup WebSocket on unmount
-onBeforeUnmount(() => {
-  if (ws.value) {
-    ws.value.close();
-  }
-});
 
 // Expose handleRecipeOverlay to parent components
 defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
@@ -748,18 +662,18 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
             @mouseleave="hideFluidTooltip"
             @mousemove="showFluidTooltip($event, fluid)"
           >
-            <!-- Fluid Icon - Real texture or fallback -->
+            <!-- Fluid Icon - exported texture or SVG placeholder -->
             <div class="nei-fluid-icon">
               <img
                 v-if="fluidHasImage(fluid)"
                 :src="getFluidImagePath(fluid)"
                 :alt="fluid.localizedName || fluid.internalName"
                 class="nei-fluid-image"
-                @error="(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('nei-fluid-fallback-hidden'); }"
+                @error="(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('nei-fluid-placeholder-hidden'); }"
               />
               <div
-                class="nei-fluid-fallback"
-                :class="{ 'nei-fluid-fallback-hidden': fluidHasImage(fluid) }"
+                class="nei-fluid-placeholder"
+                :class="{ 'nei-fluid-placeholder-hidden': fluidHasImage(fluid) }"
                 :style="{ background: getFluidColor(fluid.localizedName || fluid.internalName) }"
               >
                 <svg viewBox="0 0 24 24" class="nei-fluid-svg">
@@ -783,18 +697,18 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
             @mouseleave="hideFluidTooltip"
             @mousemove="showFluidTooltip($event, fluid)"
           >
-            <!-- Fluid Icon - Real texture or fallback -->
+            <!-- Fluid Icon - exported texture or SVG placeholder -->
             <div class="nei-fluid-icon">
               <img
                 v-if="fluidHasImage(fluid)"
                 :src="getFluidImagePath(fluid)"
                 :alt="fluid.localizedName || fluid.internalName"
                 class="nei-fluid-image"
-                @error="(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('nei-fluid-fallback-hidden'); }"
+                @error="(e) => { (e.target as HTMLImageElement).style.display = 'none'; (e.target as HTMLImageElement).nextElementSibling?.classList.remove('nei-fluid-placeholder-hidden'); }"
               />
               <div
-                class="nei-fluid-fallback"
-                :class="{ 'nei-fluid-fallback-hidden': fluidHasImage(fluid) }"
+                class="nei-fluid-placeholder"
+                :class="{ 'nei-fluid-placeholder-hidden': fluidHasImage(fluid) }"
                 :style="{ background: getFluidColor(fluid.localizedName || fluid.internalName) }"
               >
                 <svg viewBox="0 0 24 24" class="nei-fluid-svg">
@@ -819,7 +733,7 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
         <!-- Fluid Header -->
         <div class="fluid-tooltip-header">
           <div class="fluid-tooltip-icon" :style="{ background: getFluidColor(fluidTooltip.fluid.localizedName || fluidTooltip.fluid.internalName) }">
-            <!-- Real fluid image with SVG fallback -->
+            <!-- Exported fluid image with SVG placeholder -->
             <img
               v-if="fluidHasImage(fluidTooltip.fluid)"
               :src="getFluidImagePath(fluidTooltip.fluid)"
@@ -1423,8 +1337,8 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   filter: drop-shadow(0 1px 2px rgba(15, 23, 42, 0.45));
 }
 
-/* Fluid Fallback - SVG icon when no image available */
-.nei-fluid-fallback {
+/* Fluid placeholder - SVG icon when no image is exported */
+.nei-fluid-placeholder {
   width: 100%;
   height: 100%;
   display: flex;
@@ -1436,7 +1350,7 @@ defineExpose<RecipeDisplayHandle & { overlayState: typeof overlayState }>({
   z-index: 0;
 }
 
-.nei-fluid-fallback-hidden {
+.nei-fluid-placeholder-hidden {
   display: none;
 }
 
