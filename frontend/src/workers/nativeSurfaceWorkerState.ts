@@ -2,7 +2,7 @@ import type {
   NativeSurfaceEngineHit,
   NativeSurfaceEngineLayoutCommand,
 } from '../native-surface/NativeSurfaceEngineProtocol';
-import type { NativeSurfaceMetricsSurface } from './nativeSurfaceMetrics';
+import type { NativeSurfaceWorkerMetricsSurface } from './nativeSurfaceWorkerMetricsCatalog';
 import type {
   NativeRendererBackendKind,
   NativeSurfaceViewport,
@@ -58,7 +58,7 @@ export type SurfaceState = {
   lastProjectionMs: number;
   lastProjectionTotalEntries: number;
   lastProjectionQuery: string;
-  lastProjectionSource: NativeSurfaceMetricsSurface['lastProjectionSource'];
+  lastProjectionSource: NativeSurfaceWorkerMetricsSurface['lastProjectionSource'];
   runtimeSearchWasmPtr: number;
   runtimeSearchWasmLen: number;
   runtimeGroupWasmPtr: number;

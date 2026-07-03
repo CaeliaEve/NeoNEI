@@ -24,14 +24,18 @@ test("native sprite timeline resolves NBT/base texture aliases without DOM image
 
 test("native diagnostics expose sprite coverage instead of silently blanking pages", () => {
   const protocol = readRepoSource("frontend/src/native-surface/NativeSurfaceEngineProtocol.ts");
-  const metrics = readRepoSource("frontend/src/workers/nativeSurfaceMetrics.ts");
+  const metricsCatalog = readRepoSource("frontend/src/workers/nativeSurfaceWorkerMetricsCatalog.ts");
   const engine = readRepoSource("frontend/src/workers/nativeSurfaceEngine.worker.ts");
 
   assert.match(protocol, /spriteCommandCount: number/);
   assert.match(protocol, /missingSpriteCount: number/);
   assert.match(protocol, /missingSpriteItemIds: string\[\]/);
-  assert.match(metrics, /spriteCommandCount: params\.lastSurface\?\.spriteCommandCount \?\? 0/);
-  assert.match(metrics, /missingSpriteCount: params\.lastSurface\?\.missingSpriteCount \?\? 0/);
+  assert.match(metricsCatalog, /key: "spriteCommandCount"/);
+  assert.match(metricsCatalog, /source: "surface\.spriteCommandCount"/);
+  assert.match(metricsCatalog, /context\.lastSurface\?\.spriteCommandCount \?\? 0/);
+  assert.match(metricsCatalog, /key: "missingSpriteCount"/);
+  assert.match(metricsCatalog, /source: "surface\.missingSpriteCount"/);
+  assert.match(metricsCatalog, /context\.lastSurface\?\.missingSpriteCount \?\? 0/);
   assert.match(engine, /surface\.spriteCommandCount = spriteFrame\.spriteCommands\.length/);
   assert.match(engine, /surface\.missingSpriteCount = spriteFrame\.missingSpriteCount/);
   assert.match(engine, /surface\.missingSpriteItemIds = spriteFrame\.missingSpriteItemIds/);

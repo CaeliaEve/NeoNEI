@@ -30,7 +30,7 @@ import {
   computeNativeSurfaceColumns,
   computeWasmLayoutCommands,
 } from "./nativeSurfaceLayout";
-import { buildNativeSurfaceMetrics } from "./nativeSurfaceMetrics";
+import { buildNativeSurfaceWorkerMetrics } from "./nativeSurfaceWorkerMetricsCatalog";
 import {
   buildRuntimeBrowserIndexByItemId,
   buildRuntimeHistoryEntries as buildRuntimeHistoryEntriesFromProjection,
@@ -193,7 +193,7 @@ function rebuildLayout(surface: SurfaceState): void {
 
 function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
   const lastSurface = lastSurfaceId ? surfaces.get(lastSurfaceId) ?? null : null;
-  return buildNativeSurfaceMetrics({
+  return buildNativeSurfaceWorkerMetrics({
     surfaces: surfaces.values(),
     events,
     lastEvent,
