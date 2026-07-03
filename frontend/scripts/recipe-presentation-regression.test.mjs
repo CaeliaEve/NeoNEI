@@ -8,33 +8,39 @@ const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const frontendRoot = path.resolve(scriptDir, '..');
 const read = (relativePath) => fs.readFileSync(path.resolve(frontendRoot, relativePath), 'utf8');
 
-test('static workbench-style native layouts are eligible for the native canvas path', () => {
-  const helperSource = read('src/composables/recipe-display/nativeLayoutRendering.ts');
+test('native recipe presentation is routed through explicit policy catalogs', () => {
+  const nativePolicySource = read('src/composables/recipe-display/nativeLayoutRendering.ts');
+  const presentationPolicySource = read('src/composables/recipe-display/recipePresentationPolicyCatalog.ts');
   const presentationSource = read('src/composables/recipe-display/useRecipePresentation.ts');
 
-  assert.equal(helperSource.includes('StandardCraftingUI'), true);
-  assert.equal(helperSource.includes('AvaritiaExtremeCraftingUI'), true);
-  assert.equal(helperSource.includes('FurnaceUI'), true);
-  assert.equal(helperSource.includes('BotaniaPoolUI'), true);
-  assert.equal(helperSource.includes('BotaniaRuneAltarUI'), true);
-  assert.equal(helperSource.includes('BotaniaPureDaisyUI'), true);
-  assert.equal(helperSource.includes('BotaniaTerraPlateUI'), true);
-  assert.equal(helperSource.includes('ThaumcraftArcaneUI'), true);
-  assert.equal(helperSource.includes('BloodMagicAltarUI'), true);
-  assert.equal(helperSource.includes('MultiblockBlueprintUI'), true);
-  assert.equal(helperSource.includes('GTResearchStationUI'), true);
-  assert.equal(helperSource.includes('NATIVE_LAYOUT_DYNAMIC_RENDERER_COMPONENTS'), true);
-  assert.equal(helperSource.includes('GTUniversalMachineUI'), true);
-  assert.equal(helperSource.includes('GTAssemblyLineUI'), true);
-  assert.equal(helperSource.includes('GTChemicalReactorUI'), true);
-  assert.equal(helperSource.includes('hasDrawableNativePrimitive'), true);
-  assert.equal(helperSource.includes('hasNativeDynamicPrimitives(layout)'), true);
-  assert.equal(
-    presentationSource.includes("import { isNativeLayoutRendererEligible } from './nativeLayoutRendering';"),
-    true,
-  );
-  assert.equal(
-    presentationSource.includes('isNativeLayoutRendererEligible(presentationProfile.value.component, layout)'),
-    true,
-  );
+  assert.match(nativePolicySource, /NATIVE_LAYOUT_RENDERER_DESCRIPTORS/);
+  assert.match(nativePolicySource, /validateNativeLayoutRendererDescriptors/);
+  assert.match(nativePolicySource, /policy: 'static-layout'/);
+  assert.match(nativePolicySource, /policy: 'dynamic-primitives'/);
+  assert.match(nativePolicySource, /NATIVE_LAYOUT_RENDERER_POLICY_CATALOG/);
+  assert.match(nativePolicySource, /StandardCraftingUI/);
+  assert.match(nativePolicySource, /AvaritiaExtremeCraftingUI/);
+  assert.match(nativePolicySource, /FurnaceUI/);
+  assert.match(nativePolicySource, /BotaniaPoolUI/);
+  assert.match(nativePolicySource, /BotaniaRuneAltarUI/);
+  assert.match(nativePolicySource, /BotaniaPureDaisyUI/);
+  assert.match(nativePolicySource, /BotaniaTerraPlateUI/);
+  assert.match(nativePolicySource, /ThaumcraftArcaneUI/);
+  assert.match(nativePolicySource, /BloodMagicAltarUI/);
+  assert.match(nativePolicySource, /MultiblockBlueprintUI/);
+  assert.match(nativePolicySource, /GTResearchStationUI/);
+  assert.match(nativePolicySource, /GTUniversalMachineUI/);
+  assert.match(nativePolicySource, /GTAssemblyLineUI/);
+  assert.match(nativePolicySource, /GTChemicalReactorUI/);
+  assert.match(nativePolicySource, /hasDrawableNativePrimitive/);
+  assert.match(nativePolicySource, /hasNativeDynamicPrimitives\(layout\)/);
+
+  assert.match(presentationPolicySource, /RECIPE_PRESENTATION_ROUTE_DESCRIPTORS/);
+  assert.match(presentationPolicySource, /nativePayloadAuthority: 'fail-closed-no-legacy-component-fallback'/);
+  assert.match(presentationPolicySource, /resolveRecipePresentationDecision/);
+  assert.match(presentationPolicySource, /resolveRecipePresentationRoute/);
+  assert.match(presentationPolicySource, /refusing legacy component fallback/);
+  assert.match(presentationSource, /resolveRecipePresentationDecision/);
+  assert.match(presentationSource, /resolveRecipePresentationRoute/);
+  assert.doesNotMatch(presentationSource, /isNativeLayoutRendererEligible\(presentationProfile\.value\.component, layout\)/);
 });

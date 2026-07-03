@@ -2,15 +2,14 @@ import { computed, ref, watch, type Component } from 'vue';
 import { api, type Recipe, type RecipeUiPayload } from '../../services/api';
 import {
   resolveRecipePresentationProfile,
-  resolveRecipePresentationProfileFromUiPayload,
   type RecipePresentationProfile,
   type UITypeConfig,
 } from '../../services/uiTypeMapping';
 import {
-  isRegisteredRecipeComponent,
-  resolveRegisteredRecipeComponent,
-} from '../../components/recipe-display/recipeComponentRegistry';
-import { isNativeLayoutRendererEligible } from './nativeLayoutRendering';
+  resolveInlineRecipeUiPayload,
+  resolveRecipePresentationDecision,
+  resolveRecipePresentationRoute,
+} from './recipePresentationPolicyCatalog';
 
 interface RecipePresentationSource {
   recipe: Recipe;
@@ -31,62 +30,29 @@ export function useRecipePresentation(source: RecipePresentationSource) {
     preferDetailedCrafting: source.preferDetailedCrafting,
   }));
 
-  const inlineRecipeUiPayload = computed<RecipeUiPayload | null>(() => {
-    const additionalData =
-      source.recipe.additionalData && typeof source.recipe.additionalData === 'object'
-        ? source.recipe.additionalData as Record<string, unknown>
-        : null;
-    const candidate =
-      additionalData?.uiPayload && typeof additionalData.uiPayload === 'object'
-        ? additionalData.uiPayload as Record<string, unknown>
-        : null;
-    if (!candidate || typeof candidate.recipeId !== 'string' || typeof candidate.familyKey !== 'string') {
-      return null;
-    }
-    return candidate as unknown as RecipeUiPayload;
-  });
+  const inlineRecipeUiPayload = computed<RecipeUiPayload | null>(() => resolveInlineRecipeUiPayload(source.recipe));
 
   const resolvedRecipeUiPayload = computed<RecipeUiPayload | null>(() => inlineRecipeUiPayload.value ?? recipeUiPayload.value);
 
-  const presentationProfile = computed<RecipePresentationProfile>(() => {
-    const payloadProfile = resolveRecipePresentationProfileFromUiPayload(resolvedRecipeUiPayload.value);
-    return payloadProfile ?? detectedPresentationProfile.value;
-  });
+  const presentationDecision = computed(() => resolveRecipePresentationDecision({
+    detectedProfile: detectedPresentationProfile.value,
+    uiPayload: resolvedRecipeUiPayload.value,
+  }));
+
+  const presentationProfile = computed<RecipePresentationProfile>(() => presentationDecision.value.profile);
+  const presentationRoute = computed(() => resolveRecipePresentationRoute({
+    profile: presentationProfile.value,
+    uiPayload: resolvedRecipeUiPayload.value,
+    payloadError: presentationDecision.value.payloadError,
+  }));
 
   const uiConfig = computed<UITypeConfig>(() => presentationProfile.value.uiConfig);
-  const shouldUseDetailedCrafting = computed(() => presentationProfile.value.renderMode === 'detailed_crafting');
-  const shouldUseNativeLayoutRenderer = computed(() => {
-    const layout = resolvedRecipeUiPayload.value?.nativeLayout;
-    return Boolean(layout) && isNativeLayoutRendererEligible(presentationProfile.value.component, layout);
-  });
-  const hasRegisteredComponent = computed(() => isRegisteredRecipeComponent(presentationProfile.value.component));
-  const componentRegistrationError = computed<string | null>(() => {
-    if (shouldUseDetailedCrafting.value || shouldUseNativeLayoutRenderer.value || hasRegisteredComponent.value) {
-      return null;
-    }
-    return `Recipe display component "${presentationProfile.value.component}" is not registered `
-      + `for UI type "${uiConfig.value.uiType}".`;
-  });
-  const currentComponent = computed<Component | null>(() => (
-    hasRegisteredComponent.value
-      ? resolveRegisteredRecipeComponent(presentationProfile.value.component)
-      : null
-  ));
-  const displayedComponentName = computed(() => {
-    if (shouldUseDetailedCrafting.value) {
-      return 'NEIRecipeDisplay';
-    }
-
-    if (shouldUseNativeLayoutRenderer.value) {
-      return 'NativeNeiRecipeCanvas';
-    }
-
-    if (!hasRegisteredComponent.value) {
-      return `Unregistered:${presentationProfile.value.component}`;
-    }
-
-    return presentationProfile.value.component;
-  });
+  const shouldUseDetailedCrafting = computed(() => presentationRoute.value.kind === 'detailed-crafting');
+  const shouldUseNativeLayoutRenderer = computed(() => presentationRoute.value.kind === 'native-layout');
+  const hasRegisteredComponent = computed(() => presentationRoute.value.hasRegisteredComponent);
+  const componentRegistrationError = computed<string | null>(() => presentationRoute.value.error);
+  const currentComponent = computed<Component | null>(() => presentationRoute.value.currentComponent);
+  const displayedComponentName = computed(() => presentationRoute.value.displayedComponentName);
 
   const neiHandlerMetadata = computed(() => {
     const metadata = source.recipe.metadata && typeof source.recipe.metadata === 'object'
@@ -150,7 +116,9 @@ export function useRecipePresentation(source: RecipePresentationSource) {
     hasRegisteredComponent,
     inlineRecipeUiPayload,
     neiHandlerMetadata,
+    presentationDecision,
     presentationProfile,
+    presentationRoute,
     recipeUiPayload,
     refreshRecipeUiPayload,
     resolvedRecipeUiPayload,

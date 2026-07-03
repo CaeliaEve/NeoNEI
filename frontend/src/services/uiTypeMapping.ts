@@ -1196,7 +1196,7 @@ export function resolveRecipePresentationProfile(
 
     if (machineType.trim()) {
       return createPresentationProfile(GT_GENERIC, {
-        reason: 'fallback:machine_type_present',
+        reason: 'machine_type:gt_generic',
         sourceUiType: detected.uiType,
       });
     }

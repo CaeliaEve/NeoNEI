@@ -7,13 +7,7 @@ import {
 import NEIRecipeDisplay from './NEIRecipeDisplay.vue';
 import { type Recipe } from '../services/api';
 import type { RecipeDisplayHandle, RecipeOverlayUiState } from '../domain/recipeDisplayContract';
-import {
-  ThaumcraftArcaneUI,
-  ThaumcraftAspectUI,
-  ThaumcraftCrucibleUI,
-  ThaumcraftInfusionUI,
-  NativeNeiRecipeCanvas,
-} from './recipe-display/recipeComponentRegistry';
+import { NativeNeiRecipeCanvas } from './recipe-display/recipeComponentRegistry';
 import { useRecipeDebugPanel } from '../composables/recipe-display/useRecipeDebugPanel';
 import { useRecipePresentation } from '../composables/recipe-display/useRecipePresentation';
 import { useRecipeScale } from '../composables/recipe-display/useRecipeScale';
@@ -72,6 +66,10 @@ const {
   openDebugPanel,
   showDebugInfo,
 } = useRecipeDebugPanel();
+
+const handleItemClick = (itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => {
+  emit('item-click', itemId, options);
+};
 
 const handleOverlayStateChange = (state: RecipeOverlayUiState) => {
   emit('overlay-state-change', state);
@@ -219,38 +217,14 @@ if (isDev && typeof window !== 'undefined') {
         ref="detailedCraftingRef"
         :recipe="recipe"
         :recipe-id="recipe.recipeId"
-        @item-click="(itemId: string) => emit('item-click', itemId)"
+        @item-click="handleItemClick"
         @overlay-state-change="handleOverlayStateChange"
-      />
-      <ThaumcraftArcaneUI
-        v-else-if="uiConfig.uiType === 'thaumcraft_arcane' && presentationProfile.component === 'ThaumcraftArcaneUI'"
-        :recipe="recipe"
-        :ui-config="uiConfig"
-        @item-click="(itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => emit('item-click', itemId, options)"
-      />
-      <ThaumcraftInfusionUI
-        v-else-if="uiConfig.uiType === 'thaumcraft_infusion' && presentationProfile.component === 'ThaumcraftInfusionUI'"
-        :recipe="recipe"
-        :ui-config="uiConfig"
-        @item-click="(itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => emit('item-click', itemId, options)"
-      />
-      <ThaumcraftCrucibleUI
-        v-else-if="uiConfig.uiType === 'thaumcraft_crucible' && presentationProfile.component === 'ThaumcraftCrucibleUI'"
-        :recipe="recipe"
-        :ui-config="uiConfig"
-        @item-click="(itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => emit('item-click', itemId, options)"
-      />
-      <ThaumcraftAspectUI
-        v-else-if="uiConfig.uiType === 'thaumcraft_aspect' && presentationProfile.component === 'ThaumcraftAspectUI'"
-        :recipe="recipe"
-        :ui-config="uiConfig"
-        @item-click="(itemId: string) => emit('item-click', itemId)"
       />
       <NativeNeiRecipeCanvas
         v-else-if="shouldUseNativeLayoutRenderer"
         :recipe="recipe"
         :ui-payload="resolvedRecipeUiPayload"
-        @item-click="(itemId: string) => emit('item-click', itemId)"
+        @item-click="handleItemClick"
       />
       <component
         v-else-if="hasRegisteredComponent && currentComponent"
@@ -258,7 +232,7 @@ if (isDev && typeof window !== 'undefined') {
         :recipe="recipe"
         :ui-config="uiConfig"
         :ui-payload="resolvedRecipeUiPayload"
-        @item-click="(itemId: string) => emit('item-click', itemId)"
+        @item-click="handleItemClick"
       />
       <div
         v-else
