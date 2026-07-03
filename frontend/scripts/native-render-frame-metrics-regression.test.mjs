@@ -27,12 +27,15 @@ test("native render protocol exposes segmented frame timing metrics", () => {
 
 test("native render worker records parse normalize draw and rolling frame timings", () => {
   const source = readFrontend("src/workers/nativeRender.worker.ts");
+  const metricsCatalog = readFrontend("src/workers/nativeRenderFrameMetricsCatalog.ts");
   assert.match(source, /const FRAME_SAMPLE_LIMIT = 120/);
   assert.match(source, /function rememberFrameSample/);
   assert.match(source, /lastParseMs = performance\.now\(\) - parseStartedAt/);
   assert.match(source, /lastSpriteNormalizeMs = performance\.now\(\) - normalizeStartedAt/);
   assert.match(source, /lastDrawMs = performance\.now\(\) - drawStartedAt/);
-  assert.match(source, /frameP95Ms: percentile\(frameSamples, 95\)/);
+  assert.match(metricsCatalog, /key: "frameP95Ms"/);
+  assert.match(metricsCatalog, /source: "worker\.frameSamples\.p95"/);
+  assert.match(metricsCatalog, /frameP95Ms: percentile\(frameSamples, 95\)/);
 });
 
 test("native render worker batches atlas texture uploads instead of decoding all textures at once", () => {
@@ -110,6 +113,7 @@ test("native WebGPU renderer surfaces context loss diagnostics to render metrics
   const backend = readFrontend("src/renderers/native/NativeRendererBackend.ts");
   const renderer = readFrontend("src/renderers/native/WebGpuNativeRenderer.ts");
   const worker = readFrontend("src/workers/nativeRender.worker.ts");
+  const metricsCatalog = readFrontend("src/workers/nativeRenderFrameMetricsCatalog.ts");
 
   assert.match(backend, /export type NativeRendererDiagnostics/);
   assert.match(backend, /diagnostics\?\(\): NativeRendererDiagnostics/);
@@ -119,4 +123,8 @@ test("native WebGPU renderer surfaces context loss diagnostics to render metrics
   assert.match(worker, /const rendererDiagnostics = nativeRenderer\?\.diagnostics\?\.\(\)/);
   assert.match(worker, /contextLost: rendererDiagnostics\.contextLost/);
   assert.match(worker, /contextLostReason: rendererDiagnostics\.contextLostReason/);
+  assert.match(metricsCatalog, /key: "contextLost"/);
+  assert.match(metricsCatalog, /source: "renderer\.diagnostics\.contextLost"/);
+  assert.match(metricsCatalog, /key: "contextLostReason"/);
+  assert.match(metricsCatalog, /source: "renderer\.diagnostics\.contextLostReason"/);
 });

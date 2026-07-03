@@ -17,6 +17,7 @@ import {
   type NativeRendererProbeResult,
 } from "../renderers/native/NativeRendererProbe";
 import { WebGpuNativeRenderer } from "../renderers/native/WebGpuNativeRenderer";
+import { buildNativeRenderFrameMetrics } from "./nativeRenderFrameMetricsCatalog";
 
 let canvas: OffscreenCanvas | null = null;
 let requestedBackend: "auto" | NativeRenderBackendKind | null = null;
@@ -104,13 +105,6 @@ function requireNativeRenderer(operation: string): NativeRendererBackend {
   return nativeRenderer;
 }
 
-function percentile(values: number[], p: number): number {
-  if (values.length <= 0) return 0;
-  const sorted = [...values].sort((left, right) => left - right);
-  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
-  return sorted[index] ?? 0;
-}
-
 function rememberFrameSample(value: number): void {
   if (!Number.isFinite(value) || value < 0) return;
   frameSamples.push(value);
@@ -121,18 +115,13 @@ function rememberFrameSample(value: number): void {
 
 function buildMetrics(): NativeRendererFrameMetrics {
   const webgpuAvailable = Boolean((navigator as Navigator & { gpu?: unknown }).gpu);
-  const adapterUnavailable = Boolean(backendFallbackReason?.includes("adapter/device/context unavailable"));
   const rendererDiagnostics = nativeRenderer?.diagnostics?.() ?? { contextLost: false, contextLostReason: null };
-  const frameAvgMs = frameSamples.length > 0
-    ? frameSamples.reduce((sum, value) => sum + value, 0) / frameSamples.length
-    : 0;
-  return {
+  return buildNativeRenderFrameMetrics({
     requestedBackend,
     backend,
     webgpuAvailable,
-    webgpuUsable: backend === "webgpu" || (webgpuAvailable && !adapterUnavailable),
     backendFallbackReason,
-    initialized: Boolean(canvas && backend),
+    hasCanvas: Boolean(canvas),
     frames,
     commandCount,
     drawCalls,
@@ -153,9 +142,7 @@ function buildMetrics(): NativeRendererFrameMetrics {
     lastParseMs,
     lastSpriteNormalizeMs,
     lastDrawMs,
-    frameAvgMs,
-    frameP95Ms: percentile(frameSamples, 95),
-    frameMaxMs: frameSamples.length > 0 ? Math.max(...frameSamples) : 0,
+    frameSamples,
     latestFrameToken,
     droppedStaleFrames,
     contextLost: rendererDiagnostics.contextLost,
@@ -163,8 +150,7 @@ function buildMetrics(): NativeRendererFrameMetrics {
     animationEnabled,
     width,
     height,
-    updatedAt: performance.now(),
-  };
+  });
 }
 
 async function loadTextureBitmap(url: string): Promise<ImageBitmap> {
