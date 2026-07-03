@@ -10,6 +10,7 @@ const readSource = (relativePath) => readFileSync(resolve(frontendRoot, relative
 const policySource = readSource('src/composables/recipe-browser/recipeHydrationPolicyCatalog.ts');
 const viewerSource = readSource('src/composables/useRecipeViewer.ts');
 const shardHydratorSource = readSource('src/composables/recipe-browser/recipeShardHydrator.ts');
+const searchControllerSource = readSource('src/composables/recipe-browser/recipeSearchController.ts');
 
 test('recipe hydration recovery policy is catalog-owned and descriptor validated', () => {
   assert.match(policySource, /type RecipeHydrationRecoveryDescriptor/);
@@ -19,6 +20,8 @@ test('recipe hydration recovery policy is catalog-owned and descriptor validated
   assert.match(policySource, /used-in-visible-pack/);
   assert.match(policySource, /category-window-recovery/);
   assert.match(policySource, /group-window-recovery/);
+  assert.match(policySource, /search-result-batch/);
+  assert.match(policySource, /reportRecipeSearchHydrationOmitted/);
   assert.match(policySource, /RECIPE_HYDRATION_POLICY_CATALOG/);
 });
 
@@ -39,4 +42,12 @@ test('recipe shard hydrator forbids chunked indexed-recipe fallback after shard 
   assert.doesNotMatch(shardHydratorSource, /chunkSize/);
   assert.doesNotMatch(shardHydratorSource, /chunked batch/);
   assert.doesNotMatch(shardHydratorSource, /falling back/);
+});
+
+test('recipe search reports omitted batch hydration instead of issuing indexed-recipe fallback', () => {
+  assert.match(searchControllerSource, /reportRecipeSearchHydrationOmitted/);
+  assert.match(searchControllerSource, /getLoadedRecipeIds/);
+  assert.doesNotMatch(searchControllerSource, /getIndexedRecipesByIds/);
+  assert.doesNotMatch(searchControllerSource, /mergeIndexedRecipesIntoState/);
+  assert.doesNotMatch(searchControllerSource, /removePendingRecipeIdsFromAll/);
 });

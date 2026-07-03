@@ -1,5 +1,6 @@
 import { ref, type Ref } from 'vue';
 import { api, type ItemSearchBasic } from '../../services/api';
+import { reportRecipeSearchHydrationOmitted } from './recipeHydrationPolicyCatalog';
 
 type RecipeTab = 'usedIn' | 'producedBy';
 
@@ -28,8 +29,6 @@ export function createRecipeSearchController(options: {
   waitForPaint: () => Promise<void>;
   getFilteredRecipeCount: () => number;
   getLoadedRecipeIds: (tab: RecipeTab) => Set<string>;
-  mergeIndexedRecipesIntoState: (recipes: Array<{ id: string } & Record<string, unknown>>) => void;
-  removePendingRecipeIdsFromAll: (recipeIds: string[]) => void;
   isDisposed: () => boolean;
   logSearchLatency: (query: string, resultCount: number, durationMs: number) => void;
   debounceMs?: number;
@@ -138,14 +137,7 @@ export function createRecipeSearchController(options: {
 
         const loadedRecipeIds = options.getLoadedRecipeIds(tab);
         const missingMatchedRecipeIds = matchedRecipeIds.filter((recipeId) => !loadedRecipeIds.has(recipeId));
-        if (missingMatchedRecipeIds.length > 0) {
-          const indexedRecipes = await api.getIndexedRecipesByIds(missingMatchedRecipeIds, { signal: controller.signal });
-          if (isStale(controller, requestSeq, itemId, tab)) {
-            return;
-          }
-          options.mergeIndexedRecipesIntoState(indexedRecipes);
-          options.removePendingRecipeIdsFromAll(indexedRecipes.map((recipe) => recipe.id));
-        }
+        reportRecipeSearchHydrationOmitted(missingMatchedRecipeIds);
 
         if (isStale(controller, requestSeq, itemId, tab)) {
           return;

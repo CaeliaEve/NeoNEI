@@ -145,8 +145,6 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     waitForPaint,
     getFilteredRecipeCount: () => filteredRecipeCount.value,
     getLoadedRecipeIds: (tab) => buildLoadedRecipeIdSet(recipes.value, tab),
-    mergeIndexedRecipesIntoState: (indexedRecipes) => mergeIndexedRecipesIntoState(indexedRecipes),
-    removePendingRecipeIdsFromAll: (recipeIds) => removePendingRecipeIdsFromAll(recipeIds),
     isDisposed: () => disposed,
     logSearchLatency,
   });
@@ -363,7 +361,6 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     applyMergedRecipes,
     mergeIndexedRecipesIntoState,
     removePendingRecipeIds,
-    removePendingRecipeIdsFromAll,
   } = createRecipeMergeState({
     recipes,
     bootstrapRecipeIndex,
@@ -1119,7 +1116,6 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     selectRecipeById,
   };
 }
-
 
 
 

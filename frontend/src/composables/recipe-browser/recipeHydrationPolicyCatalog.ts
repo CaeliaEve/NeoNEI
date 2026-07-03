@@ -8,7 +8,8 @@ export type RecipeHydrationFailureSource =
   | 'produced-by-machine-group'
   | 'used-in-machine-group'
   | 'category-group'
-  | 'runtime-shard';
+  | 'runtime-shard'
+  | 'search-result-batch';
 
 type RecipeHydrationRecoveryDescriptor = Readonly<{
   reason: RecipeHydrationRecoveryReason;
@@ -73,6 +74,10 @@ const RECIPE_HYDRATION_FAILURE_DESCRIPTORS: readonly RecipeHydrationFailureDescr
     source: 'runtime-shard',
     message: 'Runtime recipe shard hydration failed; chunked indexed-recipe fallback is forbidden',
   },
+  {
+    source: 'search-result-batch',
+    message: 'Recipe search matched unloaded recipes; indexed-recipe batch hydration is forbidden',
+  },
 ]);
 
 const RECOVERY_DESCRIPTOR_BY_REASON = new Map(
@@ -128,7 +133,7 @@ export function describeRecipeHydrationRecovery(reason: RecipeHydrationRecoveryR
 }
 
 export function reportRecipeGroupHydrationFailure(
-  source: Exclude<RecipeHydrationFailureSource, 'runtime-shard'>,
+  source: Exclude<RecipeHydrationFailureSource, 'runtime-shard' | 'search-result-batch'>,
   recoveryReason: RecipeHydrationRecoveryReason,
   error: unknown,
 ): void {
@@ -140,6 +145,15 @@ export function reportRecipeGroupHydrationFailure(
 export function reportRecipeShardHydrationFailure(error: unknown): void {
   const descriptor = FAILURE_DESCRIPTOR_BY_SOURCE.get('runtime-shard');
   console.warn(`[recipe-hydration] ${descriptor?.message ?? 'Runtime recipe shard hydration failed'}.`, error);
+}
+
+export function reportRecipeSearchHydrationOmitted(recipeIds: readonly string[]): void {
+  const descriptor = FAILURE_DESCRIPTOR_BY_SOURCE.get('search-result-batch');
+  const count = recipeIds.length;
+  if (count <= 0) {
+    return;
+  }
+  console.debug(`[recipe-hydration] ${descriptor?.message ?? 'Recipe search hydration omitted'}; missing=${count}.`);
 }
 
 export const RECIPE_HYDRATION_POLICY_CATALOG = Object.freeze({
