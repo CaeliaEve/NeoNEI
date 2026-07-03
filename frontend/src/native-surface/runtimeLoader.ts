@@ -35,6 +35,27 @@ type CurrentRuntimeManifestEnvelope = {
   data?: NativeRuntimeManifest;
 };
 
+function isNativeRuntimeManifestRecord(value: unknown): value is NativeRuntimeManifest {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function unwrapCurrentRuntimeManifestPayload(payload: unknown): NativeRuntimeManifest {
+  if (isNativeRuntimeManifestRecord(payload) && ("ok" in payload || "data" in payload)) {
+    const envelope = payload as CurrentRuntimeManifestEnvelope;
+    if (envelope.ok !== true) {
+      throw new Error("Native runtime current manifest envelope reported ok=false");
+    }
+    if (!isNativeRuntimeManifestRecord(envelope.data)) {
+      throw new Error("Native runtime current manifest envelope is missing data");
+    }
+    return envelope.data;
+  }
+  if (!isNativeRuntimeManifestRecord(payload)) {
+    throw new Error("Native runtime manifest response is not an object");
+  }
+  return payload;
+}
+
 function decodeAscii(view: DataView, offset: number, length: number): string {
   const bytes = new Uint8Array(view.buffer, view.byteOffset + offset, length);
   return new TextDecoder("utf-8").decode(bytes);
@@ -107,11 +128,8 @@ export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<Na
     if (!response.ok) {
       throw new Error(`Failed to load native runtime manifest: ${response.status} ${response.statusText}`);
     }
-    const payload = await response.json() as NativeRuntimeManifest | CurrentRuntimeManifestEnvelope;
-    if (payload && typeof payload === "object" && "ok" in payload && "data" in payload) {
-      return (payload as CurrentRuntimeManifestEnvelope).data ?? {};
-    }
-    return payload as NativeRuntimeManifest;
+    const payload = await response.json() as unknown;
+    return unwrapCurrentRuntimeManifestPayload(payload);
   })().catch((error) => {
     manifestRequestCache.delete(normalizedManifestUrl);
     throw error;

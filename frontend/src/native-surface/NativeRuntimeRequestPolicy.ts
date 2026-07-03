@@ -20,6 +20,14 @@ export const NATIVE_RUNTIME_REVISION_FIELDS = Object.freeze([
   "fileBytes",
 ] as const);
 
+export const NATIVE_RUNTIME_AUTHORITATIVE_REVISION_FIELDS = Object.freeze([
+  "runtimeId",
+  "generatedAt",
+  "sourceSignature",
+  "schemaRevision",
+  "fileBytes",
+] as const);
+
 export const NATIVE_RUNTIME_PACK_CACHE_KEY_FIELDS = Object.freeze([
   "manifestUrl",
   "packName",
@@ -34,6 +42,7 @@ export const NATIVE_RUNTIME_REQUEST_POLICY_MODULE = Object.freeze({
   fetchCache: NATIVE_RUNTIME_FETCH_CACHE,
   revisionQueryParam: NATIVE_RUNTIME_REVISION.queryParam,
   revisionFields: NATIVE_RUNTIME_REVISION_FIELDS,
+  authoritativeRevisionFields: NATIVE_RUNTIME_AUTHORITATIVE_REVISION_FIELDS,
   packCacheKeyFields: NATIVE_RUNTIME_PACK_CACHE_KEY_FIELDS,
   pathPolicy: "portable-relative-runtime-path",
   failurePolicy: "fail-closed",
@@ -105,18 +114,33 @@ export function buildNativeRuntimeRevision(
   manifest: NativeRuntimeManifest,
   relativePath: string,
 ): string {
-  return [
+  assertPortableRuntimePath(relativePath, "Native runtime revision path");
+  const fileBytes = getManifestRuntimeFileBytes(manifest.files, relativePath);
+  const revisionToken = (value: unknown) => `${value ?? ""}`.trim();
+  const authoritativeRevisionTokens = [
+    manifest.runtimeId,
+    manifest.generatedAt,
+    manifest.sourceSignature,
+    manifest.schemaRevision,
+    fileBytes,
+  ]
+    .map(revisionToken)
+    .filter(Boolean);
+  if (authoritativeRevisionTokens.length === 0) {
+    throw new Error(`Native runtime manifest is missing authoritative revision identity for ${relativePath}`);
+  }
+  const revision = [
     manifest.runtimeId,
     manifest.generatedAt,
     manifest.sourceSignature,
     manifest.schemaRevision,
     relativePath,
-    getManifestRuntimeFileBytes(manifest.files, relativePath),
+    fileBytes,
   ]
-    .map((value) => `${value ?? ""}`.trim())
+    .map(revisionToken)
     .filter(Boolean)
-    .join(NATIVE_RUNTIME_REVISION.separator)
-    || `${relativePath}${NATIVE_RUNTIME_REVISION.separator}${NATIVE_RUNTIME_REVISION.currentFallback}`;
+    .join(NATIVE_RUNTIME_REVISION.separator);
+  return revision;
 }
 
 export function appendNativeRuntimeRevision(url: string, revision: string): string {

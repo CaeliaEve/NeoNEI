@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { buildNativeRuntimeRevision } from "../src/native-surface/NativeRuntimeRequestPolicy.ts";
+import { loadNativeRuntimeManifest } from "../src/native-surface/runtimeLoader.ts";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
 
@@ -17,7 +19,10 @@ test("native runtime loader consumes current API envelope and file endpoint", ()
   const abi = readSource("src/native-surface/NativeRuntimeAbi.ts");
 
   assert.match(loader, /CurrentRuntimeManifestEnvelope/);
-  assert.match(loader, /"ok" in payload && "data" in payload/);
+  assert.match(loader, /unwrapCurrentRuntimeManifestPayload/);
+  assert.match(loader, /"ok" in payload \|\| "data" in payload/);
+  assert.match(loader, /Native runtime current manifest envelope is missing data/);
+  assert.doesNotMatch(loader, /data \?\? \{\}/);
   assert.match(requestPolicy, /NATIVE_RUNTIME_REQUEST_POLICY_MODULE/);
   assert.match(requestPolicy, /NATIVE_RUNTIME_CURRENT_MANIFEST_PATH/);
   assert.match(requestPolicy, /NATIVE_RUNTIME_CURRENT_ASSET_BASE_PATH/);
@@ -27,8 +32,11 @@ test("native runtime loader consumes current API envelope and file endpoint", ()
   assert.match(requestPolicy, /encodeRuntimeFilePath/);
   assert.match(requestPolicy, /buildNativeRuntimeRevision/);
   assert.match(requestPolicy, /appendNativeRuntimeRevision/);
+  assert.match(requestPolicy, /missing authoritative revision identity/);
+  assert.doesNotMatch(requestPolicy, /currentFallback/);
   assert.match(requestPolicy, /NATIVE_RUNTIME_REVISION\.queryParam/);
   assert.match(abi, /neoneiRuntime/);
+  assert.doesNotMatch(abi, /currentFallback/);
   assert.match(loader, /resolveManifestRelativeUrl/);
   assert.doesNotMatch(loader, /new URL\(`rust\//, "runtime packs must not hardcode static rust URLs in the loader");
 });
@@ -63,6 +71,7 @@ test("native runtime request policy is the shared URL and cache boundary", () =>
   assert.match(requestPolicy, /resolveManifestRelativeUrl/);
   assert.match(requestPolicy, /getNativeRuntimeFetchCache/);
   assert.match(requestPolicy, /NATIVE_RUNTIME_REVISION_FIELDS/);
+  assert.match(requestPolicy, /NATIVE_RUNTIME_AUTHORITATIVE_REVISION_FIELDS/);
   assert.match(requestPolicy, /NATIVE_RUNTIME_PACK_CACHE_KEY_FIELDS/);
 
   assert.match(loader, /from "\.\/NativeRuntimeRequestPolicy\.ts"/);
@@ -121,4 +130,49 @@ test("recipe detail hydration uses the low-frequency current recipe page API", (
   assert.match(hydrator, /api\.getCurrentRecipePage\(recipeId\)/);
   assert.match(hydrator, /convertIndexedRecipe\(page\.recipe\)/);
   assert.match(hydrator, /additionalData\.uiPayload = page\.uiPayload/);
+});
+
+
+test("native runtime current API envelope fails closed before pack loading", async () => {
+  const previousFetch = globalThis.fetch;
+  try {
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ ok: true }),
+    });
+    await assert.rejects(
+      () => loadNativeRuntimeManifest("http://neonei.test/runtime/missing-data-manifest.json"),
+      /current manifest envelope is missing data/,
+    );
+
+    globalThis.fetch = async () => ({
+      ok: true,
+      json: async () => ({ ok: false, data: { entrypoints: {} } }),
+    });
+    await assert.rejects(
+      () => loadNativeRuntimeManifest("http://neonei.test/runtime/blocked-manifest.json"),
+      /current manifest envelope reported ok=false/,
+    );
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("native runtime pack revision requires manifest-owned identity", () => {
+  assert.throws(
+    () => buildNativeRuntimeRevision({}, "rust/browser.bin"),
+    /missing authoritative revision identity/,
+  );
+  assert.throws(
+    () => buildNativeRuntimeRevision({ runtimeId: "runtime-a" }, "../browser.bin"),
+    /revision path is not portable/,
+  );
+  assert.equal(
+    buildNativeRuntimeRevision({ runtimeId: "runtime-a" }, "rust/browser.bin"),
+    "runtime-a|rust/browser.bin",
+  );
+  assert.equal(
+    buildNativeRuntimeRevision({ files: [{ path: "rust/browser.bin", bytes: 410 }] }, "rust/browser.bin"),
+    "rust/browser.bin|410",
+  );
 });

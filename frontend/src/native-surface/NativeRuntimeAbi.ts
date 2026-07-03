@@ -20,7 +20,6 @@ export const NATIVE_RUNTIME_FETCH_CACHE = {
 export const NATIVE_RUNTIME_REVISION = {
   queryParam: "neoneiRuntime",
   separator: "|",
-  currentFallback: "current",
 } as const;
 
 export const NATIVE_RUNTIME_PACK_NAMES = [
