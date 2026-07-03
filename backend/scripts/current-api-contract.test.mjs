@@ -15,6 +15,7 @@ const currentRuntimeEndpointHandlersSource = readBackendSource('src/routes/curre
 const currentRuntimeTransportSource = readBackendSource('src/routes/current-runtime-transport.ts');
 const currentRuntimeTransportAbiSource = readBackendSource('src/routes/current-runtime-transport-abi.ts');
 const currentRuntimeSnapshotSource = readBackendSource('src/services/current-runtime-snapshot.service.ts');
+const currentRuntimeSnapshotAbiSource = readBackendSource('src/services/current-runtime-snapshot-abi.ts');
 const currentRuntimeArtifactIndexSource = readBackendSource('src/services/current-runtime-artifact-index.service.ts');
 const currentRuntimeApiSource = readBackendSource('src/services/current-runtime-api.service.ts');
 const currentRuntimeApiAbiSource = readBackendSource('src/services/current-runtime-api-abi.ts');
@@ -172,8 +173,11 @@ test('current runtime snapshot service owns immutable manifest and artifact inve
   assert.match(currentRuntimeSnapshotSource, /function refreshCurrentRuntimeSnapshot/);
   assert.match(currentRuntimeSnapshotSource, /export type CurrentRuntimeSnapshotHandle = Readonly/);
   assert.match(currentRuntimeSnapshotSource, /release: \(\) => void/);
-  assert.match(currentRuntimeSnapshotSource, /activeSnapshotReaders/);
-  assert.match(currentRuntimeSnapshotSource, /totalSnapshotAcquires/);
+  assert.match(currentRuntimeSnapshotSource, /createCurrentRuntimeSnapshotReaderCounters\(\)/);
+  assert.match(currentRuntimeSnapshotSource, /acquireCurrentRuntimeSnapshotReader\(snapshotReaders\)/);
+  assert.match(currentRuntimeSnapshotSource, /buildCurrentRuntimeSnapshotReadStats\(\{/);
+  assert.match(currentRuntimeSnapshotAbiSource, /activeReaders: input\.readers\.activeReaders/);
+  assert.match(currentRuntimeSnapshotAbiSource, /totalAcquires: input\.readers\.totalAcquires/);
   assert.match(currentRuntimeSnapshotSource, /export function acquireCurrentRuntimeSnapshot/);
   assert.match(currentRuntimeSnapshotSource, /export function withCurrentRuntimeSnapshot/);
   assert.match(currentRuntimeSnapshotSource, /export function getCurrentRuntimeSnapshotReadStats/);

@@ -1,6 +1,5 @@
 import {
   CURRENT_RUNTIME_DIST_MANIFEST_FILE,
-  CURRENT_RUNTIME_ARTIFACT_STATUS,
   buildCurrentRuntimeArtifactInventory,
   buildCurrentRuntimeSnapshotFingerprint,
   collectDeclaredRuntimeFilePaths,
@@ -15,11 +14,23 @@ import {
   type CurrentRuntimeJsonRecord,
 } from './current-runtime-artifact-index.service';
 import {
+  CURRENT_RUNTIME_SNAPSHOT_PROBES,
   CURRENT_RUNTIME_MANIFEST_FIELDS,
   CURRENT_RUNTIME_SNAPSHOT_DEFAULTS,
+  acquireCurrentRuntimeSnapshotReader,
+  buildCurrentRuntimeSnapshotDiagnostics,
+  buildCurrentRuntimeSnapshotReadStats,
+  createCurrentRuntimeSnapshotReaderCounters,
+  createInitialCurrentRuntimeSnapshotDiagnostics,
+  type CurrentRuntimeSnapshotDiagnostics,
+  type CurrentRuntimeSnapshotReadStats,
 } from './current-runtime-snapshot-abi';
 
 export type { CurrentRuntimeArtifact } from './current-runtime-artifact-index.service';
+export type {
+  CurrentRuntimeSnapshotDiagnostics,
+  CurrentRuntimeSnapshotReadStats,
+} from './current-runtime-snapshot-abi';
 
 type JsonRecord = CurrentRuntimeJsonRecord;
 
@@ -37,12 +48,6 @@ export type CurrentRuntimeSnapshot = Readonly<{
   fingerprint: string;
 }>;
 
-export type CurrentRuntimeSnapshotDiagnostics = Readonly<{
-  status: 'ready' | 'missing' | 'invalid';
-  probes: Readonly<Record<string, CurrentRuntimeArtifactProbe>>;
-  errors: readonly string[];
-}>;
-
 export type CurrentRuntimeSnapshotHandle = Readonly<{
   snapshot: CurrentRuntimeSnapshot | null;
   diagnostics: CurrentRuntimeSnapshotDiagnostics;
@@ -50,25 +55,11 @@ export type CurrentRuntimeSnapshotHandle = Readonly<{
   release: () => void;
 }>;
 
-export type CurrentRuntimeSnapshotReadStats = Readonly<{
-  activeReaders: number;
-  totalAcquires: number;
-  currentRevision: number | null;
-  currentFingerprint: string | null;
-  lastRefreshStatus: CurrentRuntimeSnapshotDiagnostics['status'];
-  lastRefreshErrors: readonly string[];
-}>;
-
 let currentSnapshot: CurrentRuntimeSnapshot | null = null;
 let currentFingerprint: string | null = null;
-let currentDiagnostics: CurrentRuntimeSnapshotDiagnostics = Object.freeze({
-  status: 'missing',
-  probes: Object.freeze({}),
-  errors: Object.freeze(['current runtime snapshot has not been acquired yet']),
-});
+let currentDiagnostics: CurrentRuntimeSnapshotDiagnostics = createInitialCurrentRuntimeSnapshotDiagnostics();
 let nextSnapshotRevision = 1;
-let activeSnapshotReaders = 0;
-let totalSnapshotAcquires = 0;
+const snapshotReaders = createCurrentRuntimeSnapshotReaderCounters();
 
 function asRecord(value: unknown): JsonRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as JsonRecord : null;
@@ -104,16 +95,7 @@ function publishCurrentRuntimeSnapshot(input: Omit<CurrentRuntimeSnapshot, 'revi
 function publishCurrentRuntimeSnapshotDiagnostics(
   probes: Record<string, CurrentRuntimeArtifactProbe>,
 ): CurrentRuntimeSnapshotDiagnostics {
-  const values = Object.values(probes);
-  const invalid = values.filter((probe) => probe.status === CURRENT_RUNTIME_ARTIFACT_STATUS.invalid);
-  const missing = values.filter((probe) => probe.status === CURRENT_RUNTIME_ARTIFACT_STATUS.missing);
-  const diagnostics = Object.freeze({
-    status: invalid.length > 0 ? 'invalid' as const : missing.length > 0 ? 'missing' as const : 'ready' as const,
-    probes: Object.freeze({ ...probes }),
-    errors: Object.freeze(values
-      .filter((probe) => probe.error)
-      .map((probe) => `${probe.relativePath ?? probe.path}: ${probe.error}`)),
-  });
+  const diagnostics = buildCurrentRuntimeSnapshotDiagnostics(probes);
   currentDiagnostics = diagnostics;
   return diagnostics;
 }
@@ -127,8 +109,11 @@ function clearCurrentRuntimeSnapshot(probes: Record<string, CurrentRuntimeArtifa
 
 function refreshCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
   const probes: Record<string, CurrentRuntimeArtifactProbe> = {};
-  const distManifestRead = readCurrentRuntimeJsonArtifact(CURRENT_RUNTIME_DIST_MANIFEST_FILE, 'manifest.json');
-  probes.distManifest = distManifestRead.probe;
+  const distManifestRead = readCurrentRuntimeJsonArtifact(
+    CURRENT_RUNTIME_DIST_MANIFEST_FILE,
+    CURRENT_RUNTIME_SNAPSHOT_PROBES.distManifest.relativePath,
+  );
+  probes[CURRENT_RUNTIME_SNAPSHOT_PROBES.distManifest.key] = distManifestRead.probe;
   const distManifest = distManifestRead.value;
   const runtimeManifestPath = getRuntimeManifestRelativePath(distManifest);
   if (!runtimeManifestPath) {
@@ -137,9 +122,9 @@ function refreshCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
 
   const runtimeManifestFile = resolveDistDataRuntimeFile(runtimeManifestPath);
   const runtimeManifestTextRead = readCurrentRuntimeTextArtifact(runtimeManifestFile, runtimeManifestPath);
-  probes.runtimeManifestText = runtimeManifestTextRead.probe;
+  probes[CURRENT_RUNTIME_SNAPSHOT_PROBES.runtimeManifestText.key] = runtimeManifestTextRead.probe;
   const runtimeManifestRead = readCurrentRuntimeJsonArtifact(runtimeManifestFile, runtimeManifestPath);
-  probes.runtimeManifestJson = runtimeManifestRead.probe;
+  probes[CURRENT_RUNTIME_SNAPSHOT_PROBES.runtimeManifestJson.key] = runtimeManifestRead.probe;
   const runtimeManifestJson = runtimeManifestTextRead.value;
   const runtimeManifest = runtimeManifestRead.value;
   if (!runtimeManifest || !runtimeManifestJson) {
@@ -176,23 +161,17 @@ function refreshCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
 }
 
 export function acquireCurrentRuntimeSnapshot(): CurrentRuntimeSnapshotHandle {
-  activeSnapshotReaders += 1;
-  totalSnapshotAcquires += 1;
-  let released = false;
+  const reader = acquireCurrentRuntimeSnapshotReader(snapshotReaders);
   try {
     const snapshot = refreshCurrentRuntimeSnapshot();
     return Object.freeze({
       snapshot,
       diagnostics: currentDiagnostics,
-      acquiredAt: Date.now(),
-      release: () => {
-        if (released) return;
-        released = true;
-        activeSnapshotReaders = Math.max(0, activeSnapshotReaders - 1);
-      },
+      acquiredAt: reader.acquiredAt,
+      release: reader.release,
     });
   } catch (error) {
-    activeSnapshotReaders = Math.max(0, activeSnapshotReaders - 1);
+    reader.release();
     throw error;
   }
 }
@@ -207,13 +186,11 @@ export function withCurrentRuntimeSnapshot<T>(reader: (snapshot: CurrentRuntimeS
 }
 
 export function getCurrentRuntimeSnapshotReadStats(): CurrentRuntimeSnapshotReadStats {
-  return Object.freeze({
-    activeReaders: activeSnapshotReaders,
-    totalAcquires: totalSnapshotAcquires,
+  return buildCurrentRuntimeSnapshotReadStats({
+    readers: snapshotReaders,
     currentRevision: currentSnapshot?.revision ?? null,
     currentFingerprint,
-    lastRefreshStatus: currentDiagnostics.status,
-    lastRefreshErrors: currentDiagnostics.errors,
+    diagnostics: currentDiagnostics,
   });
 }
 

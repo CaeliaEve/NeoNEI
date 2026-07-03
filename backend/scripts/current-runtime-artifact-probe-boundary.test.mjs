@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 const artifactSource = fs.readFileSync('src/services/current-runtime-artifact-index.service.ts', 'utf8');
 const artifactAbiSource = fs.readFileSync('src/services/current-runtime-artifact-index-abi.ts', 'utf8');
 const snapshotSource = fs.readFileSync('src/services/current-runtime-snapshot.service.ts', 'utf8');
+const snapshotAbiSource = fs.readFileSync('src/services/current-runtime-snapshot-abi.ts', 'utf8');
 const recipePackSource = fs.readFileSync('src/services/runtime-recipe-pack.service.ts', 'utf8');
 const nativeUiProofSource = fs.readFileSync('src/services/native-ui-runtime-proof.service.ts', 'utf8');
 const runtimeHealthSource = fs.readFileSync('src/services/runtime-health-summary.service.ts', 'utf8');
@@ -61,14 +62,16 @@ test('current runtime artifact reads distinguish missing invalid and present ins
 });
 
 test('current runtime snapshot publishes diagnostics and artifact probes', () => {
-  assert.match(snapshotSource, /export type CurrentRuntimeSnapshotDiagnostics/);
+  assert.match(snapshotAbiSource, /export type CurrentRuntimeSnapshotDiagnostics/);
+  assert.match(snapshotSource, /CurrentRuntimeSnapshotDiagnostics/);
   assert.match(snapshotSource, /artifactProbesByPath/);
   assert.match(snapshotSource, /diagnostics: CurrentRuntimeSnapshotDiagnostics/);
   assert.match(snapshotSource, /publishCurrentRuntimeSnapshotDiagnostics/);
+  assert.match(snapshotSource, /buildCurrentRuntimeSnapshotDiagnostics\(probes\)/);
   assert.match(snapshotSource, /readCurrentRuntimeJsonArtifact/);
   assert.match(snapshotSource, /readCurrentRuntimeTextArtifact/);
-  assert.match(snapshotSource, /lastRefreshStatus/);
-  assert.match(snapshotSource, /lastRefreshErrors/);
+  assert.match(snapshotAbiSource, /lastRefreshStatus/);
+  assert.match(snapshotAbiSource, /lastRefreshErrors/);
   assert.doesNotMatch(snapshotSource, /readCurrentRuntimeJson,/);
   assert.doesNotMatch(snapshotSource, /readCurrentRuntimeText,/);
 });
