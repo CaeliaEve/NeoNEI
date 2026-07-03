@@ -1,9 +1,9 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
-const apiSource = fs.readFileSync(
-  'src/services/api.ts',
+const bootstrapClientSource = fs.readFileSync(
+  'src/runtime/recipeBootstrapClient.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -14,27 +14,33 @@ const viewerSource = fs.readFileSync(
 
 test('recipe opening has source attribution and budget marks', () => {
   assert.equal(
-    apiSource.includes("markPerfEvent('recipe-bootstrap-resolved'"),
+    bootstrapClientSource.includes("markPerfEvent('recipe-bootstrap-resolved'"),
     true,
     'recipe bootstrap should emit a resolved perf mark with its source and latency',
   );
   for (const source of [
-    'persistent-cache',
+    'dist-data-v3',
+    'memory-cache',
+    'in-flight',
     'item-recipe-bundle',
-    'legacy-static-bootstrap',
-    'api-fallback',
+    'published-bootstrap',
   ]) {
     assert.equal(
-      apiSource.includes(`'${source}'`),
+      bootstrapClientSource.includes(`'${source}'`),
       true,
       `recipe bootstrap perf attribution should include ${source}`,
     );
   }
   assert.equal(
-    apiSource.indexOf('resolvePublishedItemRecipeBundlePath(manifest, itemId)')
-      < apiSource.indexOf("resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap')"),
+    bootstrapClientSource.indexOf('resolvePublishedItemRecipeBundlePath(manifest, itemId)')
+      < bootstrapClientSource.indexOf("resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap')"),
     true,
-    'item-centric recipe bundles should remain ahead of legacy bootstrap shards',
+    'item-centric recipe bundles should remain ahead of immutable bootstrap shards',
+  );
+  assert.equal(
+    bootstrapClientSource.includes('api-fallback'),
+    false,
+    'recipe bootstrap source attribution must not retain retired API fallback labels',
   );
 });
 
@@ -65,4 +71,3 @@ test('recipe viewer gates open latency budgets without changing UI behavior', ()
     'budget mark should compute whether the full group target was met',
   );
 });
-

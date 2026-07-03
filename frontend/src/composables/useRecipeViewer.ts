@@ -1,4 +1,4 @@
-﻿import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 import {
   api,
   type indexedItemRecipeSummaryResponse,
@@ -36,6 +36,12 @@ import {
   queueRenderableMediaPrewarmFromUnknown,
 } from '../services/animationBudget';
 import { createRecipeShardHydrator } from './recipe-browser/recipeShardHydrator';
+import {
+  RECIPE_HYDRATION_RECOVERY_REASONS,
+  recipeHydrationRecoveryReasonForTab,
+  reportRecipeGroupHydrationFailure,
+  type RecipeHydrationRecoveryReason,
+} from './recipe-browser/recipeHydrationPolicyCatalog';
 import { createRecipeNavigationController } from './recipe-browser/recipeNavigationController';
 import {
   buildCategoryPrewarmPageSequence,
@@ -383,7 +389,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   const requestRemainingShardHydration = (
     itemId: string,
     requestSeq: number,
-    reason: 'initial-fallback' | 'used-in-tab' | 'fallback-category',
+    reason: RecipeHydrationRecoveryReason,
     preloadedShardPromise?: Promise<Awaited<ReturnType<typeof api.getRecipeBootstrapShard>> | null>,
   ) => {
     if (fullShardHydrationStarted.value) {
@@ -452,8 +458,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       mergeIndexedRecipesIntoState(payload.recipes);
       removePendingRecipeIds('producedBy', payload.recipes.map((recipe) => recipe.id));
     } catch (error) {
-      console.warn('Failed to hydrate producedBy machine group, falling back to full shard:', error);
-      requestRemainingShardHydration(itemId, requestSeq, 'fallback-category');
+      reportRecipeGroupHydrationFailure('produced-by-machine-group', RECIPE_HYDRATION_RECOVERY_REASONS.groupWindowRecovery, error);
+      requestRemainingShardHydration(itemId, requestSeq, RECIPE_HYDRATION_RECOVERY_REASONS.groupWindowRecovery);
     }
   };
 
@@ -496,8 +502,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       mergeIndexedRecipesIntoState(payload.recipes);
       removePendingRecipeIds('usedIn', payload.recipes.map((recipe) => recipe.id));
     } catch (error) {
-      console.warn('Failed to hydrate usedIn machine group, falling back to full shard:', error);
-      requestRemainingShardHydration(itemId, requestSeq, 'fallback-category');
+      reportRecipeGroupHydrationFailure('used-in-machine-group', RECIPE_HYDRATION_RECOVERY_REASONS.groupWindowRecovery, error);
+      requestRemainingShardHydration(itemId, requestSeq, RECIPE_HYDRATION_RECOVERY_REASONS.groupWindowRecovery);
     }
   };
 
@@ -537,8 +543,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       mergeIndexedRecipesIntoState(payload.recipes);
       removePendingRecipeIds(tab === 'producedBy' ? 'producedBy' : 'usedIn', payload.recipes.map((recipe) => recipe.id));
     } catch (error) {
-      console.warn('Failed to hydrate recipe category group, falling back to full shard:', error);
-      requestRemainingShardHydration(itemId, requestSeq, tab === 'usedIn' ? 'used-in-tab' : 'fallback-category');
+      reportRecipeGroupHydrationFailure('category-group', RECIPE_HYDRATION_RECOVERY_REASONS.groupWindowRecovery, error);
+      requestRemainingShardHydration(itemId, requestSeq, RECIPE_HYDRATION_RECOVERY_REASONS.groupWindowRecovery);
     }
   };
 
@@ -624,7 +630,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
         requestRemainingShardHydration(
           itemId,
           requestSeq,
-          tab === 'usedIn' ? 'used-in-tab' : 'fallback-category',
+          recipeHydrationRecoveryReasonForTab(tab),
         );
       }
       return;
@@ -750,7 +756,9 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       requestRemainingShardHydration(
         itemId,
         loadRequestSeq,
-        currentTab.value === 'usedIn' ? 'used-in-tab' : 'initial-fallback',
+        currentTab.value === 'usedIn'
+          ? RECIPE_HYDRATION_RECOVERY_REASONS.usedInVisiblePack
+          : RECIPE_HYDRATION_RECOVERY_REASONS.initialVisiblePack,
       );
       return;
     }

@@ -1,7 +1,8 @@
-﻿import type { Ref } from 'vue';
+import type { Ref } from 'vue';
 import { api, type Recipe } from '../../services/api';
 import { convertIndexedRecipe } from '../../domain/recipeNormalization';
 import { primeRecipePayloadMedia } from '../recipe-display/recipeMediaPrewarm';
+import { reportRecipeShardHydrationFailure } from './recipeHydrationPolicyCatalog';
 
 type RecipeCollection = {
   usedIn: Recipe[];
@@ -77,34 +78,9 @@ export function createRecipeShardHydrator({
       pendingProducedByRecipeIds.value = [];
       pendingUsageRecipeIds.value = [];
     } catch (shardError) {
-      console.warn('Failed to hydrate recipe shard, falling back to chunked batch load:', shardError);
-      const chunkSize = 200;
-      try {
-        for (let index = 0; index < pendingRecipeIds.length; index += chunkSize) {
-          const chunk = pendingRecipeIds.slice(index, index + chunkSize);
-          const indexedRecipes = await api.getIndexedRecipesByIds(chunk);
-          if (isStaleHydration(hydrationSeq, requestSeq, itemId)) {
-            return;
-          }
-
-          for (const indexedRecipe of indexedRecipes) {
-            const normalizedRecipe = convertIndexedRecipe(indexedRecipe);
-            mergedById.set(normalizedRecipe.recipeId, normalizedRecipe);
-          }
-        }
-
-        if (isStaleHydration(hydrationSeq, requestSeq, itemId)) {
-          return;
-        }
-
-        applyMergedRecipes(mergedById);
-        pendingProducedByRecipeIds.value = [];
-        pendingUsageRecipeIds.value = [];
-      } catch (error) {
-        console.warn('Failed to hydrate remaining recipe pages:', error);
-        if (!isStaleHydration(hydrationSeq, requestSeq, itemId)) {
-          rebuildIndexesAndGraphs();
-        }
+      reportRecipeShardHydrationFailure(shardError);
+      if (!isStaleHydration(hydrationSeq, requestSeq, itemId)) {
+        rebuildIndexesAndGraphs();
       }
     }
   };
