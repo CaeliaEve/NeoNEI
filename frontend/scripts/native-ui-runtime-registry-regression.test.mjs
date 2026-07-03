@@ -203,6 +203,65 @@ test('native UI registry requires UI-pack template authority and keeps missing l
   assert.deepEqual(missing.slots, []);
 });
 
+test('native UI registry fails closed when ready runtime lacks recipe binding or template', () => {
+  const template = {
+    templateKey: 'gt-furnace@default',
+    templateSignature: 'sig-template',
+    familyKey: 'gt-furnace',
+    canonicalMachineFamily: 'gt-furnace',
+    layoutKind: 'gt-modular-ui',
+    width: 176,
+    height: 90,
+    yShift: 0,
+    coordinateSpace: 'nei_pixels',
+    scaleMode: 'uniform-scale',
+    anchor: 'top-left',
+    maxRecipesPerPage: 1,
+    imageResource: 'rust/ui-assets/gt_furnace.png',
+    handlerCount: 1,
+    slotCount: 0,
+    nativeBackground: gtBackground(),
+    slots: [],
+    textOverlays: [],
+    dynamicPrimitives: [],
+    hotspots: [],
+    viewports: [],
+  };
+  const binding = {
+    recipeId: 'recipe-1',
+    path: 'recipes/ui-payload-shards/1.json',
+    payloadKey: 'recipe-1',
+    familyKey: 'gt-furnace',
+    recipeType: 'gt.recipe',
+    machineType: 'Furnace',
+    templateKey: 'gt-furnace@default',
+    templateSignature: 'sig-template',
+    canonicalMachineFamily: 'gt-furnace',
+    layoutKind: 'gt-modular-ui',
+    bound: true,
+  };
+
+  assert.throws(
+    () => resolveNativeUiRuntimeSurface({
+      runtime: runtimeFixture(template, binding),
+      recipeId: 'missing-recipe',
+      inlineLayout: null,
+    }),
+    /Native UI runtime has no recipe binding for recipeId: missing-recipe/,
+  );
+
+  const runtime = runtimeFixture(template, binding);
+  runtime.templatesByKey = new Map();
+  assert.throws(
+    () => resolveNativeUiRuntimeSurface({
+      runtime,
+      recipeId: 'recipe-1',
+      inlineLayout: null,
+    }),
+    /Native UI runtime binding recipe-1 references missing template: gt-furnace@default/,
+  );
+});
+
 test('native UI registry rejects incomplete background ABI on resolved surfaces', () => {
   const template = {
     templateKey: 'bad-background-template',
@@ -307,8 +366,13 @@ test('native UI registry owns component runtime layout contract', () => {
 
   assert.match(componentSource, /nativeUiRuntimeRegistry/);
   assert.match(componentSource, /resolveNativeUiRuntimeSurface/);
+  assert.match(componentSource, /nativeUiSurfaceResolution = computed/);
+  assert.match(componentSource, /catch \(error\)/);
+  assert.match(componentSource, /nativeUiSurfaceError \|\| renderError/);
+  assert.match(componentSource, /if \(nativeUiSurfaceError\.value\) \{\n    renderPipeline\.dispose\(\);\n    return;\n  \}/);
   assert.match(componentSource, /buildNativeUiSlotCells/);
   assert.match(componentSource, /createNativeUiFitMatrix/);
+  assert.doesNotMatch(componentSource, /const nativeUiSurface = computed\(\(\) => resolveNativeUiRuntimeSurface/);
   assert.doesNotMatch(componentSource, /interface NativeSlotFact/);
   assert.doesNotMatch(componentSource, /interface NativeLayoutSurface/);
   assert.doesNotMatch(componentSource, /const resolvedTemplate/);

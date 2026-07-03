@@ -9,6 +9,7 @@ import {
   resolveNativeUiRuntimeSurface,
   type NativeUiFitMatrix,
   type NativeUiLayoutSurface,
+  type NativeUiResolvedSurface,
   type NativeUiRect,
   type NativeUiSlotCell,
 } from '../services/nativeUiRuntimeRegistry';
@@ -43,6 +44,10 @@ import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
 type CanvasRenderable = NativeUiRecipeRenderable;
 type CanvasCell = NativeUiSlotCell<CanvasRenderable>;
+type NativeUiSurfaceResolution = Readonly<{
+  surface: NativeUiResolvedSurface | null;
+  error: string | null;
+}>;
 
 
 const props = defineProps<{
@@ -76,18 +81,32 @@ const nativeLayout = computed<NativeUiLayoutSurface | null>(() => (
   normalizeNativeUiLayoutSurface(props.uiPayload?.nativeLayout)
 ));
 
-const nativeUiSurface = computed(() => resolveNativeUiRuntimeSurface({
-  runtime: uiPackRuntime.value,
-  recipeId: props.recipe.recipeId,
-  inlineLayout: nativeLayout.value,
-}));
+const nativeUiSurfaceResolution = computed<NativeUiSurfaceResolution>(() => {
+  try {
+    return {
+      surface: resolveNativeUiRuntimeSurface({
+        runtime: uiPackRuntime.value,
+        recipeId: props.recipe.recipeId,
+        inlineLayout: nativeLayout.value,
+      }),
+      error: null,
+    };
+  } catch (error) {
+    return {
+      surface: null,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  }
+});
+const nativeUiSurfaceError = computed(() => nativeUiSurfaceResolution.value.error);
+const nativeUiSurface = computed(() => nativeUiSurfaceResolution.value.surface);
 
-const resolvedNativeLayout = computed<NativeUiLayoutSurface | null>(() => nativeUiSurface.value.layout);
-const slots = computed(() => nativeUiSurface.value.slots);
-const textOverlays = computed(() => nativeUiSurface.value.textOverlays);
-const hotspots = computed(() => nativeUiSurface.value.hotspots);
-const viewports = computed(() => nativeUiSurface.value.viewports);
-const dynamicPrimitives = computed(() => nativeUiSurface.value.dynamicPrimitives);
+const resolvedNativeLayout = computed<NativeUiLayoutSurface | null>(() => nativeUiSurface.value?.layout ?? null);
+const slots = computed(() => nativeUiSurface.value?.slots ?? []);
+const textOverlays = computed(() => nativeUiSurface.value?.textOverlays ?? []);
+const hotspots = computed(() => nativeUiSurface.value?.hotspots ?? []);
+const viewports = computed(() => nativeUiSurface.value?.viewports ?? []);
+const dynamicPrimitives = computed(() => nativeUiSurface.value?.dynamicPrimitives ?? []);
 
 const nativeBackground = computed(() => nativeUiNativeBackground(resolvedNativeLayout.value));
 const semanticGtBackground = computed(() => nativeUiIsSemanticGtBackground(nativeBackground.value));
@@ -115,8 +134,8 @@ const subtitle = computed(() => String(
     ?? 'native-nei',
 ));
 
-const layoutWidth = computed(() => nativeUiSurface.value.width);
-const layoutHeight = computed(() => nativeUiSurface.value.height);
+const layoutWidth = computed(() => nativeUiSurface.value?.width ?? 0);
+const layoutHeight = computed(() => nativeUiSurface.value?.height ?? 0);
 const displayWidth = computed(() => Math.ceil(layoutWidth.value));
 const displayHeight = computed(() => Math.ceil(layoutHeight.value));
 const fitMatrix = computed<NativeUiFitMatrix>(() => createNativeUiFitMatrix({
@@ -124,7 +143,7 @@ const fitMatrix = computed<NativeUiFitMatrix>(() => createNativeUiFitMatrix({
   sourceHeight: displayHeight.value,
   availableWidth: shellWidth.value,
   availableHeight: shellHeight.value,
-  scaleMode: nativeUiSurface.value.scaleMode,
+  scaleMode: nativeUiSurface.value?.scaleMode ?? 'uniform-scale',
 }));
 const fitScale = computed(() => fitMatrix.value.scale);
 const fittedWidth = computed(() => fitMatrix.value.fittedWidth);
@@ -157,8 +176,9 @@ const renderSignature = computed(() => JSON.stringify({
   recipeId: props.recipe.recipeId,
   familyKey: props.uiPayload?.familyKey ?? '',
   uiPackStatus: uiPackRuntime.value?.status ?? 'loading',
-  uiPackTemplateKey: nativeUiSurface.value.binding?.templateKey ?? '',
-  nativeUiSurfaceSource: nativeUiSurface.value.source,
+  uiPackTemplateKey: nativeUiSurface.value?.binding?.templateKey ?? '',
+  nativeUiSurfaceSource: nativeUiSurface.value?.source ?? 'error',
+  nativeUiSurfaceError: nativeUiSurfaceError.value ?? '',
   layoutWidth: layoutWidth.value,
   layoutHeight: layoutHeight.value,
   nativeBackground: nativeBackground.value,
@@ -207,6 +227,10 @@ async function hydrateUiPackRuntime() {
 }
 
 async function rebuildRenderer() {
+  if (nativeUiSurfaceError.value) {
+    renderPipeline.dispose();
+    return;
+  }
   await renderPipeline.rebuild({
     mounted,
     canvas: canvasRef.value,
@@ -265,7 +289,7 @@ onBeforeUnmount(() => {
     </header>
 
     <div class="native-nei-body">
-      <div v-if="renderError" class="native-nei-error">{{ renderError }}</div>
+      <div v-if="nativeUiSurfaceError || renderError" class="native-nei-error">{{ nativeUiSurfaceError || renderError }}</div>
       <div v-else ref="shellRef" class="native-nei-canvas-shell" :style="shellStyle">
         <div class="native-nei-source-surface" :style="sourceSurfaceStyle">
           <canvas

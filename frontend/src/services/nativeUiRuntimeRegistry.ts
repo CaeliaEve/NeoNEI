@@ -236,9 +236,15 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
   const recipeId = `${options.recipeId ?? ""}`.trim();
   const inlineLayout = options.inlineLayout ?? null;
   const binding = recipeId ? runtime?.bindingsByRecipeId.get(recipeId) ?? null : null;
+  if (runtime?.status === "ready" && !binding) {
+    throw new Error(`Native UI runtime has no recipe binding for recipeId: ${recipeId || "<missing>"}`);
+  }
   const template = binding?.templateKey
     ? runtime?.templatesByKey.get(binding.templateKey) ?? null
     : null;
+  if (runtime?.status === "ready" && binding && !template) {
+    throw new Error(`Native UI runtime binding ${binding.recipeId} references missing template: ${binding.templateKey || "<missing>"}`);
+  }
 
   const layout = template
     ? {
