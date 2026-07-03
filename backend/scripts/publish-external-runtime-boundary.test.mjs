@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 
 const publishRouteSource = fs.readFileSync('src/routes/publish.routes.ts', 'utf8').replace(/\r\n/g, '\n');
 const publishEndpointRegistrySource = fs.readFileSync('src/routes/publish-public-endpoint-registry.ts', 'utf8').replace(/\r\n/g, '\n');
+const publishDeliveryAbiSource = fs.readFileSync('src/services/publish-runtime-delivery-abi.ts', 'utf8').replace(/\r\n/g, '\n');
 const publishDeliverySource = fs.readFileSync('src/services/publish-runtime-delivery.service.ts', 'utf8').replace(/\r\n/g, '\n');
 const namespaceRegistrySource = fs.readFileSync('src/routes/api-namespace-registry.ts', 'utf8').replace(/\r\n/g, '\n');
 const appSource = fs.readFileSync('src/app.ts', 'utf8').replace(/\r\n/g, '\n');
@@ -16,11 +17,17 @@ const httpSource = fs.readFileSync('src/utils/http.ts', 'utf8').replace(/\r\n/g,
 test('external-runtime publish home bootstrap is materialized-bundle only', () => {
   assert.match(publishDeliverySource, /resolveAccelerationCompilerAuthority/);
   assert.match(publishDeliverySource, /function isExternalRuntimeAuthority\(\)/);
-  assert.match(publishDeliverySource, /shouldUseMaterializedHomeBootstrap = query\.page === 1/);
+  assert.match(publishDeliverySource, /shouldUseMaterializedHomeBootstrap\(manifest, query\)/);
   assert.match(publishDeliverySource, /getPublishPayloadService\(\)\.getHomeBootstrapWindow/);
   assert.match(publishDeliverySource, /if \(isExternalRuntimeAuthority\(\)\) \{/);
-  assert.match(publishDeliverySource, /EXTERNAL_RUNTIME_PUBLISH_BUNDLE_REQUIRED/);
-  assert.match(publishDeliverySource, /dynamic SQLite fallback is disabled/);
+  assert.match(publishDeliverySource, /getPublishRuntimeExternalBundleRequiredError\(\)/);
+  assert.match(publishDeliverySource, /serviceUnavailable\(\s*error\.message,\s*error\.code,\s*\)/);
+  assert.match(publishDeliveryAbiSource, /query\.page === PUBLISH_HOME_BOOTSTRAP_MATERIALIZED_POLICY\.page/);
+  assert.match(publishDeliveryAbiSource, /authority: 'external-runtime'/);
+  assert.match(publishDeliveryAbiSource, /EXTERNAL_RUNTIME_PUBLISH_BUNDLE_REQUIRED/);
+  assert.match(publishDeliveryAbiSource, /dynamic SQLite fallback is disabled/);
+  assert.doesNotMatch(publishDeliverySource, /EXTERNAL_RUNTIME_PUBLISH_BUNDLE_REQUIRED/);
+  assert.doesNotMatch(publishDeliverySource, /dynamic SQLite fallback is disabled/);
 
   const materializedIndex = publishDeliverySource.indexOf('const materialized = readMaterializedHomeBootstrap');
   const gateIndex = publishDeliverySource.indexOf('if (isExternalRuntimeAuthority()) {');
