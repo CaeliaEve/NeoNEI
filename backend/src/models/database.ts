@@ -704,7 +704,7 @@ export class DatabaseManager {
   }
 
   save(): void {
-    // better-sqlite3 automatically saves, but we keep this method for compatibility
+  // better-sqlite3 automatically saves; this remains a no-op lifecycle hook.
     // No-op - better-sqlite3 writes to disk automatically
   }
 

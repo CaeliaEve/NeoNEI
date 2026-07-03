@@ -6,7 +6,6 @@ type CurrentRuntimeSettingsStaticKey =
   | 'apiBaseUrl'
   | 'runtimeMode'
   | 'rendererPreference'
-  | 'allowDomGridFallback'
   | 'allowPerItemImageHotLoad';
 type CurrentRuntimeSettingsRuntimeUrlKey = 'currentUrl' | 'manifestUrl' | 'assetBaseUrl';
 
@@ -135,14 +134,12 @@ export const CURRENT_RUNTIME_SETTINGS_STATIC_DESCRIPTORS =
       settingDescriptor('apiBaseUrl', '/api'),
       settingDescriptor('runtimeMode', 'native'),
       settingDescriptor('rendererPreference', 'webgpu-first'),
-      settingDescriptor('allowDomGridFallback', false),
       settingDescriptor('allowPerItemImageHotLoad', false),
     ] as const,
     [
       'apiBaseUrl',
       'runtimeMode',
       'rendererPreference',
-      'allowDomGridFallback',
       'allowPerItemImageHotLoad',
     ] as const,
     (descriptor) => {

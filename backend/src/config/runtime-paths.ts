@@ -50,7 +50,7 @@ function pickImageRootPath(candidates: Array<string | undefined>): string {
     }
   }
 
-  // Fallback to first existing path.
+  // Prefer the first existing candidate when no item texture root was detected.
   for (const candidate of normalizedCandidates) {
     if (fs.existsSync(candidate)) {
       return candidate;
@@ -123,9 +123,9 @@ export const NESQL_BLOCK_FACE_ICON_MAP_FILE = pickFirstExistingPath([
     ? path.join(NESQL_REPOSITORY_PATH, 'multiblocks', 'block-face-icon-map.json')
     : undefined,
 ]);
-// canonical is retired from the production runtime. Keep the symbol as an
-// empty compatibility constant so old imports fail closed instead of silently
-// reactivating /canonical from repository roots.
+// canonical is retired from the production runtime. Keep the symbol empty so
+// remaining internal callers fail closed instead of silently reactivating
+// /canonical from repository roots.
 export const NESQL_CANONICAL_DIR = '';
 export const SPLIT_ITEMS_DIR = pickFirstExistingPath([
   pickEnv('NESQL_SPLIT_ITEMS_DIR'),

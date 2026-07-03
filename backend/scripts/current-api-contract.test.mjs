@@ -108,7 +108,7 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(currentRuntimeSpecialDataSource.includes("from './multiblocks.service'"), true);
   assert.equal(currentRuntimeSettingsSource.includes('resolveCurrentRuntimeSettings(env)'), true);
   assert.equal(currentRuntimeSettingsAbiSource.includes('CURRENT_RUNTIME_SETTINGS_STATIC'), true);
-  assert.equal(currentRuntimeSettingsAbiSource.includes("settingDescriptor('allowDomGridFallback', false)"), true);
+  assert.equal(currentRuntimeSettingsAbiSource.includes('allowDomGridFallback'), false);
   assert.equal(currentRuntimeSettingsAbiSource.includes("settingDescriptor('allowPerItemImageHotLoad', false)"), true);
   assert.equal(currentRuntimeSettingsAbiSource.includes('NEONEI_DEBUG_PANELS'), true);
   assert.doesNotMatch(routeSource, /process\.env\.NEONEI_DEBUG_PANELS/);

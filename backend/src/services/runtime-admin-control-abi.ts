@@ -169,7 +169,7 @@ export const RUNTIME_OPENAPI_PATH_DESCRIPTORS = validateAndFreezeOpenApiPathDesc
     { key: 'apiV1RuntimeManifest', path: '/api/v1/runtime/manifest', method: 'get', summary: 'Stable v1 active runtime manifest' },
     { key: 'apiV1RuntimeContracts', path: '/api/v1/runtime/contracts', method: 'get', summary: 'Stable v1 runtime contract index' },
     { key: 'apiPublishManifest', path: '/api/publish/manifest', method: 'get', summary: 'No-cache active publish manifest' },
-    { key: 'apiPublishHomeBootstrap', path: '/api/publish/home-bootstrap', method: 'get', summary: 'Fallback home bootstrap payload' },
+    { key: 'apiPublishHomeBootstrap', path: '/api/publish/home-bootstrap', method: 'get', summary: 'Publish home bootstrap payload' },
     { key: 'publishArtifact', path: '/publish/{artifactPath}', method: 'get', summary: 'Immutable static publish artifacts except active manifests' },
     { key: 'apiAdminAccelerationReconcile', path: '/api/admin/acceleration/reconcile', method: 'post', summary: 'Token-protected rebuild/materialize trigger' },
     { key: 'apiAdminPatterns', path: '/api/admin/patterns', method: 'get', summary: 'Token-protected pattern authoring inventory' },

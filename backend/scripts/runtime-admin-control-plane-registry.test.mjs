@@ -127,7 +127,7 @@ test('runtime admin public API and OpenAPI documents are ABI-catalog owned', () 
     /'\/runtime\/diagnostics'/,
     /'\/api\/admin\/runtime'/,
     /'Token-protected render contract queries'/,
-    /'Fallback home bootstrap payload'/,
+    /'Publish home bootstrap payload'/,
     /'NeoNEI Public Runtime API'/,
   ]) {
     assert.match(runtimeAdminControlAbiSource, catalogOwnedLiteral);
