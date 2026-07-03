@@ -10,7 +10,6 @@ import {
 } from "../native-surface/NativeRuntimeRequestPolicy.ts";
 import {
   assertNativeUiRuntimeManifest,
-  getNativeRuntimeEntrypointSource,
 } from "../native-surface/NativeRuntimeCapabilityGate.ts";
 import type { NativeRuntimeManifest } from "../native-surface/NativeRuntimeManifest";
 import {
@@ -49,7 +48,6 @@ import {
   getManifestRuntimeFileBytes,
   normalizeRuntimePath,
   runtimeManifestDeclaresPath,
-  runtimeManifestFileRecord,
   runtimePathFromValue,
 } from "./runtimeManifestPath.ts";
 
@@ -201,23 +199,15 @@ function parseNativeBackgroundJson(value: string, templateKey: string): JsonReco
   return record;
 }
 
+function runtimeManifestFilesDeclarePath(manifest: NativeRuntimeManifest, relativePath: string): boolean {
+  return runtimeManifestDeclaresPath({ entrypoints: {}, files: manifest.files }, relativePath);
+}
+
 function resolveUiPackRuntimeReportPath(
   manifest: NativeRuntimeManifest,
   descriptor: UiPackRuntimeReportDescriptor,
 ): string {
-  const entrypoints = getNativeRuntimeEntrypointSource(manifest);
-  for (const manifestKey of descriptor.manifestKeys) {
-    const explicitEntrypoint = runtimePathFromValue((entrypoints as JsonRecord)[manifestKey]);
-    if (explicitEntrypoint) return explicitEntrypoint;
-  }
-
-  const fileRecord = runtimeManifestFileRecord(manifest.files);
-  for (const manifestKey of descriptor.manifestKeys) {
-    const explicitFile = runtimePathFromValue(fileRecord?.[manifestKey]);
-    if (explicitFile) return explicitFile;
-  }
-
-  if (runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, descriptor.requiredPath)) {
+  if (runtimeManifestFilesDeclarePath(manifest, descriptor.requiredPath)) {
     return descriptor.requiredPath;
   }
 
@@ -581,10 +571,10 @@ function parseUiPackManifest(manifest: NativeRuntimeManifest): UiPackRuntimeEntr
   const entrypoints = assertNativeUiRuntimeManifest(manifest);
   const exportAbiReport = resolveNativeUiExportAbiReportPath(manifest);
   const abiReport = resolveUiPackAbiReportPath(manifest);
-  if (!runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, exportAbiReport)) {
+  if (!runtimeManifestFilesDeclarePath(manifest, exportAbiReport)) {
     throw new Error(`native UI export ABI validation report is not declared by runtime manifest files: ${exportAbiReport}`);
   }
-  if (!runtimeManifestDeclaresPath({ entrypoints, files: manifest.files }, abiReport)) {
+  if (!runtimeManifestFilesDeclarePath(manifest, abiReport)) {
     throw new Error(`native UI ABI validation report is not declared by runtime manifest files: ${abiReport}`);
   }
   return {

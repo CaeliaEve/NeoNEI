@@ -43,7 +43,7 @@ export function getNativeRuntimeCapabilitySet(manifest: NativeRuntimeManifest): 
 }
 
 export function getNativeRuntimeEntrypointSource(manifest: NativeRuntimeManifest): NativeRuntimeManifestFiles {
-  return manifest.entrypoints ?? (!Array.isArray(manifest.files) ? manifest.files : undefined) ?? {};
+  return manifest.entrypoints ?? {};
 }
 
 export function describeNativeRuntimeIdentity(manifest: NativeRuntimeManifest): string {

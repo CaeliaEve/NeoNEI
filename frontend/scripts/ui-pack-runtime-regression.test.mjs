@@ -792,6 +792,42 @@ test('loadUiPackRuntime fails explicitly when native UI runtime entrypoints are 
   }
 });
 
+test('loadUiPackRuntime does not treat manifest files as native UI entrypoints', async () => {
+  clearUiPackRuntimeCache();
+  const manifest = {
+    schema: 'neonei/runtime/current',
+    capabilities: {
+      'recipes.native-ui-layout': true,
+      'recipes.ui-pack': true,
+      'native-render.webgl2': true,
+    },
+    files: {
+      uiTemplates: 'rust/ui-pack/ui_templates.bin',
+      uiBindings: 'rust/ui-pack/ui_bindings.bin',
+      uiStrings: 'rust/ui-pack/ui_strings.bin',
+      rustNativeUiExportAbiValidationReport: 'rust/native-ui-export-abi-validation-report.json',
+      rustUiPackAbiValidationReport: 'rust/ui-pack-abi-validation-report.json',
+    },
+  };
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    if (url.endsWith('/api/runtime/current/manifest?case=files-are-not-entrypoints')) {
+      return new Response(JSON.stringify(manifest), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    throw new Error(`runtime ABI gate should not fetch UI pack artifacts: ${url}`);
+  };
+  try {
+    const runtime = await loadUiPackRuntime('/api/runtime/current/manifest?case=files-are-not-entrypoints');
+    assert.equal(runtime.status, UI_PACK_RUNTIME_STATUS.error);
+    assert.match(runtime.error ?? '', /missing required entrypoints: uiTemplates, uiBindings, uiStrings/);
+    assert.equal(runtime.summary.templateCount, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+    clearUiPackRuntimeCache();
+  }
+});
+
 test('UI pack runtime ABI catalog owns statuses, entrypoints, and report paths', () => {
   assert.deepEqual(
     UI_PACK_RUNTIME_STATUS_DESCRIPTORS.map((descriptor) => descriptor.status),
@@ -809,16 +845,10 @@ test('UI pack runtime ABI catalog owns statuses, entrypoints, and report paths',
     UI_PACK_RUNTIME_REPORT_BY_ID.exportAbiReport.requiredPath,
     'rust/native-ui-export-abi-validation-report.json',
   );
-  assert.deepEqual([...UI_PACK_RUNTIME_REPORT_BY_ID.exportAbiReport.manifestKeys], [
-    'rustNativeUiExportAbiValidationReport',
-  ]);
   assert.equal(
     UI_PACK_RUNTIME_REPORT_BY_ID.abiReport.requiredPath,
     'rust/ui-pack-abi-validation-report.json',
   );
-  assert.deepEqual([...UI_PACK_RUNTIME_REPORT_BY_ID.abiReport.manifestKeys], [
-    'rustUiPackAbiValidationReport',
-  ]);
   assert.deepEqual(createEmptyUiPackRuntimeSummary(), {
     templateCount: 0,
     bindingCount: 0,
@@ -836,6 +866,7 @@ test('UI pack runtime ABI catalog owns statuses, entrypoints, and report paths',
 
 test('UI pack loader consumes catalog descriptors instead of re-owning ABI literals', () => {
   const runtimeSource = readSource('src/services/uiPackRuntime.ts');
+  const capabilityGateSource = readSource('src/native-surface/NativeRuntimeCapabilityGate.ts');
 
   assert.match(runtimeSource, /UI_PACK_RUNTIME_STATUS/);
   assert.match(runtimeSource, /UI_PACK_RUNTIME_ENTRYPOINTS/);
@@ -844,10 +875,15 @@ test('UI pack loader consumes catalog descriptors instead of re-owning ABI liter
 
   assert.doesNotMatch(runtimeSource, /status: "ready"/);
   assert.doesNotMatch(runtimeSource, /status: "error"/);
+  assert.doesNotMatch(runtimeSource, /manifestKeys/);
+  assert.doesNotMatch(runtimeSource, /runtimeManifestFileRecord/);
+  assert.doesNotMatch(runtimeSource, /getNativeRuntimeEntrypointSource/);
   assert.doesNotMatch(runtimeSource, /rustNativeUiExportAbiValidationReport/);
   assert.doesNotMatch(runtimeSource, /nativeUiExportAbiValidationReport/);
   assert.doesNotMatch(runtimeSource, /nativeUiExportAbiReport/);
   assert.doesNotMatch(runtimeSource, /rustUiPackAbiValidationReport/);
   assert.doesNotMatch(runtimeSource, /uiPackAbiValidationReport/);
   assert.doesNotMatch(runtimeSource, /uiPackAbiReport/);
+  assert.match(capabilityGateSource, /return manifest\.entrypoints \?\? \{\}/);
+  assert.doesNotMatch(capabilityGateSource, /!Array\.isArray\(manifest\.files\)/);
 });

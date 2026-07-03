@@ -82,7 +82,6 @@ export type UiPackRuntimeReportDescriptor = Readonly<{
   id: UiPackRuntimeReportId;
   label: string;
   requiredPath: string;
-  manifestKeys: readonly string[];
 }>;
 
 export const UI_PACK_RUNTIME_REPORT_DESCRIPTORS: readonly UiPackRuntimeReportDescriptor[] =
@@ -91,17 +90,11 @@ export const UI_PACK_RUNTIME_REPORT_DESCRIPTORS: readonly UiPackRuntimeReportDes
       id: "exportAbiReport",
       label: "native UI export ABI validation report",
       requiredPath: NATIVE_UI_EXPORT_ABI_VALIDATION_REPORT_PATH,
-      manifestKeys: Object.freeze([
-        "rustNativeUiExportAbiValidationReport",
-      ] as const),
     }),
     Object.freeze({
       id: "abiReport",
       label: "native UI ABI validation report",
       requiredPath: UI_PACK_ABI_VALIDATION_REPORT_PATH,
-      manifestKeys: Object.freeze([
-        "rustUiPackAbiValidationReport",
-      ] as const),
     }),
   ]);
 
