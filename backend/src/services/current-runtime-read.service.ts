@@ -1,64 +1,66 @@
 import type { CurrentRuntimeApiContext } from './current-runtime-api.service';
-import { getCurrentRuntimeOverview } from './current-runtime-api.service';
 import {
-  getCurrentRuntimeDiagnosticsHealth,
-  getCurrentRuntimeDiagnosticsSummary,
-  getCurrentRuntimeNativeSurfaceMetrics,
-} from './current-runtime-observability.service';
-import {
-  getCurrentRecipeItemProducedBy,
-  getCurrentRecipeItemUsedIn,
-  getCurrentRecipePage,
-} from './current-runtime-recipe-api.service';
-import { getCurrentRuntimeSettings } from './current-runtime-settings.service';
-import {
-  getCurrentRuntimeForestryGeneticsOverview,
-  getCurrentRuntimeGTDiagramsOverview,
-  getCurrentRuntimeMultiblockBlueprint,
-} from './current-runtime-special-data.service';
+  readCurrentRuntimeAsyncParamPayload,
+  readCurrentRuntimeContextPayload,
+  readCurrentRuntimeStaticPayload,
+  readCurrentRuntimeSyncParamPayload,
+} from './current-runtime-read-catalog';
+
+export {
+  CURRENT_RUNTIME_READ_OPERATION_DESCRIPTORS,
+  CURRENT_RUNTIME_READ_OPERATIONS,
+  getCurrentRuntimeReadOperation,
+  readCurrentRuntimeAsyncParamPayload,
+  readCurrentRuntimeContextPayload,
+  readCurrentRuntimeStaticPayload,
+  readCurrentRuntimeSyncParamPayload,
+  type CurrentRuntimeReadOperationDescriptor,
+  type CurrentRuntimeReadOperationKey,
+  type CurrentRuntimeReadOperationMode,
+} from './current-runtime-read-catalog';
 
 export function getCurrentRuntimeOverviewPayload(context: CurrentRuntimeApiContext): unknown {
-  return getCurrentRuntimeOverview(context);
+  return readCurrentRuntimeContextPayload('overview', context);
 }
 
 export async function getCurrentRuntimeRecipeProducedByPayload(itemIdParam: string | undefined): Promise<unknown> {
-  return getCurrentRecipeItemProducedBy(itemIdParam);
+  return readCurrentRuntimeAsyncParamPayload('recipeProducedBy', itemIdParam);
 }
 
 export async function getCurrentRuntimeRecipeUsedInPayload(itemIdParam: string | undefined): Promise<unknown> {
-  return getCurrentRecipeItemUsedIn(itemIdParam);
+  return readCurrentRuntimeAsyncParamPayload('recipeUsedIn', itemIdParam);
 }
 
 export async function getCurrentRuntimeRecipePagePayload(recipePageIdParam: string | undefined): Promise<unknown> {
-  return getCurrentRecipePage(recipePageIdParam);
+  return readCurrentRuntimeAsyncParamPayload('recipePage', recipePageIdParam);
 }
 
 export function getCurrentRuntimeDiagnosticsHealthPayload(context: CurrentRuntimeApiContext): unknown {
-  return getCurrentRuntimeDiagnosticsHealth(context);
+  return readCurrentRuntimeContextPayload('diagnosticsHealth', context);
 }
 
 export function getCurrentRuntimeDiagnosticsSummaryPayload(context: CurrentRuntimeApiContext): unknown {
-  return getCurrentRuntimeDiagnosticsSummary(context);
+  return readCurrentRuntimeContextPayload('diagnosticsSummary', context);
 }
 
 export function getCurrentRuntimeNativeSurfaceMetricsPayload(context: CurrentRuntimeApiContext): unknown {
-  return getCurrentRuntimeNativeSurfaceMetrics(context);
+  return readCurrentRuntimeContextPayload('nativeSurfaceMetrics', context);
 }
 
 export function getCurrentRuntimeSettingsPayload(): unknown {
-  return getCurrentRuntimeSettings();
+  return readCurrentRuntimeStaticPayload('settings');
 }
 
 export function getCurrentRuntimeGTDiagramsOverviewPayload(): unknown {
-  return getCurrentRuntimeGTDiagramsOverview();
+  return readCurrentRuntimeStaticPayload('gtDiagramsOverview');
 }
 
 export function getCurrentRuntimeForestryGeneticsOverviewPayload(): unknown {
-  return getCurrentRuntimeForestryGeneticsOverview();
+  return readCurrentRuntimeStaticPayload('forestryGeneticsOverview');
 }
 
 export function getCurrentRuntimeMultiblockBlueprintPayload(
   controllerItemIdParam: string | undefined,
 ): unknown {
-  return getCurrentRuntimeMultiblockBlueprint(controllerItemIdParam);
+  return readCurrentRuntimeSyncParamPayload('multiblockBlueprint', controllerItemIdParam);
 }

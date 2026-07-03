@@ -3,25 +3,25 @@ import {
   assertCurrentRuntimeId,
   withCurrentRuntimeApiContext,
   withCurrentRuntimeApiContextAsync,
+  type CurrentRuntimeApiContext,
 } from '../services/current-runtime-api.service';
 import {
-  getCurrentRuntimeDiagnosticsHealthPayload,
-  getCurrentRuntimeDiagnosticsSummaryPayload,
-  getCurrentRuntimeForestryGeneticsOverviewPayload,
-  getCurrentRuntimeGTDiagramsOverviewPayload,
-  getCurrentRuntimeMultiblockBlueprintPayload,
-  getCurrentRuntimeNativeSurfaceMetricsPayload,
-  getCurrentRuntimeOverviewPayload,
-  getCurrentRuntimeRecipePagePayload,
-  getCurrentRuntimeRecipeProducedByPayload,
-  getCurrentRuntimeRecipeUsedInPayload,
-  getCurrentRuntimeSettingsPayload,
+  readCurrentRuntimeAsyncParamPayload,
+  readCurrentRuntimeContextPayload,
+  readCurrentRuntimeStaticPayload,
+  readCurrentRuntimeSyncParamPayload,
+  type CurrentRuntimeReadOperationKey,
 } from '../services/current-runtime-read.service';
 import { asyncHandler } from '../utils/http';
 import {
   CURRENT_RUNTIME_ENDPOINTS,
   type CurrentRuntimeEndpointKey,
 } from './current-runtime-endpoint-registry';
+import {
+  CURRENT_RUNTIME_ENDPOINT_HANDLER_DESCRIPTORS,
+  type CurrentRuntimeEndpointHandlerDescriptor,
+  type CurrentRuntimeEndpointParamName,
+} from './current-runtime-endpoint-handler-abi';
 import {
   assetPathFromMountedRuntimeRequest,
   isRuntimeAssetRequestMethod,
@@ -32,173 +32,181 @@ import {
 } from './current-runtime-transport';
 import { validateAndFreezeRouteHandlers } from './route-descriptor-registry';
 
-function sendRuntimeCurrent(res: Response): void {
-  withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeOverviewPayload(context), context);
-  });
+function requestParam(req: Request, name: CurrentRuntimeEndpointParamName | undefined): string | undefined {
+  return name ? req.params[name] : undefined;
 }
 
-function sendMountedRuntimeAsset(req: Request, res: Response, next: NextFunction): void {
-  if (!isRuntimeAssetRequestMethod(req.method)) {
-    next();
-    return;
+function readOperation(descriptor: CurrentRuntimeEndpointHandlerDescriptor): CurrentRuntimeReadOperationKey {
+  if (!descriptor.read) {
+    throw new Error(`current runtime endpoint handler descriptor has no read operation: ${descriptor.key}`);
   }
+  return descriptor.read;
+}
+
+function assertPinnedRuntimeIfNeeded(
+  req: Request,
+  descriptor: CurrentRuntimeEndpointHandlerDescriptor,
+  context: CurrentRuntimeApiContext,
+): void {
+  if (descriptor.runtimeIdParam) {
+    assertCurrentRuntimeId(requestParam(req, descriptor.runtimeIdParam), context);
+  }
+}
+
+function sendContextJsonEndpoint(
+  req: Request,
+  res: Response,
+  descriptor: CurrentRuntimeEndpointHandlerDescriptor,
+): void {
   withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeAsset(res, context, assetPathFromMountedRuntimeRequest(req));
-  });
-}
-
-async function sendRecipeItem(itemIdParam: string | undefined, res: Response): Promise<void> {
-  await withCurrentRuntimeApiContextAsync(async (context) => {
-    sendCurrentRuntimeNoStoreJson(res, await getCurrentRuntimeRecipeProducedByPayload(itemIdParam), context);
-  });
-}
-
-async function sendRecipeUsage(itemIdParam: string | undefined, res: Response): Promise<void> {
-  await withCurrentRuntimeApiContextAsync(async (context) => {
-    sendCurrentRuntimeNoStoreJson(res, await getCurrentRuntimeRecipeUsedInPayload(itemIdParam), context);
-  });
-}
-
-async function sendRecipePage(recipePageIdParam: string | undefined, res: Response): Promise<void> {
-  await withCurrentRuntimeApiContextAsync(async (context) => {
-    sendCurrentRuntimeNoStoreJson(res, await getCurrentRuntimeRecipePagePayload(recipePageIdParam), context);
-  });
-}
-
-function sendDiagnosticsHealth(res: Response): void {
-  withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeDiagnosticsHealthPayload(context), context);
-  });
-}
-
-function sendDiagnosticsRuntimeSummary(res: Response): void {
-  withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeDiagnosticsSummaryPayload(context), context);
-  });
-}
-
-function sendRuntimeSettings(res: Response): void {
-  withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeSettingsPayload(), context);
-  });
-}
-
-function sendGTDiagramsOverview(res: Response): void {
-  withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeGTDiagramsOverviewPayload(), context);
-  });
-}
-
-function sendForestryGeneticsOverview(res: Response): void {
-  withCurrentRuntimeApiContext((context) => {
-    sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeForestryGeneticsOverviewPayload(), context);
-  });
-}
-
-function sendMultiblockBlueprint(controllerItemIdParam: string | undefined, res: Response): void {
-  withCurrentRuntimeApiContext((context) => {
+    assertPinnedRuntimeIfNeeded(req, descriptor, context);
     sendCurrentRuntimeNoStoreJson(
       res,
-      getCurrentRuntimeMultiblockBlueprintPayload(controllerItemIdParam),
+      readCurrentRuntimeContextPayload(readOperation(descriptor), context),
       context,
     );
   });
 }
 
-export const CURRENT_RUNTIME_ENDPOINT_HANDLERS: Readonly<Record<CurrentRuntimeEndpointKey, RequestHandler>> =
-  validateAndFreezeRouteHandlers({
+function sendStaticJsonEndpoint(
+  req: Request,
+  res: Response,
+  descriptor: CurrentRuntimeEndpointHandlerDescriptor,
+): void {
+  withCurrentRuntimeApiContext((context) => {
+    assertPinnedRuntimeIfNeeded(req, descriptor, context);
+    sendCurrentRuntimeNoStoreJson(
+      res,
+      readCurrentRuntimeStaticPayload(readOperation(descriptor)),
+      context,
+    );
+  });
+}
+
+function sendSyncParamJsonEndpoint(
+  req: Request,
+  res: Response,
+  descriptor: CurrentRuntimeEndpointHandlerDescriptor,
+): void {
+  withCurrentRuntimeApiContext((context) => {
+    assertPinnedRuntimeIfNeeded(req, descriptor, context);
+    sendCurrentRuntimeNoStoreJson(
+      res,
+      readCurrentRuntimeSyncParamPayload(readOperation(descriptor), requestParam(req, descriptor.param)),
+      context,
+    );
+  });
+}
+
+async function sendAsyncParamJsonEndpoint(
+  req: Request,
+  res: Response,
+  descriptor: CurrentRuntimeEndpointHandlerDescriptor,
+): Promise<void> {
+  await withCurrentRuntimeApiContextAsync(async (context) => {
+    assertPinnedRuntimeIfNeeded(req, descriptor, context);
+    const payload = await readCurrentRuntimeAsyncParamPayload(
+      readOperation(descriptor),
+      requestParam(req, descriptor.param),
+    );
+    sendCurrentRuntimeNoStoreJson(res, payload, context);
+  });
+}
+
+function sendManifestEndpoint(
+  req: Request,
+  res: Response,
+  descriptor: CurrentRuntimeEndpointHandlerDescriptor,
+): void {
+  withCurrentRuntimeApiContext((context) => {
+    assertPinnedRuntimeIfNeeded(req, descriptor, context);
+    sendCurrentRuntimeManifest(res, context, { immutable: descriptor.immutable === true });
+  });
+}
+
+function sendAssetParamEndpoint(
+  req: Request,
+  res: Response,
+  descriptor: CurrentRuntimeEndpointHandlerDescriptor,
+): void {
+  withCurrentRuntimeApiContext((context) => {
+    assertPinnedRuntimeIfNeeded(req, descriptor, context);
+    sendCurrentRuntimeAsset(res, context, requestParam(req, descriptor.param));
+  });
+}
+
+function sendMountedAssetEndpoint(
+  req: Request,
+  res: Response,
+  next: NextFunction,
+  descriptor: CurrentRuntimeEndpointHandlerDescriptor,
+): void {
+  if (!isRuntimeAssetRequestMethod(req.method)) {
+    next();
+    return;
+  }
+  withCurrentRuntimeApiContext((context) => {
+    assertPinnedRuntimeIfNeeded(req, descriptor, context);
+    sendCurrentRuntimeAsset(res, context, assetPathFromMountedRuntimeRequest(req));
+  });
+}
+
+function sendReportEndpoint(
+  req: Request,
+  res: Response,
+  descriptor: CurrentRuntimeEndpointHandlerDescriptor,
+): void {
+  if (!descriptor.runtimeIdParam) {
+    sendCurrentRuntimeReport(res, requestParam(req, descriptor.param));
+    return;
+  }
+  withCurrentRuntimeApiContext((context) => {
+    assertPinnedRuntimeIfNeeded(req, descriptor, context);
+    sendCurrentRuntimeReport(res, requestParam(req, descriptor.param));
+  });
+}
+
+function createCurrentRuntimeEndpointHandler(descriptor: CurrentRuntimeEndpointHandlerDescriptor): RequestHandler {
+  switch (descriptor.kind) {
+    case 'context-json':
+      return (req, res) => sendContextJsonEndpoint(req, res, descriptor);
+    case 'static-json':
+      return (req, res) => sendStaticJsonEndpoint(req, res, descriptor);
+    case 'param-sync-json':
+      return (req, res) => sendSyncParamJsonEndpoint(req, res, descriptor);
+    case 'param-async-json':
+      return asyncHandler(async (req, res) => sendAsyncParamJsonEndpoint(req, res, descriptor));
+    case 'manifest':
+      return (req, res) => sendManifestEndpoint(req, res, descriptor);
+    case 'asset-param':
+      return (req, res) => sendAssetParamEndpoint(req, res, descriptor);
+    case 'asset-mounted':
+      return (req, res, next) => sendMountedAssetEndpoint(req, res, next, descriptor);
+    case 'report':
+      return (req, res) => sendReportEndpoint(req, res, descriptor);
+    default: {
+      const exhaustive: never = descriptor.kind;
+      throw new Error(`Unsupported current runtime endpoint handler kind: ${exhaustive}`);
+    }
+  }
+}
+
+function createCurrentRuntimeEndpointHandlers(): Readonly<Record<CurrentRuntimeEndpointKey, RequestHandler>> {
+  const handlers = CURRENT_RUNTIME_ENDPOINT_HANDLER_DESCRIPTORS.reduce(
+    (map, descriptor) => {
+      map[descriptor.key] = createCurrentRuntimeEndpointHandler(descriptor);
+      return map;
+    },
+    {} as Record<CurrentRuntimeEndpointKey, RequestHandler>,
+  );
+  return validateAndFreezeRouteHandlers({
     label: 'current runtime endpoint',
     descriptors: CURRENT_RUNTIME_ENDPOINTS,
-    handlers: {
-      current: (_req, res) => {
-        sendRuntimeCurrent(res);
-      },
-      currentManifest: (_req, res) => {
-        withCurrentRuntimeApiContext((context) => {
-          sendCurrentRuntimeManifest(res, context);
-        });
-      },
-      currentAssetParam: (req, res) => {
-        withCurrentRuntimeApiContext((context) => {
-          sendCurrentRuntimeAsset(res, context, req.params.fileName);
-        });
-      },
-      currentAssetMounted: sendMountedRuntimeAsset,
-      currentReport: (req, res) => {
-        sendCurrentRuntimeReport(res, req.params.reportName);
-      },
-      pinnedManifest: (req, res) => {
-        withCurrentRuntimeApiContext((context) => {
-          assertCurrentRuntimeId(req.params.runtimeId, context);
-          sendCurrentRuntimeManifest(res, context, { immutable: true });
-        });
-      },
-      pinnedAssetParam: (req, res) => {
-        withCurrentRuntimeApiContext((context) => {
-          assertCurrentRuntimeId(req.params.runtimeId, context);
-          sendCurrentRuntimeAsset(res, context, req.params.fileName);
-        });
-      },
-      pinnedAssetMounted: (req, res, next) => {
-        if (!isRuntimeAssetRequestMethod(req.method)) {
-          next();
-          return;
-        }
-        withCurrentRuntimeApiContext((context) => {
-          assertCurrentRuntimeId(req.params.runtimeId, context);
-          sendCurrentRuntimeAsset(res, context, assetPathFromMountedRuntimeRequest(req));
-        });
-      },
-      pinnedReport: (req, res) => {
-        withCurrentRuntimeApiContext((context) => {
-          assertCurrentRuntimeId(req.params.runtimeId, context);
-          sendCurrentRuntimeReport(res, req.params.reportName);
-        });
-      },
-      recipeItem: asyncHandler(async (req, res) => {
-        await sendRecipeItem(req.params.itemId, res);
-      }),
-      recipeCurrentItem: asyncHandler(async (req, res) => {
-        await sendRecipeItem(req.params.itemId, res);
-      }),
-      recipeUsage: asyncHandler(async (req, res) => {
-        await sendRecipeUsage(req.params.itemId, res);
-      }),
-      recipePage: asyncHandler(async (req, res) => {
-        await sendRecipePage(req.params.recipePageId, res);
-      }),
-      recipeCurrentUsage: asyncHandler(async (req, res) => {
-        await sendRecipeUsage(req.params.itemId, res);
-      }),
-      diagnosticsHealth: (_req, res) => {
-        sendDiagnosticsHealth(res);
-      },
-      diagnosticsRuntimeSummary: (_req, res) => {
-        sendDiagnosticsRuntimeSummary(res);
-      },
-      healthCurrentRuntime: (_req, res) => {
-        sendDiagnosticsHealth(res);
-      },
-      nativeSurfaceMetrics: (_req, res) => {
-        withCurrentRuntimeApiContext((context) => {
-          sendCurrentRuntimeNoStoreJson(res, getCurrentRuntimeNativeSurfaceMetricsPayload(context), context);
-        });
-      },
-      runtimeSettings: (_req, res) => {
-        sendRuntimeSettings(res);
-      },
-      runtimeDataGTDiagramsOverview: (_req, res) => {
-        sendGTDiagramsOverview(res);
-      },
-      runtimeDataForestryGeneticsOverview: (_req, res) => {
-        sendForestryGeneticsOverview(res);
-      },
-      runtimeDataMultiblockBlueprint: asyncHandler(async (req, res) => {
-        sendMultiblockBlueprint(req.params.controllerItemId, res);
-      }),
-    },
+    handlers,
   });
+}
+
+export const CURRENT_RUNTIME_ENDPOINT_HANDLERS = createCurrentRuntimeEndpointHandlers();
 
 export function getCurrentRuntimeEndpointHandler(key: CurrentRuntimeEndpointKey): RequestHandler {
   return CURRENT_RUNTIME_ENDPOINT_HANDLERS[key];

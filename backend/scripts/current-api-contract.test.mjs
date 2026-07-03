@@ -12,6 +12,7 @@ const namespaceSource = readBackendSource('src/routes/api-namespaces.routes.ts')
 const namespaceRegistrySource = readBackendSource('src/routes/api-namespace-registry.ts');
 const currentRuntimeEndpointRegistrySource = readBackendSource('src/routes/current-runtime-endpoint-registry.ts');
 const currentRuntimeEndpointHandlersSource = readBackendSource('src/routes/current-runtime-endpoint-handlers.ts');
+const currentRuntimeEndpointHandlerAbiSource = readBackendSource('src/routes/current-runtime-endpoint-handler-abi.ts');
 const currentRuntimeTransportSource = readBackendSource('src/routes/current-runtime-transport.ts');
 const currentRuntimeTransportAbiSource = readBackendSource('src/routes/current-runtime-transport-abi.ts');
 const currentRuntimeSnapshotSource = readBackendSource('src/services/current-runtime-snapshot.service.ts');
@@ -24,6 +25,7 @@ const currentRuntimeRecipeApiSource = readBackendSource('src/services/current-ru
 const currentRuntimeReportRegistryAbiSource = readBackendSource('src/services/current-runtime-report-registry-abi.ts');
 const currentRuntimeReportRegistrySource = readBackendSource('src/services/current-runtime-report-registry.service.ts');
 const currentRuntimeReadSource = readBackendSource('src/services/current-runtime-read.service.ts');
+const currentRuntimeReadCatalogSource = readBackendSource('src/services/current-runtime-read-catalog.ts');
 const currentRuntimeSettingsSource = readBackendSource('src/services/current-runtime-settings.service.ts');
 const currentRuntimeSettingsAbiSource = readBackendSource('src/services/current-runtime-settings-abi.ts');
 const currentRuntimeSpecialDataSource = readBackendSource('src/services/current-runtime-special-data.service.ts');
@@ -85,21 +87,22 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.equal(currentRuntimeTransportSource.includes('function sendCurrentRuntimeReport'), true);
   assert.match(routeSource, /getCurrentRuntimeEndpointHandler\(endpoint\.key\)/);
   assert.doesNotMatch(routeSource, /from '\.\.\/services\//);
-  assert.equal(currentRuntimeEndpointHandlersSource.includes('function sendDiagnosticsHealth'), true);
-  assert.equal(currentRuntimeEndpointHandlersSource.includes('function sendDiagnosticsRuntimeSummary'), true);
-  assert.equal(currentRuntimeEndpointHandlersSource.includes('function sendRuntimeSettings'), true);
-  assert.equal(currentRuntimeEndpointHandlersSource.includes('function sendGTDiagramsOverview'), true);
-  assert.equal(currentRuntimeEndpointHandlersSource.includes('function sendForestryGeneticsOverview'), true);
-  assert.equal(currentRuntimeEndpointHandlersSource.includes('function sendMultiblockBlueprint'), true);
+  assert.match(currentRuntimeEndpointHandlerAbiSource, /CURRENT_RUNTIME_ENDPOINT_HANDLER_DESCRIPTORS/);
+  assert.match(currentRuntimeEndpointHandlersSource, /createCurrentRuntimeEndpointHandler\(descriptor\)/);
+  assert.match(currentRuntimeEndpointHandlersSource, /createCurrentRuntimeEndpointHandlers\(\)/);
+  assert.match(currentRuntimeEndpointHandlersSource, /readCurrentRuntimeContextPayload/);
+  assert.match(currentRuntimeEndpointHandlersSource, /readCurrentRuntimeAsyncParamPayload/);
+  assert.match(currentRuntimeEndpointHandlersSource, /readCurrentRuntimeStaticPayload/);
+  assert.match(currentRuntimeEndpointHandlersSource, /readCurrentRuntimeSyncParamPayload/);
   assert.match(currentRuntimeEndpointHandlersSource, /current-runtime-read\.service/);
   assert.doesNotMatch(currentRuntimeEndpointHandlersSource, /current-runtime-settings\.service/);
   assert.doesNotMatch(currentRuntimeEndpointHandlersSource, /current-runtime-special-data\.service/);
   assert.doesNotMatch(currentRuntimeEndpointHandlersSource, /current-runtime-recipe-api\.service/);
   assert.doesNotMatch(currentRuntimeEndpointHandlersSource, /current-runtime-observability\.service/);
-  assert.equal(currentRuntimeReadSource.includes('getCurrentRuntimeSettings()'), true);
-  assert.equal(currentRuntimeReadSource.includes('getCurrentRuntimeGTDiagramsOverview()'), true);
-  assert.equal(currentRuntimeReadSource.includes('getCurrentRuntimeForestryGeneticsOverview()'), true);
-  assert.equal(currentRuntimeReadSource.includes('getCurrentRuntimeMultiblockBlueprint(controllerItemIdParam)'), true);
+  assert.match(currentRuntimeReadCatalogSource, /read: getCurrentRuntimeSettings/);
+  assert.match(currentRuntimeReadCatalogSource, /read: getCurrentRuntimeGTDiagramsOverview/);
+  assert.match(currentRuntimeReadCatalogSource, /read: getCurrentRuntimeForestryGeneticsOverview/);
+  assert.match(currentRuntimeReadCatalogSource, /read: getCurrentRuntimeMultiblockBlueprint/);
   assert.equal(currentRuntimeSpecialDataSource.includes("from './gt-diagrams.service'"), true);
   assert.equal(currentRuntimeSpecialDataSource.includes("from './forestry-genetics.service'"), true);
   assert.equal(currentRuntimeSpecialDataSource.includes("from './multiblocks.service'"), true);
@@ -210,7 +213,10 @@ test('current runtime snapshot service owns immutable manifest and artifact inve
   assert.match(currentRuntimeObservabilitySource, /export function getCurrentRuntimeDiagnosticsHealth/);
   assert.match(currentRuntimeObservabilitySource, /export function getCurrentRuntimeDiagnosticsSummary/);
   assert.match(currentRuntimeObservabilitySource, /export function getCurrentRuntimeNativeSurfaceMetrics/);
-  assert.match(currentRuntimeReadSource, /current-runtime-observability\.service/);
+  assert.match(currentRuntimeReadSource, /current-runtime-read-catalog/);
+  assert.match(currentRuntimeReadCatalogSource, /current-runtime-observability\.service/);
+  assert.match(currentRuntimeReadCatalogSource, /CURRENT_RUNTIME_READ_OPERATION_DESCRIPTORS/);
+  assert.match(currentRuntimeReadCatalogSource, /validateAndFreezeCurrentRuntimeReadOperationDescriptors/);
   assert.match(currentRuntimeTransportSource, /export type CurrentRuntimeJsonEnvelope = Readonly/);
   assert.match(currentRuntimeTransportSource, /export function createCurrentRuntimeEnvelope/);
   assert.match(currentRuntimeTransportSource, /export function sendCurrentRuntimeJson/);
@@ -257,8 +263,10 @@ test('runtime delivery API exposes immutable ETag asset contracts and report all
   assert.match(currentRuntimeTransportSource, /CURRENT_RUNTIME_IMMUTABLE_ASSET_CACHE/);
   assert.match(currentRuntimeTransportAbiSource, /immutable:\s*true/);
   assert.match(currentRuntimeTransportSource, /res\.setHeader\('ETag'/);
-  assert.match(currentRuntimeEndpointHandlersSource, /sendCurrentRuntimeNoStoreJson\(res, getCurrentRuntimeOverviewPayload\(context\), context\)/, 'current runtime pointer must remain no-store');
-  assert.match(currentRuntimeReadSource, /getCurrentRuntimeOverview\(context\)/, 'read service must own current runtime overview payload selection');
+  assert.match(currentRuntimeEndpointHandlersSource, /sendCurrentRuntimeNoStoreJson\(/, 'current runtime pointer must remain no-store');
+  assert.match(currentRuntimeEndpointHandlerAbiSource, /key: 'current'[\s\S]*read: 'overview'/, 'current runtime pointer must map to overview read op');
+  assert.match(currentRuntimeReadSource, /readCurrentRuntimeContextPayload\('overview', context\)/, 'read service must delegate overview payload selection through read ops');
+  assert.match(currentRuntimeReadCatalogSource, /key: 'overview'[\s\S]*read: getCurrentRuntimeOverview/, 'read catalog must own overview source selection');
   assert.match(currentRuntimeTransportSource, /setNoStoreHeaders\(res\);\s*\n\s*sendCurrentRuntimeJson\(res, data, context\)/, 'no-store envelope must be centralized in current runtime transport');
   assert.match(currentRuntimeApiAbiSource, /runtimeId: meta\.runtimeId/);
   assert.match(currentRuntimeTransportSource, /resolveCurrentRuntimeReport\(reportName\)/);
@@ -318,9 +326,10 @@ test('current API responses are path portable and do not advertise machine roots
 });
 
 test('recipe page API exposes low-frequency page details without browser hot-path ownership', () => {
-  assert.equal(currentRuntimeEndpointHandlersSource.includes('function sendRecipePage'), true);
-  assert.equal(currentRuntimeEndpointHandlersSource.includes('getCurrentRuntimeRecipePagePayload(recipePageIdParam)'), true);
-  assert.equal(currentRuntimeReadSource.includes('getCurrentRecipePage(recipePageIdParam)'), true);
+  assert.match(currentRuntimeEndpointHandlerAbiSource, /key: 'recipePage'[\s\S]*kind: 'param-async-json'[\s\S]*read: 'recipePage'/);
+  assert.match(currentRuntimeEndpointHandlerAbiSource, /param: 'recipePageId'/);
+  assert.equal(currentRuntimeReadSource.includes("readCurrentRuntimeAsyncParamPayload('recipePage', recipePageIdParam)"), true);
+  assert.match(currentRuntimeReadCatalogSource, /key: 'recipePage'[\s\S]*read: getCurrentRecipePage/);
   assert.equal(currentRuntimeRecipeApiSource.includes('getRecipePageById(recipePageId)'), true);
   assert.equal(currentRuntimeRecipeApiSource.includes("throw notFound('Recipe page not found')"), true);
   assert.match(currentRuntimeEndpointRegistrySource, /path: '\/recipes\/page\/:recipePageId\(\*\)'/);
@@ -346,11 +355,10 @@ test('external-runtime authority uses runtime recipe pack for item usage and pag
   assert.doesNotMatch(routeSource, /function isExternalRuntimeAuthority/);
   assert.doesNotMatch(routeSource, /RUNTIME_PACK_QUERY_NOT_IMPLEMENTED/);
   assert.doesNotMatch(routeSource, /assertRecipeApiPackBackedOrAllowed/);
-  const pageIndex = currentRuntimeEndpointHandlersSource.indexOf('async function sendRecipePage');
-  assert.notEqual(pageIndex, -1, 'sendRecipePage must exist');
-  const pageBody = currentRuntimeEndpointHandlersSource.slice(pageIndex, currentRuntimeEndpointHandlersSource.indexOf('\n}', pageIndex) + 2);
-  assert.match(pageBody, /getCurrentRuntimeRecipePagePayload\(recipePageIdParam\)/, 'sendRecipePage must delegate runtime recipe authority');
-  assert.match(currentRuntimeReadSource, /getCurrentRecipePage\(recipePageIdParam\)/, 'read service must delegate runtime recipe authority');
+  assert.match(currentRuntimeEndpointHandlerAbiSource, /key: 'recipePage'[\s\S]*read: 'recipePage'/, 'recipe page endpoint must delegate through endpoint handler catalog');
+  assert.match(currentRuntimeEndpointHandlersSource, /sendAsyncParamJsonEndpoint/, 'async param endpoints must share the catalog-driven runtime recipe path');
+  assert.match(currentRuntimeReadSource, /readCurrentRuntimeAsyncParamPayload\('recipePage', recipePageIdParam\)/, 'read service must delegate runtime recipe authority');
+  assert.match(currentRuntimeReadCatalogSource, /read: getCurrentRecipePage/, 'read catalog must own recipe page authority');
 });
 
 

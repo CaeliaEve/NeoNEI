@@ -11,6 +11,10 @@ const settingsAbiSource = readFileSync(resolve(root, 'src/services/current-runti
 const snapshotSource = readFileSync(resolve(root, 'src/services/current-runtime-snapshot.service.ts'), 'utf8');
 const snapshotAbiSource = readFileSync(resolve(root, 'src/services/current-runtime-snapshot-abi.ts'), 'utf8');
 const apiAbiSource = readFileSync(resolve(root, 'src/services/current-runtime-api-abi.ts'), 'utf8');
+const readSource = readFileSync(resolve(root, 'src/services/current-runtime-read.service.ts'), 'utf8');
+const readCatalogSource = readFileSync(resolve(root, 'src/services/current-runtime-read-catalog.ts'), 'utf8');
+const endpointHandlerSource = readFileSync(resolve(root, 'src/routes/current-runtime-endpoint-handlers.ts'), 'utf8');
+const endpointHandlerAbiSource = readFileSync(resolve(root, 'src/routes/current-runtime-endpoint-handler-abi.ts'), 'utf8');
 
 test('current runtime report registry exposes debugfs reports through an ABI catalog', () => {
   assert.match(reportRegistrySource, /from '\.\/current-runtime-report-registry-abi'/);
@@ -92,6 +96,46 @@ test('current runtime settings controlfs response uses a settings ABI catalog', 
   assert.doesNotMatch(settingsSource, /CURRENT_RUNTIME_ENABLED_FLAG_VALUES/);
   assert.doesNotMatch(settingsSource, /function isEnabledFlag/);
   assert.doesNotMatch(settingsSource, /\.trim\(\)\.toLowerCase\(\)/);
+});
+
+test('current runtime read and endpoint handlers are descriptor ops-table owned', () => {
+  assert.match(readSource, /from '\.\/current-runtime-read-catalog'/);
+  assert.match(readCatalogSource, /CURRENT_RUNTIME_READ_OPERATION_DESCRIPTORS/);
+  assert.match(readCatalogSource, /CURRENT_RUNTIME_READ_OPERATIONS/);
+  assert.match(readCatalogSource, /validateAndFreezeCurrentRuntimeReadOperationDescriptors/);
+  assert.match(readCatalogSource, /Missing current runtime read operation descriptor/);
+  assert.match(readCatalogSource, /Duplicate current runtime read operation descriptor/);
+  for (const readKey of [
+    'overview',
+    'recipeProducedBy',
+    'recipeUsedIn',
+    'recipePage',
+    'diagnosticsHealth',
+    'diagnosticsSummary',
+    'nativeSurfaceMetrics',
+    'settings',
+    'gtDiagramsOverview',
+    'forestryGeneticsOverview',
+    'multiblockBlueprint',
+  ]) {
+    assert.match(readCatalogSource, new RegExp(`key: '${readKey}'`));
+  }
+
+  assert.match(endpointHandlerSource, /from '\.\/current-runtime-endpoint-handler-abi'/);
+  assert.match(endpointHandlerAbiSource, /CURRENT_RUNTIME_ENDPOINT_HANDLER_DESCRIPTORS/);
+  assert.match(endpointHandlerAbiSource, /CURRENT_RUNTIME_ENDPOINT_HANDLER_BY_KEY/);
+  assert.match(endpointHandlerAbiSource, /validateAndFreezeCurrentRuntimeEndpointHandlerDescriptors/);
+  assert.match(endpointHandlerAbiSource, /Missing current runtime endpoint handler descriptor/);
+  assert.match(endpointHandlerAbiSource, /Duplicate current runtime endpoint handler descriptor/);
+  assert.match(endpointHandlerSource, /createCurrentRuntimeEndpointHandler\(descriptor\)/);
+  assert.match(endpointHandlerSource, /validateAndFreezeRouteHandlers/);
+  assert.doesNotMatch(endpointHandlerSource, /getCurrentRuntimeRecipePagePayload/);
+  assert.doesNotMatch(endpointHandlerSource, /current-runtime-recipe-api\.service/);
+  assert.doesNotMatch(endpointHandlerSource, /current-runtime-settings\.service/);
+  assert.match(endpointHandlerAbiSource, /key: 'current'[\s\S]*kind: 'context-json'[\s\S]*read: 'overview'/);
+  assert.match(endpointHandlerAbiSource, /key: 'pinnedManifest'[\s\S]*runtimeIdParam: 'runtimeId'[\s\S]*immutable: true/);
+  assert.match(endpointHandlerAbiSource, /key: 'recipePage'[\s\S]*kind: 'param-async-json'[\s\S]*read: 'recipePage'/);
+  assert.match(endpointHandlerAbiSource, /key: 'runtimeDataMultiblockBlueprint'[\s\S]*kind: 'param-sync-json'[\s\S]*read: 'multiblockBlueprint'/);
 });
 
 test('current runtime snapshot manifest fields and default identities are ABI-catalog owned', () => {
