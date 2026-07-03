@@ -262,6 +262,42 @@ test('native UI registry fails closed when ready runtime lacks recipe binding or
   );
 });
 
+test('native UI registry fails closed when runtime loading reaches terminal error state', () => {
+  const runtime = {
+    status: 'error',
+    manifestUrl: 'http://localhost/api/runtime/current/manifest',
+    templates: [],
+    bindings: [],
+    strings: [],
+    templatesByKey: new Map(),
+    templatesByFamilyKey: new Map(),
+    bindingsByRecipeId: new Map(),
+    summary: {
+      templateCount: 0,
+      bindingCount: 0,
+      boundRecipeCount: 0,
+      unboundRecipeCount: 0,
+      stringCount: 0,
+      slotCount: 0,
+      textOverlayCount: 0,
+      dynamicPrimitiveCount: 0,
+      hotspotCount: 0,
+      viewportCount: 0,
+      assetCount: 0,
+    },
+    error: 'native UI ABI validation report is not ok: failed',
+  };
+
+  assert.throws(
+    () => resolveNativeUiRuntimeSurface({
+      runtime,
+      recipeId: 'recipe-1',
+      inlineLayout: null,
+    }),
+    /Native UI runtime failed for http:\/\/localhost\/api\/runtime\/current\/manifest: native UI ABI validation report is not ok: failed/,
+  );
+});
+
 test('native UI registry rejects incomplete background ABI on resolved surfaces', () => {
   const template = {
     templateKey: 'bad-background-template',
@@ -379,6 +415,8 @@ test('native UI registry owns component runtime layout contract', () => {
   assert.doesNotMatch(componentSource, /slots\.value\.forEach/);
 
   assert.match(registrySource, /export function resolveNativeUiRuntimeSurface/);
+  assert.match(registrySource, /UI_PACK_RUNTIME_STATUS\.error/);
+  assert.match(registrySource, /UI_PACK_RUNTIME_STATUS\.ready/);
   assert.match(registrySource, /export function buildNativeUiSlotCells/);
   assert.match(registrySource, /export function createNativeUiFitMatrix/);
   assert.match(registrySource, /NativeUiSurfaceSource = "ui-pack-template" \| "missing"/);

@@ -23,6 +23,7 @@ import {
   resolveNativeUiSurfaceContract,
   type NativeUiSurfaceContract,
 } from "./nativeUiSurfaceAbi.ts";
+import { UI_PACK_RUNTIME_STATUS } from "./uiPackRuntimeAbi.ts";
 
 export type NativeUiSlot = UiPackSlot;
 export type NativeUiTextOverlay = UiPackTextOverlay;
@@ -235,14 +236,19 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
   const runtime = options.runtime ?? null;
   const recipeId = `${options.recipeId ?? ""}`.trim();
   const inlineLayout = options.inlineLayout ?? null;
+  if (runtime?.status === UI_PACK_RUNTIME_STATUS.error) {
+    throw new Error(
+      `Native UI runtime failed for ${runtime.manifestUrl || "<unknown manifest>"}: ${runtime.error || "<missing error detail>"}`,
+    );
+  }
   const binding = recipeId ? runtime?.bindingsByRecipeId.get(recipeId) ?? null : null;
-  if (runtime?.status === "ready" && !binding) {
+  if (runtime?.status === UI_PACK_RUNTIME_STATUS.ready && !binding) {
     throw new Error(`Native UI runtime has no recipe binding for recipeId: ${recipeId || "<missing>"}`);
   }
   const template = binding?.templateKey
     ? runtime?.templatesByKey.get(binding.templateKey) ?? null
     : null;
-  if (runtime?.status === "ready" && binding && !template) {
+  if (runtime?.status === UI_PACK_RUNTIME_STATUS.ready && binding && !template) {
     throw new Error(`Native UI runtime binding ${binding.recipeId} references missing template: ${binding.templateKey || "<missing>"}`);
   }
 
