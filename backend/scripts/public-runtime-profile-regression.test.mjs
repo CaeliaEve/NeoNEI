@@ -14,6 +14,7 @@ const apiNamespaceRegistrySource = readFileSync(join(repoRoot, 'backend/src/rout
 const adminControlPlaneSource = readFileSync(join(repoRoot, 'backend/src/routes/runtime-admin-control-plane.routes.ts'), 'utf8');
 const adminControlPlaneRegistrySource = readFileSync(join(repoRoot, 'backend/src/routes/runtime-admin-control-plane-registry.ts'), 'utf8');
 const staticAssetRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/static-assets.routes.ts'), 'utf8');
+const staticAssetRouteRegistrySource = readFileSync(join(repoRoot, 'backend/src/routes/static-asset-route-registry.ts'), 'utf8');
 const errorResponseSource = readFileSync(join(repoRoot, 'backend/src/utils/error-response.ts'), 'utf8');
 const patternsRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/patterns.routes.ts'), 'utf8');
 const currentRuntimeSpecialDataSource = readFileSync(join(repoRoot, 'backend/src/services/current-runtime-special-data.service.ts'), 'utf8');
@@ -31,7 +32,13 @@ test('public runtime profile is explicit and keeps control on ops/admin mounts',
   assert.doesNotMatch(apiNamespacesRoutesSource, /resolveAccelerationCompilerAuthority/);
   assert.doesNotMatch(apiNamespacesRoutesSource, /app\.use\('\/lab'/);
   assert.doesNotMatch(apiNamespacesRoutesSource, /app\.use\('\/api\/items'/);
-  assert.match(apiNamespaceRegistrySource, /PUBLIC_RUNTIME_ROOT_NAMESPACE[\s\S]*mountPath:\s*'\/runtime'[\s\S]*handler:\s*runtimeRoutes/);
+  assert.match(apiNamespaceRegistrySource, /API_NAMESPACE_DESCRIPTORS/);
+  assert.match(apiNamespaceRegistrySource, /validateAndFreezeApiNamespaceDescriptors/);
+  assert.match(apiNamespaceRegistrySource, /key:\s*'runtimeRoot'[\s\S]*mountPath:\s*'\/runtime'[\s\S]*handler:\s*runtimeRoutes/);
+  assert.match(apiNamespaceRegistrySource, /key:\s*'currentApi'[\s\S]*mountPath:\s*'\/api'[\s\S]*handler:\s*currentApiRoutes/);
+  assert.match(apiNamespaceRegistrySource, /key:\s*'publicPublish'[\s\S]*mountPath:\s*'\/api\/publish'[\s\S]*handler:\s*publicPublishRoutes/);
+  assert.match(apiNamespaceRegistrySource, /input\.publicRuntimeOnly/);
+  assert.doesNotMatch(apiNamespaceRegistrySource, /PUBLIC_RUNTIME_ROOT_NAMESPACE|CURRENT_API_NAMESPACE|PUBLIC_RUNTIME_TAIL_NAMESPACES/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /LAB_CONTROL_NAMESPACES|lab-control|mountPath:\s*'\/lab/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /LEGACY_COMPAT_NAMESPACES|legacy-compat|\/api\/(?:items|patterns|recipes-indexed|recipe-bootstrap)/);
   assert.doesNotMatch(apiNamespaceRegistrySource, /labItems|labRecipes|labRecipeBootstrap/);
@@ -47,7 +54,9 @@ test('public runtime profile is explicit and keeps control on ops/admin mounts',
   assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/patterns'/);
   assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/publish'/);
   assert.match(adminControlPlaneRegistrySource, /mountPath:\s*'\/render-contract'/);
-  assert.match(staticAssetRoutesSource, /app\.use\(\s*'\/publish'/);
+  assert.match(staticAssetRoutesSource, /STATIC_ASSET_POST_FALLBACK_MOUNTS/);
+  assert.match(staticAssetRouteRegistrySource, /key:\s*'publishPrecompressed'[\s\S]*mountPath:\s*'\/publish'/);
+  assert.match(staticAssetRouteRegistrySource, /key:\s*'publishStatic'[\s\S]*mountPath:\s*'\/publish'/);
 });
 
 test('unmatched routes use the same diagnostic error envelope', () => {

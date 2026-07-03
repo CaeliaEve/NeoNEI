@@ -108,11 +108,27 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
 });
 
 test('current API owns /api without legacy dynamic namespace shadow mounts', () => {
-  const currentIndex = namespaceRegistrySource.indexOf('namespaces.push(CURRENT_API_NAMESPACE)');
+  const runtimeRootIndex = namespaceRegistrySource.indexOf("key: 'runtimeRoot'");
+  const currentIndex = namespaceRegistrySource.indexOf("key: 'currentApi'");
+  const publicPublishIndex = namespaceRegistrySource.indexOf("key: 'publicPublish'");
+  const v1RuntimeIndex = namespaceRegistrySource.indexOf("key: 'v1Runtime'");
+  assert.notEqual(runtimeRootIndex, -1);
   assert.notEqual(currentIndex, -1);
+  assert.notEqual(publicPublishIndex, -1);
+  assert.notEqual(v1RuntimeIndex, -1);
+  assert.equal(runtimeRootIndex < currentIndex, true, '/runtime must mount before /api');
+  assert.equal(currentIndex < publicPublishIndex, true, '/api must mount before /api/publish tail namespace');
+  assert.equal(publicPublishIndex < v1RuntimeIndex, true, '/api/publish must mount before /api/v1 tail namespace');
+  assert.match(namespaceRegistrySource, /export const API_NAMESPACE_DESCRIPTORS/);
+  assert.match(namespaceRegistrySource, /validateAndFreezeApiNamespaceDescriptors/);
+  assert.match(namespaceRegistrySource, /Duplicate API namespace descriptor/);
+  assert.match(namespaceRegistrySource, /Missing API namespace descriptor/);
+  assert.match(namespaceRegistrySource, /Duplicate API namespace mount path/);
+  assert.match(namespaceRegistrySource, /input\.publicRuntimeOnly/);
   assert.match(namespaceSource, /mountApiNamespaces/);
   assert.match(namespaceSource, /getApiNamespacePlan/);
   assert.doesNotMatch(namespaceSource, /app\.use\('\/api'/);
+  assert.doesNotMatch(namespaceRegistrySource, /PUBLIC_RUNTIME_ROOT_NAMESPACE|CURRENT_API_NAMESPACE|PUBLIC_RUNTIME_TAIL_NAMESPACES/);
   assert.doesNotMatch(namespaceRegistrySource, /LEGACY_COMPAT_NAMESPACES/);
   assert.doesNotMatch(namespaceRegistrySource, /legacy-compat/);
   assert.doesNotMatch(namespaceRegistrySource, /mountPath: '\/api\/(?:items|patterns|recipes-indexed|recipe-bootstrap|multiblocks|ecosystem|gt-diagrams|forestry-genetics|render-contract)'/);
