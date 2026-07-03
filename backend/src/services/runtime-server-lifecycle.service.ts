@@ -1,4 +1,4 @@
-﻿import fs from 'fs';
+import fs from 'fs';
 import type { Express } from 'express';
 import type { serverSettings as serverSettingsContract } from '../config/server-settings';
 import { IMAGES_PATH } from '../config/runtime-paths';
@@ -10,6 +10,17 @@ import {
   reconcileAccelerationRuntime,
   setAccelerationRuntimePhase,
 } from './acceleration-runtime.service';
+import {
+  getBackgroundReconcileFailureTransition,
+  getMissingImagesPathWarning,
+  getRuntimeLifecyclePhase,
+  projectRuntimeBackgroundReconcileOptions,
+  projectRuntimeServerReadyLogs,
+  RUNTIME_BACKGROUND_RECONCILE_POLICY,
+  RUNTIME_DATABASE_LOGS,
+  RUNTIME_LIFECYCLE_FAILURE_POLICY,
+  RUNTIME_NATIVE_RENDER_LOG_POLICY,
+} from './runtime-server-lifecycle-abi';
 
 export type RuntimeServerSettings = typeof serverSettingsContract;
 export type RuntimeAccelerationDbManager = ReturnType<typeof getAccelerationDatabaseManager>;
@@ -38,27 +49,22 @@ export function createRuntimeAccelerationManagerRegistry(): RuntimeAccelerationM
 export async function initializeRuntimeDatabases(
   registry: RuntimeAccelerationManagerRegistry,
 ): Promise<RuntimeAccelerationDbManager> {
-  setAccelerationRuntimePhase('initializing', 'Initializing databases...', {
-    stale: false,
-    lastCompiledSignature: null,
-    lastError: null,
-  });
+  const initializingPhase = getRuntimeLifecyclePhase('databaseInitializing');
+  setAccelerationRuntimePhase(initializingPhase.phase, initializingPhase.message, initializingPhase.extras);
 
-  logger.info('Initializing database...');
+  logger.info(RUNTIME_DATABASE_LOGS.initializingDatabase);
   const dbManager = getDatabaseManager();
   await dbManager.init();
-  logger.info('Database ready');
+  logger.info(RUNTIME_DATABASE_LOGS.databaseReady);
 
   const accelerationDbManager = getAccelerationDatabaseManager();
-  logger.info('Initializing acceleration database...');
+  logger.info(RUNTIME_DATABASE_LOGS.initializingAccelerationDatabase);
   await accelerationDbManager.init();
-  logger.info('Acceleration database ready');
+  logger.info(RUNTIME_DATABASE_LOGS.accelerationDatabaseReady);
 
   registry.setRuntimeAccelerationDbManager(accelerationDbManager);
-  setAccelerationRuntimePhase('ready', 'Acceleration database opened; background reconciliation pending.', {
-    stale: false,
-    lastError: null,
-  });
+  const readyPhase = getRuntimeLifecyclePhase('databaseReady');
+  setAccelerationRuntimePhase(readyPhase.phase, readyPhase.message, readyPhase.extras);
   return accelerationDbManager;
 }
 
@@ -70,24 +76,20 @@ function logNativeRenderRuntimeStatus(): void {
     validation: nativeRenderDiagnostics.validation,
     missing: nativeRenderDiagnostics.missing,
   };
-  if (nativeRenderDiagnostics.status === 'ok') {
-    logger.info('[NATIVE_RENDER] Angelica render index ready', nativeRenderSummary);
+  if (nativeRenderDiagnostics.status === RUNTIME_NATIVE_RENDER_LOG_POLICY.readyStatus) {
+    logger.info(RUNTIME_NATIVE_RENDER_LOG_POLICY.readyMessage, nativeRenderSummary);
   } else {
-    logger.warn('[NATIVE_RENDER] Angelica render index is not ready', nativeRenderSummary);
+    logger.warn(RUNTIME_NATIVE_RENDER_LOG_POLICY.notReadyMessage, nativeRenderSummary);
   }
 }
 
 export function logRuntimeServerReady(settings: RuntimeServerSettings): void {
   if (!fs.existsSync(IMAGES_PATH)) {
-    logger.warn(`[WARN] IMAGES_PATH does not exist: ${IMAGES_PATH}`);
+    logger.warn(getMissingImagesPathWarning(IMAGES_PATH));
   }
-  logger.info(`Server listening on ${settings.host}:${settings.port}`);
-  logger.info(`Public URL: ${settings.publicBaseUrl}`);
-  logger.info(`API endpoint: ${settings.publicBaseUrl}/api`);
-  logger.info(`Current runtime API: ${settings.publicBaseUrl}/api/runtime/current`);
-  logger.info(`Publish home bootstrap: ${settings.publicBaseUrl}/api/publish/home-bootstrap`);
-  logger.info(`Images path: ${IMAGES_PATH}`);
-  logger.info(`Public runtime only: ${settings.publicRuntimeOnly}`);
+  for (const message of projectRuntimeServerReadyLogs(settings, IMAGES_PATH)) {
+    logger.info(message);
+  }
   logNativeRenderRuntimeStatus();
 }
 
@@ -96,17 +98,16 @@ export function scheduleBackgroundAccelerationReconcile(
   settings: RuntimeServerSettings,
 ): void {
   setTimeout(() => {
-    void reconcileAccelerationRuntime(accelerationDbManager, {
-      publishMaterializeOnStart: settings.publishMaterializeOnStart,
-    }).catch((error) => {
+    void reconcileAccelerationRuntime(
+      accelerationDbManager,
+      projectRuntimeBackgroundReconcileOptions(settings),
+    ).catch((error) => {
       const message = error instanceof Error ? error.message : String(error);
-      setAccelerationRuntimePhase('error', 'Acceleration reconciliation failed.', {
-        stale: true,
-        lastError: message,
-      });
-      logger.error('[ACCELERATION_DB] background reconciliation failed', error);
+      const transition = getBackgroundReconcileFailureTransition(message);
+      setAccelerationRuntimePhase(transition.phase, transition.message, transition.extras);
+      logger.error(RUNTIME_LIFECYCLE_FAILURE_POLICY.logMessage, error);
     });
-  }, 150);
+  }, RUNTIME_BACKGROUND_RECONCILE_POLICY.delayMs);
 }
 
 export function startRuntimeServer(input: RuntimeServerStartInput): void {
