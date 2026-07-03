@@ -15,7 +15,7 @@ import {
   updateNativeSurfaceMetrics,
 } from "./NativeSurfaceMetrics";
 import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
-import type { NativeSurfaceEngineMutation } from "./NativeSurfaceEngineProtocol";
+import type { NativeSurfaceEngineMutation, NativeSurfaceEngineResponse } from "./NativeSurfaceEngineProtocol";
 import {
   beginNativeRuntimeLoad,
   createNativeRuntimeControlState,
@@ -70,6 +70,24 @@ function buildSyntheticGroup(item: Item, tooltip: NativeTooltipPayload | null): 
   };
 }
 
+class NativeSurfaceControllerProtocolError extends Error {
+  constructor(operation: string, expectedType: NativeSurfaceEngineResponse["type"], actualType: string | null) {
+    super(`Native surface engine protocol violation during ${operation}: expected ${expectedType}, received ${actualType ?? "empty response"}`);
+    this.name = "NativeSurfaceControllerProtocolError";
+  }
+}
+
+function requireEngineResponse<Type extends NativeSurfaceEngineResponse["type"]>(
+  response: NativeSurfaceEngineResponse,
+  expectedType: Type,
+  operation: string,
+): Extract<NativeSurfaceEngineResponse, { type: Type }> {
+  if (response.type !== expectedType) {
+    throw new NativeSurfaceControllerProtocolError(operation, expectedType, response.type ?? null);
+  }
+  return response as Extract<NativeSurfaceEngineResponse, { type: Type }>;
+}
+
 export class NativeSurfaceController implements NativeNeiSurfaceController {
   private readonly surfaceId: NativeSurfaceId;
   private initialized = false;
@@ -102,13 +120,14 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
     this.renderer = normalizeRenderer(options.preferredRenderer);
     this.animationEnabled = Boolean(options.enableAnimations);
     this.historyViewportEnabled = Boolean(options.enableHistoryViewport);
-    void postNativeSurfaceEngineEvent({
+    const response = await postNativeSurfaceEngineEvent({
       type: "initialize",
       surfaceId: this.surfaceId,
       preferredRenderer: this.renderer,
       enableAnimations: this.animationEnabled,
       enableHistoryViewport: this.historyViewportEnabled,
     });
+    requireEngineResponse(response, "ack", "initialize");
     if (options.manifestUrl) {
       await this.loadRuntimePacks(options.manifestUrl, options.runtimePackProfile);
     }
@@ -116,13 +135,21 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
   }
 
   destroy(): void {
-    void this.flushMutationsNow();
+    void this.flushMutationsNow().catch((error) => {
+      this.reportEngineFailure("destroy:flush:error", error);
+    });
     this.initialized = false;
     this.hover = null;
     void postNativeSurfaceEngineEvent({
       type: "destroy",
       surfaceId: this.surfaceId,
-    });
+    })
+      .then((response) => {
+        requireEngineResponse(response, "ack", "destroy");
+      })
+      .catch((error) => {
+        this.reportEngineFailure("destroy:error", error);
+      });
     this.touch("destroy");
   }
 
@@ -188,26 +215,26 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
       nowMs,
     });
     this.touch("requestFrame");
-    if (!response || response.type !== "frame") return null;
+    const frame = requireEngineResponse(response, "frame", "requestFrame");
     return {
-      drawCommands: response.drawCommands,
-      spriteCommands: response.spriteCommands,
-      drawCommandBuffer: response.commandBuffer,
-      drawCommandStride: response.commandStride,
-      drawCommandCount: response.commandCount,
-      hasAnimatedSprites: response.hasAnimatedSprites,
-      animatedSpriteCount: response.animatedSpriteCount,
-      nextFrameDelayMs: response.nextFrameDelayMs,
-      runtimeProjection: response.metrics ? {
-        source: response.metrics.projectionSource,
-        projectionSource: response.metrics.lastProjectionSource,
-        totalEntries: response.metrics.lastProjectionTotalEntries,
-        pageSize: response.metrics.currentPageSize,
-        currentPage: response.metrics.currentPage,
-        windowEntries: response.metrics.currentWindowEntries,
-        query: response.metrics.currentQuery,
-        modId: response.metrics.currentModFilter,
-        runtimeReady: response.metrics.runtimeReady,
+      drawCommands: frame.drawCommands,
+      spriteCommands: frame.spriteCommands,
+      drawCommandBuffer: frame.commandBuffer,
+      drawCommandStride: frame.commandStride,
+      drawCommandCount: frame.commandCount,
+      hasAnimatedSprites: frame.hasAnimatedSprites,
+      animatedSpriteCount: frame.animatedSpriteCount,
+      nextFrameDelayMs: frame.nextFrameDelayMs,
+      runtimeProjection: frame.metrics ? {
+        source: frame.metrics.projectionSource,
+        projectionSource: frame.metrics.lastProjectionSource,
+        totalEntries: frame.metrics.lastProjectionTotalEntries,
+        pageSize: frame.metrics.currentPageSize,
+        currentPage: frame.metrics.currentPage,
+        windowEntries: frame.metrics.currentWindowEntries,
+        query: frame.metrics.currentQuery,
+        modId: frame.metrics.currentModFilter,
+        runtimeReady: frame.metrics.runtimeReady,
       } : null,
     };
   }
@@ -223,32 +250,33 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
       clientY: pointer.clientY,
       viewport: pointer.viewport,
     });
-    if (!response || response.type !== "hitTest" || !response.hit) return null;
-    const nativeTooltip = response.hit.tooltip
+    const hitTest = requireEngineResponse(response, "hitTest", "hitTest");
+    if (!hitTest.hit) return null;
+    const nativeTooltip = hitTest.hit.tooltip
       ? {
-        title: response.hit.tooltip.groupLabel || response.hit.tooltip.localizedName || response.hit.tooltip.itemId,
-        subtitle: response.hit.tooltip.modId ?? undefined,
-        itemId: response.hit.tooltip.itemId,
-        publicItemId: response.hit.tooltip.publicItemId ?? null,
-        groupKey: response.hit.tooltip.groupKey ?? response.hit.groupKey ?? undefined,
-        localizedName: response.hit.tooltip.localizedName ?? null,
-        modId: response.hit.tooltip.modId ?? null,
-        internalName: response.hit.tooltip.internalName ?? null,
-        groupLabel: response.hit.tooltip.groupLabel ?? null,
-        groupSize: response.hit.tooltip.groupSize ?? null,
+        title: hitTest.hit.tooltip.groupLabel || hitTest.hit.tooltip.localizedName || hitTest.hit.tooltip.itemId,
+        subtitle: hitTest.hit.tooltip.modId ?? undefined,
+        itemId: hitTest.hit.tooltip.itemId,
+        publicItemId: hitTest.hit.tooltip.publicItemId ?? null,
+        groupKey: hitTest.hit.tooltip.groupKey ?? hitTest.hit.groupKey ?? undefined,
+        localizedName: hitTest.hit.tooltip.localizedName ?? null,
+        modId: hitTest.hit.tooltip.modId ?? null,
+        internalName: hitTest.hit.tooltip.internalName ?? null,
+        groupLabel: hitTest.hit.tooltip.groupLabel ?? null,
+        groupSize: hitTest.hit.tooltip.groupSize ?? null,
       }
       : null;
-    const syntheticItem = buildSyntheticItem(response.hit.itemId, nativeTooltip);
-    const syntheticGroup = response.hit.kind !== "item" || response.hit.groupKey
+    const syntheticItem = buildSyntheticItem(hitTest.hit.itemId, nativeTooltip);
+    const syntheticGroup = hitTest.hit.kind !== "item" || hitTest.hit.groupKey
       ? buildSyntheticGroup(syntheticItem, nativeTooltip)
       : null;
     return {
-      viewport: response.hit.viewport,
-      key: response.hit.key,
+      viewport: hitTest.hit.viewport,
+      key: hitTest.hit.key,
       kind: syntheticGroup ? "group-collapsed" : "item",
       item: syntheticGroup?.representative ?? syntheticItem,
       group: syntheticGroup ?? undefined,
-      groupKey: response.hit.groupKey ?? null,
+      groupKey: hitTest.hit.groupKey ?? null,
       nativeTooltip,
     };
   }
@@ -287,10 +315,18 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
     this.mutationFlushTimer = schedule(() => {
       this.mutationFlushTimer = null;
       this.mutationFlushTimerKind = null;
-      void this.flushMutationsNow();
+      void this.flushMutationsNow().catch((error) => {
+        this.reportEngineFailure("mutationBatch:error", error);
+      });
     });
   }
 
+  private reportEngineFailure(eventName: string, error: unknown): void {
+    this.touch(eventName);
+    if (typeof console !== "undefined") {
+      console.error(`[NeoNEI native surface ${this.surfaceId}] ${eventName}`, error);
+    }
+  }
 
   private async flushMutationsNow(): Promise<void> {
     if (this.mutationFlushTimer !== null && this.mutationFlushTimerKind === "raf" && typeof cancelAnimationFrame === "function") {
@@ -306,13 +342,17 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
     }
     const mutations = Array.from(this.pendingMutations.values());
     this.pendingMutations.clear();
-    await postNativeSurfaceEngineEvent({
-      type: "mutationBatch",
-      surfaceId: this.surfaceId,
-      mutations,
-    });
-    this.touch(`mutationBatch:${mutations.length}`);
-    this.resolveMutationFlush();
+    try {
+      const response = await postNativeSurfaceEngineEvent({
+        type: "mutationBatch",
+        surfaceId: this.surfaceId,
+        mutations,
+      });
+      requireEngineResponse(response, "ack", "mutationBatch");
+      this.touch(`mutationBatch:${mutations.length}`);
+    } finally {
+      this.resolveMutationFlush();
+    }
   }
 
   private resolveMutationFlush(): void {
@@ -344,7 +384,8 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
         manifestUrl: runtime.manifestUrl,
         packs,
       });
-      this.nativeRuntime = markNativeRuntimeReady(this.nativeRuntime, Boolean(response), packs.length);
+      requireEngineResponse(response, "ack", "runtimePacks");
+      this.nativeRuntime = markNativeRuntimeReady(this.nativeRuntime, true, packs.length);
       this.touch(this.nativeRuntime.ready ? "runtimePacks:ready" : "runtimePacks:error");
     } catch (error) {
       this.nativeRuntime = markNativeRuntimeError(this.nativeRuntime, error);

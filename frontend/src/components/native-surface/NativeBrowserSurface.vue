@@ -95,6 +95,8 @@ let activeResidentAtlasTextureSignature = "";
 let activeResidentAtlasTextureLoadPromise: Promise<boolean> | null = null;
 let residentAtlasBackgroundSignature = "";
 let residentAtlasBackgroundUploadStarted = false;
+let nativeRenderFaulted = false;
+let nativeSurfaceEngineFaulted = false;
 
 const itemIdsSignature = computed(() => props.historyItemIds.join("|"));
 
@@ -119,6 +121,27 @@ function resetNativeRenderReadiness() {
   nativeTexturesReady = false;
   nativeFirstFrameReady = false;
   nativeRenderVisible.value = false;
+}
+
+function reportNativeRenderFailure(phase: string, error: unknown): void {
+  nativeRenderFaulted = true;
+  nativeRenderInitialized = false;
+  nativeRenderInitializing = false;
+  activeResidentAtlasTextureLoadPromise = null;
+  activeResidentAtlasTextureSignature = "";
+  clearNativeAnimationTimer();
+  resetNativeRenderReadiness();
+  if (typeof console !== "undefined") {
+    console.error(`[NeoNEI native render] ${phase} failed`, error);
+  }
+}
+
+function reportNativeSurfaceEngineFailure(phase: string, error: unknown): void {
+  nativeSurfaceEngineFaulted = true;
+  nativeHitSeq += 1;
+  nativePendingHitPointer = null;
+  nativeHoveredHit.value = null;
+  reportNativeRenderFailure(`surface-engine:${phase}`, error);
 }
 
 function isDocumentVisible(): boolean {
@@ -224,6 +247,7 @@ async function initializeNativeRenderWorker(width: number, height: number) {
   if (
     nativeRenderInitialized
     || nativeRenderInitializing
+    || nativeRenderFaulted
     || !canvas
     || typeof canvas.transferControlToOffscreen !== "function"
   ) {
@@ -240,11 +264,13 @@ async function initializeNativeRenderWorker(width: number, height: number) {
       canvas: offscreen,
       renderer: resolveNativeRenderBackend(),
     });
-    nativeRenderInitialized = response?.type === "ready";
+    nativeRenderInitialized = response.type === "ready";
     updateNativeRenderVisibility();
     if (nativeRenderInitialized) {
       requestNativeFrame();
     }
+  } catch (error) {
+    reportNativeRenderFailure("initialize", error);
   } finally {
     nativeRenderInitializing = false;
   }
@@ -274,11 +300,14 @@ function syncViewport(width?: number, height?: number) {
       }
       : undefined,
   };
+  if (nativeSurfaceEngineFaulted) return;
   controller.setViewport(viewport);
   if (!nativeRenderInitialized) {
     void initializeNativeRenderWorker(nextWidth, nextHeight);
-  } else if (nativeRenderInitialized) {
-    void postNativeRenderEvent({ type: "resize", viewport });
+  } else if (nativeRenderInitialized && !nativeRenderFaulted) {
+    void postNativeRenderEvent({ type: "resize", viewport }).catch((error) => {
+      reportNativeRenderFailure("resize", error);
+    });
   }
   requestNativeFrame();
 }
@@ -296,6 +325,7 @@ function toLocalPointer(event: MouseEvent) {
 }
 
 function scheduleNativeHitTest(pointer: NativeSurfacePointer) {
+  if (nativeSurfaceEngineFaulted) return;
   nativePendingHitPointer = pointer;
   nativeHitSeq += 1;
   if (nativeHitScheduled) return;
@@ -306,17 +336,22 @@ function scheduleNativeHitTest(pointer: NativeSurfacePointer) {
     nativePendingHitPointer = null;
     if (!latestPointer) return;
     const requestSeq = nativeHitSeq;
-    void controller.hitTest(latestPointer).then((hit) => {
-      if (requestSeq !== nativeHitSeq) return;
-      nativeHoveredHit.value = hit
-        ? {
-          kind: hit.kind,
-          item: hit.item,
-          group: hit.group,
-          nativeTooltip: hit.nativeTooltip ?? null,
-        }
-        : null;
-    });
+    void controller.hitTest(latestPointer)
+      .then((hit) => {
+        if (requestSeq !== nativeHitSeq) return;
+        nativeHoveredHit.value = hit
+          ? {
+            kind: hit.kind,
+            item: hit.item,
+            group: hit.group,
+            nativeTooltip: hit.nativeTooltip ?? null,
+          }
+          : null;
+      })
+      .catch((error) => {
+        if (requestSeq !== nativeHitSeq) return;
+        reportNativeSurfaceEngineFailure("hitTest", error);
+      });
   };
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(run);
@@ -326,6 +361,7 @@ function scheduleNativeHitTest(pointer: NativeSurfacePointer) {
 }
 
 function handlePointerMove(event: MouseEvent) {
+  if (nativeSurfaceEngineFaulted) return;
   const pointer = toLocalPointer(event);
   controller.setHover(pointer);
   nativeHoveredPointer.value = { x: pointer.x, y: pointer.y };
@@ -340,33 +376,48 @@ function handlePointerLeave() {
 }
 
 async function handleNativeClick(event: MouseEvent) {
-  if (!nativeRenderVisible.value) return;
-  const hit = await controller.hitTest(toLocalPointer(event));
-  if (!hit) return;
-  if (hit.kind === "item") {
-    emit("itemClick", hit.item);
-    return;
+  if (!nativeRenderVisible.value || nativeSurfaceEngineFaulted) return;
+  try {
+    const hit = await controller.hitTest(toLocalPointer(event));
+    if (!hit) return;
+    if (hit.kind === "item") {
+      emit("itemClick", hit.item);
+      return;
+    }
+    if (hit.group) emit("groupClick", hit.group);
+  } catch (error) {
+    reportNativeSurfaceEngineFailure("clickHitTest", error);
   }
-  if (hit.group) emit("groupClick", hit.group);
 }
 
 async function handleNativeContextMenu(event: MouseEvent) {
-  if (!nativeRenderVisible.value) return;
-  const hit = await controller.hitTest(toLocalPointer(event));
-  if (!hit) return;
-  event.preventDefault();
-  if (hit.kind === "item") {
-    emit("itemContextmenu", hit.item, event);
-    return;
+  if (!nativeRenderVisible.value || nativeSurfaceEngineFaulted) return;
+  try {
+    const hit = await controller.hitTest(toLocalPointer(event));
+    if (!hit) return;
+    event.preventDefault();
+    if (hit.kind === "item") {
+      emit("itemContextmenu", hit.item, event);
+      return;
+    }
+    if (hit.group) emit("groupContextmenu", hit.group, event);
+  } catch (error) {
+    reportNativeSurfaceEngineFailure("contextMenuHitTest", error);
   }
-  if (hit.group) emit("groupContextmenu", hit.group, event);
 }
 
 async function syncNativeFrame() {
   nativeFrameScheduled = false;
+  if (nativeSurfaceEngineFaulted) return;
   const seq = ++nativeFrameSeq;
   const nowMs = performance.now();
-  const frame = await controller.requestFrame(nowMs);
+  let frame: Awaited<ReturnType<typeof controller.requestFrame>>;
+  try {
+    frame = await controller.requestFrame(nowMs);
+  } catch (error) {
+    reportNativeSurfaceEngineFailure("requestFrame", error);
+    return;
+  }
   if (seq !== nativeFrameSeq) return;
   if (
     props.viewportRole === "browser"
@@ -377,35 +428,39 @@ async function syncNativeFrame() {
   ) {
     emit("runtimeProjectionUpdate", frame.runtimeProjection);
   }
-  if (nativeRenderInitialized && frame?.drawCommandBuffer && frame.drawCommandCount && frame.drawCommandStride) {
-    await syncNativeTexturesForFrame(frame.spriteCommands ?? []);
-    if (seq !== nativeFrameSeq) return;
-    const response = await postNativeRenderEvent({
-      type: "render",
-      frameToken: seq,
-      commandBuffer: frame.drawCommandBuffer.slice(0),
-      commandStride: frame.drawCommandStride,
-      commandCount: frame.drawCommandCount,
-      spriteCommands: frame.spriteCommands ?? [],
-      nowMs,
-    });
-    if (seq !== nativeFrameSeq) return;
-    nativeFirstFrameReady = response?.type === "frame";
-    updateNativeRenderVisibility();
-    if (nativeFirstFrameReady) {
-      queueResidentAtlasBackgroundUpload();
-    }
-    if (frame.hasAnimatedSprites) {
-      scheduleNextAnimatedNativeFrame(frame.nextFrameDelayMs);
-    } else {
-      clearNativeAnimationTimer();
+  if (nativeRenderInitialized && !nativeRenderFaulted && frame?.drawCommandBuffer && frame.drawCommandCount && frame.drawCommandStride) {
+    try {
+      await syncNativeTexturesForFrame(frame.spriteCommands ?? []);
+      if (seq !== nativeFrameSeq) return;
+      const response = await postNativeRenderEvent({
+        type: "render",
+        frameToken: seq,
+        commandBuffer: frame.drawCommandBuffer.slice(0),
+        commandStride: frame.drawCommandStride,
+        commandCount: frame.drawCommandCount,
+        spriteCommands: frame.spriteCommands ?? [],
+        nowMs,
+      });
+      if (seq !== nativeFrameSeq) return;
+      nativeFirstFrameReady = response.type === "frame";
+      updateNativeRenderVisibility();
+      if (nativeFirstFrameReady) {
+        queueResidentAtlasBackgroundUpload();
+      }
+      if (frame.hasAnimatedSprites) {
+        scheduleNextAnimatedNativeFrame(frame.nextFrameDelayMs);
+      } else {
+        clearNativeAnimationTimer();
+      }
+    } catch (error) {
+      reportNativeRenderFailure("frame", error);
     }
   }
 }
 
 function requestNativeFrame() {
   clearNativeAnimationTimer();
-  if (nativeFrameScheduled) return;
+  if (nativeSurfaceEngineFaulted || nativeFrameScheduled) return;
   nativeFrameScheduled = true;
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(() => {
@@ -423,7 +478,7 @@ function buildTextureSignature(textures: Array<{ key: string; url: string }>): s
 }
 
 function queueResidentAtlasBackgroundUpload(): void {
-  if (residentAtlasBackgroundUploadStarted || !nativeRenderInitialized) return;
+  if (residentAtlasBackgroundUploadStarted || !nativeRenderInitialized || nativeRenderFaulted) return;
   residentAtlasBackgroundUploadStarted = true;
   window.setTimeout(() => {
     void (async () => {
@@ -436,14 +491,18 @@ function queueResidentAtlasBackgroundUpload(): void {
         type: "loadTextures",
         textures,
       });
-    })().finally(() => {
-      residentAtlasBackgroundUploadStarted = false;
-    });
+    })()
+      .catch((error) => {
+        reportNativeRenderFailure("backgroundTextureUpload", error);
+      })
+      .finally(() => {
+        residentAtlasBackgroundUploadStarted = false;
+      });
   }, 0);
 }
 
 async function syncNativeTexturesForFrame(spriteCommands: Array<{ textureKey?: string | null }>): Promise<void> {
-  if (!nativeRenderInitialized) return;
+  if (!nativeRenderInitialized || nativeRenderFaulted) return;
   const seq = ++nativeTextureSeq;
   const textureKeys = Array.from(new Set(spriteCommands.map((command) => command.textureKey ?? "").filter(Boolean)));
   let textures = getGlobalBrowserAtlasTextureDescriptorsForKeys(textureKeys);
@@ -480,7 +539,15 @@ async function syncNativeTexturesForFrame(spriteCommands: Array<{ textureKey?: s
     activeResidentAtlasTextureLoadPromise = postNativeRenderEvent({
       type: "loadTextures",
       textures,
-    }).then((response) => response?.type === "textureLoaded" && response.loaded > 0);
+    })
+      .then((response) => response.type === "textureLoaded" && response.loaded > 0)
+      .catch((error) => {
+        if (activeResidentAtlasTextureSignature === signature) {
+          activeResidentAtlasTextureLoadPromise = null;
+          activeResidentAtlasTextureSignature = "";
+        }
+        throw error;
+      });
   }
   const loaded = await activeResidentAtlasTextureLoadPromise;
   if (seq !== nativeTextureSeq && activeResidentAtlasTextureSignature !== signature) return;
@@ -494,23 +561,27 @@ async function syncNativeTexturesForFrame(spriteCommands: Array<{ textureKey?: s
 
 onMounted(async () => {
   exposeNativeSurfaceMetricsForDebug();
-  await controller.initialize({
-    surfaceId: props.surfaceId,
-    manifestUrl: props.manifestUrl ?? undefined,
-    runtimePackProfile: resolveRuntimePackProfile(),
-    preferredRenderer: "webgl2",
-    enableAnimations: props.enableAnimation,
-    enableHistoryViewport: props.viewportRole === "history",
-  });
-  controller.setItemSize(props.itemSize);
-  controller.setPage(props.page);
-  controller.setSearch(props.searchQuery ?? "");
-  controller.setModFilter(props.modId === "all" ? null : props.modId ?? null);
-  controller.setExpandedGroups(props.expandedGroups);
-  controller.setSelectedItemId(props.selectedItemId);
-  controller.setHistoryItems(props.historyItemIds);
-  syncViewport();
-  requestNativeFrame();
+  try {
+    await controller.initialize({
+      surfaceId: props.surfaceId,
+      manifestUrl: props.manifestUrl ?? undefined,
+      runtimePackProfile: resolveRuntimePackProfile(),
+      preferredRenderer: "webgl2",
+      enableAnimations: props.enableAnimation,
+      enableHistoryViewport: props.viewportRole === "history",
+    });
+    controller.setItemSize(props.itemSize);
+    controller.setPage(props.page);
+    controller.setSearch(props.searchQuery ?? "");
+    controller.setModFilter(props.modId === "all" ? null : props.modId ?? null);
+    controller.setExpandedGroups(props.expandedGroups);
+    controller.setSelectedItemId(props.selectedItemId);
+    controller.setHistoryItems(props.historyItemIds);
+    syncViewport();
+    requestNativeFrame();
+  } catch (error) {
+    reportNativeSurfaceEngineFailure("initialize", error);
+  }
   emitViewportResize();
   resizeObserver = new ResizeObserver((entries) => {
     const rect = entries[0]?.contentRect;
@@ -544,7 +615,9 @@ onBeforeUnmount(() => {
     nativeVisibilityHandler = null;
   }
   if (nativeRenderInitialized) {
-    void postNativeRenderEvent({ type: "dispose" });
+    void postNativeRenderEvent({ type: "dispose" }).catch((error) => {
+      reportNativeRenderFailure("dispose", error);
+    });
     nativeRenderInitialized = false;
     nativeRenderInitializing = false;
     resetNativeRenderReadiness();
@@ -556,6 +629,7 @@ onBeforeUnmount(() => {
 watch(
   () => props.page,
   (page) => {
+    if (nativeSurfaceEngineFaulted) return;
     controller.setPage(page);
     requestNativeFrame();
   },
@@ -564,6 +638,7 @@ watch(
 watch(
   () => props.searchQuery,
   (query) => {
+    if (nativeSurfaceEngineFaulted) return;
     controller.setSearch(query ?? "");
     controller.setPage(1);
     requestNativeFrame();
@@ -573,6 +648,7 @@ watch(
 watch(
   () => props.modId,
   (modId) => {
+    if (nativeSurfaceEngineFaulted) return;
     controller.setModFilter(modId === "all" ? null : modId ?? null);
     controller.setPage(props.page);
     requestNativeFrame();
@@ -582,6 +658,7 @@ watch(
 watch(
   () => props.expandedGroups.join("|"),
   () => {
+    if (nativeSurfaceEngineFaulted) return;
     controller.setExpandedGroups(props.expandedGroups);
     controller.setPage(props.page);
     requestNativeFrame();
@@ -591,6 +668,7 @@ watch(
 watch(
   () => props.itemSize,
   (size) => {
+    if (nativeSurfaceEngineFaulted) return;
     controller.setItemSize(size);
     requestNativeFrame();
   },
@@ -599,6 +677,7 @@ watch(
 watch(
   () => props.selectedItemId,
   (itemId) => {
+    if (nativeSurfaceEngineFaulted) return;
     controller.setSelectedItemId(itemId ?? null);
     requestNativeFrame();
   },
@@ -607,6 +686,7 @@ watch(
 watch(
   () => props.enableAnimation,
   (enabled) => {
+    if (nativeSurfaceEngineFaulted) return;
     void controller.initialize({
       surfaceId: props.surfaceId,
       manifestUrl: props.manifestUrl ?? undefined,
@@ -614,11 +694,14 @@ watch(
       preferredRenderer: "webgl2",
       enableAnimations: enabled,
       enableHistoryViewport: props.viewportRole === "history",
+    }).catch((error) => {
+      reportNativeSurfaceEngineFailure("animationInitialize", error);
     });
   },
 );
 
 watch(itemIdsSignature, () => {
+  if (nativeSurfaceEngineFaulted) return;
   controller.setHistoryItems(props.historyItemIds);
   requestNativeFrame();
 });

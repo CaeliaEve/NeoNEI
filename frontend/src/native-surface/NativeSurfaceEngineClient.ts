@@ -4,6 +4,33 @@ import type {
   NativeSurfaceEngineWorkerMetrics,
 } from "./NativeSurfaceEngineProtocol";
 
+export const NATIVE_SURFACE_ENGINE_CLIENT_POLICY = Object.freeze({
+  boundary: "native-surface-engine-client",
+  owner: "native-surface",
+  failurePolicy: "fail-closed",
+  legacyNullFallback: false,
+});
+
+export type NativeSurfaceEngineClientErrorCode =
+  | "worker-unavailable"
+  | "worker-construction-failed"
+  | "worker-post-failed"
+  | "worker-runtime-error"
+  | "worker-reset"
+  | "worker-malformed-response";
+
+export class NativeSurfaceEngineClientError extends Error {
+  readonly code: NativeSurfaceEngineClientErrorCode;
+  readonly cause?: unknown;
+
+  constructor(code: NativeSurfaceEngineClientErrorCode, message: string, cause?: unknown) {
+    super(`Native surface engine client failed: ${message}`);
+    this.name = "NativeSurfaceEngineClientError";
+    this.code = code;
+    this.cause = cause;
+  }
+}
+
 type PendingRequest = {
   resolve: (response: NativeSurfaceEngineResponse) => void;
   reject: (error: unknown) => void;
@@ -20,6 +47,14 @@ let nextRequestId = 1;
 let lastMetrics: NativeSurfaceEngineWorkerMetrics | null = null;
 const pending = new Map<number, PendingRequest>();
 
+function nativeSurfaceEngineClientFailed(
+  code: NativeSurfaceEngineClientErrorCode,
+  message: string,
+  cause?: unknown,
+): NativeSurfaceEngineClientError {
+  return new NativeSurfaceEngineClientError(code, message, cause);
+}
+
 function rejectPending(error: unknown) {
   for (const request of pending.values()) {
     request.reject(error);
@@ -27,33 +62,47 @@ function rejectPending(error: unknown) {
   pending.clear();
 }
 
-function getWorker(): Worker | null {
-  if (typeof Worker === "undefined") return null;
+function requireWorker(): Worker {
+  if (typeof Worker === "undefined") {
+    throw nativeSurfaceEngineClientFailed("worker-unavailable", "Worker API is unavailable");
+  }
   if (worker) return worker;
   try {
     worker = new Worker(new URL("../workers/nativeSurfaceEngine.worker.ts", import.meta.url), {
       type: "module",
     });
-    worker.onmessage = (event: MessageEvent<NativeSurfaceEngineResponse>) => {
-      const response = event.data;
-      if (response?.metrics) {
-        lastMetrics = response.metrics;
-      }
-      const request = pending.get(response.id);
-      if (!request) return;
-      pending.delete(response.id);
-      request.resolve(response);
-    };
-    worker.onerror = (error) => {
-      rejectPending(error);
-      worker?.terminate();
-      worker = null;
-    };
-    return worker;
-  } catch {
+  } catch (error) {
     worker = null;
-    return null;
+    throw nativeSurfaceEngineClientFailed("worker-construction-failed", "unable to construct native surface engine worker", error);
   }
+  worker.onmessage = (event: MessageEvent<NativeSurfaceEngineResponse>) => {
+    const response = event.data;
+    if (!response || typeof response.id !== "number") {
+      rejectPending(nativeSurfaceEngineClientFailed(
+        "worker-malformed-response",
+        "native surface engine worker returned a response without a numeric request id",
+      ));
+      return;
+    }
+    if (response.metrics) {
+      lastMetrics = response.metrics;
+    }
+    const request = pending.get(response.id);
+    if (!request) return;
+    pending.delete(response.id);
+    request.resolve(response);
+  };
+  worker.onerror = (error) => {
+    const failure = nativeSurfaceEngineClientFailed(
+      "worker-runtime-error",
+      error.message || "native surface engine worker runtime error",
+      error,
+    );
+    rejectPending(failure);
+    worker?.terminate();
+    worker = null;
+  };
+  return worker;
 }
 
 function getTransferables(message: NativeSurfaceEngineRequest): Transferable[] {
@@ -69,20 +118,24 @@ export function getNativeSurfaceEngineMetrics(): NativeSurfaceEngineWorkerMetric
 
 export function postNativeSurfaceEngineEvent(
   request: NativeSurfaceEngineRequestWithoutId,
-): Promise<NativeSurfaceEngineResponse | null> {
-  const activeWorker = getWorker();
-  if (!activeWorker) return Promise.resolve(null);
+): Promise<NativeSurfaceEngineResponse> {
+  const activeWorker = requireWorker();
   const id = nextRequestId++;
   const message = { ...request, id } as NativeSurfaceEngineRequest;
   return new Promise<NativeSurfaceEngineResponse>((resolve, reject) => {
     pending.set(id, { resolve, reject });
-    activeWorker.postMessage(message, getTransferables(message));
-  }).catch(() => null);
+    try {
+      activeWorker.postMessage(message, getTransferables(message));
+    } catch (error) {
+      pending.delete(id);
+      reject(nativeSurfaceEngineClientFailed("worker-post-failed", "unable to post native surface engine worker request", error));
+    }
+  });
 }
 
 export function resetNativeSurfaceEngineWorker(): void {
   worker?.terminate();
   worker = null;
-  rejectPending(new Error("Native surface engine worker reset"));
+  rejectPending(nativeSurfaceEngineClientFailed("worker-reset", "native surface engine worker reset"));
   lastMetrics = null;
 }
