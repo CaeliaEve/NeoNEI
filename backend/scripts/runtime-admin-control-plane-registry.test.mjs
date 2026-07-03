@@ -20,6 +20,8 @@ const controlPlaneSubsystemsSource = readFileSync(
 const runtimeAdminSource = readFileSync(resolve(root, 'src/routes/runtime-admin.routes.ts'), 'utf8');
 const runtimeAdminRegistrySource = readFileSync(resolve(root, 'src/routes/runtime-admin-endpoint-registry.ts'), 'utf8');
 const runtimeAdminHandlersSource = readFileSync(resolve(root, 'src/routes/runtime-admin-endpoint-handlers.ts'), 'utf8');
+const runtimeAdminControlSource = readFileSync(resolve(root, 'src/services/runtime-admin-control.service.ts'), 'utf8');
+const runtimeAdminControlAbiSource = readFileSync(resolve(root, 'src/services/runtime-admin-control-abi.ts'), 'utf8');
 const publishAdminSource = readFileSync(resolve(root, 'src/routes/publish-admin.routes.ts'), 'utf8');
 const transportSource = readFileSync(resolve(root, 'src/routes/runtime-admin-transport.ts'), 'utf8');
 const routeDescriptorRegistrySource = readFileSync(
@@ -86,6 +88,51 @@ test('admin token enforcement is middleware-owned, not repeated per route', () =
   assert.match(runtimeAdminSource, /export function createRuntimeAdminControlRouter/);
   assert.match(runtimeAdminSource, /export function registerRuntimeAdminIndexRoutes/);
   assert.doesNotMatch(runtimeAdminSource, /export function registerRuntimeAdminRoutes/);
+});
+
+test('runtime admin public API and OpenAPI documents are ABI-catalog owned', () => {
+  assert.match(runtimeAdminControlSource, /from '\.\/runtime-admin-control-abi'/);
+  for (const symbol of [
+    'RUNTIME_ADMIN_PUBLIC_API_METADATA',
+    'RUNTIME_ADMIN_PUBLIC_ENDPOINT_DESCRIPTORS',
+    'RUNTIME_ADMIN_PUBLIC_ENDPOINTS',
+    'RUNTIME_OPENAPI_PATH_DESCRIPTORS',
+    'RUNTIME_OPENAPI_PATHS',
+  ]) {
+    assert.match(runtimeAdminControlAbiSource, new RegExp(`export const ${symbol}`));
+  }
+  assert.match(runtimeAdminControlAbiSource, /validateAndFreezePublicEndpointDescriptors/);
+  assert.match(runtimeAdminControlAbiSource, /validateAndFreezeOpenApiPathDescriptors/);
+  assert.match(runtimeAdminControlAbiSource, /projectPublicEndpointMap/);
+  assert.match(runtimeAdminControlAbiSource, /projectOpenApiPaths/);
+  assert.match(runtimeAdminControlAbiSource, /Duplicate runtime admin public endpoint descriptor/);
+  assert.match(runtimeAdminControlAbiSource, /Missing runtime admin public endpoint descriptor/);
+  assert.match(runtimeAdminControlAbiSource, /Duplicate runtime OpenAPI route signature/);
+  assert.match(runtimeAdminControlAbiSource, /Missing runtime OpenAPI path descriptor/);
+  assert.match(runtimeAdminControlSource, /RUNTIME_ADMIN_PUBLIC_ENDPOINTS/);
+  assert.match(runtimeAdminControlSource, /RUNTIME_OPENAPI_PATHS/);
+  assert.match(runtimeAdminControlSource, /RUNTIME_ADMIN_PUBLIC_API_METADATA/);
+  assert.match(runtimeAdminControlAbiSource, /path: '\/api\/runtime\/current\/manifest'/);
+  assert.match(runtimeAdminControlAbiSource, /path: '\/ops\/patterns', method: 'get'/);
+  assert.match(runtimeAdminControlAbiSource, /path: '\/ops\/patterns', method: 'post'/);
+  assert.match(runtimeAdminControlAbiSource, /path: '\/api\/admin\/render-contract', method: 'get'/);
+  assert.match(runtimeAdminControlAbiSource, /path: '\/api\/admin\/render-contract', method: 'post'/);
+  assert.match(runtimeAdminControlAbiSource, /'NeoNEI Public Runtime API'/);
+
+  for (const catalogOwnedLiteral of [
+    /'\/api\/health'/,
+    /'\/api\/runtime\/current'/,
+    /'\/api\/recipes\/current\/item\/:itemId'/,
+    /'\/ops\/publish\/releases'/,
+    /'\/runtime\/diagnostics'/,
+    /'\/api\/admin\/runtime'/,
+    /'Token-protected render contract queries'/,
+    /'Fallback home bootstrap payload'/,
+    /'NeoNEI Public Runtime API'/,
+  ]) {
+    assert.match(runtimeAdminControlAbiSource, catalogOwnedLiteral);
+    assert.doesNotMatch(runtimeAdminControlSource, catalogOwnedLiteral);
+  }
 });
 
 test('runtime admin index and control endpoints are table-driven', () => {
