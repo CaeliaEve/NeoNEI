@@ -17,15 +17,27 @@ function readRepoSource(relativePath) {
 
 test("native render backend selection uses an explicit probe plan", () => {
   const source = readSource("src/workers/nativeRender.worker.ts");
+  const workerPolicyCatalog = readSource("src/workers/nativeRenderWorkerPolicyCatalog.ts");
   const probeSource = readSource("src/renderers/native/NativeRendererProbe.ts");
   const sessionSource = readSource("src/services/nativeUiRendererSession.ts");
 
-  assert.match(source, /function nativeRendererProbePlan\(requested: "auto" \| "webgpu" \| "webgl2"\)/);
-  assert.match(source, /if \(requested === "webgpu"\) return \["webgpu"\]/);
-  assert.match(source, /return \["webgl2"\]/);
-  assert.match(source, /function probeRequestedNativeRenderer/);
+  assert.match(workerPolicyCatalog, /NATIVE_RENDER_WORKER_PROBE_CATALOG/);
+  assert.match(workerPolicyCatalog, /schema: "neonei\/native-render-worker-probe\/current"/);
+  assert.match(workerPolicyCatalog, /requestedBackendPolicy: "descriptor-owned-probe-plan"/);
+  assert.match(workerPolicyCatalog, /fallbackPolicy: "no-runtime-backend-fallback"/);
+  assert.match(workerPolicyCatalog, /auto: Object\.freeze\(\{/);
+  assert.match(workerPolicyCatalog, /candidates: Object\.freeze\(\["webgl2"\] as const\)/);
+  assert.match(workerPolicyCatalog, /webgpu: Object\.freeze\(\{/);
+  assert.match(workerPolicyCatalog, /candidates: Object\.freeze\(\["webgpu"\] as const\)/);
+  assert.match(workerPolicyCatalog, /function nativeRenderWorkerProbePlan/);
+  assert.match(workerPolicyCatalog, /function probeRequestedNativeRenderWorker/);
+  assert.match(workerPolicyCatalog, /NativeRendererProbeError/);
+  assert.match(source, /const nativeRenderWorkerBackendProbes: NativeRenderWorkerBackendProbeRegistry = Object\.freeze/);
+  assert.match(source, /probeRequestedNativeRenderWorker\(/);
   assert.match(source, /assertNativeRendererProbeSupported/);
-  assert.match(source, /NativeRendererProbeError/);
+  assert.doesNotMatch(source, /function nativeRendererProbePlan/);
+  assert.doesNotMatch(source, /function probeRequestedNativeRenderer/);
+  assert.doesNotMatch(source, /NativeRendererProbeError/);
   assert.doesNotMatch(source, /function chooseBackend/);
   assert.doesNotMatch(source, /WebGl2NativeRenderer\.create/);
   assert.doesNotMatch(source, /WebGpuNativeRenderer\.create/);

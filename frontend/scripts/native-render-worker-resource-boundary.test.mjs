@@ -6,6 +6,7 @@ import test from 'node:test';
 
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const workerSource = readFileSync(resolve(frontendRoot, 'src/workers/nativeRender.worker.ts'), 'utf8');
+const policyCatalogSource = readFileSync(resolve(frontendRoot, 'src/workers/nativeRenderWorkerPolicyCatalog.ts'), 'utf8');
 
 function sourceSection(startNeedle, endNeedle) {
   const start = workerSource.indexOf(startNeedle);
@@ -16,11 +17,16 @@ function sourceSection(startNeedle, endNeedle) {
 }
 
 test('native render worker resource operations have a fail-closed boundary', () => {
-  assert.match(workerSource, /NATIVE_RENDER_WORKER_RESOURCE_POLICY = Object\.freeze/);
-  assert.match(workerSource, /failurePolicy: "fail-closed"/);
-  assert.match(workerSource, /class NativeRenderWorkerResourceError extends Error/);
+  assert.match(policyCatalogSource, /NATIVE_RENDER_WORKER_RESOURCE_CATALOG = Object\.freeze/);
+  assert.match(policyCatalogSource, /schema: "neonei\/native-render-worker-resources\/current"/);
+  assert.match(policyCatalogSource, /ownershipPolicy: "explicit-renderer-resource-requirement"/);
+  assert.match(policyCatalogSource, /failurePolicy: "fail-closed"/);
+  assert.match(policyCatalogSource, /class NativeRenderWorkerResourceError extends Error/);
+  assert.match(policyCatalogSource, /function requireNativeRenderWorkerResource/);
+  assert.match(policyCatalogSource, /throw nativeRenderWorkerResourceFailed\(operation, descriptor\.failureReason/);
   assert.match(workerSource, /function requireNativeRenderer/);
-  assert.match(workerSource, /throw nativeRenderWorkerResourceFailed\(operation, "native renderer is not initialized"/);
+  assert.match(workerSource, /return requireNativeRenderWorkerResource\(operation, \{/);
+  assert.doesNotMatch(workerSource, /NATIVE_RENDER_WORKER_RESOURCE_POLICY = Object\.freeze/);
 });
 
 test('native render texture upload failures throw worker resource errors instead of being counted and ignored', () => {

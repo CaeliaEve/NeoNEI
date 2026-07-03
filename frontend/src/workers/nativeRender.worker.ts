@@ -13,11 +13,16 @@ import {
 import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend";
 import {
   assertNativeRendererProbeSupported,
-  NativeRendererProbeError,
-  type NativeRendererProbeResult,
 } from "../renderers/native/NativeRendererProbe";
 import { WebGpuNativeRenderer } from "../renderers/native/WebGpuNativeRenderer";
 import { buildNativeRenderFrameMetrics } from "./nativeRenderFrameMetricsCatalog";
+import {
+  nativeRenderWorkerResourceFailed,
+  probeRequestedNativeRenderWorker,
+  requireNativeRenderWorkerResource,
+  type NativeRenderWorkerBackendProbeRegistry,
+  type NativeRenderWorkerResourceOperation,
+} from "./nativeRenderWorkerPolicyCatalog";
 
 let canvas: OffscreenCanvas | null = null;
 let requestedBackend: "auto" | NativeRenderBackendKind | null = null;
@@ -64,45 +69,17 @@ type TextureTile = {
 
 const virtualTextureTiles = new Map<string, TextureTile[]>();
 
-const NATIVE_RENDER_WORKER_RESOURCE_POLICY = Object.freeze({
-  id: "nativeRender.worker.resources",
-  failurePolicy: "fail-closed",
-  requiredRendererOperations: ["loadTextures", "render"] as const,
-} as const);
+const nativeRenderWorkerBackendProbes: NativeRenderWorkerBackendProbeRegistry = Object.freeze({
+  webgpu: (activeCanvas) => WebGpuNativeRenderer.probe(activeCanvas),
+  webgl2: (activeCanvas) => WebGl2NativeRenderer.probe(activeCanvas),
+});
 
-class NativeRenderWorkerResourceError extends Error {
-  readonly operation: string;
-  readonly details: unknown;
-
-  constructor(operation: string, reason: string, details?: unknown) {
-    super(`Native render worker ${operation} resource failure: ${reason}`);
-    this.name = "NativeRenderWorkerResourceError";
-    this.operation = operation;
-    this.details = Object.freeze({
-      policy: NATIVE_RENDER_WORKER_RESOURCE_POLICY.id,
-      ...(details && typeof details === "object" && !Array.isArray(details)
-        ? details as Record<string, unknown>
-        : { details: details ?? null }),
-    });
-  }
-}
-
-function nativeRenderWorkerResourceFailed(
-  operation: string,
-  reason: string,
-  details?: unknown,
-): NativeRenderWorkerResourceError {
-  return new NativeRenderWorkerResourceError(operation, reason, details);
-}
-
-function requireNativeRenderer(operation: string): NativeRendererBackend {
-  if (!nativeRenderer) {
-    throw nativeRenderWorkerResourceFailed(operation, "native renderer is not initialized", {
-      requestedBackend,
-      backend,
-    });
-  }
-  return nativeRenderer;
+function requireNativeRenderer(operation: NativeRenderWorkerResourceOperation): NativeRendererBackend {
+  return requireNativeRenderWorkerResource(operation, {
+    nativeRenderer,
+    requestedBackend,
+    backend,
+  });
 }
 
 function rememberFrameSample(value: number): void {
@@ -169,38 +146,6 @@ function detectWebglLimits(activeCanvas: OffscreenCanvas): NativeRendererLimits 
     maxTextureSize: Number(gl.getParameter(gl.MAX_TEXTURE_SIZE) ?? 0),
     maxTextureUnits: Number(gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS) ?? 0),
   };
-}
-
-function nativeRendererProbePlan(requested: "auto" | "webgpu" | "webgl2"): readonly NativeRenderBackendKind[] {
-  if (requested === "webgpu") return ["webgpu"];
-  return ["webgl2"];
-}
-
-async function probeNativeRendererBackend(
-  candidate: NativeRenderBackendKind,
-  activeCanvas: OffscreenCanvas,
-): Promise<NativeRendererProbeResult> {
-  return candidate === "webgpu"
-    ? await WebGpuNativeRenderer.probe(activeCanvas)
-    : WebGl2NativeRenderer.probe(activeCanvas);
-}
-
-async function probeRequestedNativeRenderer(
-  requested: "auto" | "webgpu" | "webgl2",
-  activeCanvas: OffscreenCanvas,
-): Promise<NativeRendererProbeResult> {
-  const failures: NativeRendererProbeResult[] = [];
-  for (const candidate of nativeRendererProbePlan(requested)) {
-    const result = await probeNativeRendererBackend(candidate, activeCanvas);
-    if (result.status === "supported") return result;
-    failures.push(result);
-  }
-  throw new NativeRendererProbeError(failures[0] ?? {
-    backend: requested === "webgpu" ? "webgpu" : "webgl2",
-    status: "failed",
-    renderer: null,
-    reason: "native renderer probe plan was empty",
-  });
 }
 
 function normalizeSpriteCommands(commands: NativeRenderSpriteCommand[]) {
@@ -380,7 +325,11 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       virtualTextureTiles.clear();
       textureLoaded = 0;
       try {
-        const rendererProbe = await probeRequestedNativeRenderer(message.renderer, canvas);
+        const rendererProbe = await probeRequestedNativeRenderWorker(
+          message.renderer,
+          canvas,
+          nativeRenderWorkerBackendProbes,
+        );
         nativeRenderer = assertNativeRendererProbeSupported(rendererProbe);
         backend = nativeRenderer.backend;
       } catch (error) {
