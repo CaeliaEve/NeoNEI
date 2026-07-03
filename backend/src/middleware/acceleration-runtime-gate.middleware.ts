@@ -1,4 +1,10 @@
-﻿import type { Request, RequestHandler, Response } from 'express';
+import type { Request, RequestHandler, Response } from 'express';
+import {
+  ACCELERATION_RUNTIME_GATE_POLICY,
+  ACCELERATION_RUNTIME_REQUEST_STATUS,
+  getAccelerationRuntimeWarmingDetails,
+  isAccelerationRuntimeTrackedPath,
+} from '../services/acceleration-runtime-state-abi';
 import {
   acquireAccelerationRuntimeApiRequest,
   type AccelerationRuntimeState,
@@ -7,21 +13,18 @@ import { sendErrorEnvelope } from '../utils/error-response';
 
 function isTrackedAccelerationApiRequest(req: Request): boolean {
   const routePath = `${req.originalUrl ?? req.url ?? ''}`.split('?')[0] || '';
-  return routePath.startsWith('/api') && routePath !== '/api/health';
+  return isAccelerationRuntimeTrackedPath(routePath);
 }
 
 function sendAccelerationRuntimeWarming(req: Request, res: Response, snapshot: AccelerationRuntimeState): void {
-  res.setHeader('Retry-After', '1');
+  res.setHeader(ACCELERATION_RUNTIME_GATE_POLICY.retryAfterHeader, ACCELERATION_RUNTIME_GATE_POLICY.retryAfterSeconds);
   sendErrorEnvelope(
     req,
     res,
-    503,
-    'ACCELERATION_RUNTIME_WARMING',
-    'Acceleration database is switching snapshots. Retry shortly.',
-    {
-      status: 'warming',
-      phase: snapshot.phase,
-    },
+    ACCELERATION_RUNTIME_GATE_POLICY.warmingStatusCode,
+    ACCELERATION_RUNTIME_GATE_POLICY.warmingErrorCode,
+    ACCELERATION_RUNTIME_GATE_POLICY.warmingMessage,
+    getAccelerationRuntimeWarmingDetails(snapshot),
   );
 }
 
@@ -32,7 +35,7 @@ export function createAccelerationRuntimeMiddleware(): RequestHandler {
     }
 
     const requestLease = acquireAccelerationRuntimeApiRequest();
-    if (requestLease.status === 'blocked') {
+    if (requestLease.status === ACCELERATION_RUNTIME_REQUEST_STATUS.blocked) {
       sendAccelerationRuntimeWarming(req, res, requestLease.snapshot);
       return;
     }

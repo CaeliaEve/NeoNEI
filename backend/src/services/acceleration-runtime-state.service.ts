@@ -1,52 +1,25 @@
-﻿export type AccelerationRuntimePhase =
-  | 'initializing'
-  | 'ready'
-  | 'stale'
-  | 'compiling'
-  | 'promoting'
-  | 'materializing'
-  | 'error';
+import {
+  ACCELERATION_RUNTIME_IDLE_WAIT_POLICY,
+  ACCELERATION_RUNTIME_REQUEST_STATUS,
+  INITIAL_ACCELERATION_RUNTIME_STATE,
+  type AccelerationRuntimeApiRequestAcquireResult,
+  type AccelerationRuntimeApiRequestLease,
+  type AccelerationRuntimePhase,
+  type AccelerationRuntimeState,
+} from './acceleration-runtime-state-abi';
 
-export type AccelerationRuntimeState = Readonly<{
-  revision: number;
-  phase: AccelerationRuntimePhase;
-  message: string;
-  activeApiRequests: number;
-  blocking: boolean;
-  stale: boolean;
-  lastCompiledSignature: string | null;
-  lastError: string | null;
-}>;
-
-export type AccelerationRuntimeApiRequestLease = Readonly<{
-  status: 'acquired';
-  snapshot: AccelerationRuntimeState;
-  release: () => void;
-}>;
-
-export type AccelerationRuntimeApiRequestAcquireResult =
-  | AccelerationRuntimeApiRequestLease
-  | Readonly<{
-      status: 'blocked';
-      snapshot: AccelerationRuntimeState;
-    }>;
+export type {
+  AccelerationRuntimeApiRequestAcquireResult,
+  AccelerationRuntimeApiRequestLease,
+  AccelerationRuntimePhase,
+  AccelerationRuntimeState,
+};
 
 type MutableAccelerationRuntimeState = {
   -readonly [Key in keyof AccelerationRuntimeState]: AccelerationRuntimeState[Key];
 };
 
 type AccelerationRuntimePatch = Partial<Omit<MutableAccelerationRuntimeState, 'revision'>>;
-
-const INITIAL_ACCELERATION_RUNTIME_STATE: AccelerationRuntimeState = Object.freeze({
-  revision: 0,
-  phase: 'initializing',
-  message: 'starting',
-  activeApiRequests: 0,
-  blocking: false,
-  stale: false,
-  lastCompiledSignature: null,
-  lastError: null,
-});
 
 let accelerationRuntimeSnapshot: AccelerationRuntimeState = INITIAL_ACCELERATION_RUNTIME_STATE;
 
@@ -92,7 +65,7 @@ export function acquireAccelerationRuntimeApiRequest(): AccelerationRuntimeApiRe
   const snapshot = getAccelerationRuntimeSnapshot();
   if (snapshot.blocking) {
     return Object.freeze({
-      status: 'blocked',
+      status: ACCELERATION_RUNTIME_REQUEST_STATUS.blocked,
       snapshot,
     });
   }
@@ -113,16 +86,18 @@ export function acquireAccelerationRuntimeApiRequest(): AccelerationRuntimeApiRe
   };
 
   return Object.freeze({
-    status: 'acquired',
+    status: ACCELERATION_RUNTIME_REQUEST_STATUS.acquired,
     snapshot: acquiredSnapshot,
     release,
   });
 }
 
-export async function waitForAccelerationApiIdle(timeoutMs = 5000): Promise<void> {
+export async function waitForAccelerationApiIdle(
+  timeoutMs = ACCELERATION_RUNTIME_IDLE_WAIT_POLICY.timeoutMs,
+): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (getAccelerationRuntimeSnapshot().activeApiRequests > 0 && Date.now() < deadline) {
     // eslint-disable-next-line no-await-in-loop
-    await new Promise((resolve) => setTimeout(resolve, 25));
+    await new Promise((resolve) => setTimeout(resolve, ACCELERATION_RUNTIME_IDLE_WAIT_POLICY.pollIntervalMs));
   }
 }
