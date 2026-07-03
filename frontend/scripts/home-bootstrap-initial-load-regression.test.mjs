@@ -6,6 +6,30 @@ const source = fs.readFileSync(
   'src/composables/useItemBrowser.ts',
   'utf8',
 );
+const browserPageCacheSource = fs.readFileSync(
+  'src/composables/browser/browserPageCache.ts',
+  'utf8',
+);
+const runtimeSessionSource = fs.readFileSync(
+  'src/services/api/runtimeSession.ts',
+  'utf8',
+);
+const runtimeTypesSource = fs.readFileSync(
+  'src/runtime/types.ts',
+  'utf8',
+);
+const browserArtifactPolicySource = fs.readFileSync(
+  'src/runtime/browserRuntimeArtifactPolicyCatalog.ts',
+  'utf8',
+);
+const recipeArtifactPolicySource = fs.readFileSync(
+  'src/runtime/recipeBootstrapArtifactPolicyCatalog.ts',
+  'utf8',
+);
+const recipeBootstrapClientSource = fs.readFileSync(
+  'src/runtime/recipeBootstrapClient.ts',
+  'utf8',
+);
 
 test('initial homepage load can use a single home-bootstrap payload for first-page cold starts', () => {
   assert.equal(
@@ -37,12 +61,12 @@ test('initial homepage load can use a single home-bootstrap payload for first-pa
 
 test('browser page caches survive homepage remounts through a bounded shared cache', () => {
   assert.equal(
-    source.includes('const sharedPageCache = new Map<string, CachedBrowserPage>();'),
+    browserPageCacheSource.includes('export const sharedPageCache = new Map<string, CachedBrowserPage>();'),
     true,
     'browser pages should be retained across route exits instead of rebuilding from scratch on every return to the homepage',
   );
   assert.equal(
-    source.includes('const SHARED_BROWSER_PAGE_CACHE_LIMIT = 48;'),
+    browserPageCacheSource.includes('const SHARED_BROWSER_PAGE_CACHE_LIMIT = 256;'),
     true,
     'shared browser page cache should stay bounded to avoid unbounded memory growth while the SPA remains open',
   );
@@ -53,19 +77,14 @@ test('browser page caches survive homepage remounts through a bounded shared cac
   );
 });
 
-test('homepage bootstrap keeps the publish-bundle fast path available before falling back to API bootstrap', () => {
-  const apiSource = fs.readFileSync(
-    'src/services/api.ts',
-    'utf8',
-  );
-
+test('homepage bootstrap keeps the publish-bundle fast path available before failing closed', () => {
   assert.equal(
-    apiSource.includes('manifest.publishBundle?.files.homeBootstrapWindows'),
+    runtimeSessionSource.includes('manifest.publishBundle?.files.homeBootstrapWindows'),
     true,
     'api.getHomeBootstrap should consult the published home-bootstrap bundle when available',
   );
   assert.equal(
-    apiSource.includes('fetchPublishedJson'),
+    runtimeSessionSource.includes('fetchPublishedJson'),
     true,
     'published bootstrap assets should be read through the shared published-json helper',
   );
@@ -77,57 +96,47 @@ test('search warmup preloads the browser search worker through published search 
     true,
     'item browser warmSearchIndex should prewarm the browser search worker',
   );
-  const apiSource = fs.readFileSync(
-    'src/services/api.ts',
-    'utf8',
-  );
   assert.equal(
-    apiSource.includes('browserSearchShards'),
+    runtimeTypesSource.includes('browserSearchShards')
+      && browserArtifactPolicySource.includes('resolvePublishedBrowserSearchShardPath'),
     true,
     'publish bundle manifest should expose browser search shard metadata to the frontend',
   );
 });
 
-test('recipe bootstrap fast path can resolve published hot-item bootstrap shards before API fallback', () => {
-  const apiSource = fs.readFileSync(
-    'src/services/api.ts',
-    'utf8',
-  );
-
+test('recipe bootstrap fast path can resolve published hot-item bootstrap shards before failing closed', () => {
   assert.equal(
-    apiSource.includes('resolvePublishedRecipeBootstrapPath'),
+    recipeArtifactPolicySource.includes('resolvePublishedRecipeBootstrapPath')
+      && recipeBootstrapClientSource.includes('resolvePublishedRecipeBootstrapPath'),
     true,
     'api should resolve published recipe bootstrap assets when the manifest advertises them',
   );
   assert.equal(
-    apiSource.includes("manifest, itemId, 'bootstrap'"),
+    recipeBootstrapClientSource.includes("manifest, itemId, 'bootstrap'"),
     true,
-    'recipe bootstrap calls should consult the published bootstrap asset before falling back to the API route',
+    'recipe bootstrap calls should consult the published bootstrap asset before failing closed',
   );
   assert.equal(
-    apiSource.includes("manifest, itemId, 'shard'"),
+    recipeBootstrapClientSource.includes("manifest, itemId, 'shard'"),
     true,
-    'recipe bootstrap shard calls should consult the published shard asset before falling back to the API route',
+    'recipe bootstrap shard calls should consult the published shard asset before failing closed',
   );
 });
 
 test('recipe group index packs can use published hot-item static assets for first id-probe group pages', () => {
-  const apiSource = fs.readFileSync(
-    'src/services/api.ts',
-    'utf8',
-  );
   const viewerSource = fs.readFileSync(
     'src/composables/useRecipeViewer.ts',
     'utf8',
   );
 
   assert.equal(
-    apiSource.includes('resolvePublishedRecipeGroupIndexPath'),
+    recipeArtifactPolicySource.includes('resolvePublishedRecipeGroupIndexPath')
+      && recipeBootstrapClientSource.includes('resolvePublishedRecipeGroupIndexPath'),
     true,
     'api should resolve published recipe group index assets when the bundle advertises them',
   );
   assert.equal(
-    apiSource.includes('recipeGroupIndexBasePath'),
+    recipeArtifactPolicySource.includes('recipeGroupIndexBasePath'),
     true,
     'publish bundle manifest should expose a recipe group index asset base path',
   );
@@ -142,4 +151,3 @@ test('recipe group index packs can use published hot-item static assets for firs
     'recipe viewer should also prefetch adjacent pages within the active category to reduce next-page latency after first open',
   );
 });
-

@@ -25,8 +25,13 @@ import {
   getBrowserDefaultCatalogCacheKey,
   getBrowserGroupItemsCacheKey,
   getBrowserSearchCatalogCacheKey,
-  resolvePublishedWindowPath,
 } from './browserProjection';
+import {
+  canUsePublishedBrowserPageWindow,
+  resolvePublishedBrowserPageWindowPath,
+  resolvePublishedBrowserSearchPackPath,
+  resolvePublishedBrowserSearchShardPath,
+} from './browserRuntimeArtifactPolicyCatalog';
 import {
   mergeBrowserSearchPackEntries,
   searchBrowserSearchPackEntries,
@@ -219,18 +224,15 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
     if (distDataPagePack) {
       return distDataPagePack;
     }
-    const normalizedExpandedGroups = params.expandedGroups ?? [];
-    const canUseStaticBundle = !params.search?.trim() && !params.modId && normalizedExpandedGroups.length === 0;
-    let staticBundleFailure: string | null = null;
-    if (canUseStaticBundle) {
+    const canUsePublishedWindow = canUsePublishedBrowserPageWindow(params);
+    let publishedArtifactFailure: string | null = null;
+    if (canUsePublishedWindow) {
       const manifest = await options.getManifest();
-      const staticPath = resolvePublishedWindowPath(
-        manifest.publishBundle?.files.browserPageWindows,
-        params.slotSize,
-        Math.max(1, Math.floor(params.page ?? 1)),
-        Math.max(1, Math.floor(params.pageSize ?? 50)),
-        options.isPublishedJsonWarm,
-      );
+      const staticPath = resolvePublishedBrowserPageWindowPath({
+        manifest,
+        request: params,
+        isWarm: options.isPublishedJsonWarm,
+      });
       if (staticPath) {
         try {
           const published = await options.fetchPublishedJson<BrowserPagePackResponse>(staticPath);
@@ -242,23 +244,23 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
           if (derived) {
             return derived;
           }
-          staticBundleFailure = 'published browser page window could not derive requested page';
+          publishedArtifactFailure = 'published browser page window could not derive requested page';
         } catch {
-          staticBundleFailure = 'published browser page window could not be read';
+          publishedArtifactFailure = 'published browser page window could not be read';
         }
       } else {
-        staticBundleFailure = 'published browser page window missing';
+        publishedArtifactFailure = 'published browser page window missing';
       }
     }
 
     options.reportGap('browser-page-pack', 'published browser page window', 'runtime browser page pack unavailable', {
       details: {
         ...params,
-        staticBundleFailure,
-        canUseStaticBundle,
+        publishedArtifactFailure,
+        canUsePublishedWindow,
       },
     });
-    throw new Error(`Runtime browser page pack unavailable: ${staticBundleFailure ?? 'compiled page pack is missing'}`);
+    throw new Error(`Runtime browser page pack unavailable: ${publishedArtifactFailure ?? 'compiled page pack is missing'}`);
   }
 
   async function primeDefaultBrowserPagePack(params: { page: number; pageSize: number; slotSize?: number }): Promise<BrowserPagePackResponse> {
@@ -291,7 +293,7 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
       return distDataSearch;
     }
     const manifest = await options.getManifest();
-    const staticPath = manifest.publishBundle?.files.browserSearchPack;
+    const staticPath = resolvePublishedBrowserSearchPackPath(manifest);
     if (staticPath) {
       try {
         return await options.fetchPublishedJson<BrowserSearchPackResponse>(staticPath);
@@ -325,9 +327,7 @@ export function createBrowserCatalogClient(options: BrowserCatalogClientOptions)
 
     const request = (async () => {
       const manifest = await options.getManifest();
-      const shardPath = manifest.publishBundle?.files.browserSearchShards?.find(
-        (entry) => entry.scope === 'all' && entry.shardId === normalizedShardId,
-      )?.path;
+      const shardPath = resolvePublishedBrowserSearchShardPath(manifest, normalizedShardId);
       if (!shardPath) {
         options.reportGap('browser-search-shard', `publish search shard ${normalizedShardId}`, 'runtime search shard missing', {
           details: { shardId: normalizedShardId },
