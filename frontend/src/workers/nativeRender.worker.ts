@@ -63,6 +63,47 @@ type TextureTile = {
 
 const virtualTextureTiles = new Map<string, TextureTile[]>();
 
+const NATIVE_RENDER_WORKER_RESOURCE_POLICY = Object.freeze({
+  id: "nativeRender.worker.resources",
+  failurePolicy: "fail-closed",
+  requiredRendererOperations: ["loadTextures", "render"] as const,
+} as const);
+
+class NativeRenderWorkerResourceError extends Error {
+  readonly operation: string;
+  readonly details: unknown;
+
+  constructor(operation: string, reason: string, details?: unknown) {
+    super(`Native render worker ${operation} resource failure: ${reason}`);
+    this.name = "NativeRenderWorkerResourceError";
+    this.operation = operation;
+    this.details = Object.freeze({
+      policy: NATIVE_RENDER_WORKER_RESOURCE_POLICY.id,
+      ...(details && typeof details === "object" && !Array.isArray(details)
+        ? details as Record<string, unknown>
+        : { details: details ?? null }),
+    });
+  }
+}
+
+function nativeRenderWorkerResourceFailed(
+  operation: string,
+  reason: string,
+  details?: unknown,
+): NativeRenderWorkerResourceError {
+  return new NativeRenderWorkerResourceError(operation, reason, details);
+}
+
+function requireNativeRenderer(operation: string): NativeRendererBackend {
+  if (!nativeRenderer) {
+    throw nativeRenderWorkerResourceFailed(operation, "native renderer is not initialized", {
+      requestedBackend,
+      backend,
+    });
+  }
+  return nativeRenderer;
+}
+
 function percentile(values: number[], p: number): number {
   if (values.length <= 0) return 0;
   const sorted = [...values].sort((left, right) => left - right);
@@ -234,15 +275,40 @@ function canUploadWholeBitmap(bitmap: ImageBitmap): boolean {
   return bitmap.width <= rendererMaxTextureSize && bitmap.height <= rendererMaxTextureSize;
 }
 
-async function uploadVirtualTextureTiles(key: string, bitmap: ImageBitmap): Promise<boolean> {
-  if (!nativeRenderer || rendererMaxTextureSize <= 0 || bitmap.width > rendererMaxTextureSize) return false;
+function shouldTileBitmap(bitmap: ImageBitmap): boolean {
+  return rendererMaxTextureSize > 0
+    && bitmap.width <= rendererMaxTextureSize
+    && bitmap.height > rendererMaxTextureSize;
+}
+
+async function uploadVirtualTextureTiles(
+  renderer: NativeRendererBackend,
+  key: string,
+  bitmap: ImageBitmap,
+): Promise<void> {
+  if (rendererMaxTextureSize <= 0) {
+    throw nativeRenderWorkerResourceFailed("loadTextures", "renderer max texture size is unavailable", { key });
+  }
+  if (bitmap.width > rendererMaxTextureSize) {
+    throw nativeRenderWorkerResourceFailed("loadTextures", "texture width exceeds renderer max texture size", {
+      key,
+      width: bitmap.width,
+      rendererMaxTextureSize,
+    });
+  }
   const tiles: TextureTile[] = [];
   for (let y = 0, tileIndex = 0; y < bitmap.height; y += rendererMaxTextureSize, tileIndex += 1) {
     const tileHeight = Math.min(rendererMaxTextureSize, bitmap.height - y);
     const tileKey = `${key}::tile:${tileIndex}`;
     const tileBitmap = await createImageBitmap(bitmap, 0, y, bitmap.width, tileHeight);
     try {
-      if (!nativeRenderer.registerTexture(tileKey, tileBitmap)) return false;
+      if (!renderer.registerTexture(tileKey, tileBitmap)) {
+        throw nativeRenderWorkerResourceFailed("loadTextures", "renderer rejected virtual texture tile", {
+          key,
+          tileKey,
+          tileHeight,
+        });
+      }
       tiles.push({
         key: tileKey,
         x: 0,
@@ -254,25 +320,36 @@ async function uploadVirtualTextureTiles(key: string, bitmap: ImageBitmap): Prom
       tileBitmap.close();
     }
   }
-  if (tiles.length <= 0) return false;
+  if (tiles.length <= 0) {
+    throw nativeRenderWorkerResourceFailed("loadTextures", "virtual texture produced no tiles", { key });
+  }
   virtualTextureTiles.set(key, tiles);
   uploadedTextureKeys.add(key);
-  textureLoaded = nativeRenderer.textureCount();
-  return true;
+  textureLoaded = renderer.textureCount();
 }
 
 async function uploadTexture(key: string, url: string): Promise<void> {
-  if (!nativeRenderer || uploadedTextureKeys.has(key)) return;
+  const renderer = requireNativeRenderer("loadTextures");
+  if (uploadedTextureKeys.has(key)) return;
   const bitmap = await loadTextureBitmap(url);
   try {
-    if (canUploadWholeBitmap(bitmap) && nativeRenderer.registerTexture(key, bitmap)) {
+    if (canUploadWholeBitmap(bitmap)) {
+      if (!renderer.registerTexture(key, bitmap)) {
+        if (shouldTileBitmap(bitmap)) {
+          await uploadVirtualTextureTiles(renderer, key, bitmap);
+          return;
+        }
+        throw nativeRenderWorkerResourceFailed("loadTextures", "renderer rejected texture registration", {
+          key,
+          width: bitmap.width,
+          height: bitmap.height,
+        });
+      }
       virtualTextureTiles.delete(key);
       uploadedTextureKeys.add(key);
-      textureLoaded = nativeRenderer.textureCount();
-    } else if (await uploadVirtualTextureTiles(key, bitmap)) {
-      textureLoaded = nativeRenderer.textureCount();
+      textureLoaded = renderer.textureCount();
     } else {
-      textureErrors += 1;
+      await uploadVirtualTextureTiles(renderer, key, bitmap);
     }
   } finally {
     bitmap.close();
@@ -291,11 +368,12 @@ async function uploadTexturesInBatches(textures: Array<{ key: string; url: strin
     const batch = pending.slice(offset, offset + TEXTURE_UPLOAD_CONCURRENCY);
     textureUploadBatches += 1;
     await Promise.all(batch.map(async (texture) => {
+      if (uploadToken !== latestTextureUploadToken) return;
       try {
-        if (uploadToken !== latestTextureUploadToken) return;
         await uploadTexture(texture.key, texture.url);
-      } catch {
+      } catch (error) {
         textureErrors += 1;
+        throw error;
       }
     }));
   }
@@ -370,12 +448,12 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
       normalizedSpriteCommands = frameSpriteCommands.length;
       lastSpriteNormalizeMs = performance.now() - normalizeStartedAt;
       const drawStartedAt = performance.now();
-      const renderStats = nativeRenderer?.render(
+      const renderStats = requireNativeRenderer("render").render(
         width,
         height,
         parsedCommands,
         frameSpriteCommands,
-      ) ?? { drawCalls: 0, vertexCount: 0, spriteDrawCalls: 0, spriteVertexCount: 0 };
+      );
       lastDrawMs = performance.now() - drawStartedAt;
       drawCalls = renderStats.drawCalls;
       vertexCount = renderStats.vertexCount;
