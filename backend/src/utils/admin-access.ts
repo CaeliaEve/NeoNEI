@@ -1,4 +1,11 @@
 import type { Request, Response } from 'express';
+import {
+  ADMIN_ACCESS_ERRORS,
+  ADMIN_ACCESS_MIN_RATE_LIMIT_MAX,
+  ADMIN_ACCESS_MIN_RATE_LIMIT_WINDOW_MS,
+  ADMIN_ACCESS_RETRY_AFTER_HEADER,
+  getAdminAccessTokenCandidate,
+} from './admin-access-abi';
 import { sendErrorEnvelope } from './error-response';
 import { logger } from './logger';
 
@@ -22,8 +29,8 @@ export function createAdminAccessGuard(options: AdminAccessGuardOptions): (req: 
 
   function isAdminRateLimited(req: Request): boolean {
     const now = Date.now();
-    const windowMs = Math.max(1_000, options.rateLimitWindowMs);
-    const maxRequests = Math.max(1, options.rateLimitMax);
+    const windowMs = Math.max(ADMIN_ACCESS_MIN_RATE_LIMIT_WINDOW_MS, options.rateLimitWindowMs);
+    const maxRequests = Math.max(ADMIN_ACCESS_MIN_RATE_LIMIT_MAX, options.rateLimitMax);
     const key = getAdminRateLimitKey(req);
     const bucket = adminRateBuckets.get(key);
     if (!bucket || now - bucket.windowStartedAt > windowMs) {
@@ -36,28 +43,31 @@ export function createAdminAccessGuard(options: AdminAccessGuardOptions): (req: 
 
   return (req: Request, res: Response): boolean => {
     if (isAdminRateLimited(req)) {
-      res.setHeader('Retry-After', String(Math.ceil(Math.max(1_000, options.rateLimitWindowMs) / 1000)));
-      sendErrorEnvelope(req, res, 429, 'ADMIN_RATE_LIMITED', 'Admin request rate limit exceeded');
-      logger.warn('[ADMIN] rate limited request', { route: req.originalUrl, ip: req.ip });
+      const error = ADMIN_ACCESS_ERRORS.rateLimited;
+      res.setHeader(
+        ADMIN_ACCESS_RETRY_AFTER_HEADER,
+        String(Math.ceil(Math.max(ADMIN_ACCESS_MIN_RATE_LIMIT_WINDOW_MS, options.rateLimitWindowMs) / 1000)),
+      );
+      sendErrorEnvelope(req, res, error.statusCode, error.code, error.message);
+      logger.warn(error.logMessage, { route: req.originalUrl, ip: req.ip });
       return false;
     }
 
     if (!options.token) {
-      sendErrorEnvelope(
-        req,
-        res,
-        503,
-        'ADMIN_TOKEN_NOT_CONFIGURED',
-        'Set NEONEI_ADMIN_TOKEN before enabling admin mutation endpoints.',
-      );
-      logger.warn('[ADMIN] rejected request because NEONEI_ADMIN_TOKEN is not configured', { route: req.originalUrl });
+      const error = ADMIN_ACCESS_ERRORS.tokenNotConfigured;
+      sendErrorEnvelope(req, res, error.statusCode, error.code, error.message);
+      logger.warn(error.logMessage, { route: req.originalUrl });
       return false;
     }
 
-    const provided = `${req.header('x-neonei-admin-token') ?? req.query.adminToken ?? ''}`;
+    const provided = getAdminAccessTokenCandidate({
+      header: (name) => req.header(name),
+      query: req.query as Readonly<Record<string, unknown>>,
+    });
     if (provided !== options.token) {
-      sendErrorEnvelope(req, res, 401, 'ADMIN_TOKEN_REQUIRED', 'Admin token is required');
-      logger.warn('[ADMIN] rejected unauthorized request', { route: req.originalUrl, ip: req.ip });
+      const error = ADMIN_ACCESS_ERRORS.tokenRequired;
+      sendErrorEnvelope(req, res, error.statusCode, error.code, error.message);
+      logger.warn(error.logMessage, { route: req.originalUrl, ip: req.ip });
       return false;
     }
     return true;

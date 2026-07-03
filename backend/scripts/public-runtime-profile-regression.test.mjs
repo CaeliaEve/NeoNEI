@@ -9,6 +9,7 @@ const serverSource = readFileSync(join(repoRoot, 'backend/src/server.ts'), 'utf8
 const bootstrapSource = readFileSync(join(repoRoot, 'backend/src/bootstrap-server.ts'), 'utf8');
 const appSource = readFileSync(join(repoRoot, 'backend/src/app.ts'), 'utf8');
 const serverSettingsSource = readFileSync(join(repoRoot, 'backend/src/config/server-settings.ts'), 'utf8');
+const serverSettingsAbiSource = readFileSync(join(repoRoot, 'backend/src/config/server-settings-abi.ts'), 'utf8');
 const apiNamespacesRoutesSource = readFileSync(join(repoRoot, 'backend/src/routes/api-namespaces.routes.ts'), 'utf8');
 const apiNamespaceRegistrySource = readFileSync(join(repoRoot, 'backend/src/routes/api-namespace-registry.ts'), 'utf8');
 const adminControlPlaneSource = readFileSync(join(repoRoot, 'backend/src/routes/runtime-admin-control-plane.routes.ts'), 'utf8');
@@ -22,9 +23,19 @@ const backendEnvExample = readFileSync(join(repoRoot, 'backend/.env.example'), '
 const rootEnvExample = readFileSync(join(repoRoot, '.env.example'), 'utf8');
 
 test('public runtime profile is explicit and keeps control on ops/admin mounts', () => {
-  assert.match(serverSettingsSource, /function resolvePublicRuntimeOnly/);
-  assert.match(serverSettingsSource, /process\.env\.NODE_ENV === 'production'/);
+  assert.match(serverSettingsSource, /from '\.\/server-settings-abi'/);
+  assert.match(serverSettingsAbiSource, /export function resolvePublicRuntimeOnly/);
+  assert.match(serverSettingsAbiSource, /SERVER_SETTINGS_PRODUCTION_NODE_ENV = 'production'/);
+  assert.match(serverSettingsAbiSource, /NEONEI_PUBLIC_RUNTIME_ONLY/);
+  assert.match(serverSettingsAbiSource, /NEONEI_PUBLISH_MATERIALIZE_ON_START/);
+  assert.match(serverSettingsAbiSource, /validateAndFreezeServerSettingsEnvDescriptors/);
+  assert.match(serverSettingsAbiSource, /'server settings string env'/);
+  assert.match(serverSettingsAbiSource, /'server settings boolean env'/);
+  assert.match(serverSettingsAbiSource, /Duplicate \$\{label\} descriptor/);
+  assert.match(serverSettingsAbiSource, /Missing \$\{label\} descriptor/);
   assert.match(serverSettingsSource, /publicRuntimeOnly: resolvePublicRuntimeOnly\(\)/);
+  assert.doesNotMatch(serverSettingsSource, /process\.env\.NEONEI_PUBLIC_RUNTIME_ONLY/);
+  assert.doesNotMatch(serverSettingsSource, /process\.env\.NEONEI_PUBLISH_MATERIALIZE_ON_START/);
   assert.equal(appSource.includes('registerApiNamespaces(app, { publicRuntimeOnly: options.serverSettings.publicRuntimeOnly })'), true);
   assert.match(apiNamespacesRoutesSource, /mountApiNamespaces\(\s*app,\s*getApiNamespacePlan/s);
   assert.match(apiNamespacesRoutesSource, /publicRuntimeOnly:\s*options\.publicRuntimeOnly/);
