@@ -1,6 +1,14 @@
 import fs from 'fs';
 import path from 'path';
 import { DIST_DATA_DIR } from '../config/runtime-paths';
+import {
+  CURRENT_RUNTIME_ARTIFACT_STATUS,
+  type CurrentRuntimeArtifactProbe,
+  type CurrentRuntimeArtifactReadKind,
+} from './current-runtime-artifact-index-abi';
+
+export { CURRENT_RUNTIME_ARTIFACT_STATUS };
+export type { CurrentRuntimeArtifactProbe };
 
 export type CurrentRuntimeJsonRecord = Record<string, unknown>;
 
@@ -9,6 +17,24 @@ export type CurrentRuntimeArtifact = Readonly<{
   absolutePath: string;
   bytes: number;
   mtimeMs: number;
+}>;
+
+export type CurrentRuntimeJsonArtifactRead = Readonly<{
+  probe: CurrentRuntimeArtifactProbe;
+  value: CurrentRuntimeJsonRecord | null;
+}>;
+
+export type CurrentRuntimeTextArtifactRead = Readonly<{
+  probe: CurrentRuntimeArtifactProbe;
+  value: string | null;
+}>;
+
+export type CurrentRuntimeArtifactInventory = Readonly<{
+  artifactsByPath: Readonly<Record<string, CurrentRuntimeArtifact>>;
+  probesByPath: Readonly<Record<string, CurrentRuntimeArtifactProbe>>;
+  missing: readonly string[];
+  invalid: readonly string[];
+  errors: readonly string[];
 }>;
 
 export const CURRENT_RUNTIME_DIST_DATA_DIR = DIST_DATA_DIR;
@@ -23,28 +49,142 @@ function asString(value: unknown): string | null {
   return text || null;
 }
 
-function statRuntimeFile(filePath: string): fs.Stats | null {
+function describeError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function errorCode(error: unknown): string | null {
+  return error && typeof error === 'object' && 'code' in error
+    ? `${(error as { code?: unknown }).code ?? ''}` || null
+    : null;
+}
+
+function createCurrentRuntimeArtifactProbe(args: {
+  status: CurrentRuntimeArtifactProbe['status'];
+  kind: CurrentRuntimeArtifactReadKind;
+  path: string;
+  relativePath?: string | null;
+  bytes?: number | null;
+  mtimeMs?: number | null;
+  error?: string | null;
+}): CurrentRuntimeArtifactProbe {
+  return Object.freeze({
+    status: args.status,
+    kind: args.kind,
+    path: args.path,
+    relativePath: args.relativePath ?? null,
+    bytes: args.bytes ?? null,
+    mtimeMs: args.mtimeMs ?? null,
+    error: args.error ?? null,
+  });
+}
+
+export function probeCurrentRuntimeFile(
+  filePath: string,
+  relativePath: string | null = null,
+  kind: CurrentRuntimeArtifactReadKind = 'file',
+): CurrentRuntimeArtifactProbe {
   try {
     const stat = fs.statSync(filePath);
-    return stat.isFile() ? stat : null;
-  } catch {
-    return null;
+    if (!stat.isFile()) {
+      return createCurrentRuntimeArtifactProbe({
+        status: CURRENT_RUNTIME_ARTIFACT_STATUS.invalid,
+        kind,
+        path: filePath,
+        relativePath,
+        error: `current runtime artifact path is not a file: ${filePath}`,
+      });
+    }
+    return createCurrentRuntimeArtifactProbe({
+      status: CURRENT_RUNTIME_ARTIFACT_STATUS.present,
+      kind,
+      path: filePath,
+      relativePath,
+      bytes: stat.size,
+      mtimeMs: stat.mtimeMs,
+    });
+  } catch (error) {
+    const missing = errorCode(error) === 'ENOENT';
+    return createCurrentRuntimeArtifactProbe({
+      status: missing
+        ? CURRENT_RUNTIME_ARTIFACT_STATUS.missing
+        : CURRENT_RUNTIME_ARTIFACT_STATUS.invalid,
+      kind,
+      path: filePath,
+      relativePath,
+      error: missing ? `current runtime artifact is missing: ${filePath}` : describeError(error),
+    });
   }
 }
 
-export function readCurrentRuntimeJson(filePath: string): CurrentRuntimeJsonRecord | null {
+export function readCurrentRuntimeJsonArtifact(
+  filePath: string,
+  relativePath: string | null = null,
+): CurrentRuntimeJsonArtifactRead {
+  const fileProbe = probeCurrentRuntimeFile(filePath, relativePath, 'json');
+  if (fileProbe.status !== CURRENT_RUNTIME_ARTIFACT_STATUS.present) {
+    return Object.freeze({ probe: fileProbe, value: null });
+  }
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as CurrentRuntimeJsonRecord;
-  } catch {
-    return null;
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8')) as unknown;
+    const record = asRecord(parsed);
+    if (!record) {
+      return Object.freeze({
+        probe: createCurrentRuntimeArtifactProbe({
+          status: CURRENT_RUNTIME_ARTIFACT_STATUS.invalid,
+          kind: 'json',
+          path: filePath,
+          relativePath,
+          bytes: fileProbe.bytes,
+          mtimeMs: fileProbe.mtimeMs,
+          error: 'current runtime JSON artifact payload must be an object',
+        }),
+        value: null,
+      });
+    }
+    return Object.freeze({ probe: fileProbe, value: record });
+  } catch (error) {
+    return Object.freeze({
+      probe: createCurrentRuntimeArtifactProbe({
+        status: CURRENT_RUNTIME_ARTIFACT_STATUS.invalid,
+        kind: 'json',
+        path: filePath,
+        relativePath,
+        bytes: fileProbe.bytes,
+        mtimeMs: fileProbe.mtimeMs,
+        error: describeError(error),
+      }),
+      value: null,
+    });
   }
 }
 
-export function readCurrentRuntimeText(filePath: string): string | null {
+export function readCurrentRuntimeTextArtifact(
+  filePath: string,
+  relativePath: string | null = null,
+): CurrentRuntimeTextArtifactRead {
+  const fileProbe = probeCurrentRuntimeFile(filePath, relativePath, 'text');
+  if (fileProbe.status !== CURRENT_RUNTIME_ARTIFACT_STATUS.present) {
+    return Object.freeze({ probe: fileProbe, value: null });
+  }
   try {
-    return fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return null;
+    return Object.freeze({
+      probe: fileProbe,
+      value: fs.readFileSync(filePath, 'utf8'),
+    });
+  } catch (error) {
+    return Object.freeze({
+      probe: createCurrentRuntimeArtifactProbe({
+        status: CURRENT_RUNTIME_ARTIFACT_STATUS.invalid,
+        kind: 'text',
+        path: filePath,
+        relativePath,
+        bytes: fileProbe.bytes,
+        mtimeMs: fileProbe.mtimeMs,
+        error: describeError(error),
+      }),
+      value: null,
+    });
   }
 }
 
@@ -127,28 +267,43 @@ export function collectDeclaredRuntimeFilePaths(
 
 export function buildCurrentRuntimeArtifactInventory(
   declaredFiles: readonly string[],
-): Readonly<Record<string, CurrentRuntimeArtifact>> {
+): CurrentRuntimeArtifactInventory {
   const artifacts: Record<string, CurrentRuntimeArtifact> = {};
+  const probes: Record<string, CurrentRuntimeArtifactProbe> = {};
   for (const relativePath of declaredFiles) {
     const absolutePath = resolveDistDataRuntimeFile(relativePath);
-    const stat = statRuntimeFile(absolutePath);
-    if (!stat) continue;
-    artifacts[relativePath] = Object.freeze({
-      relativePath,
-      absolutePath,
-      bytes: stat.size,
-      mtimeMs: stat.mtimeMs,
-    });
+    const probe = probeCurrentRuntimeFile(absolutePath, relativePath);
+    probes[relativePath] = probe;
+    if (probe.status === CURRENT_RUNTIME_ARTIFACT_STATUS.present) {
+      artifacts[relativePath] = Object.freeze({
+        relativePath,
+        absolutePath,
+        bytes: probe.bytes ?? 0,
+        mtimeMs: probe.mtimeMs ?? 0,
+      });
+    }
   }
-  return Object.freeze(artifacts);
+  return Object.freeze({
+    artifactsByPath: Object.freeze(artifacts),
+    probesByPath: Object.freeze(probes),
+    missing: Object.freeze(Object.entries(probes)
+      .filter(([, probe]) => probe.status === CURRENT_RUNTIME_ARTIFACT_STATUS.missing)
+      .map(([relativePath]) => relativePath)),
+    invalid: Object.freeze(Object.entries(probes)
+      .filter(([, probe]) => probe.status === CURRENT_RUNTIME_ARTIFACT_STATUS.invalid)
+      .map(([relativePath]) => relativePath)),
+    errors: Object.freeze(Object.entries(probes)
+      .filter(([, probe]) => probe.error)
+      .map(([relativePath, probe]) => `${relativePath}: ${probe.error}`)),
+  });
 }
 
 function fileFingerprint(relativePath: string): string {
   const absolutePath = resolveDistDataRuntimeFile(relativePath);
-  const stat = statRuntimeFile(absolutePath);
-  return stat
-    ? `${relativePath}:${stat.size}:${stat.mtimeMs}`
-    : `${relativePath}:missing`;
+  const probe = probeCurrentRuntimeFile(absolutePath, relativePath);
+  return probe.status === CURRENT_RUNTIME_ARTIFACT_STATUS.present
+    ? `${relativePath}:${probe.bytes}:${probe.mtimeMs}`
+    : `${relativePath}:${probe.status}`;
 }
 
 export function buildCurrentRuntimeSnapshotFingerprint(

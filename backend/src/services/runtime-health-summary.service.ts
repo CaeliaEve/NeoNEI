@@ -2,7 +2,12 @@ import fs from 'fs';
 import path from 'path';
 import { DIST_DATA_DIR } from '../config/runtime-paths';
 import { resolveAccelerationCompilerAuthority } from './acceleration-runtime-compiler-authority.service';
-import { acquireCurrentRuntimeSnapshot, type CurrentRuntimeSnapshot, type CurrentRuntimeSnapshotHandle } from './current-runtime-snapshot.service';
+import {
+  acquireCurrentRuntimeSnapshot,
+  type CurrentRuntimeSnapshot,
+  type CurrentRuntimeSnapshotDiagnostics,
+  type CurrentRuntimeSnapshotHandle,
+} from './current-runtime-snapshot.service';
 import { getNativeUiRuntimeProofSummary } from './native-ui-runtime-proof.service';
 import { getNativeRenderRuntimeDiagnostics } from './native-render-runtime-diagnostics.service';
 
@@ -117,6 +122,7 @@ export interface RuntimeHealthSummary {
     totalBytes: number;
   };
   runtimeSnapshot: {
+    status: CurrentRuntimeSnapshotDiagnostics['status'];
     available: boolean;
     revision: number | null;
     runtimeId: string | null;
@@ -127,6 +133,7 @@ export interface RuntimeHealthSummary {
     presentArtifacts: number;
     missingArtifacts: string[];
     totalBytes: number;
+    errors: readonly string[];
   };
   compiler: {
     authority: ReturnType<typeof resolveAccelerationCompilerAuthority>;
@@ -283,7 +290,10 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.map((entry) => `${entry ?? ''}`.trim()).filter(Boolean) : [];
 }
 
-function buildRuntimeSnapshotHealth(snapshot: CurrentRuntimeSnapshot | null): Pick<RuntimeHealthSummary, 'files' | 'runtimeSnapshot'> {
+function buildRuntimeSnapshotHealth(
+  snapshot: CurrentRuntimeSnapshot | null,
+  diagnostics: CurrentRuntimeSnapshotDiagnostics | null = null,
+): Pick<RuntimeHealthSummary, 'files' | 'runtimeSnapshot'> {
   if (!snapshot) {
     return {
       files: {
@@ -293,6 +303,7 @@ function buildRuntimeSnapshotHealth(snapshot: CurrentRuntimeSnapshot | null): Pi
         totalBytes: 0,
       },
       runtimeSnapshot: {
+        status: diagnostics?.status ?? 'missing',
         available: false,
         revision: null,
         runtimeId: null,
@@ -303,6 +314,7 @@ function buildRuntimeSnapshotHealth(snapshot: CurrentRuntimeSnapshot | null): Pi
         presentArtifacts: 0,
         missingArtifacts: [],
         totalBytes: 0,
+        errors: diagnostics?.errors ?? [],
       },
     };
   }
@@ -320,6 +332,7 @@ function buildRuntimeSnapshotHealth(snapshot: CurrentRuntimeSnapshot | null): Pi
       totalBytes,
     },
     runtimeSnapshot: {
+      status: diagnostics?.status ?? 'ready',
       available: true,
       revision: snapshot.revision,
       runtimeId: snapshot.runtimeId,
@@ -330,6 +343,7 @@ function buildRuntimeSnapshotHealth(snapshot: CurrentRuntimeSnapshot | null): Pi
       presentArtifacts: artifactPaths.size,
       missingArtifacts,
       totalBytes,
+      errors: diagnostics?.errors ?? [],
     },
   };
 }
@@ -471,7 +485,10 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
   const snapshotHandle: CurrentRuntimeSnapshotHandle | null = pinnedSnapshot ? null : acquireCurrentRuntimeSnapshot();
   try {
     const snapshot = pinnedSnapshot ? optionSnapshot : snapshotHandle?.snapshot ?? null;
-    const runtimeSnapshotHealth = buildRuntimeSnapshotHealth(snapshot);
+    const runtimeSnapshotHealth = buildRuntimeSnapshotHealth(
+      snapshot,
+      pinnedSnapshot ? null : snapshotHandle?.diagnostics ?? null,
+    );
     const files = runtimeSnapshotHealth.files;
     const compilerAuthority = resolveAccelerationCompilerAuthority();
     const externalRuntimePromotion = readExternalRuntimePromotionSummary(manifest, externalRuntimePromotionReport);

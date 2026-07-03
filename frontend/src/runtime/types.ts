@@ -98,6 +98,7 @@ export interface RuntimeHealthSummary {
     totalBytes: number;
   };
   runtimeSnapshot?: {
+    status: 'ready' | 'missing' | 'invalid';
     available: boolean;
     revision: number | null;
     runtimeId: string | null;
@@ -108,6 +109,7 @@ export interface RuntimeHealthSummary {
     presentArtifacts: number;
     missingArtifacts: string[];
     totalBytes: number;
+    errors: readonly string[];
   };
   compiler?: unknown;
   nativeUi?: NativeUiRuntimeProofSummary;

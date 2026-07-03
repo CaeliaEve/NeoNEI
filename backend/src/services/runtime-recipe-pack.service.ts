@@ -1,7 +1,9 @@
 import fs from 'fs';
 import {
   CURRENT_RUNTIME_DIST_MANIFEST_FILE,
-  readCurrentRuntimeJson,
+  CURRENT_RUNTIME_ARTIFACT_STATUS,
+  probeCurrentRuntimeFile,
+  readCurrentRuntimeJsonArtifact,
   resolveDistDataRuntimeFile,
 } from './current-runtime-artifact-index.service';
 import { RUNTIME_RECIPE_PACK_SCHEMA } from './native-runtime-pack-abi';
@@ -60,12 +62,14 @@ type RuntimeRecipePack = ParsedRuntimeRecipePack & {
   categoriesById: Map<string, RuntimeRecipeCategory>;
 };
 
-function readJsonRequired(filePath: string, label: string): JsonRecord {
-  const parsed = readCurrentRuntimeJson(filePath);
-  if (!parsed) {
-    throw new Error(`Runtime recipe ${label} is missing or invalid JSON: ${filePath}`);
+function readJsonRequired(filePath: string, label: string, relativePath: string | null = null): JsonRecord {
+  const read = readCurrentRuntimeJsonArtifact(filePath, relativePath);
+  if (!read.value) {
+    throw new Error(
+      `Runtime recipe ${label} is ${read.probe.status}: ${read.probe.error ?? filePath}`,
+    );
   }
-  return parsed;
+  return read.value;
 }
 
 function asRecord(value: unknown): JsonRecord | null {
@@ -80,26 +84,54 @@ function asString(value: unknown): string | null {
 export class RuntimeRecipePackService {
   private cache: RuntimeRecipePack | null = null;
 
-  private getRuntimeRecipePackPath(): { path: string; signature: string } {
-    const distManifest = readCurrentRuntimeJson(CURRENT_RUNTIME_DIST_MANIFEST_FILE);
-    const runtimeManifestPath = asString(asRecord(distManifest?.files)?.rustRuntimeManifest) ?? 'rust/runtime-manifest.json';
-    const runtimeManifest = readCurrentRuntimeJson(resolveDistDataRuntimeFile(runtimeManifestPath));
-    const recipePath = asString(asRecord(runtimeManifest?.entrypoints)?.recipes)
-      ?? asString(asRecord(distManifest?.files)?.rustRecipeBin)
-      ?? 'rust/recipes.bin';
+  private getRuntimeRecipePackPath(): { path: string; relativePath: string; signature: string } {
+    const distManifestRead = readCurrentRuntimeJsonArtifact(CURRENT_RUNTIME_DIST_MANIFEST_FILE, 'manifest.json');
+    const distManifest = distManifestRead.value;
+    if (!distManifest) {
+      throw new Error(`Runtime recipe dist manifest is ${distManifestRead.probe.status}: ${distManifestRead.probe.error}`);
+    }
+    const runtimeManifestPath = asString(asRecord(distManifest.files)?.rustRuntimeManifest);
+    if (!runtimeManifestPath) {
+      throw new Error('Runtime recipe manifest path is not declared by dist manifest files.rustRuntimeManifest');
+    }
+    const runtimeManifestRead = readCurrentRuntimeJsonArtifact(
+      resolveDistDataRuntimeFile(runtimeManifestPath),
+      runtimeManifestPath,
+    );
+    const runtimeManifest = runtimeManifestRead.value;
+    if (!runtimeManifest) {
+      throw new Error(`Runtime recipe manifest is ${runtimeManifestRead.probe.status}: ${runtimeManifestRead.probe.error}`);
+    }
+    const recipePath = asString(asRecord(runtimeManifest.entrypoints)?.recipes);
+    if (!recipePath) {
+      throw new Error('Runtime recipe pack entrypoint is not declared by runtime manifest entrypoints.recipes');
+    }
+    const runtimeCacheKey = asString(distManifest.runtimeCacheKey);
+    const signature = runtimeCacheKey
+      ? [runtimeCacheKey, recipePath].join('::')
+      : [
+        'artifact-probe',
+        distManifestRead.probe.bytes,
+        distManifestRead.probe.mtimeMs,
+        runtimeManifestRead.probe.bytes,
+        runtimeManifestRead.probe.mtimeMs,
+        recipePath,
+      ].join('::');
     return {
       path: resolveDistDataRuntimeFile(recipePath),
-      signature: [asString(distManifest?.runtimeCacheKey) ?? 'runtime-cache-missing', recipePath].join('::'),
+      relativePath: recipePath,
+      signature,
     };
   }
 
   private loadPack(): RuntimeRecipePack {
-    const { path: packPath, signature } = this.getRuntimeRecipePackPath();
+    const { path: packPath, relativePath, signature } = this.getRuntimeRecipePackPath();
     if (this.cache?.signature === signature) {
       return this.cache;
     }
-    if (!fs.existsSync(packPath) || !fs.statSync(packPath).isFile()) {
-      throw new Error(`Runtime recipe pack not found: ${packPath}`);
+    const packProbe = probeCurrentRuntimeFile(packPath, relativePath);
+    if (packProbe.status !== CURRENT_RUNTIME_ARTIFACT_STATUS.present) {
+      throw new Error(`Runtime recipe pack is ${packProbe.status}: ${packProbe.error ?? packPath}`);
     }
     const parsed = parseRuntimeRecipePack(fs.readFileSync(packPath));
     this.cache = {
@@ -126,7 +158,7 @@ export class RuntimeRecipePackService {
     const pack = this.loadPack();
     const entry = pack.uiPayloadByRecipeId.get(normalizedRecipePageId);
     if (!entry) return null;
-    const shard = readJsonRequired(resolveDistDataRuntimeFile(entry.path), 'UI payload shard');
+    const shard = readJsonRequired(resolveDistDataRuntimeFile(entry.path), 'UI payload shard', entry.path);
     const payloads = asRecord(shard.payloads);
     const uiPayload = asRecord(payloads?.[normalizedRecipePageId]);
     if (!uiPayload) return null;

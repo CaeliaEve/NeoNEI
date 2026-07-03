@@ -52,6 +52,7 @@ const validationRows = computed<Array<[string, string | number | null | undefine
 const runtimeSnapshotRows = computed<Array<[string, string | number | null | undefined]>>(() => {
   const snapshot = health.value?.runtimeSnapshot;
   return [
+    ['探针状态', snapshot?.status],
     ['可用', snapshot?.available ? 'yes' : 'no'],
     ['Revision', snapshot?.revision],
     ['Runtime ID', snapshot?.runtimeId],
@@ -255,11 +256,13 @@ onMounted(() => {
           <li v-for="gate in health.validation?.blockedGates ?? []" :key="gate">{{ gate }}</li>
           <li v-for="reason in health.nativeUi?.blocked ?? []" :key="reason">{{ reason }}</li>
           <li v-for="artifactError in health.artifacts?.errors ?? []" :key="artifactError">{{ artifactError }}</li>
+          <li v-for="snapshotError in health.runtimeSnapshot?.errors ?? []" :key="snapshotError">{{ snapshotError }}</li>
           <li v-if="health.validation?.compilerValidationBlocked">compiler validation blocked</li>
           <li
             v-if="!(health.validation?.blockedGates ?? []).length
               && !(health.nativeUi?.blocked ?? []).length
               && !(health.artifacts?.errors ?? []).length
+              && !(health.runtimeSnapshot?.errors ?? []).length
               && !health.validation?.compilerValidationBlocked"
           >
             暂无阻塞

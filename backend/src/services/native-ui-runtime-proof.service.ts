@@ -1,7 +1,7 @@
 import {
   isPortableRuntimePath,
   normalizeRuntimePath,
-  readCurrentRuntimeJson,
+  readCurrentRuntimeJsonArtifact,
   resolveDistDataRuntimeFile,
   type CurrentRuntimeArtifact,
   type CurrentRuntimeJsonRecord,
@@ -167,7 +167,10 @@ function readDeclaredReport(
 ): JsonRecord | null {
   const artifact = getDeclaredArtifact(snapshot, relativePath);
   if (!artifact) return null;
-  return readCurrentRuntimeJson(resolveDistDataRuntimeFile(artifact.relativePath));
+  return readCurrentRuntimeJsonArtifact(
+    resolveDistDataRuntimeFile(artifact.relativePath),
+    artifact.relativePath,
+  ).value;
 }
 
 function pushIf(condition: boolean, output: string[], message: string): void {
