@@ -18,10 +18,90 @@ type RenderRuntimeDeps = {
   reportDistDataSchemaMismatch: (manifest: DistDataManifest, path: string, reason: string, details?: unknown) => void;
 };
 
+export const NATIVE_RENDER_INDEX_LOAD_POLICY = Object.freeze({
+  id: "distData.nativeRenderIndex.loader",
+  requiredManifestField: "files.nativeRenderIndex",
+  requiredIndexField: "itemRendererByItemId",
+  failurePolicy: "fail-closed",
+} as const);
+
+export class NativeRenderIndexLoadError extends Error {
+  readonly reason: string;
+  readonly details: unknown;
+
+  constructor(reason: string, details?: unknown) {
+    super(`Native render index load failed: ${reason}`);
+    this.name = "NativeRenderIndexLoadError";
+    this.reason = reason;
+    this.details = details ?? null;
+  }
+}
+
+function nativeRenderIndexLoadFailed(reason: string, details?: unknown): NativeRenderIndexLoadError {
+  return new NativeRenderIndexLoadError(reason, {
+    policy: NATIVE_RENDER_INDEX_LOAD_POLICY.id,
+    ...(
+      details && typeof details === "object" && !Array.isArray(details)
+        ? details as Record<string, unknown>
+        : { details: details ?? null }
+    ),
+  });
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function requireNativeRenderIndexTarget(manifest: DistDataManifest | null): {
+  manifest: DistDataManifest;
+  indexPath: string;
+} {
+  if (!manifest) {
+    throw nativeRenderIndexLoadFailed("dist-data manifest is unavailable");
+  }
+  const indexPath = `${manifest.files?.nativeRenderIndex ?? ""}`.trim();
+  if (!indexPath) {
+    throw nativeRenderIndexLoadFailed("manifest is missing files.nativeRenderIndex", {
+      manifestSchemaVersion: manifest.schemaVersion ?? null,
+    });
+  }
+  return { manifest, indexPath };
+}
+
+function assertNativeRenderIndexPayload(
+  reportDistDataSchemaMismatch: RenderRuntimeDeps["reportDistDataSchemaMismatch"],
+  manifest: DistDataManifest,
+  indexPath: string,
+  payload: unknown,
+): NativeRenderIndex {
+  if (!isRecord(payload)) {
+    reportDistDataSchemaMismatch(
+      manifest,
+      indexPath,
+      "Dist-data native render index is not an object",
+      { schemaVersion: isRecord(payload) ? payload.schemaVersion ?? null : null },
+    );
+    throw nativeRenderIndexLoadFailed("native render index payload is not an object", { indexPath });
+  }
+  if (!isRecord(payload.itemRendererByItemId)) {
+    reportDistDataSchemaMismatch(
+      manifest,
+      indexPath,
+      "Dist-data native render index is missing itemRendererByItemId",
+      { schemaVersion: payload.schemaVersion ?? null },
+    );
+    throw nativeRenderIndexLoadFailed("native render index is missing itemRendererByItemId", {
+      indexPath,
+      schemaVersion: payload.schemaVersion ?? null,
+    });
+  }
+  return payload as NativeRenderIndex;
+}
+
 export function createDistDataRuntimeRenderApi(deps: RenderRuntimeDeps) {
   let browserAtlasIndexRequest: Promise<BrowserAtlasIndexResponse | null> | null = null;
   let cachedBrowserAtlasIndex: BrowserAtlasIndexResponse | null = null;
-  let nativeRenderIndexRequest: Promise<NativeRenderIndex | null> | null = null;
+  let nativeRenderIndexRequest: Promise<NativeRenderIndex> | null = null;
   let cachedNativeRenderIndex: NativeRenderIndex | null = null;
 
 async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse | null> {
@@ -83,37 +163,36 @@ async function getDistDataBrowserAtlasIndex(): Promise<BrowserAtlasIndexResponse
   return browserAtlasIndexRequest;
 }
 
-async function getDistDataNativeRenderIndex(): Promise<NativeRenderIndex | null> {
-  if (cachedNativeRenderIndex) {
-    return cachedNativeRenderIndex;
-  }
+  async function getDistDataNativeRenderIndex(): Promise<NativeRenderIndex> {
+    if (cachedNativeRenderIndex) {
+      return cachedNativeRenderIndex;
+    }
   if (nativeRenderIndexRequest) {
     return nativeRenderIndexRequest;
   }
 
   nativeRenderIndexRequest = (async () => {
-    const manifest = await deps.getDistDataManifest();
-    const indexPath = `${manifest?.files?.nativeRenderIndex ?? ""}`.trim();
-    if (!manifest || !indexPath) {
-      return null;
-    }
-    const payload = await fetchDistDataJson<NativeRenderIndex>(joinDistDataAssetPath(getDistDataBasePath(), indexPath));
-    if (!payload || typeof payload !== "object") {
-      deps.reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data native render index is not an object", {
-        schemaVersion: (payload as { schemaVersion?: unknown } | null)?.schemaVersion ?? null,
+    const { manifest, indexPath } = requireNativeRenderIndexTarget(await deps.getDistDataManifest());
+    let payload: unknown;
+    try {
+      payload = await fetchDistDataJson<unknown>(joinDistDataAssetPath(getDistDataBasePath(), indexPath));
+    } catch (error) {
+      deps.reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data native render index request failed", {
+        error: error instanceof Error ? error.message : `${error}`,
       });
-      return null;
-    }
-    const hasRendererIndex = payload.itemRendererByItemId && typeof payload.itemRendererByItemId === "object";
-    if (!hasRendererIndex) {
-      deps.reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data native render index is missing itemRendererByItemId", {
-        schemaVersion: payload.schemaVersion ?? null,
+      throw nativeRenderIndexLoadFailed("native render index request failed", {
+        indexPath,
+        error: error instanceof Error ? error.message : `${error}`,
       });
     }
-    cachedNativeRenderIndex = payload;
+    cachedNativeRenderIndex = assertNativeRenderIndexPayload(
+      deps.reportDistDataSchemaMismatch,
+      manifest,
+      indexPath,
+      payload,
+    );
     return cachedNativeRenderIndex;
   })()
-    .catch(() => null)
     .finally(() => {
       nativeRenderIndexRequest = null;
     });
@@ -170,7 +249,6 @@ async function getNativeRenderFactsForItem(itemId?: string | null, renderAssetRe
   const normalizedAssetId = `${renderAssetRef ?? getItemAssetId(normalizedItemId)}`.trim();
   if (!normalizedItemId && !normalizedAssetId) return null;
   const index = await getDistDataNativeRenderIndex();
-  if (!index) return null;
   return {
     renderer: normalizedItemId ? index.itemRendererByItemId?.[normalizedItemId] ?? null : null,
     shader: normalizedItemId ? index.shaderByItemId?.[normalizedItemId] ?? null : null,
