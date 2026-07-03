@@ -38,8 +38,10 @@ const emit = defineEmits<Emits>();
 
 const detailedCraftingRef = ref<RecipeDisplayHandle | null>(null);
 const {
+  componentRegistrationError,
   currentComponent,
   displayedComponentName,
+  hasRegisteredComponent,
   neiHandlerMetadata,
   presentationProfile,
   resolvedRecipeUiPayload,
@@ -221,25 +223,25 @@ if (isDev && typeof window !== 'undefined') {
         @overlay-state-change="handleOverlayStateChange"
       />
       <ThaumcraftArcaneUI
-        v-else-if="uiConfig.uiType === 'thaumcraft_arcane'"
+        v-else-if="uiConfig.uiType === 'thaumcraft_arcane' && presentationProfile.component === 'ThaumcraftArcaneUI'"
         :recipe="recipe"
         :ui-config="uiConfig"
         @item-click="(itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => emit('item-click', itemId, options)"
       />
       <ThaumcraftInfusionUI
-        v-else-if="uiConfig.uiType === 'thaumcraft_infusion'"
+        v-else-if="uiConfig.uiType === 'thaumcraft_infusion' && presentationProfile.component === 'ThaumcraftInfusionUI'"
         :recipe="recipe"
         :ui-config="uiConfig"
         @item-click="(itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => emit('item-click', itemId, options)"
       />
       <ThaumcraftCrucibleUI
-        v-else-if="uiConfig.uiType === 'thaumcraft_crucible'"
+        v-else-if="uiConfig.uiType === 'thaumcraft_crucible' && presentationProfile.component === 'ThaumcraftCrucibleUI'"
         :recipe="recipe"
         :ui-config="uiConfig"
         @item-click="(itemId: string, options?: { tab?: 'usedIn' | 'producedBy' }) => emit('item-click', itemId, options)"
       />
       <ThaumcraftAspectUI
-        v-else-if="uiConfig.uiType === 'thaumcraft_aspect'"
+        v-else-if="uiConfig.uiType === 'thaumcraft_aspect' && presentationProfile.component === 'ThaumcraftAspectUI'"
         :recipe="recipe"
         :ui-config="uiConfig"
         @item-click="(itemId: string) => emit('item-click', itemId)"
@@ -251,13 +253,32 @@ if (isDev && typeof window !== 'undefined') {
         @item-click="(itemId: string) => emit('item-click', itemId)"
       />
       <component
-        v-else
+        v-else-if="hasRegisteredComponent && currentComponent"
         :is="currentComponent"
         :recipe="recipe"
         :ui-config="uiConfig"
         :ui-payload="resolvedRecipeUiPayload"
         @item-click="(itemId: string) => emit('item-click', itemId)"
       />
+      <div
+        v-else
+        class="recipe-display-error"
+        role="alert"
+        data-testid="recipe-display-component-error"
+      >
+        <div class="recipe-display-error-title">
+          Recipe display component unavailable
+        </div>
+        <div class="recipe-display-error-message">
+          {{ componentRegistrationError || 'Recipe presentation could not be resolved.' }}
+        </div>
+        <div class="recipe-display-error-meta">
+          <span>recipe={{ recipe.recipeId }}</span>
+          <span>component={{ presentationProfile.component }}</span>
+          <span>uiType={{ uiConfig.uiType }}</span>
+          <span>reason={{ presentationProfile.reason }}</span>
+        </div>
+      </div>
     </div>
 
   </div>

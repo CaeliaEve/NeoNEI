@@ -33,7 +33,7 @@ export const BloodOrbCraftingUI = defineAsyncComponent(() => import('../BloodOrb
 export const MultiblockBlueprintUI = defineAsyncComponent(() => import('../MultiblockBlueprintUI.vue'));
 export const NativeNeiRecipeCanvas = defineAsyncComponent(() => import('../NativeNeiRecipeCanvas.vue'));
 
-export const componentRegistry: Record<string, Component> = {
+export const componentRegistry = {
   StandardCraftingUI,
   AvaritiaExtremeCraftingUI,
   FurnaceUI,
@@ -63,8 +63,19 @@ export const componentRegistry: Record<string, Component> = {
   BloodBindingRitualUI,
   BloodOrbCraftingUI,
   MultiblockBlueprintUI,
-};
+} satisfies Record<string, Component>;
+
+export type RegisteredRecipeComponentName = keyof typeof componentRegistry;
+
+export function isRegisteredRecipeComponent(
+  componentName: string,
+): componentName is RegisteredRecipeComponentName {
+  return Object.prototype.hasOwnProperty.call(componentRegistry, componentName);
+}
 
 export function resolveRegisteredRecipeComponent(componentName: string): Component {
-  return componentRegistry[componentName] || StandardCraftingUI;
+  if (!isRegisteredRecipeComponent(componentName)) {
+    throw new Error(`Unknown recipe display component: ${componentName}`);
+  }
+  return componentRegistry[componentName];
 }

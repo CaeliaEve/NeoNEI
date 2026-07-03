@@ -1,4 +1,4 @@
-﻿import { computed, ref, watch } from 'vue';
+import { computed, ref, watch, type Component } from 'vue';
 import { api, type Recipe, type RecipeUiPayload } from '../../services/api';
 import {
   resolveRecipePresentationProfile,
@@ -6,7 +6,10 @@ import {
   type RecipePresentationProfile,
   type UITypeConfig,
 } from '../../services/uiTypeMapping';
-import { componentRegistry, resolveRegisteredRecipeComponent } from '../../components/recipe-display/recipeComponentRegistry';
+import {
+  isRegisteredRecipeComponent,
+  resolveRegisteredRecipeComponent,
+} from '../../components/recipe-display/recipeComponentRegistry';
 import { isNativeLayoutRendererEligible } from './nativeLayoutRendering';
 
 interface RecipePresentationSource {
@@ -56,7 +59,19 @@ export function useRecipePresentation(source: RecipePresentationSource) {
     const layout = resolvedRecipeUiPayload.value?.nativeLayout;
     return Boolean(layout) && isNativeLayoutRendererEligible(presentationProfile.value.component, layout);
   });
-  const currentComponent = computed(() => resolveRegisteredRecipeComponent(presentationProfile.value.component));
+  const hasRegisteredComponent = computed(() => isRegisteredRecipeComponent(presentationProfile.value.component));
+  const componentRegistrationError = computed<string | null>(() => {
+    if (shouldUseDetailedCrafting.value || shouldUseNativeLayoutRenderer.value || hasRegisteredComponent.value) {
+      return null;
+    }
+    return `Recipe display component "${presentationProfile.value.component}" is not registered `
+      + `for UI type "${uiConfig.value.uiType}".`;
+  });
+  const currentComponent = computed<Component | null>(() => (
+    hasRegisteredComponent.value
+      ? resolveRegisteredRecipeComponent(presentationProfile.value.component)
+      : null
+  ));
   const displayedComponentName = computed(() => {
     if (shouldUseDetailedCrafting.value) {
       return 'NEIRecipeDisplay';
@@ -66,8 +81,8 @@ export function useRecipePresentation(source: RecipePresentationSource) {
       return 'NativeNeiRecipeCanvas';
     }
 
-    if (!componentRegistry[presentationProfile.value.component]) {
-      return 'StandardCraftingUI (fallback)';
+    if (!hasRegisteredComponent.value) {
+      return `Unregistered:${presentationProfile.value.component}`;
     }
 
     return presentationProfile.value.component;
@@ -129,8 +144,10 @@ export function useRecipePresentation(source: RecipePresentationSource) {
   );
 
   return {
+    componentRegistrationError,
     currentComponent,
     displayedComponentName,
+    hasRegisteredComponent,
     inlineRecipeUiPayload,
     neiHandlerMetadata,
     presentationProfile,
