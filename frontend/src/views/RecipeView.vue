@@ -1,4 +1,4 @@
-﻿<script setup lang="ts">
+<script setup lang="ts">
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import RecipeDisplayRouter from '../components/RecipeDisplayRouter.vue';
@@ -84,8 +84,8 @@ const copy = {
   previousPage: '\u4e0a\u4e00\u9875',
   previousVariant: '\u4e0a\u4e00\u4e2a\u53d8\u4f53',
   producedByTab: '\u5408\u6210\u6765\u6e90',
-  recipeDetailFallback: '\u5f53\u524d\u5c55\u793a\u7684\u662f\u56de\u9000\u914d\u65b9\u6570\u636e\uff0c\u5b8c\u6574\u8be6\u60c5\u6682\u4e0d\u53ef\u7528\u3002',
-  recipeDetailFailed: '\u914d\u65b9\u8be6\u60c5\u52a0\u8f7d\u5931\u8d25\uff0c\u5f53\u524d\u663e\u793a\u7684\u662f\u56de\u9000\u5185\u5bb9\uff0c\u53ef\u4ee5\u91cd\u8bd5\u8be6\u60c5\u8bf7\u6c42\u3002',
+  recipeDetailProjection: '\u5f53\u524d\u663e\u793a\u7684\u662f\u914d\u65b9\u6458\u8981\u6295\u5f71\uff0c\u5b8c\u6574\u8be6\u60c5\u6b63\u5728\u7b49\u5f85\u7f16\u8bd1\u5206\u7247\u8865\u9f50\u3002',
+  recipeDetailFailed: '\u914d\u65b9\u8be6\u60c5\u52a0\u8f7d\u5931\u8d25\uff0c\u5f53\u524d\u4fdd\u7559\u6458\u8981\u6295\u5f71\u5185\u5bb9\uff0c\u53ef\u4ee5\u91cd\u8bd5\u8be6\u60c5\u8bf7\u6c42\u3002',
   recipeDetailReady: '\u914d\u65b9\u8be6\u60c5\u5df2\u51c6\u5907\u5b8c\u6210',
   recipeLoadErrorTitle: '\u52a0\u8f7d\u5931\u8d25',
   recipeLoadErrorSubtitle: '\u53ef\u4ee5\u91cd\u8bd5\u5f53\u524d\u8bf7\u6c42\uff0c\u6216\u8fd4\u56de\u9996\u9875\u91cd\u65b0\u9009\u62e9\u7269\u54c1\u3002',
@@ -118,7 +118,7 @@ const {
   currentPageRecipes,
   currentRecipeId,
   isCurrentRecipeDetailLoading,
-  isCurrentRecipeUsingFallback,
+  isCurrentRecipeUsingSummaryProjection,
   isCurrentRecipeDetailFailed,
   currentRecipeVariantGroups,
   currentRecipeVariantSelections,
@@ -223,7 +223,7 @@ const overlayStatusVm = computed(() => {
     return { text: state.message || copy.overlaySending, className: 'recipe-detail-pill-loading', showRetry: false };
   }
   if (state.status === 'error') {
-    return { text: state.message || copy.overlayFailed, className: 'recipe-detail-pill-fallback', showRetry: state.canRetry };
+    return { text: state.message || copy.overlayFailed, className: 'recipe-detail-pill-warning', showRetry: state.canRetry };
   }
   return { text: state.message || copy.overlaySent, className: 'recipe-detail-pill-ready', showRetry: false };
 });
@@ -802,15 +802,15 @@ onBeforeUnmount(() => {
                   {{ copy.loadingRecipeDetail }}
                 </span>
                 <template v-else-if="isCurrentRecipeDetailFailed">
-                  <span class="recipe-detail-pill recipe-detail-pill-fallback">
+                  <span class="recipe-detail-pill recipe-detail-pill-warning">
                     {{ copy.recipeDetailFailed }}
                   </span>
                   <button class="recipe-detail-retry" @click="retryCurrentRecipeDetails">
                     {{ copy.retryDetailLoad }}
                   </button>
                 </template>
-                <span v-else-if="isCurrentRecipeUsingFallback" class="recipe-detail-pill recipe-detail-pill-fallback">
-                  {{ copy.recipeDetailFallback }}
+                <span v-else-if="isCurrentRecipeUsingSummaryProjection" class="recipe-detail-pill recipe-detail-pill-warning">
+                  {{ copy.recipeDetailProjection }}
                 </span>
                 <span v-else class="recipe-detail-pill recipe-detail-pill-ready">
                   {{ copy.recipeDetailReady }}
@@ -1336,7 +1336,7 @@ onBeforeUnmount(() => {
   color: rgba(198, 224, 250, 0.95);
 }
 
-.recipe-detail-pill-fallback {
+.recipe-detail-pill-warning {
   border-color: rgba(188, 167, 126, 0.36);
   color: rgba(237, 221, 191, 0.95);
 }

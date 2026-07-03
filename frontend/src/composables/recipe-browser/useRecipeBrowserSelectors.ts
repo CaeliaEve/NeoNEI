@@ -1,4 +1,4 @@
-﻿import { computed, type Ref } from 'vue';
+import { computed, type Ref } from 'vue';
 import type { Recipe, RecipeVariantGroup, indexedItemRecipeSummaryResponse } from '../../services/api';
 import { resolveRecipePresentationProfile } from '../../services/uiTypeMapping';
 import type { RecipeGraph } from '../../domain/recipeGraph';
@@ -448,7 +448,7 @@ export const useRecipeBrowserSelectors = ({
     return detailedRecipes.value.has(currentRecipeId.value) || hasBootstrapRichData(currentBaseRecipe.value);
   });
 
-  const isCurrentRecipeUsingFallback = computed(() => {
+  const isCurrentRecipeUsingSummaryProjection = computed(() => {
     return Boolean(currentRecipeId.value) && !hasCurrentRecipeDetailedData.value;
   });
 
@@ -493,7 +493,7 @@ export const useRecipeBrowserSelectors = ({
     currentRecipeVariantSelections,
     currentRecipeId,
     isCurrentRecipeDetailLoading,
-    isCurrentRecipeUsingFallback,
+    isCurrentRecipeUsingSummaryProjection,
     isCurrentRecipeDetailFailed,
     totalPages,
     filteredRecipeCount,

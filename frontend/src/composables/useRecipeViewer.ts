@@ -172,7 +172,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     currentRecipeVariantSelections,
     currentRecipeId,
     isCurrentRecipeDetailLoading,
-    isCurrentRecipeUsingFallback,
+    isCurrentRecipeUsingSummaryProjection,
     isCurrentRecipeDetailFailed,
     totalPages,
     filteredRecipeCount,
@@ -836,7 +836,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
 
     perf.start('loadRecipes');
     loading.value = true;
-    loadError.value = '';
+    loadError.value = '\u8bfb\u53d6\u914d\u65b9\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u670d\u52a1\u540e\u91cd\u8bd5\u3002';
     try {
       if (lastItemId.value !== itemId) {
         cancelPendingHydration();
@@ -846,7 +846,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
         resetRecipeCache();
         producedByGraph.value = { docs: new Map(), producedByIndex: new Map(), usedInIndex: new Map() };
         usedInGraph.value = { docs: new Map(), producedByIndex: new Map(), usedInIndex: new Map() };
-        loadError.value = '';
+        loadError.value = '\u8bfb\u53d6\u914d\u65b9\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u670d\u52a1\u540e\u91cd\u8bd5\u3002';
         lastItemId.value = itemId;
         clearSelectedVariants();
         clearRecipeSearch();
@@ -931,7 +931,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     } catch (error) {
       console.error('Failed to load recipes:', error);
       if (!disposed && requestSeq === loadRequestSeq && itemIdRef.value === itemId) {
-        loadError.value = '读取配方失败，请检查后端服务后重试。';
+        loadError.value = '\u8bfb\u53d6\u914d\u65b9\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u670d\u52a1\u540e\u91cd\u8bd5\u3002';
       }
     } finally {
       if (!disposed && requestSeq === loadRequestSeq) {
@@ -949,7 +949,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   };
 
   const retryLoadRecipes = () => {
-    loadError.value = '';
+    loadError.value = '\u8bfb\u53d6\u914d\u65b9\u5931\u8d25\uff0c\u8bf7\u68c0\u67e5\u540e\u7aef\u670d\u52a1\u540e\u91cd\u8bd5\u3002';
     void loadRecipes();
   };
 
@@ -1094,7 +1094,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     currentPageRecipes,
     currentRecipeId,
     isCurrentRecipeDetailLoading,
-    isCurrentRecipeUsingFallback,
+    isCurrentRecipeUsingSummaryProjection,
     isCurrentRecipeDetailFailed,
     currentRecipeVariantGroups,
     currentRecipeVariantSelections,
