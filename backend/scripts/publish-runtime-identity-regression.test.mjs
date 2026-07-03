@@ -14,19 +14,14 @@ test('runtime cache key is bound to publish bundle content identity', () => {
     'runtime manifest should derive a stable publish identity key',
   );
   assert.equal(
-    runtimeManifestSource.includes('runtimePublishBundle?.identity?.contentHash'),
+    runtimeManifestSource.includes('const publishIdentityKey = asString(publishBundle?.identity?.contentHash);'),
     true,
-    'runtime cache key should prefer the manifest identity exposed to clients',
+    'runtime cache key should prefer the validated publish bundle identity exposed to clients',
   );
   assert.equal(
-    runtimeManifestSource.includes('publishBundle?.identity?.contentHash'),
+    runtimeManifestSource.includes('runtime cache key requires database, source signature, publish metadata, browser layout, and bundle identity'),
     true,
-    'runtime cache key should fall back to the original publish bundle identity',
-  );
-  assert.equal(
-    runtimeManifestSource.includes("'publish-identity-missing'"),
-    true,
-    'runtime cache key should have an explicit missing identity fallback',
+    'runtime cache key should fail closed when bundle identity is unavailable',
   );
   assert.equal(
     runtimeManifestSource.includes('browserLayoutKey,\n        publishIdentityKey,'),
@@ -34,4 +29,3 @@ test('runtime cache key is bound to publish bundle content identity', () => {
     'publish identity should be part of runtimeCacheKey after browser layout identity',
   );
 });
-

@@ -15,6 +15,14 @@ const apiSource = fs.readFileSync(
   path.resolve('..', 'frontend/src/services/api.ts'),
   'utf8',
 );
+const runtimeSessionSource = fs.readFileSync(
+  path.resolve('..', 'frontend/src/services/api/runtimeSession.ts'),
+  'utf8',
+);
+const recipeBootstrapClientSource = fs.readFileSync(
+  path.resolve('..', 'frontend/src/runtime/recipeBootstrapClient.ts'),
+  'utf8',
+);
 
 test('publish bundle manifest exposes item recipe and recipe UI bundle roots', () => {
   for (const expected of [
@@ -47,16 +55,16 @@ test('publish materializer writes item-centric recipe and UI bundle shards', () 
 });
 
 test('frontend prefers item-centric recipe bundle before legacy recipe bootstrap files', () => {
-  assert.equal(apiSource.includes('resolvePublishedItemRecipeBundlePath'), true);
-  assert.equal(apiSource.includes('unwrapPublishedItemRecipeBundle'), true);
-  const bundleIndex = apiSource.indexOf('resolvePublishedItemRecipeBundlePath(manifest, itemId)');
-  const legacyIndex = apiSource.indexOf("resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap')");
+  assert.match(apiSource, /export \{ api \} from '\.\/api\/runtimeFacade'/);
+  assert.equal(recipeBootstrapClientSource.includes('resolvePublishedItemRecipeBundlePath'), true);
+  assert.equal(recipeBootstrapClientSource.includes('unwrapPublishedItemRecipeBundle'), true);
+  const bundleIndex = recipeBootstrapClientSource.indexOf('resolvePublishedItemRecipeBundlePath(manifest, itemId)');
+  const legacyIndex = recipeBootstrapClientSource.indexOf("resolvePublishedRecipeBootstrapPath(manifest, itemId, 'bootstrap')");
   assert.equal(bundleIndex > 0 && legacyIndex > bundleIndex, true, 'item recipe bundle should be tried before legacy bootstrap');
 });
 
 test('published JSON fast path is backed by persistent runtime cache', () => {
-  const fetchBlock = apiSource.match(/async function fetchPublishedJson[\s\S]*?\n}\n\nasync function resolveRuntimeSignature/)?.[0] ?? '';
-  assert.equal(fetchBlock.includes("readPersistentRuntimePayload<T>('published-json'"), true);
-  assert.equal(fetchBlock.includes("persistRuntimePayload('published-json'"), true);
+  assert.equal(runtimeSessionSource.includes('export const publishedJsonClient = createPublishedJsonClient'), true);
+  assert.equal(runtimeSessionSource.includes("readPersistent: <T>(url: string) => readPersistentRuntimePayload<T>('published-json'"), true);
+  assert.equal(runtimeSessionSource.includes("writePersistent: (url, payload) => persistRuntimePayload('published-json'"), true);
 });
-

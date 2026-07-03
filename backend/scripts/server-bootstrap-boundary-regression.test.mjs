@@ -12,6 +12,10 @@ const runtimeServerLifecycleSource = readFileSync(
   resolve(root, 'src/services/runtime-server-lifecycle.service.ts'),
   'utf8',
 );
+const runtimeServerLifecycleAbiSource = readFileSync(
+  resolve(root, 'src/services/runtime-server-lifecycle-abi.ts'),
+  'utf8',
+);
 const accelerationRuntimeJobRunnerSource = readFileSync(
   resolve(root, 'src/services/acceleration-runtime-job-runner.service.ts'),
   'utf8',
@@ -57,14 +61,20 @@ test('bootstrap boundary owns startup lifecycle and delegates app construction',
   assert.match(runtimeServerLifecycleSource, /export function startRuntimeServer/);
   assert.match(runtimeServerLifecycleSource, /getDatabaseManager\(/);
   assert.match(runtimeServerLifecycleSource, /getAccelerationDatabaseManager\(/);
-  assert.match(runtimeServerLifecycleSource, /setAccelerationRuntimePhase\('initializing'/);
-  assert.match(runtimeServerLifecycleSource, /setAccelerationRuntimePhase\('ready'/);
-  assert.match(runtimeServerLifecycleSource, /setAccelerationRuntimePhase\('error'/);
-  assert.match(runtimeServerLifecycleSource, /reconcileAccelerationRuntime\(accelerationDbManager/);
+  assert.match(runtimeServerLifecycleSource, /getRuntimeLifecyclePhase\('databaseInitializing'\)/);
+  assert.match(runtimeServerLifecycleSource, /getRuntimeLifecyclePhase\('databaseReady'\)/);
+  assert.match(runtimeServerLifecycleSource, /getBackgroundReconcileFailureTransition\(message\)/);
+  assert.match(runtimeServerLifecycleSource, /setAccelerationRuntimePhase\(initializingPhase\.phase, initializingPhase\.message, initializingPhase\.extras\)/);
+  assert.match(runtimeServerLifecycleSource, /setAccelerationRuntimePhase\(readyPhase\.phase, readyPhase\.message, readyPhase\.extras\)/);
+  assert.match(runtimeServerLifecycleSource, /setAccelerationRuntimePhase\(transition\.phase, transition\.message, transition\.extras\)/);
+  assert.match(runtimeServerLifecycleAbiSource, /key: 'databaseInitializing'[\s\S]*phase: 'initializing'/);
+  assert.match(runtimeServerLifecycleAbiSource, /key: 'databaseReady'[\s\S]*phase: 'ready'/);
+  assert.match(runtimeServerLifecycleAbiSource, /phase: 'error'/);
+  assert.match(runtimeServerLifecycleSource, /reconcileAccelerationRuntime\(\s*accelerationDbManager/);
   assert.match(runtimeServerLifecycleSource, /scheduleStartupAutowarm\(\)/);
   assert.match(runtimeServerLifecycleSource, /getNativeRenderRuntimeDiagnostics\(\)/);
   assert.match(runtimeServerLifecycleSource, /app\.listen\(serverSettings\.port, serverSettings\.host/);
-  assert.match(runtimeServerLifecycleSource, /settings\.publicRuntimeOnly/);
+  assert.match(runtimeServerLifecycleAbiSource, /settings\.publicRuntimeOnly/);
 });
 
 

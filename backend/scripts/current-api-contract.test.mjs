@@ -69,15 +69,16 @@ test('current API exposes semantic non-versioned runtime endpoints', () => {
   assert.doesNotMatch(routeSource, /router\.get\('/);
   assert.doesNotMatch(routeSource, /router\.use\('/);
   assert.doesNotMatch(routeSource, /\/api\/v\d/);
-  assert.equal(currentRuntimeApiSource.includes("CURRENT_RUNTIME_API_SCHEMA"), true);
-  assert.equal(currentRuntimeApiSource.includes('schemaRevision: CURRENT_RUNTIME_API_SCHEMA_REVISION'), true);
+  assert.equal(currentRuntimeApiSource.includes('buildCurrentRuntimeApiMeta'), true);
+  assert.equal(currentRuntimeApiSource.includes('buildCurrentRuntimeOverview'), true);
   assert.equal(currentRuntimeApiAbiSource.includes("CURRENT_RUNTIME_API_SCHEMA = 'neonei/api/current'"), true);
+  assert.equal(currentRuntimeApiAbiSource.includes('schemaRevision: CURRENT_RUNTIME_API_SCHEMA_REVISION'), true);
   assert.equal(currentRuntimeApiSource.includes('capabilities'), true);
-  assert.equal(currentRuntimeApiSource.includes('manifestUrl: CURRENT_RUNTIME_API_URLS.currentManifest'), true);
-  assert.equal(currentRuntimeApiSource.includes('assetBaseUrl: CURRENT_RUNTIME_API_URLS.currentAssetBase'), true);
+  assert.equal(currentRuntimeApiAbiSource.includes('manifestUrl: CURRENT_RUNTIME_API_URLS.currentManifest'), true);
+  assert.equal(currentRuntimeApiAbiSource.includes('assetBaseUrl: CURRENT_RUNTIME_API_URLS.currentAssetBase'), true);
   assert.equal(currentRuntimeApiSource.includes('runtimeSchemaRevision'), true);
-  assert.equal(currentRuntimeApiSource.includes('runtimeManifestUrl'), true);
-  assert.equal(currentRuntimeApiSource.includes('runtimeAssetBaseUrl'), true);
+  assert.equal(currentRuntimeApiAbiSource.includes('runtimeManifestUrl'), true);
+  assert.equal(currentRuntimeApiAbiSource.includes('runtimeAssetBaseUrl'), true);
   assert.equal(currentRuntimeApiSource.includes('legacyManifestUrl'), false);
   assert.doesNotMatch(currentRuntimeApiSource, /\/api\/native-runtime\/current/);
   assert.equal(currentRuntimeApiSource.includes('function assertCurrentRuntimeId'), true);
@@ -248,7 +249,10 @@ test('current runtime snapshot service owns immutable manifest and artifact inve
 });
 
 test('runtime delivery API exposes immutable ETag asset contracts and report allowlist', () => {
-  assert.match(currentRuntimeApiSource, /createWeakEtag/);
+  assert.match(currentRuntimeApiAbiSource, /createWeakEtag/);
+  assert.match(currentRuntimeApiAbiSource, /createCurrentRuntimeManifestEtag/);
+  assert.match(currentRuntimeApiAbiSource, /createCurrentRuntimeAssetEtag/);
+  assert.doesNotMatch(currentRuntimeApiSource, /createWeakEtag/);
   assert.match(currentRuntimeTransportSource, /setStaticAssetCacheHeaders/);
   assert.match(currentRuntimeTransportSource, /CURRENT_RUNTIME_IMMUTABLE_ASSET_CACHE/);
   assert.match(currentRuntimeTransportAbiSource, /immutable:\s*true/);
@@ -256,7 +260,7 @@ test('runtime delivery API exposes immutable ETag asset contracts and report all
   assert.match(currentRuntimeEndpointHandlersSource, /sendCurrentRuntimeNoStoreJson\(res, getCurrentRuntimeOverviewPayload\(context\), context\)/, 'current runtime pointer must remain no-store');
   assert.match(currentRuntimeReadSource, /getCurrentRuntimeOverview\(context\)/, 'read service must own current runtime overview payload selection');
   assert.match(currentRuntimeTransportSource, /setNoStoreHeaders\(res\);\s*\n\s*sendCurrentRuntimeJson\(res, data, context\)/, 'no-store envelope must be centralized in current runtime transport');
-  assert.match(currentRuntimeApiSource, /runtimeId: meta\.runtimeId/);
+  assert.match(currentRuntimeApiAbiSource, /runtimeId: meta\.runtimeId/);
   assert.match(currentRuntimeTransportSource, /resolveCurrentRuntimeReport\(reportName\)/);
   assert.match(currentRuntimeTransportSource, /res\.sendFile\(report\.absolutePath\)/);
   assert.doesNotMatch(routeSource, /const allowedReports/);
@@ -305,8 +309,8 @@ test('current API responses are path portable and do not advertise machine roots
   assert.doesNotMatch(currentRuntimeSettingsSource, /[A-Za-z]:\\\\/);
   assert.doesNotMatch(currentRuntimeSettingsSource, /E:\\\\codex/);
   assert.doesNotMatch(currentRuntimeApiSource, /assetBaseUrl:\s*['"](?:[A-Za-z]:|\\\\|\/runtime\/)/);
-  assert.match(currentRuntimeApiSource, /assetBaseUrl:\s*CURRENT_RUNTIME_API_URLS\.currentAssetBase/);
-  assert.match(currentRuntimeApiSource, /runtimeAssetBaseUrl:\s*buildPinnedRuntimeAssetBaseUrl\(meta\.runtimeId\)/);
+  assert.match(currentRuntimeApiAbiSource, /assetBaseUrl:\s*CURRENT_RUNTIME_API_URLS\.currentAssetBase/);
+  assert.match(currentRuntimeApiAbiSource, /runtimeAssetBaseUrl:\s*buildPinnedRuntimeAssetBaseUrl\(meta\.runtimeId\)/);
   assert.doesNotMatch(currentRuntimeSettingsSource, /assetBaseUrl:\s*['"](?:[A-Za-z]:|\\\\|\/runtime\/)/);
   assert.match(currentRuntimeSettingsSource, /resolveCurrentRuntimeSettings\(env\)/);
   assert.match(currentRuntimeSettingsAbiSource, /CURRENT_RUNTIME_SETTINGS_STATIC/);

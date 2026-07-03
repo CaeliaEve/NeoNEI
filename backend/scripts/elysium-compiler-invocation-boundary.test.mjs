@@ -8,6 +8,10 @@ const clientPath = resolve(root, 'src/compiler-client/elysium-compiler-client.ts
 const transportPath = resolve(root, 'src/compiler-client/elysium-compiler-transport.ts');
 const clientSource = readFileSync(clientPath, 'utf8');
 const transportSource = readFileSync(transportPath, 'utf8');
+const capabilityAbiSource = readFileSync(
+  resolve(root, 'src/compiler-client/elysium-compiler-capability-abi.ts'),
+  'utf8',
+);
 const fixtureSmokeSource = readFileSync(resolve(root, '../scripts/elysium-compiler-fixture-smoke.mjs'), 'utf8');
 const runtimeService = readFileSync(resolve(root, 'src/services/acceleration-runtime.service.ts'), 'utf8');
 const jobRunner = readFileSync(resolve(root, 'src/services/acceleration-runtime-job-runner.service.ts'), 'utf8');
@@ -28,9 +32,10 @@ test('elysium compiler transport owns process execution and repository path disc
 });
 
 test('elysium compiler client owns typed ABI methods but not child-process transport', () => {
-  assert.match(clientSource, /export type ElysiumCompilerScope/);
+  assert.match(capabilityAbiSource, /export type ElysiumCompilerScope/);
+  assert.match(clientSource, /import type \{ ElysiumCompilerScope \} from '\.\/elysium-compiler-capability-abi'/);
   for (const scope of ['all', 'native-ui', 'search', 'browser', 'recipes', 'ui', 'textures']) {
-    assert.match(clientSource, new RegExp(`'${scope}'`));
+    assert.match(capabilityAbiSource, new RegExp(`'${scope}'`));
   }
   assert.match(clientSource, /export type ElysiumCompilerValidateOptions/);
   assert.match(clientSource, /export type ElysiumCompilerCompileOptions/);

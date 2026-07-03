@@ -27,7 +27,7 @@ test('publish manifest exposes build report artifacts', () => {
 
 test('publish materializer registers build reports as compressed assets before writing manifest', () => {
   assert.equal(
-    materializerSource.includes("const buildReportPaths = this.writeBuildReport(bundleOutputDir, basePublicPath, bundleManifest, rows);"),
+    materializerSource.includes("const buildReportPaths = this.writeBuildReport(bundleOutputDir, basePublicPath, bundleManifest, rows, incrementalWriteStats);"),
     true,
     'build report should be produced before final manifest serialization',
   );
@@ -83,9 +83,14 @@ test('publish materializer derives identity from registered assets', () => {
     'publish identity should be finalized before manifest serialization',
   );
   assert.equal(
+    materializerSource.indexOf('registerCompressedAsset(buildReportPaths.htmlRelativePath')
+      < materializerSource.lastIndexOf('bundleManifest.identity = buildPublishIdentity(bundleManifest.compression.assets);'),
+    true,
+    'publish identity should be finalized after report sidecars enter the asset catalog',
+  );
+  assert.equal(
     materializerSource.includes('sha256: sourceHash,'),
     true,
     'registered publish assets should carry their source sha256',
   );
 });
-

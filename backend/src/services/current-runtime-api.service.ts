@@ -2,7 +2,6 @@ import { type RuntimeHealthSummary, getRuntimeHealthSummary } from './runtime-he
 import {
   isPortableRuntimePath,
   normalizeRuntimePath,
-  type CurrentRuntimeArtifact,
 } from './current-runtime-artifact-index.service';
 import {
   acquireCurrentRuntimeSnapshot,
@@ -10,30 +9,28 @@ import {
   type CurrentRuntimeSnapshotHandle,
 } from './current-runtime-snapshot.service';
 import {
-  buildPinnedRuntimeAssetBaseUrl,
-  buildPinnedRuntimeManifestUrl,
-  CURRENT_RUNTIME_API_CACHE,
+  buildCurrentRuntimeApiMeta,
+  buildCurrentRuntimeOverview,
+  createCurrentRuntimeAssetDelivery,
+  createCurrentRuntimeManifestDelivery,
   CURRENT_RUNTIME_API_ERRORS,
-  CURRENT_RUNTIME_API_ETAG_KEYS,
   CURRENT_RUNTIME_API_PARAMS,
-  CURRENT_RUNTIME_API_SCHEMA,
-  CURRENT_RUNTIME_API_SCHEMA_REVISION,
-  CURRENT_RUNTIME_API_URLS,
-  CURRENT_RUNTIME_MISSING_ID,
-  CURRENT_RUNTIME_UNKNOWN_SCHEMA_REVISION,
+  getCurrentRuntimeRequiredParamError,
+  normalizeCurrentRuntimeRequiredParamValue,
+  type CurrentRuntimeApiMeta,
   type CurrentRuntimeApiParamName,
+  type CurrentRuntimeAssetDelivery,
+  type CurrentRuntimeManifestDelivery,
+  type CurrentRuntimeOverview,
 } from './current-runtime-api-abi';
 import { badRequest, notFound } from '../utils/http';
-import { createWeakEtag } from '../utils/http-cache';
 
-type JsonRecord = Record<string, unknown>;
-
-export type CurrentRuntimeApiMeta = Readonly<{
-  schema: typeof CURRENT_RUNTIME_API_SCHEMA;
-  schemaRevision: typeof CURRENT_RUNTIME_API_SCHEMA_REVISION;
-  runtimeId: string;
-  capabilities: JsonRecord;
-}>;
+export type {
+  CurrentRuntimeApiMeta,
+  CurrentRuntimeAssetDelivery,
+  CurrentRuntimeManifestDelivery,
+  CurrentRuntimeOverview,
+} from './current-runtime-api-abi';
 
 export type CurrentRuntimeApiContext = Readonly<{
   snapshot: CurrentRuntimeSnapshot | null;
@@ -47,45 +44,9 @@ export type CurrentRuntimeApiContextHandle = Readonly<{
   release: () => void;
 }>;
 
-export type CurrentRuntimeOverview = Readonly<{
-  runtimeId: string;
-  schemaRevision: string;
-  manifestUrl: string;
-  runtimeManifestUrl: string;
-  assetBaseUrl: string;
-  runtimeAssetBaseUrl: string;
-  capabilities: JsonRecord;
-  manifestPath: string | null;
-  cache: Readonly<{
-    immutable: true;
-    maxAgeSeconds: number;
-  }>;
-}>;
-
-export type CurrentRuntimeManifestDelivery = Readonly<{
-  payload: JsonRecord;
-  etag: string;
-}>;
-
-export type CurrentRuntimeAssetDelivery = Readonly<{
-  artifact: CurrentRuntimeArtifact;
-  etag: string;
-}>;
-
-function asString(value: unknown): string | null {
-  const text = `${value ?? ''}`.trim();
-  return text || null;
-}
-
-function requiredParamError(name: CurrentRuntimeApiParamName): string {
-  return name === CURRENT_RUNTIME_API_PARAMS.runtimeId
-    ? CURRENT_RUNTIME_API_ERRORS.runtimeIdRequired
-    : CURRENT_RUNTIME_API_ERRORS.fileNameRequired;
-}
-
 function normalizeRequiredCurrentRuntimeParam(value: string | undefined, name: CurrentRuntimeApiParamName): string {
-  const normalized = `${value ?? ''}`.trim();
-  if (!normalized) throw badRequest(requiredParamError(name));
+  const normalized = normalizeCurrentRuntimeRequiredParamValue(value, name);
+  if (!normalized) throw badRequest(getCurrentRuntimeRequiredParamError(name));
   return normalized;
 }
 
@@ -95,13 +56,10 @@ function buildCurrentRuntimeApiContext(snapshot: CurrentRuntimeSnapshot | null):
   return Object.freeze({
     snapshot,
     health,
-    meta: Object.freeze({
-      schema: CURRENT_RUNTIME_API_SCHEMA,
-      schemaRevision: CURRENT_RUNTIME_API_SCHEMA_REVISION,
-      runtimeId: snapshot?.runtimeId
-        ?? asString(health.distData.runtime?.runtimeId)
-        ?? health.distData.source
-        ?? CURRENT_RUNTIME_MISSING_ID,
+    meta: buildCurrentRuntimeApiMeta({
+      snapshotRuntimeId: snapshot?.runtimeId,
+      healthRuntimeId: health.distData.runtime?.runtimeId,
+      healthSource: health.distData.source,
       capabilities,
     }),
   });
@@ -161,16 +119,10 @@ export function assertCurrentRuntimeId(runtimeId: string | undefined, context: C
 
 export function getCurrentRuntimeOverview(context: CurrentRuntimeApiContext): CurrentRuntimeOverview {
   const { meta, snapshot } = context;
-  return Object.freeze({
-    runtimeId: meta.runtimeId,
-    schemaRevision: snapshot?.runtimeSchemaRevision ?? CURRENT_RUNTIME_UNKNOWN_SCHEMA_REVISION,
-    manifestUrl: CURRENT_RUNTIME_API_URLS.currentManifest,
-    runtimeManifestUrl: buildPinnedRuntimeManifestUrl(meta.runtimeId),
-    assetBaseUrl: CURRENT_RUNTIME_API_URLS.currentAssetBase,
-    runtimeAssetBaseUrl: buildPinnedRuntimeAssetBaseUrl(meta.runtimeId),
-    capabilities: meta.capabilities,
-    manifestPath: snapshot?.manifestPath ?? null,
-    cache: CURRENT_RUNTIME_API_CACHE,
+  return buildCurrentRuntimeOverview({
+    meta,
+    runtimeSchemaRevision: snapshot?.runtimeSchemaRevision,
+    manifestPath: snapshot?.manifestPath,
   });
 }
 
@@ -179,14 +131,11 @@ export function getCurrentRuntimeManifestDelivery(
 ): CurrentRuntimeManifestDelivery {
   const { snapshot } = context;
   if (!snapshot) throw notFound(CURRENT_RUNTIME_API_ERRORS.manifestMissing);
-  return Object.freeze({
+  return createCurrentRuntimeManifestDelivery({
     payload: snapshot.manifest,
-    etag: createWeakEtag(
-      CURRENT_RUNTIME_API_ETAG_KEYS.manifest,
-      snapshot.runtimeId,
-      snapshot.manifestPath,
-      snapshot.fingerprint,
-    ),
+    runtimeId: snapshot.runtimeId,
+    manifestPath: snapshot.manifestPath,
+    fingerprint: snapshot.fingerprint,
   });
 }
 
@@ -201,14 +150,8 @@ export function getCurrentRuntimeAssetDelivery(
     ? context.snapshot.artifactsByPath[normalized] ?? null
     : null;
   if (!artifact) throw notFound(CURRENT_RUNTIME_API_ERRORS.fileNotDeclared);
-  return Object.freeze({
+  return createCurrentRuntimeAssetDelivery({
     artifact,
-    etag: createWeakEtag(
-      CURRENT_RUNTIME_API_ETAG_KEYS.asset,
-      context.meta.runtimeId,
-      artifact.relativePath,
-      artifact.bytes,
-      artifact.mtimeMs,
-    ),
+    runtimeId: context.meta.runtimeId,
   });
 }

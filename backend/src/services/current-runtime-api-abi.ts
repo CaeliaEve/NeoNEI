@@ -1,3 +1,5 @@
+import { createWeakEtag } from '../utils/http-cache';
+import type { CurrentRuntimeArtifact } from './current-runtime-artifact-index.service';
 import { CURRENT_RUNTIME_SNAPSHOT_DEFAULTS } from './current-runtime-snapshot-abi';
 
 /**
@@ -29,6 +31,65 @@ export type CurrentRuntimeApiUrlKey =
   | 'runtimeBase'
   | 'manifestSuffix'
   | 'assetSuffix';
+
+type JsonRecord = Record<string, unknown>;
+
+export type CurrentRuntimeApiMeta = Readonly<{
+  schema: typeof CURRENT_RUNTIME_API_SCHEMA;
+  schemaRevision: typeof CURRENT_RUNTIME_API_SCHEMA_REVISION;
+  runtimeId: string;
+  capabilities: JsonRecord;
+}>;
+
+export type CurrentRuntimeApiMetaInput = Readonly<{
+  snapshotRuntimeId: string | null | undefined;
+  healthRuntimeId: unknown;
+  healthSource: unknown;
+  capabilities: JsonRecord;
+}>;
+
+export type CurrentRuntimeOverview = Readonly<{
+  runtimeId: string;
+  schemaRevision: string;
+  manifestUrl: string;
+  runtimeManifestUrl: string;
+  assetBaseUrl: string;
+  runtimeAssetBaseUrl: string;
+  capabilities: JsonRecord;
+  manifestPath: string | null;
+  cache: Readonly<{
+    immutable: true;
+    maxAgeSeconds: number;
+  }>;
+}>;
+
+export type CurrentRuntimeOverviewInput = Readonly<{
+  meta: CurrentRuntimeApiMeta;
+  runtimeSchemaRevision: string | null | undefined;
+  manifestPath: string | null | undefined;
+}>;
+
+export type CurrentRuntimeManifestDelivery = Readonly<{
+  payload: JsonRecord;
+  etag: string;
+}>;
+
+export type CurrentRuntimeManifestDeliveryInput = Readonly<{
+  payload: JsonRecord;
+  runtimeId: string;
+  manifestPath: string;
+  fingerprint: string;
+}>;
+
+export type CurrentRuntimeAssetDelivery = Readonly<{
+  artifact: CurrentRuntimeArtifact;
+  etag: string;
+}>;
+
+export type CurrentRuntimeAssetDeliveryInput = Readonly<{
+  artifact: CurrentRuntimeArtifact;
+  runtimeId: string;
+}>;
 
 type CurrentRuntimeApiStringDescriptor<TKey extends string> = Readonly<{
   key: TKey;
@@ -200,10 +261,94 @@ export const CURRENT_RUNTIME_API_URL_DESCRIPTORS = validateAndFreezeCurrentRunti
 export const CURRENT_RUNTIME_API_URLS =
   projectStringDescriptorMap(CURRENT_RUNTIME_API_URL_DESCRIPTORS);
 
+function asString(value: unknown): string | null {
+  const text = `${value ?? ''}`.trim();
+  return text || null;
+}
+
 export function buildPinnedRuntimeManifestUrl(runtimeId: string): string {
   return `${CURRENT_RUNTIME_API_URLS.runtimeBase}${encodeURIComponent(runtimeId)}${CURRENT_RUNTIME_API_URLS.manifestSuffix}`;
 }
 
 export function buildPinnedRuntimeAssetBaseUrl(runtimeId: string): string {
   return `${CURRENT_RUNTIME_API_URLS.runtimeBase}${encodeURIComponent(runtimeId)}${CURRENT_RUNTIME_API_URLS.assetSuffix}`;
+}
+
+export function getCurrentRuntimeRequiredParamError(name: CurrentRuntimeApiParamName): string {
+  return name === CURRENT_RUNTIME_API_PARAMS.runtimeId
+    ? CURRENT_RUNTIME_API_ERRORS.runtimeIdRequired
+    : CURRENT_RUNTIME_API_ERRORS.fileNameRequired;
+}
+
+export function normalizeCurrentRuntimeRequiredParamValue(
+  value: string | undefined,
+  _name: CurrentRuntimeApiParamName,
+): string | null {
+  const normalized = `${value ?? ''}`.trim();
+  return normalized || null;
+}
+
+export function buildCurrentRuntimeApiMeta(input: CurrentRuntimeApiMetaInput): CurrentRuntimeApiMeta {
+  return Object.freeze({
+    schema: CURRENT_RUNTIME_API_SCHEMA,
+    schemaRevision: CURRENT_RUNTIME_API_SCHEMA_REVISION,
+    runtimeId: input.snapshotRuntimeId
+      ?? asString(input.healthRuntimeId)
+      ?? asString(input.healthSource)
+      ?? CURRENT_RUNTIME_MISSING_ID,
+    capabilities: input.capabilities,
+  });
+}
+
+export function buildCurrentRuntimeOverview(input: CurrentRuntimeOverviewInput): CurrentRuntimeOverview {
+  const { meta } = input;
+  return Object.freeze({
+    runtimeId: meta.runtimeId,
+    schemaRevision: input.runtimeSchemaRevision ?? CURRENT_RUNTIME_UNKNOWN_SCHEMA_REVISION,
+    manifestUrl: CURRENT_RUNTIME_API_URLS.currentManifest,
+    runtimeManifestUrl: buildPinnedRuntimeManifestUrl(meta.runtimeId),
+    assetBaseUrl: CURRENT_RUNTIME_API_URLS.currentAssetBase,
+    runtimeAssetBaseUrl: buildPinnedRuntimeAssetBaseUrl(meta.runtimeId),
+    capabilities: meta.capabilities,
+    manifestPath: input.manifestPath ?? null,
+    cache: CURRENT_RUNTIME_API_CACHE,
+  });
+}
+
+export function createCurrentRuntimeManifestEtag(input: CurrentRuntimeManifestDeliveryInput): string {
+  return createWeakEtag(
+    CURRENT_RUNTIME_API_ETAG_KEYS.manifest,
+    input.runtimeId,
+    input.manifestPath,
+    input.fingerprint,
+  );
+}
+
+export function createCurrentRuntimeAssetEtag(input: CurrentRuntimeAssetDeliveryInput): string {
+  const { artifact } = input;
+  return createWeakEtag(
+    CURRENT_RUNTIME_API_ETAG_KEYS.asset,
+    input.runtimeId,
+    artifact.relativePath,
+    artifact.bytes,
+    artifact.mtimeMs,
+  );
+}
+
+export function createCurrentRuntimeManifestDelivery(
+  input: CurrentRuntimeManifestDeliveryInput,
+): CurrentRuntimeManifestDelivery {
+  return Object.freeze({
+    payload: input.payload,
+    etag: createCurrentRuntimeManifestEtag(input),
+  });
+}
+
+export function createCurrentRuntimeAssetDelivery(
+  input: CurrentRuntimeAssetDeliveryInput,
+): CurrentRuntimeAssetDelivery {
+  return Object.freeze({
+    artifact: input.artifact,
+    etag: createCurrentRuntimeAssetEtag(input),
+  });
 }

@@ -22,6 +22,14 @@ test('current runtime API schema, URLs, ETags, cache, params, and errors are ABI
     'CURRENT_RUNTIME_API_URLS',
     'buildPinnedRuntimeManifestUrl',
     'buildPinnedRuntimeAssetBaseUrl',
+    'buildCurrentRuntimeApiMeta',
+    'buildCurrentRuntimeOverview',
+    'createCurrentRuntimeManifestEtag',
+    'createCurrentRuntimeAssetEtag',
+    'createCurrentRuntimeManifestDelivery',
+    'createCurrentRuntimeAssetDelivery',
+    'getCurrentRuntimeRequiredParamError',
+    'normalizeCurrentRuntimeRequiredParamValue',
   ]) {
     assert.match(apiAbiSource, new RegExp(`export (?:const|function) ${symbol}`));
   }
@@ -37,9 +45,18 @@ test('current runtime API schema, URLs, ETags, cache, params, and errors are ABI
   }
   assert.match(apiAbiSource, /validateAndFreezeCurrentRuntimeApiStringDescriptors/);
   assert.match(apiAbiSource, /validateAndFreezeCurrentRuntimeApiCacheDescriptor/);
+  assert.match(apiAbiSource, /export type CurrentRuntimeApiMeta/);
+  assert.match(apiAbiSource, /export type CurrentRuntimeOverview/);
+  assert.match(apiAbiSource, /export type CurrentRuntimeManifestDelivery/);
+  assert.match(apiAbiSource, /export type CurrentRuntimeAssetDelivery/);
   assert.match(apiAbiSource, /Missing \$\{label\} descriptor/);
   assert.match(apiAbiSource, /Duplicate \$\{label\} descriptor/);
   assert.match(apiAbiSource, /current runtime API cache descriptor must be immutable/);
+  assert.match(apiAbiSource, /createWeakEtag/);
+  assert.doesNotMatch(apiSource, /createWeakEtag/);
+  assert.doesNotMatch(apiSource, /CURRENT_RUNTIME_API_ETAG_KEYS/);
+  assert.doesNotMatch(apiSource, /buildPinnedRuntimeManifestUrl/);
+  assert.doesNotMatch(apiSource, /buildPinnedRuntimeAssetBaseUrl/);
 
   for (const ownedLiteral of [
     /'neonei\/api\/current'/,

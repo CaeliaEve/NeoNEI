@@ -16,6 +16,10 @@ const publishDeliverySource = fs.readFileSync(
   'src/services/publish-runtime-delivery.service.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
+const publishDeliveryAbiSource = fs.readFileSync(
+  'src/services/publish-runtime-delivery-abi.ts',
+  'utf8',
+).replace(/\r\n/g, '\n');
 
 test('publish hot payloads bake render hints into homepage/browser page packs', () => {
   assert.equal(
@@ -65,8 +69,18 @@ test('materialized browser windows can derive early follow-up pages from the sam
     'derived materialized page packs should slice from the hot window using the requested page offset',
   );
   assert.equal(
-    publishDeliverySource.includes('const shouldUseMaterializedHomeBootstrap = query.page === 1'),
+    publishDeliveryAbiSource.includes('export function shouldUseMaterializedHomeBootstrap'),
+    true,
+    'materialized home bootstrap policy should be ABI-catalog owned',
+  );
+  assert.equal(
+    publishDeliveryAbiSource.includes('query.page === PUBLISH_HOME_BOOTSTRAP_MATERIALIZED_POLICY.page'),
     true,
     'home bootstrap should attempt to serve the materialized hot payload before hitting the DB',
+  );
+  assert.equal(
+    publishDeliverySource.includes('const materialized = readMaterializedHomeBootstrap(manifest, query);'),
+    true,
+    'home bootstrap delivery should test the materialized path before dynamic DB fallback',
   );
 });
