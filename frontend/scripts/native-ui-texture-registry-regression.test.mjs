@@ -69,14 +69,14 @@ function installCanvasDocument() {
   };
 }
 
-function fakeRenderer() {
+function fakeRenderer(rejectedKey = 'reject') {
   const calls = [];
   return {
     backend: 'webgl2',
     calls,
     registerTexture(key, source) {
       calls.push({ key, source });
-      return key !== 'reject';
+      return key !== rejectedKey;
     },
     textureCount() { return calls.length; },
     render() { return { drawCalls: 0, vertexCount: 0, spriteDrawCalls: 0, spriteVertexCount: 0 }; },
@@ -156,6 +156,32 @@ test('native UI texture registry deduplicates renderer registration', () => {
   }
 });
 
+test('native UI texture registry fails closed when generated texture registration is rejected', () => {
+  const dom = installCanvasDocument();
+  try {
+    const slotRegistry = new NativeUiTextureRegistry();
+    assert.throws(
+      () => slotRegistry.registerSlotTextures(
+        fakeRenderer('recipe-slot:item-input:1:18x18'),
+        1,
+        [{ role: 'item-input', width: 18, height: 18 }],
+      ),
+      /Native UI texture registration failed: recipe-slot:item-input:1:18x18/,
+    );
+
+    const solidRegistry = new NativeUiTextureRegistry();
+    assert.throws(
+      () => solidRegistry.registerDynamicPrimitiveTextures(
+        fakeRenderer('native-dynamic-solid:track'),
+        [{ kind: 'progress-bar', trackColor: 'track', fillColor: 'fill', borderColor: 'border' }],
+      ),
+      /Native UI texture registration failed: native-dynamic-solid:track/,
+    );
+  } finally {
+    dom.restore();
+  }
+});
+
 test('native UI texture registry owns component texture construction boundary', () => {
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
   const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
@@ -178,6 +204,8 @@ test('native UI texture registry owns component texture construction boundary', 
   assert.doesNotMatch(componentSource, /textureRegistry\.register\(activeRenderer/);
 
   assert.match(registrySource, /export class NativeUiTextureRegistry/);
+  assert.match(registrySource, /assertNativeUiTextureRegistered/);
+  assert.match(registrySource, /Native UI texture registration failed/);
   assert.match(registrySource, /export function createNativeUiSlotTexture/);
   assert.match(registrySource, /export function createNativeUiSolidColorTexture/);
   assert.match(registrySource, /export function createNativeUiGtModularBackgroundTexture/);

@@ -121,13 +121,17 @@ export function resolveNativeUiBackgroundAssetUrl(
   assetRef: string | null,
   resolveUrl: NativeUiAssetUrlResolver = resolveManifestRelativeUrl,
 ): string | null {
+  const asset = trimToNull(assetRef);
+  if (!asset) return null;
   const manifest = trimToNull(manifestUrl);
-  if (!manifest || !assetRef) return null;
-  try {
-    return resolveUrl(manifest, assetRef);
-  } catch {
-    return null;
+  if (!manifest) {
+    throw new Error(`Native UI captured background asset requires runtime manifest URL: ${asset}`);
   }
+  const resolved = trimToNull(resolveUrl(manifest, asset));
+  if (!resolved) {
+    throw new Error(`Native UI captured background asset URL is empty: ${asset}`);
+  }
+  return resolved;
 }
 
 export function nativeUiBackgroundState(options: NativeUiBackgroundStateOptions): NativeUiBackgroundState {
@@ -180,18 +184,29 @@ export async function prepareNativeUiBackgroundSource(
   } catch (error) {
     return emptyBackgroundResult(errorMessage(error));
   }
+  if (!background && options.layout) {
+    return emptyBackgroundResult("Native UI background ABI is missing");
+  }
   const loadImage = options.loadImage ?? loadNativeUiImageAsset;
   const resolveUrl = options.resolveUrl ?? resolveManifestRelativeUrl;
   let visibleError: string | null = null;
 
   const nativeAssetRef = nativeUiNativeBackgroundAssetRef(background);
   const nativeTextureKey = nativeUiNativeBackgroundTextureKey(background);
-  const nativeAssetUrl = resolveNativeUiBackgroundAssetUrl(options.manifestUrl, nativeAssetRef, resolveUrl);
+  let nativeAssetUrl: string | null = null;
+  try {
+    nativeAssetUrl = resolveNativeUiBackgroundAssetUrl(options.manifestUrl, nativeAssetRef, resolveUrl);
+  } catch (error) {
+    visibleError = errorMessage(error);
+    if (background?.status === "captured") return emptyBackgroundResult(visibleError);
+  }
   if (nativeTextureKey && nativeAssetUrl) {
     try {
       const image = await loadImage(nativeAssetUrl);
       if (!isActive(options)) return emptyBackgroundResult(null, true);
-      options.textureRegistry.register(options.renderer, nativeTextureKey, image);
+      if (!options.textureRegistry.register(options.renderer, nativeTextureKey, image)) {
+        return emptyBackgroundResult(`Native UI captured background texture registration failed: ${nativeTextureKey}`);
+      }
       return {
         source: buildCapturedBackgroundSource(
           nativeTextureKey,
@@ -217,7 +232,9 @@ export async function prepareNativeUiBackgroundSource(
   );
   if (nativeUiIsSemanticGtBackground(background) && semanticTextureKey) {
     const texture = createNativeUiGtModularBackgroundTexture(options.layoutWidth, options.layoutHeight, options.dpr);
-    options.textureRegistry.register(options.renderer, semanticTextureKey, texture);
+    if (!options.textureRegistry.register(options.renderer, semanticTextureKey, texture)) {
+      return emptyBackgroundResult(`Native UI semantic background texture registration failed: ${semanticTextureKey}`);
+    }
     return {
       source: {
         textureKey: semanticTextureKey,

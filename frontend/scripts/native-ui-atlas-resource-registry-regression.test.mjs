@@ -5,6 +5,8 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   collectNativeUiAtlasLookupIds,
+  NATIVE_UI_ATLAS_RESOURCE_POLICY,
+  NativeUiAtlasResourceError,
   prepareNativeUiAtlasSource,
   registerNativeUiAtlasSources,
   resolveNativeUiAtlasSpriteSource,
@@ -123,7 +125,6 @@ test('native UI atlas registry warms, prepares, and registers atlas textures', a
   const entries = new Map([
     ['a', { staticAtlas: { atlasFile: 'atlas-a.png', x: 0, y: 0, width: 16, height: 16 } }],
     ['b', { animatedAtlas: { atlasFile: 'atlas-b.png', frames: [[0, 0, 0, 16, 16]], timeline: [[0, 50]] } }],
-    ['missing', null],
   ]);
 
   const result = await registerNativeUiAtlasSources({
@@ -132,7 +133,6 @@ test('native UI atlas registry warms, prepares, and registers atlas textures', a
     slotCells: [
       { key: 'a', role: 'input', x: 0, y: 0, entry: { atlasLookupId: 'a' } },
       { key: 'b', role: 'input', x: 18, y: 0, entry: { atlasLookupId: 'b' } },
-      { key: 'missing', role: 'output', x: 36, y: 0, entry: { atlasLookupId: 'missing' } },
     ],
     deps: {
       warmAtlas: async (lookupIds) => { warmed.push([...lookupIds]); },
@@ -141,12 +141,68 @@ test('native UI atlas registry warms, prepares, and registers atlas textures', a
     },
   });
 
-  assert.deepEqual(warmed, [['a', 'b', 'missing']]);
+  assert.deepEqual(warmed, [['a', 'b']]);
   assert.deepEqual(registry.calls.map((call) => call.key), ['atlas-a.png', 'atlas-b.png']);
   assert.deepEqual([...result.preparedSources.keys()], ['a', 'b']);
-  assert.equal(result.missingCount, 1);
+  assert.equal(result.missingCount, 0);
   assert.equal(result.hasAnimatedSprites, true);
   assert.equal(result.warmError, null);
+});
+
+
+test('native UI atlas registry fails closed on incomplete atlas resources', async () => {
+  const registry = fakeTextureRegistry('atlas-b.png');
+  const images = new Map([
+    ['atlas-a.png', { width: 64, height: 64 }],
+    ['atlas-b.png', { width: 64, height: 64 }],
+  ]);
+  const entries = new Map([
+    ['a', { staticAtlas: { atlasFile: 'atlas-a.png', x: 0, y: 0, width: 16, height: 16 } }],
+    ['b', { staticAtlas: { atlasFile: 'atlas-b.png', x: 0, y: 0, width: 16, height: 16 } }],
+    ['missing', null],
+  ]);
+
+  await assert.rejects(
+    () => registerNativeUiAtlasSources({
+      renderer: fakeRenderer(),
+      textureRegistry: registry,
+      slotCells: [
+        { key: 'a', role: 'input', x: 0, y: 0, entry: { atlasLookupId: 'a' } },
+        { key: 'b', role: 'input', x: 18, y: 0, entry: { atlasLookupId: 'b' } },
+        { key: 'missing', role: 'output', x: 36, y: 0, entry: { atlasLookupId: 'missing' } },
+        { key: 'no-image', role: 'output', x: 54, y: 0, entry: { atlasLookupId: 'no-image' } },
+      ],
+      deps: {
+        warmAtlas: async () => {},
+        getAtlasEntry: (lookupId) => lookupId === 'no-image'
+          ? { staticAtlas: { atlasFile: 'missing-image.png', x: 0, y: 0, width: 16, height: 16 } }
+          : entries.get(lookupId),
+        getAtlasImage: (atlasFile) => images.get(atlasFile),
+      },
+    }),
+    (error) => {
+      assert.ok(error instanceof NativeUiAtlasResourceError);
+      assert.equal(error.missingCount, 3);
+      assert.match(error.message, /missing:missing-atlas-entry/);
+      assert.match(error.message, /no-image:missing-atlas-image:missing-image\.png/);
+      assert.match(error.message, /b:texture-registration-rejected:atlas-b\.png/);
+      return true;
+    },
+  );
+
+  await assert.rejects(
+    () => registerNativeUiAtlasSources({
+      renderer: fakeRenderer(),
+      textureRegistry: fakeTextureRegistry(),
+      slotCells: [{ key: 'a', role: 'input', x: 0, y: 0, entry: { atlasLookupId: 'a' } }],
+      deps: {
+        warmAtlas: async () => { throw new Error('atlas cache offline'); },
+        getAtlasEntry: () => null,
+        getAtlasImage: () => null,
+      },
+    }),
+    /Native UI atlas warmup failed: atlas cache offline/,
+  );
 });
 
 test('native UI atlas registry owns component atlas resource boundary', () => {
@@ -171,5 +227,9 @@ test('native UI atlas registry owns component atlas resource boundary', () => {
 
   assert.match(registrySource, /export async function registerNativeUiAtlasSources/);
   assert.match(registrySource, /export function prepareNativeUiAtlasSource/);
+  assert.match(registrySource, /NATIVE_UI_ATLAS_RESOURCE_POLICY/);
+  assert.match(registrySource, /NativeUiAtlasResourceError/);
+  assert.match(registrySource, /missingTexturePolicy:\s*"fail-closed"/);
   assert.match(registrySource, /globalBrowserAtlas\.ts/);
+  assert.equal(NATIVE_UI_ATLAS_RESOURCE_POLICY.missingTexturePolicy, 'fail-closed');
 });

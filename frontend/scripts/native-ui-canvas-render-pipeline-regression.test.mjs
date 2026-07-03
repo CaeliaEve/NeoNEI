@@ -202,6 +202,75 @@ test('native UI canvas render pipeline owns rebuild sequencing and GPU resource 
   }
 });
 
+test('native UI canvas render pipeline fails closed on resource boundary errors', async () => {
+  const renderer = fakeRenderer();
+  const states = [];
+  const pipeline = new NativeUiCanvasRenderPipeline({
+    nextTick: async () => {},
+    rendererFactory: () => renderer,
+    prepareBackground: async () => ({
+      source: null,
+      error: 'captured background missing',
+      aborted: false,
+    }),
+    registerAtlasSources: async () => ({
+      lookupIds: ['minecraft:iron_ingot'],
+      preparedSources: new Map(),
+      missingCount: 1,
+      hasAnimatedSprites: false,
+      warmError: null,
+    }),
+    onStateChange: (state) => states.push(state),
+  });
+
+  const state = await pipeline.rebuild({
+    mounted: true,
+    canvas: { width: 0, height: 0 },
+    displayWidth: 176,
+    displayHeight: 90,
+    devicePixelRatio: 1,
+    layout: {},
+    manifestUrl: 'manifest.json',
+    layoutWidth: 176,
+    layoutHeight: 90,
+    dynamicPrimitives: [],
+    slotCells: [],
+  });
+
+  assert.equal(state.renderReady, false);
+  assert.equal(state.renderError, 'captured background missing');
+  assert.equal(state.backgroundLoadError, 'captured background missing');
+  assert.equal(state.missingTextureCount, 1);
+  assert.equal(renderer.renders.length, 0);
+  assert.equal(states.at(-1).renderReady, false);
+
+  const atlasFailure = new NativeUiCanvasRenderPipeline({
+    nextTick: async () => {},
+    rendererFactory: () => renderer,
+    prepareBackground: async () => ({
+      source: null,
+      error: null,
+      aborted: false,
+    }),
+    registerAtlasSources: async () => { throw new Error('atlas resources are incomplete'); },
+  });
+  const atlasFailureState = await atlasFailure.rebuild({
+    mounted: true,
+    canvas: { width: 0, height: 0 },
+    displayWidth: 176,
+    displayHeight: 90,
+    devicePixelRatio: 1,
+    layout: {},
+    manifestUrl: 'manifest.json',
+    layoutWidth: 176,
+    layoutHeight: 90,
+    dynamicPrimitives: [],
+    slotCells: [],
+  });
+  assert.equal(atlasFailureState.renderReady, false);
+  assert.equal(atlasFailureState.renderError, 'atlas resources are incomplete');
+});
+
 test('native UI canvas render pipeline is the component rebuild boundary', () => {
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
   const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
@@ -225,5 +294,7 @@ test('native UI canvas render pipeline is the component rebuild boundary', () =>
   assert.match(pipelineSource, /registerDynamicPrimitiveTextures/);
   assert.match(pipelineSource, /prepareNativeUiBackgroundSource/);
   assert.match(pipelineSource, /registerNativeUiAtlasSources/);
+  assert.match(pipelineSource, /NativeUiAtlasResourceError/);
+  assert.match(pipelineSource, /nativeUiRenderErrorMessage/);
   assert.match(pipelineSource, /scheduleAnimationLoop/);
 });

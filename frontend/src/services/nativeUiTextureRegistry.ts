@@ -9,6 +9,12 @@ export type NativeUiSlotTextureKind = "item-input" | "item-output" | "fluid-inpu
 
 type CanvasSource = HTMLCanvasElement | HTMLImageElement | ImageBitmap | OffscreenCanvas;
 
+function assertNativeUiTextureRegistered(registered: boolean, key: string): void {
+  if (!registered) {
+    throw new Error(`Native UI texture registration failed: ${key}`);
+  }
+}
+
 export function nativeUiTextureKindForRole(role: string): NativeUiSlotTextureKind {
   const normalized = role.toLowerCase();
   if (normalized.includes("fluid") && normalized.includes("output")) return "fluid-output";
@@ -172,12 +178,19 @@ export class NativeUiTextureRegistry {
       slotsByKey.set(nativeUiSlotTextureKey(cell.role, dpr, width, height), { kind, width, height });
     }
     for (const [key, slot] of slotsByKey) {
-      this.register(renderer, key, createNativeUiSlotTexture(slot.kind, dpr, slot.width, slot.height));
+      assertNativeUiTextureRegistered(
+        this.register(renderer, key, createNativeUiSlotTexture(slot.kind, dpr, slot.width, slot.height)),
+        key,
+      );
     }
   }
 
   registerSolidTexture(renderer: NativeRendererBackend, color: string): void {
-    this.register(renderer, nativeUiSolidTextureKey(color), createNativeUiSolidColorTexture(color));
+    const key = nativeUiSolidTextureKey(color);
+    assertNativeUiTextureRegistered(
+      this.register(renderer, key, createNativeUiSolidColorTexture(color)),
+      key,
+    );
   }
 
   registerDynamicPrimitiveTextures(

@@ -52,14 +52,14 @@ function fakeRenderer() {
   };
 }
 
-function fakeTextureRegistry() {
+function fakeTextureRegistry(rejectedKey = null) {
   const calls = [];
   return {
     calls,
     register(renderer, key, source) {
       assert.equal(renderer.backend, 'webgl2');
       calls.push({ key, source });
-      return true;
+      return key !== rejectedKey;
     },
   };
 }
@@ -128,6 +128,10 @@ test('native UI background resource loader normalizes layout facts and state', (
   assert.deepEqual(nativeUiNativeBackgroundTextureSpec(background), { width: 64, height: 32, borderU: 4, borderV: 4 });
   assert.deepEqual(nativeUiNativeBackgroundTargetRect(background, 176, 90), { x: 7, y: 8, width: 80, height: 36 });
   assert.equal(resolveNativeUiBackgroundAssetUrl('manifest.json', 'ui/background.png', (_manifest, path) => `asset://${path}`), 'asset://ui/background.png');
+  assert.throws(
+    () => resolveNativeUiBackgroundAssetUrl(null, 'ui/background.png', (_manifest, path) => `asset://${path}`),
+    /requires runtime manifest URL: ui\/background\.png/,
+  );
 
   assert.equal(nativeUiBackgroundState({
     nativeAssetRef: 'ui/captured.png',
@@ -189,6 +193,20 @@ test('native UI background resource loader fails captured assets visibly and sup
   assert.equal(captured.source, null);
   assert.equal(captured.error, 'missing captured asset');
 
+  const rejected = await prepareNativeUiBackgroundSource({
+    renderer: fakeRenderer(),
+    textureRegistry: fakeTextureRegistry('ui-background:ui/rejected.png'),
+    layout: { nativeBackground: gtBackground({ assetRef: 'ui/rejected.png' }) },
+    manifestUrl: 'manifest.json',
+    layoutWidth: 176,
+    layoutHeight: 90,
+    dpr: 1,
+    resolveUrl: (_manifest, path) => `asset://${path}`,
+    loadImage: async () => fakeImage(64, 32),
+  });
+  assert.equal(rejected.source, null);
+  assert.match(rejected.error, /captured background texture registration failed/);
+
   const dom = installCanvasDocument();
   try {
     const registry = fakeTextureRegistry();
@@ -235,8 +253,22 @@ test('native UI background resource loader fails closed without background ABI a
     loadImage: async () => fakeImage(64, 32),
   });
 
-  assert.equal(result.error, null);
   assert.equal(result.source, null);
+  assert.equal(result.error, 'Native UI background ABI is missing');
+
+  const loading = await prepareNativeUiBackgroundSource({
+    renderer: fakeRenderer(),
+    textureRegistry: fakeTextureRegistry(),
+    layout: null,
+    manifestUrl: 'manifest.json',
+    layoutWidth: 176,
+    layoutHeight: 90,
+    dpr: 1,
+    resolveUrl: (_manifest, path) => `asset://${path}`,
+    loadImage: async () => fakeImage(64, 32),
+  });
+  assert.equal(loading.error, null);
+  assert.equal(loading.source, null);
 
   const aborted = await prepareNativeUiBackgroundSource({
     renderer: fakeRenderer(),
@@ -293,6 +325,8 @@ test('native UI background resource loader owns component background resource bo
 
   assert.match(loaderSource, /export async function prepareNativeUiBackgroundSource/);
   assert.match(loaderSource, /export function nativeUiBackgroundState/);
+  assert.match(loaderSource, /Native UI background ABI is missing/);
+  assert.match(loaderSource, /captured background texture registration failed/);
   assert.match(loaderSource, /resolveManifestRelativeUrl/);
   assert.match(loaderSource, /createNativeUiGtModularBackgroundTexture/);
 });

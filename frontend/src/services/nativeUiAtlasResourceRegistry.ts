@@ -7,11 +7,42 @@ type NativeUiAtlasEntryRecord = Record<string, any>;
 type NativeUiAtlasImageSource = HTMLCanvasElement | HTMLImageElement | ImageBitmap | OffscreenCanvas;
 type NativeUiTextureRegistrySink = Pick<NativeUiTextureRegistry, "register">;
 
+export const NATIVE_UI_ATLAS_RESOURCE_POLICY = Object.freeze({
+  id: "nativeUi.atlasResource",
+  warmPolicy: "fail-closed",
+  missingTexturePolicy: "fail-closed",
+  rendererRegistrationPolicy: "fail-closed",
+} as const);
+
 export interface NativeUiPreparedAtlasSource {
   atlasFile: string;
   staticSource: { x: number; y: number; width: number; height: number } | null;
   frames: Array<{ index: number; x: number; y: number; width: number; height: number }>;
   timeline: Array<{ frameIndex: number; durationMs: number }>;
+}
+
+export type NativeUiAtlasResourceFailureReason =
+  | "warmup-failed"
+  | "missing-atlas-entry"
+  | "missing-atlas-image"
+  | "texture-registration-rejected";
+
+export interface NativeUiAtlasResourceFailure {
+  lookupId: string;
+  reason: NativeUiAtlasResourceFailureReason;
+  atlasFile: string | null;
+}
+
+export class NativeUiAtlasResourceError extends Error {
+  readonly failures: readonly NativeUiAtlasResourceFailure[];
+  readonly missingCount: number;
+
+  constructor(message: string, failures: readonly NativeUiAtlasResourceFailure[]) {
+    super(message);
+    this.name = "NativeUiAtlasResourceError";
+    this.failures = Object.freeze(failures.map((failure) => Object.freeze({ ...failure })));
+    this.missingCount = this.failures.length;
+  }
 }
 
 export interface NativeUiAtlasRegistryDeps {
@@ -131,6 +162,12 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function describeAtlasResourceFailures(failures: readonly NativeUiAtlasResourceFailure[]): string {
+  return failures
+    .map((failure) => `${failure.lookupId}:${failure.reason}${failure.atlasFile ? `:${failure.atlasFile}` : ""}`)
+    .join(", ");
+}
+
 export function collectNativeUiAtlasLookupIds<TEntry extends { atlasLookupId?: string | null }>(
   slotCells: readonly NativeUiSlotCell<TEntry>[],
 ): string[] {
@@ -216,35 +253,58 @@ export async function registerNativeUiAtlasSources<TEntry extends { atlasLookupI
   const lookupIds = collectNativeUiAtlasLookupIds(options.slotCells);
   const preparedSources = new Map<string, NativeUiPreparedAtlasSource>();
   const deps = options.deps ?? await defaultAtlasDeps();
-  let warmError: string | null = null;
-  try {
-    await deps.warmAtlas(lookupIds);
-  } catch (error) {
-    warmError = errorMessage(error);
+  if (lookupIds.length === 0) {
+    return {
+      lookupIds,
+      preparedSources,
+      missingCount: 0,
+      hasAnimatedSprites: false,
+      warmError: null,
+    };
   }
+  await deps.warmAtlas(lookupIds).catch((error) => {
+    throw new NativeUiAtlasResourceError(
+      `Native UI atlas warmup failed: ${errorMessage(error)}`,
+      lookupIds.map((lookupId) => ({
+        lookupId,
+        reason: "warmup-failed" as const,
+        atlasFile: null,
+      })),
+    );
+  });
 
-  let missingCount = 0;
+  const failures: NativeUiAtlasResourceFailure[] = [];
   let hasAnimatedSprites = false;
   for (const lookupId of lookupIds) {
     const prepared = prepareNativeUiAtlasSource(deps.getAtlasEntry(lookupId));
-    const image = prepared?.atlasFile ? deps.getAtlasImage(prepared.atlasFile) : null;
-    if (!prepared || !image) {
-      missingCount += 1;
+    if (!prepared) {
+      failures.push({ lookupId, reason: "missing-atlas-entry", atlasFile: null });
+      continue;
+    }
+    const image = deps.getAtlasImage(prepared.atlasFile);
+    if (!image) {
+      failures.push({ lookupId, reason: "missing-atlas-image", atlasFile: prepared.atlasFile });
       continue;
     }
     if (options.textureRegistry.register(options.renderer, prepared.atlasFile, image)) {
       preparedSources.set(lookupId, prepared);
       hasAnimatedSprites = hasAnimatedSprites || prepared.frames.length > 0;
     } else {
-      missingCount += 1;
+      failures.push({ lookupId, reason: "texture-registration-rejected", atlasFile: prepared.atlasFile });
     }
+  }
+  if (failures.length > 0) {
+    throw new NativeUiAtlasResourceError(
+      `Native UI atlas resources are incomplete: ${describeAtlasResourceFailures(failures)}`,
+      failures,
+    );
   }
 
   return {
     lookupIds,
     preparedSources,
-    missingCount,
+    missingCount: 0,
     hasAnimatedSprites,
-    warmError,
+    warmError: null,
   };
 }

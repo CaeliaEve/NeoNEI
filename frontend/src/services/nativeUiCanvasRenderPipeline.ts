@@ -1,6 +1,7 @@
 import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend.ts";
 import type { NativeTextureSpriteCommand } from "../renderers/native/WebGl2NativeRenderer.ts";
 import {
+  NativeUiAtlasResourceError,
   registerNativeUiAtlasSources,
   resolveNativeUiAtlasSpriteSource,
   type NativeUiAtlasRegistrationOptions,
@@ -79,6 +80,14 @@ function cloneNativeUiCanvasRenderState(
   state: NativeUiCanvasRenderPipelineState,
 ): NativeUiCanvasRenderPipelineState {
   return { ...state };
+}
+
+function nativeUiRenderErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+function nativeUiRenderMissingTextureCount(error: unknown): number {
+  return error instanceof NativeUiAtlasResourceError ? error.missingCount : 0;
 }
 
 export class NativeUiCanvasRenderPipeline<TEntry extends { atlasLookupId?: string | null }> {
@@ -163,14 +172,41 @@ export class NativeUiCanvasRenderPipeline<TEntry extends { atlasLookupId?: strin
     }
     this.commitState({ renderError: null });
 
-    this.textureRegistry.registerSlotTextures(renderer, this.state.currentDpr, snapshot.slotCells);
-    this.textureRegistry.registerDynamicPrimitiveTextures(renderer, snapshot.dynamicPrimitives);
-
-    const backgroundReady = this.prepareBackground(renderer, snapshot, sequence);
-    const atlasReady = this.registerAtlasSources(renderer, snapshot);
-    const [backgroundResult, atlasResult] = await Promise.all([backgroundReady, atlasReady]);
+    let backgroundResult: NativeUiBackgroundPrepareResult;
+    let atlasResult: NativeUiAtlasRegistrationResult;
+    try {
+      this.textureRegistry.registerSlotTextures(renderer, this.state.currentDpr, snapshot.slotCells);
+      this.textureRegistry.registerDynamicPrimitiveTextures(renderer, snapshot.dynamicPrimitives);
+      const backgroundReady = this.prepareBackground(renderer, snapshot, sequence);
+      const atlasReady = this.registerAtlasSources(renderer, snapshot);
+      [backgroundResult, atlasResult] = await Promise.all([backgroundReady, atlasReady]);
+    } catch (error) {
+      if (!this.isCurrent(sequence)) return this.currentState;
+      this.preparedSources.clear();
+      this.hasAnimatedSprites = false;
+      this.commitState({
+        renderError: nativeUiRenderErrorMessage(error),
+        renderReady: false,
+        missingTextureCount: nativeUiRenderMissingTextureCount(error),
+        backgroundSource: null,
+        backgroundLoadError: null,
+      });
+      return this.currentState;
+    }
     if (!this.isCurrent(sequence)) return this.currentState;
     if (backgroundResult.aborted) return this.currentState;
+    if (backgroundResult.error) {
+      this.preparedSources.clear();
+      this.hasAnimatedSprites = false;
+      this.commitState({
+        renderError: backgroundResult.error,
+        renderReady: false,
+        missingTextureCount: atlasResult.missingCount,
+        backgroundSource: null,
+        backgroundLoadError: backgroundResult.error,
+      });
+      return this.currentState;
+    }
 
     this.preparedSources.clear();
     atlasResult.preparedSources.forEach((source, lookupId) => {
