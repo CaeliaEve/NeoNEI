@@ -12,6 +12,7 @@ export const NATIVE_RENDER_RUNTIME_DIAGNOSTIC_STATUS = Object.freeze({
   ok: 'ok',
   degraded: 'degraded',
   missing: 'missing',
+  invalid: 'invalid',
 } as const);
 
 export type NativeRenderRuntimeDiagnosticStatus =
@@ -24,10 +25,39 @@ export const NATIVE_RENDER_RUNTIME_MANIFEST_KEYS = Object.freeze({
 export type NativeRenderRuntimeManifestKey =
   typeof NATIVE_RENDER_RUNTIME_MANIFEST_KEYS[keyof typeof NATIVE_RENDER_RUNTIME_MANIFEST_KEYS];
 
+export const NATIVE_RENDER_RUNTIME_ARTIFACT_PROBE_STATUS = Object.freeze({
+  present: 'present',
+  missing: 'missing',
+  invalid: 'invalid',
+} as const);
+
+export type NativeRenderRuntimeArtifactProbeStatus =
+  typeof NATIVE_RENDER_RUNTIME_ARTIFACT_PROBE_STATUS[keyof typeof NATIVE_RENDER_RUNTIME_ARTIFACT_PROBE_STATUS];
+
+const NATIVE_RENDER_RUNTIME_ARTIFACT_NAMES = Object.freeze([
+  'manifest',
+  'nativeRenderIndex',
+] as const);
+
+export type NativeRenderRuntimeArtifactName = typeof NATIVE_RENDER_RUNTIME_ARTIFACT_NAMES[number];
+
+export const NATIVE_RENDER_RUNTIME_ARTIFACTS = Object.freeze(
+  NATIVE_RENDER_RUNTIME_ARTIFACT_NAMES.reduce(
+    (artifacts, name) => {
+      artifacts[name] = name;
+      return artifacts;
+    },
+    {} as Record<NativeRenderRuntimeArtifactName, NativeRenderRuntimeArtifactName>,
+  ),
+);
+
 const NATIVE_RENDER_RUNTIME_CHECK_NAMES = Object.freeze([
   'manifestPresent',
+  'manifestValidJson',
   'manifestDeclaresNativeRenderIndex',
+  'nativeRenderIndexPathPortable',
   'nativeRenderIndexPresent',
+  'nativeRenderIndexValidJson',
   'rendererIndexPresent',
   'captureGateReady',
 ] as const);
@@ -94,7 +124,12 @@ export const NATIVE_RENDER_RUNTIME_CHECK_DESCRIPTORS = validateAndFreezeNativeRe
   nativeRenderRuntimeCheckDescriptor(
     NATIVE_RENDER_RUNTIME_CHECKS.manifestPresent,
     'missing',
-    'Current dist-data manifest is readable.',
+    'Current dist-data manifest file exists.',
+  ),
+  nativeRenderRuntimeCheckDescriptor(
+    NATIVE_RENDER_RUNTIME_CHECKS.manifestValidJson,
+    'missing',
+    'Current dist-data manifest is valid JSON object data.',
   ),
   nativeRenderRuntimeCheckDescriptor(
     NATIVE_RENDER_RUNTIME_CHECKS.manifestDeclaresNativeRenderIndex,
@@ -102,9 +137,19 @@ export const NATIVE_RENDER_RUNTIME_CHECK_DESCRIPTORS = validateAndFreezeNativeRe
     'Current manifest declares the native render index file.',
   ),
   nativeRenderRuntimeCheckDescriptor(
+    NATIVE_RENDER_RUNTIME_CHECKS.nativeRenderIndexPathPortable,
+    'missing',
+    'Native render index manifest path is runtime-relative and portable.',
+  ),
+  nativeRenderRuntimeCheckDescriptor(
     NATIVE_RENDER_RUNTIME_CHECKS.nativeRenderIndexPresent,
     'missing',
-    'Native render index file is readable.',
+    'Native render index file exists.',
+  ),
+  nativeRenderRuntimeCheckDescriptor(
+    NATIVE_RENDER_RUNTIME_CHECKS.nativeRenderIndexValidJson,
+    'missing',
+    'Native render index is valid JSON object data.',
   ),
   nativeRenderRuntimeCheckDescriptor(
     NATIVE_RENDER_RUNTIME_CHECKS.rendererIndexPresent,

@@ -75,6 +75,23 @@ const nativeUiRows = computed<Array<[string, string | number | null | undefined]
   ];
 });
 
+const nativeRenderRows = computed<Array<[string, string | number | null | undefined]>>(() => {
+  const nativeRender = health.value?.nativeRender;
+  return [
+    ['诊断状态', nativeRender?.status],
+    ['Manifest', nativeRender?.manifestPath],
+    ['Native Render Index', nativeRender?.nativeRenderIndexPath],
+    ['缺失/失败检查', nativeRender?.missing.length],
+    ['错误数', nativeRender?.errors.length],
+    ['Item renderers', nativeRender?.counts.itemRendererByItemId],
+    ['Shader items', nativeRender?.counts.shaderItems],
+    ['Framebuffer captures', nativeRender?.counts.framebufferCaptures],
+    ['Capture gate', nativeRender?.validation.status],
+  ];
+});
+
+const nativeRenderArtifacts = computed(() => Object.values(health.value?.nativeRender?.artifacts ?? {}));
+
 function formatNumber(value: number | null | undefined): string {
   return typeof value === 'number' && Number.isFinite(value) ? numberFormat.format(value) : '—';
 }
@@ -246,6 +263,27 @@ onMounted(() => {
             </dd>
           </div>
         </dl>
+      </article>
+
+      <article class="panel wide">
+        <h2>Native Render 诊断探针</h2>
+        <dl class="validation-list">
+          <div v-for="[label, value] in nativeRenderRows" :key="label">
+            <dt>{{ label }}</dt>
+            <dd>{{ typeof value === 'number' ? formatNumber(value) : (value ?? '—') }}</dd>
+          </div>
+        </dl>
+        <ul v-if="nativeRenderArtifacts.length" class="issue-list">
+          <li v-for="artifact in nativeRenderArtifacts" :key="artifact.name">
+            {{ artifact.name }} · {{ artifact.status }} · {{ artifact.relativePath ?? artifact.path ?? '—' }}
+            <template v-if="artifact.error"> · {{ artifact.error }}</template>
+          </li>
+        </ul>
+        <ul v-if="health.nativeRender?.errors?.length" class="issue-list">
+          <li v-for="nativeRenderError in health.nativeRender.errors" :key="nativeRenderError">
+            {{ nativeRenderError }}
+          </li>
+        </ul>
       </article>
     </section>
   </main>

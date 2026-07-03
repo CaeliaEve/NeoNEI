@@ -55,7 +55,7 @@ export interface RuntimeHealthSummary {
   };
   compiler?: unknown;
   nativeUi?: NativeUiRuntimeProofSummary;
-  nativeRender?: unknown;
+  nativeRender?: NativeRenderRuntimeDiagnostics;
 }
 
 export interface NativeUiRuntimeProofSummary {
@@ -84,6 +84,39 @@ export interface NativeUiProofReportSummary {
   reportStatus: string | null;
   blocked: string[];
   counts: Record<string, number | null>;
+}
+
+export type NativeRenderRuntimeDiagnosticStatus = 'ok' | 'degraded' | 'missing' | 'invalid';
+export type NativeRenderRuntimeArtifactProbeStatus = 'present' | 'missing' | 'invalid';
+export type NativeRenderRuntimeArtifactName = 'manifest' | 'nativeRenderIndex';
+
+export interface NativeRenderRuntimeArtifactProbe {
+  name: NativeRenderRuntimeArtifactName;
+  status: NativeRenderRuntimeArtifactProbeStatus;
+  path: string | null;
+  relativePath: string | null;
+  bytes: number | null;
+  mtimeMs: number | null;
+  error: string | null;
+}
+
+export interface NativeRenderRuntimeDiagnostics {
+  schemaVersion: 'neonei/native-render-runtime-diagnostics/current';
+  status: NativeRenderRuntimeDiagnosticStatus;
+  distDataRoot: string;
+  manifestPath: string;
+  nativeRenderIndexPath: string | null;
+  artifacts: Record<NativeRenderRuntimeArtifactName, NativeRenderRuntimeArtifactProbe>;
+  checks: Record<string, boolean>;
+  counts: Record<string, number>;
+  validation: {
+    status: string | null;
+    shaderItemsNeedingCapture: number;
+    framebufferCaptures: number;
+    summary: string | null;
+  };
+  missing: string[];
+  errors: string[];
 }
 
 export interface PublishBundleWindowPathEntry {
