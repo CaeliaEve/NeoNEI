@@ -14,7 +14,7 @@ test('runtime health exposes the stable public health contract', () => {
     true,
     'runtime health summary must keep a stable schemaVersion',
   );
-  for (const field of ['distData', 'counts', 'coverage', 'validation', 'files', 'runtimeSnapshot', 'compiler', 'nativeUi', 'nativeRender']) {
+  for (const field of ['distData', 'artifacts', 'counts', 'coverage', 'validation', 'files', 'runtimeSnapshot', 'compiler', 'nativeUi', 'nativeRender']) {
     assert.equal(
       serviceSource.includes(`${field}:`),
       true,

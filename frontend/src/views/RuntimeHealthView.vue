@@ -90,6 +90,7 @@ const nativeRenderRows = computed<Array<[string, string | number | null | undefi
   ];
 });
 
+const runtimeHealthArtifacts = computed(() => Object.values(health.value?.artifacts?.probes ?? {}));
 const nativeRenderArtifacts = computed(() => Object.values(health.value?.nativeRender?.artifacts ?? {}));
 
 function formatNumber(value: number | null | undefined): string {
@@ -212,6 +213,21 @@ onMounted(() => {
         </ul>
       </article>
 
+      <article class="panel wide">
+        <h2>Runtime Health Artifact Probes</h2>
+        <div class="metric-grid compact">
+          <div class="metric"><span>Probe status</span><strong>{{ health.artifacts?.status ?? 'unknown' }}</strong></div>
+          <div class="metric"><span>Probe count</span><strong>{{ formatNumber(runtimeHealthArtifacts.length) }}</strong></div>
+          <div class="metric"><span>Probe errors</span><strong>{{ formatNumber(health.artifacts?.errors?.length) }}</strong></div>
+        </div>
+        <ul v-if="runtimeHealthArtifacts.length" class="issue-list">
+          <li v-for="artifact in runtimeHealthArtifacts" :key="artifact.name">
+            {{ artifact.name }} / {{ artifact.status }} / {{ artifact.relativePath ?? artifact.path ?? 'unknown' }}
+            <template v-if="artifact.error"> / {{ artifact.error }}</template>
+          </li>
+        </ul>
+      </article>
+
       <article class="panel">
         <h2>Runtime Snapshot</h2>
         <dl class="validation-list single">
@@ -238,10 +254,12 @@ onMounted(() => {
         <ul class="issue-list">
           <li v-for="gate in health.validation?.blockedGates ?? []" :key="gate">{{ gate }}</li>
           <li v-for="reason in health.nativeUi?.blocked ?? []" :key="reason">{{ reason }}</li>
+          <li v-for="artifactError in health.artifacts?.errors ?? []" :key="artifactError">{{ artifactError }}</li>
           <li v-if="health.validation?.compilerValidationBlocked">compiler validation blocked</li>
           <li
             v-if="!(health.validation?.blockedGates ?? []).length
               && !(health.nativeUi?.blocked ?? []).length
+              && !(health.artifacts?.errors ?? []).length
               && !health.validation?.compilerValidationBlocked"
           >
             暂无阻塞

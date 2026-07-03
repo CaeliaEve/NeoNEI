@@ -1,4 +1,4 @@
-export interface PublicRuntimeManifest {
+﻿export interface PublicRuntimeManifest {
   version: number;
   sourceSignature: string;
   compiledAt: string | null;
@@ -7,6 +7,27 @@ export interface PublicRuntimeManifest {
   browserLayoutKey?: string | null;
   runtimeCacheKey?: string;
   publishBundle?: PublishStaticBundleManifest | null;
+}
+
+export type RuntimeHealthArtifactProbeStatus = 'present' | 'missing' | 'invalid';
+export type RuntimeHealthArtifactProbeName =
+  | 'manifest'
+  | 'validationReport'
+  | 'migrationReadiness'
+  | 'neiBrowserContract'
+  | 'recipeFragmentation'
+  | 'exportPathHygiene'
+  | 'externalRuntimePromotionReport';
+
+export interface RuntimeHealthArtifactProbe {
+  name: RuntimeHealthArtifactProbeName;
+  key: string;
+  status: RuntimeHealthArtifactProbeStatus;
+  path: string | null;
+  relativePath: string | null;
+  bytes: number | null;
+  mtimeMs: number | null;
+  error: string | null;
 }
 
 export interface RuntimeHealthSummary {
@@ -21,6 +42,11 @@ export interface RuntimeHealthSummary {
     sourceRepository: string | null;
     generatedAt: string | null;
     runtime: Record<string, unknown> | null;
+  };
+  artifacts: {
+    status: 'ok' | 'missing' | 'invalid';
+    probes: Record<RuntimeHealthArtifactProbeName, RuntimeHealthArtifactProbe>;
+    errors: string[];
   };
   counts: Record<string, number | null>;
   coverage: Record<string, number | null>;
