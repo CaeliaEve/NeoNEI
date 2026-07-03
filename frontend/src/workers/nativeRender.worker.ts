@@ -1,4 +1,4 @@
-﻿import type {
+import type {
   NativeRenderBackendKind,
   NativeRenderRequest,
   NativeRenderResponse,
@@ -6,21 +6,16 @@
   NativeRendererLimits,
   NativeRenderSpriteCommand,
 } from "../native-surface/NativeSurfaceRenderProtocol";
-import {
-  parseNativeLayoutCommandBuffer,
-  WebGl2NativeRenderer,
-} from "../renderers/native/WebGl2NativeRenderer";
-import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend";
+import { parseNativeLayoutCommandBuffer } from "../renderers/native/NativeRendererCommandProtocol.ts";
+import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend.ts";
 import {
   assertNativeRendererProbeSupported,
-} from "../renderers/native/NativeRendererProbe";
-import { WebGpuNativeRenderer } from "../renderers/native/WebGpuNativeRenderer";
+} from "../renderers/native/NativeRendererProbe.ts";
 import { buildNativeRenderFrameMetrics } from "./nativeRenderFrameMetricsCatalog";
 import {
   nativeRenderWorkerResourceFailed,
   probeRequestedNativeRenderWorker,
   requireNativeRenderWorkerResource,
-  type NativeRenderWorkerBackendProbeRegistry,
   type NativeRenderWorkerResourceOperation,
 } from "./nativeRenderWorkerPolicyCatalog";
 
@@ -69,10 +64,6 @@ type TextureTile = {
 
 const virtualTextureTiles = new Map<string, TextureTile[]>();
 
-const nativeRenderWorkerBackendProbes: NativeRenderWorkerBackendProbeRegistry = Object.freeze({
-  webgpu: (activeCanvas) => WebGpuNativeRenderer.probe(activeCanvas),
-  webgl2: (activeCanvas) => WebGl2NativeRenderer.probe(activeCanvas),
-});
 
 function requireNativeRenderer(operation: NativeRenderWorkerResourceOperation): NativeRendererBackend {
   return requireNativeRenderWorkerResource(operation, {
@@ -328,7 +319,6 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
         const rendererProbe = await probeRequestedNativeRenderWorker(
           message.renderer,
           canvas,
-          nativeRenderWorkerBackendProbes,
         );
         nativeRenderer = assertNativeRendererProbeSupported(rendererProbe);
         backend = nativeRenderer.backend;

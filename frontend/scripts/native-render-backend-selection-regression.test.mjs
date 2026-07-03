@@ -19,7 +19,7 @@ test("native render backend selection uses an explicit probe plan", () => {
   const source = readSource("src/workers/nativeRender.worker.ts");
   const workerPolicyCatalog = readSource("src/workers/nativeRenderWorkerPolicyCatalog.ts");
   const probeSource = readSource("src/renderers/native/NativeRendererProbe.ts");
-  const sessionSource = readSource("src/services/nativeUiRendererSession.ts");
+  const sessionCatalogSource = readSource("src/services/nativeUiRendererSessionCatalog.ts");
 
   assert.match(workerPolicyCatalog, /NATIVE_RENDER_WORKER_PROBE_CATALOG/);
   assert.match(workerPolicyCatalog, /schema: "neonei\/native-render-worker-probe\/current"/);
@@ -32,7 +32,9 @@ test("native render backend selection uses an explicit probe plan", () => {
   assert.match(workerPolicyCatalog, /function nativeRenderWorkerProbePlan/);
   assert.match(workerPolicyCatalog, /function probeRequestedNativeRenderWorker/);
   assert.match(workerPolicyCatalog, /NativeRendererProbeError/);
-  assert.match(source, /const nativeRenderWorkerBackendProbes: NativeRenderWorkerBackendProbeRegistry = Object\.freeze/);
+  assert.match(workerPolicyCatalog, /NATIVE_RENDER_WORKER_BACKEND_DESCRIPTOR_LIST/);
+  assert.match(workerPolicyCatalog, /NATIVE_RENDER_WORKER_BACKEND_PROBE_REGISTRY/);
+  assert.doesNotMatch(source, /nativeRenderWorkerBackendProbes/);
   assert.match(source, /probeRequestedNativeRenderWorker\(/);
   assert.match(source, /assertNativeRendererProbeSupported/);
   assert.doesNotMatch(source, /function nativeRendererProbePlan/);
@@ -43,8 +45,8 @@ test("native render backend selection uses an explicit probe plan", () => {
   assert.doesNotMatch(source, /WebGpuNativeRenderer\.create/);
   assert.match(probeSource, /NATIVE_RENDERER_PROBE_POLICY/);
   assert.match(probeSource, /requestedBackendPolicy:\s*"exact-probe-no-fallback"/);
-  assert.match(sessionSource, /NATIVE_UI_RENDERER_SESSION_POLICY/);
-  assert.match(sessionSource, /WebGl2NativeRenderer\.probe/);
+  assert.match(sessionCatalogSource, /NATIVE_UI_RENDERER_SESSION_POLICY/);
+  assert.match(sessionCatalogSource, /WebGl2NativeRenderer\.probe/);
 });
 
 test("requested WebGPU readiness does not silently fall back to WebGL2", () => {

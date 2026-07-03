@@ -1,5 +1,5 @@
 import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend.ts";
-import type { NativeTextureSpriteCommand } from "../renderers/native/WebGl2NativeRenderer.ts";
+import type { NativeTextureSpriteCommand } from "../renderers/native/NativeRendererCommandProtocol.ts";
 import {
   NativeUiAtlasResourceError,
   registerNativeUiAtlasSources,

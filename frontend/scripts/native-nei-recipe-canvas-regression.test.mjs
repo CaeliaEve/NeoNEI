@@ -1,4 +1,4 @@
-﻿import test from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,10 +29,12 @@ test('NativeNeiRecipeCanvas stays on the single WebGL atlas render path', () => 
   const canvasSource = read('src/components/NativeNeiRecipeCanvas.vue');
   const pipelineSource = read('src/services/nativeUiCanvasRenderPipeline.ts');
   const sessionSource = read('src/services/nativeUiRendererSession.ts');
+  const sessionCatalogSource = read('src/services/nativeUiRendererSessionCatalog.ts');
 
   assert.equal(canvasSource.includes('NativeUiCanvasRenderPipeline'), true);
-  assert.equal(sessionSource.includes('WebGl2NativeRenderer.probe(canvas)'), true);
-  assert.equal(sessionSource.includes('assertNativeRendererProbeSupported'), true);
+  assert.equal(sessionSource.includes('createNativeUiRenderer'), true);
+  assert.equal(sessionCatalogSource.includes('WebGl2NativeRenderer.probe(canvas)'), true);
+  assert.equal(sessionCatalogSource.includes('assertNativeRendererProbeSupported'), true);
   assert.equal(pipelineSource.includes('registerNativeUiAtlasSources'), true);
   assert.equal(pipelineSource.includes('buildNativeUiSpriteCommands'), true);
   assert.equal(canvasSource.includes('RecipeItemTooltip'), true, 'tooltips may remain in the interaction overlay');

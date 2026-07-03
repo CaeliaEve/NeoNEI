@@ -6,8 +6,8 @@ import {
 } from "../renderers/native/NativeRendererProbe.ts";
 import {
   WebGl2NativeRenderer,
-  type NativeTextureSpriteCommand,
 } from "../renderers/native/WebGl2NativeRenderer.ts";
+import type { NativeTextureSpriteCommand } from "../renderers/native/NativeRendererCommandProtocol.ts";
 
 export type NativeUiRendererCanvas = HTMLCanvasElement | OffscreenCanvas;
 export type NativeUiRendererProbe = (canvas: NativeUiRendererCanvas) => NativeRendererProbeResult;

@@ -4,33 +4,11 @@ import {
   nativeRendererProbeUnsupported,
   type NativeRendererProbeResult,
 } from "./NativeRendererProbe.ts";
-
-export type NativeRenderCommand = {
-  x: number;
-  y: number;
-  size: number;
-  kind: number;
-  flags: number;
-};
-
-export type NativeTextureSpriteCommand = {
-  textureKey: string;
-  sourceX: number;
-  sourceY: number;
-  sourceWidth: number;
-  sourceHeight: number;
-  destX: number;
-  destY: number;
-  destWidth: number;
-  destHeight: number;
-};
-
-export type NativeRendererStats = {
-  drawCalls: number;
-  vertexCount: number;
-  spriteDrawCalls: number;
-  spriteVertexCount: number;
-};
+import type {
+  NativeRenderCommand,
+  NativeRendererStats,
+  NativeTextureSpriteCommand,
+} from "./NativeRendererCommandProtocol.ts";
 
 const CHROME_VERTEX_SHADER = `#version 300 es
 in vec2 a_position;
@@ -132,28 +110,6 @@ function createProgram(gl: WebGL2RenderingContext, vertexSource: string, fragmen
     return null;
   }
   return program;
-}
-
-export function parseNativeLayoutCommandBuffer(
-  commandBuffer: ArrayBuffer,
-  commandStride: number,
-  count: number,
-): NativeRenderCommand[] {
-  if (commandStride < 8 || count <= 0 || commandBuffer.byteLength < commandStride * 4) return [];
-  const values = new Uint32Array(commandBuffer);
-  const maxCount = Math.min(count, Math.floor(values.length / commandStride));
-  const result: NativeRenderCommand[] = [];
-  for (let index = 0; index < maxCount; index += 1) {
-    const offset = index * commandStride;
-    result.push({
-      x: values[offset + 1] ?? 0,
-      y: values[offset + 2] ?? 0,
-      size: values[offset + 3] ?? 0,
-      kind: values[offset + 7] ?? 0,
-      flags: values[offset + 8] ?? 0,
-    });
-  }
-  return result;
 }
 
 export class WebGl2NativeRenderer {

@@ -1,4 +1,8 @@
-﻿import type { NativeTextureSpriteCommand, NativeRenderCommand, NativeRendererStats } from "./WebGl2NativeRenderer";
+import type {
+  NativeRenderCommand,
+  NativeRendererStats,
+  NativeTextureSpriteCommand,
+} from "./NativeRendererCommandProtocol.ts";
 
 export type NativeRendererTextureSource = TexImageSource;
 

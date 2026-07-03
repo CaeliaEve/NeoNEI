@@ -1,4 +1,4 @@
-import type { NativeTextureSpriteCommand } from "../renderers/native/WebGl2NativeRenderer.ts";
+import type { NativeTextureSpriteCommand } from "../renderers/native/NativeRendererCommandProtocol.ts";
 import type { NativeUiDynamicPrimitive, NativeUiSlotCell } from "./nativeUiRuntimeRegistry.ts";
 import { resolveNativeUiRectGeometry } from "./nativeUiGeometryAbi.ts";
 import {

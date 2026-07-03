@@ -1,11 +1,15 @@
-import type { NativeRendererBackend } from "./NativeRendererBackend";
+import type { NativeRendererBackend } from "./NativeRendererBackend.ts";
 import {
   nativeRendererProbeFailed,
   nativeRendererProbeSupported,
   nativeRendererProbeUnsupported,
   type NativeRendererProbeResult,
-} from "./NativeRendererProbe";
-import type { NativeRenderCommand, NativeRendererStats, NativeTextureSpriteCommand } from "./WebGl2NativeRenderer";
+} from "./NativeRendererProbe.ts";
+import type {
+  NativeRenderCommand,
+  NativeRendererStats,
+  NativeTextureSpriteCommand,
+} from "./NativeRendererCommandProtocol.ts";
 
 type AnyRecord = Record<string, any>;
 type GpuNavigator = Navigator & { gpu?: AnyRecord };
