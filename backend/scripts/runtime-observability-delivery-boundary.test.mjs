@@ -15,16 +15,24 @@ test('runtime observability payloads are delivery-service owned, not route-owned
   assert.match(deliverySource, /getRuntimeHealthSummary\(\)/);
   assert.match(deliverySource, /getRuntimeDiagnosticsSummary\(\)/);
   assert.match(deliverySource, /from '\.\/runtime-observability-delivery-abi'/);
-  assert.match(deliveryAbiSource, /RUNTIME_OBSERVABILITY_CONTRACT_VERSION = 'runtime-contracts\/current'/);
-  assert.match(deliveryAbiSource, /API_V1_RUNTIME_HEALTH_STATUS = 'ok'/);
-  assert.match(deliveryAbiSource, /API_V1_RUNTIME_HEALTH_VERSION = 1/);
+  assert.match(deliveryAbiSource, /RUNTIME_OBSERVABILITY_DELIVERY_DESCRIPTOR/);
+  assert.match(deliveryAbiSource, /contractVersion: 'runtime-contracts\/current'/);
+  assert.match(deliveryAbiSource, /apiV1HealthStatus: 'ok'/);
+  assert.match(deliveryAbiSource, /apiV1HealthVersion: 1/);
+  assert.match(deliveryAbiSource, /timestampFormat: 'iso-8601'/);
+  assert.match(deliveryAbiSource, /validateRuntimeObservabilityDeliveryDescriptor/);
+  assert.match(deliveryAbiSource, /export function buildCurrentRuntimeHealthPayload/);
+  assert.match(deliveryAbiSource, /export function buildApiV1RuntimeHealthPayload/);
   assert.match(deliverySource, /export function getCurrentRuntimeHealthDelivery/);
   assert.match(deliverySource, /export function getCurrentRuntimeDiagnosticsDelivery/);
   assert.match(deliverySource, /export function getApiV1RuntimeHealthDelivery/);
+  assert.match(deliverySource, /buildCurrentRuntimeHealthPayload\(getRuntimeHealthSummary\(\)\)/);
+  assert.match(deliverySource, /buildApiV1RuntimeHealthPayload\(\)/);
   assert.doesNotMatch(deliverySource, /contractVersion: 'runtime-contracts\/current'/);
   assert.doesNotMatch(deliverySource, /status: 'ok'/);
   assert.doesNotMatch(deliverySource, /version: 1/);
-  assert.match(deliverySource, /new Date\(\)\.toISOString\(\)/);
+  assert.doesNotMatch(deliverySource, /new Date\(\)\.toISOString\(\)/);
+  assert.match(deliveryAbiSource, /new Date\(\)\.toISOString\(\)/);
 
   assert.match(runtimeHandlerSource, /getCurrentRuntimeHealthDelivery\(\)/);
   assert.match(runtimeHandlerSource, /getCurrentRuntimeDiagnosticsDelivery\(\)/);

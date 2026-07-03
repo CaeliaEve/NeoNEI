@@ -3,14 +3,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const serviceSource = fs.readFileSync('src/services/runtime-health-summary.service.ts', 'utf8');
+const healthAbiSource = fs.readFileSync('src/services/runtime-health-summary-abi.ts', 'utf8');
 const deliverySource = fs.readFileSync('src/services/runtime-observability-delivery.service.ts', 'utf8');
+const deliveryAbiSource = fs.readFileSync('src/services/runtime-observability-delivery-abi.ts', 'utf8');
 const runtimeEndpointRegistrySource = fs.readFileSync('src/routes/runtime-public-endpoint-registry.ts', 'utf8');
 const runtimeEndpointHandlerSource = fs.readFileSync('src/routes/runtime-public-endpoint-handlers.ts', 'utf8');
 const diagnosticsSource = fs.readFileSync('src/services/runtime-diagnostics-summary.service.ts', 'utf8');
 
 test('runtime health exposes the stable public health contract', () => {
   assert.equal(
-    serviceSource.includes("schemaVersion: 'neonei/runtime-health-summary/current'"),
+    healthAbiSource.includes("RUNTIME_HEALTH_SCHEMA_VERSION = 'neonei/runtime-health-summary/current'"),
     true,
     'runtime health summary must keep a stable schemaVersion',
   );
@@ -77,7 +79,8 @@ test('runtime health exposes the stable public health contract', () => {
     'runtime endpoint registry should expose /runtime/health',
   );
   assert.equal(
-    deliverySource.includes('contractVersion'),
+    deliverySource.includes('getCurrentRuntimeHealthDelivery')
+      && deliveryAbiSource.includes('contractVersion'),
     true,
     'runtime health delivery should include the runtime contract version',
   );
