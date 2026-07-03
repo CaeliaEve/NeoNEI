@@ -2,11 +2,29 @@ import type { NativeSurfaceId, NativeSurfaceMetrics } from "./contracts";
 import { getNativeSurfaceEngineMetrics } from "./NativeSurfaceEngineClient";
 import { getNativeRenderWorkerMetrics } from "./NativeRenderWorkerClient";
 import { createNativeRuntimeControlState, toNativeRuntimeMetricsPatch } from "./NativeRuntimeControlPlane";
+import {
+  clearNativeSurfaceFaultControlState,
+  createNativeSurfaceFaultControlState,
+  markNativeSurfaceFault,
+  toNativeSurfaceFaultMetricsPatch,
+  type NativeSurfaceFaultInput,
+  type NativeSurfaceFaultControlState,
+} from "./NativeSurfaceFaultControlPlane";
 
 const metricsBySurface = new Map<NativeSurfaceId, NativeSurfaceMetrics>();
+const faultBySurface = new Map<NativeSurfaceId, NativeSurfaceFaultControlState>();
+
+function getNativeSurfaceFaultState(surfaceId: NativeSurfaceId): NativeSurfaceFaultControlState {
+  const current = faultBySurface.get(surfaceId);
+  if (current) return current;
+  const initial = createNativeSurfaceFaultControlState();
+  faultBySurface.set(surfaceId, initial);
+  return initial;
+}
 
 export function createNativeSurfaceMetrics(surfaceId: NativeSurfaceId): NativeSurfaceMetrics {
   const nativeRuntime = createNativeRuntimeControlState();
+  const nativeSurfaceFault = getNativeSurfaceFaultState(surfaceId);
   return {
     surfaceId,
     initialized: false,
@@ -18,6 +36,7 @@ export function createNativeSurfaceMetrics(surfaceId: NativeSurfaceId): NativeSu
     animationEnabled: false,
     historyViewportEnabled: false,
     ...toNativeRuntimeMetricsPatch(nativeRuntime),
+    ...toNativeSurfaceFaultMetricsPatch(nativeSurfaceFault),
     lastEvent: null,
     eventCount: 0,
     updatedAt: performance.now(),
@@ -50,12 +69,32 @@ export function getAllNativeSurfaceMetrics(): NativeSurfaceMetrics[] {
   return Array.from(metricsBySurface.values());
 }
 
+export function recordNativeSurfaceFault(
+  surfaceId: NativeSurfaceId,
+  fault: NativeSurfaceFaultInput,
+): NativeSurfaceMetrics {
+  const state = markNativeSurfaceFault(getNativeSurfaceFaultState(surfaceId), fault);
+  faultBySurface.set(surfaceId, state);
+  return updateNativeSurfaceMetrics(surfaceId, toNativeSurfaceFaultMetricsPatch(state), `${fault.domain}:${fault.phase}:fault`);
+}
+
+export function clearNativeSurfaceFault(
+  surfaceId: NativeSurfaceId,
+  eventName = "nativeSurfaceFault:clear",
+): NativeSurfaceMetrics {
+  const state = clearNativeSurfaceFaultControlState(getNativeSurfaceFaultState(surfaceId));
+  faultBySurface.set(surfaceId, state);
+  return updateNativeSurfaceMetrics(surfaceId, toNativeSurfaceFaultMetricsPatch(state), eventName);
+}
+
 export function resetNativeSurfaceMetrics(surfaceId?: NativeSurfaceId): void {
   if (surfaceId) {
     metricsBySurface.delete(surfaceId);
+    faultBySurface.delete(surfaceId);
     return;
   }
   metricsBySurface.clear();
+  faultBySurface.clear();
 }
 
 export function exposeNativeSurfaceMetricsForDebug(): void {

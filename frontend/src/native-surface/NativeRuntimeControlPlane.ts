@@ -79,8 +79,17 @@ export function markNativeRuntimeError(
 
 export function toNativeRuntimeMetricsPatch(
   state: NativeRuntimeControlState,
-): Pick<NativeSurfaceMetrics, "nativeRuntimeReady" | "nativeRuntimePacks" | "nativeRuntimeError"> {
+): Pick<
+  NativeSurfaceMetrics,
+  | "nativeRuntimeStatus"
+  | "nativeRuntimeRevision"
+  | "nativeRuntimeReady"
+  | "nativeRuntimePacks"
+  | "nativeRuntimeError"
+> {
   return {
+    nativeRuntimeStatus: state.status,
+    nativeRuntimeRevision: state.revision,
     nativeRuntimeReady: state.ready,
     nativeRuntimePacks: state.packCount,
     nativeRuntimeError: state.error,

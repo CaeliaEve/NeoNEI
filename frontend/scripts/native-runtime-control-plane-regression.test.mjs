@@ -36,6 +36,8 @@ test('native runtime control plane owns runtime status transitions', () => {
   assert.deepEqual(ready, { revision: 2, status: NATIVE_RUNTIME_CONTROL_STATUS.ready, ready: true, packCount: 3, error: null });
   assert.equal(Object.isFrozen(ready), true);
   assert.deepEqual(toNativeRuntimeMetricsPatch(ready), {
+    nativeRuntimeStatus: NATIVE_RUNTIME_CONTROL_STATUS.ready,
+    nativeRuntimeRevision: 2,
     nativeRuntimeReady: true,
     nativeRuntimePacks: 3,
     nativeRuntimeError: null,
@@ -60,6 +62,8 @@ test('native runtime control ABI catalog is the status and metrics source of tru
   assert.equal(NATIVE_RUNTIME_CONTROL_MODULE.schema, 'neonei/native-runtime-control/current');
   assert.equal(NATIVE_RUNTIME_CONTROL_MODULE.statusCount, 4);
   assert.deepEqual([...NATIVE_RUNTIME_CONTROL_METRIC_FIELDS], [
+    'nativeRuntimeStatus',
+    'nativeRuntimeRevision',
     'nativeRuntimeReady',
     'nativeRuntimePacks',
     'nativeRuntimeError',
@@ -100,7 +104,7 @@ test('native runtime control plane is the controller and metrics boundary', () =
   assert.match(controlSource, /export function toNativeRuntimeMetricsPatch/);
   assert.match(controllerSource, /private nativeRuntime = createNativeRuntimeControlState\(\)/);
   assert.match(controllerSource, /this\.nativeRuntime = beginNativeRuntimeLoad\(this\.nativeRuntime\)/);
-  assert.match(controllerSource, /this\.nativeRuntime = markNativeRuntimeReady\(this\.nativeRuntime, Boolean\(response\), packs\.length\)/);
+  assert.match(controllerSource, /this\.nativeRuntime = markNativeRuntimeReady\(this\.nativeRuntime, true, packs\.length\)/);
   assert.match(controllerSource, /this\.nativeRuntime = markNativeRuntimeError\(this\.nativeRuntime, error\)/);
   assert.match(controllerSource, /\.\.\.toNativeRuntimeMetricsPatch\(this\.nativeRuntime\)/);
   assert.match(metricsSource, /\.\.\.toNativeRuntimeMetricsPatch\(nativeRuntime\)/);

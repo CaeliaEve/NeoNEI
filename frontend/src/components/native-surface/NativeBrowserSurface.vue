@@ -11,7 +11,11 @@ import type {
   NativeSurfaceViewportRole,
 } from "../../native-surface/contracts";
 import type { NativeRuntimePackProfile } from "../../native-surface/NativeRuntimeProfilePolicy";
-import { exposeNativeSurfaceMetricsForDebug } from "../../native-surface/NativeSurfaceMetrics";
+import {
+  exposeNativeSurfaceMetricsForDebug,
+  recordNativeSurfaceFault,
+} from "../../native-surface/NativeSurfaceMetrics";
+import type { NativeSurfaceFaultDomain } from "../../native-surface/NativeSurfaceFaultControlPlane";
 import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
 import {
   getAllGlobalBrowserAtlasTextureDescriptors,
@@ -85,6 +89,7 @@ const nativeHoveredHit = ref<{
   } | null;
 } | null>(null);
 const nativeHoveredPointer = ref({ x: 0, y: 0 });
+const nativeSurfaceFaultMessage = ref("");
 let nativeRenderInitialized = false;
 let nativeRenderInitializing = false;
 let nativeTexturesReady = false;
@@ -123,12 +128,24 @@ function resetNativeRenderReadiness() {
   nativeRenderVisible.value = false;
 }
 
-function reportNativeRenderFailure(phase: string, error: unknown): void {
+function normalizeNativeSurfaceFaultMessage(error: unknown): string {
+  if (error instanceof Error && error.message) return error.message;
+  const message = `${error ?? ""}`.trim();
+  return message || "unknown native surface fault";
+}
+
+function reportNativeRenderFailure(
+  phase: string,
+  error: unknown,
+  domain: NativeSurfaceFaultDomain = "render",
+): void {
   nativeRenderFaulted = true;
   nativeRenderInitialized = false;
   nativeRenderInitializing = false;
   activeResidentAtlasTextureLoadPromise = null;
   activeResidentAtlasTextureSignature = "";
+  nativeSurfaceFaultMessage.value = `${domain}:${phase}: ${normalizeNativeSurfaceFaultMessage(error)}`;
+  recordNativeSurfaceFault(props.surfaceId, { domain, phase, error });
   clearNativeAnimationTimer();
   resetNativeRenderReadiness();
   if (typeof console !== "undefined") {
@@ -141,7 +158,7 @@ function reportNativeSurfaceEngineFailure(phase: string, error: unknown): void {
   nativeHitSeq += 1;
   nativePendingHitPointer = null;
   nativeHoveredHit.value = null;
-  reportNativeRenderFailure(`surface-engine:${phase}`, error);
+  reportNativeRenderFailure(phase, error, "engine");
 }
 
 function isDocumentVisible(): boolean {
@@ -740,8 +757,8 @@ if (typeof document !== "undefined") {
     >
       <div class="native-browser-surface__status-orb" />
       <div class="native-browser-surface__status-text">
-        <span>Native GPU runtime is preparing the resident atlas</span>
-        <small>Browser grid DOM fallback is retired on this path.</small>
+        <span>{{ nativeSurfaceFaultMessage || 'Native GPU runtime is preparing the resident atlas' }}</span>
+        <small>{{ nativeSurfaceFaultMessage ? 'Native surface fault is recorded in the control plane.' : 'Browser grid DOM fallback is retired on this path.' }}</small>
       </div>
     </div>
     <div

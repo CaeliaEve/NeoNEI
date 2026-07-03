@@ -133,9 +133,16 @@ export interface NativeSurfaceMetrics {
   viewportHeight: number;
   animationEnabled: boolean;
   historyViewportEnabled: boolean;
+  nativeRuntimeStatus: "idle" | "loading" | "ready" | "error";
+  nativeRuntimeRevision: number;
   nativeRuntimeReady: boolean;
   nativeRuntimePacks: number;
   nativeRuntimeError: string | null;
+  nativeSurfaceFaulted: boolean;
+  nativeSurfaceFaultDomain: "render" | "engine" | "runtime" | "protocol" | null;
+  nativeSurfaceFaultPhase: string | null;
+  nativeSurfaceFaultMessage: string | null;
+  nativeSurfaceFaultCount: number;
   lastEvent: string | null;
   eventCount: number;
   updatedAt: number;

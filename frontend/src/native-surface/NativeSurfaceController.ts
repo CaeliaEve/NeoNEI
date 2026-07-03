@@ -12,6 +12,7 @@ import type {
 import {
   createNativeSurfaceMetrics,
   getNativeSurfaceMetrics,
+  recordNativeSurfaceFault,
   updateNativeSurfaceMetrics,
 } from "./NativeSurfaceMetrics";
 import { postNativeSurfaceEngineEvent } from "./NativeSurfaceEngineClient";
@@ -323,6 +324,11 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
 
   private reportEngineFailure(eventName: string, error: unknown): void {
     this.touch(eventName);
+    recordNativeSurfaceFault(this.surfaceId, {
+      domain: "engine",
+      phase: eventName,
+      error,
+    });
     if (typeof console !== "undefined") {
       console.error(`[NeoNEI native surface ${this.surfaceId}] ${eventName}`, error);
     }
@@ -390,6 +396,11 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
     } catch (error) {
       this.nativeRuntime = markNativeRuntimeError(this.nativeRuntime, error);
       this.touch("runtimePacks:error");
+      recordNativeSurfaceFault(this.surfaceId, {
+        domain: "runtime",
+        phase: "runtimePacks",
+        error,
+      });
     }
   }
 }

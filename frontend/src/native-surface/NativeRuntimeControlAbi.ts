@@ -51,6 +51,8 @@ export const NATIVE_RUNTIME_CONTROL_ERRORS = Object.freeze({
 } as const);
 
 export const NATIVE_RUNTIME_CONTROL_METRIC_FIELDS = Object.freeze([
+  "nativeRuntimeStatus",
+  "nativeRuntimeRevision",
   "nativeRuntimeReady",
   "nativeRuntimePacks",
   "nativeRuntimeError",
