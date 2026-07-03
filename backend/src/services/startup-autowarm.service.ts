@@ -1,40 +1,37 @@
 import { getAutowarmPolicy } from '../config/autowarm-policy';
-import { getRecipeBootstrapService } from './recipe-bootstrap.service';
+import {
+  projectEnabledAutowarmStartupTasks,
+  type AutowarmTaskKey,
+} from '../config/autowarm-policy-abi';
 import { logger } from '../utils/logger';
+import { getRecipeBootstrapService } from './recipe-bootstrap.service';
+
+type AutowarmResult = Readonly<{
+  warmed: number;
+  skipped: number;
+}>;
+
+type AutowarmPrewarmHandler = (limit: number) => Promise<AutowarmResult>;
+
+const AUTOWARM_PREWARM_HANDLERS: Readonly<Record<AutowarmTaskKey, AutowarmPrewarmHandler>> = Object.freeze({
+  recipeBootstrap: (limit) => getRecipeBootstrapService().prewarmBootstrapCache({ limit }),
+  recipeShard: (limit) => getRecipeBootstrapService().prewarmShardCache({ limit }),
+});
 
 export function scheduleStartupAutowarm(): void {
-  const autowarmPolicy = getAutowarmPolicy();
-  if (autowarmPolicy.recipeBootstrap.enabled) {
+  for (const task of projectEnabledAutowarmStartupTasks(getAutowarmPolicy())) {
     setTimeout(() => {
-      void getRecipeBootstrapService()
-        .prewarmBootstrapCache({ limit: autowarmPolicy.recipeBootstrap.limit })
+      void AUTOWARM_PREWARM_HANDLERS[task.key](task.limit)
         .then((result) => {
-          logger.info('[RECIPE_BOOTSTRAP_AUTOWARM] completed', {
+          logger.info(task.completedLogMessage, {
             warmed: result.warmed,
             skipped: result.skipped,
-            limit: autowarmPolicy.recipeBootstrap.limit,
+            limit: task.limit,
           });
         })
         .catch((error) => {
-          logger.warn('[RECIPE_BOOTSTRAP_AUTOWARM] failed', error);
+          logger.warn(task.failedLogMessage, error);
         });
-    }, 500);
-  }
-
-  if (autowarmPolicy.recipeShard.enabled) {
-    setTimeout(() => {
-      void getRecipeBootstrapService()
-        .prewarmShardCache({ limit: autowarmPolicy.recipeShard.limit })
-        .then((result) => {
-          logger.info('[RECIPE_SHARD_AUTOWARM] completed', {
-            warmed: result.warmed,
-            skipped: result.skipped,
-            limit: autowarmPolicy.recipeShard.limit,
-          });
-        })
-        .catch((error) => {
-          logger.warn('[RECIPE_SHARD_AUTOWARM] failed', error);
-        });
-    }, 1800);
+    }, task.delayMs);
   }
 }
