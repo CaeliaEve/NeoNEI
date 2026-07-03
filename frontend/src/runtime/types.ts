@@ -1,5 +1,7 @@
-﻿export interface PublicRuntimeManifest {
+export interface PublicRuntimeManifest {
   version: number;
+  status?: 'ready' | 'blocked' | 'stale';
+  probes?: PublishManifestProbeSummary;
   sourceSignature: string;
   compiledAt: string | null;
   publishRevision?: string | null;
@@ -7,6 +9,34 @@
   browserLayoutKey?: string | null;
   runtimeCacheKey?: string;
   publishBundle?: PublishStaticBundleManifest | null;
+}
+
+export type PublishManifestProbeStatus = 'ready' | 'missing' | 'invalid' | 'stale';
+export type PublishManifestProbeName =
+  | 'database'
+  | 'sourceSignature'
+  | 'publishRevision'
+  | 'publishCompiledAt'
+  | 'browserLayoutKey'
+  | 'publishBundle'
+  | 'runtimeCacheKey';
+
+export interface PublishManifestProbe {
+  name: PublishManifestProbeName;
+  status: PublishManifestProbeStatus;
+  required: true;
+  path: string | null;
+  value: string | null;
+  message: string | null;
+}
+
+export interface PublishManifestProbeSummary {
+  status: 'ready' | 'blocked' | 'stale';
+  probes: Record<PublishManifestProbeName, PublishManifestProbe>;
+  missing: PublishManifestProbeName[];
+  invalid: PublishManifestProbeName[];
+  stale: PublishManifestProbeName[];
+  errors: string[];
 }
 
 export type RuntimeHealthArtifactProbeStatus = 'present' | 'missing' | 'invalid';
