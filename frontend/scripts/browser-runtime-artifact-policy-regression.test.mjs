@@ -15,6 +15,7 @@ test('browser runtime published artifacts are descriptor-owned', () => {
   assert.match(policySource, /validateArtifactDescriptors/);
   assert.match(policySource, /Duplicate browser published artifact descriptor/);
   assert.match(policySource, /browser-page-window/);
+  assert.match(policySource, /home-bootstrap-window/);
   assert.match(policySource, /browser-search-pack/);
   assert.match(policySource, /browser-search-shard/);
   assert.match(policySource, /BROWSER_RUNTIME_ARTIFACT_POLICY_CATALOG/);

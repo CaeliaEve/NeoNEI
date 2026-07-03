@@ -79,9 +79,11 @@ test('browser page caches survive homepage remounts through a bounded shared cac
 
 test('homepage bootstrap keeps the publish-bundle fast path available before failing closed', () => {
   assert.equal(
-    runtimeSessionSource.includes('manifest.publishBundle?.files.homeBootstrapWindows'),
+    browserArtifactPolicySource.includes('home-bootstrap-window')
+      && browserArtifactPolicySource.includes('resolvePublishedHomeBootstrapWindowPath')
+      && runtimeSessionSource.includes('resolvePublishedHomeBootstrapWindowPath'),
     true,
-    'api.getHomeBootstrap should consult the published home-bootstrap bundle when available',
+    'api.getHomeBootstrap should consult the descriptor-owned published home-bootstrap window when available',
   );
   assert.equal(
     runtimeSessionSource.includes('fetchPublishedJson'),

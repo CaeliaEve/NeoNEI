@@ -27,8 +27,8 @@ import { buildRuntimePayloadCacheKey, setCacheWithLimit } from '../../runtime/ca
 import { getDistDataHomeBootstrap } from '../distDataRuntime';
 import {
   deriveBrowserPagePackFromWindow,
-  resolvePublishedWindowPath,
 } from '../../runtime/browserProjection';
+import { resolvePublishedHomeBootstrapWindowPath } from '../../runtime/browserRuntimeArtifactPolicyCatalog';
 
 const publishedJsonValueCache = new Map<string, unknown>();
 const publishedJsonInFlight = new Map<string, Promise<unknown>>();
@@ -231,16 +231,12 @@ export async function getRuntimeHomeBootstrap(params: {
   const manifest = await runtimeManifestClient.getPublishManifest();
   const requestedPage = Math.max(1, Math.floor(params.page ?? 1));
   const requestedPageSize = Math.max(1, Math.floor(params.pageSize ?? 50));
-  let staticBundleFailure: string | null = null;
-  const staticPath = !params.modId
-    ? resolvePublishedWindowPath(
-        manifest.publishBundle?.files.homeBootstrapWindows,
-        params.slotSize,
-        requestedPage,
-        requestedPageSize,
-        isPublishedJsonWarm,
-      )
-    : null;
+  let publishedArtifactFailure: string | null = null;
+  const staticPath = resolvePublishedHomeBootstrapWindowPath({
+    manifest,
+    request: params,
+    isWarm: isPublishedJsonWarm,
+  });
   if (staticPath) {
     try {
       const published = await fetchPublishedJson<{
@@ -262,21 +258,21 @@ export async function getRuntimeHomeBootstrap(params: {
           pagePack,
         };
       }
-      staticBundleFailure = 'published home bootstrap window could not derive requested page';
+      publishedArtifactFailure = 'published home bootstrap window could not derive requested page';
     } catch {
-      staticBundleFailure = 'published home bootstrap window could not be read';
+      publishedArtifactFailure = 'published home bootstrap window could not be read';
     }
   } else {
-    staticBundleFailure = params.modId
+    publishedArtifactFailure = params.modId
       ? 'mod-scoped home bootstrap requires runtime catalog projection'
       : 'published home bootstrap window missing';
   }
 
   reportRuntimePayloadGap('home-bootstrap', 'published home bootstrap window', 'runtime home bootstrap unavailable', {
     ...getRuntimeDiagnosticIdentity(),
-    details: { ...params, staticBundleFailure },
+    details: { ...params, publishedArtifactFailure },
   });
-  throw new Error(`Runtime home bootstrap unavailable: ${staticBundleFailure ?? 'missing compiled payload'}`);
+  throw new Error(`Runtime home bootstrap unavailable: ${publishedArtifactFailure ?? 'missing compiled payload'}`);
 }
 
 export async function getRuntimeMods(): Promise<Mod[]> {

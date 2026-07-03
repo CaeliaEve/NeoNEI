@@ -1,9 +1,9 @@
-import type { BrowserPageParams } from './browserClient';
 import { resolvePublishedWindowPath } from './browserProjection';
 import type { PublicRuntimeManifest } from './types';
 
 export type BrowserPublishedArtifactKey =
   | 'browser-page-window'
+  | 'home-bootstrap-window'
   | 'browser-search-pack'
   | 'browser-search-shard';
 
@@ -14,10 +14,25 @@ type BrowserPublishedArtifactDescriptor = Readonly<{
   scope: 'default-browser' | 'global-search';
 }>;
 
+type BrowserPublishedWindowRequest = {
+  page?: number;
+  pageSize?: number;
+  slotSize?: number;
+  search?: string;
+  modId?: string;
+  expandedGroups?: string[];
+};
+
 const BROWSER_PUBLISHED_ARTIFACT_DESCRIPTORS: readonly BrowserPublishedArtifactDescriptor[] = validateArtifactDescriptors([
   {
     key: 'browser-page-window',
     route: 'publishBundle.files.browserPageWindows',
+    pathShape: 'window-entry',
+    scope: 'default-browser',
+  },
+  {
+    key: 'home-bootstrap-window',
+    route: 'publishBundle.files.homeBootstrapWindows',
     pathShape: 'window-entry',
     scope: 'default-browser',
   },
@@ -62,14 +77,14 @@ function browserArtifactDescriptor(key: BrowserPublishedArtifactKey): BrowserPub
   return descriptor;
 }
 
-export function canUsePublishedBrowserPageWindow(params: BrowserPageParams): boolean {
+export function canUsePublishedBrowserPageWindow(params: BrowserPublishedWindowRequest): boolean {
   const expandedGroups = params.expandedGroups ?? [];
   return !params.search?.trim() && !params.modId && expandedGroups.length === 0;
 }
 
 export function resolvePublishedBrowserPageWindowPath(params: {
   manifest: PublicRuntimeManifest | null | undefined;
-  request: BrowserPageParams;
+  request: BrowserPublishedWindowRequest;
   isWarm: (assetPath: string | null | undefined) => boolean;
 }): string | null {
   const descriptor = browserArtifactDescriptor('browser-page-window');
@@ -78,6 +93,24 @@ export function resolvePublishedBrowserPageWindowPath(params: {
   }
   return resolvePublishedWindowPath(
     params.manifest?.publishBundle?.files.browserPageWindows,
+    params.request.slotSize,
+    Math.max(1, Math.floor(params.request.page ?? 1)),
+    Math.max(1, Math.floor(params.request.pageSize ?? 50)),
+    params.isWarm,
+  );
+}
+
+export function resolvePublishedHomeBootstrapWindowPath(params: {
+  manifest: PublicRuntimeManifest | null | undefined;
+  request: BrowserPublishedWindowRequest;
+  isWarm: (assetPath: string | null | undefined) => boolean;
+}): string | null {
+  const descriptor = browserArtifactDescriptor('home-bootstrap-window');
+  if (descriptor.pathShape !== 'window-entry' || params.request.modId) {
+    return null;
+  }
+  return resolvePublishedWindowPath(
+    params.manifest?.publishBundle?.files.homeBootstrapWindows,
     params.request.slotSize,
     Math.max(1, Math.floor(params.request.page ?? 1)),
     Math.max(1, Math.floor(params.request.pageSize ?? 50)),
