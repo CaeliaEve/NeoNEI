@@ -62,10 +62,15 @@ test('current runtime settings controlfs response uses a settings ABI catalog', 
   assert.match(settingsSource, /from '\.\/current-runtime-settings-abi'/);
   assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_STATIC/);
   assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_ENV/);
+  assert.match(settingsAbiSource, /CURRENT_RUNTIME_ENABLED_FLAG_DESCRIPTORS/);
   assert.match(settingsAbiSource, /CURRENT_RUNTIME_ENABLED_FLAG_VALUES/);
   assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_ENV_DESCRIPTORS/);
   assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_RUNTIME_DESCRIPTORS/);
   assert.match(settingsAbiSource, /CURRENT_RUNTIME_SETTINGS_STATIC_DESCRIPTORS/);
+  assert.match(settingsAbiSource, /export type CurrentRuntimeSettingsEnvironment/);
+  assert.match(settingsAbiSource, /export type CurrentRuntimeSettings/);
+  assert.match(settingsAbiSource, /export function isCurrentRuntimeSettingsEnabledFlag/);
+  assert.match(settingsAbiSource, /export function resolveCurrentRuntimeSettings/);
   assert.match(settingsAbiSource, /validateAndFreezeRuntimeSettingsDescriptors/);
   assert.match(settingsAbiSource, /Missing \$\{label\} descriptor/);
   assert.match(settingsAbiSource, /Duplicate \$\{label\} descriptor/);
@@ -82,7 +87,11 @@ test('current runtime settings controlfs response uses a settings ABI catalog', 
     assert.match(settingsAbiSource, ownedLiteral);
     assert.doesNotMatch(settingsSource, ownedLiteral);
   }
-  assert.match(settingsSource, /CURRENT_RUNTIME_SETTINGS_STATIC/);
+  assert.match(settingsSource, /resolveCurrentRuntimeSettings\(env\)/);
+  assert.doesNotMatch(settingsSource, /CURRENT_RUNTIME_SETTINGS_STATIC/);
+  assert.doesNotMatch(settingsSource, /CURRENT_RUNTIME_ENABLED_FLAG_VALUES/);
+  assert.doesNotMatch(settingsSource, /function isEnabledFlag/);
+  assert.doesNotMatch(settingsSource, /\.trim\(\)\.toLowerCase\(\)/);
 });
 
 test('current runtime snapshot manifest fields and default identities are ABI-catalog owned', () => {

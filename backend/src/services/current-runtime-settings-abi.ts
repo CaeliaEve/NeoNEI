@@ -1,6 +1,7 @@
 /** ControlFS runtime settings ABI catalog consumed by the frontend bootstrap. */
 
 type CurrentRuntimeSettingsEnvKey = 'debugPanels';
+type CurrentRuntimeSettingsEnabledFlagKey = 'one' | 'true';
 type CurrentRuntimeSettingsStaticKey =
   | 'apiBaseUrl'
   | 'runtimeMode'
@@ -13,6 +14,8 @@ type CurrentRuntimeSettingsDescriptor<TKey extends string, TValue> = Readonly<{
   key: TKey;
   value: TValue;
 }>;
+
+export type CurrentRuntimeSettingsEnvironment = Readonly<Record<string, string | undefined>>;
 
 function settingDescriptor<TKey extends string, TValue>(
   key: TKey,
@@ -98,7 +101,18 @@ export const CURRENT_RUNTIME_SETTINGS_ENV_DESCRIPTORS = validateAndFreezeRuntime
 export const CURRENT_RUNTIME_SETTINGS_ENV =
   projectSettingsDescriptorMap(CURRENT_RUNTIME_SETTINGS_ENV_DESCRIPTORS);
 
-export const CURRENT_RUNTIME_ENABLED_FLAG_VALUES = Object.freeze(['1', 'true'] as const);
+export const CURRENT_RUNTIME_ENABLED_FLAG_DESCRIPTORS = validateAndFreezeRuntimeSettingsDescriptors(
+  'current runtime enabled flag',
+  [
+    settingDescriptor('one', '1'),
+    settingDescriptor('true', 'true'),
+  ] as const,
+  ['one', 'true'] as const,
+  requireNonEmptyString('current runtime enabled flag'),
+);
+
+export const CURRENT_RUNTIME_ENABLED_FLAG_VALUES =
+  projectSettingsDescriptorMap(CURRENT_RUNTIME_ENABLED_FLAG_DESCRIPTORS);
 
 export const CURRENT_RUNTIME_SETTINGS_RUNTIME_DESCRIPTORS = validateAndFreezeRuntimeSettingsDescriptors(
   'current runtime settings runtime URL',
@@ -116,30 +130,34 @@ const CURRENT_RUNTIME_SETTINGS_RUNTIME =
 
 export const CURRENT_RUNTIME_SETTINGS_STATIC_DESCRIPTORS =
   validateAndFreezeRuntimeSettingsDescriptors<CurrentRuntimeSettingsStaticKey, string | boolean>(
-  'current runtime settings static',
-  [
-    settingDescriptor('apiBaseUrl', '/api'),
-    settingDescriptor('runtimeMode', 'native'),
-    settingDescriptor('rendererPreference', 'webgpu-first'),
-    settingDescriptor('allowDomGridFallback', false),
-    settingDescriptor('allowPerItemImageHotLoad', false),
-  ] as const,
-  [
-    'apiBaseUrl',
-    'runtimeMode',
-    'rendererPreference',
-    'allowDomGridFallback',
-    'allowPerItemImageHotLoad',
-  ] as const,
-  (descriptor) => {
-    if (typeof descriptor.value === 'string' && !descriptor.value.trim()) {
-      throw new Error(`current runtime settings static descriptor value must be non-empty: ${descriptor.key}`);
-    }
-    if (descriptor.key === 'apiBaseUrl' && typeof descriptor.value === 'string' && !descriptor.value.startsWith('/')) {
-      throw new Error('current runtime settings API base URL must be absolute');
-    }
-  },
-);
+    'current runtime settings static',
+    [
+      settingDescriptor('apiBaseUrl', '/api'),
+      settingDescriptor('runtimeMode', 'native'),
+      settingDescriptor('rendererPreference', 'webgpu-first'),
+      settingDescriptor('allowDomGridFallback', false),
+      settingDescriptor('allowPerItemImageHotLoad', false),
+    ] as const,
+    [
+      'apiBaseUrl',
+      'runtimeMode',
+      'rendererPreference',
+      'allowDomGridFallback',
+      'allowPerItemImageHotLoad',
+    ] as const,
+    (descriptor) => {
+      if (typeof descriptor.value === 'string' && !descriptor.value.trim()) {
+        throw new Error(`current runtime settings static descriptor value must be non-empty: ${descriptor.key}`);
+      }
+      if (
+        descriptor.key === 'apiBaseUrl'
+        && typeof descriptor.value === 'string'
+        && !descriptor.value.startsWith('/')
+      ) {
+        throw new Error('current runtime settings API base URL must be absolute');
+      }
+    },
+  );
 
 const CURRENT_RUNTIME_SETTINGS_STATIC_BASE =
   projectSettingsDescriptorMap(CURRENT_RUNTIME_SETTINGS_STATIC_DESCRIPTORS);
@@ -150,3 +168,21 @@ export const CURRENT_RUNTIME_SETTINGS_STATIC = Object.freeze({
 } as Readonly<Record<CurrentRuntimeSettingsStaticKey, string | boolean>> & Readonly<{
   runtime: Readonly<Record<CurrentRuntimeSettingsRuntimeUrlKey, string>>;
 }>);
+
+export type CurrentRuntimeSettings = typeof CURRENT_RUNTIME_SETTINGS_STATIC & Readonly<{
+  debugPanels: boolean;
+}>;
+
+export function isCurrentRuntimeSettingsEnabledFlag(value: string | undefined): boolean {
+  const normalized = `${value ?? ''}`.trim().toLowerCase();
+  return Object.values(CURRENT_RUNTIME_ENABLED_FLAG_VALUES).some((candidate) => candidate === normalized);
+}
+
+export function resolveCurrentRuntimeSettings(
+  env: CurrentRuntimeSettingsEnvironment,
+): CurrentRuntimeSettings {
+  return Object.freeze({
+    ...CURRENT_RUNTIME_SETTINGS_STATIC,
+    debugPanels: isCurrentRuntimeSettingsEnabledFlag(env[CURRENT_RUNTIME_SETTINGS_ENV.debugPanels]),
+  });
+}
