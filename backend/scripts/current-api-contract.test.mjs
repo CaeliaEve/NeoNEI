@@ -26,6 +26,7 @@ const currentRuntimeReadSource = readBackendSource('src/services/current-runtime
 const currentRuntimeSettingsSource = readBackendSource('src/services/current-runtime-settings.service.ts');
 const currentRuntimeSettingsAbiSource = readBackendSource('src/services/current-runtime-settings-abi.ts');
 const currentRuntimeSpecialDataSource = readBackendSource('src/services/current-runtime-special-data.service.ts');
+const runtimeContractIndexAbiSource = readBackendSource('src/services/runtime-contract-index-abi.ts');
 
 test('current API exposes semantic non-versioned runtime endpoints', () => {
   for (const route of [
@@ -381,15 +382,17 @@ test('v1 runtime contracts advertise ops/admin control diagnostics, not legacy s
   assert.match(v1RegistrySource, /path: '\/runtime\/contracts'/);
   assert.match(v1HandlerSource, /getApiV1RuntimeContractIndex\(\)/);
   assert.doesNotMatch(v1HandlerSource, /control: \{/);
-  assert.match(runtimeContractIndexSource, /RUNTIME_CONTROL_ENDPOINT_KEYS/);
-  assert.match(runtimeContractIndexSource, /validateAndProjectContractMap/);
-  assert.match(runtimeContractIndexSource, /contractMapDescriptor\('patterns', '\/ops\/patterns'\)/);
-  assert.match(runtimeContractIndexSource, /contractMapDescriptor\('publish', '\/ops\/publish'\)/);
-  assert.match(runtimeContractIndexSource, /contractMapDescriptor\('renderContract', '\/ops\/render-contract'\)/);
+  assert.match(runtimeContractIndexSource, /from '\.\/runtime-contract-index-abi'/);
+  assert.match(runtimeContractIndexAbiSource, /RUNTIME_CONTROL_ENDPOINT_KEYS/);
+  assert.match(runtimeContractIndexAbiSource, /validateAndFreezeContractMapDescriptors/);
+  assert.match(runtimeContractIndexAbiSource, /contractMapDescriptor\('patterns', '\/ops\/patterns', 'path'\)/);
+  assert.match(runtimeContractIndexAbiSource, /contractMapDescriptor\('publish', '\/ops\/publish', 'path'\)/);
+  assert.match(runtimeContractIndexAbiSource, /contractMapDescriptor\('renderContract', '\/ops\/render-contract', 'path'\)/);
   assert.doesNotMatch(v1Source, /\/lab\//);
   assert.doesNotMatch(v1RegistrySource, /\/lab\//);
   assert.doesNotMatch(v1HandlerSource, /\/lab\//);
   assert.doesNotMatch(runtimeContractIndexSource, /\/lab\//);
+  assert.doesNotMatch(runtimeContractIndexAbiSource, /\/lab\//);
   assert.doesNotMatch(v1Source, /\/api\/recipes-indexed/);
   assert.doesNotMatch(v1Source, /\/api\/recipe-bootstrap/);
   assert.doesNotMatch(v1RegistrySource, /\/api\/recipes-indexed/);
