@@ -8,23 +8,24 @@ const read = (relativePath) =>
 
 test('backend item image fallback resolves hashed variant siblings and sidecars', () => {
   const source = read('backend/src/routes/static-assets.routes.ts');
+  const registrySource = read('backend/src/routes/static-asset-route-registry.ts');
 
   assert.equal(
-    source.includes('parseRequestedArtifact'),
+    source.includes('resolveImageFamilyArtifact'),
     true,
-    'server fallback should parse requested base artifacts and sidecars before resolving hashed variants',
+    'server fallback should delegate requested base artifacts and sidecars to the shared delivery resolver',
   );
 
   assert.equal(
-    source.includes('variantRegex'),
+    source.includes('createArtifactFallbackRoute(route.family)'),
     true,
-    'server fallback should search sibling hashed artifacts when the base export path is missing',
+    'server fallback should mount image fallbacks from the static asset descriptor catalog',
   );
 
   assert.equal(
-    source.includes("app.get('/images/item/:modId/:fileName', createArtifactFallbackRoute('item'));"),
+    registrySource.includes("path: '/images/item/:modId/:fileName', family: 'item'"),
     true,
-    'item image requests should use the shared artifact fallback resolver',
+    'item image requests should be declared in the shared static asset descriptor catalog',
   );
 });
 

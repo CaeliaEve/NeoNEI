@@ -1,12 +1,6 @@
 import type { Express, NextFunction, Request, Response } from 'express';
 import express from 'express';
 import {
-  CONTRACTS_DIR,
-  IMAGES_PATH,
-  PUBLIC_DIR,
-  PUBLISH_OUTPUT_DIR,
-} from '../config/runtime-paths';
-import {
   resolveImageFamilyArtifact,
   resolvePublishStaticAsset,
   resolveRawStaticAsset,
@@ -14,6 +8,12 @@ import {
   type ImageArtifactFamily,
 } from '../services/static-asset-delivery.service';
 import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
+import {
+  STATIC_ASSET_FALLBACK_ROUTES,
+  STATIC_ASSET_POST_FALLBACK_MOUNTS,
+  STATIC_ASSET_PRE_FALLBACK_MOUNTS,
+  type StaticAssetMountDescriptor,
+} from './static-asset-route-registry';
 
 function createArtifactFallbackRoute(family: ImageArtifactFamily) {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -29,7 +29,7 @@ function createArtifactFallbackRoute(family: ImageArtifactFamily) {
   };
 }
 
-function createRawStaticRoute(rootDir: string, options?: { maxAge?: string; immutable?: boolean }) {
+function createRawStaticRoute(rootDir: string, options?: { maxAge?: string | number; immutable?: boolean }) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
       const delivery = resolveRawStaticAsset(rootDir, req.url);
@@ -51,7 +51,7 @@ function createRawStaticRoute(rootDir: string, options?: { maxAge?: string; immu
   };
 }
 
-function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string; immutable?: boolean }) {
+function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string | number; immutable?: boolean }) {
   return (req: Request, res: Response, next: NextFunction) => {
     try {
       const delivery = resolvePublishStaticAsset({
@@ -95,56 +95,53 @@ function createPublishStaticRoute(rootDir: string, options?: { maxAge?: string; 
 }
 
 export function registerStaticAssetRoutes(app: Express): void {
-  app.use(express.static(PUBLIC_DIR));
-
-  if (staticDirectoryExists(CONTRACTS_DIR)) {
-    app.use(
-      '/contracts',
-      express.static(CONTRACTS_DIR, {
-        maxAge: '1h',
-        etag: true,
-      }),
-    );
+  for (const mount of STATIC_ASSET_PRE_FALLBACK_MOUNTS) {
+    mountStaticAssetSurface(app, mount);
   }
 
-  app.get('/images/item/:modId/:fileName', createArtifactFallbackRoute('item'));
-  app.get('/images/fluid/:modId/:fileName', createArtifactFallbackRoute('fluid'));
-  app.get('/images/entity/:modId/:fileName', createArtifactFallbackRoute('entity'));
-  app.get('/api/images/item/:modId/:fileName', createArtifactFallbackRoute('item'));
-  app.get('/api/images/fluid/:modId/:fileName', createArtifactFallbackRoute('fluid'));
-  app.get('/api/images/entity/:modId/:fileName', createArtifactFallbackRoute('entity'));
+  for (const route of STATIC_ASSET_FALLBACK_ROUTES) {
+    app.get(route.path, createArtifactFallbackRoute(route.family));
+  }
+
+  for (const mount of STATIC_ASSET_POST_FALLBACK_MOUNTS) {
+    mountStaticAssetSurface(app, mount);
+  }
+}
+
+function mountStaticAssetSurface(app: Express, mount: StaticAssetMountDescriptor): void {
+  if (mount.requireExistingDirectory && !staticDirectoryExists(mount.rootDir)) {
+    return;
+  }
+
+  if (mount.kind === 'public-root') {
+    app.use(express.static(mount.rootDir));
+    return;
+  }
+
+  if (mount.kind === 'publish-precompressed') {
+    app.use(
+      requiredMountPath(mount),
+      createPublishStaticRoute(mount.rootDir, {
+        maxAge: mount.cache.maxAge,
+        immutable: mount.cache.immutable,
+      }),
+    );
+    return;
+  }
 
   app.use(
-    '/images',
-    express.static(IMAGES_PATH, {
-      maxAge: '7d',
-      etag: true,
+    requiredMountPath(mount),
+    express.static(mount.rootDir, {
+      maxAge: mount.cache.maxAge,
+      immutable: mount.cache.immutable,
+      etag: mount.cache.etag,
     }),
   );
-  app.use(
-    '/api/images',
-    express.static(IMAGES_PATH, {
-      maxAge: '7d',
-      etag: true,
-    }),
-  );
+}
 
-  app.use(
-    '/publish',
-    createPublishStaticRoute(PUBLISH_OUTPUT_DIR, {
-      maxAge: '365d',
-      immutable: true,
-    }),
-  );
-
-  app.use(
-    '/publish',
-    express.static(PUBLISH_OUTPUT_DIR, {
-      maxAge: '365d',
-      immutable: true,
-      etag: true,
-    }),
-  );
-
-
+function requiredMountPath(mount: StaticAssetMountDescriptor): string {
+  if (!mount.mountPath) {
+    throw new Error(`static asset mount requires an absolute mount path: ${mount.key}`);
+  }
+  return mount.mountPath;
 }
