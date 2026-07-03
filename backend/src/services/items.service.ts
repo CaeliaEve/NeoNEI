@@ -2,7 +2,6 @@ import type Database from 'better-sqlite3';
 import fs from 'fs';
 import path from 'path';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
-import { getNesqlSplitExportService } from './nesql-split-export.service';
 import { IMAGES_PATH } from '../config/runtime-paths';
 import { getBrowserAtlasIndexService } from './browser-atlas-index.service';
 
@@ -92,13 +91,10 @@ type BrowserDefaultEntryRow = ItemRow & {
 
 export interface ItemsServiceOptions {
   databaseManager?: DatabaseManager;
-  splitExportFallback?: boolean;
 }
 
 export class ItemsService {
-  private splitExportService = getNesqlSplitExportService();
   private databaseManager: DatabaseManager;
-  private splitExportFallback: boolean;
   private static itemCache = new Map<string, { value: Item; expiresAt: number }>();
   private static browserCatalogCache = new Map<
     string,
@@ -128,13 +124,6 @@ export class ItemsService {
 
   constructor(options: ItemsServiceOptions = {}) {
     this.databaseManager = options.databaseManager ?? getAccelerationDatabaseManager();
-    this.splitExportFallback = options.splitExportFallback ?? true;
-  }
-
-  private ensureSplitItemsAvailable(): void {
-    if (!this.splitExportService.hasSplitItems()) {
-      throw new Error('Split item export is unavailable');
-    }
   }
 
   private getAccelerationDatabase(): Database.Database | null {
@@ -1368,50 +1357,7 @@ export class ItemsService {
       };
     }
 
-    if (!this.splitExportFallback) {
-      throw new Error('Acceleration item tables are unavailable');
-    }
-
-    this.ensureSplitItemsAvailable();
-
-    if (!normalizedSearch && (!normalizedModId || normalizedModId === 'all')) {
-      const fastPage = this.splitExportService.getItemsPageFast(page, pageSize);
-      const total = fastPage.total ?? 0;
-      return {
-        data: fastPage.items.map((raw) => this.transformSplitItem(raw)),
-        total,
-        page,
-        pageSize,
-        totalPages: Math.max(1, Math.ceil(total / pageSize)),
-      };
-    }
-
-    let items = this.splitExportService
-      .getAllItems({ includeFluids: Boolean(normalizedSearch) })
-      .map((raw) => this.transformSplitItem(raw));
-
-    if (normalizedModId && normalizedModId !== 'all') {
-      items = items.filter((item) => item.modId === normalizedModId);
-    }
-
-    if (normalizedSearch) {
-      items = items.filter((item) =>
-        item.localizedName.toLowerCase().includes(normalizedSearch) ||
-        item.internalName.toLowerCase().includes(normalizedSearch) ||
-        item.itemId.toLowerCase().includes(normalizedSearch),
-      );
-    }
-
-    const total = items.length;
-    const pageItems = items.slice(offset, offset + pageSize);
-
-    return {
-      data: pageItems,
-      total,
-      page,
-      pageSize,
-      totalPages: Math.ceil(total / pageSize),
-    };
+    throw new Error('Acceleration item tables are unavailable');
   }
 
   async getBrowserItems(params: {
@@ -1495,20 +1441,7 @@ export class ItemsService {
       }
     }
 
-    if (!this.splitExportFallback) {
-      return null;
-    }
-
-    this.ensureSplitItemsAvailable();
-
-    const splitItem = this.splitExportService.getItemById(itemId);
-    if (!splitItem) {
-      return null;
-    }
-
-    const item = this.transformSplitItem(splitItem);
-    this.setCachedItem(item);
-    return item;
+    return null;
   }
 
   async getItemsByIds(itemIds: string[]): Promise<Item[]> {
@@ -1555,17 +1488,6 @@ export class ItemsService {
         .all(...missing) as ItemRow[];
       for (const row of rows) {
         const item = this.transformDatabaseItem(row, { trustPreferredImageUrl: true });
-        byId.set(item.itemId, item);
-        this.setCachedItem(item);
-      }
-    }
-
-    const stillMissing = missing.filter((id) => !byId.has(id));
-    if (stillMissing.length > 0 && this.splitExportFallback) {
-      this.ensureSplitItemsAvailable();
-      const splitItems = this.splitExportService.getItemsByIds(stillMissing);
-      for (const raw of splitItems) {
-        const item = this.transformSplitItem(raw);
         byId.set(item.itemId, item);
         this.setCachedItem(item);
       }
@@ -1807,40 +1729,6 @@ export class ItemsService {
       return mods;
     }
 
-    if (!this.splitExportFallback) {
-      throw new Error('Acceleration item tables are unavailable');
-    }
-
-    this.ensureSplitItemsAvailable();
-    const mods = this.splitExportService.getModsFast();
-    this.setCachedMods(mods);
-    return mods;
-  }
-
-  private transformSplitItem(raw: Record<string, unknown>): Item {
-    const item: Item = {
-      itemId: String(raw.itemId ?? raw.id ?? ''),
-      modId: String(raw.modId ?? raw.mod_id ?? ''),
-      internalName: String(raw.internalName ?? raw.internal_name ?? ''),
-      localizedName: String(raw.localizedName ?? raw.localized_name ?? ''),
-      renderAssetRef: typeof raw.renderAssetRef === 'string' ? raw.renderAssetRef : null,
-      preferredImageUrl: typeof raw.preferredImageUrl === 'string' ? raw.preferredImageUrl : null,
-      unlocalizedName: String(raw.unlocalizedName ?? raw.unlocalized_name ?? ''),
-      damage: Number(raw.damage ?? 0),
-      maxStackSize: Number(raw.maxStackSize ?? raw.max_stack_size ?? 64),
-      maxDamage: Number(raw.maxDamage ?? raw.max_damage ?? 0),
-      imageFileName: typeof raw.imageFileName === 'string' ? raw.imageFileName : null,
-      tooltip: typeof raw.tooltip === 'string' ? raw.tooltip : null,
-      searchTerms: typeof raw.searchTerms === 'string' ? raw.searchTerms : null,
-      toolClasses: typeof raw.toolClasses === 'string' ? raw.toolClasses : null,
-      browserGroupKey: typeof raw.browserGroupKey === 'string' ? raw.browserGroupKey : null,
-      browserGroupLabel: typeof raw.browserGroupLabel === 'string' ? raw.browserGroupLabel : null,
-      browserGroupSize:
-        raw.browserGroupSize != null && Number.isFinite(Number(raw.browserGroupSize))
-          ? Number(raw.browserGroupSize)
-          : null,
-    };
-    item.preferredImageUrl = this.resolveUsablePreferredImageUrl(item.preferredImageUrl, item);
-    return item;
+    throw new Error('Acceleration item tables are unavailable');
   }
 }

@@ -86,7 +86,6 @@ test('RecipeBootstrapService returns materialized bootstrap payload from acceler
 
   const service = new RecipeBootstrapService({
     databaseManager: manager,
-    splitExportFallback: false,
   });
 
   const result = await service.getBootstrap('i~Botania~manaResource~4');
@@ -104,7 +103,6 @@ test('RecipeBootstrapService builds bootstrap from indexed services when materia
 
   const service = new RecipeBootstrapService({
     databaseManager: manager,
-    splitExportFallback: false,
     itemsService: {
       getItemById: async (itemId: string) => ({
         itemId,
@@ -233,7 +231,6 @@ test('RecipeBootstrapService tops up materialized bootstrap with eager missing r
 
   const service = new RecipeBootstrapService({
     databaseManager: manager,
-    splitExportFallback: false,
     indexedRecipesService: {
       getRecipesByIds: async (recipeIds: string[]) => {
         requestedRecipeIds.push([...recipeIds]);
@@ -370,7 +367,6 @@ test('RecipeBootstrapService enriches bootstrap recipes with inline ui payloads 
 
   const service = new RecipeBootstrapService({
     databaseManager: manager,
-    splitExportFallback: false,
   });
 
   const result = await service.getBootstrap(itemId);

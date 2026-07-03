@@ -1306,11 +1306,9 @@ export class PublishPayloadMaterializerService {
 
       const itemsService = new ItemsService({
         databaseManager: this.databaseManager,
-        splitExportFallback: false,
       });
       const recipeBootstrapService = new RecipeBootstrapService({
         databaseManager: this.databaseManager,
-        splitExportFallback: false,
       });
       const mods = await itemsService.getMods();
       const firstPageWindow = await itemsService.getBrowserItemsWindow({
@@ -1329,7 +1327,6 @@ export class PublishPayloadMaterializerService {
       if (this.options.includeBrowserSearchPack) {
         const searchService = new ItemsSearchService({
           databaseProvider: () => this.databaseManager.getDatabase(),
-          splitExportFallback: false,
         });
         const rustSearchPack = getRustSearchPackService().readDistDataSearchPack();
         const searchPack = rustSearchPack?.items ?? await searchService.getBrowserSearchPack();

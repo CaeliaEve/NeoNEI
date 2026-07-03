@@ -1,7 +1,6 @@
 import type Database from 'better-sqlite3';
 import { pinyin } from 'pinyin-pro';
 import { getAccelerationDatabaseManager } from '../models/database';
-import { getNesqlSplitExportService } from './nesql-split-export.service';
 
 export interface ItemBasicInfo {
   itemId: string;
@@ -67,7 +66,6 @@ type AccelerationSearchPackRow = {
 
 export interface ItemsSearchServiceOptions {
   databaseProvider?: () => Database.Database | null;
-  splitExportFallback?: boolean;
 }
 
 export function normalizeSearchKeyword(keyword: string): string {
@@ -287,15 +285,11 @@ export function queryAccelerationSearch(
 }
 
 export class ItemsSearchService {
-  private splitExportService = getNesqlSplitExportService();
   private allItemsCache: ItemBasicInfo[] | null = null;
-  private searchIndexCache: SearchIndexEntry[] | null = null;
   private browserSearchPackCache: BrowserSearchPackEntry[] | null = null;
-  private splitExportFallback: boolean;
   private readonly databaseProvider: () => Database.Database | null;
 
   constructor(options: ItemsSearchServiceOptions = {}) {
-    this.splitExportFallback = options.splitExportFallback ?? true;
     this.databaseProvider = options.databaseProvider ?? (() => {
       try {
         return getAccelerationDatabaseManager().getDatabase();
@@ -303,12 +297,6 @@ export class ItemsSearchService {
         return null;
       }
     });
-  }
-
-  private ensureSplitItemsAvailable(): void {
-    if (!this.splitExportService.hasSplitItems()) {
-      throw new Error('Split item export is unavailable');
-    }
   }
 
   private getAccelerationDatabase(): Database.Database | null {
@@ -341,33 +329,8 @@ export class ItemsSearchService {
       return items;
     }
 
-    this.ensureSplitItemsAvailable();
-    const items = this.splitExportService.getAllItems({ includeFluids: true }).map((raw) => ({
-      itemId: String(raw.itemId ?? raw.id ?? ''),
-      localizedName: String(raw.localizedName ?? raw.localized_name ?? ''),
-      modId: String(raw.modId ?? raw.mod_id ?? ''),
-    }));
-    this.allItemsCache = items;
-    return items;
-  }
-
-  private getSearchIndex(): SearchIndexEntry[] {
-    this.ensureSplitItemsAvailable();
-
-    if (this.searchIndexCache) {
-      return this.searchIndexCache;
-    }
-
-    this.searchIndexCache = this.splitExportService.getAllItems({ includeFluids: true }).map((raw) =>
-      buildSearchIndexEntry({
-        itemId: String(raw.itemId ?? raw.id ?? ''),
-        localizedName: String(raw.localizedName ?? raw.localized_name ?? ''),
-        modId: String(raw.modId ?? raw.mod_id ?? ''),
-        internalName: String(raw.internalName ?? raw.internal_name ?? ''),
-        searchTerms: typeof raw.searchTerms === 'string' ? raw.searchTerms : null,
-      }),
-    );
-    return this.searchIndexCache;
+    this.allItemsCache = [];
+    return this.allItemsCache;
   }
 
   async getBrowserSearchPack(): Promise<BrowserSearchPackEntry[]> {
@@ -419,21 +382,7 @@ export class ItemsSearchService {
       return this.browserSearchPackCache;
     }
 
-    this.ensureSplitItemsAvailable();
-    this.browserSearchPackCache = this.getSearchIndex().map((entry, index) => ({
-      itemId: entry.itemId,
-      localizedName: entry.localizedName,
-      modId: entry.modId,
-      normalizedLocalizedName: entry.normalizedLocalizedName,
-      normalizedInternalName: entry.normalizedInternalName,
-      normalizedItemId: entry.normalizedItemId,
-      normalizedSearchTerms: entry.normalizedSearchTerms,
-      pinyinFull: entry.pinyinFull,
-      pinyinAcronym: entry.pinyinAcronym,
-      aliases: '',
-      popularityScore: 0,
-      searchRank: index,
-    }));
+    this.browserSearchPackCache = [];
     return this.browserSearchPackCache;
   }
 
@@ -448,18 +397,10 @@ export class ItemsSearchService {
       const accelerated = queryAccelerationSearch(db, trimmed, limit, {
         browserOnly: false,
       });
-      if (accelerated.length > 0) {
-        return accelerated;
-      }
+      return accelerated;
     }
 
-    this.ensureSplitItemsAvailable();
-
-    const normalized = normalizeSearchKeyword(trimmed);
-    return this.getSearchIndex()
-      .filter((item) => matchesIndexedItem(item, normalized))
-      .slice(0, Math.min(Math.max(Number.isFinite(limit) ? limit : 100, 1), 500))
-      .map(({ itemId, localizedName, modId }) => ({ itemId, localizedName, modId }));
+    return [];
   }
 
   async getItemsPaginated(page: number = 1, pageSize: number = 50, modId?: string): Promise<{
@@ -515,27 +456,12 @@ export class ItemsSearchService {
       };
     }
 
-    this.ensureSplitItemsAvailable();
-
-    let items = this.splitExportService.getAllItems({ includeFluids: true }).map((raw) => ({
-      itemId: String(raw.itemId ?? raw.id ?? ''),
-      localizedName: String(raw.localizedName ?? raw.localized_name ?? ''),
-      modId: String(raw.modId ?? raw.mod_id ?? ''),
-    }));
-
-    if (normalizedModId) {
-      items = items.filter((item) => item.modId === normalizedModId);
-    }
-
-    const total = items.length;
-    const pageItems = items.slice(offset, offset + safePageSize);
-
     return {
-      items: pageItems,
-      total,
+      items: [],
+      total: 0,
       page: safePage,
       pageSize: safePageSize,
-      totalPages: Math.ceil(total / safePageSize),
+      totalPages: 1,
     };
   }
 }
@@ -544,7 +470,7 @@ let itemsSearchServiceInstance: ItemsSearchService | null = null;
 
 export function getItemsSearchService(): ItemsSearchService {
   if (!itemsSearchServiceInstance) {
-    itemsSearchServiceInstance = new ItemsSearchService({ splitExportFallback: false });
+    itemsSearchServiceInstance = new ItemsSearchService();
   }
   return itemsSearchServiceInstance;
 }

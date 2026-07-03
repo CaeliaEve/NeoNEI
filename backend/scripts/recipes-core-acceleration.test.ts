@@ -59,7 +59,6 @@ test('IndexedRecipesService reads recipe by id and machine from materialized rec
 
   const service = new IndexedRecipesService({
     databaseManager: manager,
-    splitExportFallback: false,
   });
 
   const byId = await service.getRecipeById(recipe.id);

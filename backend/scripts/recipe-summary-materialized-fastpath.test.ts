@@ -73,7 +73,6 @@ test('IndexedRecipesService hydrates missing summary groups from materialized re
 
   const service = new IndexedRecipesService({
     databaseManager: manager,
-    splitExportFallback: false,
   });
 
   const hydrated = await service.getItemRecipeSummary(itemId);
@@ -158,7 +157,6 @@ test('IndexedRecipesService returns paged machine/category packs with ordered re
 
   const service = new IndexedRecipesService({
     databaseManager: manager,
-    splitExportFallback: false,
   });
 
   const pack = await service.getUsedInRecipePackForMachineGroup(itemId, 'Crafting (Shaped)', null, {

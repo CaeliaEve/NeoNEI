@@ -2,8 +2,6 @@ import { logger } from '../utils/logger';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import { getMachineIconItem } from './machine-icon-mapping.service';
 import { getItemsSearchService, type ItemBasicInfo, type ItemsSearchService } from './items-search.service';
-import { getNesqlSplitExportService } from './nesql-split-export.service';
-import { transformRecipeMetadata } from './recipe-metadata';
 import {
   buildRecipeCategorySummaries,
   describeRecipeCategory,
@@ -214,6 +212,10 @@ type MaterializedSummaryRow = {
   summary_payload: string | null;
 };
 
+type MaterializedItemNameRow = {
+  localized_name: string | null;
+};
+
 type MaterializedMachineGroupRow = {
   relation_type: string | null;
   machine_key: string;
@@ -256,7 +258,6 @@ type UiPayloadRow = {
 
 export interface IndexedRecipesServiceOptions {
   databaseManager?: DatabaseManager;
-  splitExportFallback?: boolean;
   itemsSearchService?: Pick<ItemsSearchService, 'searchItems'>;
 }
 
@@ -311,10 +312,11 @@ function normalizeCategoryGroups(categoryGroups: RecipeCategorySummary[]): Recip
       const machineSource = `${group.machineKey ?? ''}`.trim()
         ? `${group.machineKey ?? ''}`.trim().split('::')[0]
         : `${group.name ?? ''}`.trim();
-      const machineType = normalizeMachineFamilyName(machineSource);
-      if (!machineType) continue;
+      const displayMachineType = `${group.name ?? ''}`.trim() || machineSource;
+      const normalizedMachineType = normalizeMachineFamilyName(displayMachineType);
+      if (!displayMachineType && !normalizedMachineType) continue;
       const voltageTier = group.voltageTier ?? null;
-      const machineKey = `${machineType}::${voltageTier ?? ''}`;
+      const machineKey = `${group.machineKey ?? ''}`.trim() || `${normalizedMachineType}::${voltageTier ?? ''}`;
       const categoryKey = `machine:${machineKey}`;
       const existing = merged.get(categoryKey);
       if (existing) {
@@ -323,12 +325,15 @@ function normalizeCategoryGroups(categoryGroups: RecipeCategorySummary[]): Recip
       }
       merged.set(categoryKey, {
         ...group,
-        name: machineType,
-        recipeType: machineType,
+        name: displayMachineType || normalizedMachineType,
+        recipeType: `${group.recipeType ?? ''}`.trim() || displayMachineType || normalizedMachineType,
         categoryKey,
         machineKey,
         voltageTier,
-        machineIcon: group.machineIcon ?? getMachineIconItem(machineType) ?? null,
+        machineIcon: group.machineIcon
+          ?? getMachineIconItem(displayMachineType)
+          ?? getMachineIconItem(normalizedMachineType)
+          ?? null,
       });
       continue;
     }
@@ -358,8 +363,9 @@ function normalizeMachineGroups(groups: MachineGroupSummary[]): MachineGroupSumm
   const merged = new Map<string, MachineGroupSummary>();
 
   for (const group of groups) {
-    const normalizedMachineType = normalizeMachineFamilyName(group.machineType);
-    const key = `${normalizedMachineType}::${group.voltageTier ?? ''}`;
+    const displayMachineType = `${group.machineType ?? ''}`.trim();
+    const normalizedMachineType = normalizeMachineFamilyName(displayMachineType);
+    const key = `${group.machineKey ?? ''}`.trim() || `${normalizedMachineType}::${group.voltageTier ?? ''}`;
     const existing = merged.get(key);
     if (existing) {
       existing.recipeCount += group.recipeCount;
@@ -368,9 +374,12 @@ function normalizeMachineGroups(groups: MachineGroupSummary[]): MachineGroupSumm
 
     merged.set(key, {
       ...group,
-      machineType: normalizedMachineType,
-      machineKey: `${normalizedMachineType}::${group.voltageTier ?? ''}`,
-      machineIcon: group.machineIcon ?? getMachineIconItem(normalizedMachineType) ?? null,
+      machineType: displayMachineType || normalizedMachineType,
+      machineKey: key,
+      machineIcon: group.machineIcon
+        ?? getMachineIconItem(displayMachineType)
+        ?? getMachineIconItem(normalizedMachineType)
+        ?? null,
     });
   }
 
@@ -467,7 +476,7 @@ function shouldProjectMachineGroupsToCategorySummaries(
 function projectMachineGroupsToCategorySummaries(machineGroups: MachineGroupSummary[]): RecipeCategorySummary[] {
   return machineGroups.map((group) => {
     const machineKey = toMachineGroupKey(group);
-    const machineType = normalizeMachineFamilyName(group.machineType);
+    const machineType = `${group.machineType ?? ''}`.trim() || normalizeMachineFamilyName(group.machineType);
     return {
       type: 'machine',
       name: machineType,
@@ -476,7 +485,10 @@ function projectMachineGroupsToCategorySummaries(machineGroups: MachineGroupSumm
       categoryKey: `machine:${machineKey}`,
       machineKey,
       voltageTier: group.voltageTier ?? null,
-      machineIcon: group.machineIcon ?? getMachineIconItem(machineType) ?? null,
+      machineIcon: group.machineIcon
+        ?? getMachineIconItem(machineType)
+        ?? getMachineIconItem(normalizeMachineFamilyName(machineType))
+        ?? null,
     };
   });
 }
@@ -534,26 +546,23 @@ function chunkStrings(values: string[], maxChunkSize: number): string[][] {
   return chunks;
 }
 
-function stableSerializeRecipeValue(value: unknown): string {
-  if (value == null) return 'null';
-  if (typeof value === 'string') return JSON.stringify(value);
-  if (typeof value === 'number' || typeof value === 'boolean') return JSON.stringify(value);
-  if (Array.isArray(value)) {
-    return `[${value.map((entry) => stableSerializeRecipeValue(entry)).join(',')}]`;
+function dedupeRecipeIdsPreserveOrder(recipeIds: string[]): string[] {
+  const deduped: string[] = [];
+  const seen = new Set<string>();
+  for (const recipeId of recipeIds) {
+    const normalizedRecipeId = `${recipeId ?? ''}`.trim();
+    if (!normalizedRecipeId || seen.has(normalizedRecipeId)) {
+      continue;
+    }
+    seen.add(normalizedRecipeId);
+    deduped.push(normalizedRecipeId);
   }
-  if (typeof value === 'object') {
-    const record = value as Record<string, unknown>;
-    const keys = Object.keys(record).sort();
-    return `{${keys.map((key) => `${JSON.stringify(key)}:${stableSerializeRecipeValue(record[key])}`).join(',')}}`;
-  }
-  return JSON.stringify(String(value));
+  return deduped;
 }
 
 export class IndexedRecipesService {
   private databaseManager: DatabaseManager;
-  private splitExportFallback: boolean;
   private itemsSearchService: Pick<ItemsSearchService, 'searchItems'>;
-  private splitExportService = getNesqlSplitExportService();
   private readonly indexCacheTtlMs = Number(process.env.RECIPE_INDEX_CACHE_TTL_MS || 15_000);
   private readonly machineTypesCacheTtlMs = Number(process.env.MACHINE_TYPES_CACHE_TTL_MS || 60_000);
   private readonly summaryCacheTtlMs = Number(process.env.RECIPE_SUMMARY_CACHE_TTL_MS || 10_000);
@@ -569,14 +578,7 @@ export class IndexedRecipesService {
 
   constructor(options: IndexedRecipesServiceOptions = {}) {
     this.databaseManager = options.databaseManager ?? getAccelerationDatabaseManager();
-    this.splitExportFallback = options.splitExportFallback ?? true;
     this.itemsSearchService = options.itemsSearchService ?? getItemsSearchService();
-  }
-
-  private ensureSplitRecipesAvailable(): void {
-    if (!this.splitExportService.hasSplitRecipes()) {
-      throw new Error('Split recipe export is unavailable');
-    }
   }
 
   private getAccelerationDatabase() {
@@ -635,6 +637,18 @@ export class IndexedRecipesService {
         .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'recipe_summary_compact'")
         .get() as { name?: string } | undefined;
       return row?.name === 'recipe_summary_compact';
+    } catch {
+      return false;
+    }
+  }
+
+  private canUseItemsCore(db: ReturnType<IndexedRecipesService['getAccelerationDatabase']>): db is NonNullable<ReturnType<IndexedRecipesService['getAccelerationDatabase']>> {
+    if (!db) return false;
+    try {
+      const row = db
+        .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'items_core'")
+        .get() as { name?: string } | undefined;
+      return row?.name === 'items_core';
     } catch {
       return false;
     }
@@ -866,11 +880,6 @@ export class IndexedRecipesService {
         WHERE item_id = ? AND relation_type = ?
         ORDER BY slot_index ASC, recipe_id ASC
       `).all(itemId, relationType) as Array<{ recipe_id: string }>).map((row) => row.recipe_id);
-    } else {
-      this.ensureSplitRecipesAvailable();
-      recipeIds = column === 'produced_by_recipes'
-        ? this.splitExportService.getProducedByRecipeIds(itemId)
-        : this.splitExportService.getUsedInRecipeIds(itemId);
     }
 
     this.recipeIndexCache.set(key, {
@@ -988,7 +997,7 @@ export class IndexedRecipesService {
       const rawMachineType = rawMachineKey.includes('::')
         ? rawMachineKey.slice(0, rawMachineKey.lastIndexOf('::'))
         : rawMachineKey;
-      const machineType = normalizeMachineFamilyName(rawMachineType);
+      const machineType = rawMachineType;
       if (!machineType) {
         continue;
       }
@@ -1001,7 +1010,7 @@ export class IndexedRecipesService {
         voltage: null,
         recipeCount: Math.max(0, Number(row.recipe_count ?? 0)),
         machineKey: `${machineType}::${voltageTier ?? ''}`,
-        machineIcon: getMachineIconItem(machineType) ?? null,
+        machineIcon: getMachineIconItem(machineType) ?? getMachineIconItem(normalizeMachineFamilyName(machineType)) ?? null,
       });
     }
 
@@ -1179,7 +1188,7 @@ export class IndexedRecipesService {
         continue;
       }
 
-      const machineType = normalizeMachineFamilyName(rawMachineType);
+      const machineType = rawMachineType;
       const voltageTier = `${row.voltage_tier ?? ''}`.trim() || null;
       const recipeCount = Math.max(0, Number(descriptors.occurrences.get(row.recipe_id) ?? 0));
       if (!machineType || recipeCount <= 0) {
@@ -1200,7 +1209,7 @@ export class IndexedRecipesService {
         voltage: null,
         recipeCount,
         machineKey,
-        machineIcon: getMachineIconItem(machineType) ?? null,
+        machineIcon: getMachineIconItem(machineType) ?? getMachineIconItem(normalizeMachineFamilyName(machineType)) ?? null,
       });
     }
 
@@ -1221,13 +1230,39 @@ export class IndexedRecipesService {
         continue;
       }
 
-      const descriptor = describeRecipeCategory({
-        recipeType: `${row.recipe_type ?? ''}`.trim(),
+      const recipeType = `${row.recipe_type ?? ''}`.trim();
+      const rawMachineType = `${row.machine_type ?? ''}`.trim();
+      const voltageTier = `${row.voltage_tier ?? ''}`.trim() || null;
+      let descriptor = describeRecipeCategory({
+        recipeType,
         machineInfo: {
-          machineType: `${row.machine_type ?? ''}`.trim(),
-          parsedVoltageTier: `${row.voltage_tier ?? ''}`.trim() || null,
+          machineType: rawMachineType,
+          parsedVoltageTier: voltageTier,
         },
       });
+      const lowerRecipeType = recipeType.toLowerCase();
+      const lowerMachineType = rawMachineType.toLowerCase();
+      const isExplicitNonCraftingMachine =
+        rawMachineType
+        && !lowerRecipeType.includes('crafting')
+        && !lowerRecipeType.includes('shaped')
+        && !lowerRecipeType.includes('shapeless')
+        && !lowerMachineType.includes('crafting');
+      if (descriptor.type === 'crafting' && isExplicitNonCraftingMachine) {
+        const machineKey = `${rawMachineType}::${voltageTier ?? ''}`;
+        descriptor = {
+          type: 'machine',
+          name: rawMachineType,
+          recipeType: recipeType || rawMachineType,
+          recipeCount: 1,
+          categoryKey: `machine:${machineKey}`,
+          machineKey,
+          voltageTier,
+          machineIcon: getMachineIconItem(rawMachineType)
+            ?? getMachineIconItem(normalizeMachineFamilyName(rawMachineType))
+            ?? null,
+        };
+      }
       const existing = groups.get(descriptor.categoryKey);
       if (existing) {
         existing.recipeCount += recipeCount;
@@ -1275,7 +1310,10 @@ export class IndexedRecipesService {
 
         return machineAliases.has(rowMachineType) || machineAliases.has(normalizeMachineFamilyName(rowMachineType));
       })
-      .map((row) => row.recipe_id);
+      .flatMap((row) => {
+        const occurrenceCount = Math.max(1, Math.floor(Number(descriptors.occurrences.get(row.recipe_id) ?? 1)));
+        return Array.from({ length: occurrenceCount }, () => row.recipe_id);
+      });
   }
 
   private getRecipeIdsForCategoryGroupFromDescriptors(
@@ -1383,16 +1421,6 @@ export class IndexedRecipesService {
     return recipe;
   }
 
-  private transformAndCacheSplitRecipe(raw: unknown): IndexedRecipe {
-    const value = (raw ?? {}) as Record<string, unknown>;
-    const recipeId = String(value.id ?? value.recipeId ?? '');
-    const cached = recipeId ? this.getCachedTransformedRecipe(recipeId) : null;
-    if (cached) {
-      return cached;
-    }
-    return this.setCachedTransformedRecipe(this.transformSplitRecipe(raw));
-  }
-
   private normalizeRecipeMachineIcon(recipe: IndexedRecipe): IndexedRecipe {
     const machineType = recipe.machineInfo?.machineType?.trim();
     if (!machineType) {
@@ -1436,7 +1464,8 @@ export class IndexedRecipesService {
   }
 
   async getRecipeById(recipeId: string): Promise<IndexedRecipe | null> {
-    const db = this.getAccelerationDatabase();    if (this.canUseMaterializedRecipesCore(db)) {
+    const db = this.getAccelerationDatabase();
+    if (this.canUseMaterializedRecipesCore(db)) {
       const row = db
         .prepare('SELECT payload FROM recipes_core WHERE recipe_id = ?')
         .get(recipeId) as MaterializedRecipeCoreRow | undefined;
@@ -1447,17 +1476,7 @@ export class IndexedRecipesService {
       }
     }
 
-    if (!this.splitExportFallback) {
-      return null;
-    }
-
-    this.ensureSplitRecipesAvailable();
-    const cached = this.getCachedTransformedRecipe(recipeId);
-    if (cached) {
-      return cached;
-    }
-    const splitRecipe = this.splitExportService.getRecipeById(recipeId);
-    return splitRecipe ? this.transformAndCacheSplitRecipe(splitRecipe) : null;
+    return null;
   }
 
   async getRecipesByIds(recipeIds: string[]): Promise<IndexedRecipe[]> {
@@ -1492,102 +1511,11 @@ export class IndexedRecipesService {
         }
       }
 
-      const stillMissingIds = missingIds.filter((recipeId) => !cachedRecipes.has(recipeId));
-      if (stillMissingIds.length > 0 && this.splitExportFallback) {
-        this.ensureSplitRecipesAvailable();
-        for (const raw of this.splitExportService.getRecipesByIds(stillMissingIds)) {
-          const transformed = this.transformAndCacheSplitRecipe(raw);
-          cachedRecipes.set(transformed.id, transformed);
-        }
-      }
     }
 
     return this.attachUiPayloadsToRecipes(normalizedIds
       .map((recipeId) => cachedRecipes.get(recipeId))
       .filter((recipe): recipe is IndexedRecipe => Boolean(recipe)));
-  }
-
-  private buildCanonicalMachineGroupRecipeSignature(recipe: IndexedRecipe): string {
-    const flattenInputGroups = (inputs: IndexedRecipe['inputs']): IndexedItemGroup[] => {
-      const flattened: IndexedItemGroup[] = [];
-      for (const entry of inputs ?? []) {
-        if (Array.isArray(entry)) {
-          flattened.push(...entry);
-          continue;
-        }
-        flattened.push(entry);
-      }
-      return flattened;
-    };
-
-    const normalizedInputs = flattenInputGroups(recipe.inputs ?? []).map((group) => ({
-      slotIndex: Number(group.slotIndex ?? 0),
-      isOreDictionary: Boolean(group.isOreDictionary),
-      oreDictName: group.oreDictName ?? null,
-      items: (group.items ?? []).map((entry: IndexedItemStack) => ({
-        itemId: entry.item?.itemId ?? '',
-        stackSize: Number(entry.stackSize ?? 0),
-        probability: Number(entry.probability ?? 0),
-      })),
-    }));
-    const normalizedOutputs = (recipe.outputs ?? []).map((entry) => ({
-      itemId: entry.item?.itemId ?? '',
-      stackSize: Number(entry.stackSize ?? 0),
-      probability: Number(entry.probability ?? 0),
-    }));
-    const normalizedFluidInputs = (recipe.fluidInputs ?? []).map((group) => ({
-      slotIndex: Number(group.slotIndex ?? 0),
-      fluids: (group.fluids ?? []).map((entry: IndexedFluidStack) => ({
-        fluidId: entry.fluid?.fluidId ?? '',
-        amount: Number(entry.amount ?? 0),
-        probability: Number(entry.probability ?? 0),
-      })),
-    }));
-    const normalizedFluidOutputs = (recipe.fluidOutputs ?? []).map((entry) => ({
-      fluidId: entry.fluid?.fluidId ?? '',
-      amount: Number(entry.amount ?? 0),
-      probability: Number(entry.probability ?? 0),
-    }));
-
-    return stableSerializeRecipeValue({
-      inputs: normalizedInputs,
-      outputs: normalizedOutputs,
-      fluidInputs: normalizedFluidInputs,
-      fluidOutputs: normalizedFluidOutputs,
-    });
-  }
-
-  private async dedupeMachineAliasRecipeIds(recipeIds: string[]): Promise<string[]> {
-    const normalizedIds = Array.from(new Set(recipeIds.map((recipeId) => recipeId.trim()).filter(Boolean)));
-    if (normalizedIds.length <= 1) {
-      return normalizedIds;
-    }
-
-    const recipes = await this.getRecipesByIds(normalizedIds);
-    const recipeById = new Map(recipes.map((recipe) => [recipe.id, recipe] as const));
-    const dedupedRecipeIds: string[] = [];
-    const seenSignatures = new Set<string>();
-
-    for (const recipeId of normalizedIds) {
-      const recipe = recipeById.get(recipeId);
-      if (!recipe) {
-        if (!seenSignatures.has(`missing:${recipeId}`)) {
-          seenSignatures.add(`missing:${recipeId}`);
-          dedupedRecipeIds.push(recipeId);
-        }
-        continue;
-      }
-
-      const signature = this.buildCanonicalMachineGroupRecipeSignature(recipe);
-      if (seenSignatures.has(signature)) {
-        continue;
-      }
-
-      seenSignatures.add(signature);
-      dedupedRecipeIds.push(recipeId);
-    }
-
-    return dedupedRecipeIds;
   }
 
   private async reconcileMachineGroupSummaryCounts(
@@ -1606,6 +1534,7 @@ export class IndexedRecipesService {
         relationType,
         group.machineType,
         group.voltageTier ?? null,
+        { preserveOccurrences: true },
       );
       reconciledGroups.push({
         ...group,
@@ -1663,6 +1592,7 @@ export class IndexedRecipesService {
     relationType: RecipeRelationType,
     machineType: string,
     voltageTier?: string | null,
+    options?: { preserveOccurrences?: boolean },
   ): Promise<string[]> {
     const normalizedItemId = itemId.trim();
     const normalizedMachineType = normalizeMachineFamilyName(machineType);
@@ -1675,7 +1605,9 @@ export class IndexedRecipesService {
       normalizedVoltageTier,
     );
     if (materializedRecipeIds && materializedRecipeIds.length > 0) {
-      return this.dedupeMachineAliasRecipeIds(materializedRecipeIds);
+      return options?.preserveOccurrences
+        ? materializedRecipeIds.map((recipeId) => `${recipeId ?? ''}`.trim()).filter(Boolean)
+        : dedupeRecipeIdsPreserveOrder(materializedRecipeIds);
     }
 
     const descriptorMatchedRecipeIds = this.getRecipeIdsForMachineGroupFromDescriptors(
@@ -1685,7 +1617,9 @@ export class IndexedRecipesService {
       normalizedVoltageTier,
     );
     if (descriptorMatchedRecipeIds && descriptorMatchedRecipeIds.length > 0) {
-      return this.dedupeMachineAliasRecipeIds(descriptorMatchedRecipeIds);
+      return options?.preserveOccurrences
+        ? descriptorMatchedRecipeIds.map((recipeId) => `${recipeId ?? ''}`.trim()).filter(Boolean)
+        : dedupeRecipeIdsPreserveOrder(descriptorMatchedRecipeIds);
     }
 
     const groupedRecipes = relationType === 'produced_by'
@@ -1702,7 +1636,7 @@ export class IndexedRecipesService {
         return recipeVoltageTier === normalizedVoltageTier;
       })
       .map((recipe) => recipe.id);
-    return this.dedupeMachineAliasRecipeIds(matchedRecipeIds);
+    return dedupeRecipeIdsPreserveOrder(matchedRecipeIds);
   }
 
   private async getOrderedRecipeIdsForCategoryGroup(
@@ -2132,56 +2066,10 @@ export class IndexedRecipesService {
       }
     }
 
-    if (!this.splitExportFallback) {
-      const error = new Error('Item not found') as Error & { statusCode?: number; code?: string };
-      error.statusCode = 404;
-      error.code = 'NOT_FOUND';
-      throw error;
-    }
-
-    this.ensureSplitRecipesAvailable();
-
-    const splitItem = this.splitExportService.getItemById(normalizedItemId);
-    if (!splitItem) {
-      const error = new Error('Item not found') as Error & { statusCode?: number; code?: string };
-      error.statusCode = 404;
-      error.code = 'NOT_FOUND';
-      throw error;
-    }
-
-    const producedByRecipeIds = this.getCachedIndexRecipeIds(normalizedItemId, 'produced_by_recipes');
-    const usedInRecipeIds = this.getCachedIndexRecipeIds(normalizedItemId, 'used_in_recipes');
-    const producedBy = producedByRecipeIds.length > 0
-      ? await this.getCraftingRecipesForItem(normalizedItemId)
-      : [];
-    const usedIn = usedInRecipeIds.length > 0
-      ? await this.getUsageRecipesForItem(normalizedItemId)
-      : [];
-    const producedByMachineGroups = this.toSummaryMachineGroups(this.groupRecipesByMachine(producedBy));
-    const usedInMachineGroups = this.toSummaryMachineGroups(this.groupRecipesByMachine(usedIn));
-    const producedByCategoryGroups = buildRecipeCategorySummaries(producedBy);
-    const usedInCategoryGroups = buildRecipeCategorySummaries(usedIn);
-
-    const summary: ItemRecipeSummaryResponse = {
-      itemId: String(splitItem.itemId ?? normalizedItemId),
-      itemName: String(splitItem.localizedName ?? splitItem.localized_name ?? ''),
-      counts: {
-        producedBy: producedByRecipeIds.length,
-        usedIn: usedInRecipeIds.length,
-        machineGroups: producedByMachineGroups.length,
-      },
-      machineGroups: producedByMachineGroups,
-      producedByMachineGroups,
-      usedInMachineGroups,
-      producedByCategoryGroups,
-      usedInCategoryGroups,
-    };
-
-    this.recipeSummaryCache.set(normalizedItemId, {
-      expiresAt: now + this.summaryCacheTtlMs,
-      value: normalizeItemRecipeSummary(summary),
-    });
-    return normalizeItemRecipeSummary(summary);
+    const error = new Error('Item not found') as Error & { statusCode?: number; code?: string };
+    error.statusCode = 404;
+    error.code = 'NOT_FOUND';
+    throw error;
   }
 
   private groupRecipesByMachine(recipes: IndexedRecipe[]): MachineOption[] {
@@ -2323,20 +2211,77 @@ export class IndexedRecipesService {
     });
   }
 
+  private getMaterializedItemName(itemId: string): string | null {
+    const normalizedItemId = `${itemId ?? ''}`.trim();
+    if (!normalizedItemId) {
+      return null;
+    }
+
+    const db = this.getAccelerationDatabase();
+    if (this.canUseMaterializedSummary(db)) {
+      const summaryRow = db
+        .prepare('SELECT summary_payload FROM recipe_summary_compact WHERE item_id = ?')
+        .get(normalizedItemId) as MaterializedSummaryRow | undefined;
+      if (summaryRow?.summary_payload) {
+        try {
+          const summary = JSON.parse(summaryRow.summary_payload) as { itemName?: unknown };
+          const itemName = `${summary.itemName ?? ''}`.trim();
+          if (itemName) {
+            return itemName;
+          }
+        } catch {
+          // Ignore malformed optional summary payloads; items_core remains authoritative.
+        }
+      }
+    }
+
+    const bootstrapRow = this.getMaterializedBootstrapRow(normalizedItemId);
+    if (bootstrapRow?.summary_payload) {
+      try {
+        const payload = JSON.parse(bootstrapRow.summary_payload) as {
+          item?: { localizedName?: unknown };
+          indexedSummary?: { itemName?: unknown };
+        };
+        const summaryName = `${payload.indexedSummary?.itemName ?? ''}`.trim();
+        if (summaryName) {
+          return summaryName;
+        }
+        const itemName = `${payload.item?.localizedName ?? ''}`.trim();
+        if (itemName) {
+          return itemName;
+        }
+      } catch {
+        // Ignore malformed optional bootstrap payloads; items_core remains authoritative.
+      }
+    }
+
+    if (this.canUseItemsCore(db)) {
+      const row = db
+        .prepare('SELECT localized_name FROM items_core WHERE item_id = ?')
+        .get(normalizedItemId) as MaterializedItemNameRow | undefined;
+      const itemName = `${row?.localized_name ?? ''}`.trim();
+      if (itemName) {
+        return itemName;
+      }
+    }
+
+    return null;
+  }
+
   async getMachinesForItem(itemId: string): Promise<ItemMachinesResponse> {
-    this.ensureSplitRecipesAvailable();
-    const splitItem = this.splitExportService.getItemById(itemId);
-    if (!splitItem) {
+    const normalizedItemId = `${itemId ?? ''}`.trim();
+    const itemName = this.getMaterializedItemName(normalizedItemId);
+    if (!itemName) {
       const error = new Error('Item not found') as Error & { statusCode?: number; code?: string };
       error.statusCode = 404;
       error.code = 'NOT_FOUND';
       throw error;
     }
 
-    const recipes = await this.getCraftingRecipesForItem(itemId);
+    const recipes = await this.getCraftingRecipesForItem(normalizedItemId);
     return {
-      itemId,
-      itemName: String(splitItem.localizedName ?? splitItem.localized_name ?? ''),
+      itemId: normalizedItemId,
+      itemName,
       machines: this.groupRecipesByMachine(recipes),
     };
   }
@@ -2384,33 +2329,7 @@ export class IndexedRecipesService {
       return this.setCachedRecipeCollection(cacheKey, recipes);
     }
 
-    if (!this.splitExportFallback) {
-      return [];
-    }
-
-    this.ensureSplitRecipesAvailable();
-
-    const startedAt = Date.now();
-    const recipeMap = new Map<string, IndexedRecipe>();
-    for (const alias of machineAliases) {
-      const aliasRecipes = this.splitExportService
-        .getRecipesByMachine(alias, normalizedVoltageTier)
-        .map((raw) => this.transformAndCacheSplitRecipe(raw))
-        .filter((recipe) => Boolean(recipe.machineInfo?.machineType?.trim()));
-      for (const recipe of aliasRecipes) {
-        recipeMap.set(recipe.id, recipe);
-      }
-    }
-    const recipes = Array.from(recipeMap.values());
-
-    logger.info('[RECIPES_INDEXED] getRecipesByMachine(split-only)', {
-      machineType: normalizedMachineType,
-      aliases: machineAliases,
-      voltageTier: normalizedVoltageTier || null,
-      recipeCount: recipes.length,
-      durationMs: Date.now() - startedAt,
-    });
-    return this.setCachedRecipeCollection(cacheKey, recipes);
+    return this.setCachedRecipeCollection(cacheKey, []);
   }
 
   async getAllMachineTypes(): Promise<string[]> {
@@ -2435,18 +2354,11 @@ export class IndexedRecipesService {
       return machineTypes;
     }
 
-    if (!this.splitExportFallback) {
-      return [];
-    }
-
-    this.ensureSplitRecipesAvailable();
-
-    const machineTypes = this.splitExportService.getAllMachineTypes();
     this.machineTypesCache = {
       expiresAt: now + this.machineTypesCacheTtlMs,
-      value: machineTypes,
+      value: [],
     };
-    return machineTypes;
+    return this.machineTypesCache.value;
   }
 
   private injectBotaniaFallbacks(itemId: string, recipes: IndexedRecipe[]): IndexedRecipe[] {
@@ -2552,129 +2464,13 @@ export class IndexedRecipesService {
     };
   }
 
-  private transformSplitIndexedItem(raw: unknown): IndexedItem {
-    const value = (raw ?? {}) as Record<string, unknown>;
-    return {
-      itemId: String(value.itemId ?? ''),
-      modId: String(value.modId ?? value.mod_id ?? ''),
-      internalName: String(value.internalName ?? value.internal_name ?? ''),
-      localizedName: String(value.localizedName ?? value.localized_name ?? ''),
-      renderAssetRef: typeof value.renderAssetRef === 'string' ? value.renderAssetRef : null,
-      damage: Number(value.damage ?? 0),
-      stackSize: Number(value.stackSize ?? value.maxStackSize ?? 1),
-      maxStackSize: Number(value.maxStackSize ?? value.stackSize ?? 1),
-      maxDamage: Number(value.maxDamage ?? 0),
-      nbt: typeof value.nbt === 'string' ? value.nbt : null,
-      imageFileName: typeof value.imageFileName === 'string' ? value.imageFileName : null,
-      tooltip: typeof value.tooltip === 'string' ? value.tooltip : null,
-    };
-  }
-
-  private transformSplitItemStack(raw: unknown): IndexedItemStack {
-    const value = (raw ?? {}) as Record<string, unknown>;
-    return {
-      item: this.transformSplitIndexedItem(value.item),
-      stackSize: Number(value.stackSize ?? 1),
-      probability: Number(value.probability ?? 1),
-    };
-  }
-
-  private transformSplitItemGroup(raw: unknown): IndexedItemGroup {
-    const value = (raw ?? {}) as Record<string, unknown>;
-    const items = Array.isArray(value.items) ? value.items.map((entry) => this.transformSplitItemStack(entry)) : [];
-    return {
-      slotIndex: Number(value.slotIndex ?? 0),
-      items,
-      isOreDictionary: Boolean(value.isOreDictionary),
-      oreDictName: typeof value.oreDictName === 'string' ? value.oreDictName : null,
-    };
-  }
-
-  private transformSplitFluid(raw: unknown): IndexedFluid {
-    const value = (raw ?? {}) as Record<string, unknown>;
-    return {
-      fluidId: String(value.fluidId ?? ''),
-      modId: String(value.modId ?? value.mod_id ?? ''),
-      internalName: String(value.internalName ?? value.internal_name ?? ''),
-      localizedName: String(value.localizedName ?? value.localized_name ?? ''),
-      renderAssetRef: typeof value.renderAssetRef === 'string' ? value.renderAssetRef : null,
-      temperature: Number(value.temperature ?? 0),
-    };
-  }
-
-  private transformSplitFluidStack(raw: unknown): IndexedFluidStack {
-    const value = (raw ?? {}) as Record<string, unknown>;
-    return {
-      fluid: this.transformSplitFluid(value.fluid),
-      amount: Number(value.amount ?? 0),
-      probability: Number(value.probability ?? 1),
-    };
-  }
-
-  private transformSplitFluidGroup(raw: unknown): IndexedFluidGroup {
-    const value = (raw ?? {}) as Record<string, unknown>;
-    const fluids = Array.isArray(value.fluids) ? value.fluids.map((entry) => this.transformSplitFluidStack(entry)) : [];
-    return {
-      slotIndex: Number(value.slotIndex ?? 0),
-      fluids,
-    };
-  }
-
-  private transformSplitRecipe(raw: unknown): IndexedRecipe {
-    const value = (raw ?? {}) as Record<string, unknown>;
-    const machineInfoValue = (value.machineInfo ?? null) as Record<string, unknown> | null;
-    const metadataValue = (value.metadata ?? null) as Record<string, unknown> | null;
-    const additionalDataValue = (value.additionalData ?? null) as Record<string, unknown> | null;
-    const recipeTypeDataValue = (value.recipeTypeData ?? undefined) as RecipeTypeData | undefined;
-
-    const machineInfo = machineInfoValue
-      ? {
-          machineId: String(machineInfoValue.machineId ?? ''),
-          category: String(machineInfoValue.category ?? ''),
-          machineType: String(machineInfoValue.machineType ?? ''),
-          iconInfo: String(machineInfoValue.iconInfo ?? ''),
-          shapeless: Boolean(machineInfoValue.shapeless),
-          parsedVoltageTier: typeof machineInfoValue.parsedVoltageTier === 'string' ? machineInfoValue.parsedVoltageTier : null,
-          parsedVoltage: typeof machineInfoValue.parsedVoltage === 'number' ? machineInfoValue.parsedVoltage : null,
-          machineIcon: machineInfoValue.machineIcon
-            ? {
-                itemId: String((machineInfoValue.machineIcon as Record<string, unknown>).itemId ?? ''),
-                modId: String((machineInfoValue.machineIcon as Record<string, unknown>).modId ?? ''),
-                internalName: String((machineInfoValue.machineIcon as Record<string, unknown>).internalName ?? ''),
-                localizedName: String((machineInfoValue.machineIcon as Record<string, unknown>).localizedName ?? ''),
-                imageFileName: String((machineInfoValue.machineIcon as Record<string, unknown>).imageFileName ?? ''),
-              }
-            : undefined,
-        }
-      : null;
-
-    if (machineInfo && machineInfo.machineType) {
-      const machineIcon = getMachineIconItem(machineInfo.machineType);
-      if (machineIcon) {
-        machineInfo.machineIcon = machineIcon;
-      }
-    }
-
-    return {
-      id: String(value.id ?? value.recipeId ?? ''),
-      recipeType: String(value.recipeType ?? ''),
-      outputs: Array.isArray(value.outputs) ? value.outputs.map((entry) => this.transformSplitItemStack(entry)) : [],
-      inputs: Array.isArray(value.inputs) ? value.inputs.map((entry) => this.transformSplitItemGroup(entry)) : [],
-      fluidInputs: Array.isArray(value.fluidInputs) ? value.fluidInputs.map((entry) => this.transformSplitFluidGroup(entry)) : [],
-      fluidOutputs: Array.isArray(value.fluidOutputs) ? value.fluidOutputs.map((entry) => this.transformSplitFluidStack(entry)) : [],
-      machineInfo,
-      metadata: transformRecipeMetadata(metadataValue, (entry) => this.transformSplitIndexedItem(entry)),
-      additionalData: additionalDataValue,
-      recipeTypeData: recipeTypeDataValue,
-    };
-  }
 }
 
 let serviceInstance: IndexedRecipesService | null = null;
 
 export function getIndexedRecipesService(): IndexedRecipesService {
   if (!serviceInstance) {
-    serviceInstance = new IndexedRecipesService({ splitExportFallback: false });
+    serviceInstance = new IndexedRecipesService();
   }
   return serviceInstance;
 }

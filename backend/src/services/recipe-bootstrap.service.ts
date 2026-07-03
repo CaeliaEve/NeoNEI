@@ -1,5 +1,3 @@
-import fs from 'fs';
-import path from 'path';
 import type Database from 'better-sqlite3';
 import { ItemsService, type Item } from './items.service';
 import type { BrowserPageRichMediaManifest } from './browser-render-hints.service';
@@ -12,9 +10,7 @@ import {
   type RecipeGroupPackResponse,
   normalizeItemRecipeSummary,
 } from './recipes-indexed.service';
-import { getNesqlSplitExportService } from './nesql-split-export.service';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
-import { SPLIT_ITEMS_DIR, SPLIT_RECIPES_DIR } from '../config/runtime-paths';
 import { getMachineIconItem } from './machine-icon-mapping.service';
 import { getRenderContractService, type RenderAnimationHint } from './render-contract.service';
 import { logger } from '../utils/logger';
@@ -80,6 +76,12 @@ type RecipeUiPayloadRow = {
   payload_json: string | null;
 };
 
+type RecipeBootstrapPrewarmRow = {
+  item_id: string;
+  produced_by_ids: string | null;
+  used_in_ids: string | null;
+};
+
 const BOOTSTRAP_EAGER_MISSING_RECIPE_LIMIT = Number(
   process.env.RECIPE_BOOTSTRAP_EAGER_MISSING_RECIPE_LIMIT || 6,
 );
@@ -91,33 +93,27 @@ export interface RecipeBootstrapServiceOptions {
   databaseManager?: DatabaseManager;
   itemsService?: ItemsService;
   indexedRecipesService?: IndexedRecipesService;
-  splitExportFallback?: boolean;
 }
 
 export class RecipeBootstrapService {
   private itemsService: ItemsService;
   private indexedRecipesService: IndexedRecipesService;
   private databaseManager: DatabaseManager;
-  private splitExportFallback: boolean;
-  private splitExportService = getNesqlSplitExportService();
   private cache = new Map<string, { expiresAt: number; value: RecipeBootstrapPayload | null }>();
   private fullCache = new Map<string, { expiresAt: number; value: RecipeBootstrapPayload | null }>();
   private readonly cacheTtlMs = Number(process.env.RECIPE_BOOTSTRAP_CACHE_TTL_MS || 60 * 60 * 1000);
 
   constructor(options: RecipeBootstrapServiceOptions = {}) {
     this.databaseManager = options.databaseManager ?? getAccelerationDatabaseManager();
-    this.splitExportFallback = options.splitExportFallback ?? true;
     this.itemsService =
       options.itemsService ??
       new ItemsService({
         databaseManager: this.databaseManager,
-        splitExportFallback: this.splitExportFallback,
       });
     this.indexedRecipesService =
       options.indexedRecipesService ??
       new IndexedRecipesService({
         databaseManager: this.databaseManager,
-        splitExportFallback: this.splitExportFallback,
       });
   }
 
@@ -323,30 +319,6 @@ export class RecipeBootstrapService {
     };
   }
 
-  private getBootstrapSignature(itemId: string): string {
-    const signatures: string[] = [];
-
-    if (SPLIT_RECIPES_DIR) {
-      const recipeIndexCachePath = path.join(SPLIT_RECIPES_DIR, '.hub-recipe-index-cache.json.gz');
-      if (fs.existsSync(recipeIndexCachePath)) {
-        const stat = fs.statSync(recipeIndexCachePath);
-        signatures.push(`recipes:${stat.size}:${stat.mtimeMs}`);
-      }
-    }
-
-    const parts = itemId.split('~');
-    const modId = parts.length >= 3 ? parts[1] : '';
-    if (modId && SPLIT_ITEMS_DIR) {
-      const itemFilePath = path.join(SPLIT_ITEMS_DIR, modId, 'items.json.gz');
-      if (fs.existsSync(itemFilePath)) {
-        const stat = fs.statSync(itemFilePath);
-        signatures.push(`items:${modId}:${stat.size}:${stat.mtimeMs}`);
-      }
-    }
-
-    return signatures.join('|');
-  }
-
   getCacheToken(itemId: string): string {
     const normalizedItemId = `${itemId ?? ''}`.trim();
     if (!normalizedItemId) {
@@ -366,7 +338,9 @@ export class RecipeBootstrapService {
       }
     }
 
-    return this.getBootstrapSignature(normalizedItemId) || normalizedItemId;
+    return this.canUseMaterializedBootstrap(db)
+      ? `materialized-missing:${normalizedItemId}`
+      : `materialized-unavailable:${normalizedItemId}`;
   }
 
   private readMaterializedBootstrap(itemId: string): RecipeBootstrapPayload | null {
@@ -734,56 +708,90 @@ export class RecipeBootstrapService {
     return this.buildCategoryGroupPayload(itemId, tab, categoryKey, pack);
   }
 
+  private getMaterializedPrewarmCandidates(options?: { limit?: number; defaultLimit?: number }): string[] {
+    const db = this.getAccelerationDatabase();
+    if (!this.canUseMaterializedBootstrap(db)) {
+      return [];
+    }
+
+    const rows = db.prepare(`
+      SELECT item_id, produced_by_ids, used_in_ids
+      FROM recipe_bootstrap
+      ORDER BY updated_at DESC, item_id ASC
+    `).all() as RecipeBootstrapPrewarmRow[];
+
+    const scored = rows
+      .map((row) => {
+        const countRecipes = (payload: string | null): number => {
+          if (!payload) return 0;
+          try {
+            const parsed = JSON.parse(payload) as unknown;
+            return Array.isArray(parsed) ? parsed.length : 0;
+          } catch {
+            return 0;
+          }
+        };
+        return {
+          itemId: `${row.item_id ?? ''}`.trim(),
+          recipeCount: countRecipes(row.produced_by_ids) + countRecipes(row.used_in_ids),
+        };
+      })
+      .filter((entry) => entry.itemId)
+      .sort((left, right) => right.recipeCount - left.recipeCount || left.itemId.localeCompare(right.itemId));
+
+    const requestedLimit =
+      typeof options?.limit === 'number' && options.limit > 0
+        ? Math.floor(options.limit)
+        : options?.defaultLimit;
+    const limit =
+      typeof requestedLimit === 'number' && requestedLimit > 0
+        ? Math.min(requestedLimit, scored.length)
+        : scored.length;
+    return scored.slice(0, limit).map((entry) => entry.itemId);
+  }
+
   async prewarmBootstrapCache(options?: { limit?: number }): Promise<{ warmed: number; skipped: number }> {
-    this.splitExportService.loadRecipesIfNeeded();
-    const sortedItemIds = this.splitExportService
-      .getAllItemIds()
-      .sort((a, b) => this.splitExportService.getRecipeLinkCount(b) - this.splitExportService.getRecipeLinkCount(a));
-    const limit = typeof options?.limit === 'number' && options.limit > 0
-      ? Math.min(options.limit, sortedItemIds.length)
-      : sortedItemIds.length;
+    const itemIds = this.getMaterializedPrewarmCandidates(options);
 
     let warmed = 0;
     let skipped = 0;
-    for (const itemId of sortedItemIds.slice(0, limit)) {
-      if (!itemId) {
+    for (const itemId of itemIds) {
+      const cached = this.cache.get(itemId);
+      if (cached && cached.expiresAt > Date.now()) {
         skipped += 1;
         continue;
       }
-      if (this.readMaterializedBootstrap(itemId)) {
+      const payload = await this.getBootstrap(itemId);
+      if (payload) {
+        warmed += 1;
+      } else {
         skipped += 1;
-        continue;
       }
-      await this.getBootstrap(itemId);
-      warmed += 1;
     }
 
     return { warmed, skipped };
   }
 
   async prewarmShardCache(options?: { limit?: number }): Promise<{ warmed: number; skipped: number }> {
-    this.splitExportService.loadRecipesIfNeeded();
-    const sortedItemIds = this.splitExportService
-      .getAllItemIds()
-      .sort((a, b) => this.splitExportService.getRecipeLinkCount(b) - this.splitExportService.getRecipeLinkCount(a));
-    const limit = typeof options?.limit === 'number' && options.limit > 0
-      ? Math.min(options.limit, sortedItemIds.length)
-      : Math.min(24, sortedItemIds.length);
+    const itemIds = this.getMaterializedPrewarmCandidates({
+      limit: options?.limit,
+      defaultLimit: 24,
+    });
 
     let warmed = 0;
     let skipped = 0;
-    for (const itemId of sortedItemIds.slice(0, limit)) {
-      if (!itemId) {
-        skipped += 1;
-        continue;
-      }
+    for (const itemId of itemIds) {
       const cached = this.fullCache.get(itemId);
       if (cached && cached.expiresAt > Date.now()) {
         skipped += 1;
         continue;
       }
-      await this.getBootstrapShard(itemId);
-      warmed += 1;
+      const payload = await this.getBootstrapShard(itemId);
+      if (payload) {
+        warmed += 1;
+      } else {
+        skipped += 1;
+      }
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
 
@@ -795,7 +803,7 @@ let instance: RecipeBootstrapService | null = null;
 
 export function getRecipeBootstrapService(): RecipeBootstrapService {
   if (!instance) {
-    instance = new RecipeBootstrapService({ splitExportFallback: false });
+    instance = new RecipeBootstrapService();
   }
   return instance;
 }

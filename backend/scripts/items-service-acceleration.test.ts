@@ -56,7 +56,7 @@ test('ItemsService reads paginated items and mods from acceleration tables', asy
     'gregtech terrasteel plate',
   );
 
-  const service = new ItemsService({ databaseManager: manager, splitExportFallback: false });
+  const service = new ItemsService({ databaseManager: manager });
   const page = await service.getItems({ page: 1, pageSize: 10 });
   assert.equal(page.total, 2);
   assert.equal(page.data[0]?.localizedName, '泰拉钢板');

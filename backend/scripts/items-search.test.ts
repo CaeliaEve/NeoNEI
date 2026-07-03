@@ -167,7 +167,6 @@ test('ItemsSearchService reads all-items and paginated items from acceleration t
 
   const service = new ItemsSearchService({
     databaseProvider: () => db,
-    splitExportFallback: false,
   });
 
   const all = await service.getAllItemsBasic();

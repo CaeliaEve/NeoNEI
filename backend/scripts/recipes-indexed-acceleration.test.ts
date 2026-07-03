@@ -90,7 +90,6 @@ test('IndexedRecipesService reads materialized crafting, usage, and summary payl
 
   const service = new IndexedRecipesService({
     databaseManager: manager,
-    splitExportFallback: false,
   });
 
   const crafting = await service.getCraftingRecipesForItem('i~Botania~manaResource~4');
@@ -174,7 +173,6 @@ test('IndexedRecipesService reads produced-by machine-group packs from materiali
 
   const service = new IndexedRecipesService({
     databaseManager: manager,
-    splitExportFallback: false,
   });
 
   const recipes = await service.getProducedByRecipesForMachineGroup('i~gregtech~test~0', 'Assembly Line', 'UV');
@@ -250,7 +248,6 @@ test('IndexedRecipesService reads used-in machine-group packs from materialized 
 
   const service = new IndexedRecipesService({
     databaseManager: manager,
-    splitExportFallback: false,
   });
 
   const recipes = await service.getUsedInRecipesForMachineGroup('i~gregtech~research_item~0', 'Research Station', 'ZPM');
@@ -317,7 +314,6 @@ test('IndexedRecipesService falls back to recipe_edges and recipes_core for non-
 
   const service = new IndexedRecipesService({
     databaseManager: manager,
-    splitExportFallback: false,
   });
 
   const crafting = await service.getCraftingRecipesForItem('i~gregtech~gt.blockmachines~16027');
@@ -407,7 +403,6 @@ test('IndexedRecipesService filters category packs for non-machine crafting cate
 
   const service = new IndexedRecipesService({
     databaseManager: manager,
-    splitExportFallback: false,
   });
 
   const recipes = await service.getRecipesForCategoryGroup('i~test~target~0', 'produced_by', 'crafting:有序合成');
@@ -491,7 +486,6 @@ test('IndexedRecipesService searches recipe ids for a single item tab without hy
 
   const service = new IndexedRecipesService({
     databaseManager: manager,
-    splitExportFallback: false,
     itemsSearchService: {
       searchItems: async (keyword: string) => keyword === 'copper'
         ? [{ itemId: 'i~test~copperWire~0', localizedName: 'Copper Wire', modId: 'test' }]

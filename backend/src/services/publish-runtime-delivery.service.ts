@@ -41,7 +41,7 @@ export type PublishHomeBootstrapDelivery = Readonly<{
   loadPayload: () => Promise<PublishHomeBootstrapPayload>;
 }>;
 
-const itemsService = new ItemsService({ splitExportFallback: false });
+const itemsService = new ItemsService();
 
 function isExternalRuntimeAuthority(): boolean {
   return isPublishExternalRuntimeAuthority(resolveAccelerationCompilerAuthority());
