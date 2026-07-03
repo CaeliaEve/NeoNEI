@@ -3,33 +3,16 @@ import type {
   NativeSurfaceEngineResponse,
   NativeSurfaceEngineWorkerMetrics,
 } from "./NativeSurfaceEngineProtocol";
+import {
+  getNativeSurfaceEngineRequestTransferables,
+  nativeSurfaceEngineClientFailed,
+} from "./NativeSurfaceEngineClientPolicyCatalog";
 
-export const NATIVE_SURFACE_ENGINE_CLIENT_POLICY = Object.freeze({
-  boundary: "native-surface-engine-client",
-  owner: "native-surface",
-  failurePolicy: "fail-closed",
-  legacyNullFallback: false,
-});
-
-export type NativeSurfaceEngineClientErrorCode =
-  | "worker-unavailable"
-  | "worker-construction-failed"
-  | "worker-post-failed"
-  | "worker-runtime-error"
-  | "worker-reset"
-  | "worker-malformed-response";
-
-export class NativeSurfaceEngineClientError extends Error {
-  readonly code: NativeSurfaceEngineClientErrorCode;
-  readonly cause?: unknown;
-
-  constructor(code: NativeSurfaceEngineClientErrorCode, message: string, cause?: unknown) {
-    super(`Native surface engine client failed: ${message}`);
-    this.name = "NativeSurfaceEngineClientError";
-    this.code = code;
-    this.cause = cause;
-  }
-}
+export {
+  NativeSurfaceEngineClientError,
+  NATIVE_SURFACE_ENGINE_CLIENT_POLICY,
+  type NativeSurfaceEngineClientErrorCode,
+} from "./NativeSurfaceEngineClientPolicyCatalog";
 
 type PendingRequest = {
   resolve: (response: NativeSurfaceEngineResponse) => void;
@@ -46,14 +29,6 @@ let worker: Worker | null = null;
 let nextRequestId = 1;
 let lastMetrics: NativeSurfaceEngineWorkerMetrics | null = null;
 const pending = new Map<number, PendingRequest>();
-
-function nativeSurfaceEngineClientFailed(
-  code: NativeSurfaceEngineClientErrorCode,
-  message: string,
-  cause?: unknown,
-): NativeSurfaceEngineClientError {
-  return new NativeSurfaceEngineClientError(code, message, cause);
-}
 
 function rejectPending(error: unknown) {
   for (const request of pending.values()) {
@@ -105,13 +80,6 @@ function requireWorker(): Worker {
   return worker;
 }
 
-function getTransferables(message: NativeSurfaceEngineRequest): Transferable[] {
-  if (message.type !== "runtimePacks") return [];
-  return message.packs
-    .map((pack) => pack.buffer)
-    .filter((buffer): buffer is ArrayBuffer => buffer instanceof ArrayBuffer);
-}
-
 export function getNativeSurfaceEngineMetrics(): NativeSurfaceEngineWorkerMetrics | null {
   return lastMetrics;
 }
@@ -125,7 +93,7 @@ export function postNativeSurfaceEngineEvent(
   return new Promise<NativeSurfaceEngineResponse>((resolve, reject) => {
     pending.set(id, { resolve, reject });
     try {
-      activeWorker.postMessage(message, getTransferables(message));
+      activeWorker.postMessage(message, getNativeSurfaceEngineRequestTransferables(message));
     } catch (error) {
       pending.delete(id);
       reject(nativeSurfaceEngineClientFailed("worker-post-failed", "unable to post native surface engine worker request", error));

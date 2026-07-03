@@ -1,38 +1,20 @@
 import type { NativeRenderRequest, NativeRenderResponse } from "./NativeSurfaceRenderProtocol";
+import {
+  getNativeRenderRequestTransferables,
+  nativeRenderWorkerClientFailed,
+} from "./NativeRenderWorkerClientPolicyCatalog";
+
+export {
+  NativeRenderWorkerClientError,
+  NATIVE_RENDER_WORKER_CLIENT_POLICY,
+  type NativeRenderWorkerClientErrorCode,
+} from "./NativeRenderWorkerClientPolicyCatalog";
 
 export type NativeRenderRequestWithoutId = NativeRenderRequest extends infer Request
   ? Request extends NativeRenderRequest
     ? Omit<Request, "id">
     : never
   : never;
-
-export const NATIVE_RENDER_WORKER_CLIENT_POLICY = Object.freeze({
-  boundary: "native-render-worker-client",
-  owner: "native-surface",
-  failurePolicy: "fail-closed",
-  legacyNullFallback: false,
-});
-
-export type NativeRenderWorkerClientErrorCode =
-  | "worker-unavailable"
-  | "worker-construction-failed"
-  | "worker-post-failed"
-  | "worker-runtime-error"
-  | "worker-reset"
-  | "worker-malformed-response"
-  | "worker-error-response";
-
-export class NativeRenderWorkerClientError extends Error {
-  readonly code: NativeRenderWorkerClientErrorCode;
-  readonly cause?: unknown;
-
-  constructor(code: NativeRenderWorkerClientErrorCode, message: string, cause?: unknown) {
-    super(`Native render worker client failed: ${message}`);
-    this.name = "NativeRenderWorkerClientError";
-    this.code = code;
-    this.cause = cause;
-  }
-}
 
 type PendingRenderRequest = {
   resolve: (response: NativeRenderResponse) => void;
@@ -43,14 +25,6 @@ let worker: Worker | null = null;
 let nextRequestId = 1;
 let lastMetrics: Extract<NativeRenderResponse, { metrics: unknown }>["metrics"] | null = null;
 const pending = new Map<number, PendingRenderRequest>();
-
-function nativeRenderWorkerClientFailed(
-  code: NativeRenderWorkerClientErrorCode,
-  message: string,
-  cause?: unknown,
-): NativeRenderWorkerClientError {
-  return new NativeRenderWorkerClientError(code, message, cause);
-}
 
 function rejectPending(error: unknown) {
   for (const request of pending.values()) {
@@ -110,12 +84,6 @@ function requireWorker(): Worker {
   return worker;
 }
 
-function getTransferables(message: NativeRenderRequest): Transferable[] {
-  if (message.type === "initialize") return [message.canvas];
-  if (message.type === "render") return [message.commandBuffer];
-  return [];
-}
-
 export function getNativeRenderWorkerMetrics() {
   return lastMetrics;
 }
@@ -127,7 +95,7 @@ export function postNativeRenderEvent(request: NativeRenderRequestWithoutId): Pr
   return new Promise<NativeRenderResponse>((resolve, reject) => {
     pending.set(id, { resolve, reject });
     try {
-      activeWorker.postMessage(message, getTransferables(message));
+      activeWorker.postMessage(message, getNativeRenderRequestTransferables(message));
     } catch (error) {
       pending.delete(id);
       reject(nativeRenderWorkerClientFailed("worker-post-failed", "unable to post native render worker request", error));

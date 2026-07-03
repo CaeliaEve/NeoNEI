@@ -6,7 +6,9 @@ import test from 'node:test';
 
 const frontendRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const renderClientSource = readFileSync(resolve(frontendRoot, 'src/native-surface/NativeRenderWorkerClient.ts'), 'utf8');
+const renderClientPolicySource = readFileSync(resolve(frontendRoot, 'src/native-surface/NativeRenderWorkerClientPolicyCatalog.ts'), 'utf8');
 const engineClientSource = readFileSync(resolve(frontendRoot, 'src/native-surface/NativeSurfaceEngineClient.ts'), 'utf8');
+const engineClientPolicySource = readFileSync(resolve(frontendRoot, 'src/native-surface/NativeSurfaceEngineClientPolicyCatalog.ts'), 'utf8');
 const controllerSource = readFileSync(resolve(frontendRoot, 'src/native-surface/NativeSurfaceController.ts'), 'utf8');
 const browserSurfaceSource = readFileSync(resolve(frontendRoot, 'src/components/native-surface/NativeBrowserSurface.vue'), 'utf8');
 
@@ -19,13 +21,20 @@ function sourceSection(source, startNeedle, endNeedle) {
 }
 
 test('native render worker client exposes a fail-closed client ABI boundary', () => {
-  assert.match(renderClientSource, /NATIVE_RENDER_WORKER_CLIENT_POLICY = Object\.freeze/);
-  assert.match(renderClientSource, /failurePolicy: "fail-closed"/);
-  assert.match(renderClientSource, /legacyNullFallback: false/);
-  assert.match(renderClientSource, /class NativeRenderWorkerClientError extends Error/);
+  assert.match(renderClientPolicySource, /NATIVE_RENDER_WORKER_CLIENT_POLICY = Object\.freeze/);
+  assert.match(renderClientPolicySource, /schema: "neonei\/native-render-worker-client\/current"/);
+  assert.match(renderClientPolicySource, /failurePolicy: "fail-closed"/);
+  assert.match(renderClientPolicySource, /legacyNullFallback: false/);
+  assert.match(renderClientPolicySource, /transferPolicy: "descriptor-owned-transfer-list"/);
+  assert.match(renderClientPolicySource, /class NativeRenderWorkerClientError extends Error/);
+  assert.match(renderClientPolicySource, /NATIVE_RENDER_WORKER_CLIENT_ERROR_DESCRIPTORS/);
+  assert.match(renderClientPolicySource, /NATIVE_RENDER_WORKER_TRANSFER_DESCRIPTOR_MAP/);
+  assert.match(renderClientSource, /from "\.\/NativeRenderWorkerClientPolicyCatalog"/);
+  assert.match(renderClientSource, /NATIVE_RENDER_WORKER_CLIENT_POLICY/);
   assert.match(renderClientSource, /function requireWorker\(\): Worker/);
   assert.match(renderClientSource, /throw nativeRenderWorkerClientFailed\("worker-unavailable"/);
   assert.match(renderClientSource, /throw nativeRenderWorkerClientFailed\("worker-construction-failed"/);
+  assert.doesNotMatch(renderClientSource, /class NativeRenderWorkerClientError extends Error/);
 });
 
 test('native render worker client rejects worker error responses and post failures instead of returning null', () => {
@@ -33,27 +42,41 @@ test('native render worker client rejects worker error responses and post failur
   const messageHandler = sourceSection(renderClientSource, 'worker.onmessage =', 'worker.onerror =');
 
   assert.match(postEvent, /Promise<NativeRenderResponse>/);
-  assert.match(postEvent, /activeWorker\.postMessage\(message, getTransferables\(message\)\)/);
+  assert.match(postEvent, /activeWorker\.postMessage\(message, getNativeRenderRequestTransferables\(message\)\)/);
   assert.match(postEvent, /reject\(nativeRenderWorkerClientFailed\("worker-post-failed"/);
   assert.match(messageHandler, /response\.type === "error"/);
   assert.match(messageHandler, /request\.reject\(nativeRenderWorkerClientFailed\(\s*"worker-error-response"/s);
   assert.doesNotMatch(postEvent, /Promise\.resolve\(null\)/);
   assert.doesNotMatch(postEvent, /\.catch\(\(\) => null\)/);
   assert.doesNotMatch(renderClientSource, /Worker \| null\) \{/);
+  assert.match(renderClientPolicySource, /initialize: Object\.freeze\(\{/);
+  assert.match(renderClientPolicySource, /transferableFields: Object\.freeze\(\["canvas"\] as const\)/);
+  assert.match(renderClientPolicySource, /render: Object\.freeze\(\{/);
+  assert.match(renderClientPolicySource, /transferableFields: Object\.freeze\(\["commandBuffer"\] as const\)/);
 });
 
 test('native surface engine worker client exposes the same fail-closed no-null boundary', () => {
   const postEvent = sourceSection(engineClientSource, 'export function postNativeSurfaceEngineEvent', 'export function resetNativeSurfaceEngineWorker');
 
-  assert.match(engineClientSource, /NATIVE_SURFACE_ENGINE_CLIENT_POLICY = Object\.freeze/);
-  assert.match(engineClientSource, /failurePolicy: "fail-closed"/);
-  assert.match(engineClientSource, /legacyNullFallback: false/);
-  assert.match(engineClientSource, /class NativeSurfaceEngineClientError extends Error/);
+  assert.match(engineClientPolicySource, /NATIVE_SURFACE_ENGINE_CLIENT_POLICY = Object\.freeze/);
+  assert.match(engineClientPolicySource, /schema: "neonei\/native-surface-engine-client\/current"/);
+  assert.match(engineClientPolicySource, /failurePolicy: "fail-closed"/);
+  assert.match(engineClientPolicySource, /legacyNullFallback: false/);
+  assert.match(engineClientPolicySource, /transferPolicy: "descriptor-owned-transfer-list"/);
+  assert.match(engineClientPolicySource, /class NativeSurfaceEngineClientError extends Error/);
+  assert.match(engineClientPolicySource, /NATIVE_SURFACE_ENGINE_CLIENT_ERROR_DESCRIPTORS/);
+  assert.match(engineClientPolicySource, /NATIVE_SURFACE_ENGINE_TRANSFER_DESCRIPTOR_MAP/);
+  assert.match(engineClientSource, /from "\.\/NativeSurfaceEngineClientPolicyCatalog"/);
+  assert.match(engineClientSource, /NATIVE_SURFACE_ENGINE_CLIENT_POLICY/);
+  assert.doesNotMatch(engineClientSource, /class NativeSurfaceEngineClientError extends Error/);
   assert.match(engineClientSource, /function requireWorker\(\): Worker/);
   assert.match(postEvent, /Promise<NativeSurfaceEngineResponse>/);
+  assert.match(postEvent, /activeWorker\.postMessage\(message, getNativeSurfaceEngineRequestTransferables\(message\)\)/);
   assert.match(postEvent, /reject\(nativeSurfaceEngineClientFailed\("worker-post-failed"/);
   assert.doesNotMatch(postEvent, /Promise\.resolve\(null\)/);
   assert.doesNotMatch(postEvent, /\.catch\(\(\) => null\)/);
+  assert.match(engineClientPolicySource, /runtimePacks: Object\.freeze\(\{/);
+  assert.match(engineClientPolicySource, /transferableFields: Object\.freeze\(\["packs\[\]\.buffer"\] as const\)/);
 });
 
 test('native surface controller treats wrong worker responses as protocol violations', () => {
