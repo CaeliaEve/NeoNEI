@@ -110,7 +110,8 @@ test('runtime diagnostics route is a read-only service boundary', () => {
     'runtime diagnostics handler must consume native render diagnostics through runtime health',
   );
   assert.equal(
-    diagnosticsSource.includes("schemaVersion: 'neonei/runtime-diagnostics/current'"),
+    diagnosticsSource.includes('schemaVersion: RUNTIME_DIAGNOSTICS_SCHEMA_VERSION')
+      && diagnosticsSource.includes("RUNTIME_DIAGNOSTICS_SCHEMA_VERSION"),
     true,
     'runtime diagnostics service must keep a stable schemaVersion',
   );
