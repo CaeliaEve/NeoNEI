@@ -8,6 +8,7 @@ import {
   type BackgroundPublishSummary,
 } from './acceleration-runtime-job-runner.service';
 import { activateCompiledAccelerationSnapshot } from './acceleration-runtime-snapshot-activator.service';
+import { ACCELERATION_WORKER_LOGS } from './acceleration-runtime-phase-abi';
 import {
   announceAccelerationRuntimeReady,
   announceAccelerationSnapshotCompile,
@@ -34,14 +35,14 @@ export function removeExistingAccelerationCandidateSnapshot(candidateDbPath: str
 
 export function publishPayloadMaterializationLogMessage(result: BackgroundPublishSummary): string {
   return result.materialized
-    ? '[PUBLISH_PAYLOADS] materialized in background'
-    : '[PUBLISH_PAYLOADS] already fresh';
+    ? ACCELERATION_WORKER_LOGS.publishMaterialized
+    : ACCELERATION_WORKER_LOGS.publishAlreadyFresh;
 }
 
 export async function refreshAccelerationSnapshot(input: AccelerationSnapshotRefreshInput): Promise<void> {
   const candidateDbPath = getAccelerationCandidateDbPath(input.manager);
   announceAccelerationSnapshotStale();
-  logger.info('[ACCELERATION_DB] stale; runtime will stay online while compiling next snapshot');
+  logger.info(ACCELERATION_WORKER_LOGS.accelerationSnapshotStale);
   removeExistingAccelerationCandidateSnapshot(candidateDbPath);
 
   announceAccelerationSnapshotCompile();
@@ -52,25 +53,23 @@ export async function refreshAccelerationSnapshot(input: AccelerationSnapshotRef
     compiledDbPath: candidateDbPath,
     signature: compileResult.signature,
   });
-  logger.info('[ACCELERATION_DB] promoted background snapshot', logAccelerationSnapshotPromotedPayload(compileResult));
+  logger.info(ACCELERATION_WORKER_LOGS.accelerationSnapshotPromoted, logAccelerationSnapshotPromotedPayload(compileResult));
   announceAccelerationRuntimeReady();
 }
 
 export async function refreshExternalRuntimeArtifact(): Promise<void> {
   announceAccelerationSnapshotStale();
-  logger.info('[EXTERNAL_RUNTIME] stale; compiling next external runtime artifact with elysium-compiler');
+  logger.info(ACCELERATION_WORKER_LOGS.externalRuntimeStale);
 
   announceAccelerationSnapshotCompile();
   const compileResult = await compileExternalRuntimeArtifactInChild();
 
-  logger.info('[EXTERNAL_RUNTIME] promoted external runtime artifact', logAccelerationSnapshotPromotedPayload(compileResult));
+  logger.info(ACCELERATION_WORKER_LOGS.externalRuntimePromoted, logAccelerationSnapshotPromotedPayload(compileResult));
   announceAccelerationRuntimeReady();
 }
 
 export function skipPublishPayloadMaterializationOnStartup(): void {
-  logger.info(
-    '[PUBLISH_PAYLOADS] startup materialization skipped; set NEONEI_PUBLISH_MATERIALIZE_ON_START=1 to refresh publish bundles on boot',
-  );
+  logger.info(ACCELERATION_WORKER_LOGS.publishMaterializationSkipped);
   announceAccelerationRuntimeReady();
 }
 

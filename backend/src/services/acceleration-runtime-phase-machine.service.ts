@@ -1,21 +1,19 @@
 import { setAccelerationRuntimePhase } from './acceleration-runtime-state.service';
+import {
+  ACCELERATION_PHASE_ANNOUNCEMENTS,
+  ACCELERATION_RECONCILE_DECISION,
+  ACCELERATION_RECONCILE_DECISIONS,
+  projectAccelerationPromotionLogPayload,
+  type AccelerationCompilePromotionSummary,
+  type AccelerationPhaseAnnouncementKey,
+  type AccelerationReconcileDecision,
+} from './acceleration-runtime-phase-abi';
 
-export const ACCELERATION_RECONCILE_DECISIONS = Object.freeze([
-  'compile-snapshot',
-  'compile-external-runtime',
-  'materialize-publish-payloads',
-  'ready-noop',
-] as const);
-
-export type AccelerationReconcileDecision = (typeof ACCELERATION_RECONCILE_DECISIONS)[number];
-
-export type AccelerationCompilePromotionSummary = {
-  itemsImported?: number;
-  recipesImported?: number;
-  signature: string;
-  runtimeId?: string | null;
-  promotedFiles?: number;
-  sourceIdentity?: string | null;
+export {
+  ACCELERATION_RECONCILE_DECISION,
+  ACCELERATION_RECONCILE_DECISIONS,
+  type AccelerationCompilePromotionSummary,
+  type AccelerationReconcileDecision,
 };
 
 export function decideAccelerationReconcilePhase(input: {
@@ -23,46 +21,39 @@ export function decideAccelerationReconcilePhase(input: {
   compilerAuthority?: 'internal-sqlite' | 'external-runtime';
   publishMaterializeOnStart?: boolean;
 }): AccelerationReconcileDecision {
-  if (input.compilerAuthority === 'external-runtime' && !input.fresh) return 'compile-external-runtime';
-  if (!input.fresh) return 'compile-snapshot';
-  if (input.publishMaterializeOnStart) return 'materialize-publish-payloads';
-  return 'ready-noop';
+  if (input.compilerAuthority === 'external-runtime' && !input.fresh) {
+    return ACCELERATION_RECONCILE_DECISION.compileExternalRuntime;
+  }
+  if (!input.fresh) {
+    return ACCELERATION_RECONCILE_DECISION.compileSnapshot;
+  }
+  if (input.publishMaterializeOnStart) {
+    return ACCELERATION_RECONCILE_DECISION.materializePublishPayloads;
+  }
+  return ACCELERATION_RECONCILE_DECISION.readyNoop;
 }
 
 export function announceAccelerationSnapshotStale(): void {
-  setAccelerationRuntimePhase('stale', 'Acceleration snapshot is stale; compiling next snapshot in background.', {
-    stale: true,
-    lastError: null,
-  });
+  announceAccelerationPhase('snapshotStale');
 }
 
 export function announceAccelerationSnapshotCompile(): void {
-  setAccelerationRuntimePhase('compiling', 'Compiling next acceleration snapshot in background.', {
-    stale: true,
-  });
+  announceAccelerationPhase('snapshotCompile');
 }
 
 export function announcePublishPayloadMaterialization(): void {
-  setAccelerationRuntimePhase('materializing', 'Refreshing publish hot payloads.', {
-    stale: false,
-    lastError: null,
-  });
+  announceAccelerationPhase('publishPayloadMaterialization');
 }
 
 export function announceAccelerationRuntimeReady(): void {
-  setAccelerationRuntimePhase('ready', 'Acceleration runtime ready.', {
-    stale: false,
-    lastError: null,
-  });
+  announceAccelerationPhase('runtimeReady');
 }
 
 export function logAccelerationSnapshotPromotedPayload(summary: AccelerationCompilePromotionSummary): Record<string, unknown> {
-  return {
-    itemsImported: summary.itemsImported ?? null,
-    recipesImported: summary.recipesImported ?? null,
-    signature: summary.signature,
-    runtimeId: summary.runtimeId ?? null,
-    promotedFiles: summary.promotedFiles ?? null,
-    sourceIdentity: summary.sourceIdentity ?? null,
-  };
+  return projectAccelerationPromotionLogPayload(summary);
+}
+
+function announceAccelerationPhase(key: AccelerationPhaseAnnouncementKey): void {
+  const announcement = ACCELERATION_PHASE_ANNOUNCEMENTS[key];
+  setAccelerationRuntimePhase(announcement.phase, announcement.message, announcement.extras);
 }

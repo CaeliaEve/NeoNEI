@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
 const authorityPath = resolve(root, 'src/services/acceleration-runtime-compiler-authority.service.ts');
+const phaseAbiPath = resolve(root, 'src/services/acceleration-runtime-phase-abi.ts');
 const phaseMachinePath = resolve(root, 'src/services/acceleration-runtime-phase-machine.service.ts');
 const runtimeServicePath = resolve(root, 'src/services/acceleration-runtime.service.ts');
 const dispatcherPath = resolve(root, 'src/services/acceleration-runtime-reconcile-dispatcher.service.ts');
@@ -13,6 +14,7 @@ const jobRunnerPath = resolve(root, 'src/services/acceleration-runtime-job-runne
 const identityPath = resolve(root, 'src/services/external-runtime-identity.service.ts');
 
 const authority = readFileSync(authorityPath, 'utf8');
+const phaseAbi = readFileSync(phaseAbiPath, 'utf8');
 const phaseMachine = readFileSync(phaseMachinePath, 'utf8');
 const runtimeService = readFileSync(runtimeServicePath, 'utf8');
 const dispatcher = readFileSync(dispatcherPath, 'utf8');
@@ -32,9 +34,11 @@ test('compiler authority policy is explicit and fail-closed', () => {
 });
 
 test('phase machine can select external runtime without routing through internal sqlite compile', () => {
-  assert.match(phaseMachine, /'compile-external-runtime'/);
+  assert.match(phaseAbi, /'compile-external-runtime'/);
+  assert.match(phaseMachine, /ACCELERATION_RECONCILE_DECISION\.compileExternalRuntime/);
   assert.match(phaseMachine, /compilerAuthority\?: 'internal-sqlite' \| 'external-runtime'/);
-  assert.match(phaseMachine, /if \(input\.compilerAuthority === 'external-runtime' && !input\.fresh\) return 'compile-external-runtime'/);
+  assert.match(phaseMachine, /if \(input\.compilerAuthority === 'external-runtime' && !input\.fresh\)/);
+  assert.doesNotMatch(phaseMachine, /'compile-external-runtime'/);
   assert.match(runtimeService, /resolveAccelerationCompilerAuthority\(\)/);
   assert.match(runtimeService, /compilerAuthority === 'internal-sqlite'/);
   assert.match(runtimeService, /probeExternalRuntimeIdentityFreshness\(\{ rawExportRoot: getExternalRuntimeRawExportRoot\(\) \}\)/);
@@ -53,7 +57,8 @@ test('external runtime identity is a first-class freshness boundary', () => {
 
 test('dispatcher maps external runtime to a separate worker action', () => {
   assert.match(dispatcher, /refreshExternalRuntimeArtifact/);
-  assert.match(dispatcher, /reconcileHandlerDescriptor\('compile-external-runtime', \(\) => refreshExternalRuntimeArtifact\(\)\)/);
+  assert.match(dispatcher, /reconcileHandlerDescriptor\(ACCELERATION_RECONCILE_DECISION\.compileExternalRuntime, \(\) => refreshExternalRuntimeArtifact\(\)\)/);
+  assert.doesNotMatch(dispatcher, /'compile-external-runtime'/);
   assert.match(worker, /export async function refreshExternalRuntimeArtifact\(\)/);
   assert.match(worker, /compileExternalRuntimeArtifactInChild\(\)/);
   assert.doesNotMatch(worker, /refreshExternalRuntimeArtifact[\s\S]*activateCompiledAccelerationSnapshot/);

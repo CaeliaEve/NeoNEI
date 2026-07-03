@@ -5,9 +5,11 @@ import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
 const runtimeServicePath = resolve(root, 'src/services/acceleration-runtime.service.ts');
+const phaseAbiPath = resolve(root, 'src/services/acceleration-runtime-phase-abi.ts');
 const reconcileWorkerPath = resolve(root, 'src/services/acceleration-runtime-reconcile-worker.service.ts');
 const dispatcherPath = resolve(root, 'src/services/acceleration-runtime-reconcile-dispatcher.service.ts');
 const runtimeService = readFileSync(runtimeServicePath, 'utf8');
+const phaseAbi = readFileSync(phaseAbiPath, 'utf8');
 const reconcileWorker = readFileSync(reconcileWorkerPath, 'utf8');
 const dispatcher = readFileSync(dispatcherPath, 'utf8');
 
@@ -18,6 +20,9 @@ test('acceleration reconcile work lives behind a dedicated worker boundary', () 
   assert.match(reconcileWorker, /export async function refreshPublishPayloadMaterialization/);
   assert.match(reconcileWorker, /export function getAccelerationCandidateDbPath/);
   assert.match(reconcileWorker, /export function removeExistingAccelerationCandidateSnapshot/);
+  assert.match(reconcileWorker, /ACCELERATION_WORKER_LOGS/);
+  assert.match(phaseAbi, /ACCELERATION_WORKER_LOG_DESCRIPTORS/);
+  assert.match(phaseAbi, /validateAndFreezeWorkerLogs/);
 });
 
 test('acceleration dispatcher schedules worker operations instead of executing reconcile work inline from runtime service', () => {
@@ -70,6 +75,19 @@ test('publish payload worker owns materialization and skip logs', () => {
   assert.match(reconcileWorker, /announcePublishPayloadMaterialization\(\)/);
   assert.match(reconcileWorker, /const publishPayloadsResult = await materializePublishPayloadsInChild\(\)/);
   assert.match(reconcileWorker, /logger\.info\(publishPayloadMaterializationLogMessage\(publishPayloadsResult\)\)/);
-  assert.match(reconcileWorker, /startup materialization skipped; set NEONEI_PUBLISH_MATERIALIZE_ON_START=1/);
+  assert.match(reconcileWorker, /ACCELERATION_WORKER_LOGS\.publishMaterializationSkipped/);
+  assert.match(phaseAbi, /startup materialization skipped; set NEONEI_PUBLISH_MATERIALIZE_ON_START=1/);
   assert.match(reconcileWorker, /announceAccelerationRuntimeReady\(\)/);
+  for (const catalogOwnedLogLiteral of [
+    /'\[ACCELERATION_DB\] stale; runtime will stay online while compiling next snapshot'/,
+    /'\[ACCELERATION_DB\] promoted background snapshot'/,
+    /'\[EXTERNAL_RUNTIME\] stale; compiling next external runtime artifact with elysium-compiler'/,
+    /'\[EXTERNAL_RUNTIME\] promoted external runtime artifact'/,
+    /'\[PUBLISH_PAYLOADS\] startup materialization skipped; set NEONEI_PUBLISH_MATERIALIZE_ON_START=1 to refresh publish bundles on boot'/,
+    /'\[PUBLISH_PAYLOADS\] materialized in background'/,
+    /'\[PUBLISH_PAYLOADS\] already fresh'/,
+  ]) {
+    assert.match(phaseAbi, catalogOwnedLogLiteral);
+    assert.doesNotMatch(reconcileWorker, catalogOwnedLogLiteral);
+  }
 });

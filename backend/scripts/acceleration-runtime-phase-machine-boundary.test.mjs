@@ -5,37 +5,60 @@ import test from 'node:test';
 
 const root = resolve(import.meta.dirname, '..');
 const runtimeServicePath = resolve(root, 'src/services/acceleration-runtime.service.ts');
+const phaseAbiPath = resolve(root, 'src/services/acceleration-runtime-phase-abi.ts');
 const phaseMachinePath = resolve(root, 'src/services/acceleration-runtime-phase-machine.service.ts');
 const reconcileWorkerPath = resolve(root, 'src/services/acceleration-runtime-reconcile-worker.service.ts');
 const runtimeService = readFileSync(runtimeServicePath, 'utf8');
+const phaseAbi = readFileSync(phaseAbiPath, 'utf8');
 const phaseMachine = readFileSync(phaseMachinePath, 'utf8');
 const reconcileWorker = readFileSync(reconcileWorkerPath, 'utf8');
 
 test('acceleration reconcile phase decisions live in a dedicated phase machine', () => {
   assert.equal(existsSync(phaseMachinePath), true, 'acceleration-runtime-phase-machine.service.ts must exist');
-  assert.match(phaseMachine, /export const ACCELERATION_RECONCILE_DECISIONS/);
-  assert.match(phaseMachine, /export type AccelerationReconcileDecision/);
-  assert.match(phaseMachine, /export type AccelerationReconcileDecision = \(typeof ACCELERATION_RECONCILE_DECISIONS\)\[number\]/);
-  assert.match(phaseMachine, /'compile-snapshot'/);
-  assert.match(phaseMachine, /'compile-external-runtime'/);
-  assert.match(phaseMachine, /'materialize-publish-payloads'/);
-  assert.match(phaseMachine, /'ready-noop'/);
+  assert.equal(existsSync(phaseAbiPath), true, 'acceleration-runtime-phase-abi.ts must exist');
+  assert.match(phaseMachine, /from '\.\/acceleration-runtime-phase-abi'/);
+  assert.match(phaseAbi, /export const ACCELERATION_RECONCILE_DECISION_DESCRIPTORS/);
+  assert.match(phaseMachine, /ACCELERATION_RECONCILE_DECISIONS/);
+  assert.match(phaseMachine, /type AccelerationReconcileDecision/);
+  assert.match(phaseMachine, /ACCELERATION_RECONCILE_DECISION/);
+  assert.match(phaseAbi, /'compile-snapshot'/);
+  assert.match(phaseAbi, /'compile-external-runtime'/);
+  assert.match(phaseAbi, /'materialize-publish-payloads'/);
+  assert.match(phaseAbi, /'ready-noop'/);
+  assert.match(phaseAbi, /validateAndFreezeReconcileDecisionDescriptors/);
+  assert.match(phaseAbi, /Duplicate acceleration reconcile decision descriptor/);
+  assert.match(phaseAbi, /Missing acceleration reconcile decision descriptor/);
   assert.match(phaseMachine, /export function decideAccelerationReconcilePhase/);
-  assert.match(phaseMachine, /if \(!input\.fresh\) return 'compile-snapshot'/);
-  assert.match(phaseMachine, /if \(input\.publishMaterializeOnStart\) return 'materialize-publish-payloads'/);
-  assert.match(phaseMachine, /return 'ready-noop'/);
+  assert.match(phaseMachine, /return ACCELERATION_RECONCILE_DECISION\.compileSnapshot/);
+  assert.match(phaseMachine, /return ACCELERATION_RECONCILE_DECISION\.materializePublishPayloads/);
+  assert.match(phaseMachine, /return ACCELERATION_RECONCILE_DECISION\.readyNoop/);
+  assert.doesNotMatch(phaseMachine, /'compile-snapshot'/);
+  assert.doesNotMatch(phaseMachine, /'compile-external-runtime'/);
+  assert.doesNotMatch(phaseMachine, /'materialize-publish-payloads'/);
+  assert.doesNotMatch(phaseMachine, /'ready-noop'/);
 });
 
 test('acceleration phase machine owns user-visible phase announcements', () => {
   assert.match(phaseMachine, /import \{ setAccelerationRuntimePhase \} from '\.\/acceleration-runtime-state\.service'/);
-  for (const snippet of [
-    "setAccelerationRuntimePhase('stale', 'Acceleration snapshot is stale; compiling next snapshot in background.'",
-    "setAccelerationRuntimePhase('compiling', 'Compiling next acceleration snapshot in background.'",
-    "setAccelerationRuntimePhase('materializing', 'Refreshing publish hot payloads.'",
-    "setAccelerationRuntimePhase('ready', 'Acceleration runtime ready.'",
+  assert.match(phaseAbi, /ACCELERATION_PHASE_ANNOUNCEMENT_DESCRIPTORS/);
+  assert.match(phaseAbi, /'Acceleration snapshot is stale; compiling next snapshot in background\.'/);
+  assert.match(phaseAbi, /'Compiling next acceleration snapshot in background\.'/);
+  assert.match(phaseAbi, /'Refreshing publish hot payloads\.'/);
+  assert.match(phaseAbi, /'Acceleration runtime ready\.'/);
+  assert.match(phaseAbi, /validateAndFreezePhaseAnnouncementDescriptors/);
+  assert.match(phaseMachine, /announceAccelerationPhase\('snapshotStale'\)/);
+  assert.match(phaseMachine, /announceAccelerationPhase\('snapshotCompile'\)/);
+  assert.match(phaseMachine, /announceAccelerationPhase\('publishPayloadMaterialization'\)/);
+  assert.match(phaseMachine, /announceAccelerationPhase\('runtimeReady'\)/);
+  for (const catalogOwnedAnnouncement of [
+    /'Acceleration snapshot is stale; compiling next snapshot in background\.'/,
+    /'Compiling next acceleration snapshot in background\.'/,
+    /'Refreshing publish hot payloads\.'/,
+    /'Acceleration runtime ready\.'/,
   ]) {
-    assert.equal(phaseMachine.includes(snippet), true, `phase machine missing announcement: ${snippet}`);
-    assert.equal(runtimeService.includes(snippet), false, `reconciler must not own announcement: ${snippet}`);
+    assert.match(phaseAbi, catalogOwnedAnnouncement);
+    assert.doesNotMatch(phaseMachine, catalogOwnedAnnouncement);
+    assert.doesNotMatch(runtimeService, catalogOwnedAnnouncement);
   }
 });
 
@@ -59,9 +82,13 @@ test('acceleration runtime service delegates phase decisions and announcements',
 });
 
 test('phase machine keeps promotion log payload shape explicit', () => {
-  assert.match(phaseMachine, /export type AccelerationCompilePromotionSummary/);
+  assert.match(phaseAbi, /export type AccelerationCompilePromotionSummary/);
+  assert.match(phaseAbi, /ACCELERATION_PROMOTION_LOG_FIELD_DESCRIPTORS/);
+  assert.match(phaseAbi, /validateAndFreezePromotionLogFields/);
+  assert.match(phaseAbi, /projectAccelerationPromotionLogPayload/);
   assert.match(phaseMachine, /export function logAccelerationSnapshotPromotedPayload/);
-  assert.match(phaseMachine, /itemsImported: summary\.itemsImported/);
-  assert.match(phaseMachine, /recipesImported: summary\.recipesImported/);
-  assert.match(phaseMachine, /signature: summary\.signature/);
+  assert.match(phaseMachine, /projectAccelerationPromotionLogPayload\(summary\)/);
+  assert.match(phaseAbi, /itemsImported/);
+  assert.match(phaseAbi, /recipesImported/);
+  assert.match(phaseAbi, /signature/);
 });

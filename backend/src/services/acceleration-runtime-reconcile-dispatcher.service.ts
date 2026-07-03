@@ -1,4 +1,5 @@
 import {
+  ACCELERATION_RECONCILE_DECISION,
   ACCELERATION_RECONCILE_DECISIONS,
   type AccelerationReconcileDecision,
 } from './acceleration-runtime-phase-machine.service';
@@ -61,10 +62,10 @@ function validateAndFreezeAccelerationReconcileHandlers(
 }
 
 export const ACCELERATION_RECONCILE_HANDLER_DESCRIPTORS = Object.freeze([
-  reconcileHandlerDescriptor('compile-snapshot', ({ manager }) => refreshAccelerationSnapshot({ manager })),
-  reconcileHandlerDescriptor('compile-external-runtime', () => refreshExternalRuntimeArtifact()),
-  reconcileHandlerDescriptor('materialize-publish-payloads', () => refreshPublishPayloadMaterialization()),
-  reconcileHandlerDescriptor('ready-noop', () => skipPublishPayloadMaterializationOnStartup()),
+  reconcileHandlerDescriptor(ACCELERATION_RECONCILE_DECISION.compileSnapshot, ({ manager }) => refreshAccelerationSnapshot({ manager })),
+  reconcileHandlerDescriptor(ACCELERATION_RECONCILE_DECISION.compileExternalRuntime, () => refreshExternalRuntimeArtifact()),
+  reconcileHandlerDescriptor(ACCELERATION_RECONCILE_DECISION.materializePublishPayloads, () => refreshPublishPayloadMaterialization()),
+  reconcileHandlerDescriptor(ACCELERATION_RECONCILE_DECISION.readyNoop, () => skipPublishPayloadMaterializationOnStartup()),
 ] as const satisfies readonly AccelerationReconcileHandlerDescriptor[]);
 
 export const ACCELERATION_RECONCILE_HANDLERS: Readonly<Record<AccelerationReconcileDecision, AccelerationReconcileHandler>> =
