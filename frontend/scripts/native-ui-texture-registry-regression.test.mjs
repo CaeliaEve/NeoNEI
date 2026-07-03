@@ -11,6 +11,12 @@ import {
   nativeUiTextureKindForRole,
   NativeUiTextureRegistry,
 } from '../src/services/nativeUiTextureRegistry.ts';
+import {
+  NATIVE_UI_DYNAMIC_PRIMITIVE_DESCRIPTOR_LIST,
+  NATIVE_UI_RENDER_RESOURCE_CATALOG_ABI,
+  NATIVE_UI_SLOT_TEXTURE_DESCRIPTOR_LIST,
+  NATIVE_UI_SOLID_TEXTURE_DESCRIPTOR,
+} from '../src/services/nativeUiRenderResourceCatalog.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
@@ -85,6 +91,23 @@ function fakeRenderer(rejectedKey = 'reject') {
 }
 
 test('native UI texture registry classifies slot roles and keys deterministically', () => {
+  assert.equal(NATIVE_UI_RENDER_RESOURCE_CATALOG_ABI.schema, 'neonei/native-ui-render-resource-catalog/current');
+  assert.equal(NATIVE_UI_RENDER_RESOURCE_CATALOG_ABI.buildPolicy, 'descriptor-table-render-resource-projection');
+  assert.equal(NATIVE_UI_RENDER_RESOURCE_CATALOG_ABI.failurePolicy, 'fail-closed-native-ui-resource-binding');
+  assert.deepEqual(NATIVE_UI_SLOT_TEXTURE_DESCRIPTOR_LIST.map((descriptor) => descriptor.kind), [
+    'fluid-output',
+    'fluid-input',
+    'item-output',
+    'item-input',
+  ]);
+  assert.deepEqual(NATIVE_UI_DYNAMIC_PRIMITIVE_DESCRIPTOR_LIST.map((descriptor) => descriptor.kind), [
+    'fluid-bar',
+    'energy-bar',
+    'progress-bar',
+    'indicator',
+  ]);
+  assert.equal(NATIVE_UI_SOLID_TEXTURE_DESCRIPTOR.keyPrefix, 'native-dynamic-solid');
+
   assert.equal(nativeUiTextureKindForRole('item-input'), 'item-input');
   assert.equal(nativeUiTextureKindForRole('item-output'), 'item-output');
   assert.equal(nativeUiTextureKindForRole('fluid-input'), 'fluid-input');
@@ -186,6 +209,7 @@ test('native UI texture registry owns component texture construction boundary', 
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
   const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
   const registrySource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiTextureRegistry.ts'), 'utf8').replace(/\r\n/g, '\n');
+  const catalogSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRenderResourceCatalog.ts'), 'utf8').replace(/\r\n/g, '\n');
 
   assert.match(componentSource, /nativeUiCanvasRenderPipeline/);
   assert.doesNotMatch(componentSource, /nativeUiTextureRegistry/);
@@ -206,7 +230,14 @@ test('native UI texture registry owns component texture construction boundary', 
   assert.match(registrySource, /export class NativeUiTextureRegistry/);
   assert.match(registrySource, /assertNativeUiTextureRegistered/);
   assert.match(registrySource, /Native UI texture registration failed/);
-  assert.match(registrySource, /export function createNativeUiSlotTexture/);
-  assert.match(registrySource, /export function createNativeUiSolidColorTexture/);
-  assert.match(registrySource, /export function createNativeUiGtModularBackgroundTexture/);
+  assert.match(registrySource, /from "\.\/nativeUiRenderResourceCatalog\.ts"/);
+  assert.doesNotMatch(registrySource, /normalized\.includes\("fluid"\)/);
+  assert.doesNotMatch(registrySource, /function drawRoundedRect/);
+
+  assert.match(catalogSource, /NATIVE_UI_RENDER_RESOURCE_CATALOG_ABI/);
+  assert.match(catalogSource, /NATIVE_UI_SLOT_TEXTURE_DESCRIPTOR_LIST/);
+  assert.match(catalogSource, /NATIVE_UI_DYNAMIC_PRIMITIVE_DESCRIPTOR_LIST/);
+  assert.match(catalogSource, /export function createNativeUiSlotTexture/);
+  assert.match(catalogSource, /export function createNativeUiSolidColorTexture/);
+  assert.match(catalogSource, /export function createNativeUiGtModularBackgroundTexture/);
 });

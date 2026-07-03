@@ -187,6 +187,7 @@ test('native UI render command builder owns component sprite assembly boundary',
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
   const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
   const builderSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRenderCommandBuilder.ts'), 'utf8').replace(/\r\n/g, '\n');
+  const catalogSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRenderResourceCatalog.ts'), 'utf8').replace(/\r\n/g, '\n');
 
   assert.match(componentSource, /nativeUiCanvasRenderPipeline/);
   assert.doesNotMatch(componentSource, /nativeUiRenderCommandBuilder/);
@@ -202,5 +203,11 @@ test('native UI render command builder owns component sprite assembly boundary',
   assert.match(builderSource, /export function buildNativeUiSpriteCommands/);
   assert.match(builderSource, /export function pushNativeUiBackgroundCommands/);
   assert.match(builderSource, /export function pushNativeUiDynamicPrimitiveCommands/);
-  assert.match(builderSource, /export function nativeUiDynamicPrimitiveColors/);
+  assert.match(builderSource, /from "\.\/nativeUiRenderResourceCatalog\.ts"/);
+  assert.match(builderSource, /nativeUiPrimitiveFillRatio/);
+  assert.doesNotMatch(builderSource, /const DYNAMIC_TRACK_COLOR/);
+  assert.doesNotMatch(builderSource, /function defaultDynamicFillColor/);
+  assert.match(catalogSource, /NATIVE_UI_DYNAMIC_PRIMITIVE_DESCRIPTOR_LIST/);
+  assert.match(catalogSource, /export function nativeUiDynamicPrimitiveColors/);
+  assert.match(catalogSource, /export function nativeUiSolidTextureKey/);
 });

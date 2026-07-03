@@ -1,6 +1,17 @@
 import type { NativeTextureSpriteCommand } from "../renderers/native/WebGl2NativeRenderer.ts";
 import type { NativeUiDynamicPrimitive, NativeUiSlotCell } from "./nativeUiRuntimeRegistry.ts";
 import { resolveNativeUiRectGeometry } from "./nativeUiGeometryAbi.ts";
+import {
+  nativeUiDynamicPrimitiveColors,
+  nativeUiPrimitiveFillRatio,
+  nativeUiSolidTextureKey,
+  normalizeNativeUiDpr,
+} from "./nativeUiRenderResourceCatalog.ts";
+
+export {
+  nativeUiDynamicPrimitiveColors,
+  nativeUiSolidTextureKey,
+} from "./nativeUiRenderResourceCatalog.ts";
 
 export interface NativeUiPreparedBackgroundSource {
   textureKey: string;
@@ -37,53 +48,6 @@ export interface NativeUiSpriteCommandBuildOptions<TEntry> {
   resolveAtlasSource: (entry: TEntry, nowMs: number) => NativeUiAtlasSpriteSource | null;
 }
 
-const DYNAMIC_TRACK_COLOR = "rgba(5, 9, 14, 0.72)";
-const DYNAMIC_PROGRESS_FILL_COLOR = "rgba(247, 182, 72, 0.86)";
-const DYNAMIC_FLUID_FILL_COLOR = "rgba(82, 189, 255, 0.78)";
-const DYNAMIC_ENERGY_FILL_COLOR = "rgba(118, 232, 147, 0.78)";
-const DYNAMIC_BORDER_COLOR = "rgba(238, 244, 252, 0.22)";
-
-function normalizedDpr(value: number): number {
-  return Number.isFinite(value) && value > 0 ? value : 1;
-}
-
-function clamp01(value: unknown, fallback = 1): number {
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed)) return fallback;
-  return Math.max(0, Math.min(1, parsed));
-}
-
-function normalizeDynamicPrimitiveKind(primitive: NativeUiDynamicPrimitive): string {
-  const kind = `${primitive.kind ?? primitive.role ?? ""}`.trim().toLowerCase();
-  if (kind.includes("fluid")) return "fluid-bar";
-  if (kind.includes("energy") || kind.includes("eu")) return "energy-bar";
-  if (kind.includes("progress") || kind.includes("arrow")) return "progress-bar";
-  return kind || "indicator";
-}
-
-function defaultDynamicFillColor(primitive: NativeUiDynamicPrimitive): string {
-  const kind = normalizeDynamicPrimitiveKind(primitive);
-  if (kind === "fluid-bar") return DYNAMIC_FLUID_FILL_COLOR;
-  if (kind === "energy-bar") return DYNAMIC_ENERGY_FILL_COLOR;
-  return DYNAMIC_PROGRESS_FILL_COLOR;
-}
-
-function primitiveFillRatio(primitive: NativeUiDynamicPrimitive): number {
-  return clamp01(primitive.fill ?? primitive.ratio ?? primitive.value, 1);
-}
-
-export function nativeUiSolidTextureKey(color: string): string {
-  return `native-dynamic-solid:${color}`;
-}
-
-export function nativeUiDynamicPrimitiveColors(primitive: NativeUiDynamicPrimitive): string[] {
-  return [
-    `${primitive.trackColor ?? DYNAMIC_TRACK_COLOR}`,
-    `${primitive.fillColor ?? defaultDynamicFillColor(primitive)}`,
-    `${primitive.borderColor ?? DYNAMIC_BORDER_COLOR}`,
-  ];
-}
-
 export function pushNativeUiTextureSpriteRect(
   commands: NativeTextureSpriteCommand[],
   dprValue: number,
@@ -98,7 +62,7 @@ export function pushNativeUiTextureSpriteRect(
   destHeight: number,
 ): void {
   if (sourceWidth <= 0 || sourceHeight <= 0 || destWidth <= 0 || destHeight <= 0) return;
-  const dpr = normalizedDpr(dprValue);
+  const dpr = normalizeNativeUiDpr(dprValue);
   commands.push({
     textureKey,
     sourceX,
@@ -203,7 +167,7 @@ export function pushNativeUiDynamicPrimitiveCommands(
   const innerY = y + borderSize;
   const innerWidth = Math.max(0, width - borderSize * 2);
   const innerHeight = Math.max(0, height - borderSize * 2);
-  const fillRatio = primitiveFillRatio(primitive);
+  const fillRatio = nativeUiPrimitiveFillRatio(primitive);
   const orientation = primitive.orientation ?? (height > width ? "vertical" : "horizontal");
 
   pushSolidSpriteRect(commands, dpr, trackColor, innerX, innerY, innerWidth, innerHeight);
@@ -225,7 +189,7 @@ export function pushNativeUiDynamicPrimitiveCommands(
 export function buildNativeUiSpriteCommands<TEntry>(
   options: NativeUiSpriteCommandBuildOptions<TEntry>,
 ): NativeTextureSpriteCommand[] {
-  const dpr = normalizedDpr(options.dpr);
+  const dpr = normalizeNativeUiDpr(options.dpr);
   const commands: NativeTextureSpriteCommand[] = [];
   const background = options.background;
   if (background) {
