@@ -112,10 +112,6 @@ type DistDataRecipeItemIndexEntry = {
   usedIn?: Array<{ recipeId?: string; categoryId?: string; displayName?: string }>;
 };
 
-type DistDataRecipeItemIndexPayload = {
-  schemaVersion?: string;
-  items?: DistDataRecipeItemIndexEntry[];
-};
 
 type DistDataRustRecipeCategoryEntry = {
   categoryId?: string;
@@ -149,10 +145,6 @@ type DistDataRecipeUiPayloadIndexEntry = {
   machineType?: string;
 };
 
-type DistDataRecipeUiPayloadIndexPayload = {
-  schemaVersion?: string;
-  recipes?: DistDataRecipeUiPayloadIndexEntry[];
-};
 
 type DistDataRecipeUiPayloadShard = {
   schemaVersion?: string;
@@ -743,7 +735,7 @@ async function getRustRecipePack(): Promise<DistDataRustRecipePackPayload | null
     .catch((error) => {
       void getDistDataManifest().then((manifest) => {
         if (manifest) {
-          reportDistDataSchemaMismatch(manifest, `${manifest.files?.rustRuntimeManifest ?? manifest.files?.rustRecipePack ?? "rust/recipes.bin"}`, "Binary recipes.bin failed to parse", {
+          reportDistDataSchemaMismatch(manifest, `${manifest.files?.rustRuntimeManifest ?? "rust/runtime-manifest.json"}`, "Binary recipes.bin failed to parse", {
             error: error instanceof Error ? error.message : `${error}`,
           });
         }
@@ -767,34 +759,14 @@ async function getRecipeItemIndex(): Promise<Map<string, DistDataRecipeItemIndex
   }
 
   recipeItemIndexRequest = (async () => {
-    const manifest = await getDistDataManifest();
     const rustRecipePack = await getRustRecipePack();
     const rustEntries = Array.isArray(rustRecipePack?.itemIndex)
       ? rustRecipePack.itemIndex.filter((entry) => entry?.itemId)
       : [];
-    if (rustEntries.length > 0) {
-      cachedRecipeItemIndex = new Map(rustEntries.map((entry) => [entry.itemId, entry]));
-      return cachedRecipeItemIndex;
-    }
-    if (`${manifest?.files?.rustRecipePack ?? ""}`.trim()) {
+    if (!rustEntries.length) {
       return null;
     }
-
-    const indexPath = `${manifest?.files?.recipeItemIndex ?? ""}`.trim();
-    if (!manifest || !indexPath) {
-      return null;
-    }
-    const payload = await fetchDistDataJson<DistDataRecipeItemIndexPayload>(joinDistDataAssetPath(getDistDataBasePath(), indexPath));
-    const entries = Array.isArray(payload.items) ? payload.items.filter((entry) => entry?.itemId) : [];
-    if (!Array.isArray(payload.items)) {
-      reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data recipe item index is missing items[]", {
-        schemaVersion: payload.schemaVersion ?? null,
-      });
-    }
-    if (!entries.length) {
-      return null;
-    }
-    cachedRecipeItemIndex = new Map(entries.map((entry) => [entry.itemId, entry]));
+    cachedRecipeItemIndex = new Map(rustEntries.map((entry) => [entry.itemId, entry]));
     return cachedRecipeItemIndex;
   })()
     .catch(() => null)
@@ -1246,40 +1218,14 @@ async function getRecipeUiPayloadIndex(): Promise<Map<string, DistDataRecipeUiPa
   }
 
   recipeUiPayloadIndexRequest = (async () => {
-    const manifest = await getDistDataManifest();
     const rustRecipePack = await getRustRecipePack();
     const rustEntries = Array.isArray(rustRecipePack?.uiPayloadIndex)
       ? rustRecipePack.uiPayloadIndex.filter((entry) => entry?.recipeId && entry?.path)
       : [];
-    if (rustEntries.length > 0) {
-      cachedRecipeUiPayloadIndex = new Map(rustEntries.map((entry) => [
-        entry.recipeId,
-        {
-          ...entry,
-          path: normalizeRecipeUiPayloadPath(entry.path),
-        },
-      ]));
-      return cachedRecipeUiPayloadIndex;
-    }
-    if (`${manifest?.files?.rustRecipePack ?? ""}`.trim()) {
+    if (!rustEntries.length) {
       return null;
     }
-
-    const indexPath = `${manifest?.files?.recipeUiPayloadIndex ?? ""}`.trim();
-    if (!manifest || !indexPath) {
-      return null;
-    }
-    const payload = await fetchDistDataJson<DistDataRecipeUiPayloadIndexPayload>(joinDistDataAssetPath(getDistDataBasePath(), indexPath));
-    const entries = Array.isArray(payload.recipes) ? payload.recipes.filter((entry) => entry?.recipeId && entry?.path) : [];
-    if (!Array.isArray(payload.recipes)) {
-      reportDistDataSchemaMismatch(manifest, indexPath, "Dist-data recipe UI payload index is missing recipes[]", {
-        schemaVersion: payload.schemaVersion ?? null,
-      });
-    }
-    if (!entries.length) {
-      return null;
-    }
-    cachedRecipeUiPayloadIndex = new Map(entries.map((entry) => [
+    cachedRecipeUiPayloadIndex = new Map(rustEntries.map((entry) => [
       entry.recipeId,
       {
         ...entry,

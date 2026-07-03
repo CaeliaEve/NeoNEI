@@ -54,6 +54,34 @@ test('dist-data recipe runtime does not fetch recipe-pack.json as the primary pa
     'recipe pack loader must not fetch recipe-pack.json JSON as the production index');
 });
 
+test('dist-data recipe indexes do not fall back to legacy JSON sidecar indexes', () => {
+  const getRecipeItemIndex = runtimeSource.slice(
+    runtimeSource.indexOf('async function getRecipeItemIndex()'),
+    runtimeSource.indexOf('function collectRecipeIds('),
+  );
+  const getRecipeUiPayloadIndex = runtimeSource.slice(
+    runtimeSource.indexOf('async function getRecipeUiPayloadIndex()'),
+    runtimeSource.indexOf('export async function getDistDataRecipeUiPayload('),
+  );
+
+  assert.match(getRecipeItemIndex, /const rustRecipePack = await getRustRecipePack\(\)/,
+    'item index must be projected from the native recipe pack');
+  assert.match(getRecipeItemIndex, /rustRecipePack\?\.itemIndex/,
+    'item index must consume the pack itemIndex table');
+  assert.doesNotMatch(getRecipeItemIndex, /manifest\?\.files\?\.recipeItemIndex|fetchDistDataJson<DistDataRecipeItemIndexPayload>/,
+    'item index must not read the legacy JSON recipeItemIndex sidecar');
+
+  assert.match(getRecipeUiPayloadIndex, /const rustRecipePack = await getRustRecipePack\(\)/,
+    'UI payload index must be projected from the native recipe pack');
+  assert.match(getRecipeUiPayloadIndex, /rustRecipePack\?\.uiPayloadIndex/,
+    'UI payload index must consume the pack uiPayloadIndex table');
+  assert.doesNotMatch(getRecipeUiPayloadIndex, /manifest\?\.files\?\.recipeUiPayloadIndex|fetchDistDataJson<DistDataRecipeUiPayloadIndexPayload>/,
+    'UI payload index must not read the legacy JSON recipeUiPayloadIndex sidecar');
+
+  assert.doesNotMatch(runtimeSource, /type DistDataRecipeItemIndexPayload|type DistDataRecipeUiPayloadIndexPayload/,
+    'legacy JSON index payload types should not remain in the runtime source');
+});
+
 test('dist-data atlas runtime uses binary textures.bin as the production atlas index path', () => {
   assert.match(source, /RUNTIME_PACK_CONTRACTS\.textures\.schema/,
     'atlas runtime must read the current texture binary schema from the pack ABI contract');
