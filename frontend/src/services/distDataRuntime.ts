@@ -620,9 +620,9 @@ async function getPackValidationReport(
     return packValidationReportRequest;
   }
 
-  const reportPath = resolvePackValidationReportPath(manifest, runtimeManifest);
+  const reportPath = resolvePackValidationReportPath(runtimeManifest);
   if (!reportPath) {
-    reportDistDataSchemaMismatch(manifest, "rust/pack-validation-report.json", "Pack ABI validation report is not declared by dist-data or runtime manifest");
+    reportDistDataSchemaMismatch(manifest, "rust/pack-validation-report.json", "Pack ABI validation report is not declared by runtime manifest");
     return null;
   }
 
@@ -652,7 +652,7 @@ async function assertNativeBinaryPackContract(
   contract: RuntimePackContract,
 ): Promise<string | null> {
   const runtimeManifest = await getRustRuntimeManifest();
-  const binaryPath = resolveNativePackPath(manifest, runtimeManifest, contract);
+  const binaryPath = resolveNativePackPath(runtimeManifest, contract);
   if (!binaryPath) {
     return null;
   }
@@ -662,7 +662,7 @@ async function assertNativeBinaryPackContract(
   }
   const validation = validatePackAbiReport(report, contract, binaryPath);
   if (!validation.ok) {
-    const reportPath = resolvePackValidationReportPath(manifest, runtimeManifest);
+    const reportPath = resolvePackValidationReportPath(runtimeManifest);
     reportDistDataSchemaMismatch(manifest, binaryPath, `${contract.description} is not allowed by pack ABI validation report`, {
       reportPath,
       violations: validation.violations,
@@ -677,7 +677,7 @@ async function getDeclaredNativeBinaryPackPath(
   contract: RuntimePackContract,
 ): Promise<string | null> {
   const runtimeManifest = await getRustRuntimeManifest();
-  return resolveNativePackPath(manifest, runtimeManifest, contract);
+  return resolveNativePackPath(runtimeManifest, contract);
 }
 
 async function getRequiredNativeBinaryPackPath(

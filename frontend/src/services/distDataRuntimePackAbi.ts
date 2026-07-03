@@ -1,8 +1,7 @@
-import type { DistDataManifest, DistDataRustRuntimeManifest } from "./distDataRuntimeManifest";
+import type { DistDataRustRuntimeManifest } from "./distDataRuntimeManifest";
 import {
   normalizeRuntimePath,
   runtimeManifestDeclaresPath as manifestDeclaresRuntimePath,
-  runtimeManifestFileRecord,
   runtimePathString,
 } from "./runtimeManifestPath.ts";
 
@@ -11,11 +10,10 @@ export const PACK_ABI_VALIDATION_REPORT_SCHEMA = "elysium-compiler/pack-abi-vali
 export const PACK_ABI_VERSION = "elysium.pack.v1";
 
 type RuntimePackEntrypoint = "browser" | "groups" | "search" | "recipes" | "textures";
-type RuntimePackManifestFile = "rustBrowserBin" | "rustGroupsBin" | "rustSearchBin" | "rustRecipeBin" | "rustTextureBin";
+type RuntimePackLogicalName = "rustBrowserBin" | "rustGroupsBin" | "rustSearchBin" | "rustRecipeBin" | "rustTextureBin";
 
 export type RuntimePackContract = {
-  logicalName: RuntimePackManifestFile;
-  manifestFile: RuntimePackManifestFile;
+  logicalName: RuntimePackLogicalName;
   entrypoint: RuntimePackEntrypoint;
   schema: string;
   description: string;
@@ -24,35 +22,30 @@ export type RuntimePackContract = {
 export const RUNTIME_PACK_CONTRACTS = {
   browser: {
     logicalName: "rustBrowserBin",
-    manifestFile: "rustBrowserBin",
     entrypoint: "browser",
     schema: "neonei/browser-pack/current",
     description: "Native browser pack",
   },
   groups: {
     logicalName: "rustGroupsBin",
-    manifestFile: "rustGroupsBin",
     entrypoint: "groups",
     schema: "neonei/group-pack/current",
     description: "Native group pack",
   },
   search: {
     logicalName: "rustSearchBin",
-    manifestFile: "rustSearchBin",
     entrypoint: "search",
     schema: "neonei/search-pack/current",
     description: "Native search pack",
   },
   recipes: {
     logicalName: "rustRecipeBin",
-    manifestFile: "rustRecipeBin",
     entrypoint: "recipes",
     schema: "neonei/recipe-pack/current",
     description: "Native recipe pack",
   },
   textures: {
     logicalName: "rustTextureBin",
-    manifestFile: "rustTextureBin",
     entrypoint: "textures",
     schema: "neonei/texture-pack/current",
     description: "Native texture pack",
@@ -89,13 +82,8 @@ export type PackValidationResult = {
 
 type RuntimeFileRecord = Record<string, string | undefined>;
 
-function runtimeManifestFilesRecord(runtimeManifest: DistDataRustRuntimeManifest | null): RuntimeFileRecord {
-  const record = runtimeManifestFileRecord(runtimeManifest?.files);
-  return record ? record as RuntimeFileRecord : {};
-}
-
 export function runtimeManifestEntrypoints(runtimeManifest: DistDataRustRuntimeManifest | null): RuntimeFileRecord {
-  return runtimeManifest?.entrypoints ?? runtimeManifestFilesRecord(runtimeManifest);
+  return runtimeManifest?.entrypoints ?? {};
 }
 
 export function runtimeManifestDeclaresPath(
@@ -110,15 +98,22 @@ export function runtimeManifestDeclaresPath(
     : false;
 }
 
+function runtimeManifestFilesDeclarePath(
+  runtimeManifest: DistDataRustRuntimeManifest | null,
+  artifactPath: string,
+): boolean {
+  return runtimeManifest
+    ? manifestDeclaresRuntimePath({
+      entrypoints: {},
+      files: runtimeManifest.files,
+    }, artifactPath)
+    : false;
+}
+
 export function resolveNativePackPath(
-  manifest: DistDataManifest,
   runtimeManifest: DistDataRustRuntimeManifest | null,
   contract: RuntimePackContract,
 ): string | null {
-  const manifestPath = normalizeRuntimePath(manifest.files?.[contract.manifestFile]);
-  if (manifestPath) {
-    return manifestPath;
-  }
   const runtimePath = normalizeRuntimePath(runtimeManifestEntrypoints(runtimeManifest)[contract.entrypoint]);
   if (runtimePath) {
     return runtimePath;
@@ -127,25 +122,9 @@ export function resolveNativePackPath(
 }
 
 export function resolvePackValidationReportPath(
-  manifest: DistDataManifest,
   runtimeManifest: DistDataRustRuntimeManifest | null,
 ): string | null {
-  const manifestFiles = manifest.files as (DistDataManifest["files"] & {
-    packValidationReport?: string;
-  }) | undefined;
-  const manifestPath = normalizeRuntimePath(manifestFiles?.rustPackValidationReport ?? manifestFiles?.packValidationReport);
-  if (manifestPath) {
-    return manifestPath;
-  }
-  const entrypoints = runtimeManifestEntrypoints(runtimeManifest) as RuntimeFileRecord & {
-    packValidationReport?: string;
-    packAbiValidationReport?: string;
-  };
-  const runtimeEntrypointPath = normalizeRuntimePath(entrypoints.packValidationReport ?? entrypoints.packAbiValidationReport);
-  if (runtimeEntrypointPath) {
-    return runtimeEntrypointPath;
-  }
-  if (runtimeManifestDeclaresPath(runtimeManifest, PACK_ABI_VALIDATION_REPORT_PATH)) {
+  if (runtimeManifestFilesDeclarePath(runtimeManifest, PACK_ABI_VALIDATION_REPORT_PATH)) {
     return PACK_ABI_VALIDATION_REPORT_PATH;
   }
   return null;

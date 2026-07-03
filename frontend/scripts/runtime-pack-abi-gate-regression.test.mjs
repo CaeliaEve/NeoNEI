@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 import {
   PACK_ABI_VALIDATION_REPORT_PATH,
   RUNTIME_PACK_CONTRACTS,
+  runtimeManifestEntrypoints,
   resolveNativePackPath,
   resolvePackValidationReportPath,
   validatePackAbiReport,
@@ -13,6 +14,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
+const packAbiSource = readFileSync(resolve(frontendRoot, 'src/services/distDataRuntimePackAbi.ts'), 'utf8').replace(/\r\n/g, '\n');
 const runtimeSource = readFileSync(resolve(frontendRoot, 'src/services/distDataRuntime.ts'), 'utf8').replace(/\r\n/g, '\n');
 const renderSource = readFileSync(resolve(frontendRoot, 'src/services/distDataRuntimeRender.ts'), 'utf8').replace(/\r\n/g, '\n');
 
@@ -37,12 +39,7 @@ function okReport(overrides = {}) {
   };
 }
 
-test('runtime pack ABI gate resolves compiler-declared report and native entrypoints', () => {
-  const manifest = {
-    files: {
-      rustRuntimeManifest: 'rust/runtime-manifest.json',
-    },
-  };
+test('runtime pack ABI gate resolves compiler-declared runtime-manifest entrypoints only', () => {
   const runtimeManifest = {
     entrypoints: {
       recipes: 'rust/recipes.bin',
@@ -53,8 +50,32 @@ test('runtime pack ABI gate resolves compiler-declared report and native entrypo
     ],
   };
 
-  assert.equal(resolveNativePackPath(manifest, runtimeManifest, RUNTIME_PACK_CONTRACTS.recipes), 'rust/recipes.bin');
-  assert.equal(resolvePackValidationReportPath(manifest, runtimeManifest), PACK_ABI_VALIDATION_REPORT_PATH);
+  assert.equal(resolveNativePackPath(runtimeManifest, RUNTIME_PACK_CONTRACTS.recipes), 'rust/recipes.bin');
+  assert.equal(resolvePackValidationReportPath(runtimeManifest), PACK_ABI_VALIDATION_REPORT_PATH);
+});
+
+test('runtime pack ABI gate rejects legacy manifest-file and files-to-entrypoint fallbacks', () => {
+  assert.equal(resolveNativePackPath(null, RUNTIME_PACK_CONTRACTS.recipes), null);
+  assert.deepEqual(runtimeManifestEntrypoints({
+    files: [
+      { path: 'rust/recipes.bin', bytes: 410 },
+    ],
+  }), {});
+  assert.equal(resolveNativePackPath({
+    files: [
+      { path: 'rust/recipes.bin', bytes: 410 },
+    ],
+  }, RUNTIME_PACK_CONTRACTS.recipes), null);
+  assert.equal(resolvePackValidationReportPath({
+    entrypoints: {
+      packValidationReport: PACK_ABI_VALIDATION_REPORT_PATH,
+      packAbiValidationReport: PACK_ABI_VALIDATION_REPORT_PATH,
+    },
+    files: [],
+  }), null);
+  assert.doesNotMatch(packAbiSource, /manifestFile/);
+  assert.doesNotMatch(packAbiSource, /runtimeManifestFileRecord/);
+  assert.doesNotMatch(packAbiSource, /manifest\\.files\\?\\.\\[contract\\.manifestFile\\]/);
 });
 
 test('runtime pack ABI gate validates report policy and artifact contract before binary parse', () => {
@@ -96,7 +117,7 @@ test('dist-data runtime does not derive binary packs from legacy JSON filenames'
 });
 
 test('native browser/search/recipe/texture readers are gated by pack ABI report before binary parse', () => {
-  assert.match(runtimeSource, /resolvePackValidationReportPath\(manifest, runtimeManifest\)/);
+  assert.match(runtimeSource, /resolvePackValidationReportPath\(runtimeManifest\)/);
   assert.match(runtimeSource, /validatePackAbiReport\(report, contract, binaryPath\)/);
   assert.match(runtimeSource, /RUNTIME_PACK_CONTRACTS\.browser/);
   assert.match(runtimeSource, /RUNTIME_PACK_CONTRACTS\.groups/);
@@ -105,6 +126,7 @@ test('native browser/search/recipe/texture readers are gated by pack ABI report 
   assert.match(renderSource, /RUNTIME_PACK_CONTRACTS\.textures\.schema/);
 
   assert.doesNotMatch(runtimeSource, /manifest\?\.files\?\.rustBrowserPack \?\? manifest\?\.files\?\.rustBrowserBin/);
+  assert.doesNotMatch(runtimeSource, /resolveNativePackPath\(manifest, runtimeManifest, contract\)/);
   assert.doesNotMatch(runtimeSource, /\.then\(parseNativeBrowserPackPayload\)\s*\.catch\(\(\) => null\)/);
   assert.doesNotMatch(runtimeSource, /parseNativeBinaryPackEnvelope\(buffer, "neonei\/search-pack\/current"\)[\s\S]*?\.catch\(\(error\)/);
 });
