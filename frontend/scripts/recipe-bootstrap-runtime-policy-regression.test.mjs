@@ -8,6 +8,7 @@ const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), 
 const runtimeSessionSource = fs.readFileSync(path.join(frontendRoot, 'src/services/api/runtimeSession.ts'), 'utf8').replace(/\r\n/g, '\n');
 const clientSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeBootstrapClient.ts'), 'utf8').replace(/\r\n/g, '\n');
 const recipeClientSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeClient.ts'), 'utf8').replace(/\r\n/g, '\n');
+const artifactPolicySource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeBootstrapArtifactPolicyCatalog.ts'), 'utf8').replace(/\r\n/g, '\n');
 const adminControlSource = fs.readFileSync(path.join(frontendRoot, 'src/control/adminControlClient.ts'), 'utf8').replace(/\r\n/g, '\n');
 
 test('live recipe bootstrap preference module is retired from runtime hot paths', () => {
@@ -30,9 +31,23 @@ test('recipe bootstrap runtime path uses compiled artifacts only', () => {
   assert.equal(publishedIndex < failClosedIndex, true, 'compiled artifact attempts must precede fail-closed error');
 });
 
+test('recipe bootstrap published artifact policy is descriptor-owned', () => {
+  assert.match(artifactPolicySource, /type RecipePublishedArtifactDescriptor/);
+  assert.match(artifactPolicySource, /validateArtifactDescriptors/);
+  assert.match(artifactPolicySource, /Duplicate recipe published artifact descriptor/);
+  assert.match(artifactPolicySource, /RECIPE_BOOTSTRAP_ARTIFACT_POLICY_CATALOG/);
+  assert.match(artifactPolicySource, /compiled-artifacts-fail-closed/);
+  assert.match(artifactPolicySource, /recipe-group-index/);
+  assert.match(artifactPolicySource, /recipe-group-window/);
+  assert.match(artifactPolicySource, /recipe-search-pack/);
+  assert.match(clientSource, /from '\.\/recipeBootstrapArtifactPolicyCatalog'/);
+  assert.doesNotMatch(recipeClientSource, /resolvePublishedRecipe|canUsePublishedRecipe|recipeSearchBasePath/);
+});
+
 test('recipe bootstrap control-plane fallback is not reachable from runtime clients', () => {
   assert.match(adminControlSource, /CONTROL_PLANE_DISABLED/);
   assert.equal(fs.existsSync(path.join(frontendRoot, 'src/control/labControlClient.ts')), false);
   assert.doesNotMatch(clientSource, /getRecipeBootstrap[A-Za-z]*Compat|devCompatClient|getLabPayload|\/recipe-bootstrap\//);
   assert.doesNotMatch(recipeClientSource, /getRecipeBootstrap[A-Za-z]*Compat|getLabPayload|\/recipe-bootstrap\//);
+  assert.doesNotMatch(clientSource, /fall back|fallback|live API/i);
 });

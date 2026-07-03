@@ -15,14 +15,17 @@ import {
   canUsePublishedRecipeGroupIndex,
   canUsePublishedRecipeGroupWindow,
   canUsePublishedRecipeSearchPack,
+  resolvePublishedItemRecipeBundlePath,
+  resolvePublishedRecipeBootstrapPath,
+  resolvePublishedRecipeGroupIndexPath,
+  resolvePublishedRecipeGroupWindowPath,
+  resolvePublishedRecipeSearchPath,
+} from './recipeBootstrapArtifactPolicyCatalog';
+import {
   getRuntimeRecipeBootstrapCategoryGroup,
   getRuntimeRecipeBootstrapProducedByGroup,
   getRuntimeRecipeBootstrapUsedInGroup,
   getRuntimeRecipeBootstrap,
-  resolvePublishedRecipeGroupIndexPath,
-  resolvePublishedRecipeGroupWindowPath,
-  resolvePublishedRecipeSearchPath,
-  resolveRuntimeRecipeBootstrapPath,
 } from './recipeClient';
 import {
   mergeBrowserSearchPackEntries,
@@ -55,51 +58,6 @@ function getNow(): number {
   return typeof performance !== 'undefined' && typeof performance.now === 'function'
     ? performance.now()
     : Date.now();
-}
-
-function resolvePublishedRecipeBootstrapPath(
-  manifest: PublicRuntimeManifest | null | undefined,
-  itemId: string,
-  kind: 'bootstrap' | 'shard',
-): string | null {
-  const normalizedItemId = `${itemId ?? ''}`.trim();
-  if (!normalizedItemId) {
-    return null;
-  }
-
-  const bundle = manifest?.publishBundle;
-  const publishedItems = Array.isArray(bundle?.files.recipeBootstrapItems)
-    ? bundle?.files.recipeBootstrapItems
-    : [];
-  if (!publishedItems.includes(normalizedItemId)) {
-    return null;
-  }
-
-  return resolveRuntimeRecipeBootstrapPath(
-    kind === 'bootstrap' ? bundle?.files.recipeBootstrapBasePath : bundle?.files.recipeBootstrapShardBasePath,
-    normalizedItemId,
-  );
-}
-
-function resolvePublishedItemRecipeBundlePath(
-  manifest: PublicRuntimeManifest | null | undefined,
-  itemId: string,
-): string | null {
-  const normalizedItemId = `${itemId ?? ''}`.trim();
-  if (!normalizedItemId) {
-    return null;
-  }
-
-  const bundle = manifest?.publishBundle;
-  const publishedItems = Array.isArray(bundle?.files.itemRecipeBundleItems)
-    ? bundle?.files.itemRecipeBundleItems
-    : [];
-  const basePath = `${bundle?.files.itemRecipeBundleBasePath ?? ''}`.trim();
-  if (!basePath || !publishedItems.includes(normalizedItemId)) {
-    return null;
-  }
-
-  return `${basePath.replace(/\/+$/g, '')}/${encodeURIComponent(normalizedItemId)}.json`;
 }
 
 function unwrapPublishedItemRecipeBundle(value: unknown): RecipeBootstrapPayload | null {
@@ -341,7 +299,7 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
             return bundledBootstrap;
           }
         } catch {
-          // Try the older immutable bootstrap bundle next; do not fall back to lab.
+          // Continue to the next compiled artifact source; control-plane bootstrap is not allowed here.
         }
       }
 
@@ -467,7 +425,7 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
         try {
           return await options.fetchPublishedJson<RecipeBootstrapMachineGroupPayload>(staticPath);
         } catch {
-          // Try the window bundle next.
+          // Continue within the compiled group artifact order.
         }
       }
     }
@@ -531,7 +489,7 @@ export function createRecipeBootstrapClient(options: RecipeBootstrapClientOption
         try {
           return await options.fetchPublishedJson<RecipeBootstrapCategoryGroupPayload>(staticPath);
         } catch {
-          // Try the window bundle next.
+          // Continue within the compiled group artifact order.
         }
       }
     }

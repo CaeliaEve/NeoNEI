@@ -10,8 +10,8 @@ const clientSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-const recipeClientSource = fs.readFileSync(
-  path.join(frontendRoot, 'src/runtime/recipeClient.ts'),
+const artifactPolicySource = fs.readFileSync(
+  path.join(frontendRoot, 'src/runtime/recipeBootstrapArtifactPolicyCatalog.ts'),
   'utf8',
 ).replace(/\r\n/g, '\n');
 
@@ -20,16 +20,21 @@ const viewerSource = fs.readFileSync(
   'utf8',
 ).replace(/\r\n/g, '\n');
 
-test('recipe search uses static publish packs before falling back to the live API search route', () => {
+test('recipe search uses static publish packs through compiled artifact policy', () => {
   assert.equal(
-    recipeClientSource.includes('canUsePublishedRecipeSearchPack('),
+    artifactPolicySource.includes('canUsePublishedRecipeSearchPack('),
     true,
     'api should detect whether a published recipe search pack is available',
   );
   assert.equal(
-    recipeClientSource.includes('resolvePublishedRecipeSearchPath('),
+    artifactPolicySource.includes('resolvePublishedRecipeSearchPath('),
     true,
     'api should resolve deterministic published recipe search pack paths',
+  );
+  assert.equal(
+    artifactPolicySource.includes('recipe-search-pack'),
+    true,
+    'recipe search pack availability should be owned by the artifact policy catalog',
   );
   assert.equal(
     clientSource.includes('getPublishedRecipeBootstrapSearchPack('),
@@ -47,7 +52,7 @@ test('recipe search uses static publish packs before falling back to the live AP
     'local recipe search should resolve item matches from published browser search shards before API fallback',
   );
   assert.equal(
-    clientSource.includes("await api.searchItemsFast(normalizedQuery, 80"),
+    /api\.searchItemsFast|live API fallback/i.test(clientSource),
     false,
     'static recipe search should no longer depend on the live item search API on its hot path',
   );

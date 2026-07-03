@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 const frontendRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = path.resolve(frontendRoot, '..');
 const frontendTypeSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/types.ts'), 'utf8');
-const frontendRecipeClientSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeClient.ts'), 'utf8');
+const frontendArtifactPolicySource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeBootstrapArtifactPolicyCatalog.ts'), 'utf8');
 const frontendRecipeBootstrapClientSource = fs.readFileSync(path.join(frontendRoot, 'src/runtime/recipeBootstrapClient.ts'), 'utf8');
 const backendManifestSource = fs.readFileSync(path.join(repoRoot, 'backend/src/services/publish-payload.service.ts'), 'utf8');
 const backendMaterializerSource = fs.readFileSync(
@@ -86,7 +86,7 @@ test('publish materializer writes bounded static recipe group windows', () => {
   );
 });
 
-test('frontend recipe group fetches prefer static windows before live API fallback', () => {
+test('frontend recipe group fetches use compiled artifact policy before failing closed', () => {
   assert.match(
     frontendTypeSource,
     /recipeCoverage\?:\s*\{/,
@@ -98,28 +98,34 @@ test('frontend recipe group fetches prefer static windows before live API fallba
     'frontend manifest type should understand static recipe group window paths',
   );
   assert.match(
-    frontendRecipeClientSource,
+    frontendArtifactPolicySource,
     /function canUsePublishedRecipeGroupWindow\(/,
     'frontend should gate static recipe group windows separately from ids-only indexes',
   );
   assert.match(
-    frontendRecipeClientSource,
+    frontendArtifactPolicySource,
     /function resolvePublishedRecipeGroupWindowPath\(/,
-    'frontend should resolve static window paths without building live API URLs',
+    'frontend should resolve static window paths without building control-plane URLs',
+  );
+  assert.match(
+    frontendArtifactPolicySource,
+    /RECIPE_BOOTSTRAP_ARTIFACT_POLICY_CATALOG/,
+    'frontend should expose recipe artifact resolution through a descriptor catalog',
   );
   assert.match(
     frontendRecipeBootstrapClientSource,
     /getRecipeBootstrapProducedByGroup[\s\S]*canUsePublishedRecipeGroupWindow[\s\S]*fetchPublishedJson<RecipeBootstrapMachineGroupPayload>/,
-    'produced-by machine groups should try static recipe windows before live API fallback',
+    'produced-by machine groups should try static recipe windows before failing closed',
   );
   assert.match(
     frontendRecipeBootstrapClientSource,
     /getRecipeBootstrapUsedInGroup[\s\S]*canUsePublishedRecipeGroupWindow[\s\S]*fetchPublishedJson<RecipeBootstrapMachineGroupPayload>/,
-    'used-in machine groups should try static recipe windows before live API fallback',
+    'used-in machine groups should try static recipe windows before failing closed',
   );
   assert.match(
     frontendRecipeBootstrapClientSource,
     /getRecipeBootstrapCategoryGroup[\s\S]*canUsePublishedRecipeGroupWindow[\s\S]*fetchPublishedJson<RecipeBootstrapCategoryGroupPayload>/,
-    'category groups should try static recipe windows before live API fallback',
+    'category groups should try static recipe windows before failing closed',
   );
+  assert.doesNotMatch(frontendRecipeBootstrapClientSource, /live API fallback/i);
 });
