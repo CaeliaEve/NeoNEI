@@ -13,6 +13,11 @@ import {
   nativeRendererProbeSupported,
   nativeRendererProbeUnsupported,
 } from '../src/renderers/native/NativeRendererProbe.ts';
+import {
+  NATIVE_UI_CANVAS_DPR_POLICY,
+  NATIVE_UI_RENDERER_BACKEND_DESCRIPTOR_LIST,
+  NATIVE_UI_RENDERER_SESSION_CATALOG_ABI,
+} from '../src/services/nativeUiRendererSessionCatalog.ts';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendRoot = resolve(__dirname, '..');
@@ -58,6 +63,15 @@ function fakeScheduler() {
 }
 
 test('native UI renderer session normalizes DPR and owns canvas device sizing', () => {
+  assert.equal(NATIVE_UI_RENDERER_SESSION_CATALOG_ABI.schema, 'neonei/native-ui-renderer-session-catalog/current');
+  assert.equal(NATIVE_UI_RENDERER_SESSION_CATALOG_ABI.buildPolicy, 'descriptor-table-renderer-session-projection');
+  assert.equal(NATIVE_UI_RENDERER_SESSION_CATALOG_ABI.failurePolicy, 'fail-closed-native-ui-renderer-session');
+  assert.deepEqual(NATIVE_UI_CANVAS_DPR_POLICY, { min: 1, max: 2, fallback: 1 });
+  assert.deepEqual(
+    NATIVE_UI_RENDERER_BACKEND_DESCRIPTOR_LIST.map((descriptor) => descriptor.backend),
+    ['webgl2'],
+  );
+
   assert.equal(normalizeNativeUiDpr(undefined), 1);
   assert.equal(normalizeNativeUiDpr(0), 1);
   assert.equal(normalizeNativeUiDpr(1.5), 1.5);
@@ -144,6 +158,7 @@ test('native UI renderer session owns render pipeline lifecycle boundary', () =>
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
   const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
   const sessionSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRendererSession.ts'), 'utf8').replace(/\r\n/g, '\n');
+  const catalogSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRendererSessionCatalog.ts'), 'utf8').replace(/\r\n/g, '\n');
 
   assert.match(componentSource, /nativeUiCanvasRenderPipeline/);
   assert.match(componentSource, /new NativeUiCanvasRenderPipeline/);
@@ -161,14 +176,24 @@ test('native UI renderer session owns render pipeline lifecycle boundary', () =>
   assert.match(pipelineSource, /configureNativeUiCanvasSize/);
   assert.match(pipelineSource, /rendererSession\.ensureRenderer/);
   assert.match(pipelineSource, /rendererSession\.scheduleAnimationLoop/);
-  assert.match(sessionSource, /WebGl2NativeRenderer/);
+  assert.match(sessionSource, /nativeUiRendererSessionCatalog/);
+  assert.match(sessionSource, /createNativeUiRenderer/);
+  assert.match(sessionSource, /startNativeUiAnimationLoop/);
+  assert.match(sessionSource, /cancelNativeUiAnimationLoop/);
+  assert.doesNotMatch(sessionSource, /WebGl2NativeRenderer/);
+  assert.doesNotMatch(sessionSource, /requestAnimationFrame/);
+  assert.doesNotMatch(sessionSource, /cancelAnimationFrame/);
+  assert.match(catalogSource, /NATIVE_UI_RENDERER_SESSION_CATALOG_ABI/);
+  assert.match(catalogSource, /schema: "neonei\/native-ui-renderer-session-catalog\/current"/);
+  assert.match(catalogSource, /NATIVE_UI_RENDERER_BACKEND_DESCRIPTOR_LIST/);
+  assert.match(catalogSource, /WebGl2NativeRenderer/);
   assert.match(sessionSource, /NATIVE_UI_RENDERER_SESSION_POLICY/);
-  assert.match(sessionSource, /NativeRendererProbeResult/);
-  assert.match(sessionSource, /assertNativeRendererProbeSupported/);
-  assert.match(sessionSource, /WebGl2NativeRenderer\.probe/);
+  assert.match(catalogSource, /NativeRendererProbeResult/);
+  assert.match(catalogSource, /assertNativeRendererProbeSupported/);
+  assert.match(catalogSource, /WebGl2NativeRenderer\.probe/);
   assert.doesNotMatch(sessionSource, /WebGl2NativeRenderer\.create/);
-  assert.match(sessionSource, /requestAnimationFrame/);
-  assert.match(sessionSource, /cancelAnimationFrame/);
-  assert.match(sessionSource, /nativeUiRendererNowMs/);
+  assert.match(catalogSource, /requestAnimationFrame/);
+  assert.match(catalogSource, /cancelAnimationFrame/);
+  assert.match(catalogSource, /nativeUiRendererNowMs/);
   assert.doesNotMatch(sessionSource, /animationBudget/);
 });
