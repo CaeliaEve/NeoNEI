@@ -331,11 +331,13 @@ test('native UI background contract uses materialized nine-slice ModularUI asset
   assert.equal(backgroundLoader.includes('nativeUiNativeBackgroundTextureSpec'), true);
   assert.equal(backgroundLoader.includes('source.textureKey === options.nativeTextureKey ? "captured" : "error"'), true);
   assert.equal(backgroundLoader.includes('if (background?.status === "captured") return emptyBackgroundResult(visibleError);'), true);
-  assert.equal(backgroundLoader.includes('if (nativeUiIsSemanticGtBackground(background) && semanticTextureKey)'), true);
+  assert.equal(backgroundLoader.includes('if (nativeUiIsSemanticGeneratedBackground(background) && semanticTextureKey)'), true);
   assert.equal(backgroundLoader.indexOf('if (background?.status === "captured") return emptyBackgroundResult(visibleError);')
-    < backgroundLoader.indexOf('if (nativeUiIsSemanticGtBackground(background) && semanticTextureKey)'), true);
+    < backgroundLoader.indexOf('if (nativeUiIsSemanticGeneratedBackground(background) && semanticTextureKey)'), true);
   assert.equal(renderCommands.includes('pushNativeUiBackgroundCommands'), true);
   assert.equal(renderCommands.includes('nineSlice'), true);
+  assert.equal(backgroundLoader.includes('NATIVE_UI_CANONICAL_NEI_BACKGROUND_KIND'), true);
+  assert.equal(backgroundLoader.includes('createNativeUiCanonicalNeiBackgroundTexture'), true);
 });
 test('compiler extraction boundary uses pinned external elysium-compiler binary', () => {
   const finalizer = readFileSync(join(repoRoot, 'scripts/finalize-native-ui-export.mjs'), 'utf8');

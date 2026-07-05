@@ -5,10 +5,15 @@ import {
 
 export const NATIVE_UI_SCALE_MODE = "uniform-scale";
 export const NATIVE_UI_GT_BACKGROUND_KIND = "gt-modular-ui";
+export const NATIVE_UI_CANONICAL_NEI_BACKGROUND_KIND = "canonical-nei-template";
+export const NATIVE_UI_BACKGROUND_KINDS = Object.freeze([
+  NATIVE_UI_GT_BACKGROUND_KIND,
+  NATIVE_UI_CANONICAL_NEI_BACKGROUND_KIND,
+] as const);
 export const NATIVE_UI_BACKGROUND_SCALING_NINE_SLICE = "nine-slice";
 
 export type NativeUiBackgroundStatus = "captured" | "semantic";
-export type NativeUiBackgroundKind = typeof NATIVE_UI_GT_BACKGROUND_KIND;
+export type NativeUiBackgroundKind = typeof NATIVE_UI_BACKGROUND_KINDS[number];
 
 export interface NativeUiBackgroundTextureSpec {
   width: number;
@@ -156,7 +161,7 @@ export function resolveNativeUiBackgroundContract(
     background.kind,
     "kind",
     label,
-    [NATIVE_UI_GT_BACKGROUND_KIND],
+    NATIVE_UI_BACKGROUND_KINDS,
   );
   const coordinateSpace = requiredEnum(
     background.coordinateSpace,

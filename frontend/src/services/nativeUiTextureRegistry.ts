@@ -1,6 +1,7 @@
 import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend.ts";
 import type { NativeUiDynamicPrimitive, NativeUiSlotCell } from "./nativeUiRuntimeRegistry.ts";
 import {
+  createNativeUiCanonicalNeiBackgroundTexture,
   createNativeUiGtModularBackgroundTexture,
   createNativeUiSlotTexture,
   createNativeUiSolidColorTexture,
@@ -13,6 +14,7 @@ import {
 } from "./nativeUiRenderResourceCatalog.ts";
 
 export {
+  createNativeUiCanonicalNeiBackgroundTexture,
   createNativeUiGtModularBackgroundTexture,
   createNativeUiSlotTexture,
   createNativeUiSolidColorTexture,

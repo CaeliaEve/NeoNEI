@@ -189,6 +189,17 @@ export const NATIVE_UI_GT_MODULAR_BACKGROUND_DESCRIPTOR = Object.freeze({
   shadow: "rgba(0,0,0,0.24)",
 } as const);
 
+export const NATIVE_UI_CANONICAL_NEI_BACKGROUND_DESCRIPTOR = Object.freeze({
+  baseFill: "#10151d",
+  panelInset: 0,
+  gradientTop: "#293241",
+  gradientBottom: "#151b24",
+  outerStroke: "rgba(176, 190, 209, 0.34)",
+  innerStroke: "rgba(0, 0, 0, 0.42)",
+  highlight: "rgba(255,255,255,0.06)",
+  shadow: "rgba(0,0,0,0.30)",
+} as const);
+
 const SLOT_TEXTURE_DESCRIPTOR_BY_KIND = Object.freeze(
   Object.fromEntries(NATIVE_UI_SLOT_TEXTURE_DESCRIPTOR_LIST.map((descriptor) => [descriptor.kind, descriptor])),
 ) as unknown as Readonly<Record<NativeUiSlotTextureKind, NativeUiSlotTextureDescriptor>>;
@@ -405,5 +416,42 @@ export function createNativeUiGtModularBackgroundTexture(
   ctx.fillRect(panelX + 2, panelY + 2, Math.max(0, panelWidth - 4), 1);
   ctx.fillStyle = descriptor.shadow;
   ctx.fillRect(panelX + 2, panelY + panelHeight - 3, Math.max(0, panelWidth - 4), 1);
+  return canvas;
+}
+
+export function createNativeUiCanonicalNeiBackgroundTexture(
+  width: number,
+  height: number,
+  dprValue: number,
+): HTMLCanvasElement {
+  const dpr = normalizeNativeUiDpr(dprValue);
+  const logicalWidth = Math.max(1, Math.round(width));
+  const logicalHeight = Math.max(1, Math.round(height));
+  const descriptor = NATIVE_UI_CANONICAL_NEI_BACKGROUND_DESCRIPTOR;
+  const canvas = createCanvas(logicalWidth * dpr, logicalHeight * dpr);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.scale(dpr, dpr);
+  ctx.imageSmoothingEnabled = false;
+
+  ctx.fillStyle = descriptor.baseFill;
+  ctx.fillRect(0, 0, logicalWidth, logicalHeight);
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, logicalHeight);
+  gradient.addColorStop(0, descriptor.gradientTop);
+  gradient.addColorStop(1, descriptor.gradientBottom);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(descriptor.panelInset, descriptor.panelInset,
+    Math.max(1, logicalWidth - descriptor.panelInset * 2),
+    Math.max(1, logicalHeight - descriptor.panelInset * 2));
+
+  ctx.strokeStyle = descriptor.outerStroke;
+  ctx.strokeRect(0.5, 0.5, Math.max(0, logicalWidth - 1), Math.max(0, logicalHeight - 1));
+  ctx.strokeStyle = descriptor.innerStroke;
+  ctx.strokeRect(1.5, 1.5, Math.max(0, logicalWidth - 3), Math.max(0, logicalHeight - 3));
+  ctx.fillStyle = descriptor.highlight;
+  ctx.fillRect(2, 2, Math.max(0, logicalWidth - 4), 1);
+  ctx.fillStyle = descriptor.shadow;
+  ctx.fillRect(2, Math.max(0, logicalHeight - 3), Math.max(0, logicalWidth - 4), 1);
   return canvas;
 }

@@ -100,6 +100,10 @@ export const UI_PACK_BACKGROUND_CONTRACT_FIELDS = Object.freeze([
   'recipeBackgroundOffset',
   'recipeBackgroundSize',
 ]);
+export const UI_PACK_BACKGROUND_KINDS = Object.freeze([
+  'gt-modular-ui',
+  'canonical-nei-template',
+]);
 export const UI_PACK_TEMPLATE_BACKGROUND_FIELD = 'nativeBackground';
 
 export function expectedUiTemplateHeader() {
@@ -143,6 +147,7 @@ export function uiPackFormatCatalog() {
     rectGeometryFields: UI_PACK_RECT_GEOMETRY_FIELDS,
     interactionContractFields: UI_PACK_INTERACTION_CONTRACT_FIELDS,
     backgroundContractFields: UI_PACK_BACKGROUND_CONTRACT_FIELDS,
+    backgroundKinds: UI_PACK_BACKGROUND_KINDS,
     templateBackgroundField: UI_PACK_TEMPLATE_BACKGROUND_FIELD,
   };
 }

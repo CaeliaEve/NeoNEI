@@ -43,6 +43,7 @@ logs/
 *.backup
 nul
 .tmp-runtime/
+.omx/
 
 # Python (if any)
 __pycache__/

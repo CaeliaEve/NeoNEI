@@ -4,6 +4,7 @@ import type { NativeUiLayoutSurface } from "./nativeUiRuntimeRegistry.ts";
 import type { NativeUiPreparedBackgroundSource } from "./nativeUiRenderCommandBuilder.ts";
 import {
   NATIVE_UI_BACKGROUND_SCALING_NINE_SLICE,
+  NATIVE_UI_CANONICAL_NEI_BACKGROUND_KIND,
   NATIVE_UI_GT_BACKGROUND_KIND,
   resolveNativeUiBackgroundContract,
   type NativeUiBackgroundContract,
@@ -11,6 +12,7 @@ import {
   type NativeUiBackgroundTextureSpec,
 } from "./nativeUiBackgroundAbi.ts";
 import {
+  createNativeUiCanonicalNeiBackgroundTexture,
   createNativeUiGtModularBackgroundTexture,
   type NativeUiTextureRegistry,
 } from "./nativeUiTextureRegistry.ts";
@@ -43,7 +45,7 @@ export type NativeUiBackgroundState = "captured" | "semantic" | "ready" | "loadi
 export interface NativeUiBackgroundStateOptions {
   nativeAssetRef: string | null;
   nativeTextureKey: string | null;
-  semanticGtBackground: boolean;
+  semanticBackground: boolean;
   source: NativeUiPreparedBackgroundSource | null;
   error: string | null;
 }
@@ -78,14 +80,22 @@ export function nativeUiIsSemanticGtBackground(background: NativeUiBackgroundCon
   return background?.kind === NATIVE_UI_GT_BACKGROUND_KIND && background.status === "semantic";
 }
 
+export function nativeUiIsSemanticCanonicalNeiBackground(background: NativeUiBackgroundContract | null): boolean {
+  return background?.kind === NATIVE_UI_CANONICAL_NEI_BACKGROUND_KIND && background.status === "semantic";
+}
+
+export function nativeUiIsSemanticGeneratedBackground(background: NativeUiBackgroundContract | null): boolean {
+  return nativeUiIsSemanticGtBackground(background) || nativeUiIsSemanticCanonicalNeiBackground(background);
+}
+
 export function nativeUiSemanticBackgroundTextureKey(
   background: NativeUiBackgroundContract | null,
   layoutWidth: number,
   layoutHeight: number,
   dpr: number,
 ): string | null {
-  if (!nativeUiIsSemanticGtBackground(background)) return null;
-  return `ui-background:gt-modular-ui:${layoutWidth}x${layoutHeight}:${dpr}`;
+  if (!nativeUiIsSemanticGeneratedBackground(background)) return null;
+  return `ui-background:${background.kind}:${layoutWidth}x${layoutHeight}:${dpr}`;
 }
 
 export function nativeUiNativeBackgroundAssetRef(background: NativeUiBackgroundContract | null): string | null {
@@ -140,7 +150,7 @@ export function nativeUiBackgroundState(options: NativeUiBackgroundStateOptions)
     if (!options.source) return "loading";
     return options.source.textureKey === options.nativeTextureKey ? "captured" : "error";
   }
-  if (options.semanticGtBackground) return options.source ? "semantic" : "loading";
+  if (options.semanticBackground) return options.source ? "semantic" : "loading";
   if (options.error) return "error";
   return "none";
 }
@@ -230,8 +240,10 @@ export async function prepareNativeUiBackgroundSource(
     options.layoutHeight,
     options.dpr,
   );
-  if (nativeUiIsSemanticGtBackground(background) && semanticTextureKey) {
-    const texture = createNativeUiGtModularBackgroundTexture(options.layoutWidth, options.layoutHeight, options.dpr);
+  if (nativeUiIsSemanticGeneratedBackground(background) && semanticTextureKey) {
+    const texture = nativeUiIsSemanticGtBackground(background)
+      ? createNativeUiGtModularBackgroundTexture(options.layoutWidth, options.layoutHeight, options.dpr)
+      : createNativeUiCanonicalNeiBackgroundTexture(options.layoutWidth, options.layoutHeight, options.dpr);
     if (!options.textureRegistry.register(options.renderer, semanticTextureKey, texture)) {
       return emptyBackgroundResult(`Native UI semantic background texture registration failed: ${semanticTextureKey}`);
     }

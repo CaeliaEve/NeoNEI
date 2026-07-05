@@ -26,7 +26,7 @@ import {
 } from '../services/nativeUiInteractionProjection.ts';
 import {
   nativeUiBackgroundState,
-  nativeUiIsSemanticGtBackground,
+  nativeUiIsSemanticGeneratedBackground,
   nativeUiNativeBackground,
   nativeUiNativeBackgroundAssetRef,
   nativeUiNativeBackgroundTextureKey,
@@ -109,13 +109,13 @@ const viewports = computed(() => nativeUiSurface.value?.viewports ?? []);
 const dynamicPrimitives = computed(() => nativeUiSurface.value?.dynamicPrimitives ?? []);
 
 const nativeBackground = computed(() => nativeUiNativeBackground(resolvedNativeLayout.value));
-const semanticGtBackground = computed(() => nativeUiIsSemanticGtBackground(nativeBackground.value));
+const semanticBackground = computed(() => nativeUiIsSemanticGeneratedBackground(nativeBackground.value));
 const nativeBackgroundAssetRef = computed(() => nativeUiNativeBackgroundAssetRef(nativeBackground.value));
 const nativeBackgroundTextureKey = computed(() => nativeUiNativeBackgroundTextureKey(nativeBackground.value));
 const backgroundState = computed(() => nativeUiBackgroundState({
   nativeAssetRef: nativeBackgroundAssetRef.value,
   nativeTextureKey: nativeBackgroundTextureKey.value,
-  semanticGtBackground: semanticGtBackground.value,
+  semanticBackground: semanticBackground.value,
   source: backgroundSource.value,
   error: backgroundLoadError.value,
 }));
