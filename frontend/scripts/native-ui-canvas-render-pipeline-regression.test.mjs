@@ -192,6 +192,7 @@ test('native UI canvas render pipeline owns rebuild sequencing and GPU resource 
       'native-dynamic-solid:border',
       'native-dynamic-solid:border',
       'native-dynamic-solid:border',
+      'recipe-slot:item-input:2:20x18',
       'items.png',
     ]);
     assert.ok(renderer.textures.some((entry) => entry.key === 'recipe-slot:item-input:2:20x18'));
@@ -272,12 +273,15 @@ test('native UI canvas render pipeline fails closed on resource boundary errors'
   assert.equal(atlasFailureState.renderError, 'atlas resources are incomplete');
 });
 
-test('native UI canvas render pipeline is the component rebuild boundary', () => {
+test('native UI canvas render pipeline is retired from captured NEI frame component', () => {
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
   const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /new NativeUiCanvasRenderPipeline/);
-  assert.match(componentSource, /renderPipeline\.rebuild/);
+  assert.match(componentSource, /nativeNeiFrameResource/);
+  assert.match(componentSource, /class="native-nei-frame"/);
+  assert.doesNotMatch(componentSource, /new NativeUiCanvasRenderPipeline/);
+  assert.doesNotMatch(componentSource, /renderPipeline\.rebuild/);
+  assert.doesNotMatch(componentSource, /<canvas\b/);
   assert.doesNotMatch(componentSource, /function ensureSlotTextures/);
   assert.doesNotMatch(componentSource, /function ensureDynamicPrimitiveTextures/);
   assert.doesNotMatch(componentSource, /function ensureBackgroundTexture/);

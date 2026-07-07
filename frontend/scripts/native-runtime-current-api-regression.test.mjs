@@ -103,6 +103,17 @@ test("homepage native runtime manifest defaults to current API", () => {
   );
 });
 
+test("dist-data static runtime assets revalidate when the active export changes", () => {
+  const assetResolver = readSource("src/services/distDataRuntimeAssetResolver.ts");
+
+  assert.match(assetResolver, /cache:\s*"no-cache"/);
+  assert.doesNotMatch(
+    assetResolver,
+    /cache:\s*"force-cache"/,
+    "dist-data URLs are stable across exports, so browser cache must revalidate instead of pinning stale packs",
+  );
+});
+
 
 test("native runtime packs are on by default unless explicitly disabled", () => {
   const assetResolver = readSource("src/services/distDataRuntimeAssetResolver.ts");

@@ -63,6 +63,7 @@ export const componentRegistry = {
   BloodBindingRitualUI,
   BloodOrbCraftingUI,
   MultiblockBlueprintUI,
+  NativeNeiRecipeCanvas,
 } satisfies Record<string, Component>;
 
 export type RegisteredRecipeComponentName = keyof typeof componentRegistry;

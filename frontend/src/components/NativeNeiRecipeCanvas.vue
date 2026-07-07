@@ -9,9 +9,9 @@ import {
   resolveNativeUiRuntimeSurface,
   type NativeUiFitMatrix,
   type NativeUiLayoutSurface,
-  type NativeUiResolvedSurface,
   type NativeUiRect,
   type NativeUiSlotCell,
+  type NativeUiResolvedSurface,
 } from '../services/nativeUiRuntimeRegistry';
 import {
   isNativeUiHotspotInteractive,
@@ -20,26 +20,19 @@ import {
   nativeUiRectLabel,
   nativeUiRectStyle,
   nativeUiSlotCellStyle,
-  nativeUiTextOverlayStyle,
   projectNativeUiHitCells,
   type NativeUiHitCell,
 } from '../services/nativeUiInteractionProjection.ts';
-import {
-  nativeUiBackgroundState,
-  nativeUiIsSemanticGeneratedBackground,
-  nativeUiNativeBackground,
-  nativeUiNativeBackgroundAssetRef,
-  nativeUiNativeBackgroundTextureKey,
-} from '../services/nativeUiBackgroundResourceLoader.ts';
-import {
-  NativeUiCanvasRenderPipeline,
-  type NativeUiCanvasRenderPipelineState,
-} from '../services/nativeUiCanvasRenderPipeline.ts';
 import {
   projectNativeUiRecipeRenderables,
   resolveNativeUiRenderablesForRole,
   type NativeUiRecipeRenderable,
 } from '../services/nativeUiRecipeRenderableProjection.ts';
+import {
+  nativeNeiFrameAssetUrl,
+  nativeNeiFrameFromPayload,
+  nativeNeiFrameValidationError,
+} from '../services/nativeNeiFrameResource.ts';
 import RecipeItemTooltip from './RecipeItemTooltip.vue';
 
 type CanvasRenderable = NativeUiRecipeRenderable;
@@ -48,7 +41,6 @@ type NativeUiSurfaceResolution = Readonly<{
   surface: NativeUiResolvedSurface | null;
   error: string | null;
 }>;
-
 
 const props = defineProps<{
   recipe: Recipe;
@@ -59,27 +51,26 @@ const emit = defineEmits<{
   (e: 'item-click', itemId: string): void;
 }>();
 
-const canvasRef = ref<HTMLCanvasElement | null>(null);
 const shellRef = ref<HTMLElement | null>(null);
-const renderError = ref<string | null>(null);
-const renderReady = ref(false);
-const missingTextureCount = ref(0);
-const currentDpr = ref(1);
 const uiPackRuntime = ref<UiPackRuntime | null>(null);
-const backgroundSource = ref<NativeUiCanvasRenderPipelineState['backgroundSource']>(null);
-const backgroundLoadError = ref<string | null>(null);
-let resizeObserver: ResizeObserver | null = null;
-let mounted = false;
-const renderPipeline = new NativeUiCanvasRenderPipeline<CanvasRenderable>({
-  nextTick,
-  onStateChange: syncRenderPipelineState,
-});
+const nativeFrameLoadError = ref<string | null>(null);
+const nativeFrameReady = ref(false);
 const shellWidth = ref(0);
 const shellHeight = ref(0);
+let resizeObserver: ResizeObserver | null = null;
 
 const nativeLayout = computed<NativeUiLayoutSurface | null>(() => (
   normalizeNativeUiLayoutSurface(props.uiPayload?.nativeLayout)
 ));
+const nativeFrame = computed(() => nativeNeiFrameFromPayload(props.uiPayload));
+const nativeFrameContractError = computed(() => (
+  props.uiPayload
+    ? nativeNeiFrameValidationError(props.uiPayload)
+    : 'Native recipe UI payload is unavailable; cannot render captured in-game NEI frame.'
+));
+const nativeFrameUrl = computed(() => nativeNeiFrameAssetUrl(nativeFrame.value));
+const nativeFrameError = computed(() => nativeFrameContractError.value ?? nativeFrameLoadError.value);
+const hasNativeFrame = computed(() => nativeFrame.value !== null && nativeFrameUrl.value !== null);
 
 const nativeUiSurfaceResolution = computed<NativeUiSurfaceResolution>(() => {
   try {
@@ -100,25 +91,9 @@ const nativeUiSurfaceResolution = computed<NativeUiSurfaceResolution>(() => {
 });
 const nativeUiSurfaceError = computed(() => nativeUiSurfaceResolution.value.error);
 const nativeUiSurface = computed(() => nativeUiSurfaceResolution.value.surface);
-
 const resolvedNativeLayout = computed<NativeUiLayoutSurface | null>(() => nativeUiSurface.value?.layout ?? null);
 const slots = computed(() => nativeUiSurface.value?.slots ?? []);
-const textOverlays = computed(() => nativeUiSurface.value?.textOverlays ?? []);
 const hotspots = computed(() => nativeUiSurface.value?.hotspots ?? []);
-const viewports = computed(() => nativeUiSurface.value?.viewports ?? []);
-const dynamicPrimitives = computed(() => nativeUiSurface.value?.dynamicPrimitives ?? []);
-
-const nativeBackground = computed(() => nativeUiNativeBackground(resolvedNativeLayout.value));
-const semanticBackground = computed(() => nativeUiIsSemanticGeneratedBackground(nativeBackground.value));
-const nativeBackgroundAssetRef = computed(() => nativeUiNativeBackgroundAssetRef(nativeBackground.value));
-const nativeBackgroundTextureKey = computed(() => nativeUiNativeBackgroundTextureKey(nativeBackground.value));
-const backgroundState = computed(() => nativeUiBackgroundState({
-  nativeAssetRef: nativeBackgroundAssetRef.value,
-  nativeTextureKey: nativeBackgroundTextureKey.value,
-  semanticBackground: semanticBackground.value,
-  source: backgroundSource.value,
-  error: backgroundLoadError.value,
-}));
 
 const title = computed(() => String(
   props.uiPayload?.machineType
@@ -131,11 +106,11 @@ const subtitle = computed(() => String(
   (props.uiPayload?.handler as Record<string, unknown> | undefined)?.displayName
     ?? (props.uiPayload?.handler as Record<string, unknown> | undefined)?.canonicalMachineFamily
     ?? props.uiPayload?.familyKey
-    ?? 'native-nei',
+    ?? 'native-nei-frame',
 ));
 
-const layoutWidth = computed(() => nativeUiSurface.value?.width ?? 0);
-const layoutHeight = computed(() => nativeUiSurface.value?.height ?? 0);
+const layoutWidth = computed(() => nativeFrame.value?.width ?? 0);
+const layoutHeight = computed(() => nativeFrame.value?.height ?? 0);
 const displayWidth = computed(() => Math.ceil(layoutWidth.value));
 const displayHeight = computed(() => Math.ceil(layoutHeight.value));
 const fitMatrix = computed<NativeUiFitMatrix>(() => createNativeUiFitMatrix({
@@ -165,30 +140,12 @@ const sourceSurfaceStyle = computed(() => ({
 }));
 
 const recipeRenderables = computed(() => projectNativeUiRecipeRenderables(props.recipe));
-
 const slotCells = computed<CanvasCell[]>(() => buildNativeUiSlotCells({
   slots: slots.value,
+  layout: resolvedNativeLayout.value,
   resolveRoleEntries: (role) => resolveNativeUiRenderablesForRole(role, recipeRenderables.value),
 }));
 const hitCells = computed<NativeUiHitCell<CanvasRenderable>[]>(() => projectNativeUiHitCells(slotCells.value));
-
-const renderSignature = computed(() => JSON.stringify({
-  recipeId: props.recipe.recipeId,
-  familyKey: props.uiPayload?.familyKey ?? '',
-  uiPackStatus: uiPackRuntime.value?.status ?? 'loading',
-  uiPackTemplateKey: nativeUiSurface.value?.binding?.templateKey ?? '',
-  nativeUiSurfaceSource: nativeUiSurface.value?.source ?? 'error',
-  nativeUiSurfaceError: nativeUiSurfaceError.value ?? '',
-  layoutWidth: layoutWidth.value,
-  layoutHeight: layoutHeight.value,
-  nativeBackground: nativeBackground.value,
-  slots: slots.value,
-  textOverlays: textOverlays.value,
-  dynamicPrimitives: dynamicPrimitives.value,
-  hotspots: hotspots.value,
-  viewports: viewports.value,
-  entries: slotCells.value.map((cell) => [cell.key, cell.entry?.atlasLookupId, cell.entry?.count]),
-}));
 
 function handleHotspotClick(rect: NativeUiRect) {
   const itemId = nativeUiHotspotItemId(rect);
@@ -200,14 +157,14 @@ function handleHitCellClick(cell: NativeUiHitCell<CanvasRenderable>) {
   emit('item-click', cell.entry.itemId);
 }
 
+function handleNativeFrameLoad() {
+  nativeFrameReady.value = true;
+  nativeFrameLoadError.value = null;
+}
 
-function syncRenderPipelineState(state: NativeUiCanvasRenderPipelineState) {
-  currentDpr.value = state.currentDpr;
-  renderError.value = state.renderError;
-  renderReady.value = state.renderReady;
-  missingTextureCount.value = state.missingTextureCount;
-  backgroundSource.value = state.backgroundSource;
-  backgroundLoadError.value = state.backgroundLoadError;
+function handleNativeFrameError() {
+  nativeFrameReady.value = false;
+  nativeFrameLoadError.value = `Native NEI frame asset failed to load: ${nativeFrame.value?.assetRef ?? 'unknown'}`;
 }
 
 function measureShell() {
@@ -226,98 +183,60 @@ async function hydrateUiPackRuntime() {
   uiPackRuntime.value = await loadUiPackRuntime('/api/runtime/current/manifest');
 }
 
-async function rebuildRenderer() {
-  if (nativeUiSurfaceError.value) {
-    renderPipeline.dispose();
-    return;
-  }
-  await renderPipeline.rebuild({
-    mounted,
-    canvas: canvasRef.value,
-    displayWidth: displayWidth.value,
-    displayHeight: displayHeight.value,
-    devicePixelRatio: window.devicePixelRatio,
-    layout: resolvedNativeLayout.value,
-    manifestUrl: uiPackRuntime.value?.manifestUrl ?? null,
-    layoutWidth: layoutWidth.value,
-    layoutHeight: layoutHeight.value,
-    dynamicPrimitives: dynamicPrimitives.value,
-    slotCells: slotCells.value,
-  });
-}
-
 function handleResize() {
   measureShell();
-  void rebuildRenderer();
 }
 
 onMounted(() => {
-  mounted = true;
   nextTick(() => measureShell());
   window.addEventListener('resize', handleResize, { passive: true });
   if (typeof ResizeObserver !== 'undefined') {
-    resizeObserver = new ResizeObserver(() => {
-      measureShell();
-    });
+    resizeObserver = new ResizeObserver(() => measureShell());
     if (shellRef.value) resizeObserver.observe(shellRef.value);
   }
   void hydrateUiPackRuntime();
-  void rebuildRenderer();
 });
 
-watch(renderSignature, () => {
-  void rebuildRenderer();
-}, { flush: 'post' });
+watch(nativeFrameUrl, () => {
+  nativeFrameReady.value = false;
+  nativeFrameLoadError.value = null;
+}, { flush: 'sync' });
 
 onBeforeUnmount(() => {
-  mounted = false;
   window.removeEventListener('resize', handleResize);
   resizeObserver?.disconnect();
   resizeObserver = null;
-  renderPipeline.dispose();
 });
 </script>
 
 <template>
-  <section class="native-nei-card" aria-label="Native NEI recipe canvas">
+  <section class="native-nei-card" aria-label="Captured in-game NEI recipe frame">
     <header class="native-nei-header">
       <div>
-        <div class="native-eyebrow">NATIVE NEI CANVAS</div>
+        <div class="native-eyebrow">IN-GAME NEI FRAME</div>
         <h3>{{ title }}</h3>
       </div>
       <code>{{ subtitle }}</code>
     </header>
 
     <div class="native-nei-body">
-      <div v-if="nativeUiSurfaceError || renderError" class="native-nei-error">{{ nativeUiSurfaceError || renderError }}</div>
+      <div v-if="nativeFrameError" class="native-nei-error">
+        {{ nativeFrameError }}
+      </div>
       <div v-else ref="shellRef" class="native-nei-canvas-shell" :style="shellStyle">
         <div class="native-nei-source-surface" :style="sourceSurfaceStyle">
-          <canvas
-            ref="canvasRef"
-            class="native-nei-canvas"
+          <img
+            v-if="hasNativeFrame && nativeFrameUrl"
+            class="native-nei-frame"
+            :src="nativeFrameUrl"
+            :width="displayWidth"
+            :height="displayHeight"
             :style="canvasStyle"
-            aria-hidden="true"
-          />
-          <div v-if="textOverlays.length > 0" class="native-nei-text-layer" :style="canvasStyle">
-            <div
-              v-for="(overlay, index) in textOverlays"
-              :key="`${index}:${overlay.x ?? 0}:${overlay.y ?? 0}:${overlay.text ?? ''}`"
-              class="native-nei-text-overlay"
-              :style="nativeUiTextOverlayStyle(overlay)"
-            >
-              {{ overlay.text }}
-            </div>
-          </div>
-          <div v-if="viewports.length > 0" class="native-nei-viewport-layer" :style="canvasStyle" aria-hidden="true">
-            <div
-              v-for="(viewport, index) in viewports"
-              :key="`${viewport.id ?? index}:${viewport.x ?? 0}:${viewport.y ?? 0}`"
-              class="native-nei-viewport-region"
-              :style="nativeUiRectStyle(viewport)"
-            >
-              <span>{{ nativeUiRectLabel(viewport, 'Captured viewport') }}</span>
-            </div>
-          </div>
+            alt="Captured in-game NEI recipe frame"
+            draggable="false"
+            @load="handleNativeFrameLoad"
+            @error="handleNativeFrameError"
+          >
           <div class="native-nei-hit-layer" :style="canvasStyle">
             <div
               v-for="(hotspot, index) in hotspots"
@@ -359,20 +278,21 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
-        <div v-if="slots.length === 0" class="native-nei-empty">Captured NEI template slots are unavailable.</div>
+        <div v-if="hasNativeFrame && !nativeFrameReady" class="native-nei-empty">
+          Loading captured in-game NEI frame...
+        </div>
       </div>
     </div>
 
     <footer class="native-nei-footer">
-      <span>{{ slotCells.length }} slots</span>
-      <span v-if="dynamicPrimitives.length > 0">{{ dynamicPrimitives.length }} dynamic primitives</span>
+      <span>{{ slotCells.length }} interaction slots</span>
       <span v-if="hotspots.length > 0">{{ hotspots.length }} hotspots</span>
-      <span v-if="viewports.length > 0">{{ viewports.length }} viewports</span>
       <span>UI pack: {{ uiPackRuntime?.status ?? 'loading' }}</span>
-      <span>Background: {{ backgroundState }}</span>
-      <span v-if="renderReady">WebGL2 atlas path active</span>
-      <span v-if="backgroundLoadError" class="native-nei-warning">{{ backgroundLoadError }}</span>
-      <span v-if="missingTextureCount > 0" class="native-nei-warning">{{ missingTextureCount }} atlas entries missing</span>
+      <span>Native frame: {{ nativeFrame?.status ?? 'missing' }}</span>
+      <span v-if="nativeFrameReady">In-game NEI frame active</span>
+      <span v-if="nativeUiSurfaceError" class="native-nei-warning">
+        Interaction layer unavailable: {{ nativeUiSurfaceError }}
+      </span>
     </footer>
   </section>
 </template>
@@ -450,8 +370,9 @@ code {
   will-change: transform;
 }
 
-.native-nei-canvas {
+.native-nei-frame {
   display: block;
+  user-select: none;
   image-rendering: pixelated;
 }
 
@@ -461,57 +382,7 @@ code {
   pointer-events: none;
 }
 
-.native-nei-text-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.native-nei-viewport-layer {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-}
-
-.native-nei-viewport-region {
-  position: absolute;
-  overflow: hidden;
-  border: 1px solid rgba(142, 227, 255, 0.36);
-  background: linear-gradient(135deg, rgba(92, 196, 255, 0.08), rgba(255, 255, 255, 0.015));
-  box-shadow: inset 0 0 12px rgba(92, 196, 255, 0.1);
-}
-
-.native-nei-viewport-region span {
-  position: absolute;
-  left: 2px;
-  top: 1px;
-  max-width: calc(100% - 4px);
-  overflow: hidden;
-  color: rgba(204, 237, 255, 0.76);
-  font-size: 8px;
-  line-height: 1.1;
-  text-overflow: ellipsis;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.72);
-  white-space: nowrap;
-}
-
-.native-nei-text-overlay {
-  position: absolute;
-  overflow: hidden;
-  padding: 1px 2px;
-  color: rgba(248, 243, 229, 0.92);
-  font-size: 10px;
-  line-height: 1.15;
-  white-space: pre-wrap;
-  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.72), 0 0 6px rgba(0, 0, 0, 0.32);
-  pointer-events: none;
-}
-
-.native-nei-hit-cell {
-  position: absolute;
-  pointer-events: auto;
-}
-
+.native-nei-hit-cell,
 .native-nei-hotspot-cell {
   position: absolute;
   pointer-events: auto;
@@ -559,10 +430,7 @@ code {
   background: rgba(128, 213, 226, 0.12);
 }
 
-.native-nei-hit-target:focus-visible {
-  box-shadow: 0 0 0 2px rgba(128, 213, 226, 0.76), 0 0 18px rgba(128, 213, 226, 0.28);
-}
-
+.native-nei-hit-target:focus-visible,
 .native-nei-hotspot-target:focus-visible {
   box-shadow: 0 0 0 2px rgba(128, 213, 226, 0.76), 0 0 18px rgba(128, 213, 226, 0.28);
 }
@@ -576,6 +444,12 @@ code {
   color: rgba(180, 194, 210, 0.72);
   font-size: 13px;
   text-align: center;
+}
+
+.native-nei-error {
+  position: relative;
+  min-height: 230px;
+  padding: 18px;
 }
 
 .native-nei-footer {

@@ -396,6 +396,70 @@ test('native UI registry builds exact design-space slot cells and fit matrix', (
   assert.equal(fit.fittedHeight, 120);
 });
 
+test('native UI registry synthesizes GregTech machine slots from actual recipe arity', () => {
+  const entriesByRole = new Map([
+    ['item-input', ['glowstone_dust']],
+    ['item-output', ['glowstone']],
+    ['fluid-input', []],
+  ]);
+  const cells = buildNativeUiSlotCells({
+    layout: {
+      canonicalMachineFamily: 'gregtech-machine',
+      layoutKind: 'machine',
+    },
+    slots: [
+      {
+        role: 'item-input',
+        startIndex: 0,
+        columns: 3,
+        rows: 3,
+        x: 18,
+        y: 12,
+        coordinateSpace: 'nei_pixels',
+        anchor: 'top-left',
+        slotWidth: 18,
+        slotHeight: 18,
+        pitchX: 18,
+        pitchY: 18,
+      },
+      {
+        role: 'fluid-input',
+        startIndex: 0,
+        columns: 1,
+        rows: 3,
+        x: 76,
+        y: 12,
+        coordinateSpace: 'nei_pixels',
+        anchor: 'top-left',
+        slotWidth: 18,
+        slotHeight: 18,
+        pitchX: 18,
+        pitchY: 18,
+      },
+      {
+        role: 'item-output',
+        startIndex: 9,
+        columns: 2,
+        rows: 2,
+        x: 112,
+        y: 21,
+        coordinateSpace: 'nei_pixels',
+        anchor: 'top-left',
+        slotWidth: 18,
+        slotHeight: 18,
+        pitchX: 18,
+        pitchY: 18,
+      },
+    ],
+    resolveRoleEntries: (role) => entriesByRole.get(role) ?? [],
+  });
+
+  assert.deepEqual(cells.map((cell) => [cell.role, cell.x, cell.y, cell.iconX, cell.iconY, cell.entry]), [
+    ['item-input', 52, 24, 53, 25, 'glowstone_dust'],
+    ['item-output', 106, 24, 107, 25, 'glowstone'],
+  ]);
+});
+
 test('native UI registry owns component runtime layout contract', () => {
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
   const registrySource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRuntimeRegistry.ts'), 'utf8').replace(/\r\n/g, '\n');
@@ -404,8 +468,9 @@ test('native UI registry owns component runtime layout contract', () => {
   assert.match(componentSource, /resolveNativeUiRuntimeSurface/);
   assert.match(componentSource, /nativeUiSurfaceResolution = computed/);
   assert.match(componentSource, /catch \(error\)/);
-  assert.match(componentSource, /nativeUiSurfaceError \|\| renderError/);
-  assert.match(componentSource, /if \(nativeUiSurfaceError\.value\) \{\n    renderPipeline\.dispose\(\);\n    return;\n  \}/);
+  assert.match(componentSource, /Interaction layer unavailable: \{\{ nativeUiSurfaceError \}\}/);
+  assert.doesNotMatch(componentSource, /nativeUiSurfaceError \|\| renderError/);
+  assert.doesNotMatch(componentSource, /renderPipeline\.dispose/);
   assert.match(componentSource, /buildNativeUiSlotCells/);
   assert.match(componentSource, /createNativeUiFitMatrix/);
   assert.doesNotMatch(componentSource, /const nativeUiSurface = computed\(\(\) => resolveNativeUiRuntimeSurface/);

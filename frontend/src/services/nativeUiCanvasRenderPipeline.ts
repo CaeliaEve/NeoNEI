@@ -178,7 +178,7 @@ export class NativeUiCanvasRenderPipeline<TEntry extends { atlasLookupId?: strin
     let atlasResult: NativeUiAtlasRegistrationResult;
     try {
       this.textureRegistry.registerSlotTextures(renderer, this.state.currentDpr, snapshot.slotCells);
-      this.textureRegistry.registerDynamicPrimitiveTextures(renderer, snapshot.dynamicPrimitives);
+      this.textureRegistry.registerDynamicPrimitiveTextures(renderer, this.state.currentDpr, snapshot.dynamicPrimitives);
       const backgroundReady = this.prepareBackground(renderer, snapshot, sequence);
       const atlasReady = this.registerAtlasSources(renderer, snapshot);
       [backgroundResult, atlasResult] = await Promise.all([backgroundReady, atlasReady]);

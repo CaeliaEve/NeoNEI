@@ -24,7 +24,7 @@ import { createBrowserCatalogClient } from '../../runtime/browserCatalogClient';
 import { createRecipeUiPayloadClient } from '../../runtime/recipeUiPayloadClient';
 import { createRecipeBootstrapClient } from '../../runtime/recipeBootstrapClient';
 import { buildRuntimePayloadCacheKey, setCacheWithLimit } from '../../runtime/cacheUtils';
-import { getDistDataHomeBootstrap } from '../distDataRuntime';
+import { getDistDataHomeBootstrap, getDistDataMods } from '../distDataRuntime';
 import {
   deriveBrowserPagePackFromWindow,
 } from '../../runtime/browserProjection';
@@ -282,6 +282,12 @@ export async function getRuntimeMods(): Promise<Mod[]> {
   );
   if (persistent) {
     return persistent;
+  }
+
+  const distDataMods = await getDistDataMods();
+  if (distDataMods?.length) {
+    persistRuntimePayload('mods-list', { scope: 'all' }, distDataMods);
+    return distDataMods;
   }
 
   const manifest = await runtimeManifestClient.getPublishManifest();

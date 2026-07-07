@@ -1,5 +1,6 @@
 import {
   CONTRACTS_DIR,
+  DIST_DATA_DIR,
   IMAGES_PATH,
   PUBLIC_DIR,
   PUBLISH_OUTPUT_DIR,
@@ -45,6 +46,7 @@ export const STATIC_ASSET_IMAGE_ARTIFACT_ROUTES: readonly StaticAssetImageArtifa
   ]);
 
 export type StaticAssetMountKey =
+  | 'distData'
   | 'publicRoot'
   | 'contracts'
   | 'images'
@@ -53,6 +55,7 @@ export type StaticAssetMountKey =
   | 'publishStatic';
 
 const STATIC_ASSET_MOUNT_KEYS = Object.freeze([
+  'distData',
   'publicRoot',
   'contracts',
   'images',
@@ -98,6 +101,15 @@ export type StaticAssetMountDescriptor = Readonly<{
 
 export const STATIC_ASSET_MOUNTS: readonly StaticAssetMountDescriptor[] =
   validateAndFreezeStaticAssetMounts([
+    {
+      key: 'distData',
+      kind: 'static',
+      phase: 'before-image-artifacts',
+      mountPath: '/dist-data',
+      rootDir: DIST_DATA_DIR,
+      requireExistingDirectory: true,
+      cache: Object.freeze({ maxAge: 0, etag: true }),
+    },
     {
       key: 'publicRoot',
       kind: 'public-root',

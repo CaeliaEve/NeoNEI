@@ -128,6 +128,10 @@ test('native UI background resource loader normalizes layout facts and state', (
   assert.deepEqual(nativeUiNativeBackgroundTextureSpec(background), { width: 64, height: 32, borderU: 4, borderV: 4 });
   assert.deepEqual(nativeUiNativeBackgroundTargetRect(background, 176, 90), { x: 7, y: 8, width: 80, height: 36 });
   assert.equal(resolveNativeUiBackgroundAssetUrl('manifest.json', 'ui/background.png', (_manifest, path) => `asset://${path}`), 'asset://ui/background.png');
+  assert.equal(
+    resolveNativeUiBackgroundAssetUrl(null, 'assets/ui-backgrounds/gregtech/nei_single_recipe.png'),
+    '/dist-data/assets/ui-backgrounds/gregtech/nei_single_recipe.png',
+  );
   assert.throws(
     () => resolveNativeUiBackgroundAssetUrl(null, 'ui/background.png', (_manifest, path) => `asset://${path}`),
     /requires runtime manifest URL: ui\/background\.png/,
@@ -140,6 +144,15 @@ test('native UI background resource loader normalizes layout facts and state', (
     source: { textureKey: 'ui-background:ui/captured.png', sourceX: 0, sourceY: 0, sourceWidth: 1, sourceHeight: 1, width: 1, height: 1 },
     error: null,
   }), 'captured');
+});
+
+test('native UI background resource loader accepts already-normalized background contracts', () => {
+  const background = nativeUiNativeBackground({ nativeBackground: gtBackground() });
+  assert.deepEqual(
+    nativeUiNativeBackground({ nativeBackground: background }),
+    background,
+    'resolved runtime surfaces may carry a validated background contract and must not be parsed as raw ABI again',
+  );
 });
 
 test('native UI background resource loader prepares captured background texture sources', async () => {
@@ -307,12 +320,14 @@ test('native UI background resource loader rejects missing background contract f
   assert.match(result.error, /coordinateSpace/);
 });
 
-test('native UI background resource loader owns component background resource boundary', () => {
+test('native UI background resource loader is retired from captured NEI frame component', () => {
   const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
   const pipelineSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiCanvasRenderPipeline.ts'), 'utf8').replace(/\r\n/g, '\n');
   const loaderSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiBackgroundResourceLoader.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /nativeUiBackgroundResourceLoader/);
+  assert.match(componentSource, /nativeNeiFrameResource/);
+  assert.match(componentSource, /class="native-nei-frame"/);
+  assert.doesNotMatch(componentSource, /nativeUiBackgroundResourceLoader/);
   assert.doesNotMatch(componentSource, /prepareNativeUiBackgroundSource/);
   assert.match(pipelineSource, /prepareNativeUiBackgroundSource/);
   assert.doesNotMatch(componentSource, /function resolveBackgroundAssetUrl/);
@@ -327,6 +342,7 @@ test('native UI background resource loader owns component background resource bo
   assert.match(loaderSource, /export function nativeUiBackgroundState/);
   assert.match(loaderSource, /Native UI background ABI is missing/);
   assert.match(loaderSource, /captured background texture registration failed/);
+  assert.match(loaderSource, /DIST_DATA_UI_BACKGROUND_PREFIX/);
   assert.match(loaderSource, /resolveManifestRelativeUrl/);
   assert.match(loaderSource, /createNativeUiGtModularBackgroundTexture/);
 });

@@ -1294,11 +1294,32 @@ const FAMILY_KEY_TO_UI_TYPE: Record<string, string> = {
   botania_terra_plate: BOTANIA_TERRA_PLATE.uiType,
   botania_rune_altar: BOTANIA_RUNE_ALTAR.uiType,
   botania_mana_pool: BOTANIA_MANA_POOL.uiType,
+  furnace: FURNACE.uiType,
+  gregtech: GT_GENERIC.uiType,
+  'gregtech-machine': GT_GENERIC.uiType,
   thaumcraft_infusion: THAUMCRAFT_INFUSION.uiType,
   blood_magic_altar: BLOOD_MAGIC_ALTAR.uiType,
   industrial_slaughterhouse: INDUSTRIAL_SLAUGHTERHOUSE.uiType,
   mobsinfo_slaughterhouse: INDUSTRIAL_SLAUGHTERHOUSE.uiType,
 };
+
+function resolveUiTypeFromUiPayloadFamilyKey(familyKey: string): string | undefined {
+  const normalizedFamilyKey = familyKey.trim();
+  const directUiType = FAMILY_KEY_TO_UI_TYPE[normalizedFamilyKey] ?? (
+    UI_CONFIG_BY_TYPE[normalizedFamilyKey] ? normalizedFamilyKey : undefined
+  );
+  if (directUiType) {
+    return directUiType;
+  }
+
+  const canonicalFamily = normalizedFamilyKey.split('|')[0]?.trim();
+  if (!canonicalFamily || canonicalFamily === normalizedFamilyKey) {
+    return undefined;
+  }
+  return FAMILY_KEY_TO_UI_TYPE[canonicalFamily] ?? (
+    UI_CONFIG_BY_TYPE[canonicalFamily] ? canonicalFamily : undefined
+  );
+}
 
 export function resolveRecipePresentationProfileFromUiPayload(
   uiPayload: RecipeUiPayload | null | undefined,
@@ -1307,9 +1328,7 @@ export function resolveRecipePresentationProfileFromUiPayload(
     return null;
   }
 
-  const uiType = FAMILY_KEY_TO_UI_TYPE[uiPayload.familyKey] ?? (
-    UI_CONFIG_BY_TYPE[uiPayload.familyKey] ? uiPayload.familyKey : undefined
-  );
+  const uiType = resolveUiTypeFromUiPayloadFamilyKey(uiPayload.familyKey);
   if (!uiType) {
     return null;
   }

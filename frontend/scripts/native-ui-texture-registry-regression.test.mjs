@@ -5,8 +5,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   createNativeUiGtModularBackgroundTexture,
+  createNativeUiDynamicPrimitiveTexture,
   createNativeUiSlotTexture,
   createNativeUiSolidColorTexture,
+  nativeUiDynamicPrimitiveTextureKey,
   nativeUiSlotTextureKey,
   nativeUiTextureKindForRole,
   NativeUiTextureRegistry,
@@ -123,12 +125,18 @@ test('native UI texture registry creates slot, solid, and GT background canvases
     assert.equal(slot.width, 40);
     assert.equal(slot.height, 36);
     assert.deepEqual(slot.operations[0], ['scale', 2, 2]);
-    assert.ok(slot.operations.some((op) => op[0] === 'createLinearGradient'));
+    assert.ok(slot.operations.some((op) => op[0] === 'fillStyle' && op[1] === '#373737'));
+    assert.ok(slot.operations.some((op) => op[0] === 'fillStyle' && op[1] === '#8b8b8b'));
 
     const solid = createNativeUiSolidColorTexture('rgba(1, 2, 3, 0.5)');
     assert.equal(solid.width, 1);
     assert.equal(solid.height, 1);
     assert.ok(solid.operations.some((op) => op[0] === 'fillRect'));
+
+    const progress = createNativeUiDynamicPrimitiveTexture('gt-progress-compress', 2);
+    assert.equal(progress.width, 40);
+    assert.equal(progress.height, 72);
+    assert.ok(progress.operations.some((op) => op[0] === 'imageSmoothingEnabled' && op[1] === false));
 
     const background = createNativeUiGtModularBackgroundTexture(176, 90, 2);
     assert.equal(background.width, 352);
@@ -165,12 +173,16 @@ test('native UI texture registry deduplicates renderer registration', () => {
       'recipe-slot:fluid-output:2:20x18',
     ]);
 
-    registry.registerDynamicPrimitiveTextures(renderer, [{ kind: 'progress-bar', trackColor: 'track', fillColor: 'fill', borderColor: 'border' }]);
+    registry.registerDynamicPrimitiveTextures(renderer, 1, [{ kind: 'progress-bar', trackColor: 'track', fillColor: 'fill', borderColor: 'border' }]);
     assert.deepEqual(renderer.calls.slice(-3).map((call) => call.key), [
       'native-dynamic-solid:track',
       'native-dynamic-solid:fill',
       'native-dynamic-solid:border',
     ]);
+
+    registry.registerDynamicPrimitiveTextures(renderer, 2, [{ kind: 'progress-bar', textureVariant: 'gt-progress-compress' }]);
+    assert.equal(nativeUiDynamicPrimitiveTextureKey({ textureVariant: 'gt-progress-compress' }, 2), 'native-dynamic-texture:gt-progress-compress:2');
+    assert.equal(renderer.calls.at(-1).key, 'native-dynamic-texture:gt-progress-compress:2');
 
     registry.clear();
     assert.equal(registry.has('atlas'), false);
@@ -196,6 +208,7 @@ test('native UI texture registry fails closed when generated texture registratio
     assert.throws(
       () => solidRegistry.registerDynamicPrimitiveTextures(
         fakeRenderer('native-dynamic-solid:track'),
+        1,
         [{ kind: 'progress-bar', trackColor: 'track', fillColor: 'fill', borderColor: 'border' }],
       ),
       /Native UI texture registration failed: native-dynamic-solid:track/,
@@ -211,7 +224,9 @@ test('native UI texture registry owns component texture construction boundary', 
   const registrySource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiTextureRegistry.ts'), 'utf8').replace(/\r\n/g, '\n');
   const catalogSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRenderResourceCatalog.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /nativeUiCanvasRenderPipeline/);
+  assert.match(componentSource, /nativeNeiFrameResource/);
+  assert.match(componentSource, /class="native-nei-frame"/);
+  assert.doesNotMatch(componentSource, /nativeUiCanvasRenderPipeline/);
   assert.doesNotMatch(componentSource, /nativeUiTextureRegistry/);
   assert.doesNotMatch(componentSource, /new NativeUiTextureRegistry\(\)/);
   assert.doesNotMatch(componentSource, /textureRegistry\.registerSlotTextures/);

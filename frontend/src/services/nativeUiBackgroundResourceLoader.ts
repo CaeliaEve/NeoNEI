@@ -20,6 +20,7 @@ import {
 type NativeUiTextureRegistrySink = Pick<NativeUiTextureRegistry, "register">;
 type NativeUiImageLoader = (url: string) => Promise<HTMLImageElement>;
 type NativeUiAssetUrlResolver = (manifestUrl: string, relativePath: string) => string;
+const DIST_DATA_UI_BACKGROUND_PREFIX = "assets/ui-backgrounds/";
 
 export interface NativeUiBackgroundPrepareOptions {
   renderer: NativeRendererBackend;
@@ -57,6 +58,22 @@ function errorMessage(error: unknown): string {
 function trimToNull(value: unknown): string | null {
   const normalized = `${value ?? ""}`.trim();
   return normalized.length > 0 ? normalized : null;
+}
+
+function encodeRelativeUrlPath(relativePath: string): string {
+  return relativePath
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function isDistDataNativeUiBackgroundAsset(assetRef: string): boolean {
+  return assetRef.replace(/\\/g, "/").startsWith(DIST_DATA_UI_BACKGROUND_PREFIX);
+}
+
+function resolveDistDataNativeUiBackgroundAssetUrl(assetRef: string): string {
+  return `/dist-data/${encodeRelativeUrlPath(assetRef)}`;
 }
 
 function isActive(options: NativeUiBackgroundPrepareOptions): boolean {
@@ -133,6 +150,9 @@ export function resolveNativeUiBackgroundAssetUrl(
 ): string | null {
   const asset = trimToNull(assetRef);
   if (!asset) return null;
+  if (resolveUrl === resolveManifestRelativeUrl && isDistDataNativeUiBackgroundAsset(asset)) {
+    return resolveDistDataNativeUiBackgroundAssetUrl(asset);
+  }
   const manifest = trimToNull(manifestUrl);
   if (!manifest) {
     throw new Error(`Native UI captured background asset requires runtime manifest URL: ${asset}`);
@@ -166,6 +186,8 @@ function buildCapturedBackgroundSource(
   const target = nativeUiNativeBackgroundTargetRect(background, layoutWidth, layoutHeight);
   return {
     textureKey,
+    status: background.status,
+    kind: background.kind,
     image,
     sourceX: 0,
     sourceY: 0,
@@ -178,6 +200,7 @@ function buildCapturedBackgroundSource(
     nineSlice: background.scaling === NATIVE_UI_BACKGROUND_SCALING_NINE_SLICE
       ? { borderU: texture.borderU, borderV: texture.borderV }
       : undefined,
+    coversSlotChrome: false,
   };
 }
 
@@ -250,6 +273,8 @@ export async function prepareNativeUiBackgroundSource(
     return {
       source: {
         textureKey: semanticTextureKey,
+        status: background?.status,
+        kind: background?.kind,
         image: texture,
         sourceX: 0,
         sourceY: 0,
@@ -259,6 +284,7 @@ export async function prepareNativeUiBackgroundSource(
         destY: 0,
         width: options.layoutWidth,
         height: options.layoutHeight,
+        coversSlotChrome: false,
       },
       error: visibleError,
       aborted: false,

@@ -92,6 +92,8 @@ test('native UI recipe renderable projection projects recipe sets and role dispa
   assert.equal(resolveNativeUiRenderablesForRole('item-output', sets), sets.outputItems);
   assert.equal(resolveNativeUiRenderablesForRole('fluid-input', sets), sets.inputFluids);
   assert.equal(resolveNativeUiRenderablesForRole('fluid-output', sets), sets.outputFluids);
+  assert.deepEqual(resolveNativeUiRenderablesForRole('fuel', sets), []);
+  assert.deepEqual(resolveNativeUiRenderablesForRole('item-fuel', sets), []);
 });
 
 test('native UI recipe renderable projection owns component data boundary', () => {

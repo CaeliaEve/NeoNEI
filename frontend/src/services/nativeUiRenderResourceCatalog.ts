@@ -24,6 +24,8 @@ export type NativeUiDynamicPrimitiveDescriptor = Readonly<{
   defaultForUnknownKind?: boolean;
 }>;
 
+export type NativeUiDynamicPrimitiveTextureVariant = "gt-progress-arrow" | "gt-progress-compress";
+
 type NativeUiDynamicPrimitiveColorSource = Readonly<{
   kind?: unknown;
   role?: unknown;
@@ -33,6 +35,7 @@ type NativeUiDynamicPrimitiveColorSource = Readonly<{
   fill?: unknown;
   ratio?: unknown;
   value?: unknown;
+  textureVariant?: unknown;
 }>;
 
 type NativeUiCanvas2D = CanvasRenderingContext2D;
@@ -177,6 +180,13 @@ export const NATIVE_UI_SOLID_TEXTURE_DESCRIPTOR = Object.freeze({
   size: 1,
 } as const);
 
+export const NATIVE_UI_DYNAMIC_TEXTURE_DESCRIPTOR = Object.freeze({
+  keyPrefix: "native-dynamic-texture",
+  progressWidth: 20,
+  progressFrameHeight: 18,
+  progressTextureHeight: 36,
+} as const);
+
 export const NATIVE_UI_GT_MODULAR_BACKGROUND_DESCRIPTOR = Object.freeze({
   baseFill: "#0f1115",
   panelInset: 3,
@@ -286,6 +296,42 @@ export function nativeUiDynamicPrimitiveColors(primitive: NativeUiDynamicPrimiti
   ];
 }
 
+export function nativeUiDynamicPrimitiveTextureVariant(
+  primitive: NativeUiDynamicPrimitiveColorSource,
+): NativeUiDynamicPrimitiveTextureVariant | null {
+  const variant = `${primitive.textureVariant ?? ""}`.trim();
+  return variant === "gt-progress-arrow" || variant === "gt-progress-compress"
+    ? variant
+    : null;
+}
+
+export function nativeUiDynamicPrimitiveTextureKey(
+  primitive: NativeUiDynamicPrimitiveColorSource,
+  dprValue: number,
+): string | null {
+  const variant = nativeUiDynamicPrimitiveTextureVariant(primitive);
+  if (!variant) return null;
+  return `${NATIVE_UI_DYNAMIC_TEXTURE_DESCRIPTOR.keyPrefix}:${variant}:${normalizeNativeUiDpr(dprValue)}`;
+}
+
+export function nativeUiDynamicPrimitiveTextureSource(
+  primitive: NativeUiDynamicPrimitiveColorSource,
+  dprValue: number,
+): Readonly<{
+  textureKey: string;
+  sourceWidth: number;
+  frameHeight: number;
+}> | null {
+  const textureKey = nativeUiDynamicPrimitiveTextureKey(primitive, dprValue);
+  if (!textureKey) return null;
+  const dpr = normalizeNativeUiDpr(dprValue);
+  return {
+    textureKey,
+    sourceWidth: Math.max(1, Math.round(NATIVE_UI_DYNAMIC_TEXTURE_DESCRIPTOR.progressWidth * dpr)),
+    frameHeight: Math.max(1, Math.round(NATIVE_UI_DYNAMIC_TEXTURE_DESCRIPTOR.progressFrameHeight * dpr)),
+  };
+}
+
 function createCanvas(width: number, height: number): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(width));
@@ -293,32 +339,25 @@ function createCanvas(width: number, height: number): HTMLCanvasElement {
   return canvas;
 }
 
-function drawRoundedRect(ctx: NativeUiCanvas2D, x: number, y: number, w: number, h: number, r: number): void {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.lineTo(x + w - r, y);
-  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ctx.lineTo(x + w, y + h - r);
-  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ctx.lineTo(x + r, y + h);
-  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ctx.lineTo(x, y + r);
-  ctx.quadraticCurveTo(x, y, x + r, y);
-  ctx.closePath();
-}
-
-function drawSlotIndicator(
+function drawNativeSlotChrome(
   ctx: NativeUiCanvas2D,
-  color: string | undefined,
-  x: number,
-  y: number,
+  kind: NativeUiSlotTextureKind,
   width: number,
   height: number,
 ): void {
-  if (!color) return;
-  ctx.fillStyle = color;
-  drawRoundedRect(ctx, x, y, width, height, 1.5);
-  ctx.fill();
+  const fluid = kind.includes("fluid");
+  const edge = fluid ? "#000000" : "#373737";
+  const fill = fluid ? "#373737" : "#8b8b8b";
+  const highlight = fluid ? "#8b8b8b" : "#ffffff";
+
+  ctx.fillStyle = fill;
+  ctx.fillRect(0, 0, width, height);
+  ctx.fillStyle = edge;
+  ctx.fillRect(0, 0, Math.max(0, width - 1), 1);
+  ctx.fillRect(0, 0, 1, Math.max(0, height - 1));
+  ctx.fillStyle = highlight;
+  ctx.fillRect(Math.max(0, width - 1), 1, 1, Math.max(0, height - 1));
+  ctx.fillRect(1, Math.max(0, height - 1), Math.max(0, width - 1), 1);
 }
 
 export function createNativeUiSlotTexture(
@@ -338,34 +377,7 @@ export function createNativeUiSlotTexture(
   const ctx = canvas.getContext("2d");
   if (!ctx) return canvas;
   ctx.scale(dpr, dpr);
-  drawRoundedRect(ctx, 1, 1, width - 2, height - 2, Math.min(4, width / 2, height / 2));
-  ctx.fillStyle = descriptor.fillColor;
-  ctx.fill();
-  const gradient = ctx.createLinearGradient(0, 0, width, height);
-  gradient.addColorStop(0, "rgba(255, 255, 255, 0.09)");
-  gradient.addColorStop(0.52, "rgba(255, 255, 255, 0.015)");
-  gradient.addColorStop(1, "rgba(0, 0, 0, 0.26)");
-  ctx.fillStyle = gradient;
-  ctx.fill();
-  ctx.lineWidth = 1;
-  ctx.strokeStyle = descriptor.accentColor;
-  ctx.stroke();
-  drawSlotIndicator(
-    ctx,
-    descriptor.fluidIndicatorColor,
-    Math.min(4, width - 3),
-    5,
-    3,
-    Math.max(1, height - 10),
-  );
-  drawSlotIndicator(
-    ctx,
-    descriptor.outputIndicatorColor,
-    Math.max(1, width - 7),
-    5,
-    3,
-    Math.max(1, height - 10),
-  );
+  drawNativeSlotChrome(ctx, descriptor.kind, width, height);
   return canvas;
 }
 
@@ -375,6 +387,65 @@ export function createNativeUiSolidColorTexture(color: string): HTMLCanvasElemen
   if (!ctx) return canvas;
   ctx.fillStyle = color;
   ctx.fillRect(0, 0, NATIVE_UI_SOLID_TEXTURE_DESCRIPTOR.size, NATIVE_UI_SOLID_TEXTURE_DESCRIPTOR.size);
+  return canvas;
+}
+
+function drawPolygon(ctx: NativeUiCanvas2D, color: string, points: Array<[number, number]>): void {
+  if (points.length < 3) return;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(points[0][0], points[0][1]);
+  for (let index = 1; index < points.length; index += 1) {
+    ctx.lineTo(points[index][0], points[index][1]);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawGtArrowProgressFrame(
+  ctx: NativeUiCanvas2D,
+  y: number,
+  fill: string,
+  shadow: string,
+  highlight: string,
+): void {
+  drawPolygon(ctx, shadow, [
+    [12, y + 1], [19, y + 8], [12, y + 15], [12, y + 10], [0, y + 10], [0, y + 7], [12, y + 7],
+  ]);
+  drawPolygon(ctx, fill, [
+    [13, y + 3], [18, y + 8], [13, y + 13], [13, y + 9], [1, y + 9], [1, y + 8], [13, y + 8],
+  ]);
+  ctx.fillStyle = highlight;
+  ctx.fillRect(1, y + 8, 12, 1);
+  drawPolygon(ctx, highlight, [[13, y + 4], [17, y + 8], [13, y + 8]]);
+}
+
+function drawGtCompressProgressFrame(
+  ctx: NativeUiCanvas2D,
+  y: number,
+  fill: string,
+  shadow: string,
+  highlight: string,
+): void {
+  drawPolygon(ctx, shadow, [[0, y + 3], [19, y + 9], [0, y + 15]]);
+  drawPolygon(ctx, fill, [[1, y + 5], [17, y + 9], [1, y + 13]]);
+  drawPolygon(ctx, highlight, [[1, y + 5], [14, y + 9], [1, y + 9]]);
+}
+
+export function createNativeUiDynamicPrimitiveTexture(
+  variant: NativeUiDynamicPrimitiveTextureVariant,
+  dprValue: number,
+): HTMLCanvasElement {
+  const dpr = normalizeNativeUiDpr(dprValue);
+  const descriptor = NATIVE_UI_DYNAMIC_TEXTURE_DESCRIPTOR;
+  const canvas = createCanvas(descriptor.progressWidth * dpr, descriptor.progressTextureHeight * dpr);
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return canvas;
+  ctx.scale(dpr, dpr);
+  ctx.imageSmoothingEnabled = false;
+  const draw = variant === "gt-progress-compress" ? drawGtCompressProgressFrame : drawGtArrowProgressFrame;
+  draw(ctx, 0, "#8b8b8b", "#373737", "#ffffff");
+  draw(ctx, descriptor.progressFrameHeight, "#ffffff", "#8b8b8b", "#ffffff");
   return canvas;
 }
 

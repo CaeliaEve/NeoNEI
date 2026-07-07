@@ -98,6 +98,7 @@ export function resolveNativeUiRenderablesForRole(
   renderables: NativeUiRecipeRenderableSets,
 ): NativeUiRecipeRenderable[] {
   const normalized = `${role ?? ""}`.toLowerCase();
+  if (normalized.includes("fuel")) return [];
   if (normalized.includes("fluid")) {
     return normalized.includes("output") ? renderables.outputFluids : renderables.inputFluids;
   }

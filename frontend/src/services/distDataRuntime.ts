@@ -122,6 +122,11 @@ type DistDataRecipeUiPayloadShard = {
   payloads?: Record<string, RecipeUiPayload>;
 };
 
+type DistDataRecipeItemRoleIndexEntry = {
+  producedByItemIds: string[];
+  usedInItemIds: string[];
+};
+
 export type DistDataSearchPack = {
   manifest: DistDataManifest;
   runtimeCacheKey: string;
@@ -135,6 +140,8 @@ let cachedSearchPack: DistDataSearchPack | null = null;
 let cachedBrowserRuntime: DistDataBrowserRuntime | null = null;
 let recipeItemIndexRequest: Promise<Map<string, DistDataRecipeItemIndexEntry> | null> | null = null;
 let cachedRecipeItemIndex: Map<string, DistDataRecipeItemIndexEntry> | null = null;
+let recipeItemRoleIndexRequest: Promise<Map<string, DistDataRecipeItemRoleIndexEntry> | null> | null = null;
+let cachedRecipeItemRoleIndex: Map<string, DistDataRecipeItemRoleIndexEntry> | null = null;
 let rustRecipePackRequest: Promise<DistDataRustRecipePackPayload | null> | null = null;
 let cachedRustRecipePack: DistDataRustRecipePackPayload | null = null;
 let rustRuntimeManifestRequest: Promise<DistDataRustRuntimeManifest | null> | null = null;
@@ -441,6 +448,14 @@ export async function getDistDataHomeBootstrap(params: {
   };
 }
 
+export async function getDistDataMods(): Promise<Mod[] | null> {
+  const runtime = await getBrowserRuntime();
+  if (!runtime) {
+    return null;
+  }
+  return runtime.mods;
+}
+
 export async function getDistDataBrowserPagePack(params: {
   page?: number;
   pageSize?: number;
@@ -678,6 +693,69 @@ async function getRecipeItemIndex(): Promise<Map<string, DistDataRecipeItemIndex
   return recipeItemIndexRequest;
 }
 
+function getOrCreateRecipeItemRoleIndexEntry(
+  index: Map<string, DistDataRecipeItemRoleIndexEntry>,
+  recipeId: string,
+): DistDataRecipeItemRoleIndexEntry {
+  let entry = index.get(recipeId);
+  if (!entry) {
+    entry = { producedByItemIds: [], usedInItemIds: [] };
+    index.set(recipeId, entry);
+  }
+  return entry;
+}
+
+function appendUniqueItemId(target: string[], itemId: string): void {
+  if (itemId && !target.includes(itemId)) {
+    target.push(itemId);
+  }
+}
+
+async function getRecipeItemRoleIndex(): Promise<Map<string, DistDataRecipeItemRoleIndexEntry> | null> {
+  if (cachedRecipeItemRoleIndex) {
+    return cachedRecipeItemRoleIndex;
+  }
+  if (recipeItemRoleIndexRequest) {
+    return recipeItemRoleIndexRequest;
+  }
+
+  recipeItemRoleIndexRequest = (async () => {
+    const recipeItemIndex = await getRecipeItemIndex();
+    if (!recipeItemIndex?.size) {
+      return null;
+    }
+
+    const roleIndex = new Map<string, DistDataRecipeItemRoleIndexEntry>();
+    for (const entry of recipeItemIndex.values()) {
+      const itemId = `${entry.itemId ?? ""}`.trim();
+      if (!itemId) {
+        continue;
+      }
+      for (const producedBy of entry.producedBy ?? []) {
+        const recipeId = `${producedBy?.recipeId ?? ""}`.trim();
+        if (recipeId) {
+          appendUniqueItemId(getOrCreateRecipeItemRoleIndexEntry(roleIndex, recipeId).producedByItemIds, itemId);
+        }
+      }
+      for (const usedIn of entry.usedIn ?? []) {
+        const recipeId = `${usedIn?.recipeId ?? ""}`.trim();
+        if (recipeId) {
+          appendUniqueItemId(getOrCreateRecipeItemRoleIndexEntry(roleIndex, recipeId).usedInItemIds, itemId);
+        }
+      }
+    }
+
+    cachedRecipeItemRoleIndex = roleIndex;
+    return cachedRecipeItemRoleIndex;
+  })()
+    .catch(() => null)
+    .finally(() => {
+      recipeItemRoleIndexRequest = null;
+    });
+
+  return recipeItemRoleIndexRequest;
+}
+
 function collectRecipeIds(entries?: Array<{ recipeId?: string }>): string[] {
   return Array.from(new Set(
     (entries ?? [])
@@ -829,6 +907,7 @@ function stableSlotDimension(value: unknown, defaultValue: number): number {
 function buildIndexedRecipeFromUiPayload(
   payload: RecipeUiPayload,
   runtime: DistDataBrowserRuntime,
+  itemRoleIndex?: DistDataRecipeItemRoleIndexEntry | null,
 ): indexedRecipe | null {
   const recipeId = `${payload.recipeId ?? ""}`.trim();
   if (!recipeId) {
@@ -894,14 +973,18 @@ function buildIndexedRecipeFromUiPayload(
   const outputItemIds = outputSlots.length > 0
     ? outputSlots.map((slot) => `${slot.itemId ?? ""}`.trim()).filter(Boolean)
     : (payload.outputItemIds ?? []).map((itemId) => `${itemId ?? ""}`.trim()).filter(Boolean);
+  const indexedInputItemIds = itemRoleIndex?.usedInItemIds ?? [];
+  const indexedOutputItemIds = itemRoleIndex?.producedByItemIds ?? [];
+  const resolvedInputItemIds = inputItemIds.length > 0 ? inputItemIds : indexedInputItemIds;
+  const resolvedOutputItemIds = outputItemIds.length > 0 ? outputItemIds : indexedOutputItemIds;
 
-  const inputs = inputItemIds.map((itemId, index) => ({
+  const inputs = resolvedInputItemIds.map((itemId, index) => ({
     slotIndex: index,
     items: [toRecipeItemStack(itemId, runtime, 1)],
     isOreDictionary: false,
     oreDictName: null,
   }));
-  const outputs = outputItemIds.map((itemId) => toRecipeItemStack(itemId, runtime, 1));
+  const outputs = resolvedOutputItemIds.map((itemId) => toRecipeItemStack(itemId, runtime, 1));
   const payloadRecipeType = `${payload.recipeType ?? payload.familyKey ?? "unknown"}`;
   const payloadMachineType = `${payload.machineType ?? payload.familyKey ?? payloadRecipeType}`;
 
@@ -955,13 +1038,13 @@ function buildIndexedRecipeFromUiPayload(
 }
 
 async function getIndexedRecipesFromUiPayloads(recipeIds: string[]): Promise<indexedRecipe[]> {
-  const runtime = await getBrowserRuntime();
+  const [runtime, recipeItemRoleIndex] = await Promise.all([getBrowserRuntime(), getRecipeItemRoleIndex()]);
   if (!runtime || recipeIds.length <= 0) {
     return [];
   }
   const payloads = await Promise.all(recipeIds.map((recipeId) => getDistDataRecipeUiPayload(recipeId)));
   return payloads
-    .map((payload) => (payload ? buildIndexedRecipeFromUiPayload(payload, runtime) : null))
+    .map((payload) => (payload ? buildIndexedRecipeFromUiPayload(payload, runtime, recipeItemRoleIndex?.get(payload.recipeId)) : null))
     .filter((recipe): recipe is indexedRecipe => Boolean(recipe));
 }
 
@@ -1208,6 +1291,8 @@ export function resetDistDataRuntimeCache(): void {
   cachedBrowserRuntime = null;
   recipeItemIndexRequest = null;
   cachedRecipeItemIndex = null;
+  recipeItemRoleIndexRequest = null;
+  cachedRecipeItemRoleIndex = null;
   rustRecipePackRequest = null;
   cachedRustRecipePack = null;
   rustRuntimeManifestRequest = null;

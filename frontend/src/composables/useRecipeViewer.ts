@@ -878,6 +878,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
       if (disposed || requestSeq !== loadRequestSeq || itemIdRef.value !== itemId) {
         return;
       }
+      loadError.value = '';
       item.value = bootstrappedItem;
       bootstrapRecipeIndex.value = recipeIndex;
       bootstrapIndexedSummary.value = indexedSummary;
@@ -1116,7 +1117,6 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     selectRecipeById,
   };
 }
-
 
 
 

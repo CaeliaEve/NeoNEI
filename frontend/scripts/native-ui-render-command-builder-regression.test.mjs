@@ -170,6 +170,8 @@ test('native UI render command builder assembles background, slot, and atlas spr
     ...baseOptions,
     background: {
       textureKey: 'background',
+      kind: 'gt-modular-ui',
+      status: 'captured',
       sourceX: 0,
       sourceY: 0,
       sourceWidth: 176,
@@ -178,9 +180,98 @@ test('native UI render command builder assembles background, slot, and atlas spr
       height: 90,
     },
   });
-  assert.equal(withBackground.length, 2);
+  assert.equal(withBackground.length, 3);
   assert.equal(withBackground[0]?.textureKey, 'background');
-  assert.equal(withBackground[1]?.textureKey, 'items.png');
+  assert.equal(withBackground[1]?.textureKey, 'slot:item-input:20x18');
+  assert.equal(withBackground[2]?.textureKey, 'items.png');
+
+  const fullScreenshotBackground = buildNativeUiSpriteCommands({
+    ...baseOptions,
+    background: {
+      textureKey: 'full-background',
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: 176,
+      sourceHeight: 90,
+      width: 176,
+      height: 90,
+      coversSlotChrome: true,
+    },
+  });
+  assert.deepEqual(fullScreenshotBackground.map((command) => command.textureKey), [
+    'full-background',
+    'items.png',
+  ]);
+});
+
+test('native UI render command builder suppresses synthetic GT progress placeholders over captured panels', () => {
+  const commands = buildNativeUiSpriteCommands({
+    dpr: 1,
+    nowMs: 1000,
+    background: {
+      textureKey: 'gt-panel',
+      kind: 'gt-modular-ui',
+      status: 'captured',
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: 64,
+      sourceHeight: 64,
+      width: 166,
+      height: 135,
+    },
+    dynamicPrimitives: [{
+      kind: 'progress-bar',
+      role: 'gt-progress',
+      x: 78,
+      y: 24,
+      width: 20,
+      height: 18,
+      coordinateSpace: 'nei_pixels',
+      anchor: 'top-left',
+      source: 'gtnh-basic-ui-properties-default',
+    }],
+    slotCells: [],
+    slotTextureKey: () => 'slot',
+    resolveAtlasSource: () => null,
+  });
+
+  assert.deepEqual(commands.map((command) => command.textureKey), ['gt-panel']);
+});
+
+test('native UI render command builder emits GT textured progress commands when a native texture variant is bound', () => {
+  const commands = [];
+  pushNativeUiDynamicPrimitiveCommands(commands, 2, {
+    kind: 'progress-bar',
+    role: 'gt-progress',
+    x: 78,
+    y: 24,
+    width: 20,
+    height: 18,
+    coordinateSpace: 'nei_pixels',
+    anchor: 'top-left',
+    orientation: 'horizontal',
+    fill: 0.5,
+    textureVariant: 'gt-progress-compress',
+  });
+
+  assert.deepEqual(commands.map((command) => command.textureKey), [
+    'native-dynamic-texture:gt-progress-compress:2',
+    'native-dynamic-texture:gt-progress-compress:2',
+  ]);
+  assert.deepEqual(commands[0], {
+    textureKey: 'native-dynamic-texture:gt-progress-compress:2',
+    sourceX: 0,
+    sourceY: 0,
+    sourceWidth: 40,
+    sourceHeight: 36,
+    destX: 156,
+    destY: 48,
+    destWidth: 40,
+    destHeight: 36,
+  });
+  assert.equal(commands[1].sourceY, 36);
+  assert.equal(commands[1].sourceWidth, 20);
+  assert.equal(commands[1].destWidth, 20);
 });
 
 test('native UI render command builder owns component sprite assembly boundary', () => {
@@ -189,7 +280,9 @@ test('native UI render command builder owns component sprite assembly boundary',
   const builderSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRenderCommandBuilder.ts'), 'utf8').replace(/\r\n/g, '\n');
   const catalogSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRenderResourceCatalog.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /nativeUiCanvasRenderPipeline/);
+  assert.match(componentSource, /nativeNeiFrameResource/);
+  assert.match(componentSource, /class="native-nei-frame"/);
+  assert.doesNotMatch(componentSource, /nativeUiCanvasRenderPipeline/);
   assert.doesNotMatch(componentSource, /nativeUiRenderCommandBuilder/);
   assert.doesNotMatch(componentSource, /buildNativeUiSpriteCommands/);
   assert.match(pipelineSource, /nativeUiRenderCommandBuilder/);

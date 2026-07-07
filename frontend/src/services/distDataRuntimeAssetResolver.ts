@@ -10,8 +10,12 @@ function normalizeBasePath(value: unknown): string {
   return raw.replace(/\/+$/g, "");
 }
 
+function viteEnvValue(key: string): unknown {
+  return (import.meta as ImportMeta & { env?: Record<string, unknown> }).env?.[key];
+}
+
 export function getDistDataBasePath(): string {
-  const envBasePath = normalizeBasePath(import.meta.env.VITE_DIST_DATA_BASE_URL);
+  const envBasePath = normalizeBasePath(viteEnvValue("VITE_DIST_DATA_BASE_URL"));
   if (typeof window === "undefined") {
     return envBasePath;
   }
@@ -59,12 +63,12 @@ export function resolveDistDataAssetPath(assetPath?: string | null): string | nu
 }
 
 export function resolveDistDataNativeRuntimeManifestPath(): string | null {
-  const explicitManifestUrl = `${import.meta.env.VITE_NATIVE_RUNTIME_MANIFEST_URL ?? ""}`.trim();
+  const explicitManifestUrl = `${viteEnvValue("VITE_NATIVE_RUNTIME_MANIFEST_URL") ?? ""}`.trim();
   if (explicitManifestUrl) {
     return explicitManifestUrl;
   }
 
-  const runtimePacksEnabled = `${import.meta.env.VITE_ENABLE_NATIVE_RUNTIME_PACKS ?? ""}`.trim().toLowerCase();
+  const runtimePacksEnabled = `${viteEnvValue("VITE_ENABLE_NATIVE_RUNTIME_PACKS") ?? ""}`.trim().toLowerCase();
   if (runtimePacksEnabled === "0" || runtimePacksEnabled === "false" || runtimePacksEnabled === "off") {
     return null;
   }
@@ -74,7 +78,7 @@ export function resolveDistDataNativeRuntimeManifestPath(): string | null {
 
 export async function fetchDistDataJson<T>(url: string): Promise<T> {
   const response = await fetch(url, {
-    cache: "force-cache",
+    cache: "no-cache",
     credentials: "same-origin",
   });
   if (!response.ok) {
@@ -85,7 +89,7 @@ export async function fetchDistDataJson<T>(url: string): Promise<T> {
 
 export async function fetchDistDataArrayBuffer(url: string): Promise<ArrayBuffer> {
   const response = await fetch(url, {
-    cache: "force-cache",
+    cache: "no-cache",
     credentials: "same-origin",
   });
   if (!response.ok) {

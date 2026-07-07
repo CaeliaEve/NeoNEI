@@ -2,31 +2,39 @@
 import assert from 'node:assert/strict';
 import fs from 'fs';
 
-const source = fs.readFileSync(
-  'src/services/api.ts',
+const runtimeSessionSource = fs.readFileSync(
+  'src/services/api/runtimeSession.ts',
+  'utf8',
+);
+const distDataRuntimeSource = fs.readFileSync(
+  'src/services/distDataRuntime.ts',
   'utf8',
 );
 
-test('mods list and recipe ui payload hot paths use runtime-signature persistent cache', () => {
+test('mods list hot path uses dist-data first and runtime-signature persistent cache', () => {
   assert.equal(
-    source.includes("readPersistentRuntimePayload<Mod[]>("),
+    runtimeSessionSource.includes("readPersistentRuntimePayload<Mod[]>("),
     true,
     'mods list should use persistent runtime cache so the home filter shell can restore instantly after reload',
   );
   assert.equal(
-    source.includes("persistRuntimePayload('mods-list'"),
+    runtimeSessionSource.includes("getDistDataMods()"),
+    true,
+    'mods list should be sourced from the active dist-data runtime before requiring a publish bundle',
+  );
+  assert.equal(
+    runtimeSessionSource.includes("persistRuntimePayload('mods-list'"),
     true,
     'mods list should be written back to persistent runtime cache after network fetch',
   );
   assert.equal(
-    source.includes("readPersistentRuntimePayload<RecipeUiPayload>("),
+    distDataRuntimeSource.includes("export async function getDistDataMods()"),
     true,
-    'recipe ui payload fetches should use persistent runtime cache for revisited special recipe pages',
+    'dist-data runtime should expose its derived mod catalog directly',
   );
   assert.equal(
-    source.includes("persistRuntimePayload('recipe-ui-payload'"),
+    distDataRuntimeSource.includes('const cachedRecipeUiPayloads = new Map<string, RecipeUiPayload>()'),
     true,
-    'recipe ui payloads should persist after first fetch to reduce repeat special-page latency',
+    'recipe UI payloads should retain the in-session dist-data cache for revisited special recipe pages',
   );
 });
-

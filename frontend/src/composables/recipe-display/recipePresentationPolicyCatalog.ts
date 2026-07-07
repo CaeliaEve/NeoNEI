@@ -8,7 +8,6 @@ import {
   isRegisteredRecipeComponent,
   resolveRegisteredRecipeComponent,
 } from '../../components/recipe-display/recipeComponentRegistry';
-import { isNativeLayoutRendererEligible } from './nativeLayoutRendering';
 
 type RecipePresentationRouteKind =
   | 'detailed-crafting'
@@ -56,6 +55,13 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? value as Record<string, unknown> : null;
 }
 
+function nativeFrameRecordFromPayload(uiPayload: RecipeUiPayload | null | undefined): Record<string, unknown> | null {
+  const payloadRecord = asRecord(uiPayload);
+  return asRecord(payloadRecord?.nativeFrame)
+    ?? asRecord(asRecord(payloadRecord?.metadata)?.nativeFrame)
+    ?? asRecord(asRecord(payloadRecord?.additionalData)?.nativeFrame);
+}
+
 export function resolveInlineRecipeUiPayload(recipe: Pick<Recipe, 'additionalData'>): RecipeUiPayload | null {
   const additionalData = asRecord(recipe.additionalData);
   const candidate = asRecord(additionalData?.uiPayload);
@@ -73,18 +79,41 @@ export function recipeUiPayloadNativeLayout(uiPayload: RecipeUiPayload | null | 
   return payloadRecord.nativeLayout ?? null;
 }
 
+export function recipeUiPayloadNativeFrame(uiPayload: RecipeUiPayload | null | undefined): unknown | null {
+  return nativeFrameRecordFromPayload(uiPayload);
+}
+
 function resolveRecipeUiPayloadAuthorityError(
   uiPayload: RecipeUiPayload | null | undefined,
   payloadProfile: RecipePresentationProfile | null,
 ): string | null {
   const payloadRecord = asRecord(uiPayload);
-  if (!payloadRecord || !hasOwnRecordProperty(payloadRecord, 'nativeLayout')) {
+  if (
+    !payloadRecord
+    || (!hasOwnRecordProperty(payloadRecord, 'nativeLayout') && !hasOwnRecordProperty(payloadRecord, 'nativeFrame'))
+  ) {
+    return null;
+  }
+
+  const nativeFrame = nativeFrameRecordFromPayload(uiPayload);
+  if (nativeFrame) {
     return null;
   }
 
   const nativeLayout = payloadRecord.nativeLayout;
-  if (!nativeLayout || typeof nativeLayout !== 'object') {
-    return `Native recipe UI payload for family "${uiPayload?.familyKey ?? 'unknown'}" has no valid nativeLayout; refusing retired component path.`;
+  if (nativeLayout && typeof nativeLayout === 'object') {
+    if (payloadProfile && isRegisteredRecipeComponent(payloadProfile.component)) {
+      return null;
+    }
+    return `Native recipe UI payload for family "${uiPayload?.familyKey ?? 'unknown'}" is missing nativeFrame; refusing reconstructed nativeLayout canvas path.`;
+  }
+
+  if (payloadProfile && isRegisteredRecipeComponent(payloadProfile.component)) {
+    return null;
+  }
+
+  if (!nativeFrame || typeof nativeFrame !== 'object') {
+    return `Native recipe UI payload for family "${uiPayload?.familyKey ?? 'unknown'}" has no valid nativeFrame; refusing heuristic or reconstructed UI path.`;
   }
 
   if (!payloadProfile) {
@@ -100,19 +129,24 @@ export function resolveRecipePresentationDecision({
 }: RecipePresentationDecisionInput): RecipePresentationDecision {
   const payloadProfile = resolveRecipePresentationProfileFromUiPayload(uiPayload);
   const payloadError = resolveRecipeUiPayloadAuthorityError(uiPayload, payloadProfile);
+  const resolvedPayloadError = payloadError
+    && !payloadProfile
+    && isRegisteredRecipeComponent(detectedProfile.component)
+    ? null
+    : payloadError;
 
   if (payloadProfile) {
     return {
       profile: payloadProfile,
       source: 'ui-payload',
-      payloadError,
+      payloadError: resolvedPayloadError,
     };
   }
 
   return {
     profile: detectedProfile,
     source: 'detected-profile',
-    payloadError,
+    payloadError: resolvedPayloadError,
   };
 }
 
@@ -121,23 +155,23 @@ const RECIPE_PRESENTATION_ROUTE_DESCRIPTORS: readonly RecipePresentationRouteDes
     kind: 'detailed-crafting',
     displayedComponentName: 'NEIRecipeDisplay',
     resolveComponent: () => null,
-    accepts: ({ profile }) => profile.renderMode === 'detailed_crafting',
+    accepts: ({ profile, uiPayload }) => (
+      !recipeUiPayloadNativeFrame(uiPayload)
+      && profile.renderMode === 'detailed_crafting'
+    ),
   },
   {
     kind: 'native-layout',
     displayedComponentName: 'NativeNeiRecipeCanvas',
     resolveComponent: () => null,
-    accepts: ({ profile, uiPayload }) => {
-      const nativeLayout = recipeUiPayloadNativeLayout(uiPayload);
-      return Boolean(nativeLayout) && isNativeLayoutRendererEligible(profile.component, nativeLayout);
-    },
+    accepts: ({ uiPayload }) => Boolean(recipeUiPayloadNativeFrame(uiPayload)),
   },
   {
     kind: 'registered-component',
     displayedComponentName: ({ profile }) => profile.component,
     resolveComponent: ({ profile }) => resolveRegisteredRecipeComponent(profile.component),
     accepts: ({ profile, uiPayload }) => (
-      !recipeUiPayloadNativeLayout(uiPayload)
+      !recipeUiPayloadNativeFrame(uiPayload)
       && isRegisteredRecipeComponent(profile.component)
     ),
   },
@@ -162,13 +196,14 @@ function componentRegistrationError(profile: RecipePresentationProfile): string 
   return `Recipe display component "${profile.component}" is not registered for UI type "${profile.uiConfig.uiType}".`;
 }
 
-function nativeLayoutRoutingError({ profile, uiPayload }: RecipePresentationRouteInput): string | null {
+function nativeFrameRoutingError({ uiPayload }: RecipePresentationRouteInput): string | null {
   const nativeLayout = recipeUiPayloadNativeLayout(uiPayload);
-  if (!nativeLayout) {
+  const nativeFrame = recipeUiPayloadNativeFrame(uiPayload);
+  if (nativeFrame) {
     return null;
   }
-  if (!isNativeLayoutRendererEligible(profile.component, nativeLayout)) {
-    return `Native recipe UI payload for component "${profile.component}" is not eligible for the native layout renderer; refusing retired component path.`;
+  if (!nativeLayout) {
+    return null;
   }
   return null;
 }
@@ -184,7 +219,7 @@ export function resolveRecipePresentationRoute(input: RecipePresentationRouteInp
     };
   }
 
-  const nativeError = nativeLayoutRoutingError(input);
+  const nativeError = nativeFrameRoutingError(input);
   if (nativeError) {
     return {
       kind: 'unregistered-component',

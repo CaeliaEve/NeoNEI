@@ -615,6 +615,18 @@ export interface RecipeUiPayload {
   familyKey: string;
   machineType?: string;
   recipeType?: string;
+  nativeFrame?: {
+    status?: string;
+    assetRef?: string;
+    width?: number;
+    height?: number;
+    coordinateSpace?: string;
+    source?: string | null;
+    handlerKey?: string | null;
+    handlerClass?: string | null;
+    recipeIndex?: number | null;
+    [key: string]: unknown;
+  } | null;
   inputItemIds?: string[];
   outputItemIds?: string[];
   slotCount?: {

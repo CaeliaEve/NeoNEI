@@ -34,12 +34,14 @@ test('native recipe presentation is routed through explicit policy catalogs', ()
   assert.match(nativePolicySource, /GTChemicalReactorUI/);
   assert.match(nativePolicySource, /hasDrawableNativePrimitive/);
   assert.match(nativePolicySource, /hasNativeDynamicPrimitives\(layout\)/);
+  assert.match(nativePolicySource, /hasCapturedNativeBackground/);
+  assert.match(nativePolicySource, /hasNativeDynamicPrimitives\(layout\) \|\| hasCapturedNativeBackground\(layout\)/);
 
   assert.match(presentationPolicySource, /RECIPE_PRESENTATION_ROUTE_DESCRIPTORS/);
   assert.match(presentationPolicySource, /nativePayloadAuthority: 'fail-closed-native-layout-authority'/);
   assert.match(presentationPolicySource, /resolveRecipePresentationDecision/);
   assert.match(presentationPolicySource, /resolveRecipePresentationRoute/);
-  assert.match(presentationPolicySource, /refusing retired component path/);
+  assert.match(presentationPolicySource, /refusing reconstructed nativeLayout canvas path/);
   assert.match(presentationSource, /resolveRecipePresentationDecision/);
   assert.match(presentationSource, /resolveRecipePresentationRoute/);
   assert.doesNotMatch(presentationSource, /isNativeLayoutRendererEligible\(presentationProfile\.value\.component, layout\)/);

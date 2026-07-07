@@ -53,14 +53,20 @@ export interface NativeUiDynamicPrimitive extends Partial<UiPackDynamicPrimitive
   fillColor?: string;
   borderColor?: string;
   source?: string;
+  textureVariant?: "gt-progress-arrow" | "gt-progress-compress";
 }
 
 export interface NativeUiLayoutSurface {
+  familyKey?: string;
+  canonicalMachineFamily?: string;
+  layoutKind?: string;
   width?: number;
   height?: number;
+  yShift?: number;
   coordinateSpace?: string;
   scaleMode?: string;
   anchor?: string;
+  maxRecipesPerPage?: number;
   imageResource?: string;
   imageRegion?: NativeUiImageRegion;
   nativeBackground?: Record<string, unknown> | NativeUiBackgroundContract | null;
@@ -203,6 +209,9 @@ function normalizeNativeUiDynamicPrimitive(
     fillColor: `${record.fillColor ?? ""}`.trim() || undefined,
     borderColor: `${record.borderColor ?? ""}`.trim() || undefined,
     source: `${record.source ?? ""}`.trim() || undefined,
+    textureVariant: record.textureVariant === "gt-progress-arrow" || record.textureVariant === "gt-progress-compress"
+      ? record.textureVariant
+      : undefined,
   };
   const geometry = resolveNativeUiRectGeometry(
     record,
@@ -254,11 +263,16 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
 
   const layout = template
     ? {
+      familyKey: template.familyKey,
+      canonicalMachineFamily: template.canonicalMachineFamily,
+      layoutKind: template.layoutKind,
       width: template.width,
       height: template.height,
+      yShift: template.yShift,
       coordinateSpace: template.coordinateSpace,
       scaleMode: template.scaleMode,
       anchor: template.anchor,
+      maxRecipesPerPage: template.maxRecipesPerPage,
       imageResource: template.imageResource,
       imageRegion: inlineLayout?.imageRegion,
       nativeBackground: template.nativeBackground,
@@ -322,8 +336,13 @@ export function resolveNativeUiRuntimeSurface(options: Readonly<{
 
 export function buildNativeUiSlotCells<TEntry>(options: Readonly<{
   slots: readonly NativeUiSlot[];
+  layout?: NativeUiLayoutSurface | null;
   resolveRoleEntries: (role: string) => readonly TEntry[];
 }>): NativeUiSlotCell<TEntry>[] {
+  if (isGregTechCountAwareSlotLayout(options.layout)) {
+    return buildGregTechCountAwareSlotCells(options);
+  }
+
   const cells: NativeUiSlotCell<TEntry>[] = [];
   options.slots.forEach((slot, groupIndex) => {
     const role = `${slot.role ?? ""}`.trim();
@@ -359,6 +378,159 @@ export function buildNativeUiSlotCells<TEntry>(options: Readonly<{
     }
   });
   return cells;
+}
+
+function isGregTechCountAwareSlotLayout(layout: NativeUiLayoutSurface | null | undefined): boolean {
+  const family = `${layout?.canonicalMachineFamily ?? ""}`.trim().toLowerCase();
+  const kind = `${layout?.layoutKind ?? ""}`.trim().toLowerCase();
+  return family === "gregtech-machine" && (kind === "machine" || kind === "fluid-machine");
+}
+
+function buildGregTechCountAwareSlotCells<TEntry>(options: Readonly<{
+  slots: readonly NativeUiSlot[];
+  resolveRoleEntries: (role: string) => readonly TEntry[];
+}>): NativeUiSlotCell<TEntry>[] {
+  const cells: NativeUiSlotCell<TEntry>[] = [];
+  options.slots.forEach((slot, groupIndex) => {
+    const role = `${slot.role ?? ""}`.trim();
+    if (!role) {
+      throw new Error(`Native UI slot ${groupIndex} missing required role`);
+    }
+    const normalizedRole = role.toLowerCase();
+    const entries = options.resolveRoleEntries(role);
+    const positions = gregTechSlotPositionsForRole(normalizedRole, entries.length);
+    if (!positions) {
+      appendTemplateSlotCells(cells, slot, groupIndex, entries);
+      return;
+    }
+    if (positions.length === 0) return;
+    const geometry = resolveNativeUiSlotGeometry(slot, `Native UI slot ${role}:${groupIndex}`);
+    positions.forEach((position, index) => {
+      cells.push({
+        key: `${role}:${groupIndex}:${index}`,
+        role,
+        x: position.x,
+        y: position.y,
+        width: geometry.width,
+        height: geometry.height,
+        iconX: position.x + Math.floor((geometry.width - geometry.iconWidth) / 2),
+        iconY: position.y + Math.floor((geometry.height - geometry.iconHeight) / 2),
+        iconWidth: geometry.iconWidth,
+        iconHeight: geometry.iconHeight,
+        entry: entries[index] ?? null,
+      });
+    });
+  });
+  return cells;
+}
+
+function appendTemplateSlotCells<TEntry>(
+  cells: NativeUiSlotCell<TEntry>[],
+  slot: NativeUiSlot,
+  groupIndex: number,
+  entries: readonly TEntry[],
+): void {
+  const role = `${slot.role ?? ""}`.trim();
+  const columns = Math.trunc(Number(slot.columns));
+  const rows = Math.trunc(Number(slot.rows));
+  if (!Number.isFinite(columns) || columns <= 0 || !Number.isFinite(rows) || rows <= 0) {
+    throw new Error(`Native UI slot ${role}:${groupIndex} has invalid grid dimensions`);
+  }
+  const geometry = resolveNativeUiSlotGeometry(slot, `Native UI slot ${role}:${groupIndex}`);
+  const rawStart = Math.max(0, Number(slot.startIndex ?? 0) || 0);
+  const start = rawStart >= entries.length ? 0 : rawStart;
+  const count = columns * rows;
+  for (let index = 0; index < count; index += 1) {
+    const col = index % columns;
+    const row = Math.floor(index / columns);
+    cells.push({
+      key: `${role}:${groupIndex}:${index}`,
+      role,
+      x: geometry.x + col * geometry.pitchX,
+      y: geometry.y + row * geometry.pitchY,
+      width: geometry.width,
+      height: geometry.height,
+      iconX: geometry.iconX + col * geometry.pitchX,
+      iconY: geometry.iconY + row * geometry.pitchY,
+      iconWidth: geometry.iconWidth,
+      iconHeight: geometry.iconHeight,
+      entry: entries[start + index] ?? null,
+    });
+  }
+}
+
+function gregTechSlotPositionsForRole(role: string, count: number): Array<{ x: number; y: number }> | null {
+  const total = Math.max(0, Math.trunc(Number(count) || 0));
+  if (role.includes("fuel")) return [];
+  if (role.includes("fluid")) {
+    return role.includes("output")
+      ? gregTechFluidOutputPositions(total)
+      : gregTechFluidInputPositions(total);
+  }
+  if (role.includes("output")) return gregTechItemOutputPositions(total);
+  return gregTechItemInputPositions(total);
+}
+
+function gregTechGridPositions(
+  totalCount: number,
+  xOrigin: number,
+  yOrigin: number,
+  xDirMaxCount: number,
+  yDirMaxCount = 100,
+): Array<{ x: number; y: number }> {
+  const positions: Array<{ x: number; y: number }> = [];
+  let count = 0;
+  for (let row = 0; row < yDirMaxCount; row += 1) {
+    for (let col = 0; col < xDirMaxCount; col += 1) {
+      if (count >= totalCount) return positions;
+      positions.push({ x: xOrigin + col * 18, y: yOrigin + row * 18 });
+      count += 1;
+    }
+  }
+  return positions;
+}
+
+function gregTechItemInputPositions(count: number): Array<{ x: number; y: number }> {
+  switch (count) {
+    case 0: return [];
+    case 1: return gregTechGridPositions(count, 52, 24, 1, 1);
+    case 2: return gregTechGridPositions(count, 34, 24, 2, 1);
+    case 3: return gregTechGridPositions(count, 16, 24, 3, 1);
+    case 4: return gregTechGridPositions(count, 34, 15, 2, 2);
+    case 5:
+    case 6: return gregTechGridPositions(count, 16, 15, 3, 2);
+    default: return gregTechGridPositions(count, 16, 6, 3);
+  }
+}
+
+function gregTechItemOutputPositions(count: number): Array<{ x: number; y: number }> {
+  switch (count) {
+    case 0: return [];
+    case 1: return gregTechGridPositions(count, 106, 24, 1, 1);
+    case 2: return gregTechGridPositions(count, 106, 24, 2, 1);
+    case 3: return gregTechGridPositions(count, 106, 24, 3, 1);
+    case 4: return gregTechGridPositions(count, 106, 15, 2, 2);
+    case 5:
+    case 6: return gregTechGridPositions(count, 106, 15, 3, 2);
+    default: return gregTechGridPositions(count, 106, 6, 3);
+  }
+}
+
+function gregTechFluidInputPositions(count: number): Array<{ x: number; y: number }> {
+  const positions: Array<{ x: number; y: number }> = [];
+  const base = Math.max(70 - count * 18, 16);
+  for (let index = 0; index < count; index += 1) {
+    positions.push({ x: base + index * 18, y: 62 });
+  }
+  return positions;
+}
+
+function gregTechFluidOutputPositions(count: number): Array<{ x: number; y: number }> {
+  const positions: Array<{ x: number; y: number }> = [];
+  for (let index = 0; index < count; index += 1) {
+    positions.push({ x: 106 + index * 18, y: 62 });
+  }
+  return positions;
 }
 
 export function createNativeUiFitMatrix(options: Readonly<{

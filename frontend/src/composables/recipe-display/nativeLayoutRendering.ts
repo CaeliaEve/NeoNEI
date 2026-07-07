@@ -94,6 +94,20 @@ export function hasNativeDynamicPrimitives(layout: unknown): boolean {
     || hasDrawableNativePrimitive(candidate.energyBars);
 }
 
+function hasCapturedNativeBackground(layout: unknown): boolean {
+  if (!layout || typeof layout !== 'object') {
+    return false;
+  }
+  const nativeBackground = (layout as Record<string, unknown>).nativeBackground;
+  if (!nativeBackground || typeof nativeBackground !== 'object') {
+    return false;
+  }
+  const candidate = nativeBackground as Record<string, unknown>;
+  const status = `${candidate.status ?? ''}`.trim().toLowerCase();
+  const assetRef = `${candidate.assetRef ?? ''}`.trim();
+  return status === 'captured' && assetRef.length > 0;
+}
+
 export function isNativeLayoutRendererEligible(componentName: string, layout?: unknown): boolean {
   const descriptor = NATIVE_LAYOUT_RENDERER_DESCRIPTOR_BY_COMPONENT.get(componentName);
   if (!descriptor) {
@@ -102,7 +116,7 @@ export function isNativeLayoutRendererEligible(componentName: string, layout?: u
   if (descriptor.policy === 'static-layout') {
     return true;
   }
-  return hasNativeDynamicPrimitives(layout);
+  return hasNativeDynamicPrimitives(layout) || hasCapturedNativeBackground(layout);
 }
 
 export const NATIVE_LAYOUT_RENDERER_POLICY_CATALOG = Object.freeze({

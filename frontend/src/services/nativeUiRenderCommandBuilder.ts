@@ -3,6 +3,7 @@ import type { NativeUiDynamicPrimitive, NativeUiSlotCell } from "./nativeUiRunti
 import { resolveNativeUiRectGeometry } from "./nativeUiGeometryAbi.ts";
 import {
   nativeUiDynamicPrimitiveColors,
+  nativeUiDynamicPrimitiveTextureSource,
   nativeUiPrimitiveFillRatio,
   nativeUiSolidTextureKey,
   normalizeNativeUiDpr,
@@ -10,11 +11,14 @@ import {
 
 export {
   nativeUiDynamicPrimitiveColors,
+  nativeUiDynamicPrimitiveTextureSource,
   nativeUiSolidTextureKey,
 } from "./nativeUiRenderResourceCatalog.ts";
 
 export interface NativeUiPreparedBackgroundSource {
   textureKey: string;
+  status?: string;
+  kind?: string;
   image?: HTMLImageElement | HTMLCanvasElement;
   sourceX: number;
   sourceY: number;
@@ -28,6 +32,7 @@ export interface NativeUiPreparedBackgroundSource {
     borderU: number;
     borderV: number;
   };
+  coversSlotChrome?: boolean;
 }
 
 export interface NativeUiAtlasSpriteSource {
@@ -169,6 +174,54 @@ export function pushNativeUiDynamicPrimitiveCommands(
   const innerHeight = Math.max(0, height - borderSize * 2);
   const fillRatio = nativeUiPrimitiveFillRatio(primitive);
   const orientation = primitive.orientation ?? (height > width ? "vertical" : "horizontal");
+  const texture = nativeUiDynamicPrimitiveTextureSource(primitive, dpr);
+  if (texture) {
+    pushNativeUiTextureSpriteRect(
+      commands,
+      dpr,
+      texture.textureKey,
+      0,
+      0,
+      texture.sourceWidth,
+      texture.frameHeight,
+      x,
+      y,
+      width,
+      height,
+    );
+    if (orientation === "vertical") {
+      const fillHeight = height * fillRatio;
+      const sourceFillHeight = texture.frameHeight * fillRatio;
+      pushNativeUiTextureSpriteRect(
+        commands,
+        dpr,
+        texture.textureKey,
+        0,
+        texture.frameHeight + texture.frameHeight - sourceFillHeight,
+        texture.sourceWidth,
+        sourceFillHeight,
+        x,
+        y + height - fillHeight,
+        width,
+        fillHeight,
+      );
+    } else {
+      pushNativeUiTextureSpriteRect(
+        commands,
+        dpr,
+        texture.textureKey,
+        0,
+        texture.frameHeight,
+        texture.sourceWidth * fillRatio,
+        texture.frameHeight,
+        x,
+        y,
+        width * fillRatio,
+        height,
+      );
+    }
+    return;
+  }
 
   pushSolidSpriteRect(commands, dpr, trackColor, innerX, innerY, innerWidth, innerHeight);
   if (orientation === "vertical") {
@@ -197,6 +250,13 @@ export function buildNativeUiSpriteCommands<TEntry>(
   }
 
   for (const primitive of options.dynamicPrimitives) {
+    if (
+      background?.kind === "gt-modular-ui"
+      && `${primitive.source ?? ""}`.trim() === "gtnh-basic-ui-properties-default"
+      && !nativeUiDynamicPrimitiveTextureSource(primitive, dpr)
+    ) {
+      continue;
+    }
     pushNativeUiDynamicPrimitiveCommands(commands, dpr, primitive);
   }
 
@@ -205,7 +265,7 @@ export function buildNativeUiSpriteCommands<TEntry>(
     const slotHeight = Math.max(1, Number(cell.height));
     const slotSourceWidth = Math.max(1, Math.round(slotWidth * dpr));
     const slotSourceHeight = Math.max(1, Math.round(slotHeight * dpr));
-    if (!background) {
+    if (background?.coversSlotChrome !== true) {
       commands.push({
         textureKey: options.slotTextureKey(cell),
         sourceX: 0,

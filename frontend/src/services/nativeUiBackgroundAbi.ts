@@ -111,6 +111,24 @@ function requiredObject(value: unknown, field: string, label: string): NativeUiB
   return record;
 }
 
+function isNativeUiBackgroundContract(value: unknown): value is NativeUiBackgroundContract {
+  const record = asRecord(value);
+  return Boolean(
+    record
+    && typeof record.status === "string"
+    && typeof record.kind === "string"
+    && typeof record.coordinateSpace === "string"
+    && typeof record.scaleMode === "string"
+    && typeof record.anchor === "string"
+    && typeof record.width === "number"
+    && typeof record.height === "number"
+    && typeof record.yShift === "number"
+    && typeof record.scaling === "string"
+    && asRecord(record.texture)
+    && asRecord(record.targetRect)
+  );
+}
+
 function resolveTexture(background: NativeUiBackgroundSource, label: string): NativeUiBackgroundTextureSpec {
   const texture = requiredObject(background.texture, "texture", label);
   return {
@@ -148,6 +166,10 @@ export function resolveNativeUiBackgroundContract(
   layout: NativeUiBackgroundLayoutSource | null | undefined,
   label = "Native UI background",
 ): NativeUiBackgroundContract | null {
+  if (isNativeUiBackgroundContract(layout?.nativeBackground)) {
+    return layout.nativeBackground;
+  }
+
   const background = asRecord(layout?.nativeBackground);
   if (!background) return null;
 

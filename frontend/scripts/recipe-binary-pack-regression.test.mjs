@@ -140,3 +140,31 @@ test('recipe category summaries preserve exported machine icons from native reci
     'recipe UI payloads must prefer exported machineInfo.machineIcon for recipe title icons',
   );
 });
+
+test('dist-data recipe projection backfills missing UI payload item roles from native item index', () => {
+  assert.match(
+    runtimeSource,
+    /type DistDataRecipeItemRoleIndexEntry = \{\s*producedByItemIds: string\[\];\s*usedInItemIds: string\[\];\s*\}/,
+    'runtime should materialize a recipeId -> producedBy/usedIn item role index',
+  );
+  assert.match(
+    runtimeSource,
+    /appendUniqueItemId\(getOrCreateRecipeItemRoleIndexEntry\(roleIndex, recipeId\)\.producedByItemIds, itemId\)/,
+    'producedBy itemIndex entries should become recipe output candidates',
+  );
+  assert.match(
+    runtimeSource,
+    /appendUniqueItemId\(getOrCreateRecipeItemRoleIndexEntry\(roleIndex, recipeId\)\.usedInItemIds, itemId\)/,
+    'usedIn itemIndex entries should become recipe input candidates',
+  );
+  assert.match(
+    runtimeSource,
+    /const resolvedInputItemIds = inputItemIds\.length > 0 \? inputItemIds : indexedInputItemIds/,
+    'UI payload inputs should only be backfilled when the payload has no explicit input item IDs',
+  );
+  assert.match(
+    runtimeSource,
+    /const resolvedOutputItemIds = outputItemIds\.length > 0 \? outputItemIds : indexedOutputItemIds/,
+    'UI payload outputs should only be backfilled when the payload has no explicit output item IDs',
+  );
+});

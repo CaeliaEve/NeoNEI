@@ -2,10 +2,13 @@ import type { NativeRendererBackend } from "../renderers/native/NativeRendererBa
 import type { NativeUiDynamicPrimitive, NativeUiSlotCell } from "./nativeUiRuntimeRegistry.ts";
 import {
   createNativeUiCanonicalNeiBackgroundTexture,
+  createNativeUiDynamicPrimitiveTexture,
   createNativeUiGtModularBackgroundTexture,
   createNativeUiSlotTexture,
   createNativeUiSolidColorTexture,
   nativeUiDynamicPrimitiveColors,
+  nativeUiDynamicPrimitiveTextureKey,
+  nativeUiDynamicPrimitiveTextureVariant,
   nativeUiSlotTextureKey,
   nativeUiSolidTextureKey,
   nativeUiTextureKindForRole,
@@ -15,9 +18,12 @@ import {
 
 export {
   createNativeUiCanonicalNeiBackgroundTexture,
+  createNativeUiDynamicPrimitiveTexture,
   createNativeUiGtModularBackgroundTexture,
   createNativeUiSlotTexture,
   createNativeUiSolidColorTexture,
+  nativeUiDynamicPrimitiveTextureKey,
+  nativeUiDynamicPrimitiveTextureVariant,
   nativeUiSlotTextureKey,
   nativeUiTextureKindForRole,
   type NativeUiSlotTextureKind,
@@ -83,9 +89,20 @@ export class NativeUiTextureRegistry {
 
   registerDynamicPrimitiveTextures(
     renderer: NativeRendererBackend,
+    dprValue: number,
     primitives: readonly NativeUiDynamicPrimitive[],
   ): void {
+    const dpr = normalizeNativeUiDpr(dprValue);
     for (const primitive of primitives) {
+      const variant = nativeUiDynamicPrimitiveTextureVariant(primitive);
+      const textureKey = nativeUiDynamicPrimitiveTextureKey(primitive, dpr);
+      if (variant && textureKey) {
+        assertNativeUiTextureRegistered(
+          this.register(renderer, textureKey, createNativeUiDynamicPrimitiveTexture(variant, dpr)),
+          textureKey,
+        );
+        continue;
+      }
       for (const color of nativeUiDynamicPrimitiveColors(primitive)) {
         this.registerSolidTexture(renderer, color);
       }

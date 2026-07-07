@@ -32,6 +32,9 @@ test('static asset filesystem and sidecar policy are delivery-service owned', ()
   assert.match(routeRegistrySource, /Invalid static asset mount phase/);
   assert.match(routeRegistrySource, /path: '\/images\/item\/:modId\/:fileName'/);
   assert.match(routeRegistrySource, /path: '\/api\/images\/entity\/:modId\/:fileName'/);
+  assert.match(routeRegistrySource, /DIST_DATA_DIR/);
+  assert.match(routeRegistrySource, /key:\s*'distData'[\s\S]*mountPath:\s*'\/dist-data'[\s\S]*rootDir:\s*DIST_DATA_DIR/);
+  assert.match(routeRegistrySource, /key:\s*'distData'[\s\S]*phase:\s*'before-image-artifacts'[\s\S]*key:\s*'publicRoot'/);
   assert.match(routeRegistrySource, /mountPath: '\/contracts'/);
   assert.match(routeRegistrySource, /mountPath: '\/publish'/);
   assert.match(routeRegistrySource, /phase: 'before-image-artifacts'/);
