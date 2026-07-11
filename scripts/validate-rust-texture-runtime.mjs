@@ -1,6 +1,7 @@
-﻿import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parseNativeTexturesBin } from './native-runtime-pack-reader.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -32,30 +33,40 @@ function placementKey(entry, placement) {
   ].join('|');
 }
 
-function validateAnimatedPlacement(failures, entry) {
+function validateAnimatedPlacement(failures, entry, declaredFrameRows) {
   const animated = entry?.animatedAtlas;
   if (!animated) return;
+  const frameStart = Number(animated.frameStart ?? 0);
+  const frameCount = Number(animated.frameCount ?? 0);
+  const frameDurationMs = Number(animated.frameDurationMs ?? 0);
   const frames = Array.isArray(animated.frames) ? animated.frames : [];
-  const timeline = Array.isArray(animated.timeline) ? animated.timeline : [];
-  const frameCount = Number(animated.frameCount ?? frames.length);
   if (!animated.atlasFile) {
     fail(failures, 'RUST_TEXTURE_ANIMATED_ATLAS_FILE_MISSING', 'animated atlas entry is missing atlasFile', { itemId: entry.itemId });
   }
   if (frameCount <= 0) {
     fail(failures, 'RUST_TEXTURE_ANIMATED_FRAME_COUNT_EMPTY', 'animated atlas entry has no frames', { itemId: entry.itemId });
   }
-  if (frames.length <= 0) {
-    fail(failures, 'RUST_TEXTURE_ANIMATED_FRAMES_EMPTY', 'animated atlas entry has empty frames[]', { itemId: entry.itemId });
+  if (frames.length !== frameCount) {
+    fail(failures, 'RUST_TEXTURE_ANIMATED_FRAME_TABLE_MISMATCH', 'animated atlas frame table length differs from row frameCount', {
+      itemId: entry.itemId,
+      frameCount,
+      frameTableRows: frames.length,
+    });
   }
-  if (timeline.length <= 0) {
-    fail(failures, 'RUST_TEXTURE_ANIMATED_TIMELINE_EMPTY', 'animated atlas entry has empty timeline[]', { itemId: entry.itemId });
+  const invalidFrame = frames.find((frame) => !(Number(frame?.width) > 0 && Number(frame?.height) > 0 && Number(frame?.durationMs) > 0));
+  if (invalidFrame) {
+    fail(failures, 'RUST_TEXTURE_ANIMATED_FRAME_INVALID', 'animated atlas frame row has invalid dimensions or duration', { itemId: entry.itemId, frame: invalidFrame });
   }
-  const invalidTimeline = timeline.find((frame) => {
-    const duration = Array.isArray(frame) ? Number(frame[1] ?? 0) : Number(frame?.durationMs ?? 0);
-    return !(duration > 0);
-  });
-  if (invalidTimeline) {
-    fail(failures, 'RUST_TEXTURE_ANIMATED_TIMELINE_DURATION_INVALID', 'animated atlas timeline contains non-positive duration', { itemId: entry.itemId });
+  if (frameDurationMs <= 0 && frames.length <= 0) {
+    fail(failures, 'RUST_TEXTURE_ANIMATED_TIMELINE_DURATION_INVALID', 'animated atlas timing contains no positive duration source', { itemId: entry.itemId });
+  }
+  if (frameStart < 0 || frameCount <= 0 || frameStart + frameCount > declaredFrameRows) {
+    fail(failures, 'RUST_TEXTURE_ANIMATED_FRAME_RANGE_INVALID', 'animated atlas frame range exceeds texture frame table', {
+      itemId: entry.itemId,
+      frameStart,
+      frameCount,
+      declaredFrameRows,
+    });
   }
 }
 
@@ -65,34 +76,39 @@ function main() {
   const manifestPath = join(distDataDir, 'manifest.json');
   if (!existsSync(manifestPath)) throw new Error(`dist-data manifest not found: ${manifestPath}`);
   const manifest = readJson(manifestPath);
-  const rustTexturePackRelativePath = `${manifest.files?.rustTexturePack ?? ''}`.trim();
-  if (!rustTexturePackRelativePath) {
-    fail(failures, 'RUST_TEXTURE_PACK_NOT_DECLARED', 'manifest does not declare files.rustTexturePack');
-  }
-  const texturePackPath = join(distDataDir, rustTexturePackRelativePath || 'rust/texture-pack.json');
-  if (!existsSync(texturePackPath)) {
-    fail(failures, 'RUST_TEXTURE_PACK_MISSING', 'rust texture pack file is missing', { path: rustTexturePackRelativePath });
-  }
-  const texturePack = existsSync(texturePackPath) ? readJson(texturePackPath) : null;
-  if (texturePack?.schemaVersion !== 'neonei/rust-texture-pack/current') {
-    fail(failures, 'RUST_TEXTURE_SCHEMA_MISMATCH', 'rust texture pack schemaVersion is wrong', { schemaVersion: texturePack?.schemaVersion ?? null });
+
+  const runtimeManifestRelativePath = `${manifest.files?.rustRuntimeManifest ?? 'rust/runtime-manifest.json'}`.trim();
+  const runtimeManifestPath = join(distDataDir, runtimeManifestRelativePath);
+  const runtimeManifest = existsSync(runtimeManifestPath) ? readJson(runtimeManifestPath) : null;
+  const rustTextureBinRelativePath = `${manifest.files?.rustTextureBin ?? runtimeManifest?.entrypoints?.textures ?? ''}`.trim();
+  if (!rustTextureBinRelativePath) {
+    fail(failures, 'RUST_TEXTURE_BIN_NOT_DECLARED', 'manifest does not declare files.rustTextureBin or runtime entrypoints.textures');
   }
 
-  const atlas = texturePack?.atlas ?? null;
-  const atlasItems = Array.isArray(atlas?.items) ? atlas.items : [];
-  const animationTable = Array.isArray(texturePack?.animationTable) ? texturePack.animationTable : [];
-  const atlasMap = texturePack?.atlasMap && typeof texturePack.atlasMap === 'object' ? texturePack.atlasMap : {};
-  if (atlasItems.length <= 0) fail(failures, 'RUST_TEXTURE_ATLAS_EMPTY', 'rust texture atlas has no items');
-  if (Number(texturePack?.counts?.atlasItems ?? atlasItems.length) !== atlasItems.length) {
-    fail(failures, 'RUST_TEXTURE_ATLAS_COUNT_MISMATCH', 'rust texture atlasItems count differs from atlas.items length', {
-      declared: texturePack?.counts?.atlasItems ?? null,
-      actual: atlasItems.length,
-    });
+  const texturePackPath = join(distDataDir, rustTextureBinRelativePath || 'rust/textures.bin');
+  if (!existsSync(texturePackPath)) {
+    fail(failures, 'RUST_TEXTURE_BIN_MISSING', 'rust texture binary pack file is missing', { path: rustTextureBinRelativePath });
   }
-  if (Number(texturePack?.counts?.atlasMapItems ?? Object.keys(atlasMap).length) !== Object.keys(atlasMap).length) {
-    fail(failures, 'RUST_TEXTURE_ATLAS_MAP_COUNT_MISMATCH', 'rust texture atlasMapItems count differs from atlasMap size', {
-      declared: texturePack?.counts?.atlasMapItems ?? null,
-      actual: Object.keys(atlasMap).length,
+
+  let texturePack = null;
+  if (existsSync(texturePackPath)) {
+    try {
+      texturePack = parseNativeTexturesBin(distDataDir, rustTextureBinRelativePath, { optional: false });
+    } catch (error) {
+      fail(failures, 'RUST_TEXTURE_BIN_PARSE_FAILED', 'rust texture binary pack could not be parsed', {
+        path: rustTextureBinRelativePath,
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  const atlasItems = Array.isArray(texturePack?.items) ? texturePack.items : [];
+  const declaredFrameRows = Number(texturePack?.frameCount ?? 0);
+  if (atlasItems.length <= 0) fail(failures, 'RUST_TEXTURE_ATLAS_EMPTY', 'rust texture atlas has no items');
+  if (Number(texturePack?.rowCount ?? atlasItems.length) !== atlasItems.length) {
+    fail(failures, 'RUST_TEXTURE_ATLAS_COUNT_MISMATCH', 'rust texture atlasItems count differs from texture row count', {
+      declared: texturePack?.rowCount ?? null,
+      actual: atlasItems.length,
     });
   }
 
@@ -110,8 +126,8 @@ function main() {
   let staticCount = 0;
   let animatedCount = 0;
   for (const entry of atlasItems) {
-    const hasStatic = Boolean(entry?.hasStaticAtlas || entry?.staticAtlas);
-    const hasAnimated = Boolean(entry?.hasAnimatedAtlas || entry?.animatedAtlas);
+    const hasStatic = Boolean(entry?.staticAtlas?.atlasFile);
+    const hasAnimated = Boolean(entry?.animatedAtlas?.atlasFile);
     if (!hasStatic && !hasAnimated) {
       fail(failures, 'RUST_TEXTURE_ATLAS_ENTRY_NOT_DRAWABLE', 'atlas entry has neither static nor animated placement', { itemId: entry?.itemId ?? null });
     }
@@ -119,49 +135,38 @@ function main() {
       staticCount += 1;
       const staticAtlas = entry.staticAtlas ?? {};
       if (!staticAtlas.atlasFile) fail(failures, 'RUST_TEXTURE_STATIC_ATLAS_FILE_MISSING', 'static atlas entry is missing atlasFile', { itemId: entry.itemId });
+      if (!(Number(staticAtlas.width) > 0 && Number(staticAtlas.height) > 0)) {
+        fail(failures, 'RUST_TEXTURE_STATIC_DIMENSIONS_INVALID', 'static atlas placement has invalid dimensions', { itemId: entry.itemId, staticAtlas });
+      }
       const key = placementKey(entry, staticAtlas);
       if (placementKeys.has(key)) fail(failures, 'RUST_TEXTURE_STATIC_PLACEMENT_DUPLICATE', 'static atlas placement is duplicated', { itemId: entry.itemId, key });
       placementKeys.add(key);
     }
     if (hasAnimated) {
       animatedCount += 1;
-      validateAnimatedPlacement(failures, entry);
+      validateAnimatedPlacement(failures, entry, declaredFrameRows);
     }
   }
 
-  const declaredStatic = Number(texturePack?.counts?.staticAtlasItems ?? staticCount);
-  const declaredAnimated = Number(texturePack?.counts?.animatedAtlasItems ?? animatedCount);
-  if (declaredStatic !== staticCount) fail(failures, 'RUST_TEXTURE_STATIC_COUNT_MISMATCH', 'staticAtlasItems count differs from atlas entries', { declaredStatic, staticCount });
-  if (declaredAnimated !== animatedCount) fail(failures, 'RUST_TEXTURE_ANIMATED_COUNT_MISMATCH', 'animatedAtlasItems count differs from atlas entries', { declaredAnimated, animatedCount });
-  if (Number(texturePack?.counts?.animationRows ?? animationTable.length) !== animationTable.length) {
-    fail(failures, 'RUST_TEXTURE_ANIMATION_TABLE_COUNT_MISMATCH', 'animationRows count differs from animationTable length', {
-      declared: texturePack?.counts?.animationRows ?? null,
-      actual: animationTable.length,
-    });
+  const missingTextureReportPath = `${manifest.files?.rustMissingTextureReport ?? 'rust/missing-texture-report.json'}`.trim();
+  const missingTextureReport = missingTextureReportPath && existsSync(join(distDataDir, missingTextureReportPath))
+    ? readJson(join(distDataDir, missingTextureReportPath))
+    : null;
+  const invalidFrameBounds = Number(missingTextureReport?.counts?.invalidFrameBounds ?? 0);
+  const invalidAtlasBounds = Number(missingTextureReport?.counts?.invalidAtlasBounds ?? 0);
+  const missingAtlasFileRefs = Number(missingTextureReport?.counts?.missingAtlasFileRefs ?? 0);
+  const missingAtlasAssetFiles = Number(missingTextureReport?.counts?.missingAtlasAssetFiles ?? 0);
+  if (invalidFrameBounds > 0) {
+    fail(failures, 'RUST_TEXTURE_INVALID_FRAME_BOUNDS', 'rust texture pack contains invalid animated frame bounds', { count: invalidFrameBounds });
   }
-
-  const animatedAtlasIds = new Set(atlasItems.filter((entry) => entry?.hasAnimatedAtlas || entry?.animatedAtlas).map((entry) => entry.itemId));
-  const animationTableIds = new Set(animationTable.map((row) => `${row?.itemId ?? ''}`.trim()).filter(Boolean));
-  const animatedWithoutTiming = [...animatedAtlasIds].filter((id) => !animationTableIds.has(id));
-  if (animatedWithoutTiming.length > 0) {
-    fail(failures, 'RUST_TEXTURE_ANIMATED_TIMING_MISSING', 'animated atlas items are missing animationTable timing rows', { sample: animatedWithoutTiming.slice(0, 10) });
+  if (invalidAtlasBounds > 0) {
+    fail(failures, 'RUST_TEXTURE_INVALID_ATLAS_BOUNDS', 'rust texture pack contains invalid atlas placement bounds', { count: invalidAtlasBounds });
   }
-
-  const staticWhenExpectedAnimated = Number(texturePack?.counts?.staticWhenExpectedAnimated ?? 0);
-  if (staticWhenExpectedAnimated > 0) {
-    fail(failures, 'RUST_TEXTURE_STATIC_WHEN_EXPECTED_ANIMATED', 'items expected to animate were exported as static', { staticWhenExpectedAnimated });
+  if (missingAtlasFileRefs > 0) {
+    fail(failures, 'RUST_TEXTURE_MISSING_ATLAS_FILE_REFS', 'rust texture pack references missing atlas files', { count: missingAtlasFileRefs });
   }
-  const invalidFrameBounds = Array.isArray(texturePack?.validation?.invalidFrameBounds) ? texturePack.validation.invalidFrameBounds : [];
-  const invalidAtlasBounds = Array.isArray(texturePack?.validation?.invalidAtlasBounds) ? texturePack.validation.invalidAtlasBounds : [];
-  const missingAtlasFileRefs = Array.isArray(texturePack?.validation?.missingAtlasFileRefs) ? texturePack.validation.missingAtlasFileRefs : [];
-  if (invalidFrameBounds.length > 0 || Number(texturePack?.counts?.invalidFrameBounds ?? 0) > 0) {
-    fail(failures, 'RUST_TEXTURE_INVALID_FRAME_BOUNDS', 'rust texture pack contains invalid animated frame bounds', { count: invalidFrameBounds.length });
-  }
-  if (invalidAtlasBounds.length > 0 || Number(texturePack?.counts?.invalidAtlasBounds ?? 0) > 0) {
-    fail(failures, 'RUST_TEXTURE_INVALID_ATLAS_BOUNDS', 'rust texture pack contains invalid atlas placement bounds', { count: invalidAtlasBounds.length });
-  }
-  if (missingAtlasFileRefs.length > 0 || Number(texturePack?.counts?.missingAtlasFileRefs ?? 0) > 0) {
-    fail(failures, 'RUST_TEXTURE_MISSING_ATLAS_FILE_REFS', 'rust texture pack references missing atlas files', { count: missingAtlasFileRefs.length });
+  if (missingAtlasAssetFiles > 0) {
+    fail(failures, 'RUST_TEXTURE_MISSING_ATLAS_ASSET_FILES', 'rust texture pack references atlas asset files that are missing on disk', { count: missingAtlasAssetFiles });
   }
 
   const report = {
@@ -170,16 +175,19 @@ function main() {
     distDataDir,
     source: manifest.source ?? null,
     sourceRepository: manifest.sourceRepository ?? null,
-    rustTexturePack: rustTexturePackRelativePath || null,
+    rustTextureBin: rustTextureBinRelativePath || null,
     atlasItems: atlasItems.length,
     staticCount,
     animatedCount,
-    animationRows: animationTable.length,
-    atlasMapItems: Object.keys(atlasMap).length,
-    invalidAtlasBounds: invalidAtlasBounds.length,
+    animationRows: declaredFrameRows,
+    invalidAtlasBounds,
     failures,
     warnings,
-    samples: atlasItems.slice(0, 8).map((entry) => ({ itemId: entry.itemId, hasStaticAtlas: Boolean(entry.hasStaticAtlas), hasAnimatedAtlas: Boolean(entry.hasAnimatedAtlas) })),
+    samples: atlasItems.slice(0, 8).map((entry) => ({
+      itemId: entry.itemId,
+      hasStaticAtlas: Boolean(entry.staticAtlas?.atlasFile),
+      hasAnimatedAtlas: Boolean(entry.animatedAtlas?.atlasFile),
+    })),
   };
   const outputDir = join(repoRoot, '.runtime-logs');
   mkdirSync(outputDir, { recursive: true });

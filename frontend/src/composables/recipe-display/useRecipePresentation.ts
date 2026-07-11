@@ -48,7 +48,6 @@ export function useRecipePresentation(source: RecipePresentationSource) {
 
   const uiConfig = computed<UITypeConfig>(() => presentationProfile.value.uiConfig);
   const shouldUseDetailedCrafting = computed(() => presentationRoute.value.kind === 'detailed-crafting');
-  const shouldUseNativeLayoutRenderer = computed(() => presentationRoute.value.kind === 'native-layout');
   const hasRegisteredComponent = computed(() => presentationRoute.value.hasRegisteredComponent);
   const componentRegistrationError = computed<string | null>(() => presentationRoute.value.error);
   const currentComponent = computed<Component | null>(() => presentationRoute.value.currentComponent);
@@ -123,7 +122,6 @@ export function useRecipePresentation(source: RecipePresentationSource) {
     refreshRecipeUiPayload,
     resolvedRecipeUiPayload,
     shouldUseDetailedCrafting,
-    shouldUseNativeLayoutRenderer,
     uiConfig,
   };
 }

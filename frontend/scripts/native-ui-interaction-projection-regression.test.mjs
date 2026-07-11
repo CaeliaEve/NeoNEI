@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -94,20 +94,13 @@ test('native UI interaction projection filters slot hit cells and labels entries
   assert.equal(nativeUiHitCellEntryLabel(cells[1].entry), 'minecraft:iron_ingot');
 });
 
-test('native UI interaction projection owns component hit-region boundary', () => {
-  const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
+test('native UI interaction projection remains reusable reference logic after screenshot canvas retirement', () => {
   const projectionSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiInteractionProjection.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /nativeUiInteractionProjection/);
-  assert.match(componentSource, /projectNativeUiHitCells/);
-  assert.match(componentSource, /nativeUiSlotCellStyle/);
-  assert.doesNotMatch(componentSource, /slotCells\.filter\(\(candidate\) => candidate\.entry\)/);
-  assert.doesNotMatch(componentSource, /function textOverlayStyle/);
-  assert.doesNotMatch(componentSource, /function rectFactStyle/);
-  assert.doesNotMatch(componentSource, /function labelForEntry/);
-  assert.doesNotMatch(componentSource, /entry!/);
-
+  assert.equal(existsSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue')), false);
   assert.match(projectionSource, /export function projectNativeUiHitCells/);
   assert.match(projectionSource, /export function nativeUiRectStyle/);
+  assert.match(projectionSource, /export function nativeUiSlotCellStyle/);
   assert.match(projectionSource, /export function isNativeUiHotspotInteractive/);
+  assert.doesNotMatch(projectionSource, /entry!/);
 });

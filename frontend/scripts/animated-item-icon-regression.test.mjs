@@ -62,6 +62,18 @@ test('AnimatedItemIcon replays exported atlas timing instead of probing GIF file
   );
 
   assert.equal(
+    source.includes('const lookupKeys = Array.from(new Set([renderAssetRef, itemId].filter(Boolean)))'),
+    true,
+    'AnimatedItemIcon should warm atlas entries by renderAssetRef before falling back to itemId',
+  );
+
+  assert.equal(
+    source.includes('getGlobalBrowserAtlasEntry(itemId, renderAssetRef)'),
+    true,
+    'AnimatedItemIcon should resolve atlas entries with renderAssetRef priority',
+  );
+
+  assert.equal(
     source.includes('normalizeTimeline(entry.animatedAtlas?.timeline, entry.animatedAtlas?.frameDurationMs)'),
     true,
     'AnimatedItemIcon should respect exported per-frame atlas timing',

@@ -36,8 +36,31 @@ test('global browser atlas resolves safe itemId aliases before raw image project
   );
   assert.match(
     globalAtlasSource,
-    /export function getGlobalBrowserAtlasEntry\(itemId: string\): BrowserAtlasItemEntry \| null \{\s*return getAtlasEntryForItemId\(itemId\);\s*\}/,
+    /export function getGlobalBrowserAtlasEntry\(\s*itemId: string,\s*renderAssetRef\?: string \| null,\s*\): BrowserAtlasItemEntry \| null \{\s*return getAtlasEntryForItemId\(itemId, renderAssetRef\);\s*\}/,
     'all canvas callers should resolve atlas entries through the alias-aware helper',
+  );
+});
+
+test('global browser atlas resolves renderAssetRef and assetId before bare itemId', () => {
+  assert.match(
+    globalAtlasSource,
+    /function itemIdFromRenderAssetRef\(renderAssetRef\?: string \| null\): string \| null/,
+    'global atlas runtime should normalize nesqlpp:item/* render asset references',
+  );
+  assert.match(
+    globalAtlasSource,
+    /function getAtlasLookupKeys\(itemId\?: string \| null, renderAssetRef\?: string \| null\): string\[\]/,
+    'global atlas runtime should build renderAssetRef-first lookup keys',
+  );
+  assert.match(
+    globalAtlasSource,
+    /entry\.assetId,[\s\S]*entry\.variantKey,[\s\S]*itemIdFromRenderAssetRef\(entry\.assetId\)/,
+    'mergeAtlasEntries should register assetId and renderAssetRef aliases',
+  );
+  assert.match(
+    globalAtlasSource,
+    /export function getGlobalBrowserAtlasEntry\(\s*itemId: string,\s*renderAssetRef\?: string \| null,/,
+    'atlas entry lookup API should accept renderAssetRef as the higher-fidelity render identity',
   );
 });
 

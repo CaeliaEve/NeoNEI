@@ -11,7 +11,6 @@ import {
 
 type RecipePresentationRouteKind =
   | 'detailed-crafting'
-  | 'native-layout'
   | 'registered-component'
   | 'unregistered-component';
 
@@ -55,11 +54,8 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? value as Record<string, unknown> : null;
 }
 
-function nativeFrameRecordFromPayload(uiPayload: RecipeUiPayload | null | undefined): Record<string, unknown> | null {
-  const payloadRecord = asRecord(uiPayload);
-  return asRecord(payloadRecord?.nativeFrame)
-    ?? asRecord(asRecord(payloadRecord?.metadata)?.nativeFrame)
-    ?? asRecord(asRecord(payloadRecord?.additionalData)?.nativeFrame);
+function isWebAuthoredRecipeComponent(componentName: string): boolean {
+  return isRegisteredRecipeComponent(componentName);
 }
 
 export function resolveInlineRecipeUiPayload(recipe: Pick<Recipe, 'additionalData'>): RecipeUiPayload | null {
@@ -79,45 +75,21 @@ export function recipeUiPayloadNativeLayout(uiPayload: RecipeUiPayload | null | 
   return payloadRecord.nativeLayout ?? null;
 }
 
-export function recipeUiPayloadNativeFrame(uiPayload: RecipeUiPayload | null | undefined): unknown | null {
-  return nativeFrameRecordFromPayload(uiPayload);
-}
-
 function resolveRecipeUiPayloadAuthorityError(
   uiPayload: RecipeUiPayload | null | undefined,
   payloadProfile: RecipePresentationProfile | null,
 ): string | null {
   const payloadRecord = asRecord(uiPayload);
-  if (
-    !payloadRecord
-    || (!hasOwnRecordProperty(payloadRecord, 'nativeLayout') && !hasOwnRecordProperty(payloadRecord, 'nativeFrame'))
-  ) {
+  if (!payloadRecord) {
     return null;
   }
 
-  const nativeFrame = nativeFrameRecordFromPayload(uiPayload);
-  if (nativeFrame) {
+  if (payloadProfile && isWebAuthoredRecipeComponent(payloadProfile.component)) {
     return null;
   }
 
-  const nativeLayout = payloadRecord.nativeLayout;
-  if (nativeLayout && typeof nativeLayout === 'object') {
-    if (payloadProfile && isRegisteredRecipeComponent(payloadProfile.component)) {
-      return null;
-    }
-    return `Native recipe UI payload for family "${uiPayload?.familyKey ?? 'unknown'}" is missing nativeFrame; refusing reconstructed nativeLayout canvas path.`;
-  }
-
-  if (payloadProfile && isRegisteredRecipeComponent(payloadProfile.component)) {
-    return null;
-  }
-
-  if (!nativeFrame || typeof nativeFrame !== 'object') {
-    return `Native recipe UI payload for family "${uiPayload?.familyKey ?? 'unknown'}" has no valid nativeFrame; refusing heuristic or reconstructed UI path.`;
-  }
-
-  if (!payloadProfile) {
-    return `Native recipe UI payload family "${uiPayload?.familyKey ?? 'unknown'}" is not registered in the recipe presentation catalog; refusing heuristic UI path.`;
+  if (hasOwnRecordProperty(payloadRecord, 'nativeLayout') || hasOwnRecordProperty(payloadRecord, 'familyKey')) {
+    return `Native recipe UI payload family "${uiPayload?.familyKey ?? 'unknown'}" is not registered in the web-authored recipe presentation catalog; NEI frame/background PNG rendering is retired; refusing heuristic UI path.`;
   }
 
   return null;
@@ -131,7 +103,7 @@ export function resolveRecipePresentationDecision({
   const payloadError = resolveRecipeUiPayloadAuthorityError(uiPayload, payloadProfile);
   const resolvedPayloadError = payloadError
     && !payloadProfile
-    && isRegisteredRecipeComponent(detectedProfile.component)
+    && isWebAuthoredRecipeComponent(detectedProfile.component)
     ? null
     : payloadError;
 
@@ -155,25 +127,13 @@ const RECIPE_PRESENTATION_ROUTE_DESCRIPTORS: readonly RecipePresentationRouteDes
     kind: 'detailed-crafting',
     displayedComponentName: 'NEIRecipeDisplay',
     resolveComponent: () => null,
-    accepts: ({ profile, uiPayload }) => (
-      !recipeUiPayloadNativeFrame(uiPayload)
-      && profile.renderMode === 'detailed_crafting'
-    ),
-  },
-  {
-    kind: 'native-layout',
-    displayedComponentName: 'NativeNeiRecipeCanvas',
-    resolveComponent: () => null,
-    accepts: ({ uiPayload }) => Boolean(recipeUiPayloadNativeFrame(uiPayload)),
+    accepts: ({ profile }) => profile.renderMode === 'detailed_crafting',
   },
   {
     kind: 'registered-component',
     displayedComponentName: ({ profile }) => profile.component,
     resolveComponent: ({ profile }) => resolveRegisteredRecipeComponent(profile.component),
-    accepts: ({ profile, uiPayload }) => (
-      !recipeUiPayloadNativeFrame(uiPayload)
-      && isRegisteredRecipeComponent(profile.component)
-    ),
+    accepts: ({ profile }) => isWebAuthoredRecipeComponent(profile.component),
   },
 ]);
 
@@ -196,18 +156,6 @@ function componentRegistrationError(profile: RecipePresentationProfile): string 
   return `Recipe display component "${profile.component}" is not registered for UI type "${profile.uiConfig.uiType}".`;
 }
 
-function nativeFrameRoutingError({ uiPayload }: RecipePresentationRouteInput): string | null {
-  const nativeLayout = recipeUiPayloadNativeLayout(uiPayload);
-  const nativeFrame = recipeUiPayloadNativeFrame(uiPayload);
-  if (nativeFrame) {
-    return null;
-  }
-  if (!nativeLayout) {
-    return null;
-  }
-  return null;
-}
-
 export function resolveRecipePresentationRoute(input: RecipePresentationRouteInput): RecipePresentationRoute {
   if (input.payloadError) {
     return {
@@ -216,17 +164,6 @@ export function resolveRecipePresentationRoute(input: RecipePresentationRouteInp
       currentComponent: null,
       hasRegisteredComponent: false,
       error: input.payloadError,
-    };
-  }
-
-  const nativeError = nativeFrameRoutingError(input);
-  if (nativeError) {
-    return {
-      kind: 'unregistered-component',
-      displayedComponentName: `Unregistered:${input.profile.component}`,
-      currentComponent: null,
-      hasRegisteredComponent: false,
-      error: nativeError,
     };
   }
 
@@ -256,7 +193,8 @@ export function resolveRecipePresentationRoute(input: RecipePresentationRouteInp
 }
 
 export const RECIPE_PRESENTATION_POLICY_CATALOG = Object.freeze({
-  abi: 'neonei.recipe-presentation-policy.v1',
+  abi: 'neonei.recipe-presentation-policy.v2',
   routeKinds: Object.freeze(RECIPE_PRESENTATION_ROUTE_DESCRIPTORS.map((descriptor) => descriptor.kind)),
-  nativePayloadAuthority: 'fail-closed-native-layout-authority',
+  nativePayloadAuthority: 'web-authored-ui-only',
+  retiredNativeArtifacts: Object.freeze(['nei-frame-png', 'nei-background-png']),
 });

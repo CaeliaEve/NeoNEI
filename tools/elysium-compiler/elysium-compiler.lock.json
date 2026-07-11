@@ -3,7 +3,7 @@
     "version":  "0.1.0",
     "target":  "windows-x64",
     "binary":  "tools/elysium-compiler/bin/elysium-compiler.exe",
-    "sha256":  "ff31cf2a3defc219cb8ffe1bcaae7354387ed77a09af563f5580f69f5bbd73ad",
+    "sha256":  "ec837af56854ae6a861bdc4d50b875ecb5f05c801bb3f2de55a0fd13c7799fec",
     "rawExportSchemaVersion":  "1.0",
     "compiledDistSchemaVersion":  "1.0",
     "localFallbacks":  [

@@ -63,7 +63,6 @@ test("native runtime pack fetches are versioned before using browser cache", () 
 test("native runtime request policy is the shared URL and cache boundary", () => {
   const requestPolicy = readSource("src/native-surface/NativeRuntimeRequestPolicy.ts");
   const uiPackRuntime = readSource("src/services/uiPackRuntime.ts");
-  const backgroundLoader = readSource("src/services/nativeUiBackgroundResourceLoader.ts");
   const loader = readSource("src/native-surface/runtimeLoader.ts");
 
   assert.match(requestPolicy, /NATIVE_RUNTIME_REQUEST_POLICY_MODULE/);
@@ -76,7 +75,6 @@ test("native runtime request policy is the shared URL and cache boundary", () =>
 
   assert.match(loader, /from "\.\/NativeRuntimeRequestPolicy\.ts"/);
   assert.match(uiPackRuntime, /from "\.\.\/native-surface\/NativeRuntimeRequestPolicy\.ts"/);
-  assert.match(backgroundLoader, /from "\.\.\/native-surface\/NativeRuntimeRequestPolicy\.ts"/);
   assert.match(uiPackRuntime, /getNativeRuntimeFetchCache\("report"\)/);
   assert.match(uiPackRuntime, /getNativeRuntimeFetchCache\("pack"\)/);
   assert.match(uiPackRuntime, /normalizeNativeRuntimeManifestUrl/);

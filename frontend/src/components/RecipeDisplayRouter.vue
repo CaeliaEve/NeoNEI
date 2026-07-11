@@ -7,7 +7,6 @@ import {
 import NEIRecipeDisplay from './NEIRecipeDisplay.vue';
 import { type Recipe } from '../services/api';
 import type { RecipeDisplayHandle, RecipeOverlayUiState } from '../domain/recipeDisplayContract';
-import { NativeNeiRecipeCanvas } from './recipe-display/recipeComponentRegistry';
 import { useRecipeDebugPanel } from '../composables/recipe-display/useRecipeDebugPanel';
 import { useRecipePresentation } from '../composables/recipe-display/useRecipePresentation';
 import { useRecipeScale } from '../composables/recipe-display/useRecipeScale';
@@ -40,10 +39,9 @@ const {
   presentationProfile,
   resolvedRecipeUiPayload,
   shouldUseDetailedCrafting,
-  shouldUseNativeLayoutRenderer,
   uiConfig,
 } = useRecipePresentation(props);
-const shouldUseRouterScale = computed(() => props.scaleToFit && !shouldUseNativeLayoutRenderer.value);
+const shouldUseRouterScale = computed(() => props.scaleToFit);
 
 const {
   containerRef,
@@ -219,12 +217,6 @@ if (isDev && typeof window !== 'undefined') {
         :recipe-id="recipe.recipeId"
         @item-click="handleItemClick"
         @overlay-state-change="handleOverlayStateChange"
-      />
-      <NativeNeiRecipeCanvas
-        v-else-if="shouldUseNativeLayoutRenderer"
-        :recipe="recipe"
-        :ui-payload="resolvedRecipeUiPayload"
-        @item-click="handleItemClick"
       />
       <component
         v-else-if="hasRegisteredComponent && currentComponent"

@@ -32,6 +32,26 @@ function normalizeAtlasFile(atlasFile?: string | null): string | null {
   return normalized || null;
 }
 
+function itemIdFromRenderAssetRef(renderAssetRef?: string | null): string | null {
+  const normalized = `${renderAssetRef ?? ""}`.trim();
+  if (normalized.startsWith("nesqlpp:item/")) return normalized.slice("nesqlpp:item/".length);
+  if (normalized.startsWith("nesqlpp:fluid/")) return normalized.slice("nesqlpp:fluid/".length);
+  return null;
+}
+
+function getAtlasLookupKeys(itemId?: string | null, renderAssetRef?: string | null): string[] {
+  const keys: string[] = [];
+  const normalizedRenderAssetRef = `${renderAssetRef ?? ""}`.trim();
+  if (normalizedRenderAssetRef) {
+    keys.push(normalizedRenderAssetRef);
+    const renderAssetItemId = itemIdFromRenderAssetRef(normalizedRenderAssetRef);
+    if (renderAssetItemId) keys.push(renderAssetItemId);
+  }
+  const normalizedItemId = `${itemId ?? ""}`.trim();
+  if (normalizedItemId) keys.push(normalizedItemId);
+  return Array.from(new Set(keys.filter(Boolean)));
+}
+
 function getItemIdAliases(itemId: string): string[] {
   const normalized = `${itemId ?? ""}`.trim();
   if (!normalized) {
@@ -55,8 +75,8 @@ function getItemIdAliases(itemId: string): string[] {
   return Array.from(new Set(aliases.filter((alias) => alias && alias !== normalized)));
 }
 
-function getAtlasEntryForItemId(itemId: string): BrowserAtlasItemEntry | null {
-  const normalized = `${itemId ?? ""}`.trim();
+function getAtlasEntryForSingleKey(key: string): BrowserAtlasItemEntry | null {
+  const normalized = `${key ?? ""}`.trim();
   if (!normalized) {
     return null;
   }
@@ -68,10 +88,28 @@ function getAtlasEntryForItemId(itemId: string): BrowserAtlasItemEntry | null {
   if (aliased) {
     return aliased;
   }
+  const renderAssetItemId = itemIdFromRenderAssetRef(normalized);
+  if (renderAssetItemId) {
+    const renderAssetEntry = itemEntries.get(renderAssetItemId) ?? itemEntryAliases.get(renderAssetItemId);
+    if (renderAssetEntry) {
+      itemEntryAliases.set(normalized, renderAssetEntry);
+      return renderAssetEntry;
+    }
+  }
   for (const alias of getItemIdAliases(normalized)) {
     const entry = itemEntries.get(alias) ?? itemEntryAliases.get(alias);
     if (entry) {
       itemEntryAliases.set(normalized, entry);
+      return entry;
+    }
+  }
+  return null;
+}
+
+function getAtlasEntryForItemId(itemId: string, renderAssetRef?: string | null): BrowserAtlasItemEntry | null {
+  for (const key of getAtlasLookupKeys(itemId, renderAssetRef)) {
+    const entry = getAtlasEntryForSingleKey(key);
+    if (entry) {
       return entry;
     }
   }
@@ -186,9 +224,16 @@ function mergeAtlasEntries(entries: BrowserAtlasItemEntry[]) {
   for (const entry of entries) {
     if (entry?.itemId) {
       itemEntries.set(entry.itemId, entry);
-      for (const alias of getItemIdAliases(entry.itemId)) {
-        if (!itemEntries.has(alias) && !itemEntryAliases.has(alias)) {
-          itemEntryAliases.set(alias, entry);
+      const aliases = [
+        entry.assetId,
+        entry.variantKey,
+        itemIdFromRenderAssetRef(entry.assetId),
+        ...getItemIdAliases(entry.itemId),
+      ];
+      for (const alias of aliases) {
+        const normalizedAlias = `${alias ?? ""}`.trim();
+        if (normalizedAlias && !itemEntries.has(normalizedAlias) && !itemEntryAliases.has(normalizedAlias)) {
+          itemEntryAliases.set(normalizedAlias, entry);
         }
       }
     }
@@ -401,8 +446,11 @@ export function getGlobalBrowserAtlasCoverageForItems(itemIds: string[]): {
   };
 }
 
-export function getGlobalBrowserAtlasEntry(itemId: string): BrowserAtlasItemEntry | null {
-  return getAtlasEntryForItemId(itemId);
+export function getGlobalBrowserAtlasEntry(
+  itemId: string,
+  renderAssetRef?: string | null,
+): BrowserAtlasItemEntry | null {
+  return getAtlasEntryForItemId(itemId, renderAssetRef);
 }
 
 export async function inspectGlobalBrowserAtlasResidentState(): Promise<{

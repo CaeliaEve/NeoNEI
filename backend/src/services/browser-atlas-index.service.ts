@@ -199,7 +199,8 @@ export class BrowserAtlasIndexService {
       itemMap.set(item.itemId, item);
     }
     for (const [itemId, item] of this.getAuxiliaryAnimatedEntries()) {
-      if (!itemMap.has(itemId)) {
+      const existing = itemMap.get(itemId);
+      if (!existing || this.shouldPreferAuxiliaryAnimatedEntry(existing)) {
         itemMap.set(itemId, item);
       }
     }
@@ -279,11 +280,28 @@ export class BrowserAtlasIndexService {
 
     return {
       itemId: entry.itemId,
+      assetId: entry.assetId ?? null,
+      variantKey: entry.variantKey ?? null,
+      mode: entry.mode ?? null,
+      renderMode: entry.renderMode ?? null,
+      resolutionMode: entry.resolutionMode ?? null,
+      rendererFamily: entry.rendererFamily ?? null,
+      playbackHint: entry.playbackHint ?? null,
       hasStaticAtlas: Boolean(staticAtlas),
       hasAnimatedAtlas: Boolean(animatedAtlas),
       staticAtlas,
       animatedAtlas,
     };
+  }
+
+  private shouldPreferAuxiliaryAnimatedEntry(existing: BrowserAtlasItemEntry): boolean {
+    if (!existing?.animatedAtlas?.atlasFile) {
+      return true;
+    }
+    if (existing.mode === 'rendered_frames' || existing.resolutionMode === 'animated_frame_sequence') {
+      return false;
+    }
+    return false;
   }
 
   private toCompactFrames(frames?: BrowserAtlasAnimatedFrame[] | null): CompactBrowserAtlasFrame[] {
@@ -339,9 +357,7 @@ export class BrowserAtlasIndexService {
 
       for (const asset of assets) {
         const assetId = `${asset?.assetId ?? ''}`.trim();
-        const itemId = assetId.startsWith('nesqlpp:fluid/')
-          ? assetId.slice('nesqlpp:fluid/'.length)
-          : '';
+        const itemId = this.itemIdFromRenderAssetRef(assetId);
         if (!itemId) {
           continue;
         }
@@ -392,9 +408,7 @@ export class BrowserAtlasIndexService {
 
       for (const asset of assets) {
         const assetId = `${asset?.assetId ?? ''}`.trim();
-        const itemId = assetId.startsWith('nesqlpp:fluid/')
-          ? assetId.slice('nesqlpp:fluid/'.length)
-          : '';
+        const itemId = this.itemIdFromRenderAssetRef(assetId);
         if (!itemId) {
           continue;
         }
@@ -433,17 +447,43 @@ export class BrowserAtlasIndexService {
   }
 
   private getEntryWithAliases(itemMap: Map<string, BrowserAtlasItemEntry>, itemId: string): BrowserAtlasItemEntry | null {
-    const exact = itemMap.get(itemId);
-    if (exact) {
-      return exact;
-    }
-    for (const alias of this.getItemIdAliases(itemId)) {
-      const entry = itemMap.get(alias);
-      if (entry) {
-        return entry;
+    for (const key of this.getAtlasLookupKeys(itemId)) {
+      const exact = itemMap.get(key);
+      if (exact) {
+        return exact;
+      }
+      for (const alias of this.getItemIdAliases(key)) {
+        const entry = itemMap.get(alias);
+        if (entry) {
+          return entry;
+        }
       }
     }
     return null;
+  }
+
+  private getAtlasLookupKeys(itemId: string): string[] {
+    const normalized = String(itemId || '').trim();
+    if (!normalized) {
+      return [];
+    }
+    const keys = [normalized];
+    const renderAssetItemId = this.itemIdFromRenderAssetRef(normalized);
+    if (renderAssetItemId) {
+      keys.push(renderAssetItemId);
+    }
+    return Array.from(new Set(keys.filter(Boolean)));
+  }
+
+  private itemIdFromRenderAssetRef(renderAssetRef: string): string {
+    const normalized = String(renderAssetRef || '').trim();
+    if (normalized.startsWith('nesqlpp:item/')) {
+      return normalized.slice('nesqlpp:item/'.length);
+    }
+    if (normalized.startsWith('nesqlpp:fluid/')) {
+      return normalized.slice('nesqlpp:fluid/'.length);
+    }
+    return '';
   }
 
   private getItemIdAliases(itemId: string): string[] {

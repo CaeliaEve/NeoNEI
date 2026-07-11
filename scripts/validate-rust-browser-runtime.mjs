@@ -1,6 +1,11 @@
-﻿import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  parseNativeBrowserBin,
+  parseNativeGroupsBin,
+  parseNativeTexturesBin,
+} from './native-runtime-pack-reader.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -25,8 +30,28 @@ function fail(failures, code, message, details = {}) {
   failures.push({ code, message, details });
 }
 
-function isNonEmptyString(value) {
-  return typeof value === 'string' && value.trim().length > 0;
+function runtimePath(manifest, runtimeManifest, rootKey, entrypointKey, fallback) {
+  return `${manifest.files?.[rootKey] ?? runtimeManifest?.entrypoints?.[entrypointKey] ?? fallback}`.trim();
+}
+
+function parsePack(failures, label, path, parser) {
+  if (!path) {
+    fail(failures, `${label}_NOT_DECLARED`, `manifest does not declare ${label}`);
+    return null;
+  }
+  if (!existsSync(join(distDataDir, path))) {
+    fail(failures, `${label}_MISSING`, `${label} file is missing`, { path });
+    return null;
+  }
+  try {
+    return parser(distDataDir, path, { optional: false });
+  } catch (error) {
+    fail(failures, `${label}_PARSE_FAILED`, `${label} could not be parsed`, {
+      path,
+      message: error instanceof Error ? error.message : String(error),
+    });
+    return null;
+  }
 }
 
 function main() {
@@ -37,33 +62,27 @@ function main() {
     throw new Error(`dist-data manifest not found: ${manifestPath}`);
   }
   const manifest = readJson(manifestPath);
-  const rustBrowserPackRelativePath = `${manifest.files?.rustBrowserPack ?? ''}`.trim();
-  if (!rustBrowserPackRelativePath) {
-    fail(failures, 'RUST_BROWSER_PACK_NOT_DECLARED', 'manifest does not declare files.rustBrowserPack');
-  }
+  const runtimeManifestPath = join(distDataDir, `${manifest.files?.rustRuntimeManifest ?? 'rust/runtime-manifest.json'}`.trim());
+  const runtimeManifest = existsSync(runtimeManifestPath) ? readJson(runtimeManifestPath) : null;
 
-  const rustBrowserPackPath = join(distDataDir, rustBrowserPackRelativePath || 'rust/browser-pack.json');
-  if (!existsSync(rustBrowserPackPath)) {
-    fail(failures, 'RUST_BROWSER_PACK_MISSING', 'rust browser pack file is missing', { path: rustBrowserPackRelativePath });
-  }
+  const rustBrowserBin = runtimePath(manifest, runtimeManifest, 'rustBrowserBin', 'browser', 'rust/browser.bin');
+  const rustGroupsBin = runtimePath(manifest, runtimeManifest, 'rustGroupsBin', 'groups', 'rust/groups.bin');
+  const rustTextureBin = runtimePath(manifest, runtimeManifest, 'rustTextureBin', 'textures', 'rust/textures.bin');
 
-  const browserPack = existsSync(rustBrowserPackPath) ? readJson(rustBrowserPackPath) : null;
-  if (browserPack?.schemaVersion !== 'neonei/rust-browser-pack/current') {
-    fail(failures, 'RUST_BROWSER_SCHEMA_MISMATCH', 'rust browser pack schemaVersion is wrong', {
-      schemaVersion: browserPack?.schemaVersion ?? null,
-    });
-  }
+  const browserPack = parsePack(failures, 'RUST_BROWSER_BIN', rustBrowserBin, parseNativeBrowserBin);
+  const groupsPack = parsePack(failures, 'RUST_GROUPS_BIN', rustGroupsBin, parseNativeGroupsBin);
+  const texturePack = parsePack(failures, 'RUST_TEXTURE_BIN', rustTextureBin, parseNativeTexturesBin);
 
   const items = Array.isArray(browserPack?.items) ? browserPack.items : [];
-  const groups = Array.isArray(browserPack?.groups) ? browserPack.groups : [];
-  const itemCount = Number(browserPack?.counts?.items ?? 0);
-  const groupCount = Number(browserPack?.counts?.groups ?? 0);
+  const groups = Array.isArray(groupsPack?.groups) ? groupsPack.groups : [];
+  const textureItems = Array.isArray(texturePack?.items) ? texturePack.items : [];
   if (items.length <= 0) fail(failures, 'RUST_BROWSER_ITEMS_EMPTY', 'rust browser items are empty');
-  if (itemCount !== items.length) {
-    fail(failures, 'RUST_BROWSER_ITEM_COUNT_MISMATCH', 'rust browser item count differs from items length', { itemCount, actual: items.length });
+  if (groups.length <= 0) fail(failures, 'RUST_BROWSER_GROUPS_EMPTY', 'rust browser groups are empty');
+  if (Number(browserPack?.rowCount ?? items.length) !== items.length) {
+    fail(failures, 'RUST_BROWSER_ITEM_COUNT_MISMATCH', 'rust browser item count differs from rows length', { itemCount: browserPack?.rowCount ?? null, actual: items.length });
   }
-  if (groupCount !== groups.length) {
-    fail(failures, 'RUST_BROWSER_GROUP_COUNT_MISMATCH', 'rust browser group count differs from groups length', { groupCount, actual: groups.length });
+  if (Number(groupsPack?.rowCount ?? groups.length) !== groups.length) {
+    fail(failures, 'RUST_BROWSER_GROUP_COUNT_MISMATCH', 'rust group count differs from rows length', { groupCount: groupsPack?.rowCount ?? null, actual: groups.length });
   }
 
   const itemIds = items.map((item) => `${item?.itemId ?? ''}`.trim()).filter(Boolean);
@@ -142,45 +161,35 @@ function main() {
           groupKey,
         });
       }
-      if (item?.representativeItemId !== representativeItemId) {
-        fail(failures, 'RUST_BROWSER_ITEM_REPRESENTATIVE_MISMATCH', 'grouped item representative differs from group record', {
-          itemId: memberItemId,
-          itemRepresentativeItemId: item?.representativeItemId ?? null,
-          representativeItemId,
-        });
-      }
-      if (Number(item?.groupSize ?? 0) !== groupSize) {
-        fail(failures, 'RUST_BROWSER_ITEM_GROUP_SIZE_MISMATCH', 'grouped item groupSize differs from group record', {
-          itemId: memberItemId,
-          itemGroupSize: item?.groupSize ?? null,
-          groupSize,
-        });
-      }
     }
     if (groupSamples.length < 8) {
       groupSamples.push({ groupKey, representativeItemId, groupSize, memberCount: members.length });
     }
   }
 
-  const ungroupedInNamedGroup = items
-    .filter((item) => isNonEmptyString(item?.groupKey) && !groupKeySet.has(item.groupKey))
+  const unknownGroupRefs = items
+    .filter((item) => `${item?.groupKey ?? ''}`.trim() && !groupKeySet.has(item.groupKey))
     .slice(0, 10)
     .map((item) => ({ itemId: item.itemId, groupKey: item.groupKey }));
-  if (ungroupedInNamedGroup.length > 0) {
-    fail(failures, 'RUST_BROWSER_ITEM_UNKNOWN_GROUP', 'items reference group keys that do not exist', { sample: ungroupedInNamedGroup });
+  if (unknownGroupRefs.length > 0) {
+    fail(failures, 'RUST_BROWSER_ITEM_UNKNOWN_GROUP', 'items reference group keys that do not exist', { sample: unknownGroupRefs });
   }
 
-  const orderedItems = Number(browserPack?.counts?.orderedItems ?? items.length);
-  if (orderedItems !== items.length) {
-    warnings.push({ code: 'RUST_BROWSER_ORDERED_ITEM_COUNT_DIFFERS', message: 'orderedItems differs from items length', details: { orderedItems, itemCount: items.length } });
+  const textureByItemId = new Map(textureItems.filter((item) => `${item?.itemId ?? ''}`.trim()).map((item) => [item.itemId, item]));
+  const browserMissingTexture = items
+    .filter((item) => !textureByItemId.has(item.itemId))
+    .slice(0, 20)
+    .map((item) => ({ itemId: item.itemId, localizedName: item.localizedName ?? null }));
+  if (browserMissingTexture.length > 0) {
+    warnings.push({
+      code: 'RUST_BROWSER_VISIBLE_TEXTURE_GAPS',
+      message: 'some visible browser entries do not have a native texture row',
+      details: { sample: browserMissingTexture },
+    });
   }
-  const atlasItems = items.filter((item) => item?.atlas && (item.atlas.hasStaticAtlas || item.atlas.hasAnimatedAtlas)).length;
-  const declaredAtlasItems = Number(browserPack?.counts?.atlasItems ?? atlasItems);
-  if (declaredAtlasItems !== atlasItems) {
-    fail(failures, 'RUST_BROWSER_ATLAS_COUNT_MISMATCH', 'atlasItems count differs from drawable item count', { declaredAtlasItems, atlasItems });
-  }
-  const animatedAtlasItems = items.filter((item) => item?.atlas?.hasAnimatedAtlas || item?.atlas?.animatedAtlas).length;
-  const staticAtlasItems = items.filter((item) => item?.atlas?.hasStaticAtlas || item?.atlas?.staticAtlas).length;
+
+  const staticAtlasItems = textureItems.filter((item) => item?.staticAtlas?.atlasFile).length;
+  const animatedAtlasItems = textureItems.filter((item) => item?.animatedAtlas?.atlasFile).length;
 
   const report = {
     schemaVersion: 'neonei/rust-browser-runtime-validation/v1',
@@ -188,11 +197,13 @@ function main() {
     distDataDir,
     source: manifest.source ?? null,
     sourceRepository: manifest.sourceRepository ?? null,
-    rustBrowserPack: rustBrowserPackRelativePath || null,
+    rustBrowserBin,
+    rustGroupsBin,
+    rustTextureBin,
     itemCount: items.length,
     groupCount: groups.length,
     groupedMemberCount: memberOwner.size,
-    atlasItems,
+    atlasItems: textureItems.length,
     staticAtlasItems,
     animatedAtlasItems,
     failures,

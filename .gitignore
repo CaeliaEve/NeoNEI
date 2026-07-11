@@ -65,6 +65,7 @@ backend/data/
 backend/public/dist-data
 backend/public/dist-data/
 backend/public/dist-data.partial*/
+backend/public/dist-data.backup-*/
 backend/data/all_recipes.json
 backend/data/all_items.json
 backend/data/item_recipe_index.json

@@ -1,6 +1,6 @@
 ﻿import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -460,43 +460,15 @@ test('native UI registry synthesizes GregTech machine slots from actual recipe a
   ]);
 });
 
-test('native UI registry owns component runtime layout contract', () => {
-  const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
+test('native UI registry remains a semantic layout reference without a screenshot canvas owner', () => {
   const registrySource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRuntimeRegistry.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /nativeUiRuntimeRegistry/);
-  assert.match(componentSource, /resolveNativeUiRuntimeSurface/);
-  assert.match(componentSource, /nativeUiSurfaceResolution = computed/);
-  assert.match(componentSource, /catch \(error\)/);
-  assert.match(componentSource, /Interaction layer unavailable: \{\{ nativeUiSurfaceError \}\}/);
-  assert.doesNotMatch(componentSource, /nativeUiSurfaceError \|\| renderError/);
-  assert.doesNotMatch(componentSource, /renderPipeline\.dispose/);
-  assert.match(componentSource, /buildNativeUiSlotCells/);
-  assert.match(componentSource, /createNativeUiFitMatrix/);
-  assert.doesNotMatch(componentSource, /const nativeUiSurface = computed\(\(\) => resolveNativeUiRuntimeSurface/);
-  assert.doesNotMatch(componentSource, /interface NativeSlotFact/);
-  assert.doesNotMatch(componentSource, /interface NativeLayoutSurface/);
-  assert.doesNotMatch(componentSource, /const resolvedTemplate/);
-  assert.doesNotMatch(componentSource, /slots\.value\.forEach/);
-
+  assert.equal(existsSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue')), false);
   assert.match(registrySource, /export function resolveNativeUiRuntimeSurface/);
   assert.match(registrySource, /UI_PACK_RUNTIME_STATUS\.error/);
   assert.match(registrySource, /UI_PACK_RUNTIME_STATUS\.ready/);
   assert.match(registrySource, /export function buildNativeUiSlotCells/);
   assert.match(registrySource, /export function createNativeUiFitMatrix/);
-  assert.match(registrySource, /NativeUiSurfaceSource = "ui-pack-template" \| "missing"/);
-
-  assert.deepEqual(collectNativeUiDynamicPrimitives({
-    dynamicPrimitives: [
-      { kind: 'progress-bar', x: 1, y: 2, width: 3, height: 4, coordinateSpace: 'nei_pixels', anchor: 'top-left' },
-      { kind: 'fluid-bar', x: 2, y: 3, width: 4, height: 5, coordinateSpace: 'nei_pixels', anchor: 'top-left' },
-      { kind: 'energy-bar', x: 3, y: 4, width: 5, height: 6, coordinateSpace: 'nei_pixels', anchor: 'top-left' },
-    ],
-  }).map((row) => row.kind), [
-    'progress-bar',
-    'fluid-bar',
-    'energy-bar',
-  ]);
 });
 
 test('native UI registry fails closed on rect-like geometry ABI violations', () => {

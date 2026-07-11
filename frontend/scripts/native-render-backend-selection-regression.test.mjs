@@ -19,7 +19,6 @@ test("native render backend selection uses an explicit probe plan", () => {
   const source = readSource("src/workers/nativeRender.worker.ts");
   const workerPolicyCatalog = readSource("src/workers/nativeRenderWorkerPolicyCatalog.ts");
   const probeSource = readSource("src/renderers/native/NativeRendererProbe.ts");
-  const sessionCatalogSource = readSource("src/services/nativeUiRendererSessionCatalog.ts");
 
   assert.match(workerPolicyCatalog, /NATIVE_RENDER_WORKER_PROBE_CATALOG/);
   assert.match(workerPolicyCatalog, /schema: "neonei\/native-render-worker-probe\/current"/);
@@ -45,8 +44,6 @@ test("native render backend selection uses an explicit probe plan", () => {
   assert.doesNotMatch(source, /WebGpuNativeRenderer\.create/);
   assert.match(probeSource, /NATIVE_RENDERER_PROBE_POLICY/);
   assert.match(probeSource, /requestedBackendPolicy:\s*"exact-probe-no-fallback"/);
-  assert.match(sessionCatalogSource, /NATIVE_UI_RENDERER_SESSION_POLICY/);
-  assert.match(sessionCatalogSource, /WebGl2NativeRenderer\.probe/);
 });
 
 test("requested WebGPU readiness does not silently fall back to WebGL2", () => {

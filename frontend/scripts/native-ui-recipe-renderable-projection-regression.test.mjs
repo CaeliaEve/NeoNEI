@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -96,23 +96,12 @@ test('native UI recipe renderable projection projects recipe sets and role dispa
   assert.deepEqual(resolveNativeUiRenderablesForRole('item-fuel', sets), []);
 });
 
-test('native UI recipe renderable projection owns component data boundary', () => {
-  const componentSource = readFileSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue'), 'utf8').replace(/\r\n/g, '\n');
+test('native UI recipe renderable projection remains reusable reference logic after screenshot canvas retirement', () => {
   const projectionSource = readFileSync(resolve(frontendRoot, 'src/services/nativeUiRecipeRenderableProjection.ts'), 'utf8').replace(/\r\n/g, '\n');
 
-  assert.match(componentSource, /nativeUiRecipeRenderableProjection/);
-  assert.match(componentSource, /projectNativeUiRecipeRenderables/);
-  assert.match(componentSource, /resolveNativeUiRenderablesForRole/);
-  assert.doesNotMatch(componentSource, /function renderAssetLookupId/);
-  assert.doesNotMatch(componentSource, /function resolveAtlasLookupId/);
-  assert.doesNotMatch(componentSource, /function toItemRenderable/);
-  assert.doesNotMatch(componentSource, /function toFluidRenderable/);
-  assert.doesNotMatch(componentSource, /function renderablesForRole/);
-  assert.doesNotMatch(componentSource, /const inputItems = computed/);
-  assert.doesNotMatch(componentSource, /const outputItems = computed/);
-  assert.doesNotMatch(componentSource, /const inputFluids = computed/);
-  assert.doesNotMatch(componentSource, /const outputFluids = computed/);
-
+  assert.equal(existsSync(resolve(frontendRoot, 'src/components/NativeNeiRecipeCanvas.vue')), false);
+  assert.match(projectionSource, /export function nativeUiRenderAssetLookupId/);
+  assert.match(projectionSource, /export function nativeUiAtlasLookupId/);
   assert.match(projectionSource, /export function projectNativeUiRecipeRenderables/);
   assert.match(projectionSource, /export function resolveNativeUiRenderablesForRole/);
 });

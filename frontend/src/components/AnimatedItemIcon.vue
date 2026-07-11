@@ -158,12 +158,14 @@ const prepareAtlasAnimation = (entry: BrowserAtlasItemEntry): PreparedAtlasAnima
 
 const checkAtlas = async (sequence: number): Promise<boolean> => {
   const itemId = `${props.itemId ?? ''}`.trim();
-  if (!itemId) return false;
+  const renderAssetRef = `${props.renderAssetRef ?? ''}`.trim();
+  if (!itemId && !renderAssetRef) return false;
 
-  await warmGlobalBrowserAtlasForItemsDetailed([itemId]);
+  const lookupKeys = Array.from(new Set([renderAssetRef, itemId].filter(Boolean)));
+  await warmGlobalBrowserAtlasForItemsDetailed(lookupKeys);
   if (sequence !== loadSequence) return true;
 
-  const entry = getGlobalBrowserAtlasEntry(itemId);
+  const entry = getGlobalBrowserAtlasEntry(itemId, renderAssetRef);
   if (!entry) return false;
 
   const preparedAnimation = props.enableAnimation ? prepareAtlasAnimation(entry) : null;

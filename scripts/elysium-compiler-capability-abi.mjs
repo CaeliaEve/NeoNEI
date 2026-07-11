@@ -32,7 +32,7 @@ export const ELYSIUM_COMPILER_COMPILE_SCOPES = Object.freeze([
 export const NATIVE_UI_REQUIRED_CAPABILITIES = Object.freeze([
   'native_ui.surface',
   'native_ui.design_space_coordinates',
-  'native_ui.background_asset',
+  'native_ui.semantic_layout',
 ]);
 
 export const NATIVE_UI_REQUIRED_FILES = Object.freeze([
@@ -44,7 +44,7 @@ export const NATIVE_UI_REQUIRED_FILES = Object.freeze([
 
 export const NATIVE_UI_COORDINATE_SPACE = 'nei_pixels';
 export const NATIVE_UI_RUNTIME_TRANSFORM = 'uniform-scale-to-fit-only';
-export const NATIVE_UI_FALLBACK_POLICY = 'missing required native UI capture is a validation error';
+export const NATIVE_UI_FALLBACK_POLICY = 'NEI frame/background PNG fallback is retired; missing hand-written UI mappings fail closed';
 
 export const ELYSIUM_COMPILER_POLICY = Object.freeze({
   legacyFallback: 'forbidden',

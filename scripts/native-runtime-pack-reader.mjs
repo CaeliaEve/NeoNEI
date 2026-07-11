@@ -271,11 +271,24 @@ export function parseNativeTexturesBin(distDataDir, relativePath, options = {}) 
   const frameOffset = rowOffset + rowCount * rowStride * 4;
   const stringsBase = frameOffset + frameCount * frameStride * 4;
   const stringAt = makeStringReader(bytes, offsets, stringsBase);
+  const frameRows = [];
+  for (let frame = 0; frame < frameCount; frame += 1) {
+    const base = frameOffset + frame * frameStride * 4;
+    frameRows.push({
+      x: readU32(bytes, base, 'textures frame x'),
+      y: readU32(bytes, base + 4, 'textures frame y'),
+      width: readU32(bytes, base + 8, 'textures frame width'),
+      height: readU32(bytes, base + 12, 'textures frame height'),
+      durationMs: readU32(bytes, base + 16, 'textures frame duration'),
+    });
+  }
   const items = [];
   for (let row = 0; row < rowCount; row += 1) {
     const base = rowOffset + row * rowStride * 4;
     const staticAtlasFile = stringAt(readU32(bytes, base + 4, 'textures static atlas ref'));
     const animatedAtlasFile = stringAt(readU32(bytes, base + 24, 'textures animated atlas ref'));
+    const frameStart = readU32(bytes, base + 28, 'textures frame start');
+    const animatedFrameCount = readU32(bytes, base + 32, 'textures frame count');
     items.push({
       itemId: stringAt(readU32(bytes, base, 'textures item ref')),
       staticAtlas: staticAtlasFile ? {
@@ -287,9 +300,10 @@ export function parseNativeTexturesBin(distDataDir, relativePath, options = {}) 
       } : null,
       animatedAtlas: animatedAtlasFile ? {
         atlasFile: animatedAtlasFile,
-        frameStart: readU32(bytes, base + 28, 'textures frame start'),
-        frameCount: readU32(bytes, base + 32, 'textures frame count'),
+        frameStart,
+        frameCount: animatedFrameCount,
         frameDurationMs: readU32(bytes, base + 36, 'textures frame duration'),
+        frames: frameRows.slice(frameStart, frameStart + animatedFrameCount),
       } : null,
     });
   }

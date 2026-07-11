@@ -1,7 +1,12 @@
-﻿import { defineAsyncComponent, type Component } from 'vue';
+import { defineAsyncComponent, type Component } from 'vue';
 import StandardCraftingUI from '../StandardCraftingUI.vue';
+import {
+  isRegisteredRecipeComponentName,
+  type RegisteredRecipeComponentName,
+} from './recipeComponentCatalog';
 
 export { StandardCraftingUI };
+export type { RegisteredRecipeComponentName };
 
 export const AvaritiaExtremeCraftingUI = defineAsyncComponent(() => import('../AvaritiaExtremeCraftingUI.vue'));
 export const FurnaceUI = defineAsyncComponent(() => import('../FurnaceUI.vue'));
@@ -31,7 +36,6 @@ export const BloodAlchemyTableUI = defineAsyncComponent(() => import('../BloodAl
 export const BloodBindingRitualUI = defineAsyncComponent(() => import('../BloodBindingRitualUI.vue'));
 export const BloodOrbCraftingUI = defineAsyncComponent(() => import('../BloodOrbCraftingUI.vue'));
 export const MultiblockBlueprintUI = defineAsyncComponent(() => import('../MultiblockBlueprintUI.vue'));
-export const NativeNeiRecipeCanvas = defineAsyncComponent(() => import('../NativeNeiRecipeCanvas.vue'));
 
 export const componentRegistry = {
   StandardCraftingUI,
@@ -63,15 +67,13 @@ export const componentRegistry = {
   BloodBindingRitualUI,
   BloodOrbCraftingUI,
   MultiblockBlueprintUI,
-  NativeNeiRecipeCanvas,
-} satisfies Record<string, Component>;
-
-export type RegisteredRecipeComponentName = keyof typeof componentRegistry;
+} satisfies Record<RegisteredRecipeComponentName, Component>;
 
 export function isRegisteredRecipeComponent(
   componentName: string,
 ): componentName is RegisteredRecipeComponentName {
-  return Object.prototype.hasOwnProperty.call(componentRegistry, componentName);
+  return isRegisteredRecipeComponentName(componentName)
+    && Object.prototype.hasOwnProperty.call(componentRegistry, componentName);
 }
 
 export function resolveRegisteredRecipeComponent(componentName: string): Component {

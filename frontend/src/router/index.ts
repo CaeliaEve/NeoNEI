@@ -40,6 +40,11 @@ const routes: RouteRecordRaw[] = [
     path: '/runtime-health',
     name: 'runtime-health',
     component: () => import('../views/RuntimeHealthView.vue'),
+  },
+  {
+    path: '/ui-studio',
+    name: 'ui-studio',
+    component: () => import('../views/UiStudioView.vue'),
   }
 ];
 

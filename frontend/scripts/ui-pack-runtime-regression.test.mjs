@@ -90,16 +90,14 @@ function encodeStringPack(strings) {
 
 function nativeBackgroundJson() {
   return JSON.stringify({
-    status: 'captured',
+    status: 'semantic',
     kind: 'gt-modular-ui',
     coordinateSpace: 'nei_pixels',
     scaleMode: 'uniform-scale',
     anchor: 'top-left',
     width: 166,
     height: 65,
-    assetRef: 'assets/ui-backgrounds/gregtech/nei_single_recipe.png',
-    resource: 'gregtech:textures/gui/background/nei_single_recipe.png',
-    drawable: 'GT_UI_TEXTURE_NEI_SINGLE_RECIPE',
+    drawable: 'GTUITextures.BACKGROUND_NEI_SINGLE_RECIPE',
     scaling: 'nine-slice',
     texture: { width: 18, height: 18, borderU: 4, borderV: 4 },
     recipeBackgroundOffset: { x: 0, y: 0 },
@@ -416,7 +414,8 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     assert.equal(runtime.summary.stringCount, strings.length);
     assert.equal(runtime.summary.dynamicPrimitiveCount, 1);
     assert.equal(runtime.templatesByKey.get('furnace@default')?.layoutKind, 'furnace');
-    assert.equal(runtime.templatesByKey.get('furnace@default')?.nativeBackground?.assetRef, 'assets/ui-backgrounds/gregtech/nei_single_recipe.png');
+    assert.equal(runtime.templatesByKey.get('furnace@default')?.nativeBackground?.status, 'semantic');
+    assert.equal(runtime.templatesByKey.get('furnace@default')?.nativeBackground?.assetRef, undefined);
     assert.deepEqual(runtime.templatesByKey.get('furnace@default')?.slots[0], {
       role: 'item-input',
       startIndex: 0,
