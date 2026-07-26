@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "neonei/refactor-perf-baseline/1",
+  "capturedAt": "2026-07-26",
+  "purpose": "W0.1 performance baseline for the cross-repo refactor (see REFACTOR-PLAN.md at workspace root). Any refactor step that regresses these numbers must be rolled back.",
+  "environment": {
+    "distDataGeneration": "gen-rust-a158a145dc38e3ab-12649e8f5bd3d091",
+    "sourceSignature": "2382597542fa2edfc15bd8f027a50a351aacee47",
+    "backend": "node dist/server.js on 127.0.0.1:3002",
+    "frontend": "vite dev on localhost:5173",
+    "playwrightBrowsersPath": "E:/codex/ae2/.tmp/ms-playwright (C: drive is full)"
+  },
+  "gates": {
+    "bench-browser-v3": {
+      "status": "PASS",
+      "syntheticItems": 120000,
+      "pageSize": 80,
+      "pageElapsedMsTypical": 0.002,
+      "limits": { "maxPageMs": 8, "maxSearchPageMs": 90, "maxBuildMs": 350 },
+      "failures": []
+    },
+    "bench-recipe-v3": {
+      "status": "PASS",
+      "p50Ms": 0.353,
+      "p95Ms": 0.502,
+      "maxMs": 0.502,
+      "avgMs": 0.428,
+      "limits": { "p50Ms": 12, "p95Ms": 40 },
+      "failures": []
+    },
+    "bench-search-v3": {
+      "status": "BLOCKED_BY_W1",
+      "mechanicalPerformance": { "avgQueryMs": 0.027, "limits": { "avgQueryMs": 8, "p95QueryMs": 20, "maxQueryMs": 50 } },
+      "blockingReason": "Bench resolves legacy publish bundle backend/data/publish/2fba9aee08a9618cc18fb7d24fcbe9740b244fdf/search/all.json which is a stale 2-item stub. Real search data lives in dist-data rust/search.bin (Rust path). Re-baseline after W1 publish migration or point bench at the rust search pack.",
+      "failures": [ "8 expected-hit queries returned no hits", "Search pack has only 2 items" ]
+    },
+    "native-surface-baseline": {
+      "status": "FAIL_REAL_DEFECT",
+      "defect": "Native render worker cannot decode textures: animated atlas textures/atlas-assets/animated-atlases/item-animated.png is 2048x131072 px, exceeding Chromium's maximum decodable image height. Worker throws NATIVE_RENDER_WORKER_ERROR 'The source image could not be decoded'; zero textures load, no frames submitted.",
+      "defectOwnership": "elysium-compiler texture pack: animated atlas must be sharded (e.g. <=8192 or <=16384 px per sheet) like the static atlases already are (item-static-001/002/... exist). Logged as new work item in REFACTOR-PROGRESS.md.",
+      "partialNumbers": { "searchResponseMs": 284, "limitMs": 250, "note": "captured under failed-texture conditions; not representative" },
+      "reBaselineCondition": "after animated-atlas sharding fix"
+    },
+    "runtime-service-worker-e2e": {
+      "status": "NOT_RUN",
+      "reason": "requires production build + SW registration; deferred to next session"
+    },
+    "export-stage-timings": {
+      "status": "NOT_AVAILABLE",
+      "reason": "requires an in-game NESQL++ export run; capture next time an export is performed and append here"
+    }
+  },
+  "newDefectsDiscovered": [
+    {
+      "id": "DEF-1",
+      "title": "Animated atlas exceeds browser-decodable height (2048x131072)",
+      "severity": "high (breaks all native-surface texture rendering)",
+      "location": "dist-data textures/atlas-assets/animated-atlases/item-animated.png; produced by elysium-compiler texture pack stage",
+      "suggestedFix": "shard animated atlases into multiple sheets like static atlases; add a compiler validation that rejects any atlas sheet exceeding a decode-safe dimension budget"
+    },
+    {
+      "id": "DEF-2",
+      "title": "bench-search-v3 resolves stale legacy publish bundles instead of the live Rust search pack",
+      "severity": "medium (gate gives false signal)",
+      "suggestedFix": "retire the legacy bundle resolution in the bench alongside W1, or make DIST_DATA_V3_DIR the default source"
+    }
+  ]
+}
