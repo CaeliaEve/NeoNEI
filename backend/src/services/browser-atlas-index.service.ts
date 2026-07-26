@@ -2,10 +2,13 @@ import fs from 'fs';
 import {
   NESQL_ANIMATED_ATLAS_MANIFEST_FILE,
   NESQL_ATLAS_MANIFEST_FILE,
-  NESQL_BROWSER_ATLAS_INDEX_FILE,
-  NESQL_BROWSER_LAYOUT_INDEX_FILE,
 } from '../config/runtime-paths';
 import { notFound } from '../utils/http';
+import { CURRENT_RUNTIME_ARTIFACT_PATHS } from './current-runtime-artifact-index-abi';
+import {
+  resolveCurrentRuntimeDistDataDir,
+  resolveDistDataRuntimeFile,
+} from './current-runtime-artifact-index.service';
 
 export interface BrowserAtlasStaticPlacement {
   atlasGroup?: string | null;
@@ -125,7 +128,7 @@ interface StaticAtlasManifest {
 
 export class BrowserAtlasIndexService {
   private cache: { mtimeMs: number; payload: BrowserAtlasIndexResponse } | null = null;
-  private itemMapCache: { mtimeMs: number; itemMap: Map<string, BrowserAtlasItemEntry>; meta: Omit<BrowserAtlasIndexResponse, 'items'> } | null = null;
+  private itemMapCache: { filePath: string; mtimeMs: number; itemMap: Map<string, BrowserAtlasItemEntry>; meta: Omit<BrowserAtlasIndexResponse, 'items'> } | null = null;
 
   getIndex(): BrowserAtlasIndexResponse {
     const { mtimeMs, itemMap, meta } = this.getItemMap();
@@ -168,13 +171,23 @@ export class BrowserAtlasIndexService {
   }
 
   private getItemMap(): { mtimeMs: number; itemMap: Map<string, BrowserAtlasItemEntry>; meta: Omit<BrowserAtlasIndexResponse, 'items'> } {
-    const filePath = NESQL_BROWSER_ATLAS_INDEX_FILE;
-    if (!filePath || !fs.existsSync(filePath)) {
-      throw notFound('NESQL++ browser atlas index is not available. Re-export with a build that writes canonical/browser-atlas-index.json.');
+    const generationRoot = resolveCurrentRuntimeDistDataDir();
+    const filePath = resolveDistDataRuntimeFile(
+      CURRENT_RUNTIME_ARTIFACT_PATHS.browserAtlasIndex,
+      generationRoot,
+    );
+    const layoutFilePath = resolveDistDataRuntimeFile(
+      CURRENT_RUNTIME_ARTIFACT_PATHS.browserLayoutIndex,
+      generationRoot,
+    );
+    if (!fs.existsSync(filePath)) {
+      throw notFound('Compiled browser atlas index is not available in the current sealed runtime generation.');
     }
 
     const stat = fs.statSync(filePath);
-    if (this.itemMapCache && this.itemMapCache.mtimeMs === stat.mtimeMs) {
+    if (this.itemMapCache
+      && this.itemMapCache.filePath === filePath
+      && this.itemMapCache.mtimeMs === stat.mtimeMs) {
       return this.itemMapCache;
     }
 
@@ -209,19 +222,22 @@ export class BrowserAtlasIndexService {
         itemMap.set(itemId, item);
       }
     }
-    meta.layoutCoverage = this.computeLayoutCoverage(itemMap);
-    this.itemMapCache = { mtimeMs: stat.mtimeMs, itemMap, meta };
+    meta.layoutCoverage = this.computeLayoutCoverage(itemMap, layoutFilePath);
+    this.itemMapCache = { filePath, mtimeMs: stat.mtimeMs, itemMap, meta };
     this.cache = null;
     return this.itemMapCache;
   }
 
-  private computeLayoutCoverage(itemMap: Map<string, BrowserAtlasItemEntry>): BrowserAtlasLayoutCoverage | undefined {
-    if (!NESQL_BROWSER_LAYOUT_INDEX_FILE || !fs.existsSync(NESQL_BROWSER_LAYOUT_INDEX_FILE)) {
+  private computeLayoutCoverage(
+    itemMap: Map<string, BrowserAtlasItemEntry>,
+    layoutFilePath: string,
+  ): BrowserAtlasLayoutCoverage | undefined {
+    if (!fs.existsSync(layoutFilePath)) {
       return undefined;
     }
 
     try {
-      const parsed = JSON.parse(fs.readFileSync(NESQL_BROWSER_LAYOUT_INDEX_FILE, 'utf-8')) as {
+      const parsed = JSON.parse(fs.readFileSync(layoutFilePath, 'utf-8')) as {
         items?: Array<{ itemId?: unknown }>;
         defaultEntries?: Array<{ itemId?: unknown; representativeItemId?: unknown }>;
       };

@@ -142,7 +142,9 @@ test('current API owns /api without legacy dynamic namespace shadow mounts', () 
 });
 
 test('runtime file endpoint is path traversal safe and relative-rooted', () => {
-  assert.match(currentRuntimeArtifactIndexSource, /CURRENT_RUNTIME_DIST_MANIFEST_FILE/);
+  assert.match(currentRuntimeArtifactIndexSource, /resolveCurrentExternalRuntimeGeneration\(DIST_DATA_DIR\)\.generationRoot/);
+  assert.match(currentRuntimeArtifactIndexSource, /resolveCurrentRuntimeDistManifestFile\(/);
+  assert.match(currentRuntimeArtifactIndexSource, /generationRoot = resolveCurrentRuntimeDistDataDir\(\)/);
   assert.match(currentRuntimeArtifactIndexSource, /files\?\.rustRuntimeManifest/);
   assert.match(currentRuntimeArtifactIndexSource, /nativeRuntime\?\.runtimeManifest/);
   assert.match(currentRuntimeArtifactIndexSource, /typeof value !== 'string'/);

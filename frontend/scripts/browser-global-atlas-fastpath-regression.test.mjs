@@ -9,6 +9,7 @@ const frontendRoot = path.resolve(scriptDir, '..');
 const read = (relativePath) => fs.readFileSync(path.join(frontendRoot, relativePath), 'utf8');
 
 const globalAtlasSource = read('src/services/globalBrowserAtlas.ts');
+const animationBudgetSource = read('src/services/animationBudget.ts');
 const itemBrowserSource = read('src/composables/useItemBrowser.ts');
 const browserPageProjectionLoaderSource = read('src/composables/browser/browserPageProjectionLoader.ts');
 const browserHotPathSource = `${itemBrowserSource}
@@ -82,6 +83,29 @@ test('global atlas is the homepage animation source of truth for indexed entries
     globalAtlasSource,
     /shouldUseLegacyBrowserAnimationProbe/,
     'indexed browser atlas entries must not expose legacy sprite/render-contract probe hooks during page flips',
+  );
+});
+
+test('image loading boundary removes the animation budget/global atlas module cycle', () => {
+  assert.match(
+    globalAtlasSource,
+    /from ["']\.\/imageAssetLoader["']/,
+    'global atlas should depend on the shared image loader rather than animationBudget',
+  );
+  assert.doesNotMatch(
+    globalAtlasSource,
+    /from ["']\.\/animationBudget["']|import\(["']\.\/animationBudget["']\)/,
+    'global atlas must not recreate the former animationBudget cycle',
+  );
+  assert.match(
+    animationBudgetSource,
+    /import \{ warmGlobalBrowserAtlasForItemsDetailed \} from ["']\.\/globalBrowserAtlas["']/,
+    'animation budget should use a static atlas dependency after the cycle is removed',
+  );
+  assert.doesNotMatch(
+    animationBudgetSource,
+    /import\(["']\.\/globalBrowserAtlas["']\)/,
+    'the removed cycle should not be hidden behind a dynamic import',
   );
 });
 

@@ -12,6 +12,7 @@ import {
 import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
 import {
   CURRENT_RUNTIME_ASSET_REQUEST_METHODS,
+  CURRENT_RUNTIME_ID_HEADER,
   CURRENT_RUNTIME_IMMUTABLE_ASSET_CACHE,
   CURRENT_RUNTIME_JSON_ENVELOPE_OK,
   CURRENT_RUNTIME_MOUNTED_ASSET_PATH_PREFIX,
@@ -41,6 +42,7 @@ export function sendCurrentRuntimeJson(
   data: unknown,
   context: CurrentRuntimeApiContext,
 ): void {
+  res.setHeader(CURRENT_RUNTIME_ID_HEADER, context.meta.runtimeId);
   res.json(createCurrentRuntimeEnvelope(data, context));
 }
 
@@ -75,6 +77,7 @@ export function sendCurrentRuntimeAsset(
 ): void {
   const asset = getCurrentRuntimeAssetDelivery(fileName, context);
   res.setHeader('ETag', asset.etag);
+  res.setHeader(CURRENT_RUNTIME_ID_HEADER, context.meta.runtimeId);
   setStaticAssetCacheHeaders(res, CURRENT_RUNTIME_IMMUTABLE_ASSET_CACHE);
   res.sendFile(asset.artifact.absolutePath);
 }

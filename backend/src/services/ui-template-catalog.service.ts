@@ -1,6 +1,7 @@
 import fs from 'fs';
-import { NESQL_UI_TEMPLATE_CATALOG_FILE } from '../config/runtime-paths';
 import { notFound } from '../utils/http';
+import { CURRENT_RUNTIME_ARTIFACT_PATHS } from './current-runtime-artifact-index-abi';
+import { resolveDistDataRuntimeFile } from './current-runtime-artifact-index.service';
 
 export interface UiTemplateCatalogSlot {
   role: string;
@@ -94,6 +95,7 @@ export interface UiTemplateCatalogServiceOptions {
 }
 
 type CachedCatalog = {
+  filePath: string;
   mtimeMs: number;
   report: UiTemplateCatalogReport;
   templateIndex: Map<string, UiTemplateCatalogTemplate>;
@@ -253,10 +255,15 @@ function normalizeReport(value: unknown): UiTemplateCatalogReport {
 
 export class UiTemplateCatalogService {
   private cache: CachedCatalog | null = null;
-  private readonly catalogFilePath: string;
+  private readonly explicitCatalogFilePath: string | null;
 
   constructor(options: UiTemplateCatalogServiceOptions = {}) {
-    this.catalogFilePath = options.catalogFilePath ?? NESQL_UI_TEMPLATE_CATALOG_FILE;
+    this.explicitCatalogFilePath = options.catalogFilePath ?? null;
+  }
+
+  private resolveCatalogFilePath(): string {
+    return this.explicitCatalogFilePath
+      ?? resolveDistDataRuntimeFile(CURRENT_RUNTIME_ARTIFACT_PATHS.uiTemplateCatalog);
   }
 
   getReport(): UiTemplateCatalogReport {
@@ -269,15 +276,15 @@ export class UiTemplateCatalogService {
     return report;
   }
 
-  getReportOrNull(): UiTemplateCatalogReport | null {
-    if (!this.catalogFilePath || !fs.existsSync(this.catalogFilePath)) {
+  getReportOrNull(catalogFilePath = this.resolveCatalogFilePath()): UiTemplateCatalogReport | null {
+    if (!fs.existsSync(catalogFilePath)) {
       return null;
     }
-    const stat = fs.statSync(this.catalogFilePath);
-    if (this.cache && this.cache.mtimeMs === stat.mtimeMs) {
+    const stat = fs.statSync(catalogFilePath);
+    if (this.cache && this.cache.filePath === catalogFilePath && this.cache.mtimeMs === stat.mtimeMs) {
       return this.cache.report;
     }
-    const raw = fs.readFileSync(this.catalogFilePath, 'utf8');
+    const raw = fs.readFileSync(catalogFilePath, 'utf8');
     const report = normalizeReport(JSON.parse(raw));
     const templateIndex = new Map<string, UiTemplateCatalogTemplate>();
     const familyIndex = new Map<string, UiTemplateCatalogTemplate>();
@@ -289,7 +296,7 @@ export class UiTemplateCatalogService {
         familyIndex.set(template.familyKey, template);
       }
     }
-    this.cache = { mtimeMs: stat.mtimeMs, report, templateIndex, familyIndex };
+    this.cache = { filePath: catalogFilePath, mtimeMs: stat.mtimeMs, report, templateIndex, familyIndex };
     return report;
   }
 
@@ -315,15 +322,15 @@ export class UiTemplateCatalogService {
     return cache?.familyIndex.get(normalized) ?? null;
   }
 
-  private getCacheOrNull(): CachedCatalog | null {
-    if (!this.catalogFilePath || !fs.existsSync(this.catalogFilePath)) {
+  private getCacheOrNull(catalogFilePath = this.resolveCatalogFilePath()): CachedCatalog | null {
+    if (!fs.existsSync(catalogFilePath)) {
       return null;
     }
-    const stat = fs.statSync(this.catalogFilePath);
-    if (this.cache && this.cache.mtimeMs === stat.mtimeMs) {
+    const stat = fs.statSync(catalogFilePath);
+    if (this.cache && this.cache.filePath === catalogFilePath && this.cache.mtimeMs === stat.mtimeMs) {
       return this.cache;
     }
-    this.getReportOrNull();
+    this.getReportOrNull(catalogFilePath);
     return this.cache;
   }
 }

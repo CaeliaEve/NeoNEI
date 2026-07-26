@@ -16,11 +16,11 @@ test('recipe presentation is routed through web-authored UI policy catalogs only
 
   assert.equal(exists('src/composables/recipe-display/nativeLayoutRendering.ts'), false);
   assert.match(presentationPolicySource, /RECIPE_PRESENTATION_ROUTE_DESCRIPTORS/);
-  assert.match(presentationPolicySource, /nativePayloadAuthority: 'web-authored-ui-only'/);
+  assert.match(presentationPolicySource, /presentationAuthority: 'ui-binding-v2-renderer-id-only'/);
   assert.match(presentationPolicySource, /retiredNativeArtifacts/);
   assert.match(presentationPolicySource, /resolveRecipePresentationDecision/);
   assert.match(presentationPolicySource, /resolveRecipePresentationRoute/);
-  assert.match(presentationPolicySource, /NEI frame\/background PNG rendering is retired/);
+  assert.match(presentationPolicySource, /missingBindingPolicy: 'fail-closed'/);
   assert.match(presentationSource, /resolveRecipePresentationDecision/);
   assert.match(presentationSource, /resolveRecipePresentationRoute/);
   assert.doesNotMatch(presentationSource, /isNativeLayoutRendererEligible/);

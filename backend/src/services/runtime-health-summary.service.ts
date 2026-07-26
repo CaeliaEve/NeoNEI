@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { DIST_DATA_DIR } from '../config/runtime-paths';
 import { resolveAccelerationCompilerAuthority } from './acceleration-runtime-compiler-authority.service';
+import { resolveCurrentRuntimeDistDataDir } from './current-runtime-artifact-index.service';
 import {
   acquireCurrentRuntimeSnapshot,
   type CurrentRuntimeSnapshot,
@@ -290,14 +291,15 @@ function readDistJsonByManifestKey(
   manifest: JsonRecord | null,
   key: RuntimeHealthArtifactProbeName,
   artifactReads: Map<RuntimeHealthArtifactProbeName, RuntimeHealthArtifactRead>,
+  generationRoot: string | null,
 ): JsonRecord | null {
   const files = asRecord(manifest?.files);
   const relativePath = asString(files?.[key]);
-  const read = relativePath
+  const read = relativePath && generationRoot
     ? readRuntimeHealthJsonArtifact({
       name: key,
       key,
-      filePath: path.join(DIST_DATA_DIR, relativePath),
+      filePath: path.join(generationRoot, relativePath),
       relativePath,
     })
     : missingRuntimeHealthArtifact(key, key);
@@ -341,7 +343,15 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
     return cache.summary;
   }
 
-  const manifestPath = path.join(DIST_DATA_DIR, RUNTIME_HEALTH_DIST_MANIFEST_RELATIVE_PATH);
+  let generationRoot: string | null = null;
+  try {
+    generationRoot = resolveCurrentRuntimeDistDataDir();
+  } catch {
+    generationRoot = null;
+  }
+  const manifestPath = generationRoot
+    ? path.join(generationRoot, RUNTIME_HEALTH_DIST_MANIFEST_RELATIVE_PATH)
+    : path.join(DIST_DATA_DIR, 'current.json');
   const artifactReads = new Map<RuntimeHealthArtifactProbeName, RuntimeHealthArtifactRead>();
   const manifestRead = readRuntimeHealthJsonArtifact({
     name: 'manifest',
@@ -351,14 +361,14 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
   });
   artifactReads.set('manifest', manifestRead);
   const manifest = manifestRead.value;
-  const validationReport = readDistJsonByManifestKey(manifest, 'validationReport', artifactReads);
+  const validationReport = readDistJsonByManifestKey(manifest, 'validationReport', artifactReads, generationRoot);
   const validationCounts = asRecord(validationReport?.counts);
   const validationMissing = asRecord(validationReport?.missing);
-  const migrationReadiness = readDistJsonByManifestKey(manifest, 'migrationReadiness', artifactReads);
-  const browserContract = readDistJsonByManifestKey(manifest, 'neiBrowserContract', artifactReads);
-  const recipeFragmentation = readDistJsonByManifestKey(manifest, 'recipeFragmentation', artifactReads);
-  const exportPathHygiene = readDistJsonByManifestKey(manifest, 'exportPathHygiene', artifactReads);
-  const externalRuntimePromotionReport = readDistJsonByManifestKey(manifest, 'externalRuntimePromotionReport', artifactReads);
+  const migrationReadiness = readDistJsonByManifestKey(manifest, 'migrationReadiness', artifactReads, generationRoot);
+  const browserContract = readDistJsonByManifestKey(manifest, 'neiBrowserContract', artifactReads, generationRoot);
+  const recipeFragmentation = readDistJsonByManifestKey(manifest, 'recipeFragmentation', artifactReads, generationRoot);
+  const exportPathHygiene = readDistJsonByManifestKey(manifest, 'exportPathHygiene', artifactReads, generationRoot);
+  const externalRuntimePromotionReport = readDistJsonByManifestKey(manifest, 'externalRuntimePromotionReport', artifactReads, generationRoot);
   const artifacts = summarizeRuntimeHealthArtifacts(artifactReads);
   const snapshotHandle: CurrentRuntimeSnapshotHandle | null = pinnedSnapshot ? null : acquireCurrentRuntimeSnapshot();
   try {
@@ -383,7 +393,7 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
     const summary: RuntimeHealthSummary = {
       schemaVersion: RUNTIME_HEALTH_SCHEMA_VERSION,
       status: chooseRuntimeHealthSummaryStatus({
-        distDataExists: fs.existsSync(DIST_DATA_DIR),
+        distDataExists: Boolean(generationRoot),
         manifestExists: Boolean(manifest),
         runtimeSnapshotAvailable: runtimeSnapshotHealth.runtimeSnapshot.available,
         missingFileCount: files.missing.length,
@@ -396,7 +406,7 @@ export function getRuntimeHealthSummary(options: RuntimeHealthSummaryOptions = {
       }),
       generatedAt: new Date().toISOString(),
       distData: {
-        exists: fs.existsSync(DIST_DATA_DIR),
+        exists: Boolean(generationRoot),
         manifestExists: Boolean(manifest),
         source: asString(manifest?.source),
         sourceRepository: asString(manifest?.sourceRepository),

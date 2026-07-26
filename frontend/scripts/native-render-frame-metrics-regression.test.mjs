@@ -97,12 +97,12 @@ test("native surface benchmark gates segmented render metrics", () => {
 
 
 test("native render worker drops stale rapid-paging frames by frame token", () => {
-  const protocol = readFrontend("src/native-surface/NativeSurfaceRenderProtocol.ts");
-  const component = readFrontend("src/components/native-surface/NativeBrowserSurface.vue");
+  const protocol = readFrontend("src/native-surface/NativeRenderPipelineProtocol.ts");
+  const engineWorker = readFrontend("src/workers/nativeSurfaceEngine.worker.ts");
   const worker = readFrontend("src/workers/nativeRender.worker.ts");
 
   assert.match(protocol, /frameToken: number/);
-  assert.match(component, /frameToken: seq/);
+  assert.match(engineWorker, /frameToken: message\.id/);
   assert.match(worker, /let latestFrameToken = 0/);
   assert.match(worker, /let droppedStaleFrames = 0/);
   assert.match(worker, /if \(frameToken < latestFrameToken\)/);

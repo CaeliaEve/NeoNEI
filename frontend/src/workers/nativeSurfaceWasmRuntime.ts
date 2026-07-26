@@ -141,43 +141,57 @@ export async function ensureWasmEngine(): Promise<NativeWasmEngineExports | null
   return wasmEnginePromise;
 }
 
+type NativeWasmDeallocate = (ptr: number, len: number) => void;
+
+export function releaseNativeWasmPayloads(surface: SurfaceState, deallocate?: NativeWasmDeallocate): void {
+  let firstError: unknown = null;
+  const release = (ptr: number, len: number, reset: () => void) => {
+    try {
+      if (ptr > 0 && len > 0) deallocate?.(ptr, len);
+    } catch (error) {
+      firstError ??= error;
+    } finally {
+      reset();
+    }
+  };
+
+  release(surface.runtimeBrowserWasmPtr, surface.runtimeBrowserWasmLen, () => {
+    surface.runtimeBrowserWasmPtr = 0;
+    surface.runtimeBrowserWasmLen = 0;
+    surface.runtimeBrowserWasmItemCount = 0;
+    surface.runtimeBrowserWasmProjectedEntries = 0;
+  });
+  release(surface.runtimeSearchWasmPtr, surface.runtimeSearchWasmLen, () => {
+    surface.runtimeSearchWasmPtr = 0;
+    surface.runtimeSearchWasmLen = 0;
+  });
+  release(surface.runtimeGroupWasmPtr, surface.runtimeGroupWasmLen, () => {
+    surface.runtimeGroupWasmPtr = 0;
+    surface.runtimeGroupWasmLen = 0;
+    surface.runtimeGroupWasmCount = 0;
+  });
+  release(surface.runtimeStringWasmPtr, surface.runtimeStringWasmLen, () => {
+    surface.runtimeStringWasmPtr = 0;
+    surface.runtimeStringWasmLen = 0;
+    surface.runtimeStringWasmItemCount = 0;
+  });
+  release(surface.runtimeTextureWasmPtr, surface.runtimeTextureWasmLen, () => {
+    surface.runtimeTextureWasmPtr = 0;
+    surface.runtimeTextureWasmLen = 0;
+    surface.runtimeTextureWasmItemCount = 0;
+  });
+  release(surface.runtimeAnimationWasmPtr, surface.runtimeAnimationWasmLen, () => {
+    surface.runtimeAnimationWasmPtr = 0;
+    surface.runtimeAnimationWasmLen = 0;
+    surface.runtimeAnimationWasmItemCount = 0;
+  });
+  if (firstError) throw firstError;
+}
+
 export function disposeWasmPayloads(surface: SurfaceState): void {
-  if (surface.runtimeBrowserWasmPtr > 0 && surface.runtimeBrowserWasmLen > 0) {
-    wasmEngine?.neonei_engine_dealloc?.(surface.runtimeBrowserWasmPtr, surface.runtimeBrowserWasmLen);
-  }
-  surface.runtimeBrowserWasmPtr = 0;
-  surface.runtimeBrowserWasmLen = 0;
-  surface.runtimeBrowserWasmItemCount = 0;
-  surface.runtimeBrowserWasmProjectedEntries = 0;
-  if (surface.runtimeSearchWasmPtr > 0 && surface.runtimeSearchWasmLen > 0) {
-    wasmEngine?.neonei_engine_dealloc?.(surface.runtimeSearchWasmPtr, surface.runtimeSearchWasmLen);
-  }
-  surface.runtimeSearchWasmPtr = 0;
-  surface.runtimeSearchWasmLen = 0;
-  if (surface.runtimeGroupWasmPtr > 0 && surface.runtimeGroupWasmLen > 0) {
-    wasmEngine?.neonei_engine_dealloc?.(surface.runtimeGroupWasmPtr, surface.runtimeGroupWasmLen);
-  }
-  surface.runtimeGroupWasmPtr = 0;
-  surface.runtimeGroupWasmLen = 0;
-  surface.runtimeGroupWasmCount = 0;
-  if (surface.runtimeStringWasmPtr > 0 && surface.runtimeStringWasmLen > 0) {
-    wasmEngine?.neonei_engine_dealloc?.(surface.runtimeStringWasmPtr, surface.runtimeStringWasmLen);
-  }
-  surface.runtimeStringWasmPtr = 0;
-  surface.runtimeStringWasmLen = 0;
-  surface.runtimeStringWasmItemCount = 0;
-  if (surface.runtimeTextureWasmPtr > 0 && surface.runtimeTextureWasmLen > 0) {
-    wasmEngine?.neonei_engine_dealloc?.(surface.runtimeTextureWasmPtr, surface.runtimeTextureWasmLen);
-  }
-  surface.runtimeTextureWasmPtr = 0;
-  surface.runtimeTextureWasmLen = 0;
-  surface.runtimeTextureWasmItemCount = 0;
-  if (surface.runtimeAnimationWasmPtr > 0 && surface.runtimeAnimationWasmLen > 0) {
-    wasmEngine?.neonei_engine_dealloc?.(surface.runtimeAnimationWasmPtr, surface.runtimeAnimationWasmLen);
-  }
-  surface.runtimeAnimationWasmPtr = 0;
-  surface.runtimeAnimationWasmLen = 0;
-  surface.runtimeAnimationWasmItemCount = 0;
+  releaseNativeWasmPayloads(surface, (ptr, len) => {
+    wasmEngine?.neonei_engine_dealloc?.(ptr, len);
+  });
 }
 
 export function installWasmBrowserPayload(surface: SurfaceState, payloadBuffer: ArrayBuffer): void {

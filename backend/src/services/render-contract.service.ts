@@ -6,9 +6,6 @@ import {
   NESQL_ANIMATED_ATLAS_MANIFEST_FILE,
   NESQL_RENDER_INDEX_FILE,
   NESQL_ATLAS_REGISTRY_FILE,
-  NESQL_UI_FAMILY_CENSUS_FILE,
-  NESQL_UI_TEMPLATE_CATALOG_FILE,
-  NESQL_UI_PAYLOAD_INDEX_FILE,
   NESQL_CANONICAL_DIR,
 } from '../config/runtime-paths';
 import { notFound } from '../utils/http';
@@ -16,6 +13,11 @@ import { countManifestAssets } from './manifest-counts';
 import { getUiFamilyCensusService } from './ui-family-census.service';
 import { getUiTemplateCatalogService } from './ui-template-catalog.service';
 import { getUiTemplateBindingIndexService } from './ui-template-binding-index.service';
+import { CURRENT_RUNTIME_ARTIFACT_PATHS } from './current-runtime-artifact-index-abi';
+import {
+  resolveCurrentRuntimeDistDataDir,
+  resolveDistDataRuntimeFile,
+} from './current-runtime-artifact-index.service';
 
 type JsonValue = Record<string, unknown>;
 
@@ -186,9 +188,30 @@ export class RenderContractService {
     const animatedAtlasManifest = readJsonIfExists(NESQL_ANIMATED_ATLAS_MANIFEST_FILE);
     const renderIndex = readJsonIfExists(NESQL_RENDER_INDEX_FILE);
     const atlasRegistry = readJsonIfExists(NESQL_ATLAS_REGISTRY_FILE);
-    const uiFamilyCensus = getUiFamilyCensusService().getReportOrNull();
-    const uiTemplateCatalog = getUiTemplateCatalogService().getReportOrNull();
-    const uiTemplateBindingIndex = getUiTemplateBindingIndexService().getReportOrNull();
+    const generationRoot = resolveCurrentRuntimeDistDataDir();
+    const uiFamilyCensusFilePath = resolveDistDataRuntimeFile(
+      CURRENT_RUNTIME_ARTIFACT_PATHS.uiFamilyCensus,
+      generationRoot,
+    );
+    const uiTemplateCatalogFilePath = resolveDistDataRuntimeFile(
+      CURRENT_RUNTIME_ARTIFACT_PATHS.uiTemplateCatalog,
+      generationRoot,
+    );
+    const uiTemplateBindingIndexFilePath = resolveDistDataRuntimeFile(
+      CURRENT_RUNTIME_ARTIFACT_PATHS.uiTemplateBindingIndex,
+      generationRoot,
+    );
+    const uiPayloadIndexFilePath = resolveDistDataRuntimeFile(
+      CURRENT_RUNTIME_ARTIFACT_PATHS.uiPayloadIndex,
+      generationRoot,
+    );
+    const uiFamilyCensus = getUiFamilyCensusService().getReportOrNull(uiFamilyCensusFilePath);
+    const uiTemplateCatalog = getUiTemplateCatalogService().getReportOrNull(uiTemplateCatalogFilePath);
+    const uiTemplateBindingIndex = getUiTemplateBindingIndexService().getReportOrNull({
+      bindingIndexFilePath: uiTemplateBindingIndexFilePath,
+      recipeUiPayloadIndexFilePath: uiPayloadIndexFilePath,
+      templateCatalogFilePath: uiTemplateCatalogFilePath,
+    });
 
     return {
       canonicalDir: NESQL_CANONICAL_DIR || '',
@@ -232,7 +255,7 @@ export class RenderContractService {
               : 0,
         },
         uiFamilyCensus: {
-          path: NESQL_UI_FAMILY_CENSUS_FILE,
+          path: uiFamilyCensusFilePath,
           exists: Boolean(uiFamilyCensus),
           handlerCount: uiFamilyCensus?.summary.handlerCount ?? 0,
           familyCount: uiFamilyCensus?.summary.familyCount ?? 0,
@@ -240,7 +263,7 @@ export class RenderContractService {
           layoutKindCount: uiFamilyCensus?.summary.layoutKindCount ?? 0,
         },
         uiTemplateCatalog: {
-          path: NESQL_UI_TEMPLATE_CATALOG_FILE,
+          path: uiTemplateCatalogFilePath,
           exists: Boolean(uiTemplateCatalog),
           handlerCount: uiTemplateCatalog?.summary.handlerCount ?? 0,
           templateCount: uiTemplateCatalog?.summary.templateCount ?? 0,
@@ -250,7 +273,7 @@ export class RenderContractService {
           overlayCount: uiTemplateCatalog?.summary.overlayCount ?? 0,
         },
         uiTemplateBindingIndex: {
-          path: NESQL_UI_PAYLOAD_INDEX_FILE,
+          path: uiTemplateBindingIndexFilePath,
           exists: Boolean(uiTemplateBindingIndex),
           recipeCount: uiTemplateBindingIndex?.summary.recipeCount ?? 0,
           boundRecipeCount: uiTemplateBindingIndex?.summary.boundRecipeCount ?? 0,

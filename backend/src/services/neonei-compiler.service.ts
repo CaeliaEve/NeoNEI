@@ -8,8 +8,12 @@ import { chain } from 'stream-chain';
 import { parser } from 'stream-json';
 import { streamArray } from 'stream-json/streamers/StreamArray';
 import { DatabaseManager } from '../models/database';
-import { NESQL_BROWSER_LAYOUT_INDEX_FILE } from '../config/runtime-paths';
 import { ItemsService, type Item } from './items.service';
+import { CURRENT_RUNTIME_ARTIFACT_PATHS } from './current-runtime-artifact-index-abi';
+import {
+  resolveCurrentRuntimeDistDataDir,
+  resolveDistDataRuntimeFile,
+} from './current-runtime-artifact-index.service';
 import { PublishPayloadMaterializerService } from './publish-payload-materializer.service';
 import { buildCollapsibleItemAssignments, type CollapsibleItemCandidate } from './gtnh-collapsible-items.service';
 import { buildSyntheticBrowserVariantAssignments, mergeBrowserGroupAssignments } from './browser-variant-grouping.service';
@@ -1305,11 +1309,16 @@ function chunkArray<T>(items: T[], chunkSize: number): T[][] {
 }
 
 function loadBrowserLayoutIndex(): BrowserLayoutIndex | null {
-  if (!NESQL_BROWSER_LAYOUT_INDEX_FILE || !fs.existsSync(NESQL_BROWSER_LAYOUT_INDEX_FILE)) {
-    return null;
-  }
   try {
-    const parsed = JSON.parse(fs.readFileSync(NESQL_BROWSER_LAYOUT_INDEX_FILE, 'utf8')) as BrowserLayoutIndex;
+    const generationRoot = resolveCurrentRuntimeDistDataDir();
+    const browserLayoutIndexFile = resolveDistDataRuntimeFile(
+      CURRENT_RUNTIME_ARTIFACT_PATHS.browserLayoutIndex,
+      generationRoot,
+    );
+    if (!fs.existsSync(browserLayoutIndexFile)) {
+      return null;
+    }
+    const parsed = JSON.parse(fs.readFileSync(browserLayoutIndexFile, 'utf8')) as BrowserLayoutIndex;
     if (!Array.isArray(parsed.items) || !Array.isArray(parsed.defaultEntries)) {
       return null;
     }

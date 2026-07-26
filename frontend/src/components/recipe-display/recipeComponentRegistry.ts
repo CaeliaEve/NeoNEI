@@ -9,6 +9,7 @@ export { StandardCraftingUI };
 export type { RegisteredRecipeComponentName };
 
 export const AvaritiaExtremeCraftingUI = defineAsyncComponent(() => import('../AvaritiaExtremeCraftingUI.vue'));
+export const NEIRecipeWidget = defineAsyncComponent(() => import('../NEIRecipeWidget.vue'));
 export const FurnaceUI = defineAsyncComponent(() => import('../FurnaceUI.vue'));
 export const GTUniversalMachineUI = defineAsyncComponent(() => import('../GTUniversalMachineUI.vue'));
 export const GTResearchStationUI = defineAsyncComponent(() => import('../GTResearchStationUI.vue'));
@@ -38,6 +39,7 @@ export const BloodOrbCraftingUI = defineAsyncComponent(() => import('../BloodOrb
 export const MultiblockBlueprintUI = defineAsyncComponent(() => import('../MultiblockBlueprintUI.vue'));
 
 export const componentRegistry = {
+  NEIRecipeWidget,
   StandardCraftingUI,
   AvaritiaExtremeCraftingUI,
   FurnaceUI,

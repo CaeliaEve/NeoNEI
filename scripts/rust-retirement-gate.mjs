@@ -2,6 +2,7 @@
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveElysiumOutputGeneration } from './lib/elysium-output-generation.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const frontendDir = join(repoRoot, 'frontend');
@@ -86,23 +87,25 @@ const compiler = JSON.parse(ensure.stdout).compiler;
 runStep('elysium compiler strict compile', compiler, [
   'compile', '--input', rawExportInput, '--output', distDataDir, '--report', rustReport, '--scope', compileScope, '--strict',
 ]);
+const compiledGeneration = resolveElysiumOutputGeneration(distDataDir);
+const artifactRoot = compiledGeneration.generationRoot;
 
 const rustCompile = readJson(rustReport);
-const rustManifest = readJson(join(distDataDir, 'rust', 'runtime-manifest.json'));
-const distManifest = readJson(join(distDataDir, 'manifest.json'));
-const rustReadiness = readJson(join(distDataDir, 'rust', 'migration-readiness.json'));
+const rustManifest = readJson(join(artifactRoot, 'rust', 'runtime-manifest.json'));
+const distManifest = readJson(join(artifactRoot, 'manifest.json'));
+const rustReadiness = readJson(join(artifactRoot, 'rust', 'migration-readiness.json'));
 if (rustCompile?.runtime?.counts?.recipes < 1) fail('compiled runtime has no recipes');
 if (rustManifest?.compiler?.name !== 'elysium-compiler') fail('runtime manifest lacks compiler metadata');
 if (distManifest?.compiler?.name !== 'elysium-compiler') fail('dist manifest lacks compiler metadata');
 if (rustReadiness?.ready !== true) fail(`runtime readiness is not green: ${JSON.stringify(rustReadiness)}`);
 
-const distEnv = { DIST_DATA_V3_DIR: distDataDir };
-runStep('rust production manifest validation', 'node', ['scripts/validate-rust-production-manifest.mjs', '--gate', '--dist-data', distDataDir], { env: distEnv });
-runStep('native UI layout validation', 'node', ['scripts/validate-native-ui-layouts.mjs', '--gate', '--dist-data', distDataDir], { env: distEnv });
-runStep('rust recipe runtime validation', 'node', ['scripts/validate-rust-recipe-runtime.mjs', '--gate', '--dist-data', distDataDir], { env: distEnv });
+const distEnv = { DIST_DATA_V3_DIR: artifactRoot };
+runStep('rust production manifest validation', 'node', ['scripts/validate-rust-production-manifest.mjs', '--gate', '--dist-data', artifactRoot], { env: distEnv });
+runStep('native UI layout validation', 'node', ['scripts/validate-native-ui-layouts.mjs', '--gate', '--dist-data', artifactRoot], { env: distEnv });
+runStep('rust recipe runtime validation', 'node', ['scripts/validate-rust-recipe-runtime.mjs', '--gate', '--dist-data', artifactRoot], { env: distEnv });
 if (!quick) {
   runStep('backend build', process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'build'], { cwd: backendDir });
   runStep('frontend typecheck', process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'typecheck'], { cwd: frontendDir, env: distEnv });
 }
 writeSummary('ok');
-console.log(JSON.stringify({ status: 'ok', compiler, distDataDir, compileScope }, null, 2));
+console.log(JSON.stringify({ status: 'ok', compiler, distDataDir, artifactRoot, compileScope }, null, 2));

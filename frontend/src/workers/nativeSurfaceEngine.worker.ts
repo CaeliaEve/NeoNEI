@@ -4,7 +4,10 @@
   NativeSurfaceEngineEntry,
   NativeSurfaceEngineWorkerMetrics,
 } from "../native-surface/NativeSurfaceEngineProtocol";
-import { NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE } from "../native-surface/NativeSurfaceEngineProtocol";
+import {
+  NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE,
+  validateNativeSurfaceEngineRequestEnvelope,
+} from "../native-surface/NativeSurfaceEngineProtocol";
 import { createSurfaceState, type SurfaceState } from "./nativeSurfaceWorkerState";
 import { applyNativeSurfaceMutation } from "./nativeSurfaceWorkerMutations";
 import { hitTestNativeSurface } from "./nativeSurfaceWorkerHitTest";
@@ -36,6 +39,15 @@ import {
   buildRuntimeHistoryEntries as buildRuntimeHistoryEntriesFromProjection,
 } from "./nativeSurfaceProjection";
 import {
+  type NativeRenderPipelineFrameRequest,
+} from "../native-surface/NativeRenderPipelineProtocol";
+import { NativeSurfaceRenderConnection } from "./nativeSurfaceRenderConnection.ts";
+import {
+  admitNativeSurfaceRequest,
+  completeNativeSurfaceInitialize,
+  destroyNativeSurface,
+} from "./nativeSurfaceWorkerLifecycle";
+import {
   computeWasmRuntimeVisibleEntries,
   disposeWasmPayloads,
   ensureWasmEngine,
@@ -53,6 +65,44 @@ const surfaces = new Map<NativeSurfaceId, SurfaceState>();
 let events = 0;
 let lastEvent: NativeSurfaceEngineRequest["type"] | null = null;
 let lastSurfaceId: NativeSurfaceId | null = null;
+const renderConnections = new Map<NativeSurfaceId, NativeSurfaceRenderConnection>();
+const destroyedSurfaceIds = new Set<NativeSurfaceId>();
+
+function closeRenderConnection(surfaceId: NativeSurfaceId, reason: string): void {
+  const connection = renderConnections.get(surfaceId);
+  if (!connection) return;
+  connection.close(reason);
+  renderConnections.delete(surfaceId);
+}
+
+async function connectRenderPort(surfaceId: NativeSurfaceId, sessionId: string, port: MessagePort): Promise<void> {
+  closeRenderConnection(surfaceId, "Native render pipeline replaced");
+  const connection = new NativeSurfaceRenderConnection(surfaceId, sessionId, port);
+  renderConnections.set(surfaceId, connection);
+  try {
+    await connection.connect();
+  } catch (error) {
+    connection.close(error instanceof Error ? error.message : String(error));
+    renderConnections.delete(surfaceId);
+    throw error;
+  }
+}
+
+async function renderFrameDirectly(
+  surfaceId: NativeSurfaceId,
+  request: NativeRenderPipelineFrameRequest,
+): Promise<Awaited<ReturnType<NativeSurfaceRenderConnection["render"]>>> {
+  const connection = renderConnections.get(surfaceId);
+  if (!connection || !connection.isReady() || connection.sessionId !== request.sessionId) {
+    throw new Error("Native render pipeline is not connected");
+  }
+  try {
+    return await connection.render(request);
+  } catch (error) {
+    renderConnections.delete(surfaceId);
+    throw error;
+  }
+}
 
 function getRuntimeVisibleEntries(surface: SurfaceState, browserPack: NativeCompactBrowserPack): Uint32Array {
   const cacheKey = [
@@ -205,18 +255,63 @@ function buildMetrics(): NativeSurfaceEngineWorkerMetrics {
 }
 
 async function handleRequest(message: NativeSurfaceEngineRequest): Promise<NativeSurfaceEngineResponse> {
-  const surface = getSurface(message.surfaceId);
   events += 1;
   lastEvent = message.type;
   lastSurfaceId = message.surfaceId;
+  admitNativeSurfaceRequest(destroyedSurfaceIds, message.surfaceId, message.type);
+
+  if (message.type === "destroy") {
+    destroyNativeSurface({
+      surfaceId: message.surfaceId,
+      surfaces,
+      renderConnections,
+      disposeWasmPayloads,
+      reason: "Native surface destroyed",
+    });
+    return {
+      type: "ack",
+      id: message.id,
+      surfaceId: message.surfaceId,
+      event: message.type,
+      metrics: buildMetrics(),
+    };
+  }
+  if (message.type === "connectRenderPort") {
+    await connectRenderPort(message.surfaceId, message.sessionId, message.port);
+    return {
+      type: "ack",
+      id: message.id,
+      surfaceId: message.surfaceId,
+      event: message.type,
+      metrics: buildMetrics(),
+    };
+  }
+  if (message.type === "disconnectRenderPort") {
+    const connection = renderConnections.get(message.surfaceId);
+    if (!connection || connection.sessionId !== message.sessionId) {
+      throw new Error("Native render pipeline disconnect session mismatch");
+    }
+    closeRenderConnection(message.surfaceId, "Native render pipeline disconnected");
+    return {
+      type: "ack",
+      id: message.id,
+      surfaceId: message.surfaceId,
+      event: message.type,
+      metrics: buildMetrics(),
+    };
+  }
+  const surface = getSurface(message.surfaceId);
 
   switch (message.type) {
     case "initialize":
       await ensureWasmEngine();
-      surface.initialized = true;
+      if (!completeNativeSurfaceInitialize(destroyedSurfaceIds, surfaces, message.surfaceId, surface)) {
+        throw new Error(`Native surface initialize was superseded or destroyed: ${message.surfaceId}`);
+      }
       surface.renderer = message.preferredRenderer;
       surface.enableAnimations = message.enableAnimations;
       surface.enableHistoryViewport = message.enableHistoryViewport;
+      surface.initialized = true;
       break;
     case "runtimePacks":
       surface.runtimeManifestUrl = message.manifestUrl;
@@ -302,15 +397,32 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
       surface.missingSpriteCount = spriteFrame.missingSpriteCount;
       surface.missingSpriteItemIds = spriteFrame.missingSpriteItemIds;
       surface.nextFrameDelayMs = spriteFrame.nextFrameDelayMs;
+      const renderConnection = renderConnections.get(message.surfaceId);
+      if (!renderConnection?.isReady()) {
+        throw new Error(`Native render pipeline is not connected: ${message.surfaceId}`);
+      }
+      const frameRequest: NativeRenderPipelineFrameRequest = {
+        type: "renderFrame",
+        sessionId: renderConnection.sessionId,
+        frameToken: message.id,
+        commandBuffer: buildLayoutCommandBuffer(
+          surface.layoutCommands,
+          surface.lastHit?.key ?? null,
+          surface.selectedItemId,
+        ),
+        commandStride: NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE,
+        commandCount: surface.layoutCommands.length,
+        spriteCommands: spriteFrame.spriteCommands,
+        nowMs: message.nowMs,
+      };
+      const renderResult = await renderFrameDirectly(message.surfaceId, frameRequest);
       return {
         type: "frame",
         id: message.id,
         surfaceId: message.surfaceId,
-        drawCommands: surface.layoutCommands,
-        spriteCommands: spriteFrame.spriteCommands,
-        commandBuffer: buildLayoutCommandBuffer(surface.layoutCommands, surface.lastHit?.key ?? null, surface.selectedItemId),
-        commandStride: NATIVE_SURFACE_LAYOUT_COMMAND_U32_STRIDE,
-        commandCount: surface.layoutCommands.length,
+        frameToken: message.id,
+        rendered: renderResult.status === "rendered",
+        missingTextureKeys: renderResult.missingTextureKeys,
         hasAnimatedSprites: spriteFrame.hasAnimatedSprites,
         animatedSpriteCount: spriteFrame.animatedSpriteCount,
         nextFrameDelayMs: spriteFrame.nextFrameDelayMs,
@@ -324,10 +436,10 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
         hit: hitTestNativeSurface(surface, message, getWasmEngine()),
         metrics: buildMetrics(),
       };
-    case "destroy":
-      disposeWasmPayloads(surface);
-      surface.initialized = false;
-      break;
+    default: {
+      const unsupportedMessage = message as NativeSurfaceEngineRequest & { type: string };
+      throw new Error(`Unsupported native surface engine request type: ${unsupportedMessage.type}`);
+    }
   }
 
   return {
@@ -339,9 +451,42 @@ async function handleRequest(message: NativeSurfaceEngineRequest): Promise<Nativ
   };
 }
 
-self.onmessage = (event: MessageEvent<NativeSurfaceEngineRequest>) => {
-  const message = event.data;
-  if (!message?.type || !message.surfaceId) return;
-  void handleRequest(message).then((response) => self.postMessage(response));
+type WorkerResponsePort = {
+  postMessage(message: unknown, transfer: Transferable[]): void;
+};
+
+self.onmessage = (event: MessageEvent<unknown>) => {
+  const envelopeError = validateNativeSurfaceEngineRequestEnvelope(event.data);
+  if (envelopeError) {
+    const malformed = event.data as { id?: unknown; surfaceId?: unknown } | null;
+    if (!Number.isSafeInteger(malformed?.id)) throw new Error(envelopeError);
+    const response: NativeSurfaceEngineResponse = {
+      type: "error",
+      id: malformed?.id as number,
+      surfaceId: typeof malformed?.surfaceId === "string" ? malformed.surfaceId : "invalid",
+      error: envelopeError,
+      metrics: buildMetrics(),
+    };
+    (self as unknown as WorkerResponsePort).postMessage(response, []);
+    return;
+  }
+  const message = event.data as NativeSurfaceEngineRequest;
+  const id = message.id;
+  const surfaceId = message.surfaceId;
+  void handleRequest(message).then(
+    (response) => {
+      (self as unknown as WorkerResponsePort).postMessage(response, []);
+    },
+    (error) => {
+      const response: NativeSurfaceEngineResponse = {
+        type: "error",
+        id,
+        surfaceId,
+        error: error instanceof Error ? error.message : String(error),
+        metrics: buildMetrics(),
+      };
+      (self as unknown as WorkerResponsePort).postMessage(response, []);
+    },
+  );
 };
 

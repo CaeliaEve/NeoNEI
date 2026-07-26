@@ -65,11 +65,17 @@ test('native renderer command protocol owns layout command parsing', () => {
   values.set([11, 21, 31, 41, 51, 61, 71, 1, 5], 0);
   values.set([12, 22, 32, 42, 52, 62, 72, 2, 18], 9);
 
-  assert.deepEqual(parseNativeLayoutCommandBuffer(values.buffer, 9, 2), [
-    { x: 21, y: 31, size: 41, kind: 1, flags: 5 },
-    { x: 22, y: 32, size: 42, kind: 2, flags: 18 },
-  ]);
-  assert.deepEqual(parseNativeLayoutCommandBuffer(values.buffer, 8, 2), []);
+  const batch = parseNativeLayoutCommandBuffer(values.buffer, 9, 2);
+  assert.equal(batch.values.buffer, values.buffer);
+  assert.equal(batch.stride, 9);
+  assert.equal(batch.count, 2);
+  assert.deepEqual(batch.fieldOffsets, NATIVE_RENDERER_LAYOUT_COMMAND_BUFFER_DESCRIPTOR.fieldOffsets);
+  assert.equal(batch.values[batch.fieldOffsets.x], 21);
+  assert.equal(batch.values[batch.stride + batch.fieldOffsets.flags], 18);
+
+  const malformed = parseNativeLayoutCommandBuffer(values.buffer, 8, 2);
+  assert.equal(malformed.count, 0);
+  assert.equal(malformed.values.length, 0);
 });
 
 test('native render worker policy catalog owns backend probes and resource requirements', async () => {

@@ -4,6 +4,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import {
+  ELYSIUM_COMPILER_CAPABILITY_SOURCE,
   REQUIRED_COMPILER_COMMAND_INVOCATIONS,
   validateElysiumCompilerCapabilityAbi,
 } from './elysium-compiler-capability-abi.mjs';
@@ -120,6 +121,7 @@ for (const candidate of availableCandidates) {
     ['exportAbiVersion', lock.exportAbiVersion],
     ['packAbiVersion', lock.packAbiVersion],
     ['runtimeAbiVersion', lock.runtimeAbiVersion],
+    ['schemaHash', ELYSIUM_COMPILER_CAPABILITY_SOURCE.schemaHash],
   ]) {
     if (expected && metadata[field] !== expected) {
       failures.push(`${field}: expected ${expected}, got ${metadata[field]}`);

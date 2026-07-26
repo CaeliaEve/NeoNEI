@@ -16,7 +16,7 @@ export type RuntimeRecipeUiPayloadIndexEntry = {
   recipeId: string;
   path: string;
   payloadKey?: string;
-  familyKey?: string;
+  captureKey?: string;
   recipeType?: string;
   machineType?: string;
   handlerKey?: string;
@@ -146,7 +146,7 @@ export function parseRuntimeRecipePack(buffer: Buffer): ParsedRuntimeRecipePack 
       recipeId,
       path: payloadPath,
       payloadKey: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 2)) || undefined,
-      familyKey: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 3)) || undefined,
+      captureKey: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 3)) || undefined,
       recipeType: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 4)) || undefined,
       machineType: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 5)) || undefined,
       handlerKey: compactString(strings, readRowValue(uiRowsStart, row, uiStride, 6)) || undefined,

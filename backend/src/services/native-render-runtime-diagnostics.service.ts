@@ -1,9 +1,9 @@
 import fs from 'fs';
 import {
-  CURRENT_RUNTIME_DIST_DATA_DIR,
-  CURRENT_RUNTIME_DIST_MANIFEST_FILE,
   isPortableRuntimePath,
   normalizeRuntimePath,
+  resolveCurrentRuntimeDistDataDir,
+  resolveCurrentRuntimeDistManifestFile,
   resolveDistDataRuntimeFile,
 } from './current-runtime-artifact-index.service';
 import {
@@ -161,6 +161,7 @@ function readJsonArtifact<T extends JsonRecord>(
 
 function resolveNativeRenderIndexArtifact(
   manifestArtifact: NativeRenderRuntimeJsonArtifactProbe<DistDataManifest>,
+  generationRoot: string,
 ): NativeRenderRuntimeJsonArtifactProbe<NativeRenderIndex> {
   if (manifestArtifact.status !== NATIVE_RENDER_RUNTIME_ARTIFACT_PROBE_STATUS.present || !manifestArtifact.data) {
     return artifactProbe<NativeRenderIndex>(
@@ -194,7 +195,7 @@ function resolveNativeRenderIndexArtifact(
   try {
     return readJsonArtifact<NativeRenderIndex>(
       NATIVE_RENDER_RUNTIME_ARTIFACTS.nativeRenderIndex,
-      resolveDistDataRuntimeFile(relativePath),
+      resolveDistDataRuntimeFile(relativePath, generationRoot),
       relativePath,
     );
   } catch (error) {
@@ -347,14 +348,14 @@ function artifactErrorMessages(
 }
 
 export function getNativeRenderRuntimeDiagnostics(): NativeRenderRuntimeDiagnostics {
-  const distDataRoot = CURRENT_RUNTIME_DIST_DATA_DIR;
-  const manifestPath = CURRENT_RUNTIME_DIST_MANIFEST_FILE;
+  const distDataRoot = resolveCurrentRuntimeDistDataDir();
+  const manifestPath = resolveCurrentRuntimeDistManifestFile(distDataRoot);
   const manifestArtifact = readJsonArtifact<DistDataManifest>(
     NATIVE_RENDER_RUNTIME_ARTIFACTS.manifest,
     manifestPath,
     'manifest.json',
   );
-  const nativeRenderIndexArtifact = resolveNativeRenderIndexArtifact(manifestArtifact);
+  const nativeRenderIndexArtifact = resolveNativeRenderIndexArtifact(manifestArtifact, distDataRoot);
   const nativeRenderIndex = nativeRenderIndexArtifact.data;
   const validation = nativeRenderIndex?.validation ?? null;
   const validationStatus = validation?.[NATIVE_RENDER_RUNTIME_VALIDATION_FIELDS.status] ?? null;

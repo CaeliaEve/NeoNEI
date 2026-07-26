@@ -145,6 +145,9 @@ export interface UiPackBinding {
   templateSignature: string;
   canonicalMachineFamily: string;
   layoutKind: string;
+  presentationSurface: string;
+  layoutId: string;
+  rendererId: string;
   bound: boolean;
 }
 
@@ -547,10 +550,15 @@ function parseUiBindings(payloadBuffer: ArrayBuffer, strings: string[]): UiPackB
     "UI binding pack",
   );
   const bindings: UiPackBinding[] = [];
+  const recipeIds = new Set<string>();
   for (let index = 0; index < bindingCount; index += 1) {
     const rowOffset = payloadOffset + index * rowStride * 4;
     const templateKey = resolveString(strings, readU32(view, rowOffset + 24));
-    bindings.push({
+    const flags = readU32(view, rowOffset + 52);
+    if (flags !== 0 && flags !== 1) {
+      throw new Error(`UI binding ${index} has invalid flags: ${flags}`);
+    }
+    const binding: UiPackBinding = {
       recipeId: resolveString(strings, readU32(view, rowOffset + 0)),
       path: resolveString(strings, readU32(view, rowOffset + 4)),
       payloadKey: resolveString(strings, readU32(view, rowOffset + 8)),
@@ -561,8 +569,32 @@ function parseUiBindings(payloadBuffer: ArrayBuffer, strings: string[]): UiPackB
       templateSignature: resolveString(strings, readU32(view, rowOffset + 28)),
       canonicalMachineFamily: resolveString(strings, readU32(view, rowOffset + 32)),
       layoutKind: resolveString(strings, readU32(view, rowOffset + 36)),
-      bound: Boolean(templateKey),
-    });
+      presentationSurface: resolveString(strings, readU32(view, rowOffset + 40)),
+      layoutId: resolveString(strings, readU32(view, rowOffset + 44)),
+      rendererId: resolveString(strings, readU32(view, rowOffset + 48)),
+      bound: flags === 1,
+    };
+    if (!binding.recipeId || !binding.path || !binding.payloadKey) {
+      throw new Error(`UI binding ${index} is missing recipe identity or payload path`);
+    }
+    if (!recipeIds.add(binding.recipeId)) {
+      throw new Error(`UI binding pack has duplicate recipeId: ${binding.recipeId}`);
+    }
+    if (binding.bound !== Boolean(templateKey)) {
+      throw new Error(`UI binding ${binding.recipeId} has inconsistent bound flag and templateKey`);
+    }
+    if (binding.bound && (
+      !binding.familyKey
+      || !binding.templateSignature
+      || !binding.canonicalMachineFamily
+      || !binding.layoutKind
+      || !binding.presentationSurface
+      || !binding.layoutId
+      || !binding.rendererId
+    )) {
+      throw new Error(`UI binding ${binding.recipeId} is missing required v2 presentation metadata`);
+    }
+    bindings.push(binding);
   }
   return bindings;
 }

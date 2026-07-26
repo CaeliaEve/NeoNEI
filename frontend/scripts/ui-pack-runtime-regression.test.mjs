@@ -220,6 +220,9 @@ function encodeBindingPack(strings) {
     index.get('self-test-furnace') ?? 0,
     index.get('furnace') ?? 0,
     index.get('furnace') ?? 0,
+    index.get('machine') ?? 0,
+    index.get('furnace') ?? 0,
+    index.get('furnace') ?? 0,
     1,
   ];
   for (const value of row) {
@@ -367,6 +370,7 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
     'gt-progress',
     'horizontal',
     'template-pack-v9',
+    'machine',
   ];
   const templatePack = encodeTemplatePack(strings);
   const bindingPack = encodeBindingPack(strings);
@@ -454,7 +458,22 @@ test('loadUiPackRuntime decodes current runtime ui-pack files', async () => {
       fillColor: '',
       borderColor: '',
     });
-    assert.equal(runtime.bindingsByRecipeId.get('r1')?.templateKey, 'furnace@default');
+    assert.deepEqual(runtime.bindingsByRecipeId.get('r1'), {
+      recipeId: 'r1',
+      path: 'recipes/ui-payload-shards/55.json',
+      payloadKey: 'r1',
+      familyKey: 'furnace',
+      recipeType: 'furnace',
+      machineType: 'Furnace',
+      templateKey: 'furnace@default',
+      templateSignature: 'self-test-furnace',
+      canonicalMachineFamily: 'furnace',
+      layoutKind: 'furnace',
+      presentationSurface: 'machine',
+      layoutId: 'furnace',
+      rendererId: 'furnace',
+      bound: true,
+    });
   } finally {
     globalThis.fetch = originalFetch;
     clearUiPackRuntimeCache();

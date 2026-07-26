@@ -1,7 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import { DIST_DATA_DIR } from '../config/runtime-paths';
+import { resolveCurrentExternalRuntimeGeneration } from './external-runtime-generation.service';
 import {
+  CURRENT_RUNTIME_ARTIFACT_PATHS,
   CURRENT_RUNTIME_ARTIFACT_STATUS,
   type CurrentRuntimeArtifactProbe,
   type CurrentRuntimeArtifactReadKind,
@@ -37,8 +39,15 @@ export type CurrentRuntimeArtifactInventory = Readonly<{
   errors: readonly string[];
 }>;
 
-export const CURRENT_RUNTIME_DIST_DATA_DIR = DIST_DATA_DIR;
-export const CURRENT_RUNTIME_DIST_MANIFEST_FILE = path.join(CURRENT_RUNTIME_DIST_DATA_DIR, 'manifest.json');
+export function resolveCurrentRuntimeDistDataDir(): string {
+  return resolveCurrentExternalRuntimeGeneration(DIST_DATA_DIR).generationRoot;
+}
+
+export function resolveCurrentRuntimeDistManifestFile(
+  generationRoot = resolveCurrentRuntimeDistDataDir(),
+): string {
+  return path.join(path.resolve(generationRoot), CURRENT_RUNTIME_ARTIFACT_PATHS.distManifest);
+}
 
 function asRecord(value: unknown): CurrentRuntimeJsonRecord | null {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as CurrentRuntimeJsonRecord : null;
@@ -201,14 +210,17 @@ export function normalizeRuntimePath(value: string): string {
   return value.trim().replace(/\\/g, '/').replace(/^\/+/, '');
 }
 
-export function resolveDistDataRuntimeFile(relativeFileName: string): string {
+export function resolveDistDataRuntimeFile(
+  relativeFileName: string,
+  generationRoot = resolveCurrentRuntimeDistDataDir(),
+): string {
   const raw = `${relativeFileName ?? ''}`.trim().replace(/\\/g, '/');
   if (!raw || raw.includes('..') || path.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw)) {
     throw new Error('fileName must be a runtime-relative file path');
   }
   const normalized = normalizeRuntimePath(raw);
-  const resolved = path.resolve(CURRENT_RUNTIME_DIST_DATA_DIR, normalized);
-  const runtimeRoot = path.resolve(CURRENT_RUNTIME_DIST_DATA_DIR);
+  const resolved = path.resolve(generationRoot, normalized);
+  const runtimeRoot = path.resolve(generationRoot);
   if (resolved !== runtimeRoot && !resolved.startsWith(`${runtimeRoot}${path.sep}`)) {
     throw new Error('fileName escapes dist-data root');
   }
@@ -267,11 +279,12 @@ export function collectDeclaredRuntimeFilePaths(
 
 export function buildCurrentRuntimeArtifactInventory(
   declaredFiles: readonly string[],
+  generationRoot = resolveCurrentRuntimeDistDataDir(),
 ): CurrentRuntimeArtifactInventory {
   const artifacts: Record<string, CurrentRuntimeArtifact> = {};
   const probes: Record<string, CurrentRuntimeArtifactProbe> = {};
   for (const relativePath of declaredFiles) {
-    const absolutePath = resolveDistDataRuntimeFile(relativePath);
+    const absolutePath = resolveDistDataRuntimeFile(relativePath, generationRoot);
     const probe = probeCurrentRuntimeFile(absolutePath, relativePath);
     probes[relativePath] = probe;
     if (probe.status === CURRENT_RUNTIME_ARTIFACT_STATUS.present) {
@@ -298,8 +311,8 @@ export function buildCurrentRuntimeArtifactInventory(
   });
 }
 
-function fileFingerprint(relativePath: string): string {
-  const absolutePath = resolveDistDataRuntimeFile(relativePath);
+function fileFingerprint(relativePath: string, generationRoot: string): string {
+  const absolutePath = resolveDistDataRuntimeFile(relativePath, generationRoot);
   const probe = probeCurrentRuntimeFile(absolutePath, relativePath);
   return probe.status === CURRENT_RUNTIME_ARTIFACT_STATUS.present
     ? `${relativePath}:${probe.bytes}:${probe.mtimeMs}`
@@ -309,10 +322,12 @@ function fileFingerprint(relativePath: string): string {
 export function buildCurrentRuntimeSnapshotFingerprint(
   runtimeManifestPath: string,
   declaredFiles: readonly string[],
+  generationRoot = resolveCurrentRuntimeDistDataDir(),
 ): string {
   return [
-    fileFingerprint('manifest.json'),
-    fileFingerprint(runtimeManifestPath),
-    ...declaredFiles.map((relativePath) => fileFingerprint(relativePath)),
+    `generationRoot:${path.resolve(generationRoot)}`,
+    fileFingerprint(CURRENT_RUNTIME_ARTIFACT_PATHS.distManifest, generationRoot),
+    fileFingerprint(runtimeManifestPath, generationRoot),
+    ...declaredFiles.map((relativePath) => fileFingerprint(relativePath, generationRoot)),
   ].join('|');
 }

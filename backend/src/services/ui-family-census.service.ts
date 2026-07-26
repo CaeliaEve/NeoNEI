@@ -1,6 +1,7 @@
 import fs from 'fs';
-import { NESQL_UI_FAMILY_CENSUS_FILE } from '../config/runtime-paths';
 import { notFound } from '../utils/http';
+import { CURRENT_RUNTIME_ARTIFACT_PATHS } from './current-runtime-artifact-index-abi';
+import { resolveDistDataRuntimeFile } from './current-runtime-artifact-index.service';
 
 export interface UiFamilyCensusMember {
   handler: string;
@@ -59,6 +60,7 @@ export interface UiFamilyCensusServiceOptions {
 }
 
 type CachedCensus = {
+  filePath: string;
   mtimeMs: number;
   report: UiFamilyCensusReport;
   familyIndex: Map<string, UiFamilyCensusFamily>;
@@ -156,10 +158,15 @@ function normalizeReport(value: unknown): UiFamilyCensusReport {
 
 export class UiFamilyCensusService {
   private cache: CachedCensus | null = null;
-  private readonly censusFilePath: string;
+  private readonly explicitCensusFilePath: string | null;
 
   constructor(options: UiFamilyCensusServiceOptions = {}) {
-    this.censusFilePath = options.censusFilePath ?? NESQL_UI_FAMILY_CENSUS_FILE;
+    this.explicitCensusFilePath = options.censusFilePath ?? null;
+  }
+
+  private resolveCensusFilePath(): string {
+    return this.explicitCensusFilePath
+      ?? resolveDistDataRuntimeFile(CURRENT_RUNTIME_ARTIFACT_PATHS.uiFamilyCensus);
   }
 
   getReport(): UiFamilyCensusReport {
@@ -172,15 +179,15 @@ export class UiFamilyCensusService {
     return report;
   }
 
-  getReportOrNull(): UiFamilyCensusReport | null {
-    if (!this.censusFilePath || !fs.existsSync(this.censusFilePath)) {
+  getReportOrNull(censusFilePath = this.resolveCensusFilePath()): UiFamilyCensusReport | null {
+    if (!fs.existsSync(censusFilePath)) {
       return null;
     }
-    const stat = fs.statSync(this.censusFilePath);
-    if (this.cache && this.cache.mtimeMs === stat.mtimeMs) {
+    const stat = fs.statSync(censusFilePath);
+    if (this.cache && this.cache.filePath === censusFilePath && this.cache.mtimeMs === stat.mtimeMs) {
       return this.cache.report;
     }
-    const raw = fs.readFileSync(this.censusFilePath, 'utf8');
+    const raw = fs.readFileSync(censusFilePath, 'utf8');
     const report = normalizeReport(JSON.parse(raw));
     const familyIndex = new Map<string, UiFamilyCensusFamily>();
     for (const family of report.families) {
@@ -188,7 +195,7 @@ export class UiFamilyCensusService {
         familyIndex.set(family.familyKey, family);
       }
     }
-    this.cache = { mtimeMs: stat.mtimeMs, report, familyIndex };
+    this.cache = { filePath: censusFilePath, mtimeMs: stat.mtimeMs, report, familyIndex };
     return report;
   }
 
@@ -205,15 +212,15 @@ export class UiFamilyCensusService {
     return this.getReport().families;
   }
 
-  private getCacheOrNull(): CachedCensus | null {
-    if (!this.censusFilePath || !fs.existsSync(this.censusFilePath)) {
+  private getCacheOrNull(censusFilePath = this.resolveCensusFilePath()): CachedCensus | null {
+    if (!fs.existsSync(censusFilePath)) {
       return null;
     }
-    const stat = fs.statSync(this.censusFilePath);
-    if (this.cache && this.cache.mtimeMs === stat.mtimeMs) {
+    const stat = fs.statSync(censusFilePath);
+    if (this.cache && this.cache.filePath === censusFilePath && this.cache.mtimeMs === stat.mtimeMs) {
       return this.cache;
     }
-    this.getReportOrNull();
+    this.getReportOrNull(censusFilePath);
     return this.cache;
   }
 }

@@ -8,6 +8,7 @@ import type {
 } from "../native-surface/NativeSurfaceRenderProtocol";
 import { parseNativeLayoutCommandBuffer } from "../renderers/native/NativeRendererCommandProtocol.ts";
 import type { NativeRendererBackend } from "../renderers/native/NativeRendererBackend.ts";
+import { commitNativeRenderFrame } from "./nativeRenderFrameCommit.ts";
 import {
   assertNativeRendererProbeSupported,
 } from "../renderers/native/NativeRendererProbe.ts";
@@ -18,6 +19,12 @@ import {
   requireNativeRenderWorkerResource,
   type NativeRenderWorkerResourceOperation,
 } from "./nativeRenderWorkerPolicyCatalog";
+import {
+  getNativeRenderPipelineTransferables,
+  isNativeRenderPipelineMessage,
+  type NativeRenderPipelineFrameRequest,
+  type NativeRenderPipelineMessage,
+} from "../native-surface/NativeRenderPipelineProtocol";
 
 let canvas: OffscreenCanvas | null = null;
 let requestedBackend: "auto" | NativeRenderBackendKind | null = null;
@@ -53,6 +60,9 @@ let height = 0;
 let nativeRenderer: NativeRendererBackend | null = null;
 const uploadedTextureKeys = new Set<string>();
 let rendererMaxTextureSize = 0;
+let enginePort: MessagePort | null = null;
+let engineSessionId: string | null = null;
+let directFrameQueue: Promise<void> = Promise.resolve();
 
 type TextureTile = {
   key: string;
@@ -159,7 +169,7 @@ function normalizeSpriteCommands(commands: NativeRenderSpriteCommand[]) {
       && command.destWidth > 0
       && command.destHeight > 0
     );
-  return splitSpriteCommandsForVirtualTiles(normalized);
+  return normalized;
 }
 
 function splitSpriteCommandsForVirtualTiles(commands: NativeRenderSpriteCommand[]): NativeRenderSpriteCommand[] {
@@ -190,6 +200,136 @@ function splitSpriteCommandsForVirtualTiles(commands: NativeRenderSpriteCommand[
     }
   }
   return result;
+}
+
+function postPipelineMessage(message: NativeRenderPipelineMessage): void {
+  if (!enginePort || !engineSessionId || message.sessionId !== engineSessionId) {
+    throw new Error("Native render engine port is not connected");
+  }
+  enginePort.postMessage(message, getNativeRenderPipelineTransferables(message));
+}
+
+function closeEnginePort(): void {
+  enginePort?.close();
+  enginePort = null;
+  engineSessionId = null;
+  directFrameQueue = Promise.resolve();
+}
+
+type NativeRenderPipelineFrameResult = Readonly<{
+  response: NativeRenderResponse;
+  status: "rendered" | "deferred";
+  missingTextureKeys: string[];
+}>;
+
+async function renderPipelineFrame(
+  message: NativeRenderPipelineFrameRequest,
+): Promise<NativeRenderPipelineFrameResult> {
+  const frameToken = Math.max(0, Math.floor(Number(message.frameToken) || 0));
+  if (frameToken < latestFrameToken) {
+    droppedStaleFrames += 1;
+    return {
+      response: { type: "frame", id: -frameToken, metrics: buildMetrics() },
+      status: "deferred" as const,
+      missingTextureKeys: [],
+    };
+  }
+  latestFrameToken = frameToken;
+  const startedAt = performance.now();
+  commandCount = Math.max(0, Math.floor(message.commandCount || 0));
+  const parseStartedAt = performance.now();
+  const parsedCommands = parseNativeLayoutCommandBuffer(message.commandBuffer, message.commandStride, commandCount);
+  lastParseMs = performance.now() - parseStartedAt;
+  const normalizeStartedAt = performance.now();
+  const normalizedCommands = normalizeSpriteCommands(message.spriteCommands ?? []);
+  normalizedSpriteCommands = normalizedCommands.length;
+  lastSpriteNormalizeMs = performance.now() - normalizeStartedAt;
+  const renderer = requireNativeRenderer("render");
+  const drawStartedAt = performance.now();
+  const commit = commitNativeRenderFrame(
+    renderer,
+    width,
+    height,
+    parsedCommands,
+    normalizedCommands,
+    uploadedTextureKeys,
+    splitSpriteCommandsForVirtualTiles,
+  );
+  if (commit.status === "deferred") {
+    return {
+      response: { type: "frame", id: -frameToken, metrics: buildMetrics() },
+      status: commit.status,
+      missingTextureKeys: commit.missingTextureKeys,
+    };
+  }
+  const renderStats = commit.stats;
+  lastDrawMs = performance.now() - drawStartedAt;
+  drawCalls = renderStats.drawCalls;
+  vertexCount = renderStats.vertexCount;
+  spriteDrawCalls = renderStats.spriteDrawCalls;
+  spriteVertexCount = renderStats.spriteVertexCount;
+  void message.nowMs;
+  frames += 1;
+  lastFrameMs = performance.now() - startedAt;
+  rememberFrameSample(lastFrameMs);
+  return {
+    response: { type: "frame", id: -frameToken, metrics: buildMetrics() },
+    status: commit.status,
+    missingTextureKeys: commit.missingTextureKeys,
+  };
+}
+
+function installEnginePort(sessionId: string, port: MessagePort): void {
+  closeEnginePort();
+  enginePort = port;
+  engineSessionId = sessionId;
+  enginePort.onmessage = (event: MessageEvent<unknown>) => {
+    if (!isNativeRenderPipelineMessage(event.data) || event.data.sessionId !== engineSessionId) {
+      closeEnginePort();
+      return;
+    }
+    const message = event.data;
+    if (message.type === "pipelineHandshake") {
+      postPipelineMessage({ type: "pipelineReady", sessionId });
+      return;
+    }
+    if (message.type !== "renderFrame") return;
+    directFrameQueue = directFrameQueue.then(async () => {
+      try {
+        const result = await renderPipelineFrame(message);
+        self.postMessage(result.response);
+        postPipelineMessage({
+          type: "frameRendered",
+          sessionId,
+          frameToken: message.frameToken,
+          status: result.status,
+          missingTextureKeys: result.missingTextureKeys,
+        });
+      } catch (error) {
+        const response: NativeRenderResponse = {
+          type: "error",
+          id: -message.frameToken,
+          code: "NATIVE_RENDER_PIPELINE_FRAME_ERROR",
+          message: error instanceof Error ? error.message : String(error),
+          metrics: buildMetrics(),
+        };
+        self.postMessage(response);
+        try {
+          postPipelineMessage({
+            type: "pipelineError",
+            sessionId,
+            frameToken: message.frameToken,
+            code: response.code,
+            message: response.message,
+          });
+        } finally {
+          closeEnginePort();
+        }
+      }
+    });
+  };
+  enginePort.onmessageerror = () => closeEnginePort();
+  enginePort.start();
 }
 
 function canUploadWholeBitmap(bitmap: ImageBitmap): boolean {
@@ -304,6 +444,25 @@ async function uploadTexturesInBatches(textures: Array<{ key: string; url: strin
 
 async function handleRequest(message: NativeRenderRequest): Promise<NativeRenderResponse> {
   switch (message.type) {
+    case "connectEnginePort":
+      installEnginePort(message.sessionId, message.port);
+      return {
+        type: "pipelineConnected",
+        id: message.id,
+        sessionId: message.sessionId,
+        metrics: buildMetrics(),
+      };
+    case "disconnectEnginePort":
+      if (!engineSessionId || engineSessionId !== message.sessionId) {
+        throw new Error("Native render pipeline disconnect session mismatch");
+      }
+      closeEnginePort();
+      return {
+        type: "pipelineDisconnected",
+        id: message.id,
+        sessionId: message.sessionId,
+        metrics: buildMetrics(),
+      };
     case "initialize": {
       canvas = message.canvas;
       requestedBackend = message.renderer;
@@ -356,46 +515,13 @@ async function handleRequest(message: NativeRenderRequest): Promise<NativeRender
         canvas.height = height;
       }
       return { type: "metrics", id: message.id, metrics: buildMetrics() };
-    case "render": {
-      const frameToken = Math.max(0, Math.floor(Number(message.frameToken) || 0));
-      if (frameToken < latestFrameToken) {
-        droppedStaleFrames += 1;
-        return { type: "frame", id: message.id, metrics: buildMetrics() };
-      }
-      latestFrameToken = frameToken;
-      const startedAt = performance.now();
-      commandCount = Math.max(0, Math.floor(message.commandCount || 0));
-      const parseStartedAt = performance.now();
-      const parsedCommands = parseNativeLayoutCommandBuffer(message.commandBuffer, message.commandStride, commandCount);
-      lastParseMs = performance.now() - parseStartedAt;
-      const normalizeStartedAt = performance.now();
-      const frameSpriteCommands = normalizeSpriteCommands(message.spriteCommands ?? []);
-      normalizedSpriteCommands = frameSpriteCommands.length;
-      lastSpriteNormalizeMs = performance.now() - normalizeStartedAt;
-      const drawStartedAt = performance.now();
-      const renderStats = requireNativeRenderer("render").render(
-        width,
-        height,
-        parsedCommands,
-        frameSpriteCommands,
-      );
-      lastDrawMs = performance.now() - drawStartedAt;
-      drawCalls = renderStats.drawCalls;
-      vertexCount = renderStats.vertexCount;
-      spriteDrawCalls = renderStats.spriteDrawCalls;
-      spriteVertexCount = renderStats.spriteVertexCount;
-      void message.nowMs;
-      frames += 1;
-      lastFrameMs = performance.now() - startedAt;
-      rememberFrameSample(lastFrameMs);
-      return { type: "frame", id: message.id, metrics: buildMetrics() };
-    }
     case "setAnimationEnabled":
       animationEnabled = Boolean(message.enabled);
       return { type: "metrics", id: message.id, metrics: buildMetrics() };
     case "metrics":
       return { type: "metrics", id: message.id, metrics: buildMetrics() };
     case "dispose":
+      closeEnginePort();
       nativeRenderer?.dispose();
       nativeRenderer = null;
       uploadedTextureKeys.clear();

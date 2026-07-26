@@ -157,31 +157,7 @@ export const NESQL_RENDER_INDEX_FILE = pickFirstExistingPath([
   pickEnv('NESQL_RENDER_INDEX_FILE'),
   NESQL_CANONICAL_DIR ? path.join(NESQL_CANONICAL_DIR, 'render-index.json') : undefined,
 ]);
-export const NESQL_BROWSER_ATLAS_INDEX_FILE = pickFirstExistingPath([
-  pickEnv('NESQL_BROWSER_ATLAS_INDEX_FILE'),
-  path.join(DIST_DATA_DIR, 'textures', 'browser-atlas-index.json'),
-]);
-export const NESQL_BROWSER_LAYOUT_INDEX_FILE = pickFirstExistingPath([
-  pickEnv('NESQL_BROWSER_LAYOUT_INDEX_FILE'),
-  path.join(DIST_DATA_DIR, 'browser', 'item-catalog.json'),
-]);
 export const NESQL_ATLAS_REGISTRY_FILE = pickFirstExistingPath([
   pickEnv('NESQL_ATLAS_REGISTRY_FILE'),
   NESQL_CANONICAL_DIR ? path.join(NESQL_CANONICAL_DIR, 'atlas-registry.json') : undefined,
-]);
-export const NESQL_UI_FAMILY_CENSUS_FILE = pickFirstExistingPath([
-  pickEnv('NESQL_UI_FAMILY_CENSUS_FILE'),
-  path.join(DIST_DATA_DIR, 'rust', 'ui-pack', 'ui_family_census.json'),
-]);
-export const NESQL_UI_TEMPLATE_CATALOG_FILE = pickFirstExistingPath([
-  pickEnv('NESQL_UI_TEMPLATE_CATALOG_FILE'),
-  path.join(DIST_DATA_DIR, 'rust', 'ui-pack', 'ui_template_catalog.json'),
-]);
-export const NESQL_UI_TEMPLATE_BINDING_INDEX_FILE = pickFirstExistingPath([
-  pickEnv('NESQL_UI_TEMPLATE_BINDING_INDEX_FILE'),
-  path.join(DIST_DATA_DIR, 'rust', 'ui-pack', 'ui_template_binding_index.json'),
-]);
-export const NESQL_UI_PAYLOAD_INDEX_FILE = pickFirstExistingPath([
-  pickEnv('NESQL_UI_PAYLOAD_INDEX_FILE'),
-  path.join(DIST_DATA_DIR, 'recipes', 'ui-payload-index.json'),
 ]);

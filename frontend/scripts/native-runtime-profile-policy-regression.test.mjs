@@ -57,6 +57,8 @@ test('native runtime catalog owns ABI pack, UI entrypoint, capability, and profi
     NATIVE_RUNTIME_CAPABILITIES,
     NATIVE_RUNTIME_CAPABILITY_DESCRIPTOR_LIST.map((descriptor) => descriptor.name),
   );
+  assert.equal(NATIVE_RUNTIME_CAPABILITIES.includes('native_ui.semantic_layout'), true);
+  assert.equal(NATIVE_RUNTIME_CAPABILITIES.includes('native_ui.background_asset'), false);
   assert.deepEqual(NATIVE_RUNTIME_REQUIRED_CAPABILITIES, [
     'recipes.native-ui-layout',
     'recipes.ui-pack',

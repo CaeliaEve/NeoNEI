@@ -1,11 +1,3 @@
-export type NativeRenderCommand = {
-  x: number;
-  y: number;
-  size: number;
-  kind: number;
-  flags: number;
-};
-
 export type NativeTextureSpriteCommand = {
   textureKey: string;
   sourceX: number;
@@ -36,6 +28,13 @@ type NativeLayoutCommandBufferDescriptor = Readonly<{
   }>;
 }>;
 
+export type NativeLayoutCommandBatch = Readonly<{
+  values: Uint32Array;
+  stride: number;
+  count: number;
+  fieldOffsets: NativeLayoutCommandBufferDescriptor["fieldOffsets"];
+}>;
+
 export const NATIVE_RENDERER_COMMAND_PROTOCOL_ABI = Object.freeze({
   schema: "neonei/native-renderer-command-protocol/current",
   owner: "native-renderer",
@@ -60,30 +59,39 @@ export function parseNativeLayoutCommandBuffer(
   commandStride: number,
   count: number,
   descriptor: NativeLayoutCommandBufferDescriptor = NATIVE_RENDERER_LAYOUT_COMMAND_BUFFER_DESCRIPTOR,
-): NativeRenderCommand[] {
+): NativeLayoutCommandBatch {
+  const offsets = Object.values(descriptor.fieldOffsets);
+  const descriptorValid = Number.isSafeInteger(descriptor.u32Stride)
+    && descriptor.u32Stride > 0
+    && offsets.every((offset) => Number.isSafeInteger(offset) && offset >= 0 && offset < descriptor.u32Stride);
+  const envelopeValid = commandBuffer instanceof ArrayBuffer
+    && commandBuffer.byteLength % Uint32Array.BYTES_PER_ELEMENT === 0
+    && Number.isSafeInteger(commandStride)
+    && commandStride >= descriptor.u32Stride
+    && Number.isSafeInteger(count)
+    && count > 0;
+  const requiredBytes = envelopeValid
+    ? commandStride * count * Uint32Array.BYTES_PER_ELEMENT
+    : 0;
   if (
-    commandStride < descriptor.u32Stride
-    || count <= 0
-    || commandBuffer.byteLength < commandStride * Uint32Array.BYTES_PER_ELEMENT
+    !descriptorValid
+    || !envelopeValid
+    || !Number.isSafeInteger(requiredBytes)
+    || commandBuffer.byteLength < requiredBytes
   ) {
-    return [];
+    return {
+      values: new Uint32Array(0),
+      stride: descriptor.u32Stride,
+      count: 0,
+      fieldOffsets: descriptor.fieldOffsets,
+    };
   }
 
   const values = new Uint32Array(commandBuffer);
-  const maxCount = Math.min(count, Math.floor(values.length / commandStride));
-  const result: NativeRenderCommand[] = [];
-  const offsets = descriptor.fieldOffsets;
-
-  for (let index = 0; index < maxCount; index += 1) {
-    const offset = index * commandStride;
-    result.push({
-      x: values[offset + offsets.x] ?? 0,
-      y: values[offset + offsets.y] ?? 0,
-      size: values[offset + offsets.size] ?? 0,
-      kind: values[offset + offsets.kind] ?? 0,
-      flags: values[offset + offsets.flags] ?? 0,
-    });
-  }
-
-  return result;
+  return {
+    values,
+    stride: commandStride,
+    count,
+    fieldOffsets: descriptor.fieldOffsets,
+  };
 }

@@ -1,3 +1,8 @@
+import {
+  fetchRuntimeArtifactArrayBuffer,
+  fetchRuntimeArtifactJson,
+} from "./runtimeArtifactClient.ts";
+
 function trimSlashes(value: string): string {
   return value.replace(/^\/+|\/+$/g, "");
 }
@@ -76,24 +81,43 @@ export function resolveDistDataNativeRuntimeManifestPath(): string | null {
   return "/api/runtime/current/manifest";
 }
 
-export async function fetchDistDataJson<T>(url: string): Promise<T> {
-  const response = await fetch(url, {
-    cache: "no-cache",
-    credentials: "same-origin",
+export async function fetchDistDataJson<T>(
+  url: string,
+  options?: { persistent?: boolean; memory?: boolean },
+): Promise<T> {
+  return fetchRuntimeArtifactJson<T>({
+    artifactPath: canonicalArtifactPath(url),
+    resolvedUrl: url,
+    persistent: options?.persistent,
+    memory: options?.memory,
+    fetchInit: {
+      cache: "no-cache",
+      credentials: "same-origin",
+    },
   });
-  if (!response.ok) {
-    throw new Error(`dist-data request failed (${response.status}) for ${url}`);
-  }
-  return response.json() as Promise<T>;
 }
 
-export async function fetchDistDataArrayBuffer(url: string): Promise<ArrayBuffer> {
-  const response = await fetch(url, {
-    cache: "no-cache",
-    credentials: "same-origin",
+export async function fetchDistDataArrayBuffer(
+  url: string,
+  options?: { persistent?: boolean; memory?: boolean },
+): Promise<ArrayBuffer> {
+  return fetchRuntimeArtifactArrayBuffer({
+    artifactPath: canonicalArtifactPath(url),
+    resolvedUrl: url,
+    persistent: options?.persistent,
+    memory: options?.memory,
+    fetchInit: {
+      cache: "no-cache",
+      credentials: "same-origin",
+    },
   });
-  if (!response.ok) {
-    throw new Error(`dist-data request failed (${response.status}) for ${url}`);
+}
+
+function canonicalArtifactPath(url: string): string {
+  try {
+    const resolved = new URL(url, globalThis.location?.href ?? "http://localhost/");
+    return `${resolved.pathname}${resolved.search}`;
+  } catch {
+    return url;
   }
-  return response.arrayBuffer();
 }

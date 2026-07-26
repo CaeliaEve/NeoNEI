@@ -39,7 +39,7 @@ test('UI Studio surfaces actionable hand-written UI adaptation gaps', () => {
   }
   assert.match(serviceSource, /sampleBoundRecipeIds/);
   assert.match(serviceSource, /sampleUnboundRecipeIds/);
-  assert.match(serviceSource, /resolveRecipePresentationProfileFromUiPayload/);
+  assert.match(serviceSource, /resolveRecipePresentationProfileFromBinding/);
   assert.match(serviceSource, /isRegisteredRecipeComponentName/);
   assert.match(viewSource, /下一步适配流程/);
   assert.match(viewSource, /复制 familyKey 和 sample recipeId/);
@@ -106,6 +106,9 @@ test('UI Studio summary builder classifies covered and unbound families from run
         templateSignature: 'sig',
         canonicalMachineFamily: 'crafting-table',
         layoutKind: 'crafting-grid',
+        presentationSurface: 'workbench',
+        layoutId: 'standard-crafting',
+        rendererId: 'standard_crafting',
         bound: true,
       },
       {
@@ -119,6 +122,9 @@ test('UI Studio summary builder classifies covered and unbound families from run
         templateSignature: '',
         canonicalMachineFamily: '',
         layoutKind: '',
+        presentationSurface: '',
+        layoutId: '',
+        rendererId: '',
         bound: false,
       },
     ],

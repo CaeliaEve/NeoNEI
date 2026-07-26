@@ -22,6 +22,7 @@ function readJson(filePath) {
 }
 
 const COMPACT_RECIPE_MAGIC = 'NEIRCP1\0';
+const UI_TEMPLATE_BINDING_INDEX_SCHEMA = 'neonei/ui-template-binding-index/current';
 
 function readNativeBinaryPack(filePath) {
   const bytes = readFileSync(filePath);
@@ -193,6 +194,56 @@ function fail(failures, code, message, details = {}) {
   failures.push({ code, message, details });
 }
 
+function readUiBindingIndex(manifest, failures) {
+  const relativePath = `${manifest.files?.rustUiTemplateBindingIndex ?? ''}`.trim().replaceAll('\\', '/');
+  if (!relativePath) {
+    fail(failures, 'RUST_UI_BINDING_INDEX_NOT_DECLARED', 'manifest does not declare files.rustUiTemplateBindingIndex');
+    return { relativePath: null, bindingByRecipeId: new Map(), bindingCount: 0 };
+  }
+  const absolutePath = join(distDataDir, relativePath);
+  if (!existsSync(absolutePath)) {
+    fail(failures, 'RUST_UI_BINDING_INDEX_MISSING', 'compiled UI template binding index is missing', { path: relativePath });
+    return { relativePath, bindingByRecipeId: new Map(), bindingCount: 0 };
+  }
+
+  let document;
+  try {
+    document = readJson(absolutePath);
+  } catch (error) {
+    fail(failures, 'RUST_UI_BINDING_INDEX_INVALID', 'compiled UI template binding index is unreadable', {
+      path: relativePath,
+      error: error instanceof Error ? error.message : `${error}`,
+    });
+    return { relativePath, bindingByRecipeId: new Map(), bindingCount: 0 };
+  }
+  if (document?.schemaVersion !== UI_TEMPLATE_BINDING_INDEX_SCHEMA) {
+    fail(failures, 'RUST_UI_BINDING_INDEX_SCHEMA_MISMATCH', 'compiled UI template binding index schema is wrong', {
+      path: relativePath,
+      schemaVersion: document?.schemaVersion ?? null,
+    });
+  }
+  if (!Array.isArray(document?.bindings)) {
+    fail(failures, 'RUST_UI_BINDING_INDEX_INVALID', 'compiled UI template binding index bindings must be an array', {
+      path: relativePath,
+    });
+    return { relativePath, bindingByRecipeId: new Map(), bindingCount: 0 };
+  }
+
+  const bindingByRecipeId = new Map();
+  for (const binding of document.bindings) {
+    const recipeId = `${binding?.recipeId ?? ''}`.trim();
+    if (!recipeId) continue;
+    if (bindingByRecipeId.has(recipeId)) {
+      fail(failures, 'RUST_UI_BINDING_DUPLICATE_RECIPE_ID', 'compiled UI template binding index contains a duplicate recipeId', {
+        recipeId,
+      });
+      continue;
+    }
+    bindingByRecipeId.set(recipeId, binding);
+  }
+  return { relativePath, bindingByRecipeId, bindingCount: document.bindings.length };
+}
+
 function main() {
   const failures = [];
   const warnings = [];
@@ -201,6 +252,7 @@ function main() {
     throw new Error(`dist-data manifest not found: ${manifestPath}`);
   }
   const manifest = readJson(manifestPath);
+  const uiBindingIndex = readUiBindingIndex(manifest, failures);
   const rustRecipeBinRelativePath = `${manifest.files?.rustRecipeBin ?? ''}`.trim();
   if (!rustRecipeBinRelativePath) {
     fail(failures, 'RUST_RECIPE_BIN_NOT_DECLARED', 'manifest does not declare files.rustRecipeBin');
@@ -304,7 +356,7 @@ function main() {
         schemaVersion: payload.schemaVersion ?? null,
       });
     }
-    for (const key of ['familyKey', 'machineType', 'recipeType']) {
+    for (const key of ['machineType', 'recipeType']) {
       if (!`${payload[key] ?? ''}`.trim()) {
         fail(failures, 'RUST_UI_PAYLOAD_DISPLAY_FIELD_MISSING', `rust ui payload missing ${key}`, { recipeId: entry.recipeId });
       }
@@ -312,11 +364,42 @@ function main() {
     if (!Array.isArray(payload.inputItemIds) || !Array.isArray(payload.outputItemIds)) {
       fail(failures, 'RUST_UI_PAYLOAD_ITEM_ARRAYS_MISSING', 'rust ui payload lacks item id arrays', { recipeId: entry.recipeId });
     }
+
+    const binding = uiBindingIndex.bindingByRecipeId.get(entry.recipeId);
+    if (!binding) {
+      fail(failures, 'RUST_UI_BINDING_MISSING', 'compiled UI template binding index lacks sampled recipeId', {
+        recipeId: entry.recipeId,
+      });
+      continue;
+    }
+    const bindingPath = `${binding.path ?? ''}`.trim().replaceAll('\\', '/');
+    const bindingPayloadKey = `${binding.payloadKey ?? ''}`.trim();
+    if (bindingPath !== shardPath || bindingPayloadKey !== entry.payloadKey) {
+      fail(failures, 'RUST_UI_BINDING_IDENTITY_MISMATCH', 'compiled UI binding does not identify the sampled recipe payload', {
+        recipeId: entry.recipeId,
+        expectedPath: shardPath,
+        bindingPath,
+        expectedPayloadKey: entry.payloadKey,
+        bindingPayloadKey,
+      });
+    }
+    for (const key of ['familyKey', 'presentationSurface', 'layoutId', 'rendererId', 'templateKey']) {
+      if (!`${binding[key] ?? ''}`.trim()) {
+        fail(failures, 'RUST_UI_BINDING_PRESENTATION_FIELD_MISSING', `compiled UI binding missing ${key}`, {
+          recipeId: entry.recipeId,
+          field: key,
+        });
+      }
+    }
     checked.push({
       recipeId: entry.recipeId,
       shardPath,
-      familyKey: payload.familyKey,
       machineType: payload.machineType,
+      recipeType: payload.recipeType,
+      familyKey: binding.familyKey,
+      presentationSurface: binding.presentationSurface,
+      layoutId: binding.layoutId,
+      rendererId: binding.rendererId,
     });
   }
 
@@ -337,6 +420,12 @@ function main() {
     checkedCount: checked.length,
     shardCount: recipeBinaryIndex?.shardPathCount ?? shardCache.size,
     checkedShardCount: shardCache.size,
+    uiBindingIndex: {
+      path: uiBindingIndex.relativePath,
+      bindingCount: uiBindingIndex.bindingCount,
+      uniqueRecipeCount: uiBindingIndex.bindingByRecipeId.size,
+      schemaVersion: UI_TEMPLATE_BINDING_INDEX_SCHEMA,
+    },
     failures,
     warnings,
     samples: checked,

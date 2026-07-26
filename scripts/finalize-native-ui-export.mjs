@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveElysiumOutputGeneration } from './lib/elysium-output-generation.mjs';
+import { resolveNesqlRawExportGeneration } from './lib/nesql-raw-export-generation.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -15,10 +17,13 @@ const distDataDir = resolve(
     ?? join(repoRoot, 'backend', 'public', 'dist-data'),
 );
 const explicitCompileScope = readArg('--scope');
+const explicitThreads = readArg('--threads');
 const explicitCompiler = readArg('--compiler') ?? process.env.NEONEI_COMPILER_BIN ?? null;
 const skipCompile = args.includes('--skip-compile');
 const runExtendedRuntime = args.includes('--extended-runtime');
 let compilerCommand = null;
+let compiledDistDataDir = null;
+let resolvedRawExportDir = null;
 
 const steps = [];
 
@@ -36,6 +41,7 @@ function usage() {
     '  --skip-compile       Validate an already compiled dist-data directory.',
     '  --extended-runtime   Also run browser/texture runtime validators after the three final gates.',
     '  --scope <scope>      Rust compile scope; default: all.',
+    '  --threads <count>    Positive compiler worker count; omit to use compiler default.',
     '  --compiler <path>    Use an explicit local elysium-compiler binary instead of the pinned lock binary.',
     '',
     'Environment:',
@@ -117,22 +123,22 @@ function readJson(filePath) {
 
 function resolveCompileScope() {
   if (explicitCompileScope) return explicitCompileScope;
-  if (!rawExportInput) return 'all';
-  const manifestPath = join(resolve(rawExportInput), 'manifest.json');
+  if (!resolvedRawExportDir) return 'all';
+  const manifestPath = join(resolvedRawExportDir, 'manifest.json');
   if (!existsSync(manifestPath)) return 'all';
   const manifest = readJson(manifestPath);
   const profile = `${manifest.profile ?? ''}`;
   const selection = `${manifest.selection ?? ''}`;
   const files = manifest.files ?? {};
   const hasBrowserAtlas = Boolean(`${files.browserAtlasIndex ?? files.browserAtlas ?? ''}`.trim())
-    || existsSync(join(resolve(rawExportInput), 'assets', 'textures', 'browser_atlas_index.json'));
+    || existsSync(join(resolvedRawExportDir, 'assets', 'textures', 'browser_atlas_index.json'));
   if (profile.includes('data') || selection.includes('-images') || !hasBrowserAtlas) {
     return 'native-ui';
   }
   return 'all';
 }
 
-const compileScope = resolveCompileScope();
+let compileScope = explicitCompileScope ?? 'all';
 
 function writeSummary(status, message = null) {
   mkdirSync(reportDir, { recursive: true });
@@ -143,6 +149,7 @@ function writeSummary(status, message = null) {
     rawExportInput: rawExportInput ? resolve(rawExportInput).replaceAll('\\', '/') : null,
     distDataDir: distDataDir.replaceAll('\\', '/'),
     compileScope,
+    threads: explicitThreads ? Number(explicitThreads) : null,
     compiler: compilerCommand,
     skipCompile,
     runExtendedRuntime,
@@ -155,39 +162,54 @@ if (!skipCompile) {
   if (!rawExportInput) fail(`${usage()}\n\nMissing --raw-export.`);
   const rawExportDir = resolve(rawExportInput);
   if (!existsSync(rawExportDir)) fail(`raw export directory does not exist: ${rawExportDir}`);
-  if (!existsSync(join(rawExportDir, 'manifest.json'))) fail(`raw export manifest is missing: ${join(rawExportDir, 'manifest.json')}`);
+  try {
+    resolvedRawExportDir = resolveNesqlRawExportGeneration(rawExportDir).generationRoot;
+    compileScope = resolveCompileScope();
+  } catch (error) {
+    fail(`raw export authority is invalid: ${error.message}`);
+  }
   if (compilerCommand.command.includes('\\') || compilerCommand.command.includes('/')) {
     if (!existsSync(compilerCommand.command)) fail(`external compiler binary does not exist: ${compilerCommand.command}`);
   } else if (!commandExists(compilerCommand.command)) {
     fail(`external compiler command is not executable: ${compilerCommand.command}`);
   }
   mkdirSync(dirname(rustReport), { recursive: true });
-  runStep('elysium compiler strict compile', compilerCommand.command, [
-    'compile', '--input', rawExportDir, '--output', distDataDir, '--report', rustReport, '--scope', compileScope, '--strict',
-  ]);
-} else if (!existsSync(join(distDataDir, 'manifest.json'))) {
-  fail(`compiled dist-data manifest is missing: ${join(distDataDir, 'manifest.json')}`);
+  if (explicitThreads && (!/^\d+$/.test(explicitThreads) || Number(explicitThreads) < 1)) {
+    fail(`--threads must be a positive integer, got: ${explicitThreads}`);
+  }
+  const compileArgs = [
+    'compile', '--input', rawExportDir, '--output', distDataDir, '--report', rustReport, '--scope', compileScope,
+  ];
+  if (explicitThreads) compileArgs.push('--threads', explicitThreads);
+  compileArgs.push('--strict');
+  runStep('elysium compiler strict compile', compilerCommand.command, compileArgs);
+}
+try {
+  compiledDistDataDir = resolveElysiumOutputGeneration(distDataDir).generationRoot;
+} catch (error) {
+  fail(`compiled dist-data authority is invalid: ${error.message}`);
 }
 
-const distEnv = { DIST_DATA_V3_DIR: distDataDir };
-runStep('rust production manifest gate', 'node', ['scripts/validate-rust-production-manifest.mjs', '--gate', '--dist-data', distDataDir], { env: distEnv });
-runStep('rust recipe runtime gate', 'node', ['scripts/validate-rust-recipe-runtime.mjs', '--gate', '--dist-data', distDataDir], { env: distEnv });
-runStep('native UI layout gate', 'node', ['scripts/validate-native-ui-layouts.mjs', '--gate', '--dist-data', distDataDir], { env: distEnv });
+const distEnv = { DIST_DATA_V3_DIR: compiledDistDataDir };
+runStep('rust production manifest gate', 'node', ['scripts/validate-rust-production-manifest.mjs', '--gate', '--dist-data', compiledDistDataDir], { env: distEnv });
+runStep('rust recipe runtime gate', 'node', ['scripts/validate-rust-recipe-runtime.mjs', '--gate', '--dist-data', compiledDistDataDir], { env: distEnv });
+runStep('native UI layout gate', 'node', ['scripts/validate-native-ui-layouts.mjs', '--gate', '--dist-data', compiledDistDataDir], { env: distEnv });
 
 if (runExtendedRuntime) {
-  runStep('rust browser runtime gate', 'node', ['scripts/validate-rust-browser-runtime.mjs', '--gate', '--dist-data', distDataDir], { env: distEnv });
-  runStep('rust texture runtime gate', 'node', ['scripts/validate-rust-texture-runtime.mjs', '--gate', '--dist-data', distDataDir], { env: distEnv });
+  runStep('rust browser runtime gate', 'node', ['scripts/validate-rust-browser-runtime.mjs', '--gate', '--dist-data', compiledDistDataDir], { env: distEnv });
+  runStep('rust texture runtime gate', 'node', ['scripts/validate-rust-texture-runtime.mjs', '--gate', '--dist-data', compiledDistDataDir], { env: distEnv });
 }
 
-const manifest = readJson(join(distDataDir, 'manifest.json'));
+const manifest = readJson(join(compiledDistDataDir, 'manifest.json'));
 const nativeReportPath = manifest?.files?.rustNativeUiLayoutReport
-  ? join(distDataDir, manifest.files.rustNativeUiLayoutReport)
-  : join(distDataDir, 'rust', 'native-ui-layout-report.json');
+  ? join(compiledDistDataDir, manifest.files.rustNativeUiLayoutReport)
+  : join(compiledDistDataDir, 'rust', 'native-ui-layout-report.json');
 const nativeReport = existsSync(nativeReportPath) ? readJson(nativeReportPath) : null;
 writeSummary('ok');
 console.log(JSON.stringify({
   status: 'ok',
   distDataDir,
+  compiledDistDataDir,
   nativeUiLayoutReport: manifest?.files?.rustNativeUiLayoutReport ?? null,
   nativeUiStatus: nativeReport?.status ?? null,
   nativeUiCounts: nativeReport?.counts ?? null,

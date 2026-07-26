@@ -11,11 +11,19 @@ import {
 import type { Item, PageRichMediaManifest } from './api';
 import { getNativeCaptureByAssetId, getNativeRenderFactsForItem } from './distDataRuntime';
 import type { NativeFramebufferCaptureEntry } from '../runtime/types';
-import { resolveOpfsCachedAssetUrl } from './opfsAssetCache';
+import { warmGlobalBrowserAtlasForItemsDetailed } from './globalBrowserAtlas';
+import {
+  loadImageAsset as loadImageCached,
+  prewarmImageAsset,
+} from './imageAssetLoader';
+export {
+  isImageAssetDecoded,
+  isImageAssetWarm,
+  loadImageAsset,
+  prewarmImageAsset,
+} from './imageAssetLoader';
 
 const MAX_ANIMATION_WORKERS = 3;
-const MAX_CACHED_IMAGE_ASSETS = 384;
-const MAX_WARM_IMAGE_HISTORY = 8192;
 const MAX_PREPARED_FRAME_SETS = 192;
 
 class AsyncWorkQueue {
@@ -63,9 +71,6 @@ const spriteMetadataCache = new Map<string, NativeSpriteMetadata | null>();
 const spriteMetadataInFlight = new Map<string, Promise<NativeSpriteMetadata | null>>();
 const animatedAtlasCache = new Map<string, AnimatedAtlasAssetEntry | null>();
 const primedRenderHintCache = new Map<string, NonNullable<Item['renderHint']> | null>();
-const imageAssetCache = new Map<string, HTMLImageElement>();
-const imageAssetInFlight = new Map<string, Promise<HTMLImageElement>>();
-const warmImageAssetHistory = new Map<string, true>();
 const preparedAnimationFrameCache = new Map<string, PreparedAnimationFrame[]>();
 const preparedAnimationFrameInFlight = new Map<string, Promise<PreparedAnimationFrame[]>>();
 const queuedRenderablePrewarmTasks = new Map<string, Promise<void>>();
@@ -220,53 +225,6 @@ const touchBoundedCache = <T>(cache: Map<string, T>, key: string, value: T, maxS
     if (!oldestKey) break;
     cache.delete(oldestKey);
   }
-};
-
-const loadImage = (src: string): Promise<HTMLImageElement> => {
-  return new Promise((resolve, reject) => {
-    const image = new Image();
-    image.crossOrigin = 'anonymous';
-    image.src = src;
-    image.onload = async () => {
-      try {
-        if (typeof image.decode === 'function') {
-          await image.decode();
-        }
-      } catch {
-        // Keep the already-loaded image usable even if decode() rejects.
-      }
-      resolve(image);
-    };
-    image.onerror = () => reject(new Error(`Image load failed: ${src}`));
-  });
-};
-
-const loadImageCached = async (src: string): Promise<HTMLImageElement> => {
-  if (imageAssetCache.has(src)) {
-    const cached = imageAssetCache.get(src)!;
-    touchBoundedCache(imageAssetCache, src, cached, MAX_CACHED_IMAGE_ASSETS);
-    touchBoundedCache(warmImageAssetHistory, src, true, MAX_WARM_IMAGE_HISTORY);
-    return cached;
-  }
-
-  const inFlight = imageAssetInFlight.get(src);
-  if (inFlight) {
-    return inFlight;
-  }
-
-  const request = resolveOpfsCachedAssetUrl(src)
-    .then((cachedSrc) => loadImage(cachedSrc ?? src))
-    .then((image) => {
-      touchBoundedCache(imageAssetCache, src, image, MAX_CACHED_IMAGE_ASSETS);
-      touchBoundedCache(warmImageAssetHistory, src, true, MAX_WARM_IMAGE_HISTORY);
-      return image;
-    })
-    .finally(() => {
-      imageAssetInFlight.delete(src);
-    });
-
-  imageAssetInFlight.set(src, request);
-  return request;
 };
 
 const getRenderableEntityKey = (entity: RenderableEntityLike): string => {
@@ -496,8 +454,6 @@ const getItemImageBaseUrl = (entity: RenderableEntityLike): string => {
   });
 };
 
-let globalBrowserAtlasImport: Promise<typeof import('./globalBrowserAtlas')> | null = null;
-
 const getItemIdFromRenderAssetRef = (renderAssetRef?: string | null): string | null => {
   const normalized = `${renderAssetRef ?? ''}`.trim();
   const match = normalized.match(/^nesqlpp:item\/(.+)$/);
@@ -511,12 +467,6 @@ const prewarmItemViaGlobalBrowserAtlas = async (entity: RenderableEntityLike): P
   }
 
   try {
-    // Dynamic import avoids a static cycle: globalBrowserAtlas imports
-    // loadImageAsset from this module, while recipe/media prewarm needs the
-    // atlas-resident item path. This keeps item prewarm on the Native/atlas
-    // route instead of touching retired /images/item URLs.
-    globalBrowserAtlasImport ??= import('./globalBrowserAtlas');
-    const { warmGlobalBrowserAtlasForItemsDetailed } = await globalBrowserAtlasImport;
     const coverage = await warmGlobalBrowserAtlasForItemsDetailed([itemId]);
     return coverage.drawableCount > 0 && coverage.missingCount === 0;
   } catch {
@@ -771,36 +721,6 @@ export const probeAnimationSupport = async (baseUrl: string, renderAssetRef?: st
   return request;
 };
 
-export const prewarmImageAsset = async (src?: string | null): Promise<void> => {
-  const normalizedSrc = `${src ?? ''}`.trim();
-  if (!normalizedSrc) {
-    return;
-  }
-  try {
-    await loadImageCached(normalizedSrc);
-  } catch {
-    // Ignore prewarm failures; visible render paths will retry on demand.
-  }
-};
-
-export const isImageAssetWarm = (src?: string | null): boolean => {
-  const normalizedSrc = `${src ?? ''}`.trim();
-  if (!normalizedSrc) {
-    return false;
-  }
-  return warmImageAssetHistory.has(normalizedSrc)
-    || imageAssetCache.has(normalizedSrc)
-    || imageAssetInFlight.has(normalizedSrc);
-};
-
-export const isImageAssetDecoded = (src?: string | null): boolean => {
-  const normalizedSrc = `${src ?? ''}`.trim();
-  if (!normalizedSrc) {
-    return false;
-  }
-  return imageAssetCache.has(normalizedSrc) || warmImageAssetHistory.has(normalizedSrc);
-};
-
 export const prewarmRenderableEntityMedia = async (
   entity: RenderableEntityLike,
 ): Promise<void> => {
@@ -950,7 +870,6 @@ export const queueRenderableMediaPrewarmFromUnknown = (
   }
 };
 
-export const loadImageAsset = loadImageCached;
 export function getNativeSpriteAtlasUrl(
   baseUrl: string,
   metadata?: NativeSpriteMetadata | null,

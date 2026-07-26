@@ -1,0 +1,52 @@
+{
+  "source": {
+    "compiler": "elysium-compiler",
+    "version": "0.1.0",
+    "sha256": "b9bd5675278b814609fc4d27f9b5d91ab00d844bf242d0c6b1ed458fdeaa007f",
+    "schemaHash": "sha256:a1a1bd4731cc4c8e0a6ed7f2f547a03b61a538c80b51e2d2f99d4597db5eeda1"
+  },
+  "name": "elysium.compiler.capability",
+  "version": "elysium.compiler.capability.v1",
+  "commands": [
+    "compile",
+    "inspect",
+    "validate",
+    "schemas"
+  ],
+  "requiredCommands": [
+    "schemas",
+    "validate",
+    "compile"
+  ],
+  "compileScopes": [
+    "all",
+    "native-ui",
+    "search",
+    "browser",
+    "recipes",
+    "ui",
+    "textures"
+  ],
+  "nativeUi": {
+    "requiredCapabilities": [
+      "native_ui.surface",
+      "native_ui.design_space_coordinates",
+      "native_ui.semantic_layout"
+    ],
+    "requiredFiles": [
+      "native-ui/families.jsonl.zst",
+      "native-ui/surfaces.jsonl.zst",
+      "native-ui/slots.bin",
+      "validation/native-ui-abi.json"
+    ],
+    "coordinateSpace": "nei_pixels",
+    "runtimeTransform": "uniform-scale-to-fit-only",
+    "fallbackPolicy": "NEI frame/background PNG fallback is retired; missing hand-written UI mappings fail closed"
+  },
+  "policy": {
+    "legacyFallback": "forbidden",
+    "missingCapability": "fail-fast",
+    "hotPathEncoding": "binary-pack-preferred",
+    "fullExportValidation": "milestone-gate-only"
+  }
+}

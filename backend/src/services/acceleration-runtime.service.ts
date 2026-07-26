@@ -21,8 +21,10 @@ export async function reconcileAccelerationRuntime(
   accelerationDbManager: ReturnType<typeof getAccelerationDatabaseManager>,
   options?: { publishMaterializeOnStart?: boolean },
 ): Promise<void> {
-  await verifyAccelerationCompilerBoundary();
   const compilerAuthority = resolveAccelerationCompilerAuthority();
+  if (compilerAuthority === 'external-runtime') {
+    await verifyAccelerationCompilerBoundary();
+  }
   const compilerProbe = compilerAuthority === 'internal-sqlite'
     ? probeAccelerationCompilerState({ manager: accelerationDbManager })
     : probeExternalRuntimeIdentityFreshness({ rawExportRoot: getExternalRuntimeRawExportRoot() });

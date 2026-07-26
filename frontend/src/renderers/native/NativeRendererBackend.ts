@@ -1,5 +1,5 @@
 import type {
-  NativeRenderCommand,
+  NativeLayoutCommandBatch,
   NativeRendererStats,
   NativeTextureSpriteCommand,
 } from "./NativeRendererCommandProtocol.ts";
@@ -19,7 +19,7 @@ export interface NativeRendererBackend {
   render(
     activeWidth: number,
     activeHeight: number,
-    commands: NativeRenderCommand[],
+    commands: NativeLayoutCommandBatch,
     spriteCommands?: NativeTextureSpriteCommand[],
   ): NativeRendererStats;
   dispose(): void;

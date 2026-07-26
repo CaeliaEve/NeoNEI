@@ -5,9 +5,9 @@ const root = resolve(import.meta.dirname, '..');
 const read = (relativePath) => readFileSync(resolve(root, relativePath), 'utf8');
 
 const opfs = read('src/services/opfsAssetCache.ts');
-const animationBudget = read('src/services/animationBudget.ts');
+const imageAssetLoader = read('src/services/imageAssetLoader.ts');
 const sitePreheater = read('src/composables/useSitePreheater.ts');
-const api = read('src/services/api.ts');
+const runtimeSession = read('src/services/api/runtimeSession.ts');
 
 const checks = [
   {
@@ -20,8 +20,8 @@ const checks = [
   },
   {
     name: 'image prewarm resolves OPFS cached asset URL before decode',
-    pass: animationBudget.includes("resolveOpfsCachedAssetUrl")
-      && animationBudget.includes('loadImage(cachedSrc ?? src)'),
+    pass: imageAssetLoader.includes("resolveOpfsCachedAssetUrl")
+      && imageAssetLoader.includes('loadImage(cachedSrc ?? src)'),
   },
   {
     name: 'site preheater reports and clears IDB plus OPFS caches together',
@@ -31,9 +31,9 @@ const checks = [
   },
   {
     name: 'small JSON runtime payloads remain IndexedDB-backed before HTTP fallback',
-    pass: api.includes('readPersistentRuntimePayload')
-      && api.includes('persistRuntimePayload')
-      && api.includes('fetchPublishedJson'),
+    pass: runtimeSession.includes('readPersistentRuntimePayload')
+      && runtimeSession.includes('persistRuntimePayload')
+      && runtimeSession.includes('fetchPublishedJson'),
   },
 ];
 

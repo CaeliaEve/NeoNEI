@@ -7,6 +7,7 @@
  */
 
 export const CURRENT_RUNTIME_JSON_ENVELOPE_OK = true;
+export const CURRENT_RUNTIME_ID_HEADER = 'x-neonei-runtime-id' as const;
 
 export const CURRENT_RUNTIME_IMMUTABLE_ASSET_CACHE = Object.freeze({
   maxAge: '365d',

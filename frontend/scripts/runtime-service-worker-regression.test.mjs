@@ -29,12 +29,16 @@ test("runtime service worker caches binary packs, atlas images, and native engin
   assert.match(worker, /runtimeCacheName/);
   assert.match(worker, /runtimeId/);
   assert.match(worker, /manifestHash/);
-  assert.match(worker, /caches\.delete\(runtimeCacheName\(previous\.runtimeId\)\)/);
+  assert.match(worker, /retainRollbackRuntimeCaches/);
+  assert.match(worker, /previousRuntimeId/);
+  assert.match(worker, /runtimeIdentityConflict/);
+  assert.match(worker, /x-neonei-runtime-id/);
 });
 
 function createMemoryCacheStorage() {
   const stores = new Map();
   const requestKey = (request) => typeof request === "string" ? request : request.url;
+  let nextPutFailureCacheName = null;
 
   return {
     async open(name) {
@@ -45,6 +49,10 @@ function createMemoryCacheStorage() {
             return entries.get(requestKey(request))?.clone?.() ?? null;
           },
           async put(request, response) {
+            if (nextPutFailureCacheName === name) {
+              nextPutFailureCacheName = null;
+              throw new Error(`injected cache put failure: ${name}`);
+            }
             entries.set(requestKey(request), response.clone());
           },
           async keys() {
@@ -60,6 +68,9 @@ function createMemoryCacheStorage() {
     },
     async delete(name) {
       return stores.delete(name);
+    },
+    failNextPut(name) {
+      nextPutFailureCacheName = name;
     },
     _stores: stores,
   };
@@ -149,7 +160,7 @@ test("runtime service worker switches runtime caches and serves cached files off
     if (url.pathname === browserPackPath) {
       return new Response("alpha-pack", {
         status: 200,
-        headers: { "content-type": "application/octet-stream", "content-length": "10" },
+        headers: { "content-type": "application/octet-stream", "content-length": "10", "x-neonei-runtime-id": "alpha" },
       });
     }
     return new Response("not found", { status: 404 });
@@ -172,7 +183,7 @@ test("runtime service worker switches runtime caches and serves cached files off
     if (url.pathname === browserPackPath) {
       return new Response("beta-pack", {
         status: 200,
-        headers: { "content-type": "application/octet-stream", "content-length": "9" },
+        headers: { "content-type": "application/octet-stream", "content-length": "9", "x-neonei-runtime-id": "beta" },
       });
     }
     return new Response("not found", { status: 404 });
@@ -180,7 +191,7 @@ test("runtime service worker switches runtime caches and serves cached files off
 
   const betaManifest = await harness.dispatchFetch(manifestPath);
   assert.equal(betaManifest.headers.get("x-neonei-runtime-id"), "beta");
-  assert.ok(!(await harness.caches.keys()).includes("neonei-runtime-assets-alpha"), "old runtime cache should be deleted after runtimeId switch");
+  assert.ok((await harness.caches.keys()).includes("neonei-runtime-assets-alpha"), "previous runtime cache must be retained for rollback");
   const betaPack = await harness.dispatchFetch(browserPackPath);
   assert.equal(await betaPack.text(), "beta-pack");
 
@@ -211,7 +222,7 @@ test("runtime service worker cache stats count cached bodies without content-len
     if (url.pathname === browserPackPath) {
       return new Response("pack-without-content-length", {
         status: 200,
-        headers: { "content-type": "application/octet-stream" },
+        headers: { "content-type": "application/octet-stream", "x-neonei-runtime-id": "gamma" },
       });
     }
     return new Response("not found", { status: 404 });
@@ -224,5 +235,141 @@ test("runtime service worker cache stats count cached bodies without content-len
   assert.equal(message.type, "NEONEI_RUNTIME_CACHE_STATUS_RESULT");
   assert.equal(message.payload.runtimeId, "gamma");
   assert.ok(message.payload.approxBytes >= "pack-without-content-length".length);
+});
+
+test("corrupt manifest cannot evict the last known-good runtime and offline reads remain available", async () => {
+  const harness = await createServiceWorkerHarness();
+  const manifestPath = "/api/runtime/current/manifest";
+  const browserPackPath = "/api/runtime/current/asset/rust/browser.bin";
+
+  harness.setFetch(async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === manifestPath) {
+      return new Response(JSON.stringify({ ok: true, data: { runtimeId: "stable" }, meta: { runtimeId: "stable" } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.pathname === browserPackPath) return new Response("stable-pack", {
+      status: 200,
+      headers: { "x-neonei-runtime-id": "stable" },
+    });
+    return new Response("not found", { status: 404 });
+  });
+  await harness.dispatchFetch(manifestPath);
+  await harness.dispatchFetch(browserPackPath);
+
+  harness.setFetch(async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === manifestPath) {
+      return new Response("{not-json", {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error("offline after corrupt manifest");
+  });
+
+  const recoveredManifest = await harness.dispatchFetch(manifestPath);
+  assert.equal(recoveredManifest.headers.get("x-neonei-runtime-id"), "stable");
+  const recoveredPack = await harness.dispatchFetch(browserPackPath);
+  assert.equal(await recoveredPack.text(), "stable-pack");
+  assert.ok((await harness.caches.keys()).includes("neonei-runtime-assets-stable"));
+  assert.ok(!(await harness.caches.keys()).some((name) => name.startsWith("neonei-runtime-assets-hash-")));
+});
+
+test("an explicit rollback commits the older runtime only after its manifest is cached", async () => {
+  const harness = await createServiceWorkerHarness();
+  const manifestPath = "/api/runtime/current/manifest";
+  let runtimeId = "beta";
+  harness.setFetch(async () => new Response(JSON.stringify({
+    ok: true,
+    data: { runtimeId },
+    meta: { runtimeId },
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  }));
+
+  const beta = await harness.dispatchFetch(manifestPath);
+  assert.equal(beta.headers.get("x-neonei-runtime-id"), "beta");
+  runtimeId = "alpha";
+  const alpha = await harness.dispatchFetch(manifestPath);
+  assert.equal(alpha.headers.get("x-neonei-runtime-id"), "alpha");
+  assert.ok((await harness.caches.keys()).includes("neonei-runtime-assets-alpha"));
+  assert.ok((await harness.caches.keys()).includes("neonei-runtime-assets-beta"), "rolled-back-from runtime must remain as the bounded previous cache");
+
+  harness.setFetch(async () => { throw new Error("offline after rollback"); });
+  const offlineRollback = await harness.dispatchFetch(manifestPath);
+  assert.equal(offlineRollback.headers.get("x-neonei-runtime-id"), "alpha");
+});
+
+test("a failed new-runtime cache write cannot replace the previous runtime metadata", async () => {
+  const harness = await createServiceWorkerHarness();
+  const manifestPath = "/api/runtime/current/manifest";
+  let runtimeId = "stable";
+  harness.setFetch(async () => new Response(JSON.stringify({
+    ok: true,
+    data: { runtimeId },
+    meta: { runtimeId },
+  }), { status: 200, headers: { "content-type": "application/json" } }));
+
+  const stable = await harness.dispatchFetch(manifestPath);
+  assert.equal(stable.headers.get("x-neonei-runtime-id"), "stable");
+
+  runtimeId = "candidate";
+  harness.caches.failNextPut("neonei-runtime-assets-candidate");
+  const fallback = await harness.dispatchFetch(manifestPath);
+  assert.equal(fallback.headers.get("x-neonei-runtime-id"), "stable");
+  const status = await harness.dispatchMessage({ type: "NEONEI_RUNTIME_CACHE_STATUS" });
+  assert.equal(status.payload.runtimeId, "stable");
+  assert.ok((await harness.caches.keys()).includes("neonei-runtime-assets-stable"));
+});
+
+test("runtime promotion during an asset fetch cannot write new bytes into the previous runtime cache", async () => {
+  const harness = await createServiceWorkerHarness();
+  const manifestPath = "/api/runtime/current/manifest";
+  const browserPackPath = "/api/runtime/current/asset/rust/browser.bin";
+  let runtimeId = "alpha";
+  let releaseAsset;
+  const pendingAsset = new Promise((resolve) => { releaseAsset = resolve; });
+
+  harness.setFetch(async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === manifestPath) {
+      return new Response(JSON.stringify({ ok: true, data: { runtimeId }, meta: { runtimeId } }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    if (url.pathname === browserPackPath) return pendingAsset;
+    return new Response("not found", { status: 404 });
+  });
+
+  await harness.dispatchFetch(manifestPath);
+  const racingAsset = harness.dispatchFetch(browserPackPath);
+  runtimeId = "beta";
+  await harness.dispatchFetch(manifestPath);
+  releaseAsset(new Response("beta-pack", {
+    status: 200,
+    headers: { "x-neonei-runtime-id": "beta" },
+  }));
+
+  const conflict = await racingAsset;
+  assert.equal(conflict.status, 409);
+  const alphaCache = await harness.caches.open("neonei-runtime-assets-alpha");
+  assert.equal(await alphaCache.match(`https://neonei.test${browserPackPath}`), null);
+
+  harness.setFetch(async (request) => {
+    const url = new URL(request.url);
+    if (url.pathname === browserPackPath) {
+      return new Response("beta-pack", {
+        status: 200,
+        headers: { "x-neonei-runtime-id": "beta" },
+      });
+    }
+    return new Response("not found", { status: 404 });
+  });
+  assert.equal(await (await harness.dispatchFetch(browserPackPath)).text(), "beta-pack");
 });
 

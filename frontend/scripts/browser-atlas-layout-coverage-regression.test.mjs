@@ -14,8 +14,8 @@ const frontendRuntimeTypesSource = readRepoFile('frontend/src/runtime/types.ts')
 test('browser atlas index reports layout coverage against the exported NEI layout', () => {
   assert.match(
     backendAtlasSource,
-    /NESQL_BROWSER_LAYOUT_INDEX_FILE/,
-    'backend atlas index should read the exported browser layout index',
+    /CURRENT_RUNTIME_ARTIFACT_PATHS\.browserLayoutIndex/,
+    'backend atlas index should resolve the browser layout from the current sealed generation',
   );
   assert.match(
     backendAtlasSource,
@@ -24,7 +24,7 @@ test('browser atlas index reports layout coverage against the exported NEI layou
   );
   assert.match(
     backendAtlasSource,
-    /computeLayoutCoverage\(itemMap:\s*Map<string,\s*BrowserAtlasItemEntry>\)/,
+    /computeLayoutCoverage\([\s\S]*itemMap:\s*Map<string,\s*BrowserAtlasItemEntry>,[\s\S]*layoutFilePath:\s*string/,
     'backend should compute atlas coverage from the full item map including aliases and auxiliary entries',
   );
   assert.match(

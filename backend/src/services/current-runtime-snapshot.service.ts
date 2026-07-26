@@ -1,5 +1,5 @@
+import path from 'path';
 import {
-  CURRENT_RUNTIME_DIST_MANIFEST_FILE,
   buildCurrentRuntimeArtifactInventory,
   buildCurrentRuntimeSnapshotFingerprint,
   collectDeclaredRuntimeFilePaths,
@@ -13,6 +13,8 @@ import {
   type CurrentRuntimeArtifactProbe,
   type CurrentRuntimeJsonRecord,
 } from './current-runtime-artifact-index.service';
+import { DIST_DATA_DIR } from '../config/runtime-paths';
+import { tryResolveCurrentExternalRuntimeGeneration } from './external-runtime-generation.service';
 import {
   CURRENT_RUNTIME_SNAPSHOT_PROBES,
   CURRENT_RUNTIME_MANIFEST_FIELDS,
@@ -36,6 +38,9 @@ type JsonRecord = CurrentRuntimeJsonRecord;
 
 export type CurrentRuntimeSnapshot = Readonly<{
   revision: number;
+  generationId: string;
+  generationRoot: string;
+  releaseHash: string;
   runtimeId: string;
   runtimeSchemaRevision: string;
   manifestPath: string;
@@ -109,8 +114,19 @@ function clearCurrentRuntimeSnapshot(probes: Record<string, CurrentRuntimeArtifa
 
 function refreshCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
   const probes: Record<string, CurrentRuntimeArtifactProbe> = {};
+  const currentGeneration = tryResolveCurrentExternalRuntimeGeneration(DIST_DATA_DIR);
+  if (!currentGeneration) {
+    const pointerRead = readCurrentRuntimeJsonArtifact(
+      path.join(DIST_DATA_DIR, 'current.json'),
+      'current.json',
+    );
+    probes[CURRENT_RUNTIME_SNAPSHOT_PROBES.distManifest.key] = pointerRead.probe;
+    return clearCurrentRuntimeSnapshot(probes);
+  }
+  const generationRoot = currentGeneration.generationRoot;
+  const distManifestFile = resolveDistDataRuntimeFile('manifest.json', generationRoot);
   const distManifestRead = readCurrentRuntimeJsonArtifact(
-    CURRENT_RUNTIME_DIST_MANIFEST_FILE,
+    distManifestFile,
     CURRENT_RUNTIME_SNAPSHOT_PROBES.distManifest.relativePath,
   );
   probes[CURRENT_RUNTIME_SNAPSHOT_PROBES.distManifest.key] = distManifestRead.probe;
@@ -120,7 +136,7 @@ function refreshCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
     return clearCurrentRuntimeSnapshot(probes);
   }
 
-  const runtimeManifestFile = resolveDistDataRuntimeFile(runtimeManifestPath);
+  const runtimeManifestFile = resolveDistDataRuntimeFile(runtimeManifestPath, generationRoot);
   const runtimeManifestTextRead = readCurrentRuntimeTextArtifact(runtimeManifestFile, runtimeManifestPath);
   probes[CURRENT_RUNTIME_SNAPSHOT_PROBES.runtimeManifestText.key] = runtimeManifestTextRead.probe;
   const runtimeManifestRead = readCurrentRuntimeJsonArtifact(runtimeManifestFile, runtimeManifestPath);
@@ -132,7 +148,7 @@ function refreshCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
   }
 
   const declaredFiles = collectDeclaredRuntimeFilePaths(runtimeManifestPath, runtimeManifest);
-  const fingerprint = buildCurrentRuntimeSnapshotFingerprint(runtimeManifestPath, declaredFiles);
+  const fingerprint = buildCurrentRuntimeSnapshotFingerprint(runtimeManifestPath, declaredFiles, generationRoot);
   if (currentSnapshot && currentFingerprint === fingerprint) {
     publishCurrentRuntimeSnapshotDiagnostics({
       ...probes,
@@ -140,13 +156,16 @@ function refreshCurrentRuntimeSnapshot(): CurrentRuntimeSnapshot | null {
     });
     return currentSnapshot;
   }
-  const inventory = buildCurrentRuntimeArtifactInventory(declaredFiles);
+  const inventory = buildCurrentRuntimeArtifactInventory(declaredFiles, generationRoot);
   publishCurrentRuntimeSnapshotDiagnostics({
     ...probes,
     ...inventory.probesByPath,
   });
 
   return publishCurrentRuntimeSnapshot({
+    generationId: currentGeneration.generationId,
+    generationRoot,
+    releaseHash: currentGeneration.pointer.releaseHash,
     runtimeId: getRuntimeId(runtimeManifest),
     runtimeSchemaRevision: getRuntimeSchemaRevision(runtimeManifest),
     manifestPath: runtimeManifestPath,

@@ -11,8 +11,8 @@
     "bench:search-v3": "node ../scripts/bench-search-v3.mjs --gate",
     "bench:recipe-v3": "node ../scripts/bench-recipe-v3.mjs --gate",
     "bench:browser-atlas-v3": "node ../scripts/bench-browser-atlas-v3.mjs --gate",
-    "compile:raw-export": "node ../scripts/compile-raw-export.mjs",
     "test:raw-export": "node ../scripts/compile-raw-export.mjs --self-test",
+    "test:legacy-compiler-retirement": "node --test ../scripts/legacy-compiler-retirement.test.mjs",
     "bench:recipe-search": "node scripts/bench-recipe-search.mjs",
     "release:regression": "node scripts/release-regression-checklist.mjs",
     "gate:c": "playwright test -c scripts/pw-gatec.config.ts",
@@ -45,12 +45,14 @@
     "test:rust-retirement": "node ../scripts/rust-retirement-gate.mjs --gate --quick",
     "test:rust-retirement:full": "node ../scripts/rust-retirement-gate.mjs --gate",
     "test:wasm-engine": "node ../scripts/wasm-engine-gate.mjs",
+    "test:native-runtime-behavior": "node --test --test-concurrency=1 scripts/native-*-behavior.test.mjs",
     "test:native-runtime-packs": "node ../scripts/validate-native-runtime-packs.mjs --gate",
     "test:native-runtime-projection": "node ../scripts/native-runtime-projection-gate.mjs --gate",
     "test:native-surface-worker-groups": "node --test scripts/native-surface-worker-group-projection-regression.test.mjs",
     "test:native-surface-batching": "node --test scripts/native-surface-batching-regression.test.mjs",
     "test:native-surface-cutover": "node --test scripts/native-surface-cutover-regression.test.mjs",
     "test:runtime-service-worker": "node --test scripts/runtime-service-worker-regression.test.mjs",
+    "test:runtime-service-worker:e2e": "node scripts/runtime-service-worker-e2e.mjs",
     "test:native-render-overlay": "node --test scripts/native-render-overlay-regression.test.mjs",
     "test:native-render-backend-selection": "node --test scripts/native-render-backend-selection-regression.test.mjs",
     "test:native-render-frame-metrics": "node --test scripts/native-render-frame-metrics-regression.test.mjs",
@@ -66,9 +68,8 @@
     "test:browser-interaction-latency": "node --test scripts/browser-interaction-latency-regression.test.mjs"
   },
   "dependencies": {
-    "axios": "^1.13.2",
+    "axios": "^1.18.1",
     "pinia": "^3.0.4",
-    "pinyin-pro": "^3.28.0",
     "three": "^0.179.1",
     "vue": "^3.5.24",
     "vue-router": "^4.6.4"
@@ -80,10 +81,13 @@
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/tsconfig": "^0.8.1",
     "autoprefixer": "^10.4.23",
-    "postcss": "^8.5.6",
+    "postcss": "^8.5.18",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.9.3",
     "vite": "^7.2.4",
     "vue-tsc": "^3.1.4"
+  },
+  "overrides": {
+    "form-data": "4.0.6"
   }
 }

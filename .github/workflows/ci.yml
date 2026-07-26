@@ -38,6 +38,10 @@ jobs:
         working-directory: backend
         run: npm run build
 
+      - name: Compiler capability artifact contract
+        working-directory: backend
+        run: node --test scripts/elysium-compiler-capability-gate.test.mjs
+
       - name: Backend path audit
         working-directory: backend
         run: npm run audit:paths
@@ -115,6 +119,16 @@ jobs:
         working-directory: frontend
         run: npm run test:wasm-engine
 
+      - name: Native runtime behavior
+        working-directory: frontend
+        run: npm run test:native-runtime-behavior
+
+      - name: Runtime service worker behavior
+        working-directory: frontend
+        run: |
+          npm run test:runtime-service-worker
+          npm run test:runtime-service-worker:e2e
+
       - name: Native current API regression
         working-directory: frontend
         run: npm run test:native-runtime-current-api
@@ -190,5 +204,3 @@ jobs:
           name: neonei-web-release
           path: release/neonei-web
           if-no-files-found: error
-
-

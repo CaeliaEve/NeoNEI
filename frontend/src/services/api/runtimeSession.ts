@@ -14,6 +14,13 @@ import {
   writePersistentRuntimeCache,
 } from '../persistentRuntimeCache';
 import {
+  clearRuntimeArtifactMemoryCache,
+  fetchRuntimeArtifactJson,
+  isRuntimeArtifactWarm,
+  registerRuntimeArtifactContentHashes,
+  setRuntimeArtifactManifestIdentity,
+} from '../runtimeArtifactClient.ts';
+import {
   reportMissingRuntimePayload,
   reportRuntimeContractGap,
   isStrictRuntimeContractsEnabled,
@@ -23,30 +30,51 @@ import { createTextureRuntimeClient } from '../../runtime/textureClient';
 import { createBrowserCatalogClient } from '../../runtime/browserCatalogClient';
 import { createRecipeUiPayloadClient } from '../../runtime/recipeUiPayloadClient';
 import { createRecipeBootstrapClient } from '../../runtime/recipeBootstrapClient';
-import { buildRuntimePayloadCacheKey, setCacheWithLimit } from '../../runtime/cacheUtils';
+import { buildRuntimePayloadCacheKey } from '../../runtime/cacheUtils';
 import { getDistDataHomeBootstrap, getDistDataMods } from '../distDataRuntime';
 import {
   deriveBrowserPagePackFromWindow,
 } from '../../runtime/browserProjection';
 import { resolvePublishedHomeBootstrapWindowPath } from '../../runtime/browserRuntimeArtifactPolicyCatalog';
 
-const publishedJsonValueCache = new Map<string, unknown>();
-const publishedJsonInFlight = new Map<string, Promise<unknown>>();
 let browserAtlasIndexCache: BrowserAtlasIndexResponse | null = null;
 let browserAtlasIndexInFlight: Promise<BrowserAtlasIndexResponse | null> | null = null;
 const browserAtlasEntriesInFlight = new Map<string, Promise<BrowserAtlasIndexResponse | null>>();
 let publishManifestCache: PublicRuntimeManifest | null = null;
 
-const CACHE_LIMITS = {
-  publishedJson: 96,
-} as const;
-
 const STRICT_RUNTIME_V3 = isStrictRuntimeContractsEnabled();
+
+function publishArtifactHashes(manifest: PublicRuntimeManifest): Record<string, string> {
+  const hashes: Record<string, string> = {};
+  for (const asset of Object.values(manifest.publishBundle?.compression?.assets ?? {})) {
+    for (const path of [asset.relativePath, asset.path, asset.contentAddressedPath]) {
+      if (path && asset.sha256) hashes[path] = asset.sha256;
+    }
+  }
+  return hashes;
+}
+
+function resolvePublishedArtifactHash(assetPath: string, resolvedUrl: string): string | null {
+  const assets = Object.values(publishManifestCache?.publishBundle?.compression?.assets ?? {});
+  const normalizedPath = `${assetPath ?? ''}`.trim();
+  const normalizedUrl = `${resolvedUrl ?? ''}`.trim();
+  return assets.find((asset) => (
+    asset.relativePath === normalizedPath
+    || asset.path === normalizedPath
+    || asset.path === normalizedUrl
+    || asset.contentAddressedPath === normalizedPath
+    || asset.contentAddressedPath === normalizedUrl
+  ))?.sha256 ?? null;
+}
 
 export const runtimeManifestClient = createRuntimeManifestClient<PublicRuntimeManifest>({
   onManifest: (manifest) => {
     publishManifestCache = manifest;
     const runtimeCacheKey = getRuntimeCacheSignature(manifest);
+    setRuntimeArtifactManifestIdentity(runtimeCacheKey);
+    if (runtimeCacheKey) {
+      registerRuntimeArtifactContentHashes(runtimeCacheKey, publishArtifactHashes(manifest));
+    }
     primeRuntimeCacheSignature(runtimeCacheKey);
     setRuntimeDiagnosticIdentity({
       sourceSignature: manifest.sourceSignature,
@@ -147,14 +175,12 @@ export function persistRuntimePayload(
 }
 
 export const publishedJsonClient = createPublishedJsonClient({
-  hasMemory: (url) => publishedJsonValueCache.has(url),
-  getMemory: <T>(url: string) => publishedJsonValueCache.get(url) as T | undefined,
-  setMemory: (url, payload) => setCacheWithLimit(publishedJsonValueCache, url, payload, CACHE_LIMITS.publishedJson),
-  getInFlight: <T>(url: string) => publishedJsonInFlight.get(url) as Promise<T> | undefined,
-  setInFlight: (url, request) => publishedJsonInFlight.set(url, request),
-  deleteInFlight: (url) => publishedJsonInFlight.delete(url),
-  readPersistent: <T>(url: string) => readPersistentRuntimePayload<T>('published-json', { url }),
-  writePersistent: (url, payload) => persistRuntimePayload('published-json', { url }, payload),
+  getManifestIdentity: () => (
+    getRuntimeCacheSignature(publishManifestCache) || getStoredRuntimeSignature()
+  ),
+  getContentHash: resolvePublishedArtifactHash,
+  isArtifactWarm: isRuntimeArtifactWarm,
+  loadJson: fetchRuntimeArtifactJson,
 });
 
 export const textureRuntimeClient = createTextureRuntimeClient({
@@ -198,8 +224,7 @@ export const recipeBootstrapClient = createRecipeBootstrapClient({
 });
 
 export function clearPublishedRuntimeCaches(): void {
-  publishedJsonValueCache.clear();
-  publishedJsonInFlight.clear();
+  clearRuntimeArtifactMemoryCache();
 }
 
 export function resetRuntimeSessionCaches(): void {
@@ -213,7 +238,12 @@ export function updateCachedPublishManifest(manifest: PublicRuntimeManifest | nu
     return;
   }
   publishManifestCache = manifest;
-  primeRuntimeCacheSignature(getRuntimeCacheSignature(manifest));
+  const runtimeCacheKey = getRuntimeCacheSignature(manifest);
+  setRuntimeArtifactManifestIdentity(runtimeCacheKey);
+  if (runtimeCacheKey) {
+    registerRuntimeArtifactContentHashes(runtimeCacheKey, publishArtifactHashes(manifest));
+  }
+  primeRuntimeCacheSignature(runtimeCacheKey);
 }
 
 

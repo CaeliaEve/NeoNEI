@@ -72,6 +72,25 @@ export function normalizeSearchKeyword(keyword: string): string {
   return keyword.trim().toLowerCase().replace(/\s+/g, '');
 }
 
+export const ACCELERATION_SEARCH_MATCH_SQL = `
+  s.localized_name_norm LIKE @searchContains
+  OR s.internal_name_norm LIKE @searchContains
+  OR s.item_id_norm LIKE @searchContains
+  OR s.pinyin_full LIKE @searchPrefix
+  OR s.pinyin_acronym LIKE @searchPrefix
+  OR s.search_terms_norm LIKE @searchContains
+  OR COALESCE(s.aliases, '') LIKE @searchContains
+`;
+
+export function accelerationSearchBindings(keyword: string): Record<string, string> {
+  const normalized = normalizeSearchKeyword(keyword);
+  return {
+    searchExact: normalized,
+    searchContains: `%${normalized}%`,
+    searchPrefix: `${normalized}%`,
+  };
+}
+
 function normalizeLooseText(value: string | null | undefined): string {
   return `${value ?? ''}`.trim().toLowerCase();
 }
@@ -117,8 +136,8 @@ export function matchesIndexedItem(item: SearchIndexEntry, normalizedKeyword: st
     item.normalizedInternalName.includes(normalizedKeyword) ||
     item.normalizedItemId.includes(normalizedKeyword) ||
     item.normalizedSearchTerms.includes(normalizedKeyword) ||
-    item.pinyinFull.includes(normalizedKeyword) ||
-    item.pinyinAcronym.includes(normalizedKeyword)
+    item.pinyinFull.startsWith(normalizedKeyword) ||
+    item.pinyinAcronym.startsWith(normalizedKeyword)
   );
 }
 
@@ -186,9 +205,12 @@ export function queryAccelerationSearch(
         FROM items_search_fts
         INNER JOIN items_core AS ic
           ON ic.item_id = items_search_fts.item_id
+        INNER JOIN items_search AS s
+          ON s.item_id = ic.item_id
         LEFT JOIN hot_items AS h
           ON h.item_id = ic.item_id
         WHERE items_search_fts MATCH @ftsQuery
+          AND (${ACCELERATION_SEARCH_MATCH_SQL})
         ORDER BY
           rank ASC,
           COALESCE(h.search_rank, 999999) ASC,
@@ -200,6 +222,7 @@ export function queryAccelerationSearch(
       const ftsRows = ftsStatement.all({
         ftsQuery,
         limit: safeLimit,
+        ...accelerationSearchBindings(keyword),
       }) as AccelerationSearchRow[];
 
       if (ftsRows.length > 0) {
@@ -225,45 +248,27 @@ export function queryAccelerationSearch(
     LEFT JOIN hot_items AS h
       ON h.item_id = s.item_id
     WHERE
-      s.localized_name_norm LIKE @contains
-      OR s.internal_name_norm LIKE @contains
-      OR s.item_id_norm LIKE @contains
-      OR s.search_terms_norm LIKE @contains
-      OR s.pinyin_full LIKE @contains
-      OR s.pinyin_acronym LIKE @contains
-      OR COALESCE(s.aliases, '') LIKE @contains
+      ${ACCELERATION_SEARCH_MATCH_SQL}
     ORDER BY
       CASE
-        WHEN s.localized_name_norm = @exact THEN 0
-        WHEN s.pinyin_full = @exact THEN 1
-        WHEN s.pinyin_acronym = @exact THEN 2
-        WHEN COALESCE(s.aliases, '') = @exact THEN 3
-        WHEN COALESCE(s.aliases, '') LIKE @alias_exact THEN 4
-        WHEN s.internal_name_norm = @exact THEN 5
-        WHEN s.item_id_norm = @exact THEN 6
-        WHEN s.search_terms_norm = @exact THEN 7
-        WHEN s.localized_name_norm LIKE @prefix THEN 10
-        WHEN s.pinyin_full LIKE @prefix THEN 11
-        WHEN s.pinyin_acronym LIKE @prefix THEN 12
-        WHEN COALESCE(s.aliases, '') LIKE @alias_prefix THEN 13
-        WHEN s.internal_name_norm LIKE @prefix THEN 14
-        WHEN s.search_terms_norm LIKE @prefix THEN 15
-        WHEN s.item_id_norm LIKE @prefix THEN 16
+        WHEN s.localized_name_norm = @searchExact THEN 0
+        WHEN s.pinyin_full = @searchExact THEN 1
+        WHEN s.pinyin_acronym = @searchExact THEN 2
+        WHEN s.internal_name_norm = @searchExact THEN 4
+        WHEN s.item_id_norm = @searchExact THEN 5
+        WHEN s.search_terms_norm = @searchExact THEN 6
+        WHEN s.localized_name_norm LIKE @searchPrefix THEN 10
+        WHEN s.pinyin_full LIKE @searchPrefix THEN 11
+        WHEN s.pinyin_acronym LIKE @searchPrefix THEN 12
+        WHEN COALESCE(s.aliases, '') LIKE @searchContains THEN 13
+        WHEN s.internal_name_norm LIKE @searchPrefix THEN 14
+        WHEN s.search_terms_norm LIKE @searchContains THEN 15
+        WHEN s.item_id_norm LIKE @searchPrefix THEN 16
         ELSE 20
-      END ASC,
-      CASE
-        WHEN COALESCE(s.aliases, '') LIKE @alias_exact THEN 0
-        WHEN COALESCE(s.aliases, '') LIKE @alias_prefix THEN 1
-        ELSE 2
-      END ASC,
-      CASE
-        WHEN COALESCE(s.aliases, '') LIKE @alias_exact THEN (LENGTH(COALESCE(s.aliases, '')) - LENGTH(@exact))
-        WHEN COALESCE(s.aliases, '') LIKE @alias_prefix THEN (LENGTH(COALESCE(s.aliases, '')) - LENGTH(@exact))
-        ELSE 9999
       END ASC,
       COALESCE(h.search_rank, 999999) ASC,
       COALESCE(h.recipe_rank, 0) DESC,
-      (LENGTH(COALESCE(s.localized_name_norm, '')) - LENGTH(@exact)) ASC,
+      (LENGTH(COALESCE(s.localized_name_norm, '')) - LENGTH(@searchExact)) ASC,
       COALESCE(h.popularity_score, COALESCE(s.popularity_score, 0)) DESC,
       COALESCE(s.family_score, 0) DESC,
       ic.localized_name COLLATE NOCASE ASC
@@ -271,11 +276,7 @@ export function queryAccelerationSearch(
   `);
 
   return (statement.all({
-    exact: normalized,
-    prefix: `${normalized}%`,
-    contains: `%${normalized}%`,
-    alias_exact: `%${normalized}%`,
-    alias_prefix: `${normalized}%`,
+    ...accelerationSearchBindings(normalized),
     limit: safeLimit,
   }) as AccelerationSearchRow[]).map((row) => ({
     itemId: row.item_id,

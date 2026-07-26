@@ -1,23 +1,21 @@
 import type { RecipeUiPayload } from '../../services/api';
-import {
-  resolveRecipePresentationProfileFromUiPayload,
-  type RecipePresentationProfile,
-} from '../../services/uiTypeMapping';
+import type { RecipePresentationProfile } from '../../services/uiTypeMapping';
+import type { UiPackBinding } from '../../services/uiPackRuntime.ts';
 import { isRegisteredRecipeComponent } from '../../components/recipe-display/recipeComponentRegistry';
+import { resolveRecipePresentationProfileFromBinding } from './recipeRendererRegistry.ts';
 
 const DEFAULT_SAMPLE_RECIPE_LIMIT = 5;
 const UNKNOWN_FAMILY_KEY = 'unknown';
-const DETECTED_PROFILE_FAMILY_KEY = 'detected-profile';
 
 export type RecipePresentationCoverageGapKind =
-  | 'unmapped-ui-payload-family'
-  | 'unregistered-ui-payload-component'
-  | 'unregistered-detected-component';
+  | 'missing-ui-binding-v2'
+  | 'invalid-binding-renderer'
+  | 'unregistered-binding-component';
 
 export interface RecipePresentationCoverageEntry {
   recipeId?: string | null;
   uiPayload?: RecipeUiPayload | null;
-  profile?: RecipePresentationProfile | null;
+  uiBinding?: UiPackBinding | null;
 }
 
 export interface RecipePresentationCoverageGap {
@@ -25,7 +23,7 @@ export interface RecipePresentationCoverageGap {
   familyKey: string;
   recipeCount: number;
   sampleRecipeIds: string[];
-  source: 'ui-payload' | 'detected-profile';
+  source: 'ui-binding-v2';
   uiType: string | null;
   component: string | null;
   reason: string;
@@ -36,7 +34,7 @@ export interface RecipePresentationCoverageSummary {
   familyKey: string;
   recipeCount: number;
   sampleRecipeIds: string[];
-  source: 'ui-payload' | 'detected-profile';
+  source: 'ui-binding-v2';
   uiType: string | null;
   component: string | null;
   reason: string;
@@ -68,19 +66,14 @@ function normalizeRecipeId(
   if (explicitRecipeId) {
     return explicitRecipeId;
   }
+  const bindingRecipeId = typeof entry.uiBinding?.recipeId === 'string'
+    ? entry.uiBinding.recipeId.trim()
+    : '';
+  if (bindingRecipeId) {
+    return bindingRecipeId;
+  }
   const payloadRecipeId = typeof uiPayload?.recipeId === 'string' ? uiPayload.recipeId.trim() : '';
   return payloadRecipeId || null;
-}
-
-function normalizeFamilyKey(uiPayload: RecipeUiPayload | null | undefined): string | null {
-  const familyKey = typeof uiPayload?.familyKey === 'string' ? uiPayload.familyKey.trim() : '';
-  if (familyKey) {
-    return familyKey;
-  }
-  const payloadRecord = asRecord(uiPayload);
-  return payloadRecord && Object.prototype.hasOwnProperty.call(payloadRecord, 'nativeLayout')
-    ? UNKNOWN_FAMILY_KEY
-    : null;
 }
 
 function pushSampleRecipeId(
@@ -94,10 +87,6 @@ function pushSampleRecipeId(
   sampleRecipeIds.push(recipeId);
 }
 
-function createUnmappedUiPayloadFamilyError(familyKey: string): string {
-  return `Native recipe UI payload family "${familyKey}" is not registered in the web-authored recipe presentation catalog; NEI frame/background PNG rendering is retired; refusing heuristic UI path.`;
-}
-
 function createUnregisteredComponentError(profile: RecipePresentationProfile): string {
   return `Recipe display component "${profile.component}" is not registered for UI type "${profile.uiConfig.uiType}".`;
 }
@@ -105,7 +94,7 @@ function createUnregisteredComponentError(profile: RecipePresentationProfile): s
 function summarizeKey(input: {
   kind?: RecipePresentationCoverageGapKind;
   familyKey: string;
-  source: 'ui-payload' | 'detected-profile';
+  source: 'ui-binding-v2';
   uiType: string | null;
   component: string | null;
   reason: string;
@@ -142,7 +131,7 @@ export function collectRecipePresentationCoverageReport(
   function recordCovered(input: {
     familyKey: string;
     recipeId: string | null;
-    source: 'ui-payload' | 'detected-profile';
+    source: 'ui-binding-v2';
     profile: RecipePresentationProfile;
   }): void {
     const key = summarizeKey({
@@ -173,7 +162,7 @@ export function collectRecipePresentationCoverageReport(
     kind: RecipePresentationCoverageGapKind;
     familyKey: string;
     recipeId: string | null;
-    source: 'ui-payload' | 'detected-profile';
+    source: 'ui-binding-v2';
     uiType: string | null;
     component: string | null;
     reason: string;
@@ -201,42 +190,52 @@ export function collectRecipePresentationCoverageReport(
 
   for (const entry of entries) {
     const uiPayload = entry.uiPayload ?? null;
-    const familyKey = normalizeFamilyKey(uiPayload);
+    const uiBinding = entry.uiBinding ?? null;
+    const bindingFamilyKey = typeof uiBinding?.familyKey === 'string' ? uiBinding.familyKey.trim() : '';
+    const familyKey = bindingFamilyKey || UNKNOWN_FAMILY_KEY;
     const recipeId = normalizeRecipeId(entry, uiPayload);
-    const payloadProfile = resolveRecipePresentationProfileFromUiPayload(uiPayload);
-    const profile = payloadProfile ?? entry.profile ?? null;
-    const source = payloadProfile ? 'ui-payload' : 'detected-profile';
-
-    if (familyKey) {
-      payloadRecords += 1;
+    let profile: RecipePresentationProfile | null = null;
+    let bindingError: string | null = null;
+    if (uiBinding) {
+      try {
+        profile = resolveRecipePresentationProfileFromBinding(uiBinding);
+      } catch (error) {
+        bindingError = error instanceof Error ? error.message : String(error);
+      }
     }
-    if (!familyKey && !profile) {
-      continue;
+    const source = 'ui-binding-v2' as const;
+
+    if (uiPayload) {
+      payloadRecords += 1;
     }
     auditedRecords += 1;
 
-    if (profile?.renderMode === 'detailed_crafting') {
-      coveredRecords += 1;
-      recordCovered({
-        familyKey: familyKey ?? DETECTED_PROFILE_FAMILY_KEY,
+    if (!uiBinding) {
+      gapRecords += 1;
+      recordGap({
+        kind: 'missing-ui-binding-v2',
+        familyKey,
         recipeId,
         source,
-        profile,
+        uiType: null,
+        component: null,
+        reason: 'ui_binding_v2_missing',
+        error: `UiPackBinding v2 is missing for recipeId: ${recipeId || '<missing>'}`,
       });
       continue;
     }
 
-    if (familyKey && !payloadProfile) {
+    if (bindingError || !profile) {
       gapRecords += 1;
       recordGap({
-        kind: 'unmapped-ui-payload-family',
+        kind: 'invalid-binding-renderer',
         familyKey,
         recipeId,
-        source: 'ui-payload',
+        source,
         uiType: null,
         component: null,
-        reason: 'ui_payload_family_unmapped',
-        error: createUnmappedUiPayloadFamilyError(familyKey),
+        reason: 'ui_binding_v2_invalid_renderer',
+        error: bindingError || 'UiPackBinding v2 renderer resolution failed',
       });
       continue;
     }
@@ -244,8 +243,8 @@ export function collectRecipePresentationCoverageReport(
     if (profile && !isRegisteredRecipeComponent(profile.component)) {
       gapRecords += 1;
       recordGap({
-        kind: payloadProfile ? 'unregistered-ui-payload-component' : 'unregistered-detected-component',
-        familyKey: familyKey ?? DETECTED_PROFILE_FAMILY_KEY,
+        kind: 'unregistered-binding-component',
+        familyKey,
         recipeId,
         source,
         uiType: profile.uiConfig.uiType,
@@ -259,7 +258,7 @@ export function collectRecipePresentationCoverageReport(
     if (profile) {
       coveredRecords += 1;
       recordCovered({
-        familyKey: familyKey ?? DETECTED_PROFILE_FAMILY_KEY,
+        familyKey,
         recipeId,
         source,
         profile,

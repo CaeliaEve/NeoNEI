@@ -106,7 +106,7 @@ export const UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIB1_NUL";
 export const UI_STRING_PACK_PAYLOAD_MAGIC_REPORT = "NEIUIS1_NUL";
 
 export const UI_TEMPLATE_PAYLOAD_VERSION = 9;
-export const UI_BINDING_PAYLOAD_VERSION = 1;
+export const UI_BINDING_PAYLOAD_VERSION = 2;
 export const UI_STRING_PAYLOAD_VERSION = 1;
 
 export const UI_TEMPLATE_ROW_STRIDE_U32 = 25;
@@ -114,7 +114,7 @@ export const UI_SLOT_ROW_STRIDE_U32 = 12;
 export const UI_TEXT_ROW_STRIDE_U32 = 7;
 export const UI_PRIMITIVE_ROW_STRIDE_U32 = 13;
 export const UI_RECT_ROW_STRIDE_U32 = 15;
-export const UI_BINDING_ROW_STRIDE_U32 = 11;
+export const UI_BINDING_ROW_STRIDE_U32 = 14;
 
 export const UI_PACK_SURFACE_CONTRACT_FIELDS = Object.freeze([
   "coordinateSpace",

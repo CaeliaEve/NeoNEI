@@ -12,7 +12,6 @@ import RecipeBrowserStage from '../components/RecipeBrowserStage.vue';
 import RecipeStatePanel from '../components/RecipeStatePanel.vue';
 import AnimatedItemIcon from '../components/AnimatedItemIcon.vue';
 import { useSound } from '../services/sound.service';
-import { resolveRecipePresentationProfile } from '../services/uiTypeMapping';
 import { normalizeThaumcraftAspectItemIdForRecipeLookup } from '../services/thaumcraftAspects';
 import { useRecipeViewer } from '../composables/useRecipeViewer';
 import { useRecipeRouteSync } from '../composables/useRecipeRouteSync';
@@ -150,26 +149,6 @@ const displayVariantGroups = computed(() =>
 );
 
 const showGlobalVariantScaffold = computed(() => {
-  const recipe = currentPageRecipes.value[0];
-  if (!recipe) {
-    return false;
-  }
-  const profile = resolveRecipePresentationProfile({
-    machineType: recipe.machineInfo?.machineType,
-    recipeType: recipe.recipeType,
-    recipeTypeData: recipe.recipeTypeData,
-    inputs: recipe.inputs,
-    additionalData: recipe.additionalData as Record<string, unknown> | undefined,
-    metadata: recipe.metadata as Record<string, unknown> | undefined,
-    preferDetailedCrafting: false,
-  });
-  if (
-    profile.uiConfig.presentation?.surface === 'ritual'
-    || profile.uiConfig.presentation?.family === 'thaumcraft'
-    || profile.uiConfig.presentation?.family === 'gregtech'
-  ) {
-    return false;
-  }
   return displayVariantGroups.value.length > 0;
 });
 
@@ -228,40 +207,8 @@ const overlayStatusVm = computed(() => {
   return { text: state.message || copy.overlaySent, className: 'recipe-detail-pill-ready', showRetry: false };
 });
 
-const currentPresentationProfile = computed(() => {
-  const recipe = currentPageRecipes.value[0];
-  if (!recipe) return null;
-  return resolveRecipePresentationProfile({
-    machineType: recipe.machineInfo?.machineType,
-    recipeType: recipe.recipeType,
-    recipeTypeData: recipe.recipeTypeData,
-    inputs: recipe.inputs,
-    additionalData: recipe.additionalData as Record<string, unknown> | undefined,
-    metadata: recipe.metadata as Record<string, unknown> | undefined,
-    preferDetailedCrafting: false,
-  });
-});
-
-const isFurnaceCanvas = computed(() => currentPresentationProfile.value?.component === 'FurnaceUI');
-
-const shellToneClass = computed(() => {
-  if (isRecipeIndexMode.value) return 'tone-neutral';
-
-  const family = currentPresentationProfile.value?.uiConfig.presentation?.family;
-  if (family === 'thaumcraft') return 'tone-arcane';
-  if (family === 'blood_magic') return 'tone-blood';
-  if (family === 'botania') return 'tone-botania';
-  if (family === 'gregtech' || family === 'multiblock') return 'tone-tech';
-
-  const name = `${currentCategory.value?.name || ''}`.toLowerCase();
-  if (name.includes('infusion') || name.includes('thaum')) return 'tone-arcane';
-  if (name.includes('blood')) return 'tone-blood';
-  if (name.includes('botania')) return 'tone-botania';
-  if (name.includes('gt') || name.includes('gregtech') || name.includes('machine')) {
-    return 'tone-tech';
-  }
-  return 'tone-neutral';
-});
+const isFurnaceCanvas = computed(() => false);
+const shellToneClass = computed(() => 'tone-neutral');
 
 const isWorkbenchCanvas = computed(() => {
   const categoryName = `${currentCategory.value?.name || ''}`.toLowerCase();

@@ -1,5 +1,5 @@
 ﻿import { getDatabaseManager } from '../models/database';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import type Database from 'better-sqlite3';
 import {
   buildOcPatternEntry,
@@ -142,7 +142,7 @@ export class PatternsService {
   }
 
   async createPatternGroup(groupName: string, description?: string): Promise<PatternGroup> {
-    const groupId = uuidv4();
+    const groupId = randomUUID();
     const now = new Date().toISOString();
     const descriptionValue = description ?? '';
 
@@ -293,7 +293,7 @@ export class PatternsService {
       priority?: number;
     } = {}
   ): Promise<Pattern> {
-    const patternId = uuidv4();
+    const patternId = randomUUID();
     const now = new Date().toISOString();
     const { crafting = 1, substitute = 0, beSubstitute = 0, priority = 0 } = options;
 

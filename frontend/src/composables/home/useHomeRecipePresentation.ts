@@ -1,15 +1,7 @@
-﻿import { computed, type ComputedRef, type Ref } from "vue";
-import type { Recipe, RecipeTypeDTO } from "../../services/api";
-import { resolveRecipePresentationProfile } from "../../services/uiTypeMapping";
+import { computed, type ComputedRef, type Ref } from "vue";
 
 type RecipeLike = {
   recipeId?: string;
-  machineInfo?: { machineType?: string | null } | null;
-  recipeType?: string | null;
-  recipeTypeData?: RecipeTypeDTO | null;
-  inputs?: Recipe["inputs"];
-  additionalData?: unknown;
-  metadata?: unknown;
 };
 
 type CategoryLike = {
@@ -32,47 +24,13 @@ export function useHomeRecipePresentation({
   recipeModalError,
   recipeModalMode,
 }: UseHomeRecipePresentationOptions) {
-  const currentRecipePresentation = computed(() => {
-    const recipe = currentPageRecipes.value[0];
-    if (!recipe) return null;
-    return resolveRecipePresentationProfile({
-      machineType: recipe.machineInfo?.machineType,
-      recipeType: recipe.recipeType,
-      recipeTypeData: recipe.recipeTypeData,
-      inputs: recipe.inputs,
-      additionalData: recipe.additionalData as Record<string, unknown> | undefined,
-      metadata: recipe.metadata as Record<string, unknown> | undefined,
-      preferDetailedCrafting: false,
-    });
-  });
-
-  const isRecipeModalWorkbenchCanvas = computed(() => {
-    const categoryName = `${currentCategory.value?.name || ""}`.toLowerCase();
-    const isNamedWorkbench =
-      categoryName === "crafting table"
-      || categoryName === "crafting (shaped)"
-      || categoryName === "crafting (shapeless)"
-      || categoryName === "有序合成"
-      || categoryName === "无序合成";
-    return currentCategory.value?.type === "crafting" || isNamedWorkbench;
-  });
-
-  const isRecipeModalWideCanvas = computed(() => (
-    isRecipeModalWorkbenchCanvas.value || currentRecipePresentation.value?.component === "FurnaceUI"
-  ));
-
-  const isRecipeModalFurnaceCanvas = computed(() => currentRecipePresentation.value?.component === "FurnaceUI");
-
-  const recipeModalScaleToFit = computed(() => {
-    if (isRecipeModalWideCanvas.value) return false;
-    const surface = currentRecipePresentation.value?.uiConfig.presentation?.surface;
-    const density = currentRecipePresentation.value?.uiConfig.presentation?.density;
-    const family = currentRecipePresentation.value?.uiConfig.presentation?.family;
-    if (surface === "ritual" || surface === "research") return false;
-    if (density === "oversized") return false;
-    if (family === "thaumcraft" || family === "blood_magic" || family === "multiblock") return false;
-    return true;
-  });
+  // The modal shell does not choose a renderer. RecipeDisplayRouter resolves the
+  // versioned UiPackBinding v2 and owns all presentation semantics.
+  const currentRecipePresentation = computed(() => null);
+  const isRecipeModalWorkbenchCanvas = computed(() => currentCategory.value?.type === "crafting");
+  const isRecipeModalWideCanvas = computed(() => isRecipeModalWorkbenchCanvas.value);
+  const isRecipeModalFurnaceCanvas = computed(() => false);
+  const recipeModalScaleToFit = computed(() => !isRecipeModalWideCanvas.value);
 
   const recipeStageIsStateView = computed(() => (
     recipeModalLoading.value || Boolean(recipeModalError.value) || currentPageRecipes.value.length === 0

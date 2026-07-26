@@ -1,15 +1,15 @@
-﻿{
-    "compiler":  "elysium-compiler",
-    "version":  "0.1.0",
-    "target":  "windows-x64",
-    "binary":  "tools/elysium-compiler/bin/elysium-compiler.exe",
-    "sha256":  "ec837af56854ae6a861bdc4d50b875ecb5f05c801bb3f2de55a0fd13c7799fec",
-    "rawExportSchemaVersion":  "1.0",
-    "compiledDistSchemaVersion":  "1.0",
-    "localFallbacks":  [
-                           "../elysium-compiler/target/release/elysium-compiler.exe"
-                       ],
-    "exportAbiVersion":  "elysium.export.v2",
-    "packAbiVersion":  "elysium.pack.v1",
-    "runtimeAbiVersion":  "elysium.runtime.v1"
+{
+  "compiler": "elysium-compiler",
+  "version": "0.1.0",
+  "target": "windows-x64",
+  "binary": "tools/elysium-compiler/bin/elysium-compiler.exe",
+  "sha256": "b9bd5675278b814609fc4d27f9b5d91ab00d844bf242d0c6b1ed458fdeaa007f",
+  "rawExportSchemaVersion": "1.0",
+  "compiledDistSchemaVersion": "1.0",
+  "localFallbacks": [
+    "../elysium-compiler/target/release/elysium-compiler.exe"
+  ],
+  "exportAbiVersion": "elysium.export.v2",
+  "packAbiVersion": "elysium.pack.v1",
+  "runtimeAbiVersion": "elysium.runtime.v1"
 }

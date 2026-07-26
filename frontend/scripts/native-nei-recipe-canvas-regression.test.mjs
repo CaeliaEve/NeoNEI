@@ -36,7 +36,7 @@ test('recipe router cannot route to retired NEI screenshots or background PNG de
   assert.doesNotMatch(presentationSource, /shouldUseNativeLayoutRenderer/);
   assert.doesNotMatch(policySource, /kind: 'native-layout'/);
   assert.doesNotMatch(policySource, /recipeUiPayloadNativeFrame/);
-  assert.match(policySource, /nativePayloadAuthority: 'web-authored-ui-only'/);
+  assert.match(policySource, /presentationAuthority: 'ui-binding-v2-renderer-id-only'/);
   assert.match(policySource, /retiredNativeArtifacts: Object\.freeze\(\['nei-frame-png', 'nei-background-png'\]\)/);
 });
 

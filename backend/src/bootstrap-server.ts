@@ -6,6 +6,10 @@ import {
   initializeRuntimeDatabases,
   startRuntimeServer,
 } from './services/runtime-server-lifecycle.service';
+import {
+  recoverExternalRuntimeArtifactPromotion,
+  verifyCurrentExternalRuntimeGenerationSeal,
+} from './services/external-runtime-generation.service';
 
 const runtimeAccelerationRegistry = createRuntimeAccelerationManagerRegistry();
 
@@ -17,6 +21,14 @@ export const app = createApp({
 
 export async function startServer(): Promise<void> {
   try {
+    const promotionRecovery = recoverExternalRuntimeArtifactPromotion();
+    logger.info('External runtime promotion recovery complete', promotionRecovery);
+    const currentGenerationSeal = verifyCurrentExternalRuntimeGenerationSeal();
+    logger.info('External runtime generation seal verification complete', {
+      generationId: currentGenerationSeal?.generationId ?? null,
+      fileCount: currentGenerationSeal?.fileCount ?? 0,
+      totalBytes: currentGenerationSeal?.totalBytes ?? 0,
+    });
     const accelerationDbManager = await initializeRuntimeDatabases(runtimeAccelerationRegistry);
     startRuntimeServer({
       app,

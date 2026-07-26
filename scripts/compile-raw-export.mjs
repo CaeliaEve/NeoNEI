@@ -11,7 +11,13 @@ const inputArg = readArg("--input");
 const outputArg = readArg("--output");
 const allowLegacyCompile = args.includes("--legacy-compile-ok") || process.env.NEONEI_ALLOW_LEGACY_JS_COMPILE === "1";
 if (!selfTest && !allowLegacyCompile) {
-  console.warn("[compile-raw-export] JS compiler is retired from the production path; use the pinned tools/elysium-compiler binary for runtime packs. This run is compatibility-only.");
+  console.error(
+    "[compile-raw-export] Legacy JS compiler execution is disabled. "
+      + "Use --self-test for its isolated regression fixture, or explicitly authorize a migration-only run "
+      + "with --legacy-compile-ok or NEONEI_ALLOW_LEGACY_JS_COMPILE=1. "
+      + "Production runtime packs must be built by the pinned Elysium compiler.",
+  );
+  process.exit(2);
 }
 
 

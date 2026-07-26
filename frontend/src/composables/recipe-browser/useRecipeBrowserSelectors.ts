@@ -1,6 +1,5 @@
 import { computed, type Ref } from 'vue';
 import type { Recipe, RecipeVariantGroup, indexedItemRecipeSummaryResponse } from '../../services/api';
-import { resolveRecipePresentationProfile } from '../../services/uiTypeMapping';
 import type { RecipeGraph } from '../../domain/recipeGraph';
 import type { RecipeIndexes } from '../../utils/recipeIndexing';
 import {
@@ -377,18 +376,7 @@ export const useRecipeBrowserSelectors = ({
   });
 
   const recipesPerPage = computed(() => {
-    const recipe = currentCategoryPages.value[0];
-    if (!recipe) return 1;
-    const profile = resolveRecipePresentationProfile({
-      machineType: recipe.machineInfo?.machineType,
-      recipeType: recipe.recipeType,
-      recipeTypeData: recipe.recipeTypeData,
-      inputs: recipe.inputs,
-      additionalData: recipe.additionalData as Record<string, unknown> | undefined,
-      metadata: recipe.metadata as Record<string, unknown> | undefined,
-      preferDetailedCrafting: false,
-    });
-    return profile.component === 'FurnaceUI' ? 2 : 1;
+    return 1;
   });
 
   const currentBaseRecipe = computed(() => {

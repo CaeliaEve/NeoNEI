@@ -22,11 +22,12 @@ import {
   normalizeNativeRuntimeManifestUrl,
   resolveManifestRelativeUrl,
 } from "./NativeRuntimeRequestPolicy.ts";
+import {
+  fetchRuntimeArtifactArrayBuffer,
+  fetchRuntimeArtifactJson,
+} from "../services/runtimeArtifactClient.ts";
 
 export { resolveManifestRelativeUrl } from "./NativeRuntimeRequestPolicy.ts";
-
-const manifestRequestCache = new Map<string, Promise<NativeRuntimeManifest>>();
-const packRequestCache = new Map<string, Promise<NativeRuntimePack>>();
 
 export type NativeRuntimeManifestGate = (manifest: NativeRuntimeManifest) => void;
 
@@ -121,21 +122,15 @@ function detectPayloadEncoding(name: NativeRuntimePackName, payloadBuffer: Array
 
 export async function loadNativeRuntimeManifest(manifestUrl: string): Promise<NativeRuntimeManifest> {
   const normalizedManifestUrl = normalizeNativeRuntimeManifestUrl(manifestUrl);
-  const existing = manifestRequestCache.get(normalizedManifestUrl);
-  if (existing) return existing;
-  const request = (async () => {
-    const response = await fetch(normalizedManifestUrl, { cache: getNativeRuntimeFetchCache("manifest") });
-    if (!response.ok) {
-      throw new Error(`Failed to load native runtime manifest: ${response.status} ${response.statusText}`);
-    }
-    const payload = await response.json() as unknown;
-    return unwrapCurrentRuntimeManifestPayload(payload);
-  })().catch((error) => {
-    manifestRequestCache.delete(normalizedManifestUrl);
-    throw error;
+  const payload = await fetchRuntimeArtifactJson<unknown>({
+    manifestIdentity: `native-manifest:${normalizedManifestUrl}`,
+    artifactPath: normalizedManifestUrl,
+    resolvedUrl: normalizedManifestUrl,
+    fetchInit: { cache: getNativeRuntimeFetchCache("manifest") },
+    persistent: false,
+    memory: false,
   });
-  manifestRequestCache.set(normalizedManifestUrl, request);
-  return request;
+  return unwrapCurrentRuntimeManifestPayload(payload);
 }
 
 async function loadNativeRuntimePack(
@@ -148,31 +143,23 @@ async function loadNativeRuntimePack(
   const revision = buildNativeRuntimeRevision(manifest, path);
   const url = appendNativeRuntimeRevision(resolveManifestRelativeUrl(normalizedManifestUrl, path), revision);
   const cacheKey = createNativeRuntimePackCacheKey(normalizedManifestUrl, name, path, revision);
-  const existing = packRequestCache.get(cacheKey);
-  if (existing) return existing;
-  const request = (async () => {
-    const response = await fetch(url, { cache: getNativeRuntimeFetchCache("pack") });
-    if (!response.ok) {
-      throw new Error(`Failed to load native runtime pack ${name}: ${response.status} ${response.statusText}`);
-    }
-    const buffer = await response.arrayBuffer();
-    const header = parseNativeRuntimePackHeader(buffer, NATIVE_RUNTIME_PACK_SCHEMAS[name]);
-    const payloadBuffer = getNativeRuntimePackPayloadBuffer(buffer, header);
-    return {
-      name,
-      path,
-      url,
-      header,
-      buffer,
-      payloadBuffer,
-      payloadEncoding: detectPayloadEncoding(name, payloadBuffer),
-    };
-  })().catch((error) => {
-    packRequestCache.delete(cacheKey);
-    throw error;
+  const buffer = await fetchRuntimeArtifactArrayBuffer({
+    manifestIdentity: manifest.sourceSignature ?? manifest.runtimeId ?? normalizedManifestUrl,
+    artifactPath: cacheKey,
+    resolvedUrl: url,
+    fetchInit: { cache: getNativeRuntimeFetchCache("pack") },
   });
-  packRequestCache.set(cacheKey, request);
-  return request;
+  const header = parseNativeRuntimePackHeader(buffer, NATIVE_RUNTIME_PACK_SCHEMAS[name]);
+  const payloadBuffer = getNativeRuntimePackPayloadBuffer(buffer, header);
+  return {
+    name,
+    path,
+    url,
+    header,
+    buffer,
+    payloadBuffer,
+    payloadEncoding: detectPayloadEncoding(name, payloadBuffer),
+  };
 }
 
 export async function loadNativeRuntimeBuffers(

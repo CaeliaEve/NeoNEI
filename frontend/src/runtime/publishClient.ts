@@ -1,4 +1,4 @@
-import { BACKEND_BASE_URL } from '../services/api/core/http';
+import { BACKEND_BASE_URL } from '../services/api/core/http.ts';
 
 export function getBackendOrigin(): string {
   return BACKEND_BASE_URL.replace(/\/api\/?$/i, '');
@@ -31,17 +31,36 @@ export function buildPublishedAssetUrl(assetPath: string): string {
     : `${getBackendOrigin()}${normalizedPath.startsWith('/') ? normalizedPath : `/${normalizedPath}`}`;
 }
 
+function canonicalPublishedArtifactPath(url: string): string {
+  try {
+    const resolved = new URL(url, globalThis.location?.href ?? 'http://localhost/');
+    return `${resolved.pathname}${resolved.search}`;
+  } catch {
+    return url;
+  }
+}
+
 export function createPublishedJsonClient(options: {
   isDisabled?: () => boolean;
-  hasMemory: (url: string) => boolean;
-  getMemory: <T>(url: string) => T | undefined;
-  setMemory: (url: string, payload: unknown) => void;
-  getInFlight: <T>(url: string) => Promise<T> | undefined;
-  setInFlight: (url: string, request: Promise<unknown>) => void;
-  deleteInFlight: (url: string) => void;
-  readPersistent?: <T>(url: string) => Promise<T | null>;
-  writePersistent?: (url: string, payload: unknown) => void;
+  getManifestIdentity?: () => string | null;
+  getContentHash?: (assetPath: string, resolvedUrl: string) => string | null;
+  isArtifactWarm: (request: {
+    artifactPath: string;
+    resolvedUrl: string;
+    manifestIdentity: string;
+    contentHash?: string | null;
+  }) => boolean;
+  loadJson: <T>(request: {
+    artifactPath: string;
+    resolvedUrl: string;
+    manifestIdentity: string;
+    contentHash?: string | null;
+  }) => Promise<T>;
 }) {
+  if (typeof options?.loadJson !== 'function' || typeof options?.isArtifactWarm !== 'function') {
+    throw new Error('Published JSON client requires the canonical runtime artifact client');
+  }
+
   function isWarm(assetPath: string | null | undefined): boolean {
     const normalizedPath = `${assetPath ?? ''}`.trim();
     if (!normalizedPath) {
@@ -49,7 +68,14 @@ export function createPublishedJsonClient(options: {
     }
 
     const url = buildPublishedAssetUrl(normalizedPath);
-    return options.hasMemory(url) || Boolean(options.getInFlight(url));
+    const artifactPath = canonicalPublishedArtifactPath(url);
+    const manifestIdentity = options.getManifestIdentity?.() ?? `publish:${url}`;
+    return options.isArtifactWarm({
+      artifactPath,
+      resolvedUrl: url,
+      manifestIdentity,
+      contentHash: options.getContentHash?.(normalizedPath, url),
+    });
   }
 
   async function fetchJson<T>(assetPath: string): Promise<T> {
@@ -62,35 +88,14 @@ export function createPublishedJsonClient(options: {
     }
 
     const url = buildPublishedAssetUrl(normalizedPath);
-    if (options.hasMemory(url)) {
-      return options.getMemory<T>(url) as T;
-    }
-    const persistent = await options.readPersistent?.<T>(url);
-    if (persistent) {
-      options.setMemory(url, persistent);
-      return persistent;
-    }
-    const existingRequest = options.getInFlight<T>(url);
-    if (existingRequest) {
-      return existingRequest;
-    }
-
-    const request = fetch(url)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Published asset request failed (${response.status}) for ${normalizedPath}`);
-        }
-        const payload = await response.json();
-        options.setMemory(url, payload);
-        options.writePersistent?.(url, payload);
-        return payload;
-      })
-      .finally(() => {
-        options.deleteInFlight(url);
-      });
-
-    options.setInFlight(url, request);
-    return request as Promise<T>;
+    const artifactPath = canonicalPublishedArtifactPath(url);
+    const manifestIdentity = options.getManifestIdentity?.() ?? `publish:${url}`;
+    return options.loadJson<T>({
+      artifactPath,
+      resolvedUrl: url,
+      manifestIdentity,
+      contentHash: options.getContentHash?.(normalizedPath, url),
+    });
   }
 
   return { isWarm, fetchJson };

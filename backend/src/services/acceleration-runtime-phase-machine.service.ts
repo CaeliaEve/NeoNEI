@@ -21,8 +21,10 @@ export function decideAccelerationReconcilePhase(input: {
   compilerAuthority?: 'internal-sqlite' | 'external-runtime';
   publishMaterializeOnStart?: boolean;
 }): AccelerationReconcileDecision {
-  if (input.compilerAuthority === 'external-runtime' && !input.fresh) {
-    return ACCELERATION_RECONCILE_DECISION.compileExternalRuntime;
+  if (input.compilerAuthority === 'external-runtime') {
+    return input.fresh
+      ? ACCELERATION_RECONCILE_DECISION.readyNoop
+      : ACCELERATION_RECONCILE_DECISION.compileExternalRuntime;
   }
   if (!input.fresh) {
     return ACCELERATION_RECONCILE_DECISION.compileSnapshot;

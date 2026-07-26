@@ -50,6 +50,20 @@ test('matchesIndexedItem keeps english-name search working', () => {
   assert.equal(matchesIndexedItem(entry, normalizeSearchKeyword('ii')), false);
 });
 
+test('matchesIndexedItem rejects pinyin middle substrings while keeping pinyin prefixes', () => {
+  const entry = buildSearchIndexEntry({
+    itemId: 'i~mod~container~0',
+    localizedName: '\u9519\u4f4d\u5bb9\u5668',
+    modId: 'mod',
+    internalName: 'container',
+    searchTerms: null,
+  });
+
+  assert.equal(entry.pinyinFull, 'cuoweirongqi');
+  assert.equal(matchesIndexedItem(entry, normalizeSearchKeyword('cuowei')), true);
+  assert.equal(matchesIndexedItem(entry, normalizeSearchKeyword('iron')), false);
+});
+
 test('queryAccelerationSearch matches by pinyin and acronym from acceleration tables', () => {
   const db = new Database(':memory:');
   db.exec(`
@@ -106,6 +120,24 @@ test('queryAccelerationSearch matches by pinyin and acronym from acceleration ta
   );
 
   db.prepare(`
+    INSERT INTO items_core (item_id, localized_name, mod_id, internal_name)
+    VALUES (?, ?, ?, ?)
+  `).run('i~mod~container~0', '\u9519\u4f4d\u5bb9\u5668', 'mod', 'container');
+
+  insertSearch.run(
+    'i~mod~container~0',
+    '\u9519\u4f4d\u5bb9\u5668',
+    'container',
+    'i~mod~container~0',
+    'container mod rongqi',
+    'cuoweirongqi',
+    'cwrq',
+    'rongqi',
+    0,
+    0,
+  );
+
+  db.prepare(`
     INSERT INTO hot_items (item_id, popularity_score, home_rank, search_rank, recipe_rank)
     VALUES (?, ?, ?, ?, ?)
   `).run('i~Botania~manaResource~4', 999, 1, 1, 20);
@@ -133,6 +165,12 @@ test('queryAccelerationSearch matches by pinyin and acronym from acceleration ta
 
   const byAcronym = queryAccelerationSearch(db, 'tlgd', 10);
   assert.equal(byAcronym[0]?.itemId, 'i~Botania~manaResource~4');
+
+  const pinyinMiddleFalsePositive = queryAccelerationSearch(db, 'iron', 10);
+  assert.equal(
+    pinyinMiddleFalsePositive.some((entry) => entry.itemId === 'i~mod~container~0'),
+    false,
+  );
 
   db.close();
 });

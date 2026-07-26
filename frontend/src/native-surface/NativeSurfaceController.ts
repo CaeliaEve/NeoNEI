@@ -29,6 +29,7 @@ import {
 } from "./runtimePackCache";
 import type { NativeRuntimePackProfile } from "./NativeRuntimeProfilePolicy";
 import type { BrowserVariantGroup, Item } from "../services/api";
+import { NativeSurfaceLifecycle } from "./NativeSurfaceLifecycle";
 
 function normalizeRenderer(renderer?: NativeRendererBackendKind): NativeRendererBackendKind {
   if (renderer === "webgpu" || renderer === "webgl2" || renderer === "auto") return renderer;
@@ -91,6 +92,7 @@ function requireEngineResponse<Type extends NativeSurfaceEngineResponse["type"]>
 
 export class NativeSurfaceController implements NativeNeiSurfaceController {
   private readonly surfaceId: NativeSurfaceId;
+  private readonly postEngineEvent: typeof postNativeSurfaceEngineEvent;
   private initialized = false;
   private renderer: NativeRendererBackendKind = "webgl2";
   private viewport: NativeSurfaceViewport | null = null;
@@ -110,38 +112,57 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
   private mutationFlushTimerKind: "raf" | "timeout" | null = null;
   private mutationFlushPromise: Promise<void> | null = null;
   private mutationFlushResolve: (() => void) | null = null;
+  private readonly lifecycle = new NativeSurfaceLifecycle();
 
-  constructor(surfaceId: NativeSurfaceId) {
+  constructor(
+    surfaceId: NativeSurfaceId,
+    postEngineEvent: typeof postNativeSurfaceEngineEvent = postNativeSurfaceEngineEvent,
+  ) {
     this.surfaceId = surfaceId;
+    this.postEngineEvent = postEngineEvent;
     updateNativeSurfaceMetrics(surfaceId, createNativeSurfaceMetrics(surfaceId), "construct");
   }
 
   async initialize(options: NativeSurfaceInitializeOptions): Promise<void> {
-    this.initialized = true;
+    const generation = this.lifecycle.beginInitialize();
+    this.initialized = false;
     this.renderer = normalizeRenderer(options.preferredRenderer);
     this.animationEnabled = Boolean(options.enableAnimations);
     this.historyViewportEnabled = Boolean(options.enableHistoryViewport);
-    const response = await postNativeSurfaceEngineEvent({
-      type: "initialize",
-      surfaceId: this.surfaceId,
-      preferredRenderer: this.renderer,
-      enableAnimations: this.animationEnabled,
-      enableHistoryViewport: this.historyViewportEnabled,
-    });
-    requireEngineResponse(response, "ack", "initialize");
-    if (options.manifestUrl) {
-      await this.loadRuntimePacks(options.manifestUrl, options.runtimePackProfile);
+    try {
+      const response = await this.postEngineEvent({
+        type: "initialize",
+        surfaceId: this.surfaceId,
+        preferredRenderer: this.renderer,
+        enableAnimations: this.animationEnabled,
+        enableHistoryViewport: this.historyViewportEnabled,
+      });
+      requireEngineResponse(response, "ack", "initialize");
+      if (!this.lifecycle.completeInitialize(generation)) return;
+      this.initialized = true;
+      if (options.manifestUrl) {
+        await this.loadRuntimePacks(options.manifestUrl, options.runtimePackProfile, generation);
+      }
+      if (!this.lifecycle.isCurrent(generation)) return;
+      this.touch("initialize");
+    } catch (error) {
+      if (this.lifecycle.rollbackInitialize(generation)) {
+        this.initialized = false;
+        this.discardPendingMutations();
+        this.touch("initialize:error");
+      }
+      throw error;
     }
-    this.touch("initialize");
   }
 
   destroy(): void {
+    this.lifecycle.destroy();
     void this.flushMutationsNow().catch((error) => {
       this.reportEngineFailure("destroy:flush:error", error);
     });
     this.initialized = false;
     this.hover = null;
-    void postNativeSurfaceEngineEvent({
+    void this.postEngineEvent({
       type: "destroy",
       surfaceId: this.surfaceId,
     })
@@ -210,7 +231,7 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
 
   async requestFrame(nowMs: number) {
     await this.flushMutationsNow();
-    const response = await postNativeSurfaceEngineEvent({
+    const response = await this.postEngineEvent({
       type: "frame",
       surfaceId: this.surfaceId,
       nowMs,
@@ -218,11 +239,8 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
     this.touch("requestFrame");
     const frame = requireEngineResponse(response, "frame", "requestFrame");
     return {
-      drawCommands: frame.drawCommands,
-      spriteCommands: frame.spriteCommands,
-      drawCommandBuffer: frame.commandBuffer,
-      drawCommandStride: frame.commandStride,
-      drawCommandCount: frame.commandCount,
+      rendered: frame.rendered,
+      missingTextureKeys: frame.missingTextureKeys,
       hasAnimatedSprites: frame.hasAnimatedSprites,
       animatedSpriteCount: frame.animatedSpriteCount,
       nextFrameDelayMs: frame.nextFrameDelayMs,
@@ -242,7 +260,7 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
 
   async hitTest(pointer: NativeSurfacePointer): Promise<NativeHitResult | null> {
     await this.flushMutationsNow();
-    const response = await postNativeSurfaceEngineEvent({
+    const response = await this.postEngineEvent({
       type: "hitTest",
       surfaceId: this.surfaceId,
       x: pointer.x,
@@ -301,6 +319,7 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
   }
 
   private queueMutation(mutation: NativeSurfaceEngineMutation): void {
+    if (!this.lifecycle.isActive()) return;
     this.pendingMutations.set(mutation.type, mutation);
     if (!this.mutationFlushPromise) {
       this.mutationFlushPromise = new Promise<void>((resolve) => {
@@ -334,6 +353,18 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
     }
   }
 
+  private discardPendingMutations(): void {
+    if (this.mutationFlushTimer !== null && this.mutationFlushTimerKind === "raf" && typeof cancelAnimationFrame === "function") {
+      cancelAnimationFrame(Number(this.mutationFlushTimer));
+    } else if (this.mutationFlushTimer !== null && this.mutationFlushTimerKind === "timeout") {
+      clearTimeout(this.mutationFlushTimer);
+    }
+    this.mutationFlushTimer = null;
+    this.mutationFlushTimerKind = null;
+    this.pendingMutations.clear();
+    this.resolveMutationFlush();
+  }
+
   private async flushMutationsNow(): Promise<void> {
     if (this.mutationFlushTimer !== null && this.mutationFlushTimerKind === "raf" && typeof cancelAnimationFrame === "function") {
       cancelAnimationFrame(Number(this.mutationFlushTimer));
@@ -342,6 +373,11 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
     }
     this.mutationFlushTimer = null;
     this.mutationFlushTimerKind = null;
+    if (!this.lifecycle.isActive()) {
+      this.pendingMutations.clear();
+      this.resolveMutationFlush();
+      return;
+    }
     if (this.pendingMutations.size <= 0) {
       this.resolveMutationFlush();
       return;
@@ -349,7 +385,7 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
     const mutations = Array.from(this.pendingMutations.values());
     this.pendingMutations.clear();
     try {
-      const response = await postNativeSurfaceEngineEvent({
+      const response = await this.postEngineEvent({
         type: "mutationBatch",
         surfaceId: this.surfaceId,
         mutations,
@@ -367,11 +403,16 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
     this.mutationFlushPromise = null;
   }
 
-  private async loadRuntimePacks(manifestUrl: string, profile: NativeRuntimePackProfile = "full"): Promise<void> {
+  private async loadRuntimePacks(
+    manifestUrl: string,
+    profile: NativeRuntimePackProfile = "full",
+    generation: number,
+  ): Promise<void> {
     this.nativeRuntime = beginNativeRuntimeLoad(this.nativeRuntime);
     this.touch("runtimePacks:loading");
     try {
       const runtime = await loadNativeRuntimeBuffersForProfile(manifestUrl, profile);
+      if (!this.lifecycle.isCurrent(generation)) return;
       const packs = Object.values(runtime.packs).filter(Boolean).map((pack) => ({
         name: pack.name,
         path: pack.path,
@@ -384,16 +425,18 @@ export class NativeSurfaceController implements NativeNeiSurfaceController {
         // runtime pack cache remains resident for other surfaces.
         buffer: pack.payloadBuffer.slice(0),
       }));
-      const response = await postNativeSurfaceEngineEvent({
+      const response = await this.postEngineEvent({
         type: "runtimePacks",
         surfaceId: this.surfaceId,
         manifestUrl: runtime.manifestUrl,
         packs,
       });
       requireEngineResponse(response, "ack", "runtimePacks");
+      if (!this.lifecycle.isCurrent(generation)) return;
       this.nativeRuntime = markNativeRuntimeReady(this.nativeRuntime, true, packs.length);
       this.touch(this.nativeRuntime.ready ? "runtimePacks:ready" : "runtimePacks:error");
     } catch (error) {
+      if (!this.lifecycle.isCurrent(generation)) return;
       this.nativeRuntime = markNativeRuntimeError(this.nativeRuntime, error);
       this.touch("runtimePacks:error");
       recordNativeSurfaceFault(this.surfaceId, {

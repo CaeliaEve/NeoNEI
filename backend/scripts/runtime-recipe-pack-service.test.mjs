@@ -7,17 +7,33 @@ import { createRequire } from 'node:module';
 import test from 'node:test';
 
 const require = createRequire(import.meta.url);
+require('ts-node/register');
 
 const repoRoot = resolve(import.meta.dirname, '..', '..');
 const backendRoot = resolve(import.meta.dirname, '..');
-const compiler = resolve(repoRoot, '..', 'elysium-compiler', 'target', 'release', 'elysium-compiler.exe');
-const fixture = resolve(repoRoot, '..', 'elysium-compiler', 'crates', 'elysium-compiler-core', 'fixtures', 'raw-export-minimal');
+const fixture = resolve(repoRoot, 'tools', 'elysium-compiler', 'fixtures', 'raw-export-native-ui-gt');
+const { resolveElysiumOutputGeneration } = require(resolve(
+  backendRoot,
+  'src/compiler-client/elysium-output-generation.ts',
+));
+
+function resolvePinnedCompiler() {
+  const result = spawnSync(process.execPath, ['scripts/ensure-elysium-compiler.mjs', '--json'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+    stdio: 'pipe',
+  });
+  assert.equal(result.status, 0, `pinned compiler resolution failed: ${result.stderr || result.stdout}`);
+  const resolved = JSON.parse(result.stdout);
+  assert.equal(existsSync(resolved.compiler), true, 'lock-resolved compiler binary must exist');
+  return resolved.compiler;
+}
 
 function tempRoot(prefix) {
   return join(tmpdir(), `${prefix}-${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`);
 }
 
-function runCompiler(args, label) {
+function runCompiler(compiler, args, label) {
   const result = spawnSync(compiler, args, {
     cwd: repoRoot,
     encoding: 'utf8',
@@ -27,25 +43,39 @@ function runCompiler(args, label) {
 }
 
 test('runtime recipe pack service reads produced-by and used-in refs from compiler pack', () => {
+  const compiler = resolvePinnedCompiler();
   assert.equal(existsSync(compiler), true, 'elysium-compiler release binary must exist for recipe pack service smoke');
   const workDir = tempRoot('neonei-runtime-recipe-pack');
   const distDataDir = join(workDir, 'dist-data');
+  const runtimeAuthorityDir = join(workDir, 'runtime-authority');
   mkdirSync(distDataDir, { recursive: true });
   try {
-    runCompiler(['compile', '--input', fixture, '--output', distDataDir, '--report', join(workDir, 'compile-report.json'), '--scope', 'native-ui'], 'compile fixture');
-    assert.equal(existsSync(join(distDataDir, 'rust', 'recipes.bin')), true, 'fixture compile should produce recipes.bin');
+    runCompiler(compiler, ['compile', '--input', fixture, '--output', distDataDir, '--report', join(workDir, 'compile-report.json'), '--scope', 'native-ui'], 'compile fixture');
+    const compiledGeneration = resolveElysiumOutputGeneration(distDataDir);
+    const artifactRoot = compiledGeneration.generationRoot;
+    assert.equal(existsSync(join(distDataDir, 'manifest.json')), false, 'flat output root must not be an artifact authority');
+    assert.equal(existsSync(join(artifactRoot, 'rust', 'recipes.bin')), true, 'fixture compile should produce recipes.bin');
 
-    process.env.DIST_DATA_DIR = distDataDir;
+    process.env.DIST_DATA_DIR = runtimeAuthorityDir;
     process.env.TS_NODE_PROJECT = resolve(backendRoot, 'tsconfig.json');
-    require('ts-node/register');
+    const { promoteExternalRuntimeArtifact } = require(resolve(
+      backendRoot,
+      'src/services/external-runtime-artifact-promotion.service.ts',
+    ));
+    const promotion = promoteExternalRuntimeArtifact({
+      artifactRoot,
+      distDataDir: runtimeAuthorityDir,
+    });
+    assert.equal(existsSync(join(runtimeAuthorityDir, 'current.json')), true, 'runtime authority must publish current.json');
+    assert.equal(existsSync(join(promotion.generationRoot, 'generation-seal.json')), true, 'promoted generation must be sealed');
     const { RuntimeRecipePackService, RUNTIME_RECIPE_PACK_SCHEMA } = require(resolve(
       backendRoot,
       'src/services/runtime-recipe-pack.service.ts',
     ));
     assert.equal(RUNTIME_RECIPE_PACK_SCHEMA, 'neonei/recipe-pack/current');
     const service = new RuntimeRecipePackService();
-    const manifest = JSON.parse(readFileSync(join(distDataDir, 'manifest.json'), 'utf8'));
-    const runtimeManifest = JSON.parse(readFileSync(join(distDataDir, 'rust', 'runtime-manifest.json'), 'utf8'));
+    const manifest = JSON.parse(readFileSync(join(promotion.generationRoot, 'manifest.json'), 'utf8'));
+    const runtimeManifest = JSON.parse(readFileSync(join(promotion.generationRoot, 'rust', 'runtime-manifest.json'), 'utf8'));
     assert.equal(runtimeManifest.entrypoints.recipes, 'rust/recipes.bin');
     assert.equal(manifest.files.rustRuntimeManifest, 'rust/runtime-manifest.json');
 

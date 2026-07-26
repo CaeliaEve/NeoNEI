@@ -66,6 +66,10 @@ test('static asset filesystem and sidecar policy are delivery-service owned', ()
   assert.match(routeSource, /for \(const mount of STATIC_ASSET_POST_IMAGE_ARTIFACT_MOUNTS\)/);
   assert.match(routeSource, /app\.get\(route\.path, createImageArtifactRoute\(route\.family\)\)/);
   assert.match(routeSource, /staticDirectoryExists\(mount\.rootDir\)/);
+  const distDataMountIndex = routeSource.indexOf("mount.key === 'distData'");
+  const existingDirectoryGuardIndex = routeSource.indexOf('mount.requireExistingDirectory && !staticDirectoryExists');
+  assert.equal(distDataMountIndex < existingDirectoryGuardIndex, true, 'dist-data authority route must mount before directory existence checks');
+  assert.match(routeSource, /catch \{[\s\S]*res\.status\(409\)\.end\(\)/);
   assert.match(routeSource, /setNoStoreHeaders\(res\)/);
   assert.match(routeSource, /setStaticAssetCacheHeaders\(res, \{/);
   assert.match(routeSource, /res\.sendFile\(delivery\.responsePath/);

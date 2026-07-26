@@ -50,11 +50,11 @@ function assertExactString(actual: string, expected: string, path: string): void
   }
 }
 
-function assertIncludesAll(actual: readonly string[], expected: readonly string[], label: string): void {
-  const available = new Set(actual);
-  const missing = expected.filter((entry) => !available.has(entry));
-  if (missing.length > 0) {
-    throw new Error(`elysium-compiler ABI gate failed: missing required ${label}: ${missing.join(', ')}`);
+function assertExactStringArray(actual: readonly string[], expected: readonly string[], path: string): void {
+  if (actual.length !== expected.length || actual.some((entry, index) => entry !== expected[index])) {
+    throw new Error(
+      `elysium-compiler ABI gate failed: ${path} must exactly match [${expected.join(', ')}], got [${actual.join(', ')}]`,
+    );
   }
 }
 
@@ -86,13 +86,13 @@ export function assertCompilerNativeUiCapabilityGate(handshake: ElysiumCompilerH
   const contract = extractCompilerCapabilityContract(handshake);
   const commandReport = asRecord(handshake.commands);
   const availableCommands = Object.keys(commandReport ?? {}).filter((command) => asRecord(commandReport?.[command])?.ok === true);
-  assertIncludesAll(availableCommands, REQUIRED_COMPILER_COMMANDS, 'compiler commands');
-  assertIncludesAll(
+  assertExactStringArray(availableCommands, REQUIRED_COMPILER_COMMANDS, 'compiler commands');
+  assertExactStringArray(
     contract.nativeUi.requiredCapabilities,
     NATIVE_UI_REQUIRED_CAPABILITIES,
     'native UI capabilities',
   );
-  assertIncludesAll(contract.nativeUi.requiredFiles, NATIVE_UI_REQUIRED_FILES, 'native UI files');
+  assertExactStringArray(contract.nativeUi.requiredFiles, NATIVE_UI_REQUIRED_FILES, 'native UI files');
   assertExactString(
     contract.nativeUi.coordinateSpace,
     NATIVE_UI_COORDINATE_SPACE,

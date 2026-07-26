@@ -192,6 +192,23 @@ export interface PublishBundleSearchShardPathEntry {
   total: number;
 }
 
+export interface PublishBundleAssetMetadata {
+  path: string;
+  contentAddressedPath: string;
+  relativePath: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+}
+
+export interface PublishBundleIdentity {
+  algorithm: 'sha256';
+  assetCount: number;
+  totalBytes: number;
+  contentHash: string;
+  categories: Record<string, string>;
+}
+
 export interface PublishStaticBundleManifest {
   version: number;
   sourceSignature: string;
@@ -201,6 +218,7 @@ export interface PublishStaticBundleManifest {
   firstPageSize: number;
   slotSizes: number[];
   includeBrowserSearchPack: boolean;
+  identity?: PublishBundleIdentity;
   files: {
     manifest: string;
     modsList: string | null;
@@ -228,6 +246,10 @@ export interface PublishStaticBundleManifest {
     recipeGroupIndexPayloads: number;
     recipeGroupWindowPayloads: number;
     missingRecipeWindowItemIds: string[];
+  };
+  compression?: {
+    sidecars: Array<'br' | 'gzip'>;
+    assets: Record<string, PublishBundleAssetMetadata>;
   };
 }
 
@@ -612,7 +634,7 @@ export interface PublishedRecipeBootstrapSearchPack {
 
 export interface RecipeUiPayload {
   recipeId: string;
-  familyKey: string;
+  captureKey: string;
   machineType?: string;
   recipeType?: string;
   nativeFrame?: {

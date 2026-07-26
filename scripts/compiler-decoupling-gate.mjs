@@ -15,8 +15,11 @@ const requiredFiles = [
   'scripts/finalize-native-ui-export.mjs',
   'scripts/ensure-elysium-compiler.mjs',
   'scripts/elysium-compiler-capability-abi.mjs',
+  'scripts/sync-elysium-compiler-capability-abi.mjs',
   'tools/elysium-compiler/elysium-compiler.lock.json',
+  'tools/elysium-compiler/elysium-compiler-capability-abi.json',
   'backend/src/config/runtime-paths.ts',
+  'backend/src/services/current-runtime-artifact-index-abi.ts',
   'backend/src/compiler-client/elysium-compiler-capability-abi.ts',
   'backend/src/services/ui-template-catalog.service.ts',
   'backend/src/services/ui-template-binding-index.service.ts',
@@ -45,21 +48,46 @@ const requiredSnippets = [
       'compiledDistSchemaVersion',
       'validateElysiumCompilerCapabilityAbi',
       'REQUIRED_COMPILER_COMMAND_INVOCATIONS',
+      'ELYSIUM_COMPILER_CAPABILITY_SOURCE.schemaHash',
+    ],
+  },
+  {
+    file: 'scripts/elysium-compiler-capability-abi.mjs',
+    snippets: [
+      'elysium-compiler-capability-abi.json',
+      'artifact.nativeUi.requiredCapabilities',
+      'artifact.nativeUi.fallbackPolicy',
+    ],
+  },
+  {
+    file: 'scripts/sync-elysium-compiler-capability-abi.mjs',
+    snippets: [
+      "spawnSync(binaryPath, ['schemas']",
+      'compilerCapabilityAbi.nativeUi',
+      'backendCatalogPath',
+      'verifyLockedCompiler',
     ],
   },
   {
     file: 'backend/src/config/runtime-paths.ts',
     snippets: [
       'DIST_DATA_DIR',
-      "'rust', 'ui-pack', 'ui_template_catalog.json'",
-      "'rust', 'ui-pack', 'ui_template_binding_index.json'",
-      "'rust', 'ui-pack', 'ui_family_census.json'",
+    ],
+  },
+  {
+    file: 'backend/src/services/current-runtime-artifact-index-abi.ts',
+    snippets: [
+      "browserAtlasIndex: 'textures/browser-atlas-index.json'",
+      "browserLayoutIndex: 'browser/item-catalog.json'",
+      "uiTemplateCatalog: 'rust/ui-pack/ui_template_catalog.json'",
+      "uiTemplateBindingIndex: 'rust/ui-pack/ui_template_binding_index.json'",
+      "uiFamilyCensus: 'rust/ui-pack/ui_family_census.json'",
     ],
   },
   {
     file: 'backend/src/services/ui-template-binding-index.service.ts',
     snippets: [
-      'NESQL_UI_TEMPLATE_BINDING_INDEX_FILE',
+      'CURRENT_RUNTIME_ARTIFACT_PATHS.uiTemplateBindingIndex',
       'readCompiledBindingIndex',
       'getCompiledBindingReport',
     ],

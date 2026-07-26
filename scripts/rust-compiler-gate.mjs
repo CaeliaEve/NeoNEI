@@ -2,11 +2,13 @@
 import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { resolveElysiumOutputGeneration } from './lib/elysium-output-generation.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const fixture = resolve(process.argv.includes('--fixture') ? process.argv[process.argv.indexOf('--fixture') + 1] : join(repoRoot, 'tools', 'elysium-compiler', 'fixtures', 'raw-export-native-ui-gt'));
 const output = resolve(process.argv.includes('--output') ? process.argv[process.argv.indexOf('--output') + 1] : join(repoRoot, '.tmp-runtime', 'elysium-compiler-gate'));
-const report = join(output, 'compiler-report.json');
+const reportDir = join(dirname(output), `${output.split(/[\\/]/).at(-1)}-reports`);
+const report = join(reportDir, 'compiler-report.json');
 const strict = process.argv.includes('--strict') || process.argv.includes('--gate');
 
 function fail(message) {
@@ -46,18 +48,21 @@ if (existsSync(join(repoRoot, 'tools', 'neonei-compiler-rs'))) {
 }
 
 rmSync(output, { recursive: true, force: true });
-mkdirSync(output, { recursive: true });
-run(compiler, ['inspect', '--input', fixture, '--report', join(output, 'inspect-report.json')]);
-run(compiler, ['validate', '--input', fixture, '--report', join(output, 'validate-report.json')]);
-run(compiler, ['schemas', '--output', join(output, 'schema-catalog.json')]);
+rmSync(reportDir, { recursive: true, force: true });
+mkdirSync(reportDir, { recursive: true });
+run(compiler, ['inspect', '--input', fixture, '--report', join(reportDir, 'inspect-report.json')]);
+run(compiler, ['validate', '--input', fixture, '--report', join(reportDir, 'validate-report.json')]);
+run(compiler, ['schemas', '--output', join(reportDir, 'schema-catalog.json')]);
 run(compiler, ['compile', '--input', fixture, '--output', output, '--report', report, '--scope', 'native-ui', ...(strict ? ['--strict'] : [])]);
+const compiledGeneration = resolveElysiumOutputGeneration(output);
+const artifactRoot = compiledGeneration.generationRoot;
 
-const runtimeManifest = readJson(join(output, 'rust', 'runtime-manifest.json'));
-const distManifest = readJson(join(output, 'manifest.json'));
+const runtimeManifest = readJson(join(artifactRoot, 'rust', 'runtime-manifest.json'));
+const distManifest = readJson(join(artifactRoot, 'manifest.json'));
 if (runtimeManifest?.compiler?.name !== 'elysium-compiler') fail('runtime manifest lacks elysium compiler metadata');
 if (distManifest?.compiler?.name !== 'elysium-compiler') fail('dist manifest lacks elysium compiler metadata');
 if (distManifest?.compiler?.version !== resolved.metadata?.version) fail('dist manifest compiler version mismatch');
-if (!existsSync(join(output, 'recipes', 'ui-payload-index.json'))) fail('compiled recipe UI payload index missing');
+if (!existsSync(join(artifactRoot, 'recipes', 'ui-payload-index.json'))) fail('compiled recipe UI payload index missing');
 
 console.log(JSON.stringify({
   schemaVersion: 'neonei/elysium-compiler-gate/v1',
@@ -65,5 +70,6 @@ console.log(JSON.stringify({
   compiler,
   fixture: fixture.replaceAll('\\', '/'),
   output: output.replaceAll('\\', '/'),
+  outputGeneration: artifactRoot.replaceAll('\\', '/'),
   compilerMetadata: distManifest.compiler,
 }, null, 2));

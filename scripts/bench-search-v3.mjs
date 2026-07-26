@@ -108,7 +108,7 @@ function tokenizeSearchField(value) {
 function fields(entry) {
   const direct = [
     { value: entry.normalizedLocalizedName, prefixLimit: MAX_PREFIX_LENGTH, grams: true },
-    { value: entry.pinyinFull, prefixLimit: MAX_PREFIX_LENGTH, grams: true },
+    { value: entry.pinyinFull, prefixLimit: MAX_PREFIX_LENGTH, grams: false },
     { value: entry.pinyinAcronym, prefixLimit: MAX_PREFIX_LENGTH, grams: false },
     { value: entry.normalizedInternalName, prefixLimit: MAX_PREFIX_LENGTH, grams: true },
     { value: entry.normalizedItemId, prefixLimit: 16, grams: false },
@@ -196,28 +196,35 @@ function buildIndexes(pack) {
   };
 }
 
+function rankTokenPrefix(value, normalized) {
+  const tokens = tokenizeSearchField(value);
+  if (tokens.some((token) => token === normalized)) return 0;
+  if (tokens.some((token) => token.startsWith(normalized))) return 1;
+  if (tokens.some((token) => token.includes(normalized))) return 2;
+  return null;
+}
+
 function rank(entry, normalized) {
-  const aliases = entry.aliases || "";
+  const aliasRank = rankTokenPrefix(entry.aliases, normalized);
+  const searchTermRank = rankTokenPrefix(entry.normalizedSearchTerms, normalized);
   if (entry.normalizedLocalizedName === normalized) return 0;
   if (entry.pinyinFull === normalized) return 1;
   if (entry.pinyinAcronym === normalized) return 2;
-  if (aliases === normalized) return 3;
+  if (aliasRank === 0) return 3;
   if (entry.normalizedInternalName === normalized) return 4;
   if (entry.normalizedItemId === normalized) return 5;
-  if (entry.normalizedSearchTerms === normalized) return 6;
+  if (searchTermRank === 0) return 6;
   if (entry.normalizedLocalizedName?.startsWith(normalized)) return 10;
   if (entry.pinyinFull?.startsWith(normalized)) return 11;
   if (entry.pinyinAcronym?.startsWith(normalized)) return 12;
-  if (aliases.startsWith(normalized)) return 13;
+  if (aliasRank === 1) return 13;
   if (entry.normalizedInternalName?.startsWith(normalized)) return 14;
-  if (entry.normalizedSearchTerms?.startsWith(normalized)) return 15;
+  if (searchTermRank === 1) return 15;
   if (entry.normalizedItemId?.startsWith(normalized)) return 16;
   if (entry.normalizedLocalizedName?.includes(normalized)) return 20;
-  if (entry.pinyinFull?.includes(normalized)) return 21;
-  if (entry.pinyinAcronym?.includes(normalized)) return 22;
-  if (aliases.includes(normalized)) return 23;
+  if (aliasRank === 2) return 23;
   if (entry.normalizedInternalName?.includes(normalized)) return 24;
-  if (entry.normalizedSearchTerms?.includes(normalized)) return 25;
+  if (searchTermRank === 2) return 25;
   if (entry.normalizedItemId?.includes(normalized)) return 26;
   return null;
 }

@@ -77,6 +77,16 @@ export const NATIVE_RENDER_WORKER_TRANSFER_DESCRIPTOR_MAP: NativeRenderWorkerTra
       transferableFields: Object.freeze(["canvas"] as const),
       transferables: (message) => message.type === "initialize" ? [message.canvas] : [],
     }),
+    connectEnginePort: Object.freeze({
+      requestType: "connectEnginePort",
+      transferableFields: Object.freeze(["port"] as const),
+      transferables: (message) => message.type === "connectEnginePort" ? [message.port] : [],
+    }),
+    disconnectEnginePort: Object.freeze({
+      requestType: "disconnectEnginePort",
+      transferableFields: Object.freeze([] as const),
+      transferables: () => [],
+    }),
     loadTextures: Object.freeze({
       requestType: "loadTextures",
       transferableFields: Object.freeze([] as const),
@@ -86,11 +96,6 @@ export const NATIVE_RENDER_WORKER_TRANSFER_DESCRIPTOR_MAP: NativeRenderWorkerTra
       requestType: "resize",
       transferableFields: Object.freeze([] as const),
       transferables: () => [],
-    }),
-    render: Object.freeze({
-      requestType: "render",
-      transferableFields: Object.freeze(["commandBuffer"] as const),
-      transferables: (message) => message.type === "render" ? [message.commandBuffer] : [],
     }),
     setAnimationEnabled: Object.freeze({
       requestType: "setAnimationEnabled",

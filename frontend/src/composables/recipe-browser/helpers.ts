@@ -7,7 +7,6 @@ import {
   type indexedRecipeCategorySummary,
   type indexedMachineGroupSummary,
 } from '../../services/api';
-import { resolveRecipePresentationProfile } from '../../services/uiTypeMapping';
 import { resolveMachineIconByName } from './machineIconPolicyCatalog';
 
 export interface MachineCategory {
@@ -73,7 +72,6 @@ const GT_RECIPE_NAME_BY_KEY: Record<string, string> = {
   distillationtower: '蒸馏塔',
   vacuumfreezer: '真空冷冻机',
 };
-
 const WELL_KNOWN_RECIPE_NAME_BY_ID: Array<[RegExp, string]> = [
   [/codechicken_nei_recipe_shapedrecipehandler|crafting~shaped/i, '有序合成'],
   [/codechicken_nei_recipe_shapelessrecipehandler|crafting~shapeless/i, '无序合成'],
@@ -255,60 +253,9 @@ const getMachineName = (recipeType: string): string => {
 };
 
 const getCategoryMachineIcon = (recipe: Recipe, getImagePath: (itemId: string) => string): string | null => {
-  const profile = resolveRecipePresentationProfile({
-    machineType: recipe.machineInfo?.machineType,
-    recipeType: recipe.recipeType,
-    recipeTypeData: recipe.recipeTypeData,
-    inputs: recipe.inputs,
-    additionalData: recipe.additionalData as Record<string, unknown> | undefined,
-    metadata: recipe.metadata as Record<string, unknown> | undefined,
-    preferDetailedCrafting: false,
-  });
-
-  switch (profile.uiConfig.uiType) {
-    case 'industrial_slaughterhouse':
-      return getImagePath('i~gregtech~gt.blockmachines~14201');
-    case 'thaumcraft_arcane':
-      return getImagePath('i~Thaumcraft~blockTable~15');
-    case 'thaumcraft_infusion':
-      return getImagePath('i~Thaumcraft~blockStoneDevice~2');
-    case 'thaumcraft_crucible':
-      return getImagePath('i~Thaumcraft~blockMetalDevice~0');
-    case 'thaumcraft_aspect':
-      return getExplicitMachineName(recipe) === '要素组合'
-        ? getImagePath('i~Thaumcraft~ItemResource~9')
-        : getImagePath('i~Thaumcraft~ItemResearchNotes~0');
-    case 'thaumcraft_research':
-      return getImagePath('i~Thaumcraft~ItemResearchNotes~0');
-    case 'blood_magic_altar':
-      return getImagePath('i~AWWayofTime~Altar~0');
-    case 'botania_mana_pool':
-      return getImagePath('i~Botania~pool~0');
-    case 'botania_rune_altar':
-      return getImagePath('i~Botania~runeAltar~0');
-    case 'botania_pure_daisy':
-      return getImagePath('i~Botania~specialFlower~0~BVmnjzvOML-Ap_zxeMIMOw==');
-    case 'botania_terra_plate':
-      return getImagePath('i~Botania~terraPlate~0');
-    default:
-      break;
-  }
-
   const resolved = resolveMachineIcon(recipe, getImagePath);
   if (resolved) return resolved;
-
-  const policyMapped = resolveMachineIconByName(getExplicitMachineName(recipe) || '', getImagePath);
-  if (policyMapped) return policyMapped;
-
-  const combined = getCombinedRecipeText(recipe);
-  if (
-    combined.includes('singularity compressor') ||
-    combined.includes('奇点压缩机')
-  ) {
-    return getImagePath('i~Avaritia~Singularity~0');
-  }
-
-  return null;
+  return resolveMachineIconByName(getExplicitMachineName(recipe) || '', getImagePath);
 };
 
 const getKnownCategoryIcon = (name: string, getImagePath: (itemId: string) => string): string | null => {
@@ -690,16 +637,7 @@ export const buildMachineCategories = (
 
   for (const recipe of recipes) {
     const explicitMachineName = getExplicitMachineName(recipe);
-    const profile = resolveRecipePresentationProfile({
-      machineType: recipe.machineInfo?.machineType,
-      recipeType: recipe.recipeType,
-      recipeTypeData: recipe.recipeTypeData,
-      inputs: recipe.inputs,
-      additionalData: recipe.additionalData as Record<string, unknown> | undefined,
-      metadata: recipe.metadata as Record<string, unknown> | undefined,
-      preferDetailedCrafting: true,
-    });
-    const isCrafting = profile.uiConfig.presentation?.surface === 'workbench';
+    const isCrafting = !explicitMachineName;
     const categoryName = isCrafting
       ? getCraftingCategoryName(recipe)
       : normalizeMachineCategoryName(explicitMachineName || getMachineName(recipe.recipeType));
@@ -768,54 +706,9 @@ export const buildMachineCategories = (
     };
   });
 
-  const getCategoryPriority = (category: MachineCategory): number => {
-    const recipe = category.recipes[0];
-    if (!recipe) return 0;
-    const profile = resolveRecipePresentationProfile({
-      machineType: recipe.machineInfo?.machineType,
-      recipeType: recipe.recipeType,
-      recipeTypeData: recipe.recipeTypeData,
-      inputs: recipe.inputs,
-      additionalData: recipe.additionalData as Record<string, unknown> | undefined,
-      metadata: recipe.metadata as Record<string, unknown> | undefined,
-      preferDetailedCrafting: false,
-    });
-
-    switch (profile.uiConfig.uiType) {
-      case 'thaumcraft_arcane':
-      case 'thaumcraft_infusion':
-      case 'thaumcraft_crucible':
-      case 'botania_rune_altar':
-      case 'botania_mana_pool':
-      case 'botania_pure_daisy':
-      case 'botania_terra_plate':
-      case 'botania_elven_trade':
-      case 'blood_magic_altar':
-      case 'blood_alchemy_table':
-        return 400;
-      case 'gt_assembly_line':
-      case 'gt_research_station':
-        return 320;
-      case 'gt_assembler':
-        return 300;
-      case 'gt_blast_furnace':
-      case 'gt_electric_furnace':
-      case 'gt_alloy_smelter':
-      case 'gt_electrolyzer':
-      case 'gt_molecular':
-        return 280;
-      case 'multiblock_blueprint':
-        return 280;
-      case 'gt_generic':
-        return 220;
-      case 'furnace':
-        return 140;
-      case 'standard_crafting':
-        return 120;
-      default:
-        return 100;
-    }
-  };
+  const getCategoryPriority = (category: MachineCategory): number => (
+    category.type === 'crafting' ? 120 : 100
+  );
 
   ranked.sort((a, b) => {
     const priorityDelta = getCategoryPriority(b) - getCategoryPriority(a);

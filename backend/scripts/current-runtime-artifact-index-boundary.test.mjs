@@ -30,12 +30,16 @@ test('current runtime artifact index owns dist-data paths and artifact inventory
   assert.match(artifactIndex, /import fs from 'fs'/);
   assert.match(artifactIndex, /import path from 'path'/);
   assert.match(artifactIndex, /import \{ DIST_DATA_DIR \} from '\.\.\/config\/runtime-paths'/);
-  assert.match(artifactIndex, /CURRENT_RUNTIME_DIST_DATA_DIR/);
-  assert.match(artifactIndex, /CURRENT_RUNTIME_DIST_MANIFEST_FILE/);
+  assert.match(artifactIndex, /from '\.\/external-runtime-generation\.service'/);
+  assert.match(artifactIndex, /resolveCurrentExternalRuntimeGeneration\(DIST_DATA_DIR\)\.generationRoot/);
+  assert.match(artifactIndex, /export function resolveCurrentRuntimeDistDataDir/);
+  assert.match(artifactIndex, /export function resolveCurrentRuntimeDistManifestFile/);
+  assert.match(artifactIndex, /generationRoot = resolveCurrentRuntimeDistDataDir\(\)/);
+  assert.doesNotMatch(artifactIndex, /CURRENT_RUNTIME_DIST_DATA_DIR|CURRENT_RUNTIME_DIST_MANIFEST_FILE/);
   assert.doesNotMatch(artifactIndex, /PUBLIC_DIR/);
   for (const symbol of [
-    'readCurrentRuntimeJson',
-    'readCurrentRuntimeText',
+    'readCurrentRuntimeJsonArtifact',
+    'readCurrentRuntimeTextArtifact',
     'isPortableRuntimePath',
     'normalizeRuntimePath',
     'resolveDistDataRuntimeFile',
@@ -51,7 +55,9 @@ test('current runtime artifact index owns dist-data paths and artifact inventory
 test('current runtime snapshot service owns RCU publication but not artifact indexing internals', () => {
   assert.match(snapshot, /from '\.\/current-runtime-artifact-index\.service'/);
   assert.doesNotMatch(snapshot, /import fs from 'fs'/);
-  assert.doesNotMatch(snapshot, /import path from 'path'/);
+  assert.match(snapshot, /import path from 'path'/);
+  assert.match(snapshot, /path\.join\(DIST_DATA_DIR, 'current\.json'\)/);
+  assert.doesNotMatch(snapshot, /path\.resolve/);
   assert.doesNotMatch(snapshot, /PUBLIC_DIR/);
   assert.doesNotMatch(snapshot, /function collectManifestRuntimeFiles/);
   assert.doesNotMatch(snapshot, /function buildArtifactInventory/);
@@ -59,6 +65,9 @@ test('current runtime snapshot service owns RCU publication but not artifact ind
   assert.doesNotMatch(snapshot, /export function resolveDistDataRuntimeFile/);
   assert.doesNotMatch(snapshot, /export function isPortableRuntimePath/);
   assert.doesNotMatch(snapshot, /export function normalizeRuntimePath/);
+  assert.match(snapshot, /tryResolveCurrentExternalRuntimeGeneration\(DIST_DATA_DIR\)/);
+  assert.match(snapshot, /const generationRoot = currentGeneration\.generationRoot/);
+  assert.match(snapshot, /resolveDistDataRuntimeFile\('manifest\.json', generationRoot\)/);
   assert.match(snapshot, /function publishCurrentRuntimeSnapshot/);
   assert.match(snapshot, /export function acquireCurrentRuntimeSnapshot/);
   assert.match(snapshot, /export function getCurrentRuntimeSnapshotReadStats/);
@@ -75,15 +84,16 @@ test('current runtime API and report registry depend on artifact index for path 
 
 test('runtime recipe pack and native render diagnostics reuse artifact index path safety', () => {
   assert.match(runtimeRecipePack, /from '\.\/current-runtime-artifact-index\.service'/);
-  assert.match(runtimeRecipePack, /CURRENT_RUNTIME_DIST_MANIFEST_FILE/);
+  assert.match(runtimeRecipePack, /resolveCurrentRuntimeDistDataDir/);
+  assert.match(runtimeRecipePack, /resolveCurrentRuntimeDistManifestFile\(generationRoot\)/);
   assert.match(runtimeRecipePack, /resolveDistDataRuntimeFile/);
   assert.doesNotMatch(runtimeRecipePack, /function isPortableRuntimePath/);
   assert.doesNotMatch(runtimeRecipePack, /function resolveDistDataFile/);
   assert.doesNotMatch(runtimeRecipePack, /DIST_DATA_DIR/);
 
   assert.match(nativeRenderDiagnostics, /from '\.\/current-runtime-artifact-index\.service'/);
-  assert.match(nativeRenderDiagnostics, /CURRENT_RUNTIME_DIST_DATA_DIR/);
-  assert.match(nativeRenderDiagnostics, /CURRENT_RUNTIME_DIST_MANIFEST_FILE/);
+  assert.match(nativeRenderDiagnostics, /resolveCurrentRuntimeDistDataDir/);
+  assert.match(nativeRenderDiagnostics, /resolveCurrentRuntimeDistManifestFile\(distDataRoot\)/);
   assert.match(nativeRenderDiagnostics, /resolveDistDataRuntimeFile/);
   assert.doesNotMatch(nativeRenderDiagnostics, /PUBLIC_DIR/);
   assert.doesNotMatch(nativeRenderDiagnostics, /path\.resolve/);
@@ -94,7 +104,8 @@ test('runtime recipe pack and native render diagnostics reuse artifact index pat
   assert.doesNotMatch(runtimeHealth, /path\.join\(PUBLIC_DIR, 'dist-data'\)/);
 
   assert.match(rustSearchPack, /from '\.\/current-runtime-artifact-index\.service'/);
-  assert.match(rustSearchPack, /CURRENT_RUNTIME_DIST_MANIFEST_FILE/);
+  assert.match(rustSearchPack, /resolveCurrentRuntimeDistDataDir/);
+  assert.match(rustSearchPack, /resolveCurrentRuntimeDistManifestFile\(generationRoot\)/);
   assert.match(rustSearchPack, /resolveDistDataRuntimeFile/);
   assert.doesNotMatch(rustSearchPack, /DIST_DATA_DIR/);
   assert.doesNotMatch(rustSearchPack, /PUBLIC_DIR/);

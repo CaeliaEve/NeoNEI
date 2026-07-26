@@ -9,7 +9,6 @@ import { useRecipeCacheState } from './state/useRecipeCacheState';
 import { buildRecipeIndexes } from '../utils/recipeIndexing';
 import { usePerfInstrumentation } from './usePerfInstrumentation';
 import { buildRecipeGraph, type RecipeGraph } from '../domain/recipeGraph';
-import { resolveRecipePresentationProfile } from '../services/uiTypeMapping';
 import { useRecipeBrowserSelectors } from './recipe-browser/useRecipeBrowserSelectors';
 import { createRecipeSearchController } from './recipe-browser/recipeSearchController';
 import { createRecipeMergeState } from './recipe-browser/recipeMergeState';
@@ -711,6 +710,9 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     currentCategory,
     currentCategoryPages,
     currentCategoryOrderedRecipeIds,
+    machineCategories,
+    currentTab,
+    categoryRecipeIdsByKey,
     playClick,
     markRecipeSwitch,
     getNow,
@@ -1117,7 +1119,4 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     selectRecipeById,
   };
 }
-
-
-
 

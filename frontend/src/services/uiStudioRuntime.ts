@@ -6,8 +6,8 @@ import {
   type UiPackSlot,
   type UiPackTemplate,
 } from './uiPackRuntime.ts';
-import { resolveRecipePresentationProfileFromUiPayload } from './uiTypeMapping.ts';
 import { isRegisteredRecipeComponentName } from '../components/recipe-display/recipeComponentCatalog.ts';
+import { resolveRecipePresentationProfileFromBinding } from '../composables/recipe-display/recipeRendererRegistry.ts';
 
 export type UiStudioFamilyStatus =
   | 'covered'
@@ -154,6 +154,7 @@ type MutableFamilyRow = Omit<UiStudioFamilyRow, 'machineTypes' | 'recipeTypes' |
   recipeTypeCounts: Map<string, number>;
   modIdCounts: Map<string, number>;
   handlerClassCounts: Map<string, number>;
+  presentationBinding: UiPackBinding | null;
 };
 
 const UI_PACK_REPORT_PATH = 'rust/ui-pack/ui_pack_report.json';
@@ -241,6 +242,7 @@ function createMutableRow(familyKey: string): MutableFamilyRow {
     recipeTypeCounts: new Map(),
     modIdCounts: new Map(),
     handlerClassCounts: new Map(),
+    presentationBinding: null,
     slots: [],
   };
 }
@@ -285,6 +287,7 @@ function applyBinding(row: MutableFamilyRow, binding: UiPackBinding, sampleLimit
     pushUniqueSample(row.sampleBoundRecipeIds, binding.recipeId, sampleLimit);
     row.templateKey ??= binding.templateKey || null;
     row.templateSignature ??= binding.templateSignature || null;
+    row.presentationBinding ??= binding;
   } else {
     row.unboundRecipeCount += 1;
     pushUniqueSample(row.sampleUnboundRecipeIds, binding.recipeId, sampleLimit);
@@ -304,13 +307,20 @@ function applyFamilyCensus(row: MutableFamilyRow, census: UiFamilyCensusEntry): 
 }
 
 function resolvePresentation(row: MutableFamilyRow): void {
-  const profile = resolveRecipePresentationProfileFromUiPayload({ familyKey: row.familyKey } as Parameters<typeof resolveRecipePresentationProfileFromUiPayload>[0]);
-  row.uiType = profile?.uiConfig.uiType ?? null;
-  row.component = profile?.component ?? null;
-  row.renderMode = profile?.renderMode ?? null;
-  row.presentationReason = profile?.reason ?? null;
-  row.registeredComponent = profile?.renderMode === 'detailed_crafting'
-    || (typeof profile?.component === 'string' && isRegisteredRecipeComponentName(profile.component));
+  if (!row.presentationBinding) {
+    return;
+  }
+  try {
+    const profile = resolveRecipePresentationProfileFromBinding(row.presentationBinding);
+    row.uiType = profile.uiConfig.uiType;
+    row.component = profile.component;
+    row.renderMode = profile.renderMode;
+    row.presentationReason = profile.reason;
+    row.registeredComponent = profile.renderMode === 'detailed_crafting'
+      || isRegisteredRecipeComponentName(profile.component);
+  } catch (error) {
+    row.presentationReason = error instanceof Error ? error.message : String(error);
+  }
 }
 
 function finalizeStatus(row: MutableFamilyRow): void {
@@ -330,7 +340,8 @@ function finalizeStatus(row: MutableFamilyRow): void {
     row.status = 'unmapped-family';
     row.statusLabel = '未映射 UI';
     row.severity = 70;
-    row.gapReason = 'familyKey 尚未进入 web-authored recipe presentation catalog；需要新增 uiTypeMapping 和对应手写组件。';
+    row.gapReason = row.presentationReason
+      || 'UiPackBinding v2 缺少可注册的 rendererId；需要补充声明式 presentation catalog 和对应手写组件。';
     return;
   }
 

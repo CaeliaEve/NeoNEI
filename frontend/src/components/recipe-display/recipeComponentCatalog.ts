@@ -1,4 +1,5 @@
 export const REGISTERED_RECIPE_COMPONENT_NAMES = Object.freeze([
+  'NEIRecipeWidget',
   'StandardCraftingUI',
   'AvaritiaExtremeCraftingUI',
   'FurnaceUI',

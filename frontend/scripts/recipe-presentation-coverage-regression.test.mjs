@@ -11,7 +11,7 @@ const coverageSource = readSource('src/composables/recipe-display/recipePresenta
 const policySource = readSource('src/composables/recipe-display/recipePresentationPolicyCatalog.ts');
 
 test('recipe presentation coverage diagnostic is driven by the web-authored component catalog', () => {
-  assert.match(coverageSource, /resolveRecipePresentationProfileFromUiPayload/);
+  assert.match(coverageSource, /resolveRecipePresentationProfileFromBinding/);
   assert.match(coverageSource, /isRegisteredRecipeComponent/);
   assert.match(coverageSource, /export function collectRecipePresentationCoverageReport/);
   assert.match(coverageSource, /export function collectRecipePresentationCoverageGaps/);
@@ -30,11 +30,10 @@ test('coverage diagnostic groups missing hand-written UI by family and sample re
   assert.match(coverageSource, /right\.recipeCount - left\.recipeCount/);
 });
 
-test('coverage diagnostic treats detailed crafting as covered and unknown payload families as fail-closed gaps', () => {
-  assert.match(coverageSource, /profile\?\.renderMode === 'detailed_crafting'/);
-  assert.match(coverageSource, /kind: 'unmapped-ui-payload-family'/);
-  assert.match(coverageSource, /ui_payload_family_unmapped/);
-  assert.match(coverageSource, /NEI frame\/background PNG rendering is retired; refusing heuristic UI path/);
-  assert.match(policySource, /nativePayloadAuthority: 'web-authored-ui-only'/);
+test('coverage diagnostic treats missing and invalid binding v2 authority as fail-closed gaps', () => {
+  assert.match(coverageSource, /kind: 'missing-ui-binding-v2'/);
+  assert.match(coverageSource, /ui_binding_v2_missing/);
+  assert.match(coverageSource, /kind: 'invalid-binding-renderer'/);
+  assert.match(policySource, /presentationAuthority: 'ui-binding-v2-renderer-id-only'/);
   assert.match(policySource, /retiredNativeArtifacts: Object\.freeze\(\['nei-frame-png', 'nei-background-png'\]\)/);
 });

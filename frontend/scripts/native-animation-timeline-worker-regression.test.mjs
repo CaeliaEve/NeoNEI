@@ -30,7 +30,10 @@ test("native surface engine consumes texture and animation packs for sprite time
   assert.match(workerSource, /animatedSpriteCount: spriteFrame\.animatedSpriteCount/);
   assert.match(workerSource, /nextFrameDelayMs: spriteFrame\.nextFrameDelayMs/);
   assert.match(protocolSource, /export type NativeSurfaceEngineSpriteCommand = NativeRenderSpriteCommand;/);
-  assert.match(surfaceSource, /spriteCommands: frame\.spriteCommands \?\? \[\]/);
+  assert.match(workerSource, /spriteCommands: spriteFrame\.spriteCommands/);
+  assert.doesNotMatch(protocolSource, /spriteCommands: NativeSurfaceEngineSpriteCommand\[\]/);
+  assert.doesNotMatch(surfaceSource, /frame\.spriteCommands/);
+  assert.doesNotMatch(surfaceSource, /type: "render"/);
   assert.match(surfaceSource, /if \(frame\.hasAnimatedSprites\)/);
   assert.match(surfaceSource, /scheduleNextAnimatedNativeFrame\(frame\.nextFrameDelayMs\)/);
   assert.doesNotMatch(surfaceSource, /getGlobalBrowserAtlasSpriteDescriptorForItem/);

@@ -68,6 +68,16 @@ const emptyTransferables = () => [];
 
 export const NATIVE_SURFACE_ENGINE_TRANSFER_DESCRIPTOR_MAP: NativeSurfaceEngineTransferDescriptorMap =
   Object.freeze({
+    connectRenderPort: Object.freeze({
+      requestType: "connectRenderPort",
+      transferableFields: Object.freeze(["port"] as const),
+      transferables: (message) => message.type === "connectRenderPort" ? [message.port] : [],
+    }),
+    disconnectRenderPort: Object.freeze({
+      requestType: "disconnectRenderPort",
+      transferableFields: Object.freeze([] as const),
+      transferables: emptyTransferables,
+    }),
     initialize: Object.freeze({
       requestType: "initialize",
       transferableFields: Object.freeze([] as const),

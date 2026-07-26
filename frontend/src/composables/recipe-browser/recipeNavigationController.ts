@@ -3,6 +3,7 @@ import type { Recipe } from '../../services/api';
 import { markPerfEvent } from '../../services/perfMarks';
 import { getCategoryRecipesPerPage } from './recipeCategoryState';
 import type { MachineCategory } from './helpers';
+import type { RecipeTab } from '../../domain/recipeQuery';
 
 type RecipePageSwitchSource = 'page-next' | 'page-prev' | 'page-set';
 
@@ -14,6 +15,9 @@ type CreateRecipeNavigationControllerOptions = {
   currentCategory: ComputedRef<MachineCategory | null>;
   currentCategoryPages: ComputedRef<Recipe[]>;
   currentCategoryOrderedRecipeIds: ComputedRef<string[]>;
+  machineCategories: ComputedRef<MachineCategory[]>;
+  currentTab: Ref<RecipeTab>;
+  categoryRecipeIdsByKey: Ref<Record<string, string[]>>;
   playClick: () => void;
   markRecipeSwitch: (source: string) => void;
   getNow: () => number;
@@ -35,6 +39,9 @@ export function createRecipeNavigationController({
   currentCategory,
   currentCategoryPages,
   currentCategoryOrderedRecipeIds,
+  machineCategories,
+  currentTab,
+  categoryRecipeIdsByKey,
   playClick,
   markRecipeSwitch,
   getNow,
@@ -110,13 +117,29 @@ export function createRecipeNavigationController({
 
   const selectRecipeById = (recipeId: string): boolean => {
     if (!recipeId) return false;
-    const orderedRecipeIds = currentCategoryOrderedRecipeIds.value;
-    const index = orderedRecipeIds.length > 0
+    let orderedRecipeIds = currentCategoryOrderedRecipeIds.value;
+    let categoryIndex = selectedMachineIndex.value;
+    let index = orderedRecipeIds.length > 0
       ? orderedRecipeIds.findIndex((id) => id === recipeId)
       : currentCategoryPages.value.findIndex((recipe) => recipe.recipeId === recipeId);
+    if (index < 0) {
+      for (let candidateIndex = 0; candidateIndex < machineCategories.value.length; candidateIndex += 1) {
+        const category = machineCategories.value[candidateIndex];
+        const lookupKey = `${currentTab.value}:${category.categoryKey?.trim() ?? ''}:${category.machineKey?.trim() ?? ''}`;
+        const candidateIds = categoryRecipeIdsByKey.value[lookupKey] ?? category.recipes.map((recipe) => recipe.recipeId);
+        const candidateRecipeIndex = candidateIds.findIndex((id) => id === recipeId);
+        if (candidateRecipeIndex < 0) continue;
+        categoryIndex = candidateIndex;
+        orderedRecipeIds = candidateIds;
+        index = candidateRecipeIndex;
+        break;
+      }
+    }
     if (index < 0) return false;
-    const targetPage = Math.floor(index / Math.max(1, getCategoryRecipesPerPage(currentCategory.value)));
-    void navigateToPage(targetPage, 'page-set');
+    const targetCategory = machineCategories.value[categoryIndex] ?? currentCategory.value;
+    const targetPage = Math.floor(index / Math.max(1, getCategoryRecipesPerPage(targetCategory)));
+    if (categoryIndex !== selectedMachineIndex.value) selectedMachineIndex.value = categoryIndex;
+    if (targetPage !== currentPage.value) currentPage.value = targetPage;
     return true;
   };
 

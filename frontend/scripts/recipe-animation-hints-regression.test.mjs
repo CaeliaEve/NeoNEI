@@ -58,10 +58,10 @@ test('animation probing consults primed render hints before falling back to per-
   );
 
   assert.equal(
-    animationBudgetSource.includes("renderContract.animationMode === 'native_sprite_aux'")
-      || animationBudgetSource.includes('renderContract.animationMode === \"native_sprite_aux\"'),
+    animationBudgetSource.includes('animationProbeCache.set(baseUrl, Boolean(primedRenderHint.hasAnimation));')
+      && animationBudgetSource.includes('return Boolean(primedRenderHint.hasAnimation);'),
     true,
-    'animation probe should treat auxiliary native sprite timelines as animated instead of collapsing them to static',
+    'animation probe should consume the compiler-owned render hint instead of rebuilding legacy animationMode semantics',
   );
 });
 
@@ -90,9 +90,10 @@ test('animated item icons use the compiled atlas/render index instead of per-ite
     'recipe item icons must not fall back to per-item GIF/sprite probing',
   );
   assert.equal(
-    animatedItemIconSource.includes('warmGlobalBrowserAtlasForItemsDetailed([itemId])'),
+    animatedItemIconSource.includes('warmGlobalBrowserAtlasForItemsDetailed(lookupKeys)')
+      && animatedItemIconSource.includes('getGlobalBrowserAtlasEntry(itemId, renderAssetRef)'),
     true,
-    'recipe item icons should resolve through the global browser atlas index',
+    'recipe item icons should resolve renderAssetRef/itemId aliases through the global browser atlas index',
   );
 });
 

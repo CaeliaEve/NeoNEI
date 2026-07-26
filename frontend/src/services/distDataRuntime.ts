@@ -70,6 +70,10 @@ import {
   type PackValidationReport,
   type RuntimePackContract,
 } from "./distDataRuntimePackAbi";
+import {
+  registerRuntimeArtifactContentHashes,
+  setRuntimeArtifactManifestIdentity,
+} from "./runtimeArtifactClient.ts";
 export {
   resolveDistDataAssetPath,
   resolveDistDataNativeRuntimeManifestPath,
@@ -111,7 +115,7 @@ type DistDataRecipeUiPayloadIndexEntry = {
   recipeId: string;
   path: string;
   payloadKey?: string;
-  familyKey?: string;
+  captureKey?: string;
   recipeType?: string;
   machineType?: string;
 };
@@ -323,7 +327,27 @@ export async function getDistDataManifest(): Promise<DistDataManifest | null> {
     return manifestRequest;
   }
 
-  manifestRequest = fetchDistDataJson<DistDataManifest>(joinDistDataAssetPath(getDistDataBasePath(), "manifest.json"))
+  manifestRequest = fetchDistDataJson<DistDataManifest>(
+    joinDistDataAssetPath(getDistDataBasePath(), "manifest.json"),
+    { persistent: false, memory: false },
+  )
+    .then(async (manifest) => {
+      const manifestIdentity = `${
+        manifest.runtimeCacheKey ?? manifest.sourceSignature ?? buildRuntimeCacheKey(manifest)
+      }`;
+      setRuntimeArtifactManifestIdentity(manifestIdentity);
+      const integrityPath = `${manifest.files?.rustIntegrity ?? ''}`.trim();
+      if (integrityPath) {
+        const integrity = await fetchDistDataJson<{ files?: Record<string, string> }>(
+          joinDistDataAssetPath(getDistDataBasePath(), integrityPath),
+          { persistent: false, memory: false },
+        ).catch(() => null);
+        if (integrity?.files) {
+          registerRuntimeArtifactContentHashes(manifestIdentity, integrity.files);
+        }
+      }
+      return manifest;
+    })
     .catch(() => null)
     .finally(() => {
       manifestRequest = null;
@@ -985,8 +1009,8 @@ function buildIndexedRecipeFromUiPayload(
     oreDictName: null,
   }));
   const outputs = resolvedOutputItemIds.map((itemId) => toRecipeItemStack(itemId, runtime, 1));
-  const payloadRecipeType = `${payload.recipeType ?? payload.familyKey ?? "unknown"}`;
-  const payloadMachineType = `${payload.machineType ?? payload.familyKey ?? payloadRecipeType}`;
+  const payloadRecipeType = `${payload.recipeType ?? "unknown"}`;
+  const payloadMachineType = `${payload.machineType ?? payloadRecipeType}`;
 
   return {
     id: recipeId,
@@ -1048,6 +1072,35 @@ async function getIndexedRecipesFromUiPayloads(recipeIds: string[]): Promise<ind
     .filter((recipe): recipe is indexedRecipe => Boolean(recipe));
 }
 
+export async function getDistDataRecipeById(recipeId: string): Promise<indexedRecipe | null> {
+  const normalizedRecipeId = `${recipeId ?? ""}`.trim();
+  if (!normalizedRecipeId) return null;
+  const [runtime, recipeItemRoleIndex, payload] = await Promise.all([
+    getBrowserRuntime(),
+    getRecipeItemRoleIndex(),
+    getDistDataRecipeUiPayload(normalizedRecipeId),
+  ]);
+  if (!runtime || !payload) return null;
+  return buildIndexedRecipeFromUiPayload(payload, runtime, recipeItemRoleIndex?.get(normalizedRecipeId));
+}
+
+function resolveRecipeBrowserItem(runtime: DistDataBrowserRuntime, itemId: string): Item | null {
+  const exact = runtime.itemById.get(itemId);
+  if (exact) return exact;
+  const baseIdentity = itemId.split("~").slice(0, 4).join("~");
+  if (!baseIdentity || baseIdentity === itemId) return null;
+  const representative = Array.from(runtime.itemById.values()).find((item) =>
+    item.itemId === baseIdentity || item.itemId.startsWith(`${baseIdentity}~`),
+  );
+  if (!representative) return null;
+  return {
+    ...representative,
+    itemId,
+    publicItemId: itemId,
+    renderAssetRef: `nesqlpp:item/${itemId}`,
+  };
+}
+
 async function buildDistDataCategoryGroupPayload(
   itemId: string,
   tab: "usedIn" | "producedBy",
@@ -1098,7 +1151,7 @@ export async function getDistDataRecipeBootstrap(itemId: string): Promise<Recipe
   }
   const [runtime, recipeIndex, rustRecipePack] = await Promise.all([getBrowserRuntime(), getRecipeItemIndex(), getRustRecipePack()]);
   const indexEntry = recipeIndex?.get(normalizedItemId);
-  const item = runtime?.itemById.get(normalizedItemId);
+  const item = runtime ? resolveRecipeBrowserItem(runtime, normalizedItemId) : null;
   if (!item) {
     return null;
   }

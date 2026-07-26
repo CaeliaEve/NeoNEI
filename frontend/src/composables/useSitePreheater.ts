@@ -430,10 +430,18 @@ export function useSitePreheater(options: {
     if (running.value) {
       return;
     }
-    await Promise.all([
-      clearPersistentRuntimeCache(),
-      clearOpfsAssetCache(),
-    ]);
+    try {
+      await Promise.all([
+        clearPersistentRuntimeCache(),
+        clearOpfsAssetCache(),
+      ]);
+    } catch (error) {
+      console.error("Failed to clear NeoNEI preheat caches:", error);
+      currentPhase.value = "\u7f13\u5b58\u6e05\u7406\u5931\u8d25";
+      statusText.value = "\u672c\u5730\u9884\u70ed\u7f13\u5b58\u6e05\u7406\u5931\u8d25\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5";
+      lastError.value = error instanceof Error ? error.message : "\u672a\u77e5\u9519\u8bef";
+      throw error;
+    }
     clearStoredLastCompletion();
     api.resetRuntimeCaches();
     resetBrowserSearchWorker();

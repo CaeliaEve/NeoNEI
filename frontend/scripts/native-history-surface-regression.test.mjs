@@ -25,10 +25,13 @@ test("history strip renders through the native browser surface", () => {
 
 test("native browser surface keeps history rendering on the atlas path without DOM grid fallback", () => {
   const source = readSource("src/components/native-surface/NativeBrowserSurface.vue");
+  const workerSource = readSource("src/workers/nativeSurfaceEngine.worker.ts");
 
   assert.match(source, /getGlobalBrowserAtlasTextureDescriptorsForKeys/);
   assert.match(source, /queueResidentAtlasBackgroundUpload/);
-  assert.match(source, /spriteCommands: frame\.spriteCommands \?\? \[\]/);
+  assert.match(workerSource, /spriteCommands: spriteFrame\.spriteCommands/);
+  assert.doesNotMatch(source, /frame\.spriteCommands/);
+  assert.doesNotMatch(source, /type: "render"/);
   assert.match(source, /controller\.setHistoryItems\(props\.historyItemIds\)/);
   assert.doesNotMatch(source, /<HomeCanvasGrid/);
   assert.doesNotMatch(source, /suspend-rendering/);

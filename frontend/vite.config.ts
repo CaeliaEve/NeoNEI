@@ -88,7 +88,7 @@ export default defineConfig(({ mode }) => {
             if (id.includes('vue') || id.includes('vue-router') || id.includes('pinia')) {
               return 'vendor-vue'
             }
-            if (id.includes('axios') || id.includes('pinyin-pro')) {
+            if (id.includes('axios')) {
               return 'vendor-utils'
             }
             return 'vendor'

@@ -5,7 +5,7 @@ import {
   type NativeRendererProbeResult,
 } from "./NativeRendererProbe.ts";
 import type {
-  NativeRenderCommand,
+  NativeLayoutCommandBatch,
   NativeRendererStats,
   NativeTextureSpriteCommand,
 } from "./NativeRendererCommandProtocol.ts";
@@ -64,6 +64,16 @@ type TextureState = {
   width: number;
   height: number;
 };
+
+function ensureFloat32Capacity(
+  values: Float32Array<ArrayBuffer>,
+  requiredLength: number,
+): Float32Array<ArrayBuffer> {
+  if (values.length >= requiredLength) return values;
+  let capacity = Math.max(256, values.length || 1);
+  while (capacity < requiredLength) capacity *= 2;
+  return new Float32Array(capacity);
+}
 
 function textureSourceSize(bitmap: TexImageSource): { width: number; height: number } {
   const source = bitmap as TexImageSource & {
@@ -129,6 +139,10 @@ export class WebGl2NativeRenderer {
   private readonly spriteResolutionLocation: WebGLUniformLocation | null;
   private readonly textureCache = new Map<string, TextureState>();
   private readonly maxTextureSize: number;
+  private chromePositions = new Float32Array(0);
+  private chromeColors = new Float32Array(0);
+  private spritePositions = new Float32Array(0);
+  private spriteTexcoords = new Float32Array(0);
 
   static probe(activeCanvas: HTMLCanvasElement | OffscreenCanvas): NativeRendererProbeResult {
     const gl = activeCanvas.getContext("webgl2", {
@@ -228,7 +242,7 @@ export class WebGl2NativeRenderer {
   render(
     activeWidth: number,
     activeHeight: number,
-    commands: NativeRenderCommand[],
+    commands: NativeLayoutCommandBatch,
     spriteCommands: NativeTextureSpriteCommand[] = [],
   ): NativeRendererStats {
     const gl = this.gl;
@@ -249,21 +263,26 @@ export class WebGl2NativeRenderer {
     };
   }
 
-  private renderChrome(activeWidth: number, activeHeight: number, commands: NativeRenderCommand[]) {
+  private renderChrome(activeWidth: number, activeHeight: number, commands: NativeLayoutCommandBatch) {
     const gl = this.gl;
-    if (commands.length <= 0) return { drawCalls: 0, vertexCount: 0 };
+    if (commands.count <= 0) return { drawCalls: 0, vertexCount: 0 };
 
     // Allocate exactly for the base quad plus the compact plus/minus marker.
     // This keeps the native chrome path visual-only without inflating per-frame
     // typed-array pressure during fast paging.
     let chromeQuadCount = 0;
-    for (const command of commands) {
+    const { values: commandValues, stride, count, fieldOffsets } = commands;
+    for (let index = 0; index < count; index += 1) {
+      const offset = index * stride;
+      const flags = commandValues[offset + fieldOffsets.flags] ?? 0;
       chromeQuadCount += 1;
-      if ((command.flags & 1) !== 0) chromeQuadCount += 2;
-      else if ((command.flags & 2) !== 0 || (command.flags & 16) !== 0) chromeQuadCount += 1;
+      if ((flags & 1) !== 0) chromeQuadCount += 2;
+      else if ((flags & 2) !== 0 || (flags & 16) !== 0) chromeQuadCount += 1;
     }
-    const positions = new Float32Array(chromeQuadCount * 12);
-    const colors = new Float32Array(chromeQuadCount * 24);
+    this.chromePositions = ensureFloat32Capacity(this.chromePositions, chromeQuadCount * 12);
+    this.chromeColors = ensureFloat32Capacity(this.chromeColors, chromeQuadCount * 24);
+    const positions = this.chromePositions;
+    const colors = this.chromeColors;
     let positionCursor = 0;
     let colorCursor = 0;
     let vertexCount = 0;
@@ -285,18 +304,23 @@ export class WebGl2NativeRenderer {
     const pushQuad = (x1: number, y1: number, x2: number, y2: number, color: number[]) => {
       pushQuadCorners(x1, y1, x2, y2, color, color, color, color);
     };
-    for (const command of commands) {
-      const isGroup = (command.flags & 1) !== 0;
-      const isGroupHeader = (command.flags & 2) !== 0;
-      const isHovered = (command.flags & 4) !== 0;
-      const isSelected = (command.flags & 8) !== 0;
-      const isGroupMember = (command.flags & 16) !== 0;
+    for (let index = 0; index < count; index += 1) {
+      const offset = index * stride;
+      const x = commandValues[offset + fieldOffsets.x] ?? 0;
+      const y = commandValues[offset + fieldOffsets.y] ?? 0;
+      const size = commandValues[offset + fieldOffsets.size] ?? 0;
+      const flags = commandValues[offset + fieldOffsets.flags] ?? 0;
+      const isGroup = (flags & 1) !== 0;
+      const isGroupHeader = (flags & 2) !== 0;
+      const isHovered = (flags & 4) !== 0;
+      const isSelected = (flags & 8) !== 0;
+      const isGroupMember = (flags & 16) !== 0;
 
-      const inset = isHovered || isSelected ? 0 : Math.max(2, Math.floor(command.size * 0.08));
-      const x1 = command.x + inset;
-      const y1 = command.y + inset;
-      const x2 = command.x + command.size - inset;
-      const y2 = command.y + command.size - inset;
+      const inset = isHovered || isSelected ? 0 : Math.max(2, Math.floor(size * 0.08));
+      const x1 = x + inset;
+      const y1 = y + inset;
+      const x2 = x + size - inset;
+      const y2 = y + size - inset;
 
       let cTL: number[];
       let cTR: number[];
@@ -363,16 +387,16 @@ export class WebGl2NativeRenderer {
       // Plus/Minus badges (Stable positions: do not shift with hover inset)
       if (isGroup) {
         const plusColor = isHovered ? [0.94, 0.96, 1.0, 0.95] : [0.78, 0.82, 0.88, 0.65]; // Premium starlight white on hover, starlight silver when inactive
-        const bx2 = command.x + command.size;
-        const by1 = command.y;
+        const bx2 = x + size;
+        const by1 = y;
         // Horizontal line
         pushQuad(bx2 - 17, by1 + 12.25, bx2 - 9, by1 + 13.75, plusColor);
         // Vertical line
         pushQuad(bx2 - 13.75, by1 + 9, bx2 - 12.25, by1 + 17, plusColor);
       } else if (isGroupHeader || isGroupMember) {
         const minusColor = isHovered ? [0.94, 0.96, 1.0, 0.95] : [0.78, 0.82, 0.88, 0.65]; // Premium starlight white on hover, starlight silver when inactive
-        const bx2 = command.x + command.size;
-        const by1 = command.y;
+        const bx2 = x + size;
+        const by1 = y;
         pushQuad(bx2 - 17, by1 + 12.25, bx2 - 9, by1 + 13.75, minusColor);
       }
     }
@@ -412,8 +436,10 @@ export class WebGl2NativeRenderer {
     for (const [textureKey, list] of byTexture) {
       const texture = this.textureCache.get(textureKey);
       if (!texture) continue;
-      const positions = new Float32Array(list.length * 12);
-      const texcoords = new Float32Array(list.length * 12);
+      this.spritePositions = ensureFloat32Capacity(this.spritePositions, list.length * 12);
+      this.spriteTexcoords = ensureFloat32Capacity(this.spriteTexcoords, list.length * 12);
+      const positions = this.spritePositions;
+      const texcoords = this.spriteTexcoords;
       let cursor = 0;
       for (const command of list) {
         const x1 = command.destX;
@@ -432,12 +458,12 @@ export class WebGl2NativeRenderer {
 
       gl.bindTexture(gl.TEXTURE_2D, texture.texture);
       gl.bindBuffer(gl.ARRAY_BUFFER, this.spritePositionBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STREAM_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, positions.subarray(0, cursor), gl.STREAM_DRAW);
       gl.enableVertexAttribArray(this.spritePositionLocation);
       gl.vertexAttribPointer(this.spritePositionLocation, 2, gl.FLOAT, false, 0, 0);
 
       gl.bindBuffer(gl.ARRAY_BUFFER, this.spriteTexcoordBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, texcoords, gl.STREAM_DRAW);
+      gl.bufferData(gl.ARRAY_BUFFER, texcoords.subarray(0, cursor), gl.STREAM_DRAW);
       gl.enableVertexAttribArray(this.spriteTexcoordLocation);
       gl.vertexAttribPointer(this.spriteTexcoordLocation, 2, gl.FLOAT, false, 0, 0);
 

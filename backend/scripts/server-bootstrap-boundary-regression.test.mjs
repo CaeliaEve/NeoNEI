@@ -45,8 +45,15 @@ test('bootstrap boundary owns startup lifecycle and delegates app construction',
   assert.match(bootstrapSource, /export\s+const\s+app\s*=\s*createApp\(/);
   assert.match(bootstrapSource, /export\s+async\s+function\s+startServer\(\)/);
   assert.match(bootstrapSource, /createRuntimeAccelerationManagerRegistry\(\)/);
+  assert.match(bootstrapSource, /recoverExternalRuntimeArtifactPromotion\(\)/);
+  assert.match(bootstrapSource, /verifyCurrentExternalRuntimeGenerationSeal\(\)/);
   assert.match(bootstrapSource, /initializeRuntimeDatabases\(runtimeAccelerationRegistry\)/);
   assert.match(bootstrapSource, /startRuntimeServer\(\{/);
+  const recoveryIndex = bootstrapSource.indexOf('recoverExternalRuntimeArtifactPromotion()');
+  const sealVerificationIndex = bootstrapSource.indexOf('verifyCurrentExternalRuntimeGenerationSeal()');
+  const databaseInitializationIndex = bootstrapSource.indexOf('initializeRuntimeDatabases(runtimeAccelerationRegistry)');
+  assert.equal(recoveryIndex < sealVerificationIndex, true, 'promotion recovery must precede full-tree seal verification');
+  assert.equal(sealVerificationIndex < databaseInitializationIndex, true, 'seal verification must complete before runtime startup');
   assert.match(serverSettingsSource, /export const serverSettings/);
   assert.match(serverSettingsSource, /createAdminAccessGuard/);
   assert.doesNotMatch(bootstrapSource, /getDatabaseManager\(/);

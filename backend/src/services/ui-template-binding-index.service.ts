@@ -1,10 +1,10 @@
 import fs from 'fs';
-import {
-  NESQL_UI_PAYLOAD_INDEX_FILE,
-  NESQL_UI_TEMPLATE_BINDING_INDEX_FILE,
-  NESQL_UI_TEMPLATE_CATALOG_FILE,
-} from '../config/runtime-paths';
 import { notFound } from '../utils/http';
+import { CURRENT_RUNTIME_ARTIFACT_PATHS } from './current-runtime-artifact-index-abi';
+import {
+  resolveCurrentRuntimeDistDataDir,
+  resolveDistDataRuntimeFile,
+} from './current-runtime-artifact-index.service';
 import {
   UiTemplateCatalogService,
   type UiTemplateCatalogReport,
@@ -65,6 +65,12 @@ export interface UiTemplateBindingIndexServiceOptions {
   recipeUiPayloadIndexFilePath?: string;
   templateCatalogFilePath?: string;
 }
+
+type UiTemplateBindingIndexPaths = Readonly<{
+  bindingIndexFilePath: string;
+  recipeUiPayloadIndexFilePath: string;
+  templateCatalogFilePath: string;
+}>;
 
 type RecipeUiPayloadIndexEntry = {
   recipeId: string;
@@ -171,17 +177,33 @@ function readCompiledBindingIndex(filePath: string): UiTemplateBindingIndexRepor
 
 export class UiTemplateBindingIndexService {
   private cache: CachedBindingIndex | null = null;
-  private readonly bindingIndexFilePath: string;
-  private readonly recipeUiPayloadIndexFilePath: string;
-  private readonly templateCatalogFilePath: string;
+  private readonly explicitBindingIndexFilePath: string | null;
+  private readonly explicitRecipeUiPayloadIndexFilePath: string | null;
+  private readonly explicitTemplateCatalogFilePath: string | null;
   private readonly templateCatalogService: UiTemplateCatalogService;
 
   constructor(options: UiTemplateBindingIndexServiceOptions = {}) {
-    this.bindingIndexFilePath = options.bindingIndexFilePath ?? NESQL_UI_TEMPLATE_BINDING_INDEX_FILE;
-    this.recipeUiPayloadIndexFilePath = options.recipeUiPayloadIndexFilePath ?? NESQL_UI_PAYLOAD_INDEX_FILE;
-    this.templateCatalogFilePath = options.templateCatalogFilePath ?? NESQL_UI_TEMPLATE_CATALOG_FILE;
+    this.explicitBindingIndexFilePath = options.bindingIndexFilePath ?? null;
+    this.explicitRecipeUiPayloadIndexFilePath = options.recipeUiPayloadIndexFilePath ?? null;
+    this.explicitTemplateCatalogFilePath = options.templateCatalogFilePath ?? null;
     this.templateCatalogService = new UiTemplateCatalogService({
-      catalogFilePath: this.templateCatalogFilePath,
+      catalogFilePath: this.explicitTemplateCatalogFilePath ?? undefined,
+    });
+  }
+
+  private resolvePaths(): UiTemplateBindingIndexPaths {
+    const generationRoot = (
+      this.explicitBindingIndexFilePath
+      && this.explicitRecipeUiPayloadIndexFilePath
+      && this.explicitTemplateCatalogFilePath
+    ) ? null : resolveCurrentRuntimeDistDataDir();
+    return Object.freeze({
+      bindingIndexFilePath: this.explicitBindingIndexFilePath
+        ?? resolveDistDataRuntimeFile(CURRENT_RUNTIME_ARTIFACT_PATHS.uiTemplateBindingIndex, generationRoot as string),
+      recipeUiPayloadIndexFilePath: this.explicitRecipeUiPayloadIndexFilePath
+        ?? resolveDistDataRuntimeFile(CURRENT_RUNTIME_ARTIFACT_PATHS.uiPayloadIndex, generationRoot as string),
+      templateCatalogFilePath: this.explicitTemplateCatalogFilePath
+        ?? resolveDistDataRuntimeFile(CURRENT_RUNTIME_ARTIFACT_PATHS.uiTemplateCatalog, generationRoot as string),
     });
   }
 
@@ -195,18 +217,18 @@ export class UiTemplateBindingIndexService {
     return report;
   }
 
-  getReportOrNull(): UiTemplateBindingIndexReport | null {
-    const compiled = this.getCompiledBindingReport();
+  getReportOrNull(paths = this.resolvePaths()): UiTemplateBindingIndexReport | null {
+    const compiled = this.getCompiledBindingReport(paths.bindingIndexFilePath);
     if (compiled) {
       return compiled;
     }
 
-    const recipeIndex = this.getRecipeIndex();
-    const templateCatalog = this.getTemplateCatalog();
+    const recipeIndex = this.getRecipeIndex(paths.recipeUiPayloadIndexFilePath);
+    const templateCatalog = this.getTemplateCatalog(paths.templateCatalogFilePath);
     if (!recipeIndex || !templateCatalog) {
       return null;
     }
-    const cacheKey = `${recipeIndex.mtimeMs}:${templateCatalog.mtimeMs}`;
+    const cacheKey = `${paths.recipeUiPayloadIndexFilePath}:${recipeIndex.mtimeMs}:${paths.templateCatalogFilePath}:${templateCatalog.mtimeMs}`;
     if (this.cache && this.cache.cacheKey === cacheKey) {
       return this.cache.report;
     }
@@ -222,7 +244,7 @@ export class UiTemplateBindingIndexService {
     const bindingIndex = new Map<string, UiTemplateBindingIndexEntry>();
     let boundRecipeCount = 0;
     for (const entry of recipeIndex.recipes) {
-      const template = entry.familyKey ? templateIndex.get(entry.familyKey) ?? this.templateCatalogService.getTemplateByFamilyKey(entry.familyKey) : null;
+      const template = entry.familyKey ? templateIndex.get(entry.familyKey) ?? null : null;
       const binding: UiTemplateBindingIndexEntry = {
         recipeId: entry.recipeId,
         path: entry.path,
@@ -247,12 +269,12 @@ export class UiTemplateBindingIndexService {
       generatedAt: new Date().toISOString(),
       source: {
         recipeUiPayloadIndex: {
-          path: this.recipeUiPayloadIndexFilePath,
+          path: paths.recipeUiPayloadIndexFilePath,
           exists: Boolean(recipeIndex),
           recipeCount: recipeIndex.recipes.length,
         },
         uiTemplateCatalog: {
-          path: this.templateCatalogFilePath,
+          path: paths.templateCatalogFilePath,
           exists: Boolean(templateCatalog),
           templateCount: templateCatalog.report.summary.templateCount,
           familyCount: templateCatalog.report.summary.familyCount,
@@ -291,28 +313,28 @@ export class UiTemplateBindingIndexService {
     return this.getReport().bindings;
   }
 
-  private getRecipeIndex(): { mtimeMs: number; recipes: RecipeUiPayloadIndexEntry[] } | null {
-    if (!this.recipeUiPayloadIndexFilePath || !fs.existsSync(this.recipeUiPayloadIndexFilePath)) {
+  private getRecipeIndex(filePath: string): { mtimeMs: number; recipes: RecipeUiPayloadIndexEntry[] } | null {
+    if (!fs.existsSync(filePath)) {
       return null;
     }
-    const stat = fs.statSync(this.recipeUiPayloadIndexFilePath);
-    const recipes = readRecipeUiPayloadIndex(this.recipeUiPayloadIndexFilePath);
+    const stat = fs.statSync(filePath);
+    const recipes = readRecipeUiPayloadIndex(filePath);
     if (!recipes) {
       return null;
     }
     return { mtimeMs: stat.mtimeMs, recipes };
   }
 
-  private getCompiledBindingReport(): UiTemplateBindingIndexReport | null {
-    if (!this.bindingIndexFilePath || !fs.existsSync(this.bindingIndexFilePath)) {
+  private getCompiledBindingReport(filePath: string): UiTemplateBindingIndexReport | null {
+    if (!fs.existsSync(filePath)) {
       return null;
     }
-    const stat = fs.statSync(this.bindingIndexFilePath);
-    const cacheKey = `compiled:${stat.mtimeMs}`;
+    const stat = fs.statSync(filePath);
+    const cacheKey = `compiled:${filePath}:${stat.mtimeMs}`;
     if (this.cache && this.cache.cacheKey === cacheKey) {
       return this.cache.report;
     }
-    const report = readCompiledBindingIndex(this.bindingIndexFilePath);
+    const report = readCompiledBindingIndex(filePath);
     if (!report) {
       return null;
     }
@@ -324,34 +346,34 @@ export class UiTemplateBindingIndexService {
     return report;
   }
 
-  private getTemplateCatalog(): { mtimeMs: number; report: UiTemplateCatalogReport } | null {
-    if (!this.templateCatalogFilePath || !fs.existsSync(this.templateCatalogFilePath)) {
+  private getTemplateCatalog(filePath: string): { mtimeMs: number; report: UiTemplateCatalogReport } | null {
+    if (!fs.existsSync(filePath)) {
       return null;
     }
-    const stat = fs.statSync(this.templateCatalogFilePath);
-    const report = this.templateCatalogService.getReportOrNull();
+    const stat = fs.statSync(filePath);
+    const report = this.templateCatalogService.getReportOrNull(filePath);
     if (!report) {
       return null;
     }
     return { mtimeMs: stat.mtimeMs, report };
   }
 
-  private getCacheOrNull(): CachedBindingIndex | null {
-    const compiled = this.getCompiledBindingReport();
+  private getCacheOrNull(paths = this.resolvePaths()): CachedBindingIndex | null {
+    const compiled = this.getCompiledBindingReport(paths.bindingIndexFilePath);
     if (compiled && this.cache) {
       return this.cache;
     }
 
-    const recipeIndex = this.getRecipeIndex();
-    const templateCatalog = this.getTemplateCatalog();
+    const recipeIndex = this.getRecipeIndex(paths.recipeUiPayloadIndexFilePath);
+    const templateCatalog = this.getTemplateCatalog(paths.templateCatalogFilePath);
     if (!recipeIndex || !templateCatalog) {
       return null;
     }
-    const cacheKey = `${recipeIndex.mtimeMs}:${templateCatalog.mtimeMs}`;
+    const cacheKey = `${paths.recipeUiPayloadIndexFilePath}:${recipeIndex.mtimeMs}:${paths.templateCatalogFilePath}:${templateCatalog.mtimeMs}`;
     if (this.cache && this.cache.cacheKey === cacheKey) {
       return this.cache;
     }
-    this.getReportOrNull();
+    this.getReportOrNull(paths);
     return this.cache;
   }
 }

@@ -18,6 +18,7 @@ export type DistDataManifest = {
     rustRecipePack?: string;
     rustTexturePack?: string;
     rustRuntimeManifest?: string;
+    rustIntegrity?: string;
     rustPackValidationReport?: string;
     packValidationReport?: string;
     rustUiTemplatesBin?: string;

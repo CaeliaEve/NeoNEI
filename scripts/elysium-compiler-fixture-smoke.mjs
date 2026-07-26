@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
+import { resolveElysiumOutputGeneration } from './lib/elysium-output-generation.mjs';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const args = process.argv.slice(2);
@@ -79,13 +80,15 @@ try {
     ['compile', '--input', fixturePath, '--output', outputDir, '--report', compileReport, '--scope', scope],
     'elysium-compiler compile',
   );
+  const compiledGeneration = resolveElysiumOutputGeneration(outputDir);
+  const artifactRoot = compiledGeneration.generationRoot;
 
   const requiredOutputs = [
-    join(outputDir, 'manifest.json'),
-    join(outputDir, 'rust', 'runtime-manifest.json'),
-    join(outputDir, 'rust', 'ui-pack', 'ui_templates.bin'),
-    join(outputDir, 'rust', 'ui-pack', 'ui_bindings.bin'),
-    join(outputDir, 'rust', 'ui-pack', 'ui_strings.bin'),
+    join(artifactRoot, 'manifest.json'),
+    join(artifactRoot, 'rust', 'runtime-manifest.json'),
+    join(artifactRoot, 'rust', 'ui-pack', 'ui_templates.bin'),
+    join(artifactRoot, 'rust', 'ui-pack', 'ui_bindings.bin'),
+    join(artifactRoot, 'rust', 'ui-pack', 'ui_strings.bin'),
     validateReport,
     compileReport,
   ];
@@ -94,13 +97,14 @@ try {
     fail('external compiler smoke missing required outputs', { missingOutputs, workDir });
   }
 
-  const runtimeManifest = readJson(join(outputDir, 'rust', 'runtime-manifest.json'));
+  const runtimeManifest = readJson(join(artifactRoot, 'rust', 'runtime-manifest.json'));
   const payload = {
     status: 'ok',
     compiler,
     fixturePath,
     scope,
     workDir: keep ? workDir : null,
+    outputGenerationId: compiledGeneration.generationId,
     metadata: handshake.metadata,
     runtimeManifestSchema: runtimeManifest.schemaVersion ?? null,
     requiredOutputs: requiredOutputs.map((file) => file.replace(workDir, '<workDir>')),

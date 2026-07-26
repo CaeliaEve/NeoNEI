@@ -32,39 +32,23 @@ test('web-authored recipe components are the only runtime presentation path', ()
   assert.match(policySource, /kind: 'registered-component'[\s\S]*isWebAuthoredRecipeComponent\(profile\.component\)/);
 });
 
-test('native UI payload authority retires captured frame and background PNG rendering', () => {
-  assert.match(policySource, /hasOwnRecordProperty\(payloadRecord, 'nativeLayout'\)/);
-  assert.match(policySource, /NEI frame\/background PNG rendering is retired; refusing heuristic UI path/);
-  assert.match(policySource, /is not registered in the web-authored recipe presentation catalog/);
-  assert.match(policySource, /isWebAuthoredRecipeComponent\(payloadProfile\.component\)/);
-  assert.match(policySource, /isWebAuthoredRecipeComponent\(detectedProfile\.component\)/);
-  assert.match(policySource, /nativePayloadAuthority: 'web-authored-ui-only'/);
+test('binding v2 rendererId is the only recipe presentation authority', () => {
+  assert.match(policySource, /resolveRequiredRecipePresentationProfile\(uiBinding, uiBindingError, \{ preferDetailedCrafting \}\)/);
+  assert.match(policySource, /presentationAuthority: 'ui-binding-v2-renderer-id-only'/);
+  assert.match(policySource, /missingBindingPolicy: 'fail-closed'/);
   assert.match(policySource, /retiredNativeArtifacts: Object\.freeze\(\['nei-frame-png', 'nei-background-png'\]\)/);
-  assert.doesNotMatch(policySource, /missing nativeFrame/);
-  assert.doesNotMatch(policySource, /reconstructed nativeLayout canvas path/);
+  assert.doesNotMatch(policySource, /resolveRecipePresentationProfileFromUiPayload/);
 });
 
-test('machine-present generic routing is named as a policy, not a legacy fallback', () => {
-  assert.match(uiTypeMappingSource, /reason: 'machine_type:gt_generic'/);
-  assert.doesNotMatch(uiTypeMappingSource, /fallback:machine_type_present/);
+test('renderer catalog contains exact ids only and no name detector', () => {
+  assert.match(uiTypeMappingSource, /UI_CONFIG_BY_RENDERER_ID/);
+  assert.doesNotMatch(uiTypeMappingSource, /detectUIType|detectBaseUIType|EXACT_ALIASES|KEYWORD_ALIASES/);
+  assert.doesNotMatch(uiTypeMappingSource, /\.includes\(/);
 });
 
-test('native UI composite family keys resolve through registered canonical family prefixes', () => {
-  assert.match(uiTypeMappingSource, /minecraft: STANDARD_CRAFTING\.uiType/);
-  assert.match(uiTypeMappingSource, /'crafting-table': STANDARD_CRAFTING\.uiType/);
-  assert.match(uiTypeMappingSource, /avaritia: AVARITIA_EXTREME_CRAFTING\.uiType/);
-  assert.match(uiTypeMappingSource, /etfuturum: FURNACE\.uiType/);
-  assert.match(uiTypeMappingSource, /furnace: FURNACE\.uiType/);
-  assert.match(uiTypeMappingSource, /'gregtech-machine': GT_GENERIC\.uiType/);
-  assert.match(uiTypeMappingSource, /'crafting-table\|crafting-grid\|166x140@0#2\|unknown': THAUMCRAFT_ARCANE\.uiType/);
-  assert.match(uiTypeMappingSource, /'crafting-table\|crafting-grid\|256x208@0#1\|unknown': AVARITIA_EXTREME_CRAFTING\.uiType/);
-  assert.match(uiTypeMappingSource, /'botania\|native-nei\|152x122@0#4\|unknown': BOTANIA_RUNE_ALTAR\.uiType/);
-  assert.match(uiTypeMappingSource, /'thaumcraft\|native-nei\|166x140@0#2\|unknown': THAUMCRAFT_ASPECT\.uiType/);
-  assert.match(uiTypeMappingSource, /function resolveUiTypeFromUiPayloadFamilyKey/);
-  assert.match(uiTypeMappingSource, /normalizedFamilyKey\.split\('\|'\)\[0\]\?\.trim\(\)/);
-  assert.match(
-    uiTypeMappingSource,
-    /const uiType = resolveUiTypeFromUiPayloadFamilyKey\(uiPayload\.familyKey\)/,
-    'ui payload resolver should accept exporter composite keys only through registered canonical prefixes',
-  );
+test('uiTypeMapping no longer owns familyKey or composite-key presentation routing', () => {
+  assert.doesNotMatch(uiTypeMappingSource, /FAMILY_KEY_TO_UI_TYPE/);
+  assert.doesNotMatch(uiTypeMappingSource, /resolveUiTypeFromUiPayloadFamilyKey/);
+  assert.doesNotMatch(uiTypeMappingSource, /resolveRecipePresentationProfileFromUiPayload/);
+  assert.match(uiTypeMappingSource, /resolveRecipePresentationProfileByRendererId/);
 });

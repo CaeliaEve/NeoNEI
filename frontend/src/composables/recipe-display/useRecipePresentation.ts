@@ -1,7 +1,6 @@
 import { computed, ref, watch, type Component } from 'vue';
 import { api, type Recipe, type RecipeUiPayload } from '../../services/api';
 import {
-  resolveRecipePresentationProfile,
   type RecipePresentationProfile,
   type UITypeConfig,
 } from '../../services/uiTypeMapping';
@@ -10,6 +9,8 @@ import {
   resolveRecipePresentationDecision,
   resolveRecipePresentationRoute,
 } from './recipePresentationPolicyCatalog';
+import { loadUiPackRuntime, type UiPackBinding } from '../../services/uiPackRuntime.ts';
+import { UI_PACK_RUNTIME_STATUS } from '../../services/uiPackRuntimeAbi.ts';
 
 interface RecipePresentationSource {
   recipe: Recipe;
@@ -18,25 +19,19 @@ interface RecipePresentationSource {
 
 export function useRecipePresentation(source: RecipePresentationSource) {
   const recipeUiPayload = ref<RecipeUiPayload | null>(null);
+  const recipeUiBinding = ref<UiPackBinding | null>(null);
+  const recipeUiBindingError = ref<string | null>('UI binding v2 is loading');
   let uiPayloadRequestSeq = 0;
-
-  const detectedPresentationProfile = computed<RecipePresentationProfile>(() => resolveRecipePresentationProfile({
-    machineType: source.recipe.machineInfo?.machineType,
-    recipeType: source.recipe.recipeType,
-    recipeTypeData: source.recipe.recipeTypeData,
-    inputs: source.recipe.inputs,
-    additionalData: source.recipe.additionalData as Record<string, unknown> | undefined,
-    metadata: source.recipe.metadata as Record<string, unknown> | undefined,
-    preferDetailedCrafting: source.preferDetailedCrafting,
-  }));
+  let uiBindingRequestSeq = 0;
 
   const inlineRecipeUiPayload = computed<RecipeUiPayload | null>(() => resolveInlineRecipeUiPayload(source.recipe));
 
   const resolvedRecipeUiPayload = computed<RecipeUiPayload | null>(() => inlineRecipeUiPayload.value ?? recipeUiPayload.value);
 
   const presentationDecision = computed(() => resolveRecipePresentationDecision({
-    detectedProfile: detectedPresentationProfile.value,
-    uiPayload: resolvedRecipeUiPayload.value,
+    uiBinding: recipeUiBinding.value,
+    uiBindingError: recipeUiBindingError.value,
+    preferDetailedCrafting: source.preferDetailedCrafting,
   }));
 
   const presentationProfile = computed<RecipePresentationProfile>(() => presentationDecision.value.profile);
@@ -100,10 +95,35 @@ export function useRecipePresentation(source: RecipePresentationSource) {
     }
   };
 
+  const refreshRecipeUiBinding = async () => {
+    const recipeId = source.recipe.recipeId?.trim() ?? '';
+    if (!recipeId) {
+      recipeUiBinding.value = null;
+      recipeUiBindingError.value = 'Recipe presentation requires a recipeId before resolving UiPackBinding v2';
+      return;
+    }
+    const requestSeq = ++uiBindingRequestSeq;
+    recipeUiBinding.value = null;
+    recipeUiBindingError.value = `UI binding v2 is loading for recipeId: ${recipeId}`;
+    const runtime = await loadUiPackRuntime();
+    if (requestSeq !== uiBindingRequestSeq) return;
+    if (runtime.status !== UI_PACK_RUNTIME_STATUS.ready) {
+      recipeUiBinding.value = null;
+      recipeUiBindingError.value = `UI binding v2 runtime failed: ${runtime.error || '<missing error detail>'}`;
+      return;
+    }
+    const binding = runtime.bindingsByRecipeId.get(recipeId) ?? null;
+    recipeUiBinding.value = binding;
+    recipeUiBindingError.value = binding
+      ? null
+      : `UI binding v2 is missing for recipeId: ${recipeId}`;
+  };
+
   watch(
-    () => [source.recipe.recipeId, inlineRecipeUiPayload.value?.familyKey ?? ''],
+    () => [source.recipe.recipeId, inlineRecipeUiPayload.value?.captureKey ?? ''],
     () => {
       void refreshRecipeUiPayload();
+      void refreshRecipeUiBinding();
     },
     { immediate: true },
   );
@@ -119,6 +139,9 @@ export function useRecipePresentation(source: RecipePresentationSource) {
     presentationProfile,
     presentationRoute,
     recipeUiPayload,
+    recipeUiBinding,
+    recipeUiBindingError,
+    refreshRecipeUiBinding,
     refreshRecipeUiPayload,
     resolvedRecipeUiPayload,
     shouldUseDetailedCrafting,

@@ -46,7 +46,7 @@ export const UI_BINDING_PACK_PAYLOAD_MAGIC_REPORT = 'NEIUIB1_NUL';
 export const UI_STRING_PACK_PAYLOAD_MAGIC_REPORT = 'NEIUIS1_NUL';
 
 export const UI_TEMPLATE_PAYLOAD_VERSION = 9;
-export const UI_BINDING_PAYLOAD_VERSION = 1;
+export const UI_BINDING_PAYLOAD_VERSION = 2;
 export const UI_STRING_PAYLOAD_VERSION = 1;
 
 type NativeUiExportAbiRecord = Record<string, unknown>;

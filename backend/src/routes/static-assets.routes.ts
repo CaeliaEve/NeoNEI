@@ -7,6 +7,7 @@ import {
   staticDirectoryExists,
   type ImageArtifactFamily,
 } from '../services/static-asset-delivery.service';
+import { resolveCurrentExternalRuntimeGeneration } from '../services/external-runtime-generation.service';
 import { setNoStoreHeaders, setStaticAssetCacheHeaders } from '../utils/http-cache';
 import {
   STATIC_ASSET_IMAGE_ARTIFACT_ROUTES,
@@ -14,6 +15,8 @@ import {
   STATIC_ASSET_PRE_IMAGE_ARTIFACT_MOUNTS,
   type StaticAssetMountDescriptor,
 } from './static-asset-route-registry';
+
+const RUNTIME_ID_HEADER = 'x-neonei-runtime-id';
 
 function createImageArtifactRoute(family: ImageArtifactFamily) {
   return (req: Request, res: Response, next: NextFunction) => {
@@ -47,6 +50,35 @@ function createRawStaticRoute(rootDir: string, options?: { maxAge?: string | num
       });
     } catch {
       return next();
+    }
+  };
+}
+
+function createCurrentRuntimeStaticRoute(
+  authorityRoot: string,
+  options?: { maxAge?: string | number; immutable?: boolean },
+) {
+  return (req: Request, res: Response): void => {
+    try {
+      const current = resolveCurrentExternalRuntimeGeneration(authorityRoot);
+      const delivery = resolveRawStaticAsset(current.generationRoot, req.url);
+      if (!delivery) {
+        res.status(404).end();
+        return;
+      }
+      if (current.pointer.runtimeId) {
+        res.setHeader(RUNTIME_ID_HEADER, current.pointer.runtimeId);
+      }
+      setStaticAssetCacheHeaders(res, {
+        maxAge: options?.maxAge ?? 0,
+        immutable: options?.immutable ?? false,
+      });
+      res.sendFile(delivery.absolutePath, {
+        cacheControl: false,
+        lastModified: true,
+      });
+    } catch {
+      res.status(409).end();
     }
   };
 }
@@ -109,6 +141,17 @@ export function registerStaticAssetRoutes(app: Express): void {
 }
 
 function mountStaticAssetSurface(app: Express, mount: StaticAssetMountDescriptor): void {
+  if (mount.key === 'distData') {
+    app.use(
+      requiredMountPath(mount),
+      createCurrentRuntimeStaticRoute(mount.rootDir, {
+        maxAge: mount.cache.maxAge,
+        immutable: mount.cache.immutable,
+      }),
+    );
+    return;
+  }
+
   if (mount.requireExistingDirectory && !staticDirectoryExists(mount.rootDir)) {
     return;
   }

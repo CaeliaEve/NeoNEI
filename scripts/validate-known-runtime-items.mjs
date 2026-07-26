@@ -43,23 +43,25 @@ function isLocalizedName(entry) {
   if (/^i~[^~]+~[^~]+~/i.test(name)) return false;
   return true;
 }
-function fields(entry) {
-  return [
+function matchesQuery(entry, query) {
+  const needle = normalize(query);
+  if (!needle) return false;
+  const directFields = [
     entry?.localizedName,
     entry?.normalizedLocalizedName,
-    entry?.pinyinFull,
-    entry?.pinyinAcronym,
     entry?.normalizedInternalName,
     entry?.normalizedItemId,
-    entry?.normalizedSearchTerms,
     entry?.itemId,
     entry?.publicItemId,
     entry?.modId,
+    entry?.family,
+    entry?.groupKey,
   ].map(normalize).filter(Boolean);
-}
-function matchesQuery(entry, query) {
-  const needle = normalize(query);
-  return fields(entry).some((field) => field.includes(needle));
+  return directFields.some((field) => field.includes(needle))
+    || normalize(entry?.pinyinFull).startsWith(needle)
+    || normalize(entry?.pinyinAcronym).startsWith(needle)
+    || normalize(entry?.normalizedSearchTerms).includes(needle)
+    || normalize(entry?.aliases).includes(needle);
 }
 function sample(entries, limit = 20) { return entries.slice(0, limit).map((entry) => JSON.parse(JSON.stringify(entry))); }
 

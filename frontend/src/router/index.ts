@@ -14,6 +14,11 @@ const routes: RouteRecordRaw[] = [
     props: true
   },
   {
+    path: '/recipe-by-id/:recipeId',
+    name: 'recipe-by-id',
+    component: () => import('../views/RecipeByIdView.vue'),
+  },
+  {
     path: '/oracle/:itemId?',
     redirect: (to) => {
       const rawItemId = to.params.itemId;

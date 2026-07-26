@@ -19,8 +19,9 @@ function sourceSection(startNeedle, endNeedle) {
 test('native render worker resource operations have a fail-closed boundary', () => {
   assert.match(policyCatalogSource, /NATIVE_RENDER_WORKER_RESOURCE_CATALOG = Object\.freeze/);
   assert.match(policyCatalogSource, /schema: "neonei\/native-render-worker-resources\/current"/);
-  assert.match(policyCatalogSource, /ownershipPolicy: "explicit-renderer-resource-requirement"/);
-  assert.match(policyCatalogSource, /failurePolicy: "fail-closed"/);
+  assert.match(policyCatalogSource, /resourcePolicy: "explicit-renderer-resource-requirement"/);
+  assert.match(policyCatalogSource, /ownershipPolicy: NATIVE_RENDER_WORKER_POLICY_CATALOG_ABI\.resourcePolicy/);
+  assert.match(policyCatalogSource, /failurePolicy: NATIVE_RENDER_WORKER_POLICY_CATALOG_ABI\.failurePolicy/);
   assert.match(policyCatalogSource, /class NativeRenderWorkerResourceError extends Error/);
   assert.match(policyCatalogSource, /function requireNativeRenderWorkerResource/);
   assert.match(policyCatalogSource, /throw nativeRenderWorkerResourceFailed\(operation, descriptor\.failureReason/);
@@ -41,9 +42,10 @@ test('native render texture upload failures throw worker resource errors instead
 });
 
 test('native render requests require an initialized renderer instead of returning zero stats', () => {
-  const renderCase = sourceSection('case "render":', 'case "setAnimationEnabled":');
+  const renderCase = sourceSection('async function renderPipelineFrame', 'function installEnginePort');
 
-  assert.match(renderCase, /requireNativeRenderer\("render"\)\.render/);
+  assert.match(renderCase, /const renderer = requireNativeRenderer\("render"\)/);
+  assert.match(renderCase, /commitNativeRenderFrame\(/);
   assert.doesNotMatch(renderCase, /nativeRenderer\?\.render/);
   assert.doesNotMatch(renderCase, /\?\? \{ drawCalls: 0, vertexCount: 0, spriteDrawCalls: 0, spriteVertexCount: 0 \}/);
 });

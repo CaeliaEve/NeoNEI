@@ -5,7 +5,7 @@
   type BrowserAtlasStaticPlacement,
 } from "./api";
 import { resolveCanonicalRelativePath } from "./api/images";
-import { loadImageAsset } from "./animationBudget";
+import { loadImageAsset } from "./imageAssetLoader";
 import { markPerfEvent } from "./perfMarks";
 
 export type { BrowserAtlasItemEntry } from "./api";

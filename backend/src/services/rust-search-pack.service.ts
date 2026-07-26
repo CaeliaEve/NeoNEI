@@ -1,9 +1,10 @@
 import fs from 'fs';
 import type { BrowserSearchPackPayload } from './publish-payload.service';
 import {
-  CURRENT_RUNTIME_DIST_MANIFEST_FILE,
   isPortableRuntimePath,
   normalizeRuntimePath,
+  resolveCurrentRuntimeDistDataDir,
+  resolveCurrentRuntimeDistManifestFile,
   resolveDistDataRuntimeFile,
 } from './current-runtime-artifact-index.service';
 import {
@@ -27,33 +28,33 @@ function readJsonFile<T>(filePath: string): T | null {
   }
 }
 
-function resolveSearchPackCandidate(relativePath?: string | null): string | null {
+function resolveSearchPackCandidate(generationRoot: string, relativePath?: string | null): string | null {
   if (!isPortableRuntimePath(relativePath)) {
     return null;
   }
   try {
-    return resolveDistDataRuntimeFile(normalizeRuntimePath(relativePath));
+    return resolveDistDataRuntimeFile(normalizeRuntimePath(relativePath), generationRoot);
   } catch {
     return null;
   }
 }
 
-function manifestSignature(manifest: DistDataManifest | null): string {
+function manifestSignature(manifestPath: string, manifest: DistDataManifest | null): string {
   for (const field of RUST_SEARCH_PACK_DESCRIPTOR.signatureFields) {
     const signature = `${manifest?.[field] ?? ''}`.trim();
     if (signature) return signature;
   }
-  return CURRENT_RUNTIME_DIST_MANIFEST_FILE;
+  return manifestPath;
 }
 
-function searchPackCandidatePaths(manifest: DistDataManifest | null): string[] {
+function searchPackCandidatePaths(generationRoot: string, manifest: DistDataManifest | null): string[] {
   const relativePaths = [
     manifest?.files?.[RUST_SEARCH_PACK_DESCRIPTOR.manifestKey],
     RUST_SEARCH_PACK_DESCRIPTOR.defaultPath,
   ];
   return Array.from(new Set(
     relativePaths
-      .map((relativePath) => resolveSearchPackCandidate(relativePath))
+      .map((relativePath) => resolveSearchPackCandidate(generationRoot, relativePath))
       .filter((entry): entry is string => Boolean(entry)),
   ));
 }
@@ -78,13 +79,15 @@ export class RustSearchPackService {
   private cachedPack: BrowserSearchPackPayload | null = null;
 
   readDistDataSearchPack(): BrowserSearchPackPayload | null {
-    const manifest = readJsonFile<DistDataManifest>(CURRENT_RUNTIME_DIST_MANIFEST_FILE);
-    const signature = manifestSignature(manifest);
+    const generationRoot = resolveCurrentRuntimeDistDataDir();
+    const manifestPath = resolveCurrentRuntimeDistManifestFile(generationRoot);
+    const manifest = readJsonFile<DistDataManifest>(manifestPath);
+    const signature = `${generationRoot}::${manifestSignature(manifestPath, manifest)}`;
     if (this.cachedSignature === signature && this.cachedPack) {
       return this.cachedPack;
     }
 
-    for (const candidate of searchPackCandidatePaths(manifest)) {
+    for (const candidate of searchPackCandidatePaths(generationRoot, manifest)) {
       const pack = coercePack(readJsonFile<BrowserSearchPackPayload>(candidate), signature);
       if (pack) {
         this.cachedSignature = signature;

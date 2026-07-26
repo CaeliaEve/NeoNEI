@@ -312,7 +312,7 @@ export const NATIVE_RUNTIME_CAPABILITY_DESCRIPTOR_LIST = validateRuntimeCapabili
   defineNativeRuntimeCapability({ name: "strings.zh-cn", domain: "strings" }),
   defineNativeRuntimeCapability({ name: "native_ui.surface", domain: "native_ui" }),
   defineNativeRuntimeCapability({ name: "native_ui.design_space_coordinates", domain: "native_ui" }),
-  defineNativeRuntimeCapability({ name: "native_ui.background_asset", domain: "native_ui" }),
+  defineNativeRuntimeCapability({ name: "native_ui.semantic_layout", domain: "native_ui" }),
   defineNativeRuntimeCapability({
     name: "native-render.webgl2",
     domain: "native-render",

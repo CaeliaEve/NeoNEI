@@ -21,6 +21,10 @@ const animationBudgetSource = fs.readFileSync(
   'src/services/animationBudget.ts',
   'utf8',
 ).replace(/\r\n/g, '\n');
+const imageAssetLoaderSource = fs.readFileSync(
+  'src/services/imageAssetLoader.ts',
+  'utf8',
+).replace(/\r\n/g, '\n');
 
 test('homepage browser pages warm only the resident global atlas without reviving page media fallbacks', () => {
   assert.equal(
@@ -75,19 +79,19 @@ test('homepage browser pages warm only the resident global atlas without revivin
   );
 });
 
-test('animation budget remembers session-warm assets even after the short HTMLImageElement cache trims older entries', () => {
+test('shared image asset loader remembers session-warm assets after the short image cache trims entries', () => {
   assert.equal(
-    animationBudgetSource.includes('const warmImageAssetHistory = new Map<string, true>();'),
+    imageAssetLoaderSource.includes('const warmImageAssetHistory = new Map<string, true>();'),
     true,
     'animation budget should keep a separate warm-history map for assets that have already been loaded this session',
   );
   assert.equal(
-    animationBudgetSource.includes('touchBoundedCache(warmImageAssetHistory, src, true, MAX_WARM_IMAGE_HISTORY);'),
+    imageAssetLoaderSource.includes('touchBoundedCache(warmImageAssetHistory, src, true, MAX_WARM_IMAGE_HISTORY);'),
     true,
     'successful image loads should stamp the asset into the warm-history map',
   );
   assert.equal(
-    animationBudgetSource.includes('return warmImageAssetHistory.has(normalizedSrc)\n    || imageAssetCache.has(normalizedSrc)\n    || imageAssetInFlight.has(normalizedSrc);'),
+    imageAssetLoaderSource.includes('return warmImageAssetHistory.has(normalizedSrc)\n    || imageAssetCache.has(normalizedSrc)\n    || imageAssetInFlight.has(normalizedSrc);'),
     true,
     'page presentation gating should treat session-warmed assets as warm even after the short image cache rotates older entries out',
   );

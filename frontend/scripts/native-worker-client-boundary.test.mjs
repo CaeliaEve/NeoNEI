@@ -12,6 +12,7 @@ const engineClientPolicySource = readFileSync(resolve(frontendRoot, 'src/native-
 const workerClientOpsSource = readFileSync(resolve(frontendRoot, 'src/native-surface/NativeWorkerClientOpsCatalog.ts'), 'utf8');
 const controllerSource = readFileSync(resolve(frontendRoot, 'src/native-surface/NativeSurfaceController.ts'), 'utf8');
 const browserSurfaceSource = readFileSync(resolve(frontendRoot, 'src/components/native-surface/NativeBrowserSurface.vue'), 'utf8');
+const pipelineClientSource = readFileSync(resolve(frontendRoot, 'src/native-surface/NativeRenderPipelineClient.ts'), 'utf8');
 
 function sourceSection(source, startNeedle, endNeedle) {
   const start = source.indexOf(startNeedle);
@@ -30,7 +31,7 @@ test('native render worker client exposes a fail-closed client ABI boundary', ()
   assert.match(renderClientPolicySource, /class NativeRenderWorkerClientError extends Error/);
   assert.match(renderClientPolicySource, /NATIVE_RENDER_WORKER_CLIENT_ERROR_DESCRIPTORS/);
   assert.match(renderClientPolicySource, /NATIVE_RENDER_WORKER_TRANSFER_DESCRIPTOR_MAP/);
-  assert.match(renderClientSource, /from "\.\/NativeRenderWorkerClientPolicyCatalog"/);
+  assert.match(renderClientSource, /from "\.\/NativeRenderWorkerClientPolicyCatalog(?:\.ts)?"/);
   assert.match(renderClientSource, /createNativeWorkerClientSession/);
   assert.match(renderClientSource, /NATIVE_RENDER_WORKER_CLIENT_POLICY/);
   assert.match(renderClientSource, /unavailableCode: NATIVE_RENDER_WORKER_CLIENT_ERROR_CODES\.workerUnavailable/);
@@ -41,23 +42,27 @@ test('native render worker client exposes a fail-closed client ABI boundary', ()
 });
 
 test('native render worker client rejects worker error responses and post failures instead of returning null', () => {
-  const postEvent = sourceSection(renderClientSource, 'export function postNativeRenderEvent', 'export function resetNativeRenderWorker');
+  const clientFactory = sourceSection(renderClientSource, 'export function createNativeRenderWorkerClient', 'export function getNativeRenderWorkerMetrics');
   const messageHandler = sourceSection(workerClientOpsSource, 'worker.onmessage =', 'worker.onerror =');
 
-  assert.match(postEvent, /Promise<NativeRenderResponse>/);
-  assert.match(postEvent, /nativeRenderWorkerClient\.post\(request\)/);
+  assert.match(renderClientSource, /const renderClients = new Map<NativeSurfaceId, NativeRenderWorkerClient>\(\)/);
+  assert.match(renderClientSource, /function createSession\(\)/);
+  assert.match(clientFactory, /post: \(request\) => session\.post\(request\)/);
+  assert.match(clientFactory, /reset: \(\) => session\.reset\(\)/);
+  assert.match(clientFactory, /destroy\(\) \{\s*session\.reset\(\);\s*renderClients\.delete\(surfaceId\);/s);
   assert.match(renderClientSource, /postFailedCode: NATIVE_RENDER_WORKER_CLIENT_ERROR_CODES\.workerPostFailed/);
   assert.match(renderClientSource, /responseFailure: \(response\) => response\.type === "error"/);
   assert.match(renderClientSource, /code: NATIVE_RENDER_WORKER_CLIENT_ERROR_CODES\.workerErrorResponse/);
   assert.match(messageHandler, /descriptor\.responseFailure/);
   assert.match(messageHandler, /request\.reject\(fail\(responseFailure\.code/);
-  assert.doesNotMatch(postEvent, /Promise\.resolve\(null\)/);
-  assert.doesNotMatch(postEvent, /\.catch\(\(\) => null\)/);
+  assert.doesNotMatch(clientFactory, /Promise\.resolve\(null\)/);
+  assert.doesNotMatch(clientFactory, /\.catch\(\(\) => null\)/);
   assert.doesNotMatch(renderClientSource, /Worker \| null\) \{/);
   assert.match(renderClientPolicySource, /initialize: Object\.freeze\(\{/);
   assert.match(renderClientPolicySource, /transferableFields: Object\.freeze\(\["canvas"\] as const\)/);
-  assert.match(renderClientPolicySource, /render: Object\.freeze\(\{/);
-  assert.match(renderClientPolicySource, /transferableFields: Object\.freeze\(\["commandBuffer"\] as const\)/);
+  assert.match(renderClientPolicySource, /connectEnginePort: Object\.freeze\(\{/);
+  assert.match(renderClientPolicySource, /transferableFields: Object\.freeze\(\["port"\] as const\)/);
+  assert.doesNotMatch(renderClientPolicySource, /transferableFields: Object\.freeze\(\["commandBuffer"\] as const\)/);
 });
 
 test('native surface engine worker client exposes the same fail-closed no-null boundary', () => {
@@ -71,7 +76,7 @@ test('native surface engine worker client exposes the same fail-closed no-null b
   assert.match(engineClientPolicySource, /class NativeSurfaceEngineClientError extends Error/);
   assert.match(engineClientPolicySource, /NATIVE_SURFACE_ENGINE_CLIENT_ERROR_DESCRIPTORS/);
   assert.match(engineClientPolicySource, /NATIVE_SURFACE_ENGINE_TRANSFER_DESCRIPTOR_MAP/);
-  assert.match(engineClientSource, /from "\.\/NativeSurfaceEngineClientPolicyCatalog"/);
+  assert.match(engineClientSource, /from "\.\/NativeSurfaceEngineClientPolicyCatalog(?:\.ts)?"/);
   assert.match(engineClientSource, /createNativeWorkerClientSession/);
   assert.match(engineClientSource, /NATIVE_SURFACE_ENGINE_CLIENT_POLICY/);
   assert.doesNotMatch(engineClientSource, /class NativeSurfaceEngineClientError extends Error/);
@@ -83,6 +88,7 @@ test('native surface engine worker client exposes the same fail-closed no-null b
   assert.doesNotMatch(postEvent, /\.catch\(\(\) => null\)/);
   assert.match(engineClientPolicySource, /runtimePacks: Object\.freeze\(\{/);
   assert.match(engineClientPolicySource, /transferableFields: Object\.freeze\(\["packs\[\]\.buffer"\] as const\)/);
+  assert.match(engineClientPolicySource, /connectRenderPort: Object\.freeze\(\{/);
 });
 
 test('native surface controller treats wrong worker responses as protocol violations', () => {
@@ -100,8 +106,13 @@ test('native browser surface explicitly records client failures at the component
   assert.match(browserSurfaceSource, /function reportNativeSurfaceEngineFailure/);
   assert.match(browserSurfaceSource, /nativeRenderFaulted = true/);
   assert.match(browserSurfaceSource, /nativeSurfaceEngineFaulted = true/);
-  assert.match(browserSurfaceSource, /postNativeRenderEvent\(\{ type: "resize", viewport \}\)\.catch/);
+  assert.match(browserSurfaceSource, /createNativeRenderWorkerClient\(props\.surfaceId\)/);
+  assert.match(browserSurfaceSource, /createNativeRenderPipelineClient\(props\.surfaceId, nativeRenderWorker\)/);
+  assert.match(browserSurfaceSource, /nativeRenderWorker\.post\(\{ type: "resize", viewport \}\)\.catch/);
+  assert.match(browserSurfaceSource, /nativeRenderPipeline\.connect\(\)/);
+  assert.match(pipelineClientSource, /new MessageChannel\(\)/);
   assert.match(browserSurfaceSource, /controller\.requestFrame\(nowMs\)/);
   assert.match(browserSurfaceSource, /catch \(error\) \{\s*reportNativeSurfaceEngineFailure\("requestFrame", error\);/s);
   assert.doesNotMatch(browserSurfaceSource, /response\?\.type/);
+  assert.doesNotMatch(browserSurfaceSource, /type: "render"/);
 });

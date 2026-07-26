@@ -1,4 +1,4 @@
-import { ref, watch, type Ref } from 'vue';
+import { onScopeDispose, ref, watch, type Ref } from 'vue';
 import type { RouteLocationNormalizedLoaded, Router } from 'vue-router';
 import {
   buildRecipeRouteQuery,
@@ -47,6 +47,25 @@ export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
   const lastAppliedRouteSnapshot = ref('');
   const lastWrittenSnapshot = ref('');
   const skipNextRouteApply = ref(false);
+  let pendingRecipeRetryTimer: ReturnType<typeof setTimeout> | null = null;
+
+  const clearPendingRecipeRetry = () => {
+    if (pendingRecipeRetryTimer !== null) clearTimeout(pendingRecipeRetryTimer);
+    pendingRecipeRetryTimer = null;
+  };
+
+  const retryPendingRecipeSelection = () => {
+    clearPendingRecipeRetry();
+    const recipeId = pendingRecipeIdFromQuery.value;
+    if (!recipeId) return;
+    if (options.selectRecipeById(recipeId)) {
+      pendingRecipeIdFromQuery.value = null;
+      return;
+    }
+    pendingRecipeRetryTimer = setTimeout(retryPendingRecipeSelection, 100);
+  };
+
+  onScopeDispose(clearPendingRecipeRetry);
 
   const applyRouteSnapshot = () => {
     const snapshot = parseRecipeQuery(options.route.query);
@@ -229,19 +248,11 @@ export function useRecipeRouteSync(options: UseRecipeRouteSyncOptions): void {
       if (!pendingRecipeId) return;
       const applied = options.selectRecipeById(pendingRecipeId);
       if (applied) {
+        clearPendingRecipeRetry();
         pendingRecipeIdFromQuery.value = null;
         return;
       }
-
-      if (
-        currentCategoryPageCount > 0
-        && pendingMachineIndexFromQuery.value === null
-        && pendingMachineNameFromQuery.value === null
-        && pendingPageFromQuery.value === null
-        && options.currentRecipeId.value
-      ) {
-        pendingRecipeIdFromQuery.value = null;
-      }
+      if (currentCategoryPageCount > 0) retryPendingRecipeSelection();
     },
     { immediate: true },
   );

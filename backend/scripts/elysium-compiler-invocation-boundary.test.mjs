@@ -35,7 +35,7 @@ test('elysium compiler client owns typed ABI methods but not child-process trans
   assert.match(capabilityAbiSource, /export type ElysiumCompilerScope/);
   assert.match(clientSource, /import type \{ ElysiumCompilerScope \} from '\.\/elysium-compiler-capability-abi'/);
   for (const scope of ['all', 'native-ui', 'search', 'browser', 'recipes', 'ui', 'textures']) {
-    assert.match(capabilityAbiSource, new RegExp(`'${scope}'`));
+    assert.match(capabilityAbiSource, new RegExp(`["']${scope}["']`));
   }
   assert.match(clientSource, /export type ElysiumCompilerValidateOptions/);
   assert.match(clientSource, /export type ElysiumCompilerCompileOptions/);

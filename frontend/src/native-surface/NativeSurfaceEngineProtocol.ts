@@ -55,6 +55,19 @@ export type NativeSurfaceEngineHit = {
 
 export type NativeSurfaceEngineRequest =
   | {
+    type: "connectRenderPort";
+    id: number;
+    surfaceId: NativeSurfaceId;
+    sessionId: string;
+    port: MessagePort;
+  }
+  | {
+    type: "disconnectRenderPort";
+    id: number;
+    surfaceId: NativeSurfaceId;
+    sessionId: string;
+  }
+  | {
     type: "initialize";
     id: number;
     surfaceId: NativeSurfaceId;
@@ -145,6 +158,41 @@ export type NativeSurfaceEngineRequest =
     surfaceId: NativeSurfaceId;
   };
 
+const NATIVE_SURFACE_ENGINE_REQUEST_TYPES = new Set<NativeSurfaceEngineRequest["type"]>([
+  "connectRenderPort",
+  "disconnectRenderPort",
+  "initialize",
+  "runtimePacks",
+  "viewport",
+  "page",
+  "search",
+  "modFilter",
+  "expandedGroups",
+  "historyItems",
+  "itemSize",
+  "selectedItem",
+  "mutationBatch",
+  "frame",
+  "hitTest",
+  "destroy",
+]);
+
+export function validateNativeSurfaceEngineRequestEnvelope(value: unknown): string | null {
+  if (!value || typeof value !== "object") return "request must be an object";
+  const request = value as Record<string, unknown>;
+  if (!Number.isSafeInteger(request.id)) return "request id must be a safe integer";
+  if (typeof request.surfaceId !== "string" || request.surfaceId.length === 0) {
+    return "surfaceId must be a non-empty string";
+  }
+  if (
+    typeof request.type !== "string"
+    || !NATIVE_SURFACE_ENGINE_REQUEST_TYPES.has(request.type as NativeSurfaceEngineRequest["type"])
+  ) {
+    return `unsupported request type: ${String(request.type)}`;
+  }
+  return null;
+}
+
 export type NativeSurfaceEngineMutation =
   | { type: "viewport"; viewport: NativeSurfaceViewport }
   | { type: "page"; page: number }
@@ -157,6 +205,13 @@ export type NativeSurfaceEngineMutation =
 
 export type NativeSurfaceEngineResponse =
   | {
+    type: "error";
+    id: number;
+    surfaceId: NativeSurfaceId;
+    error: string;
+    metrics: NativeSurfaceEngineWorkerMetrics;
+  }
+  | {
     type: "ack";
     id: number;
     surfaceId: NativeSurfaceId;
@@ -167,11 +222,9 @@ export type NativeSurfaceEngineResponse =
     type: "frame";
     id: number;
     surfaceId: NativeSurfaceId;
-    drawCommands: NativeSurfaceEngineLayoutCommand[];
-    spriteCommands: NativeSurfaceEngineSpriteCommand[];
-    commandBuffer: ArrayBuffer;
-    commandStride: number;
-    commandCount: number;
+    frameToken: number;
+    rendered: boolean;
+    missingTextureKeys: string[];
     hasAnimatedSprites: boolean;
     animatedSpriteCount: number;
     nextFrameDelayMs: number | null;
@@ -186,7 +239,9 @@ export type NativeSurfaceEngineResponse =
   };
 
 export type NativeSurfaceEngineWorkerMetrics = {
+  surfaceCount: number;
   initializedSurfaces: number;
+  runtimePackBytes: number;
   events: number;
   lastEvent: NativeSurfaceEngineRequest["type"] | null;
   lastSurfaceId: NativeSurfaceId | null;

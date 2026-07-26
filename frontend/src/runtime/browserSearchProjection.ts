@@ -25,8 +25,6 @@ export function rankBrowserSearchPackEntry(entry: BrowserSearchPackEntry, normal
   if (entry.normalizedItemId.startsWith(normalized)) return 16;
 
   if (entry.normalizedLocalizedName.includes(normalized)) return 20;
-  if (entry.pinyinFull.includes(normalized)) return 21;
-  if (entry.pinyinAcronym.includes(normalized)) return 22;
   if (aliases.includes(normalized)) return 23;
   if (entry.normalizedInternalName.includes(normalized)) return 24;
   if (entry.normalizedSearchTerms.includes(normalized)) return 25;

@@ -31,6 +31,17 @@ export type NativeRenderSpriteCommand = {
 export type NativeRenderRequest =
   | NativeRenderInitializeRequest
   | {
+    type: "connectEnginePort";
+    id: number;
+    sessionId: string;
+    port: MessagePort;
+  }
+  | {
+    type: "disconnectEnginePort";
+    id: number;
+    sessionId: string;
+  }
+  | {
     type: "loadTextures";
     id: number;
     textures: NativeRenderTextureDescriptor[];
@@ -39,16 +50,6 @@ export type NativeRenderRequest =
     type: "resize";
     id: number;
     viewport: NativeSurfaceViewport;
-  }
-  | {
-    type: "render";
-    id: number;
-    frameToken: number;
-    commandBuffer: ArrayBuffer;
-    commandStride: number;
-    commandCount: number;
-    spriteCommands?: NativeRenderSpriteCommand[];
-    nowMs: number;
   }
   | {
     type: "setAnimationEnabled";
@@ -115,6 +116,18 @@ export type NativeRenderResponse =
     id: number;
     backend: NativeRenderBackendKind;
     limits: NativeRendererLimits;
+    metrics: NativeRendererFrameMetrics;
+  }
+  | {
+    type: "pipelineConnected";
+    id: number;
+    sessionId: string;
+    metrics: NativeRendererFrameMetrics;
+  }
+  | {
+    type: "pipelineDisconnected";
+    id: number;
+    sessionId: string;
     metrics: NativeRendererFrameMetrics;
   }
   | {

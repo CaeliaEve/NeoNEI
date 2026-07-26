@@ -4,6 +4,10 @@ import path from 'path';
 import { getAccelerationDatabaseManager, type DatabaseManager } from '../models/database';
 import { IMAGES_PATH } from '../config/runtime-paths';
 import { getBrowserAtlasIndexService } from './browser-atlas-index.service';
+import {
+  ACCELERATION_SEARCH_MATCH_SQL,
+  accelerationSearchBindings,
+} from './items-search.service';
 
 export interface Item {
   itemId: string;
@@ -247,11 +251,11 @@ export class ItemsService {
     normalizedSearch: string,
   ): number {
     const leftMeta = this.getSearchMatchMeta(
-      [left.localized_name, left.internal_name, left.item_id, left.search_terms],
+      [left.localized_name, left.internal_name, left.item_id, left.mod_id],
       normalizedSearch,
     );
     const rightMeta = this.getSearchMatchMeta(
-      [right.localized_name, right.internal_name, right.item_id, right.search_terms],
+      [right.localized_name, right.internal_name, right.item_id, right.mod_id],
       normalizedSearch,
     );
 
@@ -616,27 +620,14 @@ export class ItemsService {
 
     if (normalizedSearch) {
       conditions.push(`
-        (
-          ic.localized_name LIKE @searchContains
-          OR ic.internal_name LIKE @searchContains
-          OR ic.item_id LIKE @searchContains
-          OR EXISTS (
-            SELECT 1
-            FROM items_search AS s
-            WHERE s.item_id = ic.item_id
-            AND (
-              s.localized_name_norm LIKE @searchContains
-              OR s.internal_name_norm LIKE @searchContains
-              OR s.item_id_norm LIKE @searchContains
-              OR s.search_terms_norm LIKE @searchContains
-              OR s.pinyin_full LIKE @searchContains
-              OR s.pinyin_acronym LIKE @searchContains
-              OR COALESCE(s.aliases, '') LIKE @searchContains
-            )
-          )
+        EXISTS (
+          SELECT 1
+          FROM items_search AS s
+          WHERE s.item_id = ic.item_id
+          AND (${ACCELERATION_SEARCH_MATCH_SQL})
         )
       `);
-      bindings.searchContains = `%${normalizedSearch}%`;
+      Object.assign(bindings, accelerationSearchBindings(normalizedSearch));
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
@@ -1286,27 +1277,14 @@ export class ItemsService {
 
       if (normalizedSearch) {
         conditions.push(`
-          (
-            ic.localized_name LIKE @searchContains
-            OR ic.internal_name LIKE @searchContains
-            OR ic.item_id LIKE @searchContains
-            OR EXISTS (
-              SELECT 1
-              FROM items_search AS s
-              WHERE s.item_id = ic.item_id
-              AND (
-                s.localized_name_norm LIKE @searchContains
-                OR s.internal_name_norm LIKE @searchContains
-                OR s.item_id_norm LIKE @searchContains
-                OR s.search_terms_norm LIKE @searchContains
-                OR s.pinyin_full LIKE @searchContains
-                OR s.pinyin_acronym LIKE @searchContains
-                OR COALESCE(s.aliases, '') LIKE @searchContains
-              )
-            )
+          EXISTS (
+            SELECT 1
+            FROM items_search AS s
+            WHERE s.item_id = ic.item_id
+            AND (${ACCELERATION_SEARCH_MATCH_SQL})
           )
         `);
-        bindings.searchContains = `%${normalizedSearch}%`;
+        Object.assign(bindings, accelerationSearchBindings(normalizedSearch));
       }
 
       const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';

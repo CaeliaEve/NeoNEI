@@ -137,9 +137,10 @@ function requireFromBackendRoot(modulePath) {
   return require(path.join(moduleRoot, modulePath));
 }
 const { ElysiumCompilerClient } = requireFromBackendRoot('compiler-client/elysium-compiler-client');
+const { resolveElysiumOutputGeneration } = requireFromBackendRoot('compiler-client/elysium-output-generation');
 const { promoteExternalRuntimeArtifact } = requireFromBackendRoot('services/external-runtime-artifact-promotion.service');
-const { getExternalRuntimeRawExportRoot } = requireFromBackendRoot('services/acceleration-runtime-compiler-authority.service');
-const { computeExternalRuntimeSourceIdentity } = requireFromBackendRoot('services/external-runtime-identity.service');
+const { getExternalRuntimeRawExportRoot, resolveExternalRuntimeRawExportInput } = requireFromBackendRoot('services/acceleration-runtime-compiler-authority.service');
+const { computeExternalRuntimeSourceIdentityFromResolvedInput } = requireFromBackendRoot('services/external-runtime-identity.service');
 
 function hashDirectory(rootDir) {
   const hash = crypto.createHash('sha256');
@@ -165,8 +166,10 @@ function hashDirectory(rootDir) {
 }
 
 (async () => {
-  const input = getExternalRuntimeRawExportRoot();
-  const sourceIdentity = computeExternalRuntimeSourceIdentity(input);
+  const authorityInput = getExternalRuntimeRawExportRoot();
+  const resolvedInput = resolveExternalRuntimeRawExportInput(authorityInput);
+  const input = resolvedInput.generationRoot;
+  const sourceIdentity = computeExternalRuntimeSourceIdentityFromResolvedInput(resolvedInput);
   const workDir = fs.mkdtempSync(path.join(os.tmpdir(), 'neonei-external-runtime-'));
   const output = path.join(workDir, 'compiled');
   const validateReport = path.join(workDir, 'validate-report.json');
@@ -174,8 +177,13 @@ function hashDirectory(rootDir) {
   try {
     const compiler = new ElysiumCompilerClient();
     await compiler.validate({ input, report: validateReport, output });
-    await compiler.compile({ input, output, report: compileReport, scope: 'native-ui', strict: true });
-    const promotion = promoteExternalRuntimeArtifact({ artifactRoot: output, sourceIdentity });
+    await compiler.compile({ input, output, report: compileReport, scope: 'all', strict: true });
+    const compiledGeneration = resolveElysiumOutputGeneration(output);
+    const promotion = promoteExternalRuntimeArtifact({
+      artifactRoot: compiledGeneration.generationRoot,
+      sourceIdentity,
+      sourceGenerationId: compiledGeneration.generationId,
+    });
     console.log('EXTERNAL_RUNTIME_RESULT ' + JSON.stringify({
       ok: true,
       stage: 'external-runtime',
@@ -183,7 +191,7 @@ function hashDirectory(rootDir) {
       runtimeManifestSchema: promotion.runtimeManifestSchema,
       promotedFiles: promotion.copiedFiles.length,
       reportPath: promotion.reportPath,
-      signature: hashDirectory(output),
+      signature: hashDirectory(compiledGeneration.generationRoot),
       sourceIdentity: sourceIdentity.identity,
     }));
   } finally {

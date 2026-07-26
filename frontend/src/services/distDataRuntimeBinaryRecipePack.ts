@@ -16,7 +16,7 @@ export type CompactRecipeUiPayloadIndexEntry = {
   recipeId: string;
   path: string;
   payloadKey?: string;
-  familyKey?: string;
+  captureKey?: string;
   recipeType?: string;
   machineType?: string;
 };
@@ -147,7 +147,7 @@ export function parseCompactRecipePayload(payload: ArrayBuffer): CompactRecipePa
       recipeId,
       path,
       payloadKey: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 2)) || undefined,
-      familyKey: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 3)) || undefined,
+      captureKey: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 3)) || undefined,
       recipeType: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 4)) || undefined,
       machineType: compactRecipeString(strings, readRowValue(uiRowsStart, row, uiStride, 5)) || undefined,
     });

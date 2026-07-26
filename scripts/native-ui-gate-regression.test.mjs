@@ -370,6 +370,9 @@ test('compiler extraction boundary uses pinned external elysium-compiler binary'
   assert.equal(finalizer.includes('--skip-cargo-test'), false);
   assert.equal(finalizer.includes('--compiler <path>'), true);
   assert.equal(finalizer.includes('compiler: compilerCommand'), true);
+  assert.equal(finalizer.includes('resolveNesqlRawExportGeneration'), true);
+  assert.equal(finalizer.includes('raw export authority is invalid'), true);
+  assert.equal(finalizer.includes('resolvedRawExportDir'), true);
 
   assert.equal(ensureCompiler.includes('elysium-compiler.lock.json'), true);
   assert.equal(ensureCompiler.includes('elysium-compiler-capability-abi.mjs'), true);

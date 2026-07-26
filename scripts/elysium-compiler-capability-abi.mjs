@@ -1,60 +1,39 @@
-export const ELYSIUM_COMPILER_CAPABILITY_ABI_VERSION = 'elysium.compiler.capability.v1';
+import { readFileSync } from 'node:fs';
 
-export const ELYSIUM_COMPILER_COMMANDS = Object.freeze([
-  'compile',
-  'inspect',
-  'validate',
-  'schemas',
-]);
+const artifact = deepFreeze(
+  JSON.parse(
+    readFileSync(
+      new URL('../tools/elysium-compiler/elysium-compiler-capability-abi.json', import.meta.url),
+      'utf8',
+    ).replace(/^\uFEFF/, ''),
+  ),
+);
 
-export const REQUIRED_COMPILER_COMMANDS = Object.freeze([
-  'schemas',
-  'validate',
-  'compile',
-]);
+function deepFreeze(value) {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const child of Object.values(value)) deepFreeze(child);
+  }
+  return value;
+}
 
-export const REQUIRED_COMPILER_COMMAND_INVOCATIONS = Object.freeze({
-  schemas: Object.freeze(['schemas', '--help']),
-  validate: Object.freeze(['validate', '--help']),
-  compile: Object.freeze(['compile', '--help']),
-});
-
-export const ELYSIUM_COMPILER_COMPILE_SCOPES = Object.freeze([
-  'all',
-  'native-ui',
-  'search',
-  'browser',
-  'recipes',
-  'ui',
-  'textures',
-]);
-
-export const NATIVE_UI_REQUIRED_CAPABILITIES = Object.freeze([
-  'native_ui.surface',
-  'native_ui.design_space_coordinates',
-  'native_ui.semantic_layout',
-]);
-
-export const NATIVE_UI_REQUIRED_FILES = Object.freeze([
-  'native-ui/families.jsonl.zst',
-  'native-ui/surfaces.jsonl.zst',
-  'native-ui/slots.bin',
-  'validation/native-ui-abi.json',
-]);
-
-export const NATIVE_UI_COORDINATE_SPACE = 'nei_pixels';
-export const NATIVE_UI_RUNTIME_TRANSFORM = 'uniform-scale-to-fit-only';
-export const NATIVE_UI_FALLBACK_POLICY = 'NEI frame/background PNG fallback is retired; missing hand-written UI mappings fail closed';
-
-export const ELYSIUM_COMPILER_POLICY = Object.freeze({
-  legacyFallback: 'forbidden',
-  missingCapability: 'fail-fast',
-  hotPathEncoding: 'binary-pack-preferred',
-  fullExportValidation: 'milestone-gate-only',
-});
+export const ELYSIUM_COMPILER_CAPABILITY_ABI_VERSION = artifact.version;
+export const ELYSIUM_COMPILER_CAPABILITY_SOURCE = artifact.source;
+export const ELYSIUM_COMPILER_COMMANDS = artifact.commands;
+export const REQUIRED_COMPILER_COMMANDS = artifact.requiredCommands;
+export const REQUIRED_COMPILER_COMMAND_INVOCATIONS = deepFreeze(
+  Object.fromEntries(REQUIRED_COMPILER_COMMANDS.map((command) => [command, [command, '--help']])),
+);
+export const ELYSIUM_COMPILER_COMPILE_SCOPES = artifact.compileScopes;
+export const NATIVE_UI_REQUIRED_CAPABILITIES = artifact.nativeUi.requiredCapabilities;
+export const NATIVE_UI_REQUIRED_FILES = artifact.nativeUi.requiredFiles;
+export const NATIVE_UI_COORDINATE_SPACE = artifact.nativeUi.coordinateSpace;
+export const NATIVE_UI_RUNTIME_TRANSFORM = artifact.nativeUi.runtimeTransform;
+export const NATIVE_UI_FALLBACK_POLICY = artifact.nativeUi.fallbackPolicy;
+export const ELYSIUM_COMPILER_POLICY = artifact.policy;
 
 export const ELYSIUM_COMPILER_CAPABILITY_ABI = Object.freeze({
-  name: 'elysium.compiler.capability',
+  name: artifact.name,
   version: ELYSIUM_COMPILER_CAPABILITY_ABI_VERSION,
   commands: ELYSIUM_COMPILER_COMMANDS,
   requiredCommands: REQUIRED_COMPILER_COMMANDS,
@@ -74,7 +53,11 @@ function asRecord(value) {
 }
 
 function requireStringArray(value, path, failures) {
-  if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string' || entry.trim() === '')) {
+  if (
+    !Array.isArray(value)
+    || value.length === 0
+    || value.some((entry) => typeof entry !== 'string' || entry.trim() === '')
+  ) {
     failures.push(`${path} must be a non-empty string array`);
     return [];
   }
@@ -89,11 +72,9 @@ function requireString(value, path, failures) {
   return value;
 }
 
-function requireAll(actual, expected, label, failures) {
-  const available = new Set(actual);
-  const missing = expected.filter((entry) => !available.has(entry));
-  if (missing.length > 0) {
-    failures.push(`missing required ${label}: ${missing.join(', ')}`);
+function requireExactArray(actual, expected, path, failures) {
+  if (actual.length !== expected.length || actual.some((entry, index) => entry !== expected[index])) {
+    failures.push(`${path} must exactly match [${expected.join(', ')}], got [${actual.join(', ')}]`);
   }
 }
 
@@ -103,25 +84,72 @@ function requireExact(actual, expected, path, failures) {
   }
 }
 
+function validateNativeUiProjection(nativeUi, path, failures) {
+  if (!nativeUi) {
+    failures.push(`${path} is required`);
+    return;
+  }
+  const requiredCapabilities = requireStringArray(
+    nativeUi.requiredCapabilities,
+    `${path}.requiredCapabilities`,
+    failures,
+  );
+  const requiredFiles = requireStringArray(nativeUi.requiredFiles, `${path}.requiredFiles`, failures);
+  const coordinateSpace = requireString(nativeUi.coordinateSpace, `${path}.coordinateSpace`, failures);
+  const runtimeTransform = requireString(nativeUi.runtimeTransform, `${path}.runtimeTransform`, failures);
+  const fallbackPolicy = requireString(nativeUi.fallbackPolicy, `${path}.fallbackPolicy`, failures);
+
+  requireExactArray(requiredCapabilities, NATIVE_UI_REQUIRED_CAPABILITIES, `${path}.requiredCapabilities`, failures);
+  requireExactArray(requiredFiles, NATIVE_UI_REQUIRED_FILES, `${path}.requiredFiles`, failures);
+  requireExact(coordinateSpace, NATIVE_UI_COORDINATE_SPACE, `${path}.coordinateSpace`, failures);
+  requireExact(runtimeTransform, NATIVE_UI_RUNTIME_TRANSFORM, `${path}.runtimeTransform`, failures);
+  requireExact(fallbackPolicy, NATIVE_UI_FALLBACK_POLICY, `${path}.fallbackPolicy`, failures);
+}
+
+function validatePolicyProjection(policy, path, failures) {
+  if (!policy) {
+    failures.push(`${path} is required`);
+    return;
+  }
+  for (const [field, expected] of Object.entries(ELYSIUM_COMPILER_POLICY)) {
+    const actual = requireString(policy[field], `${path}.${field}`, failures);
+    requireExact(actual, expected, `${path}.${field}`, failures);
+  }
+}
+
 export function validateElysiumCompilerCapabilityAbi(abi) {
   const failures = [];
   const root = asRecord(abi);
+  if (!root) return ['abi must be an object'];
   const capabilityAbi = asRecord(root?.compilerCapabilityAbi);
   const exportAbi = asRecord(root?.exportAbi);
-  const nativeUi = asRecord(exportAbi?.nativeUi);
-  if (!nativeUi) {
-    return ['abi.exportAbi.nativeUi is required'];
-  }
-
-  if (capabilityAbi) {
+  if (!capabilityAbi) {
+    failures.push('abi.compilerCapabilityAbi is required');
+  } else {
+    const capabilityName = requireString(
+      capabilityAbi.name,
+      'abi.compilerCapabilityAbi.name',
+      failures,
+    );
     const capabilityVersion = requireString(
       capabilityAbi.version,
       'abi.compilerCapabilityAbi.version',
       failures,
     );
+    requireExact(capabilityName, artifact.name, 'abi.compilerCapabilityAbi.name', failures);
     const capabilityRequiredCommands = requireStringArray(
       capabilityAbi.requiredCommands,
       'abi.compilerCapabilityAbi.requiredCommands',
+      failures,
+    );
+    const capabilityCommands = requireStringArray(
+      capabilityAbi.commands,
+      'abi.compilerCapabilityAbi.commands',
+      failures,
+    );
+    const capabilityCompileScopes = requireStringArray(
+      capabilityAbi.compileScopes,
+      'abi.compilerCapabilityAbi.compileScopes',
       failures,
     );
     requireExact(
@@ -130,28 +158,36 @@ export function validateElysiumCompilerCapabilityAbi(abi) {
       'abi.compilerCapabilityAbi.version',
       failures,
     );
-    requireAll(
+    requireExactArray(
       capabilityRequiredCommands,
       REQUIRED_COMPILER_COMMANDS,
-      'compiler commands declared by compilerCapabilityAbi',
+      'abi.compilerCapabilityAbi.requiredCommands',
+      failures,
+    );
+    requireExactArray(
+      capabilityCommands,
+      ELYSIUM_COMPILER_COMMANDS,
+      'abi.compilerCapabilityAbi.commands',
+      failures,
+    );
+    requireExactArray(
+      capabilityCompileScopes,
+      ELYSIUM_COMPILER_COMPILE_SCOPES,
+      'abi.compilerCapabilityAbi.compileScopes',
+      failures,
+    );
+    validateNativeUiProjection(
+      asRecord(capabilityAbi.nativeUi),
+      'abi.compilerCapabilityAbi.nativeUi',
+      failures,
+    );
+    validatePolicyProjection(
+      asRecord(capabilityAbi.policy),
+      'abi.compilerCapabilityAbi.policy',
       failures,
     );
   }
-
-  const requiredCapabilities = requireStringArray(
-    nativeUi.requiredCapabilities,
-    'abi.exportAbi.nativeUi.requiredCapabilities',
-    failures,
-  );
-  const requiredFiles = requireStringArray(nativeUi.requiredFiles, 'abi.exportAbi.nativeUi.requiredFiles', failures);
-  const coordinateSpace = requireString(nativeUi.coordinateSpace, 'abi.exportAbi.nativeUi.coordinateSpace', failures);
-  const runtimeTransform = requireString(nativeUi.runtimeTransform, 'abi.exportAbi.nativeUi.runtimeTransform', failures);
-  const fallbackPolicy = requireString(nativeUi.fallbackPolicy, 'abi.exportAbi.nativeUi.fallbackPolicy', failures);
-
-  requireAll(requiredCapabilities, NATIVE_UI_REQUIRED_CAPABILITIES, 'native UI capabilities', failures);
-  requireAll(requiredFiles, NATIVE_UI_REQUIRED_FILES, 'native UI files', failures);
-  requireExact(coordinateSpace, NATIVE_UI_COORDINATE_SPACE, 'abi.exportAbi.nativeUi.coordinateSpace', failures);
-  requireExact(runtimeTransform, NATIVE_UI_RUNTIME_TRANSFORM, 'abi.exportAbi.nativeUi.runtimeTransform', failures);
-  requireExact(fallbackPolicy, NATIVE_UI_FALLBACK_POLICY, 'abi.exportAbi.nativeUi.fallbackPolicy', failures);
+  validateNativeUiProjection(asRecord(exportAbi?.nativeUi), 'abi.exportAbi.nativeUi', failures);
+  validatePolicyProjection(asRecord(root.policy), 'abi.policy', failures);
   return failures;
 }

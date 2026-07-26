@@ -16,7 +16,9 @@ import {
   recordNativeSurfaceFault,
 } from "../../native-surface/NativeSurfaceMetricsRegistry";
 import type { NativeSurfaceFaultDomain } from "../../native-surface/NativeSurfaceFaultControlPlane";
-import { postNativeRenderEvent } from "../../native-surface/NativeRenderWorkerClient";
+import { createNativeRenderWorkerClient } from "../../native-surface/NativeRenderWorkerClient";
+import { createNativeRenderPipelineClient } from "../../native-surface/NativeRenderPipelineClient";
+import { requireNativeFrameTextureDescriptors } from "../../native-surface/NativeFrameTextureResolution";
 import {
   getAllGlobalBrowserAtlasTextureDescriptors,
   getGlobalBrowserAtlasTextureDescriptorsForKeys,
@@ -60,6 +62,8 @@ function resolveRuntimePackProfile(): NativeRuntimePackProfile {
 const hostRef = ref<HTMLElement | null>(null);
 const nativeRenderCanvasRef = ref<HTMLCanvasElement | null>(null);
 const controller = createNativeSurfaceController(props.surfaceId);
+const nativeRenderWorker = createNativeRenderWorkerClient(props.surfaceId);
+const nativeRenderPipeline = createNativeRenderPipelineClient(props.surfaceId, nativeRenderWorker);
 let resizeObserver: ResizeObserver | null = null;
 let nativeVisibilityObserver: IntersectionObserver | null = null;
 let nativeFrameSeq = 0;
@@ -148,6 +152,9 @@ function reportNativeRenderFailure(
   recordNativeSurfaceFault(props.surfaceId, { domain, phase, error });
   clearNativeAnimationTimer();
   resetNativeRenderReadiness();
+  void nativeRenderPipeline.disconnect()
+    .catch(() => undefined)
+    .finally(() => nativeRenderWorker.reset());
   if (typeof console !== "undefined") {
     console.error(`[NeoNEI native render] ${phase} failed`, error);
   }
@@ -276,12 +283,15 @@ async function initializeNativeRenderWorker(width: number, height: number) {
     canvas.width = Math.max(1, width);
     canvas.height = Math.max(1, height);
     const offscreen = canvas.transferControlToOffscreen();
-    const response = await postNativeRenderEvent({
+    const response = await nativeRenderWorker.post({
       type: "initialize",
       canvas: offscreen,
       renderer: resolveNativeRenderBackend(),
     });
-    nativeRenderInitialized = response.type === "ready";
+    if (response.type === "ready") {
+      await nativeRenderPipeline.connect();
+      nativeRenderInitialized = true;
+    }
     updateNativeRenderVisibility();
     if (nativeRenderInitialized) {
       requestNativeFrame();
@@ -322,7 +332,7 @@ function syncViewport(width?: number, height?: number) {
   if (!nativeRenderInitialized) {
     void initializeNativeRenderWorker(nextWidth, nextHeight);
   } else if (nativeRenderInitialized && !nativeRenderFaulted) {
-    void postNativeRenderEvent({ type: "resize", viewport }).catch((error) => {
+    void nativeRenderWorker.post({ type: "resize", viewport }).catch((error) => {
       reportNativeRenderFailure("resize", error);
     });
   }
@@ -445,21 +455,18 @@ async function syncNativeFrame() {
   ) {
     emit("runtimeProjectionUpdate", frame.runtimeProjection);
   }
-  if (nativeRenderInitialized && !nativeRenderFaulted && frame?.drawCommandBuffer && frame.drawCommandCount && frame.drawCommandStride) {
+  if (nativeRenderInitialized && !nativeRenderFaulted && frame) {
     try {
-      await syncNativeTexturesForFrame(frame.spriteCommands ?? []);
+      const texturesChanged = await syncNativeTexturesForFrame(
+        frame.missingTextureKeys ?? [],
+      );
       if (seq !== nativeFrameSeq) return;
-      const response = await postNativeRenderEvent({
-        type: "render",
-        frameToken: seq,
-        commandBuffer: frame.drawCommandBuffer.slice(0),
-        commandStride: frame.drawCommandStride,
-        commandCount: frame.drawCommandCount,
-        spriteCommands: frame.spriteCommands ?? [],
-        nowMs,
-      });
-      if (seq !== nativeFrameSeq) return;
-      nativeFirstFrameReady = response.type === "frame";
+      if (texturesChanged) {
+        requestNativeFrame();
+        return;
+      }
+      if (!frame.rendered) return;
+      nativeFirstFrameReady = true;
       updateNativeRenderVisibility();
       if (nativeFirstFrameReady) {
         queueResidentAtlasBackgroundUpload();
@@ -477,7 +484,7 @@ async function syncNativeFrame() {
 
 function requestNativeFrame() {
   clearNativeAnimationTimer();
-  if (nativeSurfaceEngineFaulted || nativeFrameScheduled) return;
+  if (!nativeRenderInitialized || nativeRenderFaulted || nativeSurfaceEngineFaulted || nativeFrameScheduled) return;
   nativeFrameScheduled = true;
   if (typeof requestAnimationFrame === "function") {
     requestAnimationFrame(() => {
@@ -504,7 +511,7 @@ function queueResidentAtlasBackgroundUpload(): void {
       const signature = buildTextureSignature(textures);
       if (signature === residentAtlasBackgroundSignature) return;
       residentAtlasBackgroundSignature = signature;
-      await postNativeRenderEvent({
+      await nativeRenderWorker.post({
         type: "loadTextures",
         textures,
       });
@@ -518,42 +525,29 @@ function queueResidentAtlasBackgroundUpload(): void {
   }, 0);
 }
 
-async function syncNativeTexturesForFrame(spriteCommands: Array<{ textureKey?: string | null }>): Promise<void> {
-  if (!nativeRenderInitialized || nativeRenderFaulted) return;
+async function syncNativeTexturesForFrame(
+  missingTextureKeys: string[] = [],
+): Promise<boolean> {
+  if (!nativeRenderInitialized || nativeRenderFaulted) return false;
   const seq = ++nativeTextureSeq;
-  const textureKeys = Array.from(new Set(spriteCommands.map((command) => command.textureKey ?? "").filter(Boolean)));
-  let textures = getGlobalBrowserAtlasTextureDescriptorsForKeys(textureKeys);
-  if (textures.length <= 0 && spriteCommands.length > 0) {
-    // This should be rare: sprite commands already carry atlas-file keys. If a
-    // malformed key slips through, use the resident index as a corrective path
-    // instead of showing a permanently blank native page.
-    const allTextures = await getAllGlobalBrowserAtlasTextureDescriptors();
-    const wanted = new Set(textureKeys);
-    textures = allTextures.filter((texture) => wanted.has(texture.key));
-  }
-  if (seq !== nativeTextureSeq) return;
-  if (textures.length <= 0 && spriteCommands.length <= 0) {
+  const textureKeys = Array.from(new Set(missingTextureKeys.filter(Boolean)));
+  const textures = requireNativeFrameTextureDescriptors(
+    textureKeys,
+    getGlobalBrowserAtlasTextureDescriptorsForKeys(textureKeys),
+  );
+  if (seq !== nativeTextureSeq) return false;
+  if (textureKeys.length <= 0) {
     nativeTexturesReady = true;
     updateNativeRenderVisibility();
-    return;
-  }
-  if (textures.length <= 0) {
-    nativeTexturesReady = false;
-    updateNativeRenderVisibility();
-    return;
+    return false;
   }
   const signature = buildTextureSignature(textures);
-  if (signature === residentAtlasTextureSignature) {
-    nativeTexturesReady = true;
-    updateNativeRenderVisibility();
-    return;
-  }
   nativeTexturesReady = false;
   updateNativeRenderVisibility();
   const previousTextureSignature = activeResidentAtlasTextureSignature;
   activeResidentAtlasTextureSignature = signature;
   if (!activeResidentAtlasTextureLoadPromise || signature !== previousTextureSignature) {
-    activeResidentAtlasTextureLoadPromise = postNativeRenderEvent({
+    activeResidentAtlasTextureLoadPromise = nativeRenderWorker.post({
       type: "loadTextures",
       textures,
     })
@@ -567,13 +561,14 @@ async function syncNativeTexturesForFrame(spriteCommands: Array<{ textureKey?: s
       });
   }
   const loaded = await activeResidentAtlasTextureLoadPromise;
-  if (seq !== nativeTextureSeq && activeResidentAtlasTextureSignature !== signature) return;
+  if (seq !== nativeTextureSeq && activeResidentAtlasTextureSignature !== signature) return false;
   residentAtlasTextureSignature = signature;
   if (activeResidentAtlasTextureSignature === signature) {
     activeResidentAtlasTextureLoadPromise = null;
   }
   nativeTexturesReady = loaded;
   updateNativeRenderVisibility();
+  return loaded;
 }
 
 onMounted(async () => {
@@ -632,12 +627,17 @@ onBeforeUnmount(() => {
     nativeVisibilityHandler = null;
   }
   if (nativeRenderInitialized) {
-    void postNativeRenderEvent({ type: "dispose" }).catch((error) => {
-      reportNativeRenderFailure("dispose", error);
-    });
     nativeRenderInitialized = false;
     nativeRenderInitializing = false;
     resetNativeRenderReadiness();
+    void nativeRenderPipeline.disconnect()
+      .then(() => nativeRenderWorker.post({ type: "dispose" }))
+      .catch((error) => {
+        reportNativeRenderFailure("dispose", error);
+      })
+      .finally(() => nativeRenderWorker.destroy());
+  } else {
+    nativeRenderWorker.destroy();
   }
   controller.destroy();
   emit("viewportResize", null);

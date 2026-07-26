@@ -153,11 +153,26 @@ function validateNativeSurfaceWorkerMetricDescriptorMap(
 
 export const NATIVE_SURFACE_WORKER_METRIC_DESCRIPTOR_MAP =
   validateNativeSurfaceWorkerMetricDescriptorMap({
+    surfaceCount: defineNativeSurfaceWorkerMetric({
+      key: "surfaceCount",
+      domain: "worker",
+      source: "surfaces.length",
+      read: (context) => context.surfaces.length,
+    }),
     initializedSurfaces: defineNativeSurfaceWorkerMetric({
       key: "initializedSurfaces",
       domain: "worker",
       source: "surfaces.initialized",
       read: (context) => context.surfaces.filter((surface) => surface.initialized).length,
+    }),
+    runtimePackBytes: defineNativeSurfaceWorkerMetric({
+      key: "runtimePackBytes",
+      domain: "runtime-pack",
+      source: "surfaces.runtimePacks.buffer.byteLength",
+      read: (context) => context.surfaces.reduce((total, surface) => {
+        for (const buffer of surface.runtimePacks.values()) total += buffer.byteLength;
+        return total;
+      }, 0),
     }),
     events: defineNativeSurfaceWorkerMetric({
       key: "events",

@@ -1,5 +1,9 @@
 import fs from 'fs';
-import { NESQL_BROWSER_LAYOUT_INDEX_FILE } from '../config/runtime-paths';
+import { CURRENT_RUNTIME_ARTIFACT_PATHS } from './current-runtime-artifact-index-abi';
+import {
+  resolveCurrentRuntimeDistDataDir,
+  resolveDistDataRuntimeFile,
+} from './current-runtime-artifact-index.service';
 
 export interface BrowserLayoutIndexItem {
   itemId: string;
@@ -33,10 +37,15 @@ export interface BrowserLayoutIndex {
 
 class BrowserLayoutIndexService {
   getIndex(): BrowserLayoutIndex | null {
-    if (!NESQL_BROWSER_LAYOUT_INDEX_FILE || !fs.existsSync(NESQL_BROWSER_LAYOUT_INDEX_FILE)) {
+    const generationRoot = resolveCurrentRuntimeDistDataDir();
+    const filePath = resolveDistDataRuntimeFile(
+      CURRENT_RUNTIME_ARTIFACT_PATHS.browserLayoutIndex,
+      generationRoot,
+    );
+    if (!fs.existsSync(filePath)) {
       return null;
     }
-    const raw = fs.readFileSync(NESQL_BROWSER_LAYOUT_INDEX_FILE, 'utf8');
+    const raw = fs.readFileSync(filePath, 'utf8');
     return JSON.parse(raw) as BrowserLayoutIndex;
   }
 }
