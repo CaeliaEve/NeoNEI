@@ -1,5 +1,6 @@
 @echo off
 setlocal
-
-set "SCRIPT_DIR=%~dp0"
-node "%SCRIPT_DIR%scripts\start-neonei.mjs" %*
+cd /d "%~dp0"
+call npm run build
+if errorlevel 1 exit /b %errorlevel%
+call npm start

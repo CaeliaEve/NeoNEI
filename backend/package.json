@@ -1,58 +1,31 @@
 {
   "name": "neonei-backend",
   "version": "1.0.0",
-  "description": "NeoNEI - Backend API",
+  "private": true,
+  "description": "NeoNEI catalog API",
   "main": "dist/server.js",
-  "scripts": {
-    "dev": "nodemon --exec \"node --max-old-space-size=8192 -r ts-node/register\" src/server.ts",
-    "build": "tsc",
-    "start": "node --max-old-space-size=8192 dist/server.js",
-    "db:init": "ts-node src/scripts/init-database.ts",
-    "compile:acceleration-db": "node --max-old-space-size=8192 -r ts-node/register src/scripts/compile-acceleration-db.ts",
-    "verify-summaries": "ts-node src/scripts/quick-test-summaries.ts",
-    "prewarm:recipe-bootstrap": "ts-node src/scripts/prewarm-recipe-bootstrap.ts",
-    "test:pattern-export-contract": "node --test scripts/pattern-export-contract.test.mjs",
-    "test:pattern-route-contract": "node --test scripts/pattern-route-contract.test.mjs",
-    "gate:p0:recipe": "npm run build && npm run regression:api",
-    "smoke": "node scripts/smoke-test.mjs",
-    "bench:acceleration": "node scripts/bench-acceleration.mjs",
-    "regression:api": "node scripts/regression-api.mjs",
-    "audit:paths": "node ../scripts/audit-path-portability.mjs",
-    "test:public-runtime-profile": "node --test scripts/public-runtime-profile-regression.test.mjs",
-    "test:runtime-health-contract": "node --test scripts/runtime-health-contract.test.mjs",
-    "test:current-api-contract": "node --test scripts/current-api-contract.test.mjs",
-    "test:publish-compression-sidecar": "node --test scripts/publish-compression-sidecar-regression.test.mjs"
+  "engines": {
+    "node": ">=22.12"
   },
-  "keywords": [
-    "ae2",
-    "pattern-encoder",
-    "minecraft",
-    "gtnh"
-  ],
-  "author": "",
+  "scripts": {
+    "dev": "node --watch --env-file-if-exists=../.env.local -r ts-node/register src/server.ts",
+    "check": "tsc --noEmit",
+    "build": "tsc",
+    "start": "node --env-file-if-exists=../.env.local dist/server.js",
+    "test": "node -r ts-node/register --test test/*.test.cjs"
+  },
   "license": "MIT",
   "dependencies": {
-    "better-sqlite3": "^12.6.2",
+    "@neonei/catalog": "file:../catalog",
+    "@elysium/contracts": "file:../vendor/elysium-contracts-0.10.0.tgz",
     "compression": "^1.8.1",
-    "cors": "^2.8.5",
-    "express": "^4.22.2",
-    "pinyin-pro": "^3.28.0",
-    "stream-chain": "^3.4.0",
-    "stream-json": "^1.9.1"
+    "express": "^5.2.1"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/compression": "^1.8.1",
-    "@types/cors": "^2.8.17",
-    "@types/express": "^4.17.21",
-    "@types/node": "^20.11.16",
-    "@types/stream-chain": "^2.1.0",
-    "@types/stream-json": "^1.7.8",
-    "nodemon": "^3.0.3",
+    "@types/express": "^5.0.6",
+    "@types/node": "^22.0.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.3.3"
-  },
-  "overrides": {
-    "path-to-regexp": "0.1.13"
   }
 }

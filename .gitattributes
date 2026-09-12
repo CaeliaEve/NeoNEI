@@ -5,6 +5,7 @@
 
 *.png binary
 *.bin binary
+*.msgpack binary
 *.jpg binary
 *.jpeg binary
 *.gif binary
@@ -13,3 +14,4 @@
 *.db binary
 *.zip binary
 *.gz binary
+*.tgz binary

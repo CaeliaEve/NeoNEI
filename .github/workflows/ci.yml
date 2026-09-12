@@ -1,206 +1,48 @@
-﻿name: CI
-
+name: CI
 on:
   push:
-    branches:
-      - main
-      - elysium
+    branches: [main, refactor/core]
   pull_request:
-    branches:
-      - main
+    branches: [main]
   workflow_dispatch:
-
 permissions:
   contents: read
-
 jobs:
-  backend:
-    name: Backend build
+  web:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-
+    timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: '24'
           cache: npm
-          cache-dependency-path: backend/package-lock.json
-
-      - name: Install backend dependencies
-        working-directory: backend
+          cache-dependency-path: package-lock.json
+      - name: Install
         run: npm ci
-
-      - name: Build backend
-        working-directory: backend
+      - name: Build
         run: npm run build
-
-      - name: Compiler capability artifact contract
-        working-directory: backend
-        run: node --test scripts/elysium-compiler-capability-gate.test.mjs
-
-      - name: Backend path audit
-        working-directory: backend
-        run: npm run audit:paths
-
-      - name: Backend public runtime profile regression
-        working-directory: backend
-        run: npm run test:public-runtime-profile
-
-      - name: Backend runtime health contract
-        working-directory: backend
-        run: npm run test:runtime-health-contract
-
-      - name: Backend current runtime API contract
-        working-directory: backend
-        run: npm run test:current-api-contract
-
-      - name: Backend bootstrap boundary regression
-        working-directory: backend
-        run: node --test scripts/server-bootstrap-boundary-regression.test.mjs
-
-      - name: Upload backend dist
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: neonei-backend-dist
-          path: backend/dist
-          if-no-files-found: warn
-
-  frontend:
-    name: Frontend build
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
+      - name: Behavior checks
+        run: npm test
+      - name: Install browser
         working-directory: frontend
-        run: npm ci
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Set up Rust WASM target
-        run: rustup target add wasm32-unknown-unknown
-
-      - name: Rust compiler gate
-        working-directory: frontend
-        run: npm run test:rust-compiler
-
-      - name: Check canonical retired
-        run: node scripts/check-canonical-retired.mjs
-
-      - name: Raw export compiler self-test
-        working-directory: frontend
-        run: npm run test:raw-export
-
-      - name: Typecheck frontend
-        working-directory: frontend
-        run: npm run typecheck
-
-      - name: Browser search cache regression
-        working-directory: frontend
-        run: npm run test:browser-search-cache
-
-      - name: WASM engine gate
-        working-directory: frontend
-        run: npm run test:wasm-engine
-
-      - name: Native runtime behavior
-        working-directory: frontend
-        run: npm run test:native-runtime-behavior
-
-      - name: Runtime service worker behavior
-        working-directory: frontend
+        run: npx playwright install --with-deps chromium --only-shell
+      - name: Bundle
+        run: npm run release
+      - name: Verify production bundle
         run: |
-          npm run test:runtime-service-worker
-          npm run test:runtime-service-worker:e2e
-
-      - name: Native current API regression
-        working-directory: frontend
-        run: npm run test:native-runtime-current-api
-
-      - name: Native surface batching regression
-        working-directory: frontend
-        run: npm run test:native-surface-batching
-
-      - name: Native render frame metrics regression
-        working-directory: frontend
-        run: npm run test:native-render-frame-metrics
-
-      - name: Native history surface regression
-        working-directory: frontend
-        run: npm run test:native-history-surface
-
-      - name: Runtime service worker regression
-        working-directory: frontend
-        run: npm run test:runtime-service-worker
-
-      - name: Build frontend
-        working-directory: frontend
-        run: npm run build
-
-      - name: Frontend path audit
-        working-directory: frontend
-        run: npm run audit:paths
-
-      - name: Path audit regression
-        run: node --test scripts/path-audit-regression.test.mjs
-
-      - name: CI runtime workflow regression
-        run: node --test scripts/ci-runtime-workflow-regression.test.mjs
-
-      - name: Upload frontend dist
-        uses: actions/upload-artifact@v4
-        if: always()
+          npm ci --omit=dev --workspace catalog --workspace backend --prefix release/neonei-web
+          node scripts/check-release.mjs release/neonei-web
+      - name: Browser behavior in production bundle
+        env:
+          NEONEI_TEST_BUNDLE: ${{ github.workspace }}/release/neonei-web
+        run: npm run e2e
+      - uses: actions/upload-artifact@v4
         with:
-          name: neonei-frontend-dist
-          path: frontend/dist
-          if-no-files-found: warn
-
-  release-bundle:
-    name: Release bundle
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    needs:
-      - backend
-      - frontend
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download backend dist
-        uses: actions/download-artifact@v4
-        with:
-          name: neonei-backend-dist
-          path: backend/dist
-
-      - name: Download frontend dist
-        uses: actions/download-artifact@v4
-        with:
-          name: neonei-frontend-dist
-          path: frontend/dist
-
-      - name: Create release bundle
-        run: node scripts/create-release-bundle.mjs release/neonei-web
-
-      - name: Upload release bundle
-        uses: actions/upload-artifact@v4
-        with:
-          name: neonei-web-release
+          name: neonei-web
           path: release/neonei-web
-          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-evidence
+          path: frontend/test-results
