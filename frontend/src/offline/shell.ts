@@ -1,15 +1,14 @@
 import { ApiError } from '../catalog/transport.ts';
 
-let registration: Promise<ServiceWorkerRegistration> | null = null;
 let listening = false;
 
 function register(): Promise<ServiceWorkerRegistration> {
   if (!import.meta.env.PROD || !window.isSecureContext || !('serviceWorker' in navigator)) {
     return Promise.reject(new ApiError('offline_shell', '请通过 HTTPS 或 localhost 使用构建版本保存离线资料'));
   }
-  if (!registration) registration = navigator.serviceWorker.register('/sw.js', { type: 'module', updateViaCache: 'none' })
-    .catch(error => { registration = null; throw error; });
-  return registration;
+  // A resolved registration may later lose every worker after a failed install
+  // or removal. Ask the browser to ensure registration for each explicit save.
+  return navigator.serviceWorker.register('/sw.js', { type: 'module', updateViaCache: 'none' });
 }
 
 export function start(): void {
@@ -69,7 +68,7 @@ export async function prepare(signal: AbortSignal): Promise<void> {
     }
   }
   let next = current.installing ?? current.waiting;
-  if (!next) { await current.update(); next = current.installing ?? current.waiting; }
+  if (!next) { await current.update(); next = current.installing ?? current.waiting ?? current.active; }
   if (!next) throw new ApiError('offline_shell', '离线页面与当前版本不一致，请刷新后重试');
   await state(next, 'installed', bounded);
   const reply = await status(next, bounded);

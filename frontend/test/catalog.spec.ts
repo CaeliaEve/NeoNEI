@@ -1,6 +1,9 @@
 import { test, expect, chromium } from '@playwright/test';
 import type { Manifest } from '@elysium/contracts';
 import type { Locator } from '@playwright/test';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 async function painted(scene: Locator): Promise<number> {
   return scene.evaluate(element => {
@@ -340,29 +343,32 @@ test('a slow search cannot replace a newer search and errors are visible', async
   await expect(page.getByRole('alert').filter({ hasText: '测试：索引校验失败' })).toBeVisible();
 });
 
-test('offline copies resume, repair corruption, survive browser restart and remove across tabs', async ({ request, baseURL }, info) => {
+test('offline copies resume, repair corruption, survive browser restart and remove across tabs', async ({ request, baseURL }) => {
   const manifest = await (await request.get('/api/catalog')).json() as Manifest;
-  const directory = info.outputPath('profile');
+  // Chromium appends long hashed paths for CacheStorage; keep its profile outside deep checkout paths.
+  const directory = await mkdtemp(join(tmpdir(), 'neonei-browser-'));
   const options = { headless: true, baseURL };
   let context = await chromium.launchPersistentContext(directory, options);
   try {
     let page = await context.newPage();
     const seen: string[] = [];
-    let resumed = false, corrupted = false;
-    let arrived!: () => void, release!: () => void;
-    const blocked = new Promise<void>(resolve => { arrived = resolve; });
+    let resumed = false, corrupted = false, blocked = false;
+    let release!: () => void;
     const continued = new Promise<void>(resolve => { release = resolve; });
     const image = manifest.files.find(file => file.kind === 'image')!;
     await context.route('**/assets/**', async route => {
       const path = new URL(route.request().url()).pathname;
       seen.push(path);
-      if (!resumed && path.endsWith(manifest.files[4]!.path)) { arrived(); await continued; }
+      if (!resumed && path.endsWith(manifest.files[4]!.path)) { blocked = true; await continued; }
       if (corrupted && path.endsWith(image.path)) await route.fulfill({ status: 200, body: Buffer.alloc(image.bytes) });
       else await route.continue();
     });
     await page.goto('/offline');
     await page.getByRole('button', { name: '保存完整资料', exact: true }).click();
-    await blocked;
+    await expect.poll(async () => {
+      expect(await page.getByRole('alert').allTextContents()).toEqual([]);
+      return blocked;
+    }).toBe(true);
     await page.getByRole('button', { name: '暂停下载', exact: true }).click();
     resumed = true; release();
     const copy = page.locator('.offline-copy');
@@ -393,6 +399,8 @@ test('offline copies resume, repair corruption, survive browser restart and remo
     // An incomplete application cache must be repaired as well as the catalog.
     await page.evaluate(async () => {
       for (const name of await caches.keys()) if (name.startsWith('neonei.shell.')) await (await caches.open(name)).delete('/index.html');
+      const registration = await navigator.serviceWorker.getRegistration('/');
+      if (!registration || !await registration.unregister()) throw new Error('Expected the existing shell registration');
     });
     corrupted = false;
     await copy.getByRole('button', { name: '继续下载', exact: true }).click();
