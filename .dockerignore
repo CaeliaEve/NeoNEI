@@ -3,7 +3,7 @@
 !package.json
 !package-lock.json
 !vendor/
-!vendor/elysium-contracts-0.9.0.tgz
+!vendor/elysium-contracts-*.tgz
 !backend/
 !backend/package.json
 !backend/tsconfig.json
