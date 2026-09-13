@@ -243,6 +243,11 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.equal(study.research.parents[0].completed, null);
   assert.equal(study.research.hiddenParents[0].key, '@fixture_scanned');
   assert.equal(study.research.hiddenParents[0].id, null);
+  const portal = study.research.itemTriggers.find(clue => clue.registry === 'minecraft:portal');
+  assert.equal(portal.meta, 32767);
+  assert.deepEqual(portal.matches, []);
+  assert.equal(study.research.itemTriggers.find(clue => clue.registry === 'fixture:tagged').nbt.value.energy.value, '9223372036854775807');
+  assert.ok(!study.related.items.some(item => item.registry === 'minecraft:portal'));
   assert.ok(study.references.some(row => row.kind === 'aspect'));
 });
 

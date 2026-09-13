@@ -59,4 +59,4 @@ npm run e2e
 
 `docker compose up --build` 使用同一个 Node 服务，并将 catalog 只读挂载。Docker 配置已更新，当前环境尚未执行容器构建验收。
 
-契约由独立编译器仓库维护，以 `vendor/elysium-contracts-0.10.0.tgz` 固定。source/catalog 当前格式修订为 10；格式与修订约束由 Rust 生成到 schema，前后端复用同一校验器。旧修订直接拒绝读取；旧离线副本会提示重新下载，用户可移除它们。前后端与发布包使用同一产物，`files.json` 记录大小和 SHA-256。NeoNEI 不导入编译器源码。
+契约由独立编译器仓库维护，以 `vendor/elysium-contracts-0.11.0.tgz` 固定。source/catalog 当前格式修订为 11；格式与修订约束由 Rust 生成到 schema，前后端复用同一校验器。旧修订直接拒绝读取；旧离线副本会提示重新下载，用户可移除它们。前后端与发布包使用同一产物，`files.json` 记录大小和 SHA-256。NeoNEI 不导入编译器源码。

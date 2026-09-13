@@ -13,6 +13,7 @@ import GameText from '../components/GameText.vue';
 import Icon from '../components/Icon.vue';
 import ItemLink from '../components/ItemLink.vue';
 import Pager from '../components/Pager.vue';
+import Clue from '../components/Clue.vue';
 
 const route = useRoute(), router = useRouter();
 const { preferences } = usePreferences();
@@ -34,7 +35,7 @@ const groups = computed(() => study.value ? [
 ] : []);
 const offset = ref(0);
 const triggers = computed(() => study.value ? [
-  ...study.value.research.itemTriggers.map(id => ({ kind: 'item' as const, id })),
+  ...study.value.research.itemTriggers.map(clue => ({ kind: 'item' as const, clue })),
   ...study.value.research.aspectTriggers.map(id => ({ kind: 'aspect' as const, id })),
   ...study.value.research.entityTriggers.map(id => ({ kind: 'entity' as const, id })),
 ] : []);
@@ -101,7 +102,7 @@ function completed(value: boolean | null | undefined): string { return value == 
             </section>
             <section v-if="triggers.length" aria-label="发现线索"><h3>发现线索</h3><p class="subtle">扫描这些条目可能触发隐藏研究，是否发现由游戏规则决定。</p>
               <div class="magic-parts"><template v-for="(trigger, index) in shownTriggers" :key="index">
-                <ItemLink v-if="trigger.kind === 'item'" :target="{ kind: 'item', id: trigger.id }" :records="records" :catalog="catalog" :animate="preferences.animate" @select="select" />
+                <Clue v-if="trigger.kind === 'item'" :clue="trigger.clue" :records="records" :catalog="catalog" :animate="preferences.animate" @select="select" />
                 <TopicLink v-else-if="trigger.kind === 'aspect'" :topic="required(references, trigger.id)" :records="records" :catalog="catalog" :animate="preferences.animate" />
                 <span v-else>实体 <code>{{ trigger.id }}</code></span>
               </template></div><Pager :total="triggers.length" :offset="offset" :limit="24" :busy="false" label="线索" @change="offset = $event" />

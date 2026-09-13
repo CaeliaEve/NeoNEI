@@ -140,7 +140,7 @@ export class Query {
     for (const aspect of research.aspectTriggers) ids.add(aspect);
     const references = await this.catalog.records('topics', ids);
     const related = await this.related([], [], { topics: references,
-      targets: [...research.itemTriggers, ...(research.icon ? [research.icon] : [])].map(id => ({ kind: 'item', id })),
+      targets: [...new Set([...research.itemTriggers.flatMap(clue => clue.matches), ...(research.icon ? [research.icon] : [])])].map(id => ({ kind: 'item', id })),
       texts: [research.name, research.text, research.categoryName], images: research.texture ? [research.texture] : [],
     });
     return { research, references, related };

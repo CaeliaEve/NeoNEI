@@ -109,6 +109,11 @@ try {
   const research = await (await get(api + '/research/' + studies.rows[0].id)).json();
   assert.equal(research.research.parents[0].completed, null);
   assert.equal(research.research.completed, false);
+  const portal = research.research.itemTriggers.find(clue => clue.registry === 'minecraft:portal');
+  assert.equal(portal.meta, 32767);
+  assert.deepEqual(portal.matches, []);
+  assert.ok(!research.related.items.some(item => item.registry === 'minecraft:portal'), 'A trigger pattern became a fabricated item');
+  assert.equal(research.research.itemTriggers.find(clue => clue.registry === 'fixture:tagged').nbt.value.energy.value, '9223372036854775807');
   const aspects = await (await get(api + '/topics?kind=aspect&query=guang')).json();
   const aspect = await (await get(api + '/aspects/' + aspects.rows[0].id)).json();
   assert.equal(aspect.aspect.components.length, 2);
