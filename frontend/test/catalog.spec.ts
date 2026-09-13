@@ -60,6 +60,18 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} bro
   if (offline) await expect(page.getByText('离线副本', { exact: true })).toBeVisible();
   const stone = page.getByRole('button', { name: 'Stone 石头', exact: true });
   await expect(stone).toBeVisible();
+  for (const [query, name, registry] of [
+    ['Armor Stand', 'Armor Stand 盔甲架', 'BiblioCraft:Armor Stand'],
+    ['ProjRed|Core', 'ProjectRed part 注册样本', 'ProjRed|Core:projectred.core.part'],
+    ['Liquid Crystal', 'Liquid Crystal 流体样本', 'Liquid Crystal'],
+  ]) {
+    await page.getByRole('searchbox', { name: '搜索物品', exact: true }).fill(query!);
+    const match = page.getByRole('button', { name: name!, exact: true });
+    await expect(match).toBeVisible();
+    expect(await match.getAttribute('title')).toContain(registry);
+  }
+  await page.getByRole('searchbox', { name: '搜索物品', exact: true }).fill('');
+  await expect(stone).toBeVisible();
   await expect.poll(() => stone.locator('canvas').evaluate(canvas => {
     const context = (canvas as HTMLCanvasElement).getContext('2d')!;
     return Array.from(context.getImageData(0, 0, canvas.width, canvas.height).data).filter((_, index) => index % 4 === 3).some(alpha => alpha > 0);
@@ -323,7 +335,7 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} bro
 
 test('a slow search cannot replace a newer search and errors are visible', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('.browser-cell')).toHaveCount(29);
+  await expect(page.locator('.browser-cell')).toHaveCount(32);
   await page.route('**/items?**', async route => {
     const query = new URL(route.request().url()).searchParams.get('query');
     if (query === 'water') await new Promise(resolve => setTimeout(resolve, 400));
