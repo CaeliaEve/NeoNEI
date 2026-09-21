@@ -20,7 +20,9 @@ function current() {
 const target = computed(() => 'choices' in props.stack ? { kind: props.stack.kind, ...current() } : props.stack);
 const note = computed(() => {
   if (!('choices' in props.stack)) return '概率 ' + chance(props.stack.chance) + (props.stack.role === 'return' ? ' · 归还' : '');
-  const choice = current();
+  return choiceNote(current());
+});
+function choiceNote(choice: Input['choices'][number]): string {
   const consumption = choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'damage' ? '消耗耐久 ' + choice.consume.points : '消耗';
   const rule = choice.rule.kind === 'ore' ? '矿辞：' + choice.rule.name + (choice.rule.exclusive ? '（唯一矿辞）' : '')
     : choice.rule.kind === 'wildcard' ? '通配匹配' : choice.rule.kind === 'tags' ? [
@@ -30,7 +32,7 @@ const note = computed(() => {
       '允许其他 NBT 数据',
     ].filter(Boolean).join('；') : '精确匹配';
   return consumption + ' · ' + rule + (choice.returns.length ? ' · 归还容器' : '');
-});
+}
 watch(() => props.stack, () => { offset.value = 0; dialog.value?.close(); expanded.value = false; });
 async function expand(): Promise<void> {
   expanded.value = true;
@@ -52,8 +54,11 @@ function choose(index: number, id: string, direction: 'recipes' | 'uses'): void 
     <dialog v-if="expanded && choices.length > 1" ref="dialog" class="dialog choices-dialog" @close="expanded = false">
       <header><h2>候选输入</h2><button type="button" aria-label="关闭候选输入" @click="dialog?.close()">×</button></header>
       <p>选择当前显示的物品；右键查看其用途。</p>
-      <div class="choice-list"><ItemLink v-for="(choice, index) in choices.slice(offset, offset + 24)" :key="offset + index" :target="{ kind: stack.kind, ...choice }"
-        :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => choose(offset + index, id, direction)" /></div>
+      <div class="choice-list"><div v-for="(choice, index) in choices.slice(offset, offset + 24)" :key="offset + index">
+        <ItemLink :target="{ kind: stack.kind, ...choice }" :note="choiceNote(choice)"
+          :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => choose(offset + index, id, direction)" />
+        <small class="choice-note">{{ choiceNote(choice) }}</small>
+      </div></div>
       <Pager :total="choices.length" :offset="offset" :limit="24" label="候选输入" @change="offset = $event" />
     </dialog>
   </div>

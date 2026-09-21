@@ -69,6 +69,9 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   const uses = await (await get(base, api + '/recipes?direction=uses&item=' + first.rows[0].id)).json();
   const recipe = uses.rows[0];
   assert.equal(recipe.inputs[0].choices[0].amount, '9007199254740993');
+  assert.deepEqual(recipe.inputs[0].choices.map(choice => [choice.amount, choice.consume.kind]),
+    [['9007199254740993', 'consume'], ['7', 'consume'], ['1', 'keep']]);
+  assert.equal(new Set(recipe.inputs[0].choices.map(choice => choice.id)).size, 1);
   assert.equal(recipe.energy, '9223372036854775807');
   assert.deepEqual(recipe.outputs[0].chance, { numerator: '1', denominator: '3' });
   assert.ok(uses.related.items.length && uses.related.fluids.length && uses.related.views.length && uses.related.strings.length);
