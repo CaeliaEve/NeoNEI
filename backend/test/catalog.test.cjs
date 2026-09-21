@@ -210,6 +210,7 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
     assert.deepEqual(built.build.controller, [1, 1, 0]);
     assert.deepEqual(built.build.origin, [-1, 65, 0]);
     assert.equal(built.blocks.find(block => block.registry === 'fixture:controller').nbt.value.energy.value, '9007199254740993');
+    assert.equal(built.blocks.find(block => block.registry === 'fixture:controller').meta, 65535);
     const builtShapes = await (await get(base, api + '/builds/' + built.build.id + '/shapes')).json();
     assert.equal(builtShapes.rows.flatMap(shape => shape.cells).length, built.build.cells);
     assert.ok(builtShapes.rows.flatMap(shape => shape.cells).some(cell => cell.index === 1 && cell.at.join() === '1,1,0'));

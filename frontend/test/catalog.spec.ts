@@ -168,7 +168,7 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} bro
   await page.getByRole('searchbox', { name: '搜索多方块结构' }).fill('duofangkuai');
   await page.getByRole('button', { name: '查看 Fixture furnace 多方块', exact: true }).click();
   await expect(page.getByRole('button', { name: '整体装配', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(page.getByRole('region', { name: '装配方块' }).getByRole('button', { name: /fixture:controller/ })).toBeVisible();
+  await expect(page.getByRole('region', { name: '装配方块' }).getByRole('button', { name: 'fixture:controller : 65535 × 1', exact: true })).toBeVisible();
   await page.getByRole('region', { name: '装配方块' }).getByRole('button', { name: /fixture:controller/ }).click();
   await page.getByRole('button', { name: '方块实体数据', exact: true }).click();
   await expect(page.locator('.block-data')).toContainText('9007199254740993');
