@@ -1,5 +1,6 @@
 import type { Entry, Recipe, Category, PropertyValue, Item, Fluid, View, Text, Texture, Reference, Topic, TopicKind, Material, Circuit, Species, Mutation, Gene, Track } from '@elysium/contracts';
 import { Catalog, Fault } from './store.ts';
+import { quantityBounds } from './quantity.ts';
 import type { Structure, Shape, Build, Block, Model } from '@elysium/contracts';
 import type { Aspect, Research } from '@elysium/contracts';
 
@@ -261,6 +262,7 @@ export class Query {
         for (const returned of choice.returns) substance(returned.kind, returned.id);
       }
       for (const output of recipe.outputs) {
+        quantityBounds(recipe, output);
         substance(output.kind, output.id);
         if (output.change) {
           for (const sample of output.change.samples) substance('item', sample.id);

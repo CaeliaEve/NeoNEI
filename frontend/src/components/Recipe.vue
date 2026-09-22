@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, reactive, watch } from 'vue';
 import type { Element, Input, Output, Recipe } from '@elysium/contracts';
+import { quantityBounds } from '@neonei/catalog/source';
 import { Catalog, Records, required } from '../catalog/client.ts';
 import { amount, chance, color, ticks } from '../catalog/format.ts';
 import { Playback } from '../catalog/clock.ts';
@@ -46,6 +47,20 @@ const products = computed(() => props.recipe.outputs.map(output => {
   if (!sample) throw new Error('所选输入缺少对应的产物示例');
   return { ...output, ...sample };
 }));
+const visibleSlots = computed(() => new Set(elements.value.filter(element => element.kind === 'slot')
+  .map(element => element.direction + '/' + element.substance + '/' + element.slot)));
+const extraInputs = computed(() => props.recipe.inputs.filter(input => !visibleSlots.value.has('input/' + input.kind + '/' + input.slot)));
+const extraOutputs = computed(() => products.value.filter(output => !visibleSlots.value.has('output/' + output.kind + '/' + output.slot)));
+function quantityLabel(stack: Input | Output): string {
+  if ('choices' in stack || !stack.quantity) return '';
+  const [low, high] = quantityBounds(props.recipe, stack);
+  return amount(low.toString()) + (low === high ? '' : '–' + amount(high.toString()));
+}
+function quantityNote(stack: Input | Output): string {
+  if ('choices' in stack || !stack.quantity) return '';
+  return stack.quantity.kind === 'draw' ? '关联随机产出，与前序产物共享输入流体量。'
+    : '回收余量：输入总量减去本次已抽取的产物。';
+}
 function input(slot: number): Input {
   const value = props.recipe.inputs.find(row => row.kind === 'item' && row.slot === slot);
   if (!value) throw new Error('合成网格引用了不存在的输入');
@@ -97,6 +112,7 @@ function chosen(input: Input) {
           </div>
           <div v-else-if="element.kind === 'slot'" class="view-element" :style="position(element)">
             <Slot :stack="stack(element)" :records="records" :catalog="catalog" :size="element.width * scale" :height="element.height * scale"
+              :amount-label="quantityLabel(stack(element))" :quantity-note="quantityNote(stack(element))"
               v-model:choice="choices[element.direction + element.substance + element.slot]" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
           </div>
           <div v-else-if="element.kind === 'cost'" class="view-element" :style="position(element)">
@@ -122,8 +138,19 @@ function chosen(input: Input) {
       <div v-else><Slot v-for="input in recipe.inputs" :key="input.kind + input.slot" :stack="input" :records="records" :catalog="catalog" :animate="animate" v-model:choice="choices['input' + input.kind + input.slot]"
         @select="(id, direction) => emit('select', id, direction)" /></div><span aria-label="产出">→</span>
       <div><Slot v-for="output in products" :key="output.kind + output.slot" :stack="output" :records="records" :catalog="catalog" :animate="animate"
+        :amount-label="quantityLabel(output)" :quantity-note="quantityNote(output)"
         @select="(id, direction) => emit('select', id, direction)" /></div>
     </div>
+    <section v-if="view && (extraInputs.length || extraOutputs.length)" class="recipe-extra" aria-label="补充输入与产出">
+      <div v-if="extraInputs.length"><h4>其他输入</h4><div class="extra-slots">
+        <Slot v-for="input in extraInputs" :key="input.kind + input.slot" :stack="input" :records="records" :catalog="catalog" :animate="animate"
+          v-model:choice="choices['input' + input.kind + input.slot]" @select="(id, direction) => emit('select', id, direction)" />
+      </div></div>
+      <div v-if="extraOutputs.length"><h4>其他产出</h4><div class="extra-slots">
+        <Slot v-for="output in extraOutputs" :key="output.kind + output.slot" :stack="output" :records="records" :catalog="catalog" :animate="animate"
+          :amount-label="quantityLabel(output)" :quantity-note="quantityNote(output)" @select="(id, direction) => emit('select', id, direction)" />
+      </div></div>
+    </section>
     <div class="recipe-stats">
       <span v-if="recipe.duration != null" :title="recipe.duration + ' tick'">{{ ticks(recipe.duration) }}</span>
       <span v-if="recipe.energy != null">{{ amount(recipe.energy) }} EU/t</span>
@@ -182,8 +209,9 @@ function chosen(input: Input) {
         </div>
       </section><section><h4>产出</h4>
         <div v-for="output in products" :key="output.kind + output.slot" class="ingredient">
-          <ItemLink :target="output" :records="records" :catalog="catalog" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
-          <small>{{ chance(output.chance) }}{{ output.role === 'return' ? ' · 归还' : '' }}</small>
+          <ItemLink :target="output" :records="records" :catalog="catalog" :animate="animate" :amount-label="quantityLabel(output)" :note="quantityNote(output)"
+            @select="(id, direction) => emit('select', id, direction)" />
+          <small>{{ output.quantity ? quantityNote(output) : chance(output.chance) }}{{ output.role === 'return' ? ' · 归还' : '' }}</small>
         </div>
       </section></div>
       <dl class="properties"><template v-for="(property, key) in recipe.properties" :key="key">

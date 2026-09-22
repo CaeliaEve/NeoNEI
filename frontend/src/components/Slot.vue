@@ -5,8 +5,9 @@ import { Catalog, Records } from '../catalog/client.ts';
 import { chance } from '../catalog/format.ts';
 import ItemLink from './ItemLink.vue';
 import Pager from './Pager.vue';
-const props = withDefaults(defineProps<{ stack: Input | Output; catalog: Catalog; records: Records; size?: number; height?: number; animate?: boolean }>(),
-  { size: 32, height: 32, animate: true });
+const props = withDefaults(defineProps<{ stack: Input | Output; catalog: Catalog; records: Records; size?: number; height?: number; animate?: boolean;
+  amountLabel?: string; quantityNote?: string }>(),
+  { size: 32, height: 32, animate: true, amountLabel: '', quantityNote: '' });
 const emit = defineEmits<{ select: [id: string, direction: 'recipes' | 'uses'] }>();
 const selected = defineModel<number>('choice', { default: 0 });
 const offset = ref(0), dialog = ref<HTMLDialogElement | null>(null);
@@ -19,7 +20,8 @@ function current() {
 }
 const target = computed(() => 'choices' in props.stack ? { kind: props.stack.kind, ...current() } : props.stack);
 const note = computed(() => {
-  if (!('choices' in props.stack)) return '概率 ' + chance(props.stack.chance) + (props.stack.role === 'return' ? ' · 归还' : '');
+  if (!('choices' in props.stack)) return props.stack.quantity ? props.quantityNote
+    : '概率 ' + chance(props.stack.chance) + (props.stack.role === 'return' ? ' · 归还' : '');
   return choiceNote(current());
 });
 function choiceNote(choice: Input['choices'][number]): string {
@@ -47,7 +49,7 @@ function choose(index: number, id: string, direction: 'recipes' | 'uses'): void 
 
 <template>
   <div class="stack-slot">
-    <ItemLink :target="target" :catalog="catalog" :records="records" :width="size" :height="height" :animate="animate" compact :note="note"
+    <ItemLink :target="target" :catalog="catalog" :records="records" :width="size" :height="height" :animate="animate" compact :note="note" :amount-label="amountLabel"
       @select="(id, direction) => emit('select', id, direction)" />
     <button v-if="choices.length > 1" type="button" class="alternatives" :aria-label="'查看 ' + choices.length + ' 个候选输入'"
       @click="expand">{{ choices.length }}</button>

@@ -81,6 +81,13 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} bro
   await stone.click({ button: 'right' });
   await expect(page.locator('.recipe-card')).toHaveCount(1);
   await expect(page.getByRole('button', { name: '用途', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  const supplemental = page.getByRole('region', { name: '补充输入与产出', exact: true });
+  await expect(supplemental.getByRole('heading', { name: '其他输入', exact: true })).toBeVisible();
+  await expect(supplemental.getByRole('heading', { name: '其他产出', exact: true })).toBeVisible();
+  await expect(supplemental.getByRole('button', { name: /70–98 mB.*回收余量/s })).toBeVisible();
+  await expect(supplemental.getByRole('button', { name: /1–10 mB.*关联随机产出/s })).toBeVisible();
+  await expect(supplemental.getByRole('button', { name: /1–20 mB.*关联随机产出/s })).toBeVisible();
+  await page.screenshot({ path: `test-results/quantities-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   const animations = page.getByRole('img', { name: '配方进度动画', exact: true }), animation = animations.first();
   await expect(animations).toHaveCount(2);
   await expect(animation).toBeVisible();
