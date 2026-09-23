@@ -23,7 +23,7 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@elysium/contracts": "file:../vendor/elysium-contracts-0.12.0.tgz"
+    "@elysium/contracts": "file:../vendor/elysium-contracts-0.13.0.tgz"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

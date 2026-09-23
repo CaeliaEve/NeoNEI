@@ -361,12 +361,33 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} bro
   expect(staffData.value.sceptre.value).toBe('0');
   expect(staffData.value.AttributeModifiers.value).toHaveLength(1);
   expect(staffData.value.AttributeModifiers.value[0].value.Name.value).toBe('Weapon modifier');
+  await page.getByRole('searchbox', { name: '搜索物品', exact: true }).fill('Unanalyzed oak');
+  await page.getByRole('button', { name: 'Unanalyzed oak 树苗', exact: true }).click({ button: 'right' });
+  const scan = page.locator('.recipe-card').filter({ has: page.getByRole('heading', { name: 'Scanner 基因扫描', exact: true }) });
+  await expect(scan).toHaveCount(1);
+  await expect(scan.locator('.recipe-stats')).toContainText('2 EU/t');
+  await expect(scan).toContainText('整叠处理；显示数量为示例');
+  await expect(scan.locator('.recipe-flow .stack-slot').first().locator(':scope > .item-link')).toHaveAttribute('title', /未分析的有效基因个体/);
+  await scan.getByRole('button', { name: '查看 2 个候选输入', exact: true }).click();
+  await scan.locator('.choices-dialog').getByRole('button', { name: /^Unanalyzed birch/ }).click();
+  await expect(scan.locator('.recipe-flow .stack-slot').last().locator(':scope > .item-link')).toHaveAttribute('aria-label', /^Analyzed birch/);
+  await scan.getByText('当前结果 NBT', { exact: true }).click();
+  const scanned = JSON.parse((await scan.locator('.recipe-changes pre').textContent())!);
+  expect(scanned.value.IsAnalyzed.value).toBe('1');
+  expect(scanned.value.Genome.value.Chromosomes.value[0].value.UID0.value).toBe('fixture.birch');
+  expect(scanned.value.Mate.value.Chromosomes.value[0].value.UID0.value).toBe('fixture.birch');
+  await scan.screenshot({ path: `test-results/scanner-${offline ? 'offline' : 'online'}.png` });
+  await page.getByRole('searchbox', { name: '搜索物品', exact: true }).fill('Analyzed birch');
+  await page.getByRole('button', { name: 'Analyzed birch 树苗', exact: true }).click({ button: 'right' });
+  await expect(scan).toHaveCount(1);
+  await expect(scan.locator('.recipe-stats')).toContainText('1 EU/t');
+  await expect(scan.locator('.recipe-flow .stack-slot').nth(1).locator(':scope > .item-link')).toHaveAttribute('title', /不消耗/);
   expect(errors).toEqual([]);
 });
 
 test('a slow search cannot replace a newer search and errors are visible', async ({ page }) => {
   await page.goto('/');
-  await expect(page.locator('.browser-cell')).toHaveCount(32);
+  await expect(page.locator('.browser-cell')).toHaveCount(37);
   await page.route('**/items?**', async route => {
     const query = new URL(route.request().url()).searchParams.get('query');
     if (query === 'water') await new Promise(resolve => setTimeout(resolve, 400));

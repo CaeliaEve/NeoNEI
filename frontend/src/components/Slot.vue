@@ -21,12 +21,14 @@ function current() {
 const target = computed(() => 'choices' in props.stack ? { kind: props.stack.kind, ...current() } : props.stack);
 const note = computed(() => {
   if (!('choices' in props.stack)) return props.stack.quantity ? props.quantityNote
+    : props.stack.change?.action.kind === 'analyze' ? '与输入堆叠数量相同；显示单个样本'
     : '概率 ' + chance(props.stack.chance) + (props.stack.role === 'return' ? ' · 归还' : '');
   return choiceNote(current());
 });
 function choiceNote(choice: Input['choices'][number]): string {
-  const consumption = choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'damage' ? '消耗耐久 ' + choice.consume.points : '消耗';
+  const consumption = choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'stack' ? '处理整个输入堆叠' : choice.consume.kind === 'damage' ? '消耗耐久 ' + choice.consume.points : '消耗';
   const rule = choice.rule.kind === 'ore' ? '矿辞：' + choice.rule.name + (choice.rule.exclusive ? '（唯一矿辞）' : '')
+    : choice.rule.kind === 'member' ? (choice.rule.analyzed ? '已分析' : '未分析') + '的有效基因个体（不限于列出的品种）'
     : choice.rule.kind === 'wildcard' ? '通配匹配' : choice.rule.kind === 'tags' ? [
       choice.rule.keys.length ? '匹配字段：' + choice.rule.keys.join('、') : '',
       choice.rule.present.length ? '必须存在：' + choice.rule.present.join('、') : '',

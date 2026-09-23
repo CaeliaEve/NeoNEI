@@ -97,3 +97,8 @@ Model.hidden仅允许空几何，表示该位置由原生渲染规则省略，�
 要素与研究关系已接入 `/aspects`、`/aspect/:id`、`/research`、`/research/:id`。TopicLink 与 TopicBrowser 共用图集和快照，AspectBar 显示选定物品的精确要素数量。研究界面区分未知与未完成，显示真实前置和 `@` 知识标记；不推断当前可解锁，也不将元数据页面称为完整魔法配方／魔导手册实现。
 
 研究线索按Clue原始条件和matches物品示例分开读取。空示例保留原始registry/meta/NBT/矿辞信息，页面显示未收录示例，不创建不存在的ItemLink。示例分页展示，在线与完整离线使用同一查询。修订11替换原字符串数组，旧副本保留到用户最终清理。
+# Scanner analysis and whole-stack recipes
+
+Contract0.13.0/catalog revision13 distinguishes a native Forestry member predicate, whole-stack consumption, and the analyze output operation. Scanner input choices are concrete genotype examples. Selecting another example selects its corresponding analyzed output online and in a complete offline library. The display labels the quantity as an example and the operation as processing the whole offered stack.
+
+Unanalyzed and already analyzed members use separate recipes and separate costs. Both need at least100mB honey; only the former consumes it. The interface explains native NBT serialization on first analysis and unchanged return for previously analyzed inputs. Historical revision12 catalogs are retained but require a fresh export/compile/offline save for use with this release.
