@@ -193,7 +193,7 @@ function chosen(input: Input) {
         <p>未分析个体经林业原生接口分析并重新写出基因数据，额外的命名等标签不保留。已分析个体原样返回。</p>
         <p>两种状态都要求槽内至少有 100 mB 蜂蜜；仅未分析时消耗。耗时和能耗为对应分支的基础值。</p>
       </template>
-      <template v-if="output.change?.action.kind === 'patch'">
+      <template v-else-if="output.change?.action.kind === 'patch'">
         <p>保留输入物品及其其他数据。<template v-if="Object.keys(output.change.action.set).length">替换标签：<code>{{ Object.keys(output.change.action.set).join('、') }}</code>。</template>
           <template v-if="Object.keys(output.change.action.limits).length">超出新上限的数值会被裁剪。</template></p>
         <details><summary>数据修改规则</summary><pre>{{ JSON.stringify(output.change.action, null, 2) }}</pre></details>
