@@ -203,6 +203,10 @@ function chosen(input: Input) {
         <p v-if="output.change.action.keys">仅继承根标签：{{ output.change.action.keys.join('、') }}</p>
         <p v-if="!required(records.items, output.change.action.base.id).nbt">继承发生且原始产物没有 NBT 时，还会沿用中心物品的 metadata 和数量。</p>
       </template>
+      <template v-else-if="output.change?.action.kind === 'append'">
+        <p>保留输入物品的全部数据，向列表 <code>{{ output.change.action.path }}</code> 追加元素。原生未增强法杖或已有增强法杖均安全继承。</p>
+        <details><summary>追加数据规则</summary><pre>{{ JSON.stringify(output.change.action, null, 2) }}</pre></details>
+      </template>
       <details><summary>当前结果 NBT</summary><pre>{{ JSON.stringify(required(records.items, output.id).nbt, null, 2) }}</pre></details>
     </section>
     <details class="recipe-details" :open="!view">
