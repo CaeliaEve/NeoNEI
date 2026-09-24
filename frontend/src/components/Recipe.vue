@@ -58,8 +58,12 @@ function quantityLabel(stack: Input | Output): string {
 }
 function quantityNote(stack: Input | Output): string {
   if ('choices' in stack || !stack.quantity) return '';
-  return stack.quantity.kind === 'draw' ? '关联随机产出，与前序产物共享输入流体量。'
-    : '回收余量：输入总量减去本次已抽取的产物。';
+  const q = stack.quantity;
+  if (q.kind === 'draw') return '关联随机产出，与前序产物共享输入流体量。';
+  if (q.kind === 'remainder') return '回收余量：输入总量减去本次已抽取的产物。';
+  if (q.kind === 'branch') return `互斥工况分支【${q.group} / ${q.branch}】${q.condition ? '（' + q.condition + '）' : ''}`;
+  if (q.kind === 'potential') return `潜在产量【${q.stat}】${q.condition ? '（' + q.condition + '）' : ''}`;
+  return '';
 }
 function input(slot: number): Input {
   const value = props.recipe.inputs.find(row => row.kind === 'item' && row.slot === slot);

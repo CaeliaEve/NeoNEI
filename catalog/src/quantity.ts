@@ -12,14 +12,37 @@ function integer(value: string | null | undefined): bigint {
 export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint, bigint] {
   const rule = output.quantity;
   if (!rule) { const value = integer(output.amount); return [value, value]; }
-  ensure(output.amount == null && output.change == null && output.kind === 'fluid'
+  ensure(output.amount == null && output.change == null
     && output.chance.numerator === '1' && output.chance.denominator === '1', '关联产量含冲突的固定字段');
+
+  if (rule.kind === 'branch') {
+    const maxVal = integer(rule.nominal);
+    const seenBranches = new Set<string>();
+    for (const candidate of recipe.outputs) {
+      const q = candidate.quantity;
+      if (q && q.kind === 'branch' && q.group === rule.group) {
+        ensure(!seenBranches.has(q.branch), '关联产量重复分支');
+        seenBranches.add(q.branch);
+      }
+    }
+    return [0n, maxVal];
+  }
+
+  if (rule.kind === 'potential') {
+    const maxVal = integer(rule.nominal);
+    if (rule.sample != null) {
+      ensure(typeof rule.sample === 'string' && /^(0|[1-9][0-9]*)$/.test(rule.sample), '样本数量不是非负整数');
+    }
+    return [0n, maxVal];
+  }
+
+  ensure(output.kind === 'fluid', '关联产量要求流体产出');
   ensure(rule.after.length <= 128, '关联产量链过长');
   const draws = new Set<number>();
   let closing: readonly number[] | undefined;
   for (const candidate of recipe.outputs) {
     const quantity = candidate.quantity;
-    if (!quantity || quantity.input !== rule.input) continue;
+    if (!quantity || (quantity.kind !== 'draw' && quantity.kind !== 'remainder') || quantity.input !== rule.input) continue;
     ensure(candidate.kind === 'fluid', '关联产量要求流体产出');
     if (quantity.kind === 'draw') { ensure(!draws.has(candidate.slot), '关联产量重复抽取槽'); draws.add(candidate.slot); }
     else { ensure(!closing, '关联产量组包含多个余量'); closing = quantity.after; }
