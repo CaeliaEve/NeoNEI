@@ -32,6 +32,8 @@ export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint
     const maxVal = integer(rule.nominal);
     if (rule.sample != null) {
       ensure(typeof rule.sample === 'string' && /^(0|[1-9][0-9]*)$/.test(rule.sample), '样本数量不是非负整数');
+      const sampleVal = BigInt(rule.sample);
+      ensure(sampleVal <= maxVal, '潜在样本数量超出声明的标称上限');
     }
     return [0n, maxVal];
   }
