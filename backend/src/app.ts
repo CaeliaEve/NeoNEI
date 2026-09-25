@@ -29,7 +29,7 @@ export function createApp(options: AppOptions): Express {
   if (options.web) {
     const web = path.resolve(options.web);
     app.use(express.static(web, { index: false, fallthrough: true }));
-    app.get(['/', '/offline', '/entry/:id', '/recipe/:id', '/materials', '/material/:id', '/circuits', '/circuit/:id', '/bees', '/bee/:id', '/trees', '/tree/:id', '/structures', '/structure/:id', '/aspects', '/aspect/:id', '/research', '/research/:id'], (req, res, next) => {
+    app.get(['/', '/offline', '/entry/:id', '/recipe/:id', '/recipe-by-id/:recipeId', '/materials', '/material/:id', '/circuits', '/circuit/:id', '/bees', '/bee/:id', '/trees', '/tree/:id', '/structures', '/structure/:id', '/aspects', '/aspect/:id', '/research', '/research/:id'], (req, res, next) => {
       if (!req.accepts('html')) { next(); return; }
       res.setHeader('Cache-Control', 'no-cache');
       res.sendFile('index.html', { root: web }, error => { if (error) next(error); });

@@ -14,6 +14,18 @@ const routes: RouteRecordRaw[] = [
     props: true
   },
   {
+    // Elysium catalog links use /entry/:id. Keep that public URL compatible
+    // with the optimize UI so an item always opens the legacy recipe screen.
+    path: '/entry/:itemId',
+    name: 'entry',
+    redirect: (to) => ({
+      name: 'recipe',
+      params: { itemId: to.params.itemId },
+      query: to.query,
+      hash: to.hash,
+    }),
+  },
+  {
     path: '/recipe-by-id/:recipeId',
     name: 'recipe-by-id',
     component: () => import('../views/RecipeByIdView.vue'),
