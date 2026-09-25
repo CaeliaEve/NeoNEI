@@ -1,0 +1,79 @@
+/* Items Grid - 使用 flex 布局确保不产生滚动条 */
+.items-grid-container {
+  overflow: hidden !important;
+}
+
+.item-grid-shell {
+  position: relative;
+}
+
+.atlas-card-placeholder {
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 10px;
+  background:
+    linear-gradient(180deg, rgba(20, 24, 31, 0.84), rgba(13, 16, 22, 0.88)),
+    radial-gradient(circle at 50% 38%, rgba(255, 255, 255, 0.05), transparent 55%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.025),
+    0 3px 8px rgba(0, 0, 0, 0.18);
+}
+
+.homepage-shell {
+  --home-shell-width: min(1880px, var(--app-shell-max-width, 96vw));
+  --home-center-width: clamp(420px, 30vw, 760px);
+  --home-center-left: clamp(180px, calc(50% - 18vw), 860px);
+  --home-left-rail-width: clamp(520px, 34vw, 920px);
+  --home-right-width: clamp(520px, 38vw, 1240px);
+  --home-recipe-top: clamp(56px, 6.2vh, 70px);
+  --home-recipe-bottom: clamp(76px, 8vh, 98px);
+}
+
+.mod-filter-anchor,
+.search-anchor {
+  width: var(--home-center-width);
+  left: var(--home-center-left);
+}
+
+.recipe-preview-panel {
+  width: var(--home-center-width);
+  left: var(--home-center-left);
+}
+
+.recipe-preview-shell {
+  border: 1px solid rgba(133, 164, 206, 0.16);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 12%),
+    radial-gradient(circle at 50% 0%, rgba(107, 211, 255, 0.05), transparent 28%),
+    linear-gradient(180deg, rgba(13, 18, 26, 0.985), rgba(7, 10, 16, 0.995));
+  box-shadow:
+    0 28px 58px rgba(0, 0, 0, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    inset 0 0 0 1px rgba(89, 122, 166, 0.05);
+}
+
+.recipe-preview-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 14%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.012) 0 1px, transparent 1px 52px);
+  opacity: 0.85;
+}
+
+.recipe-preview-panel.wide-stage {
+  width: auto;
+  left: 16px;
+  right: calc(var(--home-right-width) + 16px);
+}
+
+.items-column {
+  width: var(--home-right-width);
+}
+
+.history-strip {
+  border: none;
+}
+

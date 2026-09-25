@@ -1,0 +1,42 @@
+/* Animate Scale In */
+.animate-scale-in {
+  animation: scaleIn 0.3s ease-out;
+}
+
+@media (min-width: 1600px) {
+  .homepage-shell {
+    --home-shell-width: min(2140px, 95vw);
+    --home-center-width: clamp(460px, 29vw, 820px);
+    --home-left-rail-width: clamp(620px, 33vw, 1080px);
+    --home-right-width: clamp(580px, 38vw, 1360px);
+  }
+}
+
+@media (min-width: 1920px) {
+  .homepage-shell {
+    --home-center-width: clamp(520px, 30vw, 900px);
+    --home-center-left: clamp(250px, calc(50% - 18vw), 980px);
+    --home-left-rail-width: clamp(720px, 32vw, 1240px);
+    --home-right-width: clamp(700px, 39vw, 1500px);
+  }
+}
+
+@media (min-width: 2560px) {
+  .homepage-shell {
+    --home-shell-width: min(2680px, 94vw);
+    --home-center-width: clamp(620px, 30vw, 1080px);
+    --home-center-left: clamp(320px, calc(50% - 18vw), 1220px);
+    --home-left-rail-width: clamp(860px, 31vw, 1520px);
+    --home-right-width: clamp(860px, 40vw, 1760px);
+  }
+}
+
+@media (min-width: 3200px) {
+  .homepage-shell {
+    --home-shell-width: min(3200px, 92vw);
+    --home-center-width: clamp(760px, 31vw, 1280px);
+    --home-center-left: clamp(420px, calc(50% - 18vw), 1520px);
+    --home-left-rail-width: clamp(1040px, 30vw, 1880px);
+    --home-right-width: clamp(1120px, 41vw, 2160px);
+  }
+}

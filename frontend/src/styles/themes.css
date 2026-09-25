@@ -1,0 +1,514 @@
+/* ========================================
+   COLOR THEME VARIANTS
+   多套配色方案
+   ======================================== */
+
+/* ===== THEME 1: VIBRANT GRADIENT (活力渐变) ===== */
+[data-theme="vibrant"] {
+  /* Background with subtle gradient */
+  --color-bg: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --color-surface: rgba(255, 255, 255, 0.95);
+  --color-surface-alt: rgba(255, 255, 255, 0.9);
+  --color-surface-embedded: rgba(255, 255, 255, 0.85);
+
+  /* Text Colors */
+  --color-text-primary: #1A1A2E;
+  --color-text-secondary: #4A4A68;
+  --color-text-tertiary: #9A9AB8;
+  --color-text-inverse: #FFFFFF;
+
+  /* Accent Colors */
+  --color-accent: #FF6B6B;
+  --color-accent-hover: #FF5252;
+  --color-accent-active: #E84545;
+  --color-accent-bg: rgba(255, 107, 107, 0.15);
+
+  /* Semantic Colors */
+  --color-success: #4ECDC4;
+  --color-warning: #FFE66D;
+  --color-error: #FF6B6B;
+  --color-info: #45B7D1;
+
+  /* Vibrant gradients for buttons */
+  --gradient-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  --gradient-secondary: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  --gradient-accent: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+}
+
+/* ===== THEME 2: OCEAN BREEZE (海洋微风) ===== */
+[data-theme="ocean"] {
+  --color-bg: #E0F7FA;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #F0FDFA;
+  --color-surface-embedded: #CCFBF1;
+
+  /* Text Colors */
+  --color-text-primary: #134E4A;
+  --color-text-secondary: #115E59;
+  --color-text-tertiary: #5EEAD4;
+  --color-text-inverse: #FFFFFF;
+
+  /* Accent Colors */
+  --color-accent: #06B6D4;
+  --color-accent-hover: #0891B2;
+  --color-accent-active: #0E7490;
+  --color-accent-bg: rgba(6, 182, 212, 0.15);
+
+  /* Semantic Colors */
+  --color-success: #14B8A6;
+  --color-warning: #F59E0B;
+  --color-error: #F43F5E;
+  --color-info: #0EA5E9;
+
+  /* Ocean gradients */
+  --gradient-primary: linear-gradient(135deg, #06B6D4 0%, #3B82F6 100%);
+  --gradient-secondary: linear-gradient(135deg, #22D3EE 0%, #0EA5E9 100%);
+  --gradient-accent: linear-gradient(135deg, #2DD4BF 0%, #06B6D4 100%);
+}
+
+/* ===== THEME 3: SUNSET WARM (落日暖色) ===== */
+[data-theme="sunset"] {
+  --color-bg: #FFF7ED;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #FFEDD5;
+  --color-surface-embedded: #FED7AA;
+
+  /* Text Colors */
+  --color-text-primary: #7C2D12;
+  --color-text-secondary: #9A3412;
+  --color-text-tertiary: #C2410C;
+  --color-text-inverse: #FFFFFF;
+
+  /* Accent Colors */
+  --color-accent: #F97316;
+  --color-accent-hover: #EA580C;
+  --color-accent-active: #C2410C;
+  --color-accent-bg: rgba(249, 115, 22, 0.15);
+
+  /* Semantic Colors */
+  --color-success: #22C55E;
+  --color-warning: #EAB308;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+
+  /* Sunset gradients */
+  --gradient-primary: linear-gradient(135deg, #FB923C 0%, #F97316 100%);
+  --gradient-secondary: linear-gradient(135deg, #FDBA74 0%, #FB923C 100%);
+  --gradient-accent: linear-gradient(135deg, #FCD34D 0%, #F97316 100%);
+}
+
+/* ===== THEME 4: FOREST ZEN (森林禅意) ===== */
+[data-theme="forest"] {
+  --color-bg: #ECFDF5;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #D1FAE5;
+  --color-surface-embedded: #A7F3D0;
+
+  /* Text Colors */
+  --color-text-primary: #14532D;
+  --color-text-secondary: #166534;
+  --color-text-tertiary: #15803D;
+  --color-text-inverse: #FFFFFF;
+
+  /* Accent Colors */
+  --color-accent: #10B981;
+  --color-accent-hover: #059669;
+  --color-accent-active: #047857;
+  --color-accent-bg: rgba(16, 185, 129, 0.15);
+
+  /* Semantic Colors */
+  --color-success: #22C55E;
+  --color-warning: #EAB308;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+
+  /* Forest gradients */
+  --gradient-primary: linear-gradient(135deg, #10B981 0%, #059669 100%);
+  --gradient-secondary: linear-gradient(135deg, #34D399 0%, #10B981 100%);
+  --gradient-accent: linear-gradient(135deg, #6EE7B7 0%, #10B981 100%);
+}
+
+/* ===== THEME 5: MIDNIGHT PURPLE (午夜紫罗兰) ===== */
+[data-theme="midnight"] {
+  --color-bg: #0F172A;
+  --color-surface: #1E293B;
+  --color-surface-alt: #334155;
+  --color-surface-embedded: #475569;
+
+  /* Text Colors */
+  --color-text-primary: #F1F5F9;
+  --color-text-secondary: #CBD5E1;
+  --color-text-tertiary: #94A3B8;
+  --color-text-inverse: #0F172A;
+
+  /* Accent Colors */
+  --color-accent: #A78BFA;
+  --color-accent-hover: #8B5CF6;
+  --color-accent-active: #7C3AED;
+  --color-accent-bg: rgba(167, 139, 250, 0.15);
+
+  /* Semantic Colors */
+  --color-success: #34D399;
+  --color-warning: #FBBF24;
+  --color-error: #F87171;
+  --color-info: #60A5FA;
+
+  /* Midnight gradients */
+  --gradient-primary: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%);
+  --gradient-secondary: linear-gradient(135deg, #A78BFA 0%, #8B5CF6 100%);
+  --gradient-accent: linear-gradient(135deg, #C4B5FD 0%, #A78BFA 100%);
+}
+
+/* ===== THEME 6: ROSE GARDEN (玫瑰花园) ===== */
+[data-theme="rose"] {
+  --color-bg: #FFF1F2;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #FFE4E6;
+  --color-surface-embedded: #FECDD3;
+
+  /* Text Colors */
+  --color-text-primary: #881337;
+  --color-text-secondary: #9F1239;
+  --color-text-tertiary: #BE123C;
+  --color-text-inverse: #FFFFFF;
+
+  /* Accent Colors */
+  --color-accent: #E11D48;
+  --color-accent-hover: #BE123C;
+  --color-accent-active: #9F1239;
+  --color-accent-bg: rgba(225, 29, 72, 0.15);
+
+  /* Semantic Colors */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #DC2626;
+  --color-info: #3B82F6;
+
+  /* Rose gradients */
+  --gradient-primary: linear-gradient(135deg, #FB7185 0%, #E11D48 100%);
+  --gradient-secondary: linear-gradient(135deg, #FDA4AF 0%, #FB7185 100%);
+  --gradient-accent: linear-gradient(135deg, #FECDD3 0%, #FB7185 100%);
+}
+
+/* ===== THEME 7: SKY BLUE (天空蓝) ===== */
+[data-theme="sky"] {
+  --color-bg: #F0F9FF;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #E0F2FE;
+  --color-surface-embedded: #BAE6FD;
+
+  /* Text Colors */
+  --color-text-primary: #0C4A6E;
+  --color-text-secondary: #075985;
+  --color-text-tertiary: #0369A1;
+  --color-text-inverse: #FFFFFF;
+
+  /* Accent Colors */
+  --color-accent: #0284C7;
+  --color-accent-hover: #0369A1;
+  --color-accent-active: #075985;
+  --color-accent-bg: rgba(2, 132, 199, 0.15);
+
+  /* Semantic Colors */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+
+  /* Sky gradients */
+  --gradient-primary: linear-gradient(135deg, #38BDF8 0%, #0284C7 100%);
+  --gradient-secondary: linear-gradient(135deg, #7DD3FC 0%, #38BDF8 100%);
+  --gradient-accent: linear-gradient(135deg, #BAE6FD 0%, #38BDF8 100%);
+}
+
+/* ===== THEME 8: AMBER GLOW (琥珀光辉) ===== */
+[data-theme="amber"] {
+  --color-bg: #FFFBEB;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #FEF3C7;
+  --color-surface-embedded: #FDE68A;
+
+  /* Text Colors */
+  --color-text-primary: #78350F;
+  --color-text-secondary: #92400E;
+  --color-text-tertiary: #B45309;
+  --color-text-inverse: #FFFFFF;
+
+  /* Accent Colors */
+  --color-accent: #F59E0B;
+  --color-accent-hover: #D97706;
+  --color-accent-active: #B45309;
+  --color-accent-bg: rgba(245, 158, 11, 0.15);
+
+  /* Semantic Colors */
+  --color-success: #22C55E;
+  --color-warning: #CA8A04;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+
+  /* Amber gradients */
+  --gradient-primary: linear-gradient(135deg, #FBBF24 0%, #F59E0B 100%);
+  --gradient-secondary: linear-gradient(135deg, #FCD34D 0%, #FBBF24 100%);
+  --gradient-accent: linear-gradient(135deg, #FDE68A 0%, #FBBF24 100%);
+}
+
+/* ===== THEME 9: CYBER PUNK REVIVAL (赛博朋克复兴) ===== */
+[data-theme="cyberpunk"] {
+  --color-bg: #0D0D1A;
+  --color-surface: #1A1A2E;
+  --color-surface-alt: #2D2D44;
+  --color-surface-embedded: #252540;
+
+  /* Text Colors */
+  --color-text-primary: #E0E0FF;
+  --color-text-secondary: #A0A0C0;
+  --color-text-tertiary: #707090;
+  --color-text-inverse: #0D0D1A;
+
+  /* Accent Colors - Neon */
+  --color-accent: #00FFF7;
+  --color-accent-hover: #00D4DF;
+  --color-accent-active: #00A8B3;
+  --color-accent-bg: rgba(0, 255, 247, 0.15);
+
+  /* Secondary Accent */
+  --color-accent-secondary: #FF00FF;
+  --color-accent-tertiary: #FFFF00;
+
+  /* Semantic Colors */
+  --color-success: #00FF88;
+  --color-warning: #FFAA00;
+  --color-error: #FF0055;
+  --color-info: #00AAFF;
+
+  /* Cyber gradients */
+  --gradient-primary: linear-gradient(135deg, #00FFF7 0%, #00D4DF 50%, #FF00FF 100%);
+  --gradient-secondary: linear-gradient(135deg, #FF00FF 0%, #FFFF00 100%);
+  --gradient-accent: linear-gradient(135deg, #00FF88 0%, #00FFF7 100%);
+}
+
+/* ===== THEME 10: AURORA BOREALIS (极光) ===== */
+[data-theme="aurora"] {
+  --color-bg: #0F172A;
+  --color-surface: rgba(30, 41, 59, 0.8);
+  --color-surface-alt: rgba(51, 65, 85, 0.6);
+  --color-surface-embedded: rgba(71, 85, 105, 0.4);
+
+  /* Text Colors */
+  --color-text-primary: #F1F5F9;
+  --color-text-secondary: #CBD5E1;
+  --color-text-tertiary: #94A3B8;
+  --color-text-inverse: #0F172A;
+
+  /* Accent Colors */
+  --color-accent: #22D3EE;
+  --color-accent-hover: #06B6D4;
+  --color-accent-active: #0891B2;
+  --color-accent-bg: rgba(34, 211, 238, 0.15);
+
+  /* Aurora colors */
+  --color-accent-secondary: #F472B6;
+  --color-accent-tertiary: #34D399;
+
+  /* Semantic Colors */
+  --color-success: #4ADE80;
+  --color-warning: #FBBF24;
+  --color-error: #F87171;
+  --color-info: #60A5FA;
+
+  /* Aurora gradients */
+  --gradient-primary: linear-gradient(135deg, #22D3EE 0%, #818CF8 50%, #C084FC 100%);
+  --gradient-secondary: linear-gradient(135deg, #F472B6 0%, #22D3EE 100%);
+  --gradient-accent: linear-gradient(135deg, #34D399 0%, #22D3EE 100%);
+}
+
+/* ===== THEME 11: LAVENDER DREAM (薰衣草梦境) ===== */
+[data-theme="lavender"] {
+  --color-bg: #F5F3FF;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #EDE9FE;
+  --color-surface-embedded: #DDD6FE;
+
+  /* Text Colors */
+  --color-text-primary: #4C1D95;
+  --color-text-secondary: #5B21B6;
+  --color-text-tertiary: #6D28D9;
+  --color-text-inverse: #FFFFFF;
+
+  /* Accent Colors */
+  --color-accent: #8B5CF6;
+  --color-accent-hover: #7C3AED;
+  --color-accent-active: #6D28D9;
+  --color-accent-bg: rgba(139, 92, 246, 0.15);
+
+  /* Semantic Colors */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #EF4444;
+  --color-info: #3B82F6;
+
+  /* Lavender gradients */
+  --gradient-primary: linear-gradient(135deg, #A78BFA 0%, #8B5CF6 100%);
+  --gradient-secondary: linear-gradient(135deg, #C4B5FD 0%, #A78BFA 100%);
+  --gradient-accent: linear-gradient(135deg, #DDD6FE 0%, #A78BFA 100%);
+}
+
+/* ===== THEME 12: CHERRY BLOSSOM (樱花粉) ===== */
+[data-theme="sakura"] {
+  --color-bg: #FFF0F5;
+  --color-surface: #FFFFFF;
+  --color-surface-alt: #FFE4E6;
+  --color-surface-embedded: #FECDD3;
+
+  /* Text Colors */
+  --color-text-primary: #831843;
+  --color-text-secondary: #9D174D;
+  --color-text-tertiary: #BE185D;
+  --color-text-inverse: #FFFFFF;
+
+  /* Accent Colors */
+  --color-accent: #EC4899;
+  --color-accent-hover: #DB2777;
+  --color-accent-active: #BE185D;
+  --color-accent-bg: rgba(236, 72, 153, 0.15);
+
+  /* Semantic Colors */
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-error: #DC2626;
+  --color-info: #3B82F6;
+
+  /* Sakura gradients */
+  --gradient-primary: linear-gradient(135deg, #F472B6 0%, #EC4899 100%);
+  --gradient-secondary: linear-gradient(135deg, #FB7185 0%, #F472B6 100%);
+  --gradient-accent: linear-gradient(135deg, #FBCFE8 0%, #F472B6 100%);
+}
+
+/* ===== 特殊效果：霓虹光晕 ===== */
+[data-theme~="cyberpunk"],
+[data-theme~="aurora"],
+[data-theme~="midnight"] {
+  /* 霓虹光晕效果 */
+  --glow-accent: 0 0 20px var(--color-accent);
+  --glow-accent-strong: 0 0 40px var(--color-accent), 0 0 80px var(--color-accent);
+}
+
+/* ===== 特殊效果：柔和阴影 ===== */
+[data-theme~="vibrant"],
+[data-theme~="sunset"],
+[data-theme~="amber"],
+[data-theme~="rose"],
+[data-theme~="sakura"] {
+  /* 柔和阴影 */
+  --shadow-warm: 0 8px 30px rgba(255, 150, 100, 0.15);
+  --shadow-colored: 0 4px 20px rgba(249, 115, 22, 0.2);
+}
+
+/* ===== 主题过渡动画 ===== */
+body {
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+/* 确保所有颜色变量都有过渡 */
+* {
+  transition-property: background-color, color, border-color;
+  transition-duration: 0.3s;
+  transition-timing-function: ease;
+}
+
+/* ===== 主题选择器样式 ===== */
+.theme-selector {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 16px;
+}
+
+.theme-option {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  cursor: pointer;
+  border: 3px solid transparent;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.theme-option:hover {
+  transform: scale(1.1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.theme-option.active {
+  border-color: var(--color-accent, #2997FF);
+  transform: scale(1.05);
+}
+
+.theme-option::after {
+  content: '✓';
+  position: absolute;
+  bottom: -2px;
+  right: -2px;
+  background: white;
+  color: var(--color-accent, #2997FF);
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 10px;
+  opacity: 0;
+  transform: scale(0);
+  transition: all 0.2s ease;
+}
+
+.theme-option.active::after {
+  opacity: 1;
+  transform: scale(1);
+}
+
+/* 主题预览颜色 */
+.theme-preview-vibrant {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+}
+
+.theme-preview-ocean {
+  background: linear-gradient(135deg, #06B6D4 0%, #3B82F6 100%);
+}
+
+.theme-preview-sunset {
+  background: linear-gradient(135deg, #FB923C 0%, #F97316 100%);
+}
+
+.theme-preview-forest {
+  background: linear-gradient(135deg, #10B981 0%, #059669 100%);
+}
+
+.theme-preview-midnight {
+  background: linear-gradient(135deg, #8B5CF6 0%, #6366F1 100%);
+}
+
+.theme-preview-rose {
+  background: linear-gradient(135deg, #FB7185 0%, #E11D48 100%);
+}
+
+.theme-preview-sky {
+  background: linear-gradient(135deg, #38BDF8 0%, #0284C7 100%);
+}
+
+.theme-preview-amber {
+  background: linear-gradient(135deg, #FBBF24 0%, #F59E0B 100%);
+}
+
+.theme-preview-cyberpunk {
+  background: linear-gradient(135deg, #00FFF7 0%, #FF00FF 100%);
+}
+
+.theme-preview-aurora {
+  background: linear-gradient(135deg, #22D3EE 0%, #818CF8 50%, #C084FC 100%);
+}
+
+.theme-preview-lavender {
+  background: linear-gradient(135deg, #A78BFA 0%, #8B5CF6 100%);
+}
+
+.theme-preview-sakura {
+  background: linear-gradient(135deg, #F472B6 0%, #EC4899 100%);
+}

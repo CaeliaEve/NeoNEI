@@ -1,0 +1,773 @@
+/* ========================================
+   UI COMPONENT OVERRIDES - CYBERPUNK COLOR REMOVAL
+   Apply modern monochromatic design to all UI elements
+   Minimal safe overrides only
+   ======================================== */
+
+/* ===== TEXT COLOR OVERRIDES ===== */
+.text-cyan-300,
+.text-cyan-400,
+.text-cyan-500 {
+  color: var(--color-text-primary) !important;
+}
+
+.text-purple-300,
+.text-purple-400,
+.text-purple-500 {
+  color: var(--color-accent) !important;
+}
+
+.text-pink-300,
+.text-pink-400,
+.text-pink-500 {
+  color: var(--color-accent) !important;
+}
+
+.text-blue-400,
+.text-blue-500 {
+  color: var(--color-accent) !important;
+}
+
+.text-green-400,
+.text-green-500 {
+  color: var(--color-success) !important;
+}
+
+.text-red-400,
+.text-red-500 {
+  color: var(--color-error) !important;
+}
+
+/* Text white/slate for light mode visibility */
+.text-white {
+  color: var(--color-text-primary) !important;
+}
+
+.text-slate-200,
+.text-slate-300 {
+  color: var(--color-text-primary) !important;
+}
+
+.text-slate-200\/60,
+.text-slate-200\/40 {
+  color: var(--color-text-secondary) !important;
+}
+
+/* ===== BACKGROUND COLOR OVERRIDES ===== */
+.bg-cyan-900\/50,
+.bg-cyan-800\/50 {
+  background: var(--color-surface-alt) !important;
+}
+
+.bg-cyan-400\/30,
+.bg-cyan-500\/30 {
+  background: var(--color-accent-bg) !important;
+}
+
+.bg-purple-400\/30,
+.bg-pink-500\/30 {
+  background: var(--color-accent-bg) !important;
+}
+
+.bg-black\/40 {
+  background: var(--color-surface-embedded) !important;
+}
+
+/* ===== BORDER COLOR OVERRIDES ===== */
+.border-cyan-400\/30,
+.border-cyan-400\/40,
+.border-cyan-400\/20 {
+  border-color: var(--color-border) !important;
+}
+
+.border-purple-400\/30,
+.border-pink-400\/30,
+.border-purple-500\/30 {
+  border-color: var(--color-accent-bg) !important;
+}
+
+.border-slate-200\/60,
+.border-slate-200\/40,
+.border-slate-300\/50,
+.border-slate-300\/40 {
+  border-color: var(--color-border) !important;
+}
+
+.border-blue-400\/30 {
+  border-color: var(--color-accent-bg) !important;
+}
+
+/* ===== GRADIENT OVERRIDES ===== */
+.from-pink-500,
+.from-rose-500,
+.from-red-500,
+.to-pink-500,
+.to-rose-500,
+.to-red-500,
+.from-purple-500,
+.to-purple-500,
+.from-cyan-500,
+.from-blue-500,
+.to-cyan-500,
+.to-blue-500,
+.from-green-500,
+.to-green-500,
+.from-emerald-500,
+.to-emerald-500,
+.bg-gradient-to-r {
+  background-image: none !important;
+}
+
+/* Semantic gradient overrides for buttons */
+.from-green-500.to-emerald-500,
+.from-green-600.to-emerald-600,
+.from-green-400.to-emerald-400 {
+  background-color: var(--color-success) !important;
+}
+
+.from-red-500.to-pink-500,
+.from-red-400.to-pink-400 {
+  background-color: var(--color-error) !important;
+}
+
+.from-purple-500.to-pink-500,
+.from-purple-600.to-pink-600 {
+  background-color: var(--color-accent) !important;
+}
+
+.from-cyan-500.to-blue-500 {
+  background-color: var(--color-info) !important;
+}
+
+/* ===== SHADOW OVERRIDES ===== */
+.shadow-pink-500\/50,
+.shadow-cyan-500\/50,
+.shadow-purple-500\/50,
+.shadow-purple-500\/25,
+.shadow-lg {
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* ===== HOVER STATE OVERRIDES ===== */
+.hover\:from-green-400:hover,
+.hover\:to-emerald-400:hover,
+.hover\:from-green-600:hover,
+.hover\:to-emerald-600:hover {
+  background-color: var(--color-success) !important;
+  filter: brightness(1.1);
+}
+
+.hover\:from-red-400:hover,
+.hover\:to-pink-400:hover,
+.hover\:from-purple-600:hover,
+.hover\:to-pink-600:hover {
+  background-color: var(--color-error) !important;
+  filter: brightness(1.1);
+}
+
+.hover\:from-purple-600:hover,
+.hover\:to-pink-600:hover {
+  background-color: var(--color-accent) !important;
+  filter: brightness(1.1);
+}
+
+/* ===== CHECKBOX/RADIO OVERRIDES ===== */
+.border-cyan-400\/30 {
+  border-color: var(--color-border) !important;
+}
+
+.bg-black\/40 {
+  background: var(--color-surface-embedded) !important;
+}
+
+/* ===== GTNH VOLTAGE TIER COLORS - Semantic Monochromatic ===== */
+/* These override the rainbow colors with monochromatic equivalents */
+.text-cyan-400,
+.text-purple-400,
+.text-pink-400 {
+  color: var(--color-text-primary) !important;
+}
+
+/* Add subtle visual distinction for tiers using font-weight */
+.font-bold.text-cyan-400,
+.font-bold.text-purple-400,
+.font-bold.text-pink-400 {
+  font-weight: 600 !important;
+}
+
+/* ===== PLACEHOLDER OVERRIDES ===== */
+.placeholder-cyan-300\/30,
+.placeholder-cyan-400\/30 {
+  color: var(--color-text-tertiary) !important;
+}
+
+/* ===== FOCUS RING OVERRIDES ===== */
+.focus\:ring-cyan-400\/20:focus,
+.focus\:ring-purple-400\/20:focus {
+  box-shadow: 0 0 0 3px var(--color-accent-bg) !important;
+}
+
+.focus\:border-cyan-400:focus,
+.focus\:border-purple-400:focus {
+  border-color: var(--color-accent) !important;
+}
+
+/* ===== BUTTON STYLE OVERRIDES ===== */
+/* Intentionally scoped to explicit component classes below to avoid global element collisions. */
+
+/* ===== SLIDER OVERRIDES ===== */
+.slider-cyber {
+  background: var(--color-surface-alt) !important;
+}
+
+.slider-cyber::-webkit-slider-runnable-track {
+  background: var(--color-surface-alt) !important;
+}
+
+.slider-cyber::-webkit-slider-thumb {
+  background: var(--color-accent) !important;
+}
+
+/* ===== SPINNER ANIMATION ===== */
+.cyber-spinner {
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ===== GLASS PANEL ===== */
+.glass-enhanced {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid var(--color-border);
+}
+
+@media (prefers-color-scheme: dark) {
+  .glass-enhanced {
+    background: rgba(28, 28, 30, 0.7);
+  }
+}
+
+/* ===== CARD ENHANCEMENTS ===== */
+.cyber-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  transition: all 0.25s cubic-bezier(0.25, 0.1, 0.25, 1.0);
+}
+
+.cyber-card:hover {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.item-card {
+  cursor: pointer;
+  transition: all 0.25s cubic-bezier(0.25, 0.1, 0.25, 1.0);
+}
+
+.item-card:hover {
+  transform: translateY(-2px) scale(1.01);
+}
+
+/* ===== MODAL BACKDROP ===== */
+.modal-backdrop {
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* ===== ROTATION ANIMATION OVERRIDES ===== */
+.hover\:rotate-90:hover {
+  transform: rotate(90deg);
+}
+
+/* ===== TRANSITION COLOR OVERRIDES ===== */
+.transition-colors {
+  transition-property: color, background-color, border-color;
+  transition-duration: var(--duration-normal);
+  transition-timing-function: var(--ease-smooth);
+}
+
+/* ===== DISABLED STATE OVERRIDES ===== */
+.disabled\:opacity-50:disabled,
+.disabled\:cursor-not-allowed:disabled {
+  opacity: 0.5 !important;
+  cursor: not-allowed !important;
+}
+
+/* ===== SPINNER OVERRIDES ===== */
+.cyber-spinner,
+.text-cyan-400 {
+  color: var(--color-accent) !important;
+}
+
+/* ===== SPECIAL COMPONENT OVERRIDES ===== */
+/* Recipe modal close button */
+.text-3xl.leading-none {
+  line-height: 1;
+}
+
+/* Search box focus states */
+.focus\:ring-cyan-400\/20:focus,
+.focus\:ring-purple-400\/20:focus {
+  box-shadow: 0 0 0 3px var(--color-accent-bg) !important;
+}
+
+/* ===== BUTTON UNIFIED STYLES ===== */
+/* Scope button normalization to explicit component classes to minimize global blast radius. */
+.save-settings-btn,
+.pagination-btn,
+.page-btn,
+.recipe-detail-retry,
+.btn-cyber {
+  font-family: var(--font-sans);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  transition: all var(--duration-normal) var(--ease-smooth);
+}
+
+.save-settings-btn:hover:not(:disabled),
+.pagination-btn:hover:not(:disabled),
+.page-btn:hover:not(:disabled),
+.recipe-detail-retry:hover:not(:disabled),
+.btn-cyber:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.save-settings-btn:active:not(:disabled),
+.pagination-btn:active:not(:disabled),
+.page-btn:active:not(:disabled),
+.recipe-detail-retry:active:not(:disabled),
+.btn-cyber:active:not(:disabled) {
+  transform: translateY(0);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+/* ===== ROUNDED CORNER UNIFICATION ===== */
+.rounded-lg {
+  border-radius: var(--radius-md) !important;
+}
+
+.rounded-xl {
+  border-radius: var(--radius-lg) !important;
+}
+
+/* ===== UTILITY CLASSES ===== */
+.surface-elevated {
+  background: var(--color-surface);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.surface-embedded {
+  background: var(--color-surface-alt);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.elevation-low {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.elevation-medium {
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+}
+
+.elevation-high {
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.08);
+}
+
+/* ===== RECIPE PANEL SPECIFIC OVERRIDES ===== */
+/* Recipe grid items */
+.recipe-item {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  transition: all var(--duration-normal) var(--ease-smooth);
+}
+
+.recipe-item:hover {
+  box-shadow: var(--shadow-md);
+  transform: translateY(-2px);
+}
+
+/* Recipe inputs/outputs */
+.recipe-input,
+.recipe-output {
+  background: var(--color-surface-alt);
+  border: 1px solid var(--color-border-light);
+  border-radius: var(--radius-sm);
+}
+
+/* Recipe title/headings */
+.recipe-title {
+  color: var(--color-text-primary);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+/* Recipe metadata text */
+.recipe-meta {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+}
+
+/* ===== SEARCH BOX UNIFIED STYLES ===== */
+.search-input {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-primary);
+  padding: var(--space-3) var(--space-4);
+  font-size: 0.9375rem;
+  transition: all var(--duration-normal) var(--ease-smooth);
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px var(--color-accent-bg);
+}
+
+.search-input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* ===== TAB SYSTEM OVERRIDES ===== */
+.tab-active {
+  color: var(--color-accent);
+  border-bottom: 2px solid var(--color-accent);
+}
+
+.tab-inactive {
+  color: var(--color-text-secondary);
+  border-bottom: 2px solid transparent;
+}
+
+.tab-inactive:hover {
+  color: var(--color-text-primary);
+}
+
+/* ===== DROPDOWN/MENU OVERRIDES ===== */
+.dropdown-menu {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-2);
+}
+
+.dropdown-item {
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.dropdown-item:hover {
+  background: var(--color-surface-alt);
+}
+
+/* ===== TOOLTIP OVERRIDES ===== */
+.tooltip {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-3);
+  color: var(--color-text-primary);
+}
+
+/* ===== PAGINATION OVERRIDES ===== */
+.pagination-btn {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  color: var(--color-text-primary);
+  padding: var(--space-2) var(--space-3);
+  transition: all var(--duration-fast) var(--ease-smooth);
+}
+
+.pagination-btn:hover {
+  background: var(--color-surface-alt);
+  border-color: var(--color-accent);
+}
+
+.pagination-btn.active {
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
+  border-color: var(--color-accent);
+}
+
+/* ===== LOADING STATES ===== */
+.loading-skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-surface-alt) 0%,
+    var(--color-surface-embedded) 50%,
+    var(--color-surface-alt) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+/* ===== BADGE/TAG OVERRIDES ===== */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-sm);
+  font-size: 0.75rem;
+  font-weight: 500;
+  background: var(--color-surface-alt);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.badge-accent {
+  background: var(--color-accent-bg);
+  color: var(--color-accent);
+  border-color: var(--color-accent-bg);
+}
+
+.badge-success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+  border-color: var(--color-success-bg);
+}
+
+.badge-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+  border-color: var(--color-warning-bg);
+}
+
+.badge-error {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  border-color: var(--color-error-bg);
+}
+
+/* ===== TEXT COLOR VARIANTS OVERRIDES ===== */
+/* Gray scale for monochromatic design */
+.text-gray-400,
+.text-gray-500 {
+  color: var(--color-text-tertiary) !important;
+}
+
+.text-gray-600 {
+  color: var(--color-text-secondary) !important;
+}
+
+.text-gray-800,
+.text-gray-900 {
+  color: var(--color-text-primary) !important;
+}
+
+.text-black {
+  color: var(--color-text-primary) !important;
+}
+
+/* Slate colors - use semantic colors */
+.text-slate-200,
+.text-slate-300 {
+  color: var(--color-text-primary) !important;
+}
+
+.text-slate-200\/60,
+.text-slate-200\/40 {
+  color: var(--color-text-secondary) !important;
+}
+
+.text-white {
+  color: var(--color-text-primary) !important;
+}
+
+/* ===== BACKGROUND COLOR VARIANTS ===== */
+.bg-black\/40 {
+  background: var(--color-surface-embedded) !important;
+}
+
+.bg-subtle\/50 {
+  background: var(--color-surface-embedded) !important;
+  opacity: 0.5;
+}
+
+/* ========================================
+   DISABLE ALL CYBERPUNK EFFECTS
+   ======================================== */
+
+/* ===== DISABLE SCANLINE EFFECT ===== */
+.scanline::before,
+.scanline {
+  display: none !important;
+  animation: none !important;
+}
+
+/* ===== DISABLE GRID PATTERN ===== */
+.grid-pattern {
+  background-image: none !important;
+}
+
+/* ===== DISABLE CYBERPUNK BODY BACKGROUND ===== */
+body {
+  background-image: none !important;
+  background: var(--color-bg) !important;
+}
+
+/* ===== DISABLE NEON GLOW TEXT ===== */
+.text-glow-cyan,
+.text-glow-pink,
+.text-glow-purple {
+  text-shadow: none !important;
+}
+
+/* ===== DISABLE NEON BORDERS ===== */
+.border-neon {
+  border: 1px solid var(--color-border) !important;
+  background-image: none !important;
+}
+
+/* ===== DISABLE CYBERPUNK CARD EFFECTS ===== */
+.cyber-card::before,
+.cyber-card:hover::before {
+  display: none !important;
+  content: none !important;
+}
+
+.cyber-card {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+.cyber-card:hover {
+  border-color: var(--color-accent) !important;
+  box-shadow: var(--shadow-md) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* ===== DISABLE HOLOGRAPHIC EFFECT ===== */
+.holographic {
+  background: var(--color-surface-alt) !important;
+  background-image: none !important;
+  animation: none !important;
+}
+
+/* ===== DISABLE PULSE GLOW ===== */
+.pulse-glow {
+  animation: none !important;
+  box-shadow: var(--shadow-sm) !important;
+}
+
+/* ===== DISABLE TECH BORDER CORNERS ===== */
+.tech-border::before,
+.tech-border::after,
+.tech-border:hover::before,
+.tech-border:hover::after {
+  display: none !important;
+  content: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  border: none !important;
+}
+
+.tech-border {
+  border: 1px solid var(--color-border) !important;
+}
+
+/* ===== DISABLE CYBERPUNK SPINNER ===== */
+.cyber-spinner {
+  border: 2px solid var(--color-border) !important;
+  border-top-color: var(--color-accent) !important;
+  border-right-color: var(--color-accent) !important;
+  box-shadow: none !important;
+  width: 40px !important;
+  height: 40px !important;
+}
+
+/* ===== DISABLE CYBERPUNK BUTTON ===== */
+.btn-cyber,
+.btn-cyber::before,
+.btn-cyber:hover::before {
+  background: var(--color-accent) !important;
+  background-image: none !important;
+  box-shadow: var(--shadow-sm) !important;
+  text-transform: none !important;
+  letter-spacing: normal !important;
+}
+
+.btn-cyber::before,
+.btn-cyber:hover::before {
+  display: none !important;
+  content: none !important;
+}
+
+.btn-cyber:hover {
+  transform: translateY(-1px) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+/* ===== DISABLE CYBERPUNK PROGRESS BAR ===== */
+.progress-bar-cyber::before {
+  background: var(--color-accent) !important;
+  background-image: none !important;
+  box-shadow: none !important;
+}
+
+/* ===== DISABLE GLITCH EFFECT ===== */
+.glitch:hover {
+  animation: none !important;
+}
+
+/* ===== DISABLE STAT CARD STRIP ===== */
+.stat-card::before {
+  display: none !important;
+}
+
+.stat-card {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+  border-left: 3px solid var(--color-accent) !important;
+}
+
+/* ===== DISABLE GLASS ENHANCED CYBERPUNK STYLE ===== */
+.glass-enhanced {
+  background: rgba(255, 255, 255, 0.7) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  border: 1px solid var(--color-border) !important;
+  box-shadow: var(--shadow-md) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .glass-enhanced {
+    background: rgba(28, 28, 30, 0.7) !important;
+  }
+}
+
+/* ===== SURFACE GLASS UTILITY ===== */
+.surface-glass {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-border) !important;
+}
+
+/* ===== DISABLE ALL CYBERPUNK ANIMATIONS ===== */
+/* Animation classes are already disabled above via display: none on their elements */
+/* The @keyframes definitions in cyberpunk.css won't be applied since the classes using them are disabled */

@@ -1,0 +1,102 @@
+import {
+  api,
+  type Item,
+  type Recipe,
+  type RecipeBootstrapPayload,
+  type indexedItemRecipeSummaryResponse,
+  type indexedRecipe,
+} from '../services/api';
+import { convertIndexedRecipe } from '../domain/recipeNormalization';
+import {
+  getAnimatedAtlasImageUrl,
+  loadImageAsset,
+  primeAnimatedAtlasManifest,
+  primeRenderAnimationHintsFromUnknown,
+} from '../services/animationBudget';
+
+type RecipeIndex = {
+  usedInRecipes: string[];
+  producedByRecipes: string[];
+};
+
+export interface RecipeBootstrapResult {
+  item: Item;
+  recipeIndex: RecipeIndex;
+  indexedSummary: indexedItemRecipeSummaryResponse | null;
+  recipes: {
+    usedIn: Recipe[];
+    producedBy: Recipe[];
+  };
+  pendingProducedByRecipeIds: string[];
+  pendingUsageRecipeIds: string[];
+  pendingRecipeIds: string[];
+}
+
+const appendIndexedRecipes = (target: Map<string, Recipe>, indexedRecipes: indexedRecipe[]): string[] => {
+  const recipeIds: string[] = [];
+
+  for (const indexedRecipe of indexedRecipes) {
+    const recipe = convertIndexedRecipe(indexedRecipe);
+    target.set(recipe.recipeId, recipe);
+    recipeIds.push(recipe.recipeId);
+  }
+
+  return recipeIds;
+};
+
+const orderRecipes = (recipeIds: string[], recipesById: Map<string, Recipe>): Recipe[] => {
+  const ordered: Recipe[] = [];
+  for (const recipeId of recipeIds) {
+    const recipe = recipesById.get(recipeId);
+    if (recipe) ordered.push(recipe);
+  }
+  return ordered;
+};
+
+export async function loadRecipeBootstrap(itemId: string): Promise<RecipeBootstrapResult> {
+  const bootstrap: RecipeBootstrapPayload = await api.getRecipeBootstrap(itemId);
+  primeRenderAnimationHintsFromUnknown(bootstrap);
+  primeAnimatedAtlasManifest(bootstrap.mediaManifest);
+  for (const url of Array.from(
+    new Set(
+      Object.values(bootstrap.mediaManifest?.animatedAtlases ?? {})
+        .map((entry) => getAnimatedAtlasImageUrl(entry))
+        .filter((entry): entry is string => Boolean(entry)),
+    ),
+  ).slice(0, 6)) {
+    void loadImageAsset(url);
+  }
+  const item = bootstrap.item;
+  const indexedCrafting = bootstrap.indexedCrafting;
+  const indexedUsage = bootstrap.indexedUsage;
+
+  const recipesById = new Map<string, Recipe>();
+  appendIndexedRecipes(recipesById, indexedCrafting);
+  appendIndexedRecipes(recipesById, indexedUsage);
+
+  const recipeIndex: RecipeIndex = {
+    usedInRecipes: Array.isArray(bootstrap.recipeIndex?.usedInRecipes) ? bootstrap.recipeIndex.usedInRecipes : [],
+    producedByRecipes: Array.isArray(bootstrap.recipeIndex?.producedByRecipes) ? bootstrap.recipeIndex.producedByRecipes : [],
+  };
+
+  const missingRecipeIds = Array.from(
+    new Set(
+      [...recipeIndex.producedByRecipes, ...recipeIndex.usedInRecipes].filter((recipeId) => !recipesById.has(recipeId)),
+    ),
+  );
+  const pendingProducedByRecipeIds = recipeIndex.producedByRecipes.filter((recipeId) => !recipesById.has(recipeId));
+  const pendingUsageRecipeIds = recipeIndex.usedInRecipes.filter((recipeId) => !recipesById.has(recipeId));
+
+  return {
+    item,
+    recipeIndex,
+    indexedSummary: bootstrap.indexedSummary ?? null,
+    recipes: {
+      usedIn: orderRecipes(recipeIndex.usedInRecipes, recipesById),
+      producedBy: orderRecipes(recipeIndex.producedByRecipes, recipesById),
+    },
+    pendingProducedByRecipeIds,
+    pendingUsageRecipeIds,
+    pendingRecipeIds: missingRecipeIds,
+  };
+}
