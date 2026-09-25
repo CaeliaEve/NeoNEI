@@ -33,7 +33,12 @@ export type NativeRenderWorkerClient = Readonly<{
   destroy: () => void;
 }>;
 
-const renderClients = new Map<NativeSurfaceId, NativeRenderWorkerClient>();
+type RenderClientLease = {
+  client: NativeRenderWorkerClient;
+  references: number;
+};
+
+const renderClients = new Map<NativeSurfaceId, RenderClientLease>();
 
 function createSession() {
   return createNativeWorkerClientSession<
@@ -71,8 +76,15 @@ function createSession() {
 }
 
 export function createNativeRenderWorkerClient(surfaceId: NativeSurfaceId): NativeRenderWorkerClient {
-  if (renderClients.has(surfaceId)) {
-    throw new Error(`Native render worker client already exists for surface: ${surfaceId}`);
+  const existing = renderClients.get(surfaceId);
+  if (existing) {
+    existing.references += 1;
+    return Object.freeze({
+      ...existing.client,
+      destroy() {
+        releaseNativeRenderWorkerClient(surfaceId, existing.client);
+      },
+    });
   }
   const session = createSession();
   const client: NativeRenderWorkerClient = Object.freeze({
@@ -101,16 +113,24 @@ export function createNativeRenderWorkerClient(surfaceId: NativeSurfaceId): Nati
     },
     reset: () => session.reset(),
     destroy() {
-      session.reset();
-      renderClients.delete(surfaceId);
+      releaseNativeRenderWorkerClient(surfaceId, client);
     },
   });
-  renderClients.set(surfaceId, client);
+  renderClients.set(surfaceId, { client, references: 1 });
   return client;
+}
+
+function releaseNativeRenderWorkerClient(surfaceId: NativeSurfaceId, client: NativeRenderWorkerClient): void {
+  const entry = renderClients.get(surfaceId);
+  if (!entry || entry.client !== client) return;
+  entry.references -= 1;
+  if (entry.references > 0) return;
+  client.reset();
+  renderClients.delete(surfaceId);
 }
 
 export function getNativeRenderWorkerMetrics(): Readonly<Record<string, NativeRenderWorkerMetrics | null>> {
   return Object.freeze(Object.fromEntries(
-    Array.from(renderClients, ([surfaceId, client]) => [surfaceId, client.getMetrics()]),
+    Array.from(renderClients, ([surfaceId, entry]) => [surfaceId, entry.client.getMetrics()]),
   ));
 }
