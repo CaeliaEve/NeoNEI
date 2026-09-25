@@ -1,8 +1,8 @@
 import type { Output, Recipe } from '@elysium/contracts';
 import { ensure } from './store.ts';
 
-function integer(value: string | null | undefined): bigint {
-  ensure(typeof value === 'string' && /^[1-9][0-9]*$/.test(value), '产出数量不是正整数');
+function integer(value: string | null | undefined, minimum = 1n): bigint {
+  ensure(typeof value === 'string' && (minimum === 0n ? /^(0|[1-9][0-9]*)$/.test(value) : /^[1-9][0-9]*$/.test(value)), minimum === 0n ? '产出数量不是非负整数' : '产出数量不是正整数');
   const result = BigInt(value);
   ensure(result <= 9223372036854775807n, '产出数量超出范围');
   return result;
@@ -16,6 +16,7 @@ export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint
     && output.chance.numerator === '1' && output.chance.denominator === '1', '关联产量含冲突的固定字段');
 
   if (rule.kind === 'branch') {
+    if (rule.parameters) ensure(Object.entries(rule.parameters).every(([key, value]) => /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(key) && typeof value === 'string'), '分支参数格式无效');
     const maxVal = integer(rule.nominal);
     const seenBranches = new Set<string>();
     for (const candidate of recipe.outputs) {
@@ -29,7 +30,8 @@ export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint
   }
 
   if (rule.kind === 'potential') {
-    const maxVal = integer(rule.nominal);
+    if (rule.parameters) ensure(Object.entries(rule.parameters).every(([key, value]) => /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(key) && typeof value === 'string'), '潜在产量参数格式无效');
+    const maxVal = integer(rule.nominal, 0n);
     if (rule.sample != null) {
       ensure(typeof rule.sample === 'string' && /^(0|[1-9][0-9]*)$/.test(rule.sample), '样本数量不是非负整数');
       const sampleVal = BigInt(rule.sample);

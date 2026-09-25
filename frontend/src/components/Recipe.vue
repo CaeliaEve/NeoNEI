@@ -61,8 +61,14 @@ function quantityNote(stack: Input | Output): string {
   const q = stack.quantity;
   if (q.kind === 'draw') return '关联随机产出，与前序产物共享输入流体量。';
   if (q.kind === 'remainder') return '回收余量：输入总量减去本次已抽取的产物。';
-  if (q.kind === 'branch') return `互斥工况分支【${q.group} / ${q.branch}】${q.condition ? '（' + q.condition + '）' : ''}`;
-  if (q.kind === 'potential') return `潜在产量【${q.stat}】${q.condition ? '（' + q.condition + '）' : ''}`;
+  if (q.kind === 'branch') {
+    const parameters = q.parameters ? '；参数：' + Object.entries(q.parameters).map(([key, value]) => `${key}=${value}`).join('，') : '';
+    return `互斥工况分支【${q.group} / ${q.branch}】${q.condition ? '（' + q.condition + '）' : ''}${parameters}`;
+  }
+  if (q.kind === 'potential') {
+    const parameters = q.parameters ? '；参数：' + Object.entries(q.parameters).map(([key, value]) => `${key}=${value}`).join('，') : '';
+    return `潜在产量【${q.stat}】${q.condition ? '（' + q.condition + '）' : ''}${parameters}`;
+  }
   return '';
 }
 function input(slot: number): Input {
@@ -202,6 +208,10 @@ function chosen(input: Input) {
         <p>中心物品含非空 NBT 时继承其数据{{ output.change.action.tools ? '，输入和产物均为护甲或工具时生效' : '' }}。产物已有普通字段优先保留，复合标签合并，同类型列表按顺序追加。</p>
         <p v-if="output.change.action.keys">仅继承根标签：{{ output.change.action.keys.join('、') }}</p>
         <p v-if="!required(records.items, output.change.action.base.id).nbt">继承发生且原始产物没有 NBT 时，还会沿用中心物品的 metadata 和数量。</p>
+      </template>
+      <template v-else-if="output.change?.action.kind === 'filter'">
+        <p>保留过滤纸产物自身数据，从第 {{ output.change.action.config + 1 }} 个输入读取过滤配置，再从第 {{ output.change.action.metadata + 1 }} 个输入读取过滤纸变体。</p>
+        <details><summary>过滤纸变换规则</summary><pre>{{ JSON.stringify(output.change.action, null, 2) }}</pre></details>
       </template>
       <template v-else-if="output.change?.action.kind === 'append'">
         <p>保留输入物品的全部数据，向列表 <code>{{ output.change.action.path }}</code> 追加元素。原生未增强法杖或已有增强法杖均安全继承。</p>

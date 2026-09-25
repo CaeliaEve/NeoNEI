@@ -1,8 +1,14 @@
 {
   "name": "neonei",
   "private": true,
-  "workspaces": ["catalog", "backend", "frontend"],
-  "engines": { "node": ">=24" },
+  "workspaces": [
+    "catalog",
+    "backend",
+    "frontend"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
   "scripts": {
     "build": "npm --prefix catalog run build && npm --prefix backend run build && npm --prefix frontend run build",
     "start": "npm --prefix backend start",

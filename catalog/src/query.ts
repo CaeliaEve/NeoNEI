@@ -267,6 +267,7 @@ export class Query {
         if (output.change) {
           for (const sample of output.change.samples) substance('item', sample.id);
           if (output.change.action.kind === 'merge') substance('item', output.change.action.base.id);
+          if ((output.change.action as { kind: 'filter'; base: { id: string } }).kind === 'filter') substance('item', (output.change.action as { base: { id: string } }).base.id);
         }
       }
       for (const field of Object.values(recipe.properties)) { strings.add(field.name); property(field.value); }

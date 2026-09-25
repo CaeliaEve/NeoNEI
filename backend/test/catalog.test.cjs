@@ -77,6 +77,9 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.deepEqual(quantityBounds(recipe, recipe.outputs[1]), [70n, 98n]);
   assert.deepEqual(quantityBounds(recipe, recipe.outputs[2]), [1n, 10n]);
   assert.deepEqual(quantityBounds(recipe, recipe.outputs[3]), [1n, 20n]);
+  const zeroPotential = structuredClone(recipe);
+  zeroPotential.outputs[1].quantity = { kind: 'potential', stat: 'forestry.yield', condition: 'canBearFruit=false', sample: '0', nominal: '0' };
+  assert.deepEqual(quantityBounds(zeroPotential, zeroPotential.outputs[1]), [0n, 0n]);
   const large = structuredClone(recipe);
   large.inputs.find(input => input.kind === 'fluid').choices[0].amount = '9007199254740993';
   assert.deepEqual(quantityBounds(large, large.outputs[1]), [9007199254740963n, 9007199254740991n]);
