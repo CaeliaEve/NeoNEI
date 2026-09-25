@@ -99,15 +99,15 @@ onBeforeUnmount(() => window.removeEventListener('keydown', shortcut));
 </script>
 
 <template>
-  <div class="catalog-page">
-    <SiteHeader :catalog="catalog?.manifest.id" :offline="offline"><button type="button" class="quiet" @click="settings?.showModal()" aria-label="打开设置">设置</button></SiteHeader>
+  <div class="catalog-page legacy-home">
+    <SiteHeader class="legacy-header" :catalog="catalog?.manifest.id" :offline="offline"><button type="button" class="quiet settings-trigger" @click="settings?.showModal()" aria-label="打开设置">⚙</button></SiteHeader>
 
     <section v-if="opening" class="state-panel" role="status"><span class="eyebrow">CATALOG</span><h1>正在读取数据集</h1><p>加载物品、配方和纹理索引。</p></section>
     <section v-else-if="catalogError" class="state-panel error" role="alert"><h1>数据集无法加载</h1><p>{{ catalogError }}</p><button type="button" @click="open()">重试</button></section>
     <template v-else-if="catalog">
       <aside v-if="catalog.manifest.scope === 'selection'" class="notice">当前数据集只包含选定处理器的配方，不代表完整整合包。</aside>
-      <div class="workspace">
-        <section class="browser-panel panel">
+      <div class="workspace legacy-workspace">
+        <section class="browser-panel panel legacy-browser-rail">
           <header class="panel-heading"><div><span class="eyebrow">CATALOG</span><h1>物品浏览</h1></div><span class="subtle">{{ (catalog.count('items') + catalog.count('fluids')).toLocaleString('zh-CN') }} 个条目</span></header>
           <label class="search-field"><span aria-hidden="true">⌕</span><input ref="searchInput" v-model="query" type="search" aria-label="搜索物品"
             placeholder="名称、注册名或拼音…" maxlength="256" autocomplete="off" /><kbd>/</kbd></label>
@@ -139,7 +139,7 @@ onBeforeUnmount(() => window.removeEventListener('keydown', shortcut));
           <footer class="browser-hint">左键 / R 查看配方 <span>·</span> 右键 / U 查看用途</footer>
         </section>
 
-        <section class="recipe-panel panel" :aria-busy="recipesLoading || detailLoading">
+        <section class="recipe-panel panel legacy-recipe-stage" :aria-busy="recipesLoading || detailLoading">
           <header class="panel-heading"><div><span class="eyebrow">{{ recipeId ? 'RECIPE' : direction === 'uses' ? 'USES' : 'RECIPES' }}</span>
             <h2><GameText v-if="entry" :text="entry.name" /><template v-else>{{ recipeId ? '配方详情' : '配方与用途' }}</template></h2>
             <p v-if="entry" class="registry">{{ entry.registry }}<template v-if="entry.meta != null"> : {{ entry.meta }}</template></p></div>
