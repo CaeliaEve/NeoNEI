@@ -99,12 +99,15 @@ const {
   changePage,
   prefetchItemsPage,
   applyNativeProjectionPageMetrics,
+  browserPageRevision,
 } = useItemBrowser(itemSize, {
   measureVisiblePageCapacity: () => measureGridCapacityRaw(),
   includeHiddenItems: showHiddenDebugItems,
 });
 let itemGridResizeObserver: ResizeObserver | null = null;
+let observedItemGridViewport: HTMLElement | null = null;
 let transitionOverlayTimer: number | null = null;
+let residentAtlasWarmupTimer: number | null = null;
 const TRANSITION_OVERLAY_DELAY_MS = 140;
 const currentGroupId = ref<string | undefined>(undefined);
 const latestCreatedPatternId = ref<string | undefined>(undefined);
@@ -130,8 +133,9 @@ onMounted(() => {
   itemGridResizeObserver = new ResizeObserver(() => {
     syncMeasuredPageSize();
   });
-  window.setTimeout(() => {
+  residentAtlasWarmupTimer = window.setTimeout(() => {
     void warmResidentAtlas();
+    residentAtlasWarmupTimer = null;
   }, 250);
 });
 
@@ -141,6 +145,11 @@ onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleGlobalKeydown);
   itemGridResizeObserver?.disconnect();
   itemGridResizeObserver = null;
+  observedItemGridViewport = null;
+  if (residentAtlasWarmupTimer !== null) {
+    clearTimeout(residentAtlasWarmupTimer);
+    residentAtlasWarmupTimer = null;
+  }
   if (transitionOverlayTimer !== null) {
     clearTimeout(transitionOverlayTimer);
     transitionOverlayTimer = null;
@@ -176,17 +185,24 @@ watch(currentView, async (view) => {
   if (view === "items") {
     await nextTick();
     updateHistoryPanelWidth();
-    if (itemGridViewportRef.value) {
-      itemGridResizeObserver?.disconnect();
-      itemGridResizeObserver?.observe(itemGridViewportRef.value);
-      syncMeasuredPageSize();
-    }
+    observeItemGridViewport();
   }
 });
 
+const observeItemGridViewport = () => {
+  const viewport = itemGridViewportRef.value;
+  if (!viewport || !itemGridResizeObserver) return;
+  if (observedItemGridViewport !== viewport) {
+    itemGridResizeObserver.disconnect();
+    itemGridResizeObserver.observe(viewport);
+    observedItemGridViewport = viewport;
+  }
+  syncMeasuredPageSize();
+};
+
 watch(
   () => [
-    items.value.map((item) => item.itemId).join("|"),
+    browserPageRevision.value,
     currentPage.value,
     pageSize.value,
   ].join("::"),
@@ -196,11 +212,7 @@ watch(
     }
 
     await nextTick();
-    if (itemGridViewportRef.value) {
-      itemGridResizeObserver?.disconnect();
-      itemGridResizeObserver?.observe(itemGridViewportRef.value);
-      syncMeasuredPageSize();
-    }
+    observeItemGridViewport();
   },
 );
 

@@ -79,6 +79,9 @@ export function useItemBrowser(
   const pageSize = ref(50);
   const totalItems = ref(0);
   const totalPages = ref(0);
+  // Consumers only need to know that the visible page was replaced. A
+  // monotonic revision avoids walking every item ID to build a watch key.
+  const browserPageRevision = ref(0);
 
   let loadItemsRequestId = 0;
   let resizeTimeout: ReturnType<typeof setTimeout> | undefined;
@@ -304,6 +307,7 @@ export function useItemBrowser(
 
     browserEntries.value = response.data;
     items.value = response.items;
+    browserPageRevision.value += 1;
     totalItems.value = response.total;
     totalPages.value = response.totalPages;
     currentPage.value = response.page;
@@ -965,6 +969,7 @@ export function useItemBrowser(
     pageSize,
     totalItems,
     totalPages,
+    browserPageRevision,
     setExpandedGroups,
     setExpandedGroupFacetFilter,
     clearExpandedGroupFacetFilters,
