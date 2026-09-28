@@ -97,6 +97,8 @@ export function useRecipePresentation(source: RecipePresentationSource) {
 
   const refreshRecipeUiBinding = async () => {
     const recipeId = source.recipe.recipeId?.trim() ?? '';
+    // Catalog recipes carry their captured views and do not use the retired UI pack.
+    if (/^recipe_[a-f0-9]{64}$/.test(recipeId)) { recipeUiBinding.value = null; recipeUiBindingError.value = null; return; }
     if (!recipeId) {
       recipeUiBinding.value = null;
       recipeUiBindingError.value = 'Recipe presentation requires a recipeId before resolving UiPackBinding v2';

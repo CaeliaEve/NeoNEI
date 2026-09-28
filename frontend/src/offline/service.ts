@@ -1,11 +1,29 @@
 /// <reference lib="webworker" />
-export {};
+import { Shelf } from './store';
+import { checkManifest, hash } from '@neonei/catalog/source';
 declare const __SHELL__: { build: string; files: Array<{ url: string; integrity: string }> };
 const scope = self as unknown as ServiceWorkerGlobalScope;
 const prefix = 'neonei.shell.';
 const cacheName = prefix + __SHELL__.build;
 const paths = new Set(__SHELL__.files.map(file => file.url));
 let saving: Promise<void> | null = null;
+let shelf: Promise<Shelf> | null = null;
+
+async function image(request: Request, catalog: string, path: string): Promise<Response> {
+  shelf ??= Shelf.open().catch(error => { shelf = null; throw error; });
+  const store = await shelf;
+  if ((await store.saved(catalog))?.state !== 'ready') return fetch(request);
+  const manifest = await checkManifest(await store.manifest(catalog), catalog);
+  const file = manifest.files.find(file => file.path === path && file.kind === 'image');
+  if (!file) return new Response('Texture is not declared', { status: 404 });
+  const bytes = await store.file(catalog, path);
+  if (!bytes || bytes.byteLength !== file.bytes || await hash(bytes) !== file.sha256) {
+    return new Response('Saved texture failed verification; repair the offline copy', { status: 503 });
+  }
+  return new Response(new Blob([new Uint8Array(bytes)], { type: 'image/webp' }), {
+    headers: { 'Cache-Control': 'no-store', 'Content-Type': 'image/webp' },
+  });
+}
 
 async function valid(cache: Cache, file: { url: string; integrity: string }): Promise<boolean> {
   const response = await cache.match(file.url);
@@ -83,11 +101,17 @@ scope.addEventListener('message', event => {
       () => event.ports[0]?.postMessage({ build: __SHELL__.build, ready: false })));
   }
   if (event.data?.kind === 'shell-activate' && event.data.build === __SHELL__.build) event.waitUntil(scope.skipWaiting());
+  if (event.data?.kind === 'shell-prune') event.waitUntil(prune());
 });
 
 scope.addEventListener('fetch', event => {
   const request = event.request, url = new URL(request.url);
   if (request.method !== 'GET' || url.origin !== scope.location.origin) return;
+  const texture = /^\/assets\/([a-f0-9]{64})\/(textures\/[a-f0-9]{64}\.webp)$/.exec(url.pathname);
+  if (texture) {
+    event.respondWith(image(request, texture[1]!, texture[2]!));
+    return;
+  }
   if (url.pathname === '/api' || url.pathname.startsWith('/api/') || url.pathname.startsWith('/assets/')) return;
   if (request.mode === 'navigate') {
     event.respondWith(fetch(request).catch(async () => {

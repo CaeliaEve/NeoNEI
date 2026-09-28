@@ -34,7 +34,7 @@ function remember<T>(map: Map<string, T>, key: string, value: T): T {
   return value;
 }
 
-async function session(): Promise<Catalog> {
+export async function session(): Promise<Catalog> {
   const id = currentId();
   const offline = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('offline') === '1';
   const key = `${id || 'current'}:${offline ? 'offline' : 'online'}`;
@@ -151,7 +151,7 @@ async function browse(params: { page?: number; pageSize?: number; search?: strin
   try { const value = await request; remember(browseCache, key, value); return value; } finally { browseInFlight.delete(key); }
 }
 
-async function recipePage(catalog: Catalog, itemId: string, direction: 'recipes' | 'uses', category = '', offset = 0, limit = 128): Promise<{ recipes: indexedRecipe[]; total: number }> {
+async function recipePage(catalog: Catalog, itemId: string, direction: 'recipes' | 'uses', category = '', offset = 0, limit = 100): Promise<{ recipes: indexedRecipe[]; total: number }> {
   const result = await catalog.recipes({ item: itemId, direction, category, query: '', offset, limit });
   return { recipes: result.rows.map(recipe => toIndexed(catalog, recipe, result.related)), total: result.total };
 }
@@ -191,25 +191,17 @@ export const elysiumFacade = {
     return { item, recipeIndex: { usedInRecipes: usedIn.recipes.map(recipe => recipe.id), producedByRecipes: producedBy.recipes.map(recipe => recipe.id) }, indexedCrafting: producedBy.recipes, indexedUsage: usedIn.recipes, indexedSummary: null };
   },
   async getRecipeBootstrapShard(itemId: string) { return this.getRecipeBootstrap(itemId); },
-  async getRecipeBootstrapProducedByGroup(itemId: string, machineType: string, _voltageTier?: string | null, options?: { offset?: number; limit?: number }) : Promise<RecipeBootstrapMachineGroupPayload> { const result = await recipePage(await session(), itemId, 'recipes', machineType, options?.offset || 0, options?.limit || 128); return { itemId, machineType, voltageTier: null, recipeCount: result.total, recipes: result.recipes, offset: options?.offset || 0, limit: options?.limit || 128, hasMore: (options?.offset || 0) + result.recipes.length < result.total }; },
-  async getRecipeBootstrapUsedInGroup(itemId: string, machineType: string, _voltageTier?: string | null, options?: { offset?: number; limit?: number }): Promise<RecipeBootstrapMachineGroupPayload> { const result = await recipePage(await session(), itemId, 'uses', machineType, options?.offset || 0, options?.limit || 128); return { itemId, machineType, voltageTier: null, recipeCount: result.total, recipes: result.recipes, offset: options?.offset || 0, limit: options?.limit || 128, hasMore: (options?.offset || 0) + result.recipes.length < result.total }; },
-  async getRecipeBootstrapCategoryGroup(itemId: string, tab: 'usedIn' | 'producedBy', categoryKey: string, options?: { offset?: number; limit?: number }): Promise<RecipeBootstrapCategoryGroupPayload> { const direction = tab === 'usedIn' ? 'uses' : 'recipes'; const result = await recipePage(await session(), itemId, direction, categoryKey, options?.offset || 0, options?.limit || 128); return { itemId, categoryKey, tab, recipeCount: result.total, recipes: result.recipes, offset: options?.offset || 0, limit: options?.limit || 128, hasMore: (options?.offset || 0) + result.recipes.length < result.total }; },
-  async getRecipeBootstrapSearch(itemId: string, tab: 'usedIn' | 'producedBy', query: string, options?: { signal?: AbortSignal; }): Promise<{ itemId: string; tab: 'usedIn' | 'producedBy'; query: string; recipeIds: string[]; itemMatches: ItemSearchBasic[] }> { const result = await recipePage(await session(), itemId, tab === 'usedIn' ? 'uses' : 'recipes', '', 0, 128); const needle = query.toLocaleLowerCase(); return { itemId, tab, query, recipeIds: result.recipes.filter(recipe => recipe.id.toLocaleLowerCase().includes(needle)).map(recipe => recipe.id), itemMatches: [] }; },
-  async getIndexedRecipesByIds(ids: string[], options?: { signal?: AbortSignal }): Promise<indexedRecipe[]> { const catalog = await session(); const result: indexedRecipe[] = []; for (const id of Array.from(new Set(ids))) { if (options?.signal?.aborted) throw new DOMException('Aborted', 'AbortError'); const recipe = await catalog.record('recipes', id, options?.signal); const related = await catalog.recipes({ item: recipe.outputs[0]?.id || recipe.inputs[0]?.choices[0]?.id || '', direction: 'recipes', category: recipe.category, query: recipe.id, offset: 0, limit: 1 }, options?.signal).catch(() => null); if (related?.rows[0]) result.push(toIndexed(catalog, related.rows[0], related.related)); else result.push(toIndexed(catalog, recipe, { items: [], fluids: [], categories: [], views: [], strings: [], textures: [], topics: [], tracks: [] })); } return result; },
+  async getRecipeBootstrapProducedByGroup(itemId: string, machineType: string, _voltageTier?: string | null, options?: { offset?: number; limit?: number }) : Promise<RecipeBootstrapMachineGroupPayload> { const result = await recipePage(await session(), itemId, 'recipes', machineType, options?.offset || 0, options?.limit || 100); return { itemId, machineType, voltageTier: null, recipeCount: result.total, recipes: result.recipes, offset: options?.offset || 0, limit: options?.limit || 100, hasMore: (options?.offset || 0) + result.recipes.length < result.total }; },
+  async getRecipeBootstrapUsedInGroup(itemId: string, machineType: string, _voltageTier?: string | null, options?: { offset?: number; limit?: number }): Promise<RecipeBootstrapMachineGroupPayload> { const result = await recipePage(await session(), itemId, 'uses', machineType, options?.offset || 0, options?.limit || 100); return { itemId, machineType, voltageTier: null, recipeCount: result.total, recipes: result.recipes, offset: options?.offset || 0, limit: options?.limit || 100, hasMore: (options?.offset || 0) + result.recipes.length < result.total }; },
+  async getRecipeBootstrapCategoryGroup(itemId: string, tab: 'usedIn' | 'producedBy', categoryKey: string, options?: { offset?: number; limit?: number }): Promise<RecipeBootstrapCategoryGroupPayload> { const direction = tab === 'usedIn' ? 'uses' : 'recipes'; const result = await recipePage(await session(), itemId, direction, categoryKey, options?.offset || 0, options?.limit || 100); return { itemId, categoryKey, tab, recipeCount: result.total, recipes: result.recipes, offset: options?.offset || 0, limit: options?.limit || 100, hasMore: (options?.offset || 0) + result.recipes.length < result.total }; },
+  async getRecipeBootstrapSearch(itemId: string, tab: 'usedIn' | 'producedBy', query: string, options?: { signal?: AbortSignal; }): Promise<{ itemId: string; tab: 'usedIn' | 'producedBy'; query: string; recipeIds: string[]; itemMatches: ItemSearchBasic[] }> { const result = await recipePage(await session(), itemId, tab === 'usedIn' ? 'uses' : 'recipes', '', 0, 100); const needle = query.toLocaleLowerCase(); return { itemId, tab, query, recipeIds: result.recipes.filter(recipe => recipe.id.toLocaleLowerCase().includes(needle)).map(recipe => recipe.id), itemMatches: [] }; },
+  async getIndexedRecipesByIds(ids: string[], options?: { signal?: AbortSignal }): Promise<indexedRecipe[]> {
+    const catalog = await session();
+    const result: indexedRecipe[] = [];
+    for (const id of new Set(ids)) {
+      const detail = await catalog.recipe(id, options?.signal);
+      result.push(toIndexed(catalog, detail.recipe, detail.related));
+    }
+    return result;
+  },
 };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

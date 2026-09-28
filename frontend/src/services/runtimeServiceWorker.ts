@@ -11,96 +11,31 @@ export type RuntimeServiceWorkerStatus = {
   error?: string;
 };
 
-const SW_URL = "/neonei-sw.js";
-const SW_SCOPE = "/";
-const MESSAGE_TIMEOUT_MS = 2000;
-
-function shouldRegisterRuntimeServiceWorker(): boolean {
-  if (typeof window === "undefined") return false;
-  if (!("serviceWorker" in navigator)) return false;
-  if (import.meta.env.PROD) return true;
-  try {
-    return window.localStorage.getItem("neonei:enable-runtime-sw") === "1";
-  } catch {
-    return false;
-  }
-}
-
-function postServiceWorkerMessage<T>(type: string): Promise<T | null> {
-  if (typeof navigator === "undefined" || !navigator.serviceWorker?.controller) {
-    return Promise.resolve(null);
-  }
-  return new Promise<T | null>((resolve) => {
-    let settled = false;
-    const timeout = window.setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      navigator.serviceWorker.removeEventListener("message", onMessage);
-      resolve(null);
-    }, MESSAGE_TIMEOUT_MS);
-
-    const onMessage = (event: MessageEvent) => {
-      const expectedType = `${type}_RESULT`;
-      if (event.data?.type !== expectedType) return;
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timeout);
-      navigator.serviceWorker.removeEventListener("message", onMessage);
-      resolve((event.data?.payload ?? null) as T | null);
-    };
-
-    navigator.serviceWorker.addEventListener("message", onMessage);
-    navigator.serviceWorker.controller.postMessage({ type });
-  });
-}
+import { start } from '../offline/shell';
 
 export async function registerRuntimeServiceWorker(): Promise<RuntimeServiceWorkerStatus> {
-  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
-    return { supported: false, registered: false, controllerReady: false };
-  }
-  if (!shouldRegisterRuntimeServiceWorker()) {
-    return {
-      supported: true,
-      registered: false,
-      controllerReady: Boolean(navigator.serviceWorker.controller),
-    };
-  }
-
-  try {
-    await navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE });
-    await navigator.serviceWorker.ready;
-    return {
-      supported: true,
-      registered: true,
-      controllerReady: Boolean(navigator.serviceWorker.controller),
-    };
-  } catch (error) {
-    return {
-      supported: true,
-      registered: false,
-      controllerReady: Boolean(navigator.serviceWorker.controller),
-      error: error instanceof Error ? error.message : String(error),
-    };
-  }
+  start();
+  return getRuntimeServiceWorkerStatus();
 }
 
 export async function getRuntimeServiceWorkerStatus(): Promise<RuntimeServiceWorkerStatus> {
-  if (typeof navigator === "undefined" || !("serviceWorker" in navigator)) {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) {
     return { supported: false, registered: false, controllerReady: false };
   }
-  const registrations = await navigator.serviceWorker.getRegistrations().catch(() => []);
-  const payload = await postServiceWorkerMessage<Omit<RuntimeServiceWorkerStatus, "supported" | "registered" | "controllerReady">>(
-    "NEONEI_RUNTIME_CACHE_STATUS",
-  );
-  return {
-    supported: true,
-    registered: registrations.some((registration) => registration.active?.scriptURL.endsWith(SW_URL)),
-    controllerReady: Boolean(navigator.serviceWorker.controller),
-    ...(payload ?? {}),
-  };
+  const registration = await navigator.serviceWorker.getRegistration('/');
+  const worker = registration?.active;
+  const registered = Boolean(worker && new URL(worker.scriptURL).pathname === '/sw.js');
+  const cacheName = 'neonei.shell.' + __APP_BUILD__;
+  const keys = await caches.keys();
+  const entries = keys.includes(cacheName) ? await (await caches.open(cacheName)).keys() : [];
+  return { supported: true, registered, controllerReady: registered && navigator.serviceWorker.controller === worker,
+    cacheName, runtimeId: __APP_BUILD__, manifestHash: __APP_BUILD__, entryCount: entries.length };
 }
 
 export async function clearRuntimeServiceWorkerCache(): Promise<RuntimeServiceWorkerStatus> {
-  await postServiceWorkerMessage("NEONEI_RUNTIME_CACHE_CLEAR");
+  // Prune only unused shell versions. Explicitly downloaded catalogs and the
+  // shell needed by this or another open tab remain available offline.
+  const registration = await navigator.serviceWorker?.getRegistration('/');
+  registration?.active?.postMessage({ kind: 'shell-prune' });
   return getRuntimeServiceWorkerStatus();
 }

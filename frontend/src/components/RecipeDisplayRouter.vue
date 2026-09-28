@@ -5,6 +5,7 @@ import {
   watch,
 } from 'vue';
 import NEIRecipeDisplay from './NEIRecipeDisplay.vue';
+import CatalogRecipe from './CatalogRecipe.vue';
 import { type Recipe } from '../services/api';
 import type { RecipeDisplayHandle, RecipeOverlayUiState } from '../domain/recipeDisplayContract';
 import { useRecipeDebugPanel } from '../composables/recipe-display/useRecipeDebugPanel';
@@ -210,8 +211,9 @@ if (isDev && typeof window !== 'undefined') {
       class="recipe-display-content"
       :style="{ transform: shouldUseRouterScale ? `scale(${scaleValue})` : 'none' }"
     >
+      <CatalogRecipe v-if="/^recipe_[a-f0-9]{64}$/.test(recipe.recipeId)" :id="recipe.recipeId" @select="handleItemClick" />
       <NEIRecipeDisplay
-        v-if="shouldUseDetailedCrafting"
+        v-else-if="shouldUseDetailedCrafting"
         ref="detailedCraftingRef"
         :recipe="recipe"
         :recipe-id="recipe.recipeId"

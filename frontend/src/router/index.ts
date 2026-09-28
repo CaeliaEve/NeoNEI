@@ -2,6 +2,21 @@ import { createRouter, createWebHistory } from 'vue-router';
 import type { RouteRecordRaw } from 'vue-router';
 
 const routes: RouteRecordRaw[] = [
+  { path: '/offline', name: 'offline', component: () => import('../views/OfflinePage.vue') },
+  { path: '/materials', name: 'materials', component: () => import('../views/IndustryPage.vue') },
+  { path: '/material/:id', name: 'material', component: () => import('../views/IndustryPage.vue') },
+  { path: '/circuits', name: 'circuits', component: () => import('../views/IndustryPage.vue') },
+  { path: '/circuit/:id', name: 'circuit', component: () => import('../views/IndustryPage.vue') },
+  { path: '/bees', name: 'bees', component: () => import('../views/GeneticsPage.vue') },
+  { path: '/bee/:id', name: 'bee', component: () => import('../views/GeneticsPage.vue') },
+  { path: '/trees', name: 'trees', component: () => import('../views/GeneticsPage.vue') },
+  { path: '/tree/:id', name: 'tree', component: () => import('../views/GeneticsPage.vue') },
+  { path: '/structures', name: 'structures', component: () => import('../views/StructurePage.vue') },
+  { path: '/structure/:id', name: 'structure', component: () => import('../views/StructurePage.vue') },
+  { path: '/aspects', name: 'aspects', component: () => import('../views/MagicPage.vue') },
+  { path: '/aspect/:id', name: 'aspect', component: () => import('../views/MagicPage.vue') },
+  { path: '/research', name: 'studies', component: () => import('../views/MagicPage.vue') },
+  { path: '/research/:id', name: 'research', component: () => import('../views/MagicPage.vue') },
   {
     path: '/',
     name: 'home',

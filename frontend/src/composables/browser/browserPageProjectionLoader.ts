@@ -202,36 +202,15 @@ export function createBrowserPageProjectionLoader(options: {
       return null;
     }
 
-    const normalizedSearch = `${params.search ?? ''}`.trim();
-    if (normalizedSearch && !options.isSearchLocalProjectionEligible({ search: normalizedSearch })) {
-      return null;
-    }
-
-    const catalog = normalizedSearch
-      ? await api.getBrowserSearchCatalog({
-        search: normalizedSearch,
-        modId: params.modId,
-        includeHidden: params.includeHidden,
-      })
-      : await api.getBrowserDefaultCatalog({
-        modId: params.modId,
-        includeHidden: params.includeHidden,
-      });
-    const catalogEntries = catalog.data as BrowserDefaultCatalogEntry[];
-    if (catalogEntries.length <= 0) {
-      return null;
-    }
-
-    const page = buildProjectedBrowserPage(catalogEntries, params, new Map<string, Item[]>());
-    return {
-      cacheKey: buildBrowserPageCacheKey({
-        ...params,
-        page: page.page,
-      }),
-      page,
+    // Catalog queries own paging and search, including an empty result. They
+    // work identically online and in the local worker, without a preload limit.
+    const response = await api.getBrowserItems(params);
+    const page: CachedBrowserPage = {
+      data: response.data, items: collectDisplayItems(response.data),
+      total: response.total, totalPages: response.totalPages, page: response.page,
     };
+    return { cacheKey: buildBrowserPageCacheKey({ ...params, page: page.page }), page };
   };
-
   const tryLoadExpandedProjection = async (
     params: BrowserPageRequestParams,
   ): Promise<{ cacheKey: string; page: CachedBrowserPage } | null> => {

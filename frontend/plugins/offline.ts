@@ -1,8 +1,8 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { loadEnv, type Plugin, type ResolvedConfig } from 'vite';
-import { ModuleKind, ScriptTarget, transpileModule } from 'typescript';
+import { build as bundle } from 'esbuild';
 
 function files(directory: string): string[] {
   return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
@@ -13,6 +13,7 @@ function files(directory: string): string[] {
 }
 
 export function offline(root: string): Plugin {
+  const publicAssets = ['fonts', 'sounds', 'textures', 'native', 'placeholder.png', 'placeholder-fluid.png'];
   let config: ResolvedConfig;
   let build = '';
   return {
@@ -22,7 +23,11 @@ export function offline(root: string): Plugin {
       if (input.base && input.base !== '/') throw new Error('NeoNEI currently serves its application and API from the origin root');
       const project = path.resolve(root, '..');
       const source = [
-        ...files(path.join(root, 'src')), ...files(path.join(root, 'plugins')), ...files(path.join(root, 'public/fonts')),
+        ...files(path.join(root, 'src')), ...files(path.join(root, 'plugins')),
+        ...publicAssets.flatMap(name => {
+          const entry = path.join(root, 'public', name);
+          return name.includes('.') ? [entry] : files(entry);
+        }),
         ...files(path.join(project, 'catalog/src')),
         ...['package.json', 'package-lock.json', 'catalog/package.json'].map(file => path.join(project, file)),
         ...['index.html', 'vite.config.ts', 'package.json'].map(file => path.join(root, file)),
@@ -38,8 +43,13 @@ export function offline(root: string): Plugin {
       return { define: { __APP_BUILD__: JSON.stringify(build) } };
     },
     configResolved(value) { config = value; },
-    closeBundle() {
+    async closeBundle() {
       const output = path.resolve(config.root, config.build.outDir);
+      // Ship the UI's static assets, never development pages or the retired worker.
+      for (const name of publicAssets) {
+        const source = path.join(root, 'public', name);
+        if (existsSync(source)) cpSync(source, path.join(output, name), { recursive: true });
+      }
       const assets = files(output).filter(file => !file.endsWith('.map') && path.basename(file) !== 'sw.js');
       const bytes = assets.reduce((total, file) => total + readFileSync(file).byteLength, 0);
       if (assets.length > 512 || bytes > 32 * 1024 * 1024) throw new Error('Offline application shell exceeds its budget');
@@ -47,9 +57,10 @@ export function offline(root: string): Plugin {
         url: '/' + path.relative(output, file).split(path.sep).map(encodeURIComponent).join('/'),
         integrity: 'sha256-' + createHash('sha256').update(readFileSync(file)).digest('base64'),
       })) };
-      const source = readFileSync(path.join(root, 'src/offline/service.ts'), 'utf8');
-      const script = transpileModule(source, { compilerOptions: { target: ScriptTarget.ES2022, module: ModuleKind.ES2022 } }).outputText;
-      writeFileSync(path.join(output, 'sw.js'), 'const __SHELL__ = ' + JSON.stringify(manifest) + ';\n' + script);
+      const result = await bundle({ entryPoints: [path.join(root, 'src/offline/service.ts')], bundle: true,
+        write: false, format: 'esm', platform: 'browser', target: 'es2022', minify: true,
+        define: { __SHELL__: JSON.stringify(manifest) } });
+      writeFileSync(path.join(output, 'sw.js'), result.outputFiles[0]!.contents);
     },
   };
 }

@@ -165,7 +165,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
               </div>
 
               <div v-else class="relative h-full w-full">
-                <NativeBrowserSurface
+                <NativeBrowserSurface catalog
                   surface-id="browser"
                   viewport-role="browser"
                   :item-size="itemSize"

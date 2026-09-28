@@ -123,7 +123,8 @@ try {
   assert.ok(asset, 'Fixture has no texture page');
   const pixels = Buffer.from(await (await get(`/assets/${manifest.id}/${asset.path}`)).arrayBuffer());
   assert.equal(createHash('sha256').update(pixels).digest('hex'), asset.sha256);
-  assert.equal((await fetch(base + '/recipe-by-id/removed')).status, 404);
+  assert.ok((await (await get('/recipe-by-id/' + recipes.rows[0].id)).text()).includes(script), 'Recipe deep link must serve the same application');
+  assert.equal((await fetch(base + '/api/catalog/' + manifest.id + '/recipes/removed')).status, 404);
   console.log(JSON.stringify({ path: directory, catalog: manifest.id, files: files.length, status: 'verified' }));
 } finally {
   server.closeAllConnections();

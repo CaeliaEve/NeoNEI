@@ -45,7 +45,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
       v-if="viewHistoryCount > 0"
       class="h-full w-full overflow-hidden"
     >
-      <NativeBrowserSurface
+      <NativeBrowserSurface catalog
         surface-id="history"
         viewport-role="history"
         :item-size="historyItemPixelSize"

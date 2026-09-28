@@ -20,12 +20,14 @@ import { createNativeRenderWorkerClient } from "../../native-surface/NativeRende
 import { createNativeRenderPipelineClient } from "../../native-surface/NativeRenderPipelineClient";
 import { requireNativeFrameTextureDescriptors } from "../../native-surface/NativeFrameTextureResolution";
 import { getItemImageUrlFromEntity } from "../../services/api/images";
+import CatalogIcon from '../CatalogIcon.vue';
 import {
   getAllGlobalBrowserAtlasTextureDescriptors,
   getGlobalBrowserAtlasTextureDescriptorsForKeys,
 } from "../../services/globalBrowserAtlas";
 
 const props = withDefaults(defineProps<{
+  catalog?: boolean;
   surfaceId: NativeSurfaceId;
   viewportRole?: NativeSurfaceViewportRole;
   itemSize: number;
@@ -390,6 +392,7 @@ function scheduleNativeHitTest(pointer: NativeSurfacePointer) {
 }
 
 function handlePointerMove(event: MouseEvent) {
+  if (props.catalog) return;
   if (nativeSurfaceEngineFaulted) return;
   const pointer = toLocalPointer(event);
   controller.setHover(pointer);
@@ -405,6 +408,7 @@ function handlePointerLeave() {
 }
 
 async function handleNativeClick(event: MouseEvent) {
+  if (props.catalog) return;
   if (!nativeRenderVisible.value || nativeSurfaceEngineFaulted) return;
   try {
     const hit = await controller.hitTest(toLocalPointer(event));
@@ -420,6 +424,7 @@ async function handleNativeClick(event: MouseEvent) {
 }
 
 async function handleNativeContextMenu(event: MouseEvent) {
+  if (props.catalog) return;
   if (!nativeRenderVisible.value || nativeSurfaceEngineFaulted) return;
   try {
     const hit = await controller.hitTest(toLocalPointer(event));
@@ -485,6 +490,7 @@ async function syncNativeFrame() {
 }
 
 function requestNativeFrame() {
+  if (props.catalog) return;
   clearNativeAnimationTimer();
   if (!nativeRenderInitialized || nativeRenderFaulted || nativeSurfaceEngineFaulted || nativeFrameScheduled) return;
   nativeFrameScheduled = true;
@@ -574,6 +580,12 @@ async function syncNativeTexturesForFrame(
 }
 
 onMounted(async () => {
+  if (props.catalog) {
+    emitViewportResize();
+    resizeObserver = new ResizeObserver(() => emitViewportResize());
+    if (hostRef.value) resizeObserver.observe(hostRef.value);
+    return;
+  }
   exposeNativeSurfaceMetricsForDebug();
   try {
     await controller.initialize({
@@ -705,6 +717,7 @@ watch(
 watch(
   () => props.enableAnimation,
   (enabled) => {
+    if (props.catalog) return;
     if (nativeSurfaceEngineFaulted) return;
     void controller.initialize({
       surfaceId: props.surfaceId,
@@ -766,12 +779,13 @@ if (typeof document !== "undefined") {
         @click.stop="emit('itemClick', item)"
         @contextmenu.prevent.stop="emit('itemContextmenu', item, $event)"
       >
-        <img :src="getItemImageUrlFromEntity(item)" :alt="item.localizedName" loading="lazy" decoding="async" />
+        <CatalogIcon v-if="catalog" :id="item.itemId" :label="item.localizedName" :animate="enableAnimation" />
+        <img v-else :src="getItemImageUrlFromEntity(item)" :alt="item.localizedName" loading="lazy" decoding="async" />
         <span>{{ item.localizedName }}</span>
       </button>
     </div>
     <div
-      v-else-if="!nativeRenderVisible"
+      v-else-if="!nativeRenderVisible && !catalog"
       class="native-browser-surface__status"
       aria-live="polite"
     >

@@ -1,5 +1,7 @@
 import { defineConfig, loadEnv } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { fileURLToPath } from 'node:url'
+import { offline } from './plugins/offline'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -32,11 +34,13 @@ export default defineConfig(({ mode }) => {
   }
 
   return {
-    plugins: [vue(), forbidLegacyImports],
+    plugins: [vue(), forbidLegacyImports, offline(fileURLToPath(new URL('.', import.meta.url)))],
+    worker: { format: 'es' as const },
+    resolve: { dedupe: ['@elysium/contracts'] },
     define: {
       __BACKEND_BASE_URL__: JSON.stringify(backendBaseUrl),
       __API_BASE_URL__: JSON.stringify(apiBaseUrl),
-      __APP_BUILD__: JSON.stringify(process.env.npm_package_version || 'dev'),
+      ...(mode === 'development' ? { __APP_BUILD__: JSON.stringify('dev') } : {}),
       'import.meta.env.VITE_PUBLIC_RUNTIME_ONLY': JSON.stringify(publicRuntimeOnly),
       'import.meta.env.VITE_RUNTIME_DISABLE_CONTROL_PLANE': JSON.stringify(disableControlPlane),
       'import.meta.env.VITE_NEONEI_ADMIN_TOKEN': JSON.stringify(env.VITE_NEONEI_ADMIN_TOKEN || ''),
@@ -44,6 +48,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
+        '/assets': { target: devProxyTarget, changeOrigin: true },
         // In development, map /api/images/* to backend /images/*.
         '/api/images': {
           target: devProxyTarget,
@@ -81,6 +86,8 @@ export default defineConfig(({ mode }) => {
       },
     },
     build: {
+      copyPublicDir: false,
+      assetsDir: 'web',
       chunkSizeWarningLimit: 800,
       rollupOptions: {
         output: {

@@ -65,16 +65,19 @@
     "test:native-runtime-current-api": "node --test scripts/native-runtime-current-api-regression.test.mjs",
     "test:native-surface-no-blanking": "node --test scripts/native-surface-no-blanking-regression.test.mjs",
     "test:rust-texture-runtime": "node --test scripts/rust-texture-runtime-regression.test.mjs",
-    "test:browser-interaction-latency": "node --test scripts/browser-interaction-latency-regression.test.mjs"
+    "test:browser-interaction-latency": "node --test scripts/browser-interaction-latency-regression.test.mjs",
+    "check": "vue-tsc -b",
+    "test": "node --test test/catalog.test.mjs",
+    "e2e": "node ../scripts/browser.mjs pilot.spec.ts"
   },
   "dependencies": {
+    "@elysium/contracts": "file:../vendor/elysium-contracts-0.14.0.tgz",
+    "@neonei/catalog": "file:../catalog",
     "axios": "^1.18.1",
     "pinia": "^3.0.4",
     "three": "^0.179.1",
     "vue": "^3.5.24",
-    "vue-router": "^4.6.4",
-    "@elysium/contracts": "file:../vendor/elysium-contracts-0.14.0.tgz",
-    "@neonei/catalog": "file:../catalog"
+    "vue-router": "^4.6.4"
   },
   "devDependencies": {
     "@playwright/test": "^1.58.2",
@@ -83,6 +86,7 @@
     "@vitejs/plugin-vue": "^6.0.1",
     "@vue/tsconfig": "^0.8.1",
     "autoprefixer": "^10.4.23",
+    "esbuild": "0.27.2",
     "postcss": "^8.5.18",
     "tailwindcss": "^3.4.19",
     "typescript": "~5.9.3",

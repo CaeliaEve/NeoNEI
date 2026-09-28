@@ -445,25 +445,6 @@ export function useItemBrowser(
     const cacheKey = buildPageCacheKey(requestParams);
     const cached = pageCache.get(cacheKey);
     const hadVisibleEntries = browserEntries.value.length > 0 && items.value.length > 0;
-    const nativeProjectionOwnsCurrentView = hadVisibleEntries && (
-      Boolean(requestParams.search?.trim())
-      || requestParams.expandedGroups.length > 0
-      || Boolean(requestParams.modId)
-    );
-
-    if (!options?.forceDataProjection && nativeProjectionOwnsCurrentView) {
-      loading.value = false;
-      transitioning.value = false;
-      loadError.value = '';
-        markPerfEvent('browser-native-projection-owned', {
-        page: requestParams.page,
-        search: requestParams.search?.trim() || '',
-        modId: requestParams.modId ?? null,
-        expandedGroups: requestParams.expandedGroups.length,
-      });
-      return;
-    }
-
     if (cached) {
       if (hadVisibleEntries) {
         loading.value = false;

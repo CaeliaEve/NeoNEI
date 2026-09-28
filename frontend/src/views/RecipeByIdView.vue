@@ -3,7 +3,7 @@ import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import RecipeDisplayRouter from '../components/RecipeDisplayRouter.vue';
 import { convertIndexedRecipe } from '../domain/recipeNormalization';
-import { getDistDataRecipeById } from '../services/distDataRuntime';
+import { elysiumFacade } from '../services/api/elysiumFacade';
 import type { Recipe } from '../services/api';
 
 const route = useRoute();
@@ -14,7 +14,7 @@ onMounted(async () => {
   const rawRecipeId = route.params.recipeId;
   const recipeId = Array.isArray(rawRecipeId) ? rawRecipeId[0] : rawRecipeId;
   try {
-    const indexedRecipe = recipeId ? await getDistDataRecipeById(recipeId) : null;
+    const indexedRecipe = recipeId ? (await elysiumFacade.getIndexedRecipesByIds([recipeId]))[0] : null;
     recipe.value = indexedRecipe ? convertIndexedRecipe(indexedRecipe) : null;
     if (!recipe.value) error.value = `Recipe not found: ${recipeId ?? ''}`;
   } catch (cause) {
