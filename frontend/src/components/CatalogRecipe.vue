@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { shallowRef, watch } from 'vue';
-import { useRouter } from 'vue-router';
+import { useRoute, useRouter } from 'vue-router';
 import { Catalog, Records, type Detail } from '../catalog/client';
 import { session } from '../services/api/elysiumFacade';
 import Recipe from './Recipe.vue';
@@ -8,9 +8,10 @@ import Recipe from './Recipe.vue';
 const props = defineProps<{ id: string }>();
 const emit = defineEmits<{ select: [id: string, options: { tab: 'usedIn' | 'producedBy' }] }>();
 const router = useRouter();
+const route = useRoute();
 const current = shallowRef<{ catalog: Catalog; detail: Detail; records: Records } | null>(null);
 const error = shallowRef('');
-watch(() => props.id, async (id, _old, cleanup) => {
+watch(() => [props.id, route.query.catalog, route.query.offline] as const, async ([id], _old, cleanup) => {
   const controller = new AbortController();
   cleanup(() => controller.abort()); current.value = null; error.value = '';
   try {

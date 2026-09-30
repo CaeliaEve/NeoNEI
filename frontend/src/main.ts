@@ -7,6 +7,7 @@ import './styles/design-system.css'
 import './styles/ui-overrides.css'  // Minimal color overrides
 import './styles/animations.css'  // Rich animation system
 import './styles/enhanced-components.css'  // Enhanced component animations
+import './styles/catalog-domain.css'
 import App from './App.vue'
 import router from './router'
 import { registerRuntimeServiceWorker } from './services/runtimeServiceWorker'

@@ -120,7 +120,8 @@ function chosen(input: Input) {
               :playback="element.kind === 'clip' ? playback : undefined"
               :label="element.kind === 'clip' ? '配方进度动画' : '配方背景'" />
           </div>
-          <div v-else-if="element.kind === 'slot'" class="view-element" :style="position(element)">
+          <div v-else-if="element.kind === 'slot'" class="view-element" :style="position(element)"
+            :data-direction="element.direction" :data-substance="element.substance" :data-slot="element.slot">
             <Slot :stack="stack(element)" :records="records" :catalog="catalog" :size="element.width * scale" :height="element.height * scale"
               :amount-label="quantityLabel(stack(element))" :quantity-note="quantityNote(stack(element))"
               v-model:choice="choices[element.direction + element.substance + element.slot]" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />

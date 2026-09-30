@@ -243,14 +243,16 @@ const handleItemClick = (clickedItemId: string, options?: { tab?: 'usedIn' | 'pr
   router.push({
     name: 'recipe',
     params: { itemId: normalizedItemId },
-    query: options?.tab
-      ? {
-          tab: options.tab,
-          mode: options.tab === 'usedIn' ? 'u' : 'r',
-          machineName: options.tab === 'producedBy' ? '物品中的要素' : undefined,
-          page: '0',
-        }
-      : undefined,
+    query: {
+      catalog: route.query.catalog,
+      offline: route.query.offline,
+      ...(options?.tab ? {
+        tab: options.tab,
+        mode: options.tab === 'usedIn' ? 'u' : 'r',
+        machineName: options.tab === 'producedBy' ? '物品中的要素' : undefined,
+        page: '0',
+      } : {}),
+    },
   });
 };
 

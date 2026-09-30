@@ -1,34 +1,23 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { useRoute } from 'vue-router';
-import RecipeDisplayRouter from '../components/RecipeDisplayRouter.vue';
-import { convertIndexedRecipe } from '../domain/recipeNormalization';
-import { elysiumFacade } from '../services/api/elysiumFacade';
-import type { Recipe } from '../services/api';
+import { computed } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import CatalogRecipe from '../components/CatalogRecipe.vue';
 
 const route = useRoute();
-const recipe = ref<Recipe | null>(null);
-const error = ref('');
-
-onMounted(async () => {
-  const rawRecipeId = route.params.recipeId;
-  const recipeId = Array.isArray(rawRecipeId) ? rawRecipeId[0] : rawRecipeId;
-  try {
-    const indexedRecipe = recipeId ? (await elysiumFacade.getIndexedRecipesByIds([recipeId]))[0] : null;
-    recipe.value = indexedRecipe ? convertIndexedRecipe(indexedRecipe) : null;
-    if (!recipe.value) error.value = `Recipe not found: ${recipeId ?? ''}`;
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause);
-  }
-});
+const router = useRouter();
+const recipeId = computed(() => String(route.params.recipeId ?? ''));
+const snapshot = computed(() => ({ catalog: route.query.catalog, offline: route.query.offline }));
+function select(itemId: string, options: { tab: 'usedIn' | 'producedBy' }): void {
+  void router.push({ name: 'recipe', params: { itemId }, query: {
+    ...snapshot.value, tab: options.tab, mode: options.tab === 'usedIn' ? 'u' : 'r', page: '0',
+  } });
+}
 </script>
 
 <template>
   <main class="recipe-by-id-page">
-    <RouterLink class="recipe-by-id-back" to="/">返回首页</RouterLink>
-    <p v-if="error" role="alert">{{ error }}</p>
-    <p v-else-if="!recipe">正在读取配方…</p>
-    <RecipeDisplayRouter v-else :recipe="recipe" scale-to-fit />
+    <RouterLink class="recipe-by-id-back" :to="{ name: 'home', query: snapshot }">返回首页</RouterLink>
+    <CatalogRecipe :id="recipeId" @select="select" />
   </main>
 </template>
 
@@ -46,4 +35,5 @@ onMounted(async () => {
   margin-bottom: 20px;
   color: #8fd8ff;
 }
+.recipe-by-id-page :deep(.catalog-recipe) { width: max-content; max-width: 100%; margin: auto; }
 </style>

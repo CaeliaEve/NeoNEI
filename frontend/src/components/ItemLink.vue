@@ -17,7 +17,7 @@ const title = computed(() => [plain(name.value), quantity.value ? quantity.value
 </script>
 
 <template>
-  <button type="button" class="item-link" :class="{ compact }" :title="title" :aria-label="title"
+  <button type="button" class="item-link" :class="{ compact }" :title="title" :aria-label="title" :data-item="target.id"
     @click="emit('select', target.id, 'recipes')" @contextmenu.prevent="emit('select', target.id, 'uses')"
     @keydown.r.prevent="emit('select', target.id, 'recipes')" @keydown.u.prevent="emit('select', target.id, 'uses')">
     <Icon :atlas="catalog.atlas" :texture="records.texture(target.kind, target.id)" :width="width" :height="height" :animate="animate" :label="plain(name)" />

@@ -68,7 +68,7 @@
     "test:browser-interaction-latency": "node --test scripts/browser-interaction-latency-regression.test.mjs",
     "check": "vue-tsc -b",
     "test": "node --test test/catalog.test.mjs",
-    "e2e": "node ../scripts/browser.mjs pilot.spec.ts"
+    "e2e": "node ../scripts/browser.mjs pilot.spec.ts catalog-navigation.spec.ts"
   },
   "dependencies": {
     "@elysium/contracts": "file:../vendor/elysium-contracts-0.14.0.tgz",
