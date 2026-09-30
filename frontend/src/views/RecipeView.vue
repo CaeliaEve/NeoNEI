@@ -291,7 +291,7 @@ const getVariantSelectionPreview = (group: (typeof displayVariantGroups.value)[n
   const selected = group.options[selectedIndex] || group.options[0];
   if (!selected) return copy.noVariantAvailable;
   const countText = selected.count > 1 ? ' x' + selected.count : '';
-  return selected.itemId + countText;
+  return (selected.localizedName || selected.itemId) + countText;
 };
 
 const getVariantLabelSuffix = (group: (typeof displayVariantGroups.value)[number]): string => {
@@ -716,7 +716,7 @@ onBeforeUnmount(() => {
                         :key="[group.slotKey, option.itemId, idx].join('-')"
                         :value="idx"
                       >
-                        {{ idx + 1 }}. {{ option.itemId }}
+                        {{ idx + 1 }}. {{ option.localizedName || option.itemId }}
                       </option>
                     </select>
                     <button

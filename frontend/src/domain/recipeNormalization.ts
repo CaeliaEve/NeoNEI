@@ -185,7 +185,7 @@ const normalizeRecipeInputs = (
   const appendVariantGroup = (row: number, col: number, cell: IndexedLikeCell | null | undefined) => {
     if (!cell || typeof cell !== 'object') return;
     const items = Array.isArray(cell.items)
-      ? (cell.items as Array<{ item?: { itemId?: unknown }; stackSize?: unknown }>)
+      ? (cell.items as Array<{ item?: { itemId?: unknown; localizedName?: string }; stackSize?: unknown }>)
       : [];
     if (items.length === 0) return;
 
@@ -193,9 +193,9 @@ const normalizeRecipeInputs = (
       .map((it) => {
         const itemId = it?.item?.itemId;
         if (typeof itemId !== 'string' || !itemId) return null;
-        return { itemId, count: Number(it.stackSize) || 1 };
+        return { itemId, count: Number(it.stackSize) || 1, localizedName: it.item?.localizedName };
       })
-      .filter((it): it is { itemId: string; count: number } => it !== null);
+      .filter((it): it is NonNullable<typeof it> => it !== null);
     if (options.length <= 1) return;
 
     const slotKey = `${row},${col}`;

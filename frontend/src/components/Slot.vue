@@ -67,3 +67,16 @@ function choose(index: number, id: string, direction: 'recipes' | 'uses'): void 
     </dialog>
   </div>
 </template>
+
+<style scoped>
+/* Retain the original catalog choice dialog without leaking into the homepage. */
+.choices-dialog { color: #e4eaf0; background: #111c2a; border: 1px solid #405164; border-radius: 12px; padding: 22px; width: min(480px, calc(100vw - 30px)); max-height: 85vh; overflow: auto; box-shadow: 0 24px 90px #0009; margin: auto; }
+.choices-dialog::backdrop { background: #03080bc9; }
+.choices-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 22px; }
+.choices-dialog > header h2 { font-size: 18px; }
+.choices-dialog > header button { padding: 2px 8px; font-size: 20px; background: transparent; border-color: transparent; color: inherit; }
+.choices-dialog > p { color: #8b9aaf; font-size: 12px; margin-bottom: 15px; line-height: 1.8; }
+.choice-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 15px; }
+.choice-list :deep(.item-link) { background: #182637; border: 1px solid #253143; width: 100%; color: inherit; }
+.choice-note { display: block; padding: 4px 8px; color: #8b9aaf; overflow-wrap: anywhere; font-size: 11px; }
+</style>

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Recipe } from '../services/api';
 import AnimatedItemIcon from './AnimatedItemIcon.vue';
+import CatalogIcon from './CatalogIcon.vue';
 
 export interface MachineCategory {
   type: 'crafting' | 'machine';
@@ -239,8 +240,12 @@ onBeforeUnmount(() => {
           @keydown="handleOptionKeydown($event, index)"
         >
           <span class="machine-icon-container" aria-hidden="true">
+            <CatalogIcon
+              v-if="getMachineIconItemId(category.machineIcon)?.startsWith('item_')"
+              :id="getMachineIconItemId(category.machineIcon)!" :size="38" :label="category.name"
+            />
             <AnimatedItemIcon
-              v-if="getMachineIconItemId(category.machineIcon)"
+              v-else-if="getMachineIconItemId(category.machineIcon)"
               :item-id="getMachineIconItemId(category.machineIcon)!"
               :size="38"
               class="machine-icon"

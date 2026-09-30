@@ -87,7 +87,9 @@ function toLegacyItem(catalog: Catalog, entry: Entry, texture?: Texture, detail?
 }
 
 function toStack(catalog: Catalog, related: Related, id: string, amount: string, kind: 'item' | 'fluid', probability = 1): RecipeItem {
-  const row = kind === 'item' ? related.items.find(item => item.id === id) : related.fluids.find(fluid => fluid.id === id);
+  const source = kind === 'item' ? related.items.find(item => item.id === id) : related.fluids.find(fluid => fluid.id === id);
+  const text = (id: string) => plain(related.strings.find(s => s.id === id)?.text ?? id);
+  const row = source ? { ...source, name: text(source.name), ...('tooltip' in source ? { tooltip: source.tooltip.map(text) } : {}) } : undefined;
   const itemRow = kind === 'item' && row ? row as ElysiumItem : null;
   const fluidRow = kind === 'fluid' && row ? row as ElysiumFluid : null;
   const entry: Entry = itemRow
@@ -114,6 +116,10 @@ function toIndexed(catalog: Catalog, recipe: ElysiumRecipe, related: Related): i
   const cacheKey = `${catalog.manifest.id}:${recipe.id}`;
   const cached = recipeCache.get(cacheKey);
   if (cached) return cached;
+  const category = related.categories.find(row => row.id === recipe.category);
+  const name = plain(related.strings.find(row => row.id === category?.name)?.text ?? category?.name ?? recipe.source.handler);
+  const icon = category?.icon?.kind === 'item' ? category.icon : category?.machines.find(row => row.kind === 'item');
+  const machine = icon ? related.items.find(row => row.id === icon.id) : undefined;
   const inputs: indexedItemGroup[] = recipe.inputs.map(input => ({
     slotIndex: input.slot,
     isOreDictionary: input.choices.some(choice => choice.rule.kind === 'ore'),
@@ -121,11 +127,12 @@ function toIndexed(catalog: Catalog, recipe: ElysiumRecipe, related: Related): i
     items: input.choices.filter(choice => input.kind === 'item').map(choice => toIndexedStack(toStack(catalog, related, choice.id, choice.amount, input.kind))),
   }));
   const result: indexedRecipe = {
-    id: recipe.id, recipeType: recipe.source.handler || recipe.category,
+    id: recipe.id, recipeType: name,
     outputs: recipe.outputs.filter(output => output.kind === 'item').map(output => { const stack = toIndexedStack(toStack(catalog, related, output.id, output.amount || '1', output.kind, Number(output.chance.numerator) / Number(output.chance.denominator))); return output.quantity || output.change ? { ...stack, dynamic: { quantity: output.quantity ?? null, change: output.change ?? null } } : stack; }),
     inputs, fluidInputs: recipe.inputs.filter(input => input.kind === 'fluid').map(input => ({ slotIndex: input.slot, fluids: input.choices.map(choice => ({ fluid: { fluidId: choice.id, modId: namespace(choice.id), internalName: choice.id, localizedName: related.fluids.find(fluid => fluid.id === choice.id)?.name || choice.id, temperature: related.fluids.find(fluid => fluid.id === choice.id)?.temperature || 300 }, amount: Number(choice.amount) || 0, probability: 1 })) })),
     fluidOutputs: recipe.outputs.filter(output => output.kind === 'fluid').map(output => ({ fluid: { fluidId: output.id, modId: namespace(output.id), internalName: output.id, localizedName: related.fluids.find(fluid => fluid.id === output.id)?.name || output.id, temperature: related.fluids.find(fluid => fluid.id === output.id)?.temperature || 300 }, amount: Number(output.amount || 0), probability: Number(output.chance.numerator) / Number(output.chance.denominator) })),
-    machineInfo: { machineId: recipe.category, category: recipe.category, machineType: recipe.source.handler, iconInfo: recipe.category, shapeless: false, parsedVoltageTier: null, parsedVoltage: null },
+    machineInfo: { machineId: recipe.category, category: recipe.category, machineType: name, iconInfo: recipe.category, shapeless: false, parsedVoltageTier: null, parsedVoltage: null,
+      ...(machine ? { machineIcon: { itemId: machine.id, modId: namespace(machine.registry), internalName: machine.registry, localizedName: name, imageFileName: '' } } : {}) },
     metadata: { voltageTier: null, voltage: recipe.energy ? Number(recipe.energy) : null, amperage: null, duration: recipe.duration ? Number(recipe.duration) : null, totalEU: null, requiresCleanroom: null, requiresLowGravity: null, additionalInfo: null },
   };
   return remember(recipeCache, cacheKey, result);
@@ -175,7 +182,7 @@ export const elysiumFacade = {
   async getBrowserSearchPackShard(_shardId: string) { return null; },
   async getOptionalRecipeUiPayload(_recipeId: string) { return null; },
   async getRecipeUiPayload(recipeId: string) { return { recipeId, captureKey: recipeId }; },
-  async getCurrentRecipePage(recipePageId: string, options?: { signal?: AbortSignal }) { const catalog = await session(); const recipe = await catalog.record('recipes', recipePageId, options?.signal); const related = { items: [], fluids: [], categories: [], views: [], strings: [], textures: [], topics: [], tracks: [] } as Related; return { recipePageId, recipe: toIndexed(catalog, recipe, related), uiPayload: null }; },
+  async getCurrentRecipePage(recipePageId: string, options?: { signal?: AbortSignal }) { const catalog = await session(); const { recipe, related } = await catalog.recipe(recipePageId, options?.signal); return { recipePageId, recipe: toIndexed(catalog, recipe, related), uiPayload: null }; },
   async getBrowserPagePackByIds(params: { itemIds: string[]; slotSize?: number }) {
     const catalog = await session(); const rows = await Promise.all(params.itemIds.map(id => catalog.record('browse', id).catch(() => null)));
     return { data: rows.filter((row): row is Entry => Boolean(row)).map(row => ({ key: row.id, kind: 'item' as const, item: toLegacyItem(catalog, row) })) };

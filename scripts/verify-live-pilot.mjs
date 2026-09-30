@@ -99,6 +99,8 @@ try {
         await page.goto(url);
         const selector = `[data-recipe="${recipe.id}"] [data-direction="${element.direction}"][data-substance="item"][data-slot="${element.slot}"] > .stack-slot > [data-item="${item.id}"] canvas`;
         const canvas = page.locator(selector); await expect(canvas).toHaveCount(1); await expect(canvas).toBeVisible();
+        // Icon sets its backing dimensions after the asynchronous atlas lease resolves.
+        await expect.poll(() => canvas.evaluate(c => c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0))).toBe(true);
         const sourceBytes = await readFile(path.join(source, asset.path));
         assert.equal(hash(sourceBytes), sourceManifest.files.find(f => f.path === asset.path).sha256);
         for (const atlasPath of new Set(texture.frames.map(x=>x.path))) {
@@ -154,6 +156,8 @@ try {
       await page.goto(`${origin}/recipe-by-id/${choice.recipe.id}?catalog=${catalogId}`);
       const slot=page.locator(`[data-direction="input"][data-slot="${choice.element.slot}"][data-substance="item"]`);
       await slot.getByRole('button',{name:`查看 ${choice.stack.choices.length} 个候选输入`,exact:true}).click();
+      await expect(page.locator('.choices-dialog .choice-list')).toHaveCSS('display','grid');
+      await shot(page,'choices');
       const selected=choice.stack.choices[1].id;
       await page.locator(`.choices-dialog [data-item="${selected}"]`).click();
       await expect(slot.locator(`:scope > .stack-slot > [data-item="${selected}"]`)).toBeVisible();
@@ -162,6 +166,8 @@ try {
       await expect(page.locator('.recipe-by-id-page')).toHaveCount(0);
       await expect(page.locator('.recipe-view')).toBeVisible();
       await expect(page.locator('.recipe-view .loading-state')).toHaveCount(0);
+      await expect(page.locator('.variant-scaffold')).not.toContainText(/(?:item|string)_[a-f0-9]{64}/);
+      await expect.poll(() => page.locator('.machine-icon-container canvas').first().evaluate(c => c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0))).toBe(true);
       result.navigation={target:selected,url:page.url(),choices:choice.stack.choices.length}; await shot(page,'uses');
       for(const key of ['aer','alienis']) {
         const aspect=tables.aspects.find(x=>x.source.key===key); assert(aspect);
