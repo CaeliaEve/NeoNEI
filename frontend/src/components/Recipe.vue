@@ -211,7 +211,7 @@ function chosen(input: Input) {
         <p v-if="!required(records.items, output.change.action.base.id).nbt">继承发生且原始产物没有 NBT 时，还会沿用中心物品的 metadata 和数量。</p>
       </template>
       <template v-else-if="output.change?.action.kind === 'filter'">
-        <p>保留过滤纸产物自身数据，从第 {{ output.change.action.config + 1 }} 个输入读取过滤配置，再从第 {{ output.change.action.metadata + 1 }} 个输入读取过滤纸变体。</p>
+        <p>保留过滤纸产物自身数据，从第 {{ output.change.action.config + 1 }} 个输入读取过滤配置<template v-if="output.change.action.metadata != null">，再从第 {{ output.change.action.metadata + 1 }} 个输入读取过滤纸变体</template><template v-else>，保留产物原有变体</template>。</p>
         <details><summary>过滤纸变换规则</summary><pre>{{ JSON.stringify(output.change.action, null, 2) }}</pre></details>
       </template>
       <template v-else-if="output.change?.action.kind === 'append'">
