@@ -252,6 +252,10 @@ export class Query {
     for (const recipe of recipes) {
       categoryIds.add(recipe.category);
       if (recipe.view) views.add(recipe.view);
+      if (recipe.process?.kind === 'vat') {
+        for (const c of recipe.process.extra) substance('item', c.id);
+        if (recipe.process.zeroOutput) substance('fluid', recipe.process.zeroOutput);
+      }
       if (recipe.process?.kind === 'inscriber') {
         for (const id of [recipe.process.top, recipe.process.bottom, recipe.process.namePress]) if (id) substance('item', id);
       }

@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue';
 import type { Input, Output, Match } from '@elysium/contracts';
 import { Catalog, Records } from '../catalog/client.ts';
-import { chance } from '../catalog/format.ts';
+import { amount, chance } from '../catalog/format.ts';
 import ItemLink from './ItemLink.vue';
 import Pager from './Pager.vue';
 const props = withDefaults(defineProps<{ stack: Input | Output; catalog: Catalog; records: Records; size?: number; height?: number; animate?: boolean;
@@ -28,6 +28,7 @@ const note = computed(() => {
   return choiceNote(current());
 });
 function choiceNote(choice: Input['choices'][number]): string {
+  if (choice.consume.kind === 'upto') return '至少一件即可；启动时最多消耗 ' + amount(choice.amount) + ' 件 · ' + matchNote(choice.rule);
   if (choice.consume.kind === 'pedestals') return '样本需 ' + choice.amount + ' 座基座，每座一件；实际座数 = 1 + max(0, 输入屏障值) · ' + matchNote(choice.rule);
   const consumption = choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'buffer' ? '启动时耗尽对应内部流体存量（显示最低门槛）' : choice.consume.kind === 'stack' ? '处理整个输入堆叠' : choice.consume.kind === 'damage' ? '消耗耐久 ' + choice.consume.points : '消耗';
   return consumption + ' · ' + matchNote(choice.rule) + (choice.returns.length ? ' · 归还容器' : '');
@@ -77,6 +78,7 @@ function choose(index: number, id: string, direction: 'recipes' | 'uses'): void 
       <p>选择当前显示的物品；右键查看其用途。</p>
       <div class="choice-list"><div v-for="(choice, index) in choices.slice(offset, offset + 24)" :key="offset + index">
         <ItemLink :target="{ kind: stack.kind, ...choice }" :note="choiceNote(choice)"
+          :amount-label="choice.consume.kind === 'upto' ? '≤' + amount(choice.amount) : ''"
           :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => choose(offset + index, id, direction)" />
         <small class="choice-note">{{ choiceNote(choice) }}</small>
       </div></div>

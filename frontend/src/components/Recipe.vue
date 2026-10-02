@@ -52,7 +52,12 @@ const visibleSlots = computed(() => new Set(elements.value.filter(element => ele
 const extraInputs = computed(() => props.recipe.inputs.filter(input => !visibleSlots.value.has('input/' + input.kind + '/' + input.slot)));
 const extraOutputs = computed(() => products.value.filter(output => !visibleSlots.value.has('output/' + output.kind + '/' + output.slot)));
 function quantityLabel(stack: Input | Output): string {
-  if ('choices' in stack && stack.choices[0]?.consume.kind === 'pedestals') return amount(stack.choices[0].amount) + '座*';
+  if ('choices' in stack) {
+    const choice = chosen(stack);
+    if (props.recipe.process?.kind === 'vat' && stack.kind === 'fluid' && choice.consume.kind === 'keep') return '0';
+    if (choice.consume.kind === 'pedestals') return amount(choice.amount) + '座*';
+    if (choice.consume.kind === 'upto') return '≤' + amount(choice.amount);
+  }
   if ('choices' in stack || !stack.quantity) return '';
   const [low, high] = quantityBounds(props.recipe, stack);
   return amount(low.toString()) + (low === high ? '' : '–' + amount(high.toString()));
@@ -104,6 +109,8 @@ function stack(element: Extract<Element, { kind: 'slot' }>): Input | Output {
 }
 function consumption(input: Input): string {
   const choice = chosen(input);
+  if (props.recipe.process?.kind === 'vat' && input.kind === 'fluid' && choice.consume.kind === 'keep') return '需有对应流体对象，可为零量；不消耗流体';
+  if (choice.consume.kind === 'upto') return '至少一件即可；启动时最多消耗 ' + amount(choice.amount) + ' 件';
   if (choice.consume.kind === 'pedestals') return '样本座数；各座一件，实际数量随输入屏障变化';
   return choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'buffer' ? '启动时耗尽内部存量；显示最低门槛' : choice.consume.kind === 'stack' ? '整叠处理；显示数量为示例' : choice.consume.kind === 'damage' ? '耐久 −' + choice.consume.points : '';
 }
@@ -242,6 +249,23 @@ function chosen(input: Input) {
     </section>
     <details class="recipe-details" :open="!view">
       <summary>用量与条件</summary>
+      <template v-if="recipe.process?.kind === 'vat'">
+        <p>基础能量 {{ recipe.process.energy }} RF；实际速度由供能与机器设置决定。两侧储罐容量各 8,000 mB，启动前产物必须能完整放入输出罐。</p>
+        <p>按原生注册顺序选择首条匹配配方。每个所需物品槽至少有一件即可；启动时消耗当前存量与标注上限中的较小值，不返还容器。流体按所列数量与标签精确匹配。</p>
+        <template v-if="recipe.process.extra.length">
+          <p>第二物品槽可以空置；若已有额外材料，按下列顺序取首条匹配的消耗规则，均不匹配时消耗一件。机器的插入限制仍然生效。</p>
+          <details><summary>额外槽消耗规则</summary>
+            <p v-for="(c, index) in recipe.process.extra" :key="index">
+              {{ index + 1 }}.
+              <ItemLink :target="{ kind: 'item', id: c.id }" :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
+              {{ c.rule.kind === 'wildcard' && c.rule.meta ? '任意变体' : '相同变体' }}，忽略标签；{{ c.amount > 0 ? '最多消耗 ' + amount(c.amount.toString()) + ' 件' : '不消耗' }}。
+            </p>
+          </details>
+        </template>
+        <p v-if="recipe.process.zeroOutput">本组合经原生取整后产量为零，仍可能消耗材料与能量。原生零量输出指向
+          <ItemLink :target="{ kind: 'fluid', id: recipe.process.zeroOutput }" :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />，不计为可获取产物。
+        </p>
+      </template>
       <template v-if="recipe.process?.kind === 'enchanter'">
         <p>附魔等级 {{ recipe.process.level }}：材料槽须放入至少 {{ recipe.process.level * recipe.process.itemsPerLevel }} 件<template v-if="recipe.process.level < recipe.process.maxLevel">、少于 {{ (recipe.process.level + 1) * recipe.process.itemsPerLevel }} 件</template>。投入数量决定等级，仍受单槽与物品堆叠上限约束。</p>
         <p>需要 {{ recipe.process.cost }} 级经验；领取时扣除这些等级，创造模式免经验要求和支付。消耗一本书与笔及列出的材料数量，余料保留，不返还容器或继承书本数据。</p>
