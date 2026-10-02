@@ -46,14 +46,14 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   const api = `/api/catalog/${manifest.id}`;
   const first = await (await get(base, api + '/items?limit=1')).json();
   const second = await (await get(base, api + '/items?limit=1&offset=2')).json();
-  assert.equal(first.total, 53);
+  assert.equal(first.total, 58);
   assert.equal(first.rows[0].kind, 'item');
   assert.equal(second.rows[0].kind, 'fluid');
   assert.ok(first.textures[0].frames.length);
   assert.equal((await (await get(base, api + '/items?query=shitou')).json()).rows[0].id, first.rows[0].id);
   assert.equal((await (await get(base, api + '/items?kind=fluid&mod=minecraft')).json()).total, 0);
   const facets = await (await get(base, api + '/facets')).json();
-  assert.deepEqual(facets.mods, [{ id: 'BiblioCraft', count: 1 }, { id: 'ProjRed|Core', count: 1 }, { id: 'Thaumcraft', count: 1 }, { id: 'fixture', count: 34 }, { id: 'minecraft', count: 9 }]);
+  assert.deepEqual(facets.mods, [{ id: 'BiblioCraft', count: 1 }, { id: 'ProjRed|Core', count: 1 }, { id: 'Thaumcraft', count: 1 }, { id: 'fixture', count: 35 }, { id: 'minecraft', count: 13 }]);
   for (const [registry, mod, query] of [
     ['BiblioCraft:Armor Stand', 'BiblioCraft', 'Armor Stand'],
     ['ProjRed|Core:projectred.core.part', 'ProjRed|Core', 'projectred.core.part'],
@@ -104,6 +104,9 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.equal(optional.inputs.length, 1);
   assert.equal(optional.inputs[0].choices[0].rule.kind, 'ae');
   for (const id of [optional.process.bottom, optional.process.namePress]) assert.ok(inscriber.related.items.some(item => item.id === id));
+  const enchanterItems = await (await get(base, api + '/items?query=Enchanter%20material')).json();
+  const enchanter = await (await get(base, api + '/recipes?direction=uses&item=' + enchanterItems.rows[0].id)).json();
+  assert.deepEqual(enchanter.rows.map(row => [row.process.level, row.process.cost, row.inputs[1].choices[0].amount]), [[1, 9, '3'], [2, 15, '6'], [5, 57, '15']]);
   assert.deepEqual(recipe.inputs[0].choices.map(choice => [choice.amount, choice.consume.kind]),
     [['9007199254740993', 'consume'], ['7', 'consume'], ['1', 'keep']]);
   assert.equal(new Set(recipe.inputs[0].choices.map(choice => choice.id)).size, 1);
@@ -378,7 +381,7 @@ test('invalid pointers, damaged tables and missing declared files fail explicitl
   contents[contents.length - 1] ^= 1;
   await fs.writeFile(tablePath, contents);
   const repaired = await (await get(damaged, `/api/catalog/${pointer.id}/items`)).json();
-  assert.equal(repaired.total, 53, 'a failed memoized read must be retryable after repair');
+  assert.equal(repaired.total, 58, 'a failed memoized read must be retryable after repair');
   const recipes = manifest.files.find(file => file.kind === 'recipes');
   const recipePath = path.join(root, 'catalogs', pointer.id, recipes.path);
   const recipeBytes = await fs.readFile(recipePath);

@@ -242,6 +242,10 @@ function chosen(input: Input) {
     </section>
     <details class="recipe-details" :open="!view">
       <summary>用量与条件</summary>
+      <template v-if="recipe.process?.kind === 'enchanter'">
+        <p>附魔等级 {{ recipe.process.level }}：材料槽须放入至少 {{ recipe.process.level * recipe.process.itemsPerLevel }} 件<template v-if="recipe.process.level < recipe.process.maxLevel">、少于 {{ (recipe.process.level + 1) * recipe.process.itemsPerLevel }} 件</template>。投入数量决定等级，仍受单槽与物品堆叠上限约束。</p>
+        <p>需要 {{ recipe.process.cost }} 级经验；领取时扣除这些等级，创造模式免经验要求和支付。消耗一本书与笔及列出的材料数量，余料保留，不返还容器或继承书本数据。</p>
+      </template>
       <template v-if="recipe.process?.kind === 'inscriber'">
         <p>{{ recipe.process.mode === 'inscribe' ? '压印：保留模板，消耗中间材料。' : '合成：清空两个模板槽与中间材料槽，不返还容器。' }} 每个非空输入槽最多放一件。</p>
         <p v-if="recipe.process.top">模板可以上下互换；缺少下模板时，另一模板槽必须为空。</p>

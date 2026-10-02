@@ -75,6 +75,16 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(process).toContainText('合成：清空两个模板槽');
   await process.getByRole('button', { name: '下一页', exact: true }).click();
   await expect(process).toContainText('注册的下模板不构成材料要求');
+  await page.locator('.chrome-search-input').fill('Enchanter material');
+  await page.getByRole('button', { name: /^Enchanter material 附魔材料/ }).first().click({ button: 'right' });
+  await expect(process).toContainText('附魔等级 1：材料槽须放入至少 3 件、少于 6 件');
+  await expect(process).toContainText('需要 9 级经验');
+  await process.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(process).toContainText('附魔等级 2：材料槽须放入至少 6 件、少于 9 件');
+  await expect(process).toContainText('需要 15 级经验');
+  await process.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(process).toContainText('附魔等级 5：材料槽须放入至少 15 件');
+  await expect(process).not.toContainText('少于 18 件');
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });
