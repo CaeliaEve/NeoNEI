@@ -22,6 +22,7 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(page.locator('.recipe-preview-panel')).toBeVisible();
   await expect(page.locator('.recipe-preview-panel')).not.toContainText('正在加载配方');
   await expect(page.locator('.recipe-preview-panel')).not.toContainText('读取配方失败');
+  await page.getByRole('option', { name: /Fixture machine/ }).click();
   await expect(page.locator('.recipe-preview-panel .recipe-view')).toBeVisible();
   await expect(page.locator('.recipe-preview-panel [role="alert"]')).toHaveCount(0);
   const animations = page.getByRole('img', { name: '配方进度动画', exact: true });
@@ -44,6 +45,14 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await choices.locator('.choice-list .item-link').nth(1).click();
   await expect(input.locator('.quantity')).toHaveText('7');
   await expect(input.locator(':scope > .item-link')).toHaveAttribute('title', /仅忽略字段：frypanKill；其余 NBT 精确匹配/);
+  await page.getByRole('option', { name: /Harmony 鸿蒙之眼/ }).click();
+  const process = page.locator('.recipe-preview-panel');
+  await expect(process.locator('.item-link[title*="共享成功次数"]').first()).toBeVisible();
+  await expect(process.locator('.item-link[title*="耗尽对应内部流体存量"]').first()).toBeVisible();
+  await expect(process.locator('.item-link[title*="单次模式含历史保底状态"]').first()).toBeVisible();
+  await process.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(process.locator('.item-link[title*="星界阵列决定并行数"]').first()).toBeVisible();
+  await expect(process.locator('.item-link[title*="失败次数"]').first()).toBeVisible();
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

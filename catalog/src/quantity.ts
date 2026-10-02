@@ -8,12 +8,21 @@ function integer(value: string | null | undefined, minimum = 1n): bigint {
   return result;
 }
 
-/** Preserve draw correlation in the records; return exact bounds without sampling. */
+/** Preserve process correlation in the records; return conservative display bounds without sampling. */
 export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint, bigint] {
   const rule = output.quantity;
   if (!rule) { const value = integer(output.amount); return [value, value]; }
   ensure(output.amount == null && output.change == null
     && output.chance.numerator === '1' && output.chance.denominator === '1', '关联产量含冲突的固定字段');
+
+  if (rule.kind === 'harmony') {
+    const process = recipe.process;
+    ensure(process?.kind === 'harmony', '鸿蒙产量缺少共享过程');
+    const nominal = integer(rule.nominal);
+    // Native Java converts the base to binary64 before multiplying, then saturates d2l.
+    const bound = Number(nominal) * (process.mode === 'single' ? 1 : 1048576);
+    return [0n, bound >= Number(9223372036854775807n) ? 9223372036854775807n : BigInt(Math.trunc(bound))];
+  }
 
   if (rule.kind === 'branch') {
     if (rule.parameters) ensure(Object.entries(rule.parameters).every(([key, value]) => /^[a-zA-Z][a-zA-Z0-9_-]{0,63}$/.test(key) && typeof value === 'string'), '分支参数格式无效');

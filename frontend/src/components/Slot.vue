@@ -26,7 +26,7 @@ const note = computed(() => {
   return choiceNote(current());
 });
 function choiceNote(choice: Input['choices'][number]): string {
-  const consumption = choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'stack' ? '处理整个输入堆叠' : choice.consume.kind === 'damage' ? '消耗耐久 ' + choice.consume.points : '消耗';
+  const consumption = choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'buffer' ? '启动时耗尽对应内部流体存量（显示最低门槛）' : choice.consume.kind === 'stack' ? '处理整个输入堆叠' : choice.consume.kind === 'damage' ? '消耗耐久 ' + choice.consume.points : '消耗';
   return consumption + ' · ' + matchNote(choice.rule) + (choice.returns.length ? ' · 归还容器' : '');
 }
 function matchNote(rule: Match, nested = false): string {

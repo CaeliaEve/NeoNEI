@@ -46,7 +46,7 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   const api = `/api/catalog/${manifest.id}`;
   const first = await (await get(base, api + '/items?limit=1')).json();
   const second = await (await get(base, api + '/items?limit=1&offset=2')).json();
-  assert.equal(first.total, 38);
+  assert.equal(first.total, 42);
   assert.equal(first.rows[0].kind, 'item');
   assert.equal(second.rows[0].kind, 'fluid');
   assert.ok(first.textures[0].frames.length);
@@ -68,7 +68,18 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   }
   assert.equal(facets.groups[0].id, first.rows[0].group);
   const uses = await (await get(base, api + '/recipes?direction=uses&item=' + first.rows[0].id)).json();
-  const recipe = uses.rows[0];
+  const recipe = uses.rows.find(row => row.source.key === 'machine');
+  const harmony = uses.rows.filter(row => row.process?.kind === 'harmony');
+  assert.equal(harmony.length, 2);
+  for (const row of harmony) {
+    assert.equal(row.duration, null); assert.equal(row.energy, null);
+    assert.equal(row.inputs[1].choices[0].consume.kind, 'buffer');
+    const parallel = row.process.mode === 'parallel';
+    assert.deepEqual(quantityBounds(row, row.outputs[0]), [0n, parallel ? 9223372036854775807n : 9007199254740992n]);
+    assert.deepEqual(quantityBounds(row, row.outputs[1]), [0n, 57600n * (parallel ? 1048576n : 1n)]);
+    const missing = structuredClone(row); delete missing.process;
+    assert.throws(() => quantityBounds(missing, missing.outputs[0]), /共享过程/);
+  }
   assert.equal(recipe.inputs[0].choices[0].amount, '9007199254740993');
   assert.deepEqual(recipe.inputs[0].choices.map(choice => [choice.amount, choice.consume.kind]),
     [['9007199254740993', 'consume'], ['7', 'consume'], ['1', 'keep']]);
@@ -111,7 +122,8 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.deepEqual(detail.recipe, recipe);
   const paper = await (await get(base, api + '/items?query=paper')).json();
   const magic = await (await get(base, api + '/recipes?item=' + paper.rows[0].id)).json();
-  assert.equal(magic.total, 4);
+  assert.equal(magic.total, 6);
+  assert.equal(magic.rows.filter(row => row.magic).length, 4);
   assert.ok(magic.related.topics.some(topic => topic.kind === 'aspect'));
   assert.ok(magic.related.topics.some(topic => topic.kind === 'research'));
   const arcane = magic.rows.find(row => row.source.key === 'arcane');
@@ -343,7 +355,7 @@ test('invalid pointers, damaged tables and missing declared files fail explicitl
   contents[contents.length - 1] ^= 1;
   await fs.writeFile(tablePath, contents);
   const repaired = await (await get(damaged, `/api/catalog/${pointer.id}/items`)).json();
-  assert.equal(repaired.total, 38, 'a failed memoized read must be retryable after repair');
+  assert.equal(repaired.total, 42, 'a failed memoized read must be retryable after repair');
   const recipes = manifest.files.find(file => file.kind === 'recipes');
   const recipePath = path.join(root, 'catalogs', pointer.id, recipes.path);
   const recipeBytes = await fs.readFile(recipePath);

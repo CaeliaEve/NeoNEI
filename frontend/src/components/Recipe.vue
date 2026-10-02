@@ -59,6 +59,10 @@ function quantityLabel(stack: Input | Output): string {
 function quantityNote(stack: Input | Output): string {
   if ('choices' in stack || !stack.quantity) return '';
   const q = stack.quantity;
+  if (q.kind === 'harmony') return (q.outcome === 'success'
+    ? '共享成功次数 × 产量系数 × 原生基数 ' + q.nominal + '；稳定场与流体过量影响产量。'
+    : '失败次数 × 本次成功率 × 原生基数 ' + q.nominal + '；与正常产出共享同次结果，不乘产量系数。')
+    + '所示为保守范围；' + (props.recipe.process?.mode === 'parallel' ? '星界阵列决定并行数。' : '单次模式含历史保底状态。');
   if (q.kind === 'draw') return '关联随机产出，与前序产物共享输入流体量。';
   if (q.kind === 'remainder') return '回收余量：输入总量减去本次已抽取的产物。';
   if (q.kind === 'branch') {
@@ -99,7 +103,7 @@ function stack(element: Extract<Element, { kind: 'slot' }>): Input | Output {
 }
 function consumption(input: Input): string {
   const choice = chosen(input);
-  return choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'stack' ? '整叠处理；显示数量为示例' : choice.consume.kind === 'damage' ? '耐久 −' + choice.consume.points : '';
+  return choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'buffer' ? '启动时耗尽内部存量；显示最低门槛' : choice.consume.kind === 'stack' ? '整叠处理；显示数量为示例' : choice.consume.kind === 'damage' ? '耐久 −' + choice.consume.points : '';
 }
 function chosen(input: Input) {
   const choice = input.choices[choices['input' + input.kind + input.slot] ?? 0];
