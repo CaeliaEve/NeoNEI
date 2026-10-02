@@ -256,6 +256,13 @@ export class Query {
         for (const c of recipe.process.extra) substance('item', c.id);
         if (recipe.process.zeroOutput) substance('fluid', recipe.process.zeroOutput);
       }
+      if (recipe.process?.kind === 'sag') {
+        const p = recipe.process;
+        for (const list of [p.blocked, p.oreBlocked, ...p.earlier.map(e => e.choices), ...p.balls.map(b => b.choices)]) {
+          for (const c of list) substance('item', c.id);
+          budget();
+        }
+      }
       if (recipe.process?.kind === 'inscriber') {
         for (const id of [recipe.process.top, recipe.process.bottom, recipe.process.namePress]) if (id) substance('item', id);
       }

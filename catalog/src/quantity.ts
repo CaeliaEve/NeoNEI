@@ -22,6 +22,13 @@ export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint
     return [0n, nominal];
   }
 
+  if (rule.kind === 'grinding') {
+    ensure(recipe.process?.kind === 'sag' && output.kind === 'item', '磨粉产出缺少共享过程');
+    const threshold = Math.fround(Number(rule.threshold)), nominal = integer(rule.nominal);
+    ensure(rule.threshold.trim() !== '' && Number.isFinite(threshold) && threshold >= 0 && threshold <= 1 && nominal <= 2147483647n, '磨粉阈值或数量无效');
+    return [0n, nominal * (recipe.process.bonus ? 33554432n : 1n)];
+  }
+
   if (rule.kind === 'harmony') {
     const process = recipe.process;
     ensure(process?.kind === 'harmony', '鸿蒙产量缺少共享过程');

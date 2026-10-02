@@ -115,6 +115,14 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(process).toContainText('第 6 槽、第 1 槽');
   await expect(process).toContainText('不保证每次掉一点耐久');
   await expect(process.locator('.stack-slot > .item-link[title*="完工时尝试损耗工具"]')).toHaveCount(2);
+  await page.locator('.chrome-search-input').fill('SAG input');
+  await page.getByRole('button', { name: /^SAG input 磨粉材料/ }).first().click({ button: 'right' });
+  await expect(process).toContainText('研磨珠库存槽可留空');
+  await expect(process.locator('.stack-slot > .item-link[title*="可选研磨珠库存"]')).toContainText('可选');
+  await expect(process.locator('.stack-slot > .item-link[title*="本项阈值 0.5"]')).toContainText('2×次数');
+  await process.getByText('研磨珠参数（依次匹配）', { exact: true }).click();
+  await expect(process).toContainText('产量 ×2.5');
+  await expect(process).toContainText('能耗 ×0.5');
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

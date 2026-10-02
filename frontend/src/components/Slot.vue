@@ -28,6 +28,7 @@ const note = computed(() => {
   return choiceNote(current());
 });
 function choiceNote(choice: Input['choices'][number]): string {
+  if (choice.consume.kind === 'reserve') return '可选研磨珠库存；装载新珠时消耗一件 · ' + matchNote(choice.rule);
   if (choice.consume.kind === 'wear') return '完工时尝试损耗工具；附魔与工具状态决定实际耐久变化 · ' + matchNote(choice.rule);
   if (choice.consume.kind === 'allocated') return '原生顺序分配需求；实际扣料由配方过程决定 · ' + matchNote(choice.rule);
   if (choice.consume.kind === 'upto') return '至少一件即可；启动时最多消耗 ' + amount(choice.amount) + ' 件 · ' + matchNote(choice.rule);

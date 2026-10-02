@@ -57,14 +57,17 @@ function quantityLabel(stack: Input | Output): string {
     if (props.recipe.process?.kind === 'vat' && stack.kind === 'fluid' && choice.consume.kind === 'keep') return '0';
     if (choice.consume.kind === 'pedestals') return amount(choice.amount) + '座*';
     if (choice.consume.kind === 'upto') return '≤' + amount(choice.amount);
+    if (choice.consume.kind === 'reserve') return '可选';
   }
   if ('choices' in stack || !stack.quantity) return '';
+  if (stack.quantity.kind === 'grinding') return amount(stack.quantity.nominal) + '×次数';
   const [low, high] = quantityBounds(props.recipe, stack);
   return amount(low.toString()) + (low === high ? '' : '–' + amount(high.toString()));
 }
 function quantityNote(stack: Input | Output): string {
   if ('choices' in stack || !stack.quantity) return '';
   const q = stack.quantity;
+  if (q.kind === 'grinding') return '本项阈值 ' + q.threshold + '；全部产物共享任务抽取。命中后每次完成尝试放入 ' + amount(q.nominal) + ' 件，研磨珠可能让同组结果重复产出，实际数量受珠子状态与输出空间影响。';
   if (q.kind === 'sharedRoll') return '全部产物共享一次抽取；本项阈值 ' + q.threshold + '，命中时尝试放入 ' + amount(q.nominal) + ' 件。阈值为零仍有 1/16,777,216 的命中机会；输出槽状态可能减少实际取得数量。';
   if (q.kind === 'harmony') return (q.outcome === 'success'
     ? '共享成功次数 × 产量系数 × 原生基数 ' + q.nominal + '；稳定场与流体过量影响产量。'
@@ -110,6 +113,7 @@ function stack(element: Extract<Element, { kind: 'slot' }>): Input | Output {
 }
 function consumption(input: Input): string {
   const choice = chosen(input);
+  if (choice.consume.kind === 'reserve') return '可选研磨珠库存；装载新研磨珠时消耗一件，不是每条配方消耗一件';
   if (choice.consume.kind === 'wear') return '完工时尝试损耗工具；附魔与工具状态决定实际耐久变化';
   if (choice.consume.kind === 'allocated') return '按原生顺序分配需求；不是固定槽位扣除量';
   if (props.recipe.process?.kind === 'vat' && input.kind === 'fluid' && choice.consume.kind === 'keep') return '需有对应流体对象，可为零量；不消耗流体';
@@ -252,6 +256,19 @@ function chosen(input: Input) {
     </section>
     <details class="recipe-details" :open="!view">
       <summary>用量与条件</summary>
+      <template v-if="recipe.process?.kind === 'sag'">
+        <p>基础能量 {{ recipe.process.energy }} RF。材料放第一槽，按原生注册顺序选择首条匹配；研磨珠库存槽可留空。材料扣除位置：{{ recipe.process.slot < 0 ? '依次从两槽取料' : '第 ' + (recipe.process.slot + 1) + ' 槽' }}，实际扣除受存量限制，不返还容器。</p>
+        <p>任务开始时，当前生效的研磨珠决定概率与能耗倍率。库存中的珠子尚未生效；旧珠耗尽后从库存装载一件。材料或库存物品命中矿辞排除规则，或材料命中配置排除规则时，本次任务不使用珠子加成。</p>
+        <p>所有产物共享一次随机抽取；输出空间预检使用原始抽取值。{{ recipe.process.bonus ? '完成时按当时生效珠子的产量倍率，使用另一次共享抽取重复同组产出，不会逐项重新抽奖。' : '本配方不重复产出；任务开始时的概率与能耗倍率仍然有效。' }}过程中更换珠子、珠子耗尽和输出槽变化会影响最终结果。存档中的在用珠子参数可以不同于当前注册表。</p>
+        <details v-if="recipe.process.balls.length"><summary>研磨珠参数（依次匹配）</summary>
+          <p v-for="(ball, index) in recipe.process.balls" :key="index">
+            {{ index + 1 }}.
+            <ItemLink v-for="c in ball.choices" :key="c.id + JSON.stringify(c.rule)" :target="{ kind: 'item', id: c.id }" :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
+            产量 ×{{ ball.grinding }}，概率 ×{{ ball.chance }}，能耗 ×{{ ball.power }}，耐用能量 {{ ball.duration }} RF。
+          </p>
+        </details>
+        <details v-if="recipe.process.earlier.length || recipe.process.blocked.length || recipe.process.oreBlocked.length"><summary>原生匹配与加成排除条件</summary><pre>{{ JSON.stringify({ earlier: recipe.process.earlier, configured: recipe.process.blocked, firstOre: recipe.process.oreBlocked }, null, 2) }}</pre></details>
+      </template>
       <template v-if="recipe.process?.kind === 'alloy' || recipe.process?.kind === 'splice'">
         <p><template v-if="recipe.process.kind === 'alloy'">合金模式或全部模式；</template>基础能量 {{ recipe.process.energy }} RF，实际速度由供能决定。</p>
         <p>配方按注册顺序匹配。机器从左到右读取物品槽，将整叠数量分配给首个仍缺料的匹配需求；同一叠不会拆给多个需求，额外不匹配物品会阻止启动。下列顺序与数量为需求，不代表必须摆放的位置。</p>
