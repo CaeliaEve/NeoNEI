@@ -102,6 +102,13 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await process.getByRole('button', { name: '下一页', exact: true }).click();
   await expect(process).toContainText('产量为零');
   await expect(process).toContainText('不计为可获取产物');
+  await page.locator('.chrome-search-input').fill('Alloy input');
+  await page.getByRole('button', { name: /^Alloy input 合金材料/ }).first().click({ button: 'right' });
+  await expect(process).toContainText('同一叠不会拆给多个需求');
+  await expect(process).toContainText('第 2 槽、第 1 槽');
+  await expect(process).toContainText('所有产物共享一次随机抽取');
+  await expect(process.locator('.stack-slot > .item-link[title*="本项阈值 0.0"]')).toContainText('0–3');
+  await expect(process.locator('.stack-slot > .item-link[title*="本项阈值 0.0"]')).toHaveAttribute('title', /1\/16,777,216/);
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

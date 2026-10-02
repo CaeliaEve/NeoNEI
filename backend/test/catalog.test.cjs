@@ -46,14 +46,14 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   const api = `/api/catalog/${manifest.id}`;
   const first = await (await get(base, api + '/items?limit=1')).json();
   const second = await (await get(base, api + '/items?limit=1&offset=2')).json();
-  assert.equal(first.total, 61);
+  assert.equal(first.total, 64);
   assert.equal(first.rows[0].kind, 'item');
   assert.equal(second.rows[0].kind, 'fluid');
   assert.ok(first.textures[0].frames.length);
   assert.equal((await (await get(base, api + '/items?query=shitou')).json()).rows[0].id, first.rows[0].id);
   assert.equal((await (await get(base, api + '/items?kind=fluid&mod=minecraft')).json()).total, 0);
   const facets = await (await get(base, api + '/facets')).json();
-  assert.deepEqual(facets.mods, [{ id: 'BiblioCraft', count: 1 }, { id: 'ProjRed|Core', count: 1 }, { id: 'Thaumcraft', count: 1 }, { id: 'fixture', count: 38 }, { id: 'minecraft', count: 13 }]);
+  assert.deepEqual(facets.mods, [{ id: 'BiblioCraft', count: 1 }, { id: 'ProjRed|Core', count: 1 }, { id: 'Thaumcraft', count: 1 }, { id: 'fixture', count: 41 }, { id: 'minecraft', count: 13 }]);
   for (const [registry, mod, query] of [
     ['BiblioCraft:Armor Stand', 'BiblioCraft', 'Armor Stand'],
     ['ProjRed|Core:projectred.core.part', 'ProjRed|Core', 'projectred.core.part'],
@@ -119,6 +119,17 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.equal(optionalVat.rows.length, 0, 'optional slot references are not required ingredients');
   const vatProducts = await (await get(base, api + '/recipes?direction=recipes&item=' + zeroVat.process.zeroOutput + '&kind=fluid')).json();
   assert.equal(vatProducts.rows.some(row => row.id === zeroVat.id), false, 'zero yield cannot be a product edge');
+  const alloyInput = await (await get(base, api + '/items?query=Alloy%20input')).json();
+  const alloys = await (await get(base, api + '/recipes?direction=uses&item=' + alloyInput.rows[0].id)).json();
+  assert.equal(alloys.rows.length, 1);
+  const alloy = alloys.rows[0];
+  assert.deepEqual(alloy.process.slots, [1, 0]);
+  assert.deepEqual(alloy.inputs.map(i => [i.choices[0].consume.kind, i.choices[0].amount]), [['allocated', '1'], ['allocated', '2']]);
+  assert.deepEqual(quantityBounds(alloy, alloy.outputs[1]), [0n, 3n]);
+  const independent = structuredClone(alloy); independent.process = null;
+  assert.throws(() => quantityBounds(independent, independent.outputs[0]), /共享过程/);
+  const invalidRoll = structuredClone(alloy); invalidRoll.outputs[0].quantity.threshold = 'NaN';
+  assert.throws(() => quantityBounds(invalidRoll, invalidRoll.outputs[0]), /阈值/);
   assert.deepEqual(recipe.inputs[0].choices.map(choice => [choice.amount, choice.consume.kind]),
     [['9007199254740993', 'consume'], ['7', 'consume'], ['1', 'keep']]);
   assert.equal(new Set(recipe.inputs[0].choices.map(choice => choice.id)).size, 1);
@@ -393,7 +404,7 @@ test('invalid pointers, damaged tables and missing declared files fail explicitl
   contents[contents.length - 1] ^= 1;
   await fs.writeFile(tablePath, contents);
   const repaired = await (await get(damaged, `/api/catalog/${pointer.id}/items`)).json();
-  assert.equal(repaired.total, 61, 'a failed memoized read must be retryable after repair');
+  assert.equal(repaired.total, 64, 'a failed memoized read must be retryable after repair');
   const recipes = manifest.files.find(file => file.kind === 'recipes');
   const recipePath = path.join(root, 'catalogs', pointer.id, recipes.path);
   const recipeBytes = await fs.readFile(recipePath);

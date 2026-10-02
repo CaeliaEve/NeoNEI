@@ -15,6 +15,13 @@ export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint
   ensure(output.amount == null && output.change == null
     && output.chance.numerator === '1' && output.chance.denominator === '1', '关联产量含冲突的固定字段');
 
+  if (rule.kind === 'sharedRoll') {
+    ensure(recipe.process?.kind === 'alloy' && output.kind === 'item', '合金产出缺少共享过程');
+    const threshold = Math.fround(Number(rule.threshold)), nominal = integer(rule.nominal);
+    ensure(rule.threshold.trim() !== '' && Number.isFinite(threshold) && threshold >= 0 && threshold <= 1 && nominal <= 2147483647n, '合金抽取阈值或数量无效');
+    return [0n, nominal];
+  }
+
   if (rule.kind === 'harmony') {
     const process = recipe.process;
     ensure(process?.kind === 'harmony', '鸿蒙产量缺少共享过程');
