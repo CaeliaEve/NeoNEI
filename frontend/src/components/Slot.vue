@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue';
-import type { Input, Output } from '@elysium/contracts';
+import type { Input, Output, Match } from '@elysium/contracts';
 import { Catalog, Records } from '../catalog/client.ts';
 import { chance } from '../catalog/format.ts';
 import ItemLink from './ItemLink.vue';
@@ -27,16 +27,27 @@ const note = computed(() => {
 });
 function choiceNote(choice: Input['choices'][number]): string {
   const consumption = choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'stack' ? '处理整个输入堆叠' : choice.consume.kind === 'damage' ? '消耗耐久 ' + choice.consume.points : '消耗';
-  const rule = choice.rule.kind === 'ore' ? '矿辞：' + choice.rule.name + (choice.rule.exclusive ? '（唯一矿辞）' : '')
-    : choice.rule.kind === 'member' ? (choice.rule.analyzed ? '已分析' : '未分析') + '的有效基因个体（不限于列出的品种）'
-    : choice.rule.kind === 'without_tags' ? '仅忽略字段：' + choice.rule.keys.join('、') + '；其余 NBT 精确匹配'
-    : choice.rule.kind === 'wildcard' ? '通配匹配' : choice.rule.kind === 'tags' ? [
-      choice.rule.keys.length ? '匹配字段：' + choice.rule.keys.join('、') : '',
-      choice.rule.present.length ? '必须存在：' + choice.rule.present.join('、') : '',
-      choice.rule.absent.length ? '必须缺失：' + choice.rule.absent.join('、') : '',
+  return consumption + ' · ' + matchNote(choice.rule) + (choice.returns.length ? ' · 归还容器' : '');
+}
+function matchNote(rule: Match, nested = false): string {
+  if (rule.kind === 'except') {
+    if (nested) throw new Error('配方包含嵌套匹配排除条件');
+    const examples = rule.exclude.slice(0, 3).map(prior => {
+      const item = props.records.substance('item', prior.id);
+      return props.records.text(item.name) + '（' + matchNote(prior.rule, true) + '）';
+    });
+    return matchNote(rule.base, true) + '；排除 ' + rule.exclude.length + ' 条前序匹配：' + examples.join('、')
+      + (rule.exclude.length > 3 ? '；另有 ' + (rule.exclude.length - 3) + ' 条' : '') + '；所示物品是匹配模板';
+  }
+  return rule.kind === 'ore' ? '矿辞：' + rule.name + (rule.exclusive ? '（唯一矿辞）' : '')
+    : rule.kind === 'member' ? (rule.analyzed ? '已分析' : '未分析') + '的有效基因个体（不限于列出的品种）'
+    : rule.kind === 'without_tags' ? '仅忽略字段：' + rule.keys.join('、') + '；其余 NBT 精确匹配'
+    : rule.kind === 'wildcard' ? '通配匹配' : rule.kind === 'tags' ? [
+      rule.keys.length ? '匹配字段：' + rule.keys.join('、') : '',
+      rule.present.length ? '必须存在：' + rule.present.join('、') : '',
+      rule.absent.length ? '必须缺失：' + rule.absent.join('、') : '',
       '允许其他 NBT 数据',
     ].filter(Boolean).join('；') : '精确匹配';
-  return consumption + ' · ' + rule + (choice.returns.length ? ' · 归还容器' : '');
 }
 watch(() => props.stack, () => { offset.value = 0; dialog.value?.close(); expanded.value = false; });
 async function expand(): Promise<void> {

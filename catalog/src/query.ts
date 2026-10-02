@@ -259,6 +259,10 @@ export class Query {
       }
       for (const input of recipe.inputs) for (const choice of input.choices) {
         substance(input.kind, choice.id);
+        if (choice.rule.kind === 'except') {
+          for (const prior of choice.rule.exclude) substance('item', prior.id);
+          budget();
+        }
         for (const returned of choice.returns) substance(returned.kind, returned.id);
       }
       for (const output of recipe.outputs) {

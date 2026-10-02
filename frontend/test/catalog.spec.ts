@@ -114,7 +114,7 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} bro
   await inputSlot.getByRole('button', { name: '查看 3 个候选输入', exact: true }).click();
   const choices = page.locator('.choices-dialog');
   await expect(choices.locator('.choice-list .item-link')).toHaveCount(3);
-  await expect(choices.locator('.choice-note').nth(2)).toHaveText('不消耗 · 精确匹配');
+  await expect(choices.locator('.choice-note').nth(2)).toContainText('不消耗 · 通配匹配；排除 1 条前序匹配');
   await page.screenshot({ path: `test-results/choices-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   await choices.locator('.choice-list .item-link').nth(1).click();
   await expect(inputSlot.locator('.quantity')).toHaveText('7');
