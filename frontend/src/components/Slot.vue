@@ -29,6 +29,7 @@ function choiceNote(choice: Input['choices'][number]): string {
   const consumption = choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'stack' ? '处理整个输入堆叠' : choice.consume.kind === 'damage' ? '消耗耐久 ' + choice.consume.points : '消耗';
   const rule = choice.rule.kind === 'ore' ? '矿辞：' + choice.rule.name + (choice.rule.exclusive ? '（唯一矿辞）' : '')
     : choice.rule.kind === 'member' ? (choice.rule.analyzed ? '已分析' : '未分析') + '的有效基因个体（不限于列出的品种）'
+    : choice.rule.kind === 'without_tags' ? '仅忽略字段：' + choice.rule.keys.join('、') + '；其余 NBT 精确匹配'
     : choice.rule.kind === 'wildcard' ? '通配匹配' : choice.rule.kind === 'tags' ? [
       choice.rule.keys.length ? '匹配字段：' + choice.rule.keys.join('、') : '',
       choice.rule.present.length ? '必须存在：' + choice.rule.present.join('、') : '',

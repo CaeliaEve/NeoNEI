@@ -36,6 +36,13 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   }, { intervals: [40], timeout: 5000 }).toBe(4);
   await page.getByText('用量与条件', { exact: true }).click();
   await expect(page.locator('.recipe-preview-panel')).toContainText('9,007,199,254,740,993');
+  const input = page.locator('.recipe-preview-panel .recipe-view .stack-slot').first();
+  await input.getByRole('button', { name: '查看 3 个候选输入', exact: true }).click();
+  const choices = page.locator('.choices-dialog');
+  await expect(choices.locator('.choice-note').nth(1)).toHaveText('消耗 · 仅忽略字段：frypanKill；其余 NBT 精确匹配');
+  await choices.locator('.choice-list .item-link').nth(1).click();
+  await expect(input.locator('.quantity')).toHaveText('7');
+  await expect(input.locator(':scope > .item-link')).toHaveAttribute('title', /仅忽略字段：frypanKill；其余 NBT 精确匹配/);
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });
