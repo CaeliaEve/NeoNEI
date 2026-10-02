@@ -60,6 +60,12 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(process).toContainText('样本不稳定性：6');
   await expect(process).toContainText('4座*');
   await expect(process).toContainText('127 后回绕至 −128');
+  await page.locator('.chrome-search-input').fill('Filled map');
+  await page.getByRole('button', { name: /^Filled map 已填充地图/ }).first().click({ button: 'right' });
+  await expect(process).toContainText('周围放置 8 张纸');
+  await expect(process).toContainText('待完成地图样本');
+  await expect(process).toContainText('由世界分配新地图 ID');
+  await expect(process).toContainText('不复制旧探索像素');
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

@@ -215,6 +215,11 @@ function chosen(input: Input) {
         <p>屏障值由装备原生接口和现有强化共同决定；材料基座数为 1 + max(0, 屏障值)，不稳定性为 5 + 屏障值 / 2（向零取整）。</p>
         <p>源质基数为 32 × 2^屏障值，按原生 int 转换；能量用全额，护甲与魔法各用一半。所列为样本费用，祭坛运行风险另计。</p>
       </template>
+      <template v-else-if="output.change?.action.kind === 'mapScaling'">
+        <p>需要缩放等级低于 4 的已填充地图，周围放置 8 张纸。</p>
+        <p>显示的是待完成地图样本；合成后由世界分配新地图 ID，缩放等级增加一级并保留中心与维度，不复制旧探索像素。</p>
+        <p>保留命名等物品数据。缺失地图数据时，服务端可能先初始化地图；此页面无法判定当前存档中的地图状态。</p>
+      </template>
       <template v-else-if="output.change?.action.kind === 'patch'">
         <p>保留输入物品及其其他数据。<template v-if="Object.keys(output.change.action.set).length">替换标签：<code>{{ Object.keys(output.change.action.set).join('、') }}</code>。</template>
           <template v-if="Object.keys(output.change.action.limits).length">超出新上限的数值会被裁剪。</template></p>

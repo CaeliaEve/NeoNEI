@@ -23,6 +23,7 @@ const note = computed(() => {
   if (!('choices' in props.stack)) return props.stack.quantity ? props.quantityNote
     : props.stack.change?.action.kind === 'analyze' ? '与输入堆叠数量相同；显示单个样本'
     : props.stack.change?.action.kind === 'runic' ? '升级所投入的装备并保留其他数据；所示为样本'
+    : props.stack.change?.action.kind === 'mapScaling' ? '待完成地图样本；实际产物由世界分配新地图 ID'
     : '概率 ' + chance(props.stack.chance) + (props.stack.role === 'return' ? ' · 归还' : '');
   return choiceNote(current());
 });
