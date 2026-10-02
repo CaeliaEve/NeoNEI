@@ -123,6 +123,18 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await process.getByText('研磨珠参数（依次匹配）', { exact: true }).click();
   await expect(process).toContainText('产量 ×2.5');
   await expect(process).toContainText('能耗 ×0.5');
+  await page.locator('.chrome-search-input').fill('Soul bound product');
+  await page.getByRole('button', { name: /^Soul bound product 灵魂绑定产物/ }).first().click();
+  await expect(process).toContainText('启动需要 272 XP');
+  await expect(process).toContainText('仍检查经验门槛');
+  await expect(process).toContainText('空瓶和产物均不产出');
+  await page.locator('.chrome-search-input').fill('Broken spawner');
+  await page.getByRole('button', { name: /^Broken spawner 破损刷怪笼/ }).first().click({button:'right'});
+  await expect(process).toContainText('未列出的生物也可能匹配');
+  await expect(process).toContainText('Zombie bound spawner');
+  await process.getByRole('button',{name:'查看 2 个候选输入',exact:true}).click();
+  await choices.locator('.choice-list .item-link').nth(1).click();
+  await expect(process).toContainText('Sheep bound spawner');
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

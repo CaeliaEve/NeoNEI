@@ -22,6 +22,12 @@ export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint
     return [0n, nominal];
   }
 
+  if (rule.kind === 'soul') {
+    ensure(recipe.process?.kind === 'soul' && !recipe.process.spawner && output.kind === 'item', '灵魂绑定产量缺少共同完成条件');
+    const nominal=integer(rule.nominal);ensure(nominal<=2147483647n,'灵魂绑定数量超出范围');
+    return [0n,nominal];
+  }
+
   if (rule.kind === 'grinding') {
     ensure(recipe.process?.kind === 'sag' && output.kind === 'item', '磨粉产出缺少共享过程');
     const threshold = Math.fround(Number(rule.threshold)), nominal = integer(rule.nominal);

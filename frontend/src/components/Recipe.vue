@@ -67,6 +67,7 @@ function quantityLabel(stack: Input | Output): string {
 function quantityNote(stack: Input | Output): string {
   if ('choices' in stack || !stack.quantity) return '';
   const q = stack.quantity;
+  if (q.kind === 'soul') return '两个产出共享完成条件；材料也为灵魂瓶时，以最后一个瓶中的灵魂决定是否产出。满足时尝试放入 '+amount(q.nominal)+' 件，输出空间可能减少实际取得量。';
   if (q.kind === 'grinding') return '本项阈值 ' + q.threshold + '；全部产物共享任务抽取。命中后每次完成尝试放入 ' + amount(q.nominal) + ' 件，研磨珠可能让同组结果重复产出，实际数量受珠子状态与输出空间影响。';
   if (q.kind === 'sharedRoll') return '全部产物共享一次抽取；本项阈值 ' + q.threshold + '，命中时尝试放入 ' + amount(q.nominal) + ' 件。阈值为零仍有 1/16,777,216 的命中机会；输出槽状态可能减少实际取得数量。';
   if (q.kind === 'harmony') return (q.outcome === 'success'
@@ -256,6 +257,13 @@ function chosen(input: Input) {
     </section>
     <details class="recipe-details" :open="!view">
       <summary>用量与条件</summary>
+      <template v-if="recipe.process?.kind === 'soul'">
+        <p>基础能量 {{ recipe.process.energy }} RF；启动需要 {{ recipe.process.experience }} XP（界面标注 {{ recipe.process.levels }} 级），经验容量 {{ recipe.process.capacity }} XP。{{ recipe.process.drains ? '任务成功启动后扣除原始经验值。' : '当前未注册经验流体：仍检查经验门槛，但原生机器不扣除经验。' }}</p>
+        <p>第一槽检查灵魂标识，第二槽检查材料；正常库存每槽限一件，启动各消耗一件，不返还材料容器。按注册顺序选择首条匹配，两槽放入限制还取决于已有物品。</p>
+        <p v-if="recipe.process.spawner">灵魂类型只受黑名单限制，未列出的生物也可能匹配。完成时生成变体为零的新刷怪笼，仅写入该灵魂的生物类型；不继承输入瓶或旧刷怪笼的其他数据。</p>
+        <p v-else>完成时依次检查两项投入物，最后一个带灵魂的瓶决定结果；若其类型不受本配方支持，空瓶和产物均不产出。输出空间与运行中更改输出槽可能减少实际取得量。</p>
+        <details v-if="recipe.process.earlier.length"><summary>前序灵魂配方匹配条件</summary><pre>{{ JSON.stringify(recipe.process.earlier, null, 2) }}</pre></details>
+      </template>
       <template v-if="recipe.process?.kind === 'sag'">
         <p>基础能量 {{ recipe.process.energy }} RF。材料放第一槽，按原生注册顺序选择首条匹配；研磨珠库存槽可留空。材料扣除位置：{{ recipe.process.slot < 0 ? '依次从两槽取料' : '第 ' + (recipe.process.slot + 1) + ' 槽' }}，实际扣除受存量限制，不返还容器。</p>
         <p>任务开始时，当前生效的研磨珠决定概率与能耗倍率。库存中的珠子尚未生效；旧珠耗尽后从库存装载一件。材料或库存物品命中矿辞排除规则，或材料命中配置排除规则时，本次任务不使用珠子加成。</p>

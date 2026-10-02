@@ -263,6 +263,11 @@ export class Query {
           budget();
         }
       }
+      if (recipe.process?.kind === 'soul') {
+        for (const prior of recipe.process.earlier) {
+          substance('item',prior.soul.vessel);substance('item',prior.material.id);budget();
+        }
+      }
       if (recipe.process?.kind === 'inscriber') {
         for (const id of [recipe.process.top, recipe.process.bottom, recipe.process.namePress]) if (id) substance('item', id);
       }
@@ -274,6 +279,7 @@ export class Query {
       for (const input of recipe.inputs) for (const choice of input.choices) {
         substance(input.kind, choice.id);
         if (choice.rule.kind === 'infusion') substance('item', choice.rule.template);
+        if (choice.rule.kind === 'soul') substance('item',choice.rule.filter.vessel);
         if (choice.rule.kind === 'except') {
           for (const prior of choice.rule.exclude) substance('item', prior.id);
           budget();
@@ -286,6 +292,7 @@ export class Query {
         if (output.change) {
           for (const sample of output.change.samples) substance('item', sample.id);
           if (output.change.action.kind === 'merge') substance('item', output.change.action.base.id);
+          if (output.change.action.kind === 'soul') substance('item',output.change.action.base);
           if ((output.change.action as { kind: 'filter'; base: { id: string } }).kind === 'filter') substance('item', (output.change.action as { base: { id: string } }).base.id);
         }
       }

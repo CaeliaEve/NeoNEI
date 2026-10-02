@@ -24,6 +24,7 @@ const note = computed(() => {
     : props.stack.change?.action.kind === 'analyze' ? '与输入堆叠数量相同；显示单个样本'
     : props.stack.change?.action.kind === 'runic' ? '升级所投入的装备并保留其他数据；所示为样本'
     : props.stack.change?.action.kind === 'mapScaling' ? '待完成地图样本；实际产物由世界分配新地图 ID'
+    : props.stack.change?.action.kind === 'soul' ? '按所选灵魂生成新的刷怪笼；只写入生物类型，不继承实体的其他数据'
     : '概率 ' + chance(props.stack.chance) + (props.stack.role === 'return' ? ' · 归还' : '');
   return choiceNote(current());
 });
@@ -37,6 +38,10 @@ function choiceNote(choice: Input['choices'][number]): string {
   return consumption + ' · ' + matchNote(choice.rule) + (choice.returns.length ? ' · 归还容器' : '');
 }
 function matchNote(rule: Match, nested = false): string {
+  if (rule.kind === 'soul') {
+    const names=rule.filter.names.slice(0,8).map(name=>name===null?'无灵魂标识':name===''?'空字符串':name).join('、');
+    return (rule.filter.exclude?'排除以下灵魂类型：':'允许以下灵魂类型：')+names+(rule.filter.names.length>8?' 等 '+rule.filter.names.length+' 项':'')+'；按原生灵魂标识匹配，不限于展示样本';
+  }
   if (rule.kind === 'ae') return 'AE2 精确匹配：同物品与变体；空 NBT 等价，其他标签按原生类型和值比较';
   if (rule.kind === 'infusion') return '原生注魔匹配：同物品与变体，或首个矿辞组为 ' + (rule.ores.join('、') || '无') + '；仅列出已观察候选';
   if (rule.kind === 'except') {
