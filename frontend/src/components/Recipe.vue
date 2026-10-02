@@ -110,6 +110,7 @@ function stack(element: Extract<Element, { kind: 'slot' }>): Input | Output {
 }
 function consumption(input: Input): string {
   const choice = chosen(input);
+  if (choice.consume.kind === 'wear') return '完工时尝试损耗工具；附魔与工具状态决定实际耐久变化';
   if (choice.consume.kind === 'allocated') return '按原生顺序分配需求；不是固定槽位扣除量';
   if (props.recipe.process?.kind === 'vat' && input.kind === 'fluid' && choice.consume.kind === 'keep') return '需有对应流体对象，可为零量；不消耗流体';
   if (choice.consume.kind === 'upto') return '至少一件即可；启动时最多消耗 ' + amount(choice.amount) + ' 件';
@@ -251,11 +252,15 @@ function chosen(input: Input) {
     </section>
     <details class="recipe-details" :open="!view">
       <summary>用量与条件</summary>
-      <template v-if="recipe.process?.kind === 'alloy'">
-        <p>合金模式或全部模式；基础能量 {{ recipe.process.energy }} RF，实际速度由供能决定。</p>
+      <template v-if="recipe.process?.kind === 'alloy' || recipe.process?.kind === 'splice'">
+        <p><template v-if="recipe.process.kind === 'alloy'">合金模式或全部模式；</template>基础能量 {{ recipe.process.energy }} RF，实际速度由供能决定。</p>
         <p>配方按注册顺序匹配。机器从左到右读取物品槽，将整叠数量分配给首个仍缺料的匹配需求；同一叠不会拆给多个需求，额外不匹配物品会阻止启动。下列顺序与数量为需求，不代表必须摆放的位置。</p>
         <p>启动后再按需求顺序扣料，各需求的取料位置为：{{ recipe.process.slots.map(slot => slot < 0 ? '任意槽' : '第 ' + (slot + 1) + ' 槽').join('、') }}。实际扣除受该槽存量限制，剩余材料保留，不返还容器。</p>
         <p>所有产物共享一次随机抽取，较低阈值命中时较高阈值也命中。重试不会重新抽取。输出槽合并仅比较物品与变体，已有堆叠的标签保留；空间不足或运行中改变输出槽可能减少实际取得量。</p>
+        <template v-if="recipe.process.kind === 'splice'">
+          <p>六个材料槽；正常库存每槽限一件。斧头放工具槽 7，剪刀放工具槽 8；工具不参与材料匹配。材料槽能否放入物品还取决于已放入的材料组合。</p>
+          <p>启动时两工具槽须非空；完工后对当时仍在槽内、可损耗的工具各调用一次原生损耗。耐久附魔、不可破坏状态及工具自有行为会影响结果，不保证每次掉一点耐久。损耗后达到最大损伤的工具会移除；过程中取出或更换工具会改变实际损耗对象。</p>
+        </template>
       </template>
       <template v-if="recipe.process?.kind === 'vat'">
         <p>基础能量 {{ recipe.process.energy }} RF；实际速度由供能与机器设置决定。两侧储罐容量各 8,000 mB，启动前产物必须能完整放入输出罐。</p>

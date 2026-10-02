@@ -109,6 +109,12 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(process).toContainText('所有产物共享一次随机抽取');
   await expect(process.locator('.stack-slot > .item-link[title*="本项阈值 0.0"]')).toContainText('0–3');
   await expect(process.locator('.stack-slot > .item-link[title*="本项阈值 0.0"]')).toHaveAttribute('title', /1\/16,777,216/);
+  await page.locator('.chrome-search-input').fill('Splice input');
+  await page.getByRole('button', { name: /^Splice input 装配材料/ }).first().click({ button: 'right' });
+  await expect(process).toContainText('六个材料槽');
+  await expect(process).toContainText('第 6 槽、第 1 槽');
+  await expect(process).toContainText('不保证每次掉一点耐久');
+  await expect(process.locator('.stack-slot > .item-link[title*="完工时尝试损耗工具"]')).toHaveCount(2);
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });
