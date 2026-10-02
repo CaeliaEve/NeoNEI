@@ -52,6 +52,7 @@ const visibleSlots = computed(() => new Set(elements.value.filter(element => ele
 const extraInputs = computed(() => props.recipe.inputs.filter(input => !visibleSlots.value.has('input/' + input.kind + '/' + input.slot)));
 const extraOutputs = computed(() => products.value.filter(output => !visibleSlots.value.has('output/' + output.kind + '/' + output.slot)));
 function quantityLabel(stack: Input | Output): string {
+  if ('choices' in stack && stack.choices[0]?.consume.kind === 'pedestals') return amount(stack.choices[0].amount) + '座*';
   if ('choices' in stack || !stack.quantity) return '';
   const [low, high] = quantityBounds(props.recipe, stack);
   return amount(low.toString()) + (low === high ? '' : '–' + amount(high.toString()));
@@ -62,7 +63,7 @@ function quantityNote(stack: Input | Output): string {
   if (q.kind === 'harmony') return (q.outcome === 'success'
     ? '共享成功次数 × 产量系数 × 原生基数 ' + q.nominal + '；稳定场与流体过量影响产量。'
     : '失败次数 × 本次成功率 × 原生基数 ' + q.nominal + '；与正常产出共享同次结果，不乘产量系数。')
-    + '所示为保守范围；' + (props.recipe.process?.mode === 'parallel' ? '星界阵列决定并行数。' : '单次模式含历史保底状态。');
+    + '所示为保守范围；' + (props.recipe.process?.kind === 'harmony' && props.recipe.process.mode === 'parallel' ? '星界阵列决定并行数。' : '单次模式含历史保底状态。');
   if (q.kind === 'draw') return '关联随机产出，与前序产物共享输入流体量。';
   if (q.kind === 'remainder') return '回收余量：输入总量减去本次已抽取的产物。';
   if (q.kind === 'branch') {
@@ -103,6 +104,7 @@ function stack(element: Extract<Element, { kind: 'slot' }>): Input | Output {
 }
 function consumption(input: Input): string {
   const choice = chosen(input);
+  if (choice.consume.kind === 'pedestals') return '样本座数；各座一件，实际数量随输入屏障变化';
   return choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'buffer' ? '启动时耗尽内部存量；显示最低门槛' : choice.consume.kind === 'stack' ? '整叠处理；显示数量为示例' : choice.consume.kind === 'damage' ? '耐久 −' + choice.consume.points : '';
 }
 function chosen(input: Input) {
@@ -132,7 +134,7 @@ function chosen(input: Input) {
           </div>
           <div v-else-if="element.kind === 'cost'" class="view-element" :style="position(element)">
             <TopicLink :topic="required(records.topics, cost(element.index).aspect)" :catalog="catalog" :records="records" :animate="animate"
-              compact :size="element.width * scale" :note="amount(cost(element.index).amount) + (recipe.magic?.kind === 'arcane' ? ' Vis' : ' 源质')">
+              compact :size="element.width * scale" :note="(recipe.process?.kind === 'runic' ? '样本费用 ' : '') + amount(cost(element.index).amount) + (recipe.magic?.kind === 'arcane' ? ' Vis' : ' 源质')">
               <span class="quantity">{{ amount(cost(element.index).amount) }}</span>
             </TopicLink>
           </div>
@@ -151,6 +153,7 @@ function chosen(input: Input) {
         </div>
       </div>
       <div v-else><Slot v-for="input in recipe.inputs" :key="input.kind + input.slot" :stack="input" :records="records" :catalog="catalog" :animate="animate" v-model:choice="choices['input' + input.kind + input.slot]"
+        :amount-label="quantityLabel(input)"
         @select="(id, direction) => emit('select', id, direction)" /></div><span aria-label="产出">→</span>
       <div><Slot v-for="output in products" :key="output.kind + output.slot" :stack="output" :records="records" :catalog="catalog" :animate="animate"
         :amount-label="quantityLabel(output)" :quantity-note="quantityNote(output)"
@@ -159,6 +162,7 @@ function chosen(input: Input) {
     <section v-if="view && (extraInputs.length || extraOutputs.length)" class="recipe-extra" aria-label="补充输入与产出">
       <div v-if="extraInputs.length"><h4>其他输入</h4><div class="extra-slots">
         <Slot v-for="input in extraInputs" :key="input.kind + input.slot" :stack="input" :records="records" :catalog="catalog" :animate="animate"
+          :amount-label="quantityLabel(input)"
           v-model:choice="choices['input' + input.kind + input.slot]" @select="(id, direction) => emit('select', id, direction)" />
       </div></div>
       <div v-if="extraOutputs.length"><h4>其他产出</h4><div class="extra-slots">
@@ -173,7 +177,9 @@ function chosen(input: Input) {
     </div>
     <section v-if="recipe.magic" class="recipe-magic" aria-label="魔法用量与研究">
       <h4>{{ magicName }}</h4>
-      <p class="magic-cost-note">{{ recipe.magic.kind === 'arcane' ? '基础 Vis 用量，装备减免另计。' : '每次配方消耗的源质。' }}</p>
+      <p class="magic-cost-note">{{ recipe.process?.kind === 'runic'
+        ? '展示样本屏障值 ' + recipe.process.charge + '；实际费用随输入装备与其内部升级变化。材料需分放在不同基座，不能合并为一个堆叠。'
+        : recipe.magic.kind === 'arcane' ? '基础 Vis 用量，装备减免另计。' : '每次配方消耗的源质。' }}</p>
       <p v-if="recipe.magic.creative">{{ recipe.magic.aspects.length ? '创造模式免 Vis 消耗。' : '此组合缺少可用于生存模式的 Vis 成本，仅在创造模式免消耗配置下可用。' }}</p>
       <div class="magic-costs"><span v-for="value in recipe.magic.aspects" :key="value.aspect">
         <TopicLink :topic="required(records.topics, value.aspect)" :catalog="catalog" :records="records" :animate="animate" /> × {{ amount(value.amount) }}
@@ -186,7 +192,7 @@ function chosen(input: Input) {
           <p>下方产物示例按额外法杖供能显示，自行供能后的实际余量由游戏计算。</p>
         </template>
       </section>
-      <p v-if="recipe.magic.instability != null">基础不稳定性：{{ recipe.magic.instability }}</p>
+      <p v-if="recipe.magic.instability != null">{{ recipe.process?.kind === 'runic' ? '样本不稳定性：' : '基础不稳定性：' }}{{ recipe.magic.instability }}</p>
       <div v-if="recipe.magic.central != null" class="magic-central"><span>中心材料</span>
         <ItemLink :target="{ kind: 'item', ...chosen(input(recipe.magic.central)) }" :catalog="catalog" :records="records" :animate="animate"
           @select="(id, direction) => emit('select', id, direction)" /></div>
@@ -203,6 +209,11 @@ function chosen(input: Input) {
         <p>基因扫描处理整个输入堆叠，产物数量与输入相同；显示数量是单个样本。</p>
         <p>未分析个体经林业原生接口分析并重新写出基因数据，额外的命名等标签不保留。已分析个体原样返回。</p>
         <p>两种状态都要求槽内至少有 100 mB 蜂蜜；仅未分析时消耗。耗时和能耗为对应分支的基础值。</p>
+      </template>
+      <template v-else-if="output.change?.action.kind === 'runic'">
+        <p>保留装备与其他 NBT。将 RS.HARDEN 按原生有符号 byte 读取并加一（127 后回绕至 −128）。</p>
+        <p>屏障值由装备原生接口和现有强化共同决定；材料基座数为 1 + max(0, 屏障值)，不稳定性为 5 + 屏障值 / 2（向零取整）。</p>
+        <p>源质基数为 32 × 2^屏障值，按原生 int 转换；能量用全额，护甲与魔法各用一半。所列为样本费用，祭坛运行风险另计。</p>
       </template>
       <template v-else-if="output.change?.action.kind === 'patch'">
         <p>保留输入物品及其其他数据。<template v-if="Object.keys(output.change.action.set).length">替换标签：<code>{{ Object.keys(output.change.action.set).join('、') }}</code>。</template>
@@ -229,6 +240,7 @@ function chosen(input: Input) {
       <div class="ingredients"><section><h4>输入</h4>
         <div v-for="input in recipe.inputs" :key="input.kind + input.slot" class="ingredient">
           <ItemLink :target="{ kind: input.kind, ...chosen(input) }" :records="records" :catalog="catalog" :animate="animate"
+            :amount-label="quantityLabel(input)"
             @select="(id, direction) => emit('select', id, direction)" />
           <small>{{ consumption(input) }}<template v-if="input.choices.length > 1"> · {{ input.choices.length }} 个候选</template></small>
           <template v-for="returned in chosen(input).returns" :key="returned.kind + returned.id"><small>归还</small>

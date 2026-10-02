@@ -22,14 +22,17 @@ const target = computed(() => 'choices' in props.stack ? { kind: props.stack.kin
 const note = computed(() => {
   if (!('choices' in props.stack)) return props.stack.quantity ? props.quantityNote
     : props.stack.change?.action.kind === 'analyze' ? '与输入堆叠数量相同；显示单个样本'
+    : props.stack.change?.action.kind === 'runic' ? '升级所投入的装备并保留其他数据；所示为样本'
     : '概率 ' + chance(props.stack.chance) + (props.stack.role === 'return' ? ' · 归还' : '');
   return choiceNote(current());
 });
 function choiceNote(choice: Input['choices'][number]): string {
+  if (choice.consume.kind === 'pedestals') return '样本需 ' + choice.amount + ' 座基座，每座一件；实际座数 = 1 + max(0, 输入屏障值) · ' + matchNote(choice.rule);
   const consumption = choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'buffer' ? '启动时耗尽对应内部流体存量（显示最低门槛）' : choice.consume.kind === 'stack' ? '处理整个输入堆叠' : choice.consume.kind === 'damage' ? '消耗耐久 ' + choice.consume.points : '消耗';
   return consumption + ' · ' + matchNote(choice.rule) + (choice.returns.length ? ' · 归还容器' : '');
 }
 function matchNote(rule: Match, nested = false): string {
+  if (rule.kind === 'infusion') return '原生注魔匹配：同物品与变体，或首个矿辞组为 ' + (rule.ores.join('、') || '无') + '；仅列出已观察候选';
   if (rule.kind === 'except') {
     if (nested) throw new Error('配方包含嵌套匹配排除条件');
     const examples = rule.exclude.slice(0, 3).map(prior => {

@@ -53,6 +53,13 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await process.getByRole('button', { name: '下一页', exact: true }).click();
   await expect(process.locator('.item-link[title*="星界阵列决定并行数"]').first()).toBeVisible();
   await expect(process.locator('.item-link[title*="失败次数"]').first()).toBeVisible();
+  await page.locator('.chrome-search-input').fill('Runic armor');
+  const armor = page.getByRole('button', { name: /^Runic armor 符文护甲/ }).first();
+  await armor.click({ button: 'right' });
+  await expect(process.locator('.magic-cost-note')).toContainText('展示样本屏障值 3');
+  await expect(process).toContainText('样本不稳定性：6');
+  await expect(process).toContainText('4座*');
+  await expect(process).toContainText('127 后回绕至 −128');
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

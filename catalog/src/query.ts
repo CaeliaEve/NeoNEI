@@ -259,6 +259,7 @@ export class Query {
       }
       for (const input of recipe.inputs) for (const choice of input.choices) {
         substance(input.kind, choice.id);
+        if (choice.rule.kind === 'infusion') substance('item', choice.rule.template);
         if (choice.rule.kind === 'except') {
           for (const prior of choice.rule.exclude) substance('item', prior.id);
           budget();
