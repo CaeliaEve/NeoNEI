@@ -242,6 +242,15 @@ function chosen(input: Input) {
     </section>
     <details class="recipe-details" :open="!view">
       <summary>用量与条件</summary>
+      <template v-if="recipe.process?.kind === 'inscriber'">
+        <p>{{ recipe.process.mode === 'inscribe' ? '压印：保留模板，消耗中间材料。' : '合成：清空两个模板槽与中间材料槽，不返还容器。' }} 每个非空输入槽最多放一件。</p>
+        <p v-if="recipe.process.top">模板可以上下互换；缺少下模板时，另一模板槽必须为空。</p>
+        <p v-else>至少一个模板槽必须为空；另一个模板槽可以放任意单件物品。注册的下模板不构成材料要求。</p>
+        <p v-if="recipe.process.namePress">若非空模板槽全部是
+          <ItemLink :target="{ kind: 'item', id: recipe.process.namePress }" :catalog="catalog" :records="records" :animate="animate"
+            @select="(id, direction) => emit('select', id, direction)" />，会优先执行命名，不执行本配方。</p>
+        <p>按快照中的原生注册顺序选取第一条匹配配方，本条顺序号为 {{ recipe.order }}。还需供能与足够产物空间；速度由升级和网络调度决定，输出时重新检查材料。</p>
+      </template>
       <div class="ingredients"><section><h4>输入</h4>
         <div v-for="input in recipe.inputs" :key="input.kind + input.slot" class="ingredient">
           <ItemLink :target="{ kind: input.kind, ...chosen(input) }" :records="records" :catalog="catalog" :animate="animate"

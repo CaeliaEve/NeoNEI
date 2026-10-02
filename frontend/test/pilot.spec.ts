@@ -66,6 +66,15 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(process).toContainText('待完成地图样本');
   await expect(process).toContainText('由世界分配新地图 ID');
   await expect(process).toContainText('不复制旧探索像素');
+  await page.locator('.chrome-search-input').fill('Inscriber input');
+  await page.getByRole('button', { name: /^Inscriber input 压印材料/ }).first().click({ button: 'right' });
+  await expect(process).toContainText('压印：保留模板');
+  await expect(process).toContainText('会优先执行命名');
+  await expect(process.locator('.stack-slot > .item-link[title*="AE2 精确匹配"]').first()).toBeVisible();
+  await process.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(process).toContainText('合成：清空两个模板槽');
+  await process.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(process).toContainText('注册的下模板不构成材料要求');
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

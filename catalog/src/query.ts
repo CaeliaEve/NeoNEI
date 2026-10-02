@@ -252,6 +252,9 @@ export class Query {
     for (const recipe of recipes) {
       categoryIds.add(recipe.category);
       if (recipe.view) views.add(recipe.view);
+      if (recipe.process?.kind === 'inscriber') {
+        for (const id of [recipe.process.top, recipe.process.bottom, recipe.process.namePress]) if (id) substance('item', id);
+      }
       if (recipe.magic) {
         for (const cost of recipe.magic.aspects) topicIds.add(cost.aspect);
         for (const aspect of Object.keys(recipe.magic.payment?.charges ?? {})) topicIds.add(aspect);

@@ -33,6 +33,7 @@ function choiceNote(choice: Input['choices'][number]): string {
   return consumption + ' · ' + matchNote(choice.rule) + (choice.returns.length ? ' · 归还容器' : '');
 }
 function matchNote(rule: Match, nested = false): string {
+  if (rule.kind === 'ae') return 'AE2 精确匹配：同物品与变体；空 NBT 等价，其他标签按原生类型和值比较';
   if (rule.kind === 'infusion') return '原生注魔匹配：同物品与变体，或首个矿辞组为 ' + (rule.ores.join('、') || '无') + '；仅列出已观察候选';
   if (rule.kind === 'except') {
     if (nested) throw new Error('配方包含嵌套匹配排除条件');
