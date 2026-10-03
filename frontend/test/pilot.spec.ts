@@ -135,6 +135,14 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await process.getByRole('button',{name:'查看 2 个候选输入',exact:true}).click();
   await choices.locator('.choice-list .item-link').nth(1).click();
   await expect(process).toContainText('Sheep bound spawner');
+  await page.locator('.chrome-search-input').fill('shitou');
+  await page.getByRole('button', { name: /Stone 石头/ }).first().click({ button: 'right' });
+  await page.getByRole('option', { name: /Rolling machine 轧制机/ }).click();
+  await expect(process).toContainText('每次从每个有物品的格子消耗一件，不返还容器');
+  await expect(process).toContainText('保留最后一份');
+  await expect(process).toContainText('每次推进消耗 50 RF');
+  await process.getByRole('button', { name: '下一页', exact: true }).click();
+  await expect(process).toContainText('当前配置关闭机器耗能');
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

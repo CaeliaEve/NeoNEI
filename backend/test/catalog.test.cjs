@@ -46,14 +46,14 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   const api = `/api/catalog/${manifest.id}`;
   const first = await (await get(base, api + '/items?limit=1')).json();
   const second = await (await get(base, api + '/items?limit=1&offset=2')).json();
-  assert.equal(first.total, 79);
+  assert.equal(first.total, 80);
   assert.equal(first.rows[0].kind, 'item');
   assert.equal(second.rows[0].kind, 'fluid');
   assert.ok(first.textures[0].frames.length);
   assert.equal((await (await get(base, api + '/items?query=shitou')).json()).rows[0].id, first.rows[0].id);
   assert.equal((await (await get(base, api + '/items?kind=fluid&mod=minecraft')).json()).total, 0);
   const facets = await (await get(base, api + '/facets')).json();
-  assert.deepEqual(facets.mods, [{ id: 'BiblioCraft', count: 1 }, { id: 'ProjRed|Core', count: 1 }, { id: 'Thaumcraft', count: 1 }, { id: 'fixture', count: 56 }, { id: 'minecraft', count: 13 }]);
+  assert.deepEqual(facets.mods, [{ id: 'BiblioCraft', count: 1 }, { id: 'ProjRed|Core', count: 1 }, { id: 'Thaumcraft', count: 1 }, { id: 'fixture', count: 57 }, { id: 'minecraft', count: 13 }]);
   for (const [registry, mod, query] of [
     ['BiblioCraft:Armor Stand', 'BiblioCraft', 'Armor Stand'],
     ['ProjRed|Core:projectred.core.part', 'ProjRed|Core', 'projectred.core.part'],
@@ -143,6 +143,16 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   const soul=soulResult.rows[0];
   assert.equal(soul.process.experience,272);assert.equal(soul.process.drains,false);
   assert.deepEqual(quantityBounds(soul,soul.outputs[1]),[0n,2n]);
+  const rollingRows = uses.rows.filter(r=>r.process?.kind==='rolling');
+  assert.equal(rollingRows.length,2);
+  for(const r of rollingRows) {
+    assert.equal(r.process.kind,'rolling');
+    const template=r.process.earlier[0].inputs[0][0].id;
+    assert.ok(uses.related.items.some(i=>i.id===template),'Prior rolling template must be hydrated');
+    assert.ok(!r.inputs.flatMap(i=>i.choices).some(c=>c.id===template),'Priority exclusion is not an ingredient');
+    const edges=await (await get(base,api+'/recipes?direction=uses&item='+template)).json();
+    assert.equal(edges.total,0,'Prior predicates must not create ingredient edges');
+  }
   const broken=await(await get(base,api+'/items?query='+encodeURIComponent('Broken spawner'))).json();
   const spawned=await(await get(base,api+'/recipes?direction=uses&item='+broken.rows[0].id)).json();
   const spawner=spawned.rows[0];assert.equal(spawner.process.spawner,true);
@@ -203,7 +213,7 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.deepEqual(detail.recipe, recipe);
   const paper = await (await get(base, api + '/items?query=paper')).json();
   const magic = await (await get(base, api + '/recipes?item=' + paper.rows[0].id)).json();
-  assert.equal(magic.total, 6);
+  assert.equal(magic.total, 8);
   assert.equal(magic.rows.filter(row => row.magic).length, 4);
   assert.ok(magic.related.topics.some(topic => topic.kind === 'aspect'));
   assert.ok(magic.related.topics.some(topic => topic.kind === 'research'));
@@ -436,7 +446,7 @@ test('invalid pointers, damaged tables and missing declared files fail explicitl
   contents[contents.length - 1] ^= 1;
   await fs.writeFile(tablePath, contents);
   const repaired = await (await get(damaged, `/api/catalog/${pointer.id}/items`)).json();
-  assert.equal(repaired.total, 79, 'a failed memoized read must be retryable after repair');
+  assert.equal(repaired.total, 80, 'a failed memoized read must be retryable after repair');
   const recipes = manifest.files.find(file => file.kind === 'recipes');
   const recipePath = path.join(root, 'catalogs', pointer.id, recipes.path);
   const recipeBytes = await fs.readFile(recipePath);

@@ -71,7 +71,7 @@
     "e2e": "node ../scripts/browser.mjs pilot.spec.ts catalog-navigation.spec.ts"
   },
   "dependencies": {
-    "@elysium/contracts": "file:../vendor/elysium-contracts-0.27.0.tgz",
+    "@elysium/contracts": "file:../vendor/elysium-contracts-0.28.0.tgz",
     "@neonei/catalog": "file:../catalog",
     "axios": "^1.18.1",
     "pinia": "^3.0.4",

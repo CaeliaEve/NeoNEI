@@ -257,6 +257,12 @@ function chosen(input: Input) {
     </section>
     <details class="recipe-details" :open="!view">
       <summary>用量与条件</summary>
+      <template v-if="recipe.process?.kind === 'rolling'">
+        <p>有序和无序配方共用注册顺序，只执行第一条匹配配方。有序配方可在 3×3 网格中平移，是否可镜像以网格规则为准；无序配方按格子顺序逐个匹配尚未使用的材料需求。</p>
+        <p>每次从每个有物品的格子消耗一件，不返还容器。默认每格需超过一件，保留最后一份；点击使用最后一份可执行一次，完成后恢复保留。邻接库存补料和同类材料均衡可能改变格中数量。</p>
+        <p>需要推进 100 次，再等待完成与输出空间检查。{{ recipe.process.powered ? '每次推进消耗 50 RF，正常完整加工共 5,000 RF；储能上限 5,000 RF，单次接收上限 1,000 RF。' : '当前配置关闭机器耗能，不消耗 RF。' }}暂停、供能不足与输出阻塞会延长耗时；完成时重新按当前网格选择配方。</p>
+        <details v-if="recipe.process.earlier.length"><summary>前序轧制配方条件</summary><pre>{{ JSON.stringify(recipe.process.earlier, null, 2) }}</pre></details>
+      </template>
       <template v-if="recipe.process?.kind === 'soul'">
         <p>基础能量 {{ recipe.process.energy }} RF；启动需要 {{ recipe.process.experience }} XP（界面标注 {{ recipe.process.levels }} 级），经验容量 {{ recipe.process.capacity }} XP。{{ recipe.process.drains ? '任务成功启动后扣除原始经验值。' : '当前未注册经验流体：仍检查经验门槛，但原生机器不扣除经验。' }}</p>
         <p>第一槽检查灵魂标识，第二槽检查材料；正常库存每槽限一件，启动各消耗一件，不返还材料容器。按注册顺序选择首条匹配，两槽放入限制还取决于已有物品。</p>

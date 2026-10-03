@@ -268,6 +268,12 @@ export class Query {
           substance('item',prior.soul.vessel);substance('item',prior.material.id);budget();
         }
       }
+      if (recipe.process?.kind === 'rolling') {
+        for (const prior of recipe.process.earlier) for (const choices of prior.inputs) {
+          for (const choice of choices) substance('item', choice.id);
+          budget();
+        }
+      }
       if (recipe.process?.kind === 'inscriber') {
         for (const id of [recipe.process.top, recipe.process.bottom, recipe.process.namePress]) if (id) substance('item', id);
       }
