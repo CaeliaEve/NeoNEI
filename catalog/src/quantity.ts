@@ -15,6 +15,14 @@ export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint
   ensure(output.amount == null && output.change == null
     && output.chance.numerator === '1' && output.chance.denominator === '1', '关联产量含冲突的固定字段');
 
+  if (rule.kind === 'squeezer') {
+    ensure(recipe.process?.kind === 'forestrySqueezer' && /^(0|-?[1-9][0-9]*)$/.test(rule.nominal), '榨汁机产量缺少原生过程或数量无效');
+    const nominal = BigInt(rule.nominal);
+    ensure(nominal >= -2147483648n && nominal <= 2147483647n, '榨汁机原生产量超出范围');
+    if (output.kind === 'item' && recipe.process.chance.numerator === '0') return [0n, 0n];
+    return [output.kind === 'item' && nominal < 0n ? nominal : 0n, nominal > 0n ? nominal : 0n];
+  }
+
   if (rule.kind === 'sharedRoll') {
     ensure((recipe.process?.kind === 'alloy' || recipe.process?.kind === 'splice') && output.kind === 'item', '装配产出缺少共享过程');
     const threshold = Math.fround(Number(rule.threshold)), nominal = integer(rule.nominal);

@@ -186,6 +186,17 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(process).toContainText('换料不会清零进度');
   await expect(process).toContainText('副产物可能部分或全部丢失');
   await expect(process.locator('.stack-slot').nth(1).locator(':scope > .item-link')).toHaveAttribute('title', /阶段.*空 NBT/);
+  await page.locator('.chrome-search-input').fill('Paper');
+  await page.locator('.items-column').getByRole('button', { name: /^Paper 纸/ }).first().click({ button: 'right' });
+  await expect(process).not.toContainText('正在加载配方');
+  for (let group=0;group<3 && !await page.getByRole('option', { name: /Shared machine rules/ }).isVisible();group++) {
+    await process.locator('.category-page-btn--next').click();
+  }
+  await page.getByRole('option', { name: /Shared machine rules/ }).click();
+  await expect(process).toContainText('九个输入库存槽');
+  await expect(process).toContainText('基础工作步数为 3');
+  await expect(process.locator('.stack-slot > .item-link[title*="共享库存"]').first()).toBeVisible();
+  await expect(process.locator('.stack-slot > .item-link[title*="原生数量参数 100"]')).toContainText('0–100');
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

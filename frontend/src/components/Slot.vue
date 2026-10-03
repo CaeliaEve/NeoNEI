@@ -48,6 +48,7 @@ function matchNote(rule: Match, nested = false): string {
     return (rule.filter.exclude?'排除以下灵魂类型：':'允许以下灵魂类型：')+names+(rule.filter.names.length>8?' 等 '+rule.filter.names.length+' 项':'')+'；按原生灵魂标识匹配，不限于展示样本';
   }
   if (rule.kind === 'integration') return '按主输入与扩展槽组合匹配；所示为原生观察样本';
+  if (rule.kind === 'forestry') return '按共享库存、当前配方和注册顺序匹配；所示为原生需求，候选数量不代表独立扣料';
   if (rule.kind === 'ae') return 'AE2 精确匹配：同物品与变体；空 NBT 等价，其他标签按原生类型和值比较';
   if (rule.kind === 'buildcraft') return 'BuildCraft：同物品；' + (rule.wildcard ? '源模板通配，忽略变体与 NBT' : (rule.subtypes ? '匹配变体；' : '不区分变体；') + '原生 NBT 比较，缺失与空标签不同；投入通配变体时跳过 NBT');
   if (rule.kind === 'infusion') return '原生注魔匹配：同物品与变体，或首个矿辞组为 ' + (rule.ores.join('、') || '无') + '；仅列出已观察候选';

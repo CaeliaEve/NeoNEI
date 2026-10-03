@@ -74,6 +74,7 @@ function quantityLabel(stack: Input | Output): string {
 function quantityNote(stack: Input | Output): string {
   if ('choices' in stack || !stack.quantity) return '';
   const q = stack.quantity;
+  if (q.kind === 'squeezer' && props.recipe.process?.kind === 'forestrySqueezer') return '原生数量参数 ' + amount(q.nominal) + '；先检查液罐与残余物空间，再按共享库存扣料，成功后产出。' + (stack.kind === 'item' ? '残余物抽取概率 ' + chance(props.recipe.process.chance) + '。' : '液罐容量为 10,000 mB。');
   if (q.kind === 'soul') return '两个产出共享完成条件；材料也为灵魂瓶时，以最后一个瓶中的灵魂决定是否产出。满足时尝试放入 '+amount(q.nominal)+' 件，输出空间可能减少实际取得量。';
   if (q.kind === 'grinding') return '本项阈值 ' + q.threshold + '；全部产物共享任务抽取。命中后每次完成尝试放入 ' + amount(q.nominal) + ' 件，研磨珠可能让同组结果重复产出，实际数量受珠子状态与输出空间影响。';
   if (q.kind === 'sharedRoll') return '全部产物共享一次抽取；本项阈值 ' + q.threshold + '，命中时尝试放入 ' + amount(q.nominal) + ' 件。阈值为零仍有 1/16,777,216 的命中机会；输出槽状态可能减少实际取得数量。';
@@ -279,6 +280,11 @@ function choose(stack: Input | Output, index: number): void {
     </section>
     <details class="recipe-details" :open="!view">
       <summary>用量与条件</summary>
+      <template v-if="recipe.process?.kind === 'forestrySqueezer'">
+        <p>九个输入库存槽。当前配方仍满足需求时继续使用；重新查找时，先按槽位寻找容器配方，再按原生注册顺序寻找普通配方。保留配方允许矿辞匹配，重新查找普通配方只使用直接匹配。</p>
+        <p>先合并同类存量，再检查每项需求；实际取料先直接匹配、后矿辞匹配，不同需求可能竞争同一份库存。取料失败可能已消耗部分物品，不返还空容器。原生零值与负值按原样保留。</p>
+        <p>基础工作步数为 {{ recipe.process.time }}，每五游戏刻检查一次；速度、供能及输出空间影响实际耗时。液罐容量为 10,000 mB；即使残余物概率为零，也会检查其空间。取料成功后生成流体，并以 {{ chance(recipe.process.chance) }} 概率尝试放入残余物。</p>
+      </template>
       <template v-if="recipe.process?.kind === 'ic2Blast'">
         <p>当前热量门槛为 {{ recipe.process.heat }}；通过正面相邻热源预热，热量达标后推进加工。实际耗时受预热、空气供应和输出空间影响。</p>
         <p>从零进度开始，完整加工需 6001 次可工作调用。在进度 1、1000、2000、3000、4000、5000 时分别消耗一件空气单元，并返还空单元；空单元输出槽堵塞时暂停。换料不会清零进度，完工时按当前主材料决定产物。</p>

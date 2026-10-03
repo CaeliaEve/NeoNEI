@@ -6,6 +6,7 @@ import { Atlas, frameAt, stepAt } from '../src/catalog/atlas.ts';
 import { amount, chance, ticks } from '../src/catalog/format.ts';
 import { Playback } from '../src/catalog/clock.ts';
 import { useRequest } from '../src/state/request.ts';
+import { quantityBounds } from '../../catalog/src/quantity.ts';
 
 test('correlated inputs select a complete sample and preserve independent single-axis changes', async () => {
   const api = await import('../src/catalog/selection.ts').catch(() => null);
@@ -60,6 +61,12 @@ test('texture timelines respect frame durations and interpolation while quantiti
   assert.equal(ticks('21'), '1.05 s');
   assert.equal(chance({ numerator: '1', denominator: '3' }), '1/3 · ≈33.33%');
   assert.equal(chance({ numerator: '0', denominator: '1' }), '0%');
+  const squeezed={process:{kind:'forestrySqueezer',chance:{numerator:'1',denominator:'2'}}}, output={kind:'item',amount:null,change:null,chance:{numerator:'1',denominator:'1'},quantity:{kind:'squeezer',nominal:'-2'}};
+  assert.deepEqual(quantityBounds({process:{kind:'forestrySqueezer',chance:{numerator:'0',denominator:'1'}}},{...output,quantity:{kind:'squeezer',nominal:'3'}}),[0n,0n]);
+  assert.deepEqual(quantityBounds(squeezed,output),[-2n,0n]);
+  assert.deepEqual(quantityBounds(squeezed,{...output,kind:'fluid'}),[0n,0n]);
+  assert.throws(()=>quantityBounds({process:null},output));
+  assert.throws(()=>quantityBounds(squeezed,{...output,quantity:{kind:'squeezer',nominal:'2147483648'}}));
 });
 
 test('request replacement and component disposal prevent late results from changing the page', async () => {

@@ -23,7 +23,7 @@ test('direct recipe slots navigate to uses without losing the catalog', async ({
   if (category.icon?.kind === 'item' || category.machines.some((m: any) => m.kind === 'item')) {
     await expect.poll(() => page.locator('.machine-icon-container canvas').first().evaluate((c: HTMLCanvasElement) => c.getContext('2d')!.getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0))).toBe(true);
   }
-  await expect(page.locator('.variant-scaffold')).not.toContainText(/(?:item|string)_[a-f0-9]{64}/);
+  await expect(page.locator('.recipe-view-root')).not.toContainText(/(?:item|string)_[a-f0-9]{64}/);
 });
 
 test('aspect details retain readable domain layout on direct entry', async ({ page, request }) => {
