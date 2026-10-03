@@ -81,6 +81,7 @@ function quantityNote(stack: Input | Output): string {
     return `互斥工况分支【${q.group} / ${q.branch}】${q.condition ? '（' + q.condition + '）' : ''}${parameters}`;
   }
   if (q.kind === 'potential') {
+    if (props.recipe.process?.kind === 'ic2Blast' && q.stat === 'ic2:slagSpace') return '实际取得量取决于副产物槽空间；未能放入的部分会丢失，最多 ' + amount(q.nominal) + ' 件。';
     const parameters = q.parameters ? '；参数：' + Object.entries(q.parameters).map(([key, value]) => `${key}=${value}`).join('，') : '';
     return `潜在产量【${q.stat}】${q.condition ? '（' + q.condition + '）' : ''}${parameters}`;
   }
@@ -114,6 +115,7 @@ function stack(element: Extract<Element, { kind: 'slot' }>): Input | Output {
 }
 function consumption(input: Input): string {
   const choice = chosen(input);
+  if (choice.consume.kind === 'staged') return input.slot === 0 ? '此数量是存量门槛；完工时只消耗一件主材料' : '每个空气检查点消耗一件，并向空单元输出槽返还下列物品';
   if (choice.consume.kind === 'reserve') return '可选研磨珠库存；装载新研磨珠时消耗一件，不是每条配方消耗一件';
   if (choice.consume.kind === 'wear') return '完工时尝试损耗工具；附魔与工具状态决定实际耐久变化';
   if (choice.consume.kind === 'allocated') return '按原生顺序分配需求；不是固定槽位扣除量';
@@ -257,6 +259,11 @@ function chosen(input: Input) {
     </section>
     <details class="recipe-details" :open="!view">
       <summary>用量与条件</summary>
+      <template v-if="recipe.process?.kind === 'ic2Blast'">
+        <p>当前热量门槛为 {{ recipe.process.heat }}；通过正面相邻热源预热，热量达标后推进加工。实际耗时受预热、空气供应和输出空间影响。</p>
+        <p>从零进度开始，完整加工需 6001 次可工作调用。在进度 1、1000、2000、3000、4000、5000 时分别消耗一件空气单元，并返还空单元；空单元输出槽堵塞时暂停。换料不会清零进度，完工时按当前主材料决定产物。</p>
+        <p>原生机器把两种产物的空间检查都做在主输出槽上，可能因此暂停；实际完工时将副产物放入独立槽，未放入的部分不会退回，副产物可能部分或全部丢失。</p>
+      </template>
       <template v-if="recipe.process?.kind === 'buildcraftRefinery'">
         <p>每次尝试的能量为 {{ recipe.process.energy }} RF；重试间隔参数为 {{ recipe.process.delay }} 游戏刻。原生图上的 RF/t 标注不代表实际逐刻扣能；供能不足和输出空间会影响完成时间。</p>
         <p>两个输入罐和一个输出罐，当前默认每罐 {{ recipe.process.capacity }} mB。更新选择时按原生注册顺序寻找首条预检查通过的配方；各份需求独立检查原始存量，重复流体不会在预检查中累计扣除。</p>

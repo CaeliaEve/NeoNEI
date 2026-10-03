@@ -29,6 +29,7 @@ const note = computed(() => {
   return choiceNote(current());
 });
 function choiceNote(choice: Input['choices'][number]): string {
+  if (choice.consume.kind === 'staged') return '阶段存量门槛；在配方过程指定的阶段消耗一件 · ' + matchNote(choice.rule);
   if (choice.consume.kind === 'reserve') return '可选研磨珠库存；装载新珠时消耗一件 · ' + matchNote(choice.rule);
   if (choice.consume.kind === 'wear') return '完工时尝试损耗工具；附魔与工具状态决定实际耐久变化 · ' + matchNote(choice.rule);
   if (choice.consume.kind === 'allocated') return '原生顺序分配需求；实际扣料由配方过程决定 · ' + matchNote(choice.rule);
@@ -38,6 +39,7 @@ function choiceNote(choice: Input['choices'][number]): string {
   return consumption + ' · ' + matchNote(choice.rule) + (choice.returns.length ? ' · 归还容器' : '');
 }
 function matchNote(rule: Match, nested = false): string {
+  if (rule.kind === 'untagged') return '仅接受空 NBT（无标签或空复合标签）；' + (rule.meta ? '不区分变体' : '变体必须相同');
   if (rule.kind === 'soul') {
     const names=rule.filter.names.slice(0,8).map(name=>name===null?'无灵魂标识':name===''?'空字符串':name).join('、');
     return (rule.filter.exclude?'排除以下灵魂类型：':'允许以下灵魂类型：')+names+(rule.filter.names.length>8?' 等 '+rule.filter.names.length+' 项':'')+'；按原生灵魂标识匹配，不限于展示样本';

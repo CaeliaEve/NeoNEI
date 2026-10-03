@@ -75,7 +75,7 @@ const GT_RECIPE_NAME_BY_KEY: Record<string, string> = {
 const WELL_KNOWN_RECIPE_NAME_BY_ID: Array<[RegExp, string]> = [
   [/codechicken_nei_recipe_shapedrecipehandler|crafting~shaped/i, '有序合成'],
   [/codechicken_nei_recipe_shapelessrecipehandler|crafting~shapeless/i, '无序合成'],
-  [/minecraft~smelting|furnace|smelting/i, '熔炉'],
+  [/^minecraft~smelting(?:~|$)|^codechicken[._]nei[._]recipe[._]furnacerecipehandler$|^(?:furnace|smelting)$/i, '熔炉'],
   [/botania.*manapool|botania~mana_pool/i, '魔力池'],
   [/mana pool/i, '魔力池'],
   [/botania.*runic|rune/i, '符文祭坛'],
@@ -115,7 +115,8 @@ const humanizeRecipeCategoryName = (raw: string): string => {
   if (/crafting \(shaped\)/i.test(stripped)) return '有序合成';
   if (/crafting \(shapeless\)/i.test(stripped)) return '无序合成';
   if (/mana pool/i.test(stripped)) return '魔力池';
-  if (/furnace|smelting/i.test(stripped)) return '熔炉';
+  // Specific native furnace names identify different machines, not vanilla aliases.
+  if (/^(?:furnace|smelting)$/i.test(stripped)) return '熔炉';
   return stripped || value;
 };
 

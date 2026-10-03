@@ -160,6 +160,14 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await process.getByText('进液许可与前序配方', { exact: true }).click();
   await expect(process).toContainText('helium');
   await expect(process).toContainText('hydrogen');
+  await page.locator('.chrome-search-input').fill('shitou');
+  await page.getByRole('button', { name: /Stone 石头/ }).first().click({ button: 'right' });
+  await page.getByRole('option', { name: /IC2 Blast Furnace 高炉/ }).click();
+  await expect(process).toContainText('当前热量门槛为 50000');
+  await expect(process).toContainText('完工时只消耗一件主材料');
+  await expect(process).toContainText('换料不会清零进度');
+  await expect(process).toContainText('副产物可能部分或全部丢失');
+  await expect(process.locator('.stack-slot').nth(1).locator(':scope > .item-link')).toHaveAttribute('title', /阶段.*空 NBT/);
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });

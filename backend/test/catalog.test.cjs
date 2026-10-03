@@ -221,7 +221,15 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.deepEqual(detail.recipe, recipe);
   const paper = await (await get(base, api + '/items?query=paper')).json();
   const magic = await (await get(base, api + '/recipes?item=' + paper.rows[0].id)).json();
-  assert.equal(magic.total, 9);
+  assert.equal(magic.total, 10);
+  const blast=magic.rows.find(row=>row.process?.kind==='ic2Blast');
+  assert.equal(blast.process.heat,50000);
+  assert.equal(blast.duration,null);
+  assert.equal(blast.energy,null);
+  assert.equal(blast.inputs[0].choices[0].amount,'4');
+  assert.equal(blast.inputs[1].choices[0].consume.kind,'staged');
+  assert.deepEqual(quantityBounds(blast,blast.outputs[1]),[0n,3n]);
+  assert.ok(magic.related.items.some(item=>item.id===blast.inputs[1].choices[0].returns[0].id));
   const buildcraft = magic.rows.find(row => row.process?.kind === 'buildcraftAssembly');
   assert.equal(buildcraft.process.energy, 700);
   assert.equal(buildcraft.duration, null);
@@ -254,7 +262,7 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
     if (key === 'filter') assert.equal(record.nbt.value.energy, undefined);
     else assert.equal(record.nbt.value.energy.value, '9007199254740993');
   }
-  assert.equal((await (await get(base, api + '/recipes?item=' + first.rows[0].id)).json()).total, 0);
+  assert.deepEqual((await (await get(base, api + '/recipes?item=' + first.rows[0].id)).json()).rows.map(row=>row.id), [blast.id]);
   const wand = (await (await get(base, api + '/items?query=' + encodeURIComponent('充能法杖'))).json()).rows[0];
   const replacements = await (await get(base, api + '/recipes?direction=uses&item=' + wand.id)).json();
   assert.equal(replacements.total, 4);
