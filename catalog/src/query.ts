@@ -281,6 +281,12 @@ export class Query {
       if (recipe.process?.kind === 'inscriber') {
         for (const id of [recipe.process.top, recipe.process.bottom, recipe.process.namePress]) if (id) substance('item', id);
       }
+      if (recipe.process?.kind === 'ic2Blast') {
+        for (const slot of recipe.process.containers) for (const container of slot) {
+          if (container) substance('item', container.id);
+          budget();
+        }
+      }
       if (recipe.magic) {
         for (const cost of recipe.magic.aspects) topicIds.add(cost.aspect);
         for (const aspect of Object.keys(recipe.magic.payment?.charges ?? {})) topicIds.add(aspect);

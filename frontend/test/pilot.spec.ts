@@ -182,7 +182,8 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await page.getByRole('button', { name: /Stone 石头/ }).first().click({ button: 'right' });
   await page.getByRole('option', { name: /IC2 Blast Furnace 高炉/ }).click();
   await expect(process).toContainText('当前热量门槛为 50000');
-  await expect(process).toContainText('完工时只消耗一件主材料');
+  await expect(process).toContainText('完工时尝试取走一件主材料');
+  await expect(process).toContainText('堆叠超过一件时不扣料');
   await expect(process).toContainText('换料不会清零进度');
   await expect(process).toContainText('副产物可能部分或全部丢失');
   await expect(process.locator('.stack-slot').nth(1).locator(':scope > .item-link')).toHaveAttribute('title', /阶段.*空 NBT/);
@@ -198,6 +199,13 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(process.locator('.stack-slot > .item-link[title*="共享库存"]').first()).toBeVisible();
   await expect(process.locator('.stack-slot > .item-link[title*="原生数量参数 100"]')).toContainText('0–100');
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
+  const stoneItems = await (await request.get(`/api/catalog/${manifest.id}/items?query=shitou`)).json();
+  const stoneProducts = await (await request.get(`/api/catalog/${manifest.id}/recipes?item=${stoneItems.rows[0].id}`)).json();
+  const unstable = stoneProducts.rows.find((row: any) => row.process?.kind === 'unstableCasting');
+  expect(unstable).toBeTruthy();
+  await page.goto(`/recipe-by-id/${unstable.id}?catalog=${manifest.id}`);
+  await page.getByText('用量与条件', { exact: true }).click();
+  await expect(page.locator('.recipe-card')).toContainText('超过 200 游戏刻后可能失效');
   expect(errors).toEqual([]);
 });
 

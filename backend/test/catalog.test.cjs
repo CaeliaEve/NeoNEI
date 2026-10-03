@@ -44,13 +44,21 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   const base = await serve(context);
   const manifest = await (await get(base, '/api/catalog')).json();
   const api = `/api/catalog/${manifest.id}`;
-  const { Catalog, Api } = require('@neonei/catalog');
+  const { Catalog, Api, Query } = require('@neonei/catalog');
   const loaded = [];
   const reader = await Catalog.open(manifest, async file => {
     loaded.push(file.kind);
     return fs.readFile(path.join(fixture, 'catalogs', manifest.id, file.path));
   });
   const category = (await reader.all('categories')).find(row => row.program);
+  const blastFixture = (await reader.all('recipes')).find(row => row.process?.kind === 'ic2Blast');
+  const query = new Query(reader);
+  const originalReferences = await query.related([blastFixture]);
+  const container = (await reader.all('items')).find(item => !originalReferences.items.some(row => row.id === item.id));
+  const withContainer = structuredClone(blastFixture);
+  withContainer.process.containers[0][0] = { id: container.id, amount: '1' };
+  assert.ok((await query.related([withContainer])).items.some(item => item.id === container.id),
+    'Same-slot blast containers must resolve in both online and offline query results');
   assert.ok(category?.program, 'Compiler dropped the shared program category');
   loaded.length = 0;
   const program = await new Api(reader).read(['programs', category.program]);
@@ -296,7 +304,9 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
     if (key === 'filter') assert.equal(record.nbt.value.energy, undefined);
     else assert.equal(record.nbt.value.energy.value, '9007199254740993');
   }
-  assert.deepEqual((await (await get(base, api + '/recipes?item=' + first.rows[0].id)).json()).rows.map(row=>row.id), [blast.id]);
+  const stoneProducts = (await (await get(base, api + '/recipes?item=' + first.rows[0].id)).json()).rows;
+  assert.deepEqual(stoneProducts.map(row => row.process.kind).sort(), ['ic2Blast', 'unstableCasting']);
+  assert.ok(stoneProducts.some(row => row.id === blast.id));
   const wand = (await (await get(base, api + '/items?query=' + encodeURIComponent('充能法杖'))).json()).rows[0];
   const replacements = await (await get(base, api + '/recipes?direction=uses&item=' + wand.id)).json();
   assert.equal(replacements.total, 4);

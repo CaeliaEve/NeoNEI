@@ -125,7 +125,7 @@ function consumption(input: Input): string {
   const choice = chosen(input);
   if (!choice) return '此组合留空';
   if (props.recipe.process?.kind === 'buildcraftIntegration') return '所示为组合样本；按原生规则选择并消耗扩展材料';
-  if (choice.consume.kind === 'staged') return input.slot === 0 ? '此数量是存量门槛；完工时只消耗一件主材料' : '每个空气检查点消耗一件，并向空单元输出槽返还下列物品';
+  if (choice.consume.kind === 'staged') return input.slot === 0 ? '此数量是存量门槛；完工时尝试取走一件主材料，容器行为见下方' : '每个空气检查点尝试取料，并向独立空单元输出槽添加下列物品';
   if (choice.consume.kind === 'reserve') return '可选研磨珠库存；装载新研磨珠时消耗一件，不是每条配方消耗一件';
   if (choice.consume.kind === 'wear') return '完工时尝试损耗工具；附魔与工具状态决定实际耐久变化';
   if (choice.consume.kind === 'allocated') return '按原生顺序分配需求；不是固定槽位扣除量';
@@ -287,8 +287,12 @@ function choose(stack: Input | Output, index: number): void {
       </template>
       <template v-if="recipe.process?.kind === 'ic2Blast'">
         <p>当前热量门槛为 {{ recipe.process.heat }}；通过正面相邻热源预热，热量达标后推进加工。实际耗时受预热、空气供应和输出空间影响。</p>
-        <p>从零进度开始，完整加工需 6001 次可工作调用。在进度 1、1000、2000、3000、4000、5000 时分别消耗一件空气单元，并返还空单元；空单元输出槽堵塞时暂停。换料不会清零进度，完工时按当前主材料决定产物。</p>
+        <p>从零进度开始，完整加工需 6001 次可工作调用。在进度 1、1000、2000、3000、4000、5000 时分别调用一次空气取料，并向独立输出槽添加空单元；空单元输出槽堵塞时暂停。换料不会清零进度，完工时按当前主材料决定产物。</p>
+        <p v-if="recipe.process.containers.some(slot => slot.some(container => container !== null))">带容器的输入只有单件时才被取走，并在原输入槽留下容器；堆叠超过一件时不扣料，机器仍可推进并生成产物。空气槽里留下的空单元也可能让后续阶段继续推进。无容器输入每次取走一件，主材料的标注数量仍是开工门槛。</p>
         <p>原生机器把两种产物的空间检查都做在主输出槽上，可能因此暂停；实际完工时将副产物放入独立槽，未放入的部分不会退回，副产物可能部分或全部丢失。</p>
+      </template>
+      <template v-if="recipe.process?.kind === 'unstableCasting'">
+        <p>不稳定部件完成浇铸时，按已加载世界的时间开始计时；超过 200 游戏刻后可能失效。图示为部件初始状态，实际计时取决于浇铸完成的世界和时刻。</p>
       </template>
       <template v-if="recipe.process?.kind === 'buildcraftIntegration'">
         <p>需要激光能量 {{ recipe.process.rule.energy }} RF；每 16 游戏刻检查配方与输出空间，这不是固定加工时间。无有效产物、输出受阻和完成加工都会清空储能。</p>
