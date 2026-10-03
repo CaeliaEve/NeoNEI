@@ -213,7 +213,12 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.deepEqual(detail.recipe, recipe);
   const paper = await (await get(base, api + '/items?query=paper')).json();
   const magic = await (await get(base, api + '/recipes?item=' + paper.rows[0].id)).json();
-  assert.equal(magic.total, 8);
+  assert.equal(magic.total, 9);
+  const buildcraft = magic.rows.find(row => row.process?.kind === 'buildcraftAssembly');
+  assert.equal(buildcraft.process.energy, 700);
+  assert.equal(buildcraft.duration, null);
+  assert.equal(buildcraft.inputs[0].choices[1].rule.wildcard, true);
+  assert.deepEqual(buildcraft.inputs[0].choices.map(choice => choice.amount), ['3', '3']);
   assert.equal(magic.rows.filter(row => row.magic).length, 4);
   assert.ok(magic.related.topics.some(topic => topic.kind === 'aspect'));
   assert.ok(magic.related.topics.some(topic => topic.kind === 'research'));

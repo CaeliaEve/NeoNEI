@@ -143,6 +143,15 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(process).toContainText('每次推进消耗 50 RF');
   await process.getByRole('button', { name: '下一页', exact: true }).click();
   await expect(process).toContainText('当前配置关闭机器耗能');
+  await page.getByRole('option', { name: /BuildCraft Assembly 激光装配台/ }).click();
+  await expect(process).toContainText('激光能量 700 RF');
+  await expect(process).toContainText('不同候选可以混合凑足同一份需求');
+  await expect(process).toContainText('不回溯重分配');
+  const assemblyInput=process.locator('.stack-slot').first();
+  await expect(assemblyInput.locator(':scope > .item-link')).toHaveAttribute('title', /BuildCraft.*缺失与空标签不同/);
+  await assemblyInput.getByRole('button', { name: '查看 2 个候选输入', exact: true }).click();
+  await expect(page.locator('.choices-dialog .choice-note').nth(1)).toContainText('源模板通配，忽略变体与 NBT');
+  await page.locator('.choices-dialog .choice-list .item-link').nth(1).click();
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });
