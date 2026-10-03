@@ -257,6 +257,20 @@ function chosen(input: Input) {
     </section>
     <details class="recipe-details" :open="!view">
       <summary>用量与条件</summary>
+      <template v-if="recipe.process?.kind === 'buildcraftRefinery'">
+        <p>每次尝试的能量为 {{ recipe.process.energy }} RF；重试间隔参数为 {{ recipe.process.delay }} 游戏刻。原生图上的 RF/t 标注不代表实际逐刻扣能；供能不足和输出空间会影响完成时间。</p>
+        <p>两个输入罐和一个输出罐，当前默认每罐 {{ recipe.process.capacity }} mB。更新选择时按原生注册顺序寻找首条预检查通过的配方；各份需求独立检查原始存量，重复流体不会在预检查中累计扣除。</p>
+        <p>尝试加工时先扣能，再按需求顺序从前到后排液。后续需求不足时，可能出现部分流体已扣除而没有产物；已扣能量也不退还。下列数量为逐项要求，产物只在实际加工成功时生成。</p>
+        <details><summary>进液许可与前序配方</summary>
+          <p>进液还受各罐当前筛选和已有流体限制；删除配方后，原生注册的进液许可仍可能保留。</p>
+          <p v-for="(tank, index) in recipe.process.filling" :key="index">输入罐 {{ index + 1 }}：
+            <ItemLink v-for="id in tank" :key="id" :target="{ kind: 'fluid', id }" :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
+          </p>
+          <p v-for="(prior, index) in recipe.process.earlier" :key="index">前序配方 {{ index + 1 }}：
+            <span v-for="(fluid, slot) in prior" :key="slot"><ItemLink :target="{ kind: 'fluid', id: fluid.id }" :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => emit('select', id, direction)" /> {{ amount(fluid.amount) }} mB </span>
+          </p>
+        </details>
+      </template>
       <template v-if="recipe.process?.kind === 'buildcraftAssembly'">
         <p>所选装配计划需要激光能量 {{ recipe.process.energy }} RF；满足材料和储能条件后加工。完成时从当前储能扣除这项能量并保留余额，不低于零；实际耗时取决于供能和计划调度。</p>
         <p>十二个库存槽。先处理固定材料，再按原生顺序处理候选组；每份需求从前到后取料，不同候选可以混合凑足同一份需求。后续需求使用剩余库存，不回溯重分配，因此摆放顺序可能影响能否加工。</p>

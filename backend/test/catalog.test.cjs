@@ -207,6 +207,14 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.equal(uses.related.tracks[0].id, clip.track);
   assert.equal(uses.related.tracks[0].frames.reduce((sum, frame) => sum + frame.ticks, 0), 16);
   const water = await (await get(base, api + '/items?kind=fluid&query=water')).json();
+  const refineryUses=await(await get(base,api+'/recipes?kind=fluid&direction=uses&item='+water.rows[0].id)).json();
+  const refinery=refineryUses.rows.find(row=>row.process?.kind==='buildcraftRefinery');
+  assert.deepEqual(refinery.inputs.map(input=>input.choices[0].amount),['700','700']);
+  const refiningDetail=await(await get(base,api+'/recipes/'+refinery.id)).json();
+  for(const id of [refinery.process.earlier[0][0].id,refinery.process.filling[0][0]])
+    assert.ok(refiningDetail.related.fluids.some(fluid=>fluid.id===id),'Refinery state reference was not hydrated');
+  const priorUses=await(await get(base,api+'/recipes?kind=fluid&direction=uses&item='+refinery.process.earlier[0][0].id)).json();
+  assert.ok(!priorUses.rows.some(row=>row.id===refinery.id),'Refinery priority reference became an ingredient');
   const producers = await (await get(base, api + '/recipes?item=' + water.rows[0].id)).json();
   assert.equal(producers.rows[0].id, recipe.id);
   const detail = await (await get(base, api + '/recipes/' + recipe.id)).json();

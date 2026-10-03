@@ -274,6 +274,10 @@ export class Query {
           budget();
         }
       }
+      if (recipe.process?.kind === 'buildcraftRefinery') {
+        for (const prior of recipe.process.earlier) for (const fluid of prior) { substance('fluid', fluid.id); budget(); }
+        for (const tank of recipe.process.filling) for (const id of tank) { substance('fluid', id); budget(); }
+      }
       if (recipe.process?.kind === 'inscriber') {
         for (const id of [recipe.process.top, recipe.process.bottom, recipe.process.namePress]) if (id) substance('item', id);
       }

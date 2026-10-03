@@ -152,6 +152,14 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await assemblyInput.getByRole('button', { name: '查看 2 个候选输入', exact: true }).click();
   await expect(page.locator('.choices-dialog .choice-note').nth(1)).toContainText('源模板通配，忽略变体与 NBT');
   await page.locator('.choices-dialog .choice-list .item-link').nth(1).click();
+  await page.locator('.chrome-search-input').fill('water');
+  await page.getByRole('button', { name: /^Water/ }).first().click({ button: 'right' });
+  await page.getByRole('option', { name: /BuildCraft Refinery 精炼厂/ }).click();
+  await expect(process).toContainText('每次尝试的能量为 30 RF');
+  await expect(process).toContainText('部分流体已扣除而没有产物');
+  await process.getByText('进液许可与前序配方', { exact: true }).click();
+  await expect(process).toContainText('helium');
+  await expect(process).toContainText('hydrogen');
   await page.screenshot({ path: `test-results/pilot-${offline ? 'offline' : 'online'}.png`, fullPage: true });
   expect(errors).toEqual([]);
 });
