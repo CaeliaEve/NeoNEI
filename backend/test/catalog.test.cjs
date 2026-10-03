@@ -44,6 +44,38 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   const base = await serve(context);
   const manifest = await (await get(base, '/api/catalog')).json();
   const api = `/api/catalog/${manifest.id}`;
+  const { Catalog, Api } = require('@neonei/catalog');
+  const loaded = [];
+  const reader = await Catalog.open(manifest, async file => {
+    loaded.push(file.kind);
+    return fs.readFile(path.join(fixture, 'catalogs', manifest.id, file.path));
+  });
+  const category = (await reader.all('categories')).find(row => row.program);
+  assert.ok(category?.program, 'Compiler dropped the shared program category');
+  loaded.length = 0;
+  const program = await new Api(reader).read(['programs', category.program]);
+  assert.equal(program.length, 4);
+  assert.ok(program.every(chunk => chunk.program === category.program));
+  assert.ok(loaded.length > 0 && loaded.every(kind => kind === 'programs'), 'Program query loaded unrelated tables');
+  const part = manifest.files.find(file => file.kind === 'programs');
+  const neighbor = (index, digit) => ({ ...part, path: `tables/programs/part-00000${index}.msgpack`, rows: 1, bytes: 1,
+    sha256: '0'.repeat(64), first: 'program_' + digit.repeat(64) + '.chunk_' + '0'.repeat(64),
+    last: 'program_' + digit.repeat(64) + '.chunk_' + '0'.repeat(64) });
+  const target = { ...part, path: 'tables/programs/part-000001.msgpack' };
+  const rangeManifest = { ...manifest, counts: { ...manifest.counts, programs: 6 },
+    files: [...manifest.files.filter(file => file.kind !== 'programs'), neighbor(0, '0'), target, neighbor(2, 'f')].sort((a, b) => a.path < b.path ? -1 : 1) };
+  delete rangeManifest.id; rangeManifest.id = digest(canonical(rangeManifest));
+  let rangeReads = 0;
+  const ranged = await Catalog.open(rangeManifest, async file => {
+    assert.equal(file.path, target.path, 'One program query decoded a neighboring program partition');
+    rangeReads++;
+    return fs.readFile(path.join(fixture, 'catalogs', manifest.id, part.path));
+  });
+  assert.deepEqual(await ranged.program(category.program), program);
+  assert.equal(rangeReads, 1);
+  assert.deepEqual(await (await get(base, api + '/programs/' + category.program)).json(), program);
+  await get(base, api + '/programs/invalid', 400);
+  await get(base, api + '/programs/program_' + '0'.repeat(64), 404);
   const first = await (await get(base, api + '/items?limit=1')).json();
   const second = await (await get(base, api + '/items?limit=1&offset=2')).json();
   assert.equal(first.total, 88);

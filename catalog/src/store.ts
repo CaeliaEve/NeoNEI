@@ -204,6 +204,36 @@ export class Catalog {
     return result;
   }
 
+  /** Program-prefixed chunk keys keep one machine's rules in adjacent partitions. */
+  async program(id: string): Promise<Row<'programs'>[]> {
+    if (!/^program_[0-9a-f]{64}$/.test(id)) throw new Fault('invalid_program', 'Invalid shared program id', 400);
+    const prefix = id + '.', end = id + '/';
+    const files = this.partitions.get('programs') ?? [];
+    let low = 0, high = files.length;
+    while (low < high) {
+      const middle = (low + high) >>> 1;
+      if (files[middle]!.last! < prefix) low = middle + 1; else high = middle;
+    }
+    const selected: File[] = [];
+    let weight = 0;
+    for (let index = low; index < files.length && files[index]!.first! < end; index++) {
+      const file = files[index]!; weight += file.bytes * 4;
+      if (weight > 128 * 1024 * 1024) throw new Fault('index_limit', 'Shared program exceeds the lookup memory budget');
+      selected.push(file);
+    }
+    const result: Row<'programs'>[] = [];
+    for (const file of selected) {
+      const table = await this.table(file);
+      ensure(table.kind === 'programs', 'Shared rules have the wrong table kind');
+      for (const row of table.records) if (row.id.startsWith(prefix)) {
+        ensure(row.program === id, 'Shared program key does not match its record');
+        result.push(row);
+      }
+    }
+    if (!result.length) throw new Fault('record_missing', 'Catalog has no shared program ' + id, 404);
+    return result;
+  }
+
   async check(): Promise<void> {
     for (let start = 0; start < this.manifest.files.length; start += 3) {
       await Promise.all(this.manifest.files.slice(start, start + 3).map(file => file.kind === 'image' ? this.read(file.path) : this.table(file)));

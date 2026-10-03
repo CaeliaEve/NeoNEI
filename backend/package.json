@@ -16,7 +16,7 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@elysium/contracts": "file:../vendor/elysium-contracts-0.32.0.tgz",
+    "@elysium/contracts": "file:../vendor/elysium-contracts-0.33.0.tgz",
     "@neonei/catalog": "file:../catalog",
     "compression": "^1.8.1",
     "express": "^5.2.1"

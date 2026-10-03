@@ -75,6 +75,7 @@ export class Api {
       }
     }
     if (parts.length === 2 && id) {
+      if (name === 'programs') return catalog.program(id);
       if (name === 'recipes') {
         const recipe = await catalog.record('recipes', id);
         return { recipe, related: await query.related([recipe]) } satisfies Detail;
