@@ -7,6 +7,30 @@ import { amount, chance, ticks } from '../src/catalog/format.ts';
 import { Playback } from '../src/catalog/clock.ts';
 import { useRequest } from '../src/state/request.ts';
 
+test('correlated inputs select a complete sample and preserve independent single-axis changes', async () => {
+  const api = await import('../src/catalog/selection.ts').catch(() => null);
+  assert.ok(api, 'Missing correlated recipe selection');
+  const inputs = [{kind:'item',slot:0,choices:[{id:'r0'},{id:'r1'}]}, {kind:'item',slot:1,choices:[{id:'b0'},{id:'b1'}]}, {kind:'item',slot:8,choices:[{id:'b1'}]}];
+  const change = {input:0,action:{kind:'integration'},bindings:[[0,0,null],[0,1,null],[1,0,null],[1,1,null],[1,null,0]],samples:[{id:'a'},{id:'b'},{id:'c'},{id:'d'},{id:'d'}]};
+  const recipe = {inputs,outputs:[{change}]}, selected = {};
+  api.selectRecipeSample(recipe,selected,0);
+  assert.equal(api.recipeChoiceIndex(recipe,selected,inputs[2]),-1);
+  api.selectRecipeChoice(recipe,selected,inputs[1],1);
+  assert.equal(api.recipeSampleIndex(recipe,selected,recipe.outputs[0]),1);
+  api.selectRecipeChoice(recipe,selected,inputs[0],1);
+  assert.equal(api.recipeSampleIndex(recipe,selected,recipe.outputs[0]),3);
+  api.selectRecipeChoice(recipe,selected,inputs[2],0);
+  assert.equal(api.recipeSampleIndex(recipe,selected,recipe.outputs[0]),4);
+  assert.equal(api.recipeChoiceIndex(recipe,selected,inputs[1]),-1);
+  assert.throws(()=>api.selectRecipeChoice(recipe,selected,inputs[1],5),/候选|组合/);
+  api.selectRecipeSample(recipe,selected,2);
+  assert.equal(api.recipeChoiceIndex(recipe,selected,inputs[0]),1);
+  assert.equal(api.recipeChoiceIndex(recipe,selected,inputs[1]),0);
+  const simple = {inputs:[inputs[0]],outputs:[{change:{input:0,action:{kind:'patch'},samples:[{id:'x'},{id:'y'}]}}]};
+  const single = {};api.selectRecipeChoice(simple,single,inputs[0],1);
+  assert.equal(api.recipeSampleIndex(simple,single,simple.outputs[0]),1);
+});
+
 test('texture timelines respect frame durations and interpolation while quantities stay exact', () => {
   const texture = { frames: [{ ticks: 2 }, { ticks: 1 }, { ticks: 3 }], interpolate: true };
   assert.deepEqual(frameAt(texture, 75), { index: 0, next: 1, blend: 0.75 });

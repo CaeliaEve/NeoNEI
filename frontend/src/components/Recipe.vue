@@ -5,6 +5,7 @@ import { quantityBounds } from '@neonei/catalog/source';
 import { Catalog, Records, required } from '../catalog/client.ts';
 import { amount, chance, color, ticks } from '../catalog/format.ts';
 import { Playback } from '../catalog/clock.ts';
+import { recipeChoiceIndex, recipeSampleIndex, selectRecipeChoice, selectRecipeSample } from '../catalog/selection.ts';
 import GameText from './GameText.vue';
 import Icon from './Icon.vue';
 import ItemLink from './ItemLink.vue';
@@ -20,16 +21,21 @@ onBeforeUnmount(() => playback.close());
 const choices = reactive<Record<string, number>>({});
 watch([() => props.recipe.id, () => props.catalog.manifest.id, () => props.focus, () => props.direction], () => {
   for (const key of Object.keys(choices)) delete choices[key];
+  if (props.recipe.outputs.some(output => output.change?.bindings)) selectRecipeSample(props.recipe, choices, 0);
   if (!props.focus) return;
   if (props.direction === 'uses') {
     for (const input of props.recipe.inputs) {
       const index = input.choices.findIndex(choice => choice.id === props.focus);
-      if (index >= 0) choices['input' + input.kind + input.slot] = index;
+      if (index >= 0) { selectRecipeChoice(props.recipe, choices, input, index); if (props.recipe.process?.kind === 'buildcraftIntegration') break; }
     }
   } else {
     for (const output of props.recipe.outputs) {
       const index = output.change?.samples.findIndex(sample => sample.id === props.focus) ?? -1;
-      if (index >= 0 && output.change) { choices['inputitem' + output.change.input] = index; break; }
+      if (index >= 0 && output.change) {
+        if (output.change.bindings) selectRecipeSample(props.recipe, choices, index);
+        else choices['inputitem' + output.change.input] = index;
+        break;
+      }
     }
   }
 }, { immediate: true });
@@ -42,7 +48,7 @@ const elements = computed(() => [...(view.value?.elements ?? [])].sort((left, ri
 const magicName = computed(() => props.recipe.magic?.kind === 'arcane' ? '奥术合成' : props.recipe.magic?.kind === 'crucible' ? '坩埚炼金' : '注魔');
 const products = computed(() => props.recipe.outputs.map(output => {
   if (!output.change) return output;
-  const index = choices['inputitem' + output.change.input] ?? 0;
+  const index = recipeSampleIndex(props.recipe, choices, output);
   const sample = output.change.samples[index];
   if (!sample) throw new Error('所选输入缺少对应的产物示例');
   return { ...output, ...sample };
@@ -54,6 +60,7 @@ const extraOutputs = computed(() => products.value.filter(output => !visibleSlot
 function quantityLabel(stack: Input | Output): string {
   if ('choices' in stack) {
     const choice = chosen(stack);
+    if (!choice) return '';
     if (props.recipe.process?.kind === 'vat' && stack.kind === 'fluid' && choice.consume.kind === 'keep') return '0';
     if (choice.consume.kind === 'pedestals') return amount(choice.amount) + '座*';
     if (choice.consume.kind === 'upto') return '≤' + amount(choice.amount);
@@ -115,6 +122,8 @@ function stack(element: Extract<Element, { kind: 'slot' }>): Input | Output {
 }
 function consumption(input: Input): string {
   const choice = chosen(input);
+  if (!choice) return '此组合留空';
+  if (props.recipe.process?.kind === 'buildcraftIntegration') return '所示为组合样本；按原生规则选择并消耗扩展材料';
   if (choice.consume.kind === 'staged') return input.slot === 0 ? '此数量是存量门槛；完工时只消耗一件主材料' : '每个空气检查点消耗一件，并向空单元输出槽返还下列物品';
   if (choice.consume.kind === 'reserve') return '可选研磨珠库存；装载新研磨珠时消耗一件，不是每条配方消耗一件';
   if (choice.consume.kind === 'wear') return '完工时尝试损耗工具；附魔与工具状态决定实际耐久变化';
@@ -125,9 +134,17 @@ function consumption(input: Input): string {
   return choice.consume.kind === 'keep' ? '不消耗' : choice.consume.kind === 'buffer' ? '启动时耗尽内部存量；显示最低门槛' : choice.consume.kind === 'stack' ? '整叠处理；显示数量为示例' : choice.consume.kind === 'damage' ? '耐久 −' + choice.consume.points : '';
 }
 function chosen(input: Input) {
-  const choice = input.choices[choices['input' + input.kind + input.slot] ?? 0];
+  const index = recipeChoiceIndex(props.recipe, choices, input);
+  if (index === -1) return undefined;
+  const choice = input.choices[index];
   if (!choice) throw new Error('配方输入缺少所选候选');
   return choice;
+}
+function selected(stack: Input | Output): number {
+  return 'choices' in stack ? recipeChoiceIndex(props.recipe, choices, stack) : 0;
+}
+function choose(stack: Input | Output, index: number): void {
+  if ('choices' in stack) selectRecipeChoice(props.recipe, choices, stack, index);
 }
 </script>
 
@@ -147,7 +164,7 @@ function chosen(input: Input) {
             :data-direction="element.direction" :data-substance="element.substance" :data-slot="element.slot">
             <Slot :stack="stack(element)" :records="records" :catalog="catalog" :size="element.width * scale" :height="element.height * scale"
               :amount-label="quantityLabel(stack(element))" :quantity-note="quantityNote(stack(element))"
-              v-model:choice="choices[element.direction + element.substance + element.slot]" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
+              :choice="selected(stack(element))" @update:choice="choose(stack(element), $event)" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
           </div>
           <div v-else-if="element.kind === 'cost'" class="view-element" :style="position(element)">
             <TopicLink :topic="required(records.topics, cost(element.index).aspect)" :catalog="catalog" :records="records" :animate="animate"
@@ -165,11 +182,11 @@ function chosen(input: Input) {
     <div v-else class="recipe-flow">
       <div v-if="recipe.grid" class="crafting-grid" :style="{ gridTemplateColumns: 'repeat(' + recipe.grid.width + ', 42px)' }" aria-label="合成网格">
         <div v-for="(slot, cell) in recipe.grid.cells" :key="cell" class="crafting-cell">
-          <Slot v-if="slot != null" :stack="input(slot)" :records="records" :catalog="catalog" :animate="animate" v-model:choice="choices['inputitem' + slot]"
+          <Slot v-if="slot != null" :stack="input(slot)" :records="records" :catalog="catalog" :animate="animate" :choice="selected(input(slot))" @update:choice="choose(input(slot), $event)"
             @select="(id, direction) => emit('select', id, direction)" />
         </div>
       </div>
-      <div v-else><Slot v-for="input in recipe.inputs" :key="input.kind + input.slot" :stack="input" :records="records" :catalog="catalog" :animate="animate" v-model:choice="choices['input' + input.kind + input.slot]"
+      <div v-else><Slot v-for="input in recipe.inputs" :key="input.kind + input.slot" :stack="input" :records="records" :catalog="catalog" :animate="animate" :choice="selected(input)" @update:choice="choose(input, $event)"
         :amount-label="quantityLabel(input)"
         @select="(id, direction) => emit('select', id, direction)" /></div><span aria-label="产出">→</span>
       <div><Slot v-for="output in products" :key="output.kind + output.slot" :stack="output" :records="records" :catalog="catalog" :animate="animate"
@@ -180,7 +197,7 @@ function chosen(input: Input) {
       <div v-if="extraInputs.length"><h4>其他输入</h4><div class="extra-slots">
         <Slot v-for="input in extraInputs" :key="input.kind + input.slot" :stack="input" :records="records" :catalog="catalog" :animate="animate"
           :amount-label="quantityLabel(input)"
-          v-model:choice="choices['input' + input.kind + input.slot]" @select="(id, direction) => emit('select', id, direction)" />
+          :choice="selected(input)" @update:choice="choose(input, $event)" @select="(id, direction) => emit('select', id, direction)" />
       </div></div>
       <div v-if="extraOutputs.length"><h4>其他产出</h4><div class="extra-slots">
         <Slot v-for="output in extraOutputs" :key="output.kind + output.slot" :stack="output" :records="records" :catalog="catalog" :animate="animate"
@@ -211,7 +228,7 @@ function chosen(input: Input) {
       </section>
       <p v-if="recipe.magic.instability != null">{{ recipe.process?.kind === 'runic' ? '样本不稳定性：' : '基础不稳定性：' }}{{ recipe.magic.instability }}</p>
       <div v-if="recipe.magic.central != null" class="magic-central"><span>中心材料</span>
-        <ItemLink :target="{ kind: 'item', ...chosen(input(recipe.magic.central)) }" :catalog="catalog" :records="records" :animate="animate"
+        <ItemLink :target="{ kind: 'item', ...chosen(input(recipe.magic.central))! }" :catalog="catalog" :records="records" :animate="animate"
           @select="(id, direction) => emit('select', id, direction)" /></div>
       <div v-if="recipe.magic.research.length" class="magic-requirements" aria-label="配方研究条件">
         <h4>研究条件</h4><div v-for="study in recipe.magic.research" :key="study.key">
@@ -222,7 +239,10 @@ function chosen(input: Input) {
     </section>
     <section v-for="output in products.filter(output => output.change)" :key="output.slot" class="recipe-changes" aria-label="产物数据变换">
       <h4>产物随所选输入变化</h4>
-      <template v-if="output.change?.action.kind === 'analyze'">
+      <template v-if="output.change?.action.kind === 'integration'">
+        <p>选择候选会同时切换相关输入与产物，空槽表示该组合没有投入材料。所列为组合样本；完整匹配与变换由原生集成规则决定。</p>
+      </template>
+      <template v-else-if="output.change?.action.kind === 'analyze'">
         <p>基因扫描处理整个输入堆叠，产物数量与输入相同；显示数量是单个样本。</p>
         <p>未分析个体经林业原生接口分析并重新写出基因数据，额外的命名等标签不保留。已分析个体原样返回。</p>
         <p>两种状态都要求槽内至少有 100 mB 蜂蜜；仅未分析时消耗。耗时和能耗为对应分支的基础值。</p>
@@ -263,6 +283,13 @@ function chosen(input: Input) {
         <p>当前热量门槛为 {{ recipe.process.heat }}；通过正面相邻热源预热，热量达标后推进加工。实际耗时受预热、空气供应和输出空间影响。</p>
         <p>从零进度开始，完整加工需 6001 次可工作调用。在进度 1、1000、2000、3000、4000、5000 时分别消耗一件空气单元，并返还空单元；空单元输出槽堵塞时暂停。换料不会清零进度，完工时按当前主材料决定产物。</p>
         <p>原生机器把两种产物的空间检查都做在主输出槽上，可能因此暂停；实际完工时将副产物放入独立槽，未放入的部分不会退回，副产物可能部分或全部丢失。</p>
+      </template>
+      <template v-if="recipe.process?.kind === 'buildcraftIntegration'">
+        <p>需要激光能量 {{ recipe.process.rule.energy }} RF；每 16 游戏刻检查配方与输出空间，这不是固定加工时间。无有效产物、输出受阻和完成加工都会清空储能。</p>
+        <p>一个主输入和八个扩展槽，扩展材料按物理槽顺序处理。当前配方仍匹配主输入时继续使用，否则按注册顺序选择。界面允许放入 {{ recipe.process.rule.maximum <= 0 ? 8 : Math.min(8, recipe.process.rule.maximum) }} 个扩展槽，已占用的后续槽仍参与处理。</p>
+        <p v-if="recipe.process.rule.kind === 'gate'">复制门及其数据；红色芯片切换逻辑而不消耗，其他芯片安装尚未具有的扩展并消耗一件。</p>
+        <p v-else-if="recipe.process.rule.kind === 'facade'">按顺序选择导线与外观，更新对应导线状态；保留中空属性，清除透明状态。界面可放入塞子，但原生加工不会把塞子作为透明外观配方。</p>
+        <p v-else>使用第一个占用的扩展槽；重新生成机器人，只写入板卡标识和能量。原能量恰为零时设为 20,000，其他附加数据不继承。</p>
       </template>
       <template v-if="recipe.process?.kind === 'buildcraftRefinery'">
         <p>每次尝试的能量为 {{ recipe.process.energy }} RF；重试间隔参数为 {{ recipe.process.delay }} 游戏刻。原生图上的 RF/t 标注不代表实际逐刻扣能；供能不足和输出空间会影响完成时间。</p>
@@ -351,11 +378,11 @@ function chosen(input: Input) {
       </template>
       <div class="ingredients"><section><h4>输入</h4>
         <div v-for="input in recipe.inputs" :key="input.kind + input.slot" class="ingredient">
-          <ItemLink :target="{ kind: input.kind, ...chosen(input) }" :records="records" :catalog="catalog" :animate="animate"
+          <ItemLink v-if="chosen(input)" :target="{ kind: input.kind, ...chosen(input)! }" :records="records" :catalog="catalog" :animate="animate"
             :amount-label="quantityLabel(input)"
             @select="(id, direction) => emit('select', id, direction)" />
           <small>{{ consumption(input) }}<template v-if="input.choices.length > 1"> · {{ input.choices.length }} 个候选</template></small>
-          <template v-for="returned in chosen(input).returns" :key="returned.kind + returned.id"><small>归还</small>
+          <template v-for="returned in chosen(input)?.returns ?? []" :key="returned.kind + returned.id"><small>归还</small>
             <ItemLink :target="returned" :records="records" :catalog="catalog" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
           </template>
         </div>

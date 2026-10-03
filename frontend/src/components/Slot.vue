@@ -14,11 +14,13 @@ const offset = ref(0), dialog = ref<HTMLDialogElement | null>(null);
 const expanded = ref(false);
 const choices = computed(() => 'choices' in props.stack ? props.stack.choices : []);
 function current() {
+  if (selected.value === -1) return undefined;
   const choice = choices.value[selected.value];
   if (!choice) throw new Error('配方输入缺少所选候选');
   return choice;
 }
-const target = computed(() => 'choices' in props.stack ? { kind: props.stack.kind, ...current() } : props.stack);
+const target = computed(() => 'choices' in props.stack ? (current() ? { kind: props.stack.kind, ...current()! } : null) : props.stack);
+const selectable = computed(() => choices.value.length > 1 || choices.value.some(choice => choice.rule.kind === 'integration'));
 const note = computed(() => {
   if (!('choices' in props.stack)) return props.stack.quantity ? props.quantityNote
     : props.stack.change?.action.kind === 'analyze' ? '与输入堆叠数量相同；显示单个样本'
@@ -26,7 +28,8 @@ const note = computed(() => {
     : props.stack.change?.action.kind === 'mapScaling' ? '待完成地图样本；实际产物由世界分配新地图 ID'
     : props.stack.change?.action.kind === 'soul' ? '按所选灵魂生成新的刷怪笼；只写入生物类型，不继承实体的其他数据'
     : '概率 ' + chance(props.stack.chance) + (props.stack.role === 'return' ? ' · 归还' : '');
-  return choiceNote(current());
+  const choice = current();
+  return choice ? choiceNote(choice) : '此组合留空';
 });
 function choiceNote(choice: Input['choices'][number]): string {
   if (choice.consume.kind === 'staged') return '阶段存量门槛；在配方过程指定的阶段消耗一件 · ' + matchNote(choice.rule);
@@ -44,6 +47,7 @@ function matchNote(rule: Match, nested = false): string {
     const names=rule.filter.names.slice(0,8).map(name=>name===null?'无灵魂标识':name===''?'空字符串':name).join('、');
     return (rule.filter.exclude?'排除以下灵魂类型：':'允许以下灵魂类型：')+names+(rule.filter.names.length>8?' 等 '+rule.filter.names.length+' 项':'')+'；按原生灵魂标识匹配，不限于展示样本';
   }
+  if (rule.kind === 'integration') return '按主输入与扩展槽组合匹配；所示为原生观察样本';
   if (rule.kind === 'ae') return 'AE2 精确匹配：同物品与变体；空 NBT 等价，其他标签按原生类型和值比较';
   if (rule.kind === 'buildcraft') return 'BuildCraft：同物品；' + (rule.wildcard ? '源模板通配，忽略变体与 NBT' : (rule.subtypes ? '匹配变体；' : '不区分变体；') + '原生 NBT 比较，缺失与空标签不同；投入通配变体时跳过 NBT');
   if (rule.kind === 'infusion') return '原生注魔匹配：同物品与变体，或首个矿辞组为 ' + (rule.ores.join('、') || '无') + '；仅列出已观察候选';
@@ -79,12 +83,12 @@ function choose(index: number, id: string, direction: 'recipes' | 'uses'): void 
 </script>
 
 <template>
-  <div class="stack-slot">
-    <ItemLink :target="target" :catalog="catalog" :records="records" :width="size" :height="height" :animate="animate" compact :note="note" :amount-label="amountLabel"
+  <div class="stack-slot" :style="!target ? { width: size + 'px', height: height + 'px' } : undefined">
+    <ItemLink v-if="target" :target="target" :catalog="catalog" :records="records" :width="size" :height="height" :animate="animate" compact :note="note" :amount-label="amountLabel"
       @select="(id, direction) => emit('select', id, direction)" />
-    <button v-if="choices.length > 1" type="button" class="alternatives" :aria-label="'查看 ' + choices.length + ' 个候选输入'"
+    <button v-if="selectable" type="button" class="alternatives" :aria-label="'查看 ' + choices.length + ' 个候选输入'"
       @click="expand">{{ choices.length }}</button>
-    <dialog v-if="expanded && choices.length > 1" ref="dialog" class="dialog choices-dialog" @close="expanded = false">
+    <dialog v-if="expanded && selectable" ref="dialog" class="dialog choices-dialog" @close="expanded = false">
       <header><h2>候选输入</h2><button type="button" aria-label="关闭候选输入" @click="dialog?.close()">×</button></header>
       <p>选择当前显示的物品；右键查看其用途。</p>
       <div class="choice-list"><div v-for="(choice, index) in choices.slice(offset, offset + 24)" :key="offset + index">
