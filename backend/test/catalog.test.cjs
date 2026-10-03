@@ -56,6 +56,8 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   const program = await new Api(reader).read(['programs', category.program]);
   assert.equal(program.length, 4);
   assert.ok(program.every(chunk => chunk.program === category.program));
+  assert.deepEqual(program.find(chunk => chunk.data.kind === 'squeezerCallbacks').data.rows,
+    [{registry: 'fixture:empty_reader', kind: 'noFluid'}]);
   assert.ok(loaded.length > 0 && loaded.every(kind => kind === 'programs'), 'Program query loaded unrelated tables');
   const part = manifest.files.find(file => file.kind === 'programs');
   const neighbor = (index, digit) => ({ ...part, path: `tables/programs/part-00000${index}.msgpack`, rows: 1, bytes: 1,
