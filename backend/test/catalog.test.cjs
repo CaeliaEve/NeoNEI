@@ -215,7 +215,9 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.throws(() => quantityBounds(noProcess, noProcess.outputs[0]));
   assert.throws(() => quantityBounds(invalidRoll, invalidRoll.outputs[0]), /阈值/);
   assert.deepEqual(recipe.inputs[0].choices.map(choice => [choice.amount, choice.consume.kind]),
-    [['9007199254740993', 'consume'], ['7', 'consume'], ['1', 'keep']]);
+    [['9007199254740993', 'consume'], ['7', 'consume'], ['1', 'keep'], ['1', 'consume']]);
+  assert.deepEqual(recipe.inputs[0].choices[3].rule,
+    {kind:'metadata',value:32767,nbt:false,absent:['synthetic']});
   assert.equal(new Set(recipe.inputs[0].choices.map(choice => choice.id)).size, 1);
   const priority = recipe.inputs[0].choices[2].rule;
   assert.equal(priority.kind, 'except');

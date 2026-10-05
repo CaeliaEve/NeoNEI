@@ -42,6 +42,9 @@ function choiceNote(choice: Input['choices'][number]): string {
   return consumption + ' · ' + matchNote(choice.rule) + (choice.returns.length ? ' · 归还容器' : '');
 }
 function matchNote(rule: Match, nested = false): string {
+  if (rule.kind === 'metadata') return '同物品，元数据必须为 ' + rule.value + '；'
+    + (rule.nbt ? '忽略 NBT' : 'NBT 精确匹配')
+    + (rule.absent.length ? '；不得包含字段：' + rule.absent.join('、') : '') + '；图标为展示示例';
   if (rule.kind === 'untagged') return '仅接受空 NBT（无标签或空复合标签）；' + (rule.meta ? '不区分变体' : '变体必须相同');
   if (rule.kind === 'soul') {
     const names=rule.filter.names.slice(0,8).map(name=>name===null?'无灵魂标识':name===''?'空字符串':name).join('、');

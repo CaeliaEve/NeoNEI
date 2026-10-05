@@ -38,8 +38,9 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await page.getByText('用量与条件', { exact: true }).click();
   await expect(page.locator('.recipe-preview-panel')).toContainText('9,007,199,254,740,993');
   const input = page.locator('.recipe-preview-panel .recipe-view .stack-slot').first();
-  await input.getByRole('button', { name: '查看 3 个候选输入', exact: true }).click();
+  await input.getByRole('button', { name: '查看 4 个候选输入', exact: true }).click();
   const choices = page.locator('.choices-dialog');
+  await expect(choices.locator('.choice-note').nth(3)).toContainText('元数据必须为 32767', { timeout: 2000 });
   await expect(choices.locator('.choice-note').nth(2)).toContainText('排除 1 条前序匹配：Priority reference 前序匹配（精确匹配）');
   await expect(choices.locator('.choice-note').nth(1)).toHaveText('消耗 · 仅忽略字段：frypanKill；其余 NBT 精确匹配');
   await choices.locator('.choice-list .item-link').nth(1).click();
