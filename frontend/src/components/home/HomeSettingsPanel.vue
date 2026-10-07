@@ -1,5 +1,7 @@
 ﻿<script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import PersonalBackup from './PersonalBackup.vue';
+import { usePreferences } from '../../state/preferences.ts';
 import { useSettingsConstellationCanvas } from "../../composables/home/useSettingsConstellationCanvas";
 import {
   clearRuntimeServiceWorkerCache,
@@ -13,6 +15,8 @@ const props = defineProps<{
   modelValue: boolean;
   currentView: HomeView;
   itemSize: number;
+  settingsSaveStatus: string;
+  settingsSaveError: string;
   atlasResidentStatus: string;
   atlasResidentRunning: boolean;
   atlasResidentProgressTotal: number;
@@ -47,7 +51,7 @@ const currentViewModel = computed({
 const totalItemsText = computed(() => props.totalItems.toLocaleString());
 const historyCountText = computed(() => props.historyCount.toLocaleString());
 
-const saveButtonRef = ref<HTMLButtonElement | null>(null);
+const { preferences, storageError } = usePreferences();
 const { settingsBgCanvas, settingsUiRoot } = useSettingsConstellationCanvas(isOpen);
 const runtimeCacheStatus = ref<RuntimeServiceWorkerStatus>({
   supported: typeof navigator !== "undefined" && "serviceWorker" in navigator,
@@ -118,13 +122,6 @@ const clearRuntimeCache = async () => {
 
 const saveItemSize = () => {
   emit("save-settings");
-  const button = saveButtonRef.value;
-  if (!button) return;
-  const originalText = button.textContent;
-  button.textContent = "已保存";
-  window.setTimeout(() => {
-    button.textContent = originalText;
-  }, 1500);
 };
 
 watch(
@@ -313,11 +310,17 @@ watch(
                         :style="{ width: Math.min(22, localItemSize / 4.5) + 'px', height: Math.min(22, localItemSize / 4.5) + 'px' }"
                       />
                     </div>
-                    <button ref="saveButtonRef" type="button" @click="saveItemSize" class="settings-primary-btn text-xs font-medium rounded-lg bg-cyan-500 hover:bg-cyan-450 text-slate-950 px-4 py-2 shadow-sm transition-all duration-200">
+                    <button type="button" @click="saveItemSize" class="settings-primary-btn text-xs font-medium rounded-lg bg-cyan-500 hover:bg-cyan-450 text-slate-950 px-4 py-2 shadow-sm transition-all duration-200">
                       保存配置
                     </button>
                   </div>
                 </div>
+              </div>
+
+              <div class="settings-row py-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+                <label class="flex items-center gap-2 text-slate-300"><input v-model="preferences.animate" type="checkbox" class="accent-cyan-400" />播放物品动画</label>
+                <p v-if="settingsSaveError || storageError" role="alert" class="text-rose-300">{{ settingsSaveError || storageError }}</p>
+                <p v-else-if="settingsSaveStatus" role="status" class="text-emerald-300">{{ settingsSaveStatus }}</p>
               </div>
 
               <!-- Row 03: WebGL Texture Atlas Cache -->
@@ -420,6 +423,7 @@ watch(
                 </div>
               </div>
 
+              <PersonalBackup class="settings-row py-5" :item-size="itemSize" @update:item-size="emit('update:itemSize', $event)" />
             </div>
 
           </div>
@@ -469,6 +473,9 @@ watch(
 
 /* Settings Panel (Premium Galaxy Workbench Style) */
 .gear-menu.settings-panel {
+  --color-text-primary: #e2e8f0;
+  --color-text-secondary: #94a3b8;
+  --color-text-tertiary: #94a3b8;
   width: 90vw;
   max-width: 820px;
   background: 

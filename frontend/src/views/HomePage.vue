@@ -25,6 +25,7 @@ import { useHomeSearchContextMenu } from "../composables/home/useHomeSearchConte
 import { useHomeSettingsState } from "../composables/home/useHomeSettingsState";
 import { useSound } from "../services/sound.service";
 import { isControlPlaneDisabled } from "../runtime/runtimeMode";
+import { isHomeItemSize } from '../state/personal-backup.ts';
 import "../styles/homePage.css";
 
 const router = useRouter();
@@ -39,8 +40,10 @@ const patternControlEnabled = computed(() => !isControlPlaneDisabled());
 
 // Item size settings with localStorage
 const loadSavedItemSize = () => {
-  const saved = localStorage.getItem("itemSize");
-  return saved ? parseInt(saved, 10) : 50; // 默认50px
+  try {
+    const saved = Number(localStorage.getItem("itemSize"));
+    return isHomeItemSize(saved) ? saved : 50;
+  } catch { return 50; }
 };
 const itemSize = ref(loadSavedItemSize());
 const showHiddenDebugItems = ref(localStorage.getItem("neonei:show-hidden-debug-items") === "true");
@@ -50,6 +53,8 @@ watch(showHiddenDebugItems, (enabled) => {
 
 const {
   showGearMenu,
+  settingsSaveStatus,
+  settingsSaveError,
   atlasResidentRunning,
   atlasResidentProgressCurrent,
   atlasResidentProgressTotal,
@@ -515,6 +520,8 @@ setGridViewportSync(syncMeasuredPageSize);
       v-model="showGearMenu"
       v-model:current-view="currentView"
       v-model:item-size="itemSize"
+      :settings-save-status="settingsSaveStatus"
+      :settings-save-error="settingsSaveError"
       :atlas-resident-status="atlasResidentStatus"
       :atlas-resident-running="atlasResidentRunning"
       :atlas-resident-progress-total="atlasResidentProgressTotal"

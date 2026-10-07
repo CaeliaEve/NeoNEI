@@ -1,5 +1,7 @@
 ﻿import { computed, ref, type Ref } from "vue";
 import type { Router } from "vue-router";
+import { watch } from 'vue';
+import { isHomeItemSize } from '../../state/personal-backup.ts';
 import {
   inspectGlobalBrowserAtlasResidentState,
   warmAllGlobalBrowserAtlases,
@@ -7,6 +9,9 @@ import {
 
 export function useHomeSettingsState(itemSize: Ref<number>, router: Router) {
   const showGearMenu = ref(false);
+  const settingsSaveStatus = ref('');
+  const settingsSaveError = ref('');
+  watch(itemSize, () => { settingsSaveStatus.value = ''; settingsSaveError.value = ''; });
   const atlasResidentRunning = ref(false);
   const atlasResidentProgressCurrent = ref(0);
   const atlasResidentProgressTotal = ref(0);
@@ -68,11 +73,21 @@ export function useHomeSettingsState(itemSize: Ref<number>, router: Router) {
   };
 
   const saveSettings = () => {
-    localStorage.setItem("itemSize", itemSize.value.toString());
+    settingsSaveStatus.value = '';
+    settingsSaveError.value = '';
+    try {
+      if (!isHomeItemSize(itemSize.value)) throw new Error('invalid size');
+      localStorage.setItem("itemSize", itemSize.value.toString());
+      settingsSaveStatus.value = '图标大小已保存';
+    } catch {
+      settingsSaveError.value = '无法保存图标大小，请检查本地存储空间或浏览器权限。';
+    }
   };
 
   return {
     showGearMenu,
+    settingsSaveStatus,
+    settingsSaveError,
     atlasResidentRunning,
     atlasResidentProgressCurrent,
     atlasResidentProgressTotal,
