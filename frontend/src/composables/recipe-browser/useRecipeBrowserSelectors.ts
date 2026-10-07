@@ -449,7 +449,7 @@ export const useRecipeBrowserSelectors = ({
     if (!currentCategory.value) return 0;
     const orderedRecipeIds = currentCategoryOrderedRecipeIds.value;
     if (orderedRecipeIds.length > 0) {
-      return Math.ceil(orderedRecipeIds.length / recipesPerPage.value);
+      return Math.ceil(Math.max(orderedRecipeIds.length, currentCategory.value.recipeCount ?? 0) / recipesPerPage.value);
     }
     const categoryCount = Math.max(currentCategory.value.recipeCount ?? 0, currentCategory.value.recipeVariants.size);
     return Math.ceil(categoryCount / recipesPerPage.value);

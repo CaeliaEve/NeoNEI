@@ -3,6 +3,9 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Motion, Texture } from '@elysium/contracts';
 import { Atlas, frameAt, stepAt, type Lease } from '../catalog/atlas.ts';
 import { clock, type Playback } from '../catalog/clock.ts';
+import {residentSourceFrame} from '../browser/resident';
+import {recipeVisualFrame} from '../browser/recipe-visuals';
+import {withFrameFallback} from '../browser/visual-mapping';
 
 const props = withDefaults(defineProps<{ atlas: Atlas; texture?: Texture | null; width?: number; height?: number; animate?: boolean; label?: string; motion?: Motion[]; playback?: Playback }>(),
   { width: 32, height: 32, animate: true, label: '' });
@@ -10,6 +13,9 @@ const canvas = ref<HTMLCanvasElement | null>(null), surface = ref<HTMLElement | 
 const visible = ref(false), error = ref('');
 let observer: IntersectionObserver | null = null;
 onMounted(() => {
+  // Newly mounted recipe slots must not wait for a throttled observer/paint cycle.
+  const bounds=surface.value?.getBoundingClientRect();
+  visible.value=!!bounds&&bounds.width>0&&bounds.height>0&&bounds.bottom>=-48&&bounds.right>=-48&&bounds.top<=innerHeight+48&&bounds.left<=innerWidth+48;
   observer = new IntersectionObserver(entries => { visible.value = entries[0]?.isIntersecting ?? false; }, { rootMargin: '48px' });
   if (surface.value) observer.observe(surface.value);
 });
@@ -24,26 +30,20 @@ watch([() => props.atlas, () => props.texture, () => props.width, () => props.he
     cleanup(() => { controller.abort(); stop?.(); updatePlayback = () => {}; leases.forEach(lease => lease.release()); });
     error.value = '';
     const target = canvas.value, texture = props.texture;
+    if(target){target.width=0;target.height=0;}
     if (!target || !texture || !visible.value) return;
-    const paths = [...new Set(texture.frames.map(frame => frame.path))];
-    const results = await Promise.allSettled(paths.map(path => props.atlas.acquire(path, controller.signal)));
-    leases = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
-    if (controller.signal.aborted) { leases.forEach(lease => lease.release()); return; }
-    const failed = results.find(result => result.status === 'rejected');
-    if (failed?.status === 'rejected') {
-      leases.forEach(lease => lease.release());
-      error.value = failed.reason instanceof Error ? failed.reason.message : '纹理加载失败';
+    try {
+      leases = [await withFrameFallback(recipeVisualFrame(texture.frames[0]!,props.atlas.catalogId,controller.signal),
+        ()=>residentSourceFrame(texture.frames[0]!,props.atlas.catalogId,controller.signal)??props.atlas.acquireFrame(texture.frames[0]!, controller.signal),controller.signal)];
+    } catch (failure) {
+      if (!controller.signal.aborted) error.value = failure instanceof Error ? failure.message : '纹理加载失败';
       return;
     }
-    const images = new Map(paths.map((path, index) => [path, leases[index]!.image]));
+    if (controller.signal.aborted) { leases.forEach(lease => lease.release()); return; }
+    let animationReady = texture.frames.length === 1;
     try {
-      for (const frame of texture.frames) {
-        const image = images.get(frame.path)!;
-        if (frame.width <= 0 || frame.height <= 0 || frame.x < 0 || frame.y < 0
-          || frame.x + frame.width > image.width || frame.y + frame.height > image.height) throw new Error('纹理裁剪超出图集范围');
-      }
       const density = Math.min(devicePixelRatio || 1, 3);
-      target.width = Math.max(1, Math.round(props.width * density)); target.height = Math.max(1, Math.round(props.height * density));
+      target.width = Math.max(texture.frames[0]!.width,1, Math.round(props.width * density)); target.height = Math.max(texture.frames[0]!.height,1, Math.round(props.height * density));
       const context = target.getContext('2d');
       if (!context) throw new Error('浏览器无法创建纹理画布');
       context.imageSmoothingEnabled = false;
@@ -59,7 +59,7 @@ watch([() => props.atlas, () => props.texture, () => props.width, () => props.he
       }
       let previous = '';
       const draw = (elapsed: number): void => {
-        const current = frameAt(texture, elapsed), clip = motion ? stepAt(motion, elapsed).index : -1;
+        const current = animationReady ? frameAt(texture, elapsed) : {index:0,next:0,blend:0}, clip = motion ? stepAt(motion, elapsed).index : -1;
         const state = current.index + ':' + current.blend + ':' + clip;
         if (state === previous) return;
         previous = state;
@@ -74,9 +74,10 @@ watch([() => props.atlas, () => props.texture, () => props.width, () => props.he
           context.clip();
         }
         const paint = (index: number, opacity: number): void => {
-          const frame = texture.frames[index]!;
           context.globalAlpha = opacity;
-          context.drawImage(images.get(frame.path)!, frame.x, frame.y, frame.width, frame.height, 0, 0, target.width, target.height);
+          const lease=leases[index]!,frame=lease.frame;
+          if(frame)context.drawImage(lease.image,frame.x,frame.y,frame.width,frame.height,0,0,target.width,target.height);
+          else context.drawImage(lease.image, 0, 0, target.width, target.height);
         };
         try {
           context.globalCompositeOperation = 'source-over';
@@ -99,7 +100,19 @@ watch([() => props.atlas, () => props.texture, () => props.width, () => props.he
         }
       };
       updatePlayback();
-    } catch (failure) { error.value = failure instanceof Error ? failure.message : '纹理绘制失败'; }
+      // Display the first real frame immediately; animation frames load afterward.
+      if (!animationReady) {
+        const results = await Promise.allSettled(texture.frames.slice(1).map(frame => withFrameFallback(recipeVisualFrame(frame,props.atlas.catalogId,controller.signal,10),()=>props.atlas.acquireFrame(frame, controller.signal,10),controller.signal)));
+        const remaining = results.flatMap(result => result.status === 'fulfilled' ? [result.value] : []);
+        if (controller.signal.aborted) { remaining.forEach(lease => lease.release()); return; }
+        leases.push(...remaining);
+        const failed = results.find(result => result.status === 'rejected');
+        if (failed?.status === 'rejected') throw failed.reason;
+        animationReady = true;
+        previous = '';
+        render(elapsed);
+      }
+    } catch (failure) { stop?.(); error.value = failure instanceof Error ? failure.message : '纹理绘制失败'; }
   }, { flush: 'post', immediate: true });
 </script>
 

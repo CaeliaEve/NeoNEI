@@ -1,9 +1,10 @@
 /// <reference lib="webworker" />
-import { Api, Catalog, Fault, checkManifest, hash, limits } from '@neonei/catalog/source';
+import { Api, Catalog, Query, Fault, checkManifest, hash, limits } from '@neonei/catalog/source';
 import { formats } from '@elysium/contracts';
 import { body, request } from '../catalog/transport.ts';
 import { Shelf } from './store.ts';
 import type { Call, Operation, Progress, Reply } from './protocol.ts';
+import {prepareInteractionSave} from '../browser/interaction-storage';
 
 const scope = self as unknown as DedicatedWorkerGlobalScope;
 const jobs = new Map<number, AbortController>();
@@ -84,17 +85,19 @@ async function run(operation: Operation, signal: AbortSignal, progress: (value: 
     const source = base(operation.base);
     return write(signal, async () => {
       const manifest = await checkManifest(await request(source.href + '/catalog/' + operation.catalog, signal, limits.manifest), operation.catalog);
-      for (const kind of ['browse', 'groups', 'topics', 'categories']) {
+      for (const kind of ['groups', 'topics', 'categories']) {
         const weight = manifest.files.filter(file => file.kind === kind).reduce((total, file) => total + file.bytes * 4, 0);
         if (weight > 256 * 1024 * 1024) throw new Fault('index_limit', '这份资料的索引超过离线查询内存预算');
       }
       const row = await shelf.begin(manifest, source.pathname);
+      const extra=await prepareInteractionSave(manifest.id,signal);
       const storage = await scope.navigator.storage?.estimate();
       if (storage?.quota !== undefined && storage.usage !== undefined
-        && row.totalBytes - row.bytes + 8 * 1024 * 1024 > storage.quota - storage.usage) {
+        && row.totalBytes - row.bytes + extra.totalBytes + 8 * 1024 * 1024 > storage.quota - storage.usage) {
         throw new Fault('storage_quota', '浏览器存储空间不足，请移除不再需要的离线副本');
       }
       let files = 0, bytes = 0;
+      const counted = new Set<string>();
       const catalog = await Catalog.open(manifest, async file => {
         signal.throwIfAborted();
         let data = await shelf.file(manifest.id, file.path);
@@ -109,11 +112,15 @@ async function run(operation: Operation, signal: AbortSignal, progress: (value: 
           signal.throwIfAborted();
           await shelf.put(manifest.id, file, data);
         }
-        files++; bytes += file.bytes;
-        progress({ id: manifest.id, files, totalFiles: row.totalFiles, bytes, totalBytes: row.totalBytes });
+        if (!counted.has(file.path)) {
+          counted.add(file.path); files++; bytes += file.bytes;
+          progress({ id: manifest.id, files, totalFiles: row.totalFiles+extra.totalFiles, bytes, totalBytes: row.totalBytes+extra.totalBytes });
+        }
         return data;
       }, manifest.id);
+      await new Query(catalog).facets();
       await catalog.check();
+      await extra.save((extraFiles,extraBytes)=>progress({id:manifest.id,files:files+extraFiles,totalFiles:row.totalFiles+extra.totalFiles,bytes:bytes+extraBytes,totalBytes:row.totalBytes+extra.totalBytes}));
       signal.throwIfAborted();
       const saved = await shelf.finish(manifest.id);
       notify('saved', manifest.id);

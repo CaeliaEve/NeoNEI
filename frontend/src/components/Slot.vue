@@ -107,6 +107,9 @@ function choose(index: number, id: string, direction: 'recipes' | 'uses'): void 
 </template>
 
 <style scoped>
+.stack-slot { position: relative; display: inline-flex; }
+/* Keep the candidate hit target inside its own slot, including direct recipe pages. */
+.alternatives { position: absolute; right: 0; bottom: 0; z-index: 1; min-width: 12px; height: 12px; padding: 0 2px; border: 1px solid #64748b; border-radius: 2px; background: #18212deb; color: white; font-size: 9px; line-height: 10px; }
 /* Retain the original catalog choice dialog without leaking into the homepage. */
 .choices-dialog { color: #e4eaf0; background: #111c2a; border: 1px solid #405164; border-radius: 12px; padding: 22px; width: min(480px, calc(100vw - 30px)); max-height: 85vh; overflow: auto; box-shadow: 0 24px 90px #0009; margin: auto; }
 .choices-dialog::backdrop { background: #03080bc9; }

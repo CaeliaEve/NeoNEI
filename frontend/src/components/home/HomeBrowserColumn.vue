@@ -4,6 +4,7 @@ import type { BrowserVariantGroup, Item } from "../../services/api";
 import type { NativeSurfaceFrameProjectionMetrics } from "../../native-surface/contracts";
 import { resolveDistDataNativeRuntimeManifestPath } from "../../services/distDataRuntime";
 import NativeBrowserSurface from "../native-surface/NativeBrowserSurface.vue";
+import {residentStatus} from '../../browser/resident';
 
 defineProps<{
   itemColumnStyle: StyleValue;
@@ -135,6 +136,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
           </div>
 
           <!-- Items Grid Container -->
+          <div v-if="residentStatus" class="text-center text-xs text-slate-400" role="status">{{ residentStatus }}</div>
           <div class="items-grid-container flex-1 min-h-0 pt-1 flex flex-col">
             <div
               :ref="bindGridViewportRef"

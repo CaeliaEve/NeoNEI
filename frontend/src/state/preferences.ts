@@ -1,4 +1,4 @@
-import { reactive, ref, watch } from 'vue';
+import { effectScope, reactive, ref, watch } from 'vue';
 import type { Entry } from '@elysium/contracts';
 
 export interface Saved { catalog: string; id: string; kind: 'item' | 'fluid'; name: string }
@@ -13,8 +13,8 @@ function saved(value: unknown): value is Saved {
     && typeof row.name === 'string' && row.name.length <= 4096;
 }
 
-export function usePreferences() {
-  const preferences = reactive<Preferences>({ size: 48, limit: 96, scale: 2, animate: !matchMedia('(prefers-reduced-motion: reduce)').matches,
+function createPreferences() {
+  const preferences = reactive<Preferences>({ size: 48, limit: 96, scale: 2, animate: typeof matchMedia !== 'function' || !matchMedia('(prefers-reduced-motion: reduce)').matches,
     collapsed: true, bookmarks: [], history: [] });
   const storageError = ref('');
   try {
@@ -30,19 +30,25 @@ export function usePreferences() {
       if (Array.isArray(value.history)) preferences.history = value.history.filter(saved).slice(0, 40);
     }
   } catch { storageError.value = '无法读取本机设置，本次使用默认设置。'; }
-  watch(preferences, value => {
+  // Settings belong to the application, so persistence survives the first consumer's unmount.
+  effectScope(true).run(() => watch(preferences, value => {
     try { localStorage.setItem(key, JSON.stringify(value)); storageError.value = ''; }
     catch { storageError.value = '无法保存本机设置；当前页面仍可继续使用。'; }
-  }, { deep: true });
+  }, { deep: true }));
   function remember(catalog: string, entry: Entry): void {
     preferences.history = [{ catalog, id: entry.id, kind: entry.kind, name: entry.name },
       ...preferences.history.filter(row => row.id !== entry.id || row.catalog !== catalog)].slice(0, 40);
   }
-  function bookmark(catalog: string, entry: Entry): void {
+  function bookmark(catalog: string, entry: Pick<Entry, 'id' | 'kind' | 'name'>): void {
     const exists = preferences.bookmarks.some(row => row.id === entry.id && row.catalog === catalog);
     if (exists) preferences.bookmarks = preferences.bookmarks.filter(row => row.id !== entry.id || row.catalog !== catalog);
     else if (preferences.bookmarks.length < 500) preferences.bookmarks.push({ catalog, id: entry.id, kind: entry.kind, name: entry.name });
     else storageError.value = '书签最多保存 500 项，请先移除不需要的书签。';
   }
   return { preferences, storageError, remember, bookmark };
+}
+
+let sharedPreferences: ReturnType<typeof createPreferences> | undefined;
+export function usePreferences() {
+  return sharedPreferences ??= createPreferences();
 }

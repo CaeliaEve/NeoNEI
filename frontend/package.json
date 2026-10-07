@@ -67,11 +67,11 @@
     "test:rust-texture-runtime": "node --test scripts/rust-texture-runtime-regression.test.mjs",
     "test:browser-interaction-latency": "node --test scripts/browser-interaction-latency-regression.test.mjs",
     "check": "vue-tsc -b",
-    "test": "node --test test/catalog.test.mjs",
+    "test": "node --test test/*.test.mjs",
     "e2e": "node ../scripts/browser.mjs pilot.spec.ts catalog-navigation.spec.ts"
   },
   "dependencies": {
-    "@elysium/contracts": "file:../vendor/elysium-contracts-0.37.0.tgz",
+    "@elysium/contracts": "file:../vendor/elysium-contracts-0.37.6.tgz",
     "@neonei/catalog": "file:../catalog",
     "axios": "^1.18.1",
     "pinia": "^3.0.4",

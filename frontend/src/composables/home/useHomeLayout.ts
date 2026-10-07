@@ -110,6 +110,9 @@ export function useHomeRailStyles(recipePreviewNeedsWideStage: ComputedRef<boole
 
     return {
       ...centerRailStyle.value,
+      // Keep the preferred center position inside the space left of the browser.
+      left: "max(16px, min(var(--home-center-left), calc(100% - var(--home-right-width) - var(--home-center-width) - 16px)))",
+      maxWidth: "calc(100% - var(--home-right-width) - 32px)",
       top: "var(--home-recipe-top)",
       bottom: "var(--home-recipe-bottom)",
       zIndex: "30",

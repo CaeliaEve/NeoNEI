@@ -1,4 +1,7 @@
 import { nextTick, onMounted, onUnmounted, ref, watch, type Ref } from 'vue';
+import {prepareResident,residentReady,residentPage} from '../browser/resident';
+import {session} from '../services/api/elysiumFacade';
+import {latestFrame} from '../browser/latest-frame';
 import {
   api,
   type BrowserGridEntry,
@@ -442,6 +445,15 @@ export function useItemBrowser(
     pagePresentationWarm.invalidate();
     loadError.value = '';
     const requestParams = buildRequestParams(currentPage.value);
+    if(residentReady.value && requestParams.expandedGroups.length===0){
+      const targetPage=requestParams.page;
+      const result=await residentPage(requestParams.search||'',requestParams.modId==='all'?'':requestParams.modId||'',(targetPage-1)*requestParams.pageSize,requestParams.pageSize);
+      if(requestId!==loadItemsRequestId)return;
+      const rows:Item[]=result.rows.map(row=>({itemId:row.id,localizedName:row.name.replace(/§[0-9a-fk-or]/gi,''),internalName:row.registry,modId:row.registry.split(':')[0]!,residentSprite:row.sprite}));
+      browserEntries.value=rows.map(item=>({key:item.itemId,kind:'item',item}));items.value=rows;
+      totalItems.value=result.total;totalPages.value=Math.max(1,Math.ceil(result.total/requestParams.pageSize));
+      loading.value=false;transitioning.value=false;browserPageRevision.value++;return;
+    }
     const cacheKey = buildPageCacheKey(requestParams);
     const cached = pageCache.get(cacheKey);
     const hadVisibleEntries = browserEntries.value.length > 0 && items.value.length > 0;
@@ -739,9 +751,11 @@ export function useItemBrowser(
     });
   };
 
+  const frameScheduler=latestFrame(cb=>requestAnimationFrame(cb),id=>cancelAnimationFrame(id));
   const changePage = (page: number) => {
+    ++loadItemsRequestId;
     currentPage.value = page;
-    interactionScheduler.schedulePageHydration(() => {
+    frameScheduler.schedule(() => {
       void loadItems();
     });
   };
@@ -834,6 +848,7 @@ export function useItemBrowser(
   };
 
   const prefetchItemsPage = async (page: number) => {
+    if(residentReady.value)return;
     if (page < 1) return;
     const requestParams = buildRequestParams(page);
     const cacheKey = buildPageCacheKey(requestParams);
@@ -923,12 +938,14 @@ export function useItemBrowser(
     await nextTick();
     pageSize.value = calculatePageSize();
     await loadInitialHomeState();
+    void session().then(c=>prepareResident(c.manifest.id)).then(()=>{if(residentReady.value)void loadItems();}).catch(()=>{});
     warmSearchIndex();
   });
 
   onUnmounted(() => {
     window.removeEventListener('resize', handleResize);
     interactionScheduler.clear();
+    frameScheduler.clear();
     if (resizeTimeout) clearTimeout(resizeTimeout);
     nativeBrowserRuntimeWarm.dispose();
   });

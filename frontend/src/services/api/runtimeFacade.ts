@@ -202,8 +202,8 @@ export const api = {
   async getRecipeUiPayload(recipeId: string): Promise<RecipeUiPayload> {
     return elysiumFacade.getRecipeUiPayload(recipeId);
   },
-  async getRecipeBootstrap(itemId: string): Promise<RecipeBootstrapPayload> {
-    return elysiumFacade.getRecipeBootstrap(itemId);
+  async getRecipeBootstrap(itemId: string,direction:'recipes'|'uses'='recipes',options:{signal?:AbortSignal}={}): Promise<RecipeBootstrapPayload> {
+    return elysiumFacade.getRecipeBootstrap(itemId,direction,options);
   },
 
   async getRecipeBootstrapShard(itemId: string): Promise<RecipeBootstrapPayload> {

@@ -53,8 +53,8 @@ const orderRecipes = (recipeIds: string[], recipesById: Map<string, Recipe>): Re
   return ordered;
 };
 
-export async function loadRecipeBootstrap(itemId: string): Promise<RecipeBootstrapResult> {
-  const bootstrap: RecipeBootstrapPayload = await api.getRecipeBootstrap(itemId);
+export async function loadRecipeBootstrap(itemId: string,direction:'recipes'|'uses'='recipes',signal?:AbortSignal): Promise<RecipeBootstrapResult> {
+  const bootstrap: RecipeBootstrapPayload = await api.getRecipeBootstrap(itemId,direction,{signal});
   primeRenderAnimationHintsFromUnknown(bootstrap);
   primeAnimatedAtlasManifest(bootstrap.mediaManifest);
   for (const url of Array.from(

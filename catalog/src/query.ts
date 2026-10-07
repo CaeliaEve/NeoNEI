@@ -9,6 +9,8 @@ export interface Browse { query: string; mod: string; kind: 'all' | 'item' | 'fl
 export interface Search { item: string; direction: 'recipes' | 'uses'; category: string; query: string; offset: number; limit: number }
 export interface TopicSearch { kind: TopicKind; item: string; query: string; offset: number; limit: number }
 export interface MutationSearch { direction: 'origins' | 'crosses'; offset: number; limit: number }
+type SearchEntry = Pick<Entry, 'id' | 'kind' | 'registry' | 'order' | 'group' | 'terms'>;
+
 export interface Related { items: Item[]; fluids: Fluid[]; categories: Category[]; views: View[]; strings: Text[]; textures: Texture[]; topics: Topic[]; tracks: Track[] }
 export interface Facets { mods: Array<{ id: string; count: number }>; groups: Array<{ id: string; name: string; count: number; collapsed: boolean }> }
 
@@ -22,11 +24,35 @@ function memo<T>(read: () => Promise<T>): () => Promise<T> {
 
 /** Per-snapshot query state; a pointer change cannot mix records from different catalogs. */
 export class Query {
-  readonly catalog: Catalog;
-  constructor(catalog: Catalog) { this.catalog = catalog; }
+  readonly catalog: Pick<Catalog,'manifest'|'record'|'records'|'all'|'scan'> & {directory?:(id:string)=>Promise<{recipes:Array<{id:string;category:string}>;uses:Array<{id:string;category:string}>}>};
+  constructor(catalog: Query['catalog']) { this.catalog = catalog; }
 
-  private readonly entries = memo(async () => (await this.catalog.all('browse')).sort((left, right) =>
-    (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER) || compare(left.id, right.id)));
+  async directory(item:string){
+    const links=await this.catalog.record('links',item);
+    const prepared=this.catalog.directory?await this.catalog.directory(item):null;
+    const group=async(direction:'recipes'|'uses')=>{
+      const counts=new Map<string,number>();
+      for(const row of prepared?.[direction]??await this.catalog.records('index',links[direction]))counts.set(row.category,(counts.get(row.category)??0)+1);
+      return [...counts].map(([id,count])=>({id,count}));
+    };
+    const [recipes,uses]=await Promise.all([group('recipes'),group('uses')]);
+    const categories=await this.catalog.records('categories',new Set([...recipes,...uses].map(row=>row.id)));
+    const strings=await this.catalog.records('strings',categories.map(row=>row.name));
+    return {links,recipes,uses,related:{categories,strings,items:[],fluids:[],textures:[],views:[],tracks:[],topics:[]} satisfies Related};
+  }
+
+  private readonly entries = memo(async () => {
+    const rows: SearchEntry[] = [], encoder = new TextEncoder();
+    let weight = 0;
+    for await (const row of this.catalog.scan('browse')) {
+      const { id, kind, registry, order, group, terms } = row;
+      const entry = { id, kind, registry, order, group, terms };
+      weight += encoder.encode(JSON.stringify(entry)).byteLength * 4;
+      if (weight > 256 * 1024 * 1024) throw new Fault('index_limit', 'Catalog search index exceeds the lookup memory budget');
+      rows.push(entry);
+    }
+    return rows.sort((left, right) => (left.order ?? Number.MAX_SAFE_INTEGER) - (right.order ?? Number.MAX_SAFE_INTEGER) || compare(left.id, right.id));
+  });
   private readonly entryMap = memo(async () => new Map((await this.entries()).map(row => [row.id, row])));
   private readonly groups = memo(async () => new Map((await this.catalog.all('groups')).map(row => [row.id, row])));
   private readonly topicRows = memo(async () => (await this.catalog.all('topics')).sort((left, right) =>
@@ -60,10 +86,10 @@ export class Query {
     ]);
     const terms = options.query.toLocaleLowerCase('en-US').trim().split(/\s+/).filter(Boolean);
     const names = options.collapsed ? await this.entryMap() : null;
-    const matches = (entry: Entry): boolean => (options.kind === 'all' || entry.kind === options.kind)
+    const matches = (entry: SearchEntry): boolean => (options.kind === 'all' || entry.kind === options.kind)
       && (!options.mod || namespace(entry.registry).toLowerCase() === options.mod.toLowerCase())
       && (!options.group || entry.group === options.group) && terms.every(term => entry.terms.includes(term));
-    const result: Entry[] = [];
+    const result: string[] = [];
     let total = 0;
     const folded = new Set<string>();
     for (const entry of entries) {
@@ -75,36 +101,40 @@ export class Query {
         const representative = names?.get(groups.get(entry.group)!.representative);
         if (representative && matches(representative)) selected = representative;
       }
-      if (total >= options.offset && result.length < options.limit) result.push(selected);
+      if (total >= options.offset && result.length < options.limit) result.push(selected.id);
       total++;
     }
-    return { rows: result, total, offset: options.offset, limit: options.limit };
+    return { rows: await this.catalog.records('browse', result), total, offset: options.offset, limit: options.limit };
   }
 
-  async recipes(options: Search): Promise<Page<Recipe> & { categories: Array<{ id: string; count: number }> }> {
+  async recipes(options: Search): Promise<Page<Recipe> & { recipeIds: string[]; categories: Array<{ id: string; count: number }> }> {
     const links = await this.catalog.record('links', options.item);
     const categories = new Map<string, number>();
     const terms = options.query.toLocaleLowerCase('en-US').trim().split(/\s+/).filter(Boolean);
     const [names, labels] = terms.length ? await Promise.all([this.entryMap(), this.categoryNames()]) : [null, null];
     const selected: string[] = [];
+    const recipeIds: string[] = [];
     let total = 0;
     const ids = links[options.direction];
-    for (let offset = 0; offset < ids.length; offset += 128) {
-      const summaries = await this.catalog.records('index', ids.slice(offset, offset + 128));
+    {
+      const summaries = !terms.length && this.catalog.directory ? (await this.catalog.directory(options.item))[options.direction]
+        : await this.catalog.records('index', ids);
       for (const recipe of summaries) {
         categories.set(recipe.category, (categories.get(recipe.category) ?? 0) + 1);
         if (options.category && recipe.category !== options.category) continue;
         if (terms.length) {
-          const search = [recipe.id, recipe.owner, recipe.handler, labels?.get(recipe.category) ?? '',
-            ...recipe.targets.map(id => names?.get(id)?.terms ?? '')].join(' ').toLocaleLowerCase('en-US');
+          const summary=recipe as import('./store.ts').Row<'index'>;
+          const search = [recipe.id, summary.owner, summary.handler, labels?.get(recipe.category) ?? '',
+            ...summary.targets.map(id => names?.get(id)?.terms ?? '')].join(' ').toLocaleLowerCase('en-US');
           if (terms.some(term => !search.includes(term))) continue;
         }
+        recipeIds.push(recipe.id);
         if (total >= options.offset && selected.length < options.limit) selected.push(recipe.id);
         total++;
       }
     }
     const result = await this.catalog.records('recipes', selected);
-    return { rows: result, total, offset: options.offset, limit: options.limit,
+    return { rows: result, recipeIds, total, offset: options.offset, limit: options.limit,
       categories: Array.from(categories, ([id, count]) => ({ id, count })) };
   }
 

@@ -1,0 +1,20 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {decodeTable} from '@elysium/contracts';
+import {sortNative} from './nei-order.mjs';
+const [root,out,orderFile]=process.argv.slice(2);
+if(!root||!out||fs.existsSync(out))throw Error('Supply catalog directory and NEW output directory');
+const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8'));
+function read(kind){return manifest.files.filter(f=>f.kind===kind).flatMap(f=>{const b=fs.readFileSync(path.join(root,f.path));if(createHash('sha256').update(b).digest('hex')!==f.sha256)throw Error(f.path);return decodeTable(b,kind).records;});}
+const order=orderFile?JSON.parse(fs.readFileSync(orderFile,'utf8')):null;
+if(order&&order.catalog!==manifest.id)throw Error('Native order Catalog mismatch');
+const entries=sortNative(read('browse'),order?.ids??[]);
+const textures=new Map(read('textures').map(t=>[t.id,t]));
+const frames=[],keys=new Map();
+const rows=entries.map(e=>{let sprite=-1; if(e.icon){const f=textures.get(e.icon)?.frames[0];if(!f)throw Error('Missing icon '+e.id);const key=JSON.stringify([f.path,f.x,f.y,f.width,f.height]);if(!keys.has(key)){keys.set(key,frames.length);frames.push(f);}sprite=keys.get(key);}return {id:e.id,name:e.name,registry:e.registry,terms:e.terms,group:e.group??null,sprite};});
+fs.mkdirSync(out,{recursive:true});
+if(order)fs.writeFileSync(path.join(out,'native-order.json'),JSON.stringify(order));
+fs.writeFileSync(path.join(out,'index.json'),JSON.stringify({catalog:manifest.id,rows,groups:read('groups')}));
+fs.writeFileSync(path.join(out,'plan.json'),JSON.stringify({root,frames,files:manifest.files.filter(f=>f.kind==='image'),catalog:manifest.id}));
+console.log(JSON.stringify({rows:rows.length,frames:frames.length}));

@@ -1,0 +1,16 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+const [release,native,interaction]=process.argv.slice(2);
+if(!release||!native||!interaction)throw Error('Supply release, native pack and interaction pack');
+const plan=JSON.parse(await fs.readFile(path.join(native,'plan.json'),'utf8'));
+const target=path.join(release,'frontend/dist/browser-native',plan.catalog);
+await fs.cp(native,target,{recursive:true,errorOnExist:true,force:false});
+const paths=[...new Set(plan.frames.map(f=>f.path))],indices=new Map(paths.map((p,i)=>[p,i]));
+const bytes=Buffer.from(JSON.stringify({paths,frames:plan.frames.map(f=>[indices.get(f.path),f.x,f.y,f.width,f.height])}));
+await fs.writeFile(path.join(target,'original-frames.json'),bytes);
+const manifest=JSON.parse(await fs.readFile(path.join(target,'manifest.json'),'utf8'));
+manifest.originalFrames={path:'original-frames.json',bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')};
+await fs.writeFile(path.join(target,'manifest.json'),JSON.stringify(manifest));
+await fs.cp(interaction,path.join(release,'frontend/dist/interaction',plan.catalog),{recursive:true,errorOnExist:true,force:false});
+console.log(JSON.stringify({catalog:plan.catalog,nativeMappingBytes:bytes.length,staged:true}));

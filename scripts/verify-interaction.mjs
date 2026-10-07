@@ -1,0 +1,38 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {gunzipSync} from 'node:zlib';
+import {decodeTable} from '@elysium/contracts';
+import {PackedCatalog} from '../catalog/src/interaction.ts';
+import {Query} from '../catalog/src/query.ts';
+const [root,pack,native,orderFile,out]=process.argv.slice(2);
+const read=async p=>JSON.parse(await fs.readFile(p,'utf8'));
+const manifest=await read(path.join(root,'manifest.json')),parts=await read(path.join(pack,'manifest.json'));
+const keyBytes=await fs.readFile(path.join(pack,parts.keys.path));
+assert.equal(createHash('sha256').update(keyBytes).digest('hex'),parts.keys.sha256);
+const dict=JSON.parse(gunzipSync(keyBytes));
+assert.equal(dict.keys.length,manifest.counts.recipes);
+const catalog=new PackedCatalog(manifest,parts.files,f=>fs.readFile(path.join(pack,f.path)),dict.keys.map(([id,c])=>({id,category:dict.categories[c]})));
+const order=await read(orderFile),index=await read(path.join(native,'index.json'));
+assert.equal(index.rows.length,manifest.counts.browse);
+const matching=new Set(order.ids);
+assert.deepEqual(index.rows.filter(r=>matching.has(r.id)).map(r=>r.id),order.ids);
+assert.equal(new Set(index.rows.map(r=>r.id)).size,index.rows.length);
+const samples=[];
+let links=0;
+for(const file of manifest.files.filter(f=>f.kind==='links')){
+ const bytes=await fs.readFile(path.join(root,file.path));
+ assert.equal(createHash('sha256').update(bytes).digest('hex'),file.sha256);
+ const rows=decodeTable(bytes,'links').records;links+=rows.length;
+ samples.push(...rows.slice(0,1),...rows.filter(r=>r.recipes.length+r.uses.length>100).sort((a,b)=>(b.recipes.length+b.uses.length)-(a.recipes.length+a.uses.length)).slice(0,1));
+}
+const selected=[...new Map(samples.map(r=>[r.id,r])).values()].sort((a,b)=>(b.recipes.length+b.uses.length)-(a.recipes.length+a.uses.length)).slice(0,12);
+for(const row of selected)assert.deepEqual(await catalog.record('links',row.id),row);
+const largest=selected[0],q=new Query(catalog),dir=await q.directory(largest.id);
+const direction=largest.uses.length>largest.recipes.length?'uses':'recipes';
+const group=[...dir[direction]].sort((a,b)=>b.count-a.count)[0];
+const tail=await q.recipes({item:largest.id,direction,category:group.id,query:'',offset:group.count-1,limit:1});
+assert.equal(tail.rows.length,1);assert.equal(tail.total,group.count);
+const result={catalog:manifest.id,recipes:dict.keys.length,browse:index.rows.length,order:{captured:order.captured,matched:order.matched,unmatched:order.unmatched.length,subsequenceIdentical:true},linksScanned:links,completeDirectorySamples:selected.map(r=>({id:r.id,recipes:r.recipes.length,uses:r.uses.length})),tail:{item:largest.id,direction,category:group.id,count:group.count,recipe:tail.rows[0].id},nativePixels:await read(path.join(native,'pixel-audit.json')),passed:true};
+await fs.writeFile(out,JSON.stringify(result,null,2));console.log(JSON.stringify({passed:true,order:result.order,tail:result.tail}));

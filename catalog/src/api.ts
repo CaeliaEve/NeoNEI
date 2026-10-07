@@ -3,7 +3,7 @@ import { Catalog, Fault, type Collection } from './store.ts';
 import { Query, type Page, type Related } from './query.ts';
 
 export type Items = Page<Entry> & { textures: Texture[] };
-export type Recipes = Page<Recipe> & { categories: Array<{ id: string; count: number }>; related: Related };
+export type Recipes = Page<Recipe> & { recipeIds: string[]; categories: Array<{ id: string; count: number }>; related: Related };
 export interface Detail { recipe: Recipe; related: Related }
 export type StructureDetail = Awaited<ReturnType<Query['structure']>>;
 export type BuildDetail = Awaited<ReturnType<Query['build']>>;
@@ -65,7 +65,12 @@ export class Api {
         if (!item) throw new Fault('invalid_query', 'An item or fluid id is required', 400);
         const result = await query.recipes({ item, direction, category: field('category'), query: field('query'),
           offset: offset(), limit: limit(20, 100) });
-        return { ...result, related: await query.related(result.rows, result.categories.map(category => category.id)) } satisfies Recipes;
+        const related=await query.related(result.rows);
+        const categories=await catalog.records('categories',result.categories.map(category=>category.id));
+        const strings=await catalog.records('strings',categories.map(category=>category.name));
+        related.categories=[...new Map([...related.categories,...categories].map(row=>[row.id,row])).values()];
+        related.strings=[...new Map([...related.strings,...strings].map(row=>[row.id,row])).values()];
+        return { ...result, related } satisfies Recipes;
       }
       if (name === 'topics') {
         const value = field('kind');
@@ -75,6 +80,7 @@ export class Api {
       }
     }
     if (parts.length === 2 && id) {
+      if(name==='directory')return query.directory(id);
       if (name === 'programs') return catalog.program(id);
       if (name === 'recipes') {
         const recipe = await catalog.record('recipes', id);

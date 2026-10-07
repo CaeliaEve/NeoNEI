@@ -1,3 +1,4 @@
+import {categoryDirectoryComplete} from './recipe-browser/recipeCategoryState';
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue';
 import {
   api,
@@ -30,10 +31,9 @@ import {
 } from './recipe-browser/recipeCategoryState';
 import type { MachineCategory } from './recipe-browser/helpers';
 import { loadRecipeBootstrap } from './useRecipeBootstrap';
+import {recipeReadReady} from '../browser/recipe-scheduling';
+import {warmRecipeFrames} from '../browser/recipe-warm';
 import { useRecipeDetailHydrator } from './useRecipeDetailHydrator';
-import {
-  queueRenderableMediaPrewarmFromUnknown,
-} from '../services/animationBudget';
 import { createRecipeShardHydrator } from './recipe-browser/recipeShardHydrator';
 import {
   RECIPE_HYDRATION_RECOVERY_REASONS,
@@ -107,6 +107,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   const categoryPackRequestsInFlight = new Map<string, Promise<void>>();
   let disposed = false;
   let loadRequestSeq = 0;
+  let bootstrapController=new AbortController(),mediaController=new AbortController(),mediaKey='';
   let recipeFirstPageVisibleItemId: string | null = null;
 
   const getNow = (): number =>
@@ -340,9 +341,10 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     if (recipesForPrewarm.length <= 0) {
       return;
     }
-    queueRenderableMediaPrewarmFromUnknown(recipesForPrewarm, {
-      limit: Math.max(24, recipesForPrewarm.length * 18),
-    });
+    const ids=recipesForPrewarm.slice(0,2).map(recipe=>recipe.recipeId),key=ids.join('|');
+    if(key===mediaKey)return;
+    mediaKey=key;mediaController.abort();mediaController=new AbortController();const signal=mediaController.signal;
+    void(async()=>{for(const id of ids)await warmRecipeFrames(id,signal,10);})().catch(()=>{});
   };
 
   const prefetchRecipeSearchPack = () => {
@@ -547,7 +549,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   const isCategoryPackComplete = (category: NonNullable<typeof currentCategory.value>) => {
     const tab = currentTab.value;
     const orderedRecipeIds = getCategoryOrderedRecipeIds(tab, category);
-    if (orderedRecipeIds.length > 0) {
+    if (categoryDirectoryComplete(orderedRecipeIds, category.recipeCount ?? category.recipes.length)) {
       const loadedRecipeIds = getLoadedRecipeIdSet(tab);
       return orderedRecipeIds.every((recipeId) => loadedRecipeIds.has(recipeId));
     }
@@ -566,6 +568,10 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     mode: 'visible' | 'prefetch',
     targetPage: number,
   ) => {
+    const requestedTab=currentTab.value;
+    if(!await recipeReadReady(mode,()=>!disposed&&requestSeq===loadRequestSeq&&itemIdRef.value===itemId&&currentTab.value===requestedTab))return;
+    if (category.categoryKey === currentCategory.value?.categoryKey
+      && Math.abs(targetPage - currentPage.value) > 1) return;
     if (isCategoryPackComplete(category)) {
       return;
     }
@@ -573,7 +579,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     const tab = currentTab.value;
     const lookupKey = getRecipeCategoryLookupKey(tab, category);
     const currentOrderedRecipeIds = getCategoryOrderedRecipeIds(tab, category);
-    const includeRecipeIds = currentOrderedRecipeIds.length === 0;
+    const includeRecipeIds = !categoryDirectoryComplete(currentOrderedRecipeIds, category.recipeCount ?? category.recipes.length);
     const recipesPerPage = getCategoryRecipesPerPage(category);
     const packWindowSize = Math.max(CATEGORY_PACK_PAGE_SIZE, recipesPerPage * 4);
     const normalizedTargetPage = Math.max(0, Math.floor(targetPage));
@@ -835,6 +841,8 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
     const itemId = itemIdRef.value;
     if (!itemId) return;
     const requestSeq = ++loadRequestSeq;
+    bootstrapController.abort();bootstrapController=new AbortController();const signal=bootstrapController.signal;
+    mediaController.abort();mediaKey='';
 
     perf.start('loadRecipes');
     loading.value = true;
@@ -866,7 +874,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
         pendingRecipeIds,
       } = await perf.measureAsync(
         'loadRecipeData',
-        () => loadRecipeBootstrap(itemId),
+        () => loadRecipeBootstrap(itemId,currentTab.value==='usedIn'?'uses':'recipes',signal),
       );
       const bootstrapDurationMs = getNow() - bootstrapStartedAt;
       markPerfEvent('recipe-open-budget', {
@@ -1074,6 +1082,7 @@ export function useRecipeViewer(itemIdRef: Ref<string | undefined>, playClick: (
   });
 
   onBeforeUnmount(() => {
+    bootstrapController.abort();mediaController.abort();
     disposed = true;
     loadRequestSeq += 1;
     disposeDetailHydration();

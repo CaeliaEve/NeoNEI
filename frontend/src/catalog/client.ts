@@ -6,6 +6,8 @@ import type { Page, Related, Items, Recipes, Detail, StructureDetail, AspectDeta
 import { Atlas } from './atlas.ts';
 import { ApiError, body, networkError, request } from './transport.ts';
 import { Local } from '../offline/client.ts';
+import {Interaction} from '../browser/interaction.ts';
+import {prepareRecipeVisuals} from '../browser/recipe-visuals.ts';
 import type { Shape } from '@elysium/contracts';
 import type { BuildDetail, ModelPage } from '@neonei/catalog/source';
 export type { BuildDetail, ModelPage } from '@neonei/catalog/source';
@@ -54,10 +56,40 @@ export class Catalog extends EventTarget {
   private readonly controller = new AbortController();
   private local: Local | null;
   private openingLocal: Promise<Local> | null = null;
+  private readonly recordCache = new Map<string, { row: unknown; bytes: number }>();
+  private recordCacheBytes = 0;
+  private readonly details=new Map<string,{detail:Detail;bytes:number}>();
+  private detailBytes=0;
+  private interaction:Interaction|null=null;
+  private rememberDetail(detail:Detail):void {
+    const id=detail.recipe.id,bytes=new TextEncoder().encode(JSON.stringify(detail)).byteLength*4;
+    const old=this.details.get(id);if(old){this.detailBytes-=old.bytes;this.details.delete(id);}
+    if(bytes>32*1024*1024)return;
+    while(this.details.size&&(this.detailBytes+bytes>32*1024*1024||this.details.size>=24)){
+      const first=this.details.keys().next().value!;this.detailBytes-=this.details.get(first)!.bytes;this.details.delete(first);
+    }
+    this.details.set(id,{detail,bytes});this.detailBytes+=bytes;
+  }
+
+  private rememberRecords<K extends Table['kind']>(kind: K, rows: Rows[K][]): void {
+    for (const row of rows) {
+      const key = kind + ':' + row.id, bytes = new TextEncoder().encode(JSON.stringify(row)).byteLength * 4;
+      const old = this.recordCache.get(key);
+      if (old) { this.recordCacheBytes -= old.bytes; this.recordCache.delete(key); }
+      if (bytes > 8 * 1024 * 1024) continue;
+      while (this.recordCache.size && (this.recordCacheBytes + bytes > 8 * 1024 * 1024 || this.recordCache.size >= 4096)) {
+        const first = this.recordCache.keys().next().value!;
+        this.recordCacheBytes -= this.recordCache.get(first)!.bytes; this.recordCache.delete(first);
+      }
+      this.recordCache.set(key, { row, bytes }); this.recordCacheBytes += bytes;
+    }
+  }
 
   private constructor(manifest: Manifest, base: string, local: Local | null = null) {
     super();
     this.manifest = manifest; this.local = local; this.origin = base;
+    if(typeof caches!=='undefined'&&base==='/api')void prepareRecipeVisuals(manifest.id);
+    if(typeof Worker!=='undefined'&&base==='/api')this.interaction=new Interaction(manifest);
     this.base = base + '/catalog/' + manifest.id;
     const assets = base.slice(0, -4) + '/assets/' + manifest.id;
     this.atlas = new Atlas(manifest, assets, this.controller.signal, async (file, signal) => {
@@ -109,8 +141,10 @@ export class Catalog extends EventTarget {
     return this.openingLocal;
   }
 
-  private async get(endpoint: string, signal?: AbortSignal): Promise<unknown> {
+  private async get(endpoint: string, signal?: AbortSignal, priority=0): Promise<unknown> {
     const active = signal ? AbortSignal.any([signal, this.controller.signal]) : this.controller.signal;
+    if(/^\/(recipes|directory|records\/(browse|groups|index|links|recipes|items|fluids|strings|textures|tracks|views|categories|topics))(\/|\?|$)/.test(endpoint)
+      &&this.interaction&&await this.interaction.ready)return this.interaction.read(endpoint,active,priority);
     if (this.local) return this.local.get(endpoint, active);
     try { return await request(this.base + endpoint, active); }
     catch (error) {
@@ -124,23 +158,33 @@ export class Catalog extends EventTarget {
     const result = { ...page(data, 'browse'), textures: table('textures', data.textures) };
     const textures = new Set(result.textures.map(texture => texture.id));
     if (result.rows.some(row => row.icon && !textures.has(row.icon))) throw new ApiError('invalid_response', '物品页缺少所引用的纹理');
+    this.rememberRecords('browse', result.rows);
+    this.rememberRecords('textures', result.textures);
     return result;
   }
 
-  async recipes(options: Search, signal?: AbortSignal): Promise<Recipes> {
-    const data = object(await this.get('/recipes?' + params(options), signal));
+  async recipes(options: Search, signal?: AbortSignal, priority=0): Promise<Recipes> {
+    const data = object(await this.get('/recipes?' + params(options) + '&directory=1', signal,priority));
     if (!Array.isArray(data.categories)) throw new ApiError('invalid_response', '配方分类数据缺失');
     const categories = data.categories.map(value => {
       const row = object(value); integer(row.count);
       if (typeof row.id !== 'string') throw new ApiError('invalid_response', '配方分类数据无效');
       return { id: row.id, count: row.count };
     });
-    return { ...page(data, 'recipes'), categories, related: related(data.related) };
+    if (!Array.isArray(data.recipeIds) || data.recipeIds.some(id => typeof id !== 'string')) throw new ApiError('invalid_response', '配方目录缺失');
+    const result={ ...page(data, 'recipes'), recipeIds: data.recipeIds as string[], categories, related: related(data.related) };
+    if(result.rows.length<=4)for(const recipe of result.rows)this.rememberDetail({recipe,related:result.related});
+    return result;
+  }
+  async directory(item:string,signal?:AbortSignal,priority=0):Promise<Awaited<ReturnType<import('@neonei/catalog/source').Query['directory']>>>{
+    return await this.get('/directory/'+encodeURIComponent(item),signal,priority) as Awaited<ReturnType<import('@neonei/catalog/source').Query['directory']>>;
   }
 
-  async recipe(id: string, signal?: AbortSignal): Promise<Detail> {
-    const data = object(await this.get('/recipes/' + encodeURIComponent(id), signal));
-    return { recipe: table('recipes', [data.recipe])[0]!, related: related(data.related) };
+  async recipe(id: string, signal?: AbortSignal, priority=0): Promise<Detail> {
+    signal?.throwIfAborted();
+    const cached=this.details.get(id);if(cached){this.details.delete(id);this.details.set(id,cached);return cached.detail;}
+    const data = object(await this.get('/recipes/' + encodeURIComponent(id), signal,priority));
+    const detail={ recipe: table('recipes', [data.recipe])[0]!, related: related(data.related) };this.rememberDetail(detail);return detail;
   }
 
   async topics(options: TopicSearch, signal?: AbortSignal): Promise<Topics> {
@@ -193,8 +237,13 @@ export class Catalog extends EventTarget {
     return { ...page(data, 'mutations'), species: table('topics', data.species), related: related(data.related) };
   }
 
-  async record<K extends Table['kind']>(kind: K, id: string, signal?: AbortSignal): Promise<Rows[K]> {
-    return table(kind, [await this.get('/records/' + kind + '/' + encodeURIComponent(id), signal)])[0]!;
+  async record<K extends Table['kind']>(kind: K, id: string, signal?: AbortSignal,priority=0): Promise<Rows[K]> {
+    signal?.throwIfAborted();
+    const key = kind + ':' + id, cached = this.recordCache.get(key);
+    if (cached) { this.recordCache.delete(key); this.recordCache.set(key, cached); return cached.row as Rows[K]; }
+    const row = table(kind, [await this.get('/records/' + kind + '/' + encodeURIComponent(id), signal,priority)])[0]!;
+    this.rememberRecords(kind, [row]);
+    return row;
   }
 
   async facets(signal?: AbortSignal): Promise<Facets> {
@@ -238,7 +287,7 @@ export class Catalog extends EventTarget {
     return { ...page(data, 'models'), textures: table('textures', data.textures) };
   }
 
-  close(): void { this.controller.abort(); this.atlas.close(); this.local?.close(); }
+  close(): void { this.details.clear(); this.detailBytes=0; this.controller.abort(); this.interaction?.close(); this.atlas.close(); this.local?.close(); }
 }
 
 function params(options: Browse | Search | TopicSearch | MutationSearch | { piece: string; offset: number; limit: number }): string {

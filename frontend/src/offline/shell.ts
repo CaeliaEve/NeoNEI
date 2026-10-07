@@ -1,4 +1,5 @@
 import { ApiError } from '../catalog/transport.ts';
+import {activateMatchingShell} from './shell-handover.ts';
 
 let listening = false;
 
@@ -17,7 +18,22 @@ export function start(): void {
   navigator.serviceWorker.addEventListener('message', event => {
     if (event.data?.kind === 'shell-build') event.ports[0]?.postMessage({ build: __APP_BUILD__ });
   });
-  void register().catch(() => {});
+  void register().then(registration=>{
+    const watched=new WeakSet<ServiceWorker>();
+    const watch=(worker:ServiceWorker|null)=>{
+      if(!worker||watched.has(worker))return;
+      watched.add(worker);
+      const changed=()=>{
+        if(worker.state==='installed'){
+          worker.removeEventListener('statechange',changed);
+          void activateMatchingShell(worker,__APP_BUILD__,()=>status(worker,AbortSignal.timeout(10000))).catch(()=>{});
+        }else if(worker.state==='redundant'||worker.state==='activated')worker.removeEventListener('statechange',changed);
+      };
+      worker.addEventListener('statechange',changed);changed();
+    };
+    registration.addEventListener('updatefound',()=>watch(registration.installing));
+    watch(registration.installing);watch(registration.waiting);
+  }).catch(() => {});
 }
 
 function status(worker: ServiceWorker, signal: AbortSignal, repair = false): Promise<{ build: string; ready: boolean }> {

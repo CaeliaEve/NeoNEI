@@ -197,11 +197,12 @@ export class Catalog {
   }
 
   async records<K extends Collection>(kind: K, ids: Iterable<string>): Promise<Row<K>[]> {
-    const keys = [...ids], result: Row<K>[] = [];
-    for (let index = 0; index < keys.length; index += 8) {
-      result.push(...await Promise.all(keys.slice(index, index + 8).map(id => this.record(kind, id))));
+    const keys = [...ids], ordered = [...new Set(keys)].sort(), result = new Map<string, Row<K>>();
+    for (let index = 0; index < ordered.length; index += 8) {
+      const rows = await Promise.all(ordered.slice(index, index + 8).map(id => this.record(kind, id)));
+      for (const row of rows) result.set(row.id, row);
     }
-    return result;
+    return keys.map(id => result.get(id)!);
   }
 
   /** Program-prefixed chunk keys keep one machine's rules in adjacent partitions. */

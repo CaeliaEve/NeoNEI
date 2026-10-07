@@ -42,7 +42,8 @@ const {
   shouldUseDetailedCrafting,
   uiConfig,
 } = useRecipePresentation(props);
-const shouldUseRouterScale = computed(() => props.scaleToFit);
+const isCatalogRecipe = computed(() => /^recipe_[a-f0-9]{64}$/.test(props.recipe.recipeId));
+const shouldUseRouterScale = computed(() => props.scaleToFit && !isCatalogRecipe.value);
 
 const {
   containerRef,
@@ -73,6 +74,21 @@ const handleItemClick = (itemId: string, options?: { tab?: 'usedIn' | 'producedB
 const handleOverlayStateChange = (state: RecipeOverlayUiState) => {
   emit('overlay-state-change', state);
 };
+
+function handleContentWheel(event: WheelEvent): void {
+  if (!isCatalogRecipe.value) return;
+  // Let native scroll containers handle the gesture without changing recipe pages.
+  for (const node of event.composedPath()) {
+    if (!(node instanceof HTMLElement)) continue;
+    const style = getComputedStyle(node);
+    if ((node.scrollHeight > node.clientHeight && /auto|scroll/.test(style.overflowY))
+      || (node.scrollWidth > node.clientWidth && /auto|scroll/.test(style.overflowX))) {
+      event.stopPropagation();
+      return;
+    }
+    if (node === containerRef.value) return;
+  }
+}
 
 const handleRecipeOverlay = async () => {
   const detailedCraftingDisplay = detailedCraftingRef.value;
@@ -117,7 +133,7 @@ if (isDev && typeof window !== 'undefined') {
 </script>
 
 <template>
-  <div ref="containerRef" class="recipe-display-wrapper" :class="{ 'scale-to-fit': shouldUseRouterScale }">
+  <div ref="containerRef" class="recipe-display-wrapper" :class="{ 'scale-to-fit': shouldUseRouterScale, 'catalog-recipe-display': isCatalogRecipe }" @wheel="handleContentWheel">
     <div
       v-if="showDebugInfo && isDev"
       id="recipe-display-debug-panel"
@@ -211,7 +227,7 @@ if (isDev && typeof window !== 'undefined') {
       class="recipe-display-content"
       :style="{ transform: shouldUseRouterScale ? `scale(${scaleValue})` : 'none' }"
     >
-      <CatalogRecipe v-if="/^recipe_[a-f0-9]{64}$/.test(recipe.recipeId)" :id="recipe.recipeId" @select="handleItemClick" />
+      <CatalogRecipe v-if="isCatalogRecipe" :id="recipe.recipeId" @select="handleItemClick" />
       <NEIRecipeDisplay
         v-else-if="shouldUseDetailedCrafting"
         ref="detailedCraftingRef"

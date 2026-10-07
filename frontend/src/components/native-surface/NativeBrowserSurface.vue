@@ -21,6 +21,10 @@ import { createNativeRenderPipelineClient } from "../../native-surface/NativeRen
 import { requireNativeFrameTextureDescriptors } from "../../native-surface/NativeFrameTextureResolution";
 import { getItemImageUrlFromEntity } from "../../services/api/images";
 import CatalogIcon from '../CatalogIcon.vue';
+import ResidentIcon from '../ResidentIcon.vue';
+import { residentCatalog } from '../../browser/resident';
+import { useFavorites } from '../../browser/favorites';
+import {scheduleRecipeWarm,cancelRecipeWarm,prioritizeRecipe} from '../../browser/recipe-warm';
 import {
   getAllGlobalBrowserAtlasTextureDescriptors,
   getGlobalBrowserAtlasTextureDescriptorsForKeys,
@@ -58,6 +62,18 @@ const emit = defineEmits<{
   viewportResize: [element: HTMLElement | null];
   runtimeProjectionUpdate: [metrics: NativeSurfaceFrameProjectionMetrics];
 }>();
+
+const { ids: favoriteIds, toggle: toggleFavorite } = useFavorites(residentCatalog);
+
+function handleFallbackClick(item: Item, event: MouseEvent): void {
+  if (props.catalog && event.altKey) {
+    cancelRecipeWarm();
+    toggleFavorite(item);
+    return;
+  }
+  if (props.catalog) prioritizeRecipe(item.itemId, 'recipes');
+  emit('itemClick', item);
+}
 
 function resolveRuntimePackProfile(): NativeRuntimePackProfile {
   return props.viewportRole === "history" ? "history-surface" : "browser-surface";
@@ -631,6 +647,7 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  cancelRecipeWarm();
   resizeObserver?.disconnect();
   resizeObserver = null;
   nativeVisibilityObserver?.disconnect();
@@ -733,6 +750,7 @@ watch(
 );
 
 watch(itemIdsSignature, () => {
+  cancelRecipeWarm();
   if (nativeSurfaceEngineFaulted) return;
   controller.setHistoryItems(props.historyItemIds);
   requestNativeFrame();
@@ -768,21 +786,48 @@ if (typeof document !== "undefined") {
     <div
       v-if="!nativeRenderVisible && (props.fallbackItems?.length ?? 0) > 0"
       class="native-browser-surface__fallback"
+      :class="{ 'native-browser-surface__catalog-grid': catalog }"
+      :style="{ '--browser-item-size': itemSize + 'px' }"
       role="list"
     >
-      <button
+      <div
         v-for="item in props.fallbackItems"
         :key="item.itemId"
+        class="native-browser-surface__cell"
+        role="listitem"
+      >
+      <button
         type="button"
         class="native-browser-surface__fallback-item"
         :class="{ 'native-browser-surface__fallback-item--selected': item.itemId === props.selectedItemId }"
-        @click.stop="emit('itemClick', item)"
-        @contextmenu.prevent.stop="emit('itemContextmenu', item, $event)"
+        :title="item.localizedName"
+        :aria-label="item.localizedName"
+        @mouseenter="catalog && scheduleRecipeWarm(item.itemId)"
+        @mouseleave="cancelRecipeWarm()"
+        @focus="catalog && scheduleRecipeWarm(item.itemId)"
+        @blur="cancelRecipeWarm()"
+        @click.stop="handleFallbackClick(item, $event)"
+        @contextmenu.prevent.stop="catalog && prioritizeRecipe(item.itemId, 'uses'); emit('itemContextmenu', item, $event)"
       >
-        <CatalogIcon v-if="catalog" :id="item.itemId" :label="item.localizedName" :animate="enableAnimation" />
+        <ResidentIcon v-if="catalog && typeof item.residentSprite === 'number' && item.residentSprite >= 0" :sprite="item.residentSprite" :size="Math.max(1, Math.floor(itemSize * 0.9))" :label="item.localizedName" />
+        <CatalogIcon v-else-if="catalog" :id="item.itemId" :size="Math.max(1, Math.floor(itemSize * 0.9))" :label="item.localizedName" :animate="enableAnimation" />
         <img v-else :src="getItemImageUrlFromEntity(item)" :alt="item.localizedName" loading="lazy" decoding="async" />
-        <span>{{ item.localizedName }}</span>
+        <span v-if="!catalog">{{ item.localizedName }}</span>
       </button>
+      <button
+        v-if="catalog && residentCatalog"
+        type="button"
+        class="native-browser-surface__favorite"
+        :class="{ 'native-browser-surface__favorite--saved': favoriteIds.has(item.itemId) }"
+        :aria-label="`${favoriteIds.has(item.itemId) ? '取消收藏' : '收藏'} ${item.localizedName}`"
+        :aria-pressed="favoriteIds.has(item.itemId)"
+        :title="`${favoriteIds.has(item.itemId) ? '取消收藏' : '收藏'}（Alt + 单击物品）`"
+        @mouseenter="cancelRecipeWarm()"
+        @focus="cancelRecipeWarm()"
+        @click.stop="toggleFavorite(item)"
+        @contextmenu.prevent.stop
+      >{{ favoriteIds.has(item.itemId) ? '★' : '☆' }}</button>
+      </div>
     </div>
     <div
       v-else-if="!nativeRenderVisible && !catalog"
@@ -852,12 +897,73 @@ if (typeof document !== "undefined") {
   color: rgba(233, 241, 251, 0.94);
   cursor: pointer;
 }
+.native-browser-surface__cell {
+  position: relative;
+  min-width: 0;
+}
+.native-browser-surface__cell > .native-browser-surface__fallback-item {
+  width: 100%;
+  height: 100%;
+}
+.native-browser-surface__favorite {
+  position: absolute;
+  top: 0;
+  right: 0;
+  z-index: 1;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 2px;
+  background: rgba(9, 13, 18, 0.9);
+  color: #e2e8f0;
+  font-size: 13px;
+  line-height: 16px;
+  cursor: pointer;
+  opacity: 0;
+}
+.native-browser-surface__cell:hover .native-browser-surface__favorite,
+.native-browser-surface__cell:focus-within .native-browser-surface__favorite,
+.native-browser-surface__favorite--saved {
+  opacity: 1;
+}
+.native-browser-surface__favorite--saved { color: #fbbf24; }
+.native-browser-surface__favorite:focus-visible { outline: 1px solid #fbbf24; }
+@media (hover: none) {
+  .native-browser-surface__favorite { opacity: 1; }
+}
 .native-browser-surface__fallback-item:hover, .native-browser-surface__fallback-item--selected {
   border-color: rgba(195, 211, 231, 0.45);
   background: rgba(18, 24, 31, 0.82);
 }
 .native-browser-surface__fallback-item img { width: 42px; height: 42px; object-fit: contain; image-rendering: pixelated; }
 .native-browser-surface__fallback-item span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+
+/* Match optimize's native surface geometry; the enclosing shell supplies padding. */
+.native-browser-surface__catalog-grid {
+  grid-template-columns: repeat(auto-fill, var(--browser-item-size));
+  grid-auto-rows: var(--browser-item-size);
+  gap: 4px;
+  padding: 0;
+}
+.native-browser-surface__catalog-grid .native-browser-surface__fallback-item {
+  width: var(--browser-item-size);
+  height: var(--browser-item-size);
+  min-height: 0;
+  padding: 0;
+  gap: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+.native-browser-surface__catalog-grid .native-browser-surface__fallback-item:hover,
+.native-browser-surface__catalog-grid .native-browser-surface__fallback-item--selected {
+  background: rgba(255, 255, 255, 0.1);
+}
+.native-browser-surface__catalog-grid .native-browser-surface__fallback-item:focus-visible {
+  outline: 1px solid rgba(245, 158, 11, 0.8);
+  outline-offset: -1px;
+}
 
 .native-browser-surface__status {
   position: absolute;

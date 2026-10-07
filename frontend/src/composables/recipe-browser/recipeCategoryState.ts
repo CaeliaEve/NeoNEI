@@ -3,6 +3,9 @@ import type { Recipe } from '../../services/api';
 import type { MachineCategory } from './helpers';
 
 type RecipeTab = 'usedIn' | 'producedBy';
+export function categoryDirectoryComplete(ids: readonly string[], expected: number): boolean {
+  return ids.length > 0 && ids.length >= expected;
+}
 type RecipeLists = {
   producedBy: Recipe[];
   usedIn: Recipe[];

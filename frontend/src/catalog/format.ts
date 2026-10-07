@@ -2,7 +2,9 @@ import type { Chance } from '@elysium/contracts';
 
 export function amount(value: string): string { return BigInt(value).toLocaleString('zh-CN'); }
 export function ticks(value: string): string {
-  const count = BigInt(value), fraction = String((count % 20n) * 5n).padStart(2, '0').replace(/0+$/, '');
+  const count = BigInt(value);
+  if (count < 0n) return '原生耗时异常（' + value + ' tick）';
+  const fraction = String((count % 20n) * 5n).padStart(2, '0').replace(/0+$/, '');
   return amount(String(count / 20n)) + (fraction ? '.' + fraction : '') + ' s';
 }
 export function chance(value: Chance): string {

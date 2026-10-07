@@ -43,7 +43,7 @@ export function computeCategoryPackWindow(options: {
 }): number {
   return Math.max(
     0,
-    Math.min(options.targetStart, Math.max(0, options.orderedRecipeCount - options.packWindowSize)),
+    Math.min(Math.floor(options.targetStart / options.packWindowSize) * options.packWindowSize, Math.max(0, options.orderedRecipeCount - options.packWindowSize)),
   );
 }
 

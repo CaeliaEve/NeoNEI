@@ -76,7 +76,8 @@ async function prune(): Promise<void> {
 
 scope.addEventListener('install', event => {
   event.waitUntil((async () => {
-    await prune();
+    // Keep the active shell until replacement installation succeeds. With no open
+    // clients, prune() cannot identify the version still needed for offline restart.
     const names = (await caches.keys()).filter(name => name.startsWith(prefix));
     if (!names.includes(cacheName) && names.length >= 4) throw new Error('Close older application tabs before installing another offline shell');
     const cache = await caches.open(cacheName);

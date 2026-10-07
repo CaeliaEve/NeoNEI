@@ -5,6 +5,9 @@ import type { Operation, Opened, Progress, Reply, Saved } from './protocol.ts';
 export type { Progress, Saved };
 
 interface Pending {
+  operation: Operation;
+  started: boolean;
+  cancelled: boolean;
   resolve: (value: unknown) => void;
   reject: (error: unknown) => void;
   progress?: (value: Progress) => void;
@@ -19,6 +22,8 @@ export function available(): boolean {
 class Channel {
   private readonly worker: Worker;
   private readonly pending = new Map<number, Pending>();
+  private readonly queue: number[] = [];
+  private active = 0;
   private sequence = 0;
   private closed = false;
   constructor() {
@@ -28,10 +33,14 @@ class Channel {
       const reply = event.data as Reply;
       const pending = this.pending.get(reply.id);
       if (!pending) return;
-      if ('progress' in reply) { pending.progress?.(reply.progress); return; }
+      if ('progress' in reply) { if (!pending.cancelled) pending.progress?.(reply.progress); return; }
       this.pending.delete(reply.id); pending.signal?.removeEventListener('abort', pending.abort);
-      if ('error' in reply) pending.reject(new ApiError(reply.error.code, reply.error.message, reply.error.status));
-      else pending.resolve(reply.value);
+      if (pending.started) this.active--;
+      if (!pending.cancelled) {
+        if ('error' in reply) pending.reject(new ApiError(reply.error.code, reply.error.message, reply.error.status));
+        else pending.resolve(reply.value);
+      }
+      this.drain();
     });
     this.worker.addEventListener('error', event => {
       event.preventDefault(); this.close(new ApiError('offline_worker', '离线读取进程无法运行，请刷新后重试'));
@@ -41,17 +50,41 @@ class Channel {
 
   call<T>(operation: Operation, signal?: AbortSignal, progress?: (value: Progress) => void): Promise<T> {
     if (this.closed || signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+    if (this.pending.size >= 2048) return Promise.reject(new ApiError('offline_busy', '离线请求队列已满，请稍后重试', 429));
     const id = ++this.sequence;
     return new Promise<T>((resolve, reject) => {
       const abort = (): void => {
-        this.pending.delete(id);
-        this.worker.postMessage({ cancel: id });
+        const pending = this.pending.get(id);
+        if (!pending || pending.cancelled) return;
+        pending.cancelled = true;
+        if (pending.started) this.worker.postMessage({ cancel: id });
+        else {
+          this.pending.delete(id);
+          const index = this.queue.indexOf(id);
+          if (index >= 0) this.queue.splice(index, 1);
+        }
         reject(new DOMException('Aborted', 'AbortError'));
+        this.drain();
       };
-      this.pending.set(id, { resolve: value => resolve(value as T), reject, signal, abort, progress });
+      this.pending.set(id, { operation, started: false, cancelled: false, resolve: value => resolve(value as T), reject, signal, abort, progress });
       signal?.addEventListener('abort', abort, { once: true });
-      this.worker.postMessage({ id, operation });
+      this.queue.push(id);
+      this.drain();
     });
+  }
+
+  private drain(): void {
+    while (!this.closed && this.active < 8 && this.queue.length) {
+      const id = this.queue.shift()!, pending = this.pending.get(id);
+      if (!pending) continue;
+      pending.started = true; this.active++;
+      try { this.worker.postMessage({ id, operation: pending.operation }); }
+      catch (error) {
+        this.active--; this.pending.delete(id);
+        pending.signal?.removeEventListener('abort', pending.abort);
+        pending.reject(error);
+      }
+    }
   }
 
   close(error: unknown = new DOMException('Aborted', 'AbortError')): void {
@@ -60,7 +93,7 @@ class Channel {
     for (const pending of this.pending.values()) {
       pending.signal?.removeEventListener('abort', pending.abort); pending.reject(error);
     }
-    this.pending.clear();
+    this.pending.clear(); this.queue.length = 0; this.active = 0;
   }
 }
 

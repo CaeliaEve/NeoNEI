@@ -1,4 +1,5 @@
-import { computed, onBeforeUnmount, onMounted, ref, type Ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
+import {residentCatalog} from '../../browser/resident';
 import type { BrowserGridEntry, Item } from "../../services/api";
 
 type ItemBasicInfo = Pick<Item, "itemId" | "localizedName" | "modId" | "internalName" | "damage" | "imageFileName" | "renderAssetRef" | "preferredImageUrl">;
@@ -9,10 +10,11 @@ const HISTORY_ROWS = 2 as const;
 const HISTORY_GRID_GAP = 4;
 const HISTORY_HORIZONTAL_PADDING = 32;
 
-const loadViewHistory = (): ItemBasicInfo[] => {
+const loadViewHistory = (key=HISTORY_STORAGE_KEY): ItemBasicInfo[] => {
   try {
-    const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
-    return saved ? JSON.parse(saved) : [];
+    const saved = localStorage.getItem(key)??localStorage.getItem(HISTORY_STORAGE_KEY);
+    const value=saved?JSON.parse(saved):[];
+    return Array.isArray(value)?value.filter(row=>row&&typeof row.itemId==='string').slice(0,MAX_HISTORY_ITEMS):[];
   } catch {
     return [];
   }
@@ -31,12 +33,14 @@ const toHistoryItem = (item: Item): ItemBasicInfo => ({
 
 export function useHomeHistory(itemSize: Ref<number>) {
   const viewHistory = ref<ItemBasicInfo[]>(loadViewHistory());
+  const storageKey=()=>residentCatalog.value?HISTORY_STORAGE_KEY+':'+residentCatalog.value:HISTORY_STORAGE_KEY;
+  watch(residentCatalog,()=>{viewHistory.value=loadViewHistory(storageKey());},{immediate:true});
   const historyPanelRef = ref<HTMLElement | null>(null);
   const historyPanelWidth = ref(0);
 
   const saveViewHistory = () => {
     try {
-      localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(viewHistory.value));
+      localStorage.setItem(storageKey(), JSON.stringify(viewHistory.value));
     } catch (e) {
       console.error("Failed to save view history:", e);
     }
