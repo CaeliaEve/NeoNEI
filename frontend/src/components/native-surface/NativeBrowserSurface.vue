@@ -24,6 +24,7 @@ import CatalogIcon from '../CatalogIcon.vue';
 import ResidentIcon from '../ResidentIcon.vue';
 import { residentCatalog } from '../../browser/resident';
 import { useFavorites } from '../../browser/favorites';
+import { usePreferences } from '../../state/preferences';
 import {scheduleRecipeWarm,cancelRecipeWarm,prioritizeRecipe} from '../../browser/recipe-warm';
 import {
   getAllGlobalBrowserAtlasTextureDescriptors,
@@ -64,6 +65,7 @@ const emit = defineEmits<{
 }>();
 
 const { ids: favoriteIds, toggle: toggleFavorite } = useFavorites(residentCatalog);
+const {preferences}=usePreferences();
 
 function handleFallbackClick(item: Item, event: MouseEvent): void {
   if (props.catalog && event.altKey) {
@@ -809,8 +811,8 @@ if (typeof document !== "undefined") {
         @click.stop="handleFallbackClick(item, $event)"
         @contextmenu.prevent.stop="catalog && prioritizeRecipe(item.itemId, 'uses'); emit('itemContextmenu', item, $event)"
       >
-        <ResidentIcon v-if="catalog && typeof item.residentSprite === 'number' && item.residentSprite >= 0" :sprite="item.residentSprite" :size="Math.max(1, Math.floor(itemSize * 0.9))" :label="item.localizedName" />
-        <CatalogIcon v-else-if="catalog" :id="item.itemId" :size="Math.max(1, Math.floor(itemSize * 0.9))" :label="item.localizedName" :animate="enableAnimation" />
+        <ResidentIcon v-if="catalog && typeof item.residentSprite === 'number' && item.residentSprite >= 0" :id="item.itemId" :sprite="item.residentSprite" :size="Math.max(1, Math.floor(itemSize * 0.9))" :label="item.localizedName" :animate="enableAnimation && preferences.animate" />
+        <CatalogIcon v-else-if="catalog" :id="item.itemId" :size="Math.max(1, Math.floor(itemSize * 0.9))" :label="item.localizedName" :animate="enableAnimation && preferences.animate" />
         <img v-else :src="getItemImageUrlFromEntity(item)" :alt="item.localizedName" loading="lazy" decoding="async" />
         <span v-if="!catalog">{{ item.localizedName }}</span>
       </button>

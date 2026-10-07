@@ -1,0 +1,16 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import {decodeTable} from '@elysium/contracts';
+import {animationPlan} from './browser-animation-plan.mjs';
+const [root,out]=process.argv.slice(2);
+if(!root||!out||fs.existsSync(out))throw Error('Supply catalog directory and NEW output directory');
+const bytes=fs.readFileSync(path.join(root,'manifest.json')),manifest=JSON.parse(bytes);
+const hash=b=>createHash('sha256').update(b).digest('hex');
+const read=kind=>manifest.files.filter(f=>f.kind===kind).flatMap(f=>{const b=fs.readFileSync(path.join(root,f.path));if(b.length!==f.bytes||hash(b)!==f.sha256)throw Error(f.path);return decodeTable(b,kind).records;});
+const {frames,index}=animationPlan(read('browse'),read('textures'));
+fs.mkdirSync(out,{recursive:true});
+fs.writeFileSync(path.join(out,'index.json'),JSON.stringify({...index,catalog:manifest.id}));
+fs.writeFileSync(path.join(out,'plan.json'),JSON.stringify({root,frames,files:manifest.files.filter(f=>f.kind==='image'),catalog:manifest.id}));
+fs.writeFileSync(path.join(out,'provenance.json'),JSON.stringify({catalog:manifest.id,manifestSha256:hash(bytes),entries:index.rows.length,timelines:index.timelines.length,frames:frames.length}));
+console.log(JSON.stringify({entries:index.rows.length,timelines:index.timelines.length,frames:frames.length}));

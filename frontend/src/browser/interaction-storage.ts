@@ -1,6 +1,7 @@
 import type {Part} from '@neonei/catalog/source';
 import {verifiedCachedBytes} from './verified-cache';
 import {visualStorage} from './visual-storage';
+import {animationStorage} from './animation-storage';
 export async function interactionStorage(catalog:string,signal?:AbortSignal){
  const base='/interaction/'+catalog+'/',cache=await caches.open('neonei.interaction.1.'+catalog);
  const manifestResponse=await cache.match(base+'manifest.json')??await fetch(base+'manifest.json',{signal});
@@ -16,6 +17,12 @@ export async function interactionStorage(catalog:string,signal?:AbortSignal){
 export async function prepareInteractionSave(catalog:string,signal:AbortSignal){
  const store=await interactionStorage(catalog,signal);
  const tasks:Array<{bytes:number;save:()=>Promise<unknown>}>=[];
+ const animations=await animationStorage(catalog,signal);
+ if(animations){
+  for(const file of [...animations.manifest.files,animations.manifest.index])
+   tasks.push({bytes:file.bytes,save:()=>animations.read(file,signal,true)});
+  await animations.cache.put(animations.base+'manifest.json',new Response(JSON.stringify(animations.manifest)));
+ }
  const visuals=await visualStorage(catalog,signal);
  if(visuals)for(const file of [...visuals.manifest.files,visuals.manifest.mapping])
   tasks.push({bytes:file.bytes,save:()=>visuals.read(file,signal,true)});
