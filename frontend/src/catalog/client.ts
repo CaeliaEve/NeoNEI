@@ -11,6 +11,8 @@ import {prepareRecipeVisuals} from '../browser/recipe-visuals.ts';
 import type { Shape } from '@elysium/contracts';
 import type { BuildDetail, ModelPage } from '@neonei/catalog/source';
 export type { BuildDetail, ModelPage } from '@neonei/catalog/source';
+import type { OreGroupDetail, OreMembers } from '@neonei/catalog/source';
+export type { OreGroupDetail, OreMembers } from '@neonei/catalog/source';
 
 export { ApiError } from './transport.ts';
 export type { Page, Related, Items, Recipes, Detail, StructureDetail, AspectDetail, ResearchDetail, ItemAspects,
@@ -192,6 +194,16 @@ export class Catalog extends EventTarget {
     return { ...page(data, 'topics'), related: related(data.related) };
   }
 
+  async oreGroup(id: string, signal?: AbortSignal): Promise<OreGroupDetail> {
+    const data = object(await this.get('/ore-groups/' + encodeURIComponent(id), signal));
+    return { group: table('ore-groups', [data.group])[0]! };
+  }
+
+  async oreMembers(id: string, offset: number, signal?: AbortSignal): Promise<OreMembers> {
+    const data = object(await this.get('/ore-groups/' + encodeURIComponent(id) + '/members?' + params({ offset, limit: 20 }), signal));
+    return { ...page(data, 'ore-members'), related: related(data.related) };
+  }
+
   async itemAspects(id: string, signal?: AbortSignal): Promise<ItemAspects> {
     const data = object(await this.get('/items/' + encodeURIComponent(id) + '/aspects', signal));
     return { item: table('items', [data.item])[0]!, aspects: table('topics', data.aspects), related: related(data.related) };
@@ -290,7 +302,7 @@ export class Catalog extends EventTarget {
   close(): void { this.details.clear(); this.detailBytes=0; this.controller.abort(); this.interaction?.close(); this.atlas.close(); this.local?.close(); }
 }
 
-function params(options: Browse | Search | TopicSearch | MutationSearch | { piece: string; offset: number; limit: number }): string {
+function params(options: Browse | Search | TopicSearch | MutationSearch | { piece?: string; offset: number; limit: number }): string {
   return new URLSearchParams(Object.entries(options).map(([key, value]) => [key, String(value)])).toString();
 }
 

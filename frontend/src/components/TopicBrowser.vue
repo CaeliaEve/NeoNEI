@@ -12,7 +12,7 @@ import Pager from './Pager.vue';
 const props = defineProps<{ catalog: Catalog; kind: TopicKind; selected: string; item: string }>();
 const emit = defineEmits<{ select: [id: string]; all: [] }>();
 const { preferences } = usePreferences();
-const labels = { material: ['材料资料', 'MATERIALS'], circuit: ['电路系列', 'CIRCUITS'], bee: ['蜜蜂资料', 'BEES'], tree: ['树木资料', 'TREES'], structure: ['多方块结构', 'STRUCTURES'], aspect: ['要素资料', 'ASPECTS'], research: ['研究资料', 'RESEARCH'] } as const;
+const labels = { ore: ['矿辞资料', 'ORE DICTIONARY'], material: ['材料资料', 'MATERIALS'], circuit: ['电路系列', 'CIRCUITS'], bee: ['蜜蜂资料', 'BEES'], tree: ['树木资料', 'TREES'], butterfly: ['蝴蝶资料', 'BUTTERFLIES'], flower: ['花卉资料', 'FLOWERS'], structure: ['多方块结构', 'STRUCTURES'], aspect: ['要素资料', 'ASPECTS'], research: ['研究资料', 'RESEARCH'] } as const;
 const label = computed(() => labels[props.kind]);
 const query = ref(''), offset = ref(0);
 const { value: topics, error, loading, run, cancel, clear } = useRequest<Topics>();

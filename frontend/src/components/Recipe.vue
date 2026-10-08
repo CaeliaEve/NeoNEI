@@ -12,6 +12,7 @@ import ItemLink from './ItemLink.vue';
 import Slot from './Slot.vue';
 import Value from './Value.vue';
 import TopicLink from './TopicLink.vue';
+import CraftingPriority from './CraftingPriority.vue';
 
 const props = defineProps<{ recipe: Recipe; records: Records; catalog: Catalog; animate: boolean; scale: number; focus?: string; direction?: 'recipes' | 'uses' }>();
 const emit = defineEmits<{ select: [id: string, direction: 'recipes' | 'uses']; open: [id: string] }>();
@@ -243,6 +244,10 @@ function choose(stack: Input | Output, index: number): void {
       <template v-if="output.change?.action.kind === 'integration'">
         <p>选择候选会同时切换相关输入与产物，空槽表示该组合没有投入材料。所列为组合样本；完整匹配与变换由原生集成规则决定。</p>
       </template>
+      <template v-else-if="output.change?.action.kind === 'floatingFlower'">
+        <p>产物类型取自合成网格按行读取时最后一朵特殊花。每次生成一朵新的浮空特殊花，只保留类型；命名等其他附加数据不继承。</p>
+        <p>当前规则覆盖该花的 type 缺失或为字符串的情况；其他类型的 type 标签尚未适配。图中的花是原生展示样本。</p>
+      </template>
       <template v-else-if="output.change?.action.kind === 'analyze'">
         <p>基因扫描处理整个输入堆叠，产物数量与输入相同；显示数量是单个样本。</p>
         <p>未分析个体经林业原生接口分析并重新写出基因数据，额外的命名等标签不保留。已分析个体原样返回。</p>
@@ -324,7 +329,23 @@ function choose(stack: Input | Output, index: number): void {
         <p>有序和无序配方共用注册顺序，只执行第一条匹配配方。有序配方可在 3×3 网格中平移，是否可镜像以网格规则为准；无序配方按格子顺序逐个匹配尚未使用的材料需求。</p>
         <p>每次从每个有物品的格子消耗一件，不返还容器。默认每格需超过一件，保留最后一份；点击使用最后一份可执行一次，完成后恢复保留。邻接库存补料和同类材料均衡可能改变格中数量。</p>
         <p>需要推进 100 次，再等待完成与输出空间检查。{{ recipe.process.powered ? '每次推进消耗 50 RF，正常完整加工共 5,000 RF；储能上限 5,000 RF，单次接收上限 1,000 RF。' : '当前配置关闭机器耗能，不消耗 RF。' }}暂停、供能不足与输出阻塞会延长耗时；完成时重新按当前网格选择配方。</p>
-        <details v-if="recipe.process.earlier.length"><summary>前序轧制配方条件</summary><pre>{{ JSON.stringify(recipe.process.earlier, null, 2) }}</pre></details>
+        <CraftingPriority :earlier="recipe.process.earlier" :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
+      </template>
+      <template v-if="recipe.process?.kind === 'qed'">
+        <p>完成一次合成需要充满 {{ amount(recipe.process.enderFlux) }} Ender Flux，完成后储能归零；实际耗时取决于外部供能。输出槽须能容纳结果；合并已有产物时同时受物品堆叠上限和机器 64 件上限约束。</p>
+        <p>有序和无序配方共用注册顺序，只执行第一条匹配配方。有序配方可在 3×3 网格内平移，镜像以网格规则为准；原生页面仅展示有序配方，未展示的前序无序配方仍可优先匹配。</p>
+        <p>完成时每个有物品的格子消耗一件，不返还容器。下方用量按成功合成次数计算。</p>
+        <CraftingPriority :earlier="recipe.process.earlier" :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
+      </template>
+      <template v-if="recipe.process?.kind === 'galaxyspace-assembly'">
+        <p>有序和无序配方按注册顺序选择第一条匹配。每个有物品的格子消耗一件，不返还容器；有序配方可平移，镜像以网格规则为准。</p>
+        <p>这里表示输入保持不变、输出槽初始为空时的普通装配。原生修理分支优先于普通装配，不能用此配方计算修理产物。</p>
+        <p>加工速度由供电等级决定，供能不足、禁用和输出阻塞会影响完成时间；没有固定耗时或总能耗。详细供电条件见下方原生属性。</p>
+        <CraftingPriority :earlier="recipe.process.earlier" :catalog="catalog" :records="records" :animate="animate" @select="(id, direction) => emit('select', id, direction)" />
+      </template>
+      <template v-if="recipe.process?.kind === 'floatingFlowers'">
+        <p>在能容纳这些材料的 2×2 或 3×3 合成网格内任意摆放，必须同时有浮空花和特殊花，其余格子留空。每个占用格消耗一件材料，始终只得到一朵产物。</p>
+        <p>同类花允许重复投入；特殊花按实际格子顺序从左到右、从上到下读取，以最后一朵决定产物。这一条展示 {{ recipe.inputs.length }} 个占用格、其中 {{ recipe.process.special.length }} 朵特殊花的分支。</p>
       </template>
       <template v-if="recipe.process?.kind === 'soul'">
         <p>基础能量 {{ recipe.process.energy }} RF；启动需要 {{ recipe.process.experience }} XP（界面标注 {{ recipe.process.levels }} 级），经验容量 {{ recipe.process.capacity }} XP。{{ recipe.process.drains ? '任务成功启动后扣除原始经验值。' : '当前未注册经验流体：仍检查经验门槛，但原生机器不扣除经验。' }}</p>

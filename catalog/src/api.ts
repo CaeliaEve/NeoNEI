@@ -16,6 +16,8 @@ export type MaterialDetail = Awaited<ReturnType<Query['material']>>;
 export type CircuitDetail = Awaited<ReturnType<Query['circuit']>>;
 export type SpeciesDetail = Awaited<ReturnType<Query['species']>>;
 export type Mutations = Awaited<ReturnType<Query['mutations']>>;
+export type OreGroupDetail = Awaited<ReturnType<Query['oreGroup']>>;
+export type OreMembers = Awaited<ReturnType<Query['oreMembers']>>;
 
 function text(parameters: URLSearchParams, key: string, limit = 256): string {
   const values = parameters.getAll(key);
@@ -93,9 +95,11 @@ export class Api {
       if (name === 'structures') return query.structure(id);
       if (name === 'builds') return query.build(id);
       if (name === 'species') return query.species(id);
+      if (name === 'ore-groups') return query.oreGroup(id);
     }
     if (parts.length === 3 && id) {
       if (name === 'items' && action === 'aspects') return query.itemAspects(id);
+      if (name === 'ore-groups' && action === 'members') return query.oreMembers(id, offset(), limit(20, 100));
       if (name === 'structures' && action === 'shapes') return query.shapes(id, field('piece'), offset(), limit(4, 8));
       if (name === 'builds' && action === 'shapes') return query.buildShapes(id, offset(), limit(4, 8));
       if (name === 'builds' && action === 'models') return query.models(id, offset(), limit(4, 8));

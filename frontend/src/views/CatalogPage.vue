@@ -156,6 +156,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', shortcut));
             <RouterLink :to="{ name: 'circuits', query: { catalog: catalog.manifest.id, item: entry.id } }">相关电路</RouterLink>
             <RouterLink :to="{ name: 'bees', query: { catalog: catalog.manifest.id, item: entry.id } }">相关蜜蜂</RouterLink>
             <RouterLink :to="{ name: 'trees', query: { catalog: catalog.manifest.id, item: entry.id } }">相关树木</RouterLink>
+            <RouterLink :to="{ name: 'butterflies', query: { catalog: catalog.manifest.id, item: entry.id } }">相关蝴蝶</RouterLink>
+            <RouterLink :to="{ name: 'flowers', query: { catalog: catalog.manifest.id, item: entry.id } }">相关花卉</RouterLink>
             <RouterLink :to="{ name: 'structures', query: { catalog: catalog.manifest.id, item: entry.id } }">相关结构</RouterLink>
             <RouterLink :to="{ name: 'studies', query: { catalog: catalog.manifest.id, item: entry.id } }">相关研究</RouterLink>
           </div>

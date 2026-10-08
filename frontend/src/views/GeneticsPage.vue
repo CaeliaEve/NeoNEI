@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import type { Mutation, Topic } from '@elysium/contracts';
+import type { Mutation, Topic, SpeciesKind } from '@elysium/contracts';
 import { ApiError, Records, required, type SpeciesDetail, type Mutations, type MutationSearch } from '../catalog/client.ts';
 import { chance, plain } from '../catalog/format.ts';
 import { useCatalog } from '../state/catalog.ts';
@@ -18,7 +18,8 @@ import Pager from '../components/Pager.vue';
 const route = useRoute(), router = useRouter();
 const { preferences } = usePreferences();
 const snapshot = computed(() => typeof route.query.catalog === 'string' ? route.query.catalog : '');
-const kind = computed(() => route.name === 'trees' || route.name === 'tree' ? 'tree' : 'bee');
+const families = { bee: 'bees', tree: 'trees', butterfly: 'butterflies', flower: 'flowers' } as const;
+const kind = computed<SpeciesKind>(() => (Object.keys(families) as SpeciesKind[]).find(key => route.name === key || route.name === families[key]) ?? 'bee');
 const id = computed(() => typeof route.params.id === 'string' ? route.params.id : '');
 const item = computed(() => typeof route.query.item === 'string' ? route.query.item : '');
 const { catalog, opening, error: openError, offline, open } = useCatalog(snapshot);
@@ -30,8 +31,9 @@ const neighbors = computed(() => new Map(mutations.value?.species.map(row => [ro
 const direction = ref<MutationSearch['direction']>('origins'), offset = ref(0);
 const productOffsets = ref({ products: 0, specialties: 0 });
 const climate: Record<string, string> = { none: '无', icy: '冰冷', cold: '寒冷', normal: '普通', warm: '温暖', hot: '炎热', hellish: '地狱', arid: '干燥', damp: '潮湿' };
-const forms: Record<string, string> = { queen: '蜂后', princess: '公主蜂', drone: '雄蜂', larvae: '幼虫', sapling: '树苗', pollen: '花粉' };
-const yields = [{ key: 'products', name: '产物' }, { key: 'specialties', name: '特产' }] as const;
+const forms: Record<string, string> = { queen: '蜂后', princess: '公主蜂', drone: '雄蜂', larvae: '幼虫', sapling: '树苗', pollen: '花粉', butterfly: '蝴蝶', serum: '血清', caterpillar: '毛毛虫', flower: '花朵', seed: '种子' };
+const soil: Record<string, string> = { acid: '酸性', neutral: '中性', alkaline: '碱性', dry: '干燥', normal: '普通', damp: '湿润' };
+const yields = computed(() => kind.value === 'bee' || kind.value === 'tree' ? [{ key: 'products', name: '产物' }, { key: 'specialties', name: '特产' }] as const : []);
 
 watch([catalog, kind, id], () => {
   clearDetail(); clearMutations(); direction.value = 'origins'; offset.value = 0;
@@ -57,7 +59,7 @@ function show(id: string): void {
   if (catalog.value) void router.push({ name: kind.value, params: { id }, query: { catalog: catalog.value.manifest.id, ...(item.value ? { item: item.value } : {}) } });
 }
 function all(): void {
-  void router.push({ name: kind.value === 'bee' ? 'bees' : 'trees', query: catalog.value ? { catalog: catalog.value.manifest.id } : {} });
+  void router.push({ name: families[kind.value], query: catalog.value ? { catalog: catalog.value.manifest.id } : {} });
 }
 </script>
 
@@ -74,7 +76,7 @@ function all(): void {
           <div v-if="reading" class="state-panel" role="status">正在读取物种…</div>
           <div v-else-if="detailError" class="state-panel error" role="alert"><h2>物种无法加载</h2><p>{{ detailError }}</p><button type="button" @click="open()">重试</button></div>
           <template v-else-if="detail && records">
-            <header class="panel-heading"><div><span class="eyebrow">{{ kind === 'bee' ? 'BEE SPECIES' : 'TREE SPECIES' }}</span>
+            <header class="panel-heading"><div><span class="eyebrow">{{ kind.toUpperCase() }} SPECIES</span>
               <h2><GameText :text="records.text(detail.species.name)" /></h2><p class="registry">{{ detail.species.source.key }}</p></div>
               <div class="species-badges"><span v-if="detail.species.secret">隐藏物种</span><span v-if="detail.species.blacklisted">已列入黑名单</span></div></header>
             <div class="industry-body">
@@ -82,16 +84,20 @@ function all(): void {
               <p class="species-attribution"><i>{{ detail.species.binomial }}</i><span>{{ detail.species.authority }}</span></p>
               <div class="species-traits"><span>温度：{{ climate[detail.species.temperature] || detail.species.temperature }}</span>
                 <span>湿度：{{ climate[detail.species.humidity] || detail.species.humidity }}</span><span>{{ detail.species.dominant ? '显性物种' : '隐性物种' }}</span>
-                <span v-if="detail.species.nocturnal !== null && detail.species.nocturnal !== undefined">自然活动：{{ detail.species.nocturnal ? '夜间' : '白天' }}</span></div>
+                <span v-if="detail.species.nocturnal !== null && detail.species.nocturnal !== undefined">自然活动：{{ detail.species.nocturnal ? '夜间' : '白天' }}</span>
+                <template v-if="detail.species.flower"><span>土壤酸碱度：{{ soil[detail.species.flower.acidity] || detail.species.flower.acidity }}</span>
+                  <span>土壤湿度：{{ soil[detail.species.flower.moisture] || detail.species.flower.moisture }}</span></template></div>
               <section aria-label="物种形态"><h3>物品形态</h3><div class="species-members">
                 <article v-for="member in detail.species.members" :key="member.form"><small>{{ forms[member.form] || member.form }}</small>
                   <ItemLink :target="{ kind: 'item', id: member.item }" :catalog="catalog" :records="records" :animate="preferences.animate" @select="select" /></article>
               </div></section>
               <p v-if="kind === 'bee'" class="subtle">产物显示每个生产周期的基础概率；实际产出受基因、蜂箱和养蜂模式影响，特产还要求蜜蜂满足适宜条件。</p>
-              <p v-else class="subtle">这里列出默认果实基因的可能产物，游戏没有为这份列表提供掉落概率。</p>
+              <p v-else-if="kind === 'tree'" class="subtle">这里列出默认果实基因的可能产物，游戏没有为这份列表提供掉落概率。</p>
               <p v-if="detail.species.fruitCompatible === false" class="notice">此物种与默认模板的果实家族不匹配；列出的可能产物不代表它可以直接结果。</p>
               <section v-for="section in yields" :key="section.key" :aria-label="section.name">
-                <h3>{{ section.name }}</h3><div class="species-products">
+                <h3>{{ section.name }}</h3>
+                <p v-if="section.key === 'specialties' && detail.species.jubilance" class="subtle"><strong>特产条件：</strong><GameText :text="records.text(detail.species.jubilance)" /></p>
+                <div class="species-products">
                   <article v-for="(product, index) in detail.species[section.key].slice(productOffsets[section.key], productOffsets[section.key] + 48)" :key="index">
                     <ItemLink :target="{ kind: 'item', id: product.item, amount: product.amount }" :catalog="catalog" :records="records" :animate="preferences.animate" @select="select" />
                     <small>{{ product.chance ? '基础概率 ' + chance(product.chance) : '可能产物 · 概率未提供' }}</small>
@@ -130,7 +136,7 @@ function all(): void {
               </section>
             </div>
           </template>
-          <div v-else class="recipe-welcome"><span class="recipe-glyph" aria-hidden="true">❧</span><h2>探索物种与遗传</h2><p>选择物种，查看产物、默认基因与亲本后代关系。</p></div>
+          <div v-else class="recipe-welcome"><span class="recipe-glyph" aria-hidden="true">❧</span><h2>探索物种与遗传</h2><p>选择物种，查看形态、默认基因与亲本后代关系。</p></div>
         </section>
       </div>
     </template>

@@ -11,9 +11,12 @@ const query = computed(() => props.catalog ? { catalog: props.catalog, ...(props
     <nav class="site-nav" aria-label="浏览分类">
       <RouterLink :to="{ name: 'home', query }">物品</RouterLink>
       <RouterLink :to="{ name: 'materials', query }">材料</RouterLink>
+      <RouterLink :to="{ name: 'ores', query }">矿辞</RouterLink>
       <RouterLink :to="{ name: 'circuits', query }">电路</RouterLink>
       <RouterLink :to="{ name: 'bees', query }">蜜蜂</RouterLink>
       <RouterLink :to="{ name: 'trees', query }">树木</RouterLink>
+      <RouterLink :to="{ name: 'butterflies', query }">蝴蝶</RouterLink>
+      <RouterLink :to="{ name: 'flowers', query }">花卉</RouterLink>
       <RouterLink :to="{ name: 'structures', query }">多方块</RouterLink>
       <RouterLink :to="{ name: 'aspects', query }">魔法</RouterLink>
     </nav>

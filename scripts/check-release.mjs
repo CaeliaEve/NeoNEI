@@ -62,6 +62,20 @@ try {
   const html = await (await get('/material/' + topics.rows[0].id)).text();
   const script = html.match(/src="(\/web\/[^"\s]+\.js)"/)?.[1];
   assert.ok(script, 'Packaged page has no entry module');
+  const ores = await (await get(api + '/topics?kind=ore')).json();
+  const ore = ores.rows.find(row => row.name === 'oreFixture');
+  assert.ok(ore, 'Packaged contract lost ore dictionary topics');
+  const orePage = await (await get(api + '/ore-groups/' + ore.id + '/members?offset=1&limit=2')).json();
+  assert.deepEqual(orePage.rows.map(row => row.index), [1, 2]);
+  assert.equal(orePage.rows[0].template.amount, '-4');
+  assert.equal(orePage.rows[1].display, null);
+  assert.ok((await (await get('/ore/' + ore.id)).text()).includes(script), 'Ore deep link does not serve the packaged application');
+  const flowers = await (await get(api + '/items?query=Floating%20pure%20daisy')).json();
+  const floating = await (await get(api + '/recipes?item=' + flowers.rows[0].id)).json();
+  assert.equal(floating.rows[0].process.kind, 'floatingFlowers');
+  assert.equal(floating.rows[0].outputs[0].change.input, 2);
+  assert.deepEqual(floating.related.items.find(item => item.id === floating.rows[0].outputs[0].id).nbt.value,
+    { type: { type: 'string', value: 'pureDaisy' } });
   await get(script);
   assert.equal(await (await get('/offline')).text(), html);
   const worker = await get('/sw.js');

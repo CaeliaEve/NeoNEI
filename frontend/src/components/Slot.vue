@@ -27,6 +27,7 @@ const note = computed(() => {
     : props.stack.change?.action.kind === 'runic' ? '升级所投入的装备并保留其他数据；所示为样本'
     : props.stack.change?.action.kind === 'mapScaling' ? '待完成地图样本；实际产物由世界分配新地图 ID'
     : props.stack.change?.action.kind === 'soul' ? '按所选灵魂生成新的刷怪笼；只写入生物类型，不继承实体的其他数据'
+    : props.stack.change?.action.kind === 'floatingFlower' ? '产物取合成网格中最后一朵特殊花的类型；其余附加数据不继承，图标为样本'
     : '概率 ' + chance(props.stack.chance) + (props.stack.role === 'return' ? ' · 归还' : '');
   const choice = current();
   return choice ? choiceNote(choice) : '此组合留空';
@@ -42,6 +43,7 @@ function choiceNote(choice: Input['choices'][number]): string {
   return consumption + ' · ' + matchNote(choice.rule) + (choice.returns.length ? ' · 归还容器' : '');
 }
 function matchNote(rule: Match, nested = false): string {
+  if (rule.kind === 'string_tag') return '同物品、不区分变体；字段 ' + rule.key + ' 必须缺失或为字符串，其他标签不限；图标为样本';
   if (rule.kind === 'metadata') return '同物品，元数据必须为 ' + rule.value + '；'
     + (rule.nbt ? '忽略 NBT' : 'NBT 精确匹配')
     + (rule.absent.length ? '；不得包含字段：' + rule.absent.join('、') : '') + '；图标为展示示例';
@@ -91,7 +93,7 @@ function choose(index: number, id: string, direction: 'recipes' | 'uses'): void 
     <ItemLink v-if="target" :target="target" :catalog="catalog" :records="records" :width="size" :height="height" :animate="animate" compact :note="note" :amount-label="amountLabel"
       @select="(id, direction) => emit('select', id, direction)" />
     <button v-if="selectable" type="button" class="alternatives" :aria-label="'查看 ' + choices.length + ' 个候选输入'"
-      @click="expand">{{ choices.length }}</button>
+      @click="expand" @contextmenu.prevent="target && emit('select', target.id, 'uses')">{{ choices.length }}</button>
     <dialog v-if="expanded && selectable" ref="dialog" class="dialog choices-dialog" @close="expanded = false">
       <header><h2>候选输入</h2><button type="button" aria-label="关闭候选输入" @click="dialog?.close()">×</button></header>
       <p>选择当前显示的物品；右键查看其用途。</p>

@@ -3,6 +3,7 @@ import { Catalog, Fault } from './store.ts';
 import { quantityBounds } from './quantity.ts';
 import type { Structure, Shape, Build, Block, Model } from '@elysium/contracts';
 import type { Aspect, Research } from '@elysium/contracts';
+import type { OreGroup, OreMember } from '@elysium/contracts';
 
 export interface Page<T> { rows: T[]; total: number; offset: number; limit: number }
 export interface Browse { query: string; mod: string; kind: 'all' | 'item' | 'fluid'; group: string; collapsed: boolean; offset: number; limit: number }
@@ -151,6 +152,22 @@ export class Query {
     return { rows, total, offset: options.offset, limit: options.limit };
   }
 
+  async oreGroup(id: string): Promise<{ group: OreGroup }> {
+    return { group: await this.catalog.record('ore-groups', id) };
+  }
+
+  async oreMembers(id: string, offset: number, limit: number): Promise<Page<OreMember> & { related: Related }> {
+    if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new Fault('invalid_query', 'Invalid ore membership page', 400);
+    }
+    const group = await this.catalog.record('ore-groups', id);
+    const keys = Array.from({ length: Math.max(0, Math.min(limit, group.members - offset)) },
+      (_, index) => `${id}.member_${(offset + index).toString(16).padStart(8, '0')}`);
+    const rows = keys.length ? await this.catalog.records('ore-members', keys) : [];
+    const related = await this.related([], [], { targets: [...new Set(rows.flatMap(row => row.display ? [row.display] : []))].map(id => ({ kind: 'item', id })) });
+    return { rows, total: group.members, offset, limit, related };
+  }
+
   async itemAspects(id: string): Promise<{ item: Item; aspects: Topic[]; related: Related }> {
     const item = await this.catalog.record('items', id);
     const aspects = await this.catalog.records('topics', (item.aspects ?? []).map(row => row.aspect));
@@ -239,7 +256,8 @@ export class Query {
     const related = await this.related([], [], {
       targets: [...species.members.map(member => member.item), ...species.products.map(product => product.item),
         ...species.specialties.map(product => product.item)].map(id => ({ kind: 'item', id })),
-      texts: [species.name, species.description, ...species.genes.map(gene => gene.name)],
+      texts: [species.name, species.description, ...(species.jubilance === null || species.jubilance === undefined ? [] : [species.jubilance]),
+        ...species.genes.map(gene => gene.name)],
       values: geneValues(species.genes),
     });
     return { species, origins: lineage.origins.length, crosses: lineage.crosses.length, related };
@@ -298,7 +316,7 @@ export class Query {
           substance('item',prior.soul.vessel);substance('item',prior.material.id);budget();
         }
       }
-      if (recipe.process?.kind === 'rolling') {
+      if (recipe.process?.kind === 'rolling' || recipe.process?.kind === 'qed' || recipe.process?.kind === 'galaxyspace-assembly') {
         for (const prior of recipe.process.earlier) for (const choices of prior.inputs) {
           for (const choice of choices) substance('item', choice.id);
           budget();
@@ -338,7 +356,7 @@ export class Query {
         if (output.change) {
           for (const sample of output.change.samples) substance('item', sample.id);
           if (output.change.action.kind === 'merge') substance('item', output.change.action.base.id);
-          if (output.change.action.kind === 'soul') substance('item',output.change.action.base);
+          if (output.change.action.kind === 'soul' || output.change.action.kind === 'floatingFlower') substance('item',output.change.action.base);
           if ((output.change.action as { kind: 'filter'; base: { id: string } }).kind === 'filter') substance('item', (output.change.action as { base: { id: string } }).base.id);
         }
       }

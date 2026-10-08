@@ -40,6 +40,76 @@ async function get(base, endpoint, status = 200) {
   return response;
 }
 
+test('floating flower output keeps only the last special type and hydrates its base without ingredient edges', async context => {
+  const base = await serve(context);
+  const manifest = await (await get(base,'/api/catalog')).json();
+  const api = `/api/catalog/${manifest.id}`;
+  const found = await (await get(base,api+'/items?query=Floating%20pure%20daisy')).json();
+  assert.equal(found.rows.length,1);
+  const recipes = await (await get(base,api+'/recipes?direction=recipes&item='+found.rows[0].id)).json();
+  const row = recipes.rows.find(row=>row.process?.kind==='floatingFlowers');
+  assert.ok(row);assert.deepEqual(row.process.special,[1,2]);assert.equal(row.inputs.length,3);
+  assert.equal(row.outputs[0].change.input,2);
+  assert.deepEqual(row.inputs[2].choices[0].rule,{kind:'string_tag',key:'type'});
+  const output = recipes.related.items.find(item=>item.id===row.outputs[0].id);
+  assert.deepEqual(output.nbt,{type:'compound',value:{type:{type:'string',value:'pureDaisy'}}});
+  const example = recipes.related.items.find(item=>item.id===row.outputs[0].change.action.base);
+  assert.ok(example?.nbt.value.discardBase);
+  const excluded = await (await get(base,api+'/recipes?direction=uses&item='+example.id)).json();
+  assert.equal(excluded.total,0);
+  const { Catalog, Api } = require('@neonei/catalog');
+  const local = new Api(await Catalog.open(manifest,file=>fs.readFile(path.join(fixture,'catalogs',manifest.id,file.path))));
+  assert.deepEqual(await local.read(['recipes',row.id]),await (await get(base,api+'/recipes/'+row.id)).json());
+});
+
+test('ore registry keeps empty groups and signed templates with online/offline paged parity', async context => {
+  const base = await serve(context);
+  const manifest = await (await get(base, '/api/catalog')).json();
+  const api = `/api/catalog/${manifest.id}`;
+  const { Catalog, Api } = require('@neonei/catalog');
+  const reader = await Catalog.open(manifest, file => fs.readFile(path.join(fixture, 'catalogs', manifest.id, file.path)));
+  const local = new Api(reader);
+  const topics = await (await get(base, api + '/topics?kind=ore')).json();
+  assert.deepEqual(topics.rows.map(row => row.name), ['oreFixture', 'oreVacant', 'paper']);
+  const group = topics.rows[0], empty = topics.rows[1];
+  const detail = await (await get(base, api + '/ore-groups/' + group.id)).json();
+  assert.equal(detail.group.members, 3);
+  assert.deepEqual(detail, await local.read(['ore-groups', group.id]));
+  const page = await (await get(base, api + `/ore-groups/${group.id}/members?offset=0&limit=2`)).json();
+  assert.deepEqual(page, await local.read(['ore-groups',group.id,'members'],new URLSearchParams({offset:'0',limit:'2'})));
+  assert.deepEqual(page.rows.map(row=>row.index), [0,1]);
+  assert.deepEqual(page.rows.map(row=>row.template.amount), ['0','-4']);
+  assert.equal(page.rows[0].template.meta,32767);
+  assert.equal(page.rows[0].template.nbt.value.raw.value,'wildcard');
+  assert.ok(page.related.items.some(item=>item.id===page.rows[0].display));
+  const last = await local.read(['ore-groups',group.id,'members'],new URLSearchParams({offset:'2',limit:'2'}));
+  assert.equal(last.rows[0].display,null);
+  assert.deepEqual(last.rows[0].template,page.rows[1].template);
+  assert.notEqual(last.rows[0].id,page.rows[1].id);
+  assert.equal((await local.read(['ore-groups',empty.id])).group.members,0);
+  assert.deepEqual((await local.read(['ore-groups',empty.id,'members'])).rows,[]);
+  const related = await local.read(['topics'],new URLSearchParams({kind:'ore',item:page.rows[0].display}));
+  assert.deepEqual(related.rows.map(row=>row.name),['oreFixture','paper']);
+  const links = await reader.record('links',page.rows[0].display);
+  assert.ok([...links.recipes,...links.uses].every(id=>id.startsWith('recipe_')));
+  assert.ok((await reader.all('recipes')).every(row=>row.source.handler!=='net.minecraftforge.oredict.OreDictionary'), 'Registry membership must not become production or use recipes');
+  await get(base,api + `/ore-groups/${group.id}/members?limit=0`,400);
+  // Three independent shards: a corrupt off-page shard must not be read by the first page.
+  const { encode } = require('@msgpack/msgpack');
+  const rows = [...page.rows,...last.rows], bytes = rows.map((row,index)=>index===2?Buffer.from('corrupt'):Buffer.from(encode({kind:'ore-members',records:[row]})));
+  const files = rows.map((row,index)=>({kind:'ore-members',path:`tables/ore-members/part-${String(index).padStart(6,'0')}.msgpack`,encoding:'msgpack',rows:1,first:row.id,last:row.id,bytes:bytes[index].length,sha256:digest(bytes[index])}));
+  const rangedManifest = {...manifest,counts:{...manifest.counts,'ore-members':3},files:[...manifest.files.filter(file=>file.kind!=='ore-members'),...files].sort((a,b)=>a.path<b.path?-1:1)};
+  delete rangedManifest.id; rangedManifest.id=digest(canonical(rangedManifest));
+  const reads=[];
+  const ranged=await Catalog.open(rangedManifest,async file=>{
+    if(file.kind==='ore-members'){reads.push(file.path);return bytes[files.findIndex(row=>row.path===file.path)];}
+    return fs.readFile(path.join(fixture,'catalogs',manifest.id,file.path));
+  });
+  const bounded=await new Api(ranged).read(['ore-groups',group.id,'members'],new URLSearchParams({limit:'1'}));
+  assert.equal(bounded.rows.length,1);assert.deepEqual(reads,[files[0].path]);
+  await assert.rejects(new Api(ranged).read(['ore-groups',group.id,'members'],new URLSearchParams({offset:'2',limit:'1'})));
+});
+
 test('compiled catalog supports NEI order, pinyin, pagination, groups and exact recipe data', async context => {
   const base = await serve(context);
   const manifest = await (await get(base, '/api/catalog')).json();
@@ -59,6 +129,12 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   withContainer.process.containers[0][0] = { id: container.id, amount: '1' };
   assert.ok((await query.related([withContainer])).items.some(item => item.id === container.id),
     'Same-slot blast containers must resolve in both online and offline query results');
+  const withQedPriority = structuredClone(blastFixture);
+  withQedPriority.process = { kind: 'qed', enderFlux: '20000', earlier: [
+    { grid: null, inputs: [[{ id: container.id, rule: { kind: 'wildcard', meta: true, nbt: true } }]] },
+  ] };
+  assert.ok((await query.related([withQedPriority])).items.some(item => item.id === container.id),
+    'Earlier QED selectors must hydrate templates absent from the visible recipe');
   assert.ok(category?.program, 'Compiler dropped the shared program category');
   loaded.length = 0;
   const program = await new Api(reader).read(['programs', category.program]);
@@ -88,14 +164,14 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   await get(base, api + '/programs/program_' + '0'.repeat(64), 404);
   const first = await (await get(base, api + '/items?limit=1')).json();
   const second = await (await get(base, api + '/items?limit=1&offset=2')).json();
-  assert.equal(first.total, 88);
+  assert.equal(first.total, 92);
   assert.equal(first.rows[0].kind, 'item');
   assert.equal(second.rows[0].kind, 'fluid');
   assert.ok(first.textures[0].frames.length);
   assert.equal((await (await get(base, api + '/items?query=shitou')).json()).rows[0].id, first.rows[0].id);
   assert.equal((await (await get(base, api + '/items?kind=fluid&mod=minecraft')).json()).total, 0);
   const facets = await (await get(base, api + '/facets')).json();
-  assert.deepEqual(facets.mods, [{ id: 'BiblioCraft', count: 1 }, { id: 'ProjRed|Core', count: 1 }, { id: 'Thaumcraft', count: 1 }, { id: 'fixture', count: 65 }, { id: 'minecraft', count: 13 }]);
+  assert.deepEqual(facets.mods, [{ id: 'BiblioCraft', count: 1 }, { id: 'ProjRed|Core', count: 1 }, { id: 'Thaumcraft', count: 1 }, { id: 'fixture', count: 69 }, { id: 'minecraft', count: 13 }]);
   for (const [registry, mod, query] of [
     ['BiblioCraft:Armor Stand', 'BiblioCraft', 'Armor Stand'],
     ['ProjRed|Core:projectred.core.part', 'ProjRed|Core', 'projectred.core.part'],
@@ -265,7 +341,27 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.deepEqual(detail.recipe, recipe);
   const paper = await (await get(base, api + '/items?query=paper')).json();
   const magic = await (await get(base, api + '/recipes?item=' + paper.rows[0].id)).json();
-  assert.equal(magic.total, 10);
+  assert.equal(magic.total, 12);
+  const qed = magic.rows.find(row => row.process?.kind === 'qed');
+  assert.equal(qed.process.enderFlux, '20000');
+  assert.equal(qed.process.earlier[0].grid, null);
+  assert.equal(qed.duration, null);
+  assert.equal(qed.energy, null);
+  assert.deepEqual(qed.grid, { width: 1, height: 1, cells: [0], mirror: true });
+  assert.equal(qed.inputs[0].choices[0].amount, '1');
+  assert.deepEqual(qed.inputs[0].choices[0].returns, []);
+  const galaxy = magic.rows.find(row => row.process?.kind === 'galaxyspace-assembly');
+  assert.ok(galaxy, 'Native GalaxySpace assembly was not published');
+  assert.equal(galaxy.outputs[0].amount, '70', 'Native raw result count must survive presentation stack limits');
+  assert.equal(galaxy.duration, null);
+  assert.equal(galaxy.energy, null);
+  const galaxyDetail = await (await get(base, api + '/recipes/' + galaxy.id)).json();
+  const galaxyPrior = galaxy.process.earlier[0].inputs[0][0].id;
+  assert.ok(!galaxy.inputs.some(input => input.choices.some(choice => choice.id === galaxyPrior)));
+  assert.ok(galaxyDetail.related.items.some(row => row.id === galaxyPrior && row.registry === 'fixture:rolling_prior'),
+    'Earlier-only GalaxySpace selectors must hydrate from the actual compiled fixture');
+  const galaxyPriorUses = await (await get(base, api + '/recipes?direction=uses&item=' + galaxyPrior)).json();
+  assert.ok(!galaxyPriorUses.rows.some(row => row.id === galaxy.id), 'Native priority exclusion is not a consumed ingredient');
   const blast=magic.rows.find(row=>row.process?.kind==='ic2Blast');
   assert.equal(blast.process.heat,50000);
   assert.equal(blast.duration,null);
@@ -355,6 +451,9 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   const hybrid = bees.rows.find(row => row.terms.includes('zajiaofeng'));
   assert.ok(hybrid);
   const species = await (await get(base, api + '/species/' + hybrid.id)).json();
+  assert.ok(species.species.jubilance, 'Native specialty conditions were lost');
+  assert.equal(species.related.strings.find(row => row.id === species.species.jubilance)?.text,
+    'Fixture specialty requires suitable climate', 'Jubilance text must be hydrated with species detail');
   assert.deepEqual(species.species.products[0].chance, { numerator: '3', denominator: '10' });
   assert.equal(species.species.genes[0].value, null);
   assert.equal(species.origins, 2);
@@ -378,6 +477,22 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.equal(tree.species.products[0].chance, null);
   assert.equal(tree.species.fruitCompatible, false);
   assert.equal(tree.origins, 0);
+  for (const [kind, query] of [['butterfly', 'hudie'], ['flower', 'huahui']]) {
+    const page = await (await get(base, api + '/topics?kind=' + kind + '&query=' + query)).json();
+    assert.equal(page.total, 1);
+    const detail = await (await get(base, api + '/species/' + page.rows[0].id)).json();
+    assert.equal(detail.species.kind, kind);
+    assert.deepEqual(detail.species.products, []);
+    assert.deepEqual(detail.species.specialties, []);
+    assert.equal(detail.species.jubilance, null);
+    assert.equal(detail.origins, 1);
+    assert.equal(detail.crosses, 1);
+    if (kind === 'butterfly') assert.equal(detail.species.nocturnal, true);
+    else assert.deepEqual(detail.species.flower, { acidity: 'neutral', moisture: 'normal', type: 12 });
+    const mutations = await (await get(base, api + '/species/' + page.rows[0].id + '/mutations')).json();
+    assert.equal(mutations.total, 1);
+    assert.ok(mutations.species.every(row => row.kind === kind));
+  }
   await get(base, endpoint + '?direction=unknown', 400);
   await get(base, endpoint + '?limit=0', 400);
   await get(base, api + '/topics?kind=unknown', 400);
@@ -513,7 +628,7 @@ test('invalid pointers, damaged tables and missing declared files fail explicitl
   contents[contents.length - 1] ^= 1;
   await fs.writeFile(tablePath, contents);
   const repaired = await (await get(damaged, `/api/catalog/${pointer.id}/items`)).json();
-  assert.equal(repaired.total, 88, 'a failed memoized read must be retryable after repair');
+  assert.equal(repaired.total, 92, 'a failed memoized read must be retryable after repair');
   const recipes = manifest.files.find(file => file.kind === 'recipes');
   const recipePath = path.join(root, 'catalogs', pointer.id, recipes.path);
   const recipeBytes = await fs.readFile(recipePath);

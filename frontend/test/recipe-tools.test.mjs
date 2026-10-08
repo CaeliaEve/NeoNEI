@@ -33,6 +33,19 @@ test('batch validation rejects zero, negative, fractional and non-decimal counts
   for (const batches of ['', '0', '-1', '1.5', '1e3', 'Infinity', '2x']) assert.throws(() => calculate(recipe(), batches), /正整数/);
 });
 
+test('QED successful batches consume each occupied cell without crafting container returns', async () => {
+  const calculate = await materials();
+  const r = recipe([input(0, [choice('filled-container')]), input(1, [choice('filled-container')])], [output('result', '3')]);
+  r.process = { kind: 'qed', enderFlux: '20000', earlier: [] };
+  r.grid = { width: 3, height: 1, cells: [0, null, 1], mirror: true };
+  const result = calculate(r, '4');
+  assert.deepEqual(result.inputs.map(row => [row.id, row.amount]), [['filled-container', '8']]);
+  assert.deepEqual(result.outputs.map(row => [row.id, row.amount]), [['result', '12']]);
+  assert.deepEqual(result.returns, []);
+  assert.deepEqual(result.tools, []);
+  assert.deepEqual(result.uncertain, []);
+});
+
 test('only the selected candidate contributes materials and its returns', async () => {
   const calculate = await materials();
   const r = recipe([input(0, [choice('water-cell', '1', { kind: 'consume' }, [{ kind: 'item', id: 'cell', amount: '1' }]), choice('water-can', '2')])]);

@@ -26,6 +26,7 @@ function energy(detail: Detail): string {
   if (process?.kind === 'buildcraftIntegration') return formatQuantity(String(process.rule.energy)) + ' RF（激光能量）';
   if (process && 'energy' in process) return formatQuantity(String(process.energy)) + ' RF（原生基础值）';
   if (process?.kind === 'rolling') return process.powered ? '5,000 RF（正常完整加工）' : '0 RF';
+  if (process?.kind === 'qed') return formatQuantity(process.enderFlux) + ' Ender Flux';
   return '未提供固定能耗';
 }
 </script>
