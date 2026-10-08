@@ -1,4 +1,38 @@
 import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
+
+async function selectRecipeCategory(page: Page, name: RegExp): Promise<void> {
+  const rail = page.locator('.recipe-preview-panel .machine-type-icons');
+  const status = rail.locator('.category-page-status');
+  await expect(rail.getByRole('option').first()).toBeVisible();
+  const findOption = () => rail.getByRole('option', { name });
+  // Category count and available width decide which page contains a category.
+  if (!await findOption().isVisible()) {
+    const previous = rail.locator('.category-page-btn--prev');
+    while (await previous.isVisible() && await previous.isEnabled()) {
+      const before = await status.textContent();
+      await previous.click({ force: true });
+      await expect.poll(() => status.textContent(), { timeout: 5000 }).not.toBe(before);
+    }
+    for (let attempts = 0; attempts < 24 && !await findOption().isVisible(); attempts += 1) {
+      const next = rail.locator('.category-page-btn--next');
+      if (!await next.isEnabled()) {
+        await page.waitForTimeout(100);
+        continue;
+      }
+      await next.click({ force: true });
+      await page.waitForTimeout(50);
+    }
+  }
+  const option = findOption();
+  await expect(option, `Recipe category ${name} must be reachable through the category pages`).toBeVisible({ timeout: 10000 });
+  const testId = await option.getAttribute('data-testid');
+  expect(testId).toBeTruthy();
+  // The rail is intentionally re-rendered when an offline page finishes warming.
+  // Dispatch the click on the current DOM node, then reacquire the option.
+  await page.getByTestId(testId!).evaluate((element) => (element as HTMLButtonElement).click());
+  await expect(rail.getByTestId(testId!)).toHaveAttribute('aria-selected', 'true');
+}
 
 for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} optimize homepage searches and opens recipes`, async ({ page, context, request }) => {
   const manifest = await (await request.get('/api/catalog')).json();
@@ -22,7 +56,7 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(page.locator('.recipe-preview-panel')).toBeVisible();
   await expect(page.locator('.recipe-preview-panel')).not.toContainText('正在加载配方');
   await expect(page.locator('.recipe-preview-panel')).not.toContainText('读取配方失败');
-  await page.getByRole('option', { name: /Fixture machine/ }).click();
+  await selectRecipeCategory(page, /Fixture machine/);
   await expect(page.locator('.recipe-preview-panel .recipe-view')).toBeVisible();
   await expect(page.locator('.recipe-preview-panel [role="alert"]')).toHaveCount(0);
   const animations = page.getByRole('img', { name: '配方进度动画', exact: true });
@@ -46,7 +80,7 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await choices.locator('.choice-list .item-link').nth(1).click();
   await expect(input.locator('.quantity')).toHaveText('7');
   await expect(input.locator(':scope > .item-link')).toHaveAttribute('title', /仅忽略字段：frypanKill；其余 NBT 精确匹配/);
-  await page.getByRole('option', { name: /Harmony 鸿蒙之眼/ }).click();
+  await selectRecipeCategory(page, /Harmony 鸿蒙之眼/);
   const process = page.locator('.recipe-preview-panel');
   await expect(process.locator('.item-link[title*="共享成功次数"]').first()).toBeVisible();
   await expect(process.locator('.item-link[title*="耗尽对应内部流体存量"]').first()).toBeVisible();
@@ -138,13 +172,13 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(process).toContainText('Sheep bound spawner');
   await page.locator('.chrome-search-input').fill('shitou');
   await page.getByRole('button', { name: /Stone 石头/ }).first().click({ button: 'right' });
-  await page.getByRole('option', { name: /Rolling machine 轧制机/ }).click();
+  await selectRecipeCategory(page, /Rolling machine 轧制机/);
   await expect(process).toContainText('每次从每个有物品的格子消耗一件，不返还容器');
   await expect(process).toContainText('保留最后一份');
   await expect(process).toContainText('每次推进消耗 50 RF');
   await process.getByRole('button', { name: '下一页', exact: true }).click();
   await expect(process).toContainText('当前配置关闭机器耗能');
-  await page.getByRole('option', { name: /BuildCraft Assembly 激光装配台/ }).click();
+  await selectRecipeCategory(page, /BuildCraft Assembly 激光装配台/);
   await expect(process).toContainText('激光能量 700 RF');
   await expect(process).toContainText('不同候选可以混合凑足同一份需求');
   await expect(process).toContainText('不回溯重分配');
@@ -173,7 +207,7 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(result).toHaveAttribute('title', /Charged blue robot/);
   await page.locator('.chrome-search-input').fill('water');
   await page.getByRole('button', { name: /^Water/ }).first().click({ button: 'right' });
-  await page.getByRole('option', { name: /BuildCraft Refinery 精炼厂/ }).click();
+  await selectRecipeCategory(page, /BuildCraft Refinery 精炼厂/);
   await expect(process).toContainText('每次尝试的能量为 30 RF');
   await expect(process).toContainText('部分流体已扣除而没有产物');
   await process.getByText('进液许可与前序配方', { exact: true }).click();
@@ -181,7 +215,7 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await expect(process).toContainText('hydrogen');
   await page.locator('.chrome-search-input').fill('shitou');
   await page.getByRole('button', { name: /Stone 石头/ }).first().click({ button: 'right' });
-  await page.getByRole('option', { name: /IC2 Blast Furnace 高炉/ }).click();
+  await selectRecipeCategory(page, /IC2 Blast Furnace 高炉/);
   await expect(process).toContainText('当前热量门槛为 50000');
   await expect(process).toContainText('完工时尝试取走一件主材料');
   await expect(process).toContainText('堆叠超过一件时不扣料');
@@ -191,10 +225,7 @@ for (const offline of [false, true]) test(`${offline ? 'offline' : 'online'} opt
   await page.locator('.chrome-search-input').fill('Paper');
   await page.locator('.items-column').getByRole('button', { name: /^Paper 纸/ }).first().click({ button: 'right' });
   await expect(process).not.toContainText('正在加载配方');
-  for (let group=0;group<3 && !await page.getByRole('option', { name: /Shared machine rules/ }).isVisible();group++) {
-    await process.locator('.category-page-btn--next').click();
-  }
-  await page.getByRole('option', { name: /Shared machine rules/ }).click();
+  await selectRecipeCategory(page, /Shared machine rules/);
   await expect(process).toContainText('九个输入库存槽');
   await expect(process).toContainText('基础工作步数为 3');
   await expect(process.locator('.stack-slot > .item-link[title*="共享库存"]').first()).toBeVisible();
