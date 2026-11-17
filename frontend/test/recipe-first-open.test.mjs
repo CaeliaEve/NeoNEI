@@ -6,7 +6,7 @@ test('first open uses the known first recipe and keeps all category names and ID
  const calls=[];
  const catalog={
   directory:async()=>({links:{recipes:['r0','r1'],uses:['u']},recipes:[{id:'a',count:1},{id:'b',count:1}],uses:[{id:'c',count:1}],related:{categories:[{id:'a',name:'sa'},{id:'b',name:'sb'},{id:'c',name:'sc'}],strings:[{id:'sa',text:'A'},{id:'sb',text:'B'},{id:'sc',text:'C'}]}}),
-  recipe:async id=>{calls.push(id);return {recipe:{id,category:'a'},related:{categories:[{id:'a',name:'sa'}],strings:[{id:'sa',text:'A'},{id:'item-name',text:'Wood'}],items:[],fluids:[],textures:[],views:[],tracks:[],topics:[]}};},
+  recipe:async id=>{calls.push(id);return {recipe:{id,category:'a'},related:{categories:[{id:'a',name:'sa'}],strings:[{id:'sa',text:'A'},{id:'item-name',text:'Wood'}],items:[],fluids:[],textures:[],topics:[]}};},
   recipes:async()=>{assert.fail('first open redundantly scanned the directory');},
  };
  const result=await initialRecipes(catalog,'item','recipes');
@@ -15,16 +15,6 @@ test('first open uses the known first recipe and keeps all category names and ID
  assert.equal(result.usedIn.total,1);
  assert.deepEqual(result.producedBy.related.categories.map(r=>r.id),['a','b','c']);
  assert.equal(result.producedBy.related.strings.find(r=>r.id==='item-name').text,'Wood');
-});
-
-test('visible recipe reads do not wait for speculative debounce; stale work is rejected',async()=>{
- const module=await import('../src/browser/recipe-scheduling.ts').catch(()=>null);
- assert.ok(module,'recipe request scheduling missing');
- let timerUsed=false;
- const {recipeReadReady}=module;
- assert.equal(await recipeReadReady('visible',()=>true,async()=>{timerUsed=true;}),true);
- assert.equal(timerUsed,false);
- assert.equal(await recipeReadReady('prefetch',()=>false,async()=>{}),false);
 });
 
 test('recipe art mapping keeps native frame dimensions and rejects out-of-page slices',async()=>{

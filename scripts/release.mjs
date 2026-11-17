@@ -6,11 +6,23 @@ import { fileURLToPath } from 'node:url';
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (process.argv.length > 3) throw new Error('Usage: node scripts/release.mjs [output-directory]');
 const target = path.resolve(process.argv[2] || path.join(root, 'release', 'neonei-web'));
+const webBuild = path.resolve(process.env.NEONEI_WEB_BUILD ?? path.join(root, 'frontend/dist'));
+const moduleBuilds={
+  catalog:path.resolve(process.env.NEONEI_CATALOG_BUILD??path.join(root,'catalog/dist')),
+  backend:path.resolve(process.env.NEONEI_BACKEND_BUILD??path.join(root,'backend/dist')),
+};
+function sourceFile(file){
+  for(const [workspace,directory]of Object.entries(moduleBuilds)){
+    const prefix=workspace+'/dist/';if(file.startsWith(prefix))return path.join(directory,file.slice(prefix.length));
+  }
+  return path.join(root,file);
+}
 if (fs.existsSync(target)) throw new Error('Release directory already exists: ' + target);
 const backend = JSON.parse(fs.readFileSync(path.join(root, 'backend/package.json'), 'utf8'));
 const frontend = JSON.parse(fs.readFileSync(path.join(root, 'frontend/package.json'), 'utf8'));
 const catalog = JSON.parse(fs.readFileSync(path.join(root, 'catalog/package.json'), 'utf8'));
 const contract = backend.dependencies['@elysium/contracts'];
+const vendoredContracts = [...new Set([contract, ...Object.values(catalog.dependencies).filter(value => value.startsWith('file:../vendor/'))])];
 if (!/^file:\.\.\/vendor\/[a-z0-9.-]+\.tgz$/.test(contract)
   || contract !== frontend.dependencies['@elysium/contracts'] || contract !== catalog.dependencies['@elysium/contracts']) {
   throw new Error('All workspaces must pin the same vendored contract');
@@ -31,17 +43,20 @@ function visit(directory, workspace) {
 visit(path.join(root, 'backend/src'), 'backend');
 visit(path.join(root, 'catalog/src'), 'catalog');
 const files = [...sources, 'package.json', 'package-lock.json', 'catalog/package.json', 'backend/package.json', 'frontend/package.json',
-  contract.slice('file:../'.length), '.env.example', 'README.md', 'docs/refactor.md'];
-for (const file of [...files, 'frontend/dist/index.html', 'frontend/dist/sw.js']) {
-  if (!fs.statSync(path.join(root, file)).isFile()) throw new Error('Build output is missing: ' + file);
+  ...vendoredContracts.map(value => value.slice('file:../'.length)), '.env.example', 'README.md', 'docs/refactor.md'];
+for (const file of files) {
+  if (!fs.statSync(sourceFile(file)).isFile()) throw new Error('Build output is missing: ' + file);
+}
+for (const file of ['index.html', 'sw.js']) {
+  if (!fs.statSync(path.join(webBuild, file)).isFile()) throw new Error('Web build output is missing: ' + file);
 }
 fs.mkdirSync(target, { recursive: true });
 for (const file of files) {
   const destination = path.join(target, file);
   fs.mkdirSync(path.dirname(destination), { recursive: true });
-  fs.copyFileSync(path.join(root, file), destination, fs.constants.COPYFILE_EXCL);
+  fs.copyFileSync(sourceFile(file), destination, fs.constants.COPYFILE_EXCL);
 }
-fs.cpSync(path.join(root, 'frontend/dist'), path.join(target, 'frontend/dist'), { recursive: true });
+fs.cpSync(webBuild, path.join(target, 'frontend/dist'), { recursive: true });
 fs.writeFileSync(path.join(target, 'START.md'), '# Run NeoNEI\n\nInstall Node.js 24. Run `npm ci --omit=dev --workspace catalog --workspace backend`, set NEONEI_CATALOG_ROOT to a compiled catalog, then run `npm start`. The default address is http://127.0.0.1:3002.\n\nOffline libraries require HTTPS or localhost. Open Offline Library and save a complete copy before disconnecting.\n');
 const manifest = [];
 function describe(directory) {

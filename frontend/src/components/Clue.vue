@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {t} from "../i18n/index.ts";
 import { computed, ref, watch } from 'vue';
 import type { Clue } from '@elysium/contracts';
 import type { Catalog, Records } from '../catalog/client.ts';
@@ -13,16 +14,16 @@ watch(() => props.clue, () => { offset.value = 0; });
 </script>
 
 <template>
-  <article class="research-clue" :aria-label="'物品线索 ' + clue.registry">
-    <p><code>{{ clue.registry }}</code> · {{ clue.meta === 32767 ? '任意元数据' : '元数据 ' + clue.meta }}</p>
-    <p v-if="clue.ore" class="subtle">同时按游戏规则匹配矿辞组：<code>{{ clue.ore }}</code></p>
-    <details v-if="clue.nbt"><summary>NBT 条件</summary><pre>{{ JSON.stringify(clue.nbt, null, 2) }}</pre></details>
-    <div v-if="clue.matches.length" class="examples" aria-label="资料库中的匹配示例">
+  <article class="research-clue" :aria-label="t('物品线索 ') + clue.registry">
+    <p><code>{{ clue.registry }}</code> · {{ clue.meta === 32767 ? t("任意元数据") : t("元数据 ") + clue.meta }}</p>
+    <p v-if="clue.ore" class="subtle">{{t("同时按游戏规则匹配矿辞组：")}}<code>{{ clue.ore }}</code></p>
+    <details v-if="clue.nbt"><summary>{{t("NBT 条件")}}</summary><pre>{{ JSON.stringify(clue.nbt, null, 2) }}</pre></details>
+    <div v-if="clue.matches.length" class="examples" :aria-label="t('资料库中的匹配示例')">
       <ItemLink v-for="id in shown" :key="id" :target="{ kind: 'item', id }" :records="records" :catalog="catalog" :animate="animate"
         @select="(id, direction) => emit('select', id, direction)" />
-      <Pager :total="clue.matches.length" :offset="offset" :limit="12" :busy="false" label="示例" @change="offset = $event" />
+      <Pager :total="clue.matches.length" :offset="offset" :limit="12" :busy="false" :label="t('示例')" @change="offset = $event" />
     </div>
-    <p v-else class="subtle">资料库中无具体物品示例，原始触发条件已保留。</p>
+    <p v-else class="subtle">{{t("资料库中无具体物品示例，原始触发条件已保留。")}}</p>
   </article>
 </template>
 

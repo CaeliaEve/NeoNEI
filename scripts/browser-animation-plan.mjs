@@ -1,8 +1,10 @@
 /** Identity is the browse entry, not the first pixels: two animations can share a first frame. */
 export function animationPlan(entries,textures){
- const byId=new Map(textures.map(t=>[t.id,t])),frames=[],keys=new Map(),timelines=[],timelineIds=new Map(),rows=[];
+ const byId=new Map(textures.map(t=>[t.id,t])),frames=[],keys=new Map(),timelines=[],timelineIds=new Map(),rows=[],programs=[];
  for(const entry of entries){
-  const texture=byId.get(entry.icon);if(!texture||texture.frames.length<2)continue;
+  const texture=byId.get(entry.icon);if(!texture)continue;
+  if(texture.visual){programs.push([entry.id,texture.id]);continue;}
+  if(texture.frames.length<2)continue;
   if(!timelineIds.has(texture.id)){
    const sequence=texture.frames.map(frame=>{
     const key=JSON.stringify([frame.path,frame.x,frame.y,frame.width,frame.height]);
@@ -13,5 +15,5 @@ export function animationPlan(entries,textures){
   }
   rows.push([entry.id,timelineIds.get(texture.id)]);
  }
- return {frames,index:{version:1,rows,timelines}};
+ return {frames,index:{version:2,rows,timelines,programs}};
 }

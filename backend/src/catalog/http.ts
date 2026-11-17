@@ -28,7 +28,8 @@ export function catalogRoutes(catalogs: Catalogs): Router {
     return result;
   }
   router.get('/api/catalog', async (req, res) => {
-    const catalog = await catalogs.current();
+    if (req.query.locale !== undefined && typeof req.query.locale !== 'string') throw new Fault('invalid_locale', 'Invalid language', 400);
+    const catalog = await catalogs.current(req.query.locale as string | undefined);
     if (!cached(req, res, catalog.manifest.id, false)) res.json(catalog.manifest);
   });
   router.get('/api/catalog/:catalog', async (req, res) => {

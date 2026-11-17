@@ -1,7 +1,6 @@
 import { lstat, open, realpath } from 'node:fs/promises';
 import path from 'node:path';
-import { assertPointer } from '@elysium/contracts';
-import { Catalog, Fault, decode, ensure, limits } from '@neonei/catalog';
+import { Catalog, Fault, decode, ensure, limits, assertCatalogPointer } from '@neonei/catalog';
 
 const digest = /^[a-f0-9]{64}$/;
 
@@ -59,16 +58,26 @@ export class Catalogs {
   readonly root: string;
   constructor(root: string) { this.root = path.resolve(root); }
 
-  async current(): Promise<Catalog> {
+  async current(locale = ''): Promise<Catalog> {
+    if (locale && !['zh_CN', 'en_US'].includes(locale)) throw new Fault('invalid_locale', 'Unsupported language', 400);
     await plain(this.root, true, 503);
-    const buffer = await bytes(path.join(this.root, 'current.json'), 4096, 503);
+    let buffer: Buffer;
+    try { buffer = await bytes(path.join(this.root, ...(locale ? ['locales', locale + '.json'] : ['current.json'])), 4096, locale ? 404 : 503); }
+    catch (error) {
+      if (!locale || !(error instanceof Fault) || error.status !== 404) throw error;
+      const catalog = await this.current();
+      if (catalog.manifest.locale === locale) return catalog;
+      throw new Fault('locale_missing', 'This language has not been published', 404);
+    }
     const pointer = decode(() => {
       const value: unknown = JSON.parse(buffer.toString('utf8'));
-      assertPointer(value);
+      assertCatalogPointer(value);
       return value;
     });
     ensure(digest.test(pointer.id), 'Invalid catalog pointer identity');
-    return this.get(pointer.id);
+    const catalog = await this.get(pointer.id);
+    if (locale && catalog.manifest.locale !== locale) throw new Fault('locale_mismatch', 'Language pointer refers to a different language');
+    return catalog;
   }
 
   get(id: string): Promise<Catalog> {

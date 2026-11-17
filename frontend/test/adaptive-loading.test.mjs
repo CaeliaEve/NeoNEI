@@ -16,18 +16,6 @@ test('fast paging predicts ahead, resets on reversal/filter and never prefetches
  assert.deepEqual(plan('iron','',0,72,120)(73),[72]);
 });
 
-test('first-frame warming excludes hidden alternatives and shares each atlas read', async()=>{
- const api=await import('../src/browser/warm-frames.ts').catch(()=>null);assert.ok(api,'first-frame warm missing');
- const f=path=>({path,x:0,y:0,width:16,height:16,ticks:1});
- const detail={recipe:{inputs:[{kind:'item',choices:[{id:'a'},{id:'hidden'}]}],outputs:[{kind:'fluid',id:'b'}],view:null},
- related:{items:[{id:'a',icon:'ta'},{id:'hidden',icon:'hidden'}],fluids:[{id:'b',icon:'tb'}],
- textures:[{id:'hidden',frames:[f('huge')]},{id:'ta',frames:[f('a'),f('animation')]},{id:'tb',frames:[f('b')]}],views:[],tracks:[],categories:[]}};
- assert.deepEqual(api.firstFrames(detail).map(x=>x.path),['a','b']);
- const controller=new AbortController();let released=0;const frames=[];
- await api.warmFrames(api.firstFrames(detail),async frame=>{frames.push(frame.path);controller.abort();return {release(){released++;}};},controller.signal);
- assert.deepEqual(frames,['a']);assert.equal(released,1);
-});
-
 test('corrupt cached bytes are replaced only after the same declared asset verifies',async()=>{
  const api=await import('../src/browser/verified-cache.ts').catch(()=>null);assert.ok(api,'verified cache missing');
  const good=new TextEncoder().encode('native pixels'),file={bytes:good.length,sha256:createHash('sha256').update(good).digest('hex')};
@@ -62,7 +50,7 @@ test('failed replacement shell install preserves the previous offline shell',asy
  const stored=new Set(['neonei.shell.previous']);const handlers={};let work;
  const cache={match:async()=>undefined};
  const scope={location:{origin:'http://localhost'},registration:{active:{}},clients:{matchAll:async()=>[]},addEventListener:(kind,handler)=>handlers[kind]=handler};
- runInNewContext(bundle.outputFiles[0].text,{self:scope,URL,Response,Request,TextEncoder,TextDecoder,Uint8Array,crypto,
+ runInNewContext(bundle.outputFiles[0].text,{self:scope,URL,Response,Request,TextEncoder,TextDecoder,Uint8Array,crypto,structuredClone,
   caches:{keys:async()=>[...stored],open:async name=>{stored.add(name);return cache;},delete:async name=>stored.delete(name)},fetch:async()=>new Response('',{status:503})});
  handlers.install({waitUntil(value){work=value;}});await assert.rejects(work,/unavailable/);
  assert.ok(stored.has('neonei.shell.previous'),'failed install removed the working offline shell');
@@ -102,4 +90,53 @@ test('a new recipe first frame overtakes pending animation frames',async context
  const background=atlas.acquireFrame(frame(16),undefined,10),foreground=atlas.acquireFrame(frame(32));
  release();const leases=await Promise.all([first,background,foreground]);leases.forEach(x=>x.release());
  assert.deepEqual(seen,[0,32,16]);
+});
+
+test('browser, recipe and animation bitmap reads reserve a foreground decode slot',async context=>{
+ const {decodeImage}=await import('../src/catalog/image-decoder.ts');
+ const original=Object.getOwnPropertyDescriptor(globalThis,'createImageBitmap');
+ const seen=[];let releaseBackground;
+ Object.defineProperty(globalThis,'createImageBitmap',{configurable:true,value:async source=>{
+  seen.push(source);
+  if(source==='animation-one')await new Promise(resolve=>releaseBackground=resolve);
+  return {width:16,height:16,close(){}};
+ }});
+ context.after(()=>{releaseBackground?.();if(original)Object.defineProperty(globalThis,'createImageBitmap',original);else delete globalThis.createImageBitmap;});
+ const signal=new AbortController().signal;
+ const first=decodeImage('animation-one',signal,10);
+ const queued=decodeImage('animation-two',signal,10);
+ const visible=await decodeImage('visible-recipe',signal,0);visible.close();
+ assert.deepEqual(seen,['animation-one','visible-recipe']);
+ releaseBackground();(await first).close();(await queued).close();
+ assert.deepEqual(seen,['animation-one','visible-recipe','animation-two']);
+});
+
+test('an abandoned in-flight bitmap closes when its native decode finishes',async context=>{
+ const {decodeImage}=await import('../src/catalog/image-decoder.ts');
+ const original=Object.getOwnPropertyDescriptor(globalThis,'createImageBitmap');
+ let release,started,closed=0;const waiting=new Promise(resolve=>started=resolve);
+ Object.defineProperty(globalThis,'createImageBitmap',{configurable:true,value:async()=>{
+  started();await new Promise(resolve=>release=resolve);
+  return {width:16,height:16,close(){closed++;}};
+ }});
+ context.after(()=>{release?.();if(original)Object.defineProperty(globalThis,'createImageBitmap',original);else delete globalThis.createImageBitmap;});
+ const controller=new AbortController(),request=decodeImage(new Blob(['page']),controller.signal);
+ await waiting;controller.abort();await assert.rejects(request,{name:'AbortError'});
+ release();await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(closed,1);
+});
+
+test('a cold speculative atlas does not block a visible first frame', {timeout:2000},async context=>{
+ const {Atlas}=await import('../src/catalog/atlas.ts');const original=Object.getOwnPropertyDescriptor(globalThis,'createImageBitmap');
+ const buffers=[Buffer.from('background'),Buffer.from('visible')],files=buffers.map(bytes=>{const sha256=createHash('sha256').update(bytes).digest('hex');return {kind:'image',bytes:bytes.length,sha256,path:`textures/${sha256}.webp`};});
+ let release,started;const waiting=new Promise(resolve=>started=resolve);
+ Object.defineProperty(globalThis,'createImageBitmap',{configurable:true,value:async()=>({width:16,height:16,close(){}})});
+ const atlas=new Atlas({files},'',new AbortController().signal,async file=>{
+  if(file===files[0]){started();await new Promise(resolve=>release=resolve);return buffers[0];}return buffers[1];
+ });
+ context.after(()=>{release?.();atlas.close();if(original)Object.defineProperty(globalThis,'createImageBitmap',original);else delete globalThis.createImageBitmap;});
+ const frame=path=>({path,x:0,y:0,width:16,height:16,ticks:1});
+ const background=atlas.acquireFrame(frame(files[0].path),undefined,10);await waiting;
+ const foreground=await atlas.acquireFrame(frame(files[1].path));foreground.release();
+ release();(await background).release();
 });

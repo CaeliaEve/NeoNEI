@@ -28,15 +28,9 @@ export function useHomeGridViewport(itemSize: Ref<number>) {
     return columnCount * rows;
   };
 
-  const measureVisibleGridCapacity = (pageSize: Ref<number>) => {
+  const measureVisibleGridCapacity = () => {
     const capacity = measureGridCapacityRaw();
     if (!capacity) return null;
-    const baseline = Math.max(20, pageSize.value);
-    const lowerBound = Math.max(20, Math.floor(baseline * 0.75));
-    const upperBound = Math.max(lowerBound, Math.ceil(baseline * 1.5));
-    if (capacity < lowerBound || capacity > upperBound) {
-      return null;
-    }
     return capacity;
   };
 

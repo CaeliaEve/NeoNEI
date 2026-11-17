@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue';
+import {t} from '../i18n/index.ts';
 import { api, type Item } from '../services/api';
 import { useFloatingTooltip } from '../composables/useFloatingTooltip';
 import ThaumcraftTooltip from './ThaumcraftTooltip.vue';
@@ -201,7 +202,7 @@ onBeforeUnmount(() => {
       >
         <div v-if="loading" class="tooltip-loading">
           <div class="mini-spinner"></div>
-          <span>加载中...</span>
+          <span>{{t('加载中…')}}</span>
         </div>
 
         <template v-else-if="resolvedItemData">
@@ -220,21 +221,21 @@ onBeforeUnmount(() => {
           </div>
 
           <div v-if="count && count > 1" class="item-count-badge">
-            数量：{{ count }}
+            {{t('数量')}}: {{ count }}
           </div>
 
           <div class="tooltip-details">
             <div v-for="line in extraLines" :key="line" class="detail-row detail-row--extra">
-              <span class="detail-label">附加</span>
+              <span class="detail-label">{{t('附加')}}</span>
               <span class="detail-value">{{ line }}</span>
             </div>
             <div class="detail-row">
-              <span class="detail-label">堆叠</span>
+              <span class="detail-label">{{t('堆叠')}}</span>
               <span class="detail-value">{{ resolvedItemData.maxStackSize }}</span>
             </div>
 
             <div v-if="resolvedItemData.maxDamage > 0" class="detail-row">
-              <span class="detail-label">耐久</span>
+              <span class="detail-label">{{t('耐久')}}</span>
               <span class="detail-value">{{ resolvedItemData.maxDamage }}</span>
             </div>
 
@@ -253,7 +254,7 @@ onBeforeUnmount(() => {
           <div class="projection-info">
             <p class="projection-id">{{ projectedItemData.localizedName }}</p>
             <p class="projection-subtitle">{{ projectedItemData.modId }} / {{ projectedItemData.internalName }}</p>
-            <p v-if="count && count > 1" class="projection-count">数量：{{ count }}</p>
+            <p v-if="count && count > 1" class="projection-count">{{t('数量')}}: {{ count }}</p>
           </div>
         </div>
       </div>

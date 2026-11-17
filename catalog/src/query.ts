@@ -1,9 +1,16 @@
-import type { Entry, Recipe, Category, PropertyValue, Item, Fluid, View, Text, Texture, Reference, Topic, TopicKind, Material, Circuit, Species, Mutation, Gene, Track } from '@elysium/contracts';
+import {validateRecipe} from './recipe-validation.ts';
+import type { Entry, Recipe, Category, PropertyValue, Item, Fluid, Text, Texture, Reference, Topic, TopicKind, Material, Circuit, Species, Mutation, Gene } from '@elysium/contracts';
+import {gtNativeReferences} from './gt-probability.ts';
 import { Catalog, Fault } from './store.ts';
+import {validateBotaniaRecipe} from './botania.ts';
 import { quantityBounds } from './quantity.ts';
 import type { Structure, Shape, Build, Block, Model } from '@elysium/contracts';
-import type { Aspect, Research } from '@elysium/contracts';
+import type { Aspect, Research, GeneticReferenceRow } from '@elysium/contracts';
 import type { OreGroup, OreMember } from '@elysium/contracts';
+import { StructureReferenceQuery, type StructureInformation } from './structure-references.ts';
+import { FmpQuery, type FmpInformation } from './fmp.ts';
+import {NativeBeePoolQuery} from './botania-pool.ts';
+import { XuQuery, type XuInformation } from './xu-microblock.ts';
 
 export interface Page<T> { rows: T[]; total: number; offset: number; limit: number }
 export interface Browse { query: string; mod: string; kind: 'all' | 'item' | 'fluid'; group: string; collapsed: boolean; offset: number; limit: number }
@@ -12,7 +19,7 @@ export interface TopicSearch { kind: TopicKind; item: string; query: string; off
 export interface MutationSearch { direction: 'origins' | 'crosses'; offset: number; limit: number }
 type SearchEntry = Pick<Entry, 'id' | 'kind' | 'registry' | 'order' | 'group' | 'terms'>;
 
-export interface Related { items: Item[]; fluids: Fluid[]; categories: Category[]; views: View[]; strings: Text[]; textures: Texture[]; topics: Topic[]; tracks: Track[] }
+export interface Related { items: Item[]; fluids: Fluid[]; categories: Category[]; strings: Text[]; textures: Texture[]; topics: Topic[]; fmp?: FmpInformation[]; xu?: XuInformation[] }
 export interface Facets { mods: Array<{ id: string; count: number }>; groups: Array<{ id: string; name: string; count: number; collapsed: boolean }> }
 
 function namespace(registry: string): string { return registry.includes(':') ? registry.split(':', 1)[0]! : ''; }
@@ -25,8 +32,12 @@ function memo<T>(read: () => Promise<T>): () => Promise<T> {
 
 /** Per-snapshot query state; a pointer change cannot mix records from different catalogs. */
 export class Query {
-  readonly catalog: Pick<Catalog,'manifest'|'record'|'records'|'all'|'scan'> & {directory?:(id:string)=>Promise<{recipes:Array<{id:string;category:string}>;uses:Array<{id:string;category:string}>}>};
-  constructor(catalog: Query['catalog']) { this.catalog = catalog; }
+  readonly catalog: Pick<Catalog,'manifest'|'record'|'records'|'all'|'scan'> & Partial<Pick<Catalog,'program'>> & {directory?:(id:string)=>Promise<{recipes:Array<{id:string;category:string}>;uses:Array<{id:string;category:string}>}>};
+  private readonly structureReferences:StructureReferenceQuery;
+  private readonly fmpPrograms:FmpQuery;
+  private readonly poolPrograms:NativeBeePoolQuery;
+  private readonly xuPrograms:XuQuery;
+  constructor(catalog: Query['catalog']) { this.catalog = catalog; this.structureReferences=new StructureReferenceQuery(catalog);this.fmpPrograms=new FmpQuery(catalog);this.xuPrograms=new XuQuery(catalog);this.poolPrograms=new NativeBeePoolQuery(catalog); }
 
   async directory(item:string){
     const links=await this.catalog.record('links',item);
@@ -39,7 +50,7 @@ export class Query {
     const [recipes,uses]=await Promise.all([group('recipes'),group('uses')]);
     const categories=await this.catalog.records('categories',new Set([...recipes,...uses].map(row=>row.id)));
     const strings=await this.catalog.records('strings',categories.map(row=>row.name));
-    return {links,recipes,uses,related:{categories,strings,items:[],fluids:[],textures:[],views:[],tracks:[],topics:[]} satisfies Related};
+    return {links,recipes,uses,related:{categories,strings,items:[],fluids:[],textures:[],topics:[]} satisfies Related};
   }
 
   private readonly entries = memo(async () => {
@@ -135,6 +146,7 @@ export class Query {
       }
     }
     const result = await this.catalog.records('recipes', selected);
+    for (const recipe of result) validateRecipe(recipe);
     return { rows: result, recipeIds, total, offset: options.offset, limit: options.limit,
       categories: Array.from(categories, ([id, count]) => ({ id, count })) };
   }
@@ -174,11 +186,45 @@ export class Query {
     return { item, aspects, related: await this.related([], [], { topics: aspects }) };
   }
 
-  async aspect(id: string): Promise<{ aspect: Aspect; components: Topic[]; related: Related }> {
+  private readonly aspectReferences = memo(async () => {
+    const definitions = new Map<string, GeneticReferenceRow>();
+    const members = new Map<string, GeneticReferenceRow[]>();
+    let count = 0;
+    for await (const row of this.catalog.scan('references')) {
+      if (row.data.kind === 'aspectCombinationsDefinition') definitions.set(row.domain, row);
+      else if (row.data.kind === 'aspectCombination') {
+        const rows = members.get(row.data.aspect) ?? [];
+        rows.push(row); members.set(row.data.aspect, rows);
+      } else continue;
+      if (++count > 16388) throw new Fault('reference_limit', 'Aspect reference catalogue exceeds query budget');
+    }
+    return { definitions, members };
+  });
+
+  async aspect(id: string): Promise<{ aspect: Aspect; components: Topic[]; combinations: Topic[]; references: GeneticReferenceRow[]; related: Related }> {
     const aspect = await this.catalog.record('aspects', id);
     const components = await this.catalog.records('topics', new Set(aspect.components));
-    const related = await this.related([], [], { topics: components, texts: [aspect.name, aspect.description], images: aspect.icon ? [aspect.icon] : [] });
-    return { aspect, components, related };
+    const index = await this.aspectReferences();
+    const members = index.members.get(id) ?? [];
+    const references = members.flatMap(row => {
+      const definition = index.definitions.get(row.domain);
+      if (!definition) throw new Fault('missing_reference', 'Aspect combination definition absent');
+      return [definition, row];
+    }).sort((a,b) => compare(a.domain,b.domain) || a.order-b.order);
+    const domains = new Set(members.map(row => row.domain));
+    const visibleDomains = new Set(members.filter(row => row.data.kind === 'aspectCombination' && row.data.visible).map(row => row.domain));
+    const combinationIds = new Set<string>();
+    for (const rows of index.members.values()) for (const row of rows) {
+      if (visibleDomains.has(row.domain) && row.data.kind === 'aspectCombination' && row.data.visible
+        && row.data.components.includes(id)) combinationIds.add(row.data.aspect);
+    }
+    const combinations = await this.catalog.records('topics', [...combinationIds].sort(compare));
+    const categories: Category[] = [];
+    if (domains.size) for await (const category of this.catalog.scan('categories')) {
+      if (category.reference && domains.has(category.reference)) categories.push(category);
+    }
+    const related = await this.related([], categories.map(category => category.id), { topics: [...components,...combinations], texts: [aspect.name, aspect.description], images: aspect.icon ? [aspect.icon] : [] });
+    return { aspect, components, combinations, references, related };
   }
 
   async research(id: string): Promise<{ research: Research; references: Topic[]; related: Related }> {
@@ -201,7 +247,7 @@ export class Query {
     return { material, components, related };
   }
 
-  async structure(id: string): Promise<{ structure: Structure; related: Related }> {
+  async structure(id: string): Promise<{ structure: Structure; information:StructureInformation|null; related: Related }> {
     const structure = await this.catalog.record('structures', id);
     const targets = [structure.controller, ...structure.pieces.flatMap(piece => piece.rules.flatMap(rule => rule.placements ?? []))];
     const related = await this.related([], [], {
@@ -209,7 +255,14 @@ export class Query {
       texts: [structure.name, ...structure.description, ...(structure.problem ? [structure.problem] : []),
         ...structure.variants.flatMap(variant => variant.problem ? [variant.problem] : [])],
     });
-    return { structure, related };
+    return { structure, information:await this.structureReferences.information(id), related };
+  }
+
+  async structureComponents(id:string,offset:number,limit:number) {
+    await this.catalog.record('structures',id);
+    const page=await this.structureReferences.page(id,offset,limit);
+    const ids=[...new Set(page.rows.flatMap(row=>row.data.items))];
+    return {...page,related:await this.related([],[],{targets:ids.map(id=>({kind:'item' as const,id}))})};
   }
 
   async shapes(id: string, name: string, offset: number, limit: number): Promise<Page<Shape>> {
@@ -278,16 +331,19 @@ export class Query {
 
   /** Hydrates page references in small batches, with an explicit per-response budget. */
   async related(recipes: Recipe[], categories: string[] = [], additions: { targets?: Reference[]; texts?: string[]; values?: PropertyValue[]; images?: string[]; topics?: Topic[] } = {}): Promise<Related> {
+    const fmp=await Promise.all(recipes.filter(recipe=>recipe.process?.kind==='fmpMicroblock').map(recipe=>this.fmpPrograms.information(recipe)));
+    const xu=await Promise.all(recipes.filter(recipe=>recipe.process?.kind==='xuMicroblock').map(recipe=>this.xuPrograms.information(recipe)));
     const items = new Set<string>(), fluids = new Set<string>(), strings = new Set<string>();
-    const textures = new Set<string>(additions.images), views = new Set<string>(), categoryIds = new Set(categories);
+    const textures = new Set<string>(additions.images), categoryIds = new Set(categories);
     const topicRows = new Map((additions.topics ?? []).map(topic => [topic.id, topic]));
-    const topicIds = new Set<string>(), tracks = new Set<string>();
+    const topicIds = new Set<string>();
     const budget = (): void => {
-      if (items.size + fluids.size + strings.size + textures.size + views.size + categoryIds.size + topicIds.size + topicRows.size + tracks.size > 32768) {
+      if (items.size + fluids.size + strings.size + textures.size + categoryIds.size + topicIds.size + topicRows.size > 32768) {
         throw new Fault('result_limit', 'This page exceeds the reference budget; request a smaller page');
       }
     };
     const substance = (kind: 'item' | 'fluid', id: string): void => { (kind === 'item' ? items : fluids).add(id); };
+    for(const material of fmp)substance('item',material.block);
     for (const target of additions.targets ?? []) substance(target.kind, target.id);
     for (const text of additions.texts ?? []) strings.add(text);
     const property = (value: PropertyValue): void => {
@@ -298,8 +354,32 @@ export class Query {
     };
     for (const value of additions.values ?? []) property(value);
     for (const recipe of recipes) {
+      validateRecipe(recipe);
       categoryIds.add(recipe.category);
-      if (recipe.view) views.add(recipe.view);
+      for (const note of recipe.notes ?? []) strings.add(note.text);
+      if (recipe.gtNative) for (const reference of gtNativeReferences(recipe.gtNative)) {
+        substance(reference.kind, reference.id); budget();
+      }
+      if(recipe.process?.kind==='botaniaPool')for(const observation of recipe.process.selection?.coercions??[]){substance('item',observation.input);budget();}
+      if(recipe.process?.kind==='arcaneSpecial'){
+        for(const id of Object.values(recipe.process.roles))substance('item',id);
+        for(const id of Object.values(recipe.process.aspects))topicIds.add(id);
+        budget();
+      }
+      if(recipe.process?.kind==='nativeInfusion'||recipe.process?.kind==='nativeRunic'){
+        for(const state of recipe.process.pattern.states){substance('item',state.id);budget();}
+        if(recipe.process.kind==='nativeInfusion')for(const aspect of [...recipe.process.baseAspects,...(recipe.process.randomAspects?.bases??[])]){topicIds.add(aspect.aspect);budget();}
+      }
+      if(recipe.process?.kind==='disguiseInfusion'){
+        for(const state of recipe.process.states){substance('item',state.id);budget();}
+      }
+      if (recipe.process?.kind === 'railcraftBlast') {
+        for (const fuel of recipe.process.fuel.allowed) { substance('item', fuel.item); budget(); }
+      }
+      if(recipe.process?.kind==='bloodAlchemy'||recipe.process?.kind==='logisticsSoldering'||recipe.process?.kind==='randomThingsImbuing'){
+        substance('item',recipe.process.result.id);
+        if(recipe.process.kind==='bloodAlchemy')for(const group of recipe.process.containers)for(const c of group)if(c){substance('item',c.id);budget();}
+      }
       if (recipe.process?.kind === 'vat') {
         for (const c of recipe.process.extra) substance('item', c.id);
         if (recipe.process.zeroOutput) substance('fluid', recipe.process.zeroOutput);
@@ -316,11 +396,18 @@ export class Query {
           substance('item',prior.soul.vessel);substance('item',prior.material.id);budget();
         }
       }
-      if (recipe.process?.kind === 'rolling' || recipe.process?.kind === 'qed' || recipe.process?.kind === 'galaxyspace-assembly') {
+      if (recipe.process?.kind === 'rolling' || recipe.process?.kind === 'qed' || recipe.process?.kind === 'galaxyspace-assembly' || recipe.process?.kind === 'extremeCrafting') {
         for (const prior of recipe.process.earlier) for (const choices of prior.inputs) {
           for (const choice of choices) substance('item', choice.id);
           budget();
         }
+      }
+      if (recipe.process?.kind === 'extremeCrafting' || recipe.process?.kind === 'galaxyspace-assembly') {
+        for (const repair of recipe.process.repair) { substance('item', repair.item); budget(); }
+      }
+      if (recipe.process?.kind === 'bannerPattern') {
+        for (const dye of recipe.process.palette) { substance('item', dye.id); budget(); }
+        for (const rule of recipe.process.rules) if (rule.catalyst) { substance('item', rule.catalyst); budget(); }
       }
       if (recipe.process?.kind === 'buildcraftRefinery') {
         for (const prior of recipe.process.earlier) for (const fluid of prior) { substance('fluid', fluid.id); budget(); }
@@ -335,6 +422,28 @@ export class Query {
           budget();
         }
       }
+      if (recipe.process?.kind === 'gtCrafting') {
+        substance('item', recipe.process.prototype.id);
+        substance('item', recipe.process.base.id);
+      }
+      if(recipe.process?.kind==='ic2Advanced')substance('item',recipe.process.prototype.id);
+      if(recipe.process?.kind==='galacticraftRefinery')substance('fluid',recipe.process.normalizedOil);
+      if(recipe.process?.kind==='witcheryDistillery'){
+        substance('item',recipe.process.jar);
+        for(const prototype of recipe.process.outputs)if(prototype)substance('item',prototype.id);
+        for(const rule of [recipe.process,...recipe.process.earlier]){for(const reagent of rule.reagents)if(reagent)substance('item',reagent.item);budget();}
+      }
+      if(recipe.process?.kind==='witcheryNativeOven')for(const id of Object.values(recipe.process.roles))substance('item',id);
+      if(recipe.process?.kind==='bloodmagic-meteor'){
+        const p=recipe.process;
+        for(const entry of [...p.ores,...p.filler,p.fallback,...p.reagents.flatMap(r=>r.filler)]){if(entry.id)substance('item',entry.id);budget();}
+      }
+      if(recipe.process?.kind==='chisel'){
+        substance('item',recipe.process.target);
+        for(const source of recipe.process.sources){substance('item',source.item);for(const target of source.targets)substance('item',target.item);budget();}
+        for(const tool of recipe.process.tools){substance('item',tool.item);budget();}
+      }
+      if(recipe.process?.kind==='xuMicroblock')substance('item',recipe.process.prototype.id);
       if (recipe.magic) {
         for (const cost of recipe.magic.aspects) topicIds.add(cost.aspect);
         for (const aspect of Object.keys(recipe.magic.payment?.charges ?? {})) topicIds.add(aspect);
@@ -355,8 +464,9 @@ export class Query {
         substance(output.kind, output.id);
         if (output.change) {
           for (const sample of output.change.samples) substance('item', sample.id);
-          if (output.change.action.kind === 'merge') substance('item', output.change.action.base.id);
-          if (output.change.action.kind === 'soul' || output.change.action.kind === 'floatingFlower') substance('item',output.change.action.base);
+          if (output.change.action.kind === 'merge'||output.change.action.kind==='nativeInfusionMerge') substance('item', output.change.action.base.id);
+          if (output.change.action.kind === 'craftingNbt') substance('item', output.change.action.base.id);
+          if (output.change.action.kind === 'soul' || output.change.action.kind === 'floatingFlower' || output.change.action.kind === 'nativeFloatingFlower') substance('item',output.change.action.base);
           if ((output.change.action as { kind: 'filter'; base: { id: string } }).kind === 'filter') substance('item', (output.change.action as { base: { id: string } }).base.id);
         }
       }
@@ -371,31 +481,41 @@ export class Query {
     const categoryRows = await this.catalog.records('categories', categoryIds);
     for (const category of categoryRows) {
       strings.add(category.name);
+      for (const note of category.notes ?? []) strings.add(note.text);
       if (category.icon) substance(category.icon.kind, category.icon.id);
       category.machines.forEach(machine => substance(machine.kind, machine.id));
-      if (category.view) views.add(category.view);
     }
     budget();
-    const [itemRows, fluidRows, viewRows] = await Promise.all([
+    const [itemRows, fluidRows] = await Promise.all([
       this.catalog.records('items', items),
       this.catalog.records('fluids', fluids),
-      this.catalog.records('views', views),
     ]);
+    if(recipes.some(r=>r.process?.kind==='nativeBotaniaPool')){
+      const facts=new Map(itemRows.map(item=>[item.id,item]));
+      for(const recipe of recipes)if(recipe.process?.kind==='nativeBotaniaPool'){
+        const category=categoryRows.find(c=>c.id===recipe.category);
+        if(!category)throw new Fault('invalid_pool','Missing native pool category');
+        await this.poolPrograms.validate(recipe,category,facts);
+      }
+    }
+    if(recipes.length){
+      const facts=new Map(itemRows.map(item=>[item.id,item]));
+      const fluidFacts=new Map(fluidRows.map(fluid=>[fluid.id,fluid]));
+      for(const recipe of recipes) validateRecipe(recipe,facts,fluidFacts);
+    }
     for (const item of itemRows) { strings.add(item.name); item.tooltip.forEach(line => strings.add(line)); if (item.icon) textures.add(item.icon); }
     for (const fluid of fluidRows) { strings.add(fluid.name); if (fluid.icon) textures.add(fluid.icon); }
-    for (const view of viewRows) for (const element of view.elements) {
-      if (element.kind === 'sprite' || element.kind === 'clip') textures.add(element.asset);
-      if (element.kind === 'clip') tracks.add(element.track);
-      if (element.kind === 'text') strings.add(element.text);
-      if (element.kind === 'tooltip') element.lines.forEach(line => strings.add(line));
-    }
     budget();
-    const [textRows, textureRows, trackRows] = await Promise.all([
+    const [textRows, textureRows] = await Promise.all([
       this.catalog.records('strings', strings),
       this.catalog.records('textures', textures),
-      this.catalog.records('tracks', tracks),
     ]);
-    return { items: itemRows, fluids: fluidRows, categories: categoryRows, views: viewRows, strings: textRows, textures: textureRows, topics: [...topicRows.values()], tracks: trackRows };
+    if(recipes.some(recipe=>recipe.process?.kind==='botaniaRunic'&&(recipe.process.head||recipe.process.earlierHeads?.length))){
+      const textFacts=new Map(textRows.map(text=>[text.id,text]));
+      const itemFacts=new Map(itemRows.map(item=>[item.id,item]));
+      for(const recipe of recipes)validateBotaniaRecipe(recipe,itemFacts,textFacts,this.catalog.manifest.locale);
+    }
+    return { items: itemRows, fluids: fluidRows, categories: categoryRows, strings: textRows, textures: textureRows, topics: [...topicRows.values()], ...(fmp.length?{fmp}: {}), ...(xu.length?{xu}: {}) };
   }
 }
 

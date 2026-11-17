@@ -16,6 +16,7 @@ export function offline(root: string): Plugin {
   const publicAssets = ['fonts', 'sounds', 'textures', 'native', 'placeholder.png', 'placeholder-fluid.png'];
   let config: ResolvedConfig;
   let build = '';
+  const emitted = new Set<string>();
   return {
     name: 'catalog-offline-shell',
     apply: 'build',
@@ -43,14 +44,26 @@ export function offline(root: string): Plugin {
       return { define: { __APP_BUILD__: JSON.stringify(build) } };
     },
     configResolved(value) { config = value; },
+    buildStart() { emitted.clear(); },
+    writeBundle(_options, output) {
+      // Includes Vite's emitted worker chunks and lazy routes. Output directories
+      // may contain older builds; their files do not belong to this shell.
+      for (const file of Object.values(output)) emitted.add(file.fileName);
+    },
     async closeBundle() {
       const output = path.resolve(config.root, config.build.outDir);
+      const selected = new Set([...emitted].map(name => path.join(output, name)));
       // Ship the UI's static assets, never development pages or the retired worker.
       for (const name of publicAssets) {
         const source = path.join(root, 'public', name);
-        if (existsSync(source)) cpSync(source, path.join(output, name), { recursive: true });
+        if (existsSync(source)) {
+          cpSync(source, path.join(output, name), { recursive: true });
+          const current = name.includes('.') ? [source] : files(source);
+          for (const file of current) selected.add(path.join(output, path.relative(path.join(root, 'public'), file)));
+        }
       }
-      const assets = files(output).filter(file => !file.endsWith('.map') && path.basename(file) !== 'sw.js');
+      const assets = [...selected].filter(file => !file.endsWith('.map') && path.basename(file) !== 'sw.js').sort();
+      if (!selected.has(path.join(output, 'index.html'))) throw new Error('Offline application build has no emitted entry page');
       const bytes = assets.reduce((total, file) => total + readFileSync(file).byteLength, 0);
       if (assets.length > 512 || bytes > 32 * 1024 * 1024) throw new Error('Offline application shell exceeds its budget');
       const manifest = { build, files: assets.map(file => ({

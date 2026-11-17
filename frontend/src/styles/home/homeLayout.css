@@ -71,9 +71,46 @@
 
 .items-column {
   width: var(--home-right-width);
+  container: home-browser / inline-size;
 }
+
+.homepage-shell--resizing { user-select: none; }
+.items-column .pagination-top { gap: 4px; padding-inline: 12px; flex-shrink: 0; }
+.items-column .pager-capsule { gap: 6px; }
+@container home-browser (max-width: 280px) {
+  .items-column .pagination-top { flex-wrap: wrap; padding-inline: 8px; gap: 4px 8px; }
+  .items-column .pager-capsule { order: 3; flex-shrink: 0; gap: 4px; padding-inline: 4px; }
+  .items-column .pager-arrow-btn { width: 24px; height: 24px; }
+  .items-column .pager-divider { margin-inline: 4px; }
+  .items-column .history-strip__hint { display: none; }
+  .items-column .history-strip__toolbar { gap: 2px; font-size: 10px; }
+  .items-column .history-strip__toolbar button { padding-inline: 3px; }
+}
+.panel-layout-storage-error { position: fixed; bottom: 8px; right: 16px; z-index: 60; max-width: 280px; padding: 6px 10px; font-size: 12px; color: #fbbf24; background: #0f172a; border-radius: 6px; }
 
 .history-strip {
   border: none;
 }
 
+
+/* One mounted browser/history shell; only the left content changes with the route. */
+.workspace-left { position: absolute; inset: 0 calc(var(--home-right-width) + 8px) 0 0; display: flex; flex-direction: column; min-width: 0; }
+.workspace-left--expanded { right: 0; }
+.workspace-content { flex: 1; min-height: 0; overflow: auto; padding: 8px 16px 96px; container: workspace-content / inline-size; }
+.workspace-content .catalog-page { min-height: 0; padding: 8px 0; }
+.workspace-content .catalog-page .site-footer { display: none; }
+.workspace-content .recipe-by-id-page { min-height: 0; padding: 12px; background: transparent; }
+.workspace-content .recipe-preview-panel { left: auto; width: 100%; }
+.workspace-content .industry-workspace { gap: 12px; grid-template-columns: minmax(170px, 220px) minmax(0, 1fr); }
+.workspace-content .panel-heading { padding: 12px; }
+.workspace-content .industry-body { padding: 0 12px 12px; }
+.workspace-browser-toggle { align-self: flex-end; font-size: 10px; color: #8ba4bc; padding: 2px 14px; cursor: pointer; }
+.homepage-shell .mod-filter-anchor { top: auto; bottom: 42px; }
+.homepage-shell .chrome-search-input { background: #101722; color: #dce8f6; border: 1px solid #34485b; }
+@container workspace-content (max-width: 640px) { .workspace-content .industry-workspace { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 700px) {
+  .homepage-shell .workspace-left { right: 0; z-index: 35; background: #090d14; }
+  .homepage-shell .items-column { width: 100% !important; padding-top: 68px; }
+  .homepage-shell--mobile-browser .workspace-left { bottom: auto; }
+  .homepage-shell .mod-filter-anchor, .homepage-shell .search-anchor { left: 8px !important; width: calc(100% - 16px) !important; max-width: none !important; }
+}

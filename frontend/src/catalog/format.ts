@@ -1,9 +1,10 @@
+import { t, language } from "../i18n/index.ts";
 import type { Chance } from '@elysium/contracts';
 
-export function amount(value: string): string { return BigInt(value).toLocaleString('zh-CN'); }
+export function amount(value: string): string { return BigInt(value).toLocaleString(language.value); }
 export function ticks(value: string): string {
   const count = BigInt(value);
-  if (count < 0n) return '原生耗时异常（' + value + ' tick）';
+  if (count < 0n) return t("原生耗时异常（{0} tick）", value);
   const fraction = String((count % 20n) * 5n).padStart(2, '0').replace(/0+$/, '');
   return amount(String(count / 20n)) + (fraction ? '.' + fraction : '') + ' s';
 }
@@ -18,5 +19,5 @@ export function plain(text: string): string { return text.replace(/§[0-9a-fk-or
 export function color(argb: number): string {
   return 'rgba(' + ((argb >>> 16) & 255) + ',' + ((argb >>> 8) & 255) + ',' + (argb & 255) + ',' + ((argb >>> 24) / 255) + ')';
 }
-export const units = { count: '个', tick: 'tick', eu: 'EU', eu_per_tick: 'EU/t', mb: 'mB', kelvin: 'K', pascal: 'Pa',
+export const units = { get count(){return t("个");}, tick: 'tick', eu: 'EU', eu_per_tick: 'EU/t', mb: 'mB', kelvin: 'K', pascal: 'Pa',
   rpm: 'RPM', mana: 'Mana', lp: 'LP', vis: 'Vis', percent: '%' } as const;

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t, language } from "../i18n/index.ts";
 import type { PropertyValue } from '@elysium/contracts';
 import { Catalog, Records } from '../catalog/client.ts';
 import { amount, units } from '../catalog/format.ts';
@@ -13,7 +14,7 @@ const emit = defineEmits<{ select: [id: string, direction: 'recipes' | 'uses'] }
   <span v-else-if="value.kind === 'decimal'">{{ value.value }}</span>
   <span v-else-if="value.kind === 'quantity'">{{ amount(value.amount) }} {{ units[value.unit] }}</span>
   <GameText v-else-if="value.kind === 'text'" :text="records.text(value.text)" />
-  <span v-else-if="value.kind === 'flag'">{{ value.value ? '是' : '否' }}</span>
+  <span v-else-if="value.kind === 'flag'">{{ value.value ? t("是") : t("否") }}</span>
   <ItemLink v-else-if="value.kind === 'reference'" :target="value.target" :catalog="catalog" :records="records" :animate="animate"
     @select="(id, direction) => emit('select', id, direction)" />
   <span v-else-if="value.kind === 'symbol'" :title="value.namespace">{{ value.value }}</span>

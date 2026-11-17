@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import {errorMessage} from '../i18n/errors.ts';
+import {t} from '../i18n/index.ts';
 import { shallowRef, watch } from 'vue';
 import type { Texture } from '@elysium/contracts';
 import type { Catalog } from '../catalog/client';
@@ -14,10 +16,10 @@ watch(() => props.id, async (id, _old, cleanup) => {
     const entry = await catalog.record('browse', id, controller.signal);
     const texture = entry.icon ? await catalog.record('textures', entry.icon, controller.signal) : null;
     if (!controller.signal.aborted) current.value = { catalog, texture };
-  } catch (cause) { if (!controller.signal.aborted) error.value = cause instanceof Error ? cause.message : String(cause); }
+  } catch (cause) { if (!controller.signal.aborted) error.value = errorMessage(cause); }
 }, { immediate: true });
 </script>
 <template>
   <Icon v-if="current" :atlas="current.catalog.atlas" :texture="current.texture" :width="size" :height="size" :label="label" :animate="animate" />
-  <span v-else :title="error" :style="{ width: size + 'px', height: size + 'px' }" aria-label="纹理未就绪">◇</span>
+  <span v-else :title="error" :style="{ width: size + 'px', height: size + 'px' }" :aria-label="t('未采集纹理')">◇</span>
 </template>

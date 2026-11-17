@@ -11,9 +11,54 @@ function integer(value: string | null | undefined, minimum = 1n): bigint {
 /** Preserve process correlation in the records; return conservative display bounds without sampling. */
 export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint, bigint] {
   const rule = output.quantity;
-  if (!rule) { const value = integer(output.amount); return [value, value]; }
+  if (!rule) {
+    if(recipe.process?.kind==='nativeBotaniaPool')return [0n,2147483647n];
+    if(recipe.process?.kind==='wirelessTerminalUpgrade'){
+      ensure(output.kind==='item'&&output.role==='result'&&output.change!=null,'Wireless result must copy the offered stack');
+      return [1n,2147483647n];
+    }
+    if (recipe.process?.kind === 'chisel' && output.change?.action.kind === 'chiselTool') {
+      ensure(output.kind === 'item' && output.role === 'return', '凿子变更要求保留工具归还项');
+      return [0n, 2147483647n];
+    }
+    const value = integer(output.amount); return [value, value];
+  }
   ensure(output.amount == null && output.change == null
     && output.chance.numerator === '1' && output.chance.denominator === '1', '关联产量含冲突的固定字段');
+
+  if (rule.kind === 'spaceAcquisition') {
+    const process = recipe.process;
+    ensure(process?.kind === 'spaceAcquisition' && output.kind === 'fluid' && rule.nominal === process.baseAmount, '太空产量缺少原生采集条件');
+    const nominal = integer(rule.nominal);
+    ensure(nominal <= 2147483647n, '原生流体基数超出范围');
+    return [0n, process.operation === 'pump' ? nominal * 64n * 128n * 4n : 2147483647n];
+  }
+
+  if (rule.kind === 'lootBag') {
+    ensure(recipe.process?.kind === 'lootBagOpening' && output.kind === 'item', '战利品袋数量缺少原生开袋规则');
+    return [0n, 9223372036854775807n];
+  }
+
+  if (rule.kind === 'bloodAltar') {
+    ensure(recipe.process?.kind === 'bloodmagic-altar' && !recipe.process.canBeFilled && output.kind === 'item', '祭坛产量缺少整叠转换过程');
+    ensure(integer(rule.nominal) <= 2147483647n, '祭坛原生产量超出范围');
+    return [0n, 2147483647n];
+  }
+
+  if (rule.kind === 'harvest') {
+    const process = recipe.process;
+    ensure(process?.kind === 'harvestDrops' && output.kind === 'item', '收获产量缺少共享抽取过程');
+    ensure(Number.isInteger(process.draws) && process.draws > 0 && process.draws <= 2147483647
+      && process.weights.length > 0 && process.weights.length <= 128
+      && process.weights.every(weight => Number.isInteger(weight) && weight >= 0 && weight <= 4294967295), '收获抽取次数或权重无效');
+    const total = process.weights.reduce((sum, weight) => sum + BigInt(weight), 0n);
+    const weight = process.weights[output.slot];
+    ensure(total > 0n && total <= 2147483647n && weight !== undefined, '收获权重合计或槽位无效');
+    const nominal = integer(rule.nominal);
+    ensure(nominal <= 2147483647n, '收获单次产量超出范围');
+    const high = weight === 0 ? 0n : nominal * BigInt(process.draws);
+    return [BigInt(weight) === total ? high : 0n, high];
+  }
 
   if (rule.kind === 'squeezer') {
     ensure(recipe.process?.kind === 'forestrySqueezer' && /^(0|-?[1-9][0-9]*)$/.test(rule.nominal), '榨汁机产量缺少原生过程或数量无效');
@@ -73,6 +118,23 @@ export function quantityBounds(recipe: Recipe, output: Output): readonly [bigint
       ensure(typeof rule.sample === 'string' && /^(0|[1-9][0-9]*)$/.test(rule.sample), '样本数量不是非负整数');
       const sampleVal = BigInt(rule.sample);
       ensure(sampleVal <= maxVal, '潜在样本数量超出声明的标称上限');
+    }
+    if (rule.stat === 'binnie:geneticTransform') {
+      const process = recipe.process;
+      ensure(process?.kind === 'binnie_genetics', '基因产量缺少对应的原生处理过程');
+      let upper = 1n;
+      if (output.kind === 'fluid') {
+        ensure(process.machine === 'genepool', '动态基因流体产量要求基因池');
+        upper = process.domain.rootClass === 'forestry.apiculture.genetics.BeeHelper' ? 50n : 10n;
+      }
+      ensure(maxVal <= upper, '基因样本数量超过原生产量范围');
+      return [0n, upper];
+    }
+    if (rule.stat === 'chisel:selection') {
+      const process = recipe.process;
+      ensure(process?.kind === 'chisel' && output.kind === 'item'
+        && maxVal === BigInt(process.mode === 'stack' ? 1 : process.targetCount), '凿子产量与原生选择不一致');
+      return [0n, process.mode === 'stack' ? 2147483647n : maxVal];
     }
     return [0n, maxVal];
   }

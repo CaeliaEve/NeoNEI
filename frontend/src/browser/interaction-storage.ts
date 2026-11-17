@@ -1,4 +1,4 @@
-import type {Part} from '@neonei/catalog/source';
+import type {Part,CatalogManifest} from '@neonei/catalog/source';
 import {verifiedCachedBytes} from './verified-cache';
 import {visualStorage} from './visual-storage';
 import {animationStorage} from './animation-storage';
@@ -14,7 +14,11 @@ export async function interactionStorage(catalog:string,signal?:AbortSignal){
  const keyData=keys?JSON.parse(await new Response(new Blob([keys as BlobPart]).stream().pipeThrough(new DecompressionStream('gzip'))).text()):null;
  return {manifest,read,cache,base,keys:keyData?.keys.map((row:[string,number])=>({id:row[0],category:keyData.categories[row[1]]}))??[]};
 }
-export async function prepareInteractionSave(catalog:string,signal:AbortSignal){
+export async function prepareInteractionSave(catalog:string,signal:AbortSignal,published?:CatalogManifest){
+ if(published&&published.revision>=40){
+  if(published.id!==catalog)throw Error('Published Catalog identity differs');
+  signal.throwIfAborted();return {totalFiles:0,totalBytes:0,save:async()=>{signal.throwIfAborted();}};
+ }
  const store=await interactionStorage(catalog,signal);
  const tasks:Array<{bytes:number;save:()=>Promise<unknown>}>=[];
  const animations=await animationStorage(catalog,signal);

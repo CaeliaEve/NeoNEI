@@ -1,4 +1,5 @@
-import { assertManifest, canonical, collections, decodeTable, type File, type Manifest, type Table } from '@elysium/contracts';
+import { canonical, collections, type File, type Table } from '@elysium/contracts';
+import { assertCatalogManifest, catalogCollections, decodeCatalogTable, type CatalogManifest as Manifest } from './compatibility.ts';
 
 export type Collection = Table['kind'];
 type Rows = { [T in Table as T['kind']]: T['records'][number] };
@@ -43,6 +44,7 @@ function portable(value: string): void {
 }
 
 async function validate(manifest: Manifest): Promise<void> {
+  const collections = catalogCollections(manifest.revision);
   ensure(digest.test(manifest.id) && digest.test(manifest.source) && digest.test(manifest.environment), 'Invalid catalog identity');
   const { id, ...content } = manifest;
   ensure(await hash(canonical(content)) === id, 'Catalog manifest digest mismatch');
@@ -79,7 +81,7 @@ async function validate(manifest: Manifest): Promise<void> {
 
 
 export async function checkManifest(value: unknown, expected = ''): Promise<Manifest> {
-  const manifest = decode(() => { assertManifest(value); return value; });
+  const manifest = decode(() => { assertCatalogManifest(value); return value; });
   await validate(manifest);
   ensure(!expected || manifest.id === expected, 'Catalog pointer identity mismatch');
   Object.freeze(manifest.counts);
@@ -141,8 +143,9 @@ export class Catalog {
       this.queue.push(() => {
         this.active++;
         void this.read(file.path).then(buffer => {
-          const table = decode(() => decodeTable(buffer, file.kind as Collection));
+          const table = decode(() => decodeCatalogTable(buffer, file.kind as Collection, this.manifest.revision));
           const rows = table.records;
+          if(table.kind==='strings'&&this.manifest.locale)ensure(table.records.every(row=>row.locale===this.manifest.locale), 'Text locale differs from Catalog locale');
           ensure(rows.length === file.rows && (rows[0]?.id ?? null) === (file.first ?? null)
             && (rows[rows.length - 1]?.id ?? null) === (file.last ?? null)
             && rows.every((row, index) => index === 0 || rows[index - 1]!.id < row.id), 'Catalog table range or count mismatch');

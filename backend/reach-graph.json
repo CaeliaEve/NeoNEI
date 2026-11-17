@@ -1,0 +1,2044 @@
+{
+ "files": [
+  "app.ts",
+  "bootstrap-server.ts",
+  "compiler-client/elysium-compiled-artifact-loader.ts",
+  "compiler-client/elysium-compiler-capability-abi.ts",
+  "compiler-client/elysium-compiler-capability-gate.ts",
+  "compiler-client/elysium-compiler-client.ts",
+  "compiler-client/elysium-compiler-transport.ts",
+  "compiler-client/elysium-output-generation.ts",
+  "config/autowarm-policy-abi.ts",
+  "config/autowarm-policy.ts",
+  "config/block-face-icon-overrides.ts",
+  "config/multiblock-overrides.ts",
+  "config/runtime-paths.ts",
+  "config/server-settings-abi.ts",
+  "config/server-settings.ts",
+  "middleware/acceleration-runtime-gate.middleware.ts",
+  "middleware/error-handler.ts",
+  "middleware/request-observability.ts",
+  "models/database.ts",
+  "routes/api-namespace-registry.ts",
+  "routes/api-namespaces.routes.ts",
+  "routes/current-api.routes.ts",
+  "routes/current-runtime-endpoint-handler-abi.ts",
+  "routes/current-runtime-endpoint-handlers.ts",
+  "routes/current-runtime-endpoint-registry.ts",
+  "routes/current-runtime-transport-abi.ts",
+  "routes/current-runtime-transport.ts",
+  "routes/pattern-control-endpoint-handlers.ts",
+  "routes/pattern-control-endpoint-registry.ts",
+  "routes/patterns.routes.ts",
+  "routes/publish-admin-endpoint-handlers.ts",
+  "routes/publish-admin-endpoint-registry.ts",
+  "routes/publish-admin.routes.ts",
+  "routes/publish-public-endpoint-handlers.ts",
+  "routes/publish-public-endpoint-registry.ts",
+  "routes/publish.routes.ts",
+  "routes/render-contract-endpoint-handlers.ts",
+  "routes/render-contract-endpoint-registry.ts",
+  "routes/render-contract.routes.ts",
+  "routes/route-descriptor-registry.ts",
+  "routes/runtime-admin-control-plane-registry.ts",
+  "routes/runtime-admin-control-plane-subsystems.ts",
+  "routes/runtime-admin-control-plane.routes.ts",
+  "routes/runtime-admin-endpoint-handlers.ts",
+  "routes/runtime-admin-endpoint-registry.ts",
+  "routes/runtime-admin-endpoint-types.ts",
+  "routes/runtime-admin-reconcile-executor.ts",
+  "routes/runtime-admin-transport.ts",
+  "routes/runtime-admin.routes.ts",
+  "routes/runtime-public-endpoint-handlers.ts",
+  "routes/runtime-public-endpoint-registry.ts",
+  "routes/runtime.routes.ts",
+  "routes/static-asset-route-registry.ts",
+  "routes/static-assets.routes.ts",
+  "routes/v1-endpoint-handlers.ts",
+  "routes/v1-endpoint-registry.ts",
+  "routes/v1.routes.ts",
+  "scripts/analyze-indexes.ts",
+  "scripts/clean-names.ts",
+  "scripts/clean-tooltips.ts",
+  "scripts/compile-acceleration-db.ts",
+  "scripts/final-verify.ts",
+  "scripts/fix-encoding.ts",
+  "scripts/fix-schema.ts",
+  "scripts/force-rebuild.ts",
+  "scripts/import-summaries.ts",
+  "scripts/init-database.ts",
+  "scripts/migrate-database.ts",
+  "scripts/optimize-database-indexes.ts",
+  "scripts/prewarm-recipe-bootstrap.ts",
+  "scripts/quick-test-summaries.ts",
+  "scripts/rebuild-item-browser-groups.ts",
+  "scripts/script-config.ts",
+  "scripts/test-extract-items.ts",
+  "scripts/test-insert.ts",
+  "scripts/verify-final.ts",
+  "server.ts",
+  "services/acceleration-db-pipeline.service.ts",
+  "services/acceleration-runtime-compiler-authority.service.ts",
+  "services/acceleration-runtime-compiler-boundary-reporter.service.ts",
+  "services/acceleration-runtime-compiler-probe.service.ts",
+  "services/acceleration-runtime-job-runner.service.ts",
+  "services/acceleration-runtime-phase-abi.ts",
+  "services/acceleration-runtime-phase-machine.service.ts",
+  "services/acceleration-runtime-reconcile-dispatcher.service.ts",
+  "services/acceleration-runtime-reconcile-worker.service.ts",
+  "services/acceleration-runtime-snapshot-activator.service.ts",
+  "services/acceleration-runtime-state-abi.ts",
+  "services/acceleration-runtime-state.service.ts",
+  "services/acceleration-runtime.service.ts",
+  "services/block-face-icon-map.service.ts",
+  "services/block-face-textures.service.ts",
+  "services/browser-atlas-index.service.ts",
+  "services/browser-layout-index.service.ts",
+  "services/browser-render-hints.service.ts",
+  "services/browser-variant-grouping.service.ts",
+  "services/create-recipe-summary.service.ts",
+  "services/create-summaries-hybrid.service.ts",
+  "services/create-summaries-optimized.service.ts",
+  "services/create-summaries-v2.service.ts",
+  "services/current-runtime-api-abi.ts",
+  "services/current-runtime-api.service.ts",
+  "services/current-runtime-artifact-index-abi.ts",
+  "services/current-runtime-artifact-index.service.ts",
+  "services/current-runtime-observability.service.ts",
+  "services/current-runtime-read-catalog.ts",
+  "services/current-runtime-read.service.ts",
+  "services/current-runtime-recipe-api.service.ts",
+  "services/current-runtime-report-registry-abi.ts",
+  "services/current-runtime-report-registry.service.ts",
+  "services/current-runtime-settings-abi.ts",
+  "services/current-runtime-settings.service.ts",
+  "services/current-runtime-snapshot-abi.ts",
+  "services/current-runtime-snapshot.service.ts",
+  "services/current-runtime-special-data.service.ts",
+  "services/external-runtime-artifact-promotion.service.ts",
+  "services/external-runtime-generation.service.ts",
+  "services/external-runtime-identity.service.ts",
+  "services/forestry-genetics.service.ts",
+  "services/gt-diagrams.service.ts",
+  "services/gtnh-browser-order.service.ts",
+  "services/gtnh-collapsible-items.service.ts",
+  "services/items-search.service.ts",
+  "services/items.service.ts",
+  "services/machine-icon-mapping.service.ts",
+  "services/manifest-counts.ts",
+  "services/multiblocks.service.ts",
+  "services/native-render-runtime-diagnostics-abi.ts",
+  "services/native-render-runtime-diagnostics.service.ts",
+  "services/native-runtime-pack-abi.ts",
+  "services/native-ui-pack-abi.ts",
+  "services/native-ui-runtime-proof-abi.ts",
+  "services/native-ui-runtime-proof.service.ts",
+  "services/neonei-compiler.service.ts",
+  "services/nesql-split-export.service.ts",
+  "services/pattern-control.service.ts",
+  "services/pattern-export.service.ts",
+  "services/patterns.service.ts",
+  "services/publish-admin-control.service.ts",
+  "services/publish-manifest-abi.ts",
+  "services/publish-manifest.service.ts",
+  "services/publish-payload-materializer.service.ts",
+  "services/publish-payload.service.ts",
+  "services/publish-release.service.ts",
+  "services/publish-runtime-delivery-abi.ts",
+  "services/publish-runtime-delivery.service.ts",
+  "services/recipe-bootstrap.service.ts",
+  "services/recipe-category-grouping.service.ts",
+  "services/recipe-metadata.ts",
+  "services/recipes-indexed.service.ts",
+  "services/render-contract-control.service.ts",
+  "services/render-contract.service.ts",
+  "services/runtime-admin-control-abi.ts",
+  "services/runtime-admin-control.service.ts",
+  "services/runtime-admin-reconcile-control.service.ts",
+  "services/runtime-contract-index-abi.ts",
+  "services/runtime-contract-index.service.ts",
+  "services/runtime-diagnostics-summary-abi.ts",
+  "services/runtime-diagnostics-summary.service.ts",
+  "services/runtime-health-summary-abi.ts",
+  "services/runtime-health-summary.service.ts",
+  "services/runtime-manifest-delivery-abi.ts",
+  "services/runtime-manifest-delivery.service.ts",
+  "services/runtime-observability-delivery-abi.ts",
+  "services/runtime-observability-delivery.service.ts",
+  "services/runtime-recipe-pack-reader.service.ts",
+  "services/runtime-recipe-pack.service.ts",
+  "services/runtime-server-lifecycle-abi.ts",
+  "services/runtime-server-lifecycle.service.ts",
+  "services/rust-search-pack-abi.ts",
+  "services/rust-search-pack.service.ts",
+  "services/startup-autowarm.service.ts",
+  "services/static-asset-delivery.service.ts",
+  "services/ui-family-census.service.ts",
+  "services/ui-payloads.service.ts",
+  "services/ui-template-binding-index.service.ts",
+  "services/ui-template-catalog.service.ts",
+  "services/UsageRecipeService.ts",
+  "utils/admin-access-abi.ts",
+  "utils/admin-access.ts",
+  "utils/error-response.ts",
+  "utils/http-cache.ts",
+  "utils/http.ts",
+  "utils/logger.ts"
+ ],
+ "reachable": [
+  "app.ts",
+  "services/acceleration-runtime.service.ts",
+  "services/acceleration-runtime-state.service.ts",
+  "services/acceleration-runtime-state-abi.ts",
+  "services/acceleration-runtime-reconcile-dispatcher.service.ts",
+  "services/acceleration-runtime-reconcile-worker.service.ts",
+  "services/acceleration-runtime-phase-machine.service.ts",
+  "services/acceleration-runtime-phase-abi.ts",
+  "services/acceleration-runtime-snapshot-activator.service.ts",
+  "services/acceleration-db-pipeline.service.ts",
+  "services/publish-payload-materializer.service.ts",
+  "services/publish-payload.service.ts",
+  "services/browser-render-hints.service.ts",
+  "services/render-contract.service.ts",
+  "services/current-runtime-artifact-index.service.ts",
+  "services/current-runtime-artifact-index-abi.ts",
+  "services/external-runtime-generation.service.ts",
+  "config/runtime-paths.ts",
+  "services/ui-template-binding-index.service.ts",
+  "services/ui-template-catalog.service.ts",
+  "utils/http.ts",
+  "services/ui-family-census.service.ts",
+  "services/manifest-counts.ts",
+  "services/items.service.ts",
+  "services/items-search.service.ts",
+  "models/database.ts",
+  "services/browser-atlas-index.service.ts",
+  "services/recipe-category-grouping.service.ts",
+  "services/machine-icon-mapping.service.ts",
+  "services/recipes-indexed.service.ts",
+  "utils/logger.ts",
+  "services/rust-search-pack.service.ts",
+  "services/rust-search-pack-abi.ts",
+  "services/recipe-bootstrap.service.ts",
+  "services/neonei-compiler.service.ts",
+  "services/recipe-metadata.ts",
+  "services/gtnh-browser-order.service.ts",
+  "services/browser-variant-grouping.service.ts",
+  "services/gtnh-collapsible-items.service.ts",
+  "services/acceleration-runtime-job-runner.service.ts",
+  "services/external-runtime-identity.service.ts",
+  "services/acceleration-runtime-compiler-authority.service.ts",
+  "services/acceleration-runtime-compiler-probe.service.ts",
+  "services/acceleration-runtime-compiler-boundary-reporter.service.ts",
+  "compiler-client/elysium-compiler-client.ts",
+  "compiler-client/elysium-compiler-capability-abi.ts",
+  "compiler-client/elysium-compiler-transport.ts",
+  "compiler-client/elysium-compiler-capability-gate.ts",
+  "middleware/acceleration-runtime-gate.middleware.ts",
+  "utils/error-response.ts",
+  "config/server-settings.ts",
+  "config/server-settings-abi.ts",
+  "utils/admin-access.ts",
+  "utils/admin-access-abi.ts",
+  "routes/api-namespaces.routes.ts",
+  "routes/api-namespace-registry.ts",
+  "routes/current-api.routes.ts",
+  "routes/current-runtime-endpoint-handlers.ts",
+  "routes/route-descriptor-registry.ts",
+  "routes/current-runtime-transport.ts",
+  "routes/current-runtime-transport-abi.ts",
+  "utils/http-cache.ts",
+  "services/current-runtime-report-registry.service.ts",
+  "services/current-runtime-report-registry-abi.ts",
+  "services/native-ui-runtime-proof-abi.ts",
+  "services/native-ui-pack-abi.ts",
+  "services/current-runtime-api.service.ts",
+  "services/current-runtime-api-abi.ts",
+  "services/current-runtime-snapshot-abi.ts",
+  "services/current-runtime-snapshot.service.ts",
+  "services/runtime-health-summary.service.ts",
+  "services/runtime-health-summary-abi.ts",
+  "services/native-render-runtime-diagnostics.service.ts",
+  "services/native-render-runtime-diagnostics-abi.ts",
+  "services/native-ui-runtime-proof.service.ts",
+  "routes/current-runtime-endpoint-handler-abi.ts",
+  "routes/current-runtime-endpoint-registry.ts",
+  "services/current-runtime-read.service.ts",
+  "services/current-runtime-read-catalog.ts",
+  "services/current-runtime-special-data.service.ts",
+  "services/multiblocks.service.ts",
+  "services/block-face-textures.service.ts",
+  "services/block-face-icon-map.service.ts",
+  "config/block-face-icon-overrides.ts",
+  "config/multiblock-overrides.ts",
+  "services/gt-diagrams.service.ts",
+  "services/forestry-genetics.service.ts",
+  "services/current-runtime-settings.service.ts",
+  "services/current-runtime-settings-abi.ts",
+  "services/current-runtime-recipe-api.service.ts",
+  "services/runtime-recipe-pack.service.ts",
+  "services/runtime-recipe-pack-reader.service.ts",
+  "services/native-runtime-pack-abi.ts",
+  "services/current-runtime-observability.service.ts",
+  "routes/v1.routes.ts",
+  "routes/v1-endpoint-handlers.ts",
+  "routes/v1-endpoint-registry.ts",
+  "services/runtime-observability-delivery.service.ts",
+  "services/runtime-observability-delivery-abi.ts",
+  "services/runtime-diagnostics-summary.service.ts",
+  "services/runtime-diagnostics-summary-abi.ts",
+  "services/publish-manifest.service.ts",
+  "services/publish-manifest-abi.ts",
+  "services/runtime-manifest-delivery.service.ts",
+  "services/runtime-manifest-delivery-abi.ts",
+  "services/runtime-contract-index.service.ts",
+  "services/runtime-contract-index-abi.ts",
+  "routes/runtime.routes.ts",
+  "routes/runtime-public-endpoint-handlers.ts",
+  "routes/runtime-public-endpoint-registry.ts",
+  "routes/publish.routes.ts",
+  "routes/publish-public-endpoint-handlers.ts",
+  "routes/publish-public-endpoint-registry.ts",
+  "services/publish-runtime-delivery.service.ts",
+  "services/publish-runtime-delivery-abi.ts",
+  "routes/runtime-admin.routes.ts",
+  "routes/runtime-admin-endpoint-types.ts",
+  "routes/runtime-admin-endpoint-handlers.ts",
+  "routes/runtime-admin-transport.ts",
+  "services/runtime-admin-reconcile-control.service.ts",
+  "routes/runtime-admin-reconcile-executor.ts",
+  "routes/runtime-admin-endpoint-registry.ts",
+  "services/runtime-admin-control.service.ts",
+  "services/runtime-admin-control-abi.ts",
+  "routes/runtime-admin-control-plane.routes.ts",
+  "routes/runtime-admin-control-plane-subsystems.ts",
+  "routes/runtime-admin-control-plane-registry.ts",
+  "routes/publish-admin.routes.ts",
+  "routes/publish-admin-endpoint-handlers.ts",
+  "routes/publish-admin-endpoint-registry.ts",
+  "services/publish-admin-control.service.ts",
+  "services/publish-release.service.ts",
+  "routes/render-contract.routes.ts",
+  "routes/render-contract-endpoint-handlers.ts",
+  "routes/render-contract-endpoint-registry.ts",
+  "services/render-contract-control.service.ts",
+  "services/ui-payloads.service.ts",
+  "services/browser-layout-index.service.ts",
+  "routes/patterns.routes.ts",
+  "routes/pattern-control-endpoint-handlers.ts",
+  "routes/pattern-control-endpoint-registry.ts",
+  "services/pattern-control.service.ts",
+  "services/pattern-export.service.ts",
+  "services/patterns.service.ts",
+  "routes/static-assets.routes.ts",
+  "routes/static-asset-route-registry.ts",
+  "services/static-asset-delivery.service.ts",
+  "middleware/error-handler.ts",
+  "middleware/request-observability.ts",
+  "bootstrap-server.ts",
+  "services/runtime-server-lifecycle.service.ts",
+  "services/runtime-server-lifecycle-abi.ts",
+  "services/startup-autowarm.service.ts",
+  "config/autowarm-policy-abi.ts",
+  "config/autowarm-policy.ts",
+  "server.ts"
+ ],
+ "imports": {
+  "app.ts": [
+   "models/database.ts",
+   "middleware/request-observability.ts",
+   "middleware/error-handler.ts",
+   "utils/error-response.ts",
+   "routes/static-assets.routes.ts",
+   "routes/runtime-admin-control-plane.routes.ts",
+   "routes/runtime-admin.routes.ts",
+   "routes/api-namespaces.routes.ts",
+   "config/server-settings.ts",
+   "middleware/acceleration-runtime-gate.middleware.ts",
+   "services/acceleration-runtime.service.ts"
+  ],
+  "bootstrap-server.ts": [
+   "config/server-settings.ts",
+   "app.ts",
+   "utils/logger.ts",
+   "services/runtime-server-lifecycle.service.ts",
+   "services/external-runtime-generation.service.ts"
+  ],
+  "compiler-client/elysium-compiled-artifact-loader.ts": [],
+  "compiler-client/elysium-compiler-capability-abi.ts": [],
+  "compiler-client/elysium-compiler-capability-gate.ts": [
+   "compiler-client/elysium-compiler-client.ts",
+   "compiler-client/elysium-compiler-capability-abi.ts"
+  ],
+  "compiler-client/elysium-compiler-client.ts": [
+   "utils/logger.ts",
+   "compiler-client/elysium-compiler-capability-gate.ts",
+   "compiler-client/elysium-compiler-transport.ts",
+   "compiler-client/elysium-compiler-capability-abi.ts"
+  ],
+  "compiler-client/elysium-compiler-transport.ts": [],
+  "compiler-client/elysium-output-generation.ts": [],
+  "config/autowarm-policy-abi.ts": [],
+  "config/autowarm-policy.ts": [
+   "config/autowarm-policy-abi.ts"
+  ],
+  "config/block-face-icon-overrides.ts": [],
+  "config/multiblock-overrides.ts": [],
+  "config/runtime-paths.ts": [],
+  "config/server-settings-abi.ts": [
+   "utils/admin-access.ts"
+  ],
+  "config/server-settings.ts": [
+   "utils/admin-access.ts",
+   "config/server-settings-abi.ts"
+  ],
+  "middleware/acceleration-runtime-gate.middleware.ts": [
+   "services/acceleration-runtime-state-abi.ts",
+   "services/acceleration-runtime-state.service.ts",
+   "utils/error-response.ts"
+  ],
+  "middleware/error-handler.ts": [
+   "utils/logger.ts",
+   "utils/error-response.ts"
+  ],
+  "middleware/request-observability.ts": [
+   "utils/logger.ts"
+  ],
+  "models/database.ts": [
+   "config/runtime-paths.ts"
+  ],
+  "routes/api-namespace-registry.ts": [
+   "routes/publish.routes.ts",
+   "routes/runtime.routes.ts",
+   "routes/v1.routes.ts",
+   "routes/current-api.routes.ts"
+  ],
+  "routes/api-namespaces.routes.ts": [
+   "routes/api-namespace-registry.ts"
+  ],
+  "routes/current-api.routes.ts": [
+   "routes/current-runtime-endpoint-registry.ts",
+   "routes/current-runtime-endpoint-handlers.ts"
+  ],
+  "routes/current-runtime-endpoint-handler-abi.ts": [
+   "services/current-runtime-read.service.ts",
+   "routes/current-runtime-endpoint-registry.ts"
+  ],
+  "routes/current-runtime-endpoint-handlers.ts": [
+   "services/current-runtime-api.service.ts",
+   "services/current-runtime-read.service.ts",
+   "utils/http.ts",
+   "routes/current-runtime-endpoint-registry.ts",
+   "routes/current-runtime-endpoint-handler-abi.ts",
+   "routes/current-runtime-transport.ts",
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/current-runtime-endpoint-registry.ts": [
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/current-runtime-transport-abi.ts": [],
+  "routes/current-runtime-transport.ts": [
+   "services/current-runtime-api.service.ts",
+   "services/current-runtime-report-registry-abi.ts",
+   "services/current-runtime-report-registry.service.ts",
+   "utils/http-cache.ts",
+   "routes/current-runtime-transport-abi.ts"
+  ],
+  "routes/pattern-control-endpoint-handlers.ts": [
+   "services/pattern-control.service.ts",
+   "routes/pattern-control-endpoint-registry.ts",
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/pattern-control-endpoint-registry.ts": [
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/patterns.routes.ts": [
+   "utils/http.ts",
+   "utils/http-cache.ts",
+   "routes/pattern-control-endpoint-registry.ts",
+   "routes/pattern-control-endpoint-handlers.ts"
+  ],
+  "routes/publish-admin-endpoint-handlers.ts": [
+   "services/publish-admin-control.service.ts",
+   "utils/http-cache.ts",
+   "routes/publish-admin-endpoint-registry.ts",
+   "routes/route-descriptor-registry.ts",
+   "routes/runtime-admin-transport.ts"
+  ],
+  "routes/publish-admin-endpoint-registry.ts": [
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/publish-admin.routes.ts": [
+   "utils/http.ts",
+   "routes/publish-admin-endpoint-registry.ts",
+   "routes/publish-admin-endpoint-handlers.ts"
+  ],
+  "routes/publish-public-endpoint-handlers.ts": [
+   "services/publish-runtime-delivery.service.ts",
+   "utils/http-cache.ts",
+   "routes/publish-public-endpoint-registry.ts",
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/publish-public-endpoint-registry.ts": [
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/publish.routes.ts": [
+   "utils/http.ts",
+   "routes/publish-public-endpoint-registry.ts",
+   "routes/publish-public-endpoint-handlers.ts"
+  ],
+  "routes/render-contract-endpoint-handlers.ts": [
+   "services/render-contract-control.service.ts",
+   "routes/render-contract-endpoint-registry.ts",
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/render-contract-endpoint-registry.ts": [
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/render-contract.routes.ts": [
+   "utils/http.ts",
+   "routes/render-contract-endpoint-registry.ts",
+   "routes/render-contract-endpoint-handlers.ts"
+  ],
+  "routes/route-descriptor-registry.ts": [],
+  "routes/runtime-admin-control-plane-registry.ts": [
+   "services/runtime-admin-reconcile-control.service.ts"
+  ],
+  "routes/runtime-admin-control-plane-subsystems.ts": [
+   "routes/patterns.routes.ts",
+   "routes/render-contract.routes.ts",
+   "routes/publish-admin.routes.ts",
+   "routes/runtime-admin.routes.ts",
+   "routes/runtime-admin-endpoint-types.ts",
+   "routes/runtime-admin-control-plane-registry.ts"
+  ],
+  "routes/runtime-admin-control-plane.routes.ts": [
+   "routes/runtime-admin-control-plane-registry.ts",
+   "routes/runtime-admin-control-plane-subsystems.ts",
+   "routes/runtime-admin-endpoint-types.ts",
+   "routes/runtime-admin-transport.ts"
+  ],
+  "routes/runtime-admin-endpoint-handlers.ts": [
+   "services/runtime-admin-control.service.ts",
+   "services/runtime-admin-reconcile-control.service.ts",
+   "routes/runtime-admin-endpoint-registry.ts",
+   "routes/runtime-admin-endpoint-types.ts",
+   "routes/route-descriptor-registry.ts",
+   "routes/runtime-admin-reconcile-executor.ts",
+   "routes/runtime-admin-transport.ts"
+  ],
+  "routes/runtime-admin-endpoint-registry.ts": [
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/runtime-admin-endpoint-types.ts": [
+   "services/acceleration-runtime.service.ts"
+  ],
+  "routes/runtime-admin-reconcile-executor.ts": [
+   "services/acceleration-runtime.service.ts",
+   "services/runtime-admin-reconcile-control.service.ts",
+   "utils/logger.ts",
+   "routes/runtime-admin-transport.ts"
+  ],
+  "routes/runtime-admin-transport.ts": [
+   "services/runtime-admin-reconcile-control.service.ts",
+   "utils/error-response.ts",
+   "utils/http-cache.ts"
+  ],
+  "routes/runtime-admin.routes.ts": [
+   "services/runtime-admin-reconcile-control.service.ts",
+   "routes/runtime-admin-endpoint-registry.ts",
+   "routes/runtime-admin-endpoint-handlers.ts",
+   "routes/runtime-admin-endpoint-types.ts"
+  ],
+  "routes/runtime-public-endpoint-handlers.ts": [
+   "services/runtime-contract-index.service.ts",
+   "services/runtime-manifest-delivery.service.ts",
+   "services/runtime-observability-delivery.service.ts",
+   "utils/http-cache.ts",
+   "routes/runtime-public-endpoint-registry.ts",
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/runtime-public-endpoint-registry.ts": [
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/runtime.routes.ts": [
+   "utils/http.ts",
+   "routes/runtime-public-endpoint-registry.ts",
+   "routes/runtime-public-endpoint-handlers.ts"
+  ],
+  "routes/static-asset-route-registry.ts": [
+   "config/runtime-paths.ts",
+   "services/static-asset-delivery.service.ts",
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/static-assets.routes.ts": [
+   "services/static-asset-delivery.service.ts",
+   "services/external-runtime-generation.service.ts",
+   "utils/http-cache.ts",
+   "routes/static-asset-route-registry.ts"
+  ],
+  "routes/v1-endpoint-handlers.ts": [
+   "services/runtime-contract-index.service.ts",
+   "services/runtime-manifest-delivery.service.ts",
+   "services/runtime-observability-delivery.service.ts",
+   "utils/http-cache.ts",
+   "routes/v1-endpoint-registry.ts",
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/v1-endpoint-registry.ts": [
+   "routes/route-descriptor-registry.ts"
+  ],
+  "routes/v1.routes.ts": [
+   "utils/http.ts",
+   "routes/v1-endpoint-registry.ts",
+   "routes/v1-endpoint-handlers.ts"
+  ],
+  "scripts/analyze-indexes.ts": [
+   "models/database.ts"
+  ],
+  "scripts/clean-names.ts": [
+   "models/database.ts"
+  ],
+  "scripts/clean-tooltips.ts": [
+   "models/database.ts"
+  ],
+  "scripts/compile-acceleration-db.ts": [
+   "config/runtime-paths.ts",
+   "services/acceleration-db-pipeline.service.ts"
+  ],
+  "scripts/final-verify.ts": [
+   "models/database.ts"
+  ],
+  "scripts/fix-encoding.ts": [
+   "models/database.ts"
+  ],
+  "scripts/fix-schema.ts": [
+   "models/database.ts"
+  ],
+  "scripts/force-rebuild.ts": [
+   "models/database.ts",
+   "scripts/script-config.ts"
+  ],
+  "scripts/import-summaries.ts": [
+   "models/database.ts",
+   "scripts/script-config.ts"
+  ],
+  "scripts/init-database.ts": [
+   "models/database.ts",
+   "scripts/script-config.ts"
+  ],
+  "scripts/migrate-database.ts": [
+   "models/database.ts"
+  ],
+  "scripts/optimize-database-indexes.ts": [
+   "models/database.ts"
+  ],
+  "scripts/prewarm-recipe-bootstrap.ts": [
+   "services/recipe-bootstrap.service.ts",
+   "utils/logger.ts"
+  ],
+  "scripts/quick-test-summaries.ts": [
+   "models/database.ts"
+  ],
+  "scripts/rebuild-item-browser-groups.ts": [
+   "config/runtime-paths.ts",
+   "models/database.ts",
+   "services/gtnh-collapsible-items.service.ts",
+   "services/browser-variant-grouping.service.ts",
+   "services/gtnh-browser-order.service.ts"
+  ],
+  "scripts/script-config.ts": [
+   "config/runtime-paths.ts"
+  ],
+  "scripts/test-extract-items.ts": [
+   "models/database.ts",
+   "services/create-summaries-optimized.service.ts"
+  ],
+  "scripts/test-insert.ts": [
+   "models/database.ts"
+  ],
+  "scripts/verify-final.ts": [
+   "models/database.ts"
+  ],
+  "server.ts": [
+   "bootstrap-server.ts"
+  ],
+  "services/acceleration-db-pipeline.service.ts": [
+   "models/database.ts",
+   "services/neonei-compiler.service.ts",
+   "services/publish-payload-materializer.service.ts"
+  ],
+  "services/acceleration-runtime-compiler-authority.service.ts": [],
+  "services/acceleration-runtime-compiler-boundary-reporter.service.ts": [
+   "compiler-client/elysium-compiler-client.ts",
+   "utils/logger.ts"
+  ],
+  "services/acceleration-runtime-compiler-probe.service.ts": [
+   "config/runtime-paths.ts",
+   "models/database.ts",
+   "services/neonei-compiler.service.ts"
+  ],
+  "services/acceleration-runtime-job-runner.service.ts": [
+   "utils/logger.ts"
+  ],
+  "services/acceleration-runtime-phase-abi.ts": [
+   "services/acceleration-runtime-state.service.ts"
+  ],
+  "services/acceleration-runtime-phase-machine.service.ts": [
+   "services/acceleration-runtime-state.service.ts",
+   "services/acceleration-runtime-phase-abi.ts"
+  ],
+  "services/acceleration-runtime-reconcile-dispatcher.service.ts": [
+   "services/acceleration-runtime-phase-machine.service.ts",
+   "services/acceleration-runtime-reconcile-worker.service.ts"
+  ],
+  "services/acceleration-runtime-reconcile-worker.service.ts": [
+   "models/database.ts",
+   "utils/logger.ts",
+   "services/acceleration-runtime-job-runner.service.ts",
+   "services/acceleration-runtime-snapshot-activator.service.ts",
+   "services/acceleration-runtime-phase-abi.ts",
+   "services/acceleration-runtime-phase-machine.service.ts"
+  ],
+  "services/acceleration-runtime-snapshot-activator.service.ts": [
+   "models/database.ts",
+   "services/acceleration-db-pipeline.service.ts",
+   "services/acceleration-runtime-state.service.ts"
+  ],
+  "services/acceleration-runtime-state-abi.ts": [],
+  "services/acceleration-runtime-state.service.ts": [
+   "services/acceleration-runtime-state-abi.ts"
+  ],
+  "services/acceleration-runtime.service.ts": [
+   "models/database.ts",
+   "services/acceleration-runtime-phase-machine.service.ts",
+   "services/acceleration-runtime-compiler-boundary-reporter.service.ts",
+   "services/acceleration-runtime-compiler-probe.service.ts",
+   "services/acceleration-runtime-compiler-authority.service.ts",
+   "services/external-runtime-identity.service.ts",
+   "services/acceleration-runtime-reconcile-dispatcher.service.ts",
+   "services/acceleration-runtime-state.service.ts"
+  ],
+  "services/block-face-icon-map.service.ts": [
+   "config/block-face-icon-overrides.ts",
+   "config/runtime-paths.ts"
+  ],
+  "services/block-face-textures.service.ts": [
+   "config/runtime-paths.ts",
+   "services/block-face-icon-map.service.ts"
+  ],
+  "services/browser-atlas-index.service.ts": [
+   "config/runtime-paths.ts",
+   "utils/http.ts",
+   "services/current-runtime-artifact-index-abi.ts",
+   "services/current-runtime-artifact-index.service.ts"
+  ],
+  "services/browser-layout-index.service.ts": [
+   "services/current-runtime-artifact-index-abi.ts",
+   "services/current-runtime-artifact-index.service.ts"
+  ],
+  "services/browser-render-hints.service.ts": [
+   "services/items.service.ts",
+   "services/render-contract.service.ts"
+  ],
+  "services/browser-variant-grouping.service.ts": [
+   "services/gtnh-collapsible-items.service.ts"
+  ],
+  "services/create-recipe-summary.service.ts": [
+   "models/database.ts"
+  ],
+  "services/create-summaries-hybrid.service.ts": [
+   "models/database.ts"
+  ],
+  "services/create-summaries-optimized.service.ts": [
+   "models/database.ts"
+  ],
+  "services/create-summaries-v2.service.ts": [
+   "models/database.ts"
+  ],
+  "services/current-runtime-api-abi.ts": [
+   "utils/http-cache.ts",
+   "services/current-runtime-artifact-index.service.ts",
+   "services/current-runtime-snapshot-abi.ts"
+  ],
+  "services/current-runtime-api.service.ts": [
+   "services/runtime-health-summary.service.ts",
+   "services/current-runtime-artifact-index.service.ts",
+   "services/current-runtime-snapshot.service.ts",
+   "services/current-runtime-api-abi.ts",
+   "utils/http.ts"
+  ],
+  "services/current-runtime-artifact-index-abi.ts": [],
+  "services/current-runtime-artifact-index.service.ts": [
+   "config/runtime-paths.ts",
+   "services/external-runtime-generation.service.ts",
+   "services/current-runtime-artifact-index-abi.ts"
+  ],
+  "services/current-runtime-observability.service.ts": [
+   "services/current-runtime-api.service.ts"
+  ],
+  "services/current-runtime-read-catalog.ts": [
+   "services/current-runtime-api.service.ts",
+   "services/current-runtime-observability.service.ts",
+   "services/current-runtime-recipe-api.service.ts",
+   "services/current-runtime-settings.service.ts",
+   "services/current-runtime-special-data.service.ts"
+  ],
+  "services/current-runtime-read.service.ts": [
+   "services/current-runtime-api.service.ts",
+   "services/current-runtime-read-catalog.ts"
+  ],
+  "services/current-runtime-recipe-api.service.ts": [
+   "services/acceleration-runtime-compiler-authority.service.ts",
+   "services/recipes-indexed.service.ts",
+   "services/runtime-recipe-pack.service.ts",
+   "utils/http.ts"
+  ],
+  "services/current-runtime-report-registry-abi.ts": [
+   "services/native-ui-runtime-proof-abi.ts"
+  ],
+  "services/current-runtime-report-registry.service.ts": [
+   "services/current-runtime-artifact-index.service.ts",
+   "services/current-runtime-report-registry-abi.ts",
+   "utils/http.ts"
+  ],
+  "services/current-runtime-settings-abi.ts": [],
+  "services/current-runtime-settings.service.ts": [
+   "services/current-runtime-settings-abi.ts"
+  ],
+  "services/current-runtime-snapshot-abi.ts": [
+   "services/current-runtime-artifact-index-abi.ts"
+  ],
+  "services/current-runtime-snapshot.service.ts": [
+   "services/current-runtime-artifact-index.service.ts",
+   "config/runtime-paths.ts",
+   "services/external-runtime-generation.service.ts",
+   "services/current-runtime-snapshot-abi.ts"
+  ],
+  "services/current-runtime-special-data.service.ts": [
+   "services/forestry-genetics.service.ts",
+   "services/gt-diagrams.service.ts",
+   "services/multiblocks.service.ts",
+   "utils/http.ts"
+  ],
+  "services/external-runtime-artifact-promotion.service.ts": [
+   "config/runtime-paths.ts",
+   "compiler-client/elysium-compiled-artifact-loader.ts",
+   "services/external-runtime-generation.service.ts",
+   "services/external-runtime-identity.service.ts"
+  ],
+  "services/external-runtime-generation.service.ts": [
+   "config/runtime-paths.ts"
+  ],
+  "services/external-runtime-identity.service.ts": [
+   "config/runtime-paths.ts",
+   "services/acceleration-runtime-compiler-authority.service.ts",
+   "services/external-runtime-generation.service.ts"
+  ],
+  "services/forestry-genetics.service.ts": [
+   "config/runtime-paths.ts"
+  ],
+  "services/gt-diagrams.service.ts": [
+   "config/runtime-paths.ts"
+  ],
+  "services/gtnh-browser-order.service.ts": [],
+  "services/gtnh-collapsible-items.service.ts": [],
+  "services/items-search.service.ts": [
+   "models/database.ts"
+  ],
+  "services/items.service.ts": [
+   "models/database.ts",
+   "config/runtime-paths.ts",
+   "services/browser-atlas-index.service.ts",
+   "services/items-search.service.ts"
+  ],
+  "services/machine-icon-mapping.service.ts": [],
+  "services/manifest-counts.ts": [],
+  "services/multiblocks.service.ts": [
+   "config/runtime-paths.ts",
+   "config/multiblock-overrides.ts",
+   "services/block-face-textures.service.ts"
+  ],
+  "services/native-render-runtime-diagnostics-abi.ts": [],
+  "services/native-render-runtime-diagnostics.service.ts": [
+   "services/current-runtime-artifact-index.service.ts",
+   "services/native-render-runtime-diagnostics-abi.ts"
+  ],
+  "services/native-runtime-pack-abi.ts": [],
+  "services/native-ui-pack-abi.ts": [],
+  "services/native-ui-runtime-proof-abi.ts": [
+   "services/native-ui-pack-abi.ts"
+  ],
+  "services/native-ui-runtime-proof.service.ts": [
+   "services/current-runtime-artifact-index.service.ts",
+   "services/current-runtime-snapshot.service.ts",
+   "services/native-ui-pack-abi.ts",
+   "services/native-ui-runtime-proof-abi.ts"
+  ],
+  "services/neonei-compiler.service.ts": [
+   "models/database.ts",
+   "services/items.service.ts",
+   "services/current-runtime-artifact-index-abi.ts",
+   "services/current-runtime-artifact-index.service.ts",
+   "services/publish-payload-materializer.service.ts",
+   "services/gtnh-collapsible-items.service.ts",
+   "services/browser-variant-grouping.service.ts",
+   "services/gtnh-browser-order.service.ts",
+   "services/machine-icon-mapping.service.ts",
+   "services/recipe-metadata.ts",
+   "services/recipe-category-grouping.service.ts"
+  ],
+  "services/nesql-split-export.service.ts": [
+   "config/runtime-paths.ts"
+  ],
+  "services/pattern-control.service.ts": [
+   "utils/error-response.ts",
+   "services/patterns.service.ts",
+   "services/pattern-export.service.ts"
+  ],
+  "services/pattern-export.service.ts": [],
+  "services/patterns.service.ts": [
+   "models/database.ts",
+   "services/pattern-export.service.ts"
+  ],
+  "services/publish-admin-control.service.ts": [
+   "services/publish-manifest.service.ts",
+   "services/publish-release.service.ts"
+  ],
+  "services/publish-manifest-abi.ts": [],
+  "services/publish-manifest.service.ts": [
+   "config/runtime-paths.ts",
+   "models/database.ts",
+   "services/publish-payload.service.ts",
+   "services/publish-manifest-abi.ts"
+  ],
+  "services/publish-payload-materializer.service.ts": [
+   "config/runtime-paths.ts",
+   "models/database.ts",
+   "services/items-search.service.ts",
+   "services/items.service.ts",
+   "services/browser-render-hints.service.ts",
+   "services/recipe-bootstrap.service.ts",
+   "services/rust-search-pack.service.ts",
+   "services/recipes-indexed.service.ts",
+   "services/recipe-category-grouping.service.ts",
+   "services/publish-payload.service.ts"
+  ],
+  "services/publish-payload.service.ts": [
+   "models/database.ts",
+   "services/items-search.service.ts",
+   "services/items.service.ts",
+   "services/browser-render-hints.service.ts"
+  ],
+  "services/publish-release.service.ts": [
+   "config/runtime-paths.ts",
+   "models/database.ts",
+   "services/publish-payload.service.ts"
+  ],
+  "services/publish-runtime-delivery-abi.ts": [
+   "utils/http-cache.ts",
+   "services/acceleration-runtime-compiler-authority.service.ts",
+   "services/publish-manifest.service.ts"
+  ],
+  "services/publish-runtime-delivery.service.ts": [
+   "utils/http.ts",
+   "services/acceleration-runtime-compiler-authority.service.ts",
+   "services/browser-render-hints.service.ts",
+   "services/items.service.ts",
+   "services/publish-manifest.service.ts",
+   "services/publish-runtime-delivery-abi.ts",
+   "services/publish-payload.service.ts"
+  ],
+  "services/recipe-bootstrap.service.ts": [
+   "services/items.service.ts",
+   "services/browser-render-hints.service.ts",
+   "services/recipes-indexed.service.ts",
+   "models/database.ts",
+   "services/machine-icon-mapping.service.ts",
+   "services/render-contract.service.ts",
+   "utils/logger.ts"
+  ],
+  "services/recipe-category-grouping.service.ts": [
+   "services/machine-icon-mapping.service.ts"
+  ],
+  "services/recipe-metadata.ts": [
+   "services/recipes-indexed.service.ts"
+  ],
+  "services/recipes-indexed.service.ts": [
+   "utils/logger.ts",
+   "models/database.ts",
+   "services/machine-icon-mapping.service.ts",
+   "services/items-search.service.ts",
+   "services/recipe-category-grouping.service.ts",
+   "services/render-contract.service.ts"
+  ],
+  "services/render-contract-control.service.ts": [
+   "services/browser-atlas-index.service.ts",
+   "services/browser-layout-index.service.ts",
+   "services/render-contract.service.ts",
+   "services/ui-family-census.service.ts",
+   "services/ui-payloads.service.ts",
+   "services/ui-template-binding-index.service.ts",
+   "services/ui-template-catalog.service.ts",
+   "utils/http.ts"
+  ],
+  "services/render-contract.service.ts": [
+   "config/runtime-paths.ts",
+   "utils/http.ts",
+   "services/manifest-counts.ts",
+   "services/ui-family-census.service.ts",
+   "services/ui-template-catalog.service.ts",
+   "services/ui-template-binding-index.service.ts",
+   "services/current-runtime-artifact-index-abi.ts",
+   "services/current-runtime-artifact-index.service.ts"
+  ],
+  "services/runtime-admin-control-abi.ts": [],
+  "services/runtime-admin-control.service.ts": [
+   "config/runtime-paths.ts",
+   "services/acceleration-runtime.service.ts",
+   "services/runtime-admin-control-abi.ts"
+  ],
+  "services/runtime-admin-reconcile-control.service.ts": [
+   "services/acceleration-runtime.service.ts",
+   "utils/error-response.ts"
+  ],
+  "services/runtime-contract-index-abi.ts": [],
+  "services/runtime-contract-index.service.ts": [
+   "services/runtime-contract-index-abi.ts"
+  ],
+  "services/runtime-diagnostics-summary-abi.ts": [],
+  "services/runtime-diagnostics-summary.service.ts": [
+   "config/runtime-paths.ts",
+   "services/publish-manifest.service.ts",
+   "services/runtime-health-summary.service.ts",
+   "services/runtime-diagnostics-summary-abi.ts"
+  ],
+  "services/runtime-health-summary-abi.ts": [],
+  "services/runtime-health-summary.service.ts": [
+   "config/runtime-paths.ts",
+   "services/acceleration-runtime-compiler-authority.service.ts",
+   "services/current-runtime-artifact-index.service.ts",
+   "services/current-runtime-snapshot.service.ts",
+   "services/current-runtime-snapshot-abi.ts",
+   "services/native-ui-runtime-proof.service.ts",
+   "services/native-render-runtime-diagnostics.service.ts",
+   "services/runtime-health-summary-abi.ts"
+  ],
+  "services/runtime-manifest-delivery-abi.ts": [],
+  "services/runtime-manifest-delivery.service.ts": [
+   "utils/http-cache.ts",
+   "services/publish-manifest.service.ts",
+   "services/runtime-manifest-delivery-abi.ts"
+  ],
+  "services/runtime-observability-delivery-abi.ts": [
+   "services/runtime-health-summary.service.ts"
+  ],
+  "services/runtime-observability-delivery.service.ts": [
+   "services/runtime-diagnostics-summary.service.ts",
+   "services/runtime-health-summary.service.ts",
+   "services/runtime-observability-delivery-abi.ts"
+  ],
+  "services/runtime-recipe-pack-reader.service.ts": [
+   "services/native-runtime-pack-abi.ts"
+  ],
+  "services/runtime-recipe-pack.service.ts": [
+   "services/current-runtime-artifact-index.service.ts",
+   "services/native-runtime-pack-abi.ts",
+   "services/runtime-recipe-pack-reader.service.ts"
+  ],
+  "services/runtime-server-lifecycle-abi.ts": [
+   "services/acceleration-runtime-state-abi.ts"
+  ],
+  "services/runtime-server-lifecycle.service.ts": [
+   "config/server-settings.ts",
+   "config/runtime-paths.ts",
+   "models/database.ts",
+   "utils/logger.ts",
+   "services/native-render-runtime-diagnostics.service.ts",
+   "services/startup-autowarm.service.ts",
+   "services/acceleration-runtime.service.ts",
+   "services/runtime-server-lifecycle-abi.ts"
+  ],
+  "services/rust-search-pack-abi.ts": [],
+  "services/rust-search-pack.service.ts": [
+   "services/publish-payload.service.ts",
+   "services/current-runtime-artifact-index.service.ts",
+   "services/rust-search-pack-abi.ts"
+  ],
+  "services/startup-autowarm.service.ts": [
+   "config/autowarm-policy.ts",
+   "config/autowarm-policy-abi.ts",
+   "utils/logger.ts",
+   "services/recipe-bootstrap.service.ts"
+  ],
+  "services/static-asset-delivery.service.ts": [
+   "config/runtime-paths.ts"
+  ],
+  "services/ui-family-census.service.ts": [
+   "utils/http.ts",
+   "services/current-runtime-artifact-index-abi.ts",
+   "services/current-runtime-artifact-index.service.ts"
+  ],
+  "services/ui-payloads.service.ts": [
+   "models/database.ts",
+   "utils/http.ts"
+  ],
+  "services/ui-template-binding-index.service.ts": [
+   "utils/http.ts",
+   "services/current-runtime-artifact-index-abi.ts",
+   "services/current-runtime-artifact-index.service.ts",
+   "services/ui-template-catalog.service.ts"
+  ],
+  "services/ui-template-catalog.service.ts": [
+   "utils/http.ts",
+   "services/current-runtime-artifact-index-abi.ts",
+   "services/current-runtime-artifact-index.service.ts"
+  ],
+  "services/UsageRecipeService.ts": [],
+  "utils/admin-access-abi.ts": [],
+  "utils/admin-access.ts": [
+   "utils/admin-access-abi.ts",
+   "utils/error-response.ts",
+   "utils/logger.ts"
+  ],
+  "utils/error-response.ts": [],
+  "utils/http-cache.ts": [],
+  "utils/http.ts": [],
+  "utils/logger.ts": [
+   "config/runtime-paths.ts"
+  ]
+ },
+ "rev": {
+  "models/database.ts": [
+   "app.ts",
+   "scripts/analyze-indexes.ts",
+   "scripts/clean-names.ts",
+   "scripts/clean-tooltips.ts",
+   "scripts/final-verify.ts",
+   "scripts/fix-encoding.ts",
+   "scripts/fix-schema.ts",
+   "scripts/force-rebuild.ts",
+   "scripts/import-summaries.ts",
+   "scripts/init-database.ts",
+   "scripts/migrate-database.ts",
+   "scripts/optimize-database-indexes.ts",
+   "scripts/quick-test-summaries.ts",
+   "scripts/rebuild-item-browser-groups.ts",
+   "scripts/test-extract-items.ts",
+   "scripts/test-insert.ts",
+   "scripts/verify-final.ts",
+   "services/acceleration-db-pipeline.service.ts",
+   "services/acceleration-runtime-compiler-probe.service.ts",
+   "services/acceleration-runtime-reconcile-worker.service.ts",
+   "services/acceleration-runtime-snapshot-activator.service.ts",
+   "services/acceleration-runtime.service.ts",
+   "services/create-recipe-summary.service.ts",
+   "services/create-summaries-hybrid.service.ts",
+   "services/create-summaries-optimized.service.ts",
+   "services/create-summaries-v2.service.ts",
+   "services/items-search.service.ts",
+   "services/items.service.ts",
+   "services/neonei-compiler.service.ts",
+   "services/patterns.service.ts",
+   "services/publish-manifest.service.ts",
+   "services/publish-payload-materializer.service.ts",
+   "services/publish-payload.service.ts",
+   "services/publish-release.service.ts",
+   "services/recipe-bootstrap.service.ts",
+   "services/recipes-indexed.service.ts",
+   "services/runtime-server-lifecycle.service.ts",
+   "services/ui-payloads.service.ts"
+  ],
+  "middleware/request-observability.ts": [
+   "app.ts"
+  ],
+  "middleware/error-handler.ts": [
+   "app.ts"
+  ],
+  "utils/error-response.ts": [
+   "app.ts",
+   "middleware/acceleration-runtime-gate.middleware.ts",
+   "middleware/error-handler.ts",
+   "routes/runtime-admin-transport.ts",
+   "services/pattern-control.service.ts",
+   "services/runtime-admin-reconcile-control.service.ts",
+   "utils/admin-access.ts"
+  ],
+  "routes/static-assets.routes.ts": [
+   "app.ts"
+  ],
+  "routes/runtime-admin-control-plane.routes.ts": [
+   "app.ts"
+  ],
+  "routes/runtime-admin.routes.ts": [
+   "app.ts",
+   "routes/runtime-admin-control-plane-subsystems.ts"
+  ],
+  "routes/api-namespaces.routes.ts": [
+   "app.ts"
+  ],
+  "config/server-settings.ts": [
+   "app.ts",
+   "bootstrap-server.ts",
+   "services/runtime-server-lifecycle.service.ts"
+  ],
+  "middleware/acceleration-runtime-gate.middleware.ts": [
+   "app.ts"
+  ],
+  "services/acceleration-runtime.service.ts": [
+   "app.ts",
+   "routes/runtime-admin-endpoint-types.ts",
+   "routes/runtime-admin-reconcile-executor.ts",
+   "services/runtime-admin-control.service.ts",
+   "services/runtime-admin-reconcile-control.service.ts",
+   "services/runtime-server-lifecycle.service.ts"
+  ],
+  "app.ts": [
+   "bootstrap-server.ts"
+  ],
+  "utils/logger.ts": [
+   "bootstrap-server.ts",
+   "compiler-client/elysium-compiler-client.ts",
+   "middleware/error-handler.ts",
+   "middleware/request-observability.ts",
+   "routes/runtime-admin-reconcile-executor.ts",
+   "scripts/prewarm-recipe-bootstrap.ts",
+   "services/acceleration-runtime-compiler-boundary-reporter.service.ts",
+   "services/acceleration-runtime-job-runner.service.ts",
+   "services/acceleration-runtime-reconcile-worker.service.ts",
+   "services/recipe-bootstrap.service.ts",
+   "services/recipes-indexed.service.ts",
+   "services/runtime-server-lifecycle.service.ts",
+   "services/startup-autowarm.service.ts",
+   "utils/admin-access.ts"
+  ],
+  "services/runtime-server-lifecycle.service.ts": [
+   "bootstrap-server.ts"
+  ],
+  "services/external-runtime-generation.service.ts": [
+   "bootstrap-server.ts",
+   "routes/static-assets.routes.ts",
+   "services/current-runtime-artifact-index.service.ts",
+   "services/current-runtime-snapshot.service.ts",
+   "services/external-runtime-artifact-promotion.service.ts",
+   "services/external-runtime-identity.service.ts"
+  ],
+  "compiler-client/elysium-compiler-client.ts": [
+   "compiler-client/elysium-compiler-capability-gate.ts",
+   "services/acceleration-runtime-compiler-boundary-reporter.service.ts"
+  ],
+  "compiler-client/elysium-compiler-capability-abi.ts": [
+   "compiler-client/elysium-compiler-capability-gate.ts",
+   "compiler-client/elysium-compiler-client.ts"
+  ],
+  "compiler-client/elysium-compiler-capability-gate.ts": [
+   "compiler-client/elysium-compiler-client.ts"
+  ],
+  "compiler-client/elysium-compiler-transport.ts": [
+   "compiler-client/elysium-compiler-client.ts"
+  ],
+  "config/autowarm-policy-abi.ts": [
+   "config/autowarm-policy.ts",
+   "services/startup-autowarm.service.ts"
+  ],
+  "utils/admin-access.ts": [
+   "config/server-settings-abi.ts",
+   "config/server-settings.ts"
+  ],
+  "config/server-settings-abi.ts": [
+   "config/server-settings.ts"
+  ],
+  "services/acceleration-runtime-state-abi.ts": [
+   "middleware/acceleration-runtime-gate.middleware.ts",
+   "services/acceleration-runtime-state.service.ts",
+   "services/runtime-server-lifecycle-abi.ts"
+  ],
+  "services/acceleration-runtime-state.service.ts": [
+   "middleware/acceleration-runtime-gate.middleware.ts",
+   "services/acceleration-runtime-phase-abi.ts",
+   "services/acceleration-runtime-phase-machine.service.ts",
+   "services/acceleration-runtime-snapshot-activator.service.ts",
+   "services/acceleration-runtime.service.ts"
+  ],
+  "config/runtime-paths.ts": [
+   "models/database.ts",
+   "routes/static-asset-route-registry.ts",
+   "scripts/compile-acceleration-db.ts",
+   "scripts/rebuild-item-browser-groups.ts",
+   "scripts/script-config.ts",
+   "services/acceleration-runtime-compiler-probe.service.ts",
+   "services/block-face-icon-map.service.ts",
+   "services/block-face-textures.service.ts",
+   "services/browser-atlas-index.service.ts",
+   "services/current-runtime-artifact-index.service.ts",
+   "services/current-runtime-snapshot.service.ts",
+   "services/external-runtime-artifact-promotion.service.ts",
+   "services/external-runtime-generation.service.ts",
+   "services/external-runtime-identity.service.ts",
+   "services/forestry-genetics.service.ts",
+   "services/gt-diagrams.service.ts",
+   "services/items.service.ts",
+   "services/multiblocks.service.ts",
+   "services/nesql-split-export.service.ts",
+   "services/publish-manifest.service.ts",
+   "services/publish-payload-materializer.service.ts",
+   "services/publish-release.service.ts",
+   "services/render-contract.service.ts",
+   "services/runtime-admin-control.service.ts",
+   "services/runtime-diagnostics-summary.service.ts",
+   "services/runtime-health-summary.service.ts",
+   "services/runtime-server-lifecycle.service.ts",
+   "services/static-asset-delivery.service.ts",
+   "utils/logger.ts"
+  ],
+  "routes/publish.routes.ts": [
+   "routes/api-namespace-registry.ts"
+  ],
+  "routes/runtime.routes.ts": [
+   "routes/api-namespace-registry.ts"
+  ],
+  "routes/v1.routes.ts": [
+   "routes/api-namespace-registry.ts"
+  ],
+  "routes/current-api.routes.ts": [
+   "routes/api-namespace-registry.ts"
+  ],
+  "routes/api-namespace-registry.ts": [
+   "routes/api-namespaces.routes.ts"
+  ],
+  "routes/current-runtime-endpoint-registry.ts": [
+   "routes/current-api.routes.ts",
+   "routes/current-runtime-endpoint-handler-abi.ts",
+   "routes/current-runtime-endpoint-handlers.ts"
+  ],
+  "routes/current-runtime-endpoint-handlers.ts": [
+   "routes/current-api.routes.ts"
+  ],
+  "services/current-runtime-read.service.ts": [
+   "routes/current-runtime-endpoint-handler-abi.ts",
+   "routes/current-runtime-endpoint-handlers.ts"
+  ],
+  "services/current-runtime-api.service.ts": [
+   "routes/current-runtime-endpoint-handlers.ts",
+   "routes/current-runtime-transport.ts",
+   "services/current-runtime-observability.service.ts",
+   "services/current-runtime-read-catalog.ts",
+   "services/current-runtime-read.service.ts"
+  ],
+  "utils/http.ts": [
+   "routes/current-runtime-endpoint-handlers.ts",
+   "routes/patterns.routes.ts",
+   "routes/publish-admin.routes.ts",
+   "routes/publish.routes.ts",
+   "routes/render-contract.routes.ts",
+   "routes/runtime.routes.ts",
+   "routes/v1.routes.ts",
+   "services/browser-atlas-index.service.ts",
+   "services/current-runtime-api.service.ts",
+   "services/current-runtime-recipe-api.service.ts",
+   "services/current-runtime-report-registry.service.ts",
+   "services/current-runtime-special-data.service.ts",
+   "services/publish-runtime-delivery.service.ts",
+   "services/render-contract-control.service.ts",
+   "services/render-contract.service.ts",
+   "services/ui-family-census.service.ts",
+   "services/ui-payloads.service.ts",
+   "services/ui-template-binding-index.service.ts",
+   "services/ui-template-catalog.service.ts"
+  ],
+  "routes/current-runtime-endpoint-handler-abi.ts": [
+   "routes/current-runtime-endpoint-handlers.ts"
+  ],
+  "routes/current-runtime-transport.ts": [
+   "routes/current-runtime-endpoint-handlers.ts"
+  ],
+  "routes/route-descriptor-registry.ts": [
+   "routes/current-runtime-endpoint-handlers.ts",
+   "routes/current-runtime-endpoint-registry.ts",
+   "routes/pattern-control-endpoint-handlers.ts",
+   "routes/pattern-control-endpoint-registry.ts",
+   "routes/publish-admin-endpoint-handlers.ts",
+   "routes/publish-admin-endpoint-registry.ts",
+   "routes/publish-public-endpoint-handlers.ts",
+   "routes/publish-public-endpoint-registry.ts",
+   "routes/render-contract-endpoint-handlers.ts",
+   "routes/render-contract-endpoint-registry.ts",
+   "routes/runtime-admin-endpoint-handlers.ts",
+   "routes/runtime-admin-endpoint-registry.ts",
+   "routes/runtime-public-endpoint-handlers.ts",
+   "routes/runtime-public-endpoint-registry.ts",
+   "routes/static-asset-route-registry.ts",
+   "routes/v1-endpoint-handlers.ts",
+   "routes/v1-endpoint-registry.ts"
+  ],
+  "services/current-runtime-report-registry-abi.ts": [
+   "routes/current-runtime-transport.ts",
+   "services/current-runtime-report-registry.service.ts"
+  ],
+  "services/current-runtime-report-registry.service.ts": [
+   "routes/current-runtime-transport.ts"
+  ],
+  "utils/http-cache.ts": [
+   "routes/current-runtime-transport.ts",
+   "routes/patterns.routes.ts",
+   "routes/publish-admin-endpoint-handlers.ts",
+   "routes/publish-public-endpoint-handlers.ts",
+   "routes/runtime-admin-transport.ts",
+   "routes/runtime-public-endpoint-handlers.ts",
+   "routes/static-assets.routes.ts",
+   "routes/v1-endpoint-handlers.ts",
+   "services/current-runtime-api-abi.ts",
+   "services/publish-runtime-delivery-abi.ts",
+   "services/runtime-manifest-delivery.service.ts"
+  ],
+  "routes/current-runtime-transport-abi.ts": [
+   "routes/current-runtime-transport.ts"
+  ],
+  "services/pattern-control.service.ts": [
+   "routes/pattern-control-endpoint-handlers.ts"
+  ],
+  "routes/pattern-control-endpoint-registry.ts": [
+   "routes/pattern-control-endpoint-handlers.ts",
+   "routes/patterns.routes.ts"
+  ],
+  "routes/pattern-control-endpoint-handlers.ts": [
+   "routes/patterns.routes.ts"
+  ],
+  "services/publish-admin-control.service.ts": [
+   "routes/publish-admin-endpoint-handlers.ts"
+  ],
+  "routes/publish-admin-endpoint-registry.ts": [
+   "routes/publish-admin-endpoint-handlers.ts",
+   "routes/publish-admin.routes.ts"
+  ],
+  "routes/runtime-admin-transport.ts": [
+   "routes/publish-admin-endpoint-handlers.ts",
+   "routes/runtime-admin-control-plane.routes.ts",
+   "routes/runtime-admin-endpoint-handlers.ts",
+   "routes/runtime-admin-reconcile-executor.ts"
+  ],
+  "routes/publish-admin-endpoint-handlers.ts": [
+   "routes/publish-admin.routes.ts"
+  ],
+  "services/publish-runtime-delivery.service.ts": [
+   "routes/publish-public-endpoint-handlers.ts"
+  ],
+  "routes/publish-public-endpoint-registry.ts": [
+   "routes/publish-public-endpoint-handlers.ts",
+   "routes/publish.routes.ts"
+  ],
+  "routes/publish-public-endpoint-handlers.ts": [
+   "routes/publish.routes.ts"
+  ],
+  "services/render-contract-control.service.ts": [
+   "routes/render-contract-endpoint-handlers.ts"
+  ],
+  "routes/render-contract-endpoint-registry.ts": [
+   "routes/render-contract-endpoint-handlers.ts",
+   "routes/render-contract.routes.ts"
+  ],
+  "routes/render-contract-endpoint-handlers.ts": [
+   "routes/render-contract.routes.ts"
+  ],
+  "services/runtime-admin-reconcile-control.service.ts": [
+   "routes/runtime-admin-control-plane-registry.ts",
+   "routes/runtime-admin-endpoint-handlers.ts",
+   "routes/runtime-admin-reconcile-executor.ts",
+   "routes/runtime-admin-transport.ts",
+   "routes/runtime-admin.routes.ts"
+  ],
+  "routes/patterns.routes.ts": [
+   "routes/runtime-admin-control-plane-subsystems.ts"
+  ],
+  "routes/render-contract.routes.ts": [
+   "routes/runtime-admin-control-plane-subsystems.ts"
+  ],
+  "routes/publish-admin.routes.ts": [
+   "routes/runtime-admin-control-plane-subsystems.ts"
+  ],
+  "routes/runtime-admin-endpoint-types.ts": [
+   "routes/runtime-admin-control-plane-subsystems.ts",
+   "routes/runtime-admin-control-plane.routes.ts",
+   "routes/runtime-admin-endpoint-handlers.ts",
+   "routes/runtime-admin.routes.ts"
+  ],
+  "routes/runtime-admin-control-plane-registry.ts": [
+   "routes/runtime-admin-control-plane-subsystems.ts",
+   "routes/runtime-admin-control-plane.routes.ts"
+  ],
+  "routes/runtime-admin-control-plane-subsystems.ts": [
+   "routes/runtime-admin-control-plane.routes.ts"
+  ],
+  "services/runtime-admin-control.service.ts": [
+   "routes/runtime-admin-endpoint-handlers.ts"
+  ],
+  "routes/runtime-admin-endpoint-registry.ts": [
+   "routes/runtime-admin-endpoint-handlers.ts",
+   "routes/runtime-admin.routes.ts"
+  ],
+  "routes/runtime-admin-reconcile-executor.ts": [
+   "routes/runtime-admin-endpoint-handlers.ts"
+  ],
+  "routes/runtime-admin-endpoint-handlers.ts": [
+   "routes/runtime-admin.routes.ts"
+  ],
+  "services/runtime-contract-index.service.ts": [
+   "routes/runtime-public-endpoint-handlers.ts",
+   "routes/v1-endpoint-handlers.ts"
+  ],
+  "services/runtime-manifest-delivery.service.ts": [
+   "routes/runtime-public-endpoint-handlers.ts",
+   "routes/v1-endpoint-handlers.ts"
+  ],
+  "services/runtime-observability-delivery.service.ts": [
+   "routes/runtime-public-endpoint-handlers.ts",
+   "routes/v1-endpoint-handlers.ts"
+  ],
+  "routes/runtime-public-endpoint-registry.ts": [
+   "routes/runtime-public-endpoint-handlers.ts",
+   "routes/runtime.routes.ts"
+  ],
+  "routes/runtime-public-endpoint-handlers.ts": [
+   "routes/runtime.routes.ts"
+  ],
+  "services/static-asset-delivery.service.ts": [
+   "routes/static-asset-route-registry.ts",
+   "routes/static-assets.routes.ts"
+  ],
+  "routes/static-asset-route-registry.ts": [
+   "routes/static-assets.routes.ts"
+  ],
+  "routes/v1-endpoint-registry.ts": [
+   "routes/v1-endpoint-handlers.ts",
+   "routes/v1.routes.ts"
+  ],
+  "routes/v1-endpoint-handlers.ts": [
+   "routes/v1.routes.ts"
+  ],
+  "services/acceleration-db-pipeline.service.ts": [
+   "scripts/compile-acceleration-db.ts",
+   "services/acceleration-runtime-snapshot-activator.service.ts"
+  ],
+  "scripts/script-config.ts": [
+   "scripts/force-rebuild.ts",
+   "scripts/import-summaries.ts",
+   "scripts/init-database.ts"
+  ],
+  "services/recipe-bootstrap.service.ts": [
+   "scripts/prewarm-recipe-bootstrap.ts",
+   "services/publish-payload-materializer.service.ts",
+   "services/startup-autowarm.service.ts"
+  ],
+  "services/gtnh-collapsible-items.service.ts": [
+   "scripts/rebuild-item-browser-groups.ts",
+   "services/browser-variant-grouping.service.ts",
+   "services/neonei-compiler.service.ts"
+  ],
+  "services/browser-variant-grouping.service.ts": [
+   "scripts/rebuild-item-browser-groups.ts",
+   "services/neonei-compiler.service.ts"
+  ],
+  "services/gtnh-browser-order.service.ts": [
+   "scripts/rebuild-item-browser-groups.ts",
+   "services/neonei-compiler.service.ts"
+  ],
+  "services/create-summaries-optimized.service.ts": [
+   "scripts/test-extract-items.ts"
+  ],
+  "bootstrap-server.ts": [
+   "server.ts"
+  ],
+  "services/neonei-compiler.service.ts": [
+   "services/acceleration-db-pipeline.service.ts",
+   "services/acceleration-runtime-compiler-probe.service.ts"
+  ],
+  "services/publish-payload-materializer.service.ts": [
+   "services/acceleration-db-pipeline.service.ts",
+   "services/neonei-compiler.service.ts"
+  ],
+  "services/acceleration-runtime-phase-abi.ts": [
+   "services/acceleration-runtime-phase-machine.service.ts",
+   "services/acceleration-runtime-reconcile-worker.service.ts"
+  ],
+  "services/acceleration-runtime-phase-machine.service.ts": [
+   "services/acceleration-runtime-reconcile-dispatcher.service.ts",
+   "services/acceleration-runtime-reconcile-worker.service.ts",
+   "services/acceleration-runtime.service.ts"
+  ],
+  "services/acceleration-runtime-reconcile-worker.service.ts": [
+   "services/acceleration-runtime-reconcile-dispatcher.service.ts"
+  ],
+  "services/acceleration-runtime-job-runner.service.ts": [
+   "services/acceleration-runtime-reconcile-worker.service.ts"
+  ],
+  "services/acceleration-runtime-snapshot-activator.service.ts": [
+   "services/acceleration-runtime-reconcile-worker.service.ts"
+  ],
+  "services/acceleration-runtime-compiler-boundary-reporter.service.ts": [
+   "services/acceleration-runtime.service.ts"
+  ],
+  "services/acceleration-runtime-compiler-probe.service.ts": [
+   "services/acceleration-runtime.service.ts"
+  ],
+  "services/acceleration-runtime-compiler-authority.service.ts": [
+   "services/acceleration-runtime.service.ts",
+   "services/current-runtime-recipe-api.service.ts",
+   "services/external-runtime-identity.service.ts",
+   "services/publish-runtime-delivery-abi.ts",
+   "services/publish-runtime-delivery.service.ts",
+   "services/runtime-health-summary.service.ts"
+  ],
+  "services/external-runtime-identity.service.ts": [
+   "services/acceleration-runtime.service.ts",
+   "services/external-runtime-artifact-promotion.service.ts"
+  ],
+  "services/acceleration-runtime-reconcile-dispatcher.service.ts": [
+   "services/acceleration-runtime.service.ts"
+  ],
+  "config/block-face-icon-overrides.ts": [
+   "services/block-face-icon-map.service.ts"
+  ],
+  "services/block-face-icon-map.service.ts": [
+   "services/block-face-textures.service.ts"
+  ],
+  "services/current-runtime-artifact-index-abi.ts": [
+   "services/browser-atlas-index.service.ts",
+   "services/browser-layout-index.service.ts",
+   "services/current-runtime-artifact-index.service.ts",
+   "services/current-runtime-snapshot-abi.ts",
+   "services/neonei-compiler.service.ts",
+   "services/render-contract.service.ts",
+   "services/ui-family-census.service.ts",
+   "services/ui-template-binding-index.service.ts",
+   "services/ui-template-catalog.service.ts"
+  ],
+  "services/current-runtime-artifact-index.service.ts": [
+   "services/browser-atlas-index.service.ts",
+   "services/browser-layout-index.service.ts",
+   "services/current-runtime-api-abi.ts",
+   "services/current-runtime-api.service.ts",
+   "services/current-runtime-report-registry.service.ts",
+   "services/current-runtime-snapshot.service.ts",
+   "services/native-render-runtime-diagnostics.service.ts",
+   "services/native-ui-runtime-proof.service.ts",
+   "services/neonei-compiler.service.ts",
+   "services/render-contract.service.ts",
+   "services/runtime-health-summary.service.ts",
+   "services/runtime-recipe-pack.service.ts",
+   "services/rust-search-pack.service.ts",
+   "services/ui-family-census.service.ts",
+   "services/ui-template-binding-index.service.ts",
+   "services/ui-template-catalog.service.ts"
+  ],
+  "services/items.service.ts": [
+   "services/browser-render-hints.service.ts",
+   "services/neonei-compiler.service.ts",
+   "services/publish-payload-materializer.service.ts",
+   "services/publish-payload.service.ts",
+   "services/publish-runtime-delivery.service.ts",
+   "services/recipe-bootstrap.service.ts"
+  ],
+  "services/render-contract.service.ts": [
+   "services/browser-render-hints.service.ts",
+   "services/recipe-bootstrap.service.ts",
+   "services/recipes-indexed.service.ts",
+   "services/render-contract-control.service.ts"
+  ],
+  "services/current-runtime-snapshot-abi.ts": [
+   "services/current-runtime-api-abi.ts",
+   "services/current-runtime-snapshot.service.ts",
+   "services/runtime-health-summary.service.ts"
+  ],
+  "services/runtime-health-summary.service.ts": [
+   "services/current-runtime-api.service.ts",
+   "services/runtime-diagnostics-summary.service.ts",
+   "services/runtime-observability-delivery-abi.ts",
+   "services/runtime-observability-delivery.service.ts"
+  ],
+  "services/current-runtime-snapshot.service.ts": [
+   "services/current-runtime-api.service.ts",
+   "services/native-ui-runtime-proof.service.ts",
+   "services/runtime-health-summary.service.ts"
+  ],
+  "services/current-runtime-api-abi.ts": [
+   "services/current-runtime-api.service.ts"
+  ],
+  "services/current-runtime-observability.service.ts": [
+   "services/current-runtime-read-catalog.ts"
+  ],
+  "services/current-runtime-recipe-api.service.ts": [
+   "services/current-runtime-read-catalog.ts"
+  ],
+  "services/current-runtime-settings.service.ts": [
+   "services/current-runtime-read-catalog.ts"
+  ],
+  "services/current-runtime-special-data.service.ts": [
+   "services/current-runtime-read-catalog.ts"
+  ],
+  "services/current-runtime-read-catalog.ts": [
+   "services/current-runtime-read.service.ts"
+  ],
+  "services/recipes-indexed.service.ts": [
+   "services/current-runtime-recipe-api.service.ts",
+   "services/publish-payload-materializer.service.ts",
+   "services/recipe-bootstrap.service.ts",
+   "services/recipe-metadata.ts"
+  ],
+  "services/runtime-recipe-pack.service.ts": [
+   "services/current-runtime-recipe-api.service.ts"
+  ],
+  "services/native-ui-runtime-proof-abi.ts": [
+   "services/current-runtime-report-registry-abi.ts",
+   "services/native-ui-runtime-proof.service.ts"
+  ],
+  "services/current-runtime-settings-abi.ts": [
+   "services/current-runtime-settings.service.ts"
+  ],
+  "services/forestry-genetics.service.ts": [
+   "services/current-runtime-special-data.service.ts"
+  ],
+  "services/gt-diagrams.service.ts": [
+   "services/current-runtime-special-data.service.ts"
+  ],
+  "services/multiblocks.service.ts": [
+   "services/current-runtime-special-data.service.ts"
+  ],
+  "compiler-client/elysium-compiled-artifact-loader.ts": [
+   "services/external-runtime-artifact-promotion.service.ts"
+  ],
+  "services/browser-atlas-index.service.ts": [
+   "services/items.service.ts",
+   "services/render-contract-control.service.ts"
+  ],
+  "services/items-search.service.ts": [
+   "services/items.service.ts",
+   "services/publish-payload-materializer.service.ts",
+   "services/publish-payload.service.ts",
+   "services/recipes-indexed.service.ts"
+  ],
+  "config/multiblock-overrides.ts": [
+   "services/multiblocks.service.ts"
+  ],
+  "services/block-face-textures.service.ts": [
+   "services/multiblocks.service.ts"
+  ],
+  "services/native-render-runtime-diagnostics-abi.ts": [
+   "services/native-render-runtime-diagnostics.service.ts"
+  ],
+  "services/native-ui-pack-abi.ts": [
+   "services/native-ui-runtime-proof-abi.ts",
+   "services/native-ui-runtime-proof.service.ts"
+  ],
+  "services/machine-icon-mapping.service.ts": [
+   "services/neonei-compiler.service.ts",
+   "services/recipe-bootstrap.service.ts",
+   "services/recipe-category-grouping.service.ts",
+   "services/recipes-indexed.service.ts"
+  ],
+  "services/recipe-metadata.ts": [
+   "services/neonei-compiler.service.ts"
+  ],
+  "services/recipe-category-grouping.service.ts": [
+   "services/neonei-compiler.service.ts",
+   "services/publish-payload-materializer.service.ts",
+   "services/recipes-indexed.service.ts"
+  ],
+  "services/patterns.service.ts": [
+   "services/pattern-control.service.ts"
+  ],
+  "services/pattern-export.service.ts": [
+   "services/pattern-control.service.ts",
+   "services/patterns.service.ts"
+  ],
+  "services/publish-manifest.service.ts": [
+   "services/publish-admin-control.service.ts",
+   "services/publish-runtime-delivery-abi.ts",
+   "services/publish-runtime-delivery.service.ts",
+   "services/runtime-diagnostics-summary.service.ts",
+   "services/runtime-manifest-delivery.service.ts"
+  ],
+  "services/publish-release.service.ts": [
+   "services/publish-admin-control.service.ts"
+  ],
+  "services/publish-payload.service.ts": [
+   "services/publish-manifest.service.ts",
+   "services/publish-payload-materializer.service.ts",
+   "services/publish-release.service.ts",
+   "services/publish-runtime-delivery.service.ts",
+   "services/rust-search-pack.service.ts"
+  ],
+  "services/publish-manifest-abi.ts": [
+   "services/publish-manifest.service.ts"
+  ],
+  "services/browser-render-hints.service.ts": [
+   "services/publish-payload-materializer.service.ts",
+   "services/publish-payload.service.ts",
+   "services/publish-runtime-delivery.service.ts",
+   "services/recipe-bootstrap.service.ts"
+  ],
+  "services/rust-search-pack.service.ts": [
+   "services/publish-payload-materializer.service.ts"
+  ],
+  "services/publish-runtime-delivery-abi.ts": [
+   "services/publish-runtime-delivery.service.ts"
+  ],
+  "services/browser-layout-index.service.ts": [
+   "services/render-contract-control.service.ts"
+  ],
+  "services/ui-family-census.service.ts": [
+   "services/render-contract-control.service.ts",
+   "services/render-contract.service.ts"
+  ],
+  "services/ui-payloads.service.ts": [
+   "services/render-contract-control.service.ts"
+  ],
+  "services/ui-template-binding-index.service.ts": [
+   "services/render-contract-control.service.ts",
+   "services/render-contract.service.ts"
+  ],
+  "services/ui-template-catalog.service.ts": [
+   "services/render-contract-control.service.ts",
+   "services/render-contract.service.ts",
+   "services/ui-template-binding-index.service.ts"
+  ],
+  "services/manifest-counts.ts": [
+   "services/render-contract.service.ts"
+  ],
+  "services/runtime-admin-control-abi.ts": [
+   "services/runtime-admin-control.service.ts"
+  ],
+  "services/runtime-contract-index-abi.ts": [
+   "services/runtime-contract-index.service.ts"
+  ],
+  "services/runtime-diagnostics-summary-abi.ts": [
+   "services/runtime-diagnostics-summary.service.ts"
+  ],
+  "services/native-ui-runtime-proof.service.ts": [
+   "services/runtime-health-summary.service.ts"
+  ],
+  "services/native-render-runtime-diagnostics.service.ts": [
+   "services/runtime-health-summary.service.ts",
+   "services/runtime-server-lifecycle.service.ts"
+  ],
+  "services/runtime-health-summary-abi.ts": [
+   "services/runtime-health-summary.service.ts"
+  ],
+  "services/runtime-manifest-delivery-abi.ts": [
+   "services/runtime-manifest-delivery.service.ts"
+  ],
+  "services/runtime-diagnostics-summary.service.ts": [
+   "services/runtime-observability-delivery.service.ts"
+  ],
+  "services/runtime-observability-delivery-abi.ts": [
+   "services/runtime-observability-delivery.service.ts"
+  ],
+  "services/native-runtime-pack-abi.ts": [
+   "services/runtime-recipe-pack-reader.service.ts",
+   "services/runtime-recipe-pack.service.ts"
+  ],
+  "services/runtime-recipe-pack-reader.service.ts": [
+   "services/runtime-recipe-pack.service.ts"
+  ],
+  "services/startup-autowarm.service.ts": [
+   "services/runtime-server-lifecycle.service.ts"
+  ],
+  "services/runtime-server-lifecycle-abi.ts": [
+   "services/runtime-server-lifecycle.service.ts"
+  ],
+  "services/rust-search-pack-abi.ts": [
+   "services/rust-search-pack.service.ts"
+  ],
+  "config/autowarm-policy.ts": [
+   "services/startup-autowarm.service.ts"
+  ],
+  "utils/admin-access-abi.ts": [
+   "utils/admin-access.ts"
+  ]
+ },
+ "lines": {
+  "app.ts": 80,
+  "bootstrap-server.ts": 43,
+  "compiler-client/elysium-compiled-artifact-loader.ts": 90,
+  "compiler-client/elysium-compiler-capability-abi.ts": 70,
+  "compiler-client/elysium-compiler-capability-gate.ts": 113,
+  "compiler-client/elysium-compiler-client.ts": 117,
+  "compiler-client/elysium-compiler-transport.ts": 114,
+  "compiler-client/elysium-output-generation.ts": 207,
+  "config/autowarm-policy-abi.ts": 218,
+  "config/autowarm-policy.ts": 12,
+  "config/block-face-icon-overrides.ts": 10,
+  "config/multiblock-overrides.ts": 110,
+  "config/runtime-paths.ts": 164,
+  "config/server-settings-abi.ts": 212,
+  "config/server-settings.ts": 27,
+  "middleware/acceleration-runtime-gate.middleware.ts": 48,
+  "middleware/error-handler.ts": 26,
+  "middleware/request-observability.ts": 30,
+  "models/database.ts": 750,
+  "routes/api-namespace-registry.ts": 109,
+  "routes/api-namespaces.routes.ts": 26,
+  "routes/current-api.routes.ts": 15,
+  "routes/current-runtime-endpoint-handler-abi.ts": 275,
+  "routes/current-runtime-endpoint-handlers.ts": 214,
+  "routes/current-runtime-endpoint-registry.ts": 120,
+  "routes/current-runtime-transport-abi.ts": 23,
+  "routes/current-runtime-transport.ts": 111,
+  "routes/pattern-control-endpoint-handlers.ts": 52,
+  "routes/pattern-control-endpoint-registry.ts": 59,
+  "routes/patterns.routes.ts": 44,
+  "routes/publish-admin-endpoint-handlers.ts": 27,
+  "routes/publish-admin-endpoint-registry.ts": 31,
+  "routes/publish-admin.routes.ts": 30,
+  "routes/publish-public-endpoint-handlers.ts": 43,
+  "routes/publish-public-endpoint-registry.ts": 30,
+  "routes/publish.routes.ts": 29,
+  "routes/render-contract-endpoint-handlers.ts": 58,
+  "routes/render-contract-endpoint-registry.ts": 66,
+  "routes/render-contract.routes.ts": 28,
+  "routes/route-descriptor-registry.ts": 92,
+  "routes/runtime-admin-control-plane-registry.ts": 120,
+  "routes/runtime-admin-control-plane-subsystems.ts": 42,
+  "routes/runtime-admin-control-plane.routes.ts": 45,
+  "routes/runtime-admin-endpoint-handlers.ts": 69,
+  "routes/runtime-admin-endpoint-registry.ts": 50,
+  "routes/runtime-admin-endpoint-types.ts": 17,
+  "routes/runtime-admin-reconcile-executor.ts": 52,
+  "routes/runtime-admin-transport.ts": 39,
+  "routes/runtime-admin.routes.ts": 69,
+  "routes/runtime-public-endpoint-handlers.ts": 48,
+  "routes/runtime-public-endpoint-registry.ts": 34,
+  "routes/runtime.routes.ts": 21,
+  "routes/static-asset-route-registry.ts": 256,
+  "routes/static-assets.routes.ts": 191,
+  "routes/v1-endpoint-handlers.ts": 41,
+  "routes/v1-endpoint-registry.ts": 32,
+  "routes/v1.routes.ts": 18,
+  "scripts/analyze-indexes.ts": 54,
+  "scripts/clean-names.ts": 106,
+  "scripts/clean-tooltips.ts": 121,
+  "scripts/compile-acceleration-db.ts": 35,
+  "scripts/final-verify.ts": 64,
+  "scripts/fix-encoding.ts": 129,
+  "scripts/fix-schema.ts": 49,
+  "scripts/force-rebuild.ts": 43,
+  "scripts/import-summaries.ts": 111,
+  "scripts/init-database.ts": 24,
+  "scripts/migrate-database.ts": 66,
+  "scripts/optimize-database-indexes.ts": 118,
+  "scripts/prewarm-recipe-bootstrap.ts": 23,
+  "scripts/quick-test-summaries.ts": 41,
+  "scripts/rebuild-item-browser-groups.ts": 267,
+  "scripts/script-config.ts": 20,
+  "scripts/test-extract-items.ts": 58,
+  "scripts/test-insert.ts": 67,
+  "scripts/verify-final.ts": 69,
+  "server.ts": 4,
+  "services/acceleration-db-pipeline.service.ts": 149,
+  "services/acceleration-runtime-compiler-authority.service.ts": 115,
+  "services/acceleration-runtime-compiler-boundary-reporter.service.ts": 42,
+  "services/acceleration-runtime-compiler-probe.service.ts": 32,
+  "services/acceleration-runtime-job-runner.service.ts": 249,
+  "services/acceleration-runtime-phase-abi.ts": 381,
+  "services/acceleration-runtime-phase-machine.service.ts": 62,
+  "services/acceleration-runtime-reconcile-dispatcher.service.ts": 77,
+  "services/acceleration-runtime-reconcile-worker.service.ts": 82,
+  "services/acceleration-runtime-snapshot-activator.service.ts": 46,
+  "services/acceleration-runtime-state-abi.ts": 232,
+  "services/acceleration-runtime-state.service.ts": 104,
+  "services/acceleration-runtime.service.ts": 43,
+  "services/block-face-icon-map.service.ts": 97,
+  "services/block-face-textures.service.ts": 83,
+  "services/browser-atlas-index.service.ts": 528,
+  "services/browser-layout-index.service.ts": 61,
+  "services/browser-render-hints.service.ts": 161,
+  "services/browser-variant-grouping.service.ts": 270,
+  "services/create-recipe-summary.service.ts": 218,
+  "services/create-summaries-hybrid.service.ts": 196,
+  "services/create-summaries-optimized.service.ts": 231,
+  "services/create-summaries-v2.service.ts": 199,
+  "services/current-runtime-api-abi.ts": 355,
+  "services/current-runtime-api.service.ts": 158,
+  "services/current-runtime-artifact-index-abi.ts": 35,
+  "services/current-runtime-artifact-index.service.ts": 334,
+  "services/current-runtime-observability.service.ts": 60,
+  "services/current-runtime-read-catalog.ts": 242,
+  "services/current-runtime-read.service.ts": 67,
+  "services/current-runtime-recipe-api.service.ts": 69,
+  "services/current-runtime-report-registry-abi.ts": 135,
+  "services/current-runtime-report-registry.service.ts": 79,
+  "services/current-runtime-settings-abi.ts": 186,
+  "services/current-runtime-settings.service.ts": 14,
+  "services/current-runtime-snapshot-abi.ts": 306,
+  "services/current-runtime-snapshot.service.ts": 225,
+  "services/current-runtime-special-data.service.ts": 26,
+  "services/external-runtime-artifact-promotion.service.ts": 530,
+  "services/external-runtime-generation.service.ts": 653,
+  "services/external-runtime-identity.service.ts": 269,
+  "services/forestry-genetics.service.ts": 102,
+  "services/gt-diagrams.service.ts": 126,
+  "services/gtnh-browser-order.service.ts": 101,
+  "services/gtnh-collapsible-items.service.ts": 313,
+  "services/items-search.service.ts": 478,
+  "services/items.service.ts": 1713,
+  "services/machine-icon-mapping.service.ts": 1082,
+  "services/manifest-counts.ts": 18,
+  "services/multiblocks.service.ts": 321,
+  "services/native-render-runtime-diagnostics-abi.ts": 360,
+  "services/native-render-runtime-diagnostics.service.ts": 400,
+  "services/native-runtime-pack-abi.ts": 59,
+  "services/native-ui-pack-abi.ts": 119,
+  "services/native-ui-runtime-proof-abi.ts": 342,
+  "services/native-ui-runtime-proof.service.ts": 382,
+  "services/neonei-compiler.service.ts": 2458,
+  "services/nesql-split-export.service.ts": 735,
+  "services/pattern-control.service.ts": 185,
+  "services/pattern-export.service.ts": 214,
+  "services/patterns.service.ts": 437,
+  "services/publish-admin-control.service.ts": 26,
+  "services/publish-manifest-abi.ts": 98,
+  "services/publish-manifest.service.ts": 468,
+  "services/publish-payload-materializer.service.ts": 1840,
+  "services/publish-payload.service.ts": 573,
+  "services/publish-release.service.ts": 159,
+  "services/publish-runtime-delivery-abi.ts": 302,
+  "services/publish-runtime-delivery.service.ts": 157,
+  "services/recipe-bootstrap.service.ts": 810,
+  "services/recipe-category-grouping.service.ts": 391,
+  "services/recipe-metadata.ts": 49,
+  "services/recipes-indexed.service.ts": 2295,
+  "services/render-contract-control.service.ts": 100,
+  "services/render-contract.service.ts": 548,
+  "services/runtime-admin-control-abi.ts": 295,
+  "services/runtime-admin-control.service.ts": 79,
+  "services/runtime-admin-reconcile-control.service.ts": 77,
+  "services/runtime-contract-index-abi.ts": 219,
+  "services/runtime-contract-index.service.ts": 31,
+  "services/runtime-diagnostics-summary-abi.ts": 130,
+  "services/runtime-diagnostics-summary.service.ts": 271,
+  "services/runtime-health-summary-abi.ts": 337,
+  "services/runtime-health-summary.service.ts": 475,
+  "services/runtime-manifest-delivery-abi.ts": 120,
+  "services/runtime-manifest-delivery.service.ts": 54,
+  "services/runtime-observability-delivery-abi.ts": 78,
+  "services/runtime-observability-delivery.service.ts": 26,
+  "services/runtime-recipe-pack-reader.service.ts": 179,
+  "services/runtime-recipe-pack.service.ts": 249,
+  "services/runtime-server-lifecycle-abi.ts": 396,
+  "services/runtime-server-lifecycle.service.ts": 121,
+  "services/rust-search-pack-abi.ts": 93,
+  "services/rust-search-pack.service.ts": 113,
+  "services/startup-autowarm.service.ts": 38,
+  "services/static-asset-delivery.service.ts": 245,
+  "services/ui-family-census.service.ts": 236,
+  "services/ui-payloads.service.ts": 58,
+  "services/ui-template-binding-index.service.ts": 389,
+  "services/ui-template-catalog.service.ts": 346,
+  "services/UsageRecipeService.ts": 235,
+  "utils/admin-access-abi.ts": 168,
+  "utils/admin-access.ts": 76,
+  "utils/error-response.ts": 25,
+  "utils/http-cache.ts": 109,
+  "utils/http.ts": 31,
+  "utils/logger.ts": 71
+ }
+}

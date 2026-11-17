@@ -1,6 +1,5 @@
 /// <reference lib="webworker" />
-import { Api, Catalog, Query, Fault, checkManifest, hash, limits } from '@neonei/catalog/source';
-import { formats } from '@elysium/contracts';
+import { Api, Catalog, Query, Fault, checkManifest, hash, limits, supportedCatalogRevision } from '@neonei/catalog/source';
 import { body, request } from '../catalog/transport.ts';
 import { Shelf } from './store.ts';
 import type { Call, Operation, Progress, Reply } from './protocol.ts';
@@ -44,9 +43,9 @@ async function run(operation: Operation, signal: AbortSignal, progress: (value: 
     if (operation.catalog) id(operation.catalog);
     const source = base(operation.base);
     const saved = operation.catalog ? await shelf.saved(operation.catalog)
-      : (await shelf.list()).find(row => row.state === 'ready' && row.source === source.pathname && row.revision === formats.catalog.revision);
-    if (!saved || saved.state !== 'ready') throw new Fault('catalog_missing', '本地尚未完整保存这份资料', 404);
-    if (saved.revision !== formats.catalog.revision) throw new Fault('catalog_revision', '此离线副本的数据格式已更新，请下载当前发布的资料');
+      : (await shelf.list()).find(row => row.state === 'ready' && row.source === source.pathname && supportedCatalogRevision(row.revision) && (!operation.locale || row.locale === operation.locale));
+    if (!saved || saved.state !== 'ready') throw new Fault(operation.locale?'locale_missing':'catalog_missing', 'The requested dataset has not been saved completely', 404);
+    if (!supportedCatalogRevision(saved.revision)) throw new Fault('catalog_revision', '此离线副本的数据格式已更新，请下载当前发布的资料');
     id(saved.id);
     const catalog = await Catalog.open(await shelf.manifest(saved.id), async file => {
       const bytes = await shelf.file(saved.id, file.path);
@@ -90,7 +89,7 @@ async function run(operation: Operation, signal: AbortSignal, progress: (value: 
         if (weight > 256 * 1024 * 1024) throw new Fault('index_limit', '这份资料的索引超过离线查询内存预算');
       }
       const row = await shelf.begin(manifest, source.pathname);
-      const extra=await prepareInteractionSave(manifest.id,signal);
+      const extra=await prepareInteractionSave(manifest.id,signal,manifest);
       const storage = await scope.navigator.storage?.estimate();
       if (storage?.quota !== undefined && storage.usage !== undefined
         && row.totalBytes - row.bytes + extra.totalBytes + 8 * 1024 * 1024 > storage.quota - storage.usage) {
@@ -142,11 +141,12 @@ scope.addEventListener('message', event => {
   void run(call.operation, controller.signal, value => {
     if (!controller.signal.aborted) send({ id: call.id, progress: value });
   }).then(value => {
-    if (controller.signal.aborted) return;
+    // Keep the client slot until shared reads/CPU work have actually finished.
+    if (controller.signal.aborted) { send({ id: call.id, cancelled: true }); return; }
     if (value instanceof Uint8Array) send({ id: call.id, value }, [value.buffer as ArrayBuffer]);
     else send({ id: call.id, value });
   }, error => {
-    if (controller.signal.aborted) return;
+    if (controller.signal.aborted) { send({ id: call.id, cancelled: true }); return; }
     const quota = error instanceof DOMException && error.name === 'QuotaExceededError';
     send({ id: call.id, error: {
       code: quota ? 'storage_quota' : typeof error?.code === 'string' ? error.code : 'offline_error',

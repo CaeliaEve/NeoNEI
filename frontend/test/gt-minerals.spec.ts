@@ -1,0 +1,57 @@
+import {test,expect,chromium} from '@playwright/test';
+import {createRequire} from 'node:module';
+import {mkdtemp} from 'node:fs/promises';
+import {join} from 'node:path';
+import {tmpdir} from 'node:os';
+
+test('Native mineral rules remain readable and available after stopped-backend offline reopen',async({},testInfo)=>{
+  test.skip(process.env.NEONEI_TEST_NATIVE_REFERENCES!=='1','Requires actual Compiler native-reference fixture');
+  test.setTimeout(45000);
+  const {createApp}=createRequire(import.meta.url)(process.env.NEONEI_TEST_BACKEND!);
+  const server=createApp({catalog:process.env.NEONEI_TEST_CATALOG!,web:process.env.NEONEI_TEST_WEB!}).listen(0,'127.0.0.1');
+  await new Promise<void>(resolve=>server.once('listening',resolve));
+  const baseURL=`http://127.0.0.1:${server.address().port}`,directory=await mkdtemp(join(tmpdir(),'neonei-minerals-'));
+  const options={headless:true,baseURL,viewport:{width:1440,height:1000}};
+  let context=await chromium.launchPersistentContext(directory,options);const errors:string[]=[],offlineApi:string[]=[];
+  try{
+    const manifest=await(await fetch(baseURL+'/api/catalog')).json();let page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
+    await page.goto('/gt-minerals?catalog='+manifest.id);
+    await expect(page.getByRole('heading',{name:'矿脉与小矿石',exact:true})).toBeVisible();await expect(page.locator('.mineral-entry')).toHaveCount(2);
+    await expect(page.locator('.mineral-policy')).toContainText('不是实际世界生成概率');
+    const small=page.locator('.mineral-entry').filter({has:page.locator('.native-key',{hasText:'ore.small.fixture'})});
+    await expect(small).toContainText('10-10');await expect(small).toContainText('10 ～ 11');
+    await expect(small.getByRole('heading',{name:'小矿石 · Fixture Iron',exact:true})).toBeVisible();
+    await expect(small.locator('.mineral-drops .item-caption small').first()).toHaveText('2');
+    await expect(small.locator('.mineral-shares')).toContainText('原生 nan');
+    await small.getByText('7 种原生宿主样本',{exact:true}).click();await expect(small.locator('.host-list .item-link')).toHaveCount(7);
+    await small.getByText('原生辅助粉尘与掉落索引',{exact:true}).click();await expect(small.locator('.mineral-helper')).toContainText('item.diamond');
+    await page.getByRole('combobox',{name:'类型',exact:true}).selectOption('vein');await expect(page.locator('.mineral-entry')).toHaveCount(1);
+    await expect(page.locator('.mineral-role')).toHaveCount(4);await expect(page.locator('.mineral-shares')).toContainText('100.000%');
+    await page.getByRole('searchbox',{name:'查找矿物资料'}).fill('missing-native-key');await page.getByRole('button',{name:'搜索',exact:true}).click();
+    await expect(page.getByText('没有符合筛选条件的矿物定义。',{exact:true})).toBeVisible();
+    await page.getByRole('button',{name:'清空筛选',exact:true}).click();await expect(page.locator('.mineral-entry')).toHaveCount(2);
+    await page.getByRole('combobox',{name:'维度',exact:true}).selectOption('Ow');await expect(page).toHaveURL(/dimension=Ow/);
+    await page.reload();await expect(page.locator('.mineral-entry')).toHaveCount(2);
+    await page.screenshot({path:testInfo.outputPath('minerals-online.png'),fullPage:true});
+    await page.locator('.mineral-generator summary').last().click();
+    const explanation=page.locator('.mineral-generator').last().locator('p').last();
+    await expect(explanation).toContainText('不承诺每个区块固定产量');
+    await page.locator('.workspace-content').evaluate(element=>{element.scrollTop=element.scrollHeight;});await expect(explanation).toBeInViewport();
+    expect(await explanation.evaluate(element=>{const rect=element.getBoundingClientRect();return element.contains(document.elementFromPoint(rect.x+rect.width/2,rect.y+rect.height/2));})).toBe(true);
+    await page.screenshot({path:testInfo.outputPath('minerals-generator-readable.png'),fullPage:true});
+    const target=page.url();
+    await page.goto('/offline?catalog='+manifest.id);await page.getByRole('button',{name:'保存完整资料',exact:true}).click();
+    await expect(page.locator('.offline-copy')).toHaveAttribute('data-state','ready',{timeout:20000});
+    await context.close();server.closeAllConnections();await new Promise<void>((resolve,reject)=>server.close((error:Error|undefined)=>error?reject(error):resolve()));
+    context=await chromium.launchPersistentContext(directory,{...options,offline:true});
+    context.on('request',request=>{if(new URL(request.url()).pathname.startsWith('/api/'))offlineApi.push(request.url());});
+    page=await context.newPage();page.on('pageerror',error=>errors.push(error.message));
+    const location=new URL(target);location.searchParams.set('offline','1');const response=await page.goto(location.toString());expect(response?.fromServiceWorker()).toBe(true);
+    await expect(page.locator('.mineral-entry')).toHaveCount(2);await expect(page.locator('.mineral-drops')).toContainText('原生列表没有提供每项概率');
+    await page.reload();await expect(page.locator('.mineral-entry')).toHaveCount(2);
+    await page.getByRole('combobox',{name:'类型',exact:true}).selectOption('smallOre');await expect(page.locator('.mineral-entry')).toHaveCount(1);
+    await expect(page.locator('.mineral-shares')).toContainText('原生 nan');
+    await page.screenshot({path:testInfo.outputPath('minerals-offline-reopened.png'),fullPage:true});
+    expect(offlineApi).toEqual([]);expect(errors).toEqual([]);
+  }finally{await context.close();if(server.listening){server.closeAllConnections();await new Promise<void>(resolve=>server.close(resolve));}}
+});

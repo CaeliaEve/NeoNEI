@@ -1,15 +1,16 @@
-import type {Manifest} from '@elysium/contracts';
+import type {CatalogManifest as Manifest} from '@neonei/catalog/source';
 import {PriorityPool} from './priority-pool.ts';
+import {ApiError} from '../catalog/transport.ts';
 export class Interaction {
  private worker:Worker;private seq=0;
  private readonly reads=new PriorityPool<unknown>(4);
  private pending=new Map<number,{resolve:(value:any)=>void;reject:(error:Error)=>void}>();
  readonly ready:Promise<boolean>;
- constructor(manifest:Manifest){
+ constructor(manifest:Manifest,offline=false){
   this.worker=new Worker(new URL('./interaction.worker.ts',import.meta.url),{type:'module'});
-  this.worker.onmessage=event=>{const {id,value,error}=event.data,p=this.pending.get(id);if(!p)return;this.pending.delete(id);error?p.reject(Error(error)):p.resolve(value);};
+  this.worker.onmessage=event=>{const {id,value,error}=event.data,p=this.pending.get(id);if(!p)return;this.pending.delete(id);error?p.reject(new ApiError(error.code,error.message,error.status)):p.resolve(value);};
   this.worker.onerror=()=>{for(const p of this.pending.values())p.reject(Error('交互 Worker 失败'));this.pending.clear();};
-  this.ready=this.call({kind:'open',manifest}).catch(()=>false);
+  this.ready=this.call({kind:'open',manifest,offline}).catch(()=>false);
  }
  private call(message:Record<string,unknown>,signal?:AbortSignal):Promise<any>{
   if(signal?.aborted)return Promise.reject(new DOMException('Aborted','AbortError'));

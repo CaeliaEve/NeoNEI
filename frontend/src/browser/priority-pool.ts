@@ -5,8 +5,14 @@ type Job<T> = { key: string; priority: number; started: boolean; controller: Abo
 export class PriorityPool<T> {
   private jobs = new Map<string, Job<T>>();
   private active = 0;
+  private background = 0;
   private concurrency: number;
-  constructor(concurrency = 3) { this.concurrency = concurrency; }
+  private backgroundLimit: number;
+  constructor(concurrency = 3, reservedForeground = 0) {
+    if(!Number.isSafeInteger(concurrency)||concurrency<1||!Number.isSafeInteger(reservedForeground)
+      ||reservedForeground<0||reservedForeground>=concurrency)throw new Error('Invalid request concurrency');
+    this.concurrency = concurrency;this.backgroundLimit=concurrency-reservedForeground;
+  }
   run(key: string, load: (signal: AbortSignal) => Promise<T>, signal?: AbortSignal, priority = 0): Promise<T> {
     if (signal?.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
     let job = this.jobs.get(key);
@@ -34,17 +40,22 @@ export class PriorityPool<T> {
     });
     this.drain(); return result;
   }
+  priority(key:string):number|undefined{return this.jobs.get(key)?.priority;}
+  promote(key:string,priority:number):void{
+    const job=this.jobs.get(key);if(!job)return;job.priority=Math.min(job.priority,priority);this.drain();
+  }
   private drain() {
     while (this.active < this.concurrency) {
-      const next = [...this.jobs.values()].filter(job => !job.started).sort((a, b) => a.priority - b.priority)[0];
+      const next = [...this.jobs.values()].filter(job => !job.started&&(job.priority<=0||this.background<this.backgroundLimit)).sort((a, b) => a.priority - b.priority)[0];
       if (!next) return;
-      next.started = true; this.active++;
+      const background=next.priority>0;
+      next.started = true; this.active++;if(background)this.background++;
       try {
         Promise.resolve(next.load(next.controller.signal)).then(next.resolve, next.reject).finally(() => {
           if (this.jobs.get(next.key) === next) this.jobs.delete(next.key);
-          this.active--; this.drain();
+          this.active--;if(background)this.background--;this.drain();
         });
-      } catch (error) { next.reject(error); this.jobs.delete(next.key); this.active--; }
+      } catch (error) { next.reject(error); this.jobs.delete(next.key); this.active--;if(background)this.background--; }
     }
   }
   close() { for (const job of this.jobs.values()) { job.controller.abort(); job.reject(new DOMException('Aborted', 'AbortError')); } this.jobs.clear(); }

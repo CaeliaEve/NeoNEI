@@ -10,7 +10,7 @@ withDefaults(defineProps<{ topic: Topic; catalog: Catalog; records: Records; ani
 
 <template>
   <RouterLink class="topic-link" :class="{ compact }" :aria-label="plain(topic.name) + (note ? ' · ' + note : '')" :title="plain(topic.name) + (note ? ' · ' + note : '')"
-    :to="{ name: topic.kind, params: { id: topic.id }, query: { catalog: catalog.manifest.id, ...(catalog.offline ? { offline: '1' } : {}) } }">
+    :to="{ name: topic.kind, params: { id: topic.id }, query: { catalog: catalog.manifest.id, ...(catalog.locale?{lang:catalog.locale}:{}), ...(catalog.offline ? { offline: '1' } : {}) } }">
     <Icon v-if="topic.icon || topic.image" :atlas="catalog.atlas" :texture="records.picture(topic)" :width="size" :height="size" :animate="animate" :label="plain(topic.name)" />
     <GameText v-if="!compact" :text="topic.name" /><slot />
   </RouterLink>

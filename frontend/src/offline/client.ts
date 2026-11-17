@@ -1,5 +1,6 @@
-import type { Manifest } from '@elysium/contracts';
+import type { CatalogManifest as Manifest } from '@neonei/catalog/source';
 import { ApiError } from '../catalog/transport.ts';
+import {t} from '../i18n/index.ts';
 import type { Operation, Opened, Progress, Reply, Saved } from './protocol.ts';
 
 export type { Progress, Saved };
@@ -37,7 +38,8 @@ class Channel {
       this.pending.delete(reply.id); pending.signal?.removeEventListener('abort', pending.abort);
       if (pending.started) this.active--;
       if (!pending.cancelled) {
-        if ('error' in reply) pending.reject(new ApiError(reply.error.code, reply.error.message, reply.error.status));
+        if ('error' in reply) pending.reject(new ApiError(reply.error.code, reply.error.code==='locale_missing'?t('尚未发布或保存该语言的数据。'):reply.error.message, reply.error.status));
+        else if ('cancelled' in reply) pending.reject(new DOMException('Aborted', 'AbortError'));
         else pending.resolve(reply.value);
       }
       this.drain();
@@ -57,13 +59,17 @@ class Channel {
         const pending = this.pending.get(id);
         if (!pending || pending.cancelled) return;
         pending.cancelled = true;
-        if (pending.started) this.worker.postMessage({ cancel: id });
-        else {
+        pending.signal?.removeEventListener('abort', pending.abort);
+        pending.progress = undefined;
+        reject(new DOMException('Aborted', 'AbortError'));
+        if (pending.started) {
+          try { this.worker.postMessage({ cancel: id }); }
+          catch (error) { this.close(error); }
+        } else {
           this.pending.delete(id);
           const index = this.queue.indexOf(id);
           if (index >= 0) this.queue.splice(index, 1);
         }
-        reject(new DOMException('Aborted', 'AbortError'));
         this.drain();
       };
       this.pending.set(id, { operation, started: false, cancelled: false, resolve: value => resolve(value as T), reject, signal, abort, progress });
@@ -91,7 +97,8 @@ class Channel {
     if (this.closed) return;
     this.closed = true; this.worker.terminate();
     for (const pending of this.pending.values()) {
-      pending.signal?.removeEventListener('abort', pending.abort); pending.reject(error);
+      pending.signal?.removeEventListener('abort', pending.abort);
+      if (!pending.cancelled) pending.reject(error);
     }
     this.pending.clear(); this.queue.length = 0; this.active = 0;
   }
@@ -101,10 +108,10 @@ export class Local {
   readonly manifest: Manifest;
   private readonly channel: Channel;
   private constructor(manifest: Manifest, channel: Channel) { this.manifest = manifest; this.channel = channel; }
-  static async open(catalog: string, signal?: AbortSignal, base = '/api'): Promise<Local> {
+  static async open(catalog: string, signal?: AbortSignal, base = '/api', locale?: string): Promise<Local> {
     const channel = new Channel();
     try {
-      const opened = await channel.call<Opened>({ kind: 'open', catalog, base }, signal);
+      const opened = await channel.call<Opened>({ kind: 'open', catalog, base, locale }, signal);
       return new Local(opened.manifest, channel);
     } catch (error) { channel.close(); throw error; }
   }

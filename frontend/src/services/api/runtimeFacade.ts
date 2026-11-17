@@ -13,8 +13,6 @@ import type {
   Fluid,
   FluidGroup,
   FluidStack,
-  ForestryGeneticsOverview,
-  GTDiagramsOverview,
   GregTechMetadata,
   HomeBootstrapResponse,
   Item,
@@ -37,7 +35,6 @@ import type {
   RecipeUiPayload,
   RecipeVariantGroup,
   SearchItemsFastOptions,
-  MultiblockBlueprint,
   indexedItem,
   indexedItemGroup,
   indexedItemStack,
@@ -48,7 +45,6 @@ import type {
   indexedRecipeCategorySummary,
   indexedRecipeMetadata,
 } from '../../runtime/types';
-import { specialDataRuntimeClient } from '../../runtime/specialDataClient';
 import { indexedRecipeRuntimeClient, type CurrentRecipePageResponse } from '../../runtime/indexedRecipeClient';
 import {
   browserCatalogClient,
@@ -79,7 +75,6 @@ export const api = {
     browserCatalogClient.clearAllCaches();
     recipeUiPayloadClient.clearCaches();
     resetRuntimeSessionCaches();
-    specialDataRuntimeClient.clear();
   },
 
   async getPublishManifest(): Promise<PublicRuntimeManifest> {
@@ -270,16 +265,5 @@ export const api = {
     return elysiumFacade.searchItemsFast(keyword, limit, options);
   },
 
-  // Get multiblock blueprint by controller item ID
-  async getMultiblockBlueprint(controllerItemId: string): Promise<MultiblockBlueprint> {
-    return specialDataRuntimeClient.getMultiblockBlueprint(controllerItemId);
-  },
 
-  async getGTDiagramsOverview(): Promise<GTDiagramsOverview> {
-    return specialDataRuntimeClient.getGTDiagramsOverview();
-  },
-
-  async getForestryGeneticsOverview(): Promise<ForestryGeneticsOverview> {
-    return specialDataRuntimeClient.getForestryGeneticsOverview();
-  }
 };

@@ -79,6 +79,8 @@ export function useItemBrowser(
   const expandedGroupKeys = ref<string[]>([]);
   const expandedGroupFacetFilters = ref<BrowserFacetFilters>({});
   const currentPage = ref(1);
+  // Identity of the loaded rows; wheel intent may already point at a newer page.
+  const loadedPage = ref(1);
   const pageSize = ref(50);
   const totalItems = ref(0);
   const totalPages = ref(0);
@@ -148,7 +150,7 @@ export function useItemBrowser(
       ? options?.measureVisiblePageCapacity?.()
       : null;
     if (typeof measuredCapacity === 'number' && Number.isFinite(measuredCapacity) && measuredCapacity > 0) {
-      return Math.max(20, Math.floor(measuredCapacity));
+      return Math.max(1, Math.floor(measuredCapacity));
     }
 
     const gap = 4;
@@ -295,6 +297,15 @@ export function useItemBrowser(
     sharedExpandedProjectionCache.clear();
   };
 
+  const invalidateCatalog = () => {
+    ++loadItemsRequestId;
+    interactionScheduler.clear(); frameScheduler.clear(); pagePresentationWarm.invalidate();
+    clearBrowserPageState();
+    items.value = []; browserEntries.value = []; mods.value = [];
+    totalItems.value = 0; totalPages.value = 0; currentPage.value = 1;
+    selectedMod.value = 'all'; expandedGroupKeys.value = []; expandedGroupFacetFilters.value = {};
+  };
+
   const applyBrowserResponse = (
     response: CachedBrowserPage,
     requestId: number,
@@ -310,6 +321,7 @@ export function useItemBrowser(
 
     browserEntries.value = response.data;
     items.value = response.items;
+    loadedPage.value = response.page;
     browserPageRevision.value += 1;
     totalItems.value = response.total;
     totalPages.value = response.totalPages;
@@ -447,12 +459,19 @@ export function useItemBrowser(
     const requestParams = buildRequestParams(currentPage.value);
     if(residentReady.value && requestParams.expandedGroups.length===0){
       const targetPage=requestParams.page;
-      const result=await residentPage(requestParams.search||'',requestParams.modId==='all'?'':requestParams.modId||'',(targetPage-1)*requestParams.pageSize,requestParams.pageSize);
-      if(requestId!==loadItemsRequestId)return;
-      const rows:Item[]=result.rows.map(row=>({itemId:row.id,localizedName:row.name.replace(/§[0-9a-fk-or]/gi,''),internalName:row.registry,modId:row.registry.split(':')[0]!,residentSprite:row.sprite}));
-      browserEntries.value=rows.map(item=>({key:item.itemId,kind:'item',item}));items.value=rows;
-      totalItems.value=result.total;totalPages.value=Math.max(1,Math.ceil(result.total/requestParams.pageSize));
-      loading.value=false;transitioning.value=false;browserPageRevision.value++;return;
+      try {
+        const result=await residentPage(requestParams.search||'',requestParams.modId==='all'?'':requestParams.modId||'',(targetPage-1)*requestParams.pageSize,requestParams.pageSize);
+        if(requestId!==loadItemsRequestId)return;
+        const rows:Item[]=result.rows.map(row=>({itemId:row.id,localizedName:row.name.replace(/§[0-9a-fk-or]/gi,''),internalName:row.registry,modId:row.registry.split(':')[0]!,residentSprite:row.sprite}));
+        browserEntries.value=rows.map(item=>({key:item.itemId,kind:'item',item}));items.value=rows;loadedPage.value=targetPage;
+        totalItems.value=result.total;totalPages.value=Math.max(1,Math.ceil(result.total/requestParams.pageSize));
+        browserPageRevision.value++;
+      } catch (error) {
+        if(requestId===loadItemsRequestId)loadError.value=error instanceof Error?error.message:'物品列表读取失败';
+      } finally {
+        if(requestId===loadItemsRequestId){loading.value=false;transitioning.value=false;}
+      }
+      return;
     }
     const cacheKey = buildPageCacheKey(requestParams);
     const cached = pageCache.get(cacheKey);
@@ -837,12 +856,15 @@ export function useItemBrowser(
   };
 
   const setPageSize = (newSize: number, options?: { resetPage?: boolean }) => {
-    const normalized = Math.max(20, Math.floor(newSize));
+    const normalized = Math.max(1, Math.floor(newSize));
     if (normalized === pageSize.value) return;
+    const firstItem = (currentPage.value - 1) * pageSize.value;
     pageSize.value = normalized;
     clearBrowserPageState();
     if (options?.resetPage) {
       currentPage.value = 1;
+    } else {
+      currentPage.value = Math.floor(firstItem / normalized) + 1;
     }
     void loadItems();
   };
@@ -938,7 +960,7 @@ export function useItemBrowser(
     await nextTick();
     pageSize.value = calculatePageSize();
     await loadInitialHomeState();
-    void session().then(c=>prepareResident(c.manifest.id)).then(()=>{if(residentReady.value)void loadItems();}).catch(()=>{});
+    void session().then(c=>prepareResident(c.manifest.id,c)).then(()=>{if(residentReady.value)void loadItems();}).catch(()=>{});
     warmSearchIndex();
   });
 
@@ -964,6 +986,7 @@ export function useItemBrowser(
     expandedGroupKeys,
     expandedGroupFacetFilters,
     currentPage,
+    loadedPage,
     pageSize,
     totalItems,
     totalPages,
@@ -981,5 +1004,6 @@ export function useItemBrowser(
     prefetchItemsPage,
     getCachedItemsPage,
     clearCachedPages: clearBrowserPageState,
+    invalidateCatalog,
   };
 }

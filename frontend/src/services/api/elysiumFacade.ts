@@ -1,6 +1,7 @@
 import type { Entry, Recipe as ElysiumRecipe, Item as ElysiumItem, Fluid as ElysiumFluid, Texture } from '@elysium/contracts';
 import type { Related } from '../../catalog/client.ts';
 import { Catalog } from '../../catalog/client.ts';
+import { catalogSession } from '../../state/catalog-session.ts';
 import {initialRecipes} from '../../catalog/bootstrap.ts';
 import {PriorityPool} from '../../browser/priority-pool.ts';
 import type {
@@ -12,7 +13,6 @@ import type {
 type BrowseResult = Awaited<ReturnType<Catalog['items']>>;
 type RecipeResult = Awaited<ReturnType<Catalog['recipes']>>;
 
-const sessionCache = new Map<string, Promise<Catalog>>();
 const browseCache = new Map<string, BrowserPagePackResponse>();
 const browseInFlight = new Map<string, Promise<BrowserPagePackResponse>>();
 const groupCache = new Map<string, Awaited<ReturnType<typeof elysiumFacade.getBrowserGroupItems>>>();
@@ -31,7 +31,7 @@ function currentId(): string {
 }
 
 function cacheKey(params: Record<string, unknown>): string {
-  return JSON.stringify([currentId(), typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('offline') === '1', params]);
+  return JSON.stringify([currentId(), typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('lang'), typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('offline') === '1', params]);
 }
 
 function remember<T>(map: Map<string, T>, key: string, value: T): T {
@@ -43,14 +43,7 @@ function remember<T>(map: Map<string, T>, key: string, value: T): T {
 export async function session(): Promise<Catalog> {
   const id = currentId();
   const offline = typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('offline') === '1';
-  const key = `${id || 'current'}:${offline ? 'offline' : 'online'}`;
-  let pending = sessionCache.get(key);
-  if (!pending) {
-    pending = Catalog.open(id, { offline: typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('offline') === '1' });
-    sessionCache.set(key, pending);
-    pending.catch(() => sessionCache.delete(key));
-  }
-  return pending;
+  return catalogSession.open(id, offline, undefined,typeof window==='undefined'?'':new URLSearchParams(window.location.search).get('lang')??'');
 }
 
 function namespace(registry: string): string {
@@ -171,7 +164,7 @@ async function recipePage(catalog: Catalog, itemId: string, direction: 'recipes'
 }
 
 export const elysiumFacade = {
-  reset(): void { categoryIds.clear(); bootstraps.clear(); bootstrapPending.close();bootstrapPending=new PriorityPool<RecipeBootstrapPayload>(2); bootstrapBytes=0; for (const catalog of sessionCache.values()) void catalog.then(value => value.close()).catch(() => {}); sessionCache.clear(); itemCache.clear(); recipeCache.clear(); browseCache.clear(); browseInFlight.clear(); groupCache.clear(); inFlight.clear(); },
+  reset(): void { categoryIds.clear(); bootstraps.clear(); bootstrapPending.close();bootstrapPending=new PriorityPool<RecipeBootstrapPayload>(2); bootstrapBytes=0; itemCache.clear(); recipeCache.clear(); browseCache.clear(); browseInFlight.clear(); groupCache.clear(); inFlight.clear(); },
   async getMods(): Promise<Mod[]> {
     const catalog = await session(); const facets = await catalog.facets();
     return facets.mods.map(mod => ({ modId: mod.id, modName: mod.id, itemCount: mod.count }));

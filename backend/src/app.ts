@@ -29,7 +29,7 @@ export function createApp(options: AppOptions): Express {
   if (options.web) {
     const web = path.resolve(options.web);
     app.use(express.static(web, { index: false, fallthrough: true }));
-    app.get(['/', '/offline', '/entry/:id', '/recipe/:id', '/recipe-by-id/:recipeId', '/materials', '/material/:id', '/ore-groups', '/ore/:id', '/circuits', '/circuit/:id', '/bees', '/bee/:id', '/trees', '/tree/:id', '/butterflies', '/butterfly/:id', '/flowers', '/flower/:id', '/structures', '/structure/:id', '/aspects', '/aspect/:id', '/research', '/research/:id'], (req, res, next) => {
+    app.get(['/', '/offline', '/entry/:id', '/recipe', '/recipe/:id', '/recipe-by-id/:recipeId', '/oracle', '/oracle/:id', '/materials', '/material/:id', '/ore-groups', '/ore/:id', '/circuits', '/circuit/:id', '/bees', '/bee/:id', '/trees', '/tree/:id', '/butterflies', '/butterfly/:id', '/flowers', '/flower/:id', '/genetic-database', '/tool-materials', '/villager-trades', '/lexicon', '/mobs', '/mob/:entity', '/infernal-drops', '/draconic-reactor', '/bee-tree', '/underground-fluids', '/gt-minerals', '/bartworks-ores', '/quests', '/furnace-fuels', '/projectblue', '/fireworks', '/lathe', '/forestry-info', '/information', '/usage-queries', '/diagrams', '/ender-storage', '/forge-registry', '/structures', '/structure/:id', '/aspects', '/aspect/:id', '/research', '/research/:id', '/gt-diagrams', '/forestry-bee-tree', '/runtime-health', '/ui-studio'], (req, res, next) => {
       if (!req.accepts('html')) { next(); return; }
       res.setHeader('Cache-Control', 'no-cache');
       res.sendFile('index.html', { root: web }, error => { if (error) next(error); });

@@ -1,103 +1,17 @@
-﻿import { computed, ref, type Ref } from "vue";
-import type { Router } from "vue-router";
-import { watch } from 'vue';
+import { ref, watch, type Ref } from 'vue';
 import { isHomeItemSize } from '../../state/personal-backup.ts';
-import {
-  inspectGlobalBrowserAtlasResidentState,
-  warmAllGlobalBrowserAtlases,
-} from "../../services/globalBrowserAtlas";
+import {t} from '../../i18n/index.ts';
 
-export function useHomeSettingsState(itemSize: Ref<number>, router: Router) {
-  const showGearMenu = ref(false);
-  const settingsSaveStatus = ref('');
-  const settingsSaveError = ref('');
+export function useHomeSettingsState(itemSize: Ref<number>) {
+  const showGearMenu = ref(false), settingsSaveStatus = ref(''), settingsSaveError = ref('');
   watch(itemSize, () => { settingsSaveStatus.value = ''; settingsSaveError.value = ''; });
-  const atlasResidentRunning = ref(false);
-  const atlasResidentProgressCurrent = ref(0);
-  const atlasResidentProgressTotal = ref(0);
-  const atlasResidentItemCount = ref(0);
-  const atlasResidentStatus = ref("Atlas 将在主页打开后自动后台驻留");
-  const atlasResidentError = ref<string | null>(null);
-
-  const atlasResidentPercent = computed(() => {
-    if (atlasResidentProgressTotal.value <= 0) return 0;
-    return Math.min(100, Math.round((atlasResidentProgressCurrent.value / atlasResidentProgressTotal.value) * 100));
-  });
-
-  const openRuntimeHealth = () => {
-    showGearMenu.value = false;
-    void router.push({ name: "runtime-health" });
-  };
-
-  const refreshAtlasResidentState = async () => {
-    const state = await inspectGlobalBrowserAtlasResidentState().catch(() => null);
-    if (!state) {
-      atlasResidentStatus.value = "Atlas 状态读取失败";
-      return;
-    }
-    atlasResidentItemCount.value = state.itemCount;
-    atlasResidentProgressCurrent.value = state.loadedAtlasFileCount;
-    atlasResidentProgressTotal.value = state.atlasFileCount;
-    if (!state.available) {
-      atlasResidentStatus.value = "当前导出未包含浏览区 Atlas 索引";
-    } else if (state.atlasFileCount > 0 && state.loadedAtlasFileCount >= state.atlasFileCount) {
-      atlasResidentStatus.value = "Atlas 已就绪，翻页将直接走常驻纹理快路径";
-    } else {
-      atlasResidentStatus.value = `Atlas 后台驻留中 ${state.loadedAtlasFileCount}/${state.atlasFileCount}`;
-    }
-  };
-
-  const warmResidentAtlas = async () => {
-    if (atlasResidentRunning.value) return;
-    atlasResidentRunning.value = true;
-    atlasResidentError.value = null;
-    atlasResidentStatus.value = "正在后台驻留浏览区 Atlas";
+  function saveSettings() {
+    settingsSaveStatus.value = ''; settingsSaveError.value = '';
     try {
-      const ok = await warmAllGlobalBrowserAtlases((processed, total) => {
-        atlasResidentProgressCurrent.value = processed;
-        atlasResidentProgressTotal.value = total;
-        atlasResidentStatus.value = total > 0
-          ? `Atlas 后台驻留中 ${processed}/${total}`
-          : "正在读取 Atlas 索引";
-      });
-      await refreshAtlasResidentState();
-      if (!ok) {
-        atlasResidentStatus.value = "Atlas 索引不可用，请检查 NESQL++ 导出";
-      }
-    } catch (error) {
-      atlasResidentError.value = error instanceof Error ? error.message : String(error);
-      atlasResidentStatus.value = "Atlas 驻留失败";
-    } finally {
-      atlasResidentRunning.value = false;
-    }
-  };
-
-  const saveSettings = () => {
-    settingsSaveStatus.value = '';
-    settingsSaveError.value = '';
-    try {
-      if (!isHomeItemSize(itemSize.value)) throw new Error('invalid size');
-      localStorage.setItem("itemSize", itemSize.value.toString());
-      settingsSaveStatus.value = '图标大小已保存';
-    } catch {
-      settingsSaveError.value = '无法保存图标大小，请检查本地存储空间或浏览器权限。';
-    }
-  };
-
-  return {
-    showGearMenu,
-    settingsSaveStatus,
-    settingsSaveError,
-    atlasResidentRunning,
-    atlasResidentProgressCurrent,
-    atlasResidentProgressTotal,
-    atlasResidentItemCount,
-    atlasResidentStatus,
-    atlasResidentError,
-    atlasResidentPercent,
-    openRuntimeHealth,
-    refreshAtlasResidentState,
-    warmResidentAtlas,
-    saveSettings,
-  };
+      if (!isHomeItemSize(itemSize.value)) throw new Error('Invalid size');
+      localStorage.setItem('itemSize', String(itemSize.value));
+      settingsSaveStatus.value = t('图标大小已保存');
+    } catch { settingsSaveError.value = t('无法保存图标大小，请检查本地存储空间或浏览器权限。'); }
+  }
+  return { showGearMenu, settingsSaveStatus, settingsSaveError, saveSettings };
 }

@@ -16,6 +16,16 @@ test('latest frame task coalesces bursts and cancels on dispose',async()=>{
  scheduler.schedule(()=>seen.push(99));scheduler.clear();assert.ok(canceled);
 });
 
+test('recent prepared pages reuse pixels and release their buffers once on eviction or close',async()=>{
+ const {createPageBuffer}=await import('../src/browser/page-buffer.ts');let prepared=0;const disposed=[],shown=[];
+ const buffer=createPageBuffer(async page=>({value:page,dispose:()=>disposed.push(page)}),page=>shown.push(page),assert.fail,{key:page=>page,capacity:2});
+ // Count actual preparation, not commits to an already prepared page.
+ const other=createPageBuffer(async page=>{prepared++;return {value:page,dispose:()=>{}};},()=>{},assert.fail,{key:page=>page,capacity:2});
+ await buffer.stage(1);await buffer.stage(2);await buffer.stage(1);assert.deepEqual(shown,[1,2,1]);assert.deepEqual(disposed,[]);
+ await buffer.stage(3);assert.deepEqual(disposed,[2]);buffer.close();buffer.close();assert.deepEqual(disposed.sort(),[1,2,3]);
+ await other.stage(1);await other.stage(2);await other.stage(1);assert.equal(prepared,2);other.close();
+});
+
 test('page navigation cannot wait indefinitely for a throttled animation frame',async()=>{
  const {latestFrame}=await import('../src/browser/latest-frame.ts');
  const seen=[];let frame;

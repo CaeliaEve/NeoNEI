@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {t} from "../i18n/index.ts";
 import { computed, watch } from 'vue';
 import { Records, required, type Catalog, type ItemAspects } from '../catalog/client.ts';
 import { amount } from '../catalog/format.ts';
@@ -13,12 +14,12 @@ watch([() => props.item, () => props.catalog], load, { immediate: true });
 </script>
 
 <template>
-  <section class="aspect-bar" aria-label="物品要素">
-    <p v-if="loading" class="subtle" role="status">正在读取要素…</p>
-    <p v-else-if="error" class="inline-error" role="alert">{{ error }} <button type="button" @click="load">重试</button></p>
+  <section class="aspect-bar" :aria-label="t('物品要素')">
+    <p v-if="loading" class="subtle" role="status">{{t("正在读取要素…")}}</p>
+    <p v-else-if="error" class="inline-error" role="alert">{{ error }} <button type="button" @click="load">{{t("重试")}}</button></p>
     <template v-else-if="value && records">
-      <span v-if="value.item.aspects == null" class="subtle">此物品的要素信息未提供。</span>
-      <span v-else-if="!value.item.aspects.length" class="subtle">此物品没有要素。</span>
+      <span v-if="value.item.aspects == null" class="subtle">{{t("此物品的要素信息未提供。")}}</span>
+      <span v-else-if="!value.item.aspects.length" class="subtle">{{t("此物品没有要素。")}}</span>
       <span v-for="entry in value.item.aspects" :key="entry.aspect" class="aspect-amount">
         <TopicLink :topic="required(aspects, entry.aspect)" :catalog="catalog" :records="records" :animate="animate" /> × {{ amount(entry.amount) }}
       </span>

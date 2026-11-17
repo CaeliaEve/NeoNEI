@@ -19,7 +19,7 @@ for (const file of files) {
 }
 const require = createRequire(path.join(directory, 'backend/package.json'));
 const { createApp } = require(path.join(directory, 'backend/dist/app.js'));
-const app = createApp({ catalog: path.join(root, 'fixtures/catalog'), web: path.join(directory, 'frontend/dist') });
+const app = createApp({ catalog: process.env.NEONEI_TEST_CATALOG ?? path.join(root, 'fixtures/semantic-40'), web: path.join(directory, 'frontend/dist') });
 const server = await new Promise((resolve, reject) => {
   const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
   listener.once('error', reject);
@@ -35,11 +35,9 @@ try {
   const api = `/api/catalog/${manifest.id}`;
   const stone = await (await get(api + '/items?query=shitou')).json();
   const recipes = await (await get(api + '/recipes?direction=uses&item=' + stone.rows[0].id)).json();
-  const clips = recipes.related.views.flatMap(view => view.elements).filter(element => element.kind === 'clip');
-  assert.equal(clips.length, 2);
-  assert.equal(recipes.related.tracks.length, 1);
-  assert.ok(clips.every(clip => clip.track === recipes.related.tracks[0].id));
-  assert.equal(recipes.related.tracks[0].frames.reduce((sum, frame) => sum + frame.ticks, 0), 16);
+  assert.equal(Object.hasOwn(recipes.related, 'views'), false);
+  assert.equal(Object.hasOwn(recipes.related, 'tracks'), false);
+  assert.ok(recipes.rows.some(recipe => recipe.notes.some(note => note.key === 'fixture:sharedTank')));
   const changedItem = (await (await get(api + '/items?query=' + encodeURIComponent('铭记纸'))).json()).rows[0];
   const changed = await (await get(api + '/recipes?item=' + changedItem.id)).json();
   assert.equal(changed.rows[0].outputs[0].change.samples[1].id, changedItem.id);

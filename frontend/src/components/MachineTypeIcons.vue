@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import {t} from '../i18n/index.ts';
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Recipe } from '../services/api';
 import AnimatedItemIcon from './AnimatedItemIcon.vue';
@@ -213,8 +214,8 @@ onBeforeUnmount(() => {
       type="button"
       class="category-page-btn category-page-btn--prev"
       :disabled="normalizedCategoryPage <= 0"
-      title="上一组配方类�?
-      aria-label="上一组配方类�?
+      :title="t('上一组配方类别')"
+      :aria-label="t('上一组配方类别')"
       @click="goToCategoryPage(-1)"
     >
       <svg class="category-page-btn__icon" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -223,7 +224,7 @@ onBeforeUnmount(() => {
     </button>
 
     <div class="icons-viewport">
-      <div class="icons-container" role="listbox" aria-label="配方类别" aria-orientation="horizontal">
+      <div class="icons-container" role="listbox" :aria-label="t('配方类别')" aria-orientation="horizontal">
         <button
           v-for="{ category, index } in pagedCategories"
           :data-testid="`recipe-machine-option-${index}`"
@@ -235,7 +236,7 @@ onBeforeUnmount(() => {
           role="option"
           :aria-selected="modelValue === index"
           :tabindex="modelValue === index ? 0 : -1"
-          :aria-label="`${getDisplayName(category.name)} (${getCategoryCount(category)} �?`"
+          :aria-label="`${getDisplayName(category.name)} (${getCategoryCount(category)})`"
           @click="handleSelect(index)"
           @keydown="handleOptionKeydown($event, index)"
         >
@@ -277,7 +278,7 @@ onBeforeUnmount(() => {
           </span>
 
           <span class="recipe-count-badge" aria-hidden="true">{{ getCategoryCount(category) }}</span>
-          <span class="icon-tooltip" role="tooltip">{{ getDisplayName(category.name) }} ({{ getCategoryCount(category) }} �?</span>
+          <span class="icon-tooltip" role="tooltip">{{ getDisplayName(category.name) }} ({{ getCategoryCount(category) }})</span>
         </button>
       </div>
     </div>
@@ -291,8 +292,8 @@ onBeforeUnmount(() => {
       type="button"
       class="category-page-btn category-page-btn--next"
       :disabled="normalizedCategoryPage >= totalCategoryPages - 1"
-      title="下一组配方类�?
-      aria-label="下一组配方类�?
+      :title="t('下一组配方类别')"
+      :aria-label="t('下一组配方类别')"
       @click="goToCategoryPage(1)"
     >
       <svg class="category-page-btn__icon" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

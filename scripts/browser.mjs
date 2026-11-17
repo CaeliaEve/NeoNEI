@@ -6,9 +6,9 @@ import { fileURLToPath } from 'node:url';
 const root = fileURLToPath(new URL('../', import.meta.url));
 const application = path.resolve(process.env.NEONEI_TEST_BUNDLE ?? root);
 const require = createRequire(path.join(application, 'backend/package.json'));
-const { createApp } = require(path.join(application, 'backend/dist/app.js'));
+const { createApp } = require(process.env.NEONEI_TEST_BACKEND ?? path.join(application, 'backend/dist/app.js'));
 const server = await new Promise((resolve, reject) => {
-  const listener = createApp({ catalog: path.join(root, 'fixtures/catalog'), web: path.join(application, 'frontend/dist') })
+  const listener = createApp({ catalog: process.env.NEONEI_TEST_CATALOG ?? path.join(root, 'fixtures/semantic-40'), web: process.env.NEONEI_TEST_WEB ?? path.join(application, 'frontend/dist') })
     .listen(0, '127.0.0.1', () => resolve(listener));
   listener.once('error', reject);
 });

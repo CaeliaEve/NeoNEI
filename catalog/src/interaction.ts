@@ -1,4 +1,4 @@
-import type {Manifest} from '@elysium/contracts';
+import type {CatalogManifest as Manifest} from './compatibility.ts';
 import {hash, Fault, type Collection, type Row} from './store.ts';
 export interface Part {kind: string; path: string; first: string; last: string; rows: number; bytes: number; rawBytes:number; sha256: string}
 export interface Directory {id:string; recipes:Array<{id:string;category:string}>; uses:Array<{id:string;category:string}>}

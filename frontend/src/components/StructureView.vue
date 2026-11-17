@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import {errorMessage} from '../i18n/errors.ts';
+import {t} from "../i18n/index.ts";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import type { Cell } from '@elysium/contracts';
 import { Scene, type Volume } from '../catalog/scene.ts';
@@ -14,20 +16,20 @@ const choices = computed(() => [...new Map(props.volume.palette.map((entry, inde
 let pointer: { x: number; y: number; startX: number; startY: number } | null = null;
 function update(): void {
   try { error.value = ''; if (scene) scene.animate = Boolean(props.animate); scene?.set(props.volume, props.cells, layer.value, rule.value, air.value); draw(); }
-  catch (failure) { error.value = failure instanceof Error ? failure.message : '结构显示失败'; }
+  catch (failure) { error.value = errorMessage(failure,'结构显示失败'); }
 }
 function start(): void {
   if (!canvas.value) return;
   scene?.dispose(); scene = null; error.value = '';
   try { scene = new Scene(canvas.value, props.models ?? null); update(); }
-  catch (failure) { error.value = failure instanceof Error ? failure.message : '结构显示失败'; }
+  catch (failure) { error.value = errorMessage(failure,'结构显示失败'); }
 }
 function draw(): void {
   clearTimeout(timer);
   if (!frame) frame = requestAnimationFrame(() => {
     frame = 0;
     try { scene?.draw(); }
-    catch (failure) { error.value = failure instanceof Error ? failure.message : '模型绘制失败'; }
+    catch (failure) { error.value = errorMessage(failure,'模型绘制失败'); }
     if (!error.value && props.animate && props.models?.animated && !document.hidden) timer = setTimeout(draw, props.models.smooth ? 16 : 50);
   });
 }
@@ -73,16 +75,16 @@ onBeforeUnmount(() => { observer?.disconnect(); cancelAnimationFrame(frame); cle
 <template>
   <figure class="structure-view">
     <div class="structure-controls">
-      <label>高度层 <input v-model.number="layer" type="range" min="-1" :max="volume.size[1] - 1" :aria-valuetext="layer < 0 ? '全部' : String(layer)" aria-label="结构高度层" /><output>{{ layer < 0 ? '全部' : layer }}</output></label>
-      <label>{{ label }} <select v-model.number="rule" :aria-label="'隔离结构' + label"><option :value="-1">全部</option><option v-for="[index, label] in choices" :key="index" :value="index">{{ label }}</option></select></label>
-      <label v-if="volume.palette.some(entry => entry.air)"><input v-model="air" type="checkbox" />显示空气</label>
-      <button type="button" @click="reset">重置视角</button>
+      <label>{{t("高度层")}} <input v-model.number="layer" type="range" min="-1" :max="volume.size[1] - 1" :aria-valuetext="layer < 0 ? t('全部') : String(layer)" :aria-label="t('结构高度层')" /><output>{{ layer < 0 ? t("全部") : layer }}</output></label>
+      <label>{{ label }} <select v-model.number="rule" :aria-label="t('隔离结构') + label"><option :value="-1">{{t("全部")}}</option><option v-for="[index, label] in choices" :key="index" :value="index">{{ label }}</option></select></label>
+      <label v-if="volume.palette.some(entry => entry.air)"><input v-model="air" type="checkbox" />{{t("显示空气")}}</label>
+      <button type="button" @click="reset">{{t("重置视角")}}</button>
     </div>
-    <p v-if="error" class="inline-error" role="alert">{{ error }} <button type="button" @click="start">重试</button></p>
-    <canvas ref="canvas" aria-label="多方块三维结构" role="img" tabindex="0" @pointerdown="down" @pointermove="move" @pointerup="up"
+    <p v-if="error" class="inline-error" role="alert">{{ error }} <button type="button" @click="start">{{t("重试")}}</button></p>
+    <canvas ref="canvas" :aria-label="t('多方块三维结构')" role="img" tabindex="0" @pointerdown="down" @pointermove="move" @pointerup="up"
       @pointercancel="pointer = null" @wheel.prevent="wheel" @keydown="key"
-      @webglcontextlost.prevent="error = '三维上下文已丢失，正在等待浏览器恢复。'" @webglcontextrestored="start" />
-    <figcaption>拖动旋转 · 滚轮缩放 · 方向键旋转 · 点击定位。{{ caption }}</figcaption>
+      @webglcontextlost.prevent="error = t('三维上下文已丢失，正在等待浏览器恢复。')" @webglcontextrestored="start" />
+    <figcaption>{{t("拖动旋转 · 滚轮缩放 · 方向键旋转 · 点击定位。{0}", caption)}}</figcaption>
   </figure>
 </template>
 

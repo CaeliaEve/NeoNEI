@@ -1,18 +1,18 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Ref } from "vue";
 import {residentCatalog} from '../../browser/resident';
 import type { BrowserGridEntry, Item } from "../../services/api";
+import {historyRowCount} from '../../state/panel-layout';
 
 type ItemBasicInfo = Pick<Item, "itemId" | "localizedName" | "modId" | "internalName" | "damage" | "imageFileName" | "renderAssetRef" | "preferredImageUrl">;
 
 const HISTORY_STORAGE_KEY = "viewHistory";
 const MAX_HISTORY_ITEMS = 400;
-const HISTORY_ROWS = 2 as const;
 const HISTORY_GRID_GAP = 4;
 const HISTORY_HORIZONTAL_PADDING = 32;
 
 const loadViewHistory = (key=HISTORY_STORAGE_KEY): ItemBasicInfo[] => {
   try {
-    const saved = localStorage.getItem(key)??localStorage.getItem(HISTORY_STORAGE_KEY);
+    const saved = localStorage.getItem(key);
     const value=saved?JSON.parse(saved):[];
     return Array.isArray(value)?value.filter(row=>row&&typeof row.itemId==='string').slice(0,MAX_HISTORY_ITEMS):[];
   } catch {
@@ -31,10 +31,10 @@ const toHistoryItem = (item: Item): ItemBasicInfo => ({
   preferredImageUrl: item.preferredImageUrl,
 });
 
-export function useHomeHistory(itemSize: Ref<number>) {
-  const viewHistory = ref<ItemBasicInfo[]>(loadViewHistory());
+export function useHomeHistory(itemSize: Ref<number>, panelHeight: Ref<number>) {
+  const viewHistory = ref<ItemBasicInfo[]>([]);
   const storageKey=()=>residentCatalog.value?HISTORY_STORAGE_KEY+':'+residentCatalog.value:HISTORY_STORAGE_KEY;
-  watch(residentCatalog,()=>{viewHistory.value=loadViewHistory(storageKey());},{immediate:true});
+  watch(residentCatalog,()=>{viewHistory.value=residentCatalog.value?loadViewHistory(storageKey()):[];},{immediate:true});
   const historyPanelRef = ref<HTMLElement | null>(null);
   const historyPanelWidth = ref(0);
 
@@ -65,7 +65,7 @@ export function useHomeHistory(itemSize: Ref<number>) {
   };
 
   const historyItemPixelSize = computed(() => Math.min(itemSize.value, 56));
-  const historyGridCellSize = computed(() => Math.min(itemSize.value + 4, 60));
+  const historyRows = computed(() => historyRowCount(panelHeight.value, itemSize.value));
 
   const updateHistoryPanelWidth = () => {
     historyPanelWidth.value = historyPanelRef.value?.clientWidth ?? 0;
@@ -86,12 +86,12 @@ export function useHomeHistory(itemSize: Ref<number>) {
       1,
       Math.floor(
         (contentWidth + HISTORY_GRID_GAP) /
-          (historyGridCellSize.value + HISTORY_GRID_GAP),
+          (historyItemPixelSize.value + HISTORY_GRID_GAP),
       ),
     );
   });
 
-  const historyVisibleCount = computed(() => historyColumns.value * HISTORY_ROWS);
+  const historyVisibleCount = computed(() => historyColumns.value * historyRows.value);
   const visibleHistorySeeds = computed(() => viewHistory.value.slice(0, historyVisibleCount.value));
   const historyBrowserEntries = computed<BrowserGridEntry[]>(() =>
     (visibleHistorySeeds.value as Item[]).map((item) => ({
@@ -112,7 +112,7 @@ export function useHomeHistory(itemSize: Ref<number>) {
 
   return {
     viewHistory,
-    historyRows: HISTORY_ROWS,
+    historyRows,
     historyGridGap: HISTORY_GRID_GAP,
     historyItemPixelSize,
     historyBrowserEntries,

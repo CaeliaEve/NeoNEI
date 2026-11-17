@@ -1,3 +1,4 @@
+import {errorMessage} from '../i18n/errors.ts';
 import { onScopeDispose, shallowRef } from 'vue';
 
 export function useRequest<T>() {
@@ -14,7 +15,7 @@ export function useRequest<T>() {
       const result = await action(signal);
       if (request === sequence && !signal.aborted) value.value = result;
     } catch (failure) {
-      if (request === sequence && !signal.aborted) error.value = failure instanceof Error ? failure.message : '加载失败';
+      if (request === sequence && !signal.aborted) error.value = errorMessage(failure,'加载失败');
     } finally { if (request === sequence) loading.value = false; }
   }
   function clear(): void { cancel(); value.value = null; error.value = ''; }

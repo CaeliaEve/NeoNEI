@@ -2,17 +2,22 @@ import type { File, Manifest, Texture } from '@elysium/contracts';
 import { hash } from '@neonei/catalog/source';
 import { body } from './transport.ts';
 import {PriorityPool} from '../browser/priority-pool.ts';
+import {decodeImage,promoteImageDecode} from './image-decoder.ts';
 
 interface Page { image: ImageBitmap; bytes: number; refs: number }
 export interface Lease { image: ImageBitmap; frame?: Pick<Texture['frames'][number],'x'|'y'|'width'|'height'>; release: () => void }
 type Source = (file: File, signal: AbortSignal) => Promise<Uint8Array>;
+let decoderSequence=0;
 
 /** Shared decoded pages are counted once and retained only while visible consumers use them. */
 export class Atlas {
   private static readonly instances=new Set<Atlas>();
   private static readonly decodedBudget=192*1024*1024;
+  private static visualBytes=0;
+  private visualBytes=0;
   readonly catalogId:string;
-  private readonly manifest: Pick<Manifest, 'files'>;
+  private readonly decoderId='atlas-'+(++decoderSequence)+':';
+  private readonly imageFiles = new Map<string,File>();
   private readonly base: string;
   private readonly signal: AbortSignal;
   private readonly source?: Source;
@@ -22,26 +27,30 @@ export class Atlas {
   private readonly waiting = new Map<string, number>();
   private readonly sprites = new Map<string, Page>();
   private spriteBytes = 0;
-  private readonly spriteQueue: Array<{ path: string; priority:number; run: () => Promise<void> }> = [];
-  private spriteActive = false;
+  private readonly spriteQueue: Array<{ key:string;path: string; priority:number; run: () => Promise<void> }> = [];
+  private readonly activeSpriteKeys=new Set<string>();
+  private spriteActive = 0;
   private readonly spriteBudget = 64 * 1024 * 1024;
   private bytes = 0;
+  private reservedBytes = 0;
   private closed = false;
   private readonly budget: number;
 
   constructor(manifest: Pick<Manifest, 'files'> & Partial<Pick<Manifest,'id'>>, base: string, signal: AbortSignal, source?: Source, budget = 192 * 1024 * 1024) {
     this.catalogId=manifest.id??'';
     this.budget = budget;
-    this.manifest = manifest; this.base = base; this.signal = AbortSignal.any([signal, this.controller.signal]); this.source = source;
+    for(const file of manifest.files)if(file.kind==='image'&&!this.imageFiles.has(file.path))this.imageFiles.set(file.path,file);
+    this.base = base; this.signal = AbortSignal.any([signal, this.controller.signal]); this.source = source;
     Atlas.instances.add(this);
   }
 
   async acquire(path: string, signal?: AbortSignal, priority=0): Promise<Lease> {
     if (this.closed || this.signal.aborted || signal?.aborted) throw new DOMException('Aborted', 'AbortError');
+    promoteImageDecode(this.decoderId+path,priority);
     this.waiting.set(path, (this.waiting.get(path) ?? 0) + 1);
     try {
       const cached = this.pages.get(path);
-      const page = cached ?? await this.pool.run(path, active => this.load(path, active), signal, priority);
+      const page = cached ?? await this.pool.run(path, active => this.load(path, active, priority), signal, priority);
       if (this.closed || this.signal.aborted || signal?.aborted) throw new DOMException('Aborted', 'AbortError');
       page.refs++;
       this.pages.delete(path); this.pages.set(path, page);
@@ -53,7 +62,7 @@ export class Atlas {
     }
   }
 
-  /** Copy only the requested frame; serialize copies so readers never pin several pages while waiting. */
+  /** Copy only requested frames; bound in-flight copies and never queue first paint behind speculative I/O. */
   acquireFrame(frame: Texture['frames'][number], signal?: AbortSignal,priority=0): Promise<Lease> {
     const run = async (): Promise<Lease> => {
       const check = (): void => {
@@ -72,11 +81,13 @@ export class Atlas {
         try {
           check();
           if (x + width > page.image.width || y + height > page.image.height) throw new Error('纹理裁剪超出图集范围');
-          this.makeRoom(bytes);
-          const image = await createImageBitmap(page.image, x, y, width, height);
-          try { check(); } catch (failure) { image.close(); throw failure; }
-          sprite = { image, bytes, refs: 0 };
-          this.sprites.set(key, sprite); this.spriteBytes += bytes;
+          this.trimSprites(bytes);this.makeRoom(bytes);this.reservedBytes+=bytes;
+          try{
+            const image = await decodeImage(page.image,AbortSignal.any([this.signal,...(signal?[signal]:[])]),priority,{x,y,width,height},this.decoderId+'sprite:'+key);
+            try { check(); } catch (failure) { image.close(); throw failure; }
+            sprite = { image, bytes, refs: 0 };
+            this.sprites.set(key, sprite); this.spriteBytes += bytes;
+          }finally{this.reservedBytes-=bytes;}
         } finally { page.release(); }
       }
       this.sprites.delete(key); this.sprites.set(key, sprite);
@@ -89,13 +100,16 @@ export class Atlas {
         retained.refs--;
       } };
     };
-    if(this.sprites.has(JSON.stringify([frame.path,frame.x,frame.y,frame.width,frame.height])))return run();
+    const spriteKey=JSON.stringify([frame.path,frame.x,frame.y,frame.width,frame.height]);
+    promoteImageDecode(this.decoderId+'sprite:'+spriteKey,priority);
+    this.pool.promote(frame.path,priority);promoteImageDecode(this.decoderId+frame.path,priority);
+    if(this.sprites.has(spriteKey))return run();
     return new Promise<Lease>((resolve, reject) => {
       const abort=()=>{
         const index=this.spriteQueue.indexOf(job);
         if(index>=0){this.spriteQueue.splice(index,1);reject(new DOMException('Aborted','AbortError'));}
       };
-      const job={path:frame.path,priority,run:async()=>{
+      const job={key:spriteKey,path:frame.path,priority,run:async()=>{
         signal?.removeEventListener('abort',abort);
         try{resolve(await run());}catch(error){reject(error);}
       }};
@@ -107,14 +121,15 @@ export class Atlas {
   }
 
   private drainSprites(): void {
-    if (this.spriteActive || !this.spriteQueue.length) return;
-    // First paint precedes speculative/animation copies, even when the latter's atlas is resident.
-    const priority=Math.min(...this.spriteQueue.map(job=>job.priority));
-    const resident=this.spriteQueue.findIndex(job=>job.priority===priority&&this.pages.has(job.path));
-    const index=resident<0?this.spriteQueue.findIndex(job=>job.priority===priority):resident;
-    const job = this.spriteQueue.splice(index, 1)[0]!;
-    this.spriteActive = true;
-    void job.run().finally(() => { this.spriteActive = false; this.drainSprites(); });
+    while(this.spriteActive<2&&this.spriteQueue.length){
+      // Background may start only when idle; a cold background fetch never occupies both slots.
+      const candidates=this.spriteQueue.filter(job=>!this.activeSpriteKeys.has(job.key)&&(job.priority<=0||this.spriteActive===0));
+      if(!candidates.length)return;
+      const priority=Math.min(...candidates.map(job=>job.priority));
+      const job=candidates.find(job=>job.priority===priority&&this.pages.has(job.path))??candidates.find(job=>job.priority===priority)!;
+      this.spriteQueue.splice(this.spriteQueue.indexOf(job),1);this.spriteActive++;this.activeSpriteKeys.add(job.key);
+      void job.run().finally(()=>{this.spriteActive--;this.activeSpriteKeys.delete(job.key);this.drainSprites();});
+    }
   }
 
   private evictSprite(): boolean {
@@ -125,14 +140,14 @@ export class Atlas {
   }
 
   private trimSprites(size: number): void {
-    while (this.spriteBytes + size > this.spriteBudget) {
+    while (this.spriteBytes + this.reservedBytes + size > this.spriteBudget) {
       if (!this.evictSprite()) throw new Error('可见图标帧超出内存预算');
     }
   }
 
-  private async load(path: string, consumer:AbortSignal): Promise<Page> {
+  private async load(path: string, consumer:AbortSignal,priority:number): Promise<Page> {
     const signal=AbortSignal.any([this.signal,consumer]);signal.throwIfAborted();
-    const file = this.manifest.files.find(file => file.kind === 'image' && file.path === path);
+    const file = this.imageFiles.get(path);
     if (!file || !['textures/' + file.sha256 + '.webp','textures/' + file.sha256 + '.png'].includes(path) || file.bytes > 80 * 1024 * 1024) throw new Error('纹理未在数据集中声明');
     let bytes: Uint8Array;
     if (this.source) bytes = await this.source(file, signal);
@@ -144,7 +159,7 @@ export class Atlas {
     if (bytes.byteLength !== file.bytes) throw new Error('纹理长度与清单不一致');
     if (await hash(bytes) !== file.sha256) throw new Error('纹理校验失败');
     const content = bytes.buffer instanceof ArrayBuffer ? new Uint8Array(bytes.buffer, bytes.byteOffset, bytes.byteLength) : new Uint8Array(bytes);
-    const image = await createImageBitmap(new Blob([content], { type: path.endsWith('.png') ? 'image/png' : 'image/webp' }));
+    const image = await decodeImage(new Blob([content], { type: path.endsWith('.png') ? 'image/png' : 'image/webp' }),signal,this.pool.priority(path)??priority,undefined,this.decoderId+path);
     const size = image.width * image.height * 4;
     if (this.closed || signal.aborted || image.width > 4096 || image.height > 4096) {
       image.close();
@@ -157,13 +172,21 @@ export class Atlas {
   }
 
   private makeRoom(size: number): void {
-    while (this.bytes + this.spriteBytes + size > this.budget) {
+    while (this.bytes + this.spriteBytes + this.reservedBytes + this.visualBytes + size > this.budget) {
       if(!this.evictUnused())throw new Error('当前可见纹理超出内存预算，请缩小每页数量');
     }
-    const weight=()=>[...Atlas.instances].reduce((n,a)=>n+a.bytes+a.spriteBytes,0);
+    const weight=()=>Atlas.visualBytes+[...Atlas.instances].reduce((n,a)=>n+a.bytes+a.spriteBytes+a.reservedBytes,0);
     while(weight()+size>Atlas.decodedBudget){
       if(![...Atlas.instances].some(atlas=>atlas.evictUnused()))throw new Error('当前可见纹理超出共享内存预算');
     }
+  }
+
+  /** Program geometry, native lookup arrays and uploaded GPU pixels share the
+   * decoded-image ceiling. The token outlives a closed Atlas until GL deletion. */
+  claimVisualBytes(bytes:number):()=>void {
+    if(this.closed||!Number.isSafeInteger(bytes)||bytes<1)throw Error('Invalid native visual reservation');
+    this.makeRoom(bytes);this.visualBytes+=bytes;Atlas.visualBytes+=bytes;let released=false;
+    return ()=>{if(released)return;released=true;this.visualBytes-=bytes;Atlas.visualBytes-=bytes;};
   }
 
   private evictUnused():boolean {

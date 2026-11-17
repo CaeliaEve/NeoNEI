@@ -8,7 +8,7 @@ const { canonical, assertManifest } = require('@elysium/contracts');
 const { quantityBounds } = require('@neonei/catalog');
 const { createApp } = require('../src/app');
 
-const fixture = path.resolve(__dirname, '../../fixtures/catalog');
+const fixture = process.env.NEONEI_TEST_CATALOG ?? path.resolve(__dirname, '../../fixtures/semantic-40');
 const digest = value => createHash('sha256').update(value).digest('hex');
 const json = async file => JSON.parse(await fs.readFile(file, 'utf8'));
 
@@ -320,12 +320,11 @@ test('compiled catalog supports NEI order, pinyin, pagination, groups and exact 
   assert.throws(() => quantityBounds(exhausted, exhausted.outputs[1]), /耗尽/);
   assert.equal(recipe.energy, '9223372036854775807');
   assert.deepEqual(recipe.outputs[0].chance, { numerator: '1', denominator: '3' });
-  assert.ok(uses.related.items.length && uses.related.fluids.length && uses.related.views.length && uses.related.strings.length);
-  const clip = uses.related.views.flatMap(view => view.elements).find(element => element.kind === 'clip');
-  assert.ok(clip && uses.related.textures.some(texture => texture.id === clip.asset));
-  assert.equal(uses.related.tracks.length, 1);
-  assert.equal(uses.related.tracks[0].id, clip.track);
-  assert.equal(uses.related.tracks[0].frames.reduce((sum, frame) => sum + frame.ticks, 0), 16);
+  assert.ok(uses.related.items.length && uses.related.fluids.length && uses.related.strings.length);
+  assert.deepEqual(uses.related.views, []);
+  assert.deepEqual(uses.related.tracks, []);
+  assert.ok(recipe.notes.some(note => uses.related.strings.some(text => text.id === note.text && text.text.includes('shared input tank'))),
+    'Necessary native text must survive without a recipe GUI asset');
   const water = await (await get(base, api + '/items?kind=fluid&query=water')).json();
   const refineryUses=await(await get(base,api+'/recipes?kind=fluid&direction=uses&item='+water.rows[0].id)).json();
   const refinery=refineryUses.rows.find(row=>row.process?.kind==='buildcraftRefinery');

@@ -1,9 +1,11 @@
-import type { File, Manifest } from '@elysium/contracts';
+import type { File } from '@elysium/contracts';
+import type { CatalogManifest as Manifest } from '@neonei/catalog/source';
 import { Fault } from '@neonei/catalog/source';
 
 export interface Saved {
   id: string;
   revision: number;
+  locale?: string;
   source: string;
   state: 'partial' | 'ready';
   added: number;
@@ -96,7 +98,7 @@ export class Shelf {
       const keys = await result(tx.objectStore('files').index('catalog').getAllKeys(IDBKeyRange.only(manifest.id)));
       const present = new Set(keys.flatMap(key => Array.isArray(key) && typeof key[1] === 'string' ? [key[1]] : []));
       const downloaded = manifest.files.filter(file => present.has(file.path));
-      const row: Saved = { id: manifest.id, revision: manifest.revision, source, state: 'partial', added: existing?.added ?? Date.now(), saved: null,
+      const row: Saved = { id: manifest.id, revision: manifest.revision, locale: manifest.locale, source, state: 'partial', added: existing?.added ?? Date.now(), saved: null,
         files: downloaded.length, bytes: downloaded.reduce((total, file) => total + file.bytes, 0),
         totalFiles: manifest.files.length, totalBytes: manifest.files.reduce((total, file) => total + file.bytes, 0),
         items: manifest.counts.items ?? 0, recipes: manifest.counts.recipes ?? 0, scope: manifest.scope };

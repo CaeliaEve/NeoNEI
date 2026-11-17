@@ -1,15 +1,18 @@
 <script setup lang="ts">
-import type { StyleValue } from "vue";
+import { t, language } from "../../i18n/index.ts";
+import {computed, onBeforeUnmount, ref, watch, type StyleValue} from "vue";
 import type { BrowserVariantGroup, Item } from "../../services/api";
 import type { NativeSurfaceFrameProjectionMetrics } from "../../native-surface/contracts";
 import { resolveDistDataNativeRuntimeManifestPath } from "../../services/distDataRuntime";
 import NativeBrowserSurface from "../native-surface/NativeBrowserSurface.vue";
 import {residentStatus} from '../../browser/resident';
+import PanelResizeHandle from './PanelResizeHandle.vue';
 
-defineProps<{
+const props = defineProps<{
   itemColumnStyle: StyleValue;
   totalPages: number;
   currentPage: number;
+  loadedPage: number;
   itemSize: number;
   searchQuery: string;
   selectedMod: string;
@@ -26,6 +29,10 @@ defineProps<{
   groupToggleBusy: boolean;
   showTransitionOverlay: boolean;
   selectedItemId?: string | null;
+  panelWidth: number;
+  resizeEnabled: boolean;
+  minWidth: number;
+  maxWidth: number;
 }>();
 
 const emit = defineEmits<{
@@ -43,6 +50,11 @@ const emit = defineEmits<{
   runtimeProjectionUpdate: [metrics: NativeSurfaceFrameProjectionMetrics];
   toggleAllGroups: [];
   openRecipe: [];
+  columnResize: [element: HTMLElement | null];
+  resizeWidth: [value: number];
+  resizeStart: [];
+  resizeEnd: [];
+  resetWidth: [];
 }>();
 
 const bindGridViewportRef = (element: HTMLElement | null) => {
@@ -50,14 +62,31 @@ const bindGridViewportRef = (element: HTMLElement | null) => {
 };
 
 const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
+const displayedPage = ref(0);
+const pageError = ref('');
+const showPendingPage = ref(false);
+const visiblePageNumber = computed(() => displayedPage.value || props.currentPage);
+let pendingTimer: ReturnType<typeof setTimeout> | undefined;
+watch([() => props.currentPage, () => props.items, () => props.searchQuery, () => props.selectedMod], () => { pageError.value = ''; });
+watch([() => props.currentPage, displayedPage], () => {
+  clearTimeout(pendingTimer);
+  showPendingPage.value = false;
+  if (displayedPage.value !== props.currentPage) pendingTimer = setTimeout(() => { showPendingPage.value = true; }, 150);
+}, {immediate: true});
+onBeforeUnmount(() => clearTimeout(pendingTimer));
 </script>
 
 <template>
         <div
-          class="items-column ml-auto flex flex-col overflow-hidden"
+          id="home-browser-column"
+          :ref="element => emit('columnResize', element as HTMLElement | null)"
+          class="items-column relative ml-auto flex-shrink-0 flex flex-col overflow-hidden"
           :style="itemColumnStyle"
           @wheel="emit('itemsWheel', $event)"
         >
+          <PanelResizeHandle v-if="resizeEnabled" orientation="vertical" :label="t('调整浏览区宽度')" controls="home-browser-column"
+            :value="panelWidth" :min="minWidth" :max="maxWidth"
+            @update="emit('resizeWidth', $event)" @start="emit('resizeStart')" @end="emit('resizeEnd')" @reset="emit('resetWidth')" />
           <!-- Top Controls & Pagination -->
           <div
             class="pagination-top flex justify-center items-center py-2 px-4 gap-3"
@@ -66,9 +95,9 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
             <button
               @click="emit('openRecipe')"
               class="recipe-entry-btn-browser"
-              title="进入 Recipe 界面"
+              :title="t('进入 Recipe 界面')"
             >
-              Recipe
+              {{t('配方')}}
             </button>
 
             <div
@@ -79,8 +108,8 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
               <button
                 @click="emit('pageChange', currentPage - 1)"
                 class="pager-arrow-btn pager-arrow-btn--prev rounded-full"
-                title="上一页"
-                aria-label="上一页"
+                :title="t('上一页')"
+                :aria-label="t('上一页')"
               >
                 <svg
                   class="w-3.5 h-3.5 stroke-current"
@@ -96,7 +125,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
 
               <!-- 页码显示 (星微之光排版) -->
               <div class="font-mono text-[10px] tracking-wider flex items-center">
-                <span class="pager-num-current text-white font-medium">{{ String(currentPage).padStart(2, '0') }}</span>
+                <span class="pager-num-current text-white font-medium" :data-target-page="currentPage">{{ String(visiblePageNumber).padStart(2, '0') }}</span>
                 <span class="pager-divider mx-2">/</span>
                 <span class="pager-num-total">{{ String(totalPages).padStart(2, '0') }}</span>
               </div>
@@ -105,8 +134,8 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
               <button
                 @click="emit('pageChange', currentPage + 1)"
                 class="pager-arrow-btn pager-arrow-btn--next rounded-full"
-                title="下一页"
-                aria-label="下一页"
+                :title="t('下一页')"
+                :aria-label="t('下一页')"
               >
                 <svg
                   class="w-3.5 h-3.5 stroke-current"
@@ -128,15 +157,22 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
               :class="{ 'group-toggle-btn--active': allBrowserGroupsExpanded }"
               :disabled="!hasBrowserGroups || groupToggleBusy"
               :aria-busy="groupToggleBusy ? 'true' : undefined"
-              :aria-label="!hasBrowserGroups ? '当前筛选范围没有分组' : (allBrowserGroupsExpanded ? '收起当前范围全部分组' : '展开当前范围全部分组')"
-              :title="!hasBrowserGroups ? '当前筛选范围没有分组' : (allBrowserGroupsExpanded ? '收起当前范围全部分组' : '展开当前范围全部分组')"
+              :aria-label="!hasBrowserGroups ? t('当前筛选范围没有分组') : (allBrowserGroupsExpanded ? t('收起当前范围全部分组') : t('展开当前范围全部分组'))"
+              :title="!hasBrowserGroups ? t('当前筛选范围没有分组') : (allBrowserGroupsExpanded ? t('收起当前范围全部分组') : t('展开当前范围全部分组'))"
             >
-              {{ groupToggleBusy ? '...' : '组' }}
+              {{ groupToggleBusy ? '...' : t("组") }}
             </button>
           </div>
 
           <!-- Items Grid Container -->
-          <div v-if="residentStatus" class="text-center text-xs text-slate-400" role="status">{{ residentStatus }}</div>
+          <div v-if="residentStatus || pageError || loadError || showPendingPage" class="text-center text-xs text-slate-400" role="status">
+            <template v-if="pageError || loadError">
+              <span class="text-amber-200">{{ pageError || loadError }}</span>
+              <button class="ml-2 underline" @click="emit('reload')"> {{ t("重试") }} </button>
+            </template>
+            <template v-else-if="showPendingPage"> {{ t("正在准备第") }} {{ currentPage }} {{ t("页…") }} </template>
+            <template v-else>{{ residentStatus }}</template>
+          </div>
           <div class="items-grid-container flex-1 min-h-0 pt-1 flex flex-col">
             <div
               :ref="bindGridViewportRef"
@@ -144,25 +180,25 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
             >
               <div v-if="loading && items.length === 0" class="state-panel list-state-panel">
                 <div class="state-spinner"></div>
-                <p class="state-title">加载数据中...</p>
-                <p class="state-subtitle">正在同步物品列表，请稍候。</p>
+                <p class="state-title"> {{ t("加载数据中...") }} </p>
+                <p class="state-subtitle"> {{ t("正在同步物品列表，请稍候。") }} </p>
               </div>
 
               <div v-else-if="loadError && items.length === 0" class="state-panel list-state-panel state-panel-error">
                 <p class="state-title">{{ loadError }}</p>
-                <p class="state-subtitle">可立即重试，或重置筛选条件后重新加载。</p>
+                <p class="state-subtitle"> {{ t("可立即重试，或重置筛选条件后重新加载。") }} </p>
                 <div class="state-actions">
-                  <button class="mini-pager-btn" @click="emit('reload')">重试</button>
-                  <button class="mini-pager-btn" @click="emit('resetFilters')">重置筛选</button>
+                  <button class="mini-pager-btn" @click="emit('reload')"> {{ t("重试") }} </button>
+                  <button class="mini-pager-btn" @click="emit('resetFilters')"> {{ t("重置筛选") }} </button>
                 </div>
               </div>
 
               <div v-else-if="items.length === 0" class="state-panel list-state-panel">
-                <p class="state-title">暂无可显示物品</p>
+                <p class="state-title"> {{ t("暂无可显示物品") }} </p>
                 <p class="state-subtitle">{{ itemGridEmptySubtitle }}</p>
                 <div class="state-actions">
-                  <button class="mini-pager-btn" @click="emit('reload')">重新加载</button>
-                  <button class="mini-pager-btn" @click="emit('resetFilters')">重置筛选</button>
+                  <button class="mini-pager-btn" @click="emit('reload')"> {{ t("重新加载") }} </button>
+                  <button class="mini-pager-btn" @click="emit('resetFilters')"> {{ t("重置筛选") }} </button>
                 </div>
               </div>
 
@@ -172,6 +208,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                   viewport-role="browser"
                   :item-size="itemSize"
                   :page="currentPage"
+                  :items-page="loadedPage"
                   :search-query="searchQuery"
                   :mod-id="selectedMod"
                   :expanded-groups="expandedGroupKeys"
@@ -185,6 +222,8 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                   @group-contextmenu="(group, event) => emit('groupContextmenu', group, event)"
                   @viewport-resize="emit('gridViewportResize', $event)"
                   @runtime-projection-update="emit('runtimeProjectionUpdate', $event)"
+                  @page-presented="displayedPage = $event"
+                  @page-fault="pageError = $event"
                 />
 
 
@@ -192,9 +231,7 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                 <div
                   v-if="showTransitionOverlay"
                   class="pointer-events-none absolute right-3 top-3 z-20 rounded-xl border border-amber-500/20 bg-slate-950/82 px-3 py-2 text-xs text-amber-200/90 shadow-[0_10px_30px_rgba(15,23,42,0.45)] backdrop-blur-md"
-                >
-                  正在切换到第 {{ currentPage }} 页...
-                </div>
+                > {{ t("正在切换到第") }} {{ currentPage }} {{ t("页...") }} </div>
 
                 <div
                   v-else-if="loadError && items.length > 0"
@@ -202,9 +239,9 @@ const nativeRuntimeManifestUrl = resolveDistDataNativeRuntimeManifestPath();
                 >
                   <div class="state-panel list-state-panel state-panel-error !px-3 !py-2">
                     <p class="state-title text-xs">{{ loadError }}</p>
-                    <p class="state-subtitle">上一页内容已保留，可立即重试当前页加载。</p>
+                    <p class="state-subtitle"> {{ t("上一页内容已保留，可立即重试当前页加载。") }} </p>
                     <div class="state-actions">
-                      <button class="mini-pager-btn" @click="emit('reload')">重试当前页</button>
+                      <button class="mini-pager-btn" @click="emit('reload')"> {{ t("重试当前页") }} </button>
                     </div>
                   </div>
                 </div>
